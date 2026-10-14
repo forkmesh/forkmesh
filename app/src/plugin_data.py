@@ -471,6 +471,12 @@ def _legacy_only(plugin, rows, own):
             and (bool(entry.get("installedBefore")) or _hook_fallback(plugin)))
 
 
+def _unchosen(plugin, rows):
+    entry = REGISTRY.get(plugin, {})
+    return (plugin not in rows and not entry.get("default") and not entry.get("installedBefore")
+            and not _hook_fallback(plugin))
+
+
 def _account_payload(rows, own, changed=None):
     packages = []
     for plugin in sorted(_synced()):
@@ -483,6 +489,8 @@ def _account_payload(rows, own, changed=None):
         }
         if _legacy_only(plugin, rows, own):
             package["legacy"] = True
+        elif _unchosen(plugin, rows):
+            package["unchosen"] = True
         packages.append(package)
     payload = {"ok": True, "packages": packages}
     if changed is not None:

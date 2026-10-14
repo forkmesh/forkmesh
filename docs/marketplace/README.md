@@ -41,7 +41,12 @@ its manifest's id and version.
 socket config:
 
 - `dashboard.page` (App): an HTML view plus optional script calling
-  `window.ForkMeshDashboard.registerPage(pageId, initializer)`.
+  `window.ForkMeshDashboard.registerPage(pageId, initializer)`. Config
+  `devices: ["camera", "microphone"]` (either or both) lets that route alone
+  use them: `build_app_plugins.py` writes `PLUGIN_DEVICE_PAGES` into the
+  staged `plugin_registry`, and `_apply_browser_security_headers`
+  (`app/src/entry.py`) answers those routes with `camera=(self)` when asked
+  and `mediastream:` in `media-src`. Every other page keeps `camera=()`.
 - `www.page` (website): a public one-segment route on forkmesh.com.
   `build_app_plugins.stage_www_pages` copies the page and assets, runs an
   optional `builder`, content-hashes `?v=` references, refuses routes already
@@ -139,10 +144,14 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `status-check-*` packages ([status-page.md](status-page.md)), `sentry`,
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
   ([computer-security.md](computer-security.md)).
-- **Desktop and phone extras:** `capture`, `discord`, `voice-changer`,
+- **Desktop and phone extras:** `capture`, `discord`,
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `tour`, `people` ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `winamp` (theme), `gemma-4` (agent model).
+- **Face and voice:** `face-changer` (web page plus a desktop rail link) and
+  `voice-changer` (desktop virtual microphone plus a web page). Both web pages
+  run the call engine from `app/public` and share `app/public/call-studio.js`
+  ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 

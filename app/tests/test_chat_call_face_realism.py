@@ -1,4 +1,5 @@
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -42,7 +43,7 @@ out.turns = [-40, -20, 20, 40].map((deg) => {
     noseTurn: geo.noseTurn(live),
     noseFront: depths[30] > depths[39] && depths[30] > depths[42] && depths[30] > depths[0] && depths[30] > depths[16],
     eyesFrontOfJaw: depths[36] > depths[0] && depths[45] > depths[16],
-    ringBehind: depths.slice(78).every((d) => d < depths[33]),
+    ringBehind: depths.slice(78, maya.mesh.extraStart).every((d) => d < depths[33]),
     stride: vertices.length / (maya.mesh.triangles.length * 3),
     depthSlot: vertices[6],
   };
@@ -131,6 +132,93 @@ out.cleared = custom.savedCustomFaceImage(storage);
 let threw = "";
 try { custom.buildCustomFace({ image: null, width: 1, height: 1, points: null }); } catch (error) { threw = error.message; }
 out.noFace = threw;
+const span = (pts) => Math.hypot(pts[45][0] - pts[36][0], pts[45][1] - pts[36][1]);
+const bend = (pts) => {
+  const [a, b] = [pts[27], pts[30]];
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  return Math.max(...[28, 29].map((i) => Math.abs((b[0] - a[0]) * (pts[i][1] - a[1]) - (b[1] - a[1]) * (pts[i][0] - a[0])) / length)) / span(pts);
+};
+const bent = turn(15).map((p, i) => (i === 28 ? [p[0] + 9, p[1]] : i === 29 ? [p[0] - 9, p[1]] : p));
+out.nose = { raw: bend(bent), drawn: bend(geo.liveHead(maya.model, bent).points) };
+
+const turning = (pts) => pts.map((p, i) => {
+  const prev = pts[(i + pts.length - 1) % pts.length];
+  const next = pts[(i + 1) % pts.length];
+  const a = Math.atan2(p[1] - prev[1], p[0] - prev[0]);
+  const b = Math.atan2(next[1] - p[1], next[0] - p[0]);
+  let d = Math.abs(b - a);
+  if (d > Math.PI) d = 2 * Math.PI - d;
+  return (d * 180) / Math.PI;
+});
+const openLive = geo.fitTemplate(tmpl, { eyeL: [250, 300], eyeR: [350, 300], open: 0.8 });
+const openHead = geo.liveHead(maya.model, openLive);
+const contour = geo.mouthContour(openHead.points);
+const corner = (contour.length + 2) / 2 - 1;
+const smooth = turning(contour).filter((_, i) => i !== 0 && i !== corner);
+const polygon = turning([60, 61, 62, 63, 64, 65, 66, 67].map((i) => openHead.points[i])).filter((_, i) => i !== 0 && i !== 4);
+const verts = render.warpVertices(maya.mesh, maya.layout, openHead.points, 512, null);
+const holes = [];
+for (let i = 4; i < verts.length; i += render.VERTEX_FLOATS) holes.push(verts[i]);
+const feathered = maya.mesh.triangles.filter((t) => t.hole && Math.min(...t.hole) === 0 && Math.max(...t.hole) === 1).length;
+out.mouth = {
+  points: contour.length,
+  smoothTurn: Math.max(...smooth),
+  polygonTurn: Math.max(...polygon),
+  holeValues: [...new Set(holes.map((v) => Math.round(v * 100) / 100))].sort(),
+  feathered,
+  centerDrop: openLive[66][1] - openLive[65][1],
+  lipDrop: openLive[57][1] - openLive[55][1],
+  extras: geo.MOUTH_EXTRA_COUNT,
+  regions: [...new Set(maya.mesh.triangles.filter((t) => t.mouth).flatMap((t) => t.v).map((v) => render.vertexRegion(v, maya.mesh.extraStart)))],
+};
+
+const rotate3 = (yaw, pitch) => ([x, y, z]) => {
+  const X = x * Math.cos(yaw) + z * Math.sin(yaw);
+  const Z = -x * Math.sin(yaw) + z * Math.cos(yaw);
+  return [320 + 60 * X, 200 + 60 * (y * Math.cos(pitch) - Z * Math.sin(pitch)), 60 * (y * Math.sin(pitch) + Z * Math.cos(pitch))];
+};
+out.depthPose = [[0.5, 0], [-0.6, 0.2], [0.2, -0.35], [0, 0]].map(([yaw, pitch]) => {
+  const live = maya.model.slice(0, 68).map(rotate3(yaw, pitch));
+  const pose = geo.solvePose(maya.model, live);
+  return { yaw, pitch, depth: pose.depth === true, gotYaw: pose.yaw, gotPitch: pose.pitch, scale: pose.scale };
+});
+const flat = maya.model.slice(0, 68).map(rotate3(0.3, 0)).map(([x, y]) => [x, y, 0]);
+out.flatDepth = geo.solvePose(maya.model, flat).depth === true;
+const withZ = (regions, z) => Object.fromEntries(Object.entries(regions).map(([name, list]) => [name, list.map((p) => [p[0], p[1], z])]));
+const regionsZ = withZ(geo.shapeRegions(pts), 5);
+const carried = geo.landmarksFromRegions(regionsZ);
+regionsZ.nose[0] = regionsZ.nose[0].slice(0, 2);
+const partial = geo.landmarksFromRegions(regionsZ);
+out.regionDepth = {
+  carried: carried.every((p) => p.length === 3 && Math.abs(p[2] - 5) < 1e-9),
+  partial: partial.every((p) => p.length === 2),
+};
+const smoother = geo.createPointSmoother(2, 1, 0);
+smoother.smooth([[0, 0, 0], [1, 1, 1]], 0, 1);
+out.smoothDepth = smoother.smooth([[0, 0, 10], [1, 1, 11]], 1000, 1).map((p) => p.length);
+
+const blink = (frames, lids) => {
+  const tracker = ex.createBlinkTracker();
+  let time = 0;
+  const seen = [0, 0];
+  for (const [e0, e1, o0, o1, moving] of frames) {
+    time += 42;
+    const close = tracker.update({ edges: [e0, e1], openness: lids ? [o0, o1] : null, elapsed: 0.042, time, moving: Boolean(moving) });
+    seen[0] = Math.max(seen[0], close[0]);
+    seen[1] = Math.max(seen[1], close[1]);
+  }
+  return seen;
+};
+const openRun = (n) => Array.from({ length: n }, () => [1, 1, 0.3, 0.3]);
+out.blink = {
+  real: blink([...openRun(24), ...Array(5).fill([0.2, 0.22, 0.1, 0.11]), ...openRun(12)], true),
+  imageOnly: blink([...openRun(24), ...Array(5).fill([0.2, 0.22]), ...openRun(12)], false),
+  glanceDown: blink([...openRun(24), ...Array(6).fill([0.5, 0.5, 0.26, 0.26]), ...openRun(12)], true),
+  lidsOpen: blink([...openRun(24), ...Array(5).fill([0.25, 0.25, 0.3, 0.3]), ...openRun(12)], true),
+  oneEye: blink([...openRun(24), ...Array(5).fill([1, 0.25, 0.3, 0.3]), ...openRun(12)], false),
+  moving: blink([...openRun(24), ...Array(5).fill([0.2, 0.2, 0.1, 0.1, true]), ...openRun(12)], true),
+  spike: blink([...openRun(24), [2.4, 2.4, 0.3, 0.3], ...Array(12).fill([0.8, 0.8, 0.3, 0.3])], true),
+};
 console.log(JSON.stringify(out));
 '''
 
@@ -216,3 +304,49 @@ def test_your_photo_is_a_face_choice_everywhere(data):
     assert '[CUSTOM_FACE_ID, "Your photo…"]' in WEB_CALLS
     assert "faceImage: call.faceImage" in WEB_CALLS
     assert "{ landmarks: true, mask: true, accurate: true }" in CALLS
+
+
+def test_nose_moves_as_one_rigid_piece(data):
+    assert data["nose"]["raw"] > 0.05
+    assert data["nose"]["drawn"] < 0.2 * data["nose"]["raw"]
+
+
+def test_mouth_opens_in_a_smooth_feathered_mouth_shape(data):
+    mouth = data["mouth"]
+    assert mouth["points"] >= 24
+    assert mouth["smoothTurn"] < 0.6 * mouth["polygonTurn"]
+    assert mouth["smoothTurn"] < 30
+    assert mouth["holeValues"] == [0, 0.5, 1]
+    assert mouth["feathered"] >= 16
+    assert mouth["centerDrop"] > 0
+    assert mouth["lipDrop"] > 0
+    assert mouth["regions"] == [1]
+    assert "smoothstep(0.05, 0.95, vHole)" in RENDER
+
+
+def test_pose_uses_landmark_depth_when_it_is_there(data):
+    for case in data["depthPose"]:
+        assert case["depth"] is True
+        assert case["gotYaw"] == pytest.approx(math.asin(math.cos(case["pitch"]) * math.sin(case["yaw"])), abs=0.005)
+        assert case["gotPitch"] == pytest.approx(case["pitch"], abs=0.005)
+        assert case["scale"] == pytest.approx(60, abs=0.5)
+    assert data["flatDepth"] is False
+    assert data["regionDepth"] == {"carried": True, "partial": True}
+    assert data["smoothDepth"] == [3, 3]
+
+
+def test_blinks_need_closed_lids_and_ignore_glances_and_glare(data):
+    blink = data["blink"]
+    assert min(blink["real"]) > 0.6
+    assert min(blink["imageOnly"]) > 0.6
+    assert max(blink["glanceDown"]) < 0.1
+    assert max(blink["lidsOpen"]) < 0.1
+    assert blink["oneEye"][1] < 0.3
+    assert max(blink["moving"]) < 0.1
+    assert max(blink["spike"]) < 0.1
+
+
+def test_pushed_frames_reuse_the_host_landmark_reply():
+    assert "pushFrame(source, reply, time = now())" in CALLS
+    assert "presetResult(preset, sourceWidth / w, time)" in CALLS
+    assert "point.map((value) => value / scale)" in CALLS

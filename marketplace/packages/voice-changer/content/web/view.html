@@ -1,0 +1,70 @@
+          <section data-view="voice-changer" class="view active h-full overflow-y-auto vc-page">
+            <style>
+              .vc-page { --vc-border: rgb(var(--dashboard-border-rgb)); --vc-card: rgb(var(--dashboard-card-rgb)); --vc-ink: rgb(var(--dashboard-foreground-rgb)); --vc-muted: rgb(var(--dashboard-muted-foreground-rgb)); --vc-soft: rgb(var(--dashboard-secondary-rgb)); --vc-accent: rgb(var(--dashboard-primary-rgb)); --vc-accent-ink: rgb(var(--dashboard-primary-foreground-rgb)); --vc-danger: #e5484d; }
+              .vc-wrap { display: grid; gap: 1rem; max-width: 44rem; }
+              .vc-card { border: 1px solid var(--vc-border); border-radius: .75rem; background: var(--vc-card); padding: 1rem; }
+              .vc-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+              .vc-btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 2.25rem; padding: 0 .9rem; border-radius: .5rem; border: 1px solid var(--vc-border); background: var(--vc-soft); color: var(--vc-ink); font-size: .8rem; font-weight: 600; cursor: pointer; }
+              .vc-btn:disabled { opacity: .5; cursor: not-allowed; }
+              .vc-btn-primary { background: var(--vc-accent); border-color: var(--vc-accent); color: var(--vc-accent-ink); }
+              .vc-btn-danger { background: var(--vc-danger); border-color: var(--vc-danger); color: #fff; }
+              .vc-btn svg { width: 1rem; height: 1rem; }
+              @media (pointer: coarse) { .vc-btn { min-height: 44px; } }
+              .vc-spacer { flex: 1 1 auto; }
+              .vc-readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: 1rem; }
+              .vc-stat { border-radius: .5rem; background: var(--vc-soft); padding: .6rem .75rem; }
+              .vc-stat-label { display: block; font-size: .7rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--vc-muted); }
+              .vc-stat-value { display: block; margin-top: .15rem; font-size: 1.1rem; font-weight: 600; color: var(--vc-ink); font-variant-numeric: tabular-nums; }
+              .vc-timer { font-size: .8rem; font-weight: 600; color: var(--vc-ink); font-variant-numeric: tabular-nums; }
+              .vc-timer::before { content: ""; display: inline-block; width: .55rem; height: .55rem; margin-right: .4rem; border-radius: 999px; background: var(--vc-danger); }
+              .vc-page .chat-call-voice-preview { display: grid; gap: .6rem; margin-top: 1rem; }
+              .vc-page .chat-call-voice-preview label { display: grid; gap: .35rem; font-size: .75rem; color: var(--vc-muted); }
+              .vc-page .chat-call-voice-preview label > span:first-child { font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+              .vc-page .chat-call-voice-preview select { width: 100%; min-height: 2.25rem; padding: 0 .6rem; border-radius: .5rem; border: 1px solid var(--vc-border); background: var(--vc-card); color: var(--vc-ink); font-size: .85rem; }
+              .vc-page .chat-call-voice-preview button { justify-self: start; min-height: 2.25rem; padding: 0 .9rem; border-radius: .5rem; border: 1px solid var(--vc-border); background: var(--vc-soft); color: var(--vc-ink); font-size: .8rem; font-weight: 600; cursor: pointer; }
+              .vc-page .chat-call-voice-preview button[aria-pressed="true"] { border-color: var(--vc-accent); box-shadow: inset 0 0 0 1px var(--vc-accent); }
+              .vc-page .chat-call-voice-preview button:disabled { opacity: .5; cursor: not-allowed; }
+              .vc-page .chat-call-meta { font-size: .75rem; color: var(--vc-muted); }
+              .vc-clip audio { display: block; width: 100%; }
+              .vc-status { min-height: 1.25rem; font-size: .8rem; color: var(--vc-muted); }
+              .vc-status[data-tone="error"] { color: var(--vc-danger); }
+              .vc-hint { font-size: .75rem; color: var(--vc-muted); }
+              .vc-page [hidden] { display: none !important; }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4">
+                <h1 class="text-lg font-semibold text-foreground">Voice Changer</h1>
+                <p class="mt-1 text-sm text-muted-foreground">Try a different voice in this browser, hear yourself with headphones and record a clip to download. Your voice is changed on this device and never sent anywhere.</p>
+              </div>
+              <div class="vc-wrap">
+                <div class="vc-card">
+                  <div class="vc-row">
+                    <button data-vc="start" type="button" class="vc-btn vc-btn-primary"><i data-lucide="mic"></i>Start microphone</button>
+                    <button data-vc="record" type="button" class="vc-btn vc-btn-danger" hidden><i data-lucide="circle"></i>Record</button>
+                    <button data-vc="stop-record" type="button" class="vc-btn" hidden><i data-lucide="square"></i>Stop</button>
+                    <span data-vc="timer" class="vc-timer" hidden>0:00</span>
+                    <span class="vc-spacer"></span>
+                    <button data-vc="stop" type="button" class="vc-btn" hidden><i data-lucide="mic-off"></i>Stop microphone</button>
+                  </div>
+                  <div data-vc="voice-slot"></div>
+                  <div data-vc="readout" class="vc-readout" hidden>
+                    <div class="vc-stat"><span class="vc-stat-label">Your usual pitch</span><span data-vc="pitch-own" class="vc-stat-value">-</span></div>
+                    <div class="vc-stat"><span class="vc-stat-label">Speaking at</span><span data-vc="pitch-now" class="vc-stat-value">-</span></div>
+                    <div class="vc-stat"><span class="vc-stat-label">Voice aims for</span><span data-vc="pitch-target" class="vc-stat-value">-</span></div>
+                  </div>
+                  <p data-vc="latency" class="vc-hint mt-2" hidden></p>
+                </div>
+                <p data-vc="status" class="vc-status" role="status" aria-live="polite"></p>
+                <div data-vc="clip" class="vc-card vc-clip" hidden>
+                  <h2 class="mb-2 text-sm font-semibold text-foreground">Your clip</h2>
+                  <div data-vc="clip-player"></div>
+                  <div class="mt-3 vc-row">
+                    <button data-vc="clip-download" type="button" class="vc-btn vc-btn-primary"><i data-lucide="download"></i>Download</button>
+                    <button data-vc="clip-discard" type="button" class="vc-btn"><i data-lucide="trash-2"></i>Discard</button>
+                    <span data-vc="clip-meta" class="vc-hint"></span>
+                  </div>
+                </div>
+                <p class="vc-hint">To talk in the changed voice on any call or meeting app, open Voice Changer in the ForkMesh desktop app: it adds a ForkMesh Voice microphone the other app can pick.</p>
+              </div>
+            </div>
+          </section>

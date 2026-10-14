@@ -1,0 +1,100 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "face-changer",
+  "name": "Face Changer",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Privacy",
+  "version": "1.0.0",
+  "summary": "Wear a stand-in face, swap your background and change your voice live in the browser. Record a clip, take a snapshot, or pop the picture out to share into any call or meeting app. Video and sound stay on your device.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Face Changer page showing a stand-in face over a blurred room, with Face, Background and Voice pickers and Record, Snapshot and Pop out buttons"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:face-changer",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/face-changer",
+        "title": "Face Changer",
+        "description": "Wear a stand-in face, swap your background and change your voice live, then record a clip or share the picture into any call or meeting app.",
+        "script": "dashboard-script",
+        "devices": ["camera", "microphone"],
+        "navigation": {
+          "label": "Face Changer",
+          "icon": "scan-face",
+          "order": 48
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "device.camera.read",
+      "label": "Use the camera you allow in the browser to draw the changed picture; video stays on this device",
+      "risk": "high"
+    },
+    {
+      "id": "device.microphone.read",
+      "label": "Use the microphone you allow to change your voice and record clips; audio stays on this device",
+      "risk": "high"
+    },
+    {
+      "id": "storage.local.write",
+      "label": "Keep your chosen face, background, voice and any photo you upload in this browser only",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Face Changer button to the desktop rail that opens this page in your browser",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "places": [
+      "desktop",
+      "web"
+    ]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

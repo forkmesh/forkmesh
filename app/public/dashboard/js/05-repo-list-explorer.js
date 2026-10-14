@@ -955,20 +955,22 @@
     if (count) count.textContent = formatCount(entries.length);
     if (!list) return;
     if (!entries.length) {
-      list.innerHTML = '<div class="rounded-md border border-border bg-background px-2.5 py-2 text-xs text-muted-foreground">No mirrored repositories yet.</div>';
+      list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = entries.slice(0, 12).map((entry) => {
+    list.innerHTML = entries.slice(0, 6).map((entry) => {
       const repo = entry.repo;
       const live = repoIsLive(repo);
       return `
-        <a href="${escapeHtml(entry.href)}" class="group flex min-w-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo">
           <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
           <span class="min-w-0 flex-1 truncate"><span class="text-muted-foreground">${escapeHtml(repoDisplayOwner(repo) || "owner")}/</span><span class="text-foreground">${escapeHtml(repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
+          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
         </a>`;
     }).join("");
+    window.lucide?.createIcons();
   }
 
   const HOME_TOP_REPOSITORY_LIMIT = 8;

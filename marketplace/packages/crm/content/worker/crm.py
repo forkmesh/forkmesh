@@ -12,6 +12,7 @@ import io
 import json
 import re
 from datetime import datetime, timezone
+from html import unescape
 from urllib.parse import quote, urlencode
 
 
@@ -212,6 +213,16 @@ HANDLE_ANY_RE = re.compile(
     r"(?<![A-Za-z0-9_./-])@?([A-Za-z0-9_.-]{1,64})\s*@\s*"
     r"([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+)")
 EMAIL_DIRECTIONS = frozenset({"inbound", "outbound"})
+MASTODON_HOSTS = ("mastodon.social", "mastodon.online", "fosstodon.org",
+                  "hachyderm.io", "mas.to", "infosec.exchange")
+MASTODON_EPOCH_MS = 1_483_228_800_000
+TOOT_URL_RE = re.compile(
+    r"https://([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+)/(?:@([A-Za-z0-9_.-]{1,64})"
+    r"(?:@([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+))?|users/([A-Za-z0-9_.-]{1,64})"
+    r"/statuses|deck/@([A-Za-z0-9_.-]{1,64}))/([0-9]{1,25})/?(?:[?#].*)?")
+TOOT_PAGE_SIZE = 40
+TOOT_SYNC_PAGES = 5
+TOOT_SYNC_INTERVAL_MS = 10 * 60 * 1000
 EMAIL_TRACKED_CELEBRATION = "crm-email-tracked"
 SEND_STATUSES = frozenset({
     "draft", "external", "sending", "accepted", "delivery", "delivered",
@@ -911,6 +922,7 @@ def _route(path):
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
         r"(?:/([0-9a-f]{32}|import|export|send|lookup|link|copy|order|team|bulk|merge"
+        r"|toots|toot"
         r"|duplicates|evidence|activity"
         r"|connect|exchange"
         r"|delete-column"
@@ -1023,6 +1035,10 @@ def _settings_data(data, existing=None):
         result.pop("zoho", None)
     elif "zoho" in data:
         result["zoho"] = _zoho_settings(data.get("zoho"), result.get("zoho"))
+    if data.get("mastodonDisconnect"):
+        result.pop("mastodon", None)
+    elif "mastodon" in data:
+        result["mastodon"] = _mastodon_settings(data.get("mastodon"), result.get("mastodon"))
     return result
 
 
@@ -1775,10 +1791,14 @@ async def _settings(runtime, org_bi):
             "removedColumns": [], "tableViews": [],
             "zoho": {"connected": False, "region": "com", "accountId": "",
                      "oneClick": bool(_zoho_client(runtime)), "managed": False},
+            "mastodon": _mastodon_project({}),
             "mailtrapConfigured": bool(runtime.mailtrap_configured()),
         }
     data = await runtime.open(row.get("data"))
-    data = _settings_data(data if isinstance(data, dict) else {})
+    data = data if isinstance(data, dict) else {}
+    mastodon = _mastodon_project(data.get("mastodon"))
+    data = _settings_data(data)
+    data["mastodon"] = mastodon
     zoho = data.pop("zoho", {})
     zoho = zoho if isinstance(zoho, dict) else {}
     data["zoho"] = {
@@ -4167,7 +4187,8 @@ def _pipeline_choice(flows, data, contact_data):
     return flow_id, stage, ""
 
 
-async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
+async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
+                        quiet=False):
     """Tie one open message to a contact: a Gmail or Zoho Mail email, or a
     Mastodon conversation, which names its people by handle instead of by
     address. The contact is matched by the other party's address or handle and
@@ -4177,11 +4198,11 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
     provider = _email_provider(data.get("provider"))
     message_id = _clean(data.get("messageId") or data.get("externalId"), 200)
     if not message_id:
-        return _response(runtime, {"error": "message_id_required"}, 400)
+        return ({"error": "message_id_required"}, 400)
     requested_url = data.get("providerUrl")
     provider_url = _https(requested_url)
     if requested_url and not provider_url:
-        return _response(runtime, {"error": "invalid_provider_url"}, 400)
+        return ({"error": "invalid_provider_url"}, 400)
     if not provider_url and provider == "gmail":
         provider_url = _gmail_url(message_id, data.get("accountIndex"))
     existing, envelope = await _linked_email_row(runtime, org_bi, provider,
@@ -4189,10 +4210,10 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
     link = _email_link_fields(data, envelope)
     counterpart = _email(data.get("contactEmail"))
     if data.get("contactEmail") and not counterpart:
-        return _response(runtime, {"error": "invalid_email"}, 400)
+        return ({"error": "invalid_email"}, 400)
     handle = link["handle"]
     if data.get("handle") and not handle:
-        return _response(runtime, {"error": "invalid_handle"}, 400)
+        return ({"error": "invalid_handle"}, 400)
     details = _link_details(data)
     if handle and not details.get("mastodon"):
         details["mastodon"] = "@" + handle
@@ -4200,10 +4221,10 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
     row, matched_by = None, ""
     if contact_id:
         if not CONTACT_ID_RE.fullmatch(contact_id):
-            return _response(runtime, {"error": "invalid_contact_id"}, 400)
+            return ({"error": "invalid_contact_id"}, 400)
         row = await _contact_row(runtime, org_bi, contact_id)
         if not row:
-            return _response(runtime, {"error": "contact_not_found"}, 404)
+            return ({"error": "contact_not_found"}, 404)
         matched_by = "id"
     elif counterpart or handle:
         # The person's box, however this message names them: a thread and an
@@ -4213,7 +4234,7 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
             **details, "email": counterpart, "handle": handle,
             "name": data.get("contactName")})
     else:
-        return _response(runtime, {
+        return ({
             "error": "contact_handle_required" if provider == "mastodon"
                      else "contact_email_required"}, 400)
     flows = (await _settings(runtime, org_bi))["flows"]
@@ -4221,12 +4242,12 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
     flow_id, stage, error = _pipeline_choice(
         flows, data, existing_contact if isinstance(existing_contact, dict) else {})
     if error:
-        return _response(runtime, {"error": error}, 400)
+        return ({"error": error}, 400)
     now = runtime.now()
     contact_created = False
     if not row:
         if data.get("createContact") is False:
-            return _response(runtime, {"error": "contact_not_found"}, 404)
+            return ({"error": "contact_not_found"}, 404)
         contact = _contact_data({
             **details,
             # A handle is a name of sorts: better an "@grace@host" record than
@@ -4271,6 +4292,8 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
         address_added = True
     counterpart = counterpart or str(contact_data.get("email") or "")
     sent_at = max(0, _integer(data.get("sentAt"), now)) or now
+    if provider == "mastodon" and not data.get("sentAt"):
+        sent_at = _snowflake_time(message_id, now) or sent_at
     envelope = dict(envelope)
     envelope.update({
         "to": counterpart if link["direction"] == "outbound" else link["mailbox"],
@@ -4335,10 +4358,10 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
         details={"provider": provider, "contactCreated": contact_created,
                  "relinked": bool(existing), "pipeline": bool(flow_id)},
     )
-    if not existing:
+    if not existing and not quiet:
         await _celebrate_tracked_email(runtime, actor, send_id,
                                        envelope["subject"], contact_data)
-    return _response(runtime, {
+    return ({
         "ok": True,
         "contactCreated": contact_created,
         "matchedBy": "" if contact_created else matched_by,
@@ -4350,6 +4373,303 @@ async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
             runtime, await _contact_row(runtime, org_bi, contact_id)),
         "emails": await _contact_emails(runtime, org_bi, contact_id),
     }, 200 if existing else 201)
+
+
+async def _link_email(runtime, org_bi, org_name, account_bi, actor, data):
+    payload, status = await _link_message(
+        runtime, org_bi, org_name, account_bi, actor, data)
+    return _response(runtime, payload, status)
+
+
+
+def _mastodon_settings(value, existing=None):
+    source = value if isinstance(value, dict) else {}
+    result = dict(existing if isinstance(existing, dict) else {})
+    if "account" in source:
+        account = _handle(source.get("account"))
+        if account != result.get("account"):
+            for key in ("sinceId", "lastSyncAt", "lastError"):
+                result.pop(key, None)
+        result["account"] = account
+    if source.get("token"):
+        result["token"] = _clean(source.get("token"), 600)
+        result.pop("lastError", None)
+    return result
+
+
+def _mastodon_project(value):
+    value = value if isinstance(value, dict) else {}
+    account = _handle(value.get("account"))
+    return {"account": account, "connected": bool(account and value.get("token")),
+            "lastSyncAt": _integer(value.get("lastSyncAt")),
+            "lastError": _clean(value.get("lastError"), 80)}
+
+
+def _mastodon_host(account):
+    host = account.rsplit("@", 1)[1] if "@" in account else ""
+    return host if host in MASTODON_HOSTS else ""
+
+
+def _snowflake_time(status_id, now=0):
+    digits = re.match(r"[0-9]{1,25}", str(status_id or ""))
+    stamp = int(digits.group(0)) >> 16 if digits else 0
+    latest = (now or 0) + DAY_MS if now else stamp
+    return stamp if MASTODON_EPOCH_MS <= stamp <= latest else 0
+
+
+def _toot_ref(value):
+    match = TOOT_URL_RE.fullmatch(_clean(value, 1000))
+    if not match:
+        return None
+    host = match.group(1).lower()
+    user = match.group(2) or match.group(4) or match.group(5) or ""
+    return {"host": host, "id": match.group(6),
+            "author": _handle("%s@%s" % (user, match.group(3) or host)) if user else "",
+            "url": "https://%s/%s/%s" % (
+                host, "@" + user + ("@" + match.group(3) if match.group(3) else ""),
+                match.group(6)) if user else _clean(value, 1000)}
+
+
+def _status_text(value):
+    value = re.sub(r"(?i)<br\s*/?>|</p>\s*<p[^>]*>", "\n", _text(value, 40000))
+    value = unescape(re.sub(r"<[^>]+>", "", value))
+    return "\n".join(" ".join(line.split()) for line in value.splitlines()).strip()[:20000]
+
+
+def _status_subject(status, text):
+    warning = _clean(status.get("spoiler_text"), 290)
+    if warning:
+        return "CW: " + warning
+    line = " ".join(text.split())
+    return line if len(line) <= 180 else line[:177] + "…"
+
+
+def _status_time(status, now):
+    try:
+        stamp = datetime.fromisoformat(
+            str(status.get("created_at") or "").replace("Z", "+00:00"))
+        return int(stamp.timestamp() * 1000)
+    except ValueError:
+        return _snowflake_time(status.get("id"), now)
+
+
+def _status_handles(status, home):
+    found = []
+    account = status.get("account") if isinstance(status.get("account"), dict) else {}
+    acct = str(account.get("acct") or "")
+    author = _handle(acct if "@" in acct else "%s@%s" % (acct, home)) if acct else ""
+    for mention in status.get("mentions") or []:
+        if not isinstance(mention, dict):
+            continue
+        acct = str(mention.get("acct") or "")
+        handle = (_handle(acct if "@" in acct else "%s@%s" % (acct, home))
+                  or _handle(mention.get("url")))
+        if handle and handle != author and handle not in found:
+            found.append(handle)
+    return author, found
+
+
+async def _mastodon_get(runtime, host, path, token=""):
+    headers = {"accept": "application/json"}
+    if token:
+        headers["authorization"] = "Bearer " + token
+    result = await runtime.outbound_json("https://" + host + path, "GET", headers)
+    status = _integer((result or {}).get("status"))
+    if not (result or {}).get("ok") or not 200 <= status < 300:
+        return None, ("mastodon_token_rejected" if status in (401, 403)
+                      else "mastodon_not_found" if status == 404
+                      else "mastodon_unavailable")
+    return (result or {}).get("data"), ""
+
+
+async def _mastodon_config(runtime, org_bi):
+    row = await runtime.d1_first(
+        "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+    opened = await runtime.open(row.get("data")) if row else {}
+    opened = opened if isinstance(opened, dict) else {}
+    config = opened.get("mastodon") if isinstance(opened.get("mastodon"), dict) else {}
+    return opened, config
+
+
+async def _save_mastodon_state(runtime, org_bi, opened, config, account_bi, actor):
+    opened = dict(opened)
+    opened["mastodon"] = config
+    await runtime.d1_run(
+        "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+        "data=? WHERE org_bi=?",
+        account_bi, actor, runtime.now(), await runtime.seal(opened), org_bi)
+
+
+async def _contacts_by_handle(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? "
+        "ORDER BY updated_at DESC,contact_id LIMIT ?", org_bi, MAX_CONTACTS)
+    found = {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        for handle in _contact_handles(data if isinstance(data, dict) else {}):
+            found.setdefault(handle, str(row.get("contact_id") or ""))
+    return found
+
+
+async def _own_statuses(runtime, host, account, token, cursor):
+    user = account.rsplit("@", 1)[0]
+    profile, error = await _mastodon_get(
+        runtime, host, "/api/v1/accounts/lookup?acct=" + quote(user))
+    account_id = str((profile or {}).get("id") or "") if isinstance(profile, dict) else ""
+    if error or not account_id.isdigit():
+        return None, error or "mastodon_account_not_found"
+    statuses, edge = [], cursor
+    for _ in range(TOOT_SYNC_PAGES):
+        query = {"limit": TOOT_PAGE_SIZE, "exclude_reblogs": "true"}
+        if cursor:
+            query["min_id"] = edge
+        elif edge:
+            query["max_id"] = edge
+        page, error = await _mastodon_get(
+            runtime, host, "/api/v1/accounts/%s/statuses?%s" % (
+                account_id, urlencode(query)), token)
+        if error:
+            return None, error
+        page = [item for item in page or [] if isinstance(item, dict)
+                and str(item.get("id") or "").isdigit()] if isinstance(page, list) else []
+        if not page:
+            break
+        statuses.extend(page)
+        ids = [int(item["id"]) for item in page]
+        edge = str(max(ids) if cursor else min(ids))
+        if len(page) < TOOT_PAGE_SIZE:
+            break
+    return statuses, ""
+
+
+def _toot_link(status, ref, contact_id, handle, account, direction, now, index):
+    text = _status_text(status.get("content")) if status else ""
+    status_id = ref["id"]
+    return {
+        "provider": "mastodon", "direction": direction,
+        "messageId": status_id if index == 0 else "%s/%s" % (status_id, handle),
+        "threadId": str(status.get("in_reply_to_id") or "") or status_id
+                    if status else status_id,
+        "providerUrl": _https(status.get("url")) if status and _https(
+            status.get("url")) else ref["url"],
+        "contactId": contact_id, "handle": handle, "account": account,
+        "sentAt": (_status_time(status, now) if status else 0)
+                  or _snowflake_time(status_id, now) or now,
+        "subject": _status_subject(status, text) if status else "",
+        "text": text, "createContact": False,
+    }
+
+
+async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
+    opened, config = await _mastodon_config(runtime, org_bi)
+    account = _handle(config.get("account"))
+    token = _clean(config.get("token"), 600)
+    host = _mastodon_host(account)
+    if not account or not token or not host:
+        return _response(runtime, {"error": "mastodon_not_connected"}, 409)
+    now = runtime.now()
+    if data.get("auto") and now - _integer(config.get("lastSyncAt")) < TOOT_SYNC_INTERVAL_MS:
+        return _response(runtime, {"ok": True, "skipped": True, "logged": 0,
+                                   "mastodon": _mastodon_project(config)})
+    cursor = str(config.get("sinceId") or "")
+    statuses, error = await _own_statuses(runtime, host, account, token, cursor)
+    config = dict(config)
+    if error:
+        config["lastError"] = error
+        await _save_mastodon_state(runtime, org_bi, opened, config, account_bi, actor)
+        return _response(runtime, {"error": error}, 502)
+    known = await _contacts_by_handle(runtime, org_bi)
+    logged, contacts = 0, []
+    for status in sorted(statuses, key=lambda item: int(item["id"])):
+        _, mentioned = _status_handles(status, host)
+        ref = {"id": str(status["id"]), "url": _https(status.get("url"))
+               or "https://%s/@%s/%s" % (host, account.split("@")[0], status["id"])}
+        index = 0
+        for handle in mentioned:
+            contact_id = known.get(handle)
+            if not contact_id:
+                continue
+            link = _toot_link(status, ref, contact_id, handle, account, "outbound",
+                              now, index)
+            index += 1
+            existing, _ = await _linked_email_row(
+                runtime, org_bi, "mastodon", link["messageId"])
+            if existing:
+                continue
+            _, code = await _link_message(
+                runtime, org_bi, org_name, account_bi, actor, link, quiet=True)
+            if code == 201:
+                logged += 1
+                if contact_id not in contacts:
+                    contacts.append(contact_id)
+    newest = max([int(item["id"]) for item in statuses] + [int(cursor or 0)])
+    config.update({"sinceId": str(newest) if newest else "", "lastSyncAt": now,
+                   "lastError": ""})
+    await _save_mastodon_state(runtime, org_bi, opened, config, account_bi, actor)
+    if logged:
+        await runtime.audit(actor, "crm.toots.sync", "organization", org_name,
+                            details={"logged": logged, "checked": len(statuses)})
+    return _response(runtime, {
+        "ok": True, "skipped": False, "checked": len(statuses), "logged": logged,
+        "contacts": contacts, "mastodon": _mastodon_project(config)})
+
+
+async def _log_toot(runtime, org_bi, org_name, account_bi, actor, data):
+    ref = _toot_ref(data.get("url"))
+    if not ref:
+        return _response(runtime, {"error": "invalid_toot_url"}, 400)
+    _, config = await _mastodon_config(runtime, org_bi)
+    account = _handle(config.get("account"))
+    token = _clean(config.get("token"), 600)
+    status = None
+    if ref["host"] in MASTODON_HOSTS:
+        own = ref["host"] == _mastodon_host(account) and token
+        status, _ = await _mastodon_get(
+            runtime, ref["host"], "/api/v1/statuses/" + ref["id"], token if own else "")
+        status = status if isinstance(status, dict) else None
+    author, mentioned = (_status_handles(status, ref["host"]) if status
+                         else (ref["author"], []))
+    now = runtime.now()
+    targets = []
+    contact_id = _clean(data.get("contactId"), 64).lower()
+    if contact_id:
+        if not CONTACT_ID_RE.fullmatch(contact_id):
+            return _response(runtime, {"error": "invalid_contact_id"}, 400)
+        row = await _contact_row(runtime, org_bi, contact_id)
+        if not row:
+            return _response(runtime, {"error": "contact_not_found"}, 404)
+        stored = await runtime.open(row.get("data"))
+        handles = _contact_handles(stored if isinstance(stored, dict) else {})
+        handle = next((item for item in [author] + mentioned if item in handles),
+                      sorted(handles)[0] if handles else "")
+        targets.append((contact_id, handle))
+    else:
+        known = await _contacts_by_handle(runtime, org_bi)
+        for handle in mentioned + ([author] if author and author != account else []):
+            if known.get(handle) and known[handle] not in [item[0] for item in targets]:
+                targets.append((known[handle], handle))
+    if not targets:
+        return _response(runtime, {"error": "toot_contact_not_found"}, 404)
+    results = []
+    for index, (target, handle) in enumerate(targets):
+        direction = _email_direction(data.get("direction")) if data.get("direction") \
+            else "inbound" if author and author == handle else "outbound"
+        link = _toot_link(status, ref, target, handle,
+                          account if direction == "outbound" else author,
+                          direction, now, index)
+        if data.get("sentAt"):
+            link["sentAt"] = max(0, _integer(data.get("sentAt")))
+        if data.get("subject") and not link["subject"]:
+            link["subject"] = _clean(data.get("subject"), 300)
+        payload, code = await _link_message(
+            runtime, org_bi, org_name, account_bi, actor, link)
+        if code >= 400:
+            return _response(runtime, payload, code)
+        results.append(payload)
+    return _response(runtime, dict(results[0], logged=len(results),
+                                   fetched=bool(status)),
+                     201 if not results[0].get("relinked") else 200)
 
 
 def _provider_url(template, external_id):
@@ -4992,6 +5312,10 @@ async def _save_settings(runtime, org_bi, actor_bi, actor, data):
         supplied = data.get("zoho") if isinstance(data.get("zoho"), dict) else {}
         if supplied and not _zoho_connected(zoho):
             return _response(runtime, {"error": "incomplete_zoho_connection"}, 400)
+    supplied = data.get("mastodon") if isinstance(data.get("mastodon"), dict) else {}
+    if supplied.get("account") and not _mastodon_host(
+            _handle(supplied.get("account"))):
+        return _response(runtime, {"error": "invalid_mastodon_account"}, 400)
     now = runtime.now()
     await runtime.d1_run(
         "INSERT INTO crm_settings(org_bi,updated_by_bi,updated_by_name,updated_at,data) "
@@ -5121,7 +5445,7 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
-    elif resource == "emails" and item in ("send", "link"):
+    elif resource == "emails" and item in ("send", "link", "toot", "toots"):
         allowed = ("POST",)
     elif resource == "mail" and item == "import":
         allowed = ("POST",)
@@ -5380,6 +5704,10 @@ async def handle(runtime, path):
         return await _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data)
     if item == "link":
         return await _link_email(runtime, org_bi, org_name, account_bi, actor, data)
+    if item == "toot":
+        return await _log_toot(runtime, org_bi, org_name, account_bi, actor, data)
+    if item == "toots":
+        return await _sync_toots(runtime, org_bi, org_name, account_bi, actor, data)
     row = await _email_row(runtime, org_bi, item)
     if not row:
         return _response(runtime, {"error": "email_send_not_found"}, 404)

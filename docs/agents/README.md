@@ -113,6 +113,31 @@ and `lint_project` send the configured command. Commands the model runs do
 not inherit `FORKMESH_AGENT_GATE*`. Tests: `app/tests/test_coding_agent.py`,
 `tools/test_forkmesh_coding_agent_guardrails.py`.
 
+`cloudflare-ai` runs call Cloudflare directly. `agentConfigForProvider`
+(`MainWindowAgentLaunch.cpp`) passes the token from Settings as
+`FORKMESH_AGENT_API_TOKEN` and the account as `FORKMESH_AGENT_ACCOUNT_ID`; the
+script builds `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1/chat/completions`
+from them and stops with "Cloudflare endpoint or account ID is required" when
+neither an endpoint nor an account is set. The model picker reads
+`/ai/models/search` and the workspace namer calls the same chat endpoint. The
+older relay path, a per-run ticket in `FORKMESH_AI_AGENT_AUTH` signed as
+`forkmesh-ai-agent-v1` for the relay's `POST /api/ai/agent`, is no longer used
+by the desktop; the relay route stays for older clients.
+
+`app/tests/test_forkbot.py` runs the embedded script end to end
+(`_run_cloudflare_agent`): it extracts the Python from the header and drives it
+against a local stub of the chat-completions endpoint in a throwaway Git
+repository with a fake `HOME`. Small Workers AI models loop on one command,
+stop before committing, or answer with an empty turn, so the repeat guard
+(adhoc #279, #1633), steering from stdin, retries of a 5xx (adhoc #1633),
+the uncommitted-work check and the empty-turn check are exercised rather than
+grepped. On 15 Oct 2026 these tests still assumed the relay ticket and failed;
+they now use the token path. The script now echoes a tool call in the
+OpenAI `tool_calls` shape, where the relay-era script wrote it as assistant
+text because Workers AI chat templates behind the relay dropped `tool_calls`
+(adhoc #1683); whether the chat-completions endpoint keeps them needs checking
+against a live model.
+
 ## Website- and phone-queued jobs
 
 1. The web or phone queues a prompt for one repository and one target node

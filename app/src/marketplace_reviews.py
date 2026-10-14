@@ -60,6 +60,7 @@ FIRST_PARTY_PACKAGES = {
     "discord": "Discord",
     "discussions": "Discussions",
     "docs": "Docs",
+    "face-changer": "Face Changer",
     "food-guide": "Food Guide",
     "forkmesh-ide": "ForkMesh for VS Code",
     "forkmesh-sky-office": "ForkMesh Aquarium Sky Office",

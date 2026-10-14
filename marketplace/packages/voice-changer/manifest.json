@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Audio",
-  "version": "1.0.0",
-  "summary": "Sound like another person on any call or meeting app. The desktop changes your pitch and vocal tract live and offers it as a \"ForkMesh Voice\" microphone; design voices with AI or match a sample.",
+  "version": "1.1.0",
+  "summary": "Sound like another person on any call or meeting app. The desktop offers your changed voice as a \"ForkMesh Voice\" microphone; the web page lets you try voices, hear yourself and record clips. Audio stays on your device.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -32,13 +32,40 @@
   "entrypoints": {
     "desktop": "builtin:voice-changer",
     "worker": "content/worker/voice_changer.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
     "settings": "builtin:package"
   },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/voice-changer",
+        "title": "Voice Changer",
+        "description": "Try a different voice in your browser, hear yourself with headphones and record a clip. Audio is changed on your device.",
+        "script": "dashboard-script",
+        "devices": [
+          "microphone"
+        ],
+        "navigation": {
+          "label": "Voice Changer",
+          "icon": "audio-lines",
+          "order": 49
+        }
+      }
+    }
+  ],
   "permissions": [
     {
       "id": "device.microphone.read",
-      "label": "Listen to the microphone you pick while the voice changer runs; the audio stays on this computer",
+      "label": "Listen to the microphone you pick while the voice changer runs; the audio stays on this device",
       "risk": "high"
+    },
+    {
+      "id": "storage.local.write",
+      "label": "Keep your chosen voice and your usual pitch in this browser only",
+      "risk": "low"
     },
     {
       "id": "device.audio.virtual",
@@ -64,7 +91,12 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": [
+      "desktop",
+      "web"
+    ]
   },
   "lifecycle": {
     "migrations": []

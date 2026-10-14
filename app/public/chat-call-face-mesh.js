@@ -150,7 +150,9 @@ export function roiFromMesh(points) {
 
 export function meshRegions(points) {
   const out = {};
-  for (const [name, indices] of Object.entries(MESH_REGIONS)) out[name] = indices.map((i) => [points[i][0], points[i][1]]);
+  for (const [name, indices] of Object.entries(MESH_REGIONS)) {
+    out[name] = indices.map((i) => (Number.isFinite(points[i][2]) ? [points[i][0], points[i][1], -points[i][2]] : [points[i][0], points[i][1]]));
+  }
   return out;
 }
 
@@ -268,7 +270,7 @@ export function createFaceMesh(gl, models, format = floatTargets(gl)) {
       for (let i = 0; i < raw.length; i += 3) {
         const x = (raw[i] / MESH_SIZE - 0.5) * roi.size;
         const y = (raw[i + 1] / MESH_SIZE - 0.5) * roi.size;
-        points.push([roi.cx + x * c - y * s, roi.cy + x * s + y * c, raw[i + 2]]);
+        points.push([roi.cx + x * c - y * s, roi.cy + x * s + y * c, (raw[i + 2] / MESH_SIZE) * roi.size]);
       }
       roi = roiFromMesh(points);
       return { mesh: points, points: meshToLandmarks(points), score: lastScore };

@@ -5,6 +5,16 @@ import Foundation
 import ImageIO
 import Vision
 
+struct CallFaceAnalysis {
+    let landmarks: Bool
+    var regions: [String: [[Double]]]?
+    var mask: JSONValue?
+
+    init(landmarks: Bool) {
+        self.landmarks = landmarks
+    }
+}
+
 enum CallFaceLandmarks {
     private static let queue = DispatchQueue(label: "com.forkmesh.call-face-landmarks", qos: .userInteractive)
     static let maskWidth = 256
@@ -21,8 +31,13 @@ enum CallFaceLandmarks {
         guard let comma = dataURL.firstIndex(of: ","),
             let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
             let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+            let analysis = analyze(image: image, landmarks: wantLandmarks, mask: wantMask, accurate: accurate)
         else { return .null }
+        return reply(analysis)
+    }
+
+    static func analyze(image: CGImage, landmarks wantLandmarks: Bool, mask wantMask: Bool, accurate: Bool) -> CallFaceAnalysis? {
         let faceRequest = VNDetectFaceLandmarksRequest()
         faceRequest.constellation = .constellation76Points
         let personRequest = VNGeneratePersonSegmentationRequest()
@@ -31,27 +46,43 @@ enum CallFaceLandmarks {
         var requests: [VNRequest] = []
         if wantLandmarks { requests.append(faceRequest) }
         if wantMask { requests.append(personRequest) }
-        guard !requests.isEmpty else { return .null }
+        guard !requests.isEmpty else { return nil }
+        let size = CGSize(width: image.width, height: image.height)
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
         do {
             try handler.perform(requests)
         } catch {
-            return .null
+            return nil
         }
-        var reply = JSONObject()
-        reply["regions"] = wantLandmarks ? regions(faceRequest, image: image) : .null
+        var analysis = CallFaceAnalysis(landmarks: wantLandmarks)
+        if wantLandmarks { analysis.regions = regions(faceRequest, size: size) }
         if wantMask, let buffer = personRequest.results?.first?.pixelBuffer {
-            reply["mask"] = maskValue(buffer)
+            analysis.mask = maskValue(buffer)
         }
+        return analysis
+    }
+
+    static func reply(_ analysis: CallFaceAnalysis) -> JSONValue {
+        var reply = JSONObject()
+        reply["regions"] = analysis.landmarks ? json(analysis.regions) : .null
+        if let mask = analysis.mask { reply["mask"] = mask }
         return .object(reply)
     }
 
-    private static func regions(_ request: VNDetectFaceLandmarksRequest, image: CGImage) -> JSONValue {
+    static func json(_ regions: [String: [[Double]]]?) -> JSONValue {
+        guard let regions else { return .null }
+        var out = JSONObject()
+        for (name, points) in regions {
+            out[name] = .array(points.map { point in .array(point.map { .double($0) }) })
+        }
+        return .object(out)
+    }
+
+    private static func regions(_ request: VNDetectFaceLandmarksRequest, size: CGSize) -> [String: [[Double]]]? {
         let faces = request.results ?? []
         guard let face = faces.max(by: { area($0.boundingBox) < area($1.boundingBox) }),
             let landmarks = face.landmarks
-        else { return .null }
-        let size = CGSize(width: image.width, height: image.height)
+        else { return nil }
         let named: [(String, VNFaceLandmarkRegion2D?)] = [
             ("faceContour", landmarks.faceContour),
             ("leftEyebrow", landmarks.leftEyebrow),
@@ -66,15 +97,14 @@ enum CallFaceLandmarks {
             ("leftPupil", landmarks.leftPupil),
             ("rightPupil", landmarks.rightPupil),
         ]
-        var regions = JSONObject()
+        var regions: [String: [[Double]]] = [:]
         for (name, region) in named {
             guard let region, region.pointCount > 0 else { continue }
-            regions[name] = .array(
-                region.pointsInImage(imageSize: size).map { point in
-                    .array([.double(Double(point.x)), .double(Double(size.height - point.y))])
-                })
+            regions[name] = region.pointsInImage(imageSize: size).map { point in
+                [Double(point.x), Double(size.height - point.y)]
+            }
         }
-        return .object(regions)
+        return regions
     }
 
     static func maskValue(_ buffer: CVPixelBuffer) -> JSONValue {

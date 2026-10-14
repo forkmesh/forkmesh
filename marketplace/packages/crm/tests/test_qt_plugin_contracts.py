@@ -1280,3 +1280,50 @@ def test_desktop_list_heads_with_a_lead_to_reach_and_one_to_follow_up():
     render = FEATURE.split("void CrmFeature::renderContacts()", 1)[1].split("\n}\n", 1)[0]
     assert "renderNextContact();" in render
     assert 'QStringLiteral("crmNextContact")' in FEATURE
+
+
+def test_desktop_detail_card_logs_a_toot_by_its_link():
+    detail = FEATURE.split("void CrmFeature::showContactDetail(", 1)[1].split("\n}\n", 1)[0]
+    assert 'new QPushButton(QStringLiteral("Log toot"))' in detail
+    assert "logToot(contactId)" in detail
+    assert "void logToot(const QString &contactId);" in FEATURE_HEADER
+    log = FEATURE.split("void CrmFeature::logToot(", 1)[1].split("\n}\n", 1)[0]
+    assert "QInputDialog::getText(" in log
+    assert 'organizationPath(QStringLiteral("/emails/toot"))' in log
+    assert '{QStringLiteral("contactId"), contactId}' in log
+    assert "loadOrganization();" in log
+    assert 'mastodonErrorText(text(payload, "error"), error)' in log
+    assert '("send", "link", "toot", "toots")' in CRM_WORKER
+
+
+def test_desktop_checks_the_mastodon_account_once_per_load():
+    load = FEATURE.split("void CrmFeature::loadOrganization()", 1)[1].split("\n}\n", 1)[0]
+    assert load.count("syncToots(true);") == 2
+    sync = FEATURE.split("void CrmFeature::syncToots(", 1)[1].split("\n}\n", 1)[0]
+    assert 'organizationPath(QStringLiteral("/emails/toots"))' in sync
+    assert 'QJsonObject{{QStringLiteral("auto"), true}}' in sync
+    assert '.value(QStringLiteral("connected")).toBool()' in sync
+    assert "if (logged > 0) {" in sync and "loadOrganization();" in sync
+    assert "if (!automatic)\n                setStatus(" in sync
+    assert "bool m_tootSyncRunning = false;" in FEATURE_HEADER
+
+
+def test_desktop_settings_connect_the_mastodon_account_for_managers():
+    settings = FEATURE.split("void CrmFeature::editSettings()", 1)[1].split("\n}\n", 1)[0]
+    for label in ('"Mastodon account"', '"Mastodon access token"', '"Disconnect"',
+                  '"Check toots now"'):
+        assert label in settings, label
+    assert "mastodonToken->setEchoMode(QLineEdit::Password);" in settings
+    assert "read:statuses" in settings and "Preferences → Development" in settings
+    assert "mastodonSave->setEnabled(m_canManageSettings);" in settings
+    assert '{QStringLiteral("mastodonDisconnect"), true}' in settings
+    assert "syncToots(false, showMastodon);" in settings
+    state = FEATURE.split("QString mastodonStateLine(const QJsonObject &mastodon)", 1)[1].split(
+        "\n}\n", 1)[0]
+    assert '"lastSyncAt"' in state and '"lastError"' in state
+    errors = FEATURE.split("QString mastodonErrorText(", 1)[1].split("\n}\n", 1)[0]
+    for code in ("invalid_toot_url", "toot_contact_not_found", "mastodon_not_connected",
+                 "mastodon_token_rejected", "mastodon_unavailable",
+                 "mastodon_account_not_found", "invalid_mastodon_account"):
+        assert f'"{code}"' in errors, code
+        assert f'"{code}"' in CRM_WORKER, code

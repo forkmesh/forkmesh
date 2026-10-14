@@ -71,11 +71,12 @@ const heads = faces.CALL_FACES.map((face) => faces.faceHead(face));
 out.mesh = heads.map((head, i) => ({
   triangles: head.mesh.triangles.length,
   mouth: head.mesh.triangles.filter((t) => t.mouth).length,
-  mouthOnlyInnerLips: head.mesh.triangles.filter((t) => t.mouth).every((t) => t.v.every((v) => v >= 60 && v < 68)),
+  mouthOnlyInnerLips: head.mesh.triangles.filter((t) => t.mouth).every((t) => t.v.every((v) => (v >= 60 && v < 68) || v >= head.mesh.extraStart)),
+  extras: head.layout.length - head.mesh.extraStart,
   vertices: head.layout.length,
   valid: head.mesh.triangles.every((t) => t.v.every((v) => v >= 0 && v < head.layout.length)),
   ring: faces.CALL_FACES[i].head.length / 2,
-  ringInside: head.layout.slice(78).every(([x, y]) => x >= 0 && y >= 0 && x <= 512 && y <= 512),
+  ringInside: head.layout.slice(78, head.mesh.extraStart).every(([x, y]) => x >= 0 && y >= 0 && x <= 512 && y <= 512),
   photoArea: head.mesh.triangles.reduce((sum, t) => {
     const [a, b, c] = t.v.map((v) => head.layout[v]);
     return sum + Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
@@ -379,7 +380,8 @@ def test_head_mesh_covers_hair_and_leaves_the_mouth_open():
     for mesh in _faces()["mesh"]:
         assert mesh["triangles"] > 150
         assert mesh["valid"] is True
-        assert mesh["vertices"] == 68 + 10 + 28
+        assert mesh["vertices"] == 68 + 10 + 28 + mesh["extras"]
+        assert mesh["extras"] >= 40
         assert mesh["ring"] == 28
         assert mesh["ringInside"] is True
         assert mesh["photoArea"] > 0.45 * 512 * 512
@@ -517,6 +519,21 @@ def test_native_call_page_exposes_face_operations():
     for face_id in ("maya", "theo", "kofi", "ingrid", "ren"):
         assert f'"{face_id}-matte": "data:image/png;base64,' in page
     assert "window.fmCallLandmarks = (id, regions) => {" in page
+    assert "window.FmCallDepthCamera && window.FmCallDepthCamera.available" in page
+    assert "window.fmCallFrame = (payload) => {" in page
+    assert "owner.pushFrame(image, { regions: payload.regions || null, mask: payload.mask || null }, performance.now())" in page
+    assert 'const frameDone = () => post({ event: "frame-done", ...frameWant() });' in page
+    assert 'post({ event: "camera", id, op, ...frameWant() });' in page
+    assert "window.fmCallCamera = (id, reply) => {" in page
+    assert "window.fmCallCameraFailed = () => {" in page
+    assert "faces.createFaceStage({ cameraStream: null, manual: true," in page
+    assert "navigator.mediaDevices.getUserMedia({ audio: true, video: false })" in page
+    assert "wait(DEPTH_FRAME_MS)" in page
+    assert "const DEPTH_FRAME_MS = 1500;" in page
+    assert "navigator.mediaDevices.getUserMedia({ video: true })" in page
+    assert "stream = previewed || await openStream(media);" in page
+    assert "if (!stream) stream = await openStream(media);" in page
+    assert "stopPushed();\n      if (stage) stage.stop();" in page
 
 
 def test_ios_wires_the_call_engine_screen_and_buttons():
@@ -548,6 +565,27 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert "size.height - point.y" in vision
     assert "VNGeneratePersonSegmentationRequest()" in vision
     assert "personRequest.qualityLevel = accurate ? .accurate : .balanced" in vision
+    assert "static func analyze(image: CGImage, landmarks wantLandmarks: Bool" in vision
+    assert 'source: "window.FmCallDepthCamera = { available: true };", injectionTime: .atDocumentStart' in peer
+    assert 'case "camera":' in peer
+    assert 'case "frame-done":' in peer
+    assert "window.fmCallFrame && window.fmCallFrame(" in peer
+    assert "window.fmCallCamera && window.fmCallCamera(" in peer
+    assert "window.fmCallCameraFailed && window.fmCallCameraFailed(" in peer
+    assert "depthCamera?.stop()" in peer
+    depth = (app / "Features" / "Chat" / "Calls" / "CallDepthCamera.swift").read_text(encoding="utf-8")
+    assert "AVCaptureDevice.default(.builtInTrueDepthCamera, for: .video, position: .front)" in depth
+    assert "AVCaptureDataOutputSynchronizer(dataOutputs: [video, depth])" in depth
+    assert "depth.isFilteringEnabled = true" in depth
+    assert "video.alwaysDiscardsLateVideoFrames = true" in depth
+    assert "kCVPixelFormatType_DepthFloat32" in depth
+    assert "CallFaceLandmarks.analyze(image: image, landmarks: landmarks, mask: mask, accurate: false)" in depth
+    assert "CallFaceDepth.relief(regions, field: field" in depth
+    assert "calibration.intrinsicMatrixReferenceDimensions.width" in depth
+    assert "device.activeFormat.videoFieldOfView" in depth
+    assert "session.automaticallyConfiguresApplicationAudioSession = false" in depth
+    core = NATIVE / "ios" / "ForkMeshCore" / "Sources" / "FMChat" / "Direct" / "CallFaceDepth.swift"
+    assert "(faceDepth - depth) * focal / faceDepth" in core.read_text(encoding="utf-8")
     preview = (app / "Features" / "Chat" / "Calls" / "DirectCallPreview.swift").read_text(encoding="utf-8")
     assert "face: engine.face, background: engine.background, image: image, faceImage: faceImage)" in preview
     assert "PhotosPicker(selection: $photo, matching: .images)" in preview

@@ -14,7 +14,8 @@ PUBLIC_DIRS = (
 WWW_PUBLIC = PROJECT / "www" / "public"
 FAVICON_DIR = WWW_PUBLIC / "favicon"
 SELF_CONTAINED_DARK_PAGES = {
-    "index.html",
+    ("www", "index.html"),
+    ("app", "pitch-deck/deck.html"),
 }
 
 REQUIRED_HEAD_LINKS = [
@@ -153,8 +154,7 @@ def test_public_pages_use_shared_favicon_metadata():
             # is the one page allowed to stay dark-only.
             if (
                 name == "color-scheme"
-                and owner == "www"
-                and rel_path in SELF_CONTAINED_DARK_PAGES
+                and (owner, rel_path) in SELF_CONTAINED_DARK_PAGES
                 and parser.meta.get(name) == "dark"
             ):
                 continue

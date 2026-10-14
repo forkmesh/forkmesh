@@ -18,7 +18,19 @@ const PITCH_WINDOW = 512;
 const PITCH_EVERY = 2;
 const PITCH_LOW_HZ = 50;
 const PITCH_HIGH_HZ = 420;
+const PEAK_SPAN = 0.5;
 const LIFTER_PERIODS = 0.55;
+const ENVELOPE_GLIDE_S = 0.006;
+const VOICING_GLIDE = 0.25;
+const UNVOICED_WARP = 0.4;
+const WARP_KEEP_HZ = 5000;
+const WARP_RELEASE_HZ = 9000;
+const BREATH_LEVEL = 2;
+const UNVOICED_BREATH = 0.3;
+const BREATH_LOW_HZ = 800;
+const BREATH_RISE_HZ = 3000;
+const PULSE_DEPTH = 0.7;
+const PULSE_GAIN = 1 / Math.sqrt(1 + (PULSE_DEPTH * PULSE_DEPTH) / 2);
 const TREMOR_HZ = 5.5;
 const VOICED_HOLD = 10;
 
@@ -303,13 +315,15 @@ export class PitchShifter {
     this.delay = this.lookahead + this.maxHalf + 1;
     this.input = new Float64Array(this.mask + 1);
     this.output = new Float64Array(this.mask + 1);
+    this.pulse = new Float64Array(this.mask + 1).fill(1);
+    this.pulseOut = 1;
     this.smooth = new Float64Array(this.mask + 1);
     this.lpCoef = 1 - Math.exp((-TWO_PI * 900) / sampleRate);
     this.lp1 = 0;
     this.lp2 = 0;
     this.markCount = 32;
     this.markAt = new Float64Array(this.markCount);
-    this.markPeriod = new Int32Array(this.markCount);
+    this.markPeriod = new Float64Array(this.markCount);
     this.markHalf = new Int32Array(this.markCount);
     this.markVoiced = new Uint8Array(this.markCount);
     this.markWrite = 0;
@@ -350,13 +364,13 @@ export class PitchShifter {
     return this.input[index & this.mask];
   }
 
-  similarity(a, b, reach) {
+  similarity(a, b, reach, stride = 2) {
     const input = this.input;
     const mask = this.mask;
     let dot = 0;
     let ea = 0;
     let eb = 0;
-    for (let j = -reach; j <= reach; j += 2) {
+    for (let j = -reach; j <= reach; j += stride) {
       const x = input[(a + j) & mask];
       const y = input[(b + j) & mask];
       dot += x * y;
@@ -376,8 +390,10 @@ export class PitchShifter {
     for (;;) {
       const onset = voiced && !this.lastVoiced;
       const search = voiced ? Math.floor(onset ? step / 2 : step / 8) : 0;
-      const guess = this.lastAt + step;
-      if (guess + search + half >= this.written) return;
+      const lastAt = this.lastAt;
+      const anchor = Math.round(lastAt);
+      const guess = anchor + step;
+      if (guess + search + half + 2 >= this.written) return;
       let best = guess;
       let likeness = 1;
       if (voiced) {
@@ -397,9 +413,8 @@ export class PitchShifter {
           }
         } else {
           let bestScore = -Infinity;
-          const last = this.lastAt;
           for (let c = guess - search; c <= guess + search; c += 1) {
-            const like = this.similarity(last, c, reach);
+            const like = this.similarity(anchor, c, reach);
             const score = like + (ANCHOR_BIAS * Math.abs(smooth[c & mask])) / peak;
             if (score > bestScore) {
               bestScore = score;
@@ -407,13 +422,19 @@ export class PitchShifter {
               likeness = like;
             }
           }
+          const a = this.similarity(anchor, best - 1, reach, 1);
+          const b = this.similarity(anchor, best, reach, 1);
+          const c = this.similarity(anchor, best + 1, reach, 1);
+          const denominator = a - 2 * b + c;
+          const shift = denominator < -EPS ? clamp((0.5 * (a - c)) / denominator, -0.5, 0.5) : 0;
+          best += shift + (lastAt - anchor);
         }
       }
       const periodic = voiced && likeness >= LOCAL_VOICING;
-      if (voiced && !periodic) best = this.lastAt + this.unvoiced;
+      if (voiced && !periodic) best = Math.round(lastAt) + this.unvoiced;
       const slot = this.markWrite;
       this.markAt[slot] = best;
-      this.markPeriod[slot] = periodic ? (onset ? step : best - this.lastAt) : this.unvoiced;
+      this.markPeriod[slot] = periodic ? (onset ? step : best - lastAt) : this.unvoiced;
       this.markHalf[slot] = periodic ? half : this.unvoiced;
       this.markVoiced[slot] = periodic ? 1 : 0;
       this.markWrite = (slot + 1) % this.markCount;
@@ -427,7 +448,7 @@ export class PitchShifter {
     const output = this.output;
     const mask = this.mask;
     while (this.next + this.lookahead < this.written) {
-      const s = Math.floor(this.next + 0.5);
+      const s = this.next;
       let mark = -1;
       let nearest = 0;
       for (let i = 0; i < this.markCount; i += 1) {
@@ -456,16 +477,46 @@ export class PitchShifter {
       const centre = this.markAt[mark];
       let half = this.markHalf[mark];
       if (voiced && hop > 2 * half) {
-        const room = Math.min(this.maxHalf, this.written - 1 - centre, s - (this.written - this.delay));
+        const room = Math.floor(Math.min(this.maxHalf, this.written - 3 - centre, s - (this.written - this.delay)));
         half = Math.max(half, Math.min(Math.ceil(hop / 2), room));
       }
       const gain = voiced ? Math.sqrt(hop / half) : 1;
+      const offset = centre - s;
+      const whole = Math.floor(offset);
+      const f = offset - whole;
+      const f2 = f * f;
+      const f3 = f2 * f;
+      const c0 = gain * (-0.5 * f3 + f2 - 0.5 * f);
+      const c1 = gain * (1.5 * f3 - 2.5 * f2 + 1);
+      const c2 = gain * (-1.5 * f3 + 2 * f2 + 0.5 * f);
+      const c3 = gain * (0.5 * f3 - 0.5 * f2);
+      const start = Math.floor(s - half) + 1;
+      const end = Math.ceil(s + half);
       const w = Math.PI / half;
-      for (let t = 1 - half; t < half; t += 1) {
-        output[(s + t) & mask] += gain * (0.5 + 0.5 * Math.cos(w * t)) * input[(centre + t) & mask];
+      const turnCos = Math.cos(w);
+      const turnSin = Math.sin(w);
+      let wc = Math.cos(w * (start - s));
+      let ws = Math.sin(w * (start - s));
+      for (let n = start; n < end; n += 1) {
+        const j = n + whole;
+        const value = c0 * input[(j - 1) & mask] + c1 * input[j & mask] + c2 * input[(j + 1) & mask] + c3 * input[(j + 2) & mask];
+        output[n & mask] += (0.5 + 0.5 * wc) * value;
+        const nc = wc * turnCos - ws * turnSin;
+        ws = ws * turnCos + wc * turnSin;
+        wc = nc;
       }
+      if (voiced) this.markPulse(s, hop);
       this.next += hop;
     }
+  }
+
+  markPulse(s, hop) {
+    const pulse = this.pulse;
+    const mask = this.mask;
+    const from = Math.ceil(s - 0.75 * hop);
+    const to = Math.ceil(s + 0.25 * hop);
+    const step = TWO_PI / hop;
+    for (let n = from; n < to; n += 1) pulse[n & mask] = PULSE_GAIN * (1 + PULSE_DEPTH * Math.cos(step * (n - s + 0.25 * hop)));
   }
 
   process(sample, period, ratio) {
@@ -481,6 +532,8 @@ export class PitchShifter {
     const slot = t & this.mask;
     const shifted = this.output[slot];
     this.output[slot] = 0;
+    this.pulseOut = this.pulse[slot];
+    this.pulse[slot] = 1;
     const wanted = Math.abs(ratio - 1) > 2e-3 || Math.abs(this.range - 1) > 2e-3 || this.jitter > 0 || this.tremor > 0 ? 1 : 0;
     const step = 1 / (2 * this.unvoiced);
     this.shifting = wanted > this.shifting
@@ -554,14 +607,29 @@ export class VoiceEngine {
     this.accum = new Float64Array(size * 2);
     this.fifoPos = size - size / 8;
     this.frameBuffer = new Float64Array(size);
-    this.cepstrum = new Float64Array(size);
     this.re = new Float64Array(size / 2 + 1);
     this.im = new Float64Array(size / 2 + 1);
     this.cre = new Float64Array(size / 2 + 1);
     this.cim = new Float64Array(size / 2 + 1);
+    this.cepstrum = new Float64Array(size);
+    this.lifter = Math.max(12, Math.round(sampleRate / 650));
     const bins = size / 2 + 1;
     this.anaMag = new Float64Array(bins);
     this.envelope = new Float64Array(bins);
+    this.logEnvelope = new Float64Array(bins);
+    this.peakLog = new Float64Array(bins);
+    this.envelopeReady = false;
+    this.warpSource = new Float64Array(bins);
+    this.warpFormant = 0;
+    this.voicing = 0;
+    this.airRe = new Float64Array(bins);
+    this.airIm = new Float64Array(bins);
+    this.airBuffer = new Float64Array(size);
+    this.airAccum = new Float64Array(size * 2);
+    this.airFifo = new Float64Array(size);
+    this.airActive = false;
+    this.airTurn = false;
+    this.envelopeGlide = 1 - Math.exp(-this.hop / (ENVELOPE_GLIDE_S * sampleRate));
     this.gain = new Float64Array(bins).fill(1);
     this.noiseCos = new Float64Array(1024);
     this.noiseSin = new Float64Array(1024);
@@ -570,7 +638,6 @@ export class VoiceEngine {
       this.noiseSin[i] = Math.sin((TWO_PI * i) / 1024);
     }
     this.tilt = new Float64Array(bins).fill(1);
-    this.lifter = Math.max(12, Math.round(sampleRate / 650));
     this.decimate = Math.max(1, Math.round(sampleRate / 12000));
     this.pitch = new PitchDetector(sampleRate / this.decimate, PITCH_WINDOW);
     this.pitchRing = new Float64Array(PITCH_WINDOW);
@@ -599,7 +666,6 @@ export class VoiceEngine {
     this.brightness = 0;
     this.tiltBrightness = 0;
     this.breath = 0;
-    this.breathGate = 0;
     this.range = 1;
     this.jitter = 0;
     this.tremor = 0;
@@ -636,8 +702,14 @@ export class VoiceEngine {
         ? 0
         : (0.5 - 0.5 * Math.cos((TWO_PI * (i - fall)) / this.tail)) / this.window[i];
     }
+    this.airWindow = new Float64Array(this.tail);
+    for (let i = 0; i < this.tail; i += 1) {
+      this.airWindow[i] = Math.sin((Math.PI * (i + 0.5)) / this.tail) / Math.sqrt(this.windowPower);
+    }
     this.dry = new Float64Array(this.tail + this.shifter.latency());
     this.dryPos = 0;
+    this.airDelay = new Float64Array(this.shifter.latency());
+    this.airPos = 0;
     this.setNoiseReduction(0.6);
     this.setVoice(null);
   }
@@ -823,7 +895,12 @@ export class VoiceEngine {
       }
       const filtered = this.agc * this.outFifo[this.fifoPos - (n - hop)];
       const period = this.shiftPitchHz > 0 ? this.sampleRate / this.shiftPitchHz : 0;
-      const wet = this.shifter.process(filtered, period, this.ratio);
+      const airDelay = this.airDelay;
+      const air = airDelay[this.airPos];
+      airDelay[this.airPos] = this.agc * this.airFifo[this.fifoPos - (n - hop)];
+      this.airPos = this.airPos + 1 === airDelay.length ? 0 : this.airPos + 1;
+      const shifted = this.shifter.process(filtered, period, this.ratio);
+      const wet = shifted + air * this.shifter.pulseOut;
       const mixed = this.mix * wet + (1 - this.mix) * delayed;
       output[i] = this.limiter.process(mixed);
       this.fifoPos += 1;
@@ -833,6 +910,9 @@ export class VoiceEngine {
         this.outFifo.set(this.accum.subarray(0, hop), 0);
         this.accum.copyWithin(0, hop, hop + n);
         this.accum.fill(0, n, n + hop);
+        this.airFifo.set(this.airAccum.subarray(0, hop), 0);
+        this.airAccum.copyWithin(0, hop, hop + n);
+        this.airAccum.fill(0, n, n + hop);
         this.inFifo.copyWithin(0, hop, n);
         this.levelMatch();
       }
@@ -937,49 +1017,25 @@ export class VoiceEngine {
     } else {
       this.gain.fill(1);
     }
-    const cre = this.cre;
-    const cim = this.cim;
     let spectrumIn = 0;
-    for (let k = 0; k <= half; k += 1) {
-      spectrumIn += anaMag[k] * anaMag[k];
-      cre[k] = Math.log(anaMag[k] + EPS);
-      cim[k] = 0;
-    }
-    const cepstrum = this.cepstrum;
-    this.fft.inverse(cre, cim, cepstrum);
-    const lifter = Math.round(clamp((LIFTER_PERIODS * this.sampleRate) / this.userHz, this.lifter, n / 4));
-    cepstrum.fill(0, lifter, n - lifter + 1);
-    this.fft.forward(cepstrum, cre, cim);
+    for (let k = 0; k <= half; k += 1) spectrumIn += anaMag[k] * anaMag[k];
+    this.updateEnvelope();
     const envelope = this.envelope;
-    for (let k = 0; k <= half; k += 1) envelope[k] = Math.exp(cre[k]);
-    const formant = this.formant;
-    this.breathGate += 0.2 * ((this.voicedHold > 0 ? 1 : 0.3) - this.breathGate);
-    const breath = this.breath * this.breathGate;
-    const breathing = breath > 1e-3;
-    let meanSource = 0;
-    if (breathing) {
-      for (let k = 1; k < half; k += 1) meanSource += anaMag[k] / (envelope[k] + EPS);
-      meanSource /= half - 1;
-    }
-    const binHz = this.sampleRate / n;
+    this.voicing += VOICING_GLIDE * ((this.voiced ? 1 : 0) - this.voicing);
+    const depth = UNVOICED_WARP + (1 - UNVOICED_WARP) * this.voicing;
+    const formant = 1 + (this.formant - 1) * depth;
+    if (Math.abs(formant - this.warpFormant) > 1e-4) this.updateWarp(formant);
+    const source = this.warpSource;
     const tilt = this.tilt;
     const gain = this.gain;
     let spectrumOut = 0;
     for (let k = 0; k <= half; k += 1) {
-      const source = k / formant;
-      const low = Math.floor(source);
-      const env = low >= half ? envelope[half] : envelope[low] + (envelope[low + 1] - envelope[low]) * (source - low);
+      const at = source[k];
+      const low = Math.floor(at);
+      const env = low >= half ? envelope[half] : envelope[low] + (envelope[low + 1] - envelope[low]) * (at - low);
       const factor = (gain[k] * env * tilt[k]) / (envelope[k] + EPS);
-      let outRe = re[k] * factor;
-      let outIm = im[k] * factor;
-      if (breathing) {
-        const air = breath * meanSource * env * 0.6 * clamp((k * binHz - 800) / 3000, 0, 1);
-        if (air > 0) {
-          const slot = (this.random() * 1024) | 0;
-          outRe += air * this.noiseCos[slot];
-          outIm += air * this.noiseSin[slot];
-        }
-      }
+      const outRe = re[k] * factor;
+      const outIm = im[k] * factor;
       re[k] = outRe;
       im[k] = outIm;
       spectrumOut += outRe * outRe + outIm * outIm;
@@ -999,7 +1055,90 @@ export class VoiceEngine {
       const j = i + half;
       this.accum[i - fall] += buffer[j < n ? j : j - n] * this.synthesis[i] * scale;
     }
+    const breath = this.breath * (UNVOICED_BREATH + (1 - UNVOICED_BREATH) * this.voicing);
+    this.airTurn = !this.airTurn;
+    if (this.airTurn && (breath > 1e-3 || this.airActive)) this.breathe(breath);
   }
+
+  updateEnvelope() {
+    const n = this.size;
+    const half = this.half;
+    const anaMag = this.anaMag;
+    const peaks = this.peakLog;
+    const cre = this.cre;
+    const cim = this.cim;
+    for (let k = 0; k <= half; k += 1) {
+      peaks[k] = Math.log(anaMag[k] + EPS);
+      cim[k] = 0;
+    }
+    const localHz = this.shiftPitchHz > 0 ? this.shiftPitchHz : this.userHz;
+    const reach = Math.max(1, Math.round((PEAK_SPAN * localHz * n) / this.sampleRate));
+    for (let k = 0; k <= half; k += 1) {
+      let top = peaks[k];
+      const from = k > reach ? k - reach : 0;
+      const to = k + reach < half ? k + reach : half;
+      for (let j = from; j <= to; j += 1) if (peaks[j] > top) top = peaks[j];
+      cre[k] = top;
+    }
+    const cepstrum = this.cepstrum;
+    this.fft.inverse(cre, cim, cepstrum);
+    const lifter = Math.round(clamp((LIFTER_PERIODS * this.sampleRate) / this.userHz, this.lifter, n / 4));
+    cepstrum.fill(0, lifter, n - lifter + 1);
+    this.fft.forward(cepstrum, cre, cim);
+    const envelope = this.envelope;
+    const logEnvelope = this.logEnvelope;
+    const settle = this.envelopeReady ? this.envelopeGlide : 1;
+    for (let k = 0; k <= half; k += 1) {
+      logEnvelope[k] += settle * (cre[k] - logEnvelope[k]);
+      envelope[k] = Math.exp(logEnvelope[k]);
+    }
+    this.envelopeReady = true;
+  }
+
+  updateWarp(formant) {
+    const binHz = this.sampleRate / this.size;
+    const top = (this.half - 1) * binHz;
+    const keep = Math.min(WARP_KEEP_HZ, 0.5 * top);
+    const release = Math.min(WARP_RELEASE_HZ, top);
+    const from = keep / formant;
+    const slope = (release - from) / (release - keep);
+    const source = this.warpSource;
+    for (let k = 0; k <= this.half; k += 1) {
+      const hz = k * binHz;
+      const at = hz <= keep ? hz / formant : hz < release ? from + (hz - keep) * slope : hz;
+      source[k] = at / binHz;
+    }
+    this.warpFormant = formant;
+  }
+
+  breathe(breath) {
+    const n = this.size;
+    const half = this.half;
+    const envelope = this.envelope;
+    const source = this.warpSource;
+    const air = this.airRe;
+    const airIm = this.airIm;
+    const binHz = this.sampleRate / n;
+    const level = breath * BREATH_LEVEL;
+    for (let k = 0; k <= half; k += 1) {
+      const at = source[k];
+      const low = Math.floor(at);
+      const env = low >= half ? envelope[half] : envelope[low] + (envelope[low + 1] - envelope[low]) * (at - low);
+      const amount = level * env * this.tilt[k] * clamp((k * binHz - BREATH_LOW_HZ) / BREATH_RISE_HZ, 0, 1);
+      const slot = (this.random() * 1024) | 0;
+      air[k] = amount * this.noiseCos[slot];
+      airIm[k] = amount * this.noiseSin[slot];
+    }
+    airIm[0] = 0;
+    airIm[half] = 0;
+    const buffer = this.airBuffer;
+    this.fft.inverse(air, airIm, buffer);
+    const window = this.airWindow;
+    const accum = this.airAccum;
+    for (let i = 0; i < this.tail; i += 1) accum[i] += buffer[i] * window[i];
+    this.airActive = breath > 1e-3;
+  }
+
 }
 
 if (typeof registerProcessor === "function" && typeof AudioWorkletProcessor === "function") {

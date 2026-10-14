@@ -1242,12 +1242,11 @@
         left: 0.75rem;
         z-index: 70;
         display: none;
-        flex-direction: column;
         width: min(68rem, calc(100vw - 1.5rem));
         max-height: calc(100dvh - 3.5rem - 18px);
         overflow-y: auto;
         overscroll-behavior: contain;
-        padding: 12px;
+        padding: 0;
         border: 1px solid var(--border);
         border-radius: 12px;
         background-color: rgb(var(--dashboard-sidebar-rgb)) !important;
@@ -1256,7 +1255,10 @@
       }
 
       body.dashboard-sidebar-open [data-dashboard-sidebar] {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+        grid-template-rows: auto auto 1fr auto;
+        grid-template-areas: "workspace site" "plugins site" "repos site" "repos legal";
         box-shadow: 0 8px 24px rgb(1 4 9 / 0.6);
         animation: dashboard-menu-in 140ms ease-out;
       }
@@ -1286,9 +1288,7 @@
       }
 
       .dashboard-nav {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-        gap: 14px 6px;
+        display: contents;
       }
 
       .dashboard-nav-group {
@@ -1299,7 +1299,7 @@
       }
 
       .dashboard-nav-title {
-        padding: 4px 8px 6px;
+        padding: 0 0 8px;
         color: var(--muted-foreground);
         font-size: 11px;
         font-weight: 600;
@@ -1311,15 +1311,12 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        min-height: 36px;
-        padding: 4px 8px;
-        border-radius: 8px;
         color: rgb(var(--dashboard-foreground-rgb));
         font-size: 0.875rem;
         font-weight: 500;
         line-height: 1.25;
         text-decoration: none;
-        transition: background-color 150ms ease, color 150ms ease;
+        transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
       }
 
       .dashboard-nav a.hidden,
@@ -1327,27 +1324,17 @@
         display: none;
       }
 
-      .dashboard-nav a:hover,
-      .dashboard-nav a:focus-visible {
-        background: rgb(127 127 127 / 0.14);
-      }
-
       .dashboard-nav-icon {
         display: inline-grid;
         place-items: center;
-        width: 28px;
-        height: 28px;
         flex: 0 0 auto;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        background: rgb(var(--dashboard-background-rgb));
         color: var(--muted-foreground);
-        transition: color 150ms ease, border-color 150ms ease;
+        transition: color 150ms ease, background-color 150ms ease;
       }
 
       .dashboard-nav-icon svg {
-        width: 15px;
-        height: 15px;
+        width: 18px;
+        height: 18px;
       }
 
       .dashboard-nav a:hover .dashboard-nav-icon,
@@ -1355,55 +1342,212 @@
         color: rgb(var(--dashboard-foreground-rgb));
       }
 
-      .dashboard-nav a[aria-current="page"] {
-        background: rgb(var(--dashboard-accent-rgb) / 0.14);
-        font-weight: 600;
-      }
-
-      .dashboard-nav a[aria-current="page"] .dashboard-nav-icon {
-        color: rgb(var(--dashboard-accent-rgb));
-        border-color: rgb(var(--dashboard-accent-rgb) / 0.5);
-        background: rgb(var(--dashboard-accent-rgb) / 0.12);
+      .dashboard-nav a:focus-visible {
+        outline: 2px solid rgb(var(--dashboard-ring-rgb));
+        outline-offset: 1px;
       }
 
       .dashboard-nav-external {
-        width: 13px;
-        height: 13px;
-        margin-left: -4px;
+        width: 12px;
+        height: 12px;
         flex: 0 0 auto;
         color: var(--muted-foreground);
       }
 
+      .dashboard-nav-workspace {
+        grid-area: workspace;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        padding: 22px 24px 0;
+      }
+
+      .dashboard-nav-workspace > .dashboard-nav-title,
+      [data-plugin-navigation] > .dashboard-nav-title {
+        grid-column: 1 / -1;
+        padding-bottom: 2px;
+      }
+
+      .dashboard-nav-workspace a {
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 78px;
+        padding: 12px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: rgb(var(--dashboard-subtle-rgb));
+      }
+
+      .dashboard-nav-workspace a:hover,
+      .dashboard-nav-workspace a:focus-visible {
+        border-color: var(--border);
+      }
+
+      .dashboard-nav-workspace a[aria-current="page"] {
+        border-color: rgb(var(--dashboard-accent-rgb) / 0.6);
+        background: rgb(var(--dashboard-accent-rgb) / 0.1);
+      }
+
+      .dashboard-nav-workspace a[aria-current="page"] .dashboard-nav-icon {
+        color: rgb(var(--dashboard-accent-rgb));
+      }
+
+      [data-plugin-navigation] {
+        grid-area: plugins;
+        grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+        gap: 4px;
+        padding: 24px 24px 0;
+      }
+
+      [data-plugin-navigation] a {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 2px;
+        border-radius: 10px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        font-weight: 400;
+        text-align: center;
+      }
+
+      [data-plugin-navigation] .dashboard-nav-icon {
+        width: 44px;
+        height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgb(var(--dashboard-subtle-rgb));
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      [data-plugin-navigation] a:hover,
+      [data-plugin-navigation] a:focus-visible {
+        background: rgb(var(--dashboard-subtle-rgb));
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      [data-plugin-navigation] a[aria-current="page"] {
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      [data-plugin-navigation] a[aria-current="page"] .dashboard-nav-icon {
+        border-color: rgb(var(--dashboard-accent-rgb) / 0.6);
+        background: rgb(var(--dashboard-accent-rgb) / 0.12);
+        color: rgb(var(--dashboard-accent-rgb));
+      }
+
+      .dashboard-nav-site {
+        grid-area: site;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 22px 18px;
+        padding: 22px 26px 18px;
+        border-left: 1px solid var(--border);
+        background: rgb(var(--dashboard-header-rgb));
+      }
+
+      .dashboard-nav-site-title {
+        grid-column: 1 / -1;
+        padding-bottom: 0;
+      }
+
+      .dashboard-nav-site .dashboard-nav-group .dashboard-nav-title {
+        padding: 0 0 6px;
+        color: rgb(var(--dashboard-foreground-rgb));
+        font-size: 12px;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .dashboard-nav-site .dashboard-nav-icon {
+        display: none;
+      }
+
+      .dashboard-nav-site a {
+        gap: 4px;
+        min-height: 26px;
+        padding: 3px 0;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        font-weight: 400;
+      }
+
+      .dashboard-nav-site a:hover,
+      .dashboard-nav-site a:focus-visible {
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      .dashboard-nav-site a[aria-current="page"] {
+        color: rgb(var(--dashboard-accent-rgb));
+        font-weight: 500;
+      }
+
       .dashboard-nav-repos {
-        margin-top: 12px;
-        padding-top: 10px;
-        border-top: 1px solid var(--border);
+        grid-area: repos;
+        padding: 24px 24px 22px;
       }
 
       .dashboard-nav-repos-head {
         display: flex;
         align-items: center;
         gap: 8px;
+        padding-bottom: 8px;
       }
 
       .dashboard-nav-repos-head .dashboard-nav-title {
-        padding-bottom: 4px;
+        padding-bottom: 0;
       }
 
       .dashboard-nav-repo-list {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-        gap: 1px 6px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .dashboard-nav-repo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        padding: 11px 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        text-decoration: none;
+        transition: background-color 150ms ease, color 150ms ease;
+      }
+
+      .dashboard-nav-repo:hover,
+      .dashboard-nav-repo:focus-visible {
+        background: rgb(var(--dashboard-subtle-rgb));
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      .dashboard-nav-repo-arrow {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+        color: var(--muted-foreground);
+      }
+
+      .dashboard-nav-repo-empty {
+        grid-column: 1 / -1;
+        color: var(--muted-foreground);
+        font-size: 12px;
       }
 
       .dashboard-nav-legal {
+        grid-area: legal;
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 2px 14px;
-        margin-top: 12px;
-        padding: 10px 8px 2px;
+        padding: 14px 26px 18px;
         border-top: 1px solid var(--border);
+        border-left: 1px solid var(--border);
+        background: rgb(var(--dashboard-header-rgb));
       }
 
       .dashboard-nav-legal a,
@@ -1426,6 +1570,51 @@
       .dashboard-nav-legal a:hover,
       .dashboard-nav-legal button:hover {
         color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      @media (max-width: 760px) {
+        body.dashboard-sidebar-open [data-dashboard-sidebar] {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: none;
+          grid-template-areas: "workspace" "plugins" "repos" "site" "legal";
+        }
+
+        .dashboard-nav-workspace {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          padding: 16px 16px 0;
+        }
+
+        .dashboard-nav-workspace a {
+          flex-direction: row;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 10px;
+          min-height: 44px;
+          padding: 8px 12px;
+        }
+
+        [data-plugin-navigation] {
+          padding: 20px 16px 0;
+        }
+
+        .dashboard-nav-repos {
+          padding: 20px 16px;
+        }
+
+        .dashboard-nav-repo-list {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .dashboard-nav-site,
+        .dashboard-nav-legal {
+          border-left: 0;
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .dashboard-nav-site {
+          border-top: 1px solid var(--border);
+        }
       }
 
       [data-mobile-sidebar-backdrop] {
@@ -1725,6 +1914,11 @@
         outline-offset: 2px;
       }
 
+      :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), select, textarea):focus-visible {
+        outline: 1px solid rgb(var(--dashboard-primary-rgb));
+        outline-offset: -1px;
+      }
+
       [data-dashboard-skip-link] {
         position: fixed;
         left: 0.75rem;
@@ -1742,13 +1936,279 @@
         transform: translateY(0);
       }
 
+      .fm-spotlight-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 14vh 16px 16px;
+      }
+
       [data-command-palette]:not([hidden]) {
         display: flex;
       }
 
-      [data-command-palette-result][aria-selected="true"] {
-        background: rgb(var(--dashboard-secondary-rgb));
+      .fm-spotlight-backdrop {
+        position: absolute;
+        inset: 0;
+        border: 0;
+        background: rgb(1 4 9 / 0.45);
+        cursor: default;
+        animation: fm-spotlight-fade 120ms ease-out;
+      }
+
+      [data-dashboard-theme="light"] .fm-spotlight-backdrop {
+        background: rgb(31 35 40 / 0.18);
+      }
+
+      .fm-spotlight {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 640px;
+        max-height: min(560px, 76vh);
+        overflow: hidden;
+        border: 1px solid rgb(var(--dashboard-border-rgb) / 0.8);
+        border-radius: 16px;
+        background: rgb(var(--dashboard-popover-rgb) / 0.86);
+        box-shadow: 0 24px 64px rgb(1 4 9 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06) inset;
         color: rgb(var(--dashboard-foreground-rgb));
+        -webkit-backdrop-filter: blur(28px) saturate(170%);
+        backdrop-filter: blur(28px) saturate(170%);
+        animation: fm-spotlight-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+      }
+
+      [data-dashboard-theme="light"] .fm-spotlight {
+        background: rgb(255 255 255 / 0.86);
+        box-shadow: 0 24px 64px rgb(31 35 40 / 0.22), 0 0 0 0.5px rgb(31 35 40 / 0.08);
+      }
+
+      @keyframes fm-spotlight-in {
+        from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+        to { opacity: 1; transform: none; }
+      }
+
+      @keyframes fm-spotlight-fade {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fm-spotlight,
+        .fm-spotlight-backdrop {
+          animation: none;
+        }
+      }
+
+      .fm-spotlight-search {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 60px;
+        padding: 0 18px;
+        border-bottom: 1px solid rgb(var(--dashboard-border-rgb) / 0.7);
+      }
+
+      .fm-spotlight-search > svg {
+        width: 22px;
+        height: 22px;
+        flex: 0 0 auto;
+        color: var(--muted-foreground);
+      }
+
+      .fm-spotlight-search input {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        color: rgb(var(--dashboard-foreground-rgb));
+        font: inherit;
+        font-size: 20px;
+        font-weight: 400;
+        letter-spacing: -0.01em;
+        outline: none;
+        box-shadow: none;
+        -webkit-appearance: none;
+        appearance: none;
+      }
+
+      .fm-spotlight-search input::placeholder {
+        color: var(--muted-foreground);
+      }
+
+      .fm-spotlight-search input::-webkit-search-cancel-button {
+        display: none;
+      }
+
+      .fm-spotlight-search input:focus,
+      .fm-spotlight-search input:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+
+      .fm-spotlight kbd {
+        display: inline-grid;
+        place-items: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 5px;
+        border: 1px solid rgb(var(--dashboard-border-rgb));
+        border-radius: 5px;
+        background: rgb(var(--dashboard-foreground-rgb) / 0.04);
+        color: var(--muted-foreground);
+        font: 500 11px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .fm-spotlight-results {
+        flex: 1;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 6px 8px 8px;
+      }
+
+      .fm-spotlight-group {
+        padding: 10px 10px 4px;
+        color: var(--muted-foreground);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .fm-spotlight-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        height: 44px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: rgb(var(--dashboard-foreground-rgb));
+        font: inherit;
+        font-size: 14px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .fm-spotlight-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 auto;
+        border-radius: 7px;
+        background: rgb(var(--dashboard-foreground-rgb) / 0.07);
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      .fm-spotlight-icon svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .fm-spotlight-label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .fm-spotlight-hint {
+        flex: 0 0 auto;
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .fm-spotlight-item[aria-selected="true"] {
+        background: rgb(31 111 235);
+        color: rgb(255 255 255);
+      }
+
+      [data-dashboard-theme="light"] .fm-spotlight-item[aria-selected="true"] {
+        background: rgb(var(--dashboard-primary-rgb));
+      }
+
+      .fm-spotlight-item[aria-selected="true"] .fm-spotlight-icon {
+        background: rgb(255 255 255 / 0.2);
+        color: rgb(255 255 255);
+      }
+
+      .fm-spotlight-item[aria-selected="true"] .fm-spotlight-hint {
+        color: rgb(255 255 255);
+      }
+
+      .fm-spotlight-item[aria-selected="true"] kbd {
+        border-color: rgb(255 255 255 / 0.4);
+        background: rgb(255 255 255 / 0.15);
+        color: rgb(255 255 255);
+      }
+
+      .fm-spotlight-empty {
+        padding: 36px 16px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .fm-spotlight-empty-title {
+        margin-bottom: 4px;
+        color: rgb(var(--dashboard-foreground-rgb));
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .fm-spotlight-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        height: 40px;
+        padding: 0 14px;
+        border-top: 1px solid rgb(var(--dashboard-border-rgb) / 0.7);
+        background: rgb(var(--dashboard-foreground-rgb) / 0.02);
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .fm-spotlight-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .fm-spotlight-brand svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .fm-spotlight-keys {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .fm-spotlight-keys > span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .fm-spotlight-keys kbd + kbd {
+        margin-left: -1px;
+      }
+
+      @media (max-width: 640px) {
+        .fm-spotlight-overlay {
+          padding-top: 10vh;
+        }
+
+        .fm-spotlight-footer {
+          display: none;
+        }
       }
 
       [data-repo-pull-diff-row] code,
@@ -2259,8 +2719,8 @@
       <div data-dashboard-shell class="flex flex-1 min-h-0 overflow-hidden">
       <aside id="dashboardSidebar" data-dashboard-sidebar aria-label="Dashboard navigation" class="bg-[rgb(var(--dashboard-sidebar-rgb))]">
         <nav data-sidebar-main-menu class="dashboard-nav">
-          <div role="group" aria-labelledby="sidebarGroupDashboard" class="dashboard-nav-group">
-            <span id="sidebarGroupDashboard" class="dashboard-nav-title">Dashboard</span>
+          <div role="group" aria-labelledby="sidebarGroupDashboard" class="dashboard-nav-group dashboard-nav-workspace">
+            <span id="sidebarGroupDashboard" class="dashboard-nav-title">Workspace</span>
             <a href="https://forkmesh.com/"><span class="dashboard-nav-icon"><i data-lucide="house"></i></span>Home</a>
             <a data-nav="home" data-nav-link href="/dashboard"><span class="dashboard-nav-icon"><i data-lucide="layout-dashboard"></i></span>Dashboard</a>
             <a data-nav="profile" data-nav-link href="/dashboard/profile"><span class="dashboard-nav-icon"><i data-lucide="user-round"></i></span>Profile</a>
@@ -2268,46 +2728,50 @@
             <a data-nav="agents" data-nav-link href="/dashboard/agents" data-plugin-entry="agents"><span class="dashboard-nav-icon"><i data-lucide="bot"></i></span>Agents</a>
             <a data-nav="apps" data-nav-link href="/dashboard/apps"><span class="dashboard-nav-icon"><i data-lucide="blocks"></i></span>Apps</a>
             <a data-nav="runners" data-nav-link href="/dashboard/runners"><span class="dashboard-nav-icon"><i data-lucide="server"></i></span>Runners</a>
+            <a href="/dashboard/settings"><span class="dashboard-nav-icon"><i data-lucide="settings"></i></span>Settings</a>
           </div>
           <!-- forkmesh:plugin-navigation -->
-          <div role="group" aria-labelledby="sidebarGroupCommunity" class="dashboard-nav-group">
-            <span id="sidebarGroupCommunity" class="dashboard-nav-title">Community</span>
-            <a href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="dashboard-nav-icon"><i data-lucide="globe"></i></span>World</a>
-            <a data-nav="chat" data-nav-link href="/dashboard/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
-            <a data-nav="network" data-nav-link href="/dashboard/network" data-plugin-entry="network"><span class="dashboard-nav-icon"><i data-lucide="share-2"></i></span>Network</a>
-            <a href="/ecosystem"><span class="dashboard-nav-icon"><i data-lucide="box"></i></span>Ecosystem</a>
-            <a href="/leaderboards"><span class="dashboard-nav-icon"><i data-lucide="trophy"></i></span>Leaderboards</a>
-            <a data-nav="microjobs" data-nav-link href="/microjobs"><span class="dashboard-nav-icon"><i data-lucide="briefcase"></i></span>Microjobs</a>
-            <a data-nav="bounties" data-nav-link href="/dashboard/bounties"><span class="dashboard-nav-icon"><i data-lucide="badge-dollar-sign"></i></span>Bounties</a>
-            <a data-nav="referrals" data-nav-link href="/referral"><span class="dashboard-nav-icon"><i data-lucide="user-plus"></i></span>Referral</a>
-            <a data-nav="links" data-nav-link href="/dashboard/links"><span class="dashboard-nav-icon"><i data-lucide="link"></i></span>Links</a>
-            <a data-nav="challenges" data-nav-link href="/dashboard/challenges"><span class="dashboard-nav-icon"><i data-lucide="swords"></i></span>Challenges</a>
-            <a data-nav="ads" data-nav-link aria-current="page" href="/dashboard/ads"><span class="dashboard-nav-icon"><i data-lucide="megaphone"></i></span>Ads</a>
-            <a data-nav="hackathon" data-nav-link href="/hackathon/me"><span class="dashboard-nav-icon"><i data-lucide="flag"></i></span>Hackathon</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupProduct" class="dashboard-nav-group">
-            <span id="sidebarGroupProduct" class="dashboard-nav-title">Product</span>
-            <a href="/features"><span class="dashboard-nav-icon"><i data-lucide="sparkles"></i></span>Features</a>
-            <a href="/desktop"><span class="dashboard-nav-icon"><i data-lucide="monitor"></i></span>Desktop app</a>
-            <a href="https://forkmesh.com/market"><span class="dashboard-nav-icon"><i data-lucide="store"></i></span>Marketplace<i data-lucide="arrow-up-right" class="dashboard-nav-external"></i></a>
-            <a href="https://forkmesh.com/#pricing"><span class="dashboard-nav-icon"><i data-lucide="tag"></i></span>Pricing</a>
-            <a data-forkmesh-membership href="https://forkmesh.com/#membership"><span class="dashboard-nav-icon"><i data-lucide="heart"></i></span>Membership</a>
-            <a href="/mirror-payouts"><span class="dashboard-nav-icon"><i data-lucide="wallet"></i></span>Mirror payouts</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupResources" class="dashboard-nav-group">
-            <span id="sidebarGroupResources" class="dashboard-nav-title">Resources</span>
-            <a href="/docs"><span class="dashboard-nav-icon"><i data-lucide="book-open"></i></span>Docs</a>
-            <a data-nav="docs" data-nav-link href="/dashboard/docs"><span class="dashboard-nav-icon"><i data-lucide="file-text"></i></span>Developer docs</a>
-            <a href="/blog"><span class="dashboard-nav-icon"><i data-lucide="newspaper"></i></span>Blog</a>
-            <a href="/changelog"><span class="dashboard-nav-icon"><i data-lucide="git-commit-vertical"></i></span>Changelog</a>
-            <a href="/status" data-status-entry><span class="dashboard-nav-icon"><i data-lucide="activity"></i></span>Status</a>
-            <a data-nav="ledger" data-nav-link href="/ledger" data-plugin-entry="ledger"><span class="dashboard-nav-icon"><i data-lucide="receipt"></i></span>Financial ledger</a>
-          </div>
-          <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group">
-            <span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>
-            <a href="/about"><span class="dashboard-nav-icon"><i data-lucide="info"></i></span>About</a>
-            <a href="/careers"><span class="dashboard-nav-icon"><i data-lucide="users"></i></span>Careers</a>
-            <a href="/press"><span class="dashboard-nav-icon"><i data-lucide="volume-2"></i></span>Press</a>
+          <div class="dashboard-nav-site">
+            <span class="dashboard-nav-title dashboard-nav-site-title">Explore ForkMesh</span>
+            <div role="group" aria-labelledby="sidebarGroupCommunity" class="dashboard-nav-group">
+              <span id="sidebarGroupCommunity" class="dashboard-nav-title">Community</span>
+              <a href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="dashboard-nav-icon"><i data-lucide="globe"></i></span>World</a>
+              <a data-nav="chat" data-nav-link href="/dashboard/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
+              <a data-nav="network" data-nav-link href="/dashboard/network" data-plugin-entry="network"><span class="dashboard-nav-icon"><i data-lucide="share-2"></i></span>Network</a>
+              <a href="/ecosystem"><span class="dashboard-nav-icon"><i data-lucide="box"></i></span>Ecosystem</a>
+              <a href="/leaderboards"><span class="dashboard-nav-icon"><i data-lucide="trophy"></i></span>Leaderboards</a>
+              <a data-nav="microjobs" data-nav-link href="/microjobs"><span class="dashboard-nav-icon"><i data-lucide="briefcase"></i></span>Microjobs</a>
+              <a data-nav="bounties" data-nav-link href="/dashboard/bounties"><span class="dashboard-nav-icon"><i data-lucide="badge-dollar-sign"></i></span>Bounties</a>
+              <a data-nav="referrals" data-nav-link href="/referral"><span class="dashboard-nav-icon"><i data-lucide="user-plus"></i></span>Referral</a>
+              <a data-nav="links" data-nav-link href="/dashboard/links"><span class="dashboard-nav-icon"><i data-lucide="link"></i></span>Links</a>
+              <a data-nav="challenges" data-nav-link href="/dashboard/challenges"><span class="dashboard-nav-icon"><i data-lucide="swords"></i></span>Challenges</a>
+              <a data-nav="ads" data-nav-link aria-current="page" href="/dashboard/ads"><span class="dashboard-nav-icon"><i data-lucide="megaphone"></i></span>Ads</a>
+              <a data-nav="hackathon" data-nav-link href="/hackathon/me"><span class="dashboard-nav-icon"><i data-lucide="flag"></i></span>Hackathon</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupProduct" class="dashboard-nav-group">
+              <span id="sidebarGroupProduct" class="dashboard-nav-title">Product</span>
+              <a href="/features"><span class="dashboard-nav-icon"><i data-lucide="sparkles"></i></span>Features</a>
+              <a href="/desktop"><span class="dashboard-nav-icon"><i data-lucide="monitor"></i></span>Desktop app</a>
+              <a href="https://forkmesh.com/market"><span class="dashboard-nav-icon"><i data-lucide="store"></i></span>Marketplace<i data-lucide="arrow-up-right" class="dashboard-nav-external"></i></a>
+              <a href="https://forkmesh.com/#pricing"><span class="dashboard-nav-icon"><i data-lucide="tag"></i></span>Pricing</a>
+              <a data-forkmesh-membership href="https://forkmesh.com/#membership"><span class="dashboard-nav-icon"><i data-lucide="heart"></i></span>Membership</a>
+              <a href="/mirror-payouts"><span class="dashboard-nav-icon"><i data-lucide="wallet"></i></span>Mirror payouts</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupResources" class="dashboard-nav-group">
+              <span id="sidebarGroupResources" class="dashboard-nav-title">Resources</span>
+              <a href="/docs"><span class="dashboard-nav-icon"><i data-lucide="book-open"></i></span>Docs</a>
+              <a data-nav="docs" data-nav-link href="/dashboard/docs"><span class="dashboard-nav-icon"><i data-lucide="file-text"></i></span>Developer docs</a>
+              <a href="/blog"><span class="dashboard-nav-icon"><i data-lucide="newspaper"></i></span>Blog</a>
+              <a href="/changelog"><span class="dashboard-nav-icon"><i data-lucide="git-commit-vertical"></i></span>Changelog</a>
+              <a href="/status" data-status-entry><span class="dashboard-nav-icon"><i data-lucide="activity"></i></span>Status</a>
+              <a data-nav="ledger" data-nav-link href="/ledger" data-plugin-entry="ledger"><span class="dashboard-nav-icon"><i data-lucide="receipt"></i></span>Financial ledger</a>
+            </div>
+            <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group">
+              <span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>
+              <a href="/about"><span class="dashboard-nav-icon"><i data-lucide="info"></i></span>About</a>
+              <a href="/careers"><span class="dashboard-nav-icon"><i data-lucide="users"></i></span>Careers</a>
+              <a href="/press"><span class="dashboard-nav-icon"><i data-lucide="volume-2"></i></span>Press</a>
+            </div>
           </div>
         </nav>
 

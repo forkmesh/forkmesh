@@ -22,6 +22,10 @@ dashboard and World read it. Code: `app/src/account_users.py`
   build cannot restore a member who just went private.
 - `profile_private` must take effect at once, so no CDN may cache roster or
   avatar responses; fields are public aggregates or coarse buckets only.
+- The `/api/accounts/<name>` lookup reads the encrypted record and answers a
+  private profile before it consults `_account_lookup_cached`, so a warm entry
+  cannot outlive a privacy toggle
+  (`app/tests/test_security_controls.py::test_private_profiles_and_repo_pages_revoke_cached_public_metadata`).
 - Thumbnails (`_avatar_render_thumbnail`, Pillow) refuse sources over
   4096×4096 and are cached in a 512-entry LRU keyed by content hash.
 - The host cache is per process; cross-core lag is bounded by the cache TTLs.

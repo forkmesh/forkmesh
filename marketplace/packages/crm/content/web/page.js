@@ -58,6 +58,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // blips; writes are never replayed.
   const CRM_READ_RETRY_DELAYS_MS = [400, 1500];
   const CRM_LIST_VIEW_GAP_MS = 30 * 60 * 1000;
+  const CRM_TOOT_SYNC_MS = 10 * 60 * 1000;
 
   function crmTransientStatus(status) {
     return status === 0 || status === 408 || status === 425 || status >= 500;
@@ -3389,6 +3390,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </section>
         <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
           <button type="button" data-crm-contact-compose="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Email</button>
+          <button type="button" data-crm-contact-toot="${id}" title="Log a toot sent to or from them by pasting its link" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Log toot</button>
           <button type="button" data-crm-contact-ai="${id}" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
           <button type="button" data-crm-contact-deck="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Deck</button>
           <button type="button" data-crm-contact-link="${id}" title="Copy a link that opens this contact for members of ${escapeHtml(contact.organization || state.crmView.organization)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Copy link</button>
@@ -4543,6 +4545,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ? "Not connected. Connect with Zoho signs you in to Zoho and asks for read access to mail, folders, and the account. Or enter your own OAuth client below."
       : "Not connected. Use a Zoho OAuth client with ZohoMail.messages.READ, ZohoMail.folders.READ, and ZohoMail.accounts.READ scopes.";
     $(`[data-crm-zoho-disconnect]`).classList.toggle("hidden", !zoho.connected);
+    const mastodon = settings.mastodon || {};
+    $(`[data-crm-mastodon-account]`).value = mastodon.account ? `@${mastodon.account}` : "";
+    $(`[data-crm-mastodon-token]`).value = "";
+    $(`[data-crm-mastodon-status]`).textContent = crmMastodonStatus(mastodon);
+    $(`[data-crm-mastodon-sync]`).classList.toggle("hidden", !mastodon.connected);
+    $(`[data-crm-mastodon-disconnect]`).classList.toggle("hidden", !mastodon.connected);
     $(`[data-crm-zoho-connect]`)?.classList.toggle("hidden", !zoho.oneClick || !state.crmView.canManageSettings);
     const connectLabel = $(`[data-crm-zoho-connect]`);
     if (connectLabel) connectLabel.textContent = zoho.connected ? "Reconnect with Zoho" : "Connect with Zoho";
@@ -4856,10 +4864,61 @@ window.ForkMeshDashboard.registerPage("crm", ({
           refreshToken: $(`[data-crm-zoho-refresh]`).value,
       };
       if (state.crmView.settings?.zoho?.connected || Object.values(zoho).some((value, index) => index > 0 && value)) body.zoho = zoho;
+      const mastodon = { account: $(`[data-crm-mastodon-account]`).value.trim(), token: $(`[data-crm-mastodon-token]`).value.trim() };
+      if (mastodon.token || (mastodon.account && state.crmView.settings?.mastodon?.account)) body.mastodon = mastodon;
       await crmRequest(crmOrganizationPath("/settings"), "PUT", body);
       for (const selector of ["secret", "refresh", "code"]) $(`[data-crm-zoho-${selector}]`).value = "";
+      $(`[data-crm-mastodon-token]`).value = "";
       $(`[data-crm-settings-dialog]`).close(); crmMessage("notice", "CRM settings saved."); await loadCrm();
     } catch (error) { crmMessage("error", `Could not save settings: ${error.message}`); }
+  }
+
+  function crmMastodonStatus(mastodon) {
+    if (!mastodon.connected) return "Not connected. Add the organization's Mastodon account and an access token with the read:statuses scope (Preferences → Development → New application on its instance) to log the toots it sends to contacts automatically.";
+    const checked = mastodon.lastSyncAt ? `last checked ${relativeTimeLabel(mastodon.lastSyncAt)}` : "not checked yet";
+    const error = mastodon.lastError ? ` · last check failed: ${mastodon.lastError.replaceAll("_", " ")}` : "";
+    return `Connected as @${mastodon.account} · ${checked}${error}. Toots it sends that mention a contact are logged on that contact, private mentions included. Leave the token blank to keep it.`;
+  }
+
+  async function syncCrmToots(auto) {
+    const button = $(`[data-crm-mastodon-sync]`); if (!auto && button) button.disabled = true;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/emails/toots"), "POST", auto ? { auto: true } : {});
+      if (!auto) crmMessage("notice", `Toots checked: ${payload.checked || 0} read, ${payload.logged || 0} newly logged.`);
+      if (payload.logged || !auto) await loadCrm();
+      if (payload.logged && auto) crmMessage("notice", `${payload.logged} new toot${payload.logged === 1 ? "" : "s"} logged on contacts.`);
+      if (!auto) $(`[data-crm-mastodon-status]`).textContent = crmMastodonStatus(state.crmView.settings?.mastodon || {});
+    } catch (error) { if (!auto) crmMessage("error", `Could not check toots: ${error.message}`); }
+    finally { if (button) button.disabled = false; }
+  }
+
+  function crmAutoSyncToots() {
+    if (!state.crmView.settings?.mastodon?.connected) return;
+    const key = state.crmView.organization;
+    const last = state.crmView.tootSyncedAt?.[key] || 0;
+    if (Date.now() - last < CRM_TOOT_SYNC_MS) return;
+    state.crmView.tootSyncedAt = { ...(state.crmView.tootSyncedAt || {}), [key]: Date.now() };
+    void syncCrmToots(true);
+  }
+
+  async function disconnectCrmMastodon() {
+    if (!confirm("Disconnect the Mastodon account? Toots already logged stay on their contacts; new ones are no longer found.")) return;
+    try {
+      await crmRequest(crmOrganizationPath("/settings"), "PUT", { mastodonDisconnect: true });
+      $(`[data-crm-settings-dialog]`).close(); crmMessage("notice", "Mastodon account disconnected."); await loadCrm();
+    } catch (error) { crmMessage("error", `Could not disconnect Mastodon: ${error.message}`); }
+  }
+
+  async function logCrmToot(contactId) {
+    const contact = crmContactById(contactId);
+    const url = String(prompt(`Link to the toot to log on ${crmContactLabel(contact || {})}, e.g. https://mastodon.social/@forkmesh/117441498168443197`) || "").trim();
+    if (!url) return;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/emails/toot"), "POST", { url, contactId });
+      crmMessage("notice", payload.relinked ? "That toot was already logged; its record was refreshed." : `Toot logged on ${crmContactLabel(payload.contact || contact || {})}.`);
+      await loadCrm();
+      if (state.crmView.detailContactId === contactId) renderCrmContactDetail();
+    } catch (error) { crmMessage("error", `Could not log the toot: ${error.message}`); }
   }
 
   async function syncCrmZoho() {
@@ -6212,6 +6271,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       }
       renderCrmDraftsLabel(); crmMessage("error", ""); renderCrm();
       crmRefreshForkMeshAvatars();
+      crmAutoSyncToots();
     } catch (error) {
       if (error.status === 409 && error.payload?.error === "plugin_not_installed") {
         const record = crmSelectedOrg(); if (record) record.installed = false;
@@ -6337,6 +6397,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       }
       const link = event.target.closest("[data-crm-contact-link]");
       if (link) { void copyCrmContactLink(link.dataset.crmContactLink, link); return; }
+      const toot = event.target.closest("[data-crm-contact-toot]");
+      if (toot) { void logCrmToot(toot.dataset.crmContactToot); return; }
       const ai = event.target.closest("[data-crm-contact-ai]");
       if (ai) { detailDialog.close(); openCrmAi(ai.dataset.crmContactAi); return; }
       const advance = event.target.closest("[data-crm-account-advance]");
@@ -6446,6 +6508,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-zoho-connect]`)?.addEventListener("click", () => void connectCrmZoho());
     $(`[data-crm-zoho-exchange]`)?.addEventListener("click", () => void exchangeCrmZohoCode());
     $(`[data-crm-zoho-disconnect]`)?.addEventListener("click", () => void disconnectCrmZoho());
+    $(`[data-crm-mastodon-sync]`)?.addEventListener("click", () => void syncCrmToots(false));
+    $(`[data-crm-mastodon-disconnect]`)?.addEventListener("click", () => void disconnectCrmMastodon());
     $(`[data-crm-mail-box-filter]`)?.addEventListener("change", renderCrmMail);
     $(`[data-crm-mail-groups]`)?.addEventListener("change", (event) => {
       const select = event.target.closest("[data-crm-mail-move]");

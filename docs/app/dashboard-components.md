@@ -56,6 +56,28 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
 - Runner sign-in attention and **Reconnect node**: `fm-label fm-label-lg`
   links in the header, amber; the runner chip turns red when its
   `data-state` is `expired`.
+- Command palette (Ctrl/Command+K, `js/09-daily-interface.js`): styled after
+  macOS Spotlight, `fm-spotlight-*` in the shell. A 20px borderless search
+  field, commands grouped under **Go to** and **Actions** with an icon each,
+  and a footer naming the keys. It is the one floating surface allowed a
+  translucent, blurred fill and a drop shadow, because that is what makes it
+  read as Spotlight. The selected row is a solid blue fill with white text;
+  dark mode uses `rgb(31 111 235)` instead of the theme's lighter primary so
+  white text keeps 4.5:1 contrast. Pointer hover moves the selection without
+  re-rendering. The dialog name, `Filter commands` combobox and option roles
+  are unchanged for `browser_tests/tests/daily-interface.spec.js`.
+
+- Main menu (the header's menu button, `partials/sidebar.html`): two zones
+  instead of six equal columns, because the list kept growing and every link
+  carried the same weight. The left zone is the user's own space: **Workspace**
+  as tiles (Settings added so the grid stays full), installed **Plugins** as an
+  app grid, and **Top repositories** as up to six cards. The right zone,
+  **Explore ForkMesh**, keeps Community, Product, Resources and Company as
+  plain text lists on the header surface, with the legal links under them.
+  The `<a>` markup is unchanged; the layout lives in the shell's CSS (the nav
+  is `display: contents` so its groups sit in the menu's grid areas, keeping
+  the main menu ahead of Top repositories in the DOM). Below 760px it stacks
+  into one column with row-style tiles.
 - Pings dropdown, account menu and the header's **Start an agent** composer:
   `fm-popover` with menu rows; the account menu's log-out rows use
   `fm-menu-item-danger`.
@@ -82,3 +104,13 @@ blankslates and flashes unstyled. They are now listed in
 `dashboard_shell.PACKAGED_PAGE_COPIES` and composed from the shell and
 `partials/views/<id>.html` by `app/tools/build_dashboard_assets.py`;
 `test_dashboard_composer.py` fails when a copy differs from the composed page.
+
+## Text field focus
+
+Text fields (inputs, selects, textareas) take a 1px primary outline drawn on
+their own border when focused, instead of the shared 3px offset ring that
+buttons and links keep. The user found the ring "too much" on the repository
+clone popover, where the read-only URL field is focused and selected as soon
+as the popover opens; on a field the thin outline reads as a highlighted
+border rather than a halo. Checkboxes, radios, ranges and file pickers keep the
+shared ring.
