@@ -8,6 +8,7 @@
 // RelaySwitchController, whose overlay covers the app while the project underneath is replaced.
 
 import FMAccount
+import FMApi
 import FMBase
 import FMChat
 import FMNet
@@ -249,6 +250,7 @@ struct ProjectSwitcher: View {
                             }
                             ProjectSwitcherRow(
                                 info: entry.element,
+                                online: entry.element.active && model.connection == .connected,
                                 onTap: entry.element.active || model.canSwitch
                                     ? { switchTo(entry.element.relay) } : nil,
                                 onChooseInstance: { choosingInstance = entry.element.relay })
@@ -270,6 +272,7 @@ struct ProjectSwitcher: View {
             }
             .padding(FmSpace.x4)
         }
+        .task { await model.refreshStatuses() }
     }
 
     /// The switch replaces the whole app underneath this drawer, so the drawer closes first.
@@ -313,6 +316,7 @@ final class ProjectHome {
 struct ProjectSwitcherRow: View {
     @Environment(\.fmPalette) private var fm
     let info: RelayRowInfo
+    var online: Bool = false
     let onTap: (() -> Void)?
     var onChooseInstance: (() -> Void)? = nil
 
@@ -357,18 +361,59 @@ struct ProjectSwitcherRow: View {
         .accessibilityIdentifier("project-choose-instance")
     }
 
-    private var subtitle: some View {
-        (Text(info.relay.displayOrigin).foregroundColor(fm.textSecondary)
-            + Text(" · ").foregroundColor(fm.textTertiary)
-            + Text(info.who).foregroundColor(info.signedIn ? fm.success : fm.textTertiary))
-            .fmText(.bodySmall)
-            .lineLimit(1)
-            .truncationMode(.tail)
+    @ViewBuilder private var subtitle: some View {
+        if info.signedIn {
+            VStack(alignment: .leading, spacing: FmSpace.x1) {
+                Text(info.relay.displayOrigin)
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                UserStatusBuilder(status: info.userStatus) { (visible: UserStatus) in
+                    account(visible)
+                }
+            }
+        } else {
+            (Text(info.relay.displayOrigin).foregroundColor(fm.textSecondary)
+                + Text(" · ").foregroundColor(fm.textTertiary)
+                + Text(info.who).foregroundColor(fm.textTertiary))
+                .fmText(.bodySmall)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    private func account(_ visible: UserStatus) -> some View {
+        HStack(spacing: FmSpace.x2) {
+            FmAvatar(name: info.account, avatarPng: info.avatarPng, size: 22, fontSize: 11)
+                .overlay(alignment: .bottomTrailing) {
+                    if online || visible.away {
+                        PresenceDot(online: true, away: visible.away, size: 8)
+                            .background(Circle().fill(fm.bgRaised).padding(-1.5))
+                            .offset(x: 2, y: 2)
+                    }
+                }
+            (Text(info.account).foregroundColor(fm.success)
+                + Text(ProjectSwitcherRow.statusLine(visible)).foregroundColor(fm.textSecondary))
+                .fmText(.bodySmall)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    static func statusLine(_ visible: UserStatus) -> String {
+        var parts: [String] = []
+        if visible.hasCustom {
+            parts.append([visible.emoji, visible.text].filter { !$0.isEmpty }.joined(separator: " "))
+        }
+        if visible.away { parts.append("Away") }
+        return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
     }
 
     private var accessibility: String {
         let state: String = info.active ? "Active. " : ""
-        return "\(info.relay.label), \(info.relay.displayOrigin). \(state)\(info.who)"
+        let status: String = info.signedIn ? info.userStatus.describe(Date()) : ""
+        let tail: String = status.isEmpty ? "" : ". Status: \(status)"
+        return "\(info.relay.label), \(info.relay.displayOrigin). \(state)\(info.who)\(tail)"
     }
 }
 

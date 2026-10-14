@@ -18,6 +18,9 @@ public struct RelayRowInfo: Equatable, Identifiable, Sendable {
     /// The host, or "On this network", shown before `who` when the title does not already say it.
     public let place: String
     public let removable: Bool
+    public var account: String = ""
+    public var avatarPng: String = ""
+    public var userStatus: UserStatus = .empty
 
     public var id: String { relay.id }
 }
@@ -41,6 +44,8 @@ public final class RelaySettingsModel {
     @ObservationIgnored public let relay: RelayService
     @ObservationIgnored public let switcher: RelaySwitchController?
     @ObservationIgnored let probeFactory: () -> RelayProbe
+    @ObservationIgnored let http: HTTPClient?
+    public private(set) var statuses: [String: UserStatus] = [:]
 
     /// Relay id being tested, so only that row shows a spinner.
     public private(set) var testing = ""
@@ -48,13 +53,14 @@ public final class RelaySettingsModel {
 
     public init(
         settings: SettingsService, auth: AuthService, relay: RelayService, switcher: RelaySwitchController?,
-        probe: @escaping () -> RelayProbe
+        probe: @escaping () -> RelayProbe, http: HTTPClient? = nil
     ) {
         self.settings = settings
         self.auth = auth
         self.relay = relay
         self.switcher = switcher
         self.probeFactory = probe
+        self.http = http
     }
 
     public var busy: Bool { switcher?.busy ?? false }
@@ -77,10 +83,49 @@ public final class RelaySettingsModel {
             } else {
                 place = ""
             }
+            let active = profile.id == activeId
             return RelayRowInfo(
-                relay: profile, active: profile.id == activeId, who: who, signedIn: session != nil, place: place,
-                removable: !profile.builtIn)
+                relay: profile, active: active, who: who, signedIn: session != nil, place: place,
+                removable: !profile.builtIn, account: session?.nodeName ?? "", avatarPng: session?.avatarPng ?? "",
+                userStatus: session == nil ? .empty : active ? relay.ownStatus : statuses[profile.id] ?? .empty)
         }
+    }
+
+    public func refreshStatuses() async {
+        guard let http else { return }
+        let activeId = settings.relays.activeId
+        var reads: [(String, URL, String)] = []
+        for profile in settings.relays.relays where profile.id != activeId && profile.hasInstance {
+            guard let token = auth.sessionForRelay(profile.id)?.sessionToken, !token.isEmpty,
+                let url = URL(string: "\(profile.httpOrigin)/api/accounts/user-status")
+            else { continue }
+            reads.append((profile.id, url, token))
+        }
+        if reads.isEmpty { return }
+        let found = await withTaskGroup(of: (String, UserStatus?).self) { group in
+            for (id, url, token) in reads {
+                group.addTask { (id, await RelaySettingsModel.readStatus(http, url: url, token: token)) }
+            }
+            var out: [String: UserStatus] = [:]
+            for await (id, status) in group {
+                if let status { out[id] = status }
+            }
+            return out
+        }
+        statuses.merge(found) { _, new in new }
+    }
+
+    nonisolated static func readStatus(_ http: HTTPClient, url: URL, token: String) async -> UserStatus? {
+        let request = HTTPRequest(
+            method: "POST", url: url,
+            headers: [
+                "Accept": "application/json", "Content-Type": "application/json", "Authorization": "Bearer \(token)",
+            ],
+            body: Data("{}".utf8), timeout: 8)
+        guard let response = try? await Deadline.send(http, request, seconds: 8), response.status == 200 else {
+            return nil
+        }
+        return UserStatus(json: response.jsonObject["userStatus"])
     }
 
     /// Optional features the active relay does not serve.
