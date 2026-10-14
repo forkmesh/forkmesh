@@ -810,6 +810,7 @@ func (r *actionsRunner) execute(ctx context.Context, cancel context.CancelFunc, 
 	if note != "" {
 		r.appendLog(run.ID, note)
 	}
+	_ = removeOwnCloneUnder(r.runDirectory(run.ID), filepath.Join(r.runDirectory(run.ID), "work"))
 	r.mu.Lock()
 	if live := r.findRunLocked(run.ID); live != nil {
 		live.Status = status
@@ -831,7 +832,6 @@ func (r *actionsRunner) execute(ctx context.Context, cancel context.CancelFunc, 
 	r.running = 0
 	r.saveLocked()
 	r.mu.Unlock()
-	_ = removeOwnCloneUnder(r.runDirectory(run.ID), filepath.Join(r.runDirectory(run.ID), "work"))
 	log.Printf("mirror actions run #%d %q for %s/%s ended %s", run.ID,
 		run.WorkflowName, run.Owner, run.Repository, status)
 	r.startNext()

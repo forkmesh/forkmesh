@@ -108,6 +108,24 @@
       ]
     },
     {
+      "id": "security-guard-contracts",
+      "category": "security",
+      "command": [
+        "{python}",
+        "tools/run_critical_tests.py",
+        "security"
+      ]
+    },
+    {
+      "id": "mirror-server-go-tests",
+      "category": "regression",
+      "command": [
+        "{python}",
+        "tools/run_critical_tests.py",
+        "go"
+      ]
+    },
+    {
       "id": "performance-budgets",
       "category": "performance",
       "command": [
@@ -377,6 +395,8 @@
     "core": [
       "python-syntax",
       "security-privacy-contracts",
+      "security-guard-contracts",
+      "mirror-server-go-tests",
       "private-surface-confidentiality",
       "external-dependency-map",
       "collaboration-conformance",
@@ -402,6 +422,8 @@
     "release": [
       "python-syntax",
       "security-privacy-contracts",
+      "security-guard-contracts",
+      "mirror-server-go-tests",
       "private-surface-confidentiality",
       "external-dependency-map",
       "collaboration-conformance",

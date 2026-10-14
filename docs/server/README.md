@@ -117,6 +117,11 @@ forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json --check
 forkmesh-mirror-node --config /etc/forkmesh/mirror-node.json --preflight --json
 ```
 
+`python3 tools/run_critical_tests.py go` runs the same tests offline
+(`GOTOOLCHAIN=local`, `GOPROXY=off`); CI (`.forkmesh/ci.yml`), the quality
+gate and the auto-deploy gate all run it, so a failing Go test blocks a
+deploy. Until 2026-10-15 no gate ran them and two had broken unnoticed.
+
 `python3 tools/next_fleet.py install nN --steps daemon` builds and installs
 it on a core or runner. Gateway tests are Python
 (`app/tests/test_mirror_gateway*.py`, `app/tests/test_headless_mirror_*.py`).

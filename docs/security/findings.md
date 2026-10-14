@@ -9,8 +9,13 @@ the `security` department and appear here only once their fix is on main.
 Update the checkpoint line after each review.
 
 Status words: **Fixed** means the fix is on main and the Guard test fails
-without it. **Fixed, unguarded** means no test guards it yet. **Partial** and
-**Open** are used only for items already public. Add a finding as one row;
+without it, and the guard runs in a gate: the `security` suite of
+`tools/run_critical_tests.py` (CI, the quality gate and the auto-deploy
+must-pass set) holds the S-2, S-5 and C-H5 guards, the account TOTP gate and
+the destructive-delete contract; the Go guards run with `go test` in
+`server/` in the same gates. Until 2026-10-15 none of these ran in any gate.
+**Fixed, unguarded** means no test guards it yet. **Partial** and **Open** are
+used only for items already public. Add a finding as one row;
 the last cell names the guard test (paths must exist).
 
 ## Fixed

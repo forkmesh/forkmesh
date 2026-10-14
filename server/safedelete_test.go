@@ -142,3 +142,25 @@ func TestRemoveTreeUnderDeletesOnlyWhatIsAllowed(t *testing.T) {
 		t.Fatal("own clone survived")
 	}
 }
+
+func TestSafeDeleteCleanResolvesTheDeepestExistingAncestor(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := safeDeleteClean(filepath.Join(link, "missing", "deeper", "leaf")),
+		filepath.Join(real, "missing", "deeper", "leaf"); got != want {
+		t.Fatalf("safeDeleteClean = %s want %s", got, want)
+	}
+	if got, want := safeDeleteClean(filepath.Join(link, "leaf")), filepath.Join(real, "leaf"); got != want {
+		t.Fatalf("safeDeleteClean = %s want %s", got, want)
+	}
+	if err := agentWorkOutsideNodeKey(filepath.Join(link, "identity", "agent-jobs", "work"),
+		filepath.Join(real, "identity", "ed25519.pem")); err == nil {
+		t.Fatal("a work root under the key folder was accepted through a symlinked parent")
+	}
+}

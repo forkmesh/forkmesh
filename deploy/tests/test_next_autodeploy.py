@@ -640,11 +640,86 @@ def test_new_failures_against_the_deployed_base_show_their_output(tmp_path, monk
     monkeypatch.setattr(pipeline, "pytest_quiet", lambda work, venv, path: (
         path, 1 if "FAILED" in outputs[path][-1] else 0,
         auto.failing_ids(outputs[path]), outputs[path]))
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {"server": (0, set(), [])})
     with pytest.raises(auto.ToolError, match="test_rekey.py::test_columns"):
         pipeline.test_gate("target", "base")
     text = "\n".join(log.lines)
     assert "code_challenges missing" in text
     assert "known breakage" not in text
+
+
+def test_a_failing_go_test_fails_the_gate_with_its_output(tmp_path, monkeypatch):
+    log = auto.Log(echo=False)
+    pipeline = auto.Pipeline(tmp_path, log, state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    monkeypatch.setattr(pipeline, "archive", lambda commit, work: None)
+    monkeypatch.setattr(pipeline, "venv", lambda src: tmp_path / "venv")
+    monkeypatch.setattr(pipeline, "prestage", lambda work, venv: None)
+    monkeypatch.setattr(pipeline, "test_files", lambda src: [])
+    lines = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted", "FAIL"]
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
+        "server": (1, auto.failing_go_ids("server", lines), lines)})
+    with pytest.raises(auto.ToolError, match="server::TestAgentWork"):
+        pipeline.test_gate("target", "base")
+    assert "key folder accepted" in "\n".join(log.lines)
+
+
+def test_go_tests_run_offline_in_the_sandbox_with_the_host_toolchain(tmp_path, monkeypatch):
+    root = tmp_path / "goroot"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "go").write_text("")
+    monkeypatch.setattr(auto.shutil, "which",
+                        lambda name: str(root / "bin" / "go") if name == "go" else "/usr/bin/" + name)
+    seen = []
+
+    def fake_stream(command, say, **_kwargs):
+        seen.append(command)
+        say("ok  \tforkmesh.com/mirror-node\t1.0s")
+        return 0
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    work = tmp_path / "work"
+    results = pipeline.go_tests(work, tmp_path / "venv")
+    assert results == {"server": (0, set(), ["ok  \tforkmesh.com/mirror-node\t1.0s"])}
+    command = seen[0]
+    assert "--unshare-all" in command
+    assert command[-5:] == [str(root.resolve() / "bin" / "go"), "test", "-C", "server", "./..."]
+    pairs = {command[i + 1]: command[i + 2] for i, item in enumerate(command) if item == "--setenv"}
+    assert pairs["GOPROXY"] == "off" and pairs["GOTOOLCHAIN"] == "local"
+    assert pairs["GOCACHE"] == str(work / "gocache")
+    assert pairs["PATH"].startswith(str(root.resolve()) + "/bin:")
+    assert ["--ro-bind", str(root.resolve()), str(root.resolve())] == command[
+        command.index(str(root.resolve())) - 1:command.index(str(root.resolve())) + 2]
+
+
+def test_the_gate_refuses_to_pass_without_a_go_toolchain(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto.shutil, "which", lambda name: None)
+    monkeypatch.setattr(auto, "GO_FALLBACKS", (str(tmp_path / "missing" / "go"),))
+    with pytest.raises(auto.ToolError, match="go is required"):
+        auto.go_root()
+    fallback = tmp_path / "usr-local-go" / "bin" / "go"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("")
+    monkeypatch.setattr(auto, "GO_FALLBACKS", (str(tmp_path / "missing" / "go"), str(fallback)))
+    assert auto.go_root() == (tmp_path / "usr-local-go").resolve()
+
+
+def test_the_critical_security_suite_must_pass_before_a_deploy(tmp_path):
+    import ast
+    root = Path(__file__).resolve().parents[2]
+    runner = ast.parse((root / "tools" / "run_critical_tests.py").read_text(encoding="utf-8"))
+    suites = next(ast.literal_eval(node.value) for node in runner.body
+                  if isinstance(node, ast.Assign)
+                  and any(getattr(t, "id", "") == "PYTEST_SUITES" for t in node.targets))
+    assert suites["security"]
+    for item in suites["security"]:
+        assert item in auto.MUST_PASS
+    assert auto.GO_TEST_MODULES == ("server",)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    files = pipeline.test_files(root)
+    assert set(suites["security"]) <= set(files)
 
 
 def test_markdown_under_roll_prefixes_never_needs_a_roll():
