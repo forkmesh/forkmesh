@@ -220,7 +220,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 MessagesConversationView(
                     hub: hub, onBack: onOpenChannels, showsHeader: showsHeader, drawer: drawer,
                     actions: { (row: ChatRow) in actions(for: row) }, onRoute: onRoute, draft: $draft,
-                    focused: $composerFocused, onSend: send, notice: $notice)
+                    focused: $composerFocused, onSend: { send() }, notice: $notice)
             } else {
                 roomLayout
             }
@@ -265,7 +265,7 @@ private struct ChatTranscript<Drawer: View>: View {
                     draft = (draft.isEmpty || draft.hasSuffix(" ") ? draft : draft + " ") + text
                     composerFocused = true
                 },
-                onRoute: onRoute, onAddPeople: addPeopleAction)
+                onRoute: onRoute)
         }
         .alert(
             broadcast?.title ?? "", isPresented: Binding(get: { broadcast != nil }, set: { if !$0 { broadcast = nil } }),
