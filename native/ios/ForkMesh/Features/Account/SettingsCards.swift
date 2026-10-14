@@ -498,7 +498,7 @@ struct DeviceRow: View {
 
     private var tone: Color {
         switch deviceTone(device) {
-        case .offline: return FmColors.offline
+        case .offline: return fm.offline
         case .success: return fm.success
         case .warning: return fm.warning
         }

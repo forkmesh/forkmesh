@@ -89,6 +89,28 @@ Passkeys/WebAuthn and QR device linking are not rows; see section 2.3.
 | 19 | Theme, accents, frosted surfaces, design kit | **Done**: `NI/ForkMesh/Theme/*`, `NI/ForkMesh/Kit/*` | **Done**: `A/ui/theme/*`, `A/ui/kit/*` | — | — |
 | 20 | World (the `world-general` room plus the external World link) | **Done**: `HomeShell.swift` (`FORKMESH_WORLD_URL`) | **Missing** | — | — |
 
+Light-mode text contrast (2026-10-13). Settings subtitles, device timelines,
+status badges and placeholders were hard to read in light mode: tertiary text
+was 40% black (about 2.7:1 on the page), the warning amber 3.4:1, and the
+offline grey 2.3:1. Every light-mode text colour now clears WCAG AA (4.5:1)
+on `bgBase`, `bgRaised` and `bgOverlay` and inside its own 11% status-badge
+tint. Both `FmColors.swift` and `ForkMeshTheme.kt` carry the same values:
+
+| Token | Was | Now | Contrast on `bgBase` |
+|---|---|---|---|
+| `textSecondary` | 60% `#0A0A0A` | 72% (`0xB8`) | 8.0:1 |
+| `textTertiary` | 40% | 60% (`0x99`) | 5.1:1 |
+| `success` | `#148A45` | `#0F7A3B` | 5.1:1 |
+| `warning` | `#B7791F` | `#8F5A0A` | 5.4:1 |
+| `offline` (palette, light only) | `#A0A7B2` | `#5F6672` (`offlineOnLight`) | 5.4:1 |
+
+Dark mode is unchanged. `FmColors.offline` stays the raw grey for presence
+dots; the Settings device rows and relay badge read the palette's `offline`, so
+they get the darker grey in light mode. `textDisabled` stays 25%, since
+disabled controls and chevrons are not body text. The accents are unchanged:
+the default blue `#007AFF` is 4.0:1 on white and teal 3.7:1, so they suit
+buttons and larger text rather than small captions.
+
 ### 1.4 Code, repositories and Git
 
 | # | Feature | iOS native | Android native | Effort | Depends on |
