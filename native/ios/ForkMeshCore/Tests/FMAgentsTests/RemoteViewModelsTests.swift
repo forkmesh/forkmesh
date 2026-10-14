@@ -1,5 +1,6 @@
 import FMApi
 import FMBase
+import FMChat
 import FMControl
 import Foundation
 import XCTest
@@ -77,6 +78,23 @@ final class RemoteViewModelsTests: XCTestCase {
         await other.prepare()
         _ = await other.run()
         XCTAssertFalse(other.conflicted)
+        XCTAssertEqual(other.errorText, AgentOpsClient.describe(code: "merge_failed"))
+    }
+
+    @MainActor func testAFailedMergeSaysWhyWhenTheDesktopDoes() async {
+        let channel = FakeAgentOpsChannel()
+        channel.reply("agentops.prepare", confirmationJSON("merge", typeToConfirm: "agent/fix"))
+        channel.failures["agentops.merge"] = LocalControlException(
+            "merge_failed", message: " Couldn't merge agent/fix: main has uncommitted changes. ")
+        let model = MergeCleanupModel(client: AgentOpsClient(channel: channel), sessionId: 7)
+        await model.prepare()
+        let ok = await model.run()
+        XCTAssertFalse(ok)
+        XCTAssertEqual(
+            model.errorText, "The merge did not finish. Couldn't merge agent/fix: main has uncommitted changes.")
+        XCTAssertEqual(
+            AgentOpsClient.describe(LocalControlException("merge_failed", message: "  ")),
+            AgentOpsClient.describe(code: "merge_failed"))
     }
 
     @MainActor func testConflictFixSendsOnceAndExplainsAFailure() async {
