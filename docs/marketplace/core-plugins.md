@@ -73,6 +73,16 @@ server and web, the project's `project.json` `created` on desktop (the home
 project counts as old), and a per-project legacy marker on phones (a project
 added on the phone is marked new when it is added).
 
+Answers with no row that step 1 to 3 do not cover (not default, no
+`installedBefore`, no per-account data hook) carry `"unchosen": true`
+(`_unchosen`). The account has never chosen the package, so a desktop that
+has its own stored install keeps it and posts an install to the account
+(`PackageRegistry::hasStoredInstall`, `MainWindow::applyAccountPackages`).
+This keeps desktop installs made while a package was desktop-only, such as
+`voice-changer` before 1.1.0 added its web page and account sync. Removing
+a package stores a row with `installed: false`, so a removal is never undone
+this way.
+
 ### Projects
 
 The web has no projects and uses the account answer. Desktop and phones:

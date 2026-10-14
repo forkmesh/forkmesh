@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">The Face Changer page showing a stand-in face over a blurred room, with Face, Background and Voice pickers and Record, Snapshot and Pop out buttons</title>
+  <defs>
+    <linearGradient id="room" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b4a63"/>
+      <stop offset="1" stop-color="#7d8aa3"/>
+    </linearGradient>
+    <clipPath id="stage"><rect width="780" height="438" rx="12"/></clipPath>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="14"/></filter>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e2b48f"/>
+      <stop offset="1" stop-color="#c98f69"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="64" y="84" font-size="30" font-weight="600" fill="#f4f5f7">Face Changer</text>
+    <text x="64" y="114" font-size="16" fill="#9aa3b2">A stand-in face, a new background and a new voice · share into any call or meeting app · video stays on your device</text>
+    <g transform="translate(64,146)">
+      <rect width="780" height="438" rx="12" fill="#0b0d12"/>
+      <g clip-path="url(#stage)">
+        <rect width="780" height="438" rx="12" fill="url(#room)"/>
+        <g filter="url(#soft)" opacity=".9">
+          <rect x="40" y="60" width="180" height="260" rx="10" fill="#5b6b86"/>
+          <rect x="560" y="40" width="190" height="150" rx="10" fill="#a9b6cc"/>
+          <rect x="520" y="250" width="240" height="160" rx="10" fill="#4a566d"/>
+          <circle cx="300" cy="90" r="40" fill="#d8dfeb"/>
+        </g>
+        <path d="M250 438 C260 350 310 318 390 318 C470 318 520 350 530 438 Z" fill="#2f3c58"/>
+        <rect x="362" y="270" width="56" height="60" rx="20" fill="#c98f69"/>
+        <ellipse cx="390" cy="200" rx="88" ry="108" fill="url(#skin)"/>
+        <path d="M302 186 C300 112 344 84 392 84 C446 84 482 116 478 190 C466 150 440 128 392 128 C346 128 316 150 302 186 Z" fill="#3a2a22"/>
+        <ellipse cx="358" cy="204" rx="11" ry="7" fill="#2b2f3a"/>
+        <ellipse cx="422" cy="204" rx="11" ry="7" fill="#2b2f3a"/>
+        <path d="M340 186 Q358 178 374 186" stroke="#3a2a22" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M406 186 Q422 178 440 186" stroke="#3a2a22" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M390 212 L384 244 Q390 250 398 246" stroke="#a8714f" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M360 266 Q390 286 420 266" stroke="#8c4a3c" stroke-width="5" fill="none" stroke-linecap="round"/>
+      </g>
+      <rect x="18" y="18" width="104" height="28" rx="14" fill="#000" opacity=".6"/>
+      <circle cx="38" cy="32" r="6" fill="#e5484d"/>
+      <text x="52" y="37" font-size="14" font-weight="600" fill="#ffffff">0:12</text>
+      <g transform="translate(0,454)">
+        <rect width="112" height="40" rx="8" fill="#e5484d"/><text x="56" y="26" font-size="15" font-weight="600" fill="#ffffff" text-anchor="middle">Record</text>
+        <rect x="126" width="124" height="40" rx="8" fill="#232834" stroke="#2a2f3a"/><text x="188" y="26" font-size="15" font-weight="600" fill="#f4f5f7" text-anchor="middle">Snapshot</text>
+        <rect x="264" width="116" height="40" rx="8" fill="#232834" stroke="#8b5cf6"/><text x="322" y="26" font-size="15" font-weight="600" fill="#f4f5f7" text-anchor="middle">Pop out</text>
+        <rect x="628" width="152" height="40" rx="8" fill="#232834" stroke="#2a2f3a"/><text x="704" y="26" font-size="15" font-weight="600" fill="#f4f5f7" text-anchor="middle">Stop camera</text>
+      </g>
+    </g>
+    <g transform="translate(876,146)">
+      <rect width="340" height="494" rx="12" fill="#1e222b" stroke="#2a2f3a"/>
+      <text x="24" y="40" font-size="13" font-weight="600" fill="#9aa3b2" letter-spacing="1">FACE</text>
+      <rect x="24" y="52" width="292" height="36" rx="8" fill="#171a21" stroke="#2a2f3a"/><text x="38" y="76" font-size="15" fill="#f4f5f7">Maya</text>
+      <text x="24" y="128" font-size="13" font-weight="600" fill="#9aa3b2" letter-spacing="1">BACKGROUND</text>
+      <g transform="translate(24,140)">
+        <rect width="88" height="56" rx="6" fill="#232834" stroke="#2a2f3a"/>
+        <rect x="102" width="88" height="56" rx="6" fill="#6f7d96" stroke="#8b5cf6" stroke-width="2"/>
+        <rect x="204" width="88" height="56" rx="6" fill="#4b6a8a" stroke="#2a2f3a"/>
+        <rect y="68" width="88" height="56" rx="6" fill="#7a6a58" stroke="#2a2f3a"/>
+        <rect x="102" y="68" width="88" height="56" rx="6" fill="#3f5866" stroke="#2a2f3a"/>
+        <rect x="204" y="68" width="88" height="56" rx="6" fill="#232834" stroke="#5b6475" stroke-dasharray="4 3"/>
+        <text x="248" y="102" font-size="12" fill="#9aa3b2" text-anchor="middle">Your photo</text>
+      </g>
+      <text x="24" y="308" font-size="13" font-weight="600" fill="#9aa3b2" letter-spacing="1">VOICE</text>
+      <rect x="24" y="320" width="292" height="36" rx="8" fill="#171a21" stroke="#2a2f3a"/><text x="38" y="344" font-size="15" fill="#f4f5f7">Match face</text>
+      <rect x="24" y="370" width="148" height="36" rx="8" fill="#232834" stroke="#8b5cf6"/><text x="98" y="394" font-size="14" font-weight="600" fill="#f4f5f7" text-anchor="middle">Hear myself</text>
+      <text x="24" y="436" font-size="13" fill="#9aa3b2">Voice: Maya</text>
+      <text x="24" y="462" font-size="13" fill="#9aa3b2">Headphones detected.</text>
+    </g>
+  </g>
+</svg>

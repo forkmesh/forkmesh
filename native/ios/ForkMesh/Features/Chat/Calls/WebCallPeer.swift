@@ -116,6 +116,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     private var nextId = 1
     private var closed = false
     private var voiceObserver: (@MainActor (String) -> Void)?
+    private var depthCamera: CallDepthCamera?
     var previewing = false
 
     init(onDispose: @escaping @MainActor (WebCallPeer) -> Void) {
@@ -124,6 +125,12 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(proxy, name: "fmCall")
+        if CallDepthCamera.available {
+            configuration.userContentController.addUserScript(
+                WKUserScript(
+                    source: "window.FmCallDepthCamera = { available: true };", injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true))
+        }
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
         webView.backgroundColor = .black
@@ -190,6 +197,13 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
                 let reply = await CallFaceLandmarks.detect(dataURL: image, landmarks: landmarks, mask: mask, accurate: accurate)
                 self?.replyLandmarks(id: id, regions: reply)
             }
+        case "camera":
+            controlCamera(
+                id: message["id"]?.intValue ?? 0, op: message["op"]?.text ?? "",
+                landmarks: message["landmarks"]?.boolValue ?? false, mask: message["mask"]?.boolValue ?? false)
+        case "frame-done":
+            depthCamera?.frameDone(
+                landmarks: message["landmarks"]?.boolValue ?? false, mask: message["mask"]?.boolValue ?? false)
         case "voice":
             voiceObserver?(message["id"]?.text ?? "")
         case "live":
@@ -206,6 +220,62 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         webView.evaluateJavaScript(
             "window.fmCallLandmarks && window.fmCallLandmarks(\(id), \(JSON.encode(regions)))",
             completionHandler: nil)
+    }
+
+    private func controlCamera(id: Int, op: String, landmarks: Bool, mask: Bool) {
+        switch op {
+        case "start":
+            guard !closed, CallDepthCamera.trueDepth != nil else {
+                replyCamera(id: id, error: "no_camera")
+                return
+            }
+            let camera = depthCamera ?? makeDepthCamera()
+            camera.start(landmarks: landmarks, mask: mask) { [weak self] failure in
+                Task { @MainActor in self?.replyCamera(id: id, error: failure) }
+            }
+        case "stop":
+            guard let camera = depthCamera else {
+                replyCamera(id: id, error: nil)
+                return
+            }
+            camera.stop { [weak self] in
+                Task { @MainActor in self?.replyCamera(id: id, error: nil) }
+            }
+        default:
+            replyCamera(id: id, error: "unknown_camera_operation")
+        }
+    }
+
+    private func makeDepthCamera() -> CallDepthCamera {
+        let camera = CallDepthCamera()
+        camera.onFrame = { [weak self] payload in
+            Task { @MainActor in self?.pushFrame(payload) }
+        }
+        camera.onFailure = { [weak self] reason in
+            Task { @MainActor in self?.cameraFailed(reason) }
+        }
+        depthCamera = camera
+        return camera
+    }
+
+    private func replyCamera(id: Int, error: String?) {
+        guard !closed, id > 0 else { return }
+        var reply = JSONObject()
+        reply["ok"] = .bool(error == nil)
+        if let error { reply["error"] = .string(error) }
+        webView.evaluateJavaScript(
+            "window.fmCallCamera && window.fmCallCamera(\(id), \(JSON.encode(.object(reply))))", completionHandler: nil)
+    }
+
+    private func pushFrame(_ payload: String) {
+        guard !closed else { return }
+        webView.evaluateJavaScript("window.fmCallFrame && window.fmCallFrame(\(payload))", completionHandler: nil)
+    }
+
+    private func cameraFailed(_ reason: String) {
+        guard !closed else { return }
+        webView.evaluateJavaScript(
+            "window.fmCallCameraFailed && window.fmCallCameraFailed(\(JSON.encode(.string(reason))))", completionHandler: nil)
     }
 
     func offer() async throws -> JSONObject {
@@ -317,6 +387,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         guard !closed else { return }
         webView.evaluateJavaScript("window.fmCall && window.fmCall(0, \"close\", [])", completionHandler: nil)
         closed = true
+        depthCamera?.stop()
+        depthCamera = nil
         let waiters = readyWaiters
         readyWaiters = []
         for waiter in waiters { waiter.resume(throwing: WebCallError.notReady) }

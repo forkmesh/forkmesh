@@ -1,7 +1,7 @@
 # Voice Changer
 
 Talk in another voice on any call or meeting app, from the ForkMesh desktop
-app. Free, from the ForkMesh Market.
+app, or try the voices on the web dashboard. Free, from the ForkMesh Market.
 
 - `content/desktop/VoiceEngine.{h,cpp}`: the voice engine, plain C++ with no
   Qt, about 35 ms of latency. Each 21 ms STFT frame is split into source
@@ -46,6 +46,15 @@ app. Free, from the ForkMesh Market.
   desktop with `REQUEST_PROOF`. `GET` says whether AI voice design is
   available, and `POST /design` asks the host AI (`runtime.ai_json`) for
   clamped settings. Everything except AI design works with no account at all.
+
+- `content/web/view.html` and `content/web/page.js`: the dashboard page at
+  `/dashboard/voice-changer`. It runs the call voice changer
+  (`app/public/chat-call-voice.js`, `createVoiceStage`, through
+  `createVoicePreview` and `mountVoicePreviewControls`) on the microphone:
+  pick a voice, "Hear myself" with headphones, read your usual pitch, the
+  pitch you speak at and the pitch the voice aims for, and record a clip to
+  download. Shared page glue is `/call-studio.js`. It does not create a
+  microphone other apps can pick; that stays the desktop page's job.
 
 Tests: `python3 -m pytest marketplace/packages/voice-changer/tests` builds
 and runs `content/desktop/tests/test_voice_engine.cpp` (g++) and
