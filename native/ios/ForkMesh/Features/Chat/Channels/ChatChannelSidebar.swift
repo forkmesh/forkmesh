@@ -26,6 +26,8 @@ struct ChatChannelSidebar: View {
     @State private var inviting: String?
     @State private var managing: OfficeRoom?
     @State private var leaving: String?
+    @State private var deleting: String?
+    @State private var blocking: String?
     @State private var person: ChatPersonKey?
     @State private var showingOnline: Bool = false
 
@@ -166,6 +168,28 @@ struct ChatChannelSidebar: View {
             }
         } message: {
             Text("It disappears from this phone. Messages others send there stop arriving here.")
+        }
+        .confirmationDialog(
+            "Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let conversation = deleting { hub.deleteConversation(conversation) }
+                deleting = nil
+            }
+        } message: {
+            Text("It is removed from this phone only, and comes back if they message you again.")
+        }
+        .confirmationDialog(
+            "Block \(blocking ?? "")?", isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                if let name = blocking { hub.setBlocked(name, true) }
+                blocking = nil
+            }
+        } message: {
+            Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
         }
     }
 
@@ -375,6 +399,17 @@ struct ChatChannelSidebar: View {
                 conversationMenu(conversation)
                 if person || conversation == meshConversation {
                     ChatRetentionMenu(hub: hub, conversation: conversation)
+                }
+                if person {
+                    let handle: String = hub.conversationHandle(conversation)
+                    if !handle.isEmpty {
+                        Button(role: .destructive, action: { blocking = handle }) {
+                            Label("Block \(handle)", systemImage: "hand.raised")
+                        }
+                    }
+                    Button(role: .destructive, action: { deleting = conversation }) {
+                        Label("Delete Conversation", systemImage: "trash")
+                    }
                 }
             }
     }

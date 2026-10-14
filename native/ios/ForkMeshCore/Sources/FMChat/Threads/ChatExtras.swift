@@ -246,6 +246,7 @@ public final class ChatExtras {
         switch type {
         case "chat", "dm":
             rememberFile(frame)
+            stopTyping(senderId, target: conversation.hasPrefix("@") ? "@\(senderId)" : conversation)
             if frame["private"]?.isTrue == true, conversation.hasPrefix("#"), !hiddenChannels.contains(conversation) {
                 if privateChannels.insert(conversation).inserted { changed() }
             }
@@ -280,6 +281,7 @@ public final class ChatExtras {
         switch type {
         case "chat":
             rememberFile(frame)
+            stopTyping(senderId, target: conversation)
             retryPendingEdit(id, conversation: conversation)
         case ChatLookFrames.type:
             applyLook(frame, senderId: senderId, conversation: conversation, selfId: roomSelfId)
@@ -298,6 +300,8 @@ public final class ChatExtras {
             }
         case "delete":
             applyRoomDelete(frame, senderId: senderId, conversation: conversation)
+        case "typing":
+            applyTyping(frame, senderId: senderId, target: conversation, selfId: roomSelfId)
         default:
             break
         }
@@ -475,9 +479,18 @@ public final class ChatExtras {
         }
     }
 
+    private func stopTyping(_ senderId: String, target: String) {
+        guard !senderId.isEmpty, var peers = typingState[target], peers.removeValue(forKey: senderId) != nil else { return }
+        typingState[target] = peers.isEmpty ? nil : peers
+    }
+
     private func applyTyping(_ frame: JSONObject, senderId: String, conversation: String) {
-        if senderId.isEmpty || senderId == selfId || conversation.isEmpty { return }
         let target = conversation.hasPrefix("@") ? "@\(senderId)" : conversation
+        applyTyping(frame, senderId: senderId, target: target, selfId: selfId)
+    }
+
+    private func applyTyping(_ frame: JSONObject, senderId: String, target: String, selfId me: String) {
+        if senderId.isEmpty || senderId == me || target.isEmpty { return }
         var peers = typingState[target] ?? [:]
         if frame["active"]?.isTrue == true {
             let name = String((frame["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))

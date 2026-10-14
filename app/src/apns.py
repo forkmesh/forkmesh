@@ -69,6 +69,7 @@ APNS_KEY_VERSION_MAX = 1_000_000_000
 APNS_OFFICE_CONVERSATION_PREFIX = "#office/"
 APNS_OFFICE_NAME_MAX_CHARS = 32
 APNS_MESH_CONVERSATION = "#mesh"
+APNS_MESH_COLLAPSE_ID = "mesh-room"
 APNS_CONVERSATION_MAX_CHARS = 120
 # APNs refuses a payload over 4 KB; stay under it with room for the envelope.
 APNS_PAYLOAD_MAX_BYTES = 4000
@@ -483,8 +484,10 @@ def alert_payload(alert, topic="", origin=""):
     return encode(kept + "\u2026" if kept else "")
 
 
-def collapse_id_for(topic):
+def collapse_id_for(topic, conversation=""):
     """The apns-collapse-id for a topic, or "" when its alerts must stack."""
+    if topic == APNS_CHAT_TOPIC and conversation == APNS_MESH_CONVERSATION:
+        return APNS_MESH_COLLAPSE_ID
     return str(topic) if topic in APNS_COLLAPSE_TOPICS else ""
 
 
