@@ -116,3 +116,36 @@ access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's
 fediverse posts sit at the bottom as collapsibles.
+
+## Issues, pull requests and discussions
+
+These three tabs follow GitHub's layouts (October 2026, from the user's
+GitHub reference screenshots).
+
+- **Issues and Pull requests lists** share one layout
+  (`data-repo-collection-layout`). On wide screens the views sidebar sits
+  flush against the left edge of the window with a border down its right
+  side, and the list is centred beside it at up to 80rem. "Collapse sidebar"
+  is pinned to the bottom of the sidebar and is shared by both tabs.
+- **Pull request views** are Pull requests, Authored by me and Mentioned, then
+  a Branches link and the base branches of the open pulls. Pulls carry no
+  labels, milestones, assignees or review requests in `pull.md`, so the list
+  offers only filters it can apply: Author, Base (when there is more than one)
+  and Sort. The search box carries them as qualifiers: `is:pr state:open
+  author:… base:… mentions:@me sort:…`. Row icons show the state: open green,
+  merged primary blue, closed red (purple is not a ForkMesh colour).
+- **Pull request page**: no Back button, as on GitHub; the Pull requests tab
+  returns to the list (the same holds for Issues and Discussions). The header
+  is the title and number, the state pill, "wants to merge N commits into
+  `owner/repo:base` from `owner/repo:head`" with a copy button, and boxed
+  section tabs with the diffstat on the right. The description is an
+  avatar-left comment card; commits and bodiless reviews are lines on a
+  timeline rail, and reviews with text are comment cards. The sidebar lists
+  only sections with real data behind them.
+- **Discussions** have a search box (`is:open category:…`), Sort by (latest
+  activity, date created, oldest), Filter (open, closed, all) and New
+  discussion, with Categories on the left and the list on the right. Each row
+  shows the category's emoji, the title, who started it, when, and in which
+  category. There are no vote or reply counts because the list reads only
+  `discussion.md`. New discussion explains that discussions are created from
+  the desktop app, since they are signed by the author's node.
