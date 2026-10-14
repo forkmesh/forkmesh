@@ -1,5 +1,6 @@
 import re
 import urllib.parse
+from html import escape, unescape
 
 UNSUBSCRIBE_KINDS = ("notifications", "general_chat", "channel_unread", "tip",
                      "badge", "reward_wallet_reminder", "package",
@@ -39,8 +40,8 @@ def rewrite_links(html, make_url):
         target = match.group(2)
         if "/api/mail/t/" in target:
             return match.group(0)
-        return "href=%s%s%s" % (match.group(1), make_url(target).replace(
-            "&", "&amp;"), match.group(1))
+        return "href=%s%s%s" % (match.group(1), escape(make_url(unescape(target))),
+                                match.group(1))
     return HREF_RE.sub(replace, html)
 
 
@@ -50,6 +51,10 @@ def add_pixel(html, url):
     if "</body>" in html:
         return html.replace("</body>", tag + "</body>", 1)
     return html + tag
+
+
+def href_target(value):
+    return safe_target(unescape(str(value or "")))
 
 
 def safe_target(value):
