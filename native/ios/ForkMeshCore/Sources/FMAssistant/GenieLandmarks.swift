@@ -56,9 +56,15 @@ public struct GenieLandmark: Equatable, Sendable {
 public enum GenieLandmarks {
     public nonisolated static let cap: Int = 300
     public nonisolated static let refresh: Double = 2
+    public nonisolated static let mainShare: Double = 0.02
+    public nonisolated static let slowest: Double = 30
     public nonisolated static let smallest: CGFloat = 6
     public nonisolated static let largest: Double = 0.35
     public nonisolated static let longest: Int = 80
+
+    public static func spacing(afterScanTaking seconds: Double) -> Double {
+        min(slowest, max(refresh, seconds / mainShare))
+    }
 
     public static func kind(_ traits: GenieTraits, value: String = "", inTabBar: Bool = false) -> GenieLandmarkKind? {
         if traits.contains(.searchField) || traits.contains(.textEntry) { return .field }

@@ -247,27 +247,28 @@ public final class ChatHub: ShellChatBridge {
         restoreHistoryIfNeeded()
         let scope = loadedScope
         if scope.isEmpty { return }
-        history.scheduleSave(scope: scope) { [weak self] in self?.historySnapshot() ?? ChatHistorySnapshot() }
+        history.scheduleSave(scope: scope) { [weak self] in self?.historyParts() ?? ChatHistoryParts() }
     }
 
-    public func historySnapshot() -> ChatHistorySnapshot {
-        var snapshot = ChatHistorySnapshot()
-        snapshot.messages = ChatHistoryCodec.bounded(relay.historySnapshot, retention: retention, now: clock.now)
-        let kept = Set(snapshot.messages.map(\.id))
-        snapshot.replies = extras.snapshotThreads().filter { !isExpired($0.conversation, $0.timestamp) }
-        let replyIds = Set(snapshot.replies.map(\.id))
-        snapshot.replyRoots = extras.snapshotReplyRoots().filter { replyIds.contains($0.key) }
-        let known = kept.union(replyIds)
-        snapshot.reactions = extras.snapshotReactions().filter { known.contains($0.key) }
-        snapshot.reactionOrder = extras.snapshotReactionOrder().filter { known.contains($0.key) }
-        snapshot.edits = extras.snapshotEdits().filter { known.contains($0.key) }
-        snapshot.privateChannels = extras.privateChannels.sorted()
-        snapshot.hiddenChannels = extras.hiddenChannels.sorted()
-        snapshot.hiddenMessages = extras.snapshotHiddenMessages()
-        snapshot.removedMessages = extras.snapshotRemovedMessages()
-        snapshot.looks = extras.snapshotLooks()
-        snapshot.lookEvents = extras.snapshotLookEvents().filter { !isExpired($0.conversation, $0.timestamp) }
-        return snapshot
+    public func historySnapshot() -> ChatHistorySnapshot { historyParts().snapshot }
+
+    public func historyParts() -> ChatHistoryParts {
+        var parts = ChatHistoryParts()
+        parts.conversations = relay.historySnapshot
+        parts.replies = extras.snapshotThreads()
+        parts.replyRoots = extras.snapshotReplyRoots()
+        parts.reactions = extras.snapshotReactions()
+        parts.reactionOrder = extras.snapshotReactionOrder()
+        parts.edits = extras.snapshotEdits()
+        parts.privateChannels = extras.privateChannels
+        parts.hiddenChannels = extras.hiddenChannels
+        parts.hiddenMessages = extras.snapshotHiddenMessages()
+        parts.removedMessages = extras.snapshotRemovedMessages()
+        parts.looks = extras.snapshotLooks()
+        parts.lookEvents = extras.snapshotLookEvents()
+        parts.retention = retention
+        parts.now = clock.now
+        return parts
     }
 
     // MARK: ShellChatBridge
