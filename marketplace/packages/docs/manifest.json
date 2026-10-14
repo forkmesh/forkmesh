@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.1.0",
-  "summary": "The whole ForkMesh documentation library on a rail page, the same pages forkmesh.com/docs serves, plus every open-source dependency with its GitHub repository and top three authors. Browse by area, search every page, even offline.",
+  "version": "1.2.0",
+  "summary": "The ForkMesh documentation library on desktop, iPhone and Android, the same public pages forkmesh.com/docs serves, plus every open-source dependency with its GitHub repository and top three authors. Browse by area and search, even offline.",
   "license": {
     "model": "free-open-source",
     "spdx": "MIT",
@@ -25,6 +25,8 @@
   },
   "entrypoints": {
     "desktop": "builtin:docs",
+    "ios": "builtin:docs",
+    "android": "builtin:docs",
     "settings": "builtin:package"
   },
   "dataLifecycle": {
@@ -57,7 +59,12 @@
   },
   "install": {
     "bundled": true,
-    "default": true
+    "default": true,
+    "sync": "account",
+    "places": [
+      "mobile",
+      "desktop"
+    ]
   },
   "lifecycle": {
     "migrations": []

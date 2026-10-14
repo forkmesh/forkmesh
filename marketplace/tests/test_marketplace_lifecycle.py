@@ -367,7 +367,10 @@ def test_docs_package_bundles_the_web_library():
     assert f'"{(repository / "www" / "docs").as_posix()}/*"' in cmake
     manifest = load_manifest(repository / "marketplace" / "packages" / "docs" / "manifest.json")
     assert manifest["entrypoints"]["desktop"] == "builtin:docs"
-    assert manifest["install"] == {"bundled": True, "default": True}
+    assert manifest["install"] == {
+        "bundled": True, "default": True, "sync": "account", "places": ["mobile", "desktop"],
+    }
+    assert manifest["entrypoints"]["ios"] == manifest["entrypoints"]["android"] == "builtin:docs"
 
 
 def _local_catalog(root: Path):

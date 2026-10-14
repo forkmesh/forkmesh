@@ -3528,6 +3528,38 @@ to turn off and the button stayed.
   (**Remove Tour…**) or the Market; unchanged.
 - Not checked on a device from Linux.
 
+### 2.0.102 Docs: the public documentation library (2026-10-14, iOS and Android)
+
+The user asked for the desktop's Docs plugin in the mobile app as well, showing
+only the public library. Route `.docs` (`Route.Docs` on Android), URL
+`/dashboard/docs` (Android also takes `forkmesh://docs`), Home group App after
+People, gated by the `docs` package (now `sync: "account"`, `default: true`,
+places mobile and desktop), and a native Market destination, so its Market
+page opens it on the phone.
+
+- The screen lists the web library's areas in the website's order, then a
+  Dependencies area. A search box matches every word against titles,
+  summaries, paths and text (title matches first, each hit quoting the line
+  that matched), followed by matching dependencies.
+- A page renders headings, lists, quotes, code, tables and rules. A link to
+  another page pushes it, so Back walks the reading history; a `#section`
+  link scrolls; Previous and Next replace the page; other links go through the
+  app's link opener; "Open on web" opens the forkmesh.com copy.
+- Dependencies: grouped by ecosystem, each with its version, the manifests
+  that use it, its GitHub repository and its top three authors (name, commits,
+  their projects, profile, website).
+- The data is the bundled `native/ios/ForkMesh/Resources/DocsLibrary.json`
+  (Android copies it into its assets as `docs/library.json`), generated from
+  `www/docs` only; see the
+  [package README](../../marketplace/packages/docs/README.md#phones).
+- Code: iOS `FMTools/Docs/` and `ForkMesh/Features/Docs/`
+  ([FMTools](../../native/ios/docs/FMTools.md)); Android
+  `core/.../docs/` and `app/.../feature/docs/` ([ANDROID.md](ANDROID.md)).
+  Tests: iOS `DocsLibraryTests`, `NavigationCatalogTests`, `RouteParserTests`,
+  `PackageGateTests`, `PackageRoutesTests`; Android `DocsLibraryTest`,
+  `NavigationTest`, `PackageGateTest`.
+- Not run on a device from Linux; the iOS views were only parse-checked.
+
 ## 3. Navigation inside a tab
 
 ### 3.1 One `NavigationStack` per tab, with typed routes
@@ -3696,7 +3728,7 @@ returns to where you were. On iPad the same items are sections of the sidebar
 | Business | Market (11.1); CRM (11.3); Marketing (11.4); Analytics (11.5); Competitors (11.6); Ad review (11.7, ad reviewers only); Ledger (11.8). Only packages enabled for the account appear; the rest are in Market. CRM is the exception and always appears: its screen installs it for an owner or admin and tells other members whom to ask |
 | Personal | Vault (11.11–11.12), Coves (16.1), Calories (11.14), Steps, Water, Sleep, Sugar Break and Stretch Break (Pedometer, Water Intake, Sleep, Sugar Break and Stretch Break packages, Apple Health), Glasses Alert (Glasses Alert package: Bluetooth alarm for Meta smart glasses nearby; iOS and Android), Food Guide (Food Guide package: meal ideas from Apple Health nutrition, the calorie budget and ALDI groceries; iOS only), On-device AI (2.33), Activity (#44) |
 | Insights | Stats (12.1), Status (1.18, 12.8), Admin (4.3, 8.9, 12.6–12.7), which only admins see |
-| App | Settings (§13 of DESKTOP_PARITY), Organizations (13.10), Report a bug (#73), Tour (1.15), World (9.22), Sign out |
+| App | Settings (§13 of DESKTOP_PARITY), Organizations (13.10), Docs (2.0.102), Report a bug (#73), Tour (1.15), World (9.22), Sign out |
 
 The hub shows at most five **recent destinations** at the top, so a tool used
 daily is one tap from the hub. Items are never hidden behind a second "More".
@@ -4428,6 +4460,7 @@ destination.
 | Mesh room | `.channel(.mesh)` | Chat | 8.7 | — |
 | Profile of a user or organization (`/@name`) | `.profile(name)` | current | 8.5, 9.4 | WS18 |
 | People: members in campfire rings, profile sheet with Follow and Message | `.people` | current (hub: App) | 8.5, 9.10 | WS18 |
+| Docs: the public documentation library, page reader, dependencies and their top authors | `.docs` | current (hub: App) | — | WS18 |
 | Global search | `.search(query, scope)` | current | 1.5–1.7 | WS8 |
 | Notes, note | `.notes`, `.note(id)` | current (hub) | 10.1, 10.2 | WS15 |
 | Tasks, task | `.tasks(filter)`, `.task(id)` | current (hub) | 2.30, 5.25 | WS15 |

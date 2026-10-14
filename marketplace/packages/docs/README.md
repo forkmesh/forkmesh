@@ -1,9 +1,12 @@
 # Docs
 
-The ForkMesh documentation library on a desktop rail page: every Markdown page
-and data file under `www/docs/`, the same library forkmesh.com/docs renders.
-Free, bundled with the desktop and on by default; remove it from the rail or
-the Market like any other package.
+The ForkMesh documentation library on a desktop rail page and on iPhone and
+Android: every Markdown page and data file under `www/docs/`, the same public
+library forkmesh.com/docs renders, and nothing else. Free, bundled and on by
+default; remove it from the rail, the Home grid or the Market like any other
+package. It is account-synced (`install.sync: "account"`) and offered on
+phones and desktop (`install.places`), so the Market's "Show on" switches
+pick where it appears.
 
 ## What the page does
 
@@ -69,6 +72,33 @@ The loader keeps only `https://github.com/` repository and profile links,
 `http(s)` websites, valid GitHub logins, repository-relative manifest paths,
 and at most three authors, because every link on the page opens in the
 browser.
+
+## Phones
+
+iPhone and Android read one file, `native/ios/ForkMesh/Resources/DocsLibrary.json`
+(schema `forkmesh-docs-library-v1`), written by
+`marketplace/tools/docs_mobile_bundle.py`. It holds the web library's areas,
+then every page of `www/docs` in the web library's order with its title,
+summary, area, forkmesh.com URL and Markdown, then the dependency snapshot.
+The pages come from `app/tools/docs_site.py`'s catalog, the same one that
+builds forkmesh.com/docs, so the phones match the website and cannot pick up
+the internal `docs/` folder.
+
+The iOS app ships the file as a resource (`ForkMesh/` is a synchronized
+group). The Android build copies the same file into its assets, so there is
+one copy in the repository. A checked-in file rather than a build step,
+because the iOS build has no step that can read outside `native/ios`, and
+`www/docs` changes rarely.
+
+```
+python3 marketplace/tools/docs_mobile_bundle.py          # rewrite the bundle
+python3 marketplace/tools/docs_mobile_bundle.py --check  # exit 1 if it is out of date
+```
+
+`marketplace/tools/docs_dependencies.py` rewrites the bundle whenever it writes
+the snapshot. `marketplace/tests/test_docs_dependencies.py` fails when the
+bundle lags `www/docs` or the snapshot, and checks it holds exactly the
+`www/docs` pages.
 
 ## How the documents get in
 

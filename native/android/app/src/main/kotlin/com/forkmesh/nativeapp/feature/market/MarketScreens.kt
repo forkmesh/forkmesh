@@ -119,6 +119,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "calories" -> Route.Calories
     "glassesAlert" -> Route.GlassesAlert
     "people" -> Route.People
+    "docs" -> Route.Docs
     "notes" -> Route.Notes
     "tasks" -> Route.Tasks(null)
     "calendar" -> Route.Calendar(null, CalendarMode.Month)

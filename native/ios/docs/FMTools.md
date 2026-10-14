@@ -404,6 +404,57 @@ receipt reading (`marketplace/packages/calories/README.md`). The iOS app does th
   FMApiViewModels.md) so the shell's prompt bar logs typed text through `logTyped`, and removes it
   when the screen goes away.
 
+## Docs: the public documentation library (`Docs/DocsLibrary.swift`, `Docs/DocsMarkdown.swift`)
+
+The Docs package (`marketplace/packages/docs`, route `.docs`, path segment `docs`, package id
+`docs`, App hub group next to People) shows on iPhone the same public pages forkmesh.com/docs
+serves, and every dependency with its GitHub repository and top three authors. There is no server
+API: the app ships `ForkMesh/Resources/DocsLibrary.json` (schema `forkmesh-docs-library-v1`,
+written by `marketplace/tools/docs_mobile_bundle.py`; regenerate it there, never edit it by hand).
+The model follows the desktop's `DocsLibrary.cpp` so the two behave the same.
+
+- `DocsLibrary(data:) throws` (`DocsLibraryError`: `unreadable`, `wrongSchema`, `empty`) decodes
+  leniently: a malformed entry is dropped, not the whole file. Pages keep the bundle's order; a
+  path that is absolute, contains `..` or repeats is skipped. `areas` (the last is
+  `dependencies`, which has no pages), `documentAreas`, `pages(in:)`, `page(path:)`,
+  `previous`/`next`, `homePath`, `sourceURL(repositoryPath)`.
+- Dependencies are sanitised as on desktop: `repository`, `profile` and `projects` survive only as
+  `https://github.com/...` (profile and projects fall back to the login's GitHub pages), `website`
+  only as http(s), logins must look like GitHub logins, at most three authors, `usedBy` only
+  relative paths. `dependencyGroups` groups by ecosystem in order of first appearance with the
+  desktop's labels (`ecosystemLabel`); `summary`, `versionLabel`, `authorsLabel`,
+  `DocsAuthor.commitsLabel`/`projectsLabel` are the row texts.
+- `search(query, limit:)` needs every whitespace token in the title, description, path or body
+  and scores like the desktop (title phrase +200, title token +150 at the start or +100 elsewhere,
+  description +25, path +15, body occurrences up to 10). The snippet is the first Markdown line with
+  the phrase, else the first body token, without its leading `#>|*+-` or list number and inline
+  markup, cut to 140 characters around the hit; the description stands in when there is none.
+  `searchDependencies(query)` matches title, name, description, ecosystem, repository and author
+  names and logins, exact and prefix title matches first.
+- `resolve(from:href:) -> DocsTarget?` mirrors `DocsLibrary::resolve`: `#x` is `.anchor`; a
+  relative link joined to the page's folder (`.`/`..` folded, query dropped, percent-decoded) is
+  `.page` when it names a page or a folder whose `README.md` is one; `//host` and http(s)/mailto are
+  `.external`, `/abs` is on `webOrigin`, a path under `www/public/` is the website file, and any
+  other repository path opens the source tree. Other schemes resolve to nil. `linkURL(from:href:)`
+  turns a target into the URL the view puts on a link (`fmdocs://page?path=..&fragment=..`,
+  `fmdocs://anchor?fragment=..`, or the external URL) and `DocsLibrary.target(for:)` reads it back.
+- `DocsMarkdown.blocks(markdown)` is a block parser: ATX and setext headings with GitHub anchors
+  (`anchor(_:)`: lowercase, letters, digits, `_` and `-` kept, whitespace to `-`; repeats get `-1`,
+  `-2`), paragraphs, list items with nesting depth from indentation and task boxes, quotes, fenced
+  and indented code (nothing inside a fence is Markdown), pipe tables, rules; HTML comments and
+  tag-only lines are dropped. `DocsInline.runs(text)` splits inline Markdown into `DocsRun`s (bold,
+  italic, code, strike, link href) and drops HTML tags; `DocsMarkdown.plain` is the bare text.
+  Inline parsing lives here rather than in `AttributedString(markdown:)` so it is tested on Linux
+  and links can be rewritten before SwiftUI sees them.
+- App (`ForkMesh/Features/Docs`): `DocsScreen()` loads the bundle once (`DocsBundle.shared`, off the
+  main thread) and lists areas, or page hits and dependencies while searching; `DocsPageScreen`
+  renders the blocks in a `ScrollViewReader`, intercepts link taps with an `OpenURLAction` (anchor
+  scrolls, page pushes another page, external goes through `referenceOpenResult`), has Previous and
+  Next at the foot (they replace the page in place) and Open on web/Share in the toolbar;
+  `DocsDependenciesScreen` and `DocsDependencyScreen` show the dependency list and one dependency.
+  Inline styles are `InlinePresentationIntent`, which Linux Foundation lacks, so `DocsText` is only
+  built by Xcode.
+
 ## Surprises
 
 - The vault's quick unlock uses `ForkMesh/Platform/LocalAuthVaultDeviceAuth.swift` (AppServices);

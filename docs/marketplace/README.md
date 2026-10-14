@@ -310,7 +310,7 @@ clients ignore them.
 | [`competitor`](../../marketplace/packages/competitor/README.md) | extension.native | web, Worker | off | Organization-private competitor list. |
 | [`crm`](../../marketplace/packages/crm/README.md) | extension.native | web, desktop, iOS, Android, Worker | off | Contacts, pipelines, lists, Mastodon and GitHub contributor import, deck links. |
 | [`design-system`](../../marketplace/packages/design-system/README.md) | extension.native | website `/design`, desktop rail link, iOS and Android menu | off (on before 2026-10-11) | Colours, type, spacing, buttons and every icon of web, desktop, iPhone and Android, read from the sources at website build time through the `www.page` socket (2026-10-04). |
-| [`docs`](../../marketplace/packages/docs/README.md) | extension.native | desktop | on | The `www/docs` library (the pages forkmesh.com/docs renders) on a rail page: areas, full-text search, links, outline, backlinks. Embedded through `repositoryResources` (2026-09-29). |
+| [`docs`](../../marketplace/packages/docs/README.md) | extension.native | desktop, iOS, Android | on | The `www/docs` library (the pages forkmesh.com/docs renders) on a rail page: areas, full-text search, links, outline, backlinks. Embedded through `repositoryResources` (2026-09-29). A Dependencies page with GitHub repositories and top authors (1.1.0); on iPhone and Android from the bundle `native/ios/ForkMesh/Resources/DocsLibrary.json`, account-synced (1.2.0). |
 | `discord` ([preview](../../marketplace/packages/discord/preview/README.md)) | extension.native | desktop | on | Discord bot connector. |
 | [`food-guide`](../../marketplace/packages/food-guide/README.md) | extension.native | iOS (`foodGuide`) | off | A Food Guide section with breakfast, lunch and dinner ideas from recipes on the web, made with ALDI groceries, ranked by the calorie budget (Calorie Counter goal), a goal and the nutrient gaps in 14 days of Apple Health nutrition; everything is worked out on the phone (2.0.0, 2026-10-13; 1.0.0 was the Basil agent). |
 | `forkmesh-ide` ([VS Code README](../../marketplace/packages/forkmesh-ide/content/vscode/README.md)) | extension.vscode | catalog only | off | Source for the VS Code extension. |
@@ -450,6 +450,17 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 ## Recent changes
 
+- 2026-10-14: Docs 1.2.0 on iPhone and Android. The user asked for the Docs
+  plugin in the mobile app as well, showing only the public library. Phones
+  ship one generated bundle, `native/ios/ForkMesh/Resources/DocsLibrary.json`
+  (`marketplace/tools/docs_mobile_bundle.py`): every page of `www/docs` with
+  the web catalog's titles, areas, order and URLs (taken from
+  `app/tools/docs_site.py`, so nothing outside `www/docs` can get in), plus the
+  dependency snapshot. iOS ships the file as a resource; the Android build
+  copies it into its assets. The manifest is now `sync: "account"` with
+  `places: ["mobile", "desktop"]`, so a phone can hide or show it like any
+  package; it stays `default: true`. See
+  [the package README](../../marketplace/packages/docs/README.md#phones).
 - 2026-10-14: Docs 1.1.0: a **Dependencies** page. The user asked for the
   documentation plugin to list our dependencies with their GitHub URLs, their
   top three authors' names and links to those authors' projects. The page sits

@@ -235,6 +235,27 @@ class PackageGateTest {
         expect("workflows" !in PackageSurfaces.of(picked::shows).hubItems)
     }
 
+    fun testDocsIsADefaultPackageInTheAppGroup() {
+        assertEq("docs", PackageGate.HUB_ITEMS["docs"])
+        assertEq("docs", PackageGate.ROUTE_KINDS[Route.Kind.Docs])
+        expect("docs" in PackageGate.GATED)
+        assertEq(PackagePhoneSurface.Native("docs"), MarketPackage(id = "docs", name = "Docs").phoneSurface)
+        val removed = PackageSurfaces(setOf("docs"))
+        expect("docs" in removed.hubItems && Route.Kind.Docs in removed.routeKinds && !removed.showsRoute(Route.Docs))
+        expect("docs" !in HubCatalog.groups(guest = true, hidden = removed.hubItems) { true }.flatMap { it.items }.map { it.id })
+        val shown = HubCatalog.groups(guest = true, hidden = PackageSurfaces.ALL.hubItems) { true }
+        assertEq("app", shown.single { group -> group.items.any { it.id == "docs" } }.id)
+        val docs = MarketPackage.fromJson(row("docs", before = null, default = true))!!
+        val fresh = AccountPackagesStore(null, MemoryPrefStore()) { false }.also { it.rememberCatalog(catalog() + docs) }
+        expect(fresh.isInstalled("docs"))
+        expect(!fresh.isInstalled("notes"))
+        val placed = AccountPackagesStore(null, MemoryPrefStore()) { false }.also { it.rememberCatalog(catalog() + docs) }
+        placed.adopt(AccountPackagesState(listOf(AccountPackage("docs", true, places = listOf("mobile", "desktop")))))
+        expect(placed.shows("docs"))
+        placed.adopt(AccountPackagesState(listOf(AccountPackage("docs", false))))
+        expect(!placed.shows("docs"))
+    }
+
     fun testTheMarkerForACreatedProjectIsNewEvenWithAStoredSession() {
         val created = MemoryPrefStore()
         PackageGate.markNewProject(created)
@@ -308,7 +329,7 @@ class PackageGateTest {
         val surfaces = PackageSurfaces(PackageGate.GATED)
         val ids = HubCatalog.groups(guest = false, admin = true, hidden = surfaces.hubItems) { true }.flatMap { it.items }.map { it.id }
         for (core in listOf("market", "settings", "projects", "setStatus", "ads", "admin")) expect(core in ids, core)
-        for (gone in listOf("notes", "allAgents", "teammates", "status", "tour", "designSystem", "world", "orgs", "reportBug", "signOut", "crm", "workflows")) {
+        for (gone in listOf("notes", "allAgents", "teammates", "status", "tour", "designSystem", "world", "orgs", "reportBug", "signOut", "crm", "workflows", "docs")) {
             expect(gone !in ids, gone)
         }
         val guestIds = HubCatalog.groups(guest = true, hidden = surfaces.hubItems) { true }.flatMap { it.items }.map { it.id }
