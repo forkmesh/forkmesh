@@ -714,7 +714,7 @@ def caddy_release(fleet, required=True):
 def caddy_script(settings, binary_sha, dropin, host):
     import next_deploy
     import render
-    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT) + """
+    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT, max_time=CADDY_INSTALL_MAX_TIME) + """
 set -eu
 tarball=/tmp/{tarball}
 stage=$(mktemp -d /var/lib/fmnext-caddy.XXXXXX)
@@ -759,7 +759,7 @@ echo "fmnext-caddy: $({bin} version | cut -d' ' -f1) serving"
 def caddy_debian_script(host):
     import next_deploy
     import render
-    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT) + """
+    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT, max_time=CADDY_INSTALL_MAX_TIME) + """
 set -u
 rm -f {dropin_path}
 systemctl daemon-reload
@@ -909,6 +909,7 @@ def files_script(manifest, archive):
 
 
 CADDY_INSTALL_WAIT = 180
+CADDY_INSTALL_MAX_TIME = 15
 
 RESTART_FAIL2BAN = "systemctl try-restart fail2ban.service || true"
 
