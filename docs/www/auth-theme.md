@@ -14,14 +14,7 @@ tokens for both themes and the light-mode rules that apply them.
 - The dark mappings sit in `@layer auth-page-theme`, so a page's unlayered
   inline rules win in dark mode. The `html.light` rules are unlayered and come
   later, so in light mode they win over a page's inline rules. A page that
-  wants its own light look overrides the tokens, which these rules read, on an
-  element of its own; `login.html` does this on `body[data-fm-auth]`
-  (`docs/app/login-page.md`).
-
-## Recent changes
-
-- 2026-09-27: light mode no longer has a green glow at the top of the page
-  (`--auth-glow: none`) or a green focus ring (`--auth-focus: #57606a`, a
-  neutral grey that also serves as the checkbox accent). The user asked for
-  both to go on the login page, and every page that shares this sheet showed
-  the same green.
+  wants its own light look overrides the tokens on an element of its own;
+  `login.html` does this on `body[data-fm-auth]` (`docs/app/login-page.md`).
+- Light mode has no glow (`--auth-glow: none`) and a neutral grey focus ring
+  and checkbox accent (`--auth-focus: #57606a`).

@@ -28,7 +28,7 @@ native/android `collab/*.kt`.
   as short tone chips with the full label as the accessibility label), the timeline and the
   federated replies. Pull to refresh re-reads the record; a merge from the phone refreshes it too.
   The buttons are the compact tone chips of the agent session's "On the desktop" card
-  (`AgentChipRow` + `FmToneButton`), not the full-width outlined pills the page had before.
+  (`AgentChipRow` + `FmToneButton`).
 - `PullChangesScreen(repo:pull:files:commits:scope:)`: the pull's own patch in
   `DiffReviewStream` (viewed state per file is kept under `owner/name/pull/<n>`), with a Commits
   tab when the pull carries a `commits.mbox`; each commit opens `PatchCommitScreen`. An open
@@ -59,9 +59,8 @@ native/android `collab/*.kt`.
   fail with "Failed: Exception: This device has no signing identity."), `AuthService`,
   `DeviceIdentity`, `AccountFeature.requireAccount/isGuest`. Result sentences go through
   `CollabMessenger.shared` (`notice: FmNotice?`) and show as `CollabNoticeLine()`, an inline line in the
-  flow of each collaboration screen (under the header or tab picker), never a toast: the user asked on
-  2026-10-09 for no toasts anywhere. The issue board shows its move result the same way under its
-  column picker.
+  flow of each collaboration screen (under the header or tab picker), never a toast. The issue board
+  shows its move result the same way under its column picker.
 
 ## Core (FMCode/Collab)
 

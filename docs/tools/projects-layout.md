@@ -1,6 +1,6 @@
 # Projects layout
 
-Since 2026-09-21 ForkMesh keeps everything for one project under one folder.
+ForkMesh keeps everything for one project under one folder.
 The resolver exists twice and the two must agree: `desktop/src/AppPaths.{h,cpp}`
 (desktop) and `tools/forkmesh_paths.py` (every tool; `tools/forkmesh-paths.sh`
 for shell scripts).
@@ -65,7 +65,6 @@ diagnostics and SSH keys at its next start, under its single-instance lock.
 settings, the mirror-fleet SSH key and agent history. `AGENTS.md` forbids
 deleting them; tests that run installers must sandbox `HOME` and `XDG_*_HOME`
 and drop `FORKMESH_HOME` and `FORKMESH_PROJECTS_DIR` (see
-`app/tests/conftest.py`). On 2026-09-22 a test that sandboxed only `HOME`
-inherited `FORKMESH_HOME` and a reinstall erased real data;
-`www/public/install.sh` and `www/public/uninstall.sh` now refuse a data wipe
-from an agent shell or outside `HOME`.
+`app/tests/conftest.py`). `www/public/install.sh` and
+`www/public/uninstall.sh` refuse a data wipe from an agent shell or outside
+`HOME`.

@@ -34,11 +34,10 @@ sessions whose branch no longer exists anywhere.
 
 ## Why "merged by content"
 
-On 2026-09-30, 21 local branches were ahead of `main` only by repeated
-`Merge branch 'main' into …` commits made while their worktrees sat idle; their
-own work had already landed. Counting commits ahead called them ready, and
-merging them would have added empty merge commits to `main`. `prune_merged.py`
-still keeps them, because their tips are not ancestors of `main`.
+A branch can be ahead of `main` only by `Merge branch 'main' into …` commits
+while its own work has already landed; merging it would add an empty merge
+commit, so it counts as merged. `prune_merged.py` still keeps such branches,
+because their tips are not ancestors of `main`.
 
 "Ready" is a git fact, not approval. Before a merge, read the branch-vs-base
 diff: a branch built on a stale tree (a recovered worktree, or an old

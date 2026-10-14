@@ -3,17 +3,7 @@
 The on-device Gemma chat answers from the user's own ForkMesh data, manages
 their CRM, drafts emails, researches on the web and works with their agents.
 `import FMAssistant` (deps FMBase, FMNet, FMAccount, FMApi, FMChat, FMControl,
-FMPackages, FMPlanning, FMLocalAI). Added 2026-10-01.
-
-## Why
-
-The owner asked Gemma "What data do you have access to?" and "List my tasks"
-in Settings › On-device AI › Chat. It answered with generalities and asked
-which tasks: the chat sent a one-line system prompt (104 prompt tokens) and
-`tools: []`, so the model could see nothing. The request was to give Gemma
-access to all ForkMesh data, tools and context. The same day it grew to: access
-to agents (desktop and cloud), full management of the CRM, drafting emails, and
-searching the web for information on contacts.
+FMPackages, FMPlanning, FMLocalAI).
 
 ## Shape
 
@@ -56,7 +46,7 @@ Every list is cut at 25 rows (`ForkMeshToolbox.maxRows`) with a note to narrow t
 
 ## CRM
 
-The CRM organization defaults to the first of the user's organizations with the CRM package installed (`crmOrganizations()`, cached per toolbox); `organization` picks another. A contact can be named by its 32-hex id, exact email, exact name, or a phrase that matches exactly one contact; several matches return their ids instead of guessing, so an update never lands on the wrong person. Create and update run without asking: "fully manage" was the request, every change is visible as a tool row in the chat, and notes are appended, never replaced. Deleting asks first. The server's own rules still apply (`contact_email_exists`, field limits, permissions).
+The CRM organization defaults to the first of the user's organizations with the CRM package installed (`crmOrganizations()`, cached per toolbox); `organization` picks another. A contact can be named by its 32-hex id, exact email, exact name, or a phrase that matches exactly one contact; several matches return their ids instead of guessing, so an update never lands on the wrong person. Create and update run without asking: every change is visible as a tool row in the chat, and notes are appended, never replaced. Deleting asks first. The server's own rules still apply (`contact_email_exists`, field limits, permissions).
 
 ## Email drafts
 
@@ -70,7 +60,7 @@ The phone sits on the owner's LAN next to their desktop and mesh, and a web page
 
 ## Approvals
 
-`approval(for:)` returns a one-line summary for `delete_crm_contact` ("Delete Bob Builder <bob@example.com> from the acme CRM"), `message_agent` ("Send to agent "Fix login bug" in ada/site: "…"") and `stop_agent`. `OnDeviceChatModel` then sets `pendingApproval`, the status line reads "Waiting for your approval", and the tool loop waits on a continuation until `resolveApproval(_:)`: `OnDeviceChatView` shows the summary above the composer with **Allow** and **Decline**. Declining answers the model "The user declined this, so nothing was done… Do not retry it unless they ask again." Stop, Clear, leaving the foreground (which stops the reply) and the end of the run all resolve a pending approval as declined, so the continuation never leaks. The gate exists because a 2B model makes mistakes and because web pages can carry instructions aimed at it.
+`approval(for:)` returns a one-line summary for `delete_crm_contact` ("Delete <name> <email> from the <org> CRM"), `message_agent` ("Send to agent "<title>" in <owner>/<repo>: "…"") and `stop_agent`. `OnDeviceChatModel` then sets `pendingApproval`, the status line reads "Waiting for your approval", and the tool loop waits on a continuation until `resolveApproval(_:)`: `OnDeviceChatView` shows the summary above the composer with **Allow** and **Decline**. Declining answers the model "The user declined this, so nothing was done… Do not retry it unless they ask again." Stop, Clear, leaving the foreground (which stops the reply) and the end of the run all resolve a pending approval as declined, so the continuation never leaks. The gate exists because a 2B model makes mistakes and because web pages can carry instructions aimed at it.
 
 ## The tool loop (`OnDeviceChatModel`)
 

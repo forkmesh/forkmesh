@@ -1,89 +1,56 @@
 # Non-custodial organization succession
 
-ForkMesh organization succession is a governance mechanism for one
-organization roster. It is not inheritance, account recovery, custody, or an
-asset-transfer service.
+Organization succession is a governance mechanism for one organization
+roster. It is not inheritance, account recovery, custody, or asset transfer.
 
 ## Transfer boundary
 
-A completed succession performs exactly two scoped changes:
+A completed succession performs exactly two scoped changes: the configured
+owner becomes an organization administrator, and the named successor becomes
+the owner. Only those two `org_members.role` values change; repository records,
+links, teams, memberships, private-repository shares, and encryption recipients
+are untouched.
 
-1. the configured organization owner becomes an organization administrator;
-2. the explicitly named successor becomes that organization's owner.
+Never transferred:
 
-The database completion trigger updates only those two `org_members.role`
-values for the configured organization. Repository records, organization
-repository links, teams, memberships, private-repository shares and encryption
-recipients are not rewritten.
-
-The following never transfer:
-
-- wallets, wallet addresses, funds, rewards, transactions, or signing ability;
+- wallets, wallet addresses, funds, rewards, or signing ability;
 - private keys, account credentials, agent credentials, or private agent data;
-- user accounts, profile/personal data, devices, or device ownership;
-- repository ownership, repository content, or public/private repository ACLs.
+- user accounts, personal data, devices, or device ownership;
+- repository ownership, content, or ACLs.
 
-ForkMesh does not create a custodial account or wallet for an organization or
-successor. A succession response always includes this technical boundary.
+Every succession response states this boundary.
 
 ## Configuration and lifecycle
 
-Only the organization's sole current owner can configure a policy with
-`PUT /api/orgs/{org}/succession`. The successor must be an explicitly named,
-active user who is already an administrator or member of that organization.
-Unknown fields fail closed, and transfer-shaped fields are rejected.
+Only the sole current owner configures a policy with
+`PUT /api/orgs/{org}/succession`. The successor must be an active existing
+administrator or member. Unknown or transfer-shaped fields are rejected.
 
-Configuration is bounded:
+| Setting | Range | Default |
+|---|---|---|
+| Inactivity threshold | 30–730 days | 180 |
+| Grace period | 7–90 days | 30 |
+| Independent approvals | 2–20 | 2 |
 
-- inactivity threshold: 30–730 days (default 180);
-- grace period: 7–90 days (default 30);
-- independent approvals: 2–20 (default 2).
+Approvals cannot exceed the eligible roster; owner and successor cannot approve.
 
-The approval threshold cannot exceed the current eligible roster. The owner
-and successor are excluded from approvers, so approvals are independent.
+1. `POST .../check-in` (or enabled-device and owned-node activity) refreshes the
+   owner's activity and cancels an open grace case.
+2. An hourly job sends one warning before the deadline; it never opens a case.
+3. After the threshold, a current member calls `POST .../activate` to open grace.
+4. During grace the owner may `cancel` or `check-in`; other current members
+   `approve` (idempotent; removed members' approvals stop counting).
+5. After grace, a member calls `POST .../finalize`. One transaction rechecks
+   deadline, owner, successor, and current approvers before changing the roles;
+   any change fails closed.
 
-The current owner can use `POST .../check-in`. A check-in refreshes the
-succession activity timestamp and cancels an open grace case. Generalized
-enabled-device and owned-node `last_seen` maxima also count as owner activity;
-device identifiers, labels, platforms, locations and payloads never enter the
-succession tables or API.
-
-An hourly bounded job issues one deduplicated warning as the inactivity
-deadline approaches. It never opens a case or transfers a role. A currently
-authorized organization member must explicitly call `POST .../activate` after
-the threshold to open the grace period.
-
-During grace:
-
-- the current owner may call `POST .../cancel` or `POST .../check-in`;
-- independent current members call `POST .../approve`;
-- duplicate approvals are idempotent;
-- removed members' prior approvals stop counting immediately;
-- the owner and successor cannot approve.
-
-After grace, a current organization member may call `POST .../finalize`. D1
-rechecks the grace deadline, current owner, current successor, and threshold of
-currently authorized approvers inside the same transaction that changes the two
-roles and appends completion history. A changed roster or stale approval fails
-closed.
-
-`DELETE /api/orgs/{org}/succession` disables the policy and cancels an active
-case. Deleting an organization also disables/cancels current succession state;
-its audit history remains append-only.
+`DELETE /api/orgs/{org}/succession` disables the policy and cancels any case.
 
 ## Authorization and audit
 
-The succession API receives organization-session and organization-roster
-helpers only. It has no platform-administrator authorization method. Platform
-administrators who are not current organization members receive `403`, and the
-succession tables are hidden from the generic administrator table editor.
-
-Cases and approvals are immutable snapshots. Approval, case, and completion
-triggers protect transitions at the database boundary. Every configuration,
-warning, grace opening, approval, cancellation, check-in, denied completion,
-and completion adds a metadata-only event. Update/delete triggers make event
-and approval history append-only.
-
-Authorized organization members can read current status and bounded history
-with `GET /api/orgs/{org}/succession`. The endpoint is `no-store`; it returns
-counts and policy dates, not device data or sensitive account activity.
+The API uses organization session and roster checks only; it has no
+platform-administrator authorization path, and the tables are hidden from the
+generic admin editor. Cases and approvals are immutable snapshots, and every
+action appends a metadata-only event; triggers keep history append-only.
+`GET /api/orgs/{org}/succession` (`no-store`) returns status, counts, and
+dates, never device data.

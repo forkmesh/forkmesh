@@ -68,10 +68,7 @@ Ideas, not medical advice: the screen says to talk to a doctor or dietitian
 for a medical condition, pregnancy, an eating disorder, a child's diet or a
 food allergy.
 
-## History
+## Availability
 
-Version 1.0.0 (2026-10-12) shipped Basil, a special agent, and a Suggest a
-meal shortcut for a repository's `.forkmesh` folder. 2.0.0 replaced both with
-this section: the user wanted suggestions to look at, not an agent to run.
-2.1.0 (2026-10-13) declares `install.places: ["mobile"]`: Food Guide only
-exists on iPhone, so the Market offers it for phones only.
+The package declares `install.places: ["mobile"]`: Food Guide exists only on
+iPhone, so the Market offers it for phones only.

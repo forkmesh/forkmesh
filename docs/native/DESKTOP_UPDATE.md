@@ -8,18 +8,13 @@ the same quick rebuild and relaunch as the **Restart** button next to
 rebuilds the desktop's local source checkout and relaunches, without pulling
 from a mirror, and the build log streams onto the page while it runs.
 
-Until 2026-09-29 the phone button ran the profile panel's **Update** (pull,
-then rebuild). A failed pull (a busy mirror, or a checkout with its own
-commits) stopped the whole run, so the phone could not restart a desktop
-whose own Restart button worked. The protocol action keeps the name
-`updateRestart` so phones and desktops on either side of the change still
-talk to each other; an older phone's button now also runs the quick rebuild.
+The protocol action is named `updateRestart`; on every desktop that has the
+`update.` family it runs the quick rebuild, never a pull. A failed pull must
+not block a restart the desktop's own Restart button could do.
 
 On iOS the confirmation sheet hangs off `DesktopScreen`'s `List`, not off
-`DesktopUpdateSection`. A modifier on a `Section` inside a `List` is applied to
-each of its rows, so the sheet was presented from a row; when the button's
-spinner went away or the progress rows changed, that row was rebuilt and the
-sheet slid away right after opening, needing a second tap (fixed 2026-09-30).
+`DesktopUpdateSection`: a modifier on a `Section` inside a `List` applies to
+each row, and a rebuilt row would dismiss the sheet right after it opens.
 
 ## Code map
 
