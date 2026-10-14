@@ -13342,6 +13342,7 @@
                 <button data-org-agent-start-button type="submit" class="h-9 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">Start agent</button>
                 <span data-org-agent-hint class="text-[11px] ${notice ? "text-emerald-600" : "text-muted-foreground"}">${escapeHtml(notice || "The request is durable while the linked desktop is offline; it starts as soon as the node claims it.")}</span>
               </div>
+              <p data-org-agent-setup hidden class="text-[11px] leading-5 text-muted-foreground">Nothing runs agents for this repository yet. <a href="/dashboard/runners?setup=1" class="font-semibold text-primary underline underline-offset-2">Set up a runner</a> on any Linux machine with one command, or <a href="/desktop" class="font-semibold text-primary underline underline-offset-2">get the desktop app</a> and open this repository in it.</p>
             </form>` : `
             <div class="grid gap-1 text-xs text-muted-foreground">
               <strong class="text-foreground">Agent queue access is unavailable</strong>
@@ -13498,6 +13499,12 @@
       : '<option value="">No eligible node advertises this agent</option>';
     targetSelect.disabled = !targets.length;
     if (startButton) startButton.disabled = !providers.length || !targets.length;
+    const runnable = providers.length > 0 && (Array.isArray(payload?.targets) ? payload.targets : [])
+      .some((target) => Array.isArray(target?.providers) && target.providers.some((entry) => providers.includes(entry)));
+    const setup = form.querySelector("[data-org-agent-setup]");
+    const hint = form.querySelector("[data-org-agent-hint]");
+    if (setup) setup.hidden = runnable;
+    if (hint) hint.hidden = !runnable && !state.agentsView.notice;
   }
 
   // The start composer is redrawn every time the pane swaps back from an open
@@ -13930,19 +13937,29 @@
           "repository_not_published",
         ].includes(String(error?.code || ""));
         const accessError = [401, 403].includes(Number(error?.status || 0));
+        const ownerOnly = !configurationError && Number(error?.status || 0) === 404;
         const heading = configurationError
           ? "Repository setup required"
-          : accessError
-            ? "Agent access unavailable"
-            : "Organization agents are unavailable";
+          : ownerOnly
+            ? "Agents here are run by the repository owner"
+            : accessError
+              ? "Agent access unavailable"
+              : "Agents could not be loaded";
+        const detail = ownerOnly
+          ? `Only ${repo.owner || "the owner"} can start agents on ${repo.owner || ""}/${repo.name || ""}. To run agents on your own repositories, set up a runner or use the desktop app.`
+          : String(error?.message || "The agent request failed.");
         state.agentsView.selectedAgentId = null;
         state.agentsView.canQueueAgent = false;
         state.agentsView.startPayload = null;
         state.agentsView.notice = "";
         container.innerHTML = `
           <div class="grid gap-3 px-4 py-4 text-sm text-muted-foreground">
-            <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="shield-alert" class="h-4 w-4 text-amber-500"></i>${heading}</div>
-            <p class="max-w-2xl leading-6">${escapeHtml(String(error?.message || "The agent request failed."))}</p>
+            <div class="flex items-center gap-2 font-medium text-foreground"><i data-lucide="${ownerOnly ? "bot" : "shield-alert"}" class="h-4 w-4 ${ownerOnly ? "text-muted-foreground" : "text-amber-500"}"></i>${heading}</div>
+            <p class="max-w-2xl leading-6">${escapeHtml(detail)}</p>
+            ${ownerOnly ? `<div class="flex flex-wrap gap-2">
+              <a href="/dashboard/runners?setup=1" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="server" class="h-3.5 w-3.5"></i>Set up a runner</a>
+              <a href="/desktop" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Get the desktop app</a>
+            </div>` : ""}
           </div>`;
         window.lucide?.createIcons();
         refreshBranchAgentStatus();

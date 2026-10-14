@@ -75,7 +75,7 @@ async function shotAround(page, name, locators) {
   });
 }
 
-async function prepare(page, { theme = "dark", calls = [] } = {}) {
+async function prepare(page, { theme = "dark", calls = [], targets = null } = {}) {
   await page.addInitScript(({ session, theme: chosen }) => {
     localStorage.setItem("forkmesh.session", JSON.stringify(session));
     localStorage.setItem("forkmesh.dashboard.theme", chosen);
@@ -99,7 +99,7 @@ async function prepare(page, { theme = "dark", calls = [] } = {}) {
       body = { ok: true, repositories: [REPOSITORY] };
     } else if (pathname === "/api/repo/alice/engine/agent-sessions") {
       if (request.method() === "GET") {
-        body = AGENT_SESSIONS;
+        body = targets ? { ...AGENT_SESSIONS, targets } : AGENT_SESSIONS;
       } else {
         calls.push({ kind: "new", path: pathname, body: request.postDataJSON() });
         status = 202;
@@ -122,6 +122,56 @@ async function prepare(page, { theme = "dark", calls = [] } = {}) {
     await route.fulfill({ status, contentType: "application/json; charset=utf-8", body: JSON.stringify(body) });
   });
 }
+
+test("composer disables what cannot run and links to runner and desktop setup", async ({ page }) => {
+  const calls = [];
+  await page.setViewportSize({ width: 1360, height: 860 });
+  await prepare(page, { calls, targets: [] });
+  await page.goto("/alice/engine/issues/7");
+  await page.keyboard.press("Control+/");
+  const input = page.locator("[data-composer-input]");
+  await expect(input).toBeFocused();
+  const create = page.locator("[data-composer-new]");
+  const cloud = page.locator("[data-composer-cloud]");
+  const setup = page.locator("[data-composer-setup]");
+  await expect(create).toBeDisabled();
+  await expect(cloud).toBeDisabled();
+  await expect(setup).toBeVisible();
+  await expect(setup).toContainText("To run agents on alice/engine");
+  await expect(setup.locator("a")).toHaveText(["Set up a runner", "Get the desktop app"]);
+  await expect(setup.locator("a").first()).toHaveAttribute("href", "/dashboard/runners?setup=1");
+  await expect(setup.locator("a").last()).toHaveAttribute("href", "/desktop");
+  await expect(page.locator("[data-composer-task]")).toBeEnabled();
+  await input.fill("Make the sync test deterministic");
+  await input.press("Enter");
+  await expect(page.locator("[data-composer-status]")).not.toHaveAttribute("data-tone", "bad");
+  expect(calls.filter((call) => call.kind === "new")).toHaveLength(0);
+  await shot(page, "no-runner", page.locator("[data-composer-panel]"));
+});
+
+test("composer with only a desktop keeps cloud off and locked", async ({ page }) => {
+  const calls = [];
+  await page.setViewportSize({ width: 1360, height: 860 });
+  await prepare(page, {
+    calls,
+    targets: [{ node: "laptop", providers: ["claude-code", "codex"], online: true, runtimeMode: "desktop" }],
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem("forkmesh.composer.v1:alice", JSON.stringify({ cloud: true }));
+  });
+  await page.goto("/alice/engine/issues/7");
+  await page.keyboard.press("Control+/");
+  const cloud = page.locator("[data-composer-cloud]");
+  await expect(cloud).toBeDisabled();
+  await expect(cloud).toHaveAttribute("aria-pressed", "false");
+  await expect(cloud).toHaveAttribute("title", /no ForkMesh cloud runner serves alice\/engine/);
+  await expect(page.locator("[data-composer-setup]")).toBeHidden();
+  const input = page.locator("[data-composer-input]");
+  await input.fill("Run it locally");
+  await page.locator("[data-composer-new]").click();
+  await expect.poll(() => calls.filter((call) => call.kind === "new").length).toBe(1);
+  expect(calls[0].body.targetNode).toBe("laptop");
+});
 
 test("composer on a repo issue page starts, adds and files tasks with context", async ({ page }) => {
   const calls = [];

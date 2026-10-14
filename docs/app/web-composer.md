@@ -30,6 +30,29 @@ the owner route's cloud targets when that answers). Limits follow the relay:
 targets by `CLOUD_RUNTIMES`; with no eligible target nothing is sent.
 `createPr` defaults off and resets after each start.
 
+## When nothing can run
+
+The visitor should never learn by failing that an agent has nowhere to run,
+so controls follow the loaded targets (`agentPlacement`) instead of erroring
+on send:
+
+- **Cloud toggle** is disabled unless both a cloud runner and a desktop can
+  run the chosen agent. The stored `cloud` choice is kept, but the effective
+  side is the one that can run (cloud on with only a desktop runs on the
+  desktop, and the reverse). The `/` menu drops "Run in the cloud" then too.
+- **new** is disabled when no target can run the agent. A muted line under
+  the toolbar (`[data-composer-setup]`, `placementNotice`) says why: no node
+  at all links to **Set up a runner** (`/dashboard/runners?setup=1`) and
+  **Get the desktop app** (`/desktop`); a node that lacks the chosen agent
+  asks for another model; a 401/403/404 says only the owner can start
+  agents there (use **task**); another load error asks for a refresh.
+- **Repository Agents tab**: the start form shows the same setup links
+  (`[data-org-agent-setup]`) and hides its "durable request" hint when no
+  node advertises an agent. A 404 from the agent route (another account's
+  personal repository) shows "Agents here are run by the repository owner"
+  with the setup links instead of "The requested organization or repository
+  was not found".
+
 ## Page handlers
 
 `registerPageHandler({ id, label, title, placeholder, busyMessage,

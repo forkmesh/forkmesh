@@ -30,8 +30,6 @@ import (
 // Headroom added to 4 x MemoryMax for the fallback address-space limit.
 const sandboxAddressHeadroom = 8 << 30
 
-var jobSharedTmpDirs = []string{"/tmp", "/var/tmp"}
-
 const jobTmpDir = ".tmp"
 
 type jobActivity struct {
@@ -54,6 +52,7 @@ type jobSandbox struct {
 	systemdRun string
 	systemctl  string // stops a job's scope once its main process exits
 	user       bool   // --user manager (the daemon is not root)
+	direct     bool
 	// dnsAllow are loopback resolvers (e.g. systemd-resolved's 127.0.0.53)
 	// that stay reachable although the scope denies loopback addresses.
 	dnsAllow  []string
@@ -94,6 +93,10 @@ func detectJobSandbox(cfg *RunnerConfig, lookPath func(string) (string, error),
 	} else if euid == 0 {
 		// Jobs as root would own the node key and the daemon: never.
 		return box, fmt.Errorf("a runner daemon running as root needs runner.jobUid or runner.jobUser (a dedicated job user such as forkmesh-job)")
+	}
+	if directJobUID {
+		box.direct = box.uid != 0
+		return box, nil
 	}
 	path, err := lookPath("systemd-run")
 	if err != nil {
@@ -165,7 +168,7 @@ func (b jobSandbox) argvUnit(unit, name string, args []string) (string, []string
 		wrapped = append(wrapped, "--", name)
 		return b.systemdRun, append(wrapped, args...)
 	}
-	if b.noLimits {
+	if b.noLimits || !addressLimitSupported {
 		return name, args
 	}
 	limitKiB := b.addressLimit() >> 10
@@ -317,7 +320,7 @@ func (b jobSandbox) runner() agentCommandRunner {
 		command.Stdin = strings.NewReader(stdin)
 		stderr := &cappedBuffer{limit: 64 << 10}
 		command.Stdout, command.Stderr = stdout, stderr
-		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: b.credential()}
 		command.Cancel = func() error {
 			return syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		}
@@ -326,6 +329,24 @@ func (b jobSandbox) runner() agentCommandRunner {
 		b.stopScope(unit)
 		return stderr.Bytes(), err
 	}
+}
+
+func (b jobSandbox) credential() *syscall.Credential {
+	if !b.direct {
+		return nil
+	}
+	return &syscall.Credential{Uid: uint32(b.uid), Gid: uint32(b.gidOrUID()), Groups: []uint32{}}
+}
+
+func (b jobSandbox) killJobUserProcesses() {
+	if !b.direct {
+		return
+	}
+	command := exec.Command("/bin/kill", "-KILL", "-1")
+	command.Env = []string{"PATH=/usr/bin:/bin"}
+	command.Dir = "/"
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: b.credential()}
+	_ = command.Run()
 }
 
 // stopScope ends a finished job's scope and everything still in it.
@@ -414,6 +435,7 @@ func (b jobSandbox) sweepIdle() {
 }
 
 func (b jobSandbox) sweepSharedTmp() {
+	b.killJobUserProcesses()
 	if b.workRoot != "" {
 		root := filepath.Join(b.workRoot, jobTmpDir)
 		if entries, err := os.ReadDir(root); err == nil {

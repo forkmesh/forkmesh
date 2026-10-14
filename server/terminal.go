@@ -320,7 +320,7 @@ func ioctl(fd uintptr, request uintptr, argument uintptr) error {
 // pipe: the provider CLIs draw a full-screen prompt and refuse to read a
 // secret from something that is not a terminal.
 func startPtyProcess(name string, args []string, cols, rows int) (terminalProcess, error) {
-	process, err := startPtyCommand(name, args, terminalEnvironment(), terminalWorkingDirectory(), cols, rows)
+	process, err := startPtyCommand(name, args, terminalEnvironment(), terminalWorkingDirectory(), cols, rows, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -330,27 +330,9 @@ func startPtyProcess(name string, args []string, cols, rows int) (terminalProces
 // startPtyCommand is startPtyProcess with the program, environment and
 // working directory chosen by the caller: a runner's web sign-in runs the
 // login inside the job sandbox (runnerlogin.go).
-func startPtyCommand(name string, args, env []string, dir string, cols, rows int) (*ptyProcess, error) {
-	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+func startPtyCommand(name string, args, env []string, dir string, cols, rows int, credential *syscall.Credential) (*ptyProcess, error) {
+	master, follower, err := openPTY()
 	if err != nil {
-		return nil, err
-	}
-	unlock := int32(0)
-	if err := ioctl(master.Fd(), syscall.TIOCSPTLCK,
-		uintptr(unsafe.Pointer(&unlock))); err != nil {
-		master.Close()
-		return nil, err
-	}
-	var index uint32
-	if err := ioctl(master.Fd(), syscall.TIOCGPTN,
-		uintptr(unsafe.Pointer(&index))); err != nil {
-		master.Close()
-		return nil, err
-	}
-	follower, err := os.OpenFile(
-		fmt.Sprintf("/dev/pts/%d", index), os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		master.Close()
 		return nil, err
 	}
 	defer follower.Close()
@@ -361,7 +343,7 @@ func startPtyCommand(name string, args, env []string, dir string, cols, rows int
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = follower, follower, follower
 	// Ctty indexes the child's own descriptors, where the pty follower is 0.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, Setctty: true, Ctty: 0,
+		Setsid: true, Setctty: true, Ctty: 0, Credential: credential,
 	}
 	if err := cmd.Start(); err != nil {
 		master.Close()
