@@ -2,6 +2,7 @@ import FMApi
 import FMBase
 import FMChat
 import FMControl
+import Observation
 import XCTest
 @testable import FMAgents
 
@@ -219,6 +220,35 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(feed.dialog(entry), "Running the tests.")
         feed.stop()
         XCTAssertEqual(feed.dialog(entry), "")
+    }
+
+    @MainActor
+    func testEagleFeedRedrawsOnlyTheRowWhoseLineChanged() {
+        var deltas: [String: @MainActor (AgentTranscriptDelta) -> Void] = [:]
+        let feeds = ControlWatchFeeds { row, _, onDelta in
+            deltas[row.id] = onDelta
+            return nil
+        }
+        let first = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "t", repoOwner: "forkmesh", repoName: "forkmesh", node: "studio",
+            status: "running", statusLabel: "Running", isActive: true, localId: 7)
+        let second = UnifiedAgentRow(
+            id: "desktop:8", badge: .desktopLan, title: "u", repoOwner: "forkmesh", repoName: "forkmesh", node: "studio",
+            status: "running", statusLabel: "Running", isActive: true, localId: 8)
+        let feed = AgentEagleFeed()
+        feed.follow([first, second]) { feeds }
+        deltas["desktop:7"]?(AgentTranscriptDelta(text: "Reading.\n\n[Read a.swift]\n", next: 10, reset: true, active: true, status: "running"))
+        deltas["desktop:8"]?(AgentTranscriptDelta(text: "Testing.\n\n[Bash swift test]\n", next: 10, reset: true, active: true, status: "running"))
+        var firstRedraws = 0
+        var secondRedraws = 0
+        withObservationTracking { _ = feed.dialog(AgentLines.line(first)) } onChange: { firstRedraws += 1 }
+        withObservationTracking { _ = feed.dialog(AgentLines.line(second)) } onChange: { secondRedraws += 1 }
+        deltas["desktop:8"]?(AgentTranscriptDelta(text: "Fixed it.\n\n[Edit a.swift]\n", next: 30, reset: true, active: true, status: "running"))
+        XCTAssertEqual(feed.dialog(AgentLines.line(second)), "Fixed it.")
+        XCTAssertEqual(firstRedraws, 0, "another run's line does not redraw this row")
+        XCTAssertEqual(secondRedraws, 1)
+        feed.stop()
+        XCTAssertEqual(feed.dialog(AgentLines.line(first)), "")
     }
 
     func testMergeShowsEachRunOnceAcrossRepositories() {

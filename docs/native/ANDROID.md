@@ -1227,7 +1227,9 @@ and `docs/app/chat-push-previews.md`.
   #mesh and Discord rows keep one line (their messages live in other stores).
 - **DM avatars.** DM rows lead with a 28 dp round avatar (`DirectAvatar`:
   `ApiService.accountAvatarPng`, which caches per name, then the initials
-  `FmAvatar`). The presence dot (online, away, offline) sits on its corner
+  `FmAvatar`). It starts from `ApiService.knownAccountAvatarPng`, so a
+  picture already fetched paints on the first frame instead of after the
+  initial (see `NAVIGATION.md` 2.0.95). The presence dot (online, away, offline) sits on its corner
   when the other user is in the relay roster; otherwise no dot is drawn.
 - Tests: `ChatListPreviewTest` (plain text, prefixes, file fallback, skip
   rules, time labels, channel preview through edits, deletes and Delete for

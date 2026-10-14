@@ -550,11 +550,14 @@ class RemoveBackend:
         import render
         if not job.execute:
             job.say("[dry-run] %s: remove the %s [[nodes]] block (the rest of the "
-                    "file is untouched); fleet-state.json: drop its WireGuard key "
-                    "and any rqlite_nonvoters entry" % (job.fleet_file, job.name))
+                    "file is untouched) and list it in [hosted] retired_cores so its "
+                    "repositories stay core-held; fleet-state.json: drop its "
+                    "WireGuard key and any rqlite_nonvoters entry"
+                    % (job.fleet_file, job.name))
             return
         current = job.fleet_file.read_text("utf-8")
-        text = next_fleet.remove_core_block(current, job.name)
+        text = next_fleet.retire_core_block(
+            next_fleet.remove_core_block(current, job.name), job.name)
         if text != current:
             with tempfile.TemporaryDirectory(prefix="fmnext-fleet-") as tmp:
                 trial = Path(tmp) / "fleet.toml"
@@ -642,7 +645,8 @@ class RemoveBackend:
                     "pushed" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
-        text = next_fleet.remove_core_block(base_text, job.name)
+        text = next_fleet.retire_core_block(
+            next_fleet.remove_core_block(base_text, job.name), job.name)
         promoted = job.state.get("promoted") or ""
         if promoted:
             text = next_fleet.promote_core_block(text, promoted)

@@ -56,6 +56,41 @@ There are no SSH pushes to the cores (the cores' sshd is the operator's; see
 `FLAGSHIP_PUSH_PUBKEYS` is gone: the publisher is authorized as `jett`, an
 organization owner, like any other owner push.
 
+### A removed core keeps its repositories core-held (2026-10-13)
+
+`forkmesh/forkmesh` is linked in `org_repos` to the node account
+`fmnext-n1`, the core it was first published from. A push counts as
+core-held when the repository's node is in `_core_push_nodes`; only then
+may it land on a core, and any live core takes it (n1, n2 and n3 all did).
+
+Removing n1 took `fmnext-n1` out of `HOSTED_GIT_CORE_NODES`. From that
+render on, the flagship was no longer core-held, every core endpoint was
+filtered out of the push candidates, and each push answered
+`503 push_unavailable` ("could not reach the node that accepts pushes").
+The source publisher failed every pass from 02:58 UTC on 2026-10-14.
+
+The list of nodes whose repositories the cores hold is now separate from
+the list of live cores:
+
+- `[hosted] retired_cores` in `deploy/fleet.toml` names every removed core
+  (`["n1"]`). `tools/next_fleet.py remove-core` adds the name when it drops
+  the `[[nodes]]` block, in both the local file and the
+  `fleet/remove-core-nN` commit, and `fleet-toml` regeneration keeps the
+  section.
+- `deploy/core/render.py` writes `FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS`:
+  the live cores plus the retired ones, or empty when hosting is off. It
+  names a retired core only as an owner, never as a peer.
+- In the App, `hosted_repos.core_owners` (exported as `hosted_core_owners`)
+  backs `_core_push_nodes`, so the owner checks (push, docs page, file
+  edits, push credential, tag moves) treat a retired core's repositories as
+  core-held. `HOSTED_GIT_CORE_NODES` still drives rendezvous, replication
+  and wake-ups, so a push only ever goes to live cores. A node event for a
+  retired core's repository wakes the live cores.
+
+Re-pointing `org_repos` to a live core's node account would also restore
+pushes, but pins, pulls, issues and proofs are keyed by the old node's
+namespace, so the fix leaves the data alone.
+
 ## Ref rules
 
 The gateway enforces these for every router-authorized push (hosted

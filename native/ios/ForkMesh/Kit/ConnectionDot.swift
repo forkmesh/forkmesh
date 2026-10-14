@@ -5,13 +5,17 @@
 import SwiftUI
 import UIKit
 
+enum FmAvatarImages {
+    static func image(_ base64: String) -> UIImage? {
+        FmImageCache.image(base64: base64)
+    }
+}
+
 /// A round avatar: the base64 PNG when `avatarPng` decodes, otherwise the
 /// first character of `name` in white on its sender colour. The picture is
 /// painted over the initial, so one that fails to decode leaves the initial
 /// showing instead of an empty disc.
 struct FmAvatar: View {
-    @State private var image: UIImage? = nil
-
     private let name: String
     private let avatarPng: String
     private let size: CGFloat
@@ -34,18 +38,8 @@ struct FmAvatar: View {
         return String(first).uppercased()
     }
 
-    private static func decode(_ base64: String) -> UIImage? {
-        if base64.isEmpty {
-            return nil
-        }
-        guard let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters) else {
-            return nil
-        }
-        return UIImage(data: data)
-    }
-
     @ViewBuilder private var photo: some View {
-        if let image = image {
+        if let image = FmAvatarImages.image(avatarPng) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
@@ -62,11 +56,6 @@ struct FmAvatar: View {
             .background(FmColors.senderColor(name))
             .clipShape(Circle())
             .overlay { photo }
-            // Decoded once per picture: decoding on every rebuild of the top
-            // bar would make the picture flicker.
-            .task(id: avatarPng) {
-                image = FmAvatar.decode(avatarPng)
-            }
     }
 }
 

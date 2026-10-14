@@ -18,6 +18,7 @@ import SwiftUI
 struct FmSkeleton: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
 
     private let width: CGFloat?
     private let height: CGFloat
@@ -35,7 +36,8 @@ struct FmSkeleton: View {
     }
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { (context: TimelineViewDefaultContext) in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion || tabHidden)) {
+            (context: TimelineViewDefaultContext) in
             FmRoundedShape(radius: radius)
                 .fill(fm.bgOverlay)
                 .overlay {

@@ -342,7 +342,10 @@ leader mid-write.
   row in Network → Hosts. Any core can go, `n1` included: no core is the
   main one ([deploy/README.md](deploy/README.md#no-fixed-main-node)). It is
   refused below 3 cores or 3 healthy voters; when a non-voter core exists,
-  it is promoted to a voter first. See
+  it is promoted to a voter first. It also lists the core in `[hosted]
+  retired_cores`, so the repositories its node account owns (the flagship
+  is linked to `fmnext-n1`) still take pushes on the live cores
+  ([CORE_PUSH.md](CORE_PUSH.md#a-removed-core-keeps-its-repositories-core-held-2026-10-13)). See
   [deploy/README.md](deploy/README.md#removing-a-core-node).
 - **Replace a core node**: add one, then remove the old one
   ([deploy/README.md](deploy/README.md#replace-a-core-add-one-then-remove-one)):

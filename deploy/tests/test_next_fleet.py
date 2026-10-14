@@ -278,6 +278,25 @@ def test_fleet_toml_from_instances(tmp_path):
     assert data["runners"][0]["wg_ip"] == "10.77.0.11"
 
 
+def test_retiring_a_core_lists_it_once_and_survives_regeneration(tmp_path):
+    instances = {"fmnext-core-%d" % n: {"id": IDS["fmnext-core-%d" % n],
+                                        "ip": "207.0.113.%d" % n} for n in (1, 2, 3)}
+    base = next_fleet.fleet_toml_text(instances)
+    once = next_fleet.retire_core_block(next_fleet.remove_core_block(base, "n1"), "n1")
+    assert next_fleet.retire_core_block(once, "n1") == once
+    twice = next_fleet.retire_core_block(once, "n2")
+    assert tomllib.loads(twice)["hosted"]["retired_cores"] == ["n1", "n2"]
+    assert twice.index("[hosted]") < twice.index("[[nodes]]")
+    custom = once.replace("[hosted]\n", "[hosted]\nenabled = true\n")
+    grown = next_fleet.retire_core_block(custom, "n2")
+    assert tomllib.loads(grown)["hosted"] == {"enabled": True,
+                                              "retired_cores": ["n1", "n2"]}
+    del instances["fmnext-core-1"]
+    regenerated = next_fleet.fleet_toml_text(instances, current=twice)
+    assert tomllib.loads(regenerated)["hosted"]["retired_cores"] == ["n1", "n2"]
+    assert "[hosted]" not in next_fleet.fleet_toml_text(instances)
+
+
 def test_fleet_toml_command_refuses_foreign_labels(sandbox):
     (sandbox / "fleet-instances.json").write_text(json.dumps({
         "fmnext-core-1": {"id": IDS["fmnext-core-1"], "ip": "207.0.113.1"},
