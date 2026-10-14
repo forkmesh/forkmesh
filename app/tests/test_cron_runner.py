@@ -385,6 +385,7 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             "status-alert-pings",
             "mirror-health",
             "mail-log",
+            "self-deploy-pings",
         ]
         if minute % 5 == 0:
             phases.append("status-alert-email")
@@ -460,6 +461,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("badge-sweep")
         if minute % 1440 == 5:
             phases.append("attribution-clone-snapshot")
+        if minute % 5 == 0:
+            phases.append("probe-bans")
         return tuple(phases)
 
     for minute in range(360):

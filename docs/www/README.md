@@ -259,7 +259,9 @@ Crawlers and scrapers:
   (rqlite). For forkmesh.com, `app/sync_request_block_rules.sh` reads them
   from rqlite over the fleet SSH path and publishes them as the zone's
   "ForkMesh database request policy" WAF rule; run it after changing the
-  table. Keyword rules never match a User-Agent naming ChatGPT
+  table. Automatic probe bans (`auto-probe-*` rows,
+  [../app/probe-auto-ban.md](../app/probe-auto-ban.md)) are never published:
+  they are temporary and would overflow the expression. Keyword rules never match a User-Agent naming ChatGPT
   (`ChatGPT-User`, `OAI-SearchBot`), and verified Google crawlers pass too. The shortcut `tools/forkmesh-sync-block-rules.sh` does the same from
   anywhere; add `--dry-run` to print the expression without publishing. Both
   read the Cloudflare token from the fleet `cloudflare.env`
