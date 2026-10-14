@@ -26,6 +26,7 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var viewing: MessagesPhotoBox?
     @State private var lastSeenId: String = ""
     @State private var touching: Bool = false
+    @State private var viewOnceOpen: ViewOnceEntry?
 
     private var look: ChatLook { hub.conversationLook }
 
@@ -96,6 +97,7 @@ struct MessagesConversationView<Drawer: View>: View {
             })
         }
         .fullScreenCover(item: $viewing) { (box: MessagesPhotoBox) in MessagesPhotoViewer(attachment: box.attachment) }
+        .fullScreenCover(item: $viewOnceOpen) { (entry: ViewOnceEntry) in MessagesViewOnceViewer(hub: hub, entry: entry) }
     }
 
     private func transcript(_ palette: MessagesColors) -> some View {
@@ -148,14 +150,25 @@ struct MessagesConversationView<Drawer: View>: View {
         case .event(let event):
             MessagesSystemLine(text: event.text, colors: palette)
         case .message(let bubble):
-            MessagesBubbleRow(
-                bubble: bubble, group: group, colors: palette, actions: actions(bubble.row),
-                onTapback: {
-                    FmHaptics.selection()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tapbackTarget = bubble.row }
-                },
-                onPhoto: { viewing = MessagesPhotoBox(attachment: $0) })
+            if let entry = hub.viewOnce(for: bubble.row.message) {
+                MessagesViewOnceRow(
+                    bubble: bubble, entry: entry, group: group, colors: palette,
+                    busy: hub.direct?.viewOnce.isBusy(entry.messageId) ?? false,
+                    onOpen: { viewOnceOpen = entry })
+            } else {
+                messageRow(bubble, palette: palette, group: group)
+            }
         }
+    }
+
+    private func messageRow(_ bubble: ChatBubble, palette: MessagesColors, group: Bool) -> some View {
+        MessagesBubbleRow(
+            bubble: bubble, group: group, colors: palette, actions: actions(bubble.row),
+            onTapback: {
+                FmHaptics.selection()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tapbackTarget = bubble.row }
+            },
+            onPhoto: { viewing = MessagesPhotoBox(attachment: $0) })
     }
 
     private func stopSharing(_ conversation: String) {
@@ -442,6 +455,7 @@ struct MessagesComposer: View {
     @State private var background: Bool = false
     @State private var importing: Bool = false
     @State private var recorder: MessagesVoiceRecorder = MessagesVoiceRecorder()
+    @State private var viewOnceRecording: MessagesViewOnceRequest?
 
     private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -466,6 +480,9 @@ struct MessagesComposer: View {
         .sheet(isPresented: $background) { MessagesBackgroundPicker(hub: hub) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { sendFile(url) }
+        }
+        .fullScreenCover(item: $viewOnceRecording) { (request: MessagesViewOnceRequest) in
+            MessagesViewOnceRecorderSheet(hub: hub, kind: request.kind)
         }
         .fullScreenCover(isPresented: $camera) {
             MessagesCameraPicker(
@@ -506,6 +523,16 @@ struct MessagesComposer: View {
                 if !OfficeFrames.isOffice(hub.currentConversation) {
                     Button(action: { importing = true }) { Label("File", systemImage: "paperclip") }
                 }
+            }
+            if hub.canSendViewOnce {
+                Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .video) }) {
+                    Label("View-once Video", systemImage: "video.badge.ellipsis")
+                }
+                .accessibilityLabel("Record a view-once video message")
+                Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .voice) }) {
+                    Label("View-once Voice", systemImage: "waveform.badge.mic")
+                }
+                .accessibilityLabel("Record a view-once voice message")
             }
             if hub.canChangeLook {
                 Button(action: { background = true }) { Label("Background", systemImage: "photo.artframe") }
