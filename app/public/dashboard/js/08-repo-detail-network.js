@@ -4053,7 +4053,7 @@
         && event.target.form) {
       const submitters = [...event.target.form.querySelectorAll(
         "button[type='submit'], input[type='submit']")];
-      const submitter = submitters.find((button) => button.classList.contains("bg-cta"))
+      const submitter = submitters.find((button) => button.matches(".bg-cta, .fm-btn-cta"))
         || (submitters.length === 1 ? submitters[0] : null);
       if (submitter) {
         event.preventDefault();

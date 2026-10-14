@@ -90,3 +90,6 @@ per-page colours:
 - `showErrorNotice` is restyled with Tailwind utilities, not `fm-toast`:
   `test_dashboard_error_actions.py` requires its classes to exist in the
   built `tailwind.css`, and the `fm-*` classes live in `shell.html`.
+- Ctrl/Cmd+Enter in a form field submits through the form's primary button,
+  found as `.bg-cta, .fm-btn-cta` (`08-repo-detail-network.js`), so forms
+  whose green button is now an `fm-btn-cta` keep the shortcut.

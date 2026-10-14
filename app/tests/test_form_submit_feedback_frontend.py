@@ -46,7 +46,7 @@ def test_ctrl_or_cmd_enter_submits_through_primary_button():
     assert "event.metaKey || event.ctrlKey" in handler
     assert "!event.isComposing" in handler
     assert "!event.defaultPrevented" in handler
-    assert 'classList.contains("bg-cta")' in handler
+    assert 'button.matches(".bg-cta, .fm-btn-cta")' in handler
     assert "submitters.length === 1" in handler
     assert "if (!submitter.disabled) event.target.form.requestSubmit(submitter)" in handler
 
