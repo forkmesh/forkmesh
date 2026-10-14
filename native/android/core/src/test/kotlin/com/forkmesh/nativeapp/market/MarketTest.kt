@@ -254,10 +254,10 @@ class MarketTest {
         assertEq(listOf("status-page"), model.visible.map { it.id })
     }
 
-    fun testSignInIsSwitchedPerPhoneAndDefaultsFromTheLegacyMarker() {
+    fun testSignInIsSwitchedPerPhoneAndStartsOn() {
         val prefs = com.forkmesh.nativeapp.api.MemoryPrefStore()
         assertEq(true, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = true))
-        assertEq(false, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = false))
+        assertEq(true, PhonePackages.isOn(PhonePackages.SIGN_IN, prefs, legacy = false))
         assertEq(true, PhonePackages.isOn("crm", prefs, legacy = true))
         assertEq(null, PhonePackages.isOn("workflows", prefs, legacy = true))
         PhonePackages.set(PhonePackages.SIGN_IN, false, prefs)

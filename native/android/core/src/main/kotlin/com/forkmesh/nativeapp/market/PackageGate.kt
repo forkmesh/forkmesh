@@ -30,6 +30,8 @@ object PackageGate {
 
     val ORGANIZATION_PACKAGES: Set<String> = setOf(CRM, "marketing", "analytics", "competitor")
 
+    val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
+
     val HUB_ITEMS: Map<String, String> = mapOf(
         "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
@@ -118,7 +120,8 @@ object PackageGate {
     fun organizationInstalled(states: List<OrgPackageState>): Set<String> =
         states.flatMap { state -> state.plugins.filter { it.installed }.map { it.id } }.filter { it in ORGANIZATION_PACKAGES }.toSet()
 
-    fun fallback(entry: AccountCatalogEntry?, legacy: Boolean): Boolean = when {
+    fun fallback(id: String, entry: AccountCatalogEntry?, legacy: Boolean): Boolean = when {
+        !legacy && id in STARTER -> true
         entry == null -> legacy
         entry.isDefault -> true
         entry.installedBefore.isNotEmpty() -> legacy

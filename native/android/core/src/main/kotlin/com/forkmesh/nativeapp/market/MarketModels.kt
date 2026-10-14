@@ -557,7 +557,7 @@ class MarketModel(
     }
 
     fun isInstalled(pkg: MarketPackage): Boolean = when (installMode(pkg)) {
-        PackageInstallMode.ACCOUNT -> accountSwitch(pkg.id) ?: PackageGate.fallback(AccountCatalogEntry.of(pkg), legacy())
+        PackageInstallMode.ACCOUNT -> accountSwitch(pkg.id) ?: PackageGate.fallback(pkg.id, AccountCatalogEntry.of(pkg), legacy())
         PackageInstallMode.ORGANIZATION -> deviceSwitch(pkg.id) != false && organizationInstalled(pkg)
         PackageInstallMode.PHONE -> deviceSwitch(pkg.id) ?: false
         PackageInstallMode.DESKTOP -> pkg.isDefault

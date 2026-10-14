@@ -318,7 +318,7 @@ class AccountPackagesStore(
         val row = state?.find(id)
         val own = when {
             !legacyProject() -> projectOwn(id, entry, row)
-            row == null -> PackageGate.fallback(entry, true)
+            row == null -> PackageGate.fallback(id, entry, true)
             row.legacy -> true
             else -> row.installed
         }
@@ -330,7 +330,7 @@ class AccountPackagesStore(
         return when (projectChoices[id]) {
             false -> false
             true -> accountKeeps
-            null -> entry?.isDefault == true && accountKeeps
+            null -> id in PackageGate.STARTER || (entry?.isDefault == true && accountKeeps)
         }
     }
 

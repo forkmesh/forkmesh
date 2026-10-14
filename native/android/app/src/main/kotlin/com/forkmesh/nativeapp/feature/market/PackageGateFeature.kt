@@ -75,9 +75,9 @@ object PackageGateFeature {
     }
 
     fun isInstalled(id: String): Boolean = when (id) {
-        PackageGate.SIGN_IN -> PhonePackages.isOn(id, prefs, legacy) ?: legacy
+        PackageGate.SIGN_IN -> PhonePackages.isOn(id, prefs, legacy) ?: true
         in PackageGate.ORGANIZATION_PACKAGES -> id in organizationInstalled && PhonePackages.isOn(id, prefs, legacy) != false
-        else -> StatusPageFeature.store?.shows(id) ?: PackageGate.fallback(null, legacy)
+        else -> StatusPageFeature.store?.shows(id) ?: PackageGate.fallback(id, null, legacy)
     }
 
     fun deviceSwitch(id: String): Boolean? = PhonePackages.isOn(id, prefs, legacy)
