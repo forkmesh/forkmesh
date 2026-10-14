@@ -440,7 +440,7 @@ struct ChatChannelSidebar: View {
                     if hub.extras.isPrivate(channel) {
                         Button(action: { inviting = channel }) { Label("Invite people", systemImage: "person.badge.plus") }
                     }
-                    if channel != "#general" {
+                    if hub.canLeaveChannel(channel) {
                         Button(role: .destructive, action: { leaving = channel }) {
                             Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right")
                         }

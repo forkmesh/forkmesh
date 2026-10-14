@@ -52,7 +52,7 @@ struct ChatChannelSheet: View {
         let label: String = hub.conversationLabel(conversation)
         return label.hasPrefix("#") ? String(label.dropFirst()) : label
     }
-    private var canLeave: Bool { office == nil && conversation != "#general" && conversation.hasPrefix("#") }
+    private var canLeave: Bool { hub.canLeaveChannel(conversation) }
 
     var body: some View {
         NavigationStack(path: $path) {
