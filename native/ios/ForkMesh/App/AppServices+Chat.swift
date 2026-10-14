@@ -53,6 +53,11 @@ struct ChatInstaller: AppServicesInstaller {
                 _ = direct.acceptMeshDirect(channel, sealKeyId: keyId, plain: plain)
             }
             hub.forkbot = api
+            hub.accounts = api
+            if let settings = settings {
+                hub.sharedRoom = { settings.room == SettingsService.defaultRoom && settings.passphrase.isEmpty }
+            }
+            Task { await hub.refreshMemberDirectory(force: true) }
             hub.apps = api.appsClient
             Services.put(office)
             Services.put(direct)
@@ -78,6 +83,7 @@ struct ChatInstaller: AppServicesInstaller {
                             Task { await office.refresh() }
                             Task { await direct.refresh() }
                             Task { await hub.applyReadMarks() }
+                            Task { await hub.refreshMemberDirectory(force: true) }
                         }
                     }
                 }
@@ -88,6 +94,9 @@ struct ChatInstaller: AppServicesInstaller {
                 if state == .hidden || state == .paused || state == .detached {
                     live.stopSharingMotion()
                     DirectLiveMotionFeed.shared.stop()
+                }
+                if state == .resumed {
+                    Task { await hub.refreshMemberDirectory() }
                 }
                 if state == .resumed && !(auth?.session?.sessionToken ?? "").isEmpty {
                     Task { await direct.refresh() }

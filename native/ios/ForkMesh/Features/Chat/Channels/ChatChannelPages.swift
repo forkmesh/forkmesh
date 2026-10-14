@@ -346,7 +346,9 @@ struct ChatChannelMembersScreen: View {
             } header: {
                 Text("\(ChatHub.membersLabel(members.count)) \u{00B7} \(online) online")
             } footer: {
-                if hub.office?.room(for: conversation) == nil && !hub.extras.isPrivate(conversation) {
+                if ChatEveryone.contains(conversation) && hub.everyoneApplies {
+                    Text("Every member of this project is in this channel.")
+                } else if hub.office?.room(for: conversation) == nil && !hub.extras.isPrivate(conversation) {
                     Text("Everyone online in this project's chat, and everyone who has posted here.")
                 }
             }
@@ -355,7 +357,10 @@ struct ChatChannelMembersScreen: View {
         .navigationTitle("Members")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .task { await ChatChannelMembersScreen.warm(members: hub.channelMembers(conversation)) }
+        .task {
+            await hub.refreshMemberDirectory()
+            await ChatChannelMembersScreen.warm(members: hub.channelMembers(conversation))
+        }
     }
 
     @MainActor static func warm(members: [ChatChannelMember]) async {

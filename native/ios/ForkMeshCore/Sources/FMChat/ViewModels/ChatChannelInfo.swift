@@ -297,6 +297,16 @@ extension ChatHub {
             for group in roster { add(fromGroup(group)) }
         } else {
             for group in roster { add(fromGroup(group)) }
+            if ChatEveryone.contains(conversation) && sharedRoom() {
+                let own = Set(ownNames.map { $0.lowercased() })
+                for member in directoryMembers {
+                    let group = onlineByName[member.name.lowercased()]
+                    add(ChatChannelMember(
+                        name: group?.name ?? member.name, account: member.name, peerId: group?.id ?? "",
+                        online: group?.online ?? false, away: (group?.online ?? false) && (group?.userStatus.away ?? false),
+                        isSelf: own.contains(member.name.lowercased()) || (group?.isSelf ?? false)))
+                }
+            }
             for message in messages(in: conversation) + extras.allReplies.filter({ $0.conversation == conversation }) {
                 if message.senderId == "forkbot" || message.senderId.hasPrefix("app:") { continue }
                 let group = onlineByName[message.senderName.lowercased()]
