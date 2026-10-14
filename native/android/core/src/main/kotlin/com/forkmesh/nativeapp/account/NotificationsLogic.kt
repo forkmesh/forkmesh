@@ -30,7 +30,7 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "organization_task_started", "organization_task_activity", "organization_task_update" ->
         "check_circle_outline"
     "calendar_invitation", "calendar_reminder", "calendar_rsvp" -> "calendar_today_outlined"
-    "chat_webhook", "channel_unread" -> "chat_bubble_outline"
+    "chat_webhook", "channel_unread", "direct_unread" -> "chat_bubble_outline"
     "account_email_sent" -> "mark_email_read_outlined"
     "operational_alert" -> "warning_amber_outlined"
     "error_group" -> "error_outline"

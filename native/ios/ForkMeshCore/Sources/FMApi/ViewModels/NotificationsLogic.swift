@@ -33,7 +33,7 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "organization_task_started", "organization_task_activity", "organization_task_update":
         return "check_circle_outline"
     case "calendar_invitation", "calendar_reminder", "calendar_rsvp": return "calendar_today_outlined"
-    case "chat_webhook", "channel_unread": return "chat_bubble_outline"
+    case "chat_webhook", "channel_unread", "direct_unread": return "chat_bubble_outline"
     case "account_email_sent": return "mark_email_read_outlined"
     case "operational_alert": return "warning_amber_outlined"
     case "error_group": return "error_outline"
@@ -66,7 +66,7 @@ public func notificationToneForKind(_ kind: String) -> PingTone {
     case "action", "organization_task_started", "organization_task_activity", "organization_task_update",
          "pull", "pull_submitted", "review_requested", "pull_review_requested", "bounty_funded", "bounty_paid",
          "credits_refilled", "pending_reward", "tip_sent", "release", "release_published", "org_succession",
-         "chat", "comment", "discussion", "chat_webhook", "channel_unread", "hackathon_squad", "hackathon_reward":
+         "chat", "comment", "discussion", "chat_webhook", "channel_unread", "direct_unread", "hackathon_squad", "hackathon_reward":
         return .accent
     default: return .neutral
     }

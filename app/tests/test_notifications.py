@@ -84,15 +84,15 @@ def _load_notification_helpers():
     return ns
 
 
-def _load_pending_inbox_notifier(captured, maintainers=()):
+def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None):
     """notify_pending_inbox with its collaborators stubbed, so the strings
     it composes for the ping inbox can be read back directly. maintainers is
     what the organization lookup answers for the repo."""
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     body = [node for node in tree.body
             if isinstance(node, ast.AsyncFunctionDef)
-            and node.name == "notify_pending_inbox"]
-    assert len(body) == 1, "notify_pending_inbox not found in entry.py"
+            and node.name in ("notify_pending_inbox", "_node_owner_among")]
+    assert len(body) == 2, "notify_pending_inbox not found in entry.py"
     body.extend(
         node for node in tree.body
         if isinstance(node, ast.Assign) and {
@@ -112,9 +112,13 @@ def _load_pending_inbox_notifier(captured, maintainers=()):
         lookups.append((host_owner, repo))
         return list(maintainers)
 
+    async def account_row(_env, name):
+        return None, {"owner": (node_owners or {}).get(name, "")}
+
     ns = {
         "enqueue_notification": enqueue_notification,
         "_org_repo_maintainers": org_repo_maintainers,
+        "_account_row": account_row,
         "clean_string": lambda value, limit=240: (
             value.strip()[:limit] if isinstance(value, str) else ""),
         "repo_web_href": lambda owner, repo: "/" + owner + "/" + repo,
@@ -641,6 +645,30 @@ def test_new_issue_ping_reaches_the_host_and_organization_maintainers():
     # Only the hosting account is told which of its nodes serves the repo.
     assert captured[0]["body"] == "Crash on launch (hosted on your jett node)"
     assert captured[1]["body"] == "Crash on launch"
+
+
+def test_a_node_host_owned_by_a_maintainer_files_one_ping_per_person():
+    captured = []
+    notify = _load_pending_inbox_notifier(
+        captured, maintainers=["jett", "maya"],
+        node_owners={"fmnext-n1": "jett"})
+    asyncio.run(notify(object(), "fmnext-n1", "forkmesh", "pull", "kaif",
+                       "Add Forgot password", 286, public_owner="forkmesh",
+                       opened=True))
+
+    assert [p["recipient"] for p in captured] == ["jett", "maya"]
+    assert captured[0]["body"] == "Add Forgot password"
+
+
+def test_a_node_host_whose_owner_is_not_a_maintainer_still_hears_it():
+    captured = []
+    notify = _load_pending_inbox_notifier(
+        captured, maintainers=["maya"], node_owners={"fmnext-n1": "jett"})
+    asyncio.run(notify(object(), "fmnext-n1", "forkmesh", "pull", "kaif",
+                       "Add Forgot password", 286, public_owner="forkmesh",
+                       opened=True))
+
+    assert [p["recipient"] for p in captured] == ["fmnext-n1", "maya"]
 
 
 def test_inbox_activity_on_an_existing_item_stays_a_host_only_inbox_ping():

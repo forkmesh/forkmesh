@@ -28,6 +28,7 @@ PUSH_KIND_ICONS = {
     "calendar_rsvp": "\U0001F64B",
     "chat_webhook": "\U0001FA9D",
     "channel_unread": PUSH_CHAT_ICON,
+    "direct_unread": PUSH_CHAT_ICON,
     "general_chat": PUSH_CHAT_ICON,
     "account_email_sent": "\U0001F4E7",
     "operational_alert": "\U0001F4DF",

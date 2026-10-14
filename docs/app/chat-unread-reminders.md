@@ -1,4 +1,4 @@
-# Unread channel reminder emails
+# Unread channel and direct-message reminder emails
 
 Members of a private room who miss new messages get one reminder email per
 unread episode. Home page: [app/README.md](README.md). Related:
@@ -26,3 +26,28 @@ set whether or not the send succeeds. The email names rooms and counts only.
 
 Read rows are deleted with the room or member; `tools/next_rekey.py`
 recomputes `account_bi`.
+
+## Direct messages waiting on the server
+
+The relay keeps an encrypted copy of a direct message only until one of the
+recipient's devices acknowledges it ([chat-private-rooms.md](chat-private-rooms.md#server-copies-of-direct-messages)).
+A recipient whose copies sit there for a day gets one email asking them to
+open chat, so the copies are received and deleted instead of waiting out the
+7-day expiry.
+
+- Counts only `notify` rows (`msg_id` ending `:n`) sent by the other
+  participant; key advertisements and the recipient's own frames are ignored.
+- The oldest such row must be at least 24 hours old (`REMINDER_DELAY_MS`) and
+  inside the 7-day retention window.
+- `chat_direct_participants.unread_reminded_at` (migration 0260) makes it one
+  email per episode: only rows stored after the last reminder count, so the
+  next email needs a new message that again waits a day.
+- Requires a verified address and the `direct_unread` kind ("Unread direct
+  messages", on by default), sent as `email_kind="direct_unread"` with
+  List-Unsubscribe. The email names the sender and a count, never content.
+
+Phase `direct-unread-email` (`direct_reminders.send_reminders`) runs every
+five minutes with the reward sweeps (minute % 5 == 1): one joined query over the
+`chat-direct:` rows, up to 4 recipients per pass, one email per recipient
+listing every waiting sender. `unread_reminded_at` is set whether or not the
+send succeeds.

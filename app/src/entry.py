@@ -848,6 +848,7 @@ NOTIFICATION_KINDS = frozenset({
     "calendar_rsvp",
     "chat_webhook",
     "channel_unread",
+    "direct_unread",
     "account_email_sent",
     "operational_alert",
     # A member locally signed and broadcast a self-custodial SOL transfer to
@@ -946,6 +947,7 @@ NOTIFICATION_EMAIL_KINDS = (
     "calendar_rsvp",
     "package_review",
     "channel_unread",
+    "direct_unread",
 )
 NOTIFICATION_EMAIL_DEFAULTS = {
     "mention": True,
@@ -971,6 +973,7 @@ NOTIFICATION_EMAIL_DEFAULTS = {
     "calendar_rsvp": True,
     "package_review": True,
     "channel_unread": True,
+    "direct_unread": True,
 }
 # Email digest bridge (issue #361): the cron rolls a recipient's unread
 # notifications into one email so a reply reaches people who don't have the app
@@ -12172,6 +12175,8 @@ _chat_format = _LazyModule("chat_format")
 _channel_reminders = _LazyModule("channel_reminders")
 send_channel_unread_reminders = _channel_reminders.export("send_reminders")
 chat_channel_mark_read = _channel_reminders.export("mark_read")
+_direct_reminders = _LazyModule("direct_reminders")
+send_direct_unread_reminders = _direct_reminders.export("send_reminders")
 _desktop_pings = _LazyModule("desktop_pings")
 desktop_ping_handler = _desktop_pings.export("desktop_ping_handler")
 _mesh_push = _LazyModule("mesh_push")
@@ -13276,6 +13281,9 @@ SCHEMA_ALTER_STATEMENTS = [
        ADD COLUMN progress INTEGER NOT NULL DEFAULT 0
        CHECK (progress BETWEEN 0 AND 100)""",
     "ALTER TABLE not_found_paths ADD COLUMN last_client TEXT NOT NULL DEFAULT ''",
+    """ALTER TABLE chat_direct_participants
+       ADD COLUMN unread_reminded_at INTEGER NOT NULL DEFAULT 0
+       CHECK (unread_reminded_at >= 0)""",
 ]
 
 # Fingerprint of the DDL this build would apply. The latest native migration
@@ -13286,7 +13294,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "f52ed5d3bc38da7549ac2d5ca233bcfaeb8ac212442d56b2957d838160c9c778"
+    "f6b1f7f7a4bbf3af12a47342f9531f10f9c37d42ef0558873cfce3422eb4fd8f"
 )
 
 
@@ -30235,6 +30243,7 @@ MAILTRAP_EMAIL_CATEGORIES = {
     "notifications": "Notification digest",
     "general_chat": "General chat digest",
     "channel_unread": "Unread channel reminder",
+    "direct_unread": "Unread direct message reminder",
     # Kept for mail this account received while memberships were sold on the
     # site; nothing writes this kind any more.
     "polar_membership": "Billing membership",
@@ -35470,17 +35479,20 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
         # state — so the push for it found no unread row to show.
         dedupe += ":" + clean_string(text, 80)
     meta = {"number": number, "source": source, "hostOwner": host_owner}
-    await enqueue_notification(
-        env, owner, kind, label + joiner + slug,
-        body=host_body,
-        repo=slug, href=href,
-        actor=actor, source=source,
-        dedupe=dedupe,
-        meta=meta,
-    )
+    maintainers = (await _org_repo_maintainers(env, host_owner, repo)
+                   if opened else [])
+    if not await _node_owner_among(env, host_owner, maintainers):
+        await enqueue_notification(
+            env, owner, kind, label + joiner + slug,
+            body=host_body,
+            repo=slug, href=href,
+            actor=actor, source=source,
+            dedupe=dedupe,
+            meta=meta,
+        )
     if not opened:
         return
-    for maintainer in await _org_repo_maintainers(env, host_owner, repo):
+    for maintainer in maintainers:
         if maintainer == host_owner:
             continue
         await enqueue_notification(
@@ -35491,6 +35503,23 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
             dedupe=dedupe,
             meta=meta,
         )
+
+
+async def _node_owner_among(env, host, accounts):
+    if not accounts:
+        return False
+    _, rec = await _account_row(env, host)
+    owner = clean_string((rec or {}).get("owner", ""), MAX_NODE_NAME).lower()
+    return bool(owner) and owner != host and owner in accounts
+
+
+async def _org_fanout_recipients(env, host, repo):
+    maintainers = await _org_repo_maintainers(env, host, repo)
+    recipients = [] if await _node_owner_among(env, host, maintainers) else [host]
+    for maintainer in maintainers:
+        if maintainer not in recipients and maintainer != host:
+            recipients.append(maintainer)
+    return recipients
 
 
 async def _org_repo_maintainers(env, host_owner, repo):
@@ -35603,11 +35632,7 @@ async def notify_repo_activity(env, owner, repo, event, body="", actor="",
               clean_string(key, 80))
     payload_meta = dict(meta or {})
     payload_meta["event"] = event
-    recipients = [owner]
-    for maintainer in await _org_repo_maintainers(env, owner, repo):
-        if maintainer not in recipients:
-            recipients.append(maintainer)
-    for recipient in recipients:
+    for recipient in await _org_fanout_recipients(env, owner, repo):
         await enqueue_notification(
             env, recipient, "repo_activity", title,
             body=text, repo=slug, href=href,
@@ -35872,11 +35897,8 @@ async def notify_release_published(env, owner, repo, release):
     # The organization that fronts the repository hears about a cut release
     # for the same reason it hears about a new issue (adhoc #295): the people
     # who run it are the people who answer for what shipped.
-    recipients = [clean_string(owner, MAX_NODE_NAME).lower()]
-    for maintainer in await _org_repo_maintainers(env, recipients[0], repo):
-        if maintainer not in recipients:
-            recipients.append(maintainer)
-    for recipient in recipients:
+    host = clean_string(owner, MAX_NODE_NAME).lower()
+    for recipient in await _org_fanout_recipients(env, host, repo):
         await enqueue_notification(
             env, recipient, "release_published", title,
             body=body,
@@ -50406,7 +50428,8 @@ def _cron_due_phases(minute_slot):
         phases.append("ap-outbox")
     elif minute % 5 == 1:
         phases.extend((
-            "reward-chain", "reward-contributions", "reward-sweeps"))
+            "reward-chain", "reward-contributions", "reward-sweeps",
+            "direct-unread-email"))
     elif minute % 5 == 2:
         phases.append("federation")
     elif minute % 5 == 3:
@@ -50570,6 +50593,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await send_general_chat_digests(env)
     if phase == "channel-unread-email":
         return await send_channel_unread_reminders(env)
+    if phase == "direct-unread-email":
+        return await send_direct_unread_reminders(env)
     if phase == "stale-nodes":
         return await purge_stale_registered_nodes(env, force=True)
     if phase == "blocked-catalog":

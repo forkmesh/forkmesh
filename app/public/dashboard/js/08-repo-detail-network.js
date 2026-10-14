@@ -1088,6 +1088,7 @@
       calendar_rsvp: "calendar-check",
       chat_webhook: "message-square",
       channel_unread: "message-square",
+      direct_unread: "message-square",
       operational_alert: "triangle-alert",
       security_alert: "shield-alert",
       device_added: "smartphone",
