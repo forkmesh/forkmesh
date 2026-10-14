@@ -70,3 +70,15 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
   30px suggestion rows.
 - The membership panel (`membership-prompt.js`) is shared with the website and
   keeps the website's textured buttons on purpose.
+
+## Tasks, Notes and Calendar copies
+
+`/dashboard/tasks`, `/dashboard/notes` and `/dashboard/calendar` are served
+from the marketplace packages' pages (`dashboard-plugins/<id>/default/`,
+built from the shell by `app/tools/build_app_plugins.py`). The checked-in
+copies `app/public/dashboard/{tasks,notes,calendar}/index.html` used to be
+kept by hand and so missed the shell's `fm-*` styles, leaving their menus,
+blankslates and flashes unstyled. They are now listed in
+`dashboard_shell.PACKAGED_PAGE_COPIES` and composed from the shell and
+`partials/views/<id>.html` by `app/tools/build_dashboard_assets.py`;
+`test_dashboard_composer.py` fails when a copy differs from the composed page.
