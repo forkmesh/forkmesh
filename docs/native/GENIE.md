@@ -478,6 +478,22 @@ most 300, buttons first. It visits at most 2,400 nodes, 48 deep. A scan is
 reused for 2 s; a tab or page change marks it stale so the next look scans
 again.
 
+**Scan cost (2026-10-14, branch 1994).** The walk runs on the main thread,
+and asking a SwiftUI hosting view for its accessibility elements makes SwiftUI
+build an accessibility node for every visible view, which is expensive on a
+long Agents list. The spider's keep-clear check runs every 1.5 s. This is the
+likely cause, read from the code and not profiled on the device, of one
+diagnostics bundle (1.4.1 build 221, iPhone16,2): 18 frame stalls of 115 to
+490 ms in the first 51 s, the later ones with no request in flight, and an
+average main-loop lag of 45 ms. Each scan is now timed, and the next
+time-based rescan waits until the scan's cost is at most 2% of the time since
+(`GenieLandmarks.spacing(afterScanTaking:)`). That is never less than the
+2 s refresh and never more than 30 s (`GenieLandmarks.slowest`). A tab or
+page change still rescans at once. The walk runs inside the performance
+monitor's `timeSync("genie.screenScan")`, so a slow scan appears in the stall
+log by name instead of as an anonymous frame stall. Tests:
+`GenieScanSpacingTests`.
+
 **Keeping off.** `GenieKeepClear.buttons` is now the marked views, the bars,
 and every scanned button, link, tab, text field, switch, slider and picture
 (`GenieLandmarks.blockers`), so `GenieClearance` keeps the spider off all of
