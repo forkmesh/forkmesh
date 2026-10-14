@@ -84,6 +84,8 @@ that can log in as `build` on the Mac.
   desktop `.dmg` build (`desktop-release v1.2.5`), is waited for, never
   killed. A run removes the lock only while it still owns it.
 
+- The steps run `native/ios/tools/*.py` with the Mac's own `/usr/bin/python3`, which is 3.9.6. Annotations like `bytes | None` need Python 3.10 when evaluated, so a tool that uses them must start with `from __future__ import annotations` (2026-10-14: `asc_bundle_ids.py` and `asc_store_report.py` stopped an ad hoc build at "Register the bundle ids" with `TypeError: unsupported operand type(s) for |`). Check with `ast.parse(src, feature_version=(3, 9))` before pushing.
+
 ## Release builds (2026-09-28)
 
 The release host (`tools/forkmesh-release-host.py`, `docs/release/README.md`)
