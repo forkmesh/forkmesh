@@ -76,19 +76,32 @@ const client = viewOnce.createViewOnceClient({ request });
 window.harness = { viewOnce, recorder, client, revoked: [] };
 const revoke = URL.revokeObjectURL.bind(URL);
 URL.revokeObjectURL = (url) => { window.harness.revoked.push(url); revoke(url); };
-window.harness.useVoices = async () => {
+window.harness.useFilters = async () => {
+  const filters = await import("/chat-view-once-filters.js");
   const voice = await import("/chat-call-voice.js");
+  const support = filters.installViewOnceFilters();
   recorder.registerViewOnceFilterStages({
-    voice: (micTrack, voiceId) => voice.createVoiceStage({ sourceTrack: micTrack, voiceId }),
+    face: support.faces || support.backgrounds
+      ? async (stream, choice) => {
+        const stage = await filters.startViewOnceFaceStage(stream, choice);
+        window.harness.faceStage = stage;
+        return stage;
+      }
+      : null,
+    voice: support.voices
+      ? (micTrack, voiceId) => voice.createVoiceStage({ sourceTrack: micTrack, voiceId })
+      : null,
   });
-  window.harness.voices = voice.CALL_VOICES.map((item) => [item.id, item.label]);
+  window.harness.choices = filters.viewOnceFilterChoices(support);
+  return support;
 };
 window.harness.record = (kind) => new Promise((resolve) => {
   recorder.openViewOnceRecorder({
     kind,
     recipient: "bob",
-    voices: window.harness.voices || [],
+    ...(window.harness.choices || {}),
     onSend: async (recording, onProgress) => {
+      window.harness.lastBlob = recording.blob;
       const sent = await client.upload("${CONVERSATION}", recording.kind, recording.blob,
         recording.durationMs, { mime: recording.mime, onProgress });
       window.harness.sentBytes = recording.blob.size;
@@ -231,11 +244,11 @@ test("holding the record button sends a voice message in a changed voice", async
     route.fulfill({ contentType: "text/html", body: HARNESS }));
   await page.goto("/view-once-harness");
   await page.waitForFunction(() => window.harnessReady === true);
-  await page.evaluate(() => window.harness.useVoices());
+  await page.evaluate(() => window.harness.useFilters());
   const framePromise = page.evaluate(() => window.harness.record("voice"));
   const dialog = page.getByRole("dialog");
   const picker = dialog.getByRole("combobox", { name: "Voice for this message" });
-  await expect(picker).toHaveValue("");
+  await expect(picker).toHaveValue("face");
   await picker.selectOption("maya");
   const record = dialog.getByRole("button", { name: /Start recording/ });
   const box = await record.boundingBox();
@@ -369,4 +382,158 @@ test("chat page: a direct message carries a voice message that plays once and re
   expect(bob.errors).toEqual([]);
   await alice.context.close();
   await bob.context.close();
+});
+
+function cameraClip(dir) {
+  const { execFileSync } = require("node:child_process");
+  const path = require("node:path");
+  require("node:fs").mkdirSync(dir, { recursive: true });
+  const clip = path.join(dir, "maya-camera.y4m");
+  execFileSync("ffmpeg", [
+    "-loglevel", "error", "-y", "-loop", "1",
+    "-i", path.resolve(__dirname, "..", "..", "public", "assets", "call-faces", "maya.jpg"),
+    "-vf", "scale=360:360,pad=640:480:140:60:color=0x6a7a8a,format=yuv420p",
+    "-t", "4", "-r", "15", clip,
+  ]);
+  return clip;
+}
+
+const SAMPLE = `async (blob) => {
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.src = URL.createObjectURL(blob);
+  await video.play();
+  await new Promise((resolve) => {
+    const check = () => (video.currentTime >= 2 || video.ended ? resolve() : setTimeout(check, 50));
+    check();
+  });
+  video.pause();
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 120;
+  const g = canvas.getContext("2d", { willReadFrequently: true });
+  const full = document.createElement("canvas");
+  full.width = video.videoWidth;
+  full.height = video.videoHeight;
+  full.getContext("2d").drawImage(video, 0, 0);
+  const png = full.toDataURL("image/png");
+  g.drawImage(video, 0, 0, 160, 120);
+  const recorded = Array.from(g.getImageData(0, 0, 160, 120).data);
+  const office = new Image();
+  office.src = "/assets/call-backgrounds/office.jpg";
+  await office.decode();
+  const scale = Math.max(160 / office.width, 120 / office.height);
+  const w = office.width * scale;
+  const h = office.height * scale;
+  g.drawImage(office, (160 - w) / 2, (120 - h) / 2, w, h);
+  const background = Array.from(g.getImageData(0, 0, 160, 120).data);
+  g.fillStyle = "#6a7a8a";
+  g.fillRect(0, 0, 160, 120);
+  const maya = new Image();
+  maya.src = "/assets/call-faces/maya.jpg";
+  await maya.decode();
+  g.drawImage(maya, 35, 15, 90, 90);
+  const raw = Array.from(g.getImageData(0, 0, 160, 120).data);
+  return { recorded, background, raw, png };
+}`;
+
+function patchDiff(a, b, x0, y0, x1, y1) {
+  let sum = 0;
+  let count = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * 160 + x) * 4;
+      sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+      count += 3;
+    }
+  }
+  return sum / count;
+}
+
+test("video messages record the chosen face and background, and refuse to record when they cannot start", async ({}, testInfo) => {
+  test.setTimeout(120_000);
+  const clip = cameraClip(testInfo.outputDir);
+  const faceBrowser = await chromium.launch({
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+      `--use-file-for-fake-video-capture=${clip}`,
+      "--autoplay-policy=no-user-gesture-required",
+    ],
+  });
+  const context = await faceBrowser.newContext({
+    baseURL: "http://127.0.0.1:4179",
+    permissions: ["camera", "microphone"],
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const server = mediaServer();
+  await page.route("**/api/chat/direct-messages/**", server.handle);
+  await page.route("**/view-once-harness", (route) =>
+    route.fulfill({ contentType: "text/html", body: HARNESS }));
+  await page.goto("/view-once-harness");
+  await page.waitForFunction(() => window.harnessReady === true);
+  const support = await page.evaluate(() => window.harness.useFilters());
+  expect(support.faces).toBe(true);
+  expect(support.backgrounds).toBe(true);
+
+  const framePromise = page.evaluate(() => window.harness.record("video"));
+  const dialog = page.getByRole("dialog");
+  const face = dialog.getByRole("combobox", { name: "Face for this video message" });
+  const background = dialog.getByRole("combobox", { name: "Background for this video message" });
+  await expect(face).toHaveValue("");
+  await expect(background).toHaveValue("");
+  await face.selectOption("theo");
+  await background.selectOption("office");
+  await expect(dialog.getByRole("status")).toHaveText("It disappears after it is watched once.", { timeout: 40_000 });
+  await dialog.getByRole("button", { name: /Start recording/ }).click();
+  await expect(dialog.getByRole("button", { name: "Stop recording" })).toBeVisible();
+  await expect(face).toBeDisabled();
+  await page.waitForTimeout(3500);
+  const tracked = await page.evaluate(() => ({
+    face: window.harness.faceStage.face(),
+    background: window.harness.faceStage.background(),
+    presence: window.harness.faceStage.landmarks().presence,
+  }));
+  expect(tracked.face).toBe("theo");
+  expect(tracked.background).toBe("office");
+  expect(tracked.presence).toBeGreaterThan(0.5);
+  await dialog.getByRole("button", { name: "Stop recording" }).click();
+  await dialog.getByRole("button", { name: /^Send / }).click();
+  await framePromise;
+
+  const frames = await page.evaluate(`(${SAMPLE})(window.harness.lastBlob)`);
+  await testInfo.attach("recorded-frame.png", {
+    body: Buffer.from(frames.png.split(",")[1], "base64"),
+    contentType: "image/png",
+  });
+  require("node:fs").writeFileSync(
+    require("node:path").join(testInfo.outputDir, "recorded-frame.png"),
+    Buffer.from(frames.png.split(",")[1], "base64"));
+  const corner = (image) => patchDiff(frames.recorded, image, 0, 0, 24, 24) +
+    patchDiff(frames.recorded, image, 136, 0, 160, 24);
+  expect(corner(frames.background)).toBeLessThan(corner(frames.raw));
+  expect(patchDiff(frames.recorded, frames.raw, 0, 0, 24, 24)).toBeGreaterThan(12);
+  expect(patchDiff(frames.recorded, frames.raw, 60, 40, 100, 90)).toBeGreaterThan(8);
+
+  await page.evaluate(() => {
+    window.harness.recorder.registerViewOnceFilterStages({
+      face: async () => { throw new Error("no webgl"); },
+    });
+    window.harness.lastBlob = null;
+    window.harness.record("video");
+  });
+  const broken = page.getByRole("dialog");
+  await broken.getByRole("combobox", { name: "Face for this video message" }).selectOption("kofi");
+  await expect(broken.getByRole("status")).toContainText("could not start");
+  await broken.getByRole("button", { name: /Start recording/ }).click();
+  await expect(broken.getByRole("status")).toContainText("could not start");
+  await expect(broken.getByRole("button", { name: "Stop recording" })).toBeHidden();
+  await expect(broken.locator(".chat-view-once-review")).toHaveCount(0);
+  expect(await page.evaluate(() => window.harness.lastBlob)).toBeNull();
+  expect(errors).toEqual([]);
+  await context.close();
+  await faceBrowser.close();
 });
