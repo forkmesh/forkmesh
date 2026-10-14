@@ -42,6 +42,21 @@ struct ChatInstaller: AppServicesInstaller {
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
             hub.office = office
             hub.direct = direct
+            let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
+            let roomsKey: @MainActor () -> String = {
+                let account: String = (auth?.session?.nodeName ?? "").lowercased()
+                return account.isEmpty ? "" : "chat.officeRooms.\(api.url("/")?.host ?? "").\(account)"
+            }
+            let restoreRooms: @MainActor () -> Void = {
+                let key: String = roomsKey()
+                guard !key.isEmpty, let saved = prefs?.string(forKey: key), !saved.isEmpty else { return }
+                office.restore(JSON.parseObject(saved))
+                hub.adoptEveryoneGeneral()
+            }
+            office.onRooms = { (rooms: [OfficeRoom]) in
+                let key: String = roomsKey()
+                if !key.isEmpty { prefs?.set(JSON.encode(OfficeFrames.payload(rooms)), forKey: key) }
+            }
             hub.onMessageRemoved = { (_: String, messageId: String) in ChatNotificationCleanup.remove(messageId: messageId) }
             installCalls(hub: hub, direct: direct, relay: relay, auth: auth)
             let live: DirectLiveEngine = installLive(hub: hub, direct: direct)
@@ -57,8 +72,9 @@ struct ChatInstaller: AppServicesInstaller {
             Services.put(office)
             Services.put(direct)
             if !(auth?.session?.sessionToken ?? "").isEmpty {
+                restoreRooms()
                 Task {
-                    await office.refresh()
+                    await office.load()
                     hub.adoptEveryoneGeneral()
                     await hub.refreshMemberDirectory(force: true)
                 }
@@ -79,8 +95,9 @@ struct ChatInstaller: AppServicesInstaller {
                             live.clear()
                             readMarks.clear()
                         } else {
+                            restoreRooms()
                             Task {
-                                await office.refresh()
+                                await office.load()
                                 hub.adoptEveryoneGeneral()
                                 await hub.refreshMemberDirectory(force: true)
                             }
@@ -101,6 +118,7 @@ struct ChatInstaller: AppServicesInstaller {
                     Task { await hub.refreshMemberDirectory() }
                 }
                 if state == .resumed && !(auth?.session?.sessionToken ?? "").isEmpty {
+                    Task { await office.refresh() }
                     Task { await direct.refresh() }
                     Task { await hub.applyReadMarks() }
                 }

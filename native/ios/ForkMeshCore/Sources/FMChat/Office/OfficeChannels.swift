@@ -88,6 +88,19 @@ public enum OfficeFrames {
         return out
     }
 
+    public static func payload(_ rooms: [OfficeRoom]) -> JSONObject {
+        let channels: [JSONValue] = rooms.map { room in
+            .object([
+                "id": .string(room.id), "name": .string(room.name), "visibility": .string(room.isPrivate ? "private" : "public"),
+                "canManage": .bool(room.canManage), "topic": .string(room.topic), "members": JSONValue(room.members),
+                "keyVersion": .int(Int64(room.keyVersion)), "serverVisible": .bool(room.serverVisible),
+                "readOnly": .bool(room.readOnly), "kind": .string(room.everyone ? "everyone" : ""),
+                "memberCount": .int(Int64(room.memberCount)),
+            ])
+        }
+        return ["channels": .array(channels)]
+    }
+
     public static func recipients(_ envelope: JSONObject) -> Int? {
         guard case .int(let count)? = envelope["recipients"], count >= 0, count <= Int64(Int32.max) else { return nil }
         return Int(count)
@@ -217,6 +230,7 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingDeletes: [String: String] = [:]
     @ObservationIgnored private var pendingDeleteOrder: [String] = []
     @ObservationIgnored private var removedIds: Set<String> = []
+    @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
 
     public private(set) var rooms: [OfficeRoom] = []
     public private(set) var loading = false
@@ -274,8 +288,24 @@ public final class OfficeChannelService {
             }
             rooms = next
             lastError = nil
+            onRooms?(next)
         } catch {
             lastError = "\(error)"
+        }
+    }
+
+    public func restore(_ payload: JSONObject) {
+        guard rooms.isEmpty else { return }
+        rooms = OfficeFrames.rooms(from: payload)
+    }
+
+    public func load(attempts: Int = 6) async {
+        var delay: UInt64 = 1_000_000_000
+        for attempt in 1...max(1, attempts) {
+            await refresh()
+            if lastError == nil || attempt >= attempts { return }
+            do { try await Task.sleep(nanoseconds: delay) } catch { return }
+            delay = min(delay * 2, 30_000_000_000)
         }
     }
 
