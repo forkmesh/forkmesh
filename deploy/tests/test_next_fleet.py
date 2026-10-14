@@ -1043,3 +1043,5 @@ def test_caddy_install_waits_long_enough_for_a_first_certificate():
     assert next_fleet.CADDY_INSTALL_WAIT >= 120
     assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in next_fleet.caddy_debian_script(
         "n4.next.example.test")
+    assert "--max-time %d " % next_fleet.CADDY_INSTALL_MAX_TIME in script
+    assert next_fleet.CADDY_INSTALL_MAX_TIME > 10
