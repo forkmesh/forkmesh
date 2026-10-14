@@ -4828,11 +4828,6 @@ QString claudeAgentScriptPath(const QString &directory = QString());
 
 QString defaultClaudeCommand();
 
-// Materialize the bundled Cloudflare Workers AI agent script
-// into the app data dir and return its path. The script drives the tool-use
-// loop against the relay's POST /api/ai/agent using the signed run ticket
-// AgentRunner injects as FORKMESH_AI_AGENT_AUTH, so no CLI or API key is
-// required.
 QString cloudflareAgentScriptPath(const QString &directory = QString());
 
 QString defaultCloudflareAiCommand();

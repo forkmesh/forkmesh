@@ -18,9 +18,11 @@ the run.
 ## Desktop
 
 Choosing **Cloudflare AI** creates an isolated worktree and sends each turn
-through the relay's `/api/ai/agent`; tools run only locally. Models come from
-`/api/forkbot/models`. The Worker needs an `[ai] binding = "AI"` and a
-`FORKBOT_AI_MODEL` default. **Local Llama** uses an Ollama server at
+straight to Cloudflare's `/ai/v1/chat/completions` with the account ID and API
+token saved in Settings (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`);
+tools run only locally, and no turn passes through the relay. Models come from
+Cloudflare's `/ai/models/search`, with a built-in list when that is
+unreachable. **Local Llama** uses an Ollama server at
 `127.0.0.1:11434`; when `GET /api/version` answers, the native `/api/chat`
 route is used, which sizes `num_ctx`, controls thinking, and keeps the model loaded.
 
