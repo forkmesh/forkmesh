@@ -370,6 +370,22 @@ their sort cell changes.
   Background reads use `GIT_OPTIONAL_LOCKS=0`. `Unable to write index` is not
   treated as lock contention, because `--autostash` may already have stashed
   edits.
+- **Uncommitted work in the branch's worktree.** `mergeWorktreeIntoMain`
+  records in `WorktreeMergeFlow` whether an agent session on the branch is
+  still working (`agentSessionWorkInFlight` → `agentWorking`) or has stopped
+  (`idleAgentId`). When `prepareWorktreeMerge` finds the worktree dirty:
+  - **Merge & clean up** with a stopped agent: everything is committed on the
+    branch as "Agent #N: commit the changes it left uncommitted", the files are
+    logged, and the merge continues; the worktree is removed only after that
+    commit. If the commit fails, nothing is merged and the notice gives git's
+    reason.
+  - The agent is still working: the merge is refused until it finishes;
+    nothing is committed while an agent may still be writing.
+  - No agent owns the branch, or a plain **Merge** (which keeps the worktree):
+    refused as before, so a person's own edits are never committed for them.
+    The notice lists up to five files (`describeDirtyPaths`) and says whether
+    the edits would be lost with the worktree or left out of a plain merge.
+  Tested in `checkErrorLogTriage` (`desktop/tests/test_window_resize.cpp`).
 - After merging the shown branch, `applyWorktreeMergeStep` covers the Git
   workspace with a merged page (`m_gitMergedPage`) holding **Back to agents**,
   **Back to branches** and the merge stats. **Leaderboard**

@@ -11,7 +11,7 @@ Code: `app/src/attribution.py` (capture, storage, bot rules, reporting),
 `app/migrations/0174_attribution.sql`. Tests: `app/tests/test_attribution.py`,
 `www/tests/attribution_capture.test.mjs`.
 
-## Model
+## Attribution model
 
 - **Session:** one anonymous session per `fm_attr` cookie holding a random
   UUID only (`HttpOnly; Secure; SameSite=Lax; Path=/; Domain=<site domain>;
