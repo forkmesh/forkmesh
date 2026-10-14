@@ -90,33 +90,41 @@ def test_routes_are_matched_without_shadowing_existing_actions():
         assert runner_logins.match(action) is None
 
 
-def test_authorization_admin_and_personal_registrant():
+def test_only_the_registrant_sees_or_drives_a_runner():
     runtime, _pool, _own = setup()
+    runtime.admins.add("ops")
     assert start(runtime, "", "pool-1")["status"] == 401
-    # Non-admins cannot sign a pool runner in, nor someone else's runner.
-    assert start(runtime, "alice", "pool-1")["status"] == 403
-    assert start(runtime, "bob", "alice-box")["status"] == 403
+    # Nobody but the account that added a runner learns it exists, admins
+    # included: someone else's runner answers like a missing one.
+    assert start(runtime, "alice", "pool-1")["status"] == 404
+    assert start(runtime, "bob", "alice-box")["status"] == 404
+    assert start(runtime, "root", "alice-box", "codex")["status"] == 404
+    assert start(runtime, "ops", "pool-1")["status"] == 404
     assert start(runtime, "alice", "nope-1")["status"] == 404
     created = start(runtime, "alice", "alice-box")
     assert created["status"] == 201
     assert created["data"]["session"]["state"] == "pending"
     assert created["data"]["session"]["expiresAt"] == NOW + 10 * 60_000
     assert start(runtime, "root", "pool-1")["status"] == 201
-    assert start(runtime, "root", "alice-box", "codex")["status"] == 201
     assert start(runtime, "root", "pool-1", "gemini")["status"] == 400
-    # bob cannot read or drive alice's session.
     sid = created["data"]["id"]
     base = "/api/runners/alice-box/login/" + sid
-    assert browser(runtime, "bob", base + "/output", method="GET")["status"] == 403
-    assert browser(runtime, "bob", base + "/cancel", {})["status"] == 403
-    # The list shows each caller only what they may manage.
+    for actor in ("bob", "root"):
+        assert browser(runtime, actor, base + "/output",
+                       method="GET")["status"] == 404
+        assert browser(runtime, actor, base + "/cancel", {})["status"] == 404
+        assert browser(runtime, actor, base + "/input",
+                       {"data": "x"})["status"] == 404
+        assert browser(runtime, actor, "/api/runners/alice-box/accounts", {
+            "provider": "claude-code", "account": "a",
+            "action": "activate"})["status"] == 404
     listed = browser(runtime, "alice", "/api/runners", method="GET")
     assert [r["name"] for r in listed["data"]["runners"]] == ["alice-box"]
     listed = browser(runtime, "root", "/api/runners", method="GET")
-    assert [r["name"] for r in listed["data"]["runners"]] == [
-        "alice-box", "pool-1"]
-    assert browser(runtime, "bob", "/api/runners",
-                   method="GET")["data"]["runners"] == []
+    assert [r["name"] for r in listed["data"]["runners"]] == ["pool-1"]
+    for actor in ("bob", "ops"):
+        assert browser(runtime, actor, "/api/runners",
+                       method="GET")["data"]["runners"] == []
     assert browser(runtime, "root", "/api/runners")["status"] == 405
     # Revoked runners take no new sessions.
     runtime.db.execute("UPDATE runner_nodes SET status='revoked' WHERE name='pool-1'")
@@ -345,8 +353,11 @@ def test_list_counts_each_runners_live_job_leases():
             (job_id, runner, "s%d" % job_id, lease, "g", "core-a", "proj",
              "refs/heads/agent/s%d" % job_id, expires, NOW))
     runtime.db.commit()
-    listed = browser(runtime, "root", "/api/runners", method="GET")
-    leases = {r["name"]: r["activeLeases"] for r in listed["data"]["runners"]}
+    leases = {}
+    for actor in ("root", "alice"):
+        listed = browser(runtime, actor, "/api/runners", method="GET")
+        leases.update(
+            {r["name"]: r["activeLeases"] for r in listed["data"]["runners"]})
     assert leases == {"alice-box": 1, "pool-1": 2}
 
 
@@ -396,7 +407,7 @@ def test_switching_and_removing_accounts_round_trip():
     body = {"provider": "claude-code", "account": ACCOUNT_B, "action": "activate"}
     assert browser(runtime, "root", path, body)["status"] == 404
     report_accounts(runtime, pool_key)
-    assert browser(runtime, "alice", path, body)["status"] == 403
+    assert browser(runtime, "alice", path, body)["status"] == 404
     assert browser(runtime, "", path, body)["status"] == 401
     assert browser(runtime, "root", path, dict(body, action="drop"))["status"] == 400
     assert browser(runtime, "root", path, dict(body, provider="gemini"))["status"] == 400
@@ -484,7 +495,7 @@ def test_terminal_sessions_need_the_runner_feature():
     listed = browser(runtime, "root", "/api/runners", method="GET")
     pool = [r for r in listed["data"]["runners"] if r["name"] == "pool-1"][0]
     assert pool["features"] == ["terminal"]
-    assert terminal(runtime, "alice", "pool-1")["status"] == 403
+    assert terminal(runtime, "alice", "pool-1")["status"] == 404
     created = terminal(runtime, "root", "pool-1", cols=500, rows=2)
     assert created["status"] == 201
     session = created["data"]["session"]

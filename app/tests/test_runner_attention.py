@@ -45,11 +45,11 @@ def test_attention_lists_manageable_runners_that_need_sign_in():
     admin = attention(runtime, "root")
     assert admin["status"] == 200
     body = admin["data"]
-    assert body["count"] == 2 and body["expired"] == 1
-    assert body["runners"] == 2
+    assert body["count"] == 1 and body["expired"] == 1
+    assert body["runners"] == 1
     assert body["pollMs"] == 5 * 60 * 1000
     assert body["checkedAt"] == NOW
-    first, second = body["items"]
+    [first] = body["items"]
     assert first == {
         "runner": "pool-1", "provider": "claude-code",
         "providerLabel": "Claude", "state": "expired", "scope": "pool",
@@ -59,11 +59,11 @@ def test_attention_lists_manageable_runners_that_need_sign_in():
                       "&connect=1",
         "loginId": "",
     }
+    own = attention(runtime, "alice")
+    [second] = own["data"]["items"]
     assert (second["runner"], second["provider"], second["state"]) == (
         "alice-box", "codex", "expiring")
     assert second["title"] == "alice-box: Codex sign-in expires soon"
-    own = attention(runtime, "alice")
-    assert [item["runner"] for item in own["data"]["items"]] == ["alice-box"]
     none = attention(runtime, "bob")
     assert none["data"]["items"] == [] and none["data"]["runners"] == 0
 

@@ -93,7 +93,7 @@ struct RunnerTerminalScreen: View {
             FmEmptyState(
                 icon: "lock_outline",
                 title: "Sign in to ForkMesh first",
-                message: "A runner opens a terminal only for an administrator or the registrant of a personal runner."
+                message: "A runner opens a terminal only for the account that added it."
             )
         }
     }
