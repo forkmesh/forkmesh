@@ -200,3 +200,8 @@ the same endpoints: installed apps (`GET /api/apps/installed`,
 replies rendered locally, block rendering for `app:` senders, mentions from
 public channels only, and consent opened in the system browser (native apps
 never hold a client secret).
+
+Notices on both pages (`setAppsNotice`) are success or danger `fm-flash`es.
+On `/dashboard/apps/build` the one-time secrets panel is a warning flash, the
+form's Clear and **Create app** are 28px buttons (Create is the green one), and
+an empty app list, an empty delivery log and load errors are `fm-blankslate`s.
