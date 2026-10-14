@@ -31,7 +31,8 @@ HEALTH_TIMEOUT = 300
 SYNC_NUDGE_SECONDS = 60
 DAEMON_STATUS = "curl -fsS --max-time 10 http://127.0.0.1:8791/v1/status"
 DAEMON_SYNC = "curl -fsS --max-time 10 -X POST http://127.0.0.1:8791/v1/control/sync"
-RQLITE_READY = "curl -fsS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:4001/readyz"
+RQLITE_READY = ("curl -sS --max-time 5 -K /etc/forkmesh-next/rqlite.curlrc -o /dev/null "
+                "-w '%{http_code}' http://127.0.0.1:4001/readyz")
 
 STEPS = (
     ("plan", "Plan: name, region, plan, rqlite role, release", 2),
