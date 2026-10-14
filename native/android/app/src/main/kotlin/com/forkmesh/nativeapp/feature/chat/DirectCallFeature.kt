@@ -15,14 +15,26 @@ import kotlinx.coroutines.flow.update
 object DirectCallFeature {
     const val FACE_PREF = "chat.callFace"
     const val VOICE_PREF = "chat.callVoice"
+    const val BACKGROUND_PREF = "chat.callBackground"
     private const val UNINSTALL_WAIT_MS = 3_000L
 
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "direct-call").apply { isDaemon = true }
     }
     private val revisionState = MutableStateFlow(0)
+    private val previewState = MutableStateFlow<String?>(null)
 
     val revision: StateFlow<Int> = revisionState.asStateFlow()
+    val previewConversation: StateFlow<String?> = previewState.asStateFlow()
+
+    fun openPreview(conversation: String) {
+        previewState.value = conversation
+    }
+
+    fun closePreview(keepCamera: Boolean = false) {
+        previewState.value = null
+        if (!keepCamera) worker.execute { runCatching { peers?.endPreview() } }
+    }
 
     @Volatile
     var engine: DirectCallEngine? = null
@@ -56,6 +68,11 @@ object DirectCallFeature {
         made.peerFactory = factory
         prefs?.getString(FACE_PREF)?.let { made.setFace(it) }
         made.onFaceChanged = { face -> prefs?.putString(FACE_PREF, face) }
+        prefs?.getString(BACKGROUND_PREF)?.let { made.setBackground(it, CallBackgroundStore.load(context)) }
+        made.onBackgroundChanged = { background, image ->
+            prefs?.putString(BACKGROUND_PREF, background)
+            CallBackgroundStore.save(context, image)
+        }
         prefs?.getString(VOICE_PREF)?.let { made.setVoiceChoice(it) }
         made.onVoiceChanged = { choice -> prefs?.putString(VOICE_PREF, choice) }
         made.onMissed = { conversation, media -> direct.send(conversation, "📞 Missed ${media.wire} call") }

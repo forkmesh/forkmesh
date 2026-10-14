@@ -478,6 +478,18 @@ processed inside the page (an AudioWorklet), not with AVAudioEngine; see
 docs/app/chat-direct-calls.md, "Voices". `CallAudioRoute.headphonesConnected` and
 `WebCallPeer.preview` / `setMonitor` are there for the pre-call preview.
 
+The background is engine state as well: `DirectCallEngine.backgrounds` (No background, Blur,
+Strong blur, five images, Your photo), `setBackground(_:image:)` and `onBackgroundChanged`. The
+installer saves the id under `chat.callBackground` and the picked photo as
+`Application Support/ForkMesh/call-background.jpg` (`CallBackgroundStore`). A video peer gets it
+before it offers or answers, like the face. `DirectCallPreview.swift` holds the pre-call
+preview (the eye button in a DM header): `WebCallPeerFactory.preview(face:background:image:)`
+loads the page in preview mode, and `makePeer` reuses that page for the call, so the camera and
+the disguise keep running. `CallFaceLandmarks` also answers person masks: the page asks for
+`{landmarks, mask}`, and Vision's `VNGeneratePersonSegmentationRequest` (`.balanced`, 8-bit)
+runs in the same request; the mask goes back as 256-px-wide base64 bytes. See
+docs/app/chat-direct-calls.md, "Backgrounds" and "Models on the device".
+
 The face is a real photo warped onto the caller's face over a 68-point mesh
 (docs/app/chat-direct-calls.md, "Face swap"). On iOS the landmarks come from Apple Vision:
 the page posts `{event: "landmarks", id, image}` with a 480-px JPEG of the frame,

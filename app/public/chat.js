@@ -291,6 +291,7 @@ const directDialogClose = document.querySelector("#chat-direct-dialog-close");
 const directAddBtn = document.querySelector("#chat-direct-add");
 const callAudioBtn = document.querySelector("#chat-call-audio");
 const callVideoBtn = document.querySelector("#chat-call-video");
+const callPreviewBtn = document.querySelector("#chat-call-preview");
 const directSearch = document.querySelector("#chat-direct-search");
 const directOptions = document.querySelector("#chat-direct-options");
 const directEmpty = document.querySelector("#chat-direct-empty");
@@ -1825,6 +1826,7 @@ function updateAdminChannelControls() {
   const callable = directActions && callsSupported();
   if (callAudioBtn) callAudioBtn.hidden = !callable;
   if (callVideoBtn) callVideoBtn.hidden = !callable;
+  if (callPreviewBtn) callPreviewBtn.hidden = !callable;
   if (viewOnceVideoBtn) {
     viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
   }
@@ -5641,9 +5643,17 @@ function offerRequestedCall(partner) {
   startDirectCall(requested);
 }
 
-function startDirectCall(media) {
+function previewDirectCall() {
   const direct = directMessageForKey(activeChannel);
   if (!direct || !userSession() || chatCalls.active()) return;
+  chatCalls.preview(activeChannel, direct.otherUser).catch(() => {
+    setStatus("The camera or microphone is unavailable", "unavailable");
+  });
+}
+
+function startDirectCall(media) {
+  const direct = directMessageForKey(activeChannel);
+  if (!direct || !userSession() || (chatCalls.active() && !chatCalls.previewing())) return;
   const channelKey = activeChannel;
   runWhenConnected(() => {
     chatCalls.start(channelKey, direct.otherUser, media).catch(() => {
@@ -6830,6 +6840,7 @@ function wireChatControls() {
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
   callAudioBtn?.addEventListener("click", () => startDirectCall("audio"));
   callVideoBtn?.addEventListener("click", () => startDirectCall("video"));
+  callPreviewBtn?.addEventListener("click", previewDirectCall);
   viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
   viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);

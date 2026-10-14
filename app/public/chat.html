@@ -1429,6 +1429,19 @@
                 </svg>
               </button>
               <button
+                id="chat-call-preview"
+                class="chat-call-button"
+                type="button"
+                title="Preview your camera, face and background before calling"
+                aria-label="Preview your camera, face and background before calling"
+                hidden
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <button
                 id="chat-call-video"
                 class="chat-call-button"
                 type="button"
@@ -1852,7 +1865,14 @@
           <span>Face</span>
           <select id="chat-call-face" title="Show the other person a different face that follows your head and lips"></select>
         </label>
+        <div id="chat-call-background-row" class="chat-call-backgrounds" hidden>
+          <span id="chat-call-background-label">Background</span>
+          <div id="chat-call-background-options" class="chat-call-background-options" role="radiogroup" aria-labelledby="chat-call-background-label"></div>
+          <input id="chat-call-background-file" type="file" accept="image/*" hidden />
+        </div>
+        <div id="chat-call-preview-slot" class="chat-call-preview-slot" hidden></div>
         <div class="chat-call-actions">
+          <button id="chat-call-start" type="button" class="chat-call-start" hidden>Start video call</button>
           <button id="chat-call-mute" type="button">Mute</button>
           <button id="chat-call-camera" type="button" hidden>Camera off</button>
           <button id="chat-call-hangup" type="button" class="chat-call-hangup">Hang up</button>

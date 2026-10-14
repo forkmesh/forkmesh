@@ -51,6 +51,7 @@ public protocol DirectCallPeer: AnyObject {
     func setMuted(_ muted: Bool)
     func setCameraOff(_ off: Bool)
     func setFace(_ id: String)
+    func setBackground(_ id: String, image: String)
     func setVoice(_ id: String)
     func observeVoice(_ handler: @escaping @MainActor (String) -> Void)
     func close()
@@ -58,6 +59,7 @@ public protocol DirectCallPeer: AnyObject {
 
 extension DirectCallPeer {
     public func setFace(_ id: String) {}
+    public func setBackground(_ id: String, image: String) {}
     public func setVoice(_ id: String) {}
     public func observeVoice(_ handler: @escaping @MainActor (String) -> Void) {}
 }
@@ -82,6 +84,19 @@ public final class DirectCallEngine {
         DirectCallFace(id: "ingrid", label: "Ingrid"),
         DirectCallFace(id: "ren", label: "Ren"),
     ]
+    public static let backgroundKey = "chat.callBackground"
+    public static let customBackground = "custom"
+    public static let backgrounds: [DirectCallFace] = [
+        DirectCallFace(id: "", label: "No background"),
+        DirectCallFace(id: "blur", label: "Blur"),
+        DirectCallFace(id: "blur-strong", label: "Strong blur"),
+        DirectCallFace(id: "world", label: "ForkMesh World"),
+        DirectCallFace(id: "office", label: "ForkMesh office"),
+        DirectCallFace(id: "meeting", label: "Meeting room"),
+        DirectCallFace(id: "library", label: "Home library"),
+        DirectCallFace(id: "skyline", label: "City window"),
+        DirectCallFace(id: "custom", label: "Your photo"),
+    ]
     public static let voiceKey = "chat.callVoice"
     public static let voiceMatchFace = "face"
     public static let voiceOff = "off"
@@ -98,6 +113,7 @@ public final class DirectCallEngine {
     @ObservationIgnored public var peerFactory: DirectCallPeerMaking?
     @ObservationIgnored public var onMissed: (@MainActor (String, DirectCallKind) -> Void)?
     @ObservationIgnored public var onFaceChanged: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var onBackgroundChanged: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onVoiceChanged: (@MainActor (String) -> Void)?
 
     public private(set) var conversation = ""
@@ -109,6 +125,8 @@ public final class DirectCallEngine {
     public private(set) var muted = false
     public private(set) var cameraOff = false
     public private(set) var face = ""
+    public private(set) var background = ""
+    public private(set) var backgroundImage = ""
     public private(set) var voiceChoice = DirectCallEngine.voiceMatchFace
     public private(set) var voice = ""
 
@@ -233,6 +251,22 @@ public final class DirectCallEngine {
         onFaceChanged?(next)
         if media == .video { peer?.setFace(next) }
         if voiceChoice == DirectCallEngine.voiceMatchFace { pushVoice() }
+    }
+
+    public func setBackground(_ id: String, image: String = "") {
+        guard DirectCallEngine.backgrounds.contains(where: { $0.id == id }) else { return }
+        let custom = id == DirectCallEngine.customBackground
+        let picture = custom && !image.isEmpty ? image : backgroundImage
+        if custom && picture.isEmpty { return }
+        guard id != background || picture != backgroundImage else { return }
+        background = id
+        backgroundImage = picture
+        onBackgroundChanged?(id, picture)
+        if media == .video { peer?.setBackground(id, image: custom ? picture : "") }
+    }
+
+    public static func backgroundLabel(_ id: String) -> String {
+        backgrounds.first { $0.id == id }?.label ?? "No background"
     }
 
     public var effectiveVoice: String {
@@ -378,6 +412,9 @@ public final class DirectCallEngine {
     private func attach(_ made: DirectCallPeer) {
         peer = made
         if media == .video && !face.isEmpty { made.setFace(face) }
+        if media == .video && !background.isEmpty {
+            made.setBackground(background, image: background == DirectCallEngine.customBackground ? backgroundImage : "")
+        }
         let id = callId
         voice = effectiveVoice
         if !voice.isEmpty { made.setVoice(voice) }
