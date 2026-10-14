@@ -15,6 +15,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // selected organization (null until the summary has loaded).
     outreach: null,
     views: [], members: [], activeView: "",
+    stageTab: "", virtualColumns: {}, pipelineEdit: null, membersView: "",
     // Sheets other organizations shared with this account, read-only. The
     // detail (columns + rows) is fetched when its tab is first opened.
     sharedViews: [], activeShared: "", sharedCache: {},
@@ -45,6 +46,11 @@ window.ForkMeshDashboard.registerPage("crm", ({
   };
   // Flows past this many are dropped by the Worker when settings are saved.
   const CRM_MAX_FLOWS = 12;
+  const CRM_PIPELINE_TAB_PREFIX = "pipeline:";
+  const CRM_NO_PIPELINE_TAB = "no-pipeline";
+  const CRM_STAGE_SHAPE = /^[a-z][a-z0-9-]*$/;
+  const CRM_SHARE_SHOWN = 15;
+  const CRM_STAGE_PALETTE = ["#58a6ff", "#e3b341", "#bc8cff", "#39c5cf", "#db61a2", "#3fb950", "#db6d28", "#f85149"];
 
   // A wedged Worker isolate answers in a few milliseconds with a 500
   // (Pyodide "NoGilError") or a "hung" cancel before any CRM code runs, and
@@ -375,11 +381,170 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   // --- sheets and their column layouts -----------------------------------
   // A sheet is a saved column layout over the shared contacts: a CSV import
-  // creates one named after the file, ordered like the file. "All contacts" is
-  // not stored on the server, so its layout is this browser's own preference.
+  // creates one named after the file, ordered like the file.
 
   function crmActiveView() {
-    return state.crmView.views.find((view) => view.id === state.crmView.activeView) || null;
+    return crmTabViews().find((view) => view.id === state.crmView.activeView) || null;
+  }
+
+  function crmVirtualViews() {
+    const bound = new Set(state.crmView.views.map((view) => view.flow).filter(Boolean));
+    return crmFlows().filter((flow) => flow.id && !bound.has(flow.id)).map((flow) => ({
+      id: `${CRM_PIPELINE_TAB_PREFIX}${flow.id}`, name: flow.name || flow.id, flow: flow.id, virtual: true,
+    }));
+  }
+
+  function crmNoPipelineView() {
+    return { id: CRM_NO_PIPELINE_TAB, name: "No pipeline", virtual: true };
+  }
+
+  function crmPipelineIds() {
+    return new Set([...state.crmView.views, ...crmVirtualViews()].map((view) => view.flow).filter(Boolean));
+  }
+
+  function crmContactOnTab(contact, view, pipelines = crmPipelineIds()) {
+    return view.id === CRM_NO_PIPELINE_TAB
+      ? !pipelines.has(String(contact.flow || "")) : crmContactInView(contact, view);
+  }
+
+  function crmTabViews() {
+    const pipelines = crmPipelineIds();
+    const noPipeline = crmNoPipelineView();
+    const orphans = state.crmView.contacts.some((contact) => crmContactOnTab(contact, noPipeline, pipelines));
+    return [...state.crmView.views, ...crmVirtualViews(), ...(orphans ? [noPipeline] : [])];
+  }
+
+  function crmTabView(id) {
+    return id === CRM_NO_PIPELINE_TAB ? crmNoPipelineView()
+      : crmTabViews().find((view) => view.id === id) || null;
+  }
+
+  function crmSyncActiveTab() {
+    if (state.crmView.activeShared || state.crmView.sharedOnly) return;
+    const tabs = crmTabViews();
+    const previous = state.crmView.activeView;
+    if (!tabs.some((view) => view.id === previous)) {
+      state.crmView.activeView = tabs[0]?.id || "";
+      if (previous && new URL(location.href).searchParams.get("list") === previous) crmSetListParam("");
+    }
+    selectCrmFirstStage();
+  }
+
+  function crmFirstStage(stages) {
+    return stages.find((stage) => stage.toLowerCase() === "new") || stages[0] || "";
+  }
+
+  function selectCrmFirstStage() {
+    const view = crmActiveView();
+    if (!view || view.id === state.crmView.stageTab) return;
+    const { stages } = crmStripStages(view, view.flow ? "" : String($(`[data-crm-flow]`)?.value || ""));
+    if (!stages.length) return;
+    state.crmView.stageTab = view.id;
+    const select = $(`[data-crm-stage]`);
+    if (!select) return;
+    const first = crmFirstStage(stages);
+    select.value = [...select.options].some((option) => option.value === first) ? first : "";
+  }
+
+  function crmFlowStages(flowId) {
+    return flowId ? [...(crmFlows().find((flow) => flow.id === flowId)?.stages || [])] : [];
+  }
+
+  function crmStripStages(view, flowFilter = "") {
+    const flow = view?.flow || flowFilter || "";
+    const stages = crmFlowStages(flow);
+    const counts = new Map();
+    if (!view) return { stages: [], counts };
+    const pipelines = crmPipelineIds();
+    for (const contact of state.crmView.contacts) {
+      const stage = String(contact.stage || "");
+      if (!crmContactOnTab(contact, view, pipelines) || (flow && contact.flow !== flow) || !stage) continue;
+      counts.set(stage, (counts.get(stage) || 0) + 1);
+    }
+    if (!flow) {
+      const order = [...new Set(crmFlows().flatMap((item) => item.stages || []))];
+      stages.push(...order.filter((stage) => counts.has(stage)));
+      const others = [...counts.keys()].filter((stage) => !stages.includes(stage));
+      others.sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0));
+      stages.push(...others);
+    }
+    return { stages: [...new Set(stages.filter(Boolean))], counts };
+  }
+
+  function crmStageLabel(name) {
+    const label = String(name || "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+    return label ? label[0].toUpperCase() + label.slice(1) : "No stage";
+  }
+
+  function crmStageColor(name, index) {
+    const key = String(name || "").toLowerCase();
+    const any = (words) => words.some((word) => key.includes(word));
+    if (any(["lost", "churn", "reject", "dead", "disqualif", "cancel"])) return "#f85149";
+    if (any(["won", "complete", "done", "customer", "closed", "signed", "paid", "success"])) return "#3fb950";
+    if (any(["progress", "contacted", "working", "active", "follow", "ongoing"])) return "#e3b341";
+    if (any(["qualif", "proposal", "negotiat", "demo", "meeting", "review", "trial"])) return "#bc8cff";
+    if (any(["new", "lead", "prospect", "inbox", "todo", "open", "backlog"])) return "#58a6ff";
+    return CRM_STAGE_PALETTE[Math.max(0, Number(index) || 0) % CRM_STAGE_PALETTE.length];
+  }
+
+  function crmStageInk(color) {
+    const value = parseInt(String(color).slice(1), 16);
+    const channel = (shift) => ((value >> shift) & 255) / 255;
+    return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0) > 0.55 ? "#1f2328" : "#ffffff";
+  }
+
+  function crmStageStripHtml(stages, counts, selected) {
+    return stages.map((stage, index) => {
+      const color = crmStageColor(stage, index);
+      const count = counts.get(stage) || 0;
+      const label = crmStageLabel(stage);
+      const picked = stage === selected;
+      const tip = `${count.toLocaleString()} ${count === 1 ? "contact" : "contacts"} at ${label}\n${picked ? "Click to show every stage" : "Click to show only this stage"}`;
+      return `<button type="button" data-crm-stage-chip="${escapeHtml(stage)}" aria-pressed="${picked}" title="${escapeHtml(tip)}" style="--crm-chip:${color};--crm-chip-ink:${crmStageInk(color)}" class="crm-stage-chip${count ? "" : " crm-stage-empty"}"><span class="crm-stage-chip-label">${escapeHtml(label)}</span><b>${count.toLocaleString()}</b></button>`;
+    }).join("");
+  }
+
+  function renderCrmStageStrip() {
+    const host = $(`[data-crm-stage-strip]`); if (!host) return;
+    const view = crmActiveShared() ? null : crmActiveView();
+    const { stages, counts } = crmStripStages(view, view && !view.flow ? String($(`[data-crm-flow]`)?.value || "") : "");
+    host.hidden = !stages.length;
+    if (!stages.length) { host.innerHTML = ""; return; }
+    const selected = String($(`[data-crm-stage]`)?.value || "");
+    host.classList.toggle("crm-stage-picked", Boolean(selected));
+    host.setAttribute("aria-description", stages.map((stage) => `${crmStageLabel(stage)} ${counts.get(stage) || 0}`).join(", "));
+    host.innerHTML = crmStageStripHtml(stages, counts, selected)
+      + (view.flow ? `<button type="button" data-crm-stage-strip-menu aria-label="Pipeline options" title="Edit this pipeline's stages" class="crm-stage-strip-more">⋯</button>` : "");
+  }
+
+  function pickCrmStage(stage) {
+    const select = $(`[data-crm-stage]`); if (!select) return;
+    const next = stage === select.value ? "" : stage;
+    select.value = [...select.options].some((option) => option.value === next) ? next : "";
+    renderCrmContacts();
+  }
+
+  function crmEditStagesItem(flowId) {
+    const manages = Boolean(state.crmView.canManageSettings);
+    return {
+      label: `Edit “${crmFlowName(flowId)}” stages…`, disabled: !manages,
+      title: manages ? "" : "Only organization owners and admins can edit pipelines",
+      run: () => openCrmPipelineSettings(flowId),
+    };
+  }
+
+  function openCrmStageStripMenu(event) {
+    const flowId = crmActiveView()?.flow || "";
+    if (!flowId) return;
+    openCrmMenu(event, [crmEditStagesItem(flowId)]);
+  }
+
+  function crmFlowName(flowId) {
+    return crmFlows().find((flow) => flow.id === flowId)?.name || flowId;
+  }
+
+  function crmPipelineLists(flowId) {
+    return flowId ? state.crmView.views.filter((view) => view.flow === flowId).map((view) => view.id) : [];
   }
 
   function crmContactInView(contact, view) {
@@ -928,10 +1093,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return cached?.view || state.crmView.sharedViews.find((view) => view.id === id) || null;
   }
 
-  function crmLocalColumnsKey() {
-    return `forkmesh-crm-columns:${state.crmView.organization}`;
-  }
-
   function crmCustomFieldKeys() {
     const keys = [];
     for (const contact of state.crmView.contacts) {
@@ -959,11 +1120,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmStoredColumns() {
     const view = crmActiveShared() || crmActiveView();
-    if (view) return Array.isArray(view.columns) ? view.columns : [];
-    let stored = [];
-    try { stored = JSON.parse(localStorage.getItem(crmLocalColumnsKey()) || "[]"); }
-    catch { stored = []; }
-    return Array.isArray(stored) ? stored : [];
+    if (view?.virtual) return state.crmView.virtualColumns[view.id] || [];
+    return view && Array.isArray(view.columns) ? view.columns : [];
   }
 
   // Stored layouts only decide order and visibility. Any column the layout has
@@ -1236,7 +1394,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ? `<div style="margin:.25rem 0" class="border-t border-border"></div>`
       : item.heading !== undefined
       ? `<p class="truncate px-3 py-1 text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(item.heading)}</p>`
-      : `<button data-crm-menu-item="${index}" type="button" role="menuitem"${item.disabled ? " disabled" : ""} class="block w-full truncate px-3 py-1.5 text-left text-xs ${item.danger ? "text-destructive" : "text-foreground"} hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">${escapeHtml(item.label)}</button>`)).join("");
+      : `<button data-crm-menu-item="${index}" type="button" role="menuitem"${item.disabled ? " disabled" : ""}${item.title ? ` title="${escapeHtml(item.title)}"` : ""} class="block w-full truncate px-3 py-1.5 text-left text-xs ${item.danger ? "text-destructive" : "text-foreground"} hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40">${escapeHtml(item.label)}</button>`)).join("");
     menu.hidden = false;
     // Clamp into the viewport so a heading near an edge still shows the whole
     // menu rather than pushing the page sideways.
@@ -1423,16 +1581,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const memberships = Array.isArray(contact.views) ? contact.views : [];
     const flow = crmFlows().find((item) => item.id === contact.flow) || null;
     const open = crmActiveView();
-    const pipelines = crmMenuGroup(crmFlows()
-      .filter((item) => item.id !== contact.flow)
-      .map((item) => ({
-        label: item.name,
-        run: () => void crmPatchContact(id, {
-          flow: item.id,
-          stage: (item.stages || []).includes(contact.stage)
-            ? contact.stage : (item.stages || [])[0] || contact.stage,
-        }, `${name} moved to ${quoted(item.name)}.`, "Could not move the contact"),
-      })));
+    const pipelines = crmMenuGroup(crmPipelineMoveItems([id]));
     const stages = crmMenuGroup((flow?.stages || [])
       .filter((stage) => stage !== contact.stage)
       .map((stage) => ({
@@ -1464,15 +1613,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
       { label: "Edit…", run: () => openCrmContact(contact) },
       { label: "Email", disabled: !contact.email, run: () => openCrmEmail(contact) },
       { label: "Copy link", run: () => void copyCrmContactLink(id) },
-      ...(pipelines.length ? [{ separator: true }, { heading: "Move to pipeline" }, ...pipelines] : []),
+      ...(pipelines.length ? [{ separator: true }, { heading: "Move to pipeline list" }, ...pipelines] : []),
       ...(stages.length ? [{ separator: true }, { heading: `Stage in ${flow.name}` }, ...stages] : []),
       ...(moves.length ? [{ separator: true }, { heading: "Move to list" }, ...moves] : []),
       ...(adds.length ? [{ separator: true }, { heading: "Add to list" }, ...adds] : []),
-      ...(open && !open.flow && memberships.includes(open.id) ? [
+      ...(open && !open.virtual && (!open.flow || crmPipelineLists(open.flow).length > 1)
+        && memberships.includes(open.id) ? [
         { separator: true },
-        { label: `Remove from ${quoted(open.name)}`,
-          run: () => void crmPatchContact(id, { removeViews: [open.id] },
-            `${name} removed from ${quoted(open.name)}.`, "Could not remove the contact") },
+        { label: `Remove from ${quoted(open.name)}`, run: () => removeCrmContactsFromSheet([id], open.id) },
       ] : []),
       { separator: true },
       { label: "New pipeline…", run: openCrmPipelineDialog },
@@ -1549,57 +1697,327 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if ($(`[data-crm-focus]`)?.value === "duplicates") await loadCrmDuplicates();
   }
 
-  // Pipelines are edited in the settings dialog's flow editors; this opens it
-  // on them rather than making a second place to keep the same list.
-  function openCrmPipelineSettings() {
-    openCrmSettings();
-    $(`[data-crm-flow-editors]`)?.scrollIntoView({ block: "center" });
+  function crmPipelineMoveItems(ids) {
+    const contacts = ids.map(crmContactById).filter(Boolean);
+    const pipelines = crmPipelineIds();
+    return crmTabViews().filter((view) => view.flow).map((view) => {
+      const allThere = contacts.every((contact) => crmContactOnTab(contact, view, pipelines));
+      return {
+        label: crmPipelineLists(view.flow).length > 1 ? `${view.name} · ${crmFlowName(view.flow)}` : view.name,
+        disabled: allThere, title: allThere ? "Already in this list" : "",
+        run: () => moveCrmContactsToSheet(ids, view.id),
+      };
+    });
+  }
+
+  function crmMoveToSheetEdits(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || sheet.id === CRM_NO_PIPELINE_TAB) return [];
+    const flowId = sheet.flow || "";
+    const stages = crmFlowStages(flowId);
+    const siblings = crmPipelineLists(flowId).filter((id) => id !== sheetId);
+    const pipelines = crmPipelineIds();
+    const edits = [];
+    for (const id of ids) {
+      const contact = crmContactById(id);
+      if (!contact || crmContactOnTab(contact, sheet, pipelines)) continue;
+      const edit = { id };
+      if (flowId && contact.flow !== flowId) {
+        const stage = String(contact.stage || "");
+        edit.flow = flowId;
+        edit.stage = stages.includes(stage) || !stages.length ? stage : stages[0];
+      }
+      if (!sheet.virtual) {
+        edit.views = [sheetId];
+        if (flowId && siblings.length) edit.removeViews = siblings;
+      }
+      edits.push(edit);
+    }
+    return edits;
+  }
+
+  async function crmBulkMoveContacts(edits, gerund, past, target) {
+    if (!edits.length) return;
+    const byId = new Map(edits.map((edit) => [edit.id, edit]));
+    state.crmView.contacts = state.crmView.contacts.map((contact) =>
+      byId.has(contact.id) ? crmWithContactEdit(contact, byId.get(contact.id)) : contact);
+    renderCrm();
+    const count = edits.length;
+    const noun = count === 1 ? "contact" : "contacts";
+    crmMessage("notice", `${gerund} ${count} ${noun} ${target}…`);
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits });
+      const saved = new Map((payload.contacts || []).map((contact) => [contact.id, contact]));
+      state.crmView.contacts = state.crmView.contacts.map((contact) => saved.get(contact.id) || contact);
+      renderCrm();
+      const missing = (payload.missing || []).length;
+      if (missing) {
+        crmMessage("error", `${missing} of ${count} contacts were not ${past} ${target}: they no longer exist.`);
+        await loadCrm();
+        return;
+      }
+      crmMessage("notice", `${count} ${noun} ${past} ${target}.`);
+    } catch (error) {
+      crmMessage("error", `${count} ${noun} were not ${past} ${target}: ${error.message}`);
+      await loadCrm();
+    }
+  }
+
+  function moveCrmContactsToSheet(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || !ids.length) return;
+    const edits = crmMoveToSheetEdits(ids, sheetId);
+    if (!edits.length) { crmMessage("notice", `Every selected contact is already in “${sheet.name}”.`); return; }
+    const pipeline = Boolean(sheet.flow);
+    void crmBulkMoveContacts(edits, pipeline ? "Moving" : "Adding", pipeline ? "moved" : "added", `to “${sheet.name}”`);
+  }
+
+  function removeCrmContactsFromSheet(ids, sheetId) {
+    const sheet = crmTabView(sheetId);
+    if (!sheet || !ids.length) return;
+    const edits = ids.map(crmContactById)
+      .filter((contact) => contact && (contact.views || []).includes(sheetId))
+      .map((contact) => ({ id: contact.id, removeViews: [sheetId] }));
+    if (!edits.length) { crmMessage("notice", `No selected contact is on “${sheet.name}”.`); return; }
+    void crmBulkMoveContacts(edits, "Removing", "removed", `from “${sheet.name}”`);
+  }
+
+  function crmSheetShareSummary(view) {
+    const names = crmSheetShareNames(view);
+    const picked = new Set(view?.sharedWith || []);
+    const count = names.length === 1 ? "1 person" : `${names.length} people`;
+    return [
+      !names.length ? "Private to its owner"
+        : view?.visibility === "private" ? `Shared with ${count}`
+        : `Open to ${count} in ${state.crmView.organization}`,
+      ...names.map((name) => (picked.has(name) ? name : `${name} · member`)),
+      `Owner: ${view?.owner || state.crmView.organization}`,
+    ];
+  }
+
+  function crmSheetShareItems(view) {
+    const lines = crmSheetShareSummary(view);
+    const people = lines.slice(1, -1);
+    return [
+      { heading: lines[0] },
+      ...people.slice(0, CRM_SHARE_SHOWN).map((line) => ({ label: line, disabled: true })),
+      ...(people.length > CRM_SHARE_SHOWN ? [{ label: `…and ${people.length - CRM_SHARE_SHOWN} more`, disabled: true }] : []),
+      { label: lines[lines.length - 1], disabled: true },
+    ];
+  }
+
+  function crmCanDeleteList(view) {
+    return Boolean(view && !view.virtual && view.canManage
+      && (!view.flow || crmPipelineLists(view.flow).length > 1));
   }
 
   function openCrmSheetMenu(event, id) {
-    const view = state.crmView.views.find((item) => item.id === id) || null;
-    // The field list edits the layout of the sheet on screen, so it only hangs
-    // off the tab that is actually open.
-    const onScreen = !state.crmView.activeShared
-      && state.crmView.activeView === (view ? view.id : "");
+    const view = crmTabView(id);
+    if (!view) return;
+    const stored = !view.virtual;
+    const manages = Boolean(state.crmView.canManageSettings);
+    const flowId = view.flow || "";
+    const onScreen = !state.crmView.activeShared && state.crmView.activeView === view.id;
     const fields = onScreen
       ? [{ separator: true }, { heading: "Fields" }, ...crmFieldMenuItems()] : [];
     const at = state.crmView.views.findIndex((item) => item.id === id);
-    openCrmMenu(event, view ? [
-      { heading: view.name },
-      { label: "Rename…", run: () => void renameCrmSheet(view) },
-      { label: "Rename or share…", run: () => openCrmSheetDialog(view) },
-      { label: "Copy link", run: () => void copyCrmListLink(view) },
-      { label: "Activity history…", run: () => void openCrmListHistory(view) },
-      { label: "Move left", disabled: at <= 0, run: () => crmMoveSheet(view.id, -1) },
-      { label: "Move right", disabled: at < 0 || at >= state.crmView.views.length - 1,
-        run: () => crmMoveSheet(view.id, 1) },
-      { label: "Import a CSV into this sheet…", run: () => crmPickCsv(view.id) },
-      { label: "Import Mastodon followers into this sheet…", run: () => openCrmMastodonDialog(view.id) },
-      { separator: true },
-      { heading: "Pipeline type" },
-      { label: `${view.flow ? "\u2002\u2002" : "\u2713 "}No pipeline (plain list)`,
-        disabled: !view.canManage || !view.flow,
-        run: () => void crmSetSheetFlow(view, "") },
-      ...crmFlows().map((flow) => ({
-        label: `${view.flow === flow.id ? "\u2713 " : "\u2002\u2002"}${flow.name}`,
-        disabled: !view.canManage || view.flow === flow.id,
-        run: () => void crmSetSheetFlow(view, flow.id),
-      })),
-      { label: "Manage pipelines…", run: openCrmPipelineSettings },
-      ...fields,
-      { separator: true },
-      { label: "Delete sheet", danger: true, disabled: !view.canManage,
-        run: () => void deleteCrmSheet(view) },
-    ] : [
-      { heading: "All contacts" },
-      { label: "New sheet…", run: () => openCrmSheetDialog(null) },
-      { label: "New pipeline…", run: openCrmPipelineDialog },
-      { label: "Manage pipelines…", run: openCrmPipelineSettings },
-      { label: "Import a CSV as a new sheet…", run: () => crmPickCsv("") },
-      { label: "Import Mastodon followers as a new sheet…", run: () => openCrmMastodonDialog("") },
-      ...fields,
-    ]);
+    const canShare = !stored || Boolean(view.canManage);
+    const targets = state.crmView.views.filter((other) => other.id !== id && other.canManage);
+    const flows = crmFlows();
+    const lastPipeline = flows.length === 1 && flows[0].id === flowId;
+    const items = [...crmSheetShareItems(view), { separator: true }];
+    if (id !== CRM_NO_PIPELINE_TAB) {
+      items.push(
+        { label: "Rename…", disabled: !stored && !manages,
+          title: stored || manages ? "" : "Only organization owners and admins can rename pipelines",
+          run: () => void renameCrmSheet(view) },
+        { label: "Add members…", disabled: !canShare,
+          title: canShare ? "" : "Only the list's owner and organization owners and admins can add members",
+          run: () => openCrmMembersDialog(view) });
+    }
+    if (stored) {
+      items.push(
+        { label: "Rename or share…", run: () => openCrmSheetDialog(view) },
+        { label: "Copy link", run: () => void copyCrmListLink(view) },
+        { label: "Activity history…", run: () => void openCrmListHistory(view) },
+        { label: "Move left", disabled: at <= 0, run: () => crmMoveSheet(view.id, -1) },
+        { label: "Move right", disabled: at < 0 || at >= state.crmView.views.length - 1,
+          run: () => crmMoveSheet(view.id, 1) },
+        { label: "Import a CSV into this list…", run: () => crmPickCsv(view.id) },
+        { label: "Import Mastodon followers into this list…", run: () => openCrmMastodonDialog(view.id) },
+        ...(targets.length && view.canManage ? [
+          { separator: true },
+          { heading: "Merge into" },
+          ...crmMenuGroup(targets.map((other) => ({
+            label: other.flow ? `${other.name} · ${crmFlowName(other.flow)}` : other.name,
+            title: "Put every contact on this list onto that one, carry its fields over, and delete this list",
+            run: () => void mergeCrmSheetInto(view.id, other.id),
+          }))),
+        ] : [{ label: "Merge into…", disabled: true,
+          title: view.canManage ? "There is no other list you can merge it into"
+            : "Only the list's owner and organization owners and admins can merge it" }]),
+        { separator: true },
+        { heading: "Pipeline type" },
+        { label: `${view.flow ? "\u2002\u2002" : "\u2713 "}No pipeline (plain list)`,
+          disabled: !manages || !view.flow,
+          run: () => void crmSetSheetFlow(view, "") },
+        ...flows.map((flow) => ({
+          label: `${view.flow === flow.id ? "\u2713 " : "\u2002\u2002"}${flow.name}`,
+          disabled: !manages || view.flow === flow.id,
+          run: () => void crmSetSheetFlow(view, flow.id),
+        })),
+        { label: "New list…", run: () => openCrmSheetDialog(null) },
+        { label: "New pipeline…", disabled: !manages, run: openCrmPipelineDialog },
+        { label: "Manage pipelines…", disabled: !manages, run: () => openCrmPipelineSettings() },
+        ...(flowId ? [crmEditStagesItem(flowId)] : []));
+    } else {
+      items.push(
+        ...(flowId ? [crmEditStagesItem(flowId)] : []),
+        { label: "New list…", run: () => openCrmSheetDialog(null) },
+        { label: "New pipeline…", disabled: !manages, run: openCrmPipelineDialog },
+        { label: "Manage pipelines…", disabled: !manages, run: () => openCrmPipelineSettings() },
+        { label: "Import a CSV as a new list…", run: () => crmPickCsv("") },
+        { label: "Import Mastodon followers as a new list…", run: () => openCrmMastodonDialog("") });
+    }
+    items.push(...fields);
+    if (stored && flowId) {
+      const deletable = crmCanDeleteList(view);
+      items.push({ separator: true }, {
+        label: "Delete list…", danger: true, disabled: !deletable,
+        title: deletable ? "" : !view.canManage
+          ? "Only the list's owner and organization owners and admins can delete it"
+          : `The only list on “${crmFlowName(flowId)}”: use Delete pipeline… to remove it`,
+        run: () => void deleteCrmSheet(view),
+      });
+    }
+    if (flowId) {
+      items.push({ separator: true }, {
+        label: "Delete pipeline…", danger: true, disabled: !manages || lastPipeline,
+        title: !manages ? "Only organization owners and admins can delete pipelines"
+          : lastPipeline ? "An organization keeps at least one pipeline" : "",
+        run: () => void deleteCrmPipeline(view),
+      });
+    } else if (stored) {
+      items.push({ separator: true }, {
+        label: "Delete list…", danger: true, disabled: !view.canManage,
+        run: () => void deleteCrmSheet(view),
+      });
+    }
+    openCrmMenu(event, items);
+  }
+
+  function crmMergePlan(sourceId, targetId) {
+    const source = state.crmView.views.find((view) => view.id === sourceId);
+    const target = state.crmView.views.find((view) => view.id === targetId);
+    if (!source || !target || sourceId === targetId) return null;
+    const flowId = target.flow || "";
+    const stages = crmFlowStages(flowId);
+    const dropped = crmPipelineLists(flowId).filter((id) => id !== targetId);
+    if (!dropped.includes(sourceId)) dropped.push(sourceId);
+    const pipelines = crmPipelineIds();
+    const edits = state.crmView.contacts.filter((contact) => crmContactOnTab(contact, source, pipelines)).map((contact) => {
+      const edit = { id: contact.id, views: [targetId], removeViews: [...dropped] };
+      if (flowId && contact.flow !== flowId) {
+        const stage = String(contact.stage || "");
+        edit.flow = flowId;
+        edit.stage = stages.includes(stage) || !stages.length ? stage : stages[0];
+      }
+      return edit;
+    });
+    const columns = (Array.isArray(target.columns) ? target.columns : []).map((column) => ({ ...column }));
+    const shownIn = (field) => columns.some((column) => column.field === field && !column.hidden);
+    let sourceColumns = Array.isArray(source.columns) ? source.columns : [];
+    if (!columns.some((column) => !column.hidden)) {
+      sourceColumns = [...CRM_CONTACT_COLUMNS.map((column) => ({
+        field: column.field, label: column.label, custom: false, hidden: false,
+      })), ...sourceColumns];
+    }
+    let columnsChanged = false;
+    for (const column of sourceColumns) {
+      const field = String(column?.field || "");
+      if (!field || column.hidden || shownIn(field)) continue;
+      const kept = columns.filter((item) => item.field === field);
+      if (kept.length) kept.forEach((item) => { item.hidden = false; });
+      else columns.push({ ...column, hidden: false });
+      columnsChanged = true;
+    }
+    return { source, target, edits, columns, columnsChanged };
+  }
+
+  async function mergeCrmSheetInto(sourceId, targetId) {
+    const plan = crmMergePlan(sourceId, targetId);
+    if (!plan) return;
+    const { source, target, edits, columns, columnsChanged } = plan;
+    const moving = edits.length === 1 ? "1 contact" : `${edits.length} contacts`;
+    const joins = target.flow
+      ? ` They join the ${crmFlowName(target.flow)} pipeline, keeping a stage it shares and starting the rest at its first stage.` : "";
+    if (!confirm(`Merge “${source.name}” (${moving}) into “${target.name}”?\n\nIts contacts move onto “${target.name}”, every field it shows is shown there too, and “${source.name}” is then deleted.${joins}`)) return;
+    crmMessage("notice", `Merging “${source.name}” into “${target.name}”…`);
+    try {
+      if (edits.length) await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits });
+    } catch (error) {
+      crmMessage("error", `“${source.name}” was not merged into “${target.name}”: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    try {
+      if (columnsChanged) await crmRequest(crmOrganizationPath(`/views/${target.id}`), "PATCH", { columns });
+    } catch (error) {
+      crmMessage("error", `The fields on “${target.name}” were not saved: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    try { await crmRequest(crmOrganizationPath(`/views/${source.id}`), "DELETE", {}); }
+    catch (error) { failure = error.message; }
+    state.crmView.activeView = target.id;
+    crmSetListParam(target.id);
+    await loadCrm();
+    if (failure) crmMessage("error", `The contacts moved to “${target.name}” but “${source.name}” was not deleted: ${failure}`);
+    else crmMessage("notice", `“${source.name}” merged into “${target.name}”.`);
+  }
+
+  async function deleteCrmPipeline(view) {
+    const flowId = view?.flow || "";
+    if (!flowId) return;
+    closeCrmMenu();
+    if (!state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can delete pipelines.");
+      return;
+    }
+    const flows = crmFlows();
+    const remaining = flows.filter((flow) => flow.id !== flowId);
+    if (!remaining.length) {
+      crmMessage("error", "An organization keeps at least one pipeline. Add another before deleting this one.");
+      return;
+    }
+    const lists = crmPipelineLists(flowId);
+    const name = crmFlowName(flowId);
+    const contacts = state.crmView.contacts.filter((contact) => contact.flow === flowId).length;
+    const people = contacts === 0 ? "No contact is in it."
+      : contacts === 1 ? "Its contact stays in the organization, under No pipeline, until it is moved into another pipeline."
+      : `Its ${contacts} contacts stay in the organization, under No pipeline, until they are moved into another pipeline.`;
+    const bound = !lists.length ? "" : lists.length === 1 ? " The list bound to it is deleted too."
+      : ` The ${lists.length} lists bound to it are deleted too.`;
+    if (!confirm(`Delete the “${name}” pipeline for everyone in ${state.crmView.organization}?\n\n${people}${bound}`)) return;
+    crmMessage("notice", `Deleting the “${name}” pipeline…`);
+    try {
+      if (remaining.length !== flows.length) {
+        await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows: remaining });
+      }
+    } catch (error) {
+      crmMessage("error", `The “${name}” pipeline was not deleted: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    for (const listId of lists) {
+      try { await crmRequest(crmOrganizationPath(`/views/${listId}`), "DELETE", {}); }
+      catch (error) { failure = failure || error.message; }
+    }
+    await loadCrm();
+    if (failure) crmMessage("error", `The “${name}” pipeline was deleted, but a list bound to it was not: ${failure}`);
+    else crmMessage("notice", `Pipeline “${name}” deleted.`);
   }
 
   async function crmSetSheetFlow(view, flow) {
@@ -1609,7 +2027,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { flow });
       crmMessage("notice", flow
         ? `“${view.name}” now shows the “${crmFlow(flow).name}” pipeline.`
-        : `“${view.name}” is a plain sheet again; it shows only the contacts added to it.`);
+        : `“${view.name}” is a plain list again; it shows only the contacts added to it.`);
       await loadCrm();
     } catch (error) {
       crmMessage("error", `Could not change the pipeline type: ${error.message}`);
@@ -1619,21 +2037,39 @@ window.ForkMeshDashboard.registerPage("crm", ({
   // --- renaming and moving a tab -----------------------------------------
 
   async function renameCrmSheet(view) {
-    if (!view) return;
+    if (!view || view.id === CRM_NO_PIPELINE_TAB) return;
     closeCrmMenu();
-    const typed = prompt(`Rename the "${view.name}" tab`, view.name);
+    const pipeline = Boolean(view.virtual);
+    if (pipeline && !state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can rename pipelines.");
+      return;
+    }
+    const typed = prompt(`Rename the “${view.name}” ${pipeline ? "pipeline" : "list"}`, view.name);
     if (typed === null) return;
     const name = typed.trim().slice(0, 60);
     if (!name || name === view.name) return;
+    if (pipeline) {
+      const flows = crmFlows().map((flow) => (flow.id === view.flow ? { ...flow, name } : flow));
+      state.crmView.settings = { ...state.crmView.settings, flows };
+      renderCrm();
+      try {
+        await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows });
+        crmMessage("notice", `Pipeline renamed to “${name}”.`);
+      } catch (error) {
+        crmMessage("error", `Pipelines were not saved: ${error.message}`);
+      }
+      await loadCrm();
+      return;
+    }
     const previous = view.name;
     view.name = name;
     renderCrmTabs();
     try {
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { name });
-      crmMessage("notice", `Tab renamed to "${name}".`);
+      crmMessage("notice", `List renamed to “${name}”.`);
     } catch (error) {
       view.name = previous;
-      crmMessage("error", `Could not rename the tab: ${error.message}`);
+      crmMessage("error", `The list was not renamed: ${error.message}`);
       await loadCrm();
     }
   }
@@ -1737,6 +2173,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
   async function selectCrmSharedSheet(id) {
     state.crmView.activeView = "";
     state.crmView.activeShared = String(id || "");
+    if (state.crmView.stageTab) {
+      state.crmView.stageTab = "";
+      const stage = $(`[data-crm-stage]`); if (stage) stage.value = "";
+    }
     crmSetListParam(state.crmView.activeShared);
     renderCrmContacts();
     if (!id || state.crmView.sharedCache[id]) return;
@@ -1744,7 +2184,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const payload = await crmRequest(`/api/crm/-/shared/${encodeURIComponent(id)}`);
       state.crmView.sharedCache[id] = { view: payload.view || null, contacts: payload.contacts || [] };
     } catch (error) {
-      crmMessage("error", `Could not open the shared sheet: ${error.message}`);
+      crmMessage("error", `Could not open the shared list: ${error.message}`);
       if (error.status === 404) {
         state.crmView.sharedViews = state.crmView.sharedViews.filter((view) => view.id !== id);
         state.crmView.activeShared = "";
@@ -1763,7 +2203,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (payload.viewId) state.crmView.activeView = payload.viewId;
       crmMessage("notice", `${payload.view?.name || view.name}: ${payload.created || 0} added, ${payload.updated || 0} merged, ${payload.skipped || 0} skipped.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not copy the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `Could not copy the list: ${error.message}`); }
   }
 
   function renderCrmSheetShare() {
@@ -1807,8 +2247,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const reach = view.shared
       ? `It opens for the people ${view.owner || view.organization} shared it with.`
       : view.visibility === "private" && !(view.sharedWith || []).length
-      ? "The sheet is private, so the link opens only for you until you share it from Rename or share…."
-      : `It opens for everyone the sheet reaches: ${crmSheetShareLabel(view).replace(/^Shared with /, "")}.`;
+      ? "The list is private, so the link opens only for you until you share it from Rename or share…."
+      : `It opens for everyone the list reaches: ${crmSheetShareLabel(view).replace(/^Shared with /, "")}.`;
     crmMessage("notice", `Link to “${view.name}” copied. ${reach}`);
     if (!button) return;
     button.textContent = "Link copied";
@@ -1845,7 +2285,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmListFromUrl() {
     const id = new URL(location.href).searchParams.get("list") || "";
     if (!id || !state.crmView.installed) return;
-    if (state.crmView.views.some((view) => view.id === id)) { selectCrmSheet(id); return; }
+    if (crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }
     if (state.crmView.sharedViews.some((view) => view.id === id)) { void selectCrmSharedSheet(id); return; }
     crmSetListParam("");
     crmMessage("error", `That link points to a list you cannot open in ${state.crmView.organization}. It may be private, deleted, or in an organization you are not in.`);
@@ -1854,9 +2294,19 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function openCrmSheetDialog(view = null) {
     const dialog = $(`[data-crm-sheet-dialog]`); if (!dialog) return;
     closeCrmMenu();
-    $(`[data-crm-sheet-dialog-title]`).textContent = view ? "Sheet settings" : "New sheet";
+    $(`[data-crm-sheet-dialog-title]`).textContent = view ? "List settings" : "New list";
     $(`[data-crm-sheet-id]`).value = view?.id || "";
     $(`[data-crm-sheet-name]`).value = view?.name || "";
+    const flow = $(`[data-crm-sheet-flow]`);
+    if (flow) {
+      const open = crmActiveShared() ? "" : crmActiveView()?.flow || "";
+      flow.innerHTML = `<option value="">No pipeline (plain list)</option>` + crmFlows().map((item) =>
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+      flow.value = crmFlows().some((item) => item.id === open) ? open : "";
+      flow.disabled = !state.crmView.canManageSettings;
+      flow.title = state.crmView.canManageSettings ? "" : "Only organization owners and admins can put a list on a pipeline";
+      $(`[data-crm-sheet-flow-row]`)?.classList.toggle("hidden", Boolean(view));
+    }
     // Everyone the sheet reaches may rename it and shape its columns; who else
     // can open it stays with its owner and the organization's owners/admins.
     const manages = !view || Boolean(view.canManage);
@@ -1873,7 +2323,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     users.disabled = !manages;
     const editable = $(`[data-crm-sheet-share-edit]`);
     if (editable) { editable.checked = view?.shareAccess === "edit"; editable.disabled = !manages; }
-    $(`[data-crm-sheet-delete]`)?.classList.toggle("hidden", !view || !view.canManage);
+    $(`[data-crm-sheet-delete]`)?.classList.toggle("hidden", !crmCanDeleteList(view));
     const link = $(`[data-crm-sheet-link]`);
     if (link) { link.classList.toggle("hidden", !view); link.textContent = "Copy link"; }
     renderCrmSheetShare();
@@ -1893,25 +2343,101 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ],
       shareAccess: $(`[data-crm-sheet-share-edit]`)?.checked ? "edit" : "view",
     };
+    const flow = String($(`[data-crm-sheet-flow]`)?.value || "");
+    if (!id && flow && state.crmView.canManageSettings) body.flow = flow;
     try {
       const payload = await crmRequest(
         crmOrganizationPath(`/views${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
       $(`[data-crm-sheet-dialog]`).close();
-      if (payload.view?.id) state.crmView.activeView = payload.view.id;
-      crmMessage("notice", id ? "Sheet updated." : "Sheet created.");
+      if (payload.view?.id) { state.crmView.activeView = payload.view.id; state.crmView.activeShared = ""; }
+      crmMessage("notice", id ? "List updated." : `List “${payload.view?.name || body.name}” created.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not save the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `Could not save the list: ${error.message}`); }
   }
 
   async function deleteCrmSheet(view) {
-    if (!view || !confirm(`Delete the "${view.name}" sheet? Its contacts stay in the organization.`)) return;
+    if (!crmCanDeleteList(view)) return;
+    closeCrmMenu();
+    if (!confirm(`Delete the “${view.name}” list? Its contacts stay in the organization and on their pipelines.`)) return;
     try {
       await crmRequest(crmOrganizationPath(`/views/${view.id}`), "DELETE", {});
       if (state.crmView.activeView === view.id) { state.crmView.activeView = ""; crmSetListParam(""); }
       $(`[data-crm-sheet-dialog]`)?.close();
-      crmMessage("notice", "Sheet deleted.");
+      crmMessage("notice", `List “${view.name}” deleted.`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Could not delete the sheet: ${error.message}`); }
+    } catch (error) { crmMessage("error", `The “${view.name}” list was not deleted: ${error.message}`); }
+  }
+
+  function openCrmMembersDialog(view) {
+    const dialog = $(`[data-crm-members-dialog]`);
+    if (!dialog || !view || view.id === CRM_NO_PIPELINE_TAB) return;
+    closeCrmMenu();
+    state.crmView.membersView = view.id;
+    const owner = String(view.owner || "").toLowerCase();
+    const shared = new Set(view.sharedWith || []);
+    $(`[data-crm-members-intro]`).textContent = `Share “${view.name}” with more people. ${view.visibility === "private"
+      ? "Only the people it is shared with can open it."
+      : `Everyone in ${state.crmView.organization} can already open it; people added here keep it if it is made private.`}`;
+    const roster = state.crmView.members.filter((name) => name && name !== owner && !shared.has(name));
+    $(`[data-crm-members-roster]`).innerHTML = roster.length
+      ? roster.map((name) => `<label data-crm-members-person="${escapeHtml(name)}" class="flex items-center gap-2 text-xs text-foreground"><input data-crm-members-pick type="checkbox" value="${escapeHtml(name)}" />${escapeHtml(name)}</label>`).join("")
+      : `<p class="text-xs text-muted-foreground">Every organization member is already on it.</p>`;
+    $(`[data-crm-members-search]`).value = "";
+    $(`[data-crm-members-others]`).value = "";
+    dialog.showModal();
+  }
+
+  function filterCrmMembersRoster() {
+    const query = String($(`[data-crm-members-search]`)?.value || "").trim().toLowerCase();
+    $$(`[data-crm-members-person]`).forEach((row) => {
+      row.hidden = Boolean(query) && !row.dataset.crmMembersPerson.toLowerCase().includes(query);
+    });
+  }
+
+  function crmMembersAdded(view, picked, typed) {
+    const owner = String(view.owner || "").toLowerCase();
+    const shared = view.sharedWith || [];
+    const added = [...picked];
+    for (const raw of String(typed || "").split(/[\s,;]+/)) {
+      const person = raw.replace(/^@/, "").toLowerCase().slice(0, 64);
+      if (person && person !== owner && !shared.includes(person) && !added.includes(person)) added.push(person);
+    }
+    return added;
+  }
+
+  async function saveCrmMembers(event) {
+    event.preventDefault();
+    const view = crmTabView(state.crmView.membersView);
+    if (!view) return;
+    const added = crmMembersAdded(view,
+      $$(`[data-crm-members-pick]`).filter((box) => box.checked).map((box) => box.value),
+      $(`[data-crm-members-others]`)?.value);
+    $(`[data-crm-members-dialog]`)?.close();
+    if (!added.length) return;
+    const wanted = [...(view.sharedWith || []), ...added];
+    let payload;
+    try {
+      payload = view.virtual
+        ? await crmRequest(crmOrganizationPath("/views"), "POST", {
+          name: view.name, flow: view.flow, visibility: "organization", sharedWith: wanted })
+        : await crmRequest(crmOrganizationPath(`/views/${view.id}`), "PATCH", { sharedWith: wanted });
+    } catch (error) {
+      crmMessage("error", `Members were not added to “${view.name}”: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    const saved = payload.view || null;
+    if (saved?.id) {
+      const at = state.crmView.views.findIndex((item) => item.id === saved.id);
+      if (at >= 0) state.crmView.views[at] = saved; else state.crmView.views.push(saved);
+      if (view.virtual && state.crmView.activeView === view.id) state.crmView.activeView = saved.id;
+      renderCrmContacts();
+    }
+    const kept = new Set(saved?.sharedWith || []);
+    const missing = added.filter((person) => !kept.has(person));
+    const count = added.length - missing.length;
+    crmMessage(missing.length ? "error" : "notice",
+      `${count === 1 ? `Added 1 member to “${view.name}”.` : `Added ${count} members to “${view.name}”.`}${missing.length ? ` No ForkMesh account: ${missing.join(", ")}.` : ""}`);
   }
 
   function crmInitials(contact) {
@@ -2748,18 +3274,17 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function crmFilteredContacts() {
     const query = String($(`[data-crm-search]`)?.value || "").trim().toLowerCase();
-    const flow = String($(`[data-crm-flow]`)?.value || "");
+    const view = crmActiveView();
+    const flow = view?.flow ? "" : String($(`[data-crm-flow]`)?.value || "");
     const stage = String($(`[data-crm-stage]`)?.value || "");
     const owner = String($(`[data-crm-owner]`)?.value || "");
     const focus = String($(`[data-crm-focus]`)?.value || "");
-    const viewId = state.crmView.activeView;
-    const view = crmActiveView();
     const shared = state.crmView.activeShared;
     const source = shared
       ? (state.crmView.sharedCache[shared]?.contacts || []) : state.crmView.contacts;
+    const pipelines = crmPipelineIds();
     const matched = source.filter((contact) => {
-      if (viewId && !(view ? crmContactInView(contact, view)
-        : (contact.views || []).includes(viewId))) return false;
+      if (!shared && !(view && crmContactOnTab(contact, view, pipelines))) return false;
       if (flow && contact.flow !== flow) return false;
       if (stage && contact.stage !== stage) return false;
       if (owner && !crmOwnerMatches(contact, owner)) return false;
@@ -2784,25 +3309,35 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function renderCrmTabs() {
     const host = $(`[data-crm-tabs]`); if (!host) return;
     hideCrmShareCard();
+    const tabs = crmTabViews();
+    const pipelines = crmPipelineIds();
     const counts = new Map();
     for (const contact of state.crmView.contacts) {
-      for (const view of state.crmView.views) {
-        if (crmContactInView(contact, view)) {
+      for (const view of tabs) {
+        if (crmContactOnTab(contact, view, pipelines)) {
           counts.set(view.id, (counts.get(view.id) || 0) + 1);
         }
       }
     }
+    const tip = (view) => {
+      if (view.id === CRM_NO_PIPELINE_TAB) return "Contacts whose pipeline was deleted. Right-click them to move them into another one.";
+      if (!view.flow) return "Double-click to rename, drag to move, right-click for list options";
+      const kind = CRM_FLOW_ICONS.find((item) => item.id === crmFlow(view.flow).icon) || CRM_FLOW_ICONS[0];
+      return view.virtual
+        ? `${kind.label} pipeline: every contact in ${crmFlowName(view.flow)}. Double-click to rename, right-click for pipeline options`
+        : `${kind.label} pipeline: a list on ${crmFlowName(view.flow)}. Double-click to rename, drag to move, right-click for list options`;
+    };
     const tab = (id, label, count, view) => {
       const active = state.crmView.activeView === id;
-      const people = crmSheetShareNames(view);
+      const people = id === CRM_NO_PIPELINE_TAB ? [] : crmSheetShareNames(view);
       // Who the sheet reaches, as a count on the tab; the whole list is the
       // hover card, so the strip stays readable with many tabs.
       const share = people.length
         ? `<span data-crm-share="${escapeHtml(id)}" title="${escapeHtml(crmSheetShareLabel(view))}" style="font-size:10px" class="rounded-full border border-border px-1.5 font-normal text-muted-foreground">\u{1F465} ${people.length}</span>`
         : "";
-      return `<div${id ? ` data-crm-tab-drag="${escapeHtml(id)}" draggable="true" style="cursor:grab"` : ""} class="flex shrink-0 items-center rounded-md border-b-2 ${active ? "border-primary bg-secondary" : "border-transparent"}">
-        <button data-crm-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="${view?.flow ? `List on the ${escapeHtml(crmFlow(view.flow).name)} pipeline. Double-click to rename, drag to move, right-click for sheet options` : id ? "Double-click to rename, drag to move, right-click for sheet options" : "Every contact in the organization"}" class="flex items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-2 text-xs font-semibold ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}">${view?.flow ? crmFlowIcon(crmFlow(view.flow).icon) : ""}${escapeHtml(label)}${view?.flow ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase">Pipeline</span>` : ""}${view?.visibility === "private" ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase" title="${escapeHtml(crmSheetShareLabel(view))}">Private</span>` : ""}${share}<span class="rounded-full border border-border px-1.5 text-[10px] font-normal">${count}</span></button>
-        ${id ? `<button data-crm-tab-menu="${escapeHtml(id)}" type="button" aria-label="Options for ${escapeHtml(label)}" class="rounded px-2 py-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground">⋯</button>` : `<span class="pr-2"></span>`}
+      return `<div${view.virtual ? "" : ` data-crm-tab-drag="${escapeHtml(id)}" draggable="true" style="cursor:grab"`} class="flex shrink-0 items-center rounded-md border-b-2 ${active ? "border-primary bg-secondary" : "border-transparent"}">
+        <button data-crm-tab="${escapeHtml(id)}" type="button" role="tab" aria-selected="${active}" title="${escapeHtml(tip(view))}" class="flex items-center gap-1.5 whitespace-nowrap py-2 pl-3 pr-2 text-xs font-semibold ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}">${view.flow ? crmFlowIcon(crmFlow(view.flow).icon) : ""}${escapeHtml(label)}${view.flow ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase">Pipeline</span>` : ""}${view.visibility === "private" ? `<span style="font-size:9px" class="rounded-full border border-border px-1.5 font-normal uppercase" title="${escapeHtml(crmSheetShareLabel(view))}">Private</span>` : ""}${share}<span class="rounded-full border border-border px-1.5 text-[10px] font-normal">${count}</span></button>
+        <button data-crm-tab-menu="${escapeHtml(id)}" type="button" aria-label="Options for ${escapeHtml(label)}" class="rounded px-2 py-2 text-xs text-muted-foreground hover:bg-background hover:text-foreground">⋯</button>
       </div>`;
     };
     const sharedTab = (view) => {
@@ -2815,11 +3350,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
       </div>`;
     };
     const shared = state.crmView.sharedViews;
-    host.innerHTML = (state.crmView.sharedOnly ? "" : tab("", "All contacts", state.crmView.contacts.length, null))
-      + state.crmView.views.map((view) =>
-        tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
+    host.innerHTML = tabs.map((view) =>
+      tab(view.id, view.name, counts.get(view.id) || 0, view)).join("")
       + (shared.length
-        ? `<span style="align-self:center" class="mb-2 ml-2 shrink-0 text-[10px] font-semibold uppercase text-muted-foreground" title="Sheets other ForkMesh users shared with you">Shared with me</span>`
+        ? `<span style="align-self:center" class="mb-2 ml-2 shrink-0 text-[10px] font-semibold uppercase text-muted-foreground" title="Lists other ForkMesh users shared with you">Shared with me</span>`
           + shared.map(sharedTab).join("")
         : "");
   }
@@ -2834,7 +3368,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const access = (cached?.view || view).canEdit ? "you can add contacts and move them along its stages" : "read-only";
     $(`[data-crm-shared-banner-text]`).textContent = cached
       ? `Shared by ${view.owner || view.organization} from ${view.organization} · ${access} · ${cached.contacts.length} ${cached.contacts.length === 1 ? "contact" : "contacts"} with the columns they chose to show.`
-      : `Loading the sheet ${view.organization} shared with you…`;
+      : `Loading the list ${view.organization} shared with you…`;
     const copy = $(`[data-crm-shared-copy]`);
     if (copy) {
       copy.classList.toggle("hidden", Boolean(state.crmView.sharedOnly));
@@ -2873,7 +3407,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function showCrmShareCard(badge) {
     const card = $(`[data-crm-share-card]`); if (!card) return;
-    const view = state.crmView.views.find((item) => item.id === badge.dataset.crmShare);
+    const view = crmTabView(badge.dataset.crmShare);
     const names = crmSheetShareNames(view);
     if (!names.length) { hideCrmShareCard(); return; }
     const picked = new Set(view.sharedWith || []);
@@ -2894,10 +3428,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   function renderCrmContacts() {
     const list = $(`[data-crm-contact-list]`); if (!list) return;
+    crmSyncActiveTab();
     const columns = crmVisibleColumns();
     const contacts = crmFilteredContacts();
     const shared = Boolean(crmActiveShared());
     renderCrmTabs();
+    renderCrmStageStrip();
+    const flowFilter = $(`[data-crm-flow]`); if (flowFilter) flowFilter.hidden = Boolean(crmActiveView()?.flow);
     renderCrmSharedBanner();
     renderCrmNextContact();
     const board = state.crmView.layout === "board";
@@ -3502,7 +4039,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     // A contact typed while a sheet is open would otherwise land outside the
     // tab that is on screen, looking like the save was lost.
     const sheet = crmActiveView();
-    if (sheet && !id) body.views = [sheet.id];
+    if (sheet && !sheet.virtual && !sheet.flow && !id) body.views = [sheet.id];
     const sharedView = crmActiveShared();
     if (sharedView?.canEdit && !id) {
       try {
@@ -3695,7 +4232,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-settings-from-name]`).value = settings.fromName || "";
     $(`[data-crm-settings-from-email]`).value = settings.fromEmail || "";
     $(`[data-crm-settings-mail-boxes]`).value = (settings.mailBoxes || []).join(", ");
-    renderCrmFlowEditors(settings.flows || []);
     const zoho = settings.zoho || {};
     $(`[data-crm-zoho-region]`).value = zoho.region || "com";
     $(`[data-crm-zoho-account]`).value = zoho.accountId || "";
@@ -3720,30 +4256,252 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-settings-dialog]`).showModal();
   }
 
-  function renderCrmFlowEditors(flows) {
-    const host = $(`[data-crm-flow-editors]`); if (!host) return;
-    host.innerHTML = flows.map((flow) => `<div data-crm-flow-editor="${escapeHtml(flow.id)}" class="grid gap-2 rounded-md border border-border bg-secondary p-3 sm:grid-cols-[minmax(0,12rem)_1fr_auto]">
-      <div class="grid gap-2"><label class="grid gap-1 text-xs text-muted-foreground">Flow name<input data-crm-flow-name maxlength="80" value="${escapeHtml(flow.name)}" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
-      <label class="grid gap-1 text-xs text-muted-foreground">Type<select data-crm-flow-icon class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">${crmFlowIconOptions(flow.icon || "pipeline")}</select></label></div>
-      <label class="grid gap-1 text-xs text-muted-foreground">Ordered stages<textarea data-crm-flow-stages rows="2" maxlength="1200" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground">${escapeHtml((flow.stages || []).join("\n"))}</textarea></label>
-      <button data-crm-flow-remove type="button" class="self-end rounded-md border border-destructive px-2 py-2 text-xs text-destructive">Remove</button>
-    </div>`).join("");
+  function crmFlowSlug(label) {
+    let base = String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!/^[a-z]/.test(base)) base = `pipeline-${base}`.replace(/-+$/, "");
+    return base.slice(0, 34).replace(/-+$/, "");
   }
 
-  function readCrmFlows() {
-    return $$(`[data-crm-flow-editor]`).map((row) => ({
-      id: row.dataset.crmFlowEditor,
-      name: row.querySelector(`[data-crm-flow-name]`).value,
-      icon: row.querySelector(`[data-crm-flow-icon]`).value,
-      stages: row.querySelector(`[data-crm-flow-stages]`).value.split(/[\n,]+/).map((stage) => stage.trim()).filter(Boolean),
+  function crmStageSlug(label) {
+    return String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  }
+
+  function crmPipelineEditState() {
+    let next = 0;
+    const key = () => `draft-${(next += 1)}`;
+    const drafts = crmFlows().map((flow) => ({
+      key: key(), id: flow.id, name: flow.name || flow.id, icon: flow.icon || "pipeline",
+      stages: (flow.stages || []).map((stage) => ({ original: stage, label: crmStageLabel(stage) })),
     }));
+    const lists = state.crmView.views.map((view) => {
+      const bound = drafts.find((draft) => draft.id && draft.id === view.flow)?.key || "";
+      return { id: view.id, name: view.name, owner: view.owner || "", key: bound, initialKey: bound };
+    });
+    return { drafts, lists, shown: drafts.length ? 0 : -1, page: "pipelines", key };
   }
 
-  function addCrmFlowEditor() {
-    const flows = readCrmFlows();
-    const id = `flow-${Date.now().toString(36)}`;
-    flows.push({ id, name: "New flow", icon: "pipeline", stages: ["new", "in-progress", "complete"] });
-    renderCrmFlowEditors(flows);
+  function crmPipelineFlowContacts(flowId) {
+    return flowId ? state.crmView.contacts.filter((contact) => contact.flow === flowId).length : 0;
+  }
+
+  function crmPipelinePlan(edit, contacts) {
+    const taken = edit.drafts.filter((draft) => draft.id && String(draft.name || "").trim()).map((draft) => draft.id);
+    const flows = [];
+    const idByKey = new Map();
+    const renamed = new Map();
+    for (const draft of edit.drafts) {
+      const label = String(draft.name || "").trim().slice(0, 60);
+      if (!label) continue;
+      let id = draft.id;
+      if (!id) {
+        const base = crmFlowSlug(label);
+        id = base;
+        for (let suffix = 2; taken.includes(id); suffix += 1) id = `${base}-${suffix}`;
+        taken.push(id);
+      }
+      idByKey.set(draft.key, id);
+      const slugs = [];
+      const renames = new Map();
+      for (const stage of draft.stages) {
+        const slug = crmStageSlug(stage.label);
+        if (!CRM_STAGE_SHAPE.test(slug) || slugs.includes(slug)) continue;
+        slugs.push(slug);
+        if (draft.id && stage.original && stage.original !== slug) renames.set(stage.original, slug);
+      }
+      if (!slugs.length) slugs.push("lead");
+      for (const from of [...renames.keys()]) if (slugs.includes(from)) renames.delete(from);
+      if (renames.size) renamed.set(id, renames);
+      flows.push({ id, name: label, icon: draft.icon || "pipeline", stages: slugs });
+    }
+    if (!flows.length) return { error: "Keep at least one pipeline, with a name." };
+    const stageEdits = [];
+    for (const contact of contacts) {
+      const to = renamed.get(String(contact.flow || ""))?.get(String(contact.stage || ""));
+      if (to) stageEdits.push({ id: contact.id, stage: to });
+    }
+    const bindings = edit.lists
+      .filter((list) => list.key !== list.initialKey && (!list.key || idByKey.has(list.key)))
+      .map((list) => ({ id: list.id, flow: list.key ? idByKey.get(list.key) : "" }));
+    return { flows, stageEdits, bindings };
+  }
+
+  function crmRemovePipelineDraft(edit, at) {
+    const draft = edit.drafts[at];
+    if (!draft) return;
+    edit.drafts.splice(at, 1);
+    for (const list of edit.lists) if (list.key === draft.key) list.key = "";
+    edit.shown = edit.drafts.length ? Math.min(at, edit.drafts.length - 1) : -1;
+  }
+
+  function crmPipelineBoundNames(edit, key) {
+    return edit.lists.filter((list) => list.key === key).map((list) => list.name);
+  }
+
+  function renderCrmPipelinesDialog() {
+    const edit = state.crmView.pipelineEdit;
+    const body = $(`[data-crm-pipelines-body]`);
+    if (!edit || !body) return;
+    $$(`[data-crm-pipelines-page]`).forEach((button) =>
+      button.setAttribute("aria-selected", String(button.dataset.crmPipelinesPage === edit.page)));
+    const input = "rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground";
+    const small = "rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-secondary disabled:opacity-40";
+    if (edit.page === "lists") {
+      const options = (selected) => `<option value=""${selected ? "" : " selected"}>No pipeline (plain list)</option>`
+        + edit.drafts.map((draft) => `<option value="${escapeHtml(draft.key)}"${draft.key === selected ? " selected" : ""}>${escapeHtml(draft.name || "(unnamed)")}</option>`).join("");
+      body.innerHTML = `<p class="mb-3 text-xs text-muted-foreground">Pick the pipeline each list shows. A list bound to a pipeline shows every contact in it; a plain list shows only the contacts added to it.${edit.lists.length ? "" : " The organization has no lists yet; each pipeline gets its own tab."}</p>
+        ${edit.lists.length ? `<table class="w-full text-left text-xs"><thead class="text-muted-foreground"><tr><th class="px-2 py-1">List</th><th class="px-2 py-1">Owner</th><th class="px-2 py-1">Pipeline</th></tr></thead><tbody>${edit.lists.map((list, index) => `<tr class="border-t border-border"><td class="px-2 py-1.5 font-medium">${escapeHtml(list.name)}</td><td class="px-2 py-1.5 text-muted-foreground">${escapeHtml(list.owner)}</td><td class="px-2 py-1.5"><select data-crm-pipeline-list="${index}" aria-label="Pipeline for ${escapeHtml(list.name)}" class="${input}">${options(list.key)}</select></td></tr>`).join("")}</tbody></table>` : ""}`;
+      return;
+    }
+    const draft = edit.drafts[edit.shown] || null;
+    const people = draft ? crmPipelineFlowContacts(draft.id) : 0;
+    const bound = draft ? crmPipelineBoundNames(edit, draft.key) : [];
+    const peopleLabel = people === 1 ? "1 contact" : `${people} contacts`;
+    body.innerHTML = `<div class="crm-pipelines-grid">
+      <div class="grid content-start gap-2">
+        <div class="grid gap-1">${edit.drafts.map((item, index) => `<button type="button" data-crm-pipeline-pick="${index}" aria-pressed="${index === edit.shown}" class="flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs ${index === edit.shown ? "border-primary bg-secondary text-foreground" : "border-border text-muted-foreground hover:text-foreground"}">${crmFlowIcon(item.icon)}<span data-crm-pipeline-pick-name class="truncate">${escapeHtml(item.name || "(unnamed)")}</span></button>`).join("")}</div>
+        <div class="flex flex-wrap gap-1"><button type="button" data-crm-pipeline-act="add" class="${small}">Add</button><button type="button" data-crm-pipeline-act="up" class="${small}"${edit.shown > 0 ? "" : " disabled"}>Up</button><button type="button" data-crm-pipeline-act="down" class="${small}"${edit.shown >= 0 && edit.shown < edit.drafts.length - 1 ? "" : " disabled"}>Down</button><button type="button" data-crm-pipeline-act="remove" class="${small} text-destructive"${draft ? "" : " disabled"}>Remove</button></div>
+      </div>
+      ${draft ? `<div class="grid content-start gap-3">
+        <label class="grid gap-1 text-xs text-muted-foreground">Name<input data-crm-pipeline-draft-name maxlength="60" value="${escapeHtml(draft.name)}" class="${input}" /></label>
+        <label class="grid gap-1 text-xs text-muted-foreground">Type<select data-crm-pipeline-draft-icon class="${input}">${crmFlowIconOptions(draft.icon)}</select></label>
+        <div class="grid gap-1 text-xs text-muted-foreground">Stages
+          <div data-crm-pipeline-stages class="grid gap-1">${draft.stages.map((stage, index) => `<div data-crm-stage-row="${index}" class="flex items-center gap-1"><input data-crm-stage-label="${index}" maxlength="60" value="${escapeHtml(stage.label)}" aria-label="Stage ${index + 1}" class="${input} min-w-0 flex-1 py-1" /><button type="button" data-crm-stage-act="up" class="${small}"${index ? "" : " disabled"} aria-label="Move up">↑</button><button type="button" data-crm-stage-act="down" class="${small}"${index < draft.stages.length - 1 ? "" : " disabled"} aria-label="Move down">↓</button><button type="button" data-crm-stage-act="remove" class="${small} text-destructive">Remove</button></div>`).join("")}</div>
+          <button type="button" data-crm-stage-act="add" class="${small} w-fit">Add stage</button>
+          <span>In order, first to last. Rename a stage in place or move it with the arrows; contacts at a renamed stage move with it.</span>
+        </div>
+        <p class="text-xs text-muted-foreground"><span class="font-semibold">Lists</span> · ${escapeHtml(bound.length
+          ? `${peopleLabel} · shown on ${bound.join(", ")}`
+          : `${peopleLabel} · no list is bound to it, so it has a tab of its own. Bind lists on the Lists page.`)}</p>
+      </div>` : `<p class="text-xs text-muted-foreground">No pipeline is picked.</p>`}
+    </div>`;
+  }
+
+  function openCrmPipelineSettings(focusFlow = "") {
+    const dialog = $(`[data-crm-pipelines-dialog]`); if (!dialog) return;
+    closeCrmMenu();
+    if (!state.crmView.canManageSettings) {
+      crmMessage("error", "Only organization owners and admins can edit pipelines.");
+      return;
+    }
+    const edit = crmPipelineEditState();
+    const focus = edit.drafts.findIndex((draft) => focusFlow && draft.id === focusFlow);
+    if (focus >= 0) edit.shown = focus;
+    state.crmView.pipelineEdit = edit;
+    renderCrmPipelinesDialog();
+    if (!dialog.open) dialog.showModal();
+    if (focus >= 0) $(`[data-crm-stage-label]`)?.focus();
+  }
+
+  function handleCrmPipelinesClick(event) {
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const page = event.target.closest("[data-crm-pipelines-page]");
+    if (page) { edit.page = page.dataset.crmPipelinesPage === "lists" ? "lists" : "pipelines"; renderCrmPipelinesDialog(); return; }
+    const pick = event.target.closest("[data-crm-pipeline-pick]");
+    if (pick) { edit.shown = Number(pick.dataset.crmPipelinePick); renderCrmPipelinesDialog(); return; }
+    const act = event.target.closest("[data-crm-pipeline-act]")?.dataset.crmPipelineAct;
+    const draft = edit.drafts[edit.shown];
+    if (act === "add") {
+      if (edit.drafts.length >= CRM_MAX_FLOWS) { alert(`An organization can have ${CRM_MAX_FLOWS} pipelines. Remove one first.`); return; }
+      edit.drafts.push({ key: edit.key(), id: "", name: "New pipeline", icon: "pipeline",
+        stages: ["New", "In progress", "Complete"].map((label) => ({ original: "", label })) });
+      edit.shown = edit.drafts.length - 1;
+      renderCrmPipelinesDialog();
+      $(`[data-crm-pipeline-draft-name]`)?.select();
+      return;
+    }
+    if ((act === "up" || act === "down") && draft) {
+      const to = edit.shown + (act === "up" ? -1 : 1);
+      if (to < 0 || to >= edit.drafts.length) return;
+      [edit.drafts[edit.shown], edit.drafts[to]] = [edit.drafts[to], edit.drafts[edit.shown]];
+      edit.shown = to;
+      renderCrmPipelinesDialog();
+      return;
+    }
+    if (act === "remove" && draft) {
+      if (edit.drafts.length === 1) { alert("An organization keeps at least one pipeline. Add another first."); return; }
+      const contacts = crmPipelineFlowContacts(draft.id);
+      const bound = crmPipelineBoundNames(edit, draft.key).length;
+      if ((contacts > 0 || bound > 0) && !confirm(`${contacts} contacts are in “${draft.name}” and ${bound} lists show it. Removing it leaves those contacts in the organization without a pipeline, and the lists become plain lists. Remove it?`)) return;
+      crmRemovePipelineDraft(edit, edit.shown);
+      renderCrmPipelinesDialog();
+      return;
+    }
+    const stageAct = event.target.closest("[data-crm-stage-act]")?.dataset.crmStageAct;
+    if (!stageAct || !draft) return;
+    if (stageAct === "add") {
+      draft.stages.push({ original: "", label: "New stage" });
+      renderCrmPipelinesDialog();
+      const inputs = $$(`[data-crm-stage-label]`);
+      inputs[inputs.length - 1]?.select();
+      return;
+    }
+    const at = Number(event.target.closest("[data-crm-stage-row]")?.dataset.crmStageRow);
+    const stage = draft.stages[at];
+    if (!stage) return;
+    if (stageAct === "remove") {
+      const contacts = draft.id && stage.original
+        ? state.crmView.contacts.filter((contact) => contact.flow === draft.id && contact.stage === stage.original).length : 0;
+      if (contacts > 0 && !confirm(`${contacts} contacts are at “${stage.label}”. They keep that stage until they are moved to another one. Remove it?`)) return;
+      draft.stages.splice(at, 1);
+    } else {
+      const to = at + (stageAct === "up" ? -1 : 1);
+      if (to < 0 || to >= draft.stages.length) return;
+      [draft.stages[at], draft.stages[to]] = [draft.stages[to], draft.stages[at]];
+    }
+    renderCrmPipelinesDialog();
+  }
+
+  function handleCrmPipelinesInput(event) {
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const draft = edit.drafts[edit.shown];
+    if (event.target.matches("[data-crm-pipeline-list]")) {
+      const list = edit.lists[Number(event.target.dataset.crmPipelineList)];
+      if (list) list.key = event.target.value;
+      return;
+    }
+    if (!draft) return;
+    if (event.target.matches("[data-crm-pipeline-draft-name]")) {
+      draft.name = event.target.value.trim();
+      const label = $(`[data-crm-pipeline-pick="${edit.shown}"] [data-crm-pipeline-pick-name]`);
+      if (label) label.textContent = draft.name || "(unnamed)";
+    } else if (event.target.matches("[data-crm-pipeline-draft-icon]")) {
+      draft.icon = event.target.value;
+      if (event.type === "change") renderCrmPipelinesDialog();
+    } else if (event.target.matches("[data-crm-stage-label]")) {
+      const stage = draft.stages[Number(event.target.dataset.crmStageLabel)];
+      if (stage) stage.label = event.target.value.trim();
+    }
+  }
+
+  async function saveCrmPipelines(event) {
+    event.preventDefault();
+    const edit = state.crmView.pipelineEdit; if (!edit) return;
+    const plan = crmPipelinePlan(edit, state.crmView.contacts);
+    if (plan.error) { crmMessage("error", plan.error); return; }
+    $(`[data-crm-pipelines-dialog]`)?.close();
+    crmMessage("notice", "Saving pipelines…");
+    try {
+      await crmRequest(crmOrganizationPath("/settings"), "PUT", { flows: plan.flows });
+    } catch (error) {
+      crmMessage("error", `Pipelines were not saved: ${error.message}`);
+      await loadCrm();
+      return;
+    }
+    let failure = "";
+    if (plan.stageEdits.length) {
+      try { await crmRequest(crmOrganizationPath("/contacts/bulk"), "POST", { edits: plan.stageEdits }); }
+      catch (error) { failure = `the contacts at renamed stages were not moved: ${error.message}`; }
+    }
+    for (const binding of plan.bindings) {
+      try { await crmRequest(crmOrganizationPath(`/views/${binding.id}`), "PATCH", { flow: binding.flow }); }
+      catch (error) { failure = failure || `a list's pipeline was not changed: ${error.message}`; }
+    }
+    await loadCrm();
+    if (failure) { crmMessage("error", `Pipelines were saved, but ${failure}`); return; }
+    const parts = [plan.flows.length === 1 ? "1 pipeline saved" : `${plan.flows.length} pipelines saved`];
+    if (plan.stageEdits.length) parts.push(`${plan.stageEdits.length} contacts moved to renamed stages`);
+    if (plan.bindings.length) parts.push(`${plan.bindings.length} lists given a new pipeline`);
+    crmMessage("notice", `${parts.join("; ")}.`);
   }
 
   function openCrmPipelineDialog() {
@@ -3766,10 +4524,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       crmMessage("error", `An organization can have ${CRM_MAX_FLOWS} pipelines. Remove one in CRM settings first.`);
       return;
     }
-    // Same shape the Worker keeps: a lowercase slug starting with a letter.
-    let base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    if (!/^[a-z]/.test(base)) base = `pipeline-${base}`.replace(/-+$/, "");
-    base = base.slice(0, 34).replace(/-+$/, "");
+    const base = crmFlowSlug(name);
     const taken = new Set(flows.map((flow) => flow.id));
     let id = base;
     for (let suffix = 2; taken.has(id); suffix += 1) id = `${base}-${suffix}`;
@@ -3793,7 +4548,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
         providerUrlTemplate: $(`[data-crm-settings-url]`).value,
         fromName: $(`[data-crm-settings-from-name]`).value,
         fromEmail: $(`[data-crm-settings-from-email]`).value,
-        flows: readCrmFlows(),
         mailBoxes: $(`[data-crm-settings-mail-boxes]`).value.split(",").map((box) => box.trim()).filter(Boolean),
       };
       const zoho = {
@@ -4292,11 +5046,6 @@ window.ForkMeshDashboard.registerPage("crm", ({
       state.crmView.sharedViews = payload.sharedViews || [];
       state.crmView.decks = payload.decks || [];
       state.crmView.activity = payload.activity || { days: [], kinds: [], members: [] };
-      // A sheet another member deleted, or one belonging to the organization
-      // just switched away from, falls back to "All contacts".
-      if (!state.crmView.views.some((view) => view.id === state.crmView.activeView)) {
-        state.crmView.activeView = "";
-      }
       if (!state.crmView.sharedViews.some((view) => view.id === state.crmView.activeShared)) {
         state.crmView.activeShared = "";
       }
@@ -4527,11 +5276,22 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const button = event.target.closest("[data-crm-outreach-team-remove]");
       if (button) void updateCrmOutreachTeam("remove", button.getAttribute("data-crm-outreach-team-remove"));
     });
-    $(`[data-crm-flow-add]`)?.addEventListener("click", addCrmFlowEditor);
-    $(`[data-crm-flow-editors]`)?.addEventListener("click", (event) => {
-      if (!event.target.closest("[data-crm-flow-remove]")) return;
-      event.target.closest("[data-crm-flow-editor]")?.remove();
+    $(`[data-crm-pipelines-open]`)?.addEventListener("click", () => { $(`[data-crm-settings-dialog]`)?.close(); openCrmPipelineSettings(); });
+    const pipelinesDialog = $(`[data-crm-pipelines-dialog]`);
+    pipelinesDialog?.addEventListener("click", handleCrmPipelinesClick);
+    pipelinesDialog?.addEventListener("input", handleCrmPipelinesInput);
+    pipelinesDialog?.addEventListener("change", handleCrmPipelinesInput);
+    pipelinesDialog?.addEventListener("close", () => { state.crmView.pipelineEdit = null; });
+    $(`[data-crm-pipelines-form]`)?.addEventListener("submit", (event) => void saveCrmPipelines(event));
+    $(`[data-crm-members-form]`)?.addEventListener("submit", (event) => void saveCrmMembers(event));
+    $(`[data-crm-members-search]`)?.addEventListener("input", filterCrmMembersRoster);
+    const strip = $(`[data-crm-stage-strip]`);
+    strip?.addEventListener("click", (event) => {
+      if (event.target.closest("[data-crm-stage-strip-menu]")) { openCrmStageStripMenu(event); return; }
+      const chip = event.target.closest("[data-crm-stage-chip]");
+      if (chip) pickCrmStage(chip.dataset.crmStageChip);
     });
+    strip?.addEventListener("contextmenu", openCrmStageStripMenu);
     $(`[data-crm-zoho-sync]`)?.addEventListener("click", () => {
       if (state.crmView.settings?.zoho?.connected) void syncCrmZoho();
       else if (state.crmView.canManageSettings && state.crmView.settings?.zoho?.oneClick) void connectCrmZoho();
@@ -4576,9 +5336,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
     tabs?.addEventListener("dblclick", (event) => {
       const tab = event.target.closest("[data-crm-tab]");
       const id = tab?.dataset.crmTab;
-      if (!id) return;
+      if (!id || id === CRM_NO_PIPELINE_TAB) return;
       event.preventDefault();
-      void renameCrmSheet(state.crmView.views.find((view) => view.id === id));
+      void renameCrmSheet(crmTabView(id));
     });
     // The count of people a sheet reaches opens the list of who they are.
     tabs?.addEventListener("mouseover", (event) => {
