@@ -119,7 +119,6 @@ def _admin_now():
 ADMIN_HIDDEN_TABLES = (
     "_cf_KV",
     "accounts",
-    "repositories",
     "repo_shares",
     "mirror_requests",
     "repo_agents",

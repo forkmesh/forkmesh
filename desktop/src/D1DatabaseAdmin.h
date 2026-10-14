@@ -31,6 +31,7 @@ struct D1DatabaseTable {
     // Rows are served only by the table's purpose-built API.
     bool restricted = false;
     bool writable = false;
+    bool deletable = false;
     QString writeBlockedReason;
     // WITHOUT ROWID tables page by offset and cannot be edited by row.
     bool rowid = true;

@@ -5830,6 +5830,8 @@ _admin_database = _LazyModule("admin_database")
 _admin_database_handler = _admin_database.export("admin_database_handler")
 _admin_database_phone_handler = _admin_database.export(
     "admin_database_phone_handler")
+_admin_purge_repository_rows = _admin_database.export(
+    "admin_purge_repository_rows")
 
 
 
@@ -18422,13 +18424,16 @@ async def _clear_repo_delete_tombstone(env, repo_bi):
 _REPO_SCOPED_TABLES = (
     ("about_inbox", "repo_bi"),
     ("branch_op_inbox", "repo_bi"),
+    ("branch_op_results", "repo_bi"),
     ("inbox_drain_log", "repo_bi"),
     ("issue_seq", "repo_bi"),
     ("private_mirror_routes", "repo_bi"),
+    ("pull_submission_receipts", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
     ("repo_privacy_policy", "repo_bi"),
+    ("repo_remote_forks", "repo_bi"),
     ("repo_security_scan_leases", "repo_bi"),
     ("repo_stars", "repo_bi"),
     ("repo_state_history", "key_bi"),
