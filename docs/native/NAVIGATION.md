@@ -3289,7 +3289,7 @@ and then for `@everyone` and `@here` tags that work as in Discord and Slack.
   who has posted in it or its threads, without ForkBot, apps or transient
   guests. Office and private D1 rooms use the server's member list
   (`OfficeRoom.members`). The Members page says which rule applies.
-  Since 2.0.101 `#general`, `#random` and `#welcome` also count every member
+  Since 2.0.102 `#general`, `#random` and `#welcome` also count every member
   of the project's account directory.
 - **Messages.** 38 pt rounded-square avatars (`FmAvatar(corner:)`), the sender's
   name bold in the text colour with the time beside it, 17 pt body. Reactions
@@ -3465,7 +3465,50 @@ options so the bar can look the way they want.
 - Android's bar is unchanged. Not built or checked on a device from Linux,
   which only parses the Swift.
 
-### 2.0.101 Every member is in #general, #random and #welcome (2026-10-14, iOS)
+### 2.0.101 A richer channel list over the wallpaper (2026-10-14, iOS)
+
+The user sent a screenshot of the channel drawer (quiet rows with an empty
+second line, so the `#` and lock glyphs sat below their titles, 12 pt text,
+a flat opaque panel) and asked for it to look nicer with more information,
+centred icons, slightly bigger text, the connected apps at the bottom, and
+the custom background showing through.
+
+- **Rows** (`ChatChannelTile`): the icon is an SF Symbol (`number`,
+  `lock.fill`, `at`, the mesh glyph) centred in a 36 pt rounded tile, and the
+  row centres it against both text lines. The bundled Material glyphs sat
+  low in their frame. Titles are `bodyLarge` (15 pt, was 12), previews
+  `bodyMedium` (13 pt), rows at least 56 pt, and the time turns red when the
+  room is unread. People rows use the same 36 pt avatar with the presence dot
+  on its corner.
+- **Every row has a second line.** A room with no messages shows
+  `ChatHub.listFallback`/`ChatListPreviews.fallback` in a fainter tone: the
+  Office topic, else "Public · no messages yet", "Private · N members" or
+  "Private · invited people only", "No messages yet" for a direct message,
+  and "Phones and desktops on this network" for #mesh.
+- **Layout.** A strip of three counts (channels, unread rooms that are not
+  muted, people online) sits under the search bar. Each section (Starred,
+  Channels, Direct messages, People, Connected apps) has an upper-case title
+  with a count and sits on its own rounded card. Group headers use a
+  rotating chevron.
+- **Connected apps** close the list (`ChatChannelSidebar.connectedApps`):
+  one row per installed chat app, grouped from the app command catalog by
+  `ChatListPreviews.apps` (`ChatConnectedApp`, its first three slash
+  commands and "+N"). Discord moved there from the channel list, with a dot
+  for its connection. The desktop on this network is listed when
+  `LocalDesktopText.chip` names one. "Manage" and the app rows open Settings
+  › Installed apps. With none, a row points to the Market. The list loads
+  the catalog on appear and on pull to refresh.
+- **Wallpaper.** With a background image the sidebar draws no fill of its
+  own, the cards are the raised colour at 62%, and the phone drawer paints
+  `FmWallpaperBackdrop` (same image and dim as the rest of the app) instead
+  of the opaque raised colour. The transcript behind the drawer still does
+  not show through. Without a wallpaper, the page is the base colour and
+  the cards are the raised colour. The scroll content clears the bottom bar
+  (`ShellDock.clearance`).
+- `ChatListPreviewTests` covers the fallback lines and the app grouping (iOS
+  core, Linux). The SwiftUI is only parsed on Linux, not built.
+
+### 2.0.102 Every member is in #general, #random and #welcome (2026-10-14, iOS)
 
 The user asked for every ForkMesh member to be in the general chat and the
 random chat. The phone's general chat page should show the full member count,

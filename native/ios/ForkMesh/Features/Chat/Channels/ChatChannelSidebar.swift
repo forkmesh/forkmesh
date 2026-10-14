@@ -15,6 +15,8 @@ struct ChatChannelSidebar: View {
     var onClose: (() -> Void)? = nil
     @State private var groups: ChannelGroupsStore? = Services.get(ChannelGroupsStore.self)
     @State private var discord: DiscordBridge? = Services.get(DiscordBridge.self)
+    @State private var desktop: LocalControlService? = Services.get(LocalControlService.self)
+    @Environment(\.shellDock) private var shell
     @State private var statusSheet: Bool = false
     @State private var newChannel: Bool = false
     @State private var newGroup: Bool = false
@@ -46,65 +48,56 @@ struct ChatChannelSidebar: View {
                 if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
+                summary.padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
-                    FmSectionHeader(title: "Starred")
-                        .padding(.bottom, FmSpace.x2)
-                    ForEach(hub.workspace.starred, id: \.self) { (conversation: String) in
-                        conversationTile(conversation)
-                    }
-                    Color.clear.frame(height: FmSpace.x3)
-                }
-                HStack {
-                    FmSectionHeader(title: "Channels")
-                    Spacer()
-                    addMenu
-                }
-                .padding(.bottom, FmSpace.x2)
-                ForEach(ChannelGroups.visibleRows(rows)) { (row: ChannelGroups.Row) in
-                    if row.header {
-                        groupHeader(row)
-                    } else {
-                        channelTile(row.channel)
-                    }
-                }
-                if !hub.workspace.isStarred(meshConversation) {
-                    conversationTile(meshConversation)
-                }
-                if discord != nil {
-                    Button(action: { onRoute(.discord(guild: "", channel: nil)) }) {
-                        HStack(spacing: FmSpace.x3) {
-                            FmIcon("desktop_windows", size: 17, color: fm.textTertiary)
-                            Text("Discord (through your desktop)")
-                                .fmText(.bodySmall, color: fm.textSecondary)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            FmIcon("chevron_right", size: 16, color: fm.textTertiary)
+                    sectionTitle("Starred", count: hub.workspace.starred.count)
+                    card {
+                        ForEach(hub.workspace.starred, id: \.self) { (conversation: String) in
+                            conversationTile(conversation)
                         }
-                        .padding(.horizontal, FmSpace.x3)
-                        .padding(.vertical, FmSpace.x2)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .padding(.bottom, FmSpace.x4)
+                }
+                sectionTitle("Channels", count: rows.filter { !$0.header }.count) { addMenu }
+                card {
+                    ForEach(ChannelGroups.visibleRows(rows)) { (row: ChannelGroups.Row) in
+                        if row.header {
+                            groupHeader(row)
+                        } else {
+                            channelTile(row.channel)
+                        }
+                    }
+                    if !hub.workspace.isStarred(meshConversation) {
+                        conversationTile(meshConversation)
+                    }
                 }
                 directMessages
-                FmSectionHeader(title: "People")
-                    .padding(.top, FmSpace.x4)
-                    .padding(.bottom, FmSpace.x2)
-                ForEach(hub.memberGroups) { (group: MemberGroup) in
-                    ChatMemberRow(
-                        group: group, selected: hub.currentConversation == "@\(group.id)",
-                        onTap: memberTap(group), onProfile: { onRoute(.profile(name: group.name)) }, retentionHub: hub)
+                if !hub.memberGroups.isEmpty {
+                    sectionTitle("People", count: hub.memberGroups.count)
+                        .padding(.top, FmSpace.x4)
+                    card {
+                        ForEach(hub.memberGroups) { (group: MemberGroup) in
+                            ChatMemberRow(
+                                group: group, selected: hub.currentConversation == "@\(group.id)",
+                                onTap: memberTap(group), onProfile: { onRoute(.profile(name: group.name)) }, retentionHub: hub)
+                        }
+                    }
                 }
+                connectedApps
             }
             .padding(FmSpace.x3)
         }
-        .background(fm.bgRaised)
+        .safeAreaPadding(.bottom, shell?.clearance ?? 0)
+        .background(fm.wallpaper ? Color.clear : fm.bgBase)
         .fmRefreshable {
             await hub.office?.refresh()
             await hub.direct?.refresh()
+            await hub.refreshAppCommands(force: true)
         }
-        .task { await hub.direct?.refresh() }
+        .task {
+            await hub.direct?.refresh()
+            await hub.refreshAppCommands()
+        }
         .sheet(isPresented: $statusSheet) { UserStatusSheet() }
         .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { select($0) }) }
         .sheet(item: Binding(get: { inviting.map(ChatSheetKey.init) }, set: { inviting = $0?.value })) { key in
@@ -178,14 +171,14 @@ struct ChatChannelSidebar: View {
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(fm.textTertiary)
                         Text("Jump to or search\u{2026}")
-                            .fmText(.bodySmall, color: fm.textTertiary)
+                            .fmText(.bodyLarge, color: fm.textTertiary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, FmSpace.x3)
-                    .frame(minHeight: 40)
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
-                    .shellGlass(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shellGlass(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Jump to or search")
@@ -205,12 +198,122 @@ struct ChatChannelSidebar: View {
         }
     }
 
+    private var cardFill: Color { fm.wallpaper ? fm.bgRaised.opacity(0.62) : fm.bgRaised }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) { content() }
+            .padding(FmSpace.x1)
+            .background(FmRoundedShape(radius: FmRadius.lg).fill(cardFill))
+            .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
+    }
+
+    private func sectionTitle(_ title: String, count: Int) -> some View {
+        sectionTitle(title, count: count) { EmptyView() }
+    }
+
+    private func sectionTitle<Trailing: View>(_ title: String, count: Int, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(spacing: FmSpace.x2) {
+            Text(title.uppercased())
+                .fmText(.labelMedium, color: fm.textSecondary, tracking: 0.6)
+                .lineLimit(1)
+            if count > 0 {
+                Text("\(count)")
+                    .fmText(.labelSmall, color: fm.textTertiary, tabular: true)
+                    .padding(.horizontal, 7)
+                    .frame(minHeight: 18)
+                    .background(Capsule().fill(fm.textPrimary.opacity(0.08)))
+            }
+            Spacer(minLength: 0)
+            trailing()
+        }
+        .padding(.horizontal, FmSpace.x2)
+        .frame(minHeight: 44)
+    }
+
+    private var unreadCount: Int {
+        let listed: [String] = hub.channels + hub.officeChannels + hub.directRows.map(\.conversation) + [meshConversation]
+        return Set(listed).filter { hub.isUnread($0) && !hub.workspace.isMuted($0) }.count
+    }
+
+    private var summary: some View {
+        HStack(spacing: FmSpace.x2) {
+            summaryStat(icon: "number", value: hub.channels.count + hub.officeChannels.count, label: "Channels", tint: fm.accent)
+            summaryStat(icon: "envelope.badge", value: unreadCount, label: "Unread", tint: unreadCount > 0 ? fm.danger : fm.textTertiary)
+            summaryStat(
+                icon: "person.2.fill", value: hub.memberGroups.filter(\.online).count, label: "Online", tint: fm.success)
+        }
+    }
+
+    private func summaryStat(icon: String, value: Int, label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: FmSpace.x1) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 18, height: 18)
+                Text("\(value)")
+                    .fmText(.titleMedium, color: fm.textPrimary, tabular: true)
+                    .lineLimit(1)
+            }
+            Text(label)
+                .fmText(.bodySmall, color: fm.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, FmSpace.x2)
+        .padding(.vertical, FmSpace.x2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(FmRoundedShape(radius: FmRadius.lg).fill(cardFill))
+        .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var desktopChip: (label: String, tone: LocalDesktopTone)? {
+        guard let desktop else { return nil }
+        return LocalDesktopText.chip(desktop)
+    }
+
+    @ViewBuilder private var connectedApps: some View {
+        let apps: [ChatConnectedApp] = hub.connectedApps
+        let chip: (label: String, tone: LocalDesktopTone)? = desktopChip
+        sectionTitle("Connected apps", count: apps.count + (discord != nil ? 1 : 0) + (chip != nil ? 1 : 0)) {
+            Button(action: { onRoute(.settings(section: "apps")) }) {
+                Text("Manage")
+                    .fmText(.labelMedium, color: fm.accent)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, FmSpace.x4)
+        card {
+            ForEach(apps) { (app: ChatConnectedApp) in
+                ChatAppTile(
+                    title: app.name, detail: app.detail, monogram: String(app.name.prefix(1)).uppercased(),
+                    tint: fm.accent, onTap: { onRoute(.settings(section: "apps")) })
+            }
+            if let discord {
+                ChatAppTile(
+                    title: "Discord", detail: discord.status.connected ? "Connected through your desktop" : "Through your desktop",
+                    symbol: "bubble.left.and.bubble.right.fill", tint: Color(red: 0.345, green: 0.396, blue: 0.949),
+                    status: discord.status.connected, onTap: { onRoute(.discord(guild: "", channel: nil)) })
+            }
+            if let chip {
+                ChatAppTile(
+                    title: "Desktop on this network", detail: chip.label, symbol: "desktopcomputer", tint: fm.success,
+                    status: chip.tone == .success, onTap: { onRoute(.desktops) })
+            }
+            if apps.isEmpty && discord == nil && chip == nil {
+                ChatAppTile(
+                    title: "No apps connected", detail: "Install apps from the Market on the web or the desktop",
+                    symbol: "puzzlepiece.extension", tint: fm.textTertiary, onTap: { onRoute(.settings(section: "apps")) })
+            }
+        }
+    }
+
     @ViewBuilder private var directMessages: some View {
         let rows: [ChatDirectRow] = hub.directRows.filter { !hub.workspace.isStarred($0.conversation) }
         if !rows.isEmpty || onCompose != nil {
-            HStack {
-                FmSectionHeader(title: "Direct messages")
-                Spacer()
+            sectionTitle("Direct messages", count: rows.count) {
                 if let onCompose {
                     Button(action: onCompose) {
                         FmIcon("add", size: 20, color: fm.textSecondary, label: "New message")
@@ -220,9 +323,12 @@ struct ChatChannelSidebar: View {
                 }
             }
             .padding(.top, FmSpace.x4)
-            .padding(.bottom, FmSpace.x2)
-            ForEach(rows) { (row: ChatDirectRow) in
-                conversationTile(row.conversation, direct: row)
+            if !rows.isEmpty {
+                card {
+                    ForEach(rows) { (row: ChatDirectRow) in
+                        conversationTile(row.conversation, direct: row)
+                    }
+                }
             }
         }
     }
@@ -231,7 +337,7 @@ struct ChatChannelSidebar: View {
         let office: OfficeRoom? = hub.office?.room(for: conversation)
         let person: Bool = conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(conversation)
-        let icon: String = conversation == meshConversation ? "lan_outlined" : (person ? "alternate_email" : (locked ? "lock_outline" : "tag"))
+        let icon: String = conversation == meshConversation ? "point.3.connected.trianglepath.dotted" : (person ? "at" : (locked ? "lock.fill" : "number"))
         let title: String = direct.map { $0.name } ?? hub.conversationLabel(conversation)
         let preview: ChatListPreview? = hub.listPreview(conversation)
         let row: ChatDirectRow? = direct ?? (person ? hub.directRows.first(where: { $0.conversation == conversation }) : nil)
@@ -240,8 +346,8 @@ struct ChatChannelSidebar: View {
             onTap: { select(conversation) }, muted: hub.workspace.isMuted(conversation),
             draft: hub.workspace.hasDraft(conversation) && hub.currentConversation != conversation,
             count: hub.workspace.isMuted(conversation) ? 0 : (row?.unread ?? 0), online: row?.online,
-            preview: preview?.text ?? "", time: preview.map { hub.listTimeLabel($0) } ?? "",
-            avatar: person ? (row?.name ?? String(title.drop(while: { $0 == "@" }))) : nil)
+            preview: preview?.text ?? hub.listFallback(conversation), time: preview.map { hub.listTimeLabel($0) } ?? "",
+            quiet: preview == nil, avatar: person ? (row?.name ?? String(title.drop(while: { $0 == "@" }))) : nil)
             .contextMenu {
                 conversationMenu(conversation)
                 if person || conversation == meshConversation {
@@ -279,15 +385,20 @@ struct ChatChannelSidebar: View {
             let collapsed: Bool = !row.collapsed
             groups?.update { ChannelGroups.setCollapsed(&$0, row.group, collapsed: collapsed, automatic: row.automatic) }
         }) {
-            HStack(spacing: FmSpace.x2) {
-                FmIcon(row.collapsed ? "chevron_right" : "expand_more", size: 16, color: fm.textTertiary)
+            HStack(spacing: FmSpace.x3) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(fm.textTertiary)
+                    .rotationEffect(.degrees(row.collapsed ? 0 : 90))
+                    .frame(width: 34, height: 20)
                 Text(row.group)
-                    .fmText(.labelMedium, color: fm.textTertiary)
+                    .fmText(.labelLarge, color: fm.textSecondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, FmSpace.x2)
-            .frame(minHeight: 36)
+            .padding(.top, FmSpace.x2)
+            .frame(minHeight: 40)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -310,11 +421,12 @@ struct ChatChannelSidebar: View {
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(channel)
         let preview: ChatListPreview? = hub.listPreview(channel)
         ChatChannelTile(
-            title: office?.name.isEmpty == false ? "#\(office!.name)" : channel, icon: locked ? "lock_outline" : "tag",
+            title: office?.name.isEmpty == false ? "#\(office!.name)" : channel, icon: locked ? "lock.fill" : "number",
             selected: hub.currentConversation == channel, unread: hub.isUnread(channel), onTap: { select(channel) },
             muted: hub.workspace.isMuted(channel),
             draft: hub.workspace.hasDraft(channel) && hub.currentConversation != channel,
-            preview: preview?.text ?? "", time: preview.map { hub.listTimeLabel($0) } ?? "")
+            preview: preview?.text ?? hub.listFallback(channel), time: preview.map { hub.listTimeLabel($0) } ?? "",
+            quiet: preview == nil)
             .contextMenu {
                 conversationMenu(channel)
                 Button(action: { moving = channel }) { Label("Move to group", systemImage: "folder") }
@@ -368,44 +480,62 @@ struct ChatChannelTile: View {
     var online: Bool? = nil
     var preview: String? = nil
     var time: String = ""
+    var quiet: Bool = false
     var avatar: String? = nil
+
+    static let leadingSize: CGFloat = 36
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: FmSpace.x3) {
+            HStack(alignment: .center, spacing: FmSpace.x3) {
                 leading
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: FmSpace.x2) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
                         Text(title)
-                            .fmText(.bodySmall, color: selected ? fm.textPrimary : (unread ? fm.textPrimary : fm.textSecondary),
+                            .fmText(.bodyLarge, color: selected || unread ? fm.textPrimary : fm.textSecondary,
                                     weight: selected || unread ? FmType.emphasis : FmType.regular)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         if !time.isEmpty {
                             Text(time)
-                                .fmText(.bodySmall, color: fm.textTertiary, tabular: true)
+                                .fmText(.bodySmall, color: unread ? fm.danger : fm.textTertiary, tabular: true)
                                 .lineLimit(1)
                                 .fixedSize()
                         }
                     }
-                    if let preview {
-                        Text(preview.isEmpty ? " " : preview)
-                            .fmText(.bodySmall, color: fm.textTertiary)
+                    if let preview, !preview.isEmpty {
+                        Text(preview)
+                            .fmText(.bodyMedium, color: quiet ? fm.textTertiary.opacity(0.75) : fm.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityHidden(preview.isEmpty)
                     }
                 }
+                trailing
+            }
+            .opacity(muted && !selected ? 0.6 : 1)
+            .padding(.horizontal, FmSpace.x2)
+            .padding(.vertical, FmSpace.x2)
+            .frame(minHeight: 56)
+            .background(selected ? fm.accentSubtle : Color.clear)
+            .clipShape(FmRoundedShape(radius: FmRadius.md))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private var trailing: some View {
+        if draft || muted || count > 0 || unread {
+            HStack(spacing: FmSpace.x1) {
                 if draft {
                     Image(systemName: "pencil")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(fm.textTertiary)
                         .accessibilityLabel("Draft")
                 }
                 if muted {
                     Image(systemName: "bell.slash")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(fm.textTertiary)
                         .accessibilityLabel("Muted")
                 }
@@ -413,45 +543,106 @@ struct ChatChannelTile: View {
                     Text("\(count)")
                         .fmText(.labelSmall, color: Color.white, tabular: true)
                         .padding(.horizontal, 6)
-                        .frame(minWidth: 20, minHeight: 18)
+                        .frame(minWidth: 20, minHeight: 20)
                         .background(fm.danger)
                         .clipShape(Capsule())
                 } else if unread {
-                    Circle().fill(fm.danger).frame(width: 8, height: 8)
+                    Circle().fill(fm.danger).frame(width: 9, height: 9)
                 }
             }
-            .opacity(muted && !selected ? 0.6 : 1)
-            .padding(.horizontal, FmSpace.x3)
-            .padding(.vertical, FmSpace.x2)
-            .frame(minHeight: 44)
-            .background(selected ? fm.accentSubtle : Color.clear)
-            .clipShape(FmRoundedShape(radius: FmRadius.md))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .padding(.bottom, FmSpace.x1)
     }
 
     @ViewBuilder private var leading: some View {
+        let size: CGFloat = ChatChannelTile.leadingSize
         if let avatar {
             ZStack(alignment: .bottomTrailing) {
-                MessagesPersonAvatar(name: avatar, size: 28)
+                MessagesPersonAvatar(name: avatar, size: size)
                 if let online {
-                    PresenceDot(online: online, size: 9)
+                    PresenceDot(online: online, size: 10)
                         .overlay { Circle().strokeBorder(selected ? fm.accentSubtle : fm.bgRaised, lineWidth: 1.5) }
                         .offset(x: 2, y: 2)
                 }
             }
-            .frame(width: 28, height: 28)
+            .frame(width: size, height: size)
         } else {
-            ZStack(alignment: .bottomTrailing) {
-                FmIcon(icon, size: 17, color: selected ? fm.accent : fm.textTertiary)
-                if let online {
-                    PresenceDot(online: online, size: 7).offset(x: 3, y: 3)
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(selected ? fm.accent : (unread ? fm.textPrimary : fm.textSecondary))
+                .frame(width: size, height: size, alignment: .center)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? fm.accent.opacity(0.18) : fm.textPrimary.opacity(0.07)))
+                .overlay(alignment: .bottomTrailing) {
+                    if let online {
+                        PresenceDot(online: online, size: 9).offset(x: 2, y: 2)
+                    }
                 }
-            }
-            .frame(width: 28)
         }
+    }
+}
+
+struct ChatAppTile: View {
+    @Environment(\.fmPalette) private var fm
+    let title: String
+    let detail: String
+    var monogram: String = ""
+    var symbol: String = ""
+    let tint: Color
+    var status: Bool? = nil
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .center, spacing: FmSpace.x3) {
+                badge
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .fmText(.bodyLarge, color: fm.textPrimary)
+                        .lineLimit(1)
+                    if !detail.isEmpty {
+                        Text(detail)
+                            .fmText(.bodyMedium, color: fm.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(fm.textTertiary)
+            }
+            .padding(.horizontal, FmSpace.x2)
+            .padding(.vertical, FmSpace.x2)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var badge: some View {
+        let size: CGFloat = ChatChannelTile.leadingSize
+        return ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.9))
+            if symbol.isEmpty {
+                Text(monogram)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.white)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.white)
+            }
+        }
+        .frame(width: size, height: size)
+        .overlay(alignment: .bottomTrailing) {
+            if let status {
+                PresenceDot(online: status, size: 10)
+                    .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
+                    .offset(x: 3, y: 3)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -468,22 +659,26 @@ struct ChatMemberRow: View {
 
     var body: some View {
         Button(action: { onTap?() }) {
-            HStack(alignment: .top, spacing: FmSpace.x3) {
-                PresenceDot(online: group.online, away: away)
-                    .padding(.top, 4)
+            HStack(alignment: .center, spacing: FmSpace.x3) {
+                ZStack(alignment: .bottomTrailing) {
+                    MessagesPersonAvatar(name: group.name, size: ChatChannelTile.leadingSize)
+                    PresenceDot(online: group.online, away: away, size: 10)
+                        .overlay { Circle().strokeBorder(fm.bgRaised, lineWidth: 1.5) }
+                        .offset(x: 2, y: 2)
+                }
+                .frame(width: ChatChannelTile.leadingSize, height: ChatChannelTile.leadingSize)
                 details
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, FmSpace.x3)
+            .padding(.horizontal, FmSpace.x2)
             .padding(.vertical, FmSpace.x2)
-            .frame(minHeight: 44)
+            .frame(minHeight: 56)
             .background(selected ? fm.accentSubtle : Color.clear)
             .clipShape(FmRoundedShape(radius: FmRadius.md))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)
-        .padding(.bottom, FmSpace.x1)
         .contextMenu {
             if !group.isSelf && !visitor {
                 Button(action: onProfile) { Label("View profile", systemImage: "person.crop.circle") }
@@ -498,10 +693,10 @@ struct ChatMemberRow: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
                 Text(group.isSelf ? "\(group.name) (you)" : group.name)
-                    .fmText(.bodySmall, color: selected ? fm.textPrimary : fm.textSecondary,
+                    .fmText(.bodyLarge, color: selected ? fm.textPrimary : fm.textSecondary,
                             weight: selected ? FmType.emphasis : FmType.regular)
                     .lineLimit(1)
-                UserStatusEmoji(status: group.userStatus, size: FmType.small)
+                UserStatusEmoji(status: group.userStatus, size: FmType.body)
             }
             if visitor {
                 Text("Visitor").fmText(.labelSmall, color: fm.textTertiary)
