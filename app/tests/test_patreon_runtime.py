@@ -1235,6 +1235,21 @@ def test_concurrent_older_snapshot_cannot_overwrite_newer_reconciliation(runtime
     ).fetchone()[0] == 1
 
 
+def test_unconfigured_webhook_secret_is_expected_degraded(runtime):
+    notification = webhook_request(
+        runtime, "members:pledge:update", 1000, "patreon-a", "a@example.test")
+    runtime.PATREON_WEBHOOK_SECRET = ""
+
+    response = run(handler.patreon_webhook_handler(runtime, notification))
+
+    assert response.status == 503
+    assert response.headers["x-forkmesh-expected-degraded"] == "1"
+    assert response.headers["cache-control"].startswith("no-store")
+    assert runtime.connection.execute(
+        "SELECT COUNT(*) FROM patreon_webhook_events"
+    ).fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("failure", ["missing_token", "api_failure"])
 def test_reconciliation_failure_preserves_state_and_allows_retry(runtime, failure):
     add_account(runtime, "acct-a", "a@example.test")
@@ -1260,6 +1275,9 @@ def test_reconciliation_failure_preserves_state_and_allows_retry(runtime, failur
     response = run(handler.patreon_webhook_handler(runtime, notification))
 
     assert response.status == 503
+    assert (
+        response.headers.get("x-forkmesh-expected-degraded") == "1"
+    ) is (failure == "missing_token")
     assert active_roles(runtime, "acct-a") == set()
     assert runtime.connection.execute(
         "SELECT COUNT(*) FROM patreon_webhook_events"
