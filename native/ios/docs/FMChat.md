@@ -826,12 +826,94 @@ only. The rest of the app target was compiled on the office Mac (Xcode 26.6, Deb
 in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
 capture, playback and the screen-capture notices are untested on hardware.
 
+## Link previews (branch 1996)
+
+Requested 2026-10-14: Slack-style cards for links in chat, for 50 kinds of
+popular site and for any site's own social image.
+
+- **Catalog** (`Threads/ChatLinkSites.swift`). `ChatLinkSites.all` has 64
+  sites in 14 kinds (`ChatLinkKind`: video, music, social, code, package,
+  document, article, shop, app, map, image, chat, reference, page). Each entry
+  has hosts (a suffix match after `www.`/`m.`/`mobile.`/`old.`/`new.`, or
+  `host/path` such as `google.com/maps`), a brand colour and SF Symbol for the
+  badge, a kind and a resolver. A test keeps the catalog at 50 or more.
+- **Resolvers** (`ChatLinkPreviewService.special`). Sites with a public API
+  are asked through it, not scraped: YouTube (oEmbed for the title and
+  channel, `i.ytimg.com/vi/<id>/hqdefault.jpg`; watch, youtu.be, shorts, live
+  and embed links), oEmbed for Vimeo, TikTok, Dailymotion, Loom, Spotify,
+  SoundCloud, CodePen and Flickr, X/Twitter (`publish.twitter.com/oembed`, the
+  post's text), Wikipedia (REST summary), Hacker News (Firebase item), npm,
+  PyPI, crates.io, the App Store (iTunes lookup), Steam (appdetails), xkcd
+  (`info.0.json`) and Stack Exchange (api.stackexchange.com). Everything else,
+  and any API that fails, falls back to the page: `og:*`, `twitter:*`,
+  `<title>`, `description`, `author`, `link rel=image_src`, read anywhere in the
+  first 2 MB (Pinterest and Google Play put theirs in the body). A link to an
+  image file is shown as the image. Known sites always show the catalog's
+  name; unknown ones show `og:site_name` or the host.
+- **Fetching.** Through its own `URLSessionHTTPClient` (ephemeral: no cookies,
+  no cache, not the telemetry-wrapped client), 8 s per request, redirects
+  followed by hand (at most 4) so that every hop is checked. Only `http(s)`
+  on ports 80/443 without user info, to a public name: loopback, private,
+  link-local, CGNAT, multicast and documentation addresses (v4, v6 and
+  v4-mapped), numeric or hex-dotted hosts, single-label names and `.local`,
+  `.lan`, `.home.arpa`, `.internal` and similar are refused, the same check
+  for image URLs. A host name that resolves to a private address is not
+  caught (the phone does not resolve before connecting). The first try says
+  `ForkMeshBot … facebookexternalhit/1.1 Twitterbot/1.0`, because X, Instagram,
+  Facebook, TikTok and Threads only give crawlers their tags; a 401/403/429/503
+  or a page with no picture or description is retried once as iPhone Safari
+  (forkmesh.com's WAF refuses "bot" agents). Pages are cut at 2 MB, images
+  refused over 6 MB and decoded off the main thread to at most 1,200 px.
+  Linux's URLSession reports Twitch's `103 Early Hints` as the status, so a
+  1xx with a body is read as the page.
+- **Cache.** `ChatLinkPreviewService` keeps up to 400 previews in memory and
+  in `Caches/chat-link-previews.json` (3 days); a miss is not retried for 6
+  hours in a launch; image bytes are kept to 48 MB, decoded images in an
+  `NSCache` of 120.
+- **Switch.** `chat/link-previews/enabled` (on by default), in a channel's
+  Settings & Details. Previews are fetched by each reader's phone, so the site
+  learns that someone opened the chat; turning the switch off stops every
+  fetch.
+- **Live check, 2026-10-14** (a throwaway probe against the real sites from
+  the Linux box, not part of the suite): 62 of 68 links gave a card, including
+  the YouTube link of the request ("OWASP Spotlight - Project 40 - OWASP CVE
+  Lite CLI", Vandana Verma, the thumbnail). Medium, Etsy, Reuters and eBay
+  refused this box (Cloudflare, DataDome) with either agent; a private Google
+  Doc and a Bitbucket single-page app have no tags. Those links stay plain.
+
+## Channel details, members and smart mentions (branch 1996)
+
+- `ViewModels/ChatChannelInfo.swift`: `ChatChannelMember`,
+  `ChatHub.channelMembers` / `memberCount` / `onlineMemberCount` (see
+  docs/native/NAVIGATION.md 2.0.97 for who counts), `channelFiles` (files and
+  links in loaded history, newest first), `savedItems(in:)`, `bookmarkCount`,
+  `channelTabCount`, `channelDetail`, `addBookmark`, `saveCanvas`,
+  `notifyLevel` / `setNotifyLevel`, `unreadCount`, `unreadMessages`,
+  `hasUnreadMention`, `firstUnreadId`, `broadcastWarning`,
+  `broadcastSuggestions`, `broadcastAudience`, and
+  `ChatLinkPreviewParsing.links(in:)` (http(s) links outside code fences,
+  sentence punctuation and unbalanced brackets trimmed, Slack's `<url|label>`).
+- `ChatWorkspace` gains `ChatBookmark` (50 per channel, http(s) only),
+  `ChatCanvas` (20,000 characters) and `ChatNotifyLevel`; `forget` clears them
+  when a channel is left.
+- `ChatSmartMentions`: `split` turns text into plain, person, you and
+  broadcast pieces (an `@` after a space or opening bracket, outside
+  backticks; `team@here.com` and `@hereafter` are not tags), `broadcasts`,
+  `strongest` (everyone, then channel, then here), `mentionsYou`.
+  `ChatRow.mentionsYou` is set in `rows`. Warnings start at
+  `ChatSmartMentions.warnAt` (6) people other than you.
+- `ChatHub.unreadStart`: the conversation that was opened and the id of its
+  first unread message, for the NEW line; it is replaced on the next `select`.
+
 ## Views (ForkMesh/Features/Chat)
 
 `ChatScreen(showComposer:)`, `RelaySettingsSection()`, `RelayNetworksScreen()`,
 `LocalDesktopScreen()` (+ `LocalAgentScreen(sessionId:)`, `LocalDesktopChip()`),
 `ComposeIdentityBar(verb:)`, `RelaySwitchScope`, `ChatFeature`, `ChatNewMessageSheet`,
-`ChatShareMessageSheet`, `ChatSearchSheet` (Channels/). Conversations are drawn by
+`ChatShareMessageSheet`, `ChatSearchSheet`, `ChatChannelSheet` and its pages
+(`ChatChannelPages.swift`: files and links, bookmarks, canvas, members, agents
+and apps, notifications, settings), `ChatMoveChannelSheet` (Channels/),
+`ChatLinkPreviews` / `ChatLinkPreviewCard` (Threads/). Conversations are drawn by
 `Messages/`: `MessagesConversationView` (header with the avatar and name that open the details,
 transcript over the shared background, double-tap tapback picker, composer with photos, camera,
 files, background, emoji and a voice-message recorder), `MessagesBubbles.swift` (tailed bubble
