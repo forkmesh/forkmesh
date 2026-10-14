@@ -481,3 +481,22 @@ channel header, because it adds the call buttons and "Add person".
   with the badge text and opens the same encryption summary.
 
 None of the three was run on a device or in a browser for this change.
+
+### The back button on smaller iPhones
+
+Reported 2026-10-13: the DM header's back chevron did nothing on smaller
+phones. `MessagesHeaderLayout` placed the right-hand group at the right edge
+whatever its width, and that group grows with Dynamic Type: the new agent
+circle is a `@ScaledMetric` 44 pt. On a 320 pt screen (an iPhone SE or mini
+with Display Zoom), or with large text, the group slid left over the chevron.
+It was drawn after the chevron, so it took the taps.
+
+- The right-hand group never starts left of the chevron and its gap; when
+  it does not fit it runs past the right edge instead.
+- The chevron's group has `zIndex(1)`, so it is drawn and hit-tested above
+  the title and the right-hand group whatever overlaps.
+- The right-hand group stops growing at `.xxxLarge` text, like a system
+  bar. The new agent button already shows the large content viewer when
+  held at larger sizes.
+- Only parse-checked on Linux (`swiftc -parse`); not run on a device or in
+  the simulator.
