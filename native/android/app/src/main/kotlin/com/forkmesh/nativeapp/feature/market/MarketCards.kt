@@ -39,6 +39,7 @@ import com.forkmesh.nativeapp.market.MarketPlatform
 import com.forkmesh.nativeapp.market.MarketPrice
 import com.forkmesh.nativeapp.market.MarketSort
 import com.forkmesh.nativeapp.market.MarketText
+import com.forkmesh.nativeapp.market.MarketUninstall
 import com.forkmesh.nativeapp.market.PackageInstallMode
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
@@ -167,6 +168,9 @@ internal fun MarketCard(
     onOpen: () -> Unit,
     onInstall: (String?) -> Unit,
     version: Int,
+    uninstall: MarketUninstall? = null,
+    uninstalling: Boolean = false,
+    onUninstall: (String?) -> Unit = {},
 ) {
     @Suppress("UNUSED_EXPRESSION") version
     val c = Fm.colors
@@ -205,8 +209,36 @@ internal fun MarketCard(
             Text(facts.joinToString(" · "), style = Fm.text.labelSmall, color = c.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (failure != null) Text(failure, style = Fm.text.labelSmall, color = c.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Box(Modifier.widthIn(min = ACTION_WIDTH).heightIn(min = 34.dp), contentAlignment = Alignment.CenterEnd) {
-            MarketCardButton(pkg, model, action, busy, onOpen, onInstall)
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.widthIn(min = ACTION_WIDTH).heightIn(min = 34.dp), contentAlignment = Alignment.CenterEnd) {
+                MarketCardButton(pkg, model, action, busy, onOpen, onInstall)
+            }
+            if (uninstalling) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FmCircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text("Removing", style = Fm.text.labelSmall, color = c.textSecondary)
+                }
+            } else if (uninstall != null && !busy) {
+                MarketUninstallButton(uninstall, onUninstall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarketUninstallButton(uninstall: MarketUninstall, onUninstall: (String?) -> Unit) {
+    val organizations = (uninstall as? MarketUninstall.Organization)?.organizations.orEmpty()
+    if (organizations.size <= 1) {
+        FmToneButton("Uninstall", onPressed = { onUninstall(organizations.firstOrNull()) }, tone = FmTone.Danger)
+        return
+    }
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FmToneButton("Uninstall", onPressed = { open = true }, tone = FmTone.Danger)
+        FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            organizations.forEach { org ->
+                FmDropdownMenuItem("Uninstall from $org", onClick = { open = false; onUninstall(org) }, textColor = Fm.colors.danger)
+            }
         }
     }
 }

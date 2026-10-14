@@ -2,4 +2,5 @@
 <paths>
     <cache-path name="composer_camera" path="composer-camera/" />
     <cache-path name="marketing_share" path="marketing-share/" />
+    <cache-path name="face-changer-share" path="face-changer-share/" />
 </paths>

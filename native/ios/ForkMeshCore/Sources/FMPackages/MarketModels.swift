@@ -273,7 +273,7 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
         "ledger": "ledger", "vault": "vault", "calories": "calories", "notes": "notes", "tasks": "tasks",
         "calendar": "calendar", "timers": "timers", "steps": "steps", "water": "water", "sleep": "sleep",
         "sugar-break": "sugarBreak", "stretch": "stretch", "food-guide": "foodGuide", "speech": "speech", "status-page": "status", "tour": "tour", "aquarium": "aquarium",
-        "glasses-alert": "glassesAlert", "people": "people", "docs": "docs", "design-system": "designSystem",
+        "glasses-alert": "glassesAlert", "face-changer": "faceChanger", "people": "people", "docs": "docs", "design-system": "designSystem",
         "agents": "Agents", "inbox": "Inbox", "chat": "Chat", "code": "currentRepo", "bug-reports": "reportBug",
         "issues": "repo-issues", "commits": "repo-commits", "branches": "repo-branches", "pull-requests": "repo-pulls",
         "releases": "repo-releases", "actions": "repo-actions", "discussions": "repo-discussions",
@@ -618,6 +618,13 @@ public enum MarketCardAction: Equatable, Sendable {
     case signIn
     case desktop
     case busy
+}
+
+public enum MarketUninstall: Equatable, Sendable {
+    case account
+    case device
+    case phone
+    case organization([String])
 }
 
 public enum PackagesText {

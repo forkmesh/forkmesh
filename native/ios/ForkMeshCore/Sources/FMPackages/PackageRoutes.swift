@@ -86,6 +86,7 @@ public enum PackageRoutes {
         case "foodGuide": return .foodGuide
         case "speech": return .speech
         case "glassesAlert": return .glassesAlert
+        case "faceChanger": return .faceChanger
         case "people": return .people
         case "docs": return .docs
         case "notes": return .notes

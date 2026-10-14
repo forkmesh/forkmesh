@@ -37,7 +37,7 @@ def test_listing_is_free_and_matches_the_catalog():
     assert row["manifest"] == "packages/face-changer/manifest.json"
     assert MANIFEST["install"] == {
         "bundled": True, "default": False, "sync": "account",
-        "places": ["desktop", "web"],
+        "places": ["mobile", "desktop", "web"],
     }
     assert MANIFEST["dataLifecycle"]["scope"] == "none"
     assert "worker" not in MANIFEST
@@ -202,6 +202,30 @@ try {
   out.empty = error.message;
 }
 out.denied = studio.studioMediaError({ name: "NotAllowedError" }, { video: true });
+const bytes = new Uint8Array(studio.STUDIO_SHARE_CHUNK + 10).map((_, index) => index % 251);
+const clip = new Blob([bytes], { type: "video/mp4" });
+const posted = [];
+const ios = { webkit: { messageHandlers: { fmShare: { postMessage: (text) => posted.push(JSON.parse(text)) } } } };
+out.iosBridge = Boolean(studio.studioShareBridge(ios)) && studio.canShareStudioFiles("video/mp4", ios);
+out.iosOutcome = await studio.shareStudioBlob(clip, "face-changer.mp4", { title: "Clip", globalRef: ios });
+out.iosEvents = posted.map((message) => message.event);
+out.iosBegin = { name: posted[0].name, mime: posted[0].mime, size: posted[0].size, title: posted[0].title };
+out.iosSameId = posted.every((message) => message.id === posted[0].id);
+const joined = Buffer.concat(posted.filter((m) => m.event === "chunk").map((m) => Buffer.from(m.data, "base64")));
+out.iosBytes = joined.length === bytes.length && joined.equals(Buffer.from(bytes));
+const androidPosted = [];
+const android = { FmShareBridge: { post: (text) => androidPosted.push(JSON.parse(text).event) } };
+out.androidOutcome = await studio.shareStudioBlob(new Blob(["hi"], { type: "image/png" }), "snap.png", { globalRef: android });
+out.androidEvents = androidPosted;
+const shared = [];
+const browser = { File, navigator: { canShare: ({ files }) => files[0].type === "video/mp4", share: async (data) => shared.push([data.files[0].name, data.title]) } };
+out.browserCan = [studio.canShareStudioFiles("video/mp4", browser), studio.canShareStudioFiles("video/webm", browser)];
+out.browserOutcome = await studio.shareStudioBlob(clip, "face-changer.mp4", { title: "Clip", globalRef: browser });
+out.browserShared = shared;
+out.browserWebm = await studio.shareStudioBlob(new Blob(["x"], { type: "video/webm" }), "c.webm", { globalRef: browser });
+const cancelled = { File, navigator: { share: async () => { const error = new Error("no"); error.name = "AbortError"; throw error; } } };
+out.cancelled = await studio.shareStudioBlob(clip, "c.mp4", { globalRef: cancelled });
+out.nothing = [studio.canShareStudioFiles("video/mp4", {}), await studio.shareStudioBlob(clip, "c.mp4", { globalRef: {} })];
 console.log(JSON.stringify(out));
 """
 
@@ -224,4 +248,21 @@ def test_shared_studio_glue_behaves():
     assert out["stats"] == [["preview", 131], ["page", 131]]
     assert out["recorded"] == [[["v", "a"], "video", 300000], [["a"], "voice"]]
     assert out["empty"] == "nothing_to_record"
+    assert out["iosBridge"] is True and out["iosOutcome"] == "native"
+    assert out["iosEvents"] == ["begin", "chunk", "chunk", "end"] and out["iosSameId"] is True
+    assert out["iosBegin"] == {"name": "face-changer.mp4", "mime": "video/mp4", "size": 384 * 1024 + 10, "title": "Clip"}
+    assert out["iosBytes"] is True
+    assert out["androidOutcome"] == "native" and out["androidEvents"] == ["begin", "chunk", "end"]
+    assert out["browserCan"] == [True, False]
+    assert out["browserOutcome"] == "shared" and out["browserShared"] == [["face-changer.mp4", "Clip"]]
+    assert out["browserWebm"] == "unsupported"
+    assert out["cancelled"] == "cancelled"
+    assert out["nothing"] == [False, "unsupported"]
     assert "Allow the camera and microphone" in out["denied"]
+
+
+def test_a_clip_can_go_to_the_share_sheet():
+    assert 'data-fc="clip-share"' in VIEW
+    assert "shareStudioBlob" in PAGE and "canShareStudioFiles" in PAGE
+    assert "studioShareBridge" in PAGE
+    assert "fmShare" in STUDIO and "FmShareBridge" in STUDIO

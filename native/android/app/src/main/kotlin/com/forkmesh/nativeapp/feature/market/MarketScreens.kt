@@ -1,8 +1,5 @@
 package com.forkmesh.nativeapp.feature.market
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +24,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.unit.Dp
 import com.forkmesh.nativeapp.market.MarketCardAction
+import com.forkmesh.nativeapp.market.MarketUninstall
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.market.PackageInstallMode
 import com.forkmesh.nativeapp.market.PackagesException
 import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
@@ -54,7 +54,6 @@ import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.market.MarketFilter
 import com.forkmesh.nativeapp.market.MarketModel
 import com.forkmesh.nativeapp.market.MarketPackage
-import com.forkmesh.nativeapp.market.OrgPackageState
 import com.forkmesh.nativeapp.market.PackageActivityTotals
 import com.forkmesh.nativeapp.market.PackageGate
 import com.forkmesh.nativeapp.market.PackagePhoneSurface
@@ -93,7 +92,6 @@ import kotlinx.coroutines.withContext
 
 private var sharedMarket: MarketModel? = null
 
-private const val DEVICE_REMOVE_NOTE = "Removing it hides its buttons on this phone only. Settings always keeps Sign in and Sign out."
 private const val DEVICE_INSTALL_NOTE = "Install it to show its buttons on this phone"
 private const val DEVICE_UNINSTALL_NOTE = "Uninstalling hides it from the home menu, search and recents on this phone until you install it again here. Your organization keeps its data."
 
@@ -119,6 +117,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "vault" -> Route.Vault(null)
     "calories" -> Route.Calories
     "glassesAlert" -> Route.GlassesAlert
+    "faceChanger" -> Route.FaceChanger
     "people" -> Route.People
     "docs" -> Route.Docs
     "notes" -> Route.Notes
@@ -159,6 +158,15 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
         val accountVersion by StatusPageFeature.version.collectAsState()
         val surfaces by PackageGateFeature.surfaces.collectAsState()
         val scope = rememberCoroutineScope()
+        val signedIn = rememberPackagesSignedIn()
+        val saveExport = rememberExportSaver(model) { ok ->
+            if (!ok) model.removed?.let { failures[it.packageId] = "Could not save the export." }
+            version++
+        }
+        val uninstaller = rememberPackageUninstaller(model, saveExport) { outcome ->
+            outcome.problem?.let { failures[outcome.request.pkg.id] = it }
+            version++
+        }
         LaunchedEffect(reload) {
             loading = true
             val names = MarketFeature.organizationNamesOrNull()
@@ -215,6 +223,7 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
             }
         }
 
+        uninstaller.Dialog()
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
             ToolsAppBar("Market", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)
@@ -268,6 +277,7 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                     itemsIndexed(shelf.packages, key = { _, pkg -> "${shelf.category}/${pkg.id}" }) { index, pkg ->
                         if (index > 0) HorizontalDivider(thickness = Dp.Hairline, color = Fm.colors.border)
                         val route = routeFor(pkg)
+                        val uninstall = model.uninstallAction(pkg, signedIn)
                         MarketCard(
                             pkg = pkg,
                             model = model,
@@ -278,6 +288,12 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                             onOpen = { route?.let { navigator.push(NavigationFeature.screen(it)) } },
                             onInstall = { organization -> install(pkg, organization) },
                             version = version,
+                            uninstall = uninstall,
+                            uninstalling = uninstaller.isWorking(pkg),
+                            onUninstall = { organization ->
+                                failures.remove(pkg.id)
+                                if (uninstall != null) uninstaller.ask(UninstallRequest(pkg, uninstall, organization))
+                            },
                         )
                     }
                 }
@@ -299,12 +315,12 @@ class PackageScreen(private val packageId: String) : Screen() {
     private val reviews = MarketFeature.client()?.let { PackageReviewsModel(it, packageId) }
     private var version by mutableIntStateOf(0)
     private var loading by mutableStateOf(true)
-    private var removeTarget by mutableStateOf<OrgPackageState?>(null)
-    private var removing by mutableStateOf("")
+    private var menu by mutableStateOf(false)
     private var rating by mutableStateOf(false)
     private var viewReported = false
     private val orgStatus = FmStatus()
     private val rateStatus = FmStatus()
+    private val packageStatus = FmStatus()
 
     @Composable
     override fun Content(navigator: Navigator) {
@@ -312,43 +328,17 @@ class PackageScreen(private val packageId: String) : Screen() {
         val reviews = reviews ?: return
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
-        val saveExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-            val export = market.removed?.export
-            if (uri == null || export == null) return@rememberLauncherForActivityResult
-            scope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(export.toByteArray()) } != null }.getOrDefault(false)
-                }
-                if (ok) market.dismissRemoval()
-                version++
-                if (ok) orgStatus.show("Export saved.") else orgStatus.error("Could not save the export.")
-            }
+        val signedIn = rememberPackagesSignedIn()
+        val saveExport = rememberExportSaver(market) { ok ->
+            version++
+            if (ok) orgStatus.show("Export saved.") else orgStatus.error("Could not save the export.")
         }
-        removeTarget?.let { target ->
-            FmConfirmDialog(
-                title = "Remove ${market.pkg(packageId)?.name ?: packageId} from ${target.organization}?",
-                body = "Everyone in the organization loses it. Its data is deleted from the server; you get a copy to save right after.",
-                confirmLabel = "Remove",
-                destructive = true,
-                onConfirm = {
-                    val pkg = market.pkg(packageId)
-                    removeTarget = null
-                    if (pkg != null) {
-                        removing = target.organization
-                        orgStatus.clear()
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) { market.uninstall(pkg, target.organization) }
-                            if (ok) PackageGateFeature.adoptOrganizations(market.organizations)
-                            removing = ""
-                            version++
-                            orgStatus.report(if (ok) "Removed from ${target.organization}" else market.errorText, !ok)
-                            market.removed?.takeIf { ok && it.export != null && it.packageId == pkg.id }?.let { saveExport.launch(it.filename) }
-                        }
-                    }
-                },
-                onDismissRequest = { removeTarget = null },
-            )
+        val uninstaller = rememberPackageUninstaller(market, saveExport) { outcome ->
+            version++
+            val status = if (outcome.request.action is MarketUninstall.Organization) orgStatus else packageStatus
+            if (outcome.problem != null) status.error(outcome.problem) else status.show(outcome.note)
         }
+        uninstaller.Dialog()
         val accountVersion by StatusPageFeature.version.collectAsState()
         LaunchedEffect(Unit) {
             if (!viewReported) {
@@ -380,7 +370,36 @@ class PackageScreen(private val packageId: String) : Screen() {
         @Suppress("UNUSED_EXPRESSION") accountVersion
         val pkg = market.pkg(packageId)
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar(pkg?.name ?: "Package", navigator)
+            ToolsAppBar(pkg?.name ?: "Package", navigator) {
+                if (pkg != null) {
+                    Box {
+                        FmIconButton("more_vert", "More", onPressed = { menu = true }, color = Fm.colors.textPrimary)
+                        FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            FmDropdownMenuItem(
+                                if (reviews.page?.viewer?.review != null) "Edit your rating" else "Rate",
+                                onClick = { menu = false; navigator.push(RateScreen(reviews)) },
+                                icon = "star",
+                            )
+                            market.uninstallAction(pkg, signedIn)?.let { action ->
+                                PackageUninstall.requests(pkg, action).forEach { request ->
+                                    FmDropdownMenuItem(
+                                        request.organization?.let { "Uninstall from $it" } ?: "Uninstall",
+                                        onClick = {
+                                            menu = false
+                                            orgStatus.clear()
+                                            packageStatus.clear()
+                                            uninstaller.ask(request)
+                                        },
+                                        icon = "delete",
+                                        enabled = uninstaller.working == null,
+                                        textColor = Fm.colors.danger,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             when {
                 loading && pkg == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
                 pkg == null -> FmEmptyState("extension_off", "Package not found", message = market.errorText.ifEmpty { null })
@@ -441,6 +460,10 @@ class PackageScreen(private val packageId: String) : Screen() {
                             })
                         }
                     }
+                    if (uninstaller.working?.let { it.pkg.id == pkg.id && it.action !is MarketUninstall.Organization } == true) {
+                        FmLinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+                    }
+                    FmInlineStatus(packageStatus)
                     onPhone?.let { on ->
                         FmListRow(
                             if (on) "Installed on this phone" else "Not installed on this phone",
@@ -476,9 +499,12 @@ class PackageScreen(private val packageId: String) : Screen() {
                                 org.organization,
                                 subtitle = if (installed) "Installed" else if (org.canManage) "Not installed" else "Ask an owner or admin to install it",
                                 trailing = when {
-                                    removing == org.organization -> ({ FmCircularProgressIndicator(Modifier.size(20.dp)) })
+                                    uninstaller.working?.organization == org.organization -> ({ FmCircularProgressIndicator(Modifier.size(20.dp)) })
                                     installed && org in targets -> ({
-                                        FmToneButton("Remove", onPressed = { removeTarget = org }, tone = FmTone.Danger)
+                                        FmToneButton("Remove", onPressed = {
+                                            orgStatus.clear()
+                                            uninstaller.ask(UninstallRequest(pkg, MarketUninstall.Organization(listOf(org.organization)), org.organization))
+                                        }, tone = FmTone.Danger)
                                     })
                                     !installed && org in targets -> ({
                                         FmToneButton("Install", onPressed = {
@@ -504,7 +530,7 @@ class PackageScreen(private val packageId: String) : Screen() {
                                 color = Fm.colors.textTertiary,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FmToneButton("Save the exported data", onPressed = { saveExport.launch(removal.filename) }, tone = FmTone.Accent, filled = true)
+                                FmToneButton("Save the exported data", onPressed = { saveExport(removal.filename) }, tone = FmTone.Accent, filled = true)
                                 FmToneButton("Discard", onPressed = {
                                     market.dismissRemoval()
                                     version++
@@ -632,6 +658,7 @@ class RateScreen(private val model: PackageReviewsModel) : Screen() {
                 }) else null, tone = FmTone.Accent, filled = true)
             }
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                model.page?.viewer?.takeIf { !it.canRate }?.let { Text(it.cannotRateReason, style = Fm.text.bodyMedium, color = Fm.colors.textSecondary) }
                 ErrorLine(model.errorText)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     (1..5).forEach { star ->

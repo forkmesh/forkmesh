@@ -238,6 +238,24 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   installs and users, and one-tap Install/Open (`MarketModel.cardAction`).
   Install state follows the account, organizations and `install.default` for
   desktop-only packages. Package pages set "Show on" places.
+  An installed card also shows Uninstall, and each package page has a ⋯ menu
+  (top right) with Rate and Uninstall. Both ask `MarketModel.uninstallAction`
+  how this phone removes it: account packages leave every device
+  (`AccountPackagesStore.uninstall`, naming the packages that go with them),
+  per-phone switches turn off (`PackageGateSync.setOnDevice`), packages with a
+  phone screen hide from this phone (`PhonePackages.setRemoved`), and
+  organization packages with no phone screen are removed from an organization
+  you manage, with the data export to save after. Nothing is removed without a
+  confirmation (`PackageUninstall.swift`). Android mirrors it with the same
+  rules (`MarketModel.uninstallAction`, `PackageUninstall.kt`).
+- **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): the Market
+  package's web page in a web view on the server's own https origin, with the
+  camera and microphone granted only to that origin. A recorded clip (or a
+  snapshot) goes to the share sheet: the page hands the file to the app in
+  384 KiB base64 chunks through the `fmShare` script handler (Android:
+  `FmShareBridge`), `ShareTransferWriter` checks the type (video, image,
+  audio), size (512 MiB at most) and name, and writes it to one temporary
+  folder that each new share empties.
 - **People** (`.people`, `/dashboard/people`): a campfire of five engagement
   rings with Follow and Message ([People](../marketplace/people.md)).
 - **Docs** (`.docs`): the public documentation library bundled with the app.
