@@ -36,7 +36,8 @@ def load(tmp_path, text, name):
 def fleets(tmp_path):
     base = EXAMPLE.read_text()
     grown = next_fleet.upsert_core_block(base, "n4", n4_block(False))
-    shrunk = next_fleet.promote_core_block(next_fleet.remove_core_block(grown, "n1"), "n4")
+    shrunk = next_fleet.promote_core_block(next_fleet.retire_core_block(
+        next_fleet.remove_core_block(grown, "n1"), "n1"), "n4")
     return {"base": load(tmp_path, base, "base"), "grown": load(tmp_path, grown, "grown"),
             "shrunk": load(tmp_path, shrunk, "shrunk")}
 
@@ -57,6 +58,8 @@ def test_a_fleet_without_n1_renders_no_trace_of_it(fleets):
         for path, content in files_of(fleet, name).items():
             if path in shipped:
                 continue
+            content = re.sub(r"(?m)^FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=.*$", "",
+                             content)
             for trace in N1_TRACES:
                 assert not trace.search(content), "%s on %s names n1 (%s)" % (
                     path, name, trace.pattern)
@@ -87,6 +90,8 @@ def test_core_lists_follow_the_fleet(fleets):
     env = files_of(fleets["shrunk"], "n3")["/etc/forkmesh-next/app.env"]
     assert "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=fmnext-n2,fmnext-n3,fmnext-n4" in env
     assert "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=fmnext-n2,fmnext-n3,fmnext-n4" in env
+    assert "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=fmnext-n2,fmnext-n3,fmnext-n4," \
+        "fmnext-n1" in env
     assert "FORKMESH_MESH_PEERS=n2=http://10.77.0.2:8792,n3=http://10.77.0.3:8792," \
         "n4=http://10.77.0.4:8792" in env
     grown = files_of(fleets["grown"], "n2")["/etc/forkmesh-next/app.env"]
@@ -113,4 +118,19 @@ def test_hosting_off_in_the_fleet_empties_the_hosted_core_list(fleets):
     fleet = dict(fleets["shrunk"], hosted={"enabled": False})
     env = render.core_role_settings(fleet)
     assert "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=\n" in env + "\n"
+    assert "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=\n" in env + "\n"
     assert "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=fmnext-n2,fmnext-n3,fmnext-n4" in env
+
+
+def test_a_core_retired_and_added_back_is_not_listed_twice(fleets):
+    fleet = dict(fleets["base"], hosted={"retired_cores": ["n1", "n9"]})
+    env = render.core_role_settings(fleet)
+    assert "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=fmnext-n1,fmnext-n2,fmnext-n3," \
+        "fmnext-n9" in env
+
+
+def test_retired_cores_must_be_core_names(tmp_path):
+    text = EXAMPLE.read_text().replace(
+        "[[nodes]]", '[hosted]\nretired_cores = ["r1"]\n\n[[nodes]]', 1)
+    with pytest.raises(render.RenderError):
+        load(tmp_path, text, "bad")

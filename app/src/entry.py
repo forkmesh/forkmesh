@@ -15931,6 +15931,7 @@ hosted_push_candidates = _hosted_git.export("hosted_push_candidates")
 hosted_push_limit = _hosted_git.export("hosted_push_limit")
 hosted_private_read = _hosted_git.export("hosted_private_read")
 hosted_core_nodes = _hosted_git.export("hosted_core_nodes")
+hosted_core_owners = _hosted_git.export("hosted_core_owners")
 _core_push = _LazyModule("core_push")
 _deploy_approvals = _LazyModule("deploy_approvals")
 core_push_pending_tag_moves = _core_push.export("pending_tag_moves")
@@ -49875,7 +49876,8 @@ def _ref_updates_from(upstream):
 
 
 def _core_push_nodes(env):
-    core_nodes_of = globals().get("hosted_core_nodes")
+    core_nodes_of = (globals().get("hosted_core_owners")
+                     or globals().get("hosted_core_nodes"))
     if not callable(core_nodes_of):
         return set()
     return {

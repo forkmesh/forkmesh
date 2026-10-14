@@ -314,11 +314,11 @@ def test_fleet_step_drops_the_block_and_its_state(tmp_path):
     common.save_json(config() / "fleet-state.json", state)
     backend.step_fleet(job)
     assert 'name = "n4"' not in job.fleet_file.read_text()
-    assert job.fleet_file.read_text() == fleet_text()
+    assert job.fleet_file.read_text() == next_fleet.retire_core_block(fleet_text(), "n4")
     state = common.load_json(config() / "fleet-state.json", {})
     assert "n4" not in state["wg_pubkeys"] and state["rqlite_nonvoters"] == []
     backend.step_fleet(job)
-    assert job.fleet_file.read_text() == fleet_text()
+    assert job.fleet_file.read_text() == next_fleet.retire_core_block(fleet_text(), "n4")
 
 
 def test_peers_step_rolls_every_remaining_core_without_the_node(tmp_path, monkeypatch):
@@ -394,7 +394,8 @@ def test_commit_goes_to_a_branch_and_leaves_head_index_and_tree_alone(tmp_path, 
     assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "rev-parse", "fleet/remove-core-n4") == commit
     assert git(repo, "rev-parse", commit + "^") == head
-    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == fleet_text()
+    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == \
+        next_fleet.retire_core_block(fleet_text(), "n4")
     assert git(repo, "diff", "--name-only", head, commit) == "deploy/fleet.toml"
     assert git(repo, "status", "--porcelain") == ""
     assert fleet_path.read_text() == tree_before
