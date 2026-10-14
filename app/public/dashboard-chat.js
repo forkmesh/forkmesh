@@ -1614,8 +1614,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (!mentionSuggestEl) {
       mentionSuggestEl = document.createElement("div");
       mentionSuggestEl.className =
-        "absolute left-0 right-0 z-30 mb-2 overflow-y-auto rounded-lg border " +
-        "border-border bg-background p-1 shadow-lg";
+        "fm-popover fm-menu absolute left-0 right-0 z-30 mb-2 overflow-y-auto";
       // bottom/max-height inline: the dashboard ships a pre-compiled Tailwind
       // subset that has no bottom-full / max-h-56 rule to lean on.
       mentionSuggestEl.style.bottom = "100%";
@@ -1639,8 +1638,7 @@ function mountForkMeshDashboardChat(options = {}) {
       slashSuggestEl = document.createElement("div");
       slashSuggestEl.id = "dashboard-chat-slash-suggest";
       slashSuggestEl.className =
-        "absolute left-0 right-0 z-30 mb-2 overflow-y-auto rounded-lg border " +
-        "border-border bg-background p-1 shadow-lg";
+        "fm-popover fm-menu absolute left-0 right-0 z-30 mb-2 overflow-y-auto";
       slashSuggestEl.style.bottom = "100%";
       slashSuggestEl.style.maxHeight = "224px";
       slashSuggestEl.hidden = true;
@@ -1729,7 +1727,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const box = ensureSlashSuggest(slashSuggest.input);
     box.textContent = "";
     const hint = document.createElement("div");
-    hint.className = "px-2 py-1 text-[10px] text-muted-foreground";
+    hint.className = "fm-menu-heading";
     hint.textContent = "Available commands · Tab to insert · Esc to dismiss";
     box.append(hint);
     slashSuggest.items.forEach((entry, index) => {
@@ -1739,7 +1737,7 @@ function mountForkMeshDashboardChat(options = {}) {
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", active ? "true" : "false");
       item.className =
-        "flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-xs " +
+        "flex h-menu-row w-full items-center gap-3 rounded-md px-2 text-left text-control " +
         (active
           ? "bg-secondary text-foreground"
           : "text-muted-foreground hover:bg-secondary/60");
@@ -1807,7 +1805,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const box = ensureMentionSuggest(mentionSuggest.input);
     box.textContent = "";
     const hint = document.createElement("div");
-    hint.className = "px-2 py-1 text-[10px] text-muted-foreground";
+    hint.className = "fm-menu-heading";
     hint.textContent = "Tab to mention · Esc to dismiss";
     box.append(hint);
     mentionSuggest.items.forEach((person, index) => {
@@ -1817,7 +1815,7 @@ function mountForkMeshDashboardChat(options = {}) {
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", active ? "true" : "false");
       item.className =
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs " +
+        "flex h-menu-row w-full items-center gap-2 rounded-md px-2 text-left text-control " +
         (active
           ? "bg-secondary text-foreground"
           : "text-muted-foreground hover:bg-secondary/60");
@@ -1832,7 +1830,7 @@ function mountForkMeshDashboardChat(options = {}) {
       item.append(avatar, label);
       if (mentionIsOnline(person)) {
         const dot = document.createElement("span");
-        dot.className = "ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary";
+        dot.className = "ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-success";
         dot.title = "Active in this room";
         item.append(dot);
       }
@@ -1909,19 +1907,19 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function fullEmptyHtml() {
-    return `<div class="mt-3 rounded-lg border border-border bg-background px-4 py-3 text-sm text-muted-foreground">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</div>`;
+    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
   }
 
   function sideEmptyHtml() {
-    return `<div class="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">Type to join ${escapeHtml(CHANNEL)}.</div>`;
+    return `<div class="px-3 py-2 text-xs text-muted-foreground">Type to join ${escapeHtml(CHANNEL)}.</div>`;
   }
 
   function fullUserOnlyHtml() {
-    return `<div class="mt-3 rounded-lg border border-border bg-background px-4 py-3 text-sm text-muted-foreground">Log in as a user to join the authenticated ${escapeHtml(CHANNEL)} channel. Guests can use only public World #general.</div>`;
+    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span class="fm-blankslate-title">Sign in to chat here</span><p class="fm-blankslate-desc">Log in as a user to join the authenticated ${escapeHtml(CHANNEL)} channel. Guests can use only public World #general.</p></div>`;
   }
 
   function sideUserOnlyHtml() {
-    return '<div class="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground">User login required for this channel. Guests can use only public World #general.</div>';
+    return '<div class="px-3 py-2 text-xs text-muted-foreground">User login required for this channel. Guests can use only public World #general.</div>';
   }
 
   function setInputsEnabled(enabled) {
@@ -2037,7 +2035,7 @@ function mountForkMeshDashboardChat(options = {}) {
       imagePreviewDialog = document.createElement("dialog");
       imagePreviewDialog.id = "dashboard-chat-image-preview-dialog";
       imagePreviewDialog.className = "chat-image-preview-dialog max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-background p-3 shadow-2xl";
-      imagePreviewDialog.innerHTML = '<button type="button" class="absolute right-0 top-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-xl leading-none text-foreground" aria-label="Close image preview">×</button><img class="chat-image-preview-full max-h-[calc(100vh-1.5rem)] max-w-full object-contain" />';
+      imagePreviewDialog.innerHTML = '<button type="button" class="fm-btn fm-btn-icon fm-btn-sm absolute right-0 top-0" aria-label="Close image preview"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button><img class="chat-image-preview-full max-h-[calc(100vh-1.5rem)] max-w-full object-contain" />';
       imagePreviewDialog.querySelector("button").addEventListener("click", () => imagePreviewDialog.close());
       imagePreviewDialog.addEventListener("click", (event) => {
         if (event.target === imagePreviewDialog) imagePreviewDialog.close();
@@ -2549,17 +2547,17 @@ function mountForkMeshDashboardChat(options = {}) {
     const dialog = document.createElement("dialog");
     dialog.dataset.chatThreadDialog = "true";
     dialog.className =
-      "w-[min(94vw,38rem)] max-h-[88vh] rounded-xl border border-border " +
-      "bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/60";
+      "w-[min(94vw,38rem)] max-h-[88vh] overflow-hidden rounded-xl border border-border " +
+      "bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/60";
     dialog.innerHTML = `
-      <form method="dialog" class="flex items-center justify-between border-b border-border px-4 py-3">
-        <div><strong>Thread</strong> <span data-chat-thread-count class="ml-2 text-xs text-muted-foreground"></span></div>
-        <button type="submit" class="rounded border border-border px-2 py-1" aria-label="Close thread">×</button>
+      <form method="dialog" class="fm-dialog-header">
+        <div class="fm-dialog-title">Thread <span data-chat-thread-count class="ml-1 text-xs font-normal text-muted-foreground"></span></div>
+        <button type="submit" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close thread"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button>
       </form>
       <div data-chat-thread-list class="grid max-h-[62vh] gap-2 overflow-y-auto p-4"></div>
-      <div class="flex gap-2 border-t border-border p-3">
-        <textarea data-chat-thread-input rows="2" maxlength="16000" class="min-w-0 flex-1 resize-y rounded-md border border-border bg-background px-3 py-2" placeholder="Reply in thread…" aria-label="Reply in thread"></textarea>
-        <button data-chat-thread-send type="button" class="self-end rounded-md bg-primary px-3 py-2 font-semibold text-primary-foreground">Reply</button>
+      <div class="fm-dialog-footer items-end">
+        <textarea data-chat-thread-input rows="2" maxlength="16000" class="min-w-0 flex-1 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" placeholder="Reply in thread…" aria-label="Reply in thread"></textarea>
+        <button data-chat-thread-send type="button" class="inline-flex h-7 shrink-0 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Reply</button>
       </div>`;
     dialog.querySelector("[data-chat-thread-send]")?.addEventListener(
       "click", sendThreadReply,
@@ -2671,9 +2669,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const button = document.createElement("button");
     button.type = "button";
     button.className =
-      "rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-semibold " +
-      "hover:bg-secondary " +
-      (danger ? "text-destructive" : "text-muted-foreground hover:text-foreground");
+      (danger ? "fm-btn fm-btn-sm fm-btn-danger text-destructive" : "fm-btn fm-btn-invisible fm-btn-sm");
     button.textContent = label;
     button.setAttribute("aria-label", ariaLabel || `${label} message`);
     button.addEventListener("click", onClick);
