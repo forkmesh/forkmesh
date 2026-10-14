@@ -176,8 +176,14 @@ public final class MarketModel {
         return parent
     }
 
+    nonisolated static func parent(of package: MarketPackage, among ids: Set<String>) -> String? {
+        guard let parent = package.dependencies.first, parent != package.id, ids.contains(parent) else { return nil }
+        return parent
+    }
+
     public func nested(in package: MarketPackage) -> [MarketPackage] {
-        packages.filter { marketParent(of: $0) == package.id }
+        let ids = Set(packages.map(\.id))
+        return packages.filter { MarketModel.parent(of: $0, among: ids) == package.id }
     }
 
     public var categories: [String] {
@@ -211,8 +217,13 @@ public final class MarketModel {
     }
 
     public var visible: [MarketPackage] {
+        let ids = Set(packages.map(\.id))
+        var children: [String: [MarketPackage]] = [:]
+        for package in packages {
+            if let parent = MarketModel.parent(of: package, among: ids) { children[parent, default: []].append(package) }
+        }
         let rows = packages.filter { package in
-            if marketParent(of: package) != nil { return false }
+            if MarketModel.parent(of: package, among: ids) != nil { return false }
             let installed = isInstalled(package)
             switch filter {
             case .all: break
@@ -220,7 +231,7 @@ public final class MarketModel {
             case .notInstalled: if installed { return false }
             }
             if !matchesFilters(package) { return false }
-            return ([package] + nested(in: package)).contains {
+            return ([package] + (children[package.id] ?? [])).contains {
                 PackagesText.matches(query, $0.name, $0.summary, $0.category, $0.publisher)
             }
         }
