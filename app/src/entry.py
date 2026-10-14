@@ -20950,6 +20950,30 @@ def _signup_page_required_response():
     )
 
 
+SIGNUP_INTENT_PATH = "/api/accounts/signup/intent"
+
+
+async def _account_signup_intent_renew(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if not _request_origin_allowed(env, request):
+        return json_response(
+            {"error": "origin_not_allowed"}, status=403,
+            cache_control=no_store)
+    claim_id, issued_at, expires_at, email_field_name = (
+        await _issue_account_signup_intent(env))
+    url = urlparse(request.url)
+    return json_response(
+        {
+            "emailField": email_field_name,
+            "challengeCdata": _turnstile.signup_cdata(claim_id),
+        },
+        cache_control=no_store,
+        extra_headers={"set-cookie": _account_signup_intent_cookie(
+            env, claim_id, issued_at, expires_at,
+            secure=(url.scheme == "https"))},
+    )
+
+
 def _signup_page_target(query):
     """Canonical /signup URL for a redirect, minus bot-challenge parameters.
 
@@ -32835,6 +32859,8 @@ async def accounts_handler(env, request):
             raise
     if url.path == SIGNUP_PROBLEM_PATH and method == "POST":
         return await _account_signup_problem(env, request)
+    if url.path == SIGNUP_INTENT_PATH and method == "POST":
+        return await _account_signup_intent_renew(env, request)
     if url.path == "/api/accounts/reserve" and method == "POST":
         return await _account_reserve(env, request)
     if url.path == "/api/accounts/profile" and method == "POST":
@@ -42589,6 +42615,7 @@ SIGNUP_BROWSER_PROBLEMS = frozenset({
     "challenge_token_missing",
     "challenge_unavailable",
     "network_error",
+    "signup_page_renew_failed",
     "unexpected_response",
 })
 SIGNUP_FAILURE_WINDOW_MS = 60 * 60 * 1000
