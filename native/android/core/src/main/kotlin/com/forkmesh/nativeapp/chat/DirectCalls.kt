@@ -47,6 +47,10 @@ interface DirectCallPeer {
 
     fun setFace(id: String) {}
 
+    fun setFace(id: String, image: String) {
+        setFace(id)
+    }
+
     fun setBackground(id: String, image: String) {}
 
     fun setVoice(id: String) {}
@@ -97,6 +101,11 @@ class DirectCallEngine(
             DirectCallFace("ingrid", "Ingrid"),
             DirectCallFace("ren", "Ren"),
         )
+        const val CUSTOM_FACE = "custom"
+        val FACE_CHOICES: List<DirectCallFace> by lazy { FACES + DirectCallFace(CUSTOM_FACE, "Your photo") }
+
+        fun faceLabel(id: String): String = FACE_CHOICES.firstOrNull { it.id == id }?.label ?: "Your own face"
+
         const val CUSTOM_BACKGROUND = "custom"
         val BACKGROUNDS = listOf(
             DirectCallFace("", "No background"),
@@ -113,7 +122,22 @@ class DirectCallEngine(
         fun backgroundLabel(id: String): String = BACKGROUNDS.firstOrNull { it.id == id }?.label ?: "No background"
         const val VOICE_MATCH_FACE = "face"
         const val VOICE_OFF = "off"
-        val VOICES: List<DirectCallFace> get() = FACES
+        val VOICES = listOf(
+            DirectCallFace("maya", "Maya"),
+            DirectCallFace("theo", "Theo"),
+            DirectCallFace("kofi", "Kofi"),
+            DirectCallFace("ingrid", "Ingrid"),
+            DirectCallFace("ren", "Ren"),
+            DirectCallFace("deep", "Deep man"),
+            DirectCallFace("older-man", "Older man"),
+            DirectCallFace("young-man", "Young man"),
+            DirectCallFace("warm", "Warm woman"),
+            DirectCallFace("low", "Low woman"),
+            DirectCallFace("older-woman", "Older woman"),
+            DirectCallFace("teen", "Teen"),
+            DirectCallFace("neutral", "Neutral"),
+            DirectCallFace("robot", "Robot"),
+        )
 
         fun voiceLabel(id: String): String = VOICES.firstOrNull { it.id == id }?.label ?: "Your own"
     }
@@ -126,6 +150,7 @@ class DirectCallEngine(
 
     @Volatile
     var onFaceChanged: ((String) -> Unit)? = null
+    var onFaceImageChanged: ((String) -> Unit)? = null
 
     @Volatile
     var onVoiceChanged: ((String) -> Unit)? = null
@@ -173,6 +198,10 @@ class DirectCallEngine(
         private set
 
     @Volatile
+    var faceImage: String = ""
+        private set
+
+    @Volatile
     var background: String = ""
         private set
 
@@ -191,7 +220,7 @@ class DirectCallEngine(
     val effectiveVoice: String
         get() = when (val choice = voiceChoice) {
             VOICE_OFF -> ""
-            VOICE_MATCH_FACE -> face
+            VOICE_MATCH_FACE -> if (face == CUSTOM_FACE) "" else face
             else -> choice
         }
 
@@ -336,16 +365,24 @@ class DirectCallEngine(
         notifyListeners()
     }
 
-    fun setFace(id: String): Boolean {
-        if (id.isNotEmpty() && FACES.none { it.id == id }) return false
+    fun setFace(id: String, image: String = ""): Boolean {
+        val custom = id == CUSTOM_FACE
+        if (id.isNotEmpty() && !custom && FACES.none { it.id == id }) return false
         val target: DirectCallPeer?
+        val picture: String
+        val pictureChanged: Boolean
         synchronized(lock) {
+            picture = if (custom && image.isNotEmpty()) image else faceImage
+            if (custom && picture.isEmpty()) return false
+            pictureChanged = picture != faceImage
             face = id
+            faceImage = picture
             target = if (media == DirectCallKind.VIDEO) peer else null
         }
         notifyListeners()
+        if (pictureChanged) onFaceImageChanged?.invoke(picture)
         onFaceChanged?.invoke(id)
-        target?.let { runCatching { it.setFace(id) } }
+        target?.let { runCatching { if (custom) it.setFace(id, picture) else it.setFace(id) } }
         if (voiceChoice == VOICE_MATCH_FACE) pushVoice()
         return true
     }
@@ -409,7 +446,11 @@ class DirectCallEngine(
 
     private fun applyFace(made: DirectCallPeer, kind: DirectCallKind) {
         val chosen = face
-        if (kind == DirectCallKind.VIDEO && chosen.isNotEmpty()) made.setFace(chosen)
+        if (kind == DirectCallKind.VIDEO && chosen == CUSTOM_FACE) {
+            made.setFace(chosen, faceImage)
+        } else if (kind == DirectCallKind.VIDEO && chosen.isNotEmpty()) {
+            made.setFace(chosen)
+        }
         val scene = background
         if (kind == DirectCallKind.VIDEO && scene.isNotEmpty()) {
             made.setBackground(scene, if (scene == CUSTOM_BACKGROUND) backgroundImage else "")

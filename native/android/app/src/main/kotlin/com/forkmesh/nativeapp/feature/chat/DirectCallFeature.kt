@@ -66,8 +66,9 @@ object DirectCallFeature {
         )
         val factory = WebCallPeers(context.applicationContext, worker, voice = { made.effectiveVoice }) { made.face }
         made.peerFactory = factory
-        prefs?.getString(FACE_PREF)?.let { made.setFace(it) }
+        prefs?.getString(FACE_PREF)?.let { made.setFace(it, CallFaceStore.load(context)) }
         made.onFaceChanged = { face -> prefs?.putString(FACE_PREF, face) }
+        made.onFaceImageChanged = { image -> CallFaceStore.save(context, image) }
         prefs?.getString(BACKGROUND_PREF)?.let { made.setBackground(it, CallBackgroundStore.load(context)) }
         made.onBackgroundChanged = { background, image ->
             prefs?.putString(BACKGROUND_PREF, background)

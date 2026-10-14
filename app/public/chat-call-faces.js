@@ -13,6 +13,8 @@ import {
   pointsFromFlat,
 } from "./chat-call-face-geometry.js";
 import { createFaceTracker } from "./chat-call-face-tracker.js";
+import { closeLids, createExpressionProbe, tongueWindow } from "./chat-call-face-expression.js";
+import { buildCustomFace, CUSTOM_FACE_ID, CUSTOM_FACE_LABEL, CUSTOM_FACE_SIDE } from "./chat-call-face-custom.js";
 import { backgroundCapable, createFaceRenderer, faceWebGL } from "./chat-call-face-render.js";
 import { sharedSegmentModels, decodeBase64 } from "./chat-call-segment.js";
 import { callBackgroundById, callBackgroundImageUrl } from "./chat-call-backgrounds.js";
@@ -34,6 +36,8 @@ const QUALITY = Object.freeze([
   Object.freeze({ network: 2, hair: 3, guide: 256 }),
   Object.freeze({ network: 3, hair: 4, guide: 192 }),
 ]);
+const CUSTOM_MESH_WAIT_MS = 15000;
+const CUSTOM_TRACK_TRIES = 4;
 const SLOW_MS = 34;
 const FAST_MS = 20;
 const QUALITY_HOLD = 24;
@@ -134,7 +138,7 @@ export const CALL_FACES = Object.freeze([
   }),
 ]);
 
-const meshes = new Map();
+const meshes = new WeakMap();
 let template = null;
 
 export function faceTemplate() {
@@ -147,7 +151,7 @@ export function facePoints(face) {
 }
 
 export function faceHead(face) {
-  if (meshes.has(face.id)) return meshes.get(face.id);
+  if (meshes.has(face)) return meshes.get(face);
   const points = facePoints(face);
   const ring = pointsFromFlat(face.head);
   const model = headModel(points, ring);
@@ -156,12 +160,27 @@ export function faceHead(face) {
     model,
     mesh: buildHeadMesh(model, faceTemplate()),
   };
-  meshes.set(face.id, entry);
+  meshes.set(face, entry);
   return entry;
 }
 
 export function callFaceById(id) {
   return CALL_FACES.find((face) => face.id === id) || null;
+}
+
+export function isCustomFace(id) {
+  return id === CUSTOM_FACE_ID;
+}
+
+export function callFaceChoices() {
+  return [...CALL_FACES.map((face) => ({ id: face.id, label: face.label, custom: false })), { id: CUSTOM_FACE_ID, label: CUSTOM_FACE_LABEL, custom: true }];
+}
+
+export function pupilsFromRegions(regions, scale = 1) {
+  const pick = (region) => (Array.isArray(region) && region.length && Array.isArray(region[0]) ? [region[0][0] / scale, region[0][1] / scale] : null);
+  const pupils = [pick(regions?.leftPupil), pick(regions?.rightPupil)];
+  if (!pupils[0] || !pupils[1]) return null;
+  return pupils.sort((a, b) => a[0] - b[0]);
 }
 
 export function callFacePhotoUrl(face) {
@@ -285,7 +304,11 @@ export function createHostLocator(host, documentRef) {
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
     const reply = hostReply(await host.landmarks(canvas.toDataURL("image/jpeg", 0.8), canvas.width, canvas.height, want));
     const points = want.landmarks ? landmarksFromRegions(reply.regions) : null;
-    return { points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null, mask: reply.mask };
+    return {
+      points: points ? points.map(([x, y]) => [x / scale, y / scale]) : null,
+      mask: reply.mask,
+      pupils: points ? pupilsFromRegions(reply.regions, scale) : null,
+    };
   };
 }
 
@@ -302,6 +325,7 @@ export function createFaceStage({
   cameraStream = null,
   manual = false,
   faceId = "",
+  faceImage = "",
   backgroundId = "",
   backgroundImage = "",
   documentRef = globalThis.document,
@@ -335,6 +359,9 @@ export function createFaceStage({
   }
 
   const tracker = createFaceTracker({ grab: canvasGrabber(documentRef) });
+  const probe = createExpressionProbe({ documentRef });
+  let expression = null;
+  let customImage = String(faceImage || "");
   const anchorSmoother = createAnchorSmoother();
   const pointSmoother = createPointSmoother(68, 1.5, 1.5);
   let hostLocate = landmarkHost?.landmarks ? createHostLocator(landmarkHost, documentRef) : null;
@@ -389,7 +416,7 @@ export function createFaceStage({
           else if (++hostMaskMisses >= HOST_MASK_MISSES) hostMasks = false;
         }
         const points = reply.points ? pointSmoother.smooth(reply.points, time, faceFrame(reply.points).span) : null;
-        return { points, mask: reply.mask };
+        return { points, mask: reply.mask, pupils: reply.pupils || null };
       } catch (_) {
         hostFailures += 1;
         if (hostFailures >= HOST_FAILURES) {
@@ -431,9 +458,19 @@ export function createFaceStage({
     const held = live && time - seenAt < HOLD_MS;
     if (!held) {
       live = null;
+      expression = null;
       anchorSmoother.reset();
       pointSmoother.reset();
+      probe.reset();
     }
+    if (points && face) {
+      try {
+        expression = probe.measure(frame.canvas, points, time, { pupils: result?.pupils || null }) || expression;
+      } catch (_) {
+        expression = null;
+      }
+    }
+    const drawn = live && expression ? closeLids(live, expression.close) : live;
     const ready = Boolean(face?.ready);
     const seen = Boolean(points) && ready;
     presence += ((held && ready ? 1 : 0) - presence) * (held ? FADE_IN : FADE_OUT);
@@ -449,12 +486,14 @@ export function createFaceStage({
     const runHair = count % quality.hair === 0;
     const started = now();
     const hairBefore = renderer.hairMatte?.ran || 0;
-    renderer.draw(frame.canvas, width, height, face ? live : null, {
+    renderer.draw(frame.canvas, width, height, face ? drawn : null, {
       presence,
       hide: face ? hide : 0,
       runNetwork,
       runHair,
       uploaded: Boolean(result?.uploaded),
+      expression,
+      tongueBox: drawn ? tongueWindow(drawn) : null,
     });
     const spent = now() - started;
     const whole = now() - (startedAt ?? started);
@@ -504,7 +543,67 @@ export function createFaceStage({
     process(video, video.videoWidth, video.videoHeight, now());
   }
 
-  function loadFace(id) {
+  function wait(ms) {
+    return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+  }
+
+  async function customPoints(image, w, h) {
+    const scale = Math.min(1, CUSTOM_FACE_SIDE / Math.max(w, h));
+    const sized = documentRef.createElement("canvas");
+    sized.width = Math.max(1, Math.round(w * scale));
+    sized.height = Math.max(1, Math.round(h * scale));
+    sized.getContext("2d").drawImage(image, 0, 0, sized.width, sized.height);
+    if (landmarkHost?.landmarks) {
+      const reply = hostReply(await landmarkHost.landmarks(sized.toDataURL("image/jpeg", 0.9), sized.width, sized.height, { landmarks: true, mask: true, accurate: true }));
+      const points = landmarksFromRegions(reply.regions);
+      if (!points) return { points: null, mask: null };
+      return { points: points.map(([x, y]) => [x / scale, y / scale]), mask: reply.mask };
+    }
+    const deadline = now() + CUSTOM_MESH_WAIT_MS;
+    while (!renderer.faceMesh && !stopped && now() < deadline) await wait(100);
+    if (!renderer.faceMesh) return { points: null, mask: null };
+    for (let tries = 0; tries < CUSTOM_TRACK_TRIES; tries += 1) {
+      const found = renderer.trackFace(sized, sized.width, sized.height);
+      if (found?.points) return { points: found.points.map(([x, y]) => [x / scale, y / scale]), mask: null };
+    }
+    return { points: null, mask: null };
+  }
+
+  async function buildCustom(url) {
+    const image = await loadImage(ImageImpl, url);
+    const w = image.naturalWidth || image.width;
+    const h = image.naturalHeight || image.height;
+    const { points, mask } = await customPoints(image, w, h);
+    return buildCustomFace({ image, width: w, height: h, points, mask, documentRef });
+  }
+
+  function loadCustomFace(token) {
+    face = { id: CUSTOM_FACE_ID, ready: false, failed: false };
+    presence = 0;
+    requestModels();
+    const current = face;
+    if (!customImage) {
+      current.failed = true;
+      return;
+    }
+    buildCustom(customImage)
+      .then((built) => {
+        if (token !== loading || stopped) return;
+        const head = faceHead(built);
+        renderer.setPhoto(built.photo, built.matte, head.mesh, head.layout, head.model, PHOTO_SIZE);
+        current.ready = true;
+      })
+      .catch(() => {
+        if (token === loading) current.failed = true;
+      });
+  }
+
+  function loadFace(id, image) {
+    if (image !== undefined && image !== null) customImage = String(image);
+    if (id === CUSTOM_FACE_ID) {
+      loadCustomFace(++loading);
+      return;
+    }
     const next = callFaceById(id);
     const token = ++loading;
     if (!next) {
@@ -546,7 +645,7 @@ export function createFaceStage({
     }).catch(() => {});
   }
 
-  loadFace(faceId);
+  loadFace(faceId, faceImage);
   loadBackground(backgroundId, backgroundImage);
   const timer = manual ? null : setIntervalImpl(tick, FRAME_MS);
 
@@ -555,6 +654,8 @@ export function createFaceStage({
     canvas,
     stats,
     face: () => face?.id || "",
+    faceState: () => (!face ? "" : face.ready ? "ready" : face.failed ? "failed" : "loading"),
+    expression: () => expression,
     background: () => background.id,
     landmarks: () => ({ live, head: renderer.lastHead, presence, hide }),
     ready: () => Boolean((!face || face.ready) && (background.mode !== "image" || renderer.hasBackgroundImage) && (!wantsMatte() || renderer.segmentation) && (!face || hostLocate || renderer.faceMesh)),
@@ -563,8 +664,8 @@ export function createFaceStage({
       const h = source.videoHeight || source.naturalHeight || source.height;
       return process(source, w, h, time) || Promise.resolve(false);
     },
-    setFace(id) {
-      loadFace(id);
+    setFace(id, image) {
+      loadFace(id, image);
     },
     setBackground(id, image = "") {
       loadBackground(id, image);
