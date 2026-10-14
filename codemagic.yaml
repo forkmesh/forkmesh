@@ -371,45 +371,51 @@ workflows:
         CM_CLONE_UNSHALLOW: "true"
         FORKMESH_NATIVE_EXTENSIONS: "1"
     scripts:
-      - name: Cancel probes
+      - *native_project
+      - *native_watch_platform
+      - *native_packages
+      - name: Build for the simulator (Debug)
         script: |
           #!/usr/bin/env bash
-          cd ForkMeshCore
-          D="$CM_BUILD_DIR"
-          sw_vers > "$D/diag.log" 2>&1
-          swift --version >> "$D/diag.log" 2>&1
-          probes="P1SleepLoopCancelled P2StreamIterationCancelled P3AwaitingInnerValueCancelled P4GenericSleepingPollCancelled P5GenericBlockingPollCancelled P6TransportHeadOuterCancel P7TransportBodyOuterCancel P8TransportHeadTokenCancel P9SilentClientSendCancelled"
-          binary() { find "$1" -path '*ForkMeshCorePackageTests.xctest/Contents/MacOS/ForkMeshCorePackageTests' | head -1; }
-          run_set() {
-            name="$1"; shift
-            echo "== $name build" >> "$D/diag.log"
-            swift build --build-tests -v "$@" > "$D/diag-build-$name.log" 2>&1
-            echo "build rc=$?" >> "$D/diag.log"
-            grep -o -- '-target [a-z0-9_.-]*' "$D/diag-build-$name.log" | sort | uniq -c >> "$D/diag.log"
-            grep -ohE -- '"-target","[^"]*"' .build-$name/*.yaml 2>/dev/null | sort | uniq -c >> "$D/diag.log"
-            bin="$(binary .build-$name)"
-            echo "binary: $bin" >> "$D/diag.log"
-            if [ -n "$bin" ]; then
-              echo "back-deploy thunks (Tb):" >> "$D/diag.log"
-              nm "$bin" 2>/dev/null | awk '{print $NF}' | grep 'Tb$' | sort -u | xcrun swift-demangle | head -40 >> "$D/diag.log"
-            fi
-            for p in $probes; do
-              NSUnbufferedIO=YES perl -e 'alarm 180; exec @ARGV' swift test --skip-build "$@" --filter "DiagCancelProbes/test$p" > "$D/diag-$name-$p.log" 2>&1
-              rc=$?
-              freed=$(grep -c "freed pointer" "$D/diag-$name-$p.log")
-              echo "$name $p rc=$rc freed=$freed" >> "$D/diag.log"
-            done
-          }
-          echo "== full suite (debug, 25 min cap)" >> "$D/diag.log"
-          NSUnbufferedIO=YES perl -e 'alarm 1500; exec @ARGV' swift test --scratch-path .build-debug > "$D/core-tests.log" 2>&1
-          echo "full rc=$?" >> "$D/diag.log"
-          grep -E "' failed|: error:|freed pointer|signal" "$D/core-tests.log" | head -20 >> "$D/diag.log"
-          grep "' started" "$D/core-tests.log" | tail -2 >> "$D/diag.log"
-          run_set debug --scratch-path .build-debug
-          run_set target15 --scratch-path .build-target15 -Xswiftc -target -Xswiftc arm64-apple-macos15.0
-          run_set release --scratch-path .build-release -c release -Xswiftc -enable-testing
-          cat "$D/diag.log"
-          exit 0
+          set -e
+          status=0
+          xcodebuild build \
+            -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            > "$CM_BUILD_DIR/xcodebuild-debug.log" 2>&1 || status=$?
+          if [ "$status" != "0" ]; then
+            echo "ERROR: the Debug build failed. Every compiler error:" >&2
+            grep -E "error:" "$CM_BUILD_DIR/xcodebuild-debug.log" | sort -u >&2 || true
+            tail -n 40 "$CM_BUILD_DIR/xcodebuild-debug.log" >&2
+            exit "$status"
+          fi
+          grep -c "warning:" "$CM_BUILD_DIR/xcodebuild-debug.log" | sed 's/^/Warnings: /' || true
+      - name: Build the watch app (watchOS simulator)
+        script: |
+          #!/usr/bin/env bash
+          set -e
+          status=0
+          xcodebuild build \
+            -project ForkMesh.xcodeproj -scheme ForkMeshWatch -configuration Debug \
+            -destination "generic/platform=watchOS Simulator" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            > "$CM_BUILD_DIR/xcodebuild-watch.log" 2>&1 || status=$?
+          if [ "$status" != "0" ]; then
+            echo "ERROR: the watch app build failed. Every compiler error:" >&2
+            grep -E "error:" "$CM_BUILD_DIR/xcodebuild-watch.log" | sort -u >&2 || true
+            tail -n 40 "$CM_BUILD_DIR/xcodebuild-watch.log" >&2
+            exit "$status"
+          fi
+      - *native_archive_unsigned
+      - name: Zip the unsigned .app
+        script: |
+          set -e
+          cd "$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications"
+          zip -qry "$CM_BUILD_DIR/ForkMesh-native.app.zip" ForkMesh.app
+      - *native_core_tests
     artifacts:
       - $CM_BUILD_DIR/ForkMesh-native.app.zip
       - $CM_BUILD_DIR/*.log
