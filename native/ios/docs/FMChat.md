@@ -1034,6 +1034,86 @@ popular site and for any site's own social image.
 - Rationale: docs/native/NAVIGATION.md 2.0.102 and
   docs/app/chat-everyone-channels.md.
 
+## Chat fixes (branch 2010, 2026-10-14)
+
+Asked: "I opened the chat and I did not see any other channels except the world channel but after a
+minute now I see them", "when I click the online icon … I would like to see who is online", "when I
+clicked on someone's name in the list, it brought me to a weird direct message screen", "the
+delivery notification icon is not showing delivered right away … I sent a message and it didn't go
+through", "move the deliver status icon into the message itself", "download the video that is
+created from the direct message video tool", and "when you click on someone's avatar, you should
+see their profile and be able to direct message them also show their current time based on their
+time zone and their avatar full screen".
+
+**Channels on open.** #general, #random, #welcome and every office room came from one
+`GET /api/chat/channels` at launch, with no copy on the phone and no retry, so a slow or failed
+first call left only World until something else refreshed the list.
+- `OfficeChannelService.onRooms` hands every successful refresh to the app, which saves
+  `OfficeFrames.payload(rooms)` (the same shape the server sends, without anything secret: room
+  passphrases only come from `room-access`) under `chat.officeRooms.<host>.<account>`.
+- At launch and at sign-in the app calls `restore(_:)` with that copy before the network call, so
+  the list paints at once, then `load(attempts:)`, which refreshes and retries after 1, 2, 4, 8 and
+  16 s while the call fails. `restore` never replaces rooms already loaded. Returning to the app
+  also refreshes the list.
+
+**Online.** The "Online" tile at the top of the conversation list is a button. It opens
+`ChatOnlineSheet` (`Channels/ChatPersonSheet.swift`): you first, then everyone online, each with
+presence, away and custom status. Tapping a name opens your direct messages with them; tapping the
+avatar opens their person card.
+
+**Tapping a person.** A People row used to select `@<node id>`, the relay's peer-to-peer room:
+online-only, no history, no server copy. It now calls `ChatHub.openPerson(_:)` with
+`ChatHub.recipient(for:)` (name, account from the member's `owner`, node id), which goes through
+`conversation(for:)`: the account direct message is reused or started (`POST
+/api/chat/direct-messages`), and only a person with no account falls back to `@<node id>`.
+`MemberGroup.account` is the lowercased owner. A row is highlighted for either kind of conversation.
+
+**Person card.** The avatar in a People row, in the online list, beside a message bubble or a
+channel row, and "View <name>" in a message menu open `ChatPersonSheet`: the picture (tap for
+`ChatAvatarViewer`, full screen with pinch to zoom; initials when there is no picture), name,
+@account, presence, custom status, bio, local time, a Message button and "View full profile" (the
+existing profile route).
+- Local time: `ChatLocalTime.zone(profile:presence:)` takes the profile's `profileTimezone`
+  (`AccountProfile.timeZone`, opt-in on the web profile) first, then the time zone the person's
+  phone announces. `ChatLocalTime.time` formats it, `difference` says "5½ hours ahead of you" or
+  "Same time as you", `place` gives the city. It updates every minute.
+- Hello and presence frames from iOS now carry `timeZone` (the device's IANA identifier).
+  `RelayService` keeps a peer's value only if `TimeZone(identifier:)` knows it and it is at most 64
+  characters; `Member.timeZone` and `MemberGroup.timeZone` expose it. Web, desktop and Android do
+  not send it yet, so their users show a local time only when they set a profile time zone.
+- `AccountProfile` also parses `avatarPng`, used when the avatar cache has nothing yet.
+
+**Delivery.** A direct message could stay at "Sending" for good: after the app came back from the
+background, the room socket could be dead without iOS reporting it, so the write "succeeded" and
+the relay never saw the frame. `DirectMessageService` now watches each chat or thread reply it
+sends. If `forkmesh-recipients` has not arrived within `DirectMessageFrames.ackTimeout` (5 s) on
+the same socket, it marks every outbox entry still `sending` in that room as lost (`unacked`),
+closes the socket and reconnects; at `forkmesh-history-end` `reseal` sends the lost entries again
+(fresh seal, `resend: true`) and supersedes their old refs, exactly as for a key change. Up to
+`ackRetries` (3) rounds per message. A socket that drops on its own flags its unacked entries the
+same way. An entry still waiting on a live socket is never resent, so a send right after opening a
+room is not doubled. The receiving side was already right: delivered comes from the other person's
+device as soon as it has the room open (see "Direct message delivery").
+
+**Mark inside the bubble.** `MessagesBubbleRow` draws the sending / sent / delivered / read mark,
+and the "to N" count in office rooms, inside your own bubble after the text (white on the blue
+bubble; read is two white discs), in the bottom corner of a photo on a dark pill, or inside an
+audio or file bubble. Only a jumbo-emoji message keeps the mark under it.
+
+**Saving a recorded video.** Both video recorders, the view-once camera
+(`MessagesViewOnceRecorderSheet`) and the face-and-voice preview (`DirectCallPreviewScreen`), show
+`MessagesVideoSaveButton` at the top right while you review a take. It saves the video you would
+send (with burned-in captions when they are on) to Photos (add-only permission,
+`NSPhotoLibraryAddUsageDescription` was already in the plist). A recording that is not MP4/MOV
+opens the share sheet instead, since Photos cannot keep it. Nothing was added to save a view-once
+message after it is sent.
+
+Tests: `DirectMessageReceiptsTests.testAnUnacknowledgedSendReconnectsAndGoesOutAgain`,
+`DirectMessagesTests.testTappingAPersonOpensTheirAccountDirectMessageNotTheRelayPeerRoom`,
+`OfficeChannelsTests.testSavedRoomsShowBeforeTheServerAnswersAndRefreshesSaveThem`,
+`RelayServiceTests.testPresenceCarriesTheDeviceTimeZoneSoPeopleShowTheirLocalTime` and
+`testLocalTimeComesFromTheProfileFirstAndSaysHowFarAheadItIs`. The views were syntax-checked only.
+
 ## Views (ForkMesh/Features/Chat)
 
 `ChatScreen(showComposer:)`, `RelaySettingsSection()`, `RelayNetworksScreen()`,

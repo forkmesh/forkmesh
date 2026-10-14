@@ -322,6 +322,9 @@ struct DirectCallPreviewScreen: View {
                 .accessibilityLabel("Close")
                 .accessibilityIdentifier("chat-call-preview-close")
                 Spacer()
+                if case .review(let url, _, _) = record {
+                    MessagesVideoSaveButton(url: captions.url(for: url), disabled: captions.working)
+                }
             }
         }
         .padding(.top, FmSpace.x4)

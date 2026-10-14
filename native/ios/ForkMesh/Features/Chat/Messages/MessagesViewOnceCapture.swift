@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import CoreMedia
 import FMChat
+import Photos
 import SwiftUI
 import UIKit
 
@@ -518,7 +519,9 @@ struct MessagesViewOnceRecorderSheet: View {
     }
 
     @ViewBuilder private var countdown: some View {
-        if phase == .recording, let startedAt {
+        if kind == .video, case .review(let url, _) = phase {
+            MessagesVideoSaveButton(url: captions.url(for: url), disabled: captions.working)
+        } else if phase == .recording, let startedAt {
             TimelineView(.periodic(from: Date(), by: 0.25)) { (context: TimelineViewDefaultContext) in
                 let left: Double = max(0, limitSeconds - context.date.timeIntervalSince(startedAt))
                 Text(ViewOnceFrames.durationLabel(Int64(left * 1000)))
@@ -629,6 +632,74 @@ struct MessagesViewOnceRecorderSheet: View {
             } else {
                 FmHaptics.failure()
             }
+        }
+    }
+}
+
+struct MessagesVideoSaveButton: View {
+    let url: URL
+    var disabled: Bool = false
+    @State private var saving: Bool = false
+    @State private var saved: URL?
+    @State private var problem: String?
+
+    private var photosCanKeep: Bool { ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased()) }
+
+    var body: some View {
+        Group {
+            if photosCanKeep {
+                Button(action: { Task { await save() } }) { face }
+                    .buttonStyle(.plain)
+                    .disabled(disabled || saving || saved == url)
+                    .accessibilityLabel(saved == url ? "Saved to Photos" : "Save video to Photos")
+            } else {
+                ShareLink(item: url) { face }
+                    .disabled(disabled)
+                    .accessibilityLabel("Save or share video")
+            }
+        }
+        .opacity(disabled ? 0.5 : 1)
+        .alert("Video not saved", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(problem ?? "")
+        }
+        .accessibilityIdentifier("chat-video-save")
+    }
+
+    private var face: some View {
+        ZStack {
+            if saving {
+                ProgressView().tint(Color.white)
+            } else {
+                Image(systemName: saved == url ? "checkmark" : (photosCanKeep ? "arrow.down.to.line" : "square.and.arrow.up"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.white)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .background(Circle().fill(Color.black.opacity(0.45)))
+    }
+
+    private func save() async {
+        saving = true
+        defer { saving = false }
+        let status: PHAuthorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            problem = "Allow ForkMesh to add photos in Settings to save this video."
+            FmHaptics.failure()
+            return
+        }
+        let file: URL = url
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: file, options: nil)
+            }
+            saved = file
+            FmHaptics.commit()
+        } catch {
+            problem = "The video could not be saved to Photos."
+            FmHaptics.failure()
         }
     }
 }
