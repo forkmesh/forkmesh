@@ -3856,6 +3856,7 @@
     calendar_reminder: true,
     calendar_rsvp: true,
     channel_unread: true,
+    direct_unread: true,
   };
 
   function normalizedNotificationPreferences(session = state.session) {
@@ -3907,6 +3908,7 @@
       { kind: "subscribed", label: "Activity on things you follow", email: true },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
+      { kind: "direct_unread", label: "Unread direct messages", email: true },
       { kind: "calendar_invitation", label: "Calendar invitations", email: true },
       { kind: "calendar_reminder", label: "Calendar reminders", email: true },
       { kind: "calendar_rsvp", label: "Calendar replies", email: true },

@@ -81,6 +81,8 @@ it. Clients show "N messages on the server" or "Not stored on the server".
 - Only a `notify` frame that is not a `resend` raises the unread count and
   sends a push.
 - Channels have many readers: no `ref`, receipts ignored.
+- A recipient whose copies wait more than a day gets one reminder email
+  ([chat-unread-reminders.md](chat-unread-reminders.md#direct-messages-waiting-on-the-server)).
 
 ### Re-sealing
 

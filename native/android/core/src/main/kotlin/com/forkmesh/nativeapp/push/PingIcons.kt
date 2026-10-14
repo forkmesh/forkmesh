@@ -30,6 +30,7 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "calendar_rsvp" to "🙋",
     "chat_webhook" to "🪝",
     "channel_unread" to PING_CHAT_ICON,
+    "direct_unread" to PING_CHAT_ICON,
     "general_chat" to PING_CHAT_ICON,
     "account_email_sent" to "📧",
     "operational_alert" to "📟",

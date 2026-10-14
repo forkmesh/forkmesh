@@ -110,7 +110,7 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "repository_hosted": return "Hosting"
         case "organization_task_started", "organization_task_activity", "organization_task_update": return "Task"
         case "calendar_invitation", "calendar_reminder", "calendar_rsvp": return "Calendar"
-        case "chat_webhook", "channel_unread": return "Chat"
+        case "chat_webhook", "channel_unread", "direct_unread": return "Chat"
         case "account_email_sent": return "Email"
         case "operational_alert": return "Alert"
         case "security_alert": return "Security"
