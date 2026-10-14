@@ -519,11 +519,11 @@ struct MessagesComposer: View {
             }
             if hub.canSendViewOnce {
                 Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .video) }) {
-                    Label("View-once Video", systemImage: "video.badge.ellipsis")
+                    Label("Video Message (Plays Once)", systemImage: "video.badge.ellipsis")
                 }
                 .accessibilityLabel("Record a view-once video message")
                 Button(action: { viewOnceRecording = MessagesViewOnceRequest(kind: .voice) }) {
-                    Label("View-once Voice", systemImage: "waveform.badge.mic")
+                    Label("Voice Message (Plays Once)", systemImage: "waveform.badge.mic")
                 }
                 .accessibilityLabel("Record a view-once voice message")
             }

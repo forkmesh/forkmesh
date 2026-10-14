@@ -5624,6 +5624,15 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   const DISCONNECT_GRACE_MS = 8000;
   const LANDMARK_TIMEOUT_MS = 1500;
   const VOICE_READY_MS = 2500;
+  const RECORD_READY_MS = 20000;
+  const RECORD_CHUNK_BYTES = 786432;
+  const RECORD_MIMES = [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4;codecs=avc1,mp4a.40.2",
+    "video/mp4",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
   const remote = document.getElementById("remote");
   const local = document.getElementById("local");
   let pc = null;
@@ -5644,6 +5653,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   let voiceReported = null;
   let audioSender = null;
   let voiceModuleUrl = "";
+  let recording = null;
 
   const post = (message) => {
     const text = JSON.stringify(message);
@@ -5780,11 +5790,46 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     return backgroundWanted;
   };
 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const recordMime = () => window.MediaRecorder && typeof MediaRecorder.isTypeSupported === "function"
+    ? RECORD_MIMES.find((type) => MediaRecorder.isTypeSupported(type)) || ""
+    : "";
+  const dropRecording = () => {
+    const current = recording;
+    recording = null;
+    if (!current) return;
+    if (current.recorder.state !== "inactive") {
+      try { current.recorder.stop(); } catch (_) {}
+    }
+    current.chunks.length = 0;
+    if (current.bytes) current.bytes.fill(0);
+    current.bytes = null;
+  };
+  const filtersReady = async (face, background, voice) => {
+    if (face !== faceWanted) throw new Error("face_unavailable");
+    if (background !== backgroundWanted) throw new Error("background_unavailable");
+    if (voice !== voiceWanted) throw new Error("voice_unavailable");
+    const deadline = Date.now() + RECORD_READY_MS;
+    if (face || background) {
+      while (!(stage && stage.ready())) {
+        if (Date.now() > deadline) throw new Error("face_not_ready");
+        await wait(100);
+      }
+      if (face && stage.face() !== face) throw new Error("face_unavailable");
+      if (background && stage.background() !== background) throw new Error("background_unavailable");
+    }
+    if (voice) {
+      if (voicePending) await voicePending;
+      if (!voiceStage || voiceStage.voice() !== voice) throw new Error("voice_unavailable");
+    }
+  };
+
   const ops = {
     async setup(media, iceServers, face) {
       const voice = arguments[3];
       const background = arguments[4];
       const image = arguments[5];
+      dropRecording();
       document.body.className = media === "video" ? "video" : "audio";
       const previewed = stream && (media !== "video" || tracks("video").length) ? stream : null;
       if (!previewed && stream) {
@@ -5904,7 +5949,61 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       document.body.classList.toggle("camera-off", Boolean(off));
       return true;
     },
+    async record(face, background, voice) {
+      if (pc || !stream || !tracks("video").length) throw new Error("not_previewing");
+      if (!window.MediaRecorder) throw new Error("recording_unsupported");
+      dropRecording();
+      await filtersReady(String(face || ""), String(background || ""), String(voice || ""));
+      const recorded = [outgoingVideo(), outgoingAudio()].filter(Boolean);
+      const mimeType = recordMime();
+      const options = { videoBitsPerSecond: 900000, audioBitsPerSecond: 64000 };
+      if (mimeType) options.mimeType = mimeType;
+      const recorder = new MediaRecorder(new MediaStream(recorded), options);
+      const current = { recorder, chunks: [], bytes: null, mime: mimeType, startedAt: 0, durationMs: 0, finished: null };
+      current.finished = new Promise((resolve, reject) => {
+        recorder.addEventListener("stop", () => resolve());
+        recorder.addEventListener("error", (event) => reject((event && event.error) || new Error("recording_failed")));
+      });
+      current.finished.catch(() => {});
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size) current.chunks.push(event.data);
+      });
+      recorder.start(1000);
+      current.startedAt = performance.now();
+      recording = current;
+      return true;
+    },
+    async recordStop() {
+      const current = recording;
+      if (!current) throw new Error("not_recording");
+      if (current.recorder.state !== "inactive") {
+        current.durationMs = performance.now() - current.startedAt;
+        current.recorder.stop();
+      }
+      await current.finished;
+      if (recording !== current) throw new Error("not_recording");
+      const type = (current.recorder.mimeType || current.mime || "video/mp4").toLowerCase();
+      current.bytes = new Uint8Array(await new Blob(current.chunks, { type }).arrayBuffer());
+      current.chunks.length = 0;
+      return { mime: type, durationMs: Math.round(current.durationMs), size: current.bytes.length };
+    },
+    async recordChunk(offset) {
+      const bytes = recording && recording.bytes;
+      if (!bytes) throw new Error("not_recorded");
+      const start = Math.max(0, Number(offset) || 0);
+      const slice = bytes.subarray(start, start + RECORD_CHUNK_BYTES);
+      let text = "";
+      for (let at = 0; at < slice.length; at += 0x8000) {
+        text += String.fromCharCode.apply(null, slice.subarray(at, at + 0x8000));
+      }
+      return btoa(text);
+    },
+    async recordDrop() {
+      dropRecording();
+      return true;
+    },
     async close() {
+      dropRecording();
       if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
       const closing = pc;
       pc = null;

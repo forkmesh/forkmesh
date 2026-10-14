@@ -12,6 +12,12 @@ enum CallAudioRoute {
     }
 }
 
+struct WebCallRecording {
+    let data: Data
+    let mime: String
+    let durationMs: Int64
+}
+
 enum WebCallError: Error {
     case missingPage
     case notReady
@@ -264,6 +270,36 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     @discardableResult
     func setMonitor(_ on: Bool) async -> Bool {
         (try? await run("monitor", [.bool(on)]))?.boolValue ?? false
+    }
+
+    func startRecording(face: String, background: String, voice: String) async throws {
+        try await run("record", [.string(face), .string(background), .string(voice)])
+    }
+
+    func finishRecording() async throws -> WebCallRecording {
+        defer { dropRecording() }
+        let summary: JSONObject = try await run("recordStop").objectValue ?? [:]
+        let size: Int = summary["size"]?.intValue ?? 0
+        guard size > 0 else { throw WebCallError.failed("empty_recording") }
+        var data = Data(capacity: size)
+        while data.count < size {
+            let text: String = try await run("recordChunk", [.int(Int64(data.count))]).text
+            guard let chunk = Data(base64Encoded: text), !chunk.isEmpty else {
+                throw WebCallError.failed("recording_read")
+            }
+            data.append(chunk)
+        }
+        guard data.count == size else { throw WebCallError.failed("recording_read") }
+        let mime: String = (summary["mime"]?.text ?? "").split(separator: ";").first
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        return WebCallRecording(
+            data: data, mime: mime.hasPrefix("video/") ? mime : "video/mp4",
+            durationMs: Int64(summary["durationMs"]?.intValue ?? 0))
+    }
+
+    func dropRecording() {
+        guard !closed else { return }
+        Task { _ = try? await run("recordDrop") }
     }
 
     func close() {

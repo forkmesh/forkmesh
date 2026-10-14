@@ -339,6 +339,12 @@ background, image)`), with Face, Background (thumbnail sheet; "Your photo"
 uses the system photo picker), Voice and Hear myself. Start video call
 hands the previewing WebView to the call (`WebCallPeerFactory.makePeer` /
 `WebCallPeers.makePeer` run `setup` on it instead of loading a new page).
+On iOS, in a DM, the preview also has **Record message**: the page records
+its own outgoing tracks (`record`, `recordStop`, `recordChunk`,
+`recordDrop`) and the app sends the result as a view-once video message
+(native/ios/docs/FMChat.md, "Preview stuck on the spinner; recording from
+the preview"). The iOS preview shows the WebView from the start, because
+WebKit does not start `getUserMedia` in a page that is not on screen.
 
 **Using the pipeline outside a call** (for recorded video messages):
 
