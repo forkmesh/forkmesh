@@ -1,4 +1,6 @@
+import FMAccount
 import FMAssistant
+import FMBase
 import Foundation
 import UIKit
 
@@ -11,6 +13,7 @@ final class GenieScreenScan {
 
     private(set) var landmarks: [GenieLandmark] = []
     private var scanned: Date = .distantPast
+    private var spacing: Double = GenieLandmarks.refresh
     private var stale: Bool = true
 
     func invalidate() {
@@ -18,7 +21,7 @@ final class GenieScreenScan {
     }
 
     func current(now: Date = Date()) -> [GenieLandmark] {
-        if stale || now.timeIntervalSince(scanned) >= GenieLandmarks.refresh {
+        if stale || now.timeIntervalSince(scanned) >= spacing {
             rescan(now)
         }
         return landmarks
@@ -33,9 +36,19 @@ final class GenieScreenScan {
             landmarks = []
             return
         }
-        var walk: Walk = Walk(window: window)
-        walk.view(window.rootViewController?.view ?? window, depth: 0, inTabBar: false)
-        landmarks = GenieLandmarks.tidy(walk.found, in: window.bounds)
+        let started: TimeInterval = ProcessInfo.processInfo.systemUptime
+        let walked: [GenieLandmark] = Self.timed {
+            var walk: Walk = Walk(window: window)
+            walk.view(window.rootViewController?.view ?? window, depth: 0, inTabBar: false)
+            return walk.found
+        }
+        spacing = GenieLandmarks.spacing(afterScanTaking: ProcessInfo.processInfo.systemUptime - started)
+        landmarks = GenieLandmarks.tidy(walked, in: window.bounds)
+    }
+
+    private static func timed(_ walk: () -> [GenieLandmark]) -> [GenieLandmark] {
+        guard let monitor = Services.get(PerformanceMonitorService.self) else { return walk() }
+        return monitor.timeSync("genie.screenScan", walk)
     }
 
     @MainActor

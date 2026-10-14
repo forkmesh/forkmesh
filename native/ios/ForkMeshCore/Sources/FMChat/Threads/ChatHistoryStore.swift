@@ -142,11 +142,100 @@ public enum ChatHistoryCodec {
     }
 }
 
+public struct ChatHistoryParts: Sendable {
+    public var conversations: [String: [ChatMessage]] = [:]
+    public var replies: [ChatMessage] = []
+    public var replyRoots: [String: String] = [:]
+    public var reactions: [String: [String: [String: String]]] = [:]
+    public var reactionOrder: [String: [String]] = [:]
+    public var edits: [String: String] = [:]
+    public var privateChannels: Set<String> = []
+    public var hiddenChannels: Set<String> = []
+    public var hiddenMessages: [String] = []
+    public var removedMessages: [String] = []
+    public var looks: [String: ChatLook] = [:]
+    public var lookEvents: [ChatLookEvent] = []
+    public var retention: ChatRetention?
+    public var now = Date()
+
+    public init() {}
+
+    public var snapshot: ChatHistorySnapshot {
+        var snapshot = ChatHistorySnapshot()
+        snapshot.messages = ChatHistoryCodec.bounded(conversations, retention: retention, now: now)
+        let kept = Set(snapshot.messages.map(\.id))
+        snapshot.replies = replies.filter { !isExpired($0.conversation, $0.timestamp) }
+        let replyIds = Set(snapshot.replies.map(\.id))
+        snapshot.replyRoots = replyRoots.filter { replyIds.contains($0.key) }
+        let known = kept.union(replyIds)
+        snapshot.reactions = reactions.filter { known.contains($0.key) }
+        snapshot.reactionOrder = reactionOrder.filter { known.contains($0.key) }
+        snapshot.edits = edits.filter { known.contains($0.key) }
+        snapshot.privateChannels = privateChannels.sorted()
+        snapshot.hiddenChannels = hiddenChannels.sorted()
+        snapshot.hiddenMessages = hiddenMessages
+        snapshot.removedMessages = removedMessages
+        snapshot.looks = looks
+        snapshot.lookEvents = lookEvents.filter { !isExpired($0.conversation, $0.timestamp) }
+        return snapshot
+    }
+
+    private func isExpired(_ key: String, _ timestamp: Date) -> Bool {
+        retention?.isExpired(timestamp, key: key, now: now) ?? false
+    }
+}
+
+final class ChatHistoryWriter: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.forkmesh.chat-history", qos: .utility)
+    private var written: [URL: ChatHistorySnapshot] = [:]
+    private(set) var writes = 0
+
+    func save(_ parts: ChatHistoryParts, to target: URL, in directory: URL) {
+        queue.async { self.write(parts.snapshot, to: target, in: directory) }
+    }
+
+    func saveNow(_ snapshot: ChatHistorySnapshot, to target: URL, in directory: URL) {
+        queue.sync { write(snapshot, to: target, in: directory) }
+    }
+
+    func remember(_ snapshot: ChatHistorySnapshot, at target: URL) {
+        queue.async { self.written[target] = snapshot }
+    }
+
+    func erase(_ target: URL) {
+        queue.sync {
+            written[target] = nil
+            try? FileManager.default.removeItem(at: target)
+        }
+    }
+
+    func flush() -> Int { queue.sync { writes } }
+
+    private func write(_ snapshot: ChatHistorySnapshot, to target: URL, in directory: URL) {
+        if written[target] == snapshot { return }
+        let data = ChatHistoryCodec.encode(snapshot)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        #if os(iOS)
+        let options: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        #else
+        let options: Data.WritingOptions = [.atomic]
+        #endif
+        do {
+            try data.write(to: target, options: options)
+            written[target] = snapshot
+            writes += 1
+        } catch {
+            written[target] = nil
+        }
+    }
+}
+
 @MainActor
 public final class ChatHistoryStore {
     public let directory: URL
     private var saveTask: Task<Void, Never>?
     private let delay: TimeInterval
+    private let writer = ChatHistoryWriter()
 
     public init(directory: URL, delay: TimeInterval = 2) {
         self.directory = directory
@@ -161,32 +250,35 @@ public final class ChatHistoryStore {
     public func file(scope: String) -> URL { directory.appendingPathComponent("relay-\(scope).json") }
 
     public func load(scope: String) -> ChatHistorySnapshot? {
-        guard let data = try? Data(contentsOf: file(scope: scope)) else { return nil }
-        return ChatHistoryCodec.decode(data)
+        let target = file(scope: scope)
+        guard let data = try? Data(contentsOf: target), let snapshot = ChatHistoryCodec.decode(data) else { return nil }
+        writer.remember(snapshot, at: target)
+        return snapshot
     }
 
     public func save(_ snapshot: ChatHistorySnapshot, scope: String) {
-        let data = ChatHistoryCodec.encode(snapshot)
-        let target = file(scope: scope)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        #if os(iOS)
-        try? data.write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        #else
-        try? data.write(to: target, options: [.atomic])
-        #endif
+        writer.saveNow(snapshot, to: file(scope: scope), in: directory)
     }
 
-    public func scheduleSave(scope: String, _ snapshot: @escaping @MainActor () -> ChatHistorySnapshot) {
+    public func scheduleSave(scope: String, _ parts: @escaping @MainActor () -> ChatHistoryParts) {
         saveTask?.cancel()
         let delay = self.delay
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            if Task.isCancelled { return }
-            self?.save(snapshot(), scope: scope)
+            guard let self, !Task.isCancelled else { return }
+            self.writer.save(parts(), to: self.file(scope: scope), in: self.directory)
         }
     }
 
+    @discardableResult
+    public func flush() async -> Int {
+        await saveTask?.value
+        let writer = self.writer
+        return await Task.detached { writer.flush() }.value
+    }
+
     public func erase(scope: String) {
-        try? FileManager.default.removeItem(at: file(scope: scope))
+        saveTask?.cancel()
+        writer.erase(file(scope: scope))
     }
 }
