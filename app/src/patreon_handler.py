@@ -868,7 +868,7 @@ async def patreon_webhook_handler(env, request):
     secret = str(
         getattr(env, "PATREON_WEBHOOK_SECRET", "") or "").strip()
     if not secret:
-        return json_response(
+        return _no_store(
             {"error": "patreon_webhook_not_configured"}, status=503)
 
     try:
@@ -929,9 +929,8 @@ async def patreon_webhook_handler(env, request):
         not campaign_id or len(campaign_id) > 128
         or not creator_token or len(creator_token) > 4096
     ):
-        return json_response(
-            {"error": "patreon_reconciliation_not_configured"}, status=503,
-            cache_control="no-store, max-age=0")
+        return _no_store(
+            {"error": "patreon_reconciliation_not_configured"}, status=503)
     if not member_url:
         return json_response({"error": "invalid_member_id"}, status=400)
     # Claim a per-member generation before any provider I/O so concurrent
