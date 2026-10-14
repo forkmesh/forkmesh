@@ -1752,77 +1752,58 @@ def test_ai_agent_route_is_wired():
 
 
 def test_qt_composer_runs_cloudflare_models_as_agents():
-    # adhoc #1634: picking a Workers AI model in the composer starts a real
-    # agent session (worktree, branch, PR) instead of the old one-shot
-    # /api/ai/ask answer.
     qt = ROOT.parent / "desktop" / "src"
-    internal = (qt / "MainWindowInternal.h").read_text(encoding="utf-8")
+    internal = "".join(
+        (qt / name).read_text(encoding="utf-8")
+        for name in ("MainWindowInternal.h", "MainWindowInternal1.cpp")
+    )
     chat = "".join(
         (qt / name).read_text(encoding="utf-8")
         for name in MAIN_WINDOW_CHAT_SOURCES
     )
     issues = (qt / "MainWindowIssues.cpp").read_text(encoding="utf-8")
-    agents = "".join(
-        (qt / name).read_text(encoding="utf-8")
-        for name in MAIN_WINDOW_AGENT_SOURCES
-    )
+    launch = (qt / "MainWindowAgentLaunch.cpp").read_text(encoding="utf-8")
     settings = (qt / "MainWindowSettings.cpp").read_text(encoding="utf-8")
     store = (qt / "AgentStore.cpp").read_text(encoding="utf-8")
     runner = (qt / "AgentRunner.cpp").read_text(encoding="utf-8")
     script = (qt / "CloudflareAgentScript.h").read_text(encoding="utf-8")
-    # The composer's combined agent+model menu carries the Workers AI models as
-    # their own group, and cloudflare-ai is a first-class agent provider.
     assert 'kCloudflareAiProvider = QStringLiteral("cloudflare-ai")' in internal
-    assert "agentIsCloudflareAiProvider(provider);" in internal
+    assert "return provider == kCloudflareAiProvider;" in internal
     assert "populateCloudflareAiModelCombo" in internal
     assert "populateCloudflareAiModelCombo(&cloudflareModels)" in chat
     assert "addItem(QStringLiteral(\"CF AI\")" in chat
-    # The relay owns the allowlist, so the picker asks it and caches the answer.
-    assert '"/api/forkbot/models"' in chat
+    assert "/ai/models/search" in chat
     assert "kCloudflareAiModelsCacheSetting" in chat
-    # A "@cf/..." model binds to the cloudflare-ai provider only — it must
-    # never leak into a Codex/OpenAI run just because it is not Claude-style.
     assert "agentModelIsCloudflareStyle" in internal
     assert 'startsWith(QLatin1String("@cf/"))' in internal
-    # The quick-add submit path hands the pick to the agent launch like any
-    # other provider, model included.
     assert "agentIsCloudflareAiProvider(provider)" in issues
     assert "sendPromptToCloudflareAi" not in issues
-    # The launch config runs the bundled Workers AI agent script and signs the
-    # per-run relay ticket the endpoint verifies (same canonical string).
-    assert "defaultCloudflareAiCommand()" in agents
-    assert "FORKMESH_AI_AGENT_AUTH" in agents
-    assert "forkmesh-ai-agent-v1" in agents
-    assert "forkmesh-ai-agent-v1" in ENTRY_TEXT
-    assert '"/api/ai/agent"' in agents
-    # The bundled script drives an OpenAI-format tool loop against the relay.
+    assert "config.command = defaultCloudflareAiCommand();" in launch
+    assert 'config.apiKeyName = QStringLiteral("FORKMESH_AGENT_API_TOKEN");' \
+        in launch
+    assert "cloudflareApiTokenFromVariables(variables)" in launch
+    assert 'QStringLiteral("FORKMESH_AGENT_ACCOUNT_ID=") + accountId' in launch
+    assert "FORKMESH_AI_AGENT_AUTH" not in launch
     assert "forkmesh_cloudflare_agent.py" in internal
-    assert "FORKMESH_AI_AGENT_AUTH" in script
-    assert '"tools": TOOLS' in script
+    assert 'env.insert(QStringLiteral("FORKMESH_AGENT_PROVIDER"), provider);' \
+        in runner
+    assert 'value("API_TOKEN")' in script
+    assert 'value("ACCOUNT_ID")' in script
+    assert "/ai/v1/chat/completions" in script
+    assert 'payload["tools"] = tools' in script
     assert "tool_call_id" in script
-    # Every static fallback id is one the relay's allowlist actually offers.
     ns = _load_forkbot()
     allowed = {entry[0] for entry in ns["FORKBOT_AI_MODEL_CHOICES"]}
     fallback = re.findall(r'QStringLiteral\("(@cf/[^"]+)"\)', internal)
     assert fallback
     assert set(fallback) == allowed
-    # Issue #575: naming is separately opt-in, sends only the prompt needed for
-    # the summary, and persists one shared safe name for branch and worktree.
     assert "Branch/worktree names" in settings
     assert "kAgentWorkspaceNameModelSetting" in settings
-    assert '"/api/ai/workspace-name"' in agents
-    assert "forkmesh-ai-workspace-name-v1" in agents
-    assert "stored->branchName = sharedName" in agents
-    assert "stored->worktreeName = sharedName" in agents
+    assert "requestCloudflareWorkspaceName(" in launch
+    assert "stored->branchName = sharedName" in launch
+    assert "stored->worktreeName = sharedName" in launch
     assert 'obj["worktreeName"] = worktreeName' in store
     assert "m_session.worktreeName.isEmpty()" in runner
-
-
-# --- The bundled Workers AI agent script, run for real (adhoc #1622).
-#     The models behind this provider are small enough to loop on one command
-#     forever, so the script's guards are worth exercising rather than
-#     grepping: extract the Python out of the header and drive it against a
-#     stub relay in a throwaway git repo.
 
 
 def _cloudflare_agent_script(tmp_path):
@@ -1836,18 +1817,6 @@ def _cloudflare_agent_script(tmp_path):
 
 
 def _run_cloudflare_agent(tmp_path, turns, steer=None, fail=None, reply=None):
-    """Run the bundled script against a stub /api/ai/agent.
-
-    `turns` is called with (turn number, conversation) and returns that turn's
-    toolCalls; returning [] ends the run the way a finished model does. `fail`
-    is called with the HTTP request count and returns a status to answer with
-    instead of a turn (0/None to serve it normally), so a run can be made to
-    meet the relay's transient failures. `reply` is called with (turn number,
-    toolCalls) for the assistant text, defaulting to "Done." on the turn that
-    stops calling tools. Returns (stdout, exit code, worktree, fake HOME,
-    conversations) with the git identity configured only in the fake HOME's
-    ~/.gitconfig, so a run that reaches for `git config --global` is caught.
-    """
     if not shutil.which("git"):
         pytest.skip("git is not installed")
 
@@ -1865,8 +1834,6 @@ def _run_cloudflare_agent(tmp_path, turns, steer=None, fail=None, reply=None):
             requests.append(body)
             status = (fail(len(requests)) if fail else 0) or 0
             if status:
-                # What a wedged relay isolate actually returns: Cloudflare's
-                # own 1101 error document, not the relay's JSON.
                 detail = json.dumps({
                     "title": "Error 1101: Worker threw exception",
                     "status": status,
@@ -1880,12 +1847,17 @@ def _run_cloudflare_agent(tmp_path, turns, steer=None, fail=None, reply=None):
             seen.append(body["messages"])
             calls = turns(len(seen), body["messages"])
             payload = json.dumps({
-                "ok": True,
                 "model": body.get("model"),
-                "reply": (reply(len(seen), calls) if reply
-                          else ("" if calls else "Done.")),
-                "toolCalls": calls,
-                "usage": {"inputTokens": 1, "outputTokens": 1},
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": (reply(len(seen), calls) if reply
+                                    else ("" if calls else "Done.")),
+                        "tool_calls": calls,
+                    },
+                    "finish_reason": "tool_calls" if calls else "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
             }).encode("utf-8")
             self.send_response(200)
             self.send_header("content-type", "application/json")
@@ -1905,11 +1877,10 @@ def _run_cloudflare_agent(tmp_path, turns, steer=None, fail=None, reply=None):
     repo.mkdir()
     env = dict(os.environ, HOME=str(home))
     env.pop("GIT_CONFIG_GLOBAL", None)
-    for name in ("FORKMESH_AGENT_GATE", "FORKMESH_AGENT_GATE_SESSION",
-                 "FORKMESH_AGENT_GATE_LABEL", "FORKMESH_AGENT_DISABLED_TOOL_FAMILIES",
-                 "FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES", "FORKMESH_AGENT_GUARDRAILS",
-                 "FORKMESH_AGENT_ALLOWED_DIRECTORIES"):
-        env.pop(name, None)
+    for name in list(env):
+        if name.startswith(("FORKMESH_AGENT_", "CLOUDFLARE_")) or \
+                name == "FORKMESH_AI_AGENT_AUTH":
+            env.pop(name)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)],
                    env=env, check=True)
     (repo / "README.md").write_text("# Title\n", encoding="utf-8")
@@ -1919,9 +1890,13 @@ def _run_cloudflare_agent(tmp_path, turns, steer=None, fail=None, reply=None):
 
     prompt = tmp_path / "prompt.md"
     prompt.write_text("add the note", encoding="utf-8")
-    env["FORKMESH_AI_AGENT_AUTH"] = json.dumps({
-        "url": "http://127.0.0.1:%d/api/ai/agent" % server.server_address[1],
-        "node": "jett", "ts": "1", "sig": "sig"})
+    env["FORKMESH_AGENT_PROVIDER"] = "cloudflare-ai"
+    env["FORKMESH_AGENT_ENDPOINT"] = (
+        "http://127.0.0.1:%d/ai/v1/chat/completions"
+        % server.server_address[1])
+    env["FORKMESH_AGENT_API_TOKEN"] = "token"
+    env["FORKMESH_AGENT_STREAMING"] = "0"
+    env["FORKMESH_AGENT_RETRY_BASE_DELAY"] = "0"
     env["FORKMESH_AGENT_MODEL"] = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
     proc = subprocess.Popen(
         [sys.executable, str(script), str(prompt)], cwd=repo, env=env,
@@ -2055,12 +2030,8 @@ def test_cloudflare_agent_script_works_the_task_and_takes_steering(tmp_path):
         text=True).stdout
 
 
-def test_cloudflare_agent_script_retries_a_relay_5xx_instead_of_dropping_run(
+def test_cloudflare_agent_script_retries_a_5xx_instead_of_dropping_run(
         tmp_path):
-    # adhoc #1633: turn 2 of a real run came back as Cloudflare's 1101 "Worker
-    # threw exception" 500 — the relay's shared Python isolate wedged by
-    # unrelated traffic — and the script abandoned a task it was halfway
-    # through. The conversation is unchanged by a failed turn, so re-send it.
     commands = ['echo "hello" >> README.md',
                 "git add -A && git commit -qm hello"]
 
@@ -2074,9 +2045,8 @@ def test_cloudflare_agent_script_retries_a_relay_5xx_instead_of_dropping_run(
         tmp_path, turns, fail=lambda request: 500 if request == 2 else 0)
 
     assert code == 0
-    assert "==> Relay error 500; retrying this turn" in out
     # The run carried on rather than reporting the turn as fatal.
-    assert "!! Relay AI agent error 500" not in out
+    assert "AI agent error 500" not in out
     assert "==> Agent finished." in out
     assert "hello" in (repo / "README.md").read_text(encoding="utf-8")
     assert "hello" in subprocess.run(
@@ -2086,15 +2056,20 @@ def test_cloudflare_agent_script_retries_a_relay_5xx_instead_of_dropping_run(
     assert len(seen) == 3
 
 
-def test_cloudflare_agent_script_gives_up_after_repeated_relay_failures(
-        tmp_path):
+def test_cloudflare_agent_script_gives_up_after_repeated_failures(tmp_path):
+    attempts = []
+
+    def fail(request):
+        attempts.append(request)
+        return 503
+
     out, code, _repo, _home, seen = _run_cloudflare_agent(
-        tmp_path, lambda turn, messages: [], fail=lambda request: 503)
+        tmp_path, lambda turn, messages: [], fail=fail)
 
     assert code == 1
     assert not seen
-    assert "!! Relay AI agent error 503" in out
-    assert "failed this turn 5 times in a row" in out
+    assert "!! Cloudflare AI agent error 503" in out
+    assert len(attempts) == 5
 
 
 def test_cloudflare_agent_script_sees_through_a_requoted_repeat(tmp_path):
@@ -2149,15 +2124,7 @@ def test_cloudflare_agent_script_will_not_call_uncommitted_work_finished(
     assert "==> Agent finished." in out
 
 
-def test_cloudflare_agent_script_echoes_tool_calls_as_assistant_text(tmp_path):
-    # adhoc #1683: Workers AI's chat templates render an assistant message's
-    # text content but drop its structured OpenAI `tool_calls` field, so the
-    # old wire-shape echo showed llama an empty turn of its own — with no
-    # record of ever running the command, it re-issued the same one every
-    # turn until the stall guard killed the run. The echo now goes into the
-    # assistant content, in the {"name", "parameters"} JSON shape llama
-    # itself emits (Cloudflare's function-calling docs echo the call as
-    # assistant content for the same reason).
+def test_cloudflare_agent_script_echoes_tool_calls_in_openai_shape(tmp_path):
     command = ('grep -qF hello README.md || echo "hello" >> README.md && '
                "git add -A && git commit -qm hello")
 
@@ -2172,10 +2139,10 @@ def test_cloudflare_agent_script_echoes_tool_calls_as_assistant_text(tmp_path):
     assert code == 0
     assistant = seen[1][2]
     assert assistant["role"] == "assistant"
-    assert json.loads(assistant["content"]) == {
-        "name": "bash", "parameters": {"command": command}}
-    assert "tool_calls" not in assistant
-    # The result still travels beside it as the OpenAI tool message.
+    call = assistant["tool_calls"][0]
+    assert call["id"] == "c1"
+    assert call["function"]["name"] == "bash"
+    assert json.loads(call["function"]["arguments"]) == {"command": command}
     tool = seen[1][3]
     assert tool["role"] == "tool"
     assert tool["tool_call_id"] == "c1"
