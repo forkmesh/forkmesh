@@ -120,6 +120,7 @@ fun AuthFlow(
     onDismiss: (() -> Unit)? = null,
 ) {
     var mode by rememberSaveable { mutableStateOf(start) }
+    var signupOpened by rememberSaveable { mutableStateOf(false) }
     val back: () -> Unit = {
         if (authBackDismisses(pushedOverApp = onDismiss != null)) onDismiss?.invoke() else mode = AuthFlowStart.Welcome
     }
@@ -150,8 +151,16 @@ fun AuthFlow(
                 onAuthenticated = onAuthenticated,
                 onSignup = { mode = AuthFlowStart.Signup },
                 onBack = back,
+                afterSignup = signupOpened,
             )
-            AuthFlowStart.Signup -> SignupPage(onLogin = { mode = AuthFlowStart.Login }, onBack = back)
+            AuthFlowStart.Signup -> SignupPage(
+                onOpened = {
+                    signupOpened = true
+                    mode = AuthFlowStart.Login
+                },
+                onLogin = { mode = AuthFlowStart.Login },
+                onBack = back,
+            )
         }
     }
 }
@@ -285,7 +294,7 @@ private fun WelcomePage(onLogin: () -> Unit, onSignup: () -> Unit, onGuest: (() 
 }
 
 @Composable
-private fun LoginPage(onAuthenticated: () -> Unit, onSignup: () -> Unit, onBack: () -> Unit) {
+private fun LoginPage(onAuthenticated: () -> Unit, onSignup: () -> Unit, onBack: () -> Unit, afterSignup: Boolean) {
     val auth = Services.get<AuthService>()
     val context = LocalContext.current
     val debug = remember(context) { isDebugBuild(context) }
@@ -294,7 +303,7 @@ private fun LoginPage(onAuthenticated: () -> Unit, onSignup: () -> Unit, onBack:
     var password by rememberSaveable { mutableStateOf("") }
     var totp by rememberSaveable { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
-    var form by remember { mutableStateOf(LoginFormState()) }
+    var form by remember { mutableStateOf(if (afterSignup) LoginFormState().afterSignup() else LoginFormState()) }
     val revokedBanner by rememberSaveable { mutableStateOf(auth?.revokedBannerPending?.value == true) }
     LaunchedEffect(Unit) {
         if (revokedBanner) auth?.clearRevokedBanner()
@@ -378,6 +387,8 @@ private fun LoginPage(onAuthenticated: () -> Unit, onSignup: () -> Unit, onBack:
         VGap(42.dp)
         PrimaryAuthButton(label = loginButtonLabel(loading), onClick = if (loading) null else { { submit() } })
         VGap(18.dp)
+        SecondaryAuthButton(label = AuthCopy.FORGOT_PASSWORD, onClick = { auth?.let { openExternalUrl(context, it.forgotPasswordUrl) } })
+        VGap(8.dp)
         SecondaryAuthButton(label = "Create an account", onClick = onSignup)
         VGap(72.dp)
         TermsCopy()
@@ -385,7 +396,7 @@ private fun LoginPage(onAuthenticated: () -> Unit, onSignup: () -> Unit, onBack:
 }
 
 @Composable
-private fun SignupPage(onLogin: () -> Unit, onBack: () -> Unit) {
+private fun SignupPage(onOpened: () -> Unit, onLogin: () -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     AuthPageScaffold(pageTitle = "Sign up", onBack = onBack) {
         VGap(58.dp)
@@ -404,7 +415,10 @@ private fun SignupPage(onLogin: () -> Unit, onBack: () -> Unit) {
         VGap(32.dp)
         PrimaryAuthButton(
             label = "Open secure signup",
-            onClick = { Services.get<AuthService>()?.let { openExternalUrl(context, it.signupUrl) } },
+            onClick = {
+                val auth = Services.get<AuthService>()
+                if (auth != null && openExternalUrl(context, auth.signupUrl)) onOpened()
+            },
         )
         VGap(18.dp)
         SecondaryAuthButton(label = "I already have an account", onClick = onLogin)

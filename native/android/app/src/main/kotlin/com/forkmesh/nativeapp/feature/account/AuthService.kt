@@ -57,6 +57,8 @@ class AuthService(val core: AuthController, private val prefs: PrefStore? = null
 
     val signupUrl: String get() = core.signupUrl
 
+    val forgotPasswordUrl: String get() = core.forgotPasswordUrl
+
     val knownDevices: List<AccountDevice> get() = devicesState.value ?: core.session?.devices.orEmpty()
 
     private val listener: () -> Unit = { publish() }
