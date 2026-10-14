@@ -17,8 +17,17 @@ public enum ThemeMode: String, CaseIterable, Sendable {
 /// `FmAccent.fromName(settings.accent.rawValue)`.
 public enum AccentChoice: String, CaseIterable, Sendable {
     case blue
-    case purple
+    case cyan
     case teal
+    case green
+    case lime
+    case amber
+    case orange
+    case red
+    case pink
+    case violet
+    case purple
+    case graphite
 
     public static let fallback: AccentChoice = .blue
 
@@ -26,8 +35,17 @@ public enum AccentChoice: String, CaseIterable, Sendable {
     public var label: String {
         switch self {
         case .blue: return "Blue"
-        case .purple: return "Purple"
+        case .cyan: return "Cyan"
         case .teal: return "Teal"
+        case .green: return "Green"
+        case .lime: return "Lime"
+        case .amber: return "Amber"
+        case .orange: return "Orange"
+        case .red: return "Red"
+        case .pink: return "Pink"
+        case .violet: return "Violet"
+        case .purple: return "Purple"
+        case .graphite: return "Graphite"
         }
     }
 
@@ -65,6 +83,10 @@ public final class SettingsService {
     nonisolated public static let bugButtonLeftKey = "bugReport/onLeft"
     nonisolated public static let themeModeKey = "appearance/themeMode"
     nonisolated public static let accentKey = "appearance/accent"
+    nonisolated public static let backgroundImageKey = "appearance/backgroundImage"
+    nonisolated public static let backgroundDimKey = "appearance/backgroundDim"
+    nonisolated public static let defaultBackgroundDim: Double = 0.4
+    nonisolated public static let maxBackgroundDim: Double = 0.9
     nonisolated public static let serveAsNodeKey = "node/serve"
     nonisolated public static let iosUdidKey = "device/iosUdid"
     nonisolated public static let iosUdidProductKey = "device/iosUdidProduct"
@@ -424,6 +446,29 @@ public final class SettingsService {
     }
 
     public func setAccent(_ accent: AccentChoice) { set(SettingsService.accentKey, accent.rawValue) }
+
+    public var backgroundImage: String {
+        track()
+        let name: String = prefs.string(forKey: SettingsService.backgroundImageKey) ?? ""
+        return name.contains("/") ? "" : name
+    }
+
+    public func setBackgroundImage(_ name: String) { set(SettingsService.backgroundImageKey, name) }
+
+    public var backgroundDim: Double {
+        track()
+        return SettingsService.clampBackgroundDim(prefs.double(forKey: SettingsService.backgroundDimKey))
+    }
+
+    public func setBackgroundDim(_ dim: Double) {
+        prefs.set(SettingsService.clampBackgroundDim(dim), forKey: SettingsService.backgroundDimKey)
+        notifyListeners()
+    }
+
+    nonisolated static func clampBackgroundDim(_ dim: Double?) -> Double {
+        guard let dim, !dim.isNaN else { return defaultBackgroundDim }
+        return min(max(dim, 0), maxBackgroundDim)
+    }
 
     // MARK: Serving as a node
     //

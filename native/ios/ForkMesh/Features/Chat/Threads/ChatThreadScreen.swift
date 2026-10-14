@@ -45,7 +45,7 @@ private struct ChatThreadBody: View {
             }
         }
             .shellDock { composer }
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationTitle("Thread in \(hub.conversationLabel(channel))")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $pushed) { (route: Route) in RouteDestinationView(route: route).shellPageClearance() }
@@ -99,7 +99,7 @@ private struct ChatThreadBody: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .onChange(of: hub.threadRows(rootId).last?.id ?? "") { _, last in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
             }

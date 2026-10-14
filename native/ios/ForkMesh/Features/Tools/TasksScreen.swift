@@ -31,7 +31,7 @@ struct TasksScreen: View {
         content
             .navigationTitle(TasksListModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .navigationDestination(isPresented: $detailOpen) {
                 if let detail = detail {
                     TaskDetailScreen(model: detail)
@@ -275,7 +275,7 @@ struct TaskDetailScreen: View {
                         onClose: { dismiss() })
                 }
             }
-            .background(fm.bgBase)
+            .background(fm.canvas)
             .fmDialog(isPresented: $confirmDelete) {
                 FmConfirmDialog(
                     title: TaskDetailModel.deleteConfirmation.title, message: TaskDetailModel.deleteConfirmation.message,

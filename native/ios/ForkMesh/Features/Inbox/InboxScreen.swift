@@ -64,7 +64,7 @@ struct InboxScreen: View {
                 FmEmptyState(icon: "inbox_outlined", title: "The inbox is unavailable")
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Inbox")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showingSettings) {

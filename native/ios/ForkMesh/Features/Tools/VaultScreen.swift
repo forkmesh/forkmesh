@@ -67,7 +67,7 @@ private struct VaultMain: View {
             phaseBody
                 .frame(maxHeight: .infinity)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(VaultCopy.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }

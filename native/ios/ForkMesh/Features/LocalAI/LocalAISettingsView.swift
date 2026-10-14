@@ -38,7 +38,7 @@ struct LocalAISettingsView: View {
             }
             .padding(FmSpace.x4)
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("On-device AI")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

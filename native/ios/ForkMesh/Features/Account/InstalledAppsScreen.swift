@@ -22,7 +22,7 @@ struct InstalledAppsScreen: View {
 
     var body: some View {
         content
-            .background(fm.bgBase.ignoresSafeArea())
+            .background(fm.canvas.ignoresSafeArea())
             .navigationTitle(InstalledAppsCopy.title)
             .navigationBarTitleDisplayMode(.inline)
             .task { if !model.loaded { await model.reload() } }

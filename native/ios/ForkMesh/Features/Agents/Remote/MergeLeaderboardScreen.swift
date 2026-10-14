@@ -38,7 +38,7 @@ struct MergeLeaderboardScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle("Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
         .fmRefreshable { await model.refresh() }

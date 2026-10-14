@@ -65,7 +65,7 @@ struct ChooseInstanceView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .projectDrawer(isPresented: $switching)
         .accessibilityIdentifier("choose-instance")
     }

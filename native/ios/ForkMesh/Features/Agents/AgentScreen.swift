@@ -80,7 +80,7 @@ struct AgentScreen: View {
                 uploadsFiles: true,
                 accessibilityPrefix: "agent-composer")
         }
-        .background(fm.bgBase)
+        .background(fm.canvas)
         .navigationTitle(model.repoName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarItems }

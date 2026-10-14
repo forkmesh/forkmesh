@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +47,7 @@ private fun ThemeModeChoice.icon(): String = when (this) {
     ThemeModeChoice.dark -> "dark_mode_outlined"
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppearanceCard() {
     val appearance by AppearanceStore.appearance.collectAsState()
@@ -99,12 +102,13 @@ fun AppearanceCard() {
         Box(Modifier.height(FmSpace.x4))
         Text("Accent colour", style = label)
         Box(Modifier.height(FmSpace.x2))
-        Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x5)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(FmSpace.x3), verticalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
             for (accent in AccentChoice.entries) {
                 val selected = appearance.accent == accent
                 val swatch = Color(accent.accent(c.dark))
                 Column(
                     Modifier
+                        .width(60.dp)
                         .testTag("appearance-accent-${accent.name}")
                         .semantics(mergeDescendants = true) {
                             this.selected = selected
@@ -127,11 +131,13 @@ fun AppearanceCard() {
                             .background(swatch),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected) FmIcon("check_rounded", size = 16.dp, tint = Color.White)
+                        if (selected) FmIcon("check_rounded", size = 16.dp, tint = if (c.dark) c.bgBase else Color.White)
                     }
                     Box(Modifier.height(FmSpace.x1))
                     Text(
                         accent.label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         style = Fm.text.labelSmall.copy(
                             color = if (selected) c.textPrimary else c.textSecondary,
                             fontWeight = if (selected) FmType.emphasis else FmType.medium,

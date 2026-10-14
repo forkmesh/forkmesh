@@ -20,7 +20,7 @@ struct SleepScreen: View {
         content
             .navigationTitle(SleepModel.title)
             .navigationBarTitleDisplayMode(.inline)
-            .background(fm.bgBase)
+            .background(fm.canvas)
     }
 
     @ViewBuilder private var content: some View {

@@ -494,14 +494,17 @@ struct HomeShell: View {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
+                .fmNavigationCanvas(fm.canvas)
                 .background { ShellRootBarHider(tab: tab) }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: Route.self) { (route: Route) in
                     RouteDestinationView(route: route)
                         .tabStackPage(tab, tops: stackTops)
                         .shellPageClearance()
+                        .fmNavigationCanvas(fm.canvas)
                 }
         }
+        .scrollContentBackground(fm.wallpaper ? .hidden : .automatic)
         .environment(\.shellDock, docks[tab])
         .environment(\.shellStackTab, tab)
         .id([stackResets[tab] ?? 0, ShellChrome.shared.stackReturns[tab] ?? 0])
@@ -688,7 +691,7 @@ struct HomeShell: View {
 
     private func framed<Content: View>(_ content: Content) -> some View {
         content
-            .background(fm.bgBase.ignoresSafeArea())
+            .background(fm.canvas.ignoresSafeArea())
             .background {
                 ShellKeyboardCommands(
                     onTab: { (tab: AppTab) in selectTab(tab) },

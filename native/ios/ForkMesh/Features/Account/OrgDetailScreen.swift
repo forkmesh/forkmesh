@@ -37,7 +37,7 @@ struct OrgDetailScreen: View {
                 FmEmptyState(icon: "cloud_off_outlined", title: "Could not load organization")
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -416,7 +416,7 @@ struct TeamDetailScreen: View {
                 content(model)
             }
         }
-        .background(fm.bgBase.ignoresSafeArea())
+        .background(fm.canvas.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
     }
 

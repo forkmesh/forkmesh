@@ -111,6 +111,41 @@ disabled controls and chevrons are not body text. The accents are unchanged:
 the default blue `#007AFF` is 4.0:1 on white and teal 3.7:1, so they suit
 buttons and larger text rather than small captions.
 
+Accents and a background image (2026-10-13). Settings, General, Appearance
+offers twelve accents instead of three: blue, cyan, teal, green, lime, amber,
+orange, red, pink, violet, purple and graphite, in a grid that wraps. They are
+stored by name in `appearance/accent` as before, so a name an older build does
+not know still falls back to blue. iOS (`FmAccent`, `AccentChoice`) and Android
+(`AccentChoice` in `Appearance.kt`) carry the same names and values. Each new
+light-mode accent is a 600-700 shade that keeps white button labels at about
+4.5:1 or better; each dark-mode accent is a 300-400 shade under the near-black
+`onPrimary` label. The swatch's check mark now uses `onPrimary` too, because a
+white check vanished on the bright dark-mode swatches.
+
+iOS also takes a background image ("Choose image…" under the accents). The
+picture is downscaled to 2800 px on its long side, saved as a JPEG in
+Application Support `wallpapers/`, and named in `appearance/backgroundImage`;
+`appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` at that
+opacity over it so text stays readable. `FmWallpaperBackdrop` draws it once,
+behind `AppHomeView`, and the palette's `wallpaper` flag makes the rest of the
+app let it through:
+
+- `fm.canvas` is clear with a background image and `bgBase` without one. Full
+  pages paint `fm.canvas` instead of `bgBase`; bars, inputs, chips, sheets and
+  the opaque reading surfaces (terminals, the diff viewer, the file viewer)
+  keep `bgBase`, so text that scrolls under them stays legible.
+- `listSurface` drops to 60% opacity, so explorer rows tint the picture rather
+  than hide it.
+- `HomeShell` gives each tab's `NavigationStack` a clear navigation container
+  background (iOS 18 and later) and hides the scroll-content background of
+  `List` and `Form`, whose rows keep their own grouped surface.
+- A chat's own conversation background, set in the conversation's details,
+  still wins over the app background.
+
+Liquid Glass (the bottom bar, top bar and prompt card) refracts whatever is
+under it, so with a background image the glass picks up its colours. Android
+has the accents but not the background image yet.
+
 ### 1.4 Code, repositories and Git
 
 | # | Feature | iOS native | Android native | Effort | Depends on |
