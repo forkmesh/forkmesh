@@ -224,4 +224,8 @@ def test_chat_page_wires_view_once_without_save_actions():
         .replace("nodownload", "")
     assert "revokeObjectURL" in viewer
     assert "registerViewOnceFilterStages" in RECORDER_TEXT
-    assert "registerViewOnceFilterStages({" in CHAT_TEXT
+    assert "const viewOnceFilterSupport = installViewOnceFilters();" in CHAT_TEXT
+    assert "...viewOnceFilterChoices(viewOnceFilterSupport)," in CHAT_TEXT
+    filters = (PUBLIC / "chat-view-once-filters.js").read_text(encoding="utf-8")
+    assert "registerViewOnceFilterStages({" in filters
+    assert "createFaceStage" in filters and "createVoiceStage" in filters
