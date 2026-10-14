@@ -471,6 +471,9 @@ line).
     the wrangler value to `""` turns hosting off only where no `app.env`
     sets it. With the list empty the create form falls back to the
     single-node or desktop flow.
+  - `FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS` is that list plus every core in
+    `[hosted] retired_cores`, so repositories whose node was a removed core
+    stay core-held ([CORE_PUSH.md](CORE_PUSH.md#a-removed-core-keeps-its-repositories-core-held-2026-10-13)).
   - On the nodes: set `[hosted] enabled = false` in `deploy/fleet.toml`, then
     run the rollout's steps 1 and 2. Existing entries stay served as
     configured repositories until they are removed.
