@@ -9,15 +9,22 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import apply_instance_brand  # noqa: E402
+import dashboard_shell  # noqa: E402
 import instance_theme  # noqa: E402
 
 APP_RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
-SHELL = (ROOT / "public" / "dashboard" / "shell.html").read_text(encoding="utf-8")
+PUBLIC = ROOT / "public"
+RAW_SHELL = (PUBLIC / "dashboard" / "shell.html").read_text(encoding="utf-8")
+THEME = json.loads((PUBLIC / dashboard_shell.THEME_PATH).read_text(encoding="utf-8"))
+SHELL = dashboard_shell.apply_theme(
+    RAW_SHELL, lambda path: (PUBLIC / path).read_text(encoding="utf-8"))
 
 
 def test_every_theme_token_is_a_token_the_dashboard_defines():
+    assert not dashboard_shell.THEME_TOKEN_RE.search(SHELL)
     for name in instance_theme.RGB_TOKENS:
         assert "--dashboard-%s-rgb:" % name in SHELL
+        assert set(THEME["colors"].get(name, {})) >= {"dark", "light"}, name
     for name in instance_theme.HEX_TOKENS:
         assert "--dashboard-%s:" % name in SHELL
     for alias, _ in instance_theme.ALIASES:
