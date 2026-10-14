@@ -20,6 +20,7 @@ struct MachineAgent {
 namespace MachineAgentScan {
 
 QString agentKind(const QString &comm, const QByteArrayList &argv);
+bool scriptStub(const QString &exePath);
 QString argValue(const QByteArrayList &argv, const QList<QByteArray> &names);
 QString claudeProjectKey(const QString &cwd);
 QString recordedClaudeSession(const QString &configDir, qint64 pid);

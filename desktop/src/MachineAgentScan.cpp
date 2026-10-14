@@ -102,6 +102,19 @@ QString agentKind(const QString &comm, const QByteArrayList &argv)
     return {};
 }
 
+bool scriptStub(const QString &exePath)
+{
+    // A shell script named `claude` (the fakes Go tests put on PATH) gets the
+    // script's name as its comm, but its executable is the shell. Real agents
+    // are a native binary or an interpreter we match by script argument.
+    static const QStringList shells = {
+        QStringLiteral("sh"),   QStringLiteral("bash"), QStringLiteral("dash"),
+        QStringLiteral("zsh"),  QStringLiteral("ash"),  QStringLiteral("ksh"),
+        QStringLiteral("fish"), QStringLiteral("busybox"),
+    };
+    return shells.contains(QFileInfo(exePath).fileName());
+}
+
 QString argValue(const QByteArrayList &argv, const QList<QByteArray> &names)
 {
     for (int i = 1; i < argv.size(); ++i) {
@@ -274,6 +287,9 @@ QList<MachineAgent> scan(const SystemStats::ProcessTable &table,
         const QByteArrayList argv = splitNul(readProc(it.key(), "cmdline"));
         const QString kind = agentKind(it->command, argv);
         if (kind.isEmpty())
+            continue;
+        if (it->command == kind
+            && scriptStub(QFileInfo(QStringLiteral("/proc/%1/exe").arg(it.key())).symLinkTarget()))
             continue;
         kinds.insert(it.key(), kind);
         argvs.insert(it.key(), argv);
