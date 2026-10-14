@@ -714,7 +714,7 @@ def caddy_release(fleet, required=True):
 def caddy_script(settings, binary_sha, dropin, host):
     import next_deploy
     import render
-    return next_deploy.caddy_functions(host) + """
+    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT) + """
 set -eu
 tarball=/tmp/{tarball}
 stage=$(mktemp -d /var/lib/fmnext-caddy.XXXXXX)
@@ -759,7 +759,7 @@ echo "fmnext-caddy: $({bin} version | cut -d' ' -f1) serving"
 def caddy_debian_script(host):
     import next_deploy
     import render
-    return next_deploy.caddy_functions(host) + """
+    return next_deploy.caddy_functions(host, wait=CADDY_INSTALL_WAIT) + """
 set -u
 rm -f {dropin_path}
 systemctl daemon-reload
@@ -907,6 +907,8 @@ def files_script(manifest, archive):
                  "systemctl restart forkmesh-mirror-node.service; fi" % DAEMON_UNIT_DIGEST)
     return "\n".join(lines)
 
+
+CADDY_INSTALL_WAIT = 180
 
 RESTART_FAIL2BAN = "systemctl try-restart fail2ban.service || true"
 

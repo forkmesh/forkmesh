@@ -1034,3 +1034,12 @@ def test_files_step_loads_the_fleet_firewall_while_ufw_is_active(tmp_path):
     assert script.index("nft -c -f /etc/nftables.conf") < script.index(firewall)
     assert firewall.index("nft -c -f /etc/nftables.conf") < firewall.index("ufw --force disable")
     assert "Status: active" in firewall
+
+
+def test_caddy_install_waits_long_enough_for_a_first_certificate():
+    settings = {"tarball": "caddy.tar.gz", "sha256": "0" * 64, "version": "2.11.4"}
+    script = next_fleet.caddy_script(settings, "1" * 64, "[Service]\n", "n4.next.example.test")
+    assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in script
+    assert next_fleet.CADDY_INSTALL_WAIT >= 120
+    assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in next_fleet.caddy_debian_script(
+        "n4.next.example.test")
