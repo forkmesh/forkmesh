@@ -212,7 +212,7 @@ def test_a_list_has_a_link_that_opens_it():
     assert "navigator.clipboard.writeText(crmListUrl(view.id))" in _function("copyCrmListLink")
     from_url = _function("openCrmListFromUrl")
     assert 'searchParams.get("list")' in from_url
-    assert "state.crmView.views.some((view) => view.id === id)) { selectCrmSheet(id); return; }" in from_url
+    assert "crmTabViews().some((view) => view.id === id)) { selectCrmSheet(id); return; }" in from_url
     assert "state.crmView.sharedViews.some((view) => view.id === id)) { void selectCrmSharedSheet(id); return; }" in from_url
     assert 'crmSetListParam("");' in from_url
     assert 'url.searchParams.delete("list"); history.replaceState' in WEB_SCRIPT

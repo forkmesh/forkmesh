@@ -68,7 +68,7 @@ def test_contact_cells_read_as_text_and_edit_through_the_same_path():
 
 
 def test_a_layout_with_nothing_visible_starts_from_the_default_columns():
-    # "All contacts" before anyone shapes it, or a sheet saved with every
+    # A pipeline tab before anyone shapes it, or a sheet saved with every
     # column hidden, starts from a readable default set.
     assert "const fresh = !stored.some((column) => !column.hidden);" in WEB_SCRIPT
     defaults = WEB_SCRIPT.split("const CRM_DEFAULT_COLUMNS = new Set([", 1)[1]

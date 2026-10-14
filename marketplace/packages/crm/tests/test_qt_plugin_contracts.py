@@ -499,7 +499,7 @@ def test_the_dashboard_wires_sheet_tabs_and_a_right_click_column_menu():
     assert 'head?.addEventListener("contextmenu"' in WEB_SCRIPT
     assert 'tabs?.addEventListener("contextmenu"' in WEB_SCRIPT
     for action in ("Move left", "Move right", "Remove from this view",
-                   "Rename or share…", "Delete sheet"):
+                   "Rename or share…", "Delete list…"):
         assert action in WEB_SCRIPT, action
     # A column is also moved by dragging its heading.
     assert 'draggable="true"' in WEB_SCRIPT
@@ -718,14 +718,15 @@ def test_a_list_carries_a_pipeline_type_on_both_surfaces():
 
 def test_the_web_contact_row_offers_the_same_right_click_moves():
     menu = WEB_SCRIPT.split("function openCrmContactMenu(", 1)[1]
-    menu = menu.split("\n  // Pipelines are edited", 1)[0]
+    menu = menu.split("\n  }\n", 1)[0]
     for label in ("Move to pipeline", "Move to list", "Add to list",
                   "Remove from ", "Manage pipelines"):
         assert label in menu, label
     # The same three membership verbs the desktop uses.
     assert "setViews: [view.id]" in menu
     assert "views: [view.id]" in menu
-    assert "removeViews: [open.id]" in menu
+    assert "removeCrmContactsFromSheet([id], open.id)" in menu
+    assert "removeViews: [sheetId]" in WEB_SCRIPT
     # A shared sheet is read-only, so it gets no move menu at all.
     assert "crmActiveShared()" in menu
     assert 'addEventListener("contextmenu", handleContactMenu)' in WEB_SCRIPT
@@ -1020,7 +1021,7 @@ def test_pipelines_carry_a_type_icon_lists_are_assigned_and_stages_are_edited():
     assert 'QStringLiteral("/views/") + listId' in save
     assert "void managePipelines(const QString &focusFlow = QString());" in FEATURE_HEADER
     # The web keeps the type through its flow editor and shows it on tabs.
-    assert "icon: row.querySelector(`[data-crm-flow-icon]`).value" in WEB_SCRIPT
+    assert 'flows.push({ id, name: label, icon: draft.icon || "pipeline", stages: slugs });' in WEB_SCRIPT
     assert "crmFlowIcon(crmFlow(view.flow).icon)" in WEB_SCRIPT
 
 
