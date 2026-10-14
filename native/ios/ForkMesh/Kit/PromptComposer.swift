@@ -221,6 +221,7 @@ struct PromptComposer: View {
                     }
                 }
         }
+        .fmKeepsKeyboard()
         .photosPicker(
             isPresented: $showLibrary, selection: $libraryItems, maxSelectionCount: max(1, room),
             matching: .images, preferredItemEncoding: .compatible)
