@@ -75,7 +75,7 @@ struct RepoSectionScreen: View {
             } else {
                 ContentUnavailableView(
                     "Coming soon", systemImage: "hammer",
-                    description: Text("\(title) is being built (\(RepoSectionRegistry.owners[section] ?? "later"))."))
+                    description: Text("\(title) is not in this version of the app yet."))
             }
         }
     }
