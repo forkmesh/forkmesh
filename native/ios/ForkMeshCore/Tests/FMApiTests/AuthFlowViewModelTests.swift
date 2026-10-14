@@ -214,6 +214,17 @@ final class AuthFlowViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningSignupLeavesTheLoginFormWaiting() async throws {
+        let h = AuthHarness()
+        let model = AuthFlowModel(auth: try h.auth(FakeHTTPClient()), start: .signup)
+        XCTAssertEqual(model.forgotPasswordURL?.path, "/forgot-password")
+        model.signupOpened()
+        XCTAssertEqual(model.mode, .login)
+        XCTAssertEqual(model.form.hint, AuthCopy.signupReturnHint)
+        XCTAssertFalse(model.form.bad)
+    }
+
+    @MainActor
     func testTheDesignPreviewCreatesThePreviewSessionOnlyInDebug() async throws {
         let h = AuthHarness()
         let auth = try h.auth(FakeHTTPClient())

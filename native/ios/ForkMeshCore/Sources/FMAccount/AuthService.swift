@@ -202,6 +202,8 @@ public final class AuthService {
 
     public var signupUrl: URL? { base("/signup") }
 
+    public var forgotPasswordUrl: URL? { base("/forgot-password") }
+
     // MARK: Relay scoping
 
     /// Move a session written before relays were scoped into the active relay's slot. Guest mode

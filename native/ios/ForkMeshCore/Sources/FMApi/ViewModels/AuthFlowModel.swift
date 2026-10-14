@@ -88,6 +88,13 @@ public final class AuthFlowModel {
     /// The secure signup page (`AuthService.signupUrl`).
     public var signupURL: URL? { auth?.signupUrl }
 
+    public var forgotPasswordURL: URL? { auth?.forgotPasswordUrl }
+
+    public func signupOpened() {
+        show(.login)
+        form = LoginFormState(hint: AuthCopy.signupReturnHint, bad: false, showTotp: form.showTotp)
+    }
+
     /// `_submit`. Returns true when the flow is done and the caller should run
     /// `onAuthenticated` (a real login, or the debug design preview).
     @discardableResult

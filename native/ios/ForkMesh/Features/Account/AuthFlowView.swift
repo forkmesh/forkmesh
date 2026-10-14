@@ -5,6 +5,7 @@
 import FMAccount
 import FMApi
 import FMBase
+import SafariServices
 import SwiftUI
 import UIKit
 
@@ -16,6 +17,7 @@ import UIKit
 struct AuthFlowView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State var model: AuthFlowModel
+    @State private var webPage: AuthWebPage?
 
     private let onDismiss: (() -> Void)?
 
@@ -58,18 +60,53 @@ struct AuthFlowView: View {
                 onSignup: { show(.signup) },
                 onGuest: onDismiss == nil ? { model.continueAsGuest() } : nil)
         case .login:
-            AuthLoginPage(model: model, onAuthenticated: authenticated, onSignup: { show(.signup) }, onBack: back)
+            AuthLoginPage(
+                model: model, onAuthenticated: authenticated, onSignup: { show(.signup) },
+                onForgotPassword: { open(model.forgotPasswordURL) }, onBack: back)
         case .signup:
-            AuthSignupPage(signupURL: model.signupURL, onLogin: { show(.login) }, onBack: back)
+            AuthSignupPage(onOpenSignup: openSignup, onLogin: { show(.login) }, onBack: back)
+        }
+    }
+
+    private func open(_ url: URL?) {
+        guard let url else { return }
+        webPage = AuthWebPage(url: url)
+    }
+
+    private func openSignup() {
+        open(model.signupURL)
+        withAnimation(FmMotion.easeOutCubic(0.22, reduceMotion: reduceMotion)) {
+            model.signupOpened()
         }
     }
 
     var body: some View {
-        page
-            .id(model.mode)
-            .transition(
-                AnyTransition.opacity.combined(with: AnyTransition.offset(x: 8, y: 0)))
+        ZStack {
+            page
+                .id(model.mode)
+                .transition(
+                    AnyTransition.opacity.combined(with: AnyTransition.offset(x: 8, y: 0)))
+        }
+        .sheet(item: $webPage) { page in
+            AuthSafariView(url: page.url)
+                .ignoresSafeArea()
+        }
     }
+}
+
+private struct AuthWebPage: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+private struct AuthSafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
 // MARK: Welcome
@@ -182,6 +219,7 @@ private struct AuthLoginPage: View {
     @Bindable var model: AuthFlowModel
     let onAuthenticated: () -> Void
     let onSignup: () -> Void
+    let onForgotPassword: () -> Void
     let onBack: () -> Void
 
     @FocusState var focus: LoginField?
@@ -194,11 +232,13 @@ private struct AuthLoginPage: View {
         model: AuthFlowModel,
         onAuthenticated: @escaping () -> Void,
         onSignup: @escaping () -> Void,
+        onForgotPassword: @escaping () -> Void,
         onBack: @escaping () -> Void
     ) {
         self.model = model
         self.onAuthenticated = onAuthenticated
         self.onSignup = onSignup
+        self.onForgotPassword = onForgotPassword
         self.onBack = onBack
     }
 
@@ -274,8 +314,10 @@ private struct AuthLoginPage: View {
             hint
             AuthPrimaryButton(label: model.buttonLabel, onPressed: model.loading ? nil : { submit() })
                 .padding(.top, 42)
-            AuthSecondaryButton(label: "Create an account", onPressed: onSignup)
+            AuthSecondaryButton(label: AuthCopy.forgotPassword, onPressed: onForgotPassword)
                 .padding(.top, 18)
+            AuthSecondaryButton(label: "Create an account", onPressed: onSignup)
+                .padding(.top, 8)
             AuthTermsCopy()
                 .padding(.top, 72)
         }
@@ -286,8 +328,7 @@ private struct AuthLoginPage: View {
 
 private struct AuthSignupPage: View {
     @Environment(\.fmPalette) var fm
-    @Environment(\.openURL) var openURL
-    let signupURL: URL?
+    let onOpenSignup: () -> Void
     let onLogin: () -> Void
     let onBack: () -> Void
 
@@ -301,13 +342,7 @@ private struct AuthSignupPage: View {
             Text(AuthCopy.signupBody)
                 .fmText(.bodyLarge, color: fm.textSecondary)
                 .padding(.top, 42)
-            AuthPrimaryButton(
-                label: "Open secure signup",
-                onPressed: {
-                    if let url = signupURL {
-                        openURL(url)
-                    }
-                })
+            AuthPrimaryButton(label: "Open secure signup", onPressed: onOpenSignup)
                 .padding(.top, 32)
             AuthSecondaryButton(label: "I already have an account", onPressed: onLogin)
                 .padding(.top, 18)
