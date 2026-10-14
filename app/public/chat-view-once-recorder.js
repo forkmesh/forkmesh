@@ -1,17 +1,18 @@
 import { VIEW_ONCE_KINDS, viewOnceDuration, viewOnceLabel } from "./chat-view-once.js";
 
 const VIDEO_MIME_CANDIDATES = [
+  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "video/mp4;codecs=avc1,mp4a.40.2",
+  "video/mp4",
   "video/webm;codecs=vp8,opus",
   "video/webm;codecs=vp9,opus",
   "video/webm",
-  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
-  "video/mp4",
 ];
 const VOICE_MIME_CANDIDATES = [
-  "audio/webm;codecs=opus",
-  "audio/ogg;codecs=opus",
   "audio/mp4;codecs=mp4a.40.2",
   "audio/mp4",
+  "audio/webm;codecs=opus",
+  "audio/ogg;codecs=opus",
   "audio/webm",
 ];
 const VIDEO_BITS_PER_SECOND = 900_000;

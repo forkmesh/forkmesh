@@ -677,9 +677,11 @@ the web cannot detect it at all.
   the upload/download/consume/status client, the bubble and the one-time
   viewer (no download link, `controlsList="nodownload"`, no context menu,
   the object URL revoked and the bytes zeroed on close).
-- `chat-view-once-recorder.js`: capture and `MediaRecorder` (WebM/Opus where
-  the browser has it, MP4 otherwise; video 640x480 at about 0.9 Mbit/s,
-  voice 32 kbit/s), a live preview or level meter, a 60 s / 120 s timer that
+- `chat-view-once-recorder.js`: capture and `MediaRecorder` (MP4 with
+  H.264/AAC where the browser can record it, because the iPhone app cannot
+  play WebM; WebM/Opus otherwise, as in Firefox, which the iPhone then
+  reports as unplayable and leaves unopened; video 640x480 at about
+  0.9 Mbit/s, voice 32 kbit/s), a live preview or level meter, a 60 s / 120 s timer that
   stops by itself, and review (play back, Discard, Re-record, Send). Voice
   messages start with a tap (tap Stop to finish) or a press: holding the
   button for longer than 0.45 s and letting go sends at once.
