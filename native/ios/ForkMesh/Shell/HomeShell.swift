@@ -480,14 +480,12 @@ struct HomeShell: View {
             tabRoot(tab)
                 .tabStackPage(tab, tops: stackTops)
                 .shellPageClearance()
-                .fmNavigationCanvas(fm.canvas)
                 .background { ShellRootBarHider(tab: tab) }
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: Route.self) { (route: Route) in
                     RouteDestinationView(route: route)
                         .tabStackPage(tab, tops: stackTops)
                         .shellPageClearance()
-                        .fmNavigationCanvas(fm.canvas)
                 }
         }
         .scrollContentBackground(fm.wallpaper ? .hidden : .automatic)

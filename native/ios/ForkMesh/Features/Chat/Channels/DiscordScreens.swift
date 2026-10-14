@@ -115,7 +115,7 @@ struct DiscordChannelScreen: View {
                     }
                     .padding(FmSpace.x3)
                 }
-                .background(fm.bgBase)
+                .background(fm.canvas)
                 .onChange(of: messages.last?.id ?? "") { _, last in proxy.scrollTo(last, anchor: .bottom) }
             }
             if notice != nil {
