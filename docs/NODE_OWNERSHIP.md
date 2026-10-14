@@ -82,6 +82,25 @@ Runner routing did not change:
 - It matches the target node against `RUNNER_POOL_TARGET_NODES`.
 - Neither depends on node ownership.
 
+## A core with no node account (2026-10-13)
+
+The daemon proves itself to the app only with its node key against `nodes.pubkey`; the `connectorToken` in `mirror-node.json` is the cloudflared tunnel token and is unused on cores. `fmnext-n1`..`n3` had accounts from before the cutover, and nothing in `tools/` created one, so `add-core` left `fmnext-n4` without an account: its catalog publications got HTTP 401, and the repository page listed only n2 and n3 under **Direct access** although n4 served the repository.
+
+```sh
+python3 tools/next_node_owner.py register            # dry-run: every core's account and owner
+python3 tools/next_node_owner.py register n5 --execute
+```
+
+For each core, `register` does three things:
+
+1. **Creates a missing account.** On the node, `python3 -I` signs `forkmesh-reserve-v1\n<node>\n<ts>` and `forkmesh-finalize-v1\n<node>\n\n<ts>` with `/var/lib/forkmesh/identity/ed25519.pem`; only the public key and the two signatures come back. The tool posts them to `/api/accounts/reserve` and `/api/accounts/finalize` with no link code and checks that `nodes.pubkey` reads back as the node's key.
+2. **Checks an existing account.** If the account is active but bound to another key (a rebuilt core reusing a name), it stops with an error instead of reporting success, because that daemon would still get HTTP 401.
+3. **Links the owner.** An unowned core is linked to the account that owns the other cores (`--owner` overrides it) through the signed link grant. The owner accepts with the operator desktop's identity key, `layout().identity_key` (`~/projects/forkmesh/data/identity/ed25519.pem`), when that key is the owner's account `pubkey`; jett's is. `--accept-key PEM` names another key. Without a matching key the account is still created and the tool prints the `transfer --from '' --to <owner>` command. A core another account owns is left alone.
+
+`add-core` runs the same `provision_core` in its `register` step, so a new core gets its account and its owner with no extra command. n4 (2026-10-13) predates this and was fixed by hand with the same calls.
+
+Fleet SSH from an agent shell used to fail with `ControlPath too long`, because the agent's `TMPDIR` is long. `Ssh.mux_dir` now falls back to `$XDG_RUNTIME_DIR/fmnext-ssh-<uid>` when the temp path is over `SSH_MUX_DIR_MAX` (48 characters, so the socket path stays under the 108-byte limit). If neither fits, it turns multiplexing off. An explicit `FMNEXT_SSH_MUX_DIR` is used as given.
+
 ## The `fmnext` account
 
 It is **kept** as an admin service account, and only its ownership was removed. The account is still used by:
