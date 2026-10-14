@@ -3371,9 +3371,17 @@ SCHEMA_STATEMENTS = [
         name TEXT NOT NULL,
         granted_by TEXT NOT NULL DEFAULT 'system',
         created_at INTEGER NOT NULL,
+        tier INTEGER NOT NULL DEFAULT 0 CHECK (tier BETWEEN 0 AND 3),
+        tier_at INTEGER NOT NULL DEFAULT 0 CHECK (tier_at >= 0),
         PRIMARY KEY (badge_slug, account_bi))""",
     "CREATE INDEX IF NOT EXISTS idx_badge_awards_account "
     "ON badge_awards(account_bi)",
+    """CREATE TABLE IF NOT EXISTS badge_progress (
+        badge_slug TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        value INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        PRIMARY KEY (badge_slug, account_bi))""",
     # Inbound website referrals: one aggregate row per referring hostname.
     # last_url is the latest bounded public referring URL, with credentials,
     # fragments, and sensitive query values removed (migration 0095).

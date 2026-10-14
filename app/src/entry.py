@@ -13181,6 +13181,12 @@ SCHEMA_PRE_CREATE_ALTER_STATEMENTS = [
 # Post-CREATE column additions for tables that predate them. Idempotent: a
 # re-run raises "duplicate column name", which the applier swallows.
 SCHEMA_ALTER_STATEMENTS = [
+    """ALTER TABLE badge_awards
+       ADD COLUMN tier INTEGER NOT NULL DEFAULT 0
+       CHECK (tier BETWEEN 0 AND 3)""",
+    """ALTER TABLE badge_awards
+       ADD COLUMN tier_at INTEGER NOT NULL DEFAULT 0
+       CHECK (tier_at >= 0)""",
     # Existing activity rows gain only a whole-step aggregate. Coordinates,
     # paths, and individual samples remain ephemeral socket state.
     """ALTER TABLE world_user_activity
@@ -13326,7 +13332,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "ad25ed4761784ba8ed1739f3932706abf1fc5aebe29af5eef61cce77a5bf1572"
+    "e05a69371b70e57df8b6065a8af3c9bb8df4ebcbab1d573dbd55392cbfefadcb"
 )
 
 
