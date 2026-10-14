@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.control.AgentControlCenter
 import com.forkmesh.nativeapp.control.AgentTranscriptDelta
+import com.forkmesh.nativeapp.control.DesktopTranscriptStream
 import com.forkmesh.nativeapp.control.RunnerDesktopHandoff
 import com.forkmesh.nativeapp.control.TranscriptBlock
 import com.forkmesh.nativeapp.control.TranscriptBlockCache
@@ -215,6 +216,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
     private var creatingPull by mutableStateOf(false)
     private var refreshing by mutableStateOf(false)
     private var pulls by mutableIntStateOf(0)
+    @Volatile private var liveStream: DesktopTranscriptStream? = null
     private val status = FmStatus()
     private val sendStatus = FmStatus()
 
@@ -247,6 +249,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
             try {
                 if (stream != null && withContext(Dispatchers.IO) { stream.start() }) {
                     refreshing = false
+                    liveStream = stream
                     for (delta in deltas) show(delta)
                     active = false
                     return@LaunchedEffect
@@ -264,6 +267,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     delay(3000)
                 }
             } finally {
+                if (liveStream === stream) liveStream = null
                 stream?.let { opened -> withContext(NonCancellable + Dispatchers.IO) { opened.stop() } }
             }
         }
@@ -540,7 +544,11 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                                 act("Sent.", sendStatus, onFailure = {
                                     if (message.isEmpty()) message = next
                                     if (photos.isEmpty()) photos = sending
-                                }, notice = { center.promptNotice }) { center.prompt(row, next, sending) }
+                                }, notice = { center.promptNotice }) {
+                                    center.prompt(row, next, sending)
+                                    val live = liveStream
+                                    if (live != null) live.refollow() else scope.launch { pulls++ }
+                                }
                             }
                         },
                         busy = busy,

@@ -12,6 +12,8 @@ REPOSITORY = Path(__file__).resolve().parents[2]
 PUBLIC = REPOSITORY / "app" / "public"
 MODULES = (
     PUBLIC / "chat-call-face-geometry.js",
+    PUBLIC / "chat-call-face-expression.js",
+    PUBLIC / "chat-call-face-custom.js",
     PUBLIC / "chat-call-segment.js",
     PUBLIC / "chat-call-face-mesh.js",
     PUBLIC / "chat-call-face-tracker.js",
@@ -41,6 +43,8 @@ CLOSE = "</script>"
 EXPORTS = (
     "CALL_FACES",
     "callFaceById",
+    "callFaceChoices",
+    "isCustomFace",
     "callFacesSupported",
     "createFaceStage",
     "CALL_BACKGROUNDS",

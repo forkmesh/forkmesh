@@ -236,6 +236,9 @@ struct DirectCallScreen: View {
                 ForEach(DirectCallEngine.faces) { (face: DirectCallFace) in
                     Text(face.label).tag(face.id)
                 }
+                if !engine.faceImage.isEmpty {
+                    Text(DirectCallEngine.faceLabel(DirectCallEngine.customFace)).tag(DirectCallEngine.customFace)
+                }
             }
         } label: {
             Image(systemName: "theatermasks.fill")
@@ -245,7 +248,7 @@ struct DirectCallScreen: View {
                 .background(Circle().fill(engine.face.isEmpty ? Color.white.opacity(0.18) : Color.white))
         }
         .accessibilityLabel("Face")
-        .accessibilityValue(DirectCallEngine.faces.first { $0.id == engine.face }?.label ?? "Your own face")
+        .accessibilityValue(DirectCallEngine.faceLabel(engine.face))
         .accessibilityHint("Shows the other person a different face that follows your head and lips")
         .accessibilityIdentifier("chat-call-face")
     }

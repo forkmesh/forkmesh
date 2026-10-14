@@ -10,12 +10,26 @@ const HIST_STEPS_PER_SEMITONE = 4;
 const HIST_BINS = 160;
 const HIST_HALF_LIFE = 3000;
 const SEED_WEIGHT = 60;
+const VOICING_ENTER = 0.55;
+const VOICING_STAY = 0.45;
+const ANCHOR_BIAS = 0.3;
+const LOCAL_VOICING = 0.6;
+const PITCH_WINDOW = 512;
+const PITCH_EVERY = 2;
+const PITCH_LOW_HZ = 50;
+const PITCH_HIGH_HZ = 420;
+const LIFTER_PERIODS = 0.55;
+const TREMOR_HZ = 5.5;
+const VOICED_HOLD = 10;
 
 export const VOICE_LIMITS = Object.freeze({
   ratio: [0.45, 2.6],
   formant: [0.72, 1.42],
   callerHz: [70, 330],
   tract: [0.94, 1.26],
+  range: [0, 1.5],
+  jitter: [0, 0.04],
+  tremor: [0, 0.05],
 });
 
 const clamp = (value, low, high) => (value < low ? low : value > high ? high : value);
@@ -32,6 +46,9 @@ export function voicePlanInto(out, preset, callerHz) {
     out.formant = 1;
     out.brightness = 0;
     out.breath = 0;
+    out.range = 1;
+    out.jitter = 0;
+    out.tremor = 0;
     out.mix = 0;
     return out;
   }
@@ -40,6 +57,9 @@ export function voicePlanInto(out, preset, callerHz) {
   out.formant = clamp((preset.tract || 1) / tractFromPitch(caller), VOICE_LIMITS.formant[0], VOICE_LIMITS.formant[1]);
   out.brightness = clamp(Number(preset.brightness) || 0, -1, 1);
   out.breath = clamp(Number(preset.breath) || 0, 0, 1);
+  out.range = clamp(Number.isFinite(preset.range) ? preset.range : 1, VOICE_LIMITS.range[0], VOICE_LIMITS.range[1]);
+  out.jitter = clamp(Number(preset.jitter) || 0, VOICE_LIMITS.jitter[0], VOICE_LIMITS.jitter[1]);
+  out.tremor = clamp(Number(preset.tremor) || 0, VOICE_LIMITS.tremor[0], VOICE_LIMITS.tremor[1]);
   out.mix = 1;
   return out;
 }
@@ -184,20 +204,20 @@ export class RealFft {
 }
 
 export class PitchDetector {
-  constructor(sampleRate, size = 1024) {
+  constructor(sampleRate, size = PITCH_WINDOW) {
     this.sampleRate = sampleRate;
     this.size = size;
     this.fft = new RealFft(size * 2);
     this.buffer = new Float64Array(size * 2);
     this.re = new Float64Array(size + 1);
     this.im = new Float64Array(size + 1);
-    this.minLag = Math.max(2, Math.floor(sampleRate / 420));
-    this.maxLag = Math.min(size - 2, Math.ceil(sampleRate / 60));
+    this.minLag = Math.max(2, Math.floor(sampleRate / PITCH_HIGH_HZ));
+    this.maxLag = Math.min(size - 2, Math.ceil(sampleRate / PITCH_LOW_HZ));
     this.nsdf = new Float64Array(this.maxLag + 2);
     this.peaks = new Int32Array(64);
   }
 
-  detect(samples) {
+  detect(samples, previousHz = 0) {
     const n = this.size;
     const buffer = this.buffer;
     const re = this.re;
@@ -246,12 +266,23 @@ export class PitchDetector {
     if (!count) return 0;
     let highest = 0;
     for (let i = 0; i < count; i += 1) highest = Math.max(highest, nsdf[peaks[i]]);
-    if (highest < 0.6) return 0;
+    const tracking = previousHz > 0;
+    if (highest < (tracking ? VOICING_STAY : VOICING_ENTER)) return 0;
     let lag = peaks[0];
     for (let i = 0; i < count; i += 1) {
       if (nsdf[peaks[i]] >= 0.9 * highest) {
         lag = peaks[i];
         break;
+      }
+    }
+    if (tracking) {
+      const expected = this.sampleRate / previousHz;
+      if (Math.abs(Math.log2(lag / expected)) > 0.4) {
+        let near = -1;
+        for (let i = 0; i < count; i += 1) {
+          if (Math.abs(Math.log2(peaks[i] / expected)) < 0.2 && (near < 0 || nsdf[peaks[i]] > nsdf[near])) near = peaks[i];
+        }
+        if (near > 0 && nsdf[near] >= 0.8 * highest) lag = near;
       }
     }
     const a = nsdf[lag - 1];
@@ -272,6 +303,10 @@ export class PitchShifter {
     this.delay = this.lookahead + this.maxHalf + 1;
     this.input = new Float64Array(this.mask + 1);
     this.output = new Float64Array(this.mask + 1);
+    this.smooth = new Float64Array(this.mask + 1);
+    this.lpCoef = 1 - Math.exp((-TWO_PI * 900) / sampleRate);
+    this.lp1 = 0;
+    this.lp2 = 0;
     this.markCount = 32;
     this.markAt = new Float64Array(this.markCount);
     this.markPeriod = new Int32Array(this.markCount);
@@ -283,56 +318,107 @@ export class PitchShifter {
     this.lastVoiced = false;
     this.next = 0;
     this.shifting = 0;
+    this.range = 1;
+    this.centrePeriod = sampleRate / MALE_HZ;
+    this.jitter = 0;
+    this.tremor = 0;
+    this.tremorStep = (TWO_PI * TREMOR_HZ) / sampleRate;
+    this.seed = 0x6d2b79f5;
   }
 
   latency() {
     return this.delay;
   }
 
+  shape(range, centrePeriod, jitter, tremor) {
+    this.range = range;
+    this.centrePeriod = centrePeriod;
+    this.jitter = jitter;
+    this.tremor = tremor;
+  }
+
+  random() {
+    let x = this.seed;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    this.seed = x >>> 0;
+    return this.seed / 4294967296 - 0.5;
+  }
+
   at(index) {
     return this.input[index & this.mask];
+  }
+
+  similarity(a, b, reach) {
+    const input = this.input;
+    const mask = this.mask;
+    let dot = 0;
+    let ea = 0;
+    let eb = 0;
+    for (let j = -reach; j <= reach; j += 2) {
+      const x = input[(a + j) & mask];
+      const y = input[(b + j) & mask];
+      dot += x * y;
+      ea += x * x;
+      eb += y * y;
+    }
+    return dot / Math.sqrt(ea * eb + 1e-18);
   }
 
   addMarks(period) {
     const voiced = period >= 16;
     const step = voiced ? Math.floor(period + 0.5) : this.unvoiced;
     const half = voiced ? Math.min(step, this.maxHalf) : this.unvoiced;
-    const search = voiced ? Math.floor(step / 8) : 0;
-    const input = this.input;
+    const reach = Math.max(8, Math.floor(half / 2));
+    const smooth = this.smooth;
     const mask = this.mask;
     for (;;) {
+      const onset = voiced && !this.lastVoiced;
+      const search = voiced ? Math.floor(onset ? step / 2 : step / 8) : 0;
       const guess = this.lastAt + step;
       if (guess + search + half >= this.written) return;
       let best = guess;
-      let measured = step;
-      if (voiced && this.lastVoiced) {
-        const reach = Math.max(8, Math.floor(half / 2));
-        const last = this.lastAt;
-        let bestScore = -Infinity;
+      let likeness = 1;
+      if (voiced) {
+        let peak = 1e-12;
         for (let c = guess - search; c <= guess + search; c += 1) {
-          let dot = 0;
-          let energy = 0;
-          for (let j = -reach; j <= reach; j += 2) {
-            const v = input[(c + j) & mask];
-            dot += input[(last + j) & mask] * v;
-            energy += v * v;
-          }
-          const score = dot / Math.sqrt(energy + 1e-12);
-          if (score > bestScore) {
-            bestScore = score;
-            best = c;
+          const v = Math.abs(smooth[c & mask]);
+          if (v > peak) {
+            peak = v;
+            if (onset) best = c;
           }
         }
-        measured = best - last;
+        if (onset) {
+          likeness = -1;
+          const wobble = Math.max(1, Math.floor(step / 8));
+          for (let lag = step - wobble; lag <= step + wobble; lag += 1) {
+            likeness = Math.max(likeness, this.similarity(best, best - lag, reach));
+          }
+        } else {
+          let bestScore = -Infinity;
+          const last = this.lastAt;
+          for (let c = guess - search; c <= guess + search; c += 1) {
+            const like = this.similarity(last, c, reach);
+            const score = like + (ANCHOR_BIAS * Math.abs(smooth[c & mask])) / peak;
+            if (score > bestScore) {
+              bestScore = score;
+              best = c;
+              likeness = like;
+            }
+          }
+        }
       }
-      this.lastAt = best;
-      this.lastVoiced = voiced;
+      const periodic = voiced && likeness >= LOCAL_VOICING;
+      if (voiced && !periodic) best = this.lastAt + this.unvoiced;
       const slot = this.markWrite;
       this.markAt[slot] = best;
-      this.markPeriod[slot] = measured;
-      this.markHalf[slot] = half;
-      this.markVoiced[slot] = voiced ? 1 : 0;
+      this.markPeriod[slot] = periodic ? (onset ? step : best - this.lastAt) : this.unvoiced;
+      this.markHalf[slot] = periodic ? half : this.unvoiced;
+      this.markVoiced[slot] = periodic ? 1 : 0;
       this.markWrite = (slot + 1) % this.markCount;
+      this.lastAt = best;
+      this.lastVoiced = periodic;
     }
   }
 
@@ -358,7 +444,15 @@ export class PitchShifter {
       }
       const voiced = this.markVoiced[mark] === 1;
       const period = this.markPeriod[mark];
-      const hop = voiced ? Math.max(8, period / ratio) : period;
+      let hop = period;
+      if (voiced) {
+        let r = ratio;
+        if (this.range !== 1) r *= Math.pow(period / this.centrePeriod, 1 - this.range);
+        if (this.tremor > 0) r *= 1 + this.tremor * Math.sin(this.tremorStep * s);
+        hop = period / clamp(r, VOICE_LIMITS.ratio[0] * 0.9, VOICE_LIMITS.ratio[1] * 1.1);
+        if (this.jitter > 0) hop *= 1 + 2 * this.jitter * this.random();
+        hop = Math.max(8, hop);
+      }
       const centre = this.markAt[mark];
       let half = this.markHalf[mark];
       if (voiced && hop > 2 * half) {
@@ -376,6 +470,9 @@ export class PitchShifter {
 
   process(sample, period, ratio) {
     this.input[this.written & this.mask] = sample;
+    this.lp1 += this.lpCoef * (sample - this.lp1);
+    this.lp2 += this.lpCoef * (this.lp1 - this.lp2);
+    this.smooth[this.written & this.mask] = this.lp2;
     this.written += 1;
     this.addMarks(period);
     this.placeGrains(ratio);
@@ -384,7 +481,7 @@ export class PitchShifter {
     const slot = t & this.mask;
     const shifted = this.output[slot];
     this.output[slot] = 0;
-    const wanted = Math.abs(ratio - 1) > 2e-3 ? 1 : 0;
+    const wanted = Math.abs(ratio - 1) > 2e-3 || Math.abs(this.range - 1) > 2e-3 || this.jitter > 0 || this.tremor > 0 ? 1 : 0;
     const step = 1 / (2 * this.unvoiced);
     this.shifting = wanted > this.shifting
       ? Math.min(wanted, this.shifting + step)
@@ -475,9 +572,9 @@ export class VoiceEngine {
     this.tilt = new Float64Array(bins).fill(1);
     this.lifter = Math.max(12, Math.round(sampleRate / 650));
     this.decimate = Math.max(1, Math.round(sampleRate / 12000));
-    this.pitch = new PitchDetector(sampleRate / this.decimate, 1024);
-    this.pitchRing = new Float64Array(1024);
-    this.pitchScratch = new Float64Array(1024);
+    this.pitch = new PitchDetector(sampleRate / this.decimate, PITCH_WINDOW);
+    this.pitchRing = new Float64Array(PITCH_WINDOW);
+    this.pitchScratch = new Float64Array(PITCH_WINDOW);
     this.pitchWrite = 0;
     this.decAcc = 0;
     this.decCount = 0;
@@ -486,7 +583,7 @@ export class VoiceEngine {
     this.pitchHist = new Float64Array(HIST_BINS);
     this.histWeight = 1;
     this.histTotal = 0;
-    this.histGrowth = Math.pow(2, 1 / HIST_HALF_LIFE);
+    this.histGrowth = Math.pow(2, PITCH_EVERY / (4 * HIST_HALF_LIFE));
     this.setUserPitch(userPitchHz);
     this.voiced = false;
     this.lastPitchHz = 0;
@@ -502,6 +599,10 @@ export class VoiceEngine {
     this.brightness = 0;
     this.tiltBrightness = 0;
     this.breath = 0;
+    this.breathGate = 0;
+    this.range = 1;
+    this.jitter = 0;
+    this.tremor = 0;
     this.mix = 0;
     this.mixTarget = 0;
     this.mixStep = 1 / (0.03 * sampleRate);
@@ -655,8 +756,8 @@ export class VoiceEngine {
       const j = write + i;
       this.pitchScratch[i] = this.pitchRing[j < n ? j : j - n];
     }
-    const hz = this.pitch.detect(this.pitchScratch);
-    this.voiced = hz >= 60 && hz <= 420;
+    const hz = this.pitch.detect(this.pitchScratch, this.voicedHold > 0 ? this.shiftPitchHz : 0);
+    this.voiced = hz >= PITCH_LOW_HZ && hz <= PITCH_HIGH_HZ;
     if (!this.voiced) {
       if (this.voicedHold > 0) {
         this.voicedHold -= 1;
@@ -673,9 +774,9 @@ export class VoiceEngine {
     const b = recent[1];
     const c = recent[2];
     this.shiftPitchHz = Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
-    this.voicedHold = 5;
+    this.voicedHold = VOICED_HOLD;
     this.lastPitchHz = hz;
-    this.addPitchReading(this.shiftPitchHz, 1);
+    this.addPitchReading(this.shiftPitchHz, PITCH_EVERY / 4);
   }
 
   steer() {
@@ -684,6 +785,13 @@ export class VoiceEngine {
     this.formant += 0.15 * (plan.formant - this.formant);
     this.brightness += 0.15 * (plan.brightness - this.brightness);
     this.breath += 0.15 * (plan.breath - this.breath);
+    this.range += 0.15 * (plan.range - this.range);
+    this.jitter += 0.15 * (plan.jitter - this.jitter);
+    this.tremor += 0.15 * (plan.tremor - this.tremor);
+    if (Math.abs(this.range - 1) < 1e-4) this.range = 1;
+    if (this.jitter < 1e-5) this.jitter = 0;
+    if (this.tremor < 1e-5) this.tremor = 0;
+    this.shifter.shape(this.range, this.sampleRate / this.userPitchHz(), this.jitter, this.tremor);
     if (Math.abs(this.brightness - this.tiltBrightness) > 2e-3) this.updateTilt();
   }
 
@@ -806,7 +914,7 @@ export class VoiceEngine {
     const im = this.im;
     const buffer = this.frameBuffer;
     this.framesSincePitch += 1;
-    if (this.framesSincePitch >= 4) {
+    if (this.framesSincePitch >= PITCH_EVERY) {
       this.framesSincePitch = 0;
       this.analysePitch();
     }
@@ -839,12 +947,14 @@ export class VoiceEngine {
     }
     const cepstrum = this.cepstrum;
     this.fft.inverse(cre, cim, cepstrum);
-    cepstrum.fill(0, this.lifter, n - this.lifter + 1);
+    const lifter = Math.round(clamp((LIFTER_PERIODS * this.sampleRate) / this.userHz, this.lifter, n / 4));
+    cepstrum.fill(0, lifter, n - lifter + 1);
     this.fft.forward(cepstrum, cre, cim);
     const envelope = this.envelope;
     for (let k = 0; k <= half; k += 1) envelope[k] = Math.exp(cre[k]);
     const formant = this.formant;
-    const breath = this.breath;
+    this.breathGate += 0.2 * ((this.voicedHold > 0 ? 1 : 0.3) - this.breathGate);
+    const breath = this.breath * this.breathGate;
     const breathing = breath > 1e-3;
     let meanSource = 0;
     if (breathing) {

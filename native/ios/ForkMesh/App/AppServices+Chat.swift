@@ -151,8 +151,9 @@ struct ChatInstaller: AppServicesInstaller {
             Task { _ = await direct.send(conversation, text: "📞 Missed \(media.rawValue) call") }
         }
         let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
-        calls.setFace(prefs?.string(forKey: DirectCallEngine.faceKey) ?? "")
+        calls.setFace(prefs?.string(forKey: DirectCallEngine.faceKey) ?? "", image: CallFaceStore.load())
         calls.onFaceChanged = { (face: String) in prefs?.set(face, forKey: DirectCallEngine.faceKey) }
+        calls.onFaceImageChanged = { (image: String) in CallFaceStore.save(image) }
         calls.setBackground(
             prefs?.string(forKey: DirectCallEngine.backgroundKey) ?? "", image: CallBackgroundStore.load())
         calls.onBackgroundChanged = { (background: String, image: String) in

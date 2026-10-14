@@ -8,35 +8,54 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-enum CallBackgroundStore {
-    private static var file: URL? {
+struct CallPhotoStore {
+    let name: String
+
+    private var file: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("ForkMesh", isDirectory: true)
-            .appendingPathComponent("call-background.jpg")
+            .appendingPathComponent(name)
     }
 
-    static func load() -> String {
+    func load() -> String {
         guard let file, let data = try? Data(contentsOf: file), !data.isEmpty else { return "" }
         return "data:image/jpeg;base64," + data.base64EncodedString()
     }
 
-    static func save(_ image: String) {
+    func save(_ image: String) {
         guard let file, let comma = image.firstIndex(of: ","),
             let data = Data(base64Encoded: String(image[image.index(after: comma)...]))
         else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: file, options: .atomic)
+        try? data.write(to: file, options: [.atomic, .completeFileProtection])
     }
+}
+
+enum CallBackgroundStore {
+    private static let store = CallPhotoStore(name: "call-background.jpg")
+
+    static func load() -> String { store.load() }
+
+    static func save(_ image: String) { store.save(image) }
+}
+
+enum CallFaceStore {
+    private static let store = CallPhotoStore(name: "call-face.jpg")
+
+    static func load() -> String { store.load() }
+
+    static func save(_ image: String) { store.save(image) }
 }
 
 enum CallBackgroundPhoto {
     static let side = 1920
+    static let faceSide = 1024
 
-    static func dataURL(from data: Data) async -> String? {
-        await Task.detached(priority: .userInitiated) { prepare(data) }.value
+    static func dataURL(from data: Data, side: Int = CallBackgroundPhoto.side) async -> String? {
+        await Task.detached(priority: .userInitiated) { prepare(data, side: side) }.value
     }
 
-    private static func prepare(_ data: Data) -> String? {
+    private static func prepare(_ data: Data, side: Int) -> String? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { return nil }
         let options: CFDictionary = [
@@ -195,6 +214,10 @@ struct DirectCallPreviewScreen: View {
     @State private var hearing = false
     @State private var record: DirectCallRecordPhase = .idle
     @State private var notice = ""
+    @State private var captions = MessagesVideoCaptionsModel()
+    @State private var pickingFace = false
+    @State private var facePhoto: PhotosPickerItem?
+    @State private var faceWorking = false
 
     private static let openTimeout: UInt64 = 30_000_000_000
     private static let limitSeconds = Double(ViewOnceKind.video.maxDurationMs) / 1000
@@ -208,7 +231,8 @@ struct DirectCallPreviewScreen: View {
                 WebCallSurface(webView: surface.webView).ignoresSafeArea()
             }
             if case .review(let url, _, _) = record {
-                MessagesViewOnceReviewVideo(url: url)
+                MessagesViewOnceReviewVideo(url: captions.url(for: url))
+                    .id(captions.url(for: url))
                     .onAppear {
                         if !CallAudioRoute.headphonesConnected {
                             try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
@@ -238,7 +262,23 @@ struct DirectCallPreviewScreen: View {
             DirectCallBackgroundSheet(engine: engine, peer: peer)
                 .presentationDetents([.medium, .large])
         }
+        .photosPicker(isPresented: $pickingFace, selection: $facePhoto, matching: .images)
+        .onChange(of: facePhoto) { (_: PhotosPickerItem?, item: PhotosPickerItem?) in
+            guard let item else { return }
+            facePhoto = nil
+            Task { await useFacePhoto(item) }
+        }
         .task { await open() }
+        .onChange(of: record) { (_: DirectCallRecordPhase, now: DirectCallRecordPhase) in
+            switch now {
+            case .review(let url, _, let mime):
+                captions.attach(url, mime: mime)
+            case .sending:
+                break
+            default:
+                captions.reset()
+            }
+        }
         .onDisappear { discardReview() }
         .accessibilityIdentifier("chat-call-preview")
     }
@@ -350,23 +390,28 @@ struct DirectCallPreviewScreen: View {
             .accessibilityLabel("Stop recording")
             .accessibilityIdentifier("chat-call-record-stop")
         case .review(let url, let millis, let mime):
-            HStack(spacing: FmSpace.x3) {
-                pill("Discard", systemImage: "trash") {
-                    discardReview()
-                    record = .idle
+            VStack(spacing: FmSpace.x3) {
+                MessagesCaptionsBar(model: captions)
+                HStack(spacing: FmSpace.x3) {
+                    pill("Discard", systemImage: "trash") {
+                        discardReview()
+                        record = .idle
+                    }
+                    .accessibilityLabel("Discard recording")
+                    pill("Re-record", systemImage: "arrow.counterclockwise") {
+                        discardReview()
+                        record = .idle
+                        startRecording()
+                    }
+                    .accessibilityLabel("Record again")
+                    pill("Send", systemImage: "arrow.up.circle.fill", fill: MessagesColors.blue) {
+                        send(url, millis, mime)
+                    }
+                    .disabled(captions.working)
+                    .opacity(captions.working ? 0.5 : 1)
+                    .accessibilityLabel("Send video message")
+                    .accessibilityIdentifier("chat-call-record-send")
                 }
-                .accessibilityLabel("Discard recording")
-                pill("Re-record", systemImage: "arrow.counterclockwise") {
-                    discardReview()
-                    record = .idle
-                    startRecording()
-                }
-                .accessibilityLabel("Record again")
-                pill("Send", systemImage: "arrow.up.circle.fill", fill: MessagesColors.blue) {
-                    send(url, millis, mime)
-                }
-                .accessibilityLabel("Send video message")
-                .accessibilityIdentifier("chat-call-record-send")
             }
         case .sending(let progress):
             VStack(spacing: FmSpace.x2) {
@@ -438,13 +483,57 @@ struct DirectCallPreviewScreen: View {
                 ForEach(DirectCallEngine.faces) { (face: DirectCallFace) in
                     Text(face.label).tag(face.id)
                 }
+                if !engine.faceImage.isEmpty {
+                    Text(DirectCallEngine.faceLabel(DirectCallEngine.customFace)).tag(DirectCallEngine.customFace)
+                }
             }
+            Button {
+                pickingFace = true
+            } label: {
+                Label(engine.faceImage.isEmpty ? "Use a photo of a face…" : "Choose another photo…", systemImage: "person.crop.square.badge.camera")
+            }
+            .accessibilityIdentifier("chat-call-face-photo")
         } label: {
-            roundLabel("theatermasks.fill", on: !engine.face.isEmpty)
+            if faceWorking {
+                ProgressView().tint(.white).frame(width: 56, height: 56)
+            } else {
+                roundLabel("theatermasks.fill", on: !engine.face.isEmpty)
+            }
         }
         .accessibilityLabel("Face")
-        .accessibilityValue(DirectCallEngine.faces.first { $0.id == engine.face }?.label ?? "Your own face")
+        .accessibilityValue(DirectCallEngine.faceLabel(engine.face))
         .accessibilityIdentifier("chat-call-face")
+    }
+
+    private func useFacePhoto(_ item: PhotosPickerItem) async {
+        faceWorking = true
+        defer { faceWorking = false }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+            let image = await CallBackgroundPhoto.dataURL(from: data, side: CallBackgroundPhoto.faceSide)
+        else {
+            notice = "That photo could not be opened."
+            return
+        }
+        let previous = engine.face
+        engine.setFace(DirectCallEngine.customFace, image: image)
+        peer?.setFace(DirectCallEngine.customFace, image: image)
+        peer?.setVoice(engine.effectiveVoice)
+        guard let peer else { return }
+        for _ in 0..<120 {
+            let state = await peer.faceState()
+            if state == "ready" {
+                notice = ""
+                FmHaptics.tap()
+                return
+            }
+            if state == "failed" {
+                notice = "No face was found in that photo. Try a clear photo of one face looking at the camera."
+                FmHaptics.failure()
+                chooseFace(previous == DirectCallEngine.customFace ? "" : previous)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
     }
 
     private var voiceMenu: some View {
@@ -480,7 +569,11 @@ struct DirectCallPreviewScreen: View {
 
     private func chooseFace(_ id: String) {
         engine.setFace(id)
-        peer?.setFace(engine.face)
+        if engine.face == DirectCallEngine.customFace {
+            peer?.setFace(engine.face, image: engine.faceImage)
+        } else {
+            peer?.setFace(engine.face)
+        }
         peer?.setVoice(engine.effectiveVoice)
     }
 
@@ -503,7 +596,9 @@ struct DirectCallPreviewScreen: View {
         defer { watchdog.cancel() }
         do {
             let image = engine.background == DirectCallEngine.customBackground ? engine.backgroundImage : ""
-            peer = try await factory.preview(face: engine.face, background: engine.background, image: image)
+            let faceImage = engine.face == DirectCallEngine.customFace ? engine.faceImage : ""
+            peer = try await factory.preview(
+                face: engine.face, background: engine.background, image: image, faceImage: faceImage)
             if CallAudioRoute.headphonesConnected {
                 hearing = await peer?.setMonitor(true) ?? false
             }
@@ -556,6 +651,8 @@ struct DirectCallPreviewScreen: View {
         switch reason {
         case "face_not_ready", "face_unavailable", "background_unavailable":
             return "The face or background could not start here, so nothing was recorded."
+        case "face_not_found":
+            return "No face was found in your photo, so nothing was recorded."
         case "voice_unavailable":
             return "The changed voice could not start here, so nothing was recorded."
         case "recording_unsupported":
@@ -566,7 +663,9 @@ struct DirectCallPreviewScreen: View {
     }
 
     private func send(_ url: URL, _ millis: Int64, _ mime: String) {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+        let chosen = captions.url(for: url)
+        let sentMime = chosen == url ? mime : "video/mp4"
+        guard let data = try? Data(contentsOf: chosen), !data.isEmpty else {
             notice = "The recording could not be read."
             discardReview()
             record = .idle
@@ -575,11 +674,12 @@ struct DirectCallPreviewScreen: View {
         record = .sending(0)
         Task { @MainActor in
             let sent = await hub.sendViewOnce(
-                kind: .video, mime: mime, data: data, durationMs: millis,
+                kind: .video, mime: sentMime, data: data, durationMs: millis,
                 progress: { (value: Double) in record = .sending(value) })
             if sent {
                 FmHaptics.send()
                 MessagesViewOnceFiles.drop(url)
+                captions.reset()
                 record = .idle
                 close()
             } else {
@@ -592,6 +692,7 @@ struct DirectCallPreviewScreen: View {
 
     private func discardReview() {
         if case .review(let url, _, _) = record { MessagesViewOnceFiles.drop(url) }
+        captions.reset()
     }
 
     private func close() {

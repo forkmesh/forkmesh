@@ -9,13 +9,15 @@ enum CallFaceLandmarks {
     private static let queue = DispatchQueue(label: "com.forkmesh.call-face-landmarks", qos: .userInteractive)
     static let maskWidth = 256
 
-    static func detect(dataURL: String, landmarks: Bool = true, mask: Bool = false) async -> JSONValue {
+    static func detect(dataURL: String, landmarks: Bool = true, mask: Bool = false, accurate: Bool = false) async -> JSONValue {
         await withCheckedContinuation { (continuation: CheckedContinuation<JSONValue, Never>) in
-            queue.async { continuation.resume(returning: run(dataURL: dataURL, landmarks: landmarks, mask: mask)) }
+            queue.async {
+                continuation.resume(returning: run(dataURL: dataURL, landmarks: landmarks, mask: mask, accurate: accurate))
+            }
         }
     }
 
-    private static func run(dataURL: String, landmarks wantLandmarks: Bool, mask wantMask: Bool) -> JSONValue {
+    private static func run(dataURL: String, landmarks wantLandmarks: Bool, mask wantMask: Bool, accurate: Bool) -> JSONValue {
         guard let comma = dataURL.firstIndex(of: ","),
             let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
             let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -24,7 +26,7 @@ enum CallFaceLandmarks {
         let faceRequest = VNDetectFaceLandmarksRequest()
         faceRequest.constellation = .constellation76Points
         let personRequest = VNGeneratePersonSegmentationRequest()
-        personRequest.qualityLevel = .balanced
+        personRequest.qualityLevel = accurate ? .accurate : .balanced
         personRequest.outputPixelFormat = kCVPixelFormatType_OneComponent8
         var requests: [VNRequest] = []
         if wantLandmarks { requests.append(faceRequest) }

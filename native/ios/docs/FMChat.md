@@ -722,6 +722,44 @@ whose recording waits for the stage; no recording before preview or after `setup
 files pass `swiftc -parse` only (the app target does not build on Linux); not yet run on a
 device.
 
+### "Your photo" face, blinks and tongue in the preview (2026-10-14)
+
+Asked: "let the user upload their own image that gets used as the face replacement", "fix the
+nose … when we turn left the nose turns right", and "stick out their tongue and blink". The
+page-side work (depth-tested head mesh, blink/gaze/tongue probe, the photo-to-stand-in builder)
+is shared with the web and described in `docs/app/chat-direct-calls.md` ("Realism pass"). On
+iOS:
+
+- **Face menu.** The preview's Face menu lists the five faces, then "Your photo" once a photo
+  is saved, and has a "Use a photo of a face…" / "Choose another photo…" button.
+  - The button opens the system photo picker (`photosPicker`, no photo-library permission
+    needed). The picture is downscaled to 1024 px (`CallBackgroundPhoto.dataURL(from:side:)`)
+    and sent as `face("custom", image)`.
+  - The screen then polls `faceState()` (every 250 ms, at most 30 s).
+  - `failed` says "No face was found in that photo…" and returns to the previous face.
+  - The in-call Face menu offers "Your photo" when one is saved.
+- **Engine.** `DirectCallEngine` (FMChat) has `customFace`, `faceChoices`, `faceImage`,
+  `setFace(_:image:)` and `onFaceImageChanged`.
+  - `custom` is only accepted with a picture.
+  - Peers get `setFace(_:image:)` (a protocol requirement with a default that drops the
+    image), so a new call page receives the photo too.
+  - "Match face" gives no voice for `custom`.
+- **Storage.** The picture is `call-face.jpg` in Application Support. `CallPhotoStore`, shared
+  with the background photo, now writes with complete file protection. The choice is kept as
+  `chat.callFace`.
+- **Vision.** The one-off landmark request for the photo asks for `accurate: true`, so
+  `CallFaceLandmarks` runs person segmentation at `.accurate` for it. Live frames stay
+  `.balanced` for speed. Pupils from the 76-point constellation drive the stand-in's gaze.
+- **Why not ARKit.** ARKit's face tracking (TrueDepth blend shapes such as `tongueOut` and
+  `eyeBlinkLeft`) would need its own `ARSession` on the front camera. That camera is already
+  held by WebKit's `getUserMedia` for the page. Moving capture native would mean feeding every
+  frame into the page or porting the whole compositor. So blinks, gaze and tongue are measured
+  from the camera image, in the page, on all platforms.
+
+Tests: `DirectCallsTests.testYourPhotoFaceNeedsAPictureAndReachesThePeer` (Linux `swift test`,
+passes); `app/tests/test_chat_call_face_realism.py`. The app files pass `swiftc -parse` only;
+not run on a device.
+
 ## View-once video and voice messages
 
 Requested 2026-10-13 (task 1998): record a video or voice message in a direct message and have it
@@ -825,6 +863,79 @@ held receipts and Unsend came later and were checked with the FMChat tests and `
 only. The rest of the app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
 in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
 capture, playback and the screen-capture notices are untested on hardware.
+
+## Captions on video messages (added 2026-10-14)
+
+Asked: "On the video messages have the option to have closed captioning on them so as you talk,
+the words that you say are highlighted on the screen ... Please use the power of the iPhone."
+
+Both review steps (the composer's "Video Message (Plays Once)" sheet and the call preview's
+"Record message") have a **Captions** button (`captions.bubble`) above Discard / Re-record /
+Send. It is off by default and remembered under `chat.videoCaptions`
+(`ViewOnceCaptions.prefKey`) in the app's `KeyValueStore`, the same store as
+`chat.callFace` / `chat.callBackground`. When it is on, captioning starts as soon as the review
+appears (or when the button is turned on), with "Adding captions…" and a progress bar; Send is
+disabled meanwhile (turning Captions off sends the original at once). When the captioned file is
+ready the review player restarts on it, so the sender sees the highlighting before sending.
+Send then uploads the captioned file (`video/mp4`, same duration) instead of the original.
+
+How (`Features/Chat/Messages/MessagesVideoCaptions.swift`):
+
+- **On-device Speech only.** `SFSpeechURLRecognitionRequest` on the recorded file with
+  `requiresOnDeviceRecognition`, `addsPunctuation`, `taskHint = .dictation` and no partial
+  results; word timings come from the final `SFTranscriptionSegment`s (substring, timestamp,
+  duration). The recogniser is the dictation language chosen in Settings, else the phone's
+  locale, else en-US (only when the phone's language has no recogniser at all). A view-once
+  message is private, so the audio never goes to Apple's servers: if the language has no
+  on-device model the button says so and the video stays as recorded.
+- **Burned in, not a side track.** The words are drawn into the video frames, so the web and
+  Android viewers show them with no protocol change and no new frame fields; the receiver
+  cannot turn them off.
+- **Karaoke highlighting.** `ViewOnceCaptions.lines` (ForkMeshCore) groups words into lines of at
+  most 6 words / 28 characters, breaking on pauses over 0.6 s, after `. ! ? …`, and after a
+  comma once a line has 3 words. A line shows from its first word until the next line starts or
+  1.2 s after its last word. `ViewOnceCaptions.cue(at:)` gives the line and the word being
+  spoken: earlier words are white, the current word is yellow, 8 % larger with a soft glow, and
+  later words are white at 55 %; 0.35 s after the line's last word every word is white.
+- **Per-frame CIFilter compositing.** `AVMutableVideoComposition.videoComposition(with:
+  applyingCIFiltersWithHandler:)` calls `MessagesCaptionPainter.apply` for each frame. The
+  composition applies the track's `preferredTransform`, so portrait recordings stay upright and
+  the layout uses the frame's real size. `CaptionLayout` sizes the bold rounded system font from
+  the video (4.2 % of the shorter of the height and 1.4 x the width, at least 12 px), puts the
+  translucent dark pill 8 % of the height above the bottom edge and shrinks the font when a line
+  is wider than 90 % of the frame. Each (line, word) overlay is drawn once with Core Text into a
+  bitmap and cached as a `CIImage`; every other frame only composites it.
+- **Size-safe export.** A view-once video must stay under 12 MiB, and a re-encode with an
+  `AVAssetExportSession` preset has no bitrate control (HighestQuality would push a 60 s
+  recording past the limit). The file is therefore written with `AVAssetReaderVideoCompositionOutput`
+  and `AVAssetWriter`: H.264 at `ViewOnceCaptions.videoBitRate` (1.2 x the source rate, at least
+  600 kbit/s, capped so video plus audio fill at most 85 % of the limit), AAC audio re-encoded
+  at 64 kbit/s per channel, `shouldOptimizeForNetworkUse`. A result still over the limit is
+  dropped with a message.
+- **Files.** The captioned file is a fresh protected temporary file (`MessagesViewOnceFiles`).
+  It is kept while the review lasts (turning Captions off and on again reuses it) and dropped on
+  send, discard, re-record or close; a run that is cancelled or superseded drops its output.
+
+Errors keep the original sendable and show one line under the button: Speech Recognition not
+allowed, no on-device recognition for the language, no sound track, "No words heard, so there are
+no captions.", too large, or failed. A call-preview recording that came out as WebM (browsers
+without MP4 `MediaRecorder`) cannot be read by AVFoundation and says captions need MP4.
+
+`Config/ForkMesh-Info.plist`: `NSSpeechRecognitionUsageDescription` now mentions captions. The
+Speech framework links automatically from `import Speech` (as for `PromptDictation`), and the
+app target uses synchronized folders, so the new file needed no project change.
+
+Limits: captions are only as good as on-device recognition for that language; there is no way
+to edit a wrong word before sending; one line at a time, bottom centre, so a face filmed very low
+in the frame can be covered; the receiver sees them as part of the picture (not selectable, not
+read by VoiceOver). Captioning a 60 s message takes a few seconds on a recent iPhone (estimate,
+not measured).
+
+Tests: `Tests/FMChatTests/ViewOnceCaptionsTests.swift` (line grouping by words, characters,
+pauses, sentence and clause ends; cleaning and punctuation joining; line timing; the cue for a
+time; word states; layout sizes and shrinking; bitrate under the size limit; MP4 only; failure
+text) pass on Linux with `swift test`. The app files pass `swiftc -parse` only; the Speech,
+AVFoundation and Core Image code has not been compiled against the iOS SDK or run on a device.
 
 ## Link previews (branch 1996)
 

@@ -42,6 +42,7 @@ struct AgentRunScreen: View {
     @State private var pullOpening = false
     @State private var openedPull = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.shellStackTab) private var stackTab
     @Environment(\.fmPalette) private var fm
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -394,6 +395,14 @@ struct AgentRunScreen: View {
         .onChange(of: live.updatedAtMs) { (_: Int, _: Int) in
             if isRunnerRun { Task { await load() } }
         }
+        .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
+            guard phase == .active else { return }
+            if row.isDesktop {
+                Task { await refollow() }
+            } else {
+                Task { await load() }
+            }
+        }
         .onDisappear {
             if let tapId { center.hub.removeEventTap(tapId) }
             stream?.stop()
@@ -661,6 +670,11 @@ struct AgentRunScreen: View {
         }
     }
 
+    private func refollow() async {
+        guard let stream else { return await follow() }
+        if !(await stream.refollow()) { await load() }
+    }
+
     private func load() async {
         if streaming { return }
         do {
@@ -720,7 +734,7 @@ struct AgentRunScreen: View {
             try await center.prompt(live, text, images: images, model: model, mode: mode, provider: provider)
         }
         notice = error.isEmpty ? center.promptNotice : ""
-        if error.isEmpty, row.isDesktop, !streaming { await follow() }
+        if error.isEmpty, row.isDesktop { await refollow() }
         if !error.isEmpty {
             pending.remove(echo)
             if prompt.isEmpty { prompt = text }
