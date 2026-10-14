@@ -923,9 +923,12 @@ FIREWALL_BEFORE_CADDY = (
     "systemctl reload-or-restart nftables.service && " + RETIRE_UFW + "; fi")
 
 
-def start_script(manifest):
-    units = [u for u in manifest["units"] if u != "forkmesh-app.service"
-             and u != "forkmesh-mirror-node.service"]
+IDS_UNIT = "fmnext-ids.service"
+
+
+def start_script(manifest, start_ids=True):
+    units = [u for u in manifest["units"] if u not in (
+        "forkmesh-app.service", "forkmesh-mirror-node.service", IDS_UNIT)]
     lines = ["systemctl enable --now %s" % " ".join(units)]
     # Vultr's Debian image ships ufw enabled (only 22/tcp open). Our nftables
     # ruleset replaces it; drop ufw only after that ruleset is loaded, so the
@@ -950,11 +953,12 @@ def start_script(manifest):
         lines.append("systemctl try-restart fmnext-certsync.service")
     if manifest.get("turn"):
         lines.append("systemctl try-restart fmnext-turn.service")
-    if manifest.get("ids"):
-        # Last, so everything else is up: new IDS code and config take
-        # effect now (its state is on disk); a failure here is loud.
-        lines.append("systemctl restart fmnext-ids.service")
+    ids = bool(manifest.get("ids")) and start_ids
+    if ids:
+        lines.append("systemctl try-restart %s" % IDS_UNIT)
     lines.append(logread_authorized_script(bool(manifest.get("logread"))))
+    if ids:
+        lines.append("systemctl enable --now %s" % IDS_UNIT)
     return "\n".join(lines)
 
 
@@ -1005,9 +1009,10 @@ def logread_script(manifest, archive):
         mode = manifest["files"][path].replace("0o", "0")
         lines.append("install -D -m %s \"$stage\"%s %s" % (mode, shq(path),
                                                            shq(path)))
-    lines += ["systemctl restart fmnext-ids.service",
+    lines += ["systemctl try-restart %s" % IDS_UNIT,
               "sleep 3",
-              "systemctl is-active -q fmnext-ids.service"]
+              "systemctl is-active -q %s || { echo '%s is not running: run "
+              "the start step first' >&2; exit 1; }" % (IDS_UNIT, IDS_UNIT)]
     if is_core:
         lines.append(
             "if ! systemctl reload caddy; then "

@@ -268,7 +268,7 @@ def test_access_log_keeps_ip_and_user_agent_and_drops_headers(tmp_path):
 def test_start_script_authorizes_the_reader_only_after_the_ids_restart():
     script = next_fleet.start_script({"role": "core", "units": [], "ids": True,
                                       "logread": True})
-    assert script.index("systemctl restart fmnext-ids.service") < \
+    assert script.index("systemctl try-restart fmnext-ids.service") < \
         script.index(render.LOGREAD_AUTHORIZED_KEY)
     off = next_fleet.start_script({"role": "runner", "units": [], "ids": True})
     assert render.LOGREAD_AUTHORIZED_KEY not in off
@@ -305,7 +305,7 @@ def test_logread_script_restarts_the_ids_before_authorizing(tmp_path):
     files, manifest = render.render_core(fleet(tmp_path), "n1")
     script = next_fleet.logread_script(manifest, "/tmp/x.tar.gz")
     order = [script.index(s) for s in (
-        "/opt/forkmesh-next/bin/fmnext-logread", "systemctl restart fmnext-ids",
+        "/opt/forkmesh-next/bin/fmnext-logread", "systemctl try-restart fmnext-ids",
         "systemctl reload caddy", "cat " + render.LOGREAD_AUTHORIZED_KEY)]
     assert order == sorted(order)
     assert "Caddyfile.previous" in script

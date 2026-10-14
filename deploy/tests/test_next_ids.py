@@ -127,7 +127,7 @@ def test_install_tells_the_ids_before_each_step(tmp_path, sandbox,
     scripts = [s for _, s, _ in ssh.runs]
     assert "fmnext-ids expect" in scripts[0]
     assert "systemctl enable --now" in scripts[1]
-    assert "systemctl restart fmnext-ids.service" in scripts[1]
+    assert "systemctl try-restart fmnext-ids.service" in scripts[1]
     assert sent[0][2]["rescan"] == sorted(next_ids.WANTS + next_ids.AUTHORIZED_KEYS)
     assert sent[0][2]["allow"] == ["listeners", "modules", "processes"]
 
