@@ -250,6 +250,10 @@ input {
   font: inherit;
 }
 
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--foreground);
+}
+
 svg {
   display: block;
   fill: none;

@@ -96,7 +96,9 @@ struct AppHomeView: View {
 
     var body: some View {
         Group {
-            if auth.hasAppAccess || settings?.project.hasInstance == false {
+            if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
+                StarterPackView(settings: settings)
+            } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
                     .relaySwitchScope()
                     .overlay { DevPerformanceOverlay() }

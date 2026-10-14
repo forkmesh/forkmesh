@@ -8199,6 +8199,7 @@
     calendar_reminder: true,
     calendar_rsvp: true,
     channel_unread: true,
+    direct_unread: true,
   };
 
   function normalizedNotificationPreferences(session = state.session) {
@@ -8250,6 +8251,7 @@
       { kind: "subscribed", label: "Activity on things you follow", email: true },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
+      { kind: "direct_unread", label: "Unread direct messages", email: true },
       { kind: "calendar_invitation", label: "Calendar invitations", email: true },
       { kind: "calendar_reminder", label: "Calendar reminders", email: true },
       { kind: "calendar_rsvp", label: "Calendar replies", email: true },
@@ -34630,6 +34632,7 @@
       calendar_rsvp: "calendar-check",
       chat_webhook: "message-square",
       channel_unread: "message-square",
+      direct_unread: "message-square",
       operational_alert: "triangle-alert",
       security_alert: "shield-alert",
       device_added: "smartphone",
@@ -41430,7 +41433,7 @@
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
     "agents": "/dashboard-page-agents.js?v=d6ad7cc11759",
-    "apps": "/dashboard-page-apps.js?v=9860ce47c4bd",
+    "apps": "/dashboard-page-apps.js?v=eb3cb2e0f47a",
     "bounties": "/dashboard-page-bounties.js?v=9f064fa2d410",
     "calendar": "/dashboard-page-calendar.js?v=4e116dd6970c",
     "challenges": "/dashboard-page-challenges.js?v=7a3220dda9d8",

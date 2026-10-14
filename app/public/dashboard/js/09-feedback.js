@@ -5,7 +5,7 @@
     const status = $("[data-feedback-status]");
     if (!status) return;
     status.textContent = text || "";
-    status.className = `min-h-4 text-xs ${tone === "bad" ? "text-red-500" : tone === "good" ? "text-emerald-500" : "text-muted-foreground"}`;
+    status.className = `min-h-4 text-xs ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
   }
 
   function setFeedbackModalOpen(open) {

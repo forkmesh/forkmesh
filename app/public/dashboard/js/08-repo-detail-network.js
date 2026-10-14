@@ -139,7 +139,7 @@
             <p class="text-[11px] leading-5 text-muted-foreground">Saved to the relay now and written into the repository's committed <span class="font-mono">.forkmesh/info.json</span> the next time the owner's node syncs.</p>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span data-repo-settings-status class="text-[11px] text-muted-foreground"></span>
-              <button type="submit" class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save settings</button>
+              <button type="submit" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90">Save settings</button>
             </div>
           </form>
         </div>
@@ -173,7 +173,7 @@
               </fieldset>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <span data-repo-webhook-status class="text-[11px] text-muted-foreground"></span>
-                <button type="submit" class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Add webhook</button>
+                <button type="submit" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90">Add webhook</button>
               </div>
             </form>
             <div data-repo-webhook-secret hidden class="rounded-md border border-border bg-secondary/40 p-3 text-[11px] leading-5 text-foreground">
@@ -297,13 +297,13 @@
 	                  </section>
 	                </div>
 	              </div>
-	              <div data-repo-file-finder class="fixed inset-0 z-50 hidden items-start justify-center bg-background/80 p-4 pt-20 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Go to file">
+	              <div data-repo-file-finder class="fixed inset-0 z-50 hidden items-start justify-center bg-black/50 p-4 pt-20" role="dialog" aria-modal="true" aria-label="Go to file">
 	                <button type="button" data-repo-file-finder-backdrop class="absolute inset-0 cursor-default" aria-label="Close file finder"></button>
-	                <div class="relative z-10 grid w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+	                <div class="fm-popover relative z-10 grid w-full max-w-2xl overflow-hidden">
 	                  <div class="flex items-center gap-3 border-b border-border px-4 py-3">
 	                    <i data-lucide="search" class="h-4 w-4 text-muted-foreground"></i>
 	                    <input data-repo-file-finder-input type="search" autocomplete="off" spellcheck="false" placeholder="Search files in this live mirror" class="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground" />
-	                    <button type="button" data-repo-file-finder-close class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Esc</button>
+	                    <button type="button" data-repo-file-finder-close class="fm-btn fm-btn-sm">Esc</button>
 	                  </div>
 	                  <div data-repo-file-finder-status class="border-b border-border px-4 py-2 text-xs text-muted-foreground">Type to search files.</div>
 	                  <div data-repo-file-finder-results class="max-h-[26rem] overflow-auto p-2"></div>
@@ -353,7 +353,7 @@
                   </span>
                   <span>Watch</span>
                 </button>
-                <div data-repo-watch-menu class="absolute left-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-3 text-left shadow-xl">
+                <div data-repo-watch-menu class="fm-popover absolute left-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Watch on the fediverse</p>
                   <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Follow this repository from Mastodon (or any ActivityPub app) to get new issues, pull requests, discussions and releases in your feed.</p>
                   <div class="mt-2 flex items-center gap-2">
@@ -361,7 +361,7 @@
                     <button type="button" data-dashboard-copy="${escapeHtml(fediHandle)}" aria-label="Copy fediverse handle" class="copy-button inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>
                   </div>
                   <p class="mt-2 text-[11px] text-muted-foreground"><span data-repo-watch-followers class="font-mono text-foreground">–</span> fediverse watchers</p>
-                  <p data-repo-watch-disabled class="mt-1 hidden text-[11px] text-yellow-500">Federation is turned off for this repository.</p>
+                  <p data-repo-watch-disabled class="mt-1 hidden text-[11px] text-attention">Federation is turned off for this repository.</p>
                   <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
                   <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
                 </div>
@@ -374,10 +374,10 @@
                   </span>
                   <span>Fork</span>
                 </button>
-                <div data-repo-fork-menu class="absolute left-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-3 text-left shadow-xl">
+                <div data-repo-fork-menu class="fm-popover absolute left-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
                   <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="mt-2 inline-flex h-8 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"><i data-lucide="git-fork" class="h-3.5 w-3.5"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
                   <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
                   <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
                     <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
@@ -386,7 +386,7 @@
                     <form data-repo-remote-fork-form hidden class="mt-2 grid gap-1.5">
                       <div class="flex gap-1.5">
                         <input data-repo-remote-fork-url type="url" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://forkmesh.com/owner/repository" aria-label="Address of the repository on another instance" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-accent" />
-                        <button type="submit" class="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Save</button>
+                        <button type="submit" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="plus"></i>Save</button>
                       </div>
                       <p data-repo-remote-fork-status aria-live="polite" class="text-[10px] leading-4 text-muted-foreground"></p>
                     </form>
@@ -429,7 +429,7 @@
                 <span data-repo-about-status class="text-[11px] text-muted-foreground"></span>
                 <span class="inline-flex items-center gap-2">
                   <button type="button" data-repo-about-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground">Cancel</button>
-                  <button type="submit" class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
+                  <button type="submit" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90">Save</button>
                 </span>
               </div>
             </form>
@@ -589,13 +589,13 @@
       `<button type="button" data-dashboard-copy="${escapeHtml(value)}" aria-label="${label}" class="copy-button inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`;
     return `
       <div data-repo-code-wrap class="relative">
-        <button type="button" data-repo-code-button aria-haspopup="true" aria-expanded="false" class="inline-flex ${btnHeight} items-center justify-center gap-2 rounded-md border border-primary/40 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+        <button type="button" data-repo-code-button aria-haspopup="true" aria-expanded="false" class="inline-flex ${btnHeight} items-center justify-center gap-2 rounded-md border border-foreground/10 bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90 transition-colors">
           <i data-lucide="code" class="h-3.5 w-3.5"></i><span>Code</span><i data-lucide="chevron-down" class="h-3 w-3"></i>
         </button>
-        <div data-repo-code-menu class="absolute right-0 z-40 mt-1 hidden w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-3 text-left shadow-xl">
+        <div data-repo-code-menu class="fm-popover absolute right-0 z-40 mt-1 hidden w-96 max-w-[calc(100vw-2rem)] p-3 text-left">
           <div class="flex items-center justify-between gap-2">
             <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="terminal" class="h-3.5 w-3.5 text-muted-foreground"></i>Clone</span>
-            <span class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">HTTPS</span>
+            <span class="fm-label">HTTPS</span>
           </div>
           <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Clone this repository from its live ForkMesh mirror over HTTPS.</p>
           <div class="mt-2 flex items-center gap-2">
@@ -613,7 +613,7 @@
             <div class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-2">
                 <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>SSH clone and push</span>
-                <span class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">SSH</span>
+                <span class="fm-label">SSH</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Register your public key in Settings. Your private key stays on your device; write permission is checked on every push.</p>
               <div class="mt-2 flex items-center gap-2">
@@ -640,7 +640,7 @@
     if (menu) return menu;
     menu = document.createElement("div");
     menu.dataset.repoTreeContextMenu = "1";
-    menu.className = "fixed z-50 hidden w-56 overflow-hidden rounded-md border border-border bg-background py-1 shadow-lg";
+    menu.className = "fm-popover fm-menu fixed z-50 hidden w-56";
     menu.setAttribute("role", "menu");
     document.body.appendChild(menu);
     return menu;
@@ -664,14 +664,14 @@
 
   function renderRepoTreeContextMenuItems(kind) {
     const downloadItem = kind === "blob"
-      ? `<button type="button" data-repo-tree-context-action="download" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Download</span></button>`
+      ? `<button type="button" data-repo-tree-context-action="download" role="menuitem" class="fm-menu-item"><i data-lucide="download" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Download</span></button>`
       : "";
     return `
-      <button type="button" data-repo-tree-context-action="open" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="folder-open" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Open</span></button>
-      <button type="button" data-repo-tree-context-action="open-in-tab" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="external-link" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Open in new tab</span></button>
-      <button type="button" data-repo-tree-context-action="copy-path" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="copy" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy Path</span></button>
-      <button type="button" data-repo-tree-context-action="copy-relative-path" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="link-2" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy Relative Path</span></button>
-      <button type="button" data-repo-tree-context-action="git-ignore" role="menuitem" class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px] text-foreground transition-colors hover:bg-secondary/80 hover:text-foreground"><i data-lucide="circle-minus" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy as .gitignore entry</span></button>
+      <button type="button" data-repo-tree-context-action="open" role="menuitem" class="fm-menu-item"><i data-lucide="folder-open" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Open</span></button>
+      <button type="button" data-repo-tree-context-action="open-in-tab" role="menuitem" class="fm-menu-item"><i data-lucide="external-link" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Open in new tab</span></button>
+      <button type="button" data-repo-tree-context-action="copy-path" role="menuitem" class="fm-menu-item"><i data-lucide="copy" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy Path</span></button>
+      <button type="button" data-repo-tree-context-action="copy-relative-path" role="menuitem" class="fm-menu-item"><i data-lucide="link-2" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy Relative Path</span></button>
+      <button type="button" data-repo-tree-context-action="git-ignore" role="menuitem" class="fm-menu-item"><i data-lucide="circle-minus" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Copy as .gitignore entry</span></button>
       ${downloadItem}
     `;
   }
@@ -684,7 +684,8 @@
     menu.dataset.repoTreeContextPath = repoTreeContextMenuState.path;
     menu.dataset.repoTreeContextKind = repoTreeContextMenuState.kind;
     menu.innerHTML = `
-      <div class="px-2 py-1.5 border-b border-border text-[10px] font-medium text-muted-foreground">${escapeHtml(formatRepoGitIgnoreLine(path, kind) || ".")}</div>
+      <div class="fm-menu-heading truncate font-mono">${escapeHtml(formatRepoGitIgnoreLine(path, kind) || ".")}</div>
+      <div class="fm-menu-divider"></div>
       ${renderRepoTreeContextMenuItems(kind)}
     `;
     window.lucide?.createIcons();
@@ -1088,6 +1089,7 @@
       calendar_rsvp: "calendar-check",
       chat_webhook: "message-square",
       channel_unread: "message-square",
+      direct_unread: "message-square",
       operational_alert: "triangle-alert",
       security_alert: "shield-alert",
       device_added: "smartphone",
@@ -1131,7 +1133,7 @@
     list.innerHTML = items.map((item) => `
       <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full px-3 py-2 text-left hover:bg-secondary transition-colors ${item.readAt ? "opacity-70" : ""}">
         <div class="flex items-start gap-2">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 ${item.readAt ? "text-muted-foreground" : "text-primary"}"></i>
+          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
             <p class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title || "Ping")}</p>
             <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || item.repo || "ForkMesh update")}</p>
@@ -1237,7 +1239,7 @@
     const enc = escapeHtml(id);
     return `
       <div data-mirror-request-actions="${enc}" class="mt-5 flex items-center gap-2">
-        <button type="button" data-mirror-request-accept="${enc}" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Accept &amp; mirror</button>
+        <button type="button" data-mirror-request-accept="${enc}" class="inline-flex h-9 items-center justify-center rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors">Accept &amp; mirror</button>
         <button type="button" data-mirror-request-reject="${enc}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Decline</button>
         <span data-mirror-request-hint class="text-[11px] text-muted-foreground"></span>
       </div>
@@ -1639,10 +1641,13 @@
       const count = $("[data-repo-count]");
       if (count) count.textContent = "Unavailable";
       if (list) {
-        list.innerHTML = `<div role="status" class="grid justify-items-start gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-5">
-          <span><strong class="text-foreground">Repositories are unavailable.</strong> Check your connection or mirror, then try again.</span>
-          <button data-repositories-retry type="button" class="rounded-md border border-border bg-secondary px-3 py-2 font-semibold text-foreground hover:bg-background">Retry repository list</button>
+        list.innerHTML = `<div role="status" class="fm-blankslate">
+          <i data-lucide="cloud-off"></i>
+          <span class="fm-blankslate-title">Repositories are unavailable.</span>
+          <span class="fm-blankslate-desc">Check your connection or mirror, then try again.</span>
+          <button data-repositories-retry type="button" class="fm-btn fm-btn-sm mt-3">Retry repository list</button>
         </div>`;
+        window.lucide?.createIcons();
       }
       renderSidebarRepositories(state.session);
       renderHomeFeed();
@@ -4049,7 +4054,7 @@
         && event.target.form) {
       const submitters = [...event.target.form.querySelectorAll(
         "button[type='submit'], input[type='submit']")];
-      const submitter = submitters.find((button) => button.classList.contains("bg-primary"))
+      const submitter = submitters.find((button) => button.matches(".bg-cta, .fm-btn-cta"))
         || (submitters.length === 1 ? submitters[0] : null);
       if (submitter) {
         event.preventDefault();

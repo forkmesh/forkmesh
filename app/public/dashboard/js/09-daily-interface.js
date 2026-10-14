@@ -76,17 +76,17 @@
     palette.setAttribute("aria-describedby", "commandPaletteHelp");
     palette.innerHTML = `
       <button data-command-palette-backdrop type="button" tabindex="-1" class="absolute inset-0 cursor-default" aria-label="Close command palette"></button>
-      <section class="relative w-full max-w-xl overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl">
-        <div class="border-b border-border px-4 py-3">
+      <section class="fm-popover relative w-full max-w-xl overflow-hidden">
+        <div class="border-b border-border px-3 py-3">
           <div class="flex items-center justify-between gap-3">
             <h2 id="commandPaletteTitle" class="text-sm font-semibold">Command palette</h2>
-            <kbd class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Esc</kbd>
+            <kbd class="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">Esc</kbd>
           </div>
           <p id="commandPaletteHelp" class="mt-1 text-xs text-muted-foreground">Type to filter. Use Up and Down to choose, then Enter.</p>
           <label for="commandPaletteInput" class="sr-only">Filter commands</label>
-          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" class="mt-3 h-11 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none" placeholder="Search commands" />
+          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" class="mt-3 h-control w-full rounded-control border border-border bg-background px-3 text-control text-foreground outline-none focus:border-primary focus:shadow-[inset_0_0_0_1px_rgb(var(--dashboard-primary-rgb))]" placeholder="Search commands" />
         </div>
-        <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="max-h-[55vh] overflow-y-auto p-2"></div>
+        <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="fm-menu max-h-[55vh] overflow-y-auto"></div>
       </section>`;
     document.body.appendChild(palette);
 
@@ -115,13 +115,14 @@
     const input = document.querySelector("[data-command-palette-input]");
     if (!results || !input) return;
     if (!commandPaletteState.commands.length) {
-      results.innerHTML = '<p role="status" class="px-3 py-6 text-center text-sm text-muted-foreground">No commands match. Try repositories, issues, review, or theme.</p>';
+      results.innerHTML = '<div role="status" class="fm-blankslate"><i data-lucide="search" aria-hidden="true"></i><p class="fm-blankslate-title">No commands match</p><p class="fm-blankslate-desc">Try repositories, issues, review, or theme.</p></div>';
+      window.lucide?.createIcons();
       input.removeAttribute("aria-activedescendant");
       return;
     }
     results.innerHTML = commandPaletteState.commands.map((command, index) => {
       const selected = index === commandPaletteState.selectedIndex;
-      return `<button id="commandPaletteResult${index}" data-command-palette-result="${index}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm text-muted-foreground"><span>${escapeHtml(command.label)}</span><span class="text-xs text-muted-foreground">${escapeHtml(command.hint)}</span></button>`;
+      return `<button id="commandPaletteResult${index}" data-command-palette-result="${index}" type="button" role="option" aria-selected="${selected ? "true" : "false"}" class="flex h-menu-row w-full items-center justify-between gap-3 rounded-control px-2 text-left text-control text-foreground hover:bg-foreground/[.08]"><span class="truncate">${escapeHtml(command.label)}</span><span class="shrink-0 text-xs text-muted-foreground">${escapeHtml(command.hint)}</span></button>`;
     }).join("");
     input.setAttribute("aria-activedescendant", `commandPaletteResult${commandPaletteState.selectedIndex}`);
   }

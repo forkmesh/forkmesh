@@ -25,17 +25,18 @@
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                   <label data-stretch-requires-install class="hidden items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><input data-stretch-voice type="checkbox" class="h-3.5 w-3.5"> Voice</label>
-                  <button data-stretch-refresh data-stretch-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="refresh-cw" class="mr-1 inline h-3.5 w-3.5"></i>Refresh</button>
-                  <button data-stretch-manage data-stretch-requires-install type="button" class="hidden rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-foreground"><i data-lucide="settings" class="mr-1 inline h-3.5 w-3.5"></i>Plugin data</button>
+                  <button data-stretch-refresh data-stretch-requires-install type="button" class="fm-btn hidden"><i data-lucide="refresh-cw"></i>Refresh</button>
+                  <button data-stretch-manage data-stretch-requires-install type="button" class="fm-btn hidden"><i data-lucide="settings"></i>Plugin data</button>
                 </div>
               </div>
-              <div data-stretch-error class="mb-3 hidden rounded-md border border-destructive bg-secondary px-3 py-2 text-sm text-destructive"></div>
-              <div data-stretch-notice class="mb-3 hidden rounded-md border border-primary bg-secondary px-3 py-2 text-sm text-foreground"></div>
+              <div data-stretch-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-stretch-message-text class="fm-flash-body"></p></div>
+              <div data-stretch-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-stretch-message-text class="fm-flash-body"></p></div>
 
-              <section data-stretch-install-panel class="hidden rounded-lg border border-border bg-card p-8 text-center">
-                <h2 class="text-base font-semibold text-foreground">Install Stretch Break</h2>
-                <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">Take a few minutes away from the screen: circle your hips, swing your arms so your torso rotates, stretch to the left and the right, and roll your neck. There is also a lymph tapping routine down your arms, around your eyes and over your head. A voice guides you and an example person moves with you. Sessions are private to your account, follow you to the desktop and iPhone apps, and on iPhone are saved to Apple Health. Everything is encrypted at rest with a key minted for your account alone.</p>
-                <button data-stretch-install type="button" class="mt-4 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">Install Stretch Break</button>
+              <section data-stretch-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="person-standing"></i>
+                <h2 class="fm-blankslate-title">Install Stretch Break</h2>
+                <p class="fm-blankslate-desc">Take a few minutes away from the screen: circle your hips, swing your arms so your torso rotates, stretch to the left and the right, and roll your neck. There is also a lymph tapping routine down your arms, around your eyes and over your head. A voice guides you and an example person moves with you. Sessions are private to your account, follow you to the desktop and iPhone apps, and on iPhone are saved to Apple Health. Everything is encrypted at rest with a key minted for your account alone.</p>
+                <button data-stretch-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Install Stretch Break</button>
               </section>
 
               <div data-stretch-app class="hidden grid gap-4">
@@ -56,7 +57,7 @@
                   <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
                     <div class="stretch-stage" data-stretch-stage></div>
                     <div class="flex min-w-0 flex-col gap-3">
-                      <p data-stretch-position class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"></p>
+                      <p data-stretch-position class="text-xs font-medium text-muted-foreground"></p>
                       <h2 data-stretch-title class="text-2xl font-semibold text-foreground"></h2>
                       <p data-stretch-say class="text-base text-foreground"></p>
                       <div class="flex items-end gap-3"><span data-stretch-count class="stretch-count"></span><span class="pb-2 text-sm text-muted-foreground">seconds</span></div>
@@ -65,10 +66,10 @@
                       <div class="stretch-bar" aria-hidden="true"><div data-stretch-total-bar style="width:0%"></div></div>
                       <p data-stretch-total class="text-xs text-muted-foreground"></p>
                       <div class="mt-2 flex flex-wrap gap-2">
-                        <button data-stretch-back type="button" class="rounded-md border border-border px-3 py-2 text-sm text-foreground"><i data-lucide="skip-back" class="mr-1 inline h-4 w-4"></i>Back</button>
-                        <button data-stretch-pause type="button" class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Pause</button>
-                        <button data-stretch-skip type="button" class="rounded-md border border-border px-3 py-2 text-sm text-foreground">Skip<i data-lucide="skip-forward" class="ml-1 inline h-4 w-4"></i></button>
-                        <button data-stretch-stop type="button" class="rounded-md border border-destructive px-3 py-2 text-sm text-destructive">Stop</button>
+                        <button data-stretch-back type="button" class="fm-btn"><i data-lucide="skip-back"></i>Back</button>
+                        <button data-stretch-pause type="button" class="fm-btn">Pause</button>
+                        <button data-stretch-skip type="button" class="fm-btn">Skip<i data-lucide="skip-forward"></i></button>
+                        <button data-stretch-stop type="button" class="fm-btn fm-btn-danger">Stop</button>
                       </div>
                     </div>
                   </div>
@@ -88,9 +89,11 @@
               </div>
             </div>
 
-            <dialog data-stretch-manage-dialog class="w-full max-w-lg rounded-lg border border-border bg-card p-5 text-foreground shadow-2xl backdrop:bg-background/80">
-              <h2 class="text-base font-semibold">Stretch Break data</h2>
-              <p class="mt-2 text-sm text-muted-foreground">Export your sessions as JSON, or uninstall Stretch Break from your account. Uninstalling downloads your export first, then deletes your sessions on web, desktop, and mobile. Apple Health keeps its own records.</p>
-              <div class="mt-4 flex flex-wrap justify-end gap-2"><button data-stretch-export type="button" class="rounded-md border border-border px-3 py-2 text-xs">Export my data</button><button data-stretch-uninstall type="button" class="rounded-md border border-destructive px-3 py-2 text-xs text-destructive">Uninstall…</button><button data-stretch-dialog-close type="button" class="rounded-md border border-border px-3 py-2 text-xs">Close</button></div>
+            <dialog data-stretch-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Stretch Break data</h2></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your sessions as JSON, or uninstall Stretch Break from your account. Uninstalling downloads your export first, then deletes your sessions on web, desktop, and mobile. Apple Health keeps its own records.</p></div>
+                <div class="fm-dialog-footer"><button data-stretch-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-stretch-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-stretch-export type="button" class="fm-btn fm-btn-sm">Export my data</button></div>
+              </div>
             </dialog>
           </section>

@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-SCANNED = ("desktop", "app", "world", "tools", "deploy", "www/public", "marketplace",
+SCANNED = ("desktop", "desktop_go_new", "app", "world", "tools", "deploy", "www/public", "marketplace",
            "native", "server", "conformance")
 
 SOURCE_SUFFIXES = {".py", ".sh", ".bash", ".cpp", ".cc", ".h", ".hpp", ".go", ".swift", ".kt",
@@ -22,6 +22,8 @@ HELPERS = {
     "tools/forkmesh-safe-rm.sh",
     "desktop/src/SafeDelete.h",
     "server/safedelete.go",
+    "desktop_go_new/internal/safedelete/safedelete.go",
+    "desktop_go_new/internal/safedelete/worktree.go",
 }
 
 
@@ -213,6 +215,15 @@ ALLOW: list[tuple[str, str, str]] = [
     ('desktop/src/UpstreamCheckoutSync.cpp',
      'QStringLiteral\\("-D"\\)',
      'prunes merged or pull branches after saving their tips to a trash ref'),
+    ('desktop_go_new/internal/pulls/ledger.go',
+     '"checkout", "-f", "HEAD", "--"',
+     'restores only stale .forkmesh/pulls ledger paths from HEAD'),
+    ('desktop_go_new/internal/pulls/ledger.go',
+     '"rm", "-r", "--ignore-unmatch", "--"',
+     'git rm of pull folders in the ledger, committed and recoverable'),
+    ('desktop_go_new/internal/pulls/sessions.go',
+     '"branch", "-D", sess\\.AmBranch',
+     'drops the pull branch an aborted merge created, only after its tip is saved to a trash ref'),
     ('marketplace/packages/backups/content/desktop/BackupsFeature.cpp',
      'QDir\\(chosen\\.path\\)\\.removeRecursively\\(\\)',
      'moved-aside data folder validated by BackupShelf canDelete'),
@@ -240,6 +251,9 @@ ALLOW: list[tuple[str, str, str]] = [
     ('native/ios/ForkMesh/Features/Agents/AgentAttachmentViews.swift',
      'removeItem\\(at: folder\\)',
      'removes its own uuid temp share folder'),
+    ('native/ios/ForkMesh/Features/Chat/Threads/ChatMessageParts.swift',
+     'removeItem\\(at: file\\)',
+     'deletes decrypted chat attachment files this app wrote in its own temporary folder'),
     ('native/ios/ForkMesh/Features/Code/RepoSettings/RepoSettingsScreen.swift',
      'removeItem\\(at: url\\)',
      'replaces a temp zip file in the app temporary directory'),
@@ -250,8 +264,14 @@ ALLOW: list[tuple[str, str, str]] = [
      '\\.part"\\)',
      'removes a partial download file in the sandbox'),
     ('native/ios/ForkMeshCore/Sources/FMChat/Threads/ChatHistoryStore.swift',
-     'removeItem\\(at: file\\(scope: scope\\)\\)',
+     'removeItem\\(at: target\\)',
      'erases one chat history file in the sandbox'),
+    ('native/ios/ForkMesh/Features/Chat/Messages/MessagesViewOnceCapture.swift',
+     'removeItem\\(at: url\\)',
+     'drops one view-once capture file this type wrote to the temporary directory'),
+    ('native/ios/ForkMeshCore/Sources/FMBase/SharedItems.swift',
+     'removeItem\\(at: url\\(item\\)\\)',
+     'removes one shared item file inside the app group container'),
     ('native/ios/ForkMeshCore/Sources/FMCode/Local/LocalRepoStore.swift',
      'removeItem\\(at: directory\\)',
      'user-confirmed local repo delete, or cleanup of a folder this call just created'),
@@ -453,7 +473,7 @@ def _tracked_files() -> list[str]:
         files = []
         for top in SCANNED:
             for dirpath, dirnames, filenames in os.walk(REPO / top):
-                dirnames[:] = [d for d in dirnames if d not in {".git", "node_modules", "__pycache__"}
+                dirnames[:] = [d for d in dirnames if d not in {".git", "node_modules", "__pycache__", "src_build"}
                                and not d.startswith("build")]
                 files.extend(os.path.relpath(os.path.join(dirpath, f), REPO) for f in filenames)
         return files

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Hackathon Finalist">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6f8fa"/><stop offset="1" stop-color="#7d8590"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d4f6b"/><stop offset="1" stop-color="#1c2738"/></linearGradient>
+<linearGradient id="coin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#a8b1bd"/></linearGradient><clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#7d8590" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<g fill="#c9d1d9"><ellipse cx="47.1" cy="95.8" rx="4.4" ry="9" transform="rotate(-214.0 47.1 95.8)"/>
+<ellipse cx="35.6" cy="86.2" rx="4.4" ry="9" transform="rotate(-190.0 35.6 86.2)"/>
+<ellipse cx="29.1" cy="72.7" rx="4.4" ry="9" transform="rotate(-166.0 29.1 72.7)"/>
+<ellipse cx="28.5" cy="57.7" rx="4.4" ry="9" transform="rotate(-142.0 28.5 57.7)"/>
+<ellipse cx="34.2" cy="43.9" rx="4.4" ry="9" transform="rotate(-118.0 34.2 43.9)"/>
+<ellipse cx="44.9" cy="33.5" rx="4.4" ry="9" transform="rotate(-94.0 44.9 33.5)"/></g>
+<g fill="#c9d1d9" transform="matrix(-1 0 0 1 128 0)"><ellipse cx="47.1" cy="95.8" rx="4.4" ry="9" transform="rotate(-214.0 47.1 95.8)"/>
+<ellipse cx="35.6" cy="86.2" rx="4.4" ry="9" transform="rotate(-190.0 35.6 86.2)"/>
+<ellipse cx="29.1" cy="72.7" rx="4.4" ry="9" transform="rotate(-166.0 29.1 72.7)"/>
+<ellipse cx="28.5" cy="57.7" rx="4.4" ry="9" transform="rotate(-142.0 28.5 57.7)"/>
+<ellipse cx="34.2" cy="43.9" rx="4.4" ry="9" transform="rotate(-118.0 34.2 43.9)"/>
+<ellipse cx="44.9" cy="33.5" rx="4.4" ry="9" transform="rotate(-94.0 44.9 33.5)"/></g>
+<circle cx="64" cy="64" r="22" fill="url(#coin)" stroke="#57606a" stroke-width="2.5"/>
+<text x="64" y="75" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="30" font-weight="800" fill="#3d4f6b">2</text>
+</svg>

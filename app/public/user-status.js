@@ -281,37 +281,66 @@
     style.textContent = `
       .fm-user-status-badge { display: inline-block; margin-left: 4px; font-size: 0.95em;
         line-height: 1; vertical-align: -0.05em; cursor: default; flex: none; }
-      .fm-user-status-dialog { border: 1px solid var(--border, #d0d7de); border-radius: 12px;
-        padding: 0; width: min(440px, calc(100vw - 24px)); background: var(--surface, Canvas);
-        color: var(--fg, CanvasText); font: inherit; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
-      .fm-user-status-dialog::backdrop { background: rgba(0,0,0,.45); }
-      .fm-user-status-dialog form { display: grid; gap: 12px; padding: 18px; }
-      .fm-user-status-dialog h2 { margin: 0; font-size: 16px; }
+      .fm-user-status-dialog { --us-bg: var(--surface, Canvas); --us-fg: var(--fg, CanvasText);
+        --us-border: var(--border, #d0d7de); --us-muted: var(--muted, GrayText);
+        --us-hover: rgba(127,127,127,.15); --us-field: var(--surface2, transparent);
+        --us-focus: #0969da; --us-cta: var(--accent, #1f883d); --us-cta-fg: #fff;
+        border: 1px solid var(--us-border); border-radius: 12px; padding: 0;
+        width: min(440px, calc(100vw - 24px)); background: var(--us-bg); color: var(--us-fg);
+        font: inherit; font-size: 13px; box-shadow: 0 16px 48px rgba(1,4,9,.5); }
+      [data-dashboard-theme] .fm-user-status-dialog { --us-bg: rgb(var(--dashboard-card-rgb));
+        --us-fg: rgb(var(--dashboard-foreground-rgb)); --us-border: rgb(var(--dashboard-border-rgb));
+        --us-muted: rgb(var(--dashboard-muted-foreground-rgb));
+        --us-hover: rgb(var(--dashboard-foreground-rgb) / .08); --us-field: rgb(var(--dashboard-background-rgb));
+        --us-focus: rgb(var(--dashboard-primary-rgb)); --us-cta: rgb(var(--dashboard-cta-rgb));
+        --us-cta-fg: rgb(var(--dashboard-cta-foreground-rgb)); }
+      .fm-user-status-dialog::backdrop { background: rgba(1,4,9,.6); }
+      .fm-user-status-dialog form { display: flex; flex-direction: column; margin: 0; }
+      .fm-user-status-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+        border-bottom: 1px solid var(--us-border); }
+      .fm-user-status-dialog h2 { flex: 1; margin: 0; font-size: 14px; font-weight: 600; }
+      .fm-user-status-close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+        border: 0; border-radius: 6px; background: transparent; color: var(--us-muted); cursor: pointer; }
+      .fm-user-status-close:hover, .fm-user-status-close:focus-visible { background: var(--us-hover);
+        color: var(--us-fg); outline: none; }
+      .fm-user-status-close svg { width: 16px; height: 16px; }
+      .fm-user-status-body { display: grid; gap: 12px; padding: 16px; }
       .fm-user-status-row { display: flex; gap: 8px; align-items: center; }
-      .fm-user-status-dialog input, .fm-user-status-dialog select { font: inherit; color: inherit;
-        background: var(--surface2, transparent); border: 1px solid var(--border, #d0d7de);
-        border-radius: 8px; padding: 7px 9px; min-width: 0; }
-      .fm-user-status-emoji-input { width: 3.2em; text-align: center; font-size: 18px; }
+      .fm-user-status-dialog input:not([type="checkbox"]), .fm-user-status-dialog select { font: inherit;
+        font-size: 13px; color: inherit; height: 32px; background: var(--us-field);
+        border: 1px solid var(--us-border); border-radius: 6px; padding: 0 8px; min-width: 0; outline: none; }
+      .fm-user-status-dialog input:focus-visible, .fm-user-status-dialog select:focus-visible {
+        border-color: var(--us-focus); box-shadow: inset 0 0 0 1px var(--us-focus); }
+      .fm-user-status-dialog input[type="checkbox"] { width: 16px; height: 16px; margin: 0;
+        accent-color: var(--us-focus); }
+      .fm-user-status-emoji-input { width: 40px; text-align: center; font-size: 16px; }
       .fm-user-status-text-input { flex: 1; }
-      .fm-user-status-quick { display: flex; flex-wrap: wrap; gap: 4px; }
+      .fm-user-status-quick { display: flex; flex-wrap: wrap; gap: 2px; }
       .fm-user-status-quick button, .fm-user-status-preset { font: inherit; color: inherit;
-        background: transparent; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
-      .fm-user-status-quick button { font-size: 18px; width: 34px; height: 34px; }
+        background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+      .fm-user-status-quick button { font-size: 16px; width: 32px; height: 32px; }
       .fm-user-status-quick button:hover, .fm-user-status-preset:hover,
       .fm-user-status-quick button:focus-visible, .fm-user-status-preset:focus-visible {
-        background: var(--surface2, rgba(127,127,127,.15)); border-color: var(--border, #d0d7de); }
-      .fm-user-status-presets { display: grid; gap: 2px; }
-      .fm-user-status-preset { display: flex; gap: 8px; align-items: center; padding: 6px 8px;
-        text-align: left; }
-      .fm-user-status-preset small { margin-left: auto; color: var(--muted, GrayText); }
-      .fm-user-status-label { font-size: 12px; color: var(--muted, GrayText); }
+        background: var(--us-hover); outline: none; }
+      .fm-user-status-presets { display: grid; gap: 0; margin: 0 -8px; }
+      .fm-user-status-preset { display: flex; gap: 8px; align-items: center; height: 30px; padding: 0 8px;
+        font-size: 13px; text-align: left; }
+      .fm-user-status-preset small { margin-left: auto; color: var(--us-muted); font-size: 12px; }
+      .fm-user-status-label { font-size: 12px; font-weight: 500; color: var(--us-muted); }
       .fm-user-status-away { display: flex; gap: 8px; align-items: center; }
-      .fm-user-status-error { color: #d1242f; font-size: 13px; min-height: 1em; margin: 0; }
-      .fm-user-status-actions { display: flex; gap: 8px; justify-content: flex-end; }
-      .fm-user-status-actions button { font: inherit; border-radius: 8px; padding: 7px 14px;
-        border: 1px solid var(--border, #d0d7de); background: transparent; color: inherit; cursor: pointer; }
-      .fm-user-status-actions .is-primary { background: var(--accent, #1f883d); color: #fff;
-        border-color: transparent; }
+      .fm-user-status-error { color: #d1242f; font-size: 12px; margin: 0; }
+      .fm-user-status-error:empty { display: none; }
+      [data-dashboard-theme] .fm-user-status-error { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-user-status-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+        padding: 12px 16px; border-top: 1px solid var(--us-border); }
+      .fm-user-status-actions button { font: inherit; font-size: 12px; font-weight: 500; height: 28px;
+        padding: 0 10px; border-radius: 6px; border: 1px solid var(--us-border); background: transparent;
+        color: inherit; cursor: pointer; }
+      .fm-user-status-actions button:hover { background: var(--us-hover); }
+      .fm-user-status-actions button:disabled { opacity: .5; cursor: not-allowed; }
+      .fm-user-status-actions .is-primary { background: var(--us-cta); color: var(--us-cta-fg);
+        border-color: rgba(127,127,127,.2); }
+      .fm-user-status-actions .is-primary:hover { background: var(--us-cta); opacity: .9; }
       .fm-user-status-actions .is-clear { margin-right: auto; }
     `;
     document.head.append(style);
@@ -403,20 +432,26 @@
     const clear = el("button", { type: "button", className: "is-clear", text: "Clear status" });
     clear.hidden = !hasCustom(existing);
     const save = el("button", { type: "submit", className: "is-primary", text: "Save" });
+    const close = el("button", {
+      type: "button", className: "fm-user-status-close", "aria-label": "Close",
+    });
+    close.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>';
     const form = el("form", { method: "dialog" }, [
-      el("h2", { text: "Set a status" }),
-      el("div", { className: "fm-user-status-row" }, [emojiInput, textInput]),
-      quick,
-      el("span", { className: "fm-user-status-label", text: "Suggestions" }),
-      presets,
-      el("div", { className: "fm-user-status-row" }, [
-        el("span", { className: "fm-user-status-label", text: "Clear after" }),
-        clearSelect, customInput,
+      el("div", { className: "fm-user-status-head" }, [el("h2", { text: "Set a status" }), close]),
+      el("div", { className: "fm-user-status-body" }, [
+        el("div", { className: "fm-user-status-row" }, [emojiInput, textInput]),
+        quick,
+        el("span", { className: "fm-user-status-label", text: "Suggestions" }),
+        presets,
+        el("div", { className: "fm-user-status-row" }, [
+          el("span", { className: "fm-user-status-label", text: "Clear after" }),
+          clearSelect, customInput,
+        ]),
+        el("label", { className: "fm-user-status-away", for: "fm-user-status-away" }, [
+          awayInput, el("span", { text: "Set yourself away" }),
+        ]),
+        error,
       ]),
-      el("label", { className: "fm-user-status-away", for: "fm-user-status-away" }, [
-        awayInput, el("span", { text: "Set yourself away" }),
-      ]),
-      error,
       el("div", { className: "fm-user-status-actions" }, [clear, cancel, save]),
     ]);
     const dialog = el("dialog", {
@@ -425,6 +460,7 @@
     document.body.append(dialog);
     dialog.addEventListener("close", () => dialog.remove());
     cancel.addEventListener("click", () => dialog.close());
+    close.addEventListener("click", () => dialog.close());
 
     const run = async (body) => {
       error.textContent = "";

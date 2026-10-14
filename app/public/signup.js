@@ -158,16 +158,88 @@
     }
   }
 
-  function refreshChallenge() {
-    resetChallenge();
+  function waitForChallenge() {
+    if (!challengeBox || challengeWidget === null) return Promise.resolve("");
+    if (challengeToken) return Promise.resolve(challengeToken);
     return new Promise((resolve) => {
       challengeWaiters.push(resolve);
       setTimeout(() => resolve(""), CHALLENGE_REFRESH_WAIT_MS);
     });
   }
 
+  function refreshChallenge() {
+    resetChallenge();
+    return waitForChallenge();
+  }
+
+  const SIGNUP_INTENT_RENEW_MS = 12 * 60 * 1000;
+  const SIGNUP_PAGE_RENEW_ERRORS = ["signup_page_required", "turnstile_stale_page"];
+  let signupIntentAt = Date.now();
+  let signupIntentRenewing = null;
+
+  function signupIntentStale() {
+    return isLive && Date.now() - signupIntentAt > SIGNUP_INTENT_RENEW_MS;
+  }
+
+  async function requestSignupIntent() {
+    let result = null;
+    try {
+      result = await api("/api/accounts/signup/intent", { method: "POST", body: "{}" });
+    } catch (_) {
+      return false;
+    }
+    const field = String((result && result.body && result.body.emailField) || "");
+    if (!result.ok || !/^contact_[0-9a-f]{18}$/.test(field)) return false;
+    signupIntentAt = Date.now();
+    emailInput.name = field;
+    if (challengeBox) {
+      challengeBox.dataset.cdata = String(result.body.challengeCdata || "");
+      challengeToken = "";
+      challengeAt = 0;
+      try {
+        if (challengeWidget !== null && window.turnstile) window.turnstile.remove(challengeWidget);
+      } catch (_) {}
+      challengeWidget = null;
+      renderChallenge();
+    }
+    return true;
+  }
+
+  function renewSignupIntent() {
+    if (!signupIntentRenewing) {
+      signupIntentRenewing = requestSignupIntent().finally(() => {
+        signupIntentRenewing = null;
+      });
+    }
+    return signupIntentRenewing;
+  }
+
+  async function renewSignupPage() {
+    createButton.disabled = true;
+    createButton.textContent = "Checking…";
+    setSignupHint("Refreshing the signup page…", "");
+    const renewed = await renewSignupIntent();
+    const token = renewed ? await waitForChallenge() : "";
+    createButton.disabled = false;
+    createButton.textContent = "Create account";
+    if (!renewed) {
+      setSignupHint("Couldn’t refresh the signup page. Check your connection and try again.", "bad");
+      reportProblem("signup_page_renew_failed", "");
+      return false;
+    }
+    if (challengeBox && challengeWidget !== null && !token) {
+      setSignupHint("Complete the security check above, then create your account.", "bad");
+      return false;
+    }
+    setSignupHint("", "");
+    return true;
+  }
+
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && challengeWidget !== null && challengeStale()) {
+    if (document.visibilityState !== "visible") return;
+    if (signupIntentStale()) {
+      renewSignupIntent();
+    } else if (challengeWidget !== null && challengeStale()) {
       resetChallenge();
     }
   });
@@ -325,6 +397,9 @@
       setSignupHint("Accept the Terms and Privacy policy to continue.", "bad");
       return;
     }
+    if (signupIntentStale() && !(await renewSignupPage())) {
+      return;
+    }
     if (challengeBox && challengeWidget !== null && challengeStale()) {
       createButton.disabled = true;
       createButton.textContent = "Checking…";
@@ -354,27 +429,34 @@
       return;
     }
 
+    const postSignup = () => api("/api/accounts/signup", {
+      method: "POST",
+      body: JSON.stringify({
+        nodeName,
+        email: "",
+        [emailInput.name]: email,
+        password,
+        signupReferralCode: signupReferralCodeInput
+          ? signupReferralCodeInput.value.trim()
+          : "",
+        ref: referralCode(),
+        referralToken: referralToken(),
+        turnstileToken: challengeToken,
+        marketingEmail: Boolean(updatesAgree && updatesAgree.checked),
+      }),
+    });
     createButton.disabled = true;
     createButton.textContent = "Creating…";
     let result = null;
     let created = false;
     try {
-      result = await api("/api/accounts/signup", {
-        method: "POST",
-        body: JSON.stringify({
-          nodeName,
-          email: "",
-          [emailInput.name]: email,
-          password,
-          signupReferralCode: signupReferralCodeInput
-            ? signupReferralCodeInput.value.trim()
-            : "",
-          ref: referralCode(),
-          referralToken: referralToken(),
-          turnstileToken: challengeToken,
-          marketingEmail: Boolean(updatesAgree && updatesAgree.checked),
-        }),
-      });
+      result = await postSignup();
+      if (!result.ok && isLive && SIGNUP_PAGE_RENEW_ERRORS.includes(result.body.error)) {
+        if (!(await renewSignupPage())) return;
+        createButton.disabled = true;
+        createButton.textContent = "Creating…";
+        result = await postSignup();
+      }
       created = Boolean(result.ok);
     } catch (error) {
       resetChallenge();

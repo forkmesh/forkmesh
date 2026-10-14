@@ -1,6 +1,7 @@
 """Contracts for the network-isolated ForkMesh CI workflow."""
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -11,6 +12,7 @@ DESKTOP_WORKFLOW = ROOT / ".forkmesh" / "desktop-ci.yml"
 DEPLOY_WORKFLOW = ROOT / ".forkmesh" / "deploy.yml"
 RELEASE_WORKFLOW = ROOT / ".forkmesh" / "release.yml"
 CRITICAL_RUNNER = ROOT / "tools" / "run_critical_tests.py"
+QUALITY_GATES = ROOT / "www" / "docs" / "engineering" / "quality-gates.json"
 BROWSER_PACKAGE = ROOT / "world" / "browser_tests" / "package.json"
 BROWSER_CONFIG = ROOT / "world" / "browser_tests" / "playwright.config.js"
 BROWSER_SERVER = ROOT / "world" / "browser_tests" / "run-browser-worker.sh"
@@ -25,6 +27,8 @@ def test_critical_suites_use_runner_packages_without_network_install():
 
     assert "python3 tools/run_critical_tests.py worker" in source
     assert "python3 tools/run_critical_tests.py world" in source
+    assert "python3 tools/run_critical_tests.py security" in source
+    assert "python3 tools/run_critical_tests.py go" in source
     assert "python3 tools/run_critical_tests.py qt" in DESKTOP_WORKFLOW.read_text(
         encoding="utf-8"
     )
@@ -239,6 +243,7 @@ def test_critical_suites_enforce_sub_minute_deadlines():
     batches = BROWSER_BATCH_RUNNER.read_text(encoding="utf-8")
 
     assert "TEST_BUDGET_SECONDS = 55" in runner
+    assert 'SUITE_BUDGET_SECONDS = {"security": 300, "go": 900}' in runner
     assert 'playwright test --grep @critical' in package
     assert "globalTimeout: fullSuite ? 0 : 55_000" in config
     assert '"test:all": "node run-browser-test-batches.js"' in package
@@ -305,3 +310,26 @@ def _pinned_suites() -> dict[str, tuple[str, ...]]:
         if "PYTEST_SUITES" in targets:
             return ast.literal_eval(node.value)
     raise AssertionError("run_critical_tests.py defines no PYTEST_SUITES")
+
+
+def test_security_guards_and_go_tests_run_in_ci_and_the_quality_gate():
+    source = WORKFLOW.read_text(encoding="utf-8")
+    suites = _pinned_suites()
+    gates = json.loads(QUALITY_GATES.read_text(encoding="utf-8"))
+    commands = {gate["id"]: gate["command"] for gate in gates["gates"]}
+
+    assert "- name: Security guard contracts" in source
+    assert "- name: Mirror server Go tests" in source
+    for path in ("app/tests/test_users_nodes_claim_link.py", "app/tests/test_account_totp_gate.py",
+                 "app/tests/test_login_key_binding.py",
+                 "app/tests/test_no_unguarded_destructive_deletes.py"):
+        assert path in suites["security"]
+    assert any(item.startswith("app/tests/test_forkbot.py::") for item in suites["security"])
+    assert commands["security-guard-contracts"][1:] == ["tools/run_critical_tests.py", "security"]
+    assert commands["mirror-server-go-tests"][1:] == ["tools/run_critical_tests.py", "go"]
+    for profile in ("core", "release"):
+        assert "security-guard-contracts" in gates["profiles"][profile]
+        assert "mirror-server-go-tests" in gates["profiles"][profile]
+    runner = CRITICAL_RUNNER.read_text(encoding="utf-8")
+    assert '"test", "-C", "server", "./..."' in runner
+    assert 'GOPROXY="off"' in runner and 'GOTOOLCHAIN="local"' in runner

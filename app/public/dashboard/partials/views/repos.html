@@ -7,11 +7,11 @@
                     <p class="mt-1 text-sm text-muted-foreground">Mirrors published by ForkMesh desktop nodes. Open a repo to browse files live from its host.</p>
                   </div>
                   <div class="shrink-0 flex items-center gap-3 self-start">
-                    <span data-repo-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <span data-repo-count class="fm-label">Loading</span>
                     <a
                       data-new-repo-open
                       href="/dashboard/repos/new"
-                      class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                      class="inline-flex items-center gap-1.5 rounded-md bg-cta px-3 py-1.5 text-xs font-semibold text-cta-foreground hover:bg-cta/90 transition-colors"
                     >
                       <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                       New repository
@@ -81,7 +81,7 @@
                     <h2 class="text-base font-semibold text-foreground">External repositories &amp; stubs</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Resumable imports and stubs from GitHub, GitLab, or Codeberg. Signed import state is separate from live mirrors and always links back to the provider.</p>
                   </div>
-                  <span data-external-repo-count class="self-start text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                  <span data-external-repo-count class="fm-label self-start">Loading</span>
                 </div>
                 <div class="border-b border-border bg-background/50 px-4 sm:px-5 py-3 text-xs leading-5 text-muted-foreground">
                   ForkMesh does not own or control external repositories. “Stub only” and “External repository” do not mean the repository is mirrored or available through ForkMesh. Interrupted imports keep their last checkpoint and can be continued here.
@@ -91,7 +91,7 @@
                     <input data-external-repo-select-all type="checkbox" class="h-4 w-4 rounded border-border bg-card accent-accent" />
                     Select all manageable imports
                   </label>
-                  <button data-external-repo-delete-selected type="button" disabled class="inline-flex h-8 items-center gap-1.5 rounded-md border border-destructive/50 px-3 text-xs font-semibold text-destructive disabled:cursor-not-allowed disabled:opacity-40 hover:bg-destructive/10">
+                  <button data-external-repo-delete-selected type="button" disabled class="fm-btn fm-btn-sm fm-btn-danger">
                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                     Delete selected
                   </button>

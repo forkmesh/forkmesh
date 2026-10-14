@@ -462,6 +462,9 @@ func TestDropBrokenRefsRemovesEmptyMissingAndStaleLockRefs(t *testing.T) {
 	if got := run(t, ".", "git", "--git-dir="+bare, "rev-parse", "refs/heads/good"); got != main {
 		t.Fatalf("a healthy ref moved: %s", got)
 	}
+	if err := os.Remove(freshLock); err != nil {
+		t.Fatal(err)
+	}
 	run(t, ".", "git", "--git-dir="+bare, "fsck", "--connectivity-only")
 }
 

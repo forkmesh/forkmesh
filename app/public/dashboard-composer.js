@@ -16,7 +16,7 @@
   const TEXT_FILE_MAX_BYTES = 64 * 1024;
   const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
   const GAUGE_BARS = 5;
-  const DEFAULT_PLACEHOLDER = "enter prompt";
+  const DEFAULT_PLACEHOLDER = "Describe a task or ask a question…";
   const SHORTCUT_LABEL = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘/" : "Ctrl+/";
 
   const AGENTS = [
@@ -25,7 +25,6 @@
     { value: "codex", label: "Codex", title: "Run Codex" },
     { value: "local-llama", label: "Gemma", title: "Run Gemma on the node's own Ollama" },
   ];
-  const AGENT_ICON_BASE = "/assets/agent-ui/";
   const RUN_MODES = [
     { value: "auto", label: "Auto", hint: "run without asking", icon: "mode-auto" },
     { value: "ask", label: "Ask", hint: "confirm every change", icon: "mode-ask" },
@@ -90,15 +89,22 @@
     pull: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/>',
     cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
     chevron: '<path d="m6 9 6 6 6-6"/>',
+    chevronRight: '<path d="m9 18 6-6-6-6"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    ask: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    map: '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+    server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
   };
+  const MODE_GLYPHS = { auto: "zap", ask: "ask", plan: "map", edit: "prompt" };
+  const EFFORT_ROW = "effort";
 
   function icon(name, extra = "") {
     return `<svg class="fmc-icon${extra ? " " + extra : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICONS[name] || ""}</svg>`;
   }
 
-  function choiceImage(name, fallback = "") {
-    if (!name) return `<span class="fmc-choice-img fmc-choice-letter" aria-hidden="true">${escapeHtml(String(fallback || "?").charAt(0).toUpperCase())}</span>`;
-    return `<img class="fmc-choice-img" src="${AGENT_ICON_BASE}${name}.webp" alt="" width="20" height="20" decoding="async" />`;
+  function choiceGlyph(key, value) {
+    return key === "mode" && MODE_GLYPHS[value] ? icon(MODE_GLYPHS[value], "fmc-choice-glyph") : "";
   }
 
   function escapeHtml(value) {
@@ -455,7 +461,7 @@
     recognition: null,
     listening: false,
     menu: { open: false, items: [], active: 0, filter: "", fromTyping: false },
-    choice: { open: "", active: -1 },
+    choice: { open: "", active: -1, from: "" },
     saveTimer: 0,
     drag: null,
     pageHandlers: [],
@@ -617,58 +623,68 @@
           <button type="button" class="fmc-icon-button" data-composer-expand aria-pressed="false" aria-label="Expand composer" title="Expand composer">${icon("expand")}</button>
           <button type="button" class="fmc-icon-button" data-composer-collapse aria-label="Collapse composer" title="Collapse composer (Esc)">${icon("minimize")}</button>
         </div>
-        <div class="fmc-meta" data-composer-meta>
-          <span class="fmc-chip" data-composer-chip hidden>
-            <span class="fmc-chip-kind">context</span>
-            <span class="fmc-chip-icon" data-composer-chip-icon></span>
-            <span class="fmc-chip-label" data-composer-chip-label></span>
-            <button type="button" class="fmc-chip-remove" data-composer-chip-remove aria-label="Remove context">${icon("x")}</button>
-          </span>
-          <label class="fmc-field" data-composer-repo-field hidden>
-            <span class="fmc-sr">Repository</span>
-            <select class="fmc-select" data-composer-repo></select>
-          </label>
-          <label class="fmc-field" data-composer-session-field hidden>
-            <span class="fmc-sr">Session to add the prompt to</span>
-            <select class="fmc-select" data-composer-session aria-label="Session to add the prompt to"></select>
-          </label>
-          <label class="fmc-field" data-composer-target-field hidden>
-            <span class="fmc-field-label">on</span>
-            <select class="fmc-select" data-composer-target aria-label="Node that runs a new agent"></select>
-          </label>
-        </div>
-        <div class="fmc-body">
-          <label class="fmc-sr" for="fmcInput">Prompt</label>
-          <textarea id="fmcInput" class="fmc-input" data-composer-input rows="3" maxlength="${MAX_PROMPT}" placeholder="${DEFAULT_PLACEHOLDER}" spellcheck="true" aria-describedby="fmcStatus" autocomplete="off"></textarea>
-          <div class="fmc-actions">
-            <button type="button" class="fmc-action fmc-action-primary" data-composer-page hidden>${icon("send")}<span data-composer-page-label></span></button>
-            <button type="button" class="fmc-action" data-composer-task title="Create an organization task from this prompt">${icon("task")}<span>task</span></button>
-            <button type="button" class="fmc-action" data-composer-add title="Add this prompt to the selected agent session">${icon("add")}<span>add</span></button>
-            <button type="button" class="fmc-action fmc-action-primary" data-composer-new title="Start a new agent session with this prompt">${icon("send")}<span>new</span></button>
+        <div class="fmc-box">
+          <div class="fmc-meta" data-composer-meta>
+            <span class="fmc-chip" data-composer-chip hidden>
+              <span class="fmc-chip-icon" data-composer-chip-icon></span>
+              <span class="fmc-chip-label" data-composer-chip-label></span>
+              <button type="button" class="fmc-chip-remove" data-composer-chip-remove aria-label="Remove context">${icon("x")}</button>
+            </span>
+            <label class="fmc-field" data-composer-session-field hidden>
+              <span class="fmc-field-label">add to</span>
+              <select class="fmc-select" data-composer-session aria-label="Session to add the prompt to"></select>
+              ${icon("chevron", "fmc-field-chevron")}
+            </label>
+            <label class="fmc-field" data-composer-target-field hidden>
+              ${icon("server", "fmc-field-icon")}
+              <span class="fmc-sr">Node that runs a new agent</span>
+              <select class="fmc-select" data-composer-target aria-label="Node that runs a new agent"></select>
+              ${icon("chevron", "fmc-field-chevron")}
+            </label>
+          </div>
+          <ul class="fmc-attachments" data-composer-attachments aria-label="Attachments" hidden></ul>
+          <div class="fmc-body">
+            <label class="fmc-sr" for="fmcInput">Prompt</label>
+            <textarea id="fmcInput" class="fmc-input" data-composer-input rows="3" maxlength="${MAX_PROMPT}" placeholder="${DEFAULT_PLACEHOLDER}" spellcheck="true" aria-describedby="fmcStatus" autocomplete="off"></textarea>
+          </div>
+          <div class="fmc-menu" data-composer-menu role="listbox" id="fmcMenu" aria-label="Slash commands" tabindex="-1" hidden></div>
+          <div class="fmc-toolbar">
+            <div class="fmc-tools">
+              <button type="button" class="fmc-avatar" data-composer-avatar aria-label="Collapse composer" title="Collapse composer" hidden></button>
+              <button type="button" class="fmc-icon-button" data-composer-attach aria-label="Attach photos or files" title="Attach photos or files">${icon("clip")}</button>
+              <button type="button" class="fmc-icon-button" data-composer-mic aria-pressed="false" aria-label="Dictate" title="Dictate">${icon("mic")}</button>
+              <button type="button" class="fmc-icon-button fmc-slash" data-composer-slash aria-haspopup="listbox" aria-expanded="false" aria-controls="fmcMenu" aria-label="Slash commands" title="Slash commands">/</button>
+              <label class="fmc-field" data-composer-repo-field hidden>
+                ${icon("repo", "fmc-field-icon")}
+                <span class="fmc-sr">Repository</span>
+                <select class="fmc-select" data-composer-repo></select>
+                ${icon("chevron", "fmc-field-chevron")}
+              </label>
+              ${choiceMarkup("mode", "Permission mode")}
+            </div>
+            <div class="fmc-tools fmc-tools-end">
+              <span class="fmc-gauge" data-composer-gauge role="img" aria-label="No context usage reported" title="No context usage reported">${"<span></span>".repeat(GAUGE_BARS)}</span>
+              <div class="fmc-choice-pair">
+                ${choiceMarkup("model", "Model")}
+                ${choiceMarkup("speed", "Reasoning effort")}
+              </div>
+              <button type="button" class="fmc-action" data-composer-task title="Create an organization task from this prompt">Task</button>
+              <button type="button" class="fmc-action" data-composer-add title="Add this prompt to the selected agent session">Add</button>
+              <button type="button" class="fmc-action fmc-action-primary" data-composer-page hidden><span data-composer-page-label></span>${icon("add")}</button>
+              <button type="button" class="fmc-action fmc-action-primary fmc-send" data-composer-new title="Start a new agent session with this prompt">${icon("add")}<span class="fmc-sr">Start a new agent</span></button>
+            </div>
+            <input type="file" data-composer-file multiple hidden tabindex="-1" />
           </div>
         </div>
-        <ul class="fmc-attachments" data-composer-attachments aria-label="Attachments" hidden></ul>
         <div class="fmc-output" data-composer-output hidden></div>
-        <div class="fmc-menu" data-composer-menu role="listbox" id="fmcMenu" aria-label="Slash commands" tabindex="-1" hidden></div>
-        <div class="fmc-toolbar">
-          <button type="button" class="fmc-avatar" data-composer-avatar aria-label="Collapse composer" title="Collapse composer"></button>
-          <button type="button" class="fmc-icon-button" data-composer-attach aria-label="Attach photos or files" title="Attach photos or files">${icon("clip")}</button>
-          <button type="button" class="fmc-icon-button" data-composer-mic aria-pressed="false" aria-label="Dictate" title="Dictate">${icon("mic")}</button>
-          <button type="button" class="fmc-icon-button fmc-slash" data-composer-slash aria-haspopup="listbox" aria-expanded="false" aria-controls="fmcMenu" aria-label="Slash commands" title="Slash commands">/</button>
-          ${choiceMarkup("model", "Model")}
-          ${choiceMarkup("mode", "Permission mode")}
-          ${choiceMarkup("speed", "Reasoning effort", true)}
-          <span class="fmc-gauge" data-composer-gauge role="img" aria-label="No context usage reported" title="No context usage reported">${"<span></span>".repeat(GAUGE_BARS)}</span>
-          <input type="file" data-composer-file multiple hidden tabindex="-1" />
-        </div>
         <p class="fmc-setup" data-composer-setup hidden></p>
         <p id="fmcStatus" class="fmc-status" data-composer-status role="status" aria-live="polite"></p>
       </section>`;
     return root;
   }
 
-  function choiceMarkup(key, label, compact = false) {
-    return `<div class="fmc-choice${compact ? " fmc-choice-compact" : ""}" data-composer-choice="${key}">
+  function choiceMarkup(key, label) {
+    return `<div class="fmc-choice" data-composer-choice="${key}">
             <button type="button" class="fmc-choice-button" data-composer-${key} aria-haspopup="listbox" aria-expanded="false" aria-controls="fmcChoice-${key}" aria-label="${label}"></button>
             <div class="fmc-choice-menu" id="fmcChoice-${key}" data-composer-choice-menu="${key}" role="listbox" aria-label="${label}" tabindex="-1" hidden></div>
           </div>`;
@@ -779,6 +795,7 @@
       applyPlacement();
       void ensureRepoChoices();
       void loadRepoData();
+      fitInput();
       if (focus) focusInput(!wasOpen);
     } else {
       closeMenu();
@@ -806,6 +823,7 @@
     if (!panel) return;
     const expanded = isExpanded();
     panel.classList.toggle("fmc-expanded", expanded);
+    fitInput();
     composer.els.expand?.setAttribute("aria-pressed", String(expanded));
     if (composer.els.expand) {
       composer.els.expand.innerHTML = icon(expanded ? "shrink" : "expand");
@@ -922,6 +940,14 @@
     }
     const hasDraft = Boolean((composer.els.input?.value || "").trim() || composer.attachments.length);
     if (composer.els.draftDot) composer.els.draftDot.hidden = !hasDraft;
+    fitInput();
+  }
+
+  function fitInput() {
+    const input = composer.els.input;
+    if (!input || !isOpen()) return;
+    input.style.height = "auto";
+    input.style.height = input.scrollHeight + "px";
   }
 
   function choiceItems(key) {
@@ -932,15 +958,18 @@
       return EFFORTS.map((option) => ({ ...option, title: `Reasoning effort: ${option.label}` }));
     }
     const allowed = activeRepoData()?.models;
-    return AGENTS.filter((agent) => MODEL_CATALOG[agent.value]).flatMap((agent) =>
-      modelOptions(agent.value, allowed).map((option) => ({
-        value: `${agent.value}|${option.value}`,
-        label: option.label,
-        hint: option.id,
-        icon: option.icon || "",
-        group: agent.label,
-        title: `Model: ${option.label} (${option.id}) on ${agent.label}`,
-      })));
+    const effort = EFFORTS.find((option) => option.value === currentEffort());
+    return [
+      ...AGENTS.filter((agent) => MODEL_CATALOG[agent.value]).flatMap((agent) =>
+        modelOptions(agent.value, allowed).map((option) => ({
+          value: `${agent.value}|${option.value}`,
+          label: option.label,
+          hint: option.id,
+          group: agent.label,
+          title: `Model: ${option.label} (${option.id}) on ${agent.label}`,
+        }))),
+      { value: EFFORT_ROW, label: "Effort", hint: effort?.label || "", submenu: true, separator: true, title: "Reasoning effort" },
+    ];
   }
 
   function choiceValue(key) {
@@ -961,8 +990,8 @@
     const button = composer.els[key];
     if (!button) return;
     const item = choiceItems(key).find((entry) => entry.value === choiceValue(key));
-    const compact = key === "speed";
-    button.innerHTML = `${choiceImage(item?.icon, item?.label)}${compact ? "" : `<span class="fmc-choice-label">${escapeHtml(item?.label || "")}</span>`}${icon("chevron", "fmc-choice-chevron")}`;
+    const chevron = key === "model" ? "" : icon("chevron", "fmc-choice-chevron");
+    button.innerHTML = `${choiceGlyph(key, item?.value)}<span class="fmc-choice-label">${escapeHtml(item?.label || "")}</span>${chevron}`;
     button.dataset.value = item ? item.value.split("|").pop() : "";
     const summary = choiceSummary(key);
     button.title = summary;
@@ -989,29 +1018,32 @@
     }
     let group = "";
     menu.innerHTML = items.map((item, index) => {
+      const separator = item.separator ? `<div class="fmc-menu-sep" role="presentation"></div>` : "";
       const header = item.group && item.group !== group ? `<div class="fmc-menu-group" role="presentation">${escapeHtml(item.group)}</div>` : "";
       group = item.group || group;
-      return `${header}<div class="fmc-choice-option" role="option" id="fmcChoice-${key}-${index}" data-composer-choice-option="${index}" aria-selected="${item.value === selected}" data-active="${index === composer.choice.active ? "1" : "0"}" title="${escapeHtml(item.title || item.label)}">${choiceImage(item.icon, item.label)}<span class="fmc-choice-option-label">${escapeHtml(item.label)}</span>${item.hint ? `<span class="fmc-menu-hint">${escapeHtml(item.hint)}</span>` : ""}</div>`;
+      const hint = item.hint ? `<span class="fmc-menu-hint">${escapeHtml(item.hint)}</span>` : "";
+      const mark = item.submenu ? icon("chevronRight", "fmc-choice-mark") : icon("check", "fmc-choice-mark fmc-choice-check");
+      return `${separator}${header}<div class="fmc-choice-option" role="option" id="fmcChoice-${key}-${index}" data-composer-choice-option="${index}" aria-selected="${item.value === selected}" data-active="${index === composer.choice.active ? "1" : "0"}"${item.submenu ? ' data-submenu="1"' : ""} title="${escapeHtml(item.title || item.label)}">${choiceGlyph(key, item.value)}<span class="fmc-choice-option-label">${escapeHtml(item.label)}</span>${hint}${mark}</div>`;
     }).join("");
     menu.setAttribute("aria-activedescendant", `fmcChoice-${key}-${composer.choice.active}`);
     menu.querySelector('[data-active="1"]')?.scrollIntoView?.({ block: "nearest" });
   }
 
-  function openChoice(key) {
+  function openChoice(key, from = "") {
     if (composer.choice.open && composer.choice.open !== key) closeChoice({ focus: false });
     closeMenu();
     const menu = $(`[data-composer-choice-menu="${key}"]`);
     const button = composer.els[key];
     if (!menu || !button) return;
-    composer.choice = { open: key, active: -1 };
+    composer.choice = { open: key, active: -1, from };
     renderChoiceMenu(key);
     menu.dataset.drop = "";
-    menu.style.left = "";
+    menu.style.translate = "";
     menu.hidden = false;
     const bounds = composer.els.panel?.getBoundingClientRect() || { left: 0, right: window.innerWidth };
     const box = menu.getBoundingClientRect();
     const shift = Math.max(bounds.left + 4 - box.left, Math.min(0, bounds.right - 4 - box.right));
-    if (shift) menu.style.left = `${shift}px`;
+    if (shift) menu.style.translate = `${shift}px 0`;
     const rect = button.getBoundingClientRect();
     const viewport = window.visualViewport?.height || window.innerHeight;
     if (menu.offsetHeight > rect.top - 8 && viewport - rect.bottom > rect.top) menu.dataset.drop = "down";
@@ -1022,7 +1054,7 @@
   function closeChoice({ focus = true } = {}) {
     const key = composer.choice.open;
     if (!key) return;
-    composer.choice = { open: "", active: -1 };
+    composer.choice = { open: "", active: -1, from: "" };
     const menu = $(`[data-composer-choice-menu="${key}"]`);
     if (menu) menu.hidden = true;
     composer.els[key]?.setAttribute("aria-expanded", "false");
@@ -1032,6 +1064,7 @@
   function pickChoice(key, value) {
     if (key === "mode") setRunMode(value);
     else if (key === "speed") setEffort(value);
+    else if (value === EFFORT_ROW) openChoice("speed", "model");
     else {
       const [agent, model] = String(value).split("|");
       setAgentModel(agent, model);
@@ -1048,10 +1081,19 @@
       composer.choice.active = 0;
     } else if (event.key === "End") {
       composer.choice.active = last;
-    } else if (event.key === "Enter" || event.key === " ") {
+    } else if (event.key === "Enter" || event.key === " " || (event.key === "ArrowRight" && items[composer.choice.active]?.submenu)) {
       const item = items[composer.choice.active];
       closeChoice();
       if (item) pickChoice(key, item.value);
+    } else if (event.key === "ArrowLeft" && composer.choice.from) {
+      const back = composer.choice.from;
+      closeChoice({ focus: false });
+      openChoice(back);
+      composer.choice.active = choiceItems(back).findIndex((item) => item.value === EFFORT_ROW);
+      renderChoiceMenu(back);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
     } else if (event.key === "Escape") {
       closeChoice();
     } else if (event.key === "Tab") {
@@ -1737,7 +1779,7 @@
       { group: "Model", label: "Switch model…", hint: choiceItems("model").find((item) => item.value === choiceValue("model"))?.label || "", run: () => openChoice("model") },
       { group: "Model", label: "Switch permission mode…", hint: RUN_MODES.find((item) => item.value === currentRunMode())?.label || "", run: () => openChoice("mode") },
       { group: "Model", label: "Switch speed…", hint: EFFORTS.find((item) => item.value === currentEffort())?.label || "", run: () => openChoice("speed") },
-      { group: "Model", label: composer.stored.createPr === true ? "Don't open a pull request" : "Open a pull request when done", hint: "green dot", run: togglePr },
+      { group: "Model", label: composer.stored.createPr === true ? "Don't open a pull request" : "Open a pull request when done", hint: "dot in the header", run: togglePr },
       ...(canToggleCloud() ? [{ group: "Model", label: runsInCloud() ? "Run on your desktop" : "Run in the cloud", hint: "cloud", run: toggleCloud }] : []),
       { group: "Apps", label: "/apps", hint: "list your app commands", run: () => { composer.els.input.value = "/apps"; void maybeRunSlashCommand(); } },
     );
@@ -2381,7 +2423,8 @@
     wire();
     renderAll();
     const idle = !document.activeElement || document.activeElement === document.body;
-    setOpen(composer.inline || Boolean(composer.stored.open), { focus: idle });
+    const startOpen = composer.inline || Boolean(composer.stored.open);
+    setOpen(startOpen, { focus: idle && startOpen });
   }
 
   window.ForkMeshComposer = Object.freeze({

@@ -9,13 +9,36 @@ window.ForkMeshDashboard.registerPage("vault", ({
   const Vault = globalThis.ForkMeshVaultClient;
   const AUTOLOCK_KEY = "forkmesh.vault.autolockMinutes";
   const CLIPBOARD_CLEAR_MS = 30000;
-  const state = { client: null, editing: "", sharing: "", preview: null, idleTimer: 0, clipboardTimer: 0, afterRecovery: null };
+  const state = { client: null, editing: "", sharing: "", preview: null, idleTimer: 0, clipboardTimer: 0, toastTimer: 0, afterRecovery: null };
 
   // --- helpers ----------------------------------------------------------------
   function message(kind, value = "") {
     const node = $(`[data-vault-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    (node.querySelector("[data-vault-message-text]") || node).textContent = value; node.classList.toggle("hidden", !value);
     if (value) node.scrollIntoView?.({ block: "nearest" });
+  }
+  function toast(value) {
+    const node = $(`[data-vault-toast]`); if (!node) { message("notice", value); return; }
+    node.querySelector("[data-vault-toast-text]").textContent = value;
+    node.classList.remove("hidden");
+    try { node.hidePopover?.(); node.showPopover?.(); } catch {}
+    clearTimeout(state.toastTimer);
+    state.toastTimer = setTimeout(() => { node.classList.add("hidden"); try { node.hidePopover?.(); } catch {} }, 4000);
+  }
+  function ask(text, { title = "Are you sure?", action = "Continue", danger = false } = {}) {
+    const dialog = $(`[data-vault-confirm-dialog]`);
+    if (!dialog) return Promise.resolve(confirm(text));
+    $(`[data-vault-confirm-title]`).textContent = title;
+    $(`[data-vault-confirm-text]`).textContent = text;
+    const accept = $(`[data-vault-confirm-accept]`);
+    accept.textContent = action;
+    accept.classList.toggle("fm-btn-danger", danger);
+    accept.classList.toggle("fm-btn-cta", !danger);
+    dialog.returnValue = "";
+    return new Promise((resolve) => {
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+      dialog.showModal();
+    });
   }
   function clearMessages() { message("error"); message("notice"); }
   function icons() { window.lucide?.createIcons?.(); }
@@ -80,7 +103,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     } catch {
       message("error", "This browser did not allow copying."); return;
     }
-    message("notice", `${label} copied. The clipboard is cleared in 30 seconds.`);
+    toast(`${label} copied. The clipboard is cleared in 30 seconds.`);
     clearTimeout(state.clipboardTimer);
     state.clipboardTimer = setTimeout(() => { navigator.clipboard.writeText("").catch(() => {}); }, CLIPBOARD_CLEAR_MS);
   }
@@ -139,9 +162,9 @@ window.ForkMeshDashboard.registerPage("vault", ({
   function shareBadges(item) {
     if (!item.owned) {
       const via = item.via?.kind === "organization" ? ` via ${escapeHtml(item.via.name)}` : "";
-      return `<span class="vault-badge">from ${escapeHtml(item.owner)}${via}</span> <span class="vault-badge">${item.permission === "write" ? "can edit" : "view only"}</span>`;
+      return `<span class="fm-label">from ${escapeHtml(item.owner)}${via}</span> <span class="fm-label">${item.permission === "write" ? "can edit" : "view only"}</span>`;
     }
-    return (item.shares || []).map((share) => `<span class="vault-badge">${share.kind === "organization" ? "org " : ""}${escapeHtml(share.name)}</span>`).join(" ");
+    return (item.shares || []).map((share) => `<span class="fm-label">${share.kind === "organization" ? "org " : ""}${escapeHtml(share.name)}</span>`).join(" ");
   }
   function renderList() {
     const items = visibleItems();
@@ -153,16 +176,16 @@ window.ForkMeshDashboard.registerPage("vault", ({
         const why = item.error === "sender_keys_changed"
           ? `${escapeHtml(item.owner)}'s keys changed since you first received a share from them. It stays closed until you compare fingerprints with them.`
           : "This item could not be opened with your keys.";
-        return `<div class="vault-row p-3"><div><p class="text-sm font-semibold text-foreground">Unreadable item <span class="vault-badge" data-tone="warn">${escapeHtml(item.error || "error")}</span></p><p class="text-xs text-muted-foreground">${why}</p></div><div></div></div>`;
+        return `<div class="vault-row p-3"><div><p class="text-sm font-semibold text-foreground">Unreadable item <span class="fm-label fm-label-danger" data-tone="warn">${escapeHtml(item.error || "error")}</span></p><p class="text-xs text-muted-foreground">${why}</p></div><div></div></div>`;
       }
       const fields = item.fields, site = Vault.loginHost(fields.url || "");
       return `<div class="vault-row p-3" data-vault-item="${escapeHtml(item.id)}">
-        <button type="button" data-vault-open class="min-w-0 text-left"><p class="truncate text-sm font-semibold text-foreground">${escapeHtml(fields.title)}</p><p class="truncate text-xs text-muted-foreground">${escapeHtml(fields.username || "")}${fields.username && site ? " · " : ""}${escapeHtml(site)}</p><p class="mt-1">${shareBadges(item)}</p></button>
+        <button type="button" data-vault-open class="min-w-0 text-left"><p class="truncate text-sm font-semibold text-foreground">${escapeHtml(fields.title)}</p><p class="truncate text-xs text-muted-foreground">${escapeHtml(fields.username || "")}${fields.username && site ? " · " : ""}${escapeHtml(site)}</p><p class="mt-1 flex flex-wrap gap-1">${shareBadges(item)}</p></button>
         <div class="flex flex-wrap items-center justify-end gap-1">
-          <button type="button" data-vault-copy="username" title="Copy username" class="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground">User</button>
-          <button type="button" data-vault-copy="password" title="Copy password" class="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground">Password</button>
-          ${site ? `<button type="button" data-vault-visit title="Open the website" class="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground">Open</button>` : ""}
-          ${item.owned ? `<button type="button" data-vault-share title="Share" class="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground">Share</button>` : ""}
+          <button type="button" data-vault-copy="username" title="Copy username" class="fm-btn fm-btn-sm"><i data-lucide="copy"></i>User</button>
+          <button type="button" data-vault-copy="password" title="Copy password" class="fm-btn fm-btn-sm"><i data-lucide="copy"></i>Password</button>
+          ${site ? `<button type="button" data-vault-visit title="Open the website" class="fm-btn fm-btn-sm"><i data-lucide="external-link"></i>Open</button>` : ""}
+          ${item.owned ? `<button type="button" data-vault-share title="Share" class="fm-btn fm-btn-sm"><i data-lucide="share-2"></i>Share</button>` : ""}
         </div></div>`;
     }).join("");
     icons();
@@ -211,7 +234,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     const question = item.owned
       ? `Delete "${item.fields.title}"? Everyone it is shared with loses it too. This cannot be undone.`
       : `Remove "${item.fields.title}" from your vault? ${item.owner} keeps it.`;
-    if (!confirm(question)) return;
+    if (!(await ask(question, item.owned ? { title: "Delete login", action: "Delete", danger: true } : { title: "Remove login", action: "Remove", danger: true }))) return;
     try { await state.client.remove(item.id); await reload(); $(`[data-vault-item-dialog]`).close(); }
     catch (error) { $(`[data-vault-item-dialog]`).close(); message("error", explain(error)); }
   }
@@ -222,8 +245,8 @@ window.ForkMeshDashboard.registerPage("vault", ({
     $(`[data-vault-share-title]`).textContent = item.fields.title;
     const host = $(`[data-vault-share-current]`);
     const shares = item.shares || [];
-    host.innerHTML = shares.length ? shares.map((share) => `<div class="vault-row p-3"><div><p class="text-sm text-foreground">${share.kind === "organization" ? "Organization " : ""}<b>${escapeHtml(share.name)}</b></p><p class="text-xs text-muted-foreground">${share.permission === "write" ? "Can view and edit" : "Can view and use"}</p></div><button type="button" data-vault-unshare-kind="${escapeHtml(share.kind)}" data-vault-unshare-name="${escapeHtml(share.name)}" class="rounded-md border border-destructive px-2 py-1 text-xs font-semibold text-destructive">Stop sharing</button></div>`).join("")
-      : `<p class="p-3 text-xs text-muted-foreground">Not shared with anyone.</p>`;
+    host.innerHTML = shares.length ? shares.map((share) => `<div class="vault-row p-3"><div><p class="text-sm text-foreground">${share.kind === "organization" ? "Organization " : ""}<b>${escapeHtml(share.name)}</b></p><p class="text-xs text-muted-foreground">${share.permission === "write" ? "Can view and edit" : "Can view and use"}</p></div><button type="button" data-vault-unshare-kind="${escapeHtml(share.kind)}" data-vault-unshare-name="${escapeHtml(share.name)}" class="fm-btn fm-btn-sm fm-btn-danger">Stop sharing</button></div>`).join("")
+      : `<div class="fm-blankslate vault-compact"><p class="fm-blankslate-desc">Not shared with anyone.</p></div>`;
   }
   async function openShare(id) {
     state.sharing = id; state.preview = null; clearMessages();
@@ -249,15 +272,16 @@ window.ForkMeshDashboard.registerPage("vault", ({
     const name = (kind === "organization" ? $(`[data-vault-share-org]`).value : $(`[data-vault-share-name]`).value).trim().toLowerCase();
     return { kind, name, permission: $(`[data-vault-share-permission]`).value };
   }
-  const STATE_LABEL = { new: "first share", pinned: "known keys", changed: "KEYS CHANGED", no_vault: "no vault yet", invalid_keys: "invalid keys" };
+  const STATE_LABEL = { new: "first share", pinned: "known keys", changed: "keys changed", no_vault: "no vault yet", invalid_keys: "invalid keys" };
+  const STATE_TONE = { pinned: "fm-label-success", changed: "fm-label-danger", invalid_keys: "fm-label-danger", new: "fm-label-accent" };
   async function checkShare(event) {
     event.preventDefault(); clearMessages();
     const target = shareTarget(); if (!target.name) return;
     try {
       const members = await busy(event.target, () => state.client.previewShare(target));
       state.preview = { target, members };
-      $(`[data-vault-share-members]`).innerHTML = members.map((member) => `<div class="vault-row p-3"><div class="min-w-0"><p class="text-sm text-foreground"><b>${escapeHtml(member.name)}</b> <span class="vault-badge" ${member.state === "changed" || member.state === "invalid_keys" ? `data-tone="warn"` : ""}>${STATE_LABEL[member.state] || member.state}</span></p>${member.fingerprint && member.state !== "pinned" ? `<p class="vault-fingerprint text-muted-foreground">${escapeHtml(member.fingerprint)}</p>` : ""}</div><div></div></div>`).join("")
-        || `<p class="p-3 text-xs text-muted-foreground">Nobody else is in this organization yet.</p>`;
+      $(`[data-vault-share-members]`).innerHTML = members.map((member) => `<div class="vault-row p-3"><div class="min-w-0"><p class="text-sm text-foreground"><b>${escapeHtml(member.name)}</b> <span class="fm-label ${STATE_TONE[member.state] || ""}" ${member.state === "changed" || member.state === "invalid_keys" ? `data-tone="warn"` : ""}>${STATE_LABEL[member.state] || member.state}</span></p>${member.fingerprint && member.state !== "pinned" ? `<p class="vault-fingerprint text-muted-foreground">${escapeHtml(member.fingerprint)}</p>` : ""}</div><div></div></div>`).join("")
+        || `<div class="fm-blankslate vault-compact"><p class="fm-blankslate-desc">Nobody else is in this organization yet.</p></div>`;
       const changed = members.filter((member) => member.state === "changed");
       const fresh = members.filter((member) => member.state === "new");
       const without = members.filter((member) => member.state === "no_vault");
@@ -265,7 +289,10 @@ window.ForkMeshDashboard.registerPage("vault", ({
       if (changed.length) advice.push(`${changed.map((m) => m.name).join(", ")} now ${changed.length === 1 ? "has" : "have"} different keys than you pinned. That happens when someone deletes and recreates their vault, and it is also what an attack looks like. Compare the fingerprint with them before going on.`);
       if (fresh.length && target.kind === "user") advice.push("First share with this person. To be certain these keys are theirs, ask them to read their fingerprint (Vault settings) to you.");
       if (without.length) advice.push(`${without.length} member${without.length === 1 ? " has" : "s have"} no vault yet. They get access the next time you unlock after they create one.`);
-      $(`[data-vault-share-advice]`).textContent = advice.join(" ");
+      const adviceNode = $(`[data-vault-share-advice]`);
+      adviceNode.textContent = advice.join(" ");
+      adviceNode.classList.toggle("fm-flash-warning", Boolean(changed.length));
+      adviceNode.classList.toggle("fm-flash-neutral", !changed.length);
       $(`[data-vault-share-confirm-row]`).classList.toggle("hidden", !changed.length);
       $(`[data-vault-share-confirm]`).checked = false;
       $(`[data-vault-share-preview]`).classList.remove("hidden");
@@ -292,7 +319,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
   }
   async function stopSharing(button) {
     const target = { kind: button.dataset.vaultUnshareKind, name: button.dataset.vaultUnshareName };
-    if (!confirm(`Stop sharing with ${target.name}? The login is re-encrypted under a new key. If they already saw the password, change it on the website too.`)) return;
+    if (!(await ask(`Stop sharing with ${target.name}? The login is re-encrypted under a new key. If they already saw the password, change it on the website too.`, { title: "Stop sharing", action: "Stop sharing", danger: true }))) return;
     try { await busy(button, () => state.client.unshare(state.sharing, target)); await reload(); renderShares(); }
     catch (error) { alertInDialog(explain(error)); }
   }
@@ -337,14 +364,14 @@ window.ForkMeshDashboard.registerPage("vault", ({
     } catch (error) { $(`[data-vault-settings-dialog]`).close(); message("error", explain(error)); }
   }
   async function renewRecovery() {
-    if (!confirm("Issue a new recovery code? The current one stops working.")) return;
+    if (!(await ask("Issue a new recovery code? The current one stops working.", { title: "New recovery code", action: "Issue new code" }))) return;
     try {
       const { recoveryCode } = await state.client.renewRecoveryCode();
       $(`[data-vault-settings-dialog]`).close(); showRecoveryCode(recoveryCode, null);
     } catch (error) { $(`[data-vault-settings-dialog]`).close(); message("error", explain(error)); }
   }
   async function destroyVault() {
-    if (!confirm("Delete your vault? Every login in it is erased here and for everyone you shared it with. An encrypted export downloads first; it opens only with your master password or recovery code.")) return;
+    if (!(await ask("Delete your vault? Every login in it is erased here and for everyone you shared it with. An encrypted export downloads first; it opens only with your master password or recovery code.", { title: "Delete vault", action: "Delete vault", danger: true }))) return;
     try {
       const payload = await state.client.destroy();
       downloadJson(payload.export || {}, payload.filename || "forkmesh-vault.json");
@@ -366,7 +393,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     } catch { return false; }
   }
   async function init() {
-    bind();
+    bind(); icons();
     if (!C || !Vault || !(await supported())) { show("unsupported"); return; }
     state.client = Vault.create({ crypto: C, request });
     try {
@@ -416,9 +443,9 @@ window.ForkMeshDashboard.registerPage("vault", ({
       const field = $(`[data-vault-field="password"]`); const hidden = field.type === "password";
       field.type = hidden ? "text" : "password"; event.target.textContent = hidden ? "Hide" : "Show";
     });
-    $(`[data-vault-generate]`)?.addEventListener("click", () => {
+    $(`[data-vault-generate]`)?.addEventListener("click", async () => {
       const field = $(`[data-vault-field="password"]`);
-      if (field.value && !confirm("Replace the current password with a generated one?")) return;
+      if (field.value && !(await ask("Replace the current password with a generated one?", { title: "Replace password", action: "Replace" }))) return;
       field.value = C.generatePassword({ length: 24 }); field.type = "text"; $(`[data-vault-reveal]`).textContent = "Hide";
     });
     $(`[data-vault-share-kind]`)?.addEventListener("change", syncShareKind);
@@ -442,6 +469,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     $(`[data-vault-destroy]`)?.addEventListener("click", () => void destroyVault());
     $(`[data-vault-autolock]`)?.addEventListener("change", (event) => { localStorage.setItem(AUTOLOCK_KEY, event.target.value); touch(); });
     $$(`[data-vault-dialog-close]`).forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
+    $$(`[data-vault-message-close]`).forEach((button) => button.addEventListener("click", () => button.closest("[data-vault-error], [data-vault-notice]")?.classList.add("hidden")));
   }
   return init();
 });

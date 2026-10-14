@@ -271,17 +271,43 @@ final class SettingsServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testANewProjectIsMarkedNewOnceAndSignInStartsOff() async {
+    func testANewProjectIsMarkedNewOnceAndSignInStartsOn() async {
         let prefs = InMemoryKeyValueStore()
         let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
         XCTAssertFalse(settings.legacyProject)
         XCTAssertEqual(prefs.string(forKey: ProjectLegacyMarker.key), ProjectLegacyMarker.fresh)
-        XCTAssertFalse(settings.signInOn)
+        XCTAssertTrue(settings.signInOn)
         prefs.set("{}", forKey: "shell/bar-layout")
         XCTAssertFalse(SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore()).legacyProject)
-        settings.setSignInOn(true)
-        XCTAssertEqual(prefs.bool(forKey: SettingsService.signInOnKey), true)
-        XCTAssertTrue(settings.signInOn)
+        settings.setSignInOn(false)
+        XCTAssertEqual(prefs.bool(forKey: SettingsService.signInOnKey), false)
+        XCTAssertFalse(settings.signInOn)
+    }
+
+    @MainActor
+    func testANewProjectChoosesItsStarterPackOnce() async {
+        let prefs = InMemoryKeyValueStore()
+        let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertNil(settings.starterPack)
+        XCTAssertTrue(settings.needsStarterPack)
+        settings.setStarterPack("minimal")
+        XCTAssertEqual(prefs.string(forKey: settings.scope.key(SettingsService.starterPackKey)), "minimal")
+        XCTAssertEqual(settings.starterPack, "minimal")
+        XCTAssertFalse(settings.needsStarterPack)
+        let reopened = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertEqual(reopened.starterPack, "minimal")
+        XCTAssertFalse(reopened.needsStarterPack)
+        XCTAssertTrue(reopened.signInOn)
+    }
+
+    @MainActor
+    func testALegacyProjectIsNeverAskedForAStarterPack() async {
+        let prefs = InMemoryKeyValueStore()
+        prefs.set("{}", forKey: "shell/bar-uses")
+        let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())
+        XCTAssertTrue(settings.legacyProject)
+        XCTAssertNil(settings.starterPack)
+        XCTAssertFalse(settings.needsStarterPack)
     }
 
     @MainActor
@@ -469,6 +495,7 @@ final class IosUdidLinkTests: XCTestCase {
         XCTAssertEqual(LegalLinks.privacy.absoluteString, "https://forkmesh.com/privacy")
         XCTAssertEqual(LegalLinks.appleHealth.absoluteString, "https://forkmesh.com/privacy#apple-health")
         XCTAssertEqual(LegalLinks.design.absoluteString, "https://forkmesh.com/design")
+        XCTAssertEqual(LegalLinks.desktop.absoluteString, "https://forkmesh.com/desktop")
         XCTAssertEqual(
             LegalLinks.designFor(URL(string: "https://next.forkmesh.com/start?x=1#top")!).absoluteString,
             "https://next.forkmesh.com/design")

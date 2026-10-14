@@ -43,10 +43,17 @@
   const ADS_CREATIVE_FIELDS = ["headline", "body", "cta", "sponsor", "url", "category"];
 
   const ADS_TONE_CLASSES = {
-    good: "border-emerald-500/40 bg-emerald-500/10 text-emerald-500",
-    warn: "border-amber-500/40 bg-amber-500/10 text-amber-500",
-    bad: "border-red-500/40 bg-red-500/10 text-red-500",
-    neutral: "border-border bg-secondary text-muted-foreground",
+    good: "fm-label-success",
+    warn: "fm-label-attention",
+    bad: "fm-label-danger",
+    neutral: "",
+  };
+
+  const ADS_FLASH = {
+    good: { tone: "fm-flash-success", icon: "circle-check" },
+    warn: { tone: "fm-flash-warning", icon: "triangle-alert" },
+    bad: { tone: "fm-flash-danger", icon: "circle-alert" },
+    info: { tone: "", icon: "info" },
   };
 
   // One plain sentence per delivery word, so an owner never has to guess why
@@ -128,17 +135,38 @@
   }
 
   function adsBadge(label, tone) {
-    return adsEl("span",
-      `shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${ADS_TONE_CLASSES[tone] || ADS_TONE_CLASSES.neutral}`,
-      label);
+    return adsEl("span", `fm-label shrink-0 ${ADS_TONE_CLASSES[tone] || ""}`.trim(), label);
+  }
+
+  function adsFlash(tone, title, text) {
+    const look = ADS_FLASH[tone] || ADS_FLASH.info;
+    const box = adsEl("div", `fm-flash ${look.tone}`.trim());
+    box.append(adsIcon(look.icon, "h-4 w-4"));
+    const body = adsEl("div", "fm-flash-body");
+    if (title) body.append(adsEl("span", "fm-flash-title", title));
+    if (text) {
+      const line = adsEl(title ? "p" : "span", "", text);
+      line.style.overflowWrap = "anywhere";
+      body.append(line);
+    }
+    box.append(body);
+    return box;
+  }
+
+  function adsBlankslate(icon, title, text) {
+    const box = adsEl("div", "fm-blankslate");
+    box.append(adsIcon(icon, "h-6 w-6"));
+    box.append(adsEl("p", "fm-blankslate-title", title));
+    if (text) box.append(adsEl("p", "fm-blankslate-desc", text));
+    return box;
   }
 
   function adsButton(label, options = {}) {
     const tone = options.tone || "plain";
     const classes = {
-      primary: "inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-colors",
-      plain: "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors",
-      danger: "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-500 transition-colors",
+      primary: "fm-btn fm-btn-sm",
+      plain: "fm-btn fm-btn-sm",
+      danger: "fm-btn fm-btn-sm fm-btn-danger",
     };
     const button = adsEl("button", classes[tone] || classes.plain);
     button.type = "button";
@@ -470,10 +498,10 @@
     state.adsView.noticeTone = tone;
     const box = $("[data-ads-notice]");
     if (!box) return;
-    box.textContent = state.adsView.notice;
+    box.replaceChildren();
+    if (state.adsView.notice) box.append(adsFlash(tone === "bad" ? "bad" : "good", "", state.adsView.notice));
     box.hidden = !state.adsView.notice;
-    box.classList.toggle("text-red-500", tone === "bad");
-    box.classList.toggle("text-foreground", tone !== "bad");
+    window.lucide?.createIcons();
   }
 
   // ---- /dashboard/ads: policy summary --------------------------------------
@@ -497,7 +525,7 @@
         const name = adsEl("td", "py-1.5 pr-3 font-semibold text-foreground", tier.label || tier.id);
         if (tier.id === currentTier) {
           name.append(document.createTextNode(" "));
-          name.append(adsEl("span", "rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground", "your level"));
+          name.append(adsEl("span", "fm-label fm-label-accent", "your level"));
         }
         const price = Number(tier.priceUsdMonthly) || 0;
         const live = Number(tier.liveAds) || 0;
@@ -615,8 +643,8 @@
       return;
     }
     if (!view.mine) {
-      root.replaceChildren(adsEl("p", "text-sm text-muted-foreground",
-        "Your ads are unavailable right now. Refresh to try again."));
+      root.replaceChildren(adsFlash("warn", "", "Your ads are unavailable right now. Refresh to try again."));
+      window.lucide?.createIcons();
       if (level) level.textContent = "Unavailable";
       return;
     }
@@ -685,7 +713,7 @@
       const limit = Number(limits[field]) || 0;
       const used = Array.from(String(input?.value || "")).length;
       counter.textContent = limit ? `${used} / ${limit}` : String(used);
-      counter.classList.toggle("text-amber-500", Boolean(limit) && used >= limit);
+      counter.classList.toggle("text-attention", Boolean(limit) && used >= limit);
       counter.classList.toggle("text-muted-foreground", !limit || used < limit);
     }
   }
@@ -714,15 +742,22 @@
     const warn = Boolean(ad && ad.status === "approved" &&
       adsCreativeChanged(ad, values || adsFormValues()));
     box.hidden = !warn;
-    box.textContent = warn
-      ? "This ad is approved. Changing its words, link, category or surfaces sends it back to review, and it stops running until a reviewer approves the new version. The schedule and the note can change freely."
-      : "";
+    box.replaceChildren();
+    if (warn) {
+      box.append(adsIcon("triangle-alert", "h-4 w-4"), adsEl("div", "fm-flash-body",
+        "This ad is approved. Changing its words, link, category or surfaces sends it back to review, and it stops running until a reviewer approves the new version. The schedule and the note can change freely."));
+      window.lucide?.createIcons();
+    }
   }
 
   function setAdsFormError(message) {
     const box = $("[data-ads-form-error]");
     if (!box) return;
-    box.textContent = message || "";
+    box.replaceChildren();
+    if (message) {
+      box.append(adsIcon("circle-alert", "h-4 w-4"), adsEl("span", "fm-flash-body", message));
+      window.lucide?.createIcons();
+    }
     box.hidden = !message;
   }
 
@@ -834,18 +869,14 @@
     if (!["rejected", "suspended"].includes(ad.status) || (!ad.reviewReason && !codes.length)) {
       return null;
     }
-    const box = adsEl("div", "rounded-md border border-red-500/40 bg-red-500/10 p-3 text-xs text-foreground");
-    box.append(adsEl("p", "font-semibold", ad.status === "suspended" ? "Why it was suspended" : "Why it was rejected"));
-    if (ad.reviewReason) {
-      const reason = adsEl("p", "mt-1", ad.reviewReason);
-      reason.style.overflowWrap = "anywhere";
-      box.append(reason);
-    }
+    const box = adsFlash("bad", ad.status === "suspended" ? "Why it was suspended" : "Why it was rejected",
+      ad.reviewReason || "");
+    const body = box.querySelector(".fm-flash-body");
     if (codes.length) {
-      box.append(adsEl("p", "mt-2 text-muted-foreground", "Policy rules the reviewer cited:"));
-      const list = adsEl("ul", "mt-1 grid gap-1");
+      body.append(adsEl("p", "mt-2", "Policy rules the reviewer cited:"));
+      const list = adsEl("ul", "mt-1 grid gap-1 list-disc pl-4 text-muted-foreground");
       for (const code of codes) list.append(adsEl("li", "", adsLabelFor(adsProhibitedList(), code)));
-      box.append(list);
+      body.append(list);
     }
     return box;
   }
@@ -971,16 +1002,18 @@
       return;
     }
     if (!view.mine) {
-      root.replaceChildren(adsEl("div", "px-4 sm:px-5 py-8 text-sm text-muted-foreground",
-        "Your ads are unavailable right now."));
+      root.replaceChildren(adsBlankslate("cloud-off", "Your ads are unavailable",
+        "Refresh to try again."));
+      window.lucide?.createIcons();
       if (summary) summary.textContent = "";
       return;
     }
     const ads = Array.isArray(view.mine.ads) ? view.mine.ads : [];
     if (summary) summary.textContent = ads.length === 1 ? "1 ad" : `${formatCount(ads.length)} ads`;
     if (!ads.length) {
-      root.replaceChildren(adsEl("div", "px-4 sm:px-5 py-8 text-sm text-muted-foreground",
-        "No ads yet. Write one above - saving a draft costs nothing and shows it to nobody."));
+      root.replaceChildren(adsBlankslate("megaphone", "No ads yet",
+        "Write one above - saving a draft costs nothing and shows it to nobody."));
+      window.lucide?.createIcons();
       return;
     }
     root.replaceChildren(...ads.map(adsOwnerItemElement));
@@ -1000,8 +1033,10 @@
     state.adsView.review.notice = message || "";
     const box = $("[data-ads-review-notice]");
     if (!box) return;
-    box.textContent = state.adsView.review.notice;
+    box.replaceChildren();
+    if (state.adsView.review.notice) box.append(adsFlash("info", "", state.adsView.review.notice));
     box.hidden = !state.adsView.review.notice;
+    window.lucide?.createIcons();
   }
 
   function renderAdsReviewTabs() {
@@ -1012,7 +1047,7 @@
     for (const tab of ADS_REVIEW_TABS) {
       const active = review.status === tab.id;
       const button = adsEl("button",
-        `inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold transition-colors ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`,
+        active ? "fm-btn fm-btn-sm" : "fm-btn fm-btn-sm fm-btn-invisible",
         tab.label);
       button.type = "button";
       button.setAttribute("role", "tab");
@@ -1023,7 +1058,7 @@
         ? (active && !review.loading ? review.ads.length : null)
         : Number(review.counts?.[tab.id]) || 0;
       if (count !== null) {
-        button.append(adsEl("span", "rounded-full border border-border px-1.5 font-mono text-[10px] text-muted-foreground tabular-nums", formatCount(count)));
+        button.append(adsEl("span", "fm-counter tabular-nums", formatCount(count)));
       }
       button.addEventListener("click", () => {
         if (review.status === tab.id && !review.error) return;
@@ -1170,8 +1205,7 @@
     const item = adsEl("div", "px-4 sm:px-5 py-4 grid gap-3");
     const viewer = String(state.session?.nodeName || "").toLowerCase();
     if (viewer && String(ad.owner || "").toLowerCase() === viewer) {
-      item.append(adsEl("p", "rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground",
-        "This is your own ad - the decision will be recorded as a self-review."));
+      item.append(adsFlash("warn", "", "This is your own ad - the decision will be recorded as a self-review."));
     }
     const frame = adsEl("div", "rounded-md border border-border bg-background px-4 py-2");
     frame.append(adCardElement(ad));
@@ -1217,8 +1251,8 @@
     }
     const flags = Array.isArray(ad.screenFlags) ? ad.screenFlags : [];
     if (flags.length) {
-      item.append(adsEl("p", "rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-foreground",
-        `Screening flagged: ${flags.map(adsFlagLabel).join("; ")}. These are prompts to read closely, not decisions.`));
+      item.append(adsFlash("warn", "Screening flagged",
+        `${flags.map(adsFlagLabel).join("; ")}. These are prompts to read closely, not decisions.`));
     }
     if (["rejected", "suspended"].includes(ad.status)) {
       const reason = adsReviewReasonElement(ad);
@@ -1245,12 +1279,15 @@
       return;
     }
     if (review.error) {
-      root.replaceChildren(adsEl("div", "px-4 sm:px-5 py-8 text-sm text-muted-foreground", review.error));
+      root.replaceChildren(adsBlankslate("circle-alert", "The queue did not load", review.error));
+      window.lucide?.createIcons();
       return;
     }
     if (!review.ads.length) {
-      root.replaceChildren(adsEl("div", "px-4 sm:px-5 py-8 text-sm text-muted-foreground",
-        review.status === "pending" ? "Nothing is waiting for review." : "Nothing here."));
+      root.replaceChildren(adsBlankslate("inbox",
+        review.status === "pending" ? "All caught up" : "Nothing here",
+        review.status === "pending" ? "Nothing is waiting for review." : "No ads in this state."));
+      window.lucide?.createIcons();
       return;
     }
     root.replaceChildren(...review.ads.map(adsReviewItemElement));

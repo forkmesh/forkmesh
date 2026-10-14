@@ -43,10 +43,17 @@ func safeDeleteClean(path string) string {
 		return absolute
 	}
 	dir, name := filepath.Split(absolute)
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		return filepath.Join(resolved, name)
+	rest := []string{name}
+	for dir = filepath.Clean(dir); ; dir = filepath.Dir(dir) {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(append([]string{resolved}, rest...)...)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return absolute
+		}
+		rest = append([]string{filepath.Base(dir)}, rest...)
 	}
-	return absolute
 }
 
 func safeDeleteInside(child, parent string) bool {

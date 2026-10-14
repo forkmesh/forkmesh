@@ -1,0 +1,142 @@
+{
+  "roles": {
+    "primary": "Blue. The interactive colour: links, focus rings, selected cards and rows, checkboxes, radios, toggles, active tabs and nav, the current day. Same value family as accent and ring.",
+    "accent": "Blue. Same role as primary; prefer it for text links and focus.",
+    "cta": "Green. Only the one create/new call-to-action button on a page (bg-cta text-cta-foreground hover:bg-cta/90). Never for focus, selection, links or icons.",
+    "success": "Green. Status only: online, passed, done, operational.",
+    "attention": "Amber. Warnings, pending, usage above 80 percent.",
+    "destructive": "Red. Errors, failed, remove/delete actions (as text on a secondary button).",
+    "muted-foreground": "Grey. Every icon and secondary text; lift to foreground on hover.",
+    "surfaces": "background, canvas, card, subtle, popover: solid fills only, no gradients, no shadows on panels, never a bordered box inside a bordered box."
+  },
+  "density": {
+    "control-font": "13px",
+    "control-height": "32px",
+    "control-height-sm": "28px",
+    "menu-row-height": "30px",
+    "control-radius": "6px"
+  },
+  "rules": [
+    "Page header: a plain title and one muted line. No icon tile, no kicker label, no decorative dots.",
+    "Inputs and selects: control-height, control-font, 1px border, focus = border and inset 1px line in primary. No glow.",
+    "Menus: menu-row-height rows, control-font text, check mark in primary on the selected row, muted hint on the right. No coloured left bars.",
+    "Buttons: secondary (neutral) by default, one cta per page, destructive text for remove.",
+    "Structure: one bordered box per group with hairline dividers between rows."
+  ],
+  "colors": {
+    "header": {
+      "dark": "1 4 9",
+      "light": "246 248 250"
+    },
+    "sidebar": {
+      "dark": "12 17 23",
+      "light": "255 255 255"
+    },
+    "background": {
+      "dark": "1 4 9",
+      "light": "255 255 255"
+    },
+    "foreground": {
+      "dark": "240 246 252",
+      "light": "0 0 0"
+    },
+    "card": {
+      "dark": "13 17 23",
+      "light": "255 255 255"
+    },
+    "card-foreground": {
+      "dark": "240 246 252",
+      "light": "0 0 0"
+    },
+    "popover": {
+      "dark": "22 27 34",
+      "light": "255 255 255"
+    },
+    "popover-foreground": {
+      "dark": "240 246 252",
+      "light": "0 0 0"
+    },
+    "primary": {
+      "dark": "68 147 248",
+      "light": "9 105 218"
+    },
+    "primary-foreground": {
+      "dark": "255 255 255",
+      "light": "255 255 255"
+    },
+    "cta": {
+      "dark": "35 134 54",
+      "light": "21 128 61"
+    },
+    "cta-foreground": {
+      "dark": "255 255 255",
+      "light": "255 255 255"
+    },
+    "success": {
+      "dark": "63 185 80",
+      "light": "26 127 55"
+    },
+    "attention": {
+      "dark": "210 153 34",
+      "light": "154 103 0"
+    },
+    "secondary": {
+      "dark": "33 38 45",
+      "light": "255 255 255"
+    },
+    "secondary-foreground": {
+      "dark": "201 209 217",
+      "light": "31 35 40"
+    },
+    "muted": {
+      "dark": "22 27 34",
+      "light": "255 255 255"
+    },
+    "muted-foreground": {
+      "dark": "145 152 161",
+      "light": "89 99 110"
+    },
+    "accent": {
+      "dark": "88 166 255",
+      "light": "9 105 218"
+    },
+    "accent-foreground": {
+      "dark": "255 255 255",
+      "light": "255 255 255"
+    },
+    "destructive": {
+      "dark": "248 81 73",
+      "light": "220 38 38"
+    },
+    "border": {
+      "dark": "61 68 77",
+      "light": "226 232 240"
+    },
+    "ring": {
+      "dark": "88 166 255",
+      "light": "9 105 218"
+    },
+    "canvas": {
+      "dark": "13 17 23",
+      "light": "255 255 255"
+    },
+    "subtle": {
+      "dark": "21 27 35",
+      "light": "246 248 250"
+    },
+    "scrollbar": {
+      "dark": "139 148 158",
+      "light": "71 85 105"
+    }
+  },
+  "components": {
+    "fm-btn": "Neutral button. Add fm-btn-sm for toolbars, rows, banners and dialogs; fm-btn-cta for the one create button; fm-btn-danger for remove; fm-btn-invisible for icon-only and quiet actions; fm-btn-icon for square icon buttons.",
+    "fm-flash": "Inline alert or banner: fm-flash (blue info), fm-flash-success, fm-flash-warning, fm-flash-danger, fm-flash-neutral; fm-flash-full for a page-wide banner. Children: an icon, .fm-flash-body with .fm-flash-title and a muted p, .fm-flash-actions with fm-btn-sm buttons.",
+    "fm-label": "Small outlined pill for states and tags: fm-label, fm-label-accent, fm-label-success, fm-label-attention, fm-label-danger. fm-counter for counts.",
+    "fm-popover": "Any floating panel (menus, hovercards, pickers). fm-menu inside it, rows are fm-menu-item (aria-checked=true draws the blue check), fm-menu-heading, fm-menu-divider.",
+    "fm-dialog": "Modal: fm-dialog-header (fm-dialog-title + invisible close button), fm-dialog-body, fm-dialog-footer with right-aligned fm-btn-sm buttons.",
+    "fm-blankslate": "Empty state: one muted 24px icon, fm-blankslate-title, fm-blankslate-desc, optional button.",
+    "fm-toast": "Transient notice, popover surface with a 16px icon tinted by fm-flash-success/warning/danger.",
+    "fm-tooltip": "Inverted small tooltip."
+  }
+}

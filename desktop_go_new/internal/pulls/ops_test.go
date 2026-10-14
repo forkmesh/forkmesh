@@ -490,6 +490,9 @@ func TestConflictMergeSessionResolveAndAbort(t *testing.T) {
 	if out := sh(t, f.repo, "branch", "--list", "pull/2"); out != "" {
 		t.Fatalf("abort drops the new pull branch: %q", out)
 	}
+	if tip := sh(t, f.repo, "rev-parse", "--verify", "refs/forkmesh/trash/am-abort/pull/2"); tip == "" {
+		t.Fatal("abort keeps the dropped pull branch tip in a trash ref")
+	}
 }
 
 func TestAgentConflictWorkTreeAndFileEdits(t *testing.T) {

@@ -59,7 +59,8 @@ window.ForkMeshDashboard.registerPage("calories", ({
   function fmtWeight(kg) { return kg ? `${g(toDisplayWeight(kg))} ${weightUnit()}` : "—"; }
   function message(kind, value = "") {
     const node = $(`[data-calories-${kind}]`); if (!node) return;
-    node.textContent = value; node.classList.toggle("hidden", !value);
+    const slot = node.querySelector("[data-calories-message-text]") || node;
+    slot.textContent = value; node.classList.toggle("hidden", !value);
     if (value) node.scrollIntoView?.({ block: "nearest" });
   }
   function apiPath(suffix = "") { return `/api/calories${suffix}`; }
@@ -192,7 +193,7 @@ window.ForkMeshDashboard.registerPage("calories", ({
       <td class="px-4 py-2 text-right text-muted-foreground">${g(item.proteinG)}</td>
       <td class="px-4 py-2 text-right text-muted-foreground">${g(item.carbsG)}</td>
       <td class="px-4 py-2 text-right text-muted-foreground">${g(item.fatG)}</td>
-      <td class="px-4 py-2 text-right"><button data-calories-entry-edit="${escapeHtml(item.id)}" class="rounded border border-border px-2 py-1 text-xs">Edit</button></td></tr>`).join("")).join("");
+      <td class="px-4 py-2 text-right"><button data-calories-entry-edit="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Edit</button></td></tr>`).join("")).join("");
     $(`[data-calories-entries-empty]`).classList.toggle("hidden", rows.length > 0);
   }
 
@@ -292,7 +293,7 @@ window.ForkMeshDashboard.registerPage("calories", ({
       <input data-calories-reminder-label maxlength="80" value="${escapeHtml(item.label || "")}" placeholder="Log lunch" class="min-w-[120px] flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground" />
       <label class="flex items-center gap-1 text-xs text-muted-foreground"><input data-calories-reminder-unlogged type="checkbox" ${item.onlyIfUnlogged ? "checked" : ""} /> Only if nothing logged</label>
       <label class="flex items-center gap-1 text-xs text-muted-foreground"><input data-calories-reminder-enabled type="checkbox" ${item.enabled === false ? "" : "checked"} /> On</label>
-      <button data-calories-reminder-remove type="button" class="rounded border border-border px-2 py-1 text-xs" aria-label="Remove reminder">✕</button></div>`;
+      <button data-calories-reminder-remove type="button" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Remove reminder"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"></path></svg></button></div>`;
   }
   function renderGoals() {
     const p = state.overview?.profile; if (!p) return;
@@ -502,7 +503,7 @@ window.ForkMeshDashboard.registerPage("calories", ({
     state.quick.lists = lists;
     const filter = foodKey($(`[data-calories-quick-filter]`)?.value);
     const shown = (list) => list.map((food, i) => ({ food, i })).filter(({ food }) => !filter || foodKey(food.name).includes(filter) || foodKey(food.brand).includes(filter));
-    const section = (title, rows, empty) => `<section><h3 class="mb-1 text-xs font-semibold uppercase text-muted-foreground">${title}</h3>${rows.length ? `<div class="cal-quick-list grid gap-0.5">${rows.join("")}</div>` : `<p class="text-xs text-muted-foreground">${empty}</p>`}</section>`;
+    const section = (title, rows, empty) => `<section><h3 class="mb-1 text-xs font-semibold text-muted-foreground">${title}</h3>${rows.length ? `<div class="cal-quick-list grid gap-0.5">${rows.join("")}</div>` : `<p class="text-xs text-muted-foreground">${empty}</p>`}</section>`;
     const mineRows = shown(lists.mine).map(({ food, i }) => quickRow(food, `mine:${i}`, `<button data-calories-quick-remove="${i}" type="button" class="cal-quick-side" aria-label="${escapeHtml(`Remove ${food.name} from My foods`)}" title="Remove from My foods">✕</button>`));
     const frequentRows = shown(lists.frequent).map(({ food, i }) => quickRow(food, `frequent:${i}`, `<button data-calories-quick-save="${i}" type="button" class="cal-quick-side" aria-label="${escapeHtml(`Save ${food.name} to My foods`)}" title="Save to My foods">☆</button>`));
     const commonRows = shown(lists.common).map(({ food, i }) => quickRow(food, `common:${i}`, `<button data-calories-quick-save-common="${i}" type="button" class="cal-quick-side" aria-label="${escapeHtml(`Save ${food.name} to My foods`)}" title="Save to My foods">☆</button>`));
@@ -677,7 +678,7 @@ window.ForkMeshDashboard.registerPage("calories", ({
     const label = product.perServing ? `per serving${product.servingSize ? ` (${product.servingSize})` : ""}` : "per 100 g";
     return `<p class="font-semibold text-foreground">${escapeHtml(product.name)}</p><p class="text-xs text-muted-foreground">${escapeHtml([product.brand, product.quantity, product.source === "usda" ? "USDA FoodData Central" : "Open Food Facts"].filter(Boolean).join(" · "))}</p>
       <p class="mt-2 text-sm text-foreground">${n(basis.calories)} kcal ${label}</p><p class="text-xs text-muted-foreground">P ${g(basis.proteinG)} g · C ${g(basis.carbsG)} g · F ${g(basis.fatG)} g</p>
-      <button data-calories-product-add type="button" class="mt-3 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Add to diary…</button>`;
+      <button data-calories-product-add type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Add to diary…</button>`;
   }
   async function lookupBarcode(code) {
     const status = $(`[data-calories-scan-status]`), card = $(`[data-calories-product]`);
@@ -821,7 +822,7 @@ window.ForkMeshDashboard.registerPage("calories", ({
     const status = { active: "Active", upcoming: "Upcoming", closed: "Finished" }[item.status] || item.status;
     const mine = { invited: "You are invited", accepted: "You are in", declined: "You declined", left: "You left", none: "" }[item.myStatus] || "";
     return `<button data-calories-challenge-open="${escapeHtml(item.id)}" type="button" class="rounded-lg border border-border bg-card p-4 text-left hover:bg-secondary">
-      <div class="flex items-start justify-between gap-2"><span class="font-semibold text-foreground">${escapeHtml(item.title)}</span><span class="rounded-full border border-border px-2 py-0.5 text-xs text-foreground">${status}</span></div>
+      <div class="flex items-start justify-between gap-2"><span class="font-semibold text-foreground">${escapeHtml(item.title)}</span><span class="fm-label">${status}</span></div>
       <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(KIND_LABELS[item.kind] || item.kind)}</p>
       <p class="mt-2 text-xs text-muted-foreground">${dayLabel(item.startsOn)} → ${dayLabel(item.endsOn)} · ${item.participants} in${item.invited ? ` · ${item.invited} invited` : ""} · by ${escapeHtml(item.createdBy)}</p>
       ${mine ? `<p class="mt-2 text-xs font-semibold ${item.myStatus === "invited" ? "text-primary" : "text-foreground"}">${mine}</p>` : ""}</button>`;
@@ -877,14 +878,14 @@ window.ForkMeshDashboard.registerPage("calories", ({
     $(`[data-calories-board-description]`).textContent = item.description || "";
     const actions = [];
     if (item.status !== "closed") {
-      if (item.myStatus === "invited") { actions.push(`<button data-calories-board-respond="accept" class="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Accept challenge</button>`, `<button data-calories-board-respond="decline" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Decline</button>`); }
-      else if (item.myStatus === "accepted" && !item.isCreator) actions.push(`<button data-calories-board-respond="decline" class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Leave challenge</button>`);
+      if (item.myStatus === "invited") { actions.push(`<button data-calories-board-respond="accept" class="fm-btn fm-btn-sm fm-btn-cta">Accept challenge</button>`, `<button data-calories-board-respond="decline" class="fm-btn fm-btn-sm">Decline</button>`); }
+      else if (item.myStatus === "accepted" && !item.isCreator) actions.push(`<button data-calories-board-respond="decline" class="fm-btn fm-btn-sm">Leave challenge</button>`);
       else if (["none", "declined", "left"].includes(item.myStatus) && !item.isCreator) actions.push(`<span class="text-xs text-muted-foreground">Ask ${escapeHtml(item.createdBy)} for an invitation.</span>`);
-      if (item.isCreator) actions.push(`<button data-calories-board-edit class="rounded-md border border-border px-3 py-2 text-xs font-semibold">Edit / invite</button>`, `<button data-calories-board-close class="rounded-md border border-border px-3 py-2 text-xs font-semibold">End now</button>`);
+      if (item.isCreator) actions.push(`<button data-calories-board-edit class="fm-btn fm-btn-sm">Edit / invite</button>`, `<button data-calories-board-close class="fm-btn fm-btn-sm">End now</button>`);
     }
-    if (item.isCreator) actions.push(`<button data-calories-board-delete class="rounded-md border border-destructive px-3 py-2 text-xs font-semibold text-destructive">Delete</button>`);
+    if (item.isCreator) actions.push(`<button data-calories-board-delete class="fm-btn fm-btn-sm fm-btn-danger">Delete</button>`);
     $(`[data-calories-board-actions]`).innerHTML = actions.join("");
-    $(`[data-calories-board]`).innerHTML = item.leaderboard?.length ? item.leaderboard.map((m) => boardRow(m, item.kind)).join("") : `<p class="text-sm text-muted-foreground">Nobody has accepted yet.</p>`;
+    $(`[data-calories-board]`).innerHTML = item.leaderboard?.length ? item.leaderboard.map((m) => boardRow(m, item.kind)).join("") : `<div class="fm-blankslate"><p class="fm-blankslate-title">Nobody has accepted yet</p><p class="fm-blankslate-desc">Standings appear once invited friends accept.</p></div>`;
     const pending = (item.pending || []).map((m) => `${m.name} (${m.status})`);
     $(`[data-calories-board-pending]`).textContent = pending.length ? `Invited or left: ${pending.join(", ")}` : "";
     $(`[data-calories-board-dialog]`).showModal();

@@ -27,6 +27,7 @@ it is trivially unit-testable against the on-disk partials.
 """
 
 import hashlib
+import json
 import re
 
 # Placeholder the shell uses to pull in a partial: <!--#include partial="name"-->
@@ -42,6 +43,9 @@ PLUGIN_NAV_MARKER = "<!-- forkmesh:plugin-navigation -->"
 
 # Per-page metadata tokens in the shell: <!--#page id-->, <!--#page title-->, ...
 PAGE_TOKEN_RE = re.compile(r"<!--#page ([a-z]+)-->")
+
+THEME_TOKEN_RE = re.compile(r"/\*#theme (dark|light)\*/")
+THEME_PATH = "dashboard/theme.json"
 
 # Root-relative first-party script and stylesheet references, with an optional
 # existing ``?v=`` cache-busting query. Source documents keep a visible
@@ -505,6 +509,27 @@ def stamp_js_asset_versions(source, versions):
 def composed_page_assets():
     """The ``public/``-relative documents :data:`PAGES` composes."""
     return {meta["asset"] for meta in PAGES.values()}
+
+
+def theme_declarations(theme, mode):
+    lines = [
+        "--dashboard-%s-rgb: %s;" % (name, values[mode])
+        for name, values in theme["colors"].items()
+    ]
+    if theme.get("density"):
+        lines += [
+            "--dashboard-%s: %s;" % (name, value)
+            for name, value in theme["density"].items()
+        ]
+    return "\n        ".join(lines)
+
+
+def apply_theme(shell, read):
+    theme = json.loads(read(THEME_PATH))
+    return THEME_TOKEN_RE.sub(
+        lambda m: theme_declarations(theme, m.group(1)), shell)
+
+
 def compose_page_from_reader(
         read, page_id, *, page=None, view=None, plugin_script=""):
     """Assemble one page document using ``read(public_relative_path) -> str``.
@@ -541,7 +566,9 @@ def compose_page_from_reader(
         "extras": "".join(
             read(partial_path(name)) for name in meta.get("extras", ())),
     }
-    shell = PAGE_TOKEN_RE.sub(lambda m: tokens[m.group(1)], read("dashboard/shell.html"))
+    shell = apply_theme(
+        PAGE_TOKEN_RE.sub(lambda m: tokens[m.group(1)], read("dashboard/shell.html")),
+        read)
     partials = {name: read(partial_path(name)) for name in included_partials(shell)}
     view_source = view if view is not None else read(view_path(meta["view"]))
     partials["main"] = VIEW_INCLUDE_RE.sub(lambda m: view_source, partials["main"])

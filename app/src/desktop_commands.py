@@ -101,8 +101,15 @@ async def _queue_command(env, request, owner, repo):
     target = str(data.get("target") or "").strip()
     ts = str(data.get("ts") or "").strip()
     sig = str(data.get("sig") or "").strip()
-    if not account or account != owner.strip().lower():
+    if not account:
         return json_response({"error": "not_authorized"}, status=403)
+    if account == owner.strip().lower():
+        queue_owner = owner
+    elif await _org_write_allowed(env, owner, repo, account):
+        queue_owner = account
+    else:
+        return json_response({"error": "not_authorized"}, status=403)
+    signed_owner = await _public_repository_owner(env, request, owner, repo)
     payload = command_payload(command, target)
     if payload is None:
         return json_response({"error": "unsupported_command"}, status=400)
@@ -111,7 +118,8 @@ async def _queue_command(env, request, owner, repo):
     now = _now_ms()
     if abs(now - int(ts)) > DESKTOP_COMMAND_MAX_SKEW_MS:
         return json_response({"error": "stale_request"}, status=401)
-    canonical = canonical_command(owner, repo, command, target, ts).encode()
+    canonical = canonical_command(
+        signed_owner, repo, command, target, ts).encode()
     signer = ""
     for public_key in await _owner_signing_pubkeys(env, account):
         if await ed25519_verify(public_key, sig, canonical):
@@ -121,7 +129,7 @@ async def _queue_command(env, request, owner, repo):
         return json_response({"error": "invalid_signature"}, status=401)
 
     await ensure_tables(env)
-    repo_bi = await blind_index(env, owner + "/" + repo)
+    repo_bi = await blind_index(env, queue_owner + "/" + repo)
     sig_digest = hashlib.sha256(sig.encode()).hexdigest()
     await d1_run(
         env,
@@ -143,6 +151,7 @@ async def _queue_command(env, request, owner, repo):
         "sig": sig,
         "signer": signer,
         "ownerAccount": account,
+        "repoOwner": signed_owner,
         "queuedAt": now,
     }
     try:
@@ -154,7 +163,7 @@ async def _queue_command(env, request, owner, repo):
         )
     except Exception:
         return json_response({"error": "replayed_request"}, status=409)
-    await notify_repo_host(env, owner, repo, "desktop-commands")
+    await notify_repo_host(env, queue_owner, repo, "desktop-commands")
     return json_response({"ok": True, "queued": pending + 1})
 
 
@@ -179,8 +188,8 @@ async def _list_commands(env, request, owner, repo):
             continue
         record["id"] = int(row.get("id") or 0)
         record["canonical"] = canonical_command(
-            owner, repo, record.get("command", ""), record.get("target", ""),
-            record.get("ts", ""))
+            record.get("repoOwner") or owner, repo, record.get("command", ""),
+            record.get("target", ""), record.get("ts", ""))
         commands.append(record)
     return json_response({
         "ok": True,

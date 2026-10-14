@@ -54,6 +54,9 @@ CRON_PHASE_CATALOG = (
      "Verify submitted contribution rewards."),
     ("reward-sweeps", 5, (1,), "rewards",
      "Sweep pending custodial element deposits."),
+    ("direct-unread-email", 5, (1,), "notifications",
+     "Send one reminder email to people whose direct messages have waited "
+     "on the server for more than a day."),
     ("federation", 5, (2,), "federation",
      "Exchange catalog and node state with federated relays."),
     ("notification-digest", 5, (3,), "notifications",

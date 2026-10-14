@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Hackathon Winner">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe58f"/><stop offset="1" stop-color="#b07d00"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8f1d1d"/><stop offset="1" stop-color="#4c0b0b"/></linearGradient>
+<linearGradient id="cup" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffe58f"/><stop offset="1" stop-color="#d4a72c"/></linearGradient><clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#b07d00" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<path d="M45 40 H35 C35 55 40 61 49 63 M83 40 H93 C93 55 88 61 79 63" fill="none" stroke="#e3b341" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M43 34 H85 V52 C85 68 76 77 64 77 C52 77 43 68 43 52 Z" fill="url(#cup)"/>
+<path d="M64.0,42.0 L66.5,48.5 L73.5,48.9 L68.1,53.3 L69.9,60.1 L64.0,56.3 L58.1,60.1 L59.9,53.3 L54.5,48.9 L61.5,48.5 Z" fill="#8f1d1d"/>
+<rect x="59" y="76" width="10" height="11" fill="#e3b341"/>
+<rect x="46" y="86" width="36" height="10" rx="3" fill="#ffd33d"/>
+</svg>

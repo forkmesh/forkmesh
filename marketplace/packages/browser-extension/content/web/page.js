@@ -20,7 +20,8 @@ window.ForkMeshDashboard.registerPage("browser-extension", ({ select: $ }) => {
   }
   function notice(text = "") {
     const node = $(`[data-extension-notice]`); if (!node) return;
-    node.textContent = text; node.classList.toggle("hidden", !text);
+    const slot = node.querySelector("[data-extension-notice-text]") || node;
+    slot.textContent = text; node.classList.toggle("hidden", !text);
   }
   function render() {
     const installed = installedVersion();

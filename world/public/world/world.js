@@ -4680,6 +4680,7 @@ const WORLD_NOTIFICATION_KIND_ICONS = Object.freeze({
   calendar_rsvp: "◷",
   chat_webhook: "◌",
   channel_unread: "◌",
+  direct_unread: "◌",
   account_email_sent: "✉",
   operational_alert: "⚠",
   tip_sent: "◈",

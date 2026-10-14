@@ -7,7 +7,7 @@
               --an-s1: #3987e5; --an-s2: #d95926; --an-s3: #199e70; --an-s4: #c98500;
               --an-s5: #d55181; --an-s6: #008300; --an-s7: #9085e9; --an-s8: #e66767;
               --an-seq-rgb: 57 135 229;
-              --an-good: #3fb950; --an-warn: #d29922; --an-bad: #f85149;
+              --an-good: rgb(var(--dashboard-success-rgb)); --an-warn: rgb(var(--dashboard-attention-rgb)); --an-bad: rgb(var(--dashboard-destructive-rgb));
               --an-fg: rgb(var(--dashboard-foreground-rgb));
               --an-muted: rgb(var(--dashboard-muted-foreground-rgb));
               --an-line: rgb(var(--dashboard-border-rgb));
@@ -23,7 +23,6 @@
               --an-s1: #2a78d6; --an-s2: #eb6834; --an-s3: #1baf7a; --an-s4: #eda100;
               --an-s5: #e87ba4; --an-s6: #008300; --an-s7: #4a3aa7; --an-s8: #e34948;
               --an-seq-rgb: 42 120 214;
-              --an-good: #1a7f37; --an-warn: #9a6700; --an-bad: #cf222e;
               --an-muted: #59636e;
             }
             [data-view="analytics"] [hidden] { display: none !important; }
@@ -36,31 +35,23 @@
             .an-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
             .an-input, .an-select, .an-textarea { border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-bg); color: var(--an-fg); padding: .4rem .6rem; font-size: .8125rem; min-width: 0; max-width: 100%; }
             .an-textarea { width: 100%; font-family: var(--an-mono); font-size: .75rem; line-height: 1.5; }
-            .an-input:focus-visible, .an-select:focus-visible, .an-textarea:focus-visible, .an-btn:focus-visible, .an-tab:focus-visible, .an-link:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
-            .an-btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-card); color: var(--an-fg); padding: .4rem .7rem; font-size: .78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
-            .an-btn:hover { background: var(--an-raised); }
-            .an-btn:disabled { opacity: .5; cursor: default; }
-            .an-btn-primary { background: rgb(var(--dashboard-primary-rgb)); border-color: transparent; color: rgb(var(--dashboard-primary-foreground-rgb)); }
-            .an-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb)); filter: brightness(1.08); }
-            .an-btn-danger { border-color: var(--an-danger); color: var(--an-danger); }
-            .an-btn-small { padding: .2rem .5rem; font-size: .72rem; }
-            .an-btn svg, .an-tab svg { width: 14px; height: 14px; flex: none; }
+            .an-input:focus-visible, .an-select:focus-visible, .an-textarea:focus-visible, [data-view="analytics"] .fm-btn:focus-visible, .an-tab:focus-visible, .an-link:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+            .an-tab svg { width: 16px; height: 16px; flex: none; color: var(--an-muted); }
+            .an-tab:hover svg, .an-tab[aria-selected="true"] svg { color: var(--an-fg); }
             .an-link { border: 0; background: none; padding: 0; color: var(--dashboard-link, var(--an-accent)); font: inherit; text-align: left; cursor: pointer; min-height: 0; }
             .an-link:hover { text-decoration: underline; }
             .an-check { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; color: var(--an-fg); }
             .an-check input { min-height: 0; width: 1rem; height: 1rem; }
-            .an-banner { border: 1px solid var(--an-line); border-radius: 6px; background: var(--an-raised); padding: .5rem .75rem; font-size: .8125rem; color: var(--an-fg); }
-            .an-banner-error { border-color: var(--an-danger); color: var(--an-danger); }
-            .an-banner-notice { border-color: rgb(var(--dashboard-primary-rgb)); }
-            .an-banner-quiet { border-style: dashed; color: var(--an-muted); font-size: .75rem; }
+            [data-view="analytics"] .fm-flash p { margin: 0; }
             .an-card { border: 1px solid var(--an-line); border-radius: 8px; background: var(--an-card); min-width: 0; }
             .an-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .5rem; padding: .4rem .7rem; min-height: 2.25rem; border-bottom: 1px solid var(--an-line-soft); }
             .an-card-head h2, .an-card-head h3 { margin: 0; font-size: .8rem; font-weight: 600; color: var(--an-fg); }
             .an-pad { padding: .6rem .7rem; }
-            .an-center { padding: 2rem 1rem; text-align: center; }
-            .an-center h2 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--an-fg); }
             .an-hint { font-size: .75rem; color: var(--an-muted); }
-            .an-empty { padding: 1rem .75rem; text-align: center; font-size: .8125rem; color: var(--an-muted); }
+            [data-view="analytics"] .fm-blankslate { padding: 24px 16px; }
+            [data-view="analytics"] .fm-blankslate p, [data-view="analytics"] .fm-blankslate h2 { margin: 0; }
+            [data-view="analytics"] .fm-blankslate-desc { font-size: 13px; }
+            [data-view="analytics"] .fm-blankslate > .fm-btn { margin-top: 12px; }
             .an-stack { display: grid; gap: .75rem; min-width: 0; }
             .an-stack-tight { display: grid; gap: .5rem; min-width: 0; }
             .an-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
@@ -106,10 +97,6 @@
             .an-bar-cell { position: relative; }
             .an-bar-cell > span { position: relative; }
             .an-bar-cell::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: var(--an-share, 0%); border-radius: 3px; background: rgb(var(--an-seq-rgb) / .16); }
-            .an-badge { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--an-line); border-radius: 999px; padding: .05rem .5rem; font-size: .7rem; color: var(--an-fg); white-space: nowrap; }
-            .an-badge-good { border-color: var(--an-good); }
-            .an-badge-bad { border-color: var(--an-bad); }
-            .an-badge-warn { border-color: var(--an-warn); }
             .an-dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--an-muted); flex: none; }
             .an-dot-good { background: var(--an-good); } .an-dot-warn { background: var(--an-warn); } .an-dot-bad { background: var(--an-bad); }
             .an-pre { margin: 0; border: 1px solid var(--an-line-soft); border-radius: 6px; background: var(--an-raised); padding: .6rem .75rem; font-family: var(--an-mono); font-size: .72rem; line-height: 1.55; color: var(--an-fg); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; }
@@ -126,7 +113,7 @@
             .an-chart .an-cross { stroke: var(--an-muted); stroke-width: 1; }
             .an-chart .an-note-line { stroke: var(--an-muted); stroke-width: 1; stroke-dasharray: 2 3; }
             .an-chart .an-note-flag { fill: var(--an-muted); }
-            .an-tip { position: absolute; z-index: 5; pointer-events: none; min-width: 9rem; max-width: 18rem; border: 1px solid var(--an-line); border-radius: 6px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px -10px rgb(0 0 0 / .5); padding: .45rem .6rem; font-size: .72rem; color: var(--an-fg); }
+            .an-tip { position: absolute; z-index: 5; pointer-events: none; min-width: 9rem; max-width: 18rem; padding: 6px 8px; font-size: 12px; }
             .an-tip-title { margin-bottom: .25rem; color: var(--an-muted); }
             .an-tip-row { display: flex; align-items: center; gap: .4rem; }
             .an-tip-row b { margin-left: auto; padding-left: .75rem; font-variant-numeric: tabular-nums; }
@@ -230,13 +217,14 @@
             .an-hbar b { font-variant-numeric: tabular-nums; font-weight: 600; }
 
             /* Dialogs */
-            .an-dialog { width: calc(100% - 1.5rem); max-width: 44rem; max-height: calc(100dvh - 2rem); border: 1px solid var(--an-line); border-radius: 10px; background: var(--an-card); color: var(--an-fg); padding: 0; box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6); }
-            .an-dialog::backdrop { background: rgb(var(--dashboard-background-rgb) / .8); }
-            .an-dialog-narrow { max-width: 30rem; }
-            .an-dialog form, .an-dialog-body { display: grid; gap: 1rem; padding: 1.1rem; }
-            .an-dialog h2 { margin: 0; font-size: 1rem; font-weight: 600; }
-            .an-dialog-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
-            .an-drawer { margin: 0 0 0 auto; width: min(100%, 38rem); max-width: none; height: 100dvh; max-height: none; border-radius: 0; border-width: 0 0 0 1px; overflow-y: auto; }
+            [data-view="analytics"] dialog.fm-dialog:not([open]) { display: none; }
+            [data-view="analytics"] .an-dialog { width: calc(100% - 1.5rem); max-width: 44rem; padding: 0; }
+            [data-view="analytics"] .an-dialog::backdrop { background: rgb(var(--dashboard-background-rgb) / .8); }
+            [data-view="analytics"] .an-dialog-narrow { max-width: 30rem; }
+            [data-view="analytics"] .an-dialog-form { display: flex; flex: 1; flex-direction: column; min-height: 0; margin: 0; }
+            [data-view="analytics"] .an-dialog .fm-dialog-title { margin: 0; }
+            [data-view="analytics"] .an-dialog .fm-dialog-footer { flex-wrap: wrap; align-items: center; }
+            [data-view="analytics"] .an-drawer { margin: 0 0 0 auto; width: min(100%, 38rem); max-width: none; height: 100dvh; max-height: none; border-radius: 0; border-width: 0 0 0 1px; }
           </style>
 
           <section data-view="analytics" class="view active h-full overflow-y-auto">
@@ -249,7 +237,7 @@
                 <div class="an-controls">
                   <select data-analytics-organization aria-label="Organization" class="an-select"></select>
                   <select data-analytics-project data-analytics-requires-project aria-label="Project" class="an-select" hidden></select>
-                  <button data-analytics-new-project type="button" class="an-btn" hidden><i data-lucide="plus"></i>New project</button>
+                  <button data-analytics-new-project type="button" class="fm-btn" hidden><i data-lucide="plus"></i>New project</button>
                   <select data-analytics-range data-analytics-requires-project aria-label="Date range" class="an-select" hidden>
                     <option value="24h">Last 24 hours</option>
                     <option value="7d" selected>Last 7 days</option>
@@ -263,25 +251,27 @@
                     <label class="an-hint">To <input data-analytics-to type="date" class="an-input" /></label>
                   </span>
                   <label data-analytics-requires-project class="an-check" hidden><input data-analytics-filter-test type="checkbox" /> Filter test accounts</label>
-                  <button data-analytics-refresh data-analytics-requires-project type="button" class="an-btn" hidden><i data-lucide="refresh-cw"></i>Refresh</button>
+                  <button data-analytics-refresh data-analytics-requires-project type="button" class="fm-btn" hidden><i data-lucide="refresh-cw"></i>Refresh</button>
                 </div>
               </div>
 
-              <div data-analytics-error role="alert" class="an-banner an-banner-error" hidden></div>
-              <div data-analytics-notice role="status" class="an-banner an-banner-notice" hidden></div>
+              <div data-analytics-error role="alert" class="fm-flash fm-flash-danger" hidden></div>
+              <div data-analytics-notice role="status" class="fm-flash fm-flash-success" hidden></div>
 
-              <section data-analytics-install-panel class="an-card an-center" hidden>
-                <h2>Analytics is not installed for <span data-analytics-install-org class="an-mono"></span></h2>
-                <p class="an-sub">Install first-party analytics, session replay, feature flags, and surveys for this organization. Data is sealed with this instance's key and never sent to a third party.</p>
-                <p style="margin-top:1rem"><button data-analytics-install type="button" class="an-btn an-btn-primary" hidden>Install for this organization</button></p>
-                <p data-analytics-install-denied class="an-sub" hidden>Ask an organization owner or admin to install Analytics.</p>
+              <section data-analytics-install-panel class="an-card fm-blankslate" hidden>
+                <i data-lucide="chart-line"></i>
+                <h2 class="fm-blankslate-title">Analytics is not installed for <span data-analytics-install-org class="an-mono"></span></h2>
+                <p class="fm-blankslate-desc">Install first-party analytics, session replay, feature flags, and surveys for this organization. Data is sealed with this instance's key and never sent to a third party.</p>
+                <button data-analytics-install type="button" class="fm-btn fm-btn-sm fm-btn-cta" hidden>Install for this organization</button>
+                <p data-analytics-install-denied class="fm-blankslate-desc" hidden>Ask an organization owner or admin to install Analytics.</p>
               </section>
 
-              <section data-analytics-no-project class="an-card an-center" hidden>
-                <h2>No analytics project yet</h2>
-                <p class="an-sub">A project holds one site or app: its write key, events, replays, flags, and surveys.</p>
-                <p style="margin-top:1rem"><button data-analytics-create-first type="button" class="an-btn an-btn-primary" hidden>Create the first project</button></p>
-                <p data-analytics-create-denied class="an-sub" hidden>Ask an organization owner or admin to create a project.</p>
+              <section data-analytics-no-project class="an-card fm-blankslate" hidden>
+                <i data-lucide="folder-open"></i>
+                <h2 class="fm-blankslate-title">No analytics project yet</h2>
+                <p class="fm-blankslate-desc">A project holds one site or app: its write key, events, replays, flags, and surveys.</p>
+                <button data-analytics-create-first type="button" class="fm-btn fm-btn-sm fm-btn-cta" hidden>Create the first project</button>
+                <p data-analytics-create-denied class="fm-blankslate-desc" hidden>Ask an organization owner or admin to create a project.</p>
               </section>
 
               <div data-analytics-app class="an-stack" hidden>
@@ -298,7 +288,7 @@
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="errors" aria-selected="false"><i data-lucide="bug"></i>Errors</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="settings" aria-selected="false"><i data-lucide="settings"></i>Settings</button>
                 </nav>
-                <div data-analytics-truncated role="status" class="an-banner an-banner-quiet" hidden></div>
+                <div data-analytics-truncated role="status" class="fm-flash fm-flash-warning" hidden></div>
 
                 <!-- Overview -->
                 <div data-analytics-page="overview" role="tabpanel" class="an-stack" hidden>
@@ -307,7 +297,7 @@
                     <div class="an-pad an-stack-tight">
                       <p class="an-sub" style="margin:0">Paste this before <code class="an-mono">&lt;/head&gt;</code> on every page you want to measure:</p>
                       <pre data-analytics-onboarding-snippet class="an-pre"></pre>
-                      <div class="an-row"><button data-analytics-onboarding-copy type="button" class="an-btn"><i data-lucide="copy"></i>Copy snippet</button><button data-analytics-onboarding-settings type="button" class="an-btn">Open settings</button></div>
+                      <div class="an-row"><button data-analytics-onboarding-copy type="button" class="fm-btn fm-btn-sm"><i data-lucide="copy"></i>Copy snippet</button><button data-analytics-onboarding-settings type="button" class="fm-btn fm-btn-sm">Open settings</button></div>
                     </div>
                   </section>
                   <div data-analytics-overview-body class="an-stack">
@@ -373,9 +363,9 @@
                         <button type="button" role="tab" data-analytics-insight-type="lifecycle">Lifecycle</button>
                       </div>
                       <div class="an-row">
-                        <button data-analytics-insight-new type="button" class="an-btn">New</button>
-                        <button data-analytics-insight-add-dashboard type="button" class="an-btn" hidden>Add to dashboard</button>
-                        <button data-analytics-insight-save type="button" class="an-btn an-btn-primary"><i data-lucide="save"></i>Save insight</button>
+                        <button data-analytics-insight-new type="button" class="fm-btn fm-btn-sm">New</button>
+                        <button data-analytics-insight-add-dashboard type="button" class="fm-btn fm-btn-sm" hidden>Add to dashboard</button>
+                        <button data-analytics-insight-save type="button" class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="save"></i>Save insight</button>
                       </div>
                     </div>
                     <div class="an-builder">
@@ -390,15 +380,15 @@
                     </div>
                   </div>
                   <div data-analytics-subpage="insights:saved" hidden>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Insight</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-saved-list></tbody></table></div><div data-analytics-saved-empty class="an-empty" hidden>No saved insights yet. Build a query and press “Save insight”.</div></section>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Insight</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-saved-list></tbody></table></div><div data-analytics-saved-empty class="fm-blankslate" hidden><i data-lucide="bookmark"></i><p class="fm-blankslate-title">No saved insights yet</p><p class="fm-blankslate-desc">Build a query and press “Save insight”.</p></div></section>
                   </div>
                   <div data-analytics-subpage="insights:actions" class="an-stack" hidden>
-                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An action names an autocaptured element or page by URL, text, or selector, so it can be used anywhere an event can.</p><button data-analytics-action-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New action</button></div>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Action</th><th scope="col">Matches</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-actions-list></tbody></table></div><div data-analytics-actions-empty class="an-empty" hidden>No actions yet.</div></section>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An action names an autocaptured element or page by URL, text, or selector, so it can be used anywhere an event can.</p><button data-analytics-action-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New action</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Action</th><th scope="col">Matches</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-actions-list></tbody></table></div><div data-analytics-actions-empty class="fm-blankslate" hidden><i data-lucide="mouse-pointer-click"></i><p class="fm-blankslate-title">No actions yet</p></div></section>
                   </div>
                   <div data-analytics-subpage="insights:annotations" class="an-stack" hidden>
-                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Annotations mark a moment (a release, a campaign) on every time chart.</p><button data-analytics-annotation-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New annotation</button></div>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Date</th><th scope="col">Note</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-annotations-list></tbody></table></div><div data-analytics-annotations-empty class="an-empty" hidden>No annotations yet.</div></section>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Annotations mark a moment (a release, a campaign) on every time chart.</p><button data-analytics-annotation-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New annotation</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Date</th><th scope="col">Note</th><th scope="col">By</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-annotations-list></tbody></table></div><div data-analytics-annotations-empty class="fm-blankslate" hidden><i data-lucide="message-square-text"></i><p class="fm-blankslate-title">No annotations yet</p></div></section>
                   </div>
                 </div>
 
@@ -408,13 +398,13 @@
                     <div class="an-row">
                       <label class="an-hint" for="an-dashboard-select">Dashboard</label>
                       <select id="an-dashboard-select" data-analytics-dashboard-select class="an-select"></select>
-                      <button data-analytics-dashboard-edit type="button" class="an-btn" hidden>Edit…</button>
+                      <button data-analytics-dashboard-edit type="button" class="fm-btn" hidden>Edit…</button>
                     </div>
-                    <button data-analytics-dashboard-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New dashboard</button>
+                    <button data-analytics-dashboard-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New dashboard</button>
                   </div>
                   <p data-analytics-dashboard-description class="an-sub an-break" style="margin:0" hidden></p>
                   <div data-analytics-dashboard-tiles class="an-tiles"></div>
-                  <div data-analytics-dashboard-empty class="an-card an-empty" hidden></div>
+                  <div data-analytics-dashboard-empty class="an-card fm-blankslate" hidden></div>
                 </div>
 
                 <!-- Events -->
@@ -423,15 +413,15 @@
                     <div class="an-pad an-stack-tight">
                       <div class="an-row">
                         <label class="an-field an-grow">Event name<input data-analytics-events-name list="an-events-list" class="an-input" placeholder="Any event" autocomplete="off" /></label>
-                        <button data-analytics-events-apply type="button" class="an-btn an-btn-primary" style="align-self:end">Apply</button>
+                        <button data-analytics-events-apply type="button" class="fm-btn" style="align-self:end">Apply</button>
                       </div>
                       <div data-analytics-events-filters></div>
                     </div>
                   </section>
                   <section class="an-card">
                     <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Event</th><th scope="col">Person</th><th scope="col">URL or screen</th><th scope="col">Time</th><th scope="col"><span class="sr-only">Details</span></th></tr></thead><tbody data-analytics-events-list></tbody></table></div>
-                    <div data-analytics-events-empty class="an-empty" hidden>No events match in this range.</div>
-                    <div class="an-pad" data-analytics-events-more-wrap hidden><button data-analytics-events-more type="button" class="an-btn">Load more</button></div>
+                    <div data-analytics-events-empty class="fm-blankslate" hidden><i data-lucide="list"></i><p class="fm-blankslate-title">No events match in this range</p></div>
+                    <div class="an-pad" data-analytics-events-more-wrap hidden><button data-analytics-events-more type="button" class="fm-btn fm-btn-sm">Load more</button></div>
                   </section>
                 </div>
 
@@ -446,25 +436,25 @@
                     <form data-analytics-people-form class="an-row">
                       <input data-analytics-people-search type="search" aria-label="Search people" placeholder="Search distinct ids and properties" class="an-input an-grow" />
                       <label class="an-check"><input data-analytics-people-identified type="checkbox" /> Identified only</label>
-                      <button type="submit" class="an-btn">Search</button>
+                      <button type="submit" class="fm-btn">Search</button>
                       <span data-analytics-people-total class="an-hint"></span>
                     </form>
                     <section class="an-card">
                       <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Person</th><th scope="col">Properties</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col" class="r">Events</th></tr></thead><tbody data-analytics-people-list></tbody></table></div>
-                      <div data-analytics-people-empty class="an-empty" hidden>No people match.</div>
-                      <div class="an-pad" data-analytics-people-more-wrap hidden><button data-analytics-people-more type="button" class="an-btn">Load more</button></div>
+                      <div data-analytics-people-empty class="fm-blankslate" hidden><i data-lucide="users"></i><p class="fm-blankslate-title">No people match</p></div>
+                      <div class="an-pad" data-analytics-people-more-wrap hidden><button data-analytics-people-more type="button" class="fm-btn fm-btn-sm">Load more</button></div>
                     </section>
                   </div>
                   <div data-analytics-subpage="people:groups" class="an-stack" hidden>
                     <div class="an-row"><label class="an-hint" for="an-group-type">Group type</label><select id="an-group-type" data-analytics-group-type class="an-select"><option value="">All types</option></select></div>
                     <section class="an-card">
                       <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Type</th><th scope="col">Key</th><th scope="col">Properties</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead><tbody data-analytics-groups-list></tbody></table></div>
-                      <div data-analytics-groups-empty class="an-empty" hidden>No groups yet. Call <code class="an-mono">analytics.group(type, key, properties)</code> to create one.</div>
+                      <div data-analytics-groups-empty class="fm-blankslate" hidden><i data-lucide="building-2"></i><p class="fm-blankslate-title">No groups yet</p><p class="fm-blankslate-desc">Call <code class="an-mono">analytics.group(type, key, properties)</code> to create one.</p></div>
                     </section>
                   </div>
                   <div data-analytics-subpage="people:cohorts" class="an-stack" hidden>
-                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">A cohort is a reusable set of people: a pasted list, or everyone matching conditions.</p><button data-analytics-cohort-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New cohort</button></div>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Cohort</th><th scope="col">Kind</th><th scope="col">Definition</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-cohorts-list></tbody></table></div><div data-analytics-cohorts-empty class="an-empty" hidden>No cohorts yet.</div></section>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">A cohort is a reusable set of people: a pasted list, or everyone matching conditions.</p><button data-analytics-cohort-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New cohort</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Cohort</th><th scope="col">Kind</th><th scope="col">Definition</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-cohorts-list></tbody></table></div><div data-analytics-cohorts-empty class="fm-blankslate" hidden><i data-lucide="users"></i><p class="fm-blankslate-title">No cohorts yet</p></div></section>
                   </div>
                 </div>
 
@@ -475,20 +465,20 @@
                       <label class="an-hint" for="an-replay-duration">Minimum duration</label>
                       <select id="an-replay-duration" data-analytics-replay-duration class="an-select"><option value="0">Any</option><option value="10000">10 seconds</option><option value="30000">30 seconds</option><option value="60000">1 minute</option><option value="300000">5 minutes</option></select>
                       <label class="an-check"><input data-analytics-replay-errors type="checkbox" /> Has errors</label>
-                      <span data-analytics-replay-person class="an-badge" hidden></span>
-                      <button data-analytics-replay-person-clear type="button" class="an-btn an-btn-small" hidden>Show everyone</button>
+                      <span data-analytics-replay-person class="fm-label" hidden></span>
+                      <button data-analytics-replay-person-clear type="button" class="fm-btn fm-btn-sm" hidden>Show everyone</button>
                     </div>
-                    <div data-analytics-replay-disabled class="an-banner an-banner-quiet" hidden>Session replay is off for this project. Turn it on under Settings → Session replay.</div>
+                    <div data-analytics-replay-disabled class="fm-flash fm-flash-neutral" hidden><i data-lucide="info"></i><div class="fm-flash-body">Session replay is off for this project. Turn it on under Settings → Session replay.</div></div>
                     <section class="an-card">
                       <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Session</th><th scope="col">Started</th><th scope="col" class="r">Duration</th><th scope="col" class="r">Active</th><th scope="col" class="r">Clicks</th><th scope="col" class="r">Keys</th><th scope="col" class="r">Errors</th><th scope="col">Device</th></tr></thead><tbody data-analytics-replay-list></tbody></table></div>
-                      <div data-analytics-replay-empty class="an-empty" hidden>No recordings match.</div>
-                      <div class="an-pad" data-analytics-replay-more-wrap hidden><button data-analytics-replay-more type="button" class="an-btn">Load more</button></div>
+                      <div data-analytics-replay-empty class="fm-blankslate" hidden><i data-lucide="play-circle"></i><p class="fm-blankslate-title">No recordings match</p></div>
+                      <div class="an-pad" data-analytics-replay-more-wrap hidden><button data-analytics-replay-more type="button" class="fm-btn fm-btn-sm">Load more</button></div>
                     </section>
                   </div>
                   <div data-analytics-replay-player-view class="an-stack" hidden>
                     <div class="an-row" style="justify-content:space-between">
-                      <button data-analytics-replay-back type="button" class="an-btn"><i data-lucide="arrow-left"></i>All recordings</button>
-                      <button data-analytics-replay-delete type="button" class="an-btn an-btn-danger">Delete recording</button>
+                      <button data-analytics-replay-back type="button" class="fm-btn fm-btn-sm"><i data-lucide="arrow-left"></i>All recordings</button>
+                      <button data-analytics-replay-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger">Delete recording</button>
                     </div>
                     <div data-analytics-replay-meta class="an-row an-hint"></div>
                     <div class="an-replay">
@@ -496,7 +486,7 @@
                         <div class="an-stage"><div data-analytics-replay-stage></div><div data-analytics-replay-note class="an-stage-note"></div></div>
                         <div class="an-scrub"><div class="an-scrub-track" data-analytics-replay-track></div><div data-analytics-replay-marks></div><input data-analytics-replay-seek type="range" min="0" max="0" value="0" step="100" aria-label="Seek" disabled /></div>
                         <div class="an-row">
-                          <button data-analytics-replay-toggle type="button" class="an-btn an-btn-primary" disabled>Play</button>
+                          <button data-analytics-replay-toggle type="button" class="fm-btn fm-btn-sm" disabled>Play</button>
                           <span data-analytics-replay-time class="an-mono" aria-live="off">0:00 / 0:00</span>
                           <label class="an-hint" for="an-replay-speed">Speed</label>
                           <select id="an-replay-speed" data-analytics-replay-speed class="an-select"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
@@ -518,9 +508,9 @@
                     <label class="an-field an-grow">Page path<input data-analytics-heatmap-path list="an-paths-list" class="an-input" placeholder="/pricing" autocomplete="off" /></label>
                     <label class="an-field">Type<select data-analytics-heatmap-type class="an-select"><option value="click">Clicks</option><option value="rageclick">Rage clicks</option><option value="move">Mouse movement</option><option value="scroll">Scroll depth</option></select></label>
                     <label class="an-field">Viewport width<select data-analytics-heatmap-viewport class="an-select"><option value="all">All widths</option><option value="mobile">Mobile (under 768 px)</option><option value="tablet">Tablet (768–1023 px)</option><option value="desktop">Desktop (1024 px and up)</option></select></label>
-                    <button type="submit" class="an-btn an-btn-primary" style="align-self:end">Show</button>
+                    <button type="submit" class="fm-btn" style="align-self:end">Show</button>
                   </form>
-                  <p class="an-banner an-banner-quiet" style="margin:0">The map is drawn on a blank outline of the page, scaled to its recorded height. ForkMesh never screenshots or copies the page itself, so compare positions against the live page side by side.</p>
+                  <div class="fm-flash fm-flash-neutral"><i data-lucide="info"></i><div class="fm-flash-body">The map is drawn on a blank outline of the page, scaled to its recorded height. ForkMesh never screenshots or copies the page itself, so compare positions against the live page side by side.</div></div>
                   <div class="an-replay">
                     <div class="an-heatmap-scroll"><canvas data-analytics-heatmap-canvas width="600" height="300" role="img" aria-label="Heatmap"></canvas></div>
                     <section class="an-card">
@@ -537,20 +527,20 @@
                     <button type="button" role="tab" data-analytics-sub="flags:experiments" aria-selected="false">Experiments</button>
                   </div>
                   <div data-analytics-subpage="flags:flags" class="an-stack" hidden>
-                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Flags are evaluated on this instance; the SDK fetches them with <code class="an-mono">/_/decide</code>.</p><button data-analytics-flag-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New flag</button></div>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Flag</th><th scope="col">Type</th><th scope="col">Release</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-flags-list></tbody></table></div><div data-analytics-flags-empty class="an-empty" hidden>No feature flags yet.</div></section>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Flags are evaluated on this instance; the SDK fetches them with <code class="an-mono">/_/decide</code>.</p><button data-analytics-flag-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New flag</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Flag</th><th scope="col">Type</th><th scope="col">Release</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-flags-list></tbody></table></div><div data-analytics-flags-empty class="fm-blankslate" hidden><i data-lucide="flag"></i><p class="fm-blankslate-title">No feature flags yet</p></div></section>
                   </div>
                   <div data-analytics-subpage="flags:experiments" class="an-stack" hidden>
-                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An experiment compares the variants of a multivariate flag against one goal.</p><button data-analytics-experiment-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New experiment</button></div>
-                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Experiment</th><th scope="col">Flag</th><th scope="col">Goal</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-experiments-list></tbody></table></div><div data-analytics-experiments-empty class="an-empty" hidden>No experiments yet.</div></section>
+                    <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">An experiment compares the variants of a multivariate flag against one goal.</p><button data-analytics-experiment-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New experiment</button></div>
+                    <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Experiment</th><th scope="col">Flag</th><th scope="col">Goal</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-experiments-list></tbody></table></div><div data-analytics-experiments-empty class="fm-blankslate" hidden><i data-lucide="flask-conical"></i><p class="fm-blankslate-title">No experiments yet</p></div></section>
                     <section data-analytics-experiment-results class="an-card" hidden></section>
                   </div>
                 </div>
 
                 <!-- Surveys -->
                 <div data-analytics-page="surveys" role="tabpanel" class="an-stack" hidden>
-                  <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Surveys are shown by the SDK to visitors who match the targeting.</p><button data-analytics-survey-new type="button" class="an-btn an-btn-primary"><i data-lucide="plus"></i>New survey</button></div>
-                  <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Survey</th><th scope="col">Questions</th><th scope="col">Targeting</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-surveys-list></tbody></table></div><div data-analytics-surveys-empty class="an-empty" hidden>No surveys yet.</div></section>
+                  <div class="an-row" style="justify-content:space-between"><p class="an-sub" style="margin:0">Surveys are shown by the SDK to visitors who match the targeting.</p><button data-analytics-survey-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New survey</button></div>
+                  <section class="an-card"><div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Survey</th><th scope="col">Questions</th><th scope="col">Targeting</th><th scope="col">Updated</th><th scope="col">Active</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-surveys-list></tbody></table></div><div data-analytics-surveys-empty class="fm-blankslate" hidden><i data-lucide="message-square"></i><p class="fm-blankslate-title">No surveys yet</p></div></section>
                   <section data-analytics-survey-results class="an-card" hidden></section>
                 </div>
 
@@ -558,14 +548,14 @@
                 <div data-analytics-page="errors" role="tabpanel" class="an-stack" hidden>
                   <section class="an-card">
                     <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Error</th><th scope="col" class="r">Events</th><th scope="col" class="r">Users</th><th scope="col" class="r">Sessions</th><th scope="col">First seen</th><th scope="col">Last seen</th></tr></thead><tbody data-analytics-errors-list></tbody></table></div>
-                    <div data-analytics-errors-empty class="an-empty" hidden>No uncaught exceptions in this range.</div>
+                    <div data-analytics-errors-empty class="fm-blankslate" hidden><i data-lucide="bug"></i><p class="fm-blankslate-title">No uncaught exceptions in this range</p></div>
                   </section>
                   <section data-analytics-error-detail class="an-card" hidden></section>
                 </div>
 
                 <!-- Settings -->
                 <div data-analytics-page="settings" role="tabpanel" class="an-stack" hidden>
-                  <div data-analytics-settings-readonly class="an-banner an-banner-quiet" hidden>Only organization owners and admins can change project settings.</div>
+                  <div data-analytics-settings-readonly class="fm-flash fm-flash-neutral" hidden><i data-lucide="lock"></i><div class="fm-flash-body">Only organization owners and admins can change project settings.</div></div>
                   <form data-analytics-settings-form class="an-stack">
                     <section class="an-card">
                       <div class="an-card-head"><h2>Project</h2></div>
@@ -609,19 +599,19 @@
                       <div class="an-card-head"><h2>Test account filters</h2><span class="an-hint">Applied when “Filter test accounts” is on. An event must pass every filter to be kept.</span></div>
                       <div data-analytics-set-test-filters class="an-pad"></div>
                     </section>
-                    <div class="an-row an-row-end"><button data-analytics-settings-save type="submit" class="an-btn an-btn-primary">Save settings</button></div>
+                    <div class="an-row an-row-end"><button data-analytics-settings-save type="submit" class="fm-btn fm-btn-cta">Save settings</button></div>
                   </form>
 
                   <section class="an-card">
                     <div class="an-card-head"><h2>Install</h2></div>
                     <div class="an-pad an-stack-tight">
-                      <div class="an-row"><span class="an-hint">Write key</span><code data-analytics-write-key class="an-mono an-break"></code><button data-analytics-key-copy type="button" class="an-btn an-btn-small">Copy</button><button data-analytics-key-rotate type="button" class="an-btn an-btn-small an-btn-danger" hidden>Rotate…</button></div>
+                      <div class="an-row"><span class="an-hint">Write key</span><code data-analytics-write-key class="an-mono an-break"></code><button data-analytics-key-copy type="button" class="fm-btn fm-btn-sm">Copy</button><button data-analytics-key-rotate type="button" class="fm-btn fm-btn-sm fm-btn-danger" hidden>Rotate…</button></div>
                       <p class="an-hint" style="margin:0">Browser snippet</p>
                       <pre data-analytics-snippet class="an-pre"></pre>
-                      <div class="an-row"><button data-analytics-snippet-copy type="button" class="an-btn an-btn-small">Copy snippet</button></div>
+                      <div class="an-row"><button data-analytics-snippet-copy type="button" class="fm-btn fm-btn-sm">Copy snippet</button></div>
                       <p class="an-hint" style="margin:0">From a server or script</p>
                       <pre data-analytics-curl class="an-pre"></pre>
-                      <div class="an-row"><button data-analytics-curl-copy type="button" class="an-btn an-btn-small">Copy curl</button></div>
+                      <div class="an-row"><button data-analytics-curl-copy type="button" class="fm-btn fm-btn-sm">Copy curl</button></div>
                     </div>
                   </section>
 
@@ -636,9 +626,9 @@
                   <section class="an-card">
                     <div class="an-card-head"><h2>Data</h2></div>
                     <div class="an-pad an-row">
-                      <button data-analytics-export-events type="button" class="an-btn"><i data-lucide="download"></i>Export events (JSON)</button>
-                      <button data-analytics-manage type="button" class="an-btn" hidden>Plugin data…</button>
-                      <button data-analytics-project-delete type="button" class="an-btn an-btn-danger" hidden>Delete project…</button>
+                      <button data-analytics-export-events type="button" class="fm-btn fm-btn-sm"><i data-lucide="download"></i>Export events (JSON)</button>
+                      <button data-analytics-manage type="button" class="fm-btn fm-btn-sm" hidden>Plugin data…</button>
+                      <button data-analytics-project-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger" hidden>Delete project…</button>
                     </div>
                   </section>
                 </div>
@@ -650,30 +640,35 @@
             <datalist id="an-person-props-list"></datalist>
             <datalist id="an-paths-list"></datalist>
 
-            <dialog data-analytics-dialog class="an-dialog" aria-labelledby="an-dialog-title">
-              <form data-analytics-dialog-form method="dialog">
-                <div class="an-row" style="justify-content:space-between"><h2 id="an-dialog-title" data-analytics-dialog-title></h2><button data-analytics-dialog-close type="button" class="an-btn an-btn-small" aria-label="Close">✕</button></div>
-                <div data-analytics-dialog-error role="alert" class="an-banner an-banner-error" hidden></div>
-                <div data-analytics-dialog-body class="an-stack"></div>
-                <div class="an-dialog-foot">
-                  <button data-analytics-dialog-delete type="button" class="an-btn an-btn-danger" hidden>Delete</button>
-                  <div class="an-row" style="margin-left:auto"><button data-analytics-dialog-close type="button" class="an-btn">Cancel</button><button data-analytics-dialog-save type="submit" class="an-btn an-btn-primary">Save</button></div>
+            <dialog data-analytics-dialog class="an-dialog fm-dialog" aria-labelledby="an-dialog-title">
+              <form data-analytics-dialog-form method="dialog" class="an-dialog-form">
+                <div class="fm-dialog-header"><h2 id="an-dialog-title" class="fm-dialog-title" data-analytics-dialog-title></h2><button data-analytics-dialog-close type="button" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close"><i data-lucide="x"></i></button></div>
+                <div class="fm-dialog-body an-stack">
+                  <div data-analytics-dialog-error role="alert" class="fm-flash fm-flash-danger" hidden></div>
+                  <div data-analytics-dialog-body class="an-stack"></div>
+                </div>
+                <div class="fm-dialog-footer">
+                  <button data-analytics-dialog-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger" style="margin-right:auto" hidden>Delete</button>
+                  <button data-analytics-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button>
+                  <button data-analytics-dialog-save type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save</button>
                 </div>
               </form>
             </dialog>
 
-            <dialog data-analytics-drawer class="an-dialog an-drawer" aria-labelledby="an-drawer-title">
-              <div class="an-dialog-body">
-                <div class="an-row" style="justify-content:space-between"><h2 id="an-drawer-title" data-analytics-drawer-title>Person</h2><button data-analytics-dialog-close type="button" class="an-btn an-btn-small" aria-label="Close">✕</button></div>
-                <div data-analytics-drawer-body class="an-stack"></div>
-              </div>
+            <dialog data-analytics-drawer class="an-dialog an-drawer fm-dialog" aria-labelledby="an-drawer-title">
+              <div class="fm-dialog-header"><h2 id="an-drawer-title" class="fm-dialog-title" data-analytics-drawer-title>Person</h2><button data-analytics-dialog-close type="button" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close"><i data-lucide="x"></i></button></div>
+              <div data-analytics-drawer-body class="fm-dialog-body an-stack"></div>
             </dialog>
 
-            <dialog data-analytics-manage-dialog class="an-dialog an-dialog-narrow" aria-labelledby="an-manage-title">
-              <div class="an-dialog-body">
-                <h2 id="an-manage-title">Analytics data</h2>
+            <dialog data-analytics-manage-dialog class="an-dialog an-dialog-narrow fm-dialog" aria-labelledby="an-manage-title">
+              <div class="fm-dialog-header"><h2 id="an-manage-title" class="fm-dialog-title">Analytics data</h2><button data-analytics-dialog-close type="button" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm" aria-label="Close"><i data-lucide="x"></i></button></div>
+              <div class="fm-dialog-body">
                 <p class="an-sub" style="margin:0">Export everything Analytics stores for this organization, or uninstall the plugin and remove its stored data. Snippets still deployed on your sites will be refused after an uninstall.</p>
-                <div class="an-row an-row-end"><button data-analytics-export-all type="button" class="an-btn">Export JSON</button><button data-analytics-uninstall type="button" class="an-btn an-btn-danger">Uninstall…</button><button data-analytics-dialog-close type="button" class="an-btn">Close</button></div>
+              </div>
+              <div class="fm-dialog-footer">
+                <button data-analytics-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger" style="margin-right:auto">Uninstall…</button>
+                <button data-analytics-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button>
+                <button data-analytics-export-all type="button" class="fm-btn fm-btn-sm">Export JSON</button>
               </div>
             </dialog>
           </section>

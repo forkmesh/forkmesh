@@ -61,6 +61,8 @@ inline const QList<KindInfo> &kinds()
         {"chat_webhook", "conversations", "Chat webhook posts", false, false},
         {"channel_unread", "conversations", "Unread channel messages", true,
          true},
+        {"direct_unread", "conversations", "Unread direct messages", true,
+         true},
         {"calendar_invitation", "conversations", "Calendar invitations", true,
          true},
         {"calendar_reminder", "conversations", "Calendar reminders", true,

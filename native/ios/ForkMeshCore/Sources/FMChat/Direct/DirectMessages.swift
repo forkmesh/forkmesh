@@ -42,6 +42,7 @@ public enum DirectMessageFrames {
     public static let maxReceipts = 512
     public static let maxPendingDeletes = 64
     public static let roomFrameTypes: Set<String> = ["thread-reply", "reaction", "edit", "delete"]
+    public static let typingType = "typing"
     public static let outboxLimit = 64
     public static let outboxMaxAgeMs: Int64 = 7 * 24 * 60 * 60 * 1000
     public static let maxWatchedRooms = 16
@@ -704,6 +705,10 @@ public final class DirectMessageService {
         }
         let me = selfId()
         let type = plain["type"]?.text ?? ""
+        if type == DirectMessageFrames.typingType {
+            if live { onFrame?(plain, record.conversation) }
+            return false
+        }
         let messageId = plain["id"]?.text ?? ""
         let mine = !me.isEmpty && plain["senderId"]?.text == me
         if DirectMessageFrames.roomFrameTypes.contains(type), DirectMessageFrames.frameConversation(plain) != record.conversation {
@@ -1090,6 +1095,21 @@ public final class DirectMessageService {
             try? await connection.send(text: JSON.encode(DirectMessageFrames.supersededFrame([original])))
         }
         return true
+    }
+
+    @discardableResult
+    public func sendTyping(_ conversation: String, active: Bool) async -> Bool {
+        guard let record = record(for: conversation), let socket = sockets[record.id] else { return false }
+        var plain = frame(record, type: DirectMessageFrames.typingType, extra: ["active": .bool(active)])
+        plain.removeValue(forKey: "channel")
+        plain["conversation"] = .string(record.conversation)
+        do {
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain))
+            try await socket.connection.send(text: JSON.encode(envelope))
+            return true
+        } catch {
+            return false
+        }
     }
 
     @discardableResult

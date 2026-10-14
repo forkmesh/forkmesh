@@ -138,9 +138,27 @@ normal path, at most once a minute.
 
 ## Branding
 
-Every card from `_forkmesh_email_card_html` starts with a linked
-`assets/logo-96.png` on a dark badge with the name as real text. Inbox
+Every card from `_forkmesh_email_card_html` starts with
+`assets/logo-96.png` (see Layout below). Inbox
 avatars use BIMI: `www/public/assets/forkmesh-bimi.svg` (SVG Tiny PS),
 TXT `default._bimi.forkmesh.com`, and DMARC at `p=quarantine`. Gmail and
 Apple Mail additionally need a mark certificate. Every sender for the domain
 must sign with DKIM before it sends.
+
+### Layout
+
+In October 2026 the card was redrawn after the user compared three templates
+("Notification", "Card", "Letter") and picked the Letter: a quiet, centred
+480px column on `#fafafa` with no bordered card, the logo on its own, a 22px
+heading, a grey intro, the body, a near-black (`#171717`) button, the action
+URL written out under it ("Or open this link"), and a hairline footer with
+"Email settings". The logo is `assets/logo-96.png` at 32px wide with
+`height:auto`; the user asked for the black tile to go and for the logo not
+to be squeezed into a fixed box. `logo-96.png` is the dark cube, so it reads
+on the light page without a backing tile. The palette stays light-only so a
+client that half-applies dark mode cannot make it unreadable. The wrapper
+keeps its two `div`s, so code that inserts before
+`</div></div></body></html>` (status logs, the manage link, the instance
+"Powered by" line) still lands inside the column. `_instance_brand_email`
+rewrites the logo's `alt`, the footer name and the settings link for
+white-label instances.

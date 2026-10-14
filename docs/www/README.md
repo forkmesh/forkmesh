@@ -228,6 +228,11 @@ Crawlers and scrapers:
 - `styles.css` carries the shared page kit (`--display`, `--kit-*`, `.kit-*`
   classes; `<body class="kit-page">`). A `.kit-hero` in a grid cell needs
   `margin: 0`.
+- Checkboxes and radios on landing-style pages use the ink colour (white in
+  dark mode, near-black in light), never green or blue: green is for status
+  and blue belongs to the dashboard. `styles.css` sets
+  `accent-color: var(--foreground)` on both through a `:where()` rule, so a
+  new page gets it without its own rule and a page rule still overrides it.
 - A rule that sets `display` beats `[hidden] { display: none }`; elements
   hidden by script need an explicit `[hidden]` rule.
 - `homepage-downloads.js` keeps `knownAssets` as `["asset", [label, arch]]`

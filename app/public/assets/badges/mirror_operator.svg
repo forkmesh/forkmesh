@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Mirror Operator">
+<defs>
+<linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a5f3fc"/><stop offset="1" stop-color="#0e7490"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d4a57"/><stop offset="1" stop-color="#062a33"/></linearGradient>
+<clipPath id="faceclip"><circle cx="64" cy="64" r="48"/></clipPath></defs>
+<circle cx="64" cy="64" r="61" fill="url(#rim)" stroke="#000" stroke-opacity=".28" stroke-width="2"/>
+<circle cx="64" cy="64" r="55.5" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="64" cy="64" r="49" fill="url(#face)" stroke="#0e7490" stroke-width="3"/>
+<ellipse cx="64" cy="30" rx="44" ry="22" fill="#fff" fill-opacity=".07" clip-path="url(#faceclip)"/>
+<rect x="33" y="33" width="62" height="24" rx="6" fill="#e0fbff"/>
+<circle cx="44" cy="45" r="3.8" fill="#2ea043"/>
+<circle cx="55" cy="45" r="3.8" fill="#2ea043"/>
+<rect x="66" y="42.5" width="20" height="5" rx="2.5" fill="#0e7490"/>
+<rect x="28" y="61.5" width="72" height="3.5" rx="1.75" fill="#67e8f9"/>
+<g opacity=".5">
+<rect x="33" y="70" width="62" height="24" rx="6" fill="#e0fbff"/>
+<circle cx="44" cy="82" r="3.8" fill="#2ea043"/>
+<circle cx="55" cy="82" r="3.8" fill="#2ea043"/>
+<rect x="66" y="79.5" width="20" height="5" rx="2.5" fill="#0e7490"/>
+</g>
+</svg>

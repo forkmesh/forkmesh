@@ -15,6 +15,13 @@ class AuthFlowLogicTest {
         assertEq("https://forkmesh.com/#membership", LegalLinks.MEMBERSHIP)
     }
 
+    fun testAfterSignupTheLoginFormSaysToLogInWithoutAnError() {
+        val form = LoginFormState(showTotp = true).afterSignup()
+        assertEq(AuthCopy.SIGNUP_RETURN_HINT, form.hint)
+        expect(!form.bad)
+        expect(form.showTotp)
+    }
+
     fun testAPartiallyFilledFormNeverAuthenticates() {
         val missingPassword = loginSubmit("demo@example.com", "", "", loading = false, debugBuild = true)
         assertEq(LoginSubmit.Invalid("Enter your email or username and password."), missingPassword)

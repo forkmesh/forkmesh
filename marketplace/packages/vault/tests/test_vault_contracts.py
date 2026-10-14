@@ -22,6 +22,7 @@ CLIENT = (PACKAGE / "content" / "crypto" / "vault-client.js").read_text(encoding
 CRYPTO = (PACKAGE / "content" / "crypto" / "vault-crypto.js").read_text(encoding="utf-8")
 WORKER = (PACKAGE / "content" / "worker" / "vault.py").read_text(encoding="utf-8")
 TAILWIND = (REPO / "app" / "public" / "dashboard" / "tailwind.css").read_text(encoding="utf-8")
+SHELL = (REPO / "app" / "public" / "dashboard" / "shell.html").read_text(encoding="utf-8")
 
 
 def test_the_package_is_account_scoped_and_the_host_stages_it():
@@ -101,9 +102,13 @@ def test_the_view_follows_the_dashboard_credential_rules_and_uses_built_classes(
     # tailwind.css is a committed build that never scans package views: a
     # class it lacks would silently style nothing.
     missing = [name for name in sorted(audit.classes)
-               if not name.startswith("vault-") and name not in {"view", "active"}
+               if not name.startswith(("vault-", "fm-")) and name not in {"view", "active"}
                and "." + re.sub(r"([^A-Za-z0-9_-])", r"\\\1", name) not in TAILWIND]
     assert missing == []
+    shared = [name for name in sorted(audit.classes)
+              if name.startswith("fm-") and "." + name + " " not in SHELL and "." + name + "," not in SHELL
+              and "." + name + ":" not in SHELL and "." + name + "." not in SHELL and "." + name + " >" not in SHELL]
+    assert shared == []
     # `hidden` loses to a display utility declared later in the stylesheet.
     for group in re.findall(r'class="([^"]*)"', VIEW):
         names = group.split()

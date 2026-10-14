@@ -246,6 +246,7 @@ public final class AccountPackagesStore {
     @ObservationIgnored private let signedIn: () -> Bool
     @ObservationIgnored private let legacyProject: () -> Bool
     @ObservationIgnored private let projectNamespace: () -> String
+    @ObservationIgnored private let starterPack: () -> StarterPack
     @ObservationIgnored private var choiceCache: (namespace: String, values: [String: Bool])?
     @ObservationIgnored private var catalogLoaded = false
     @ObservationIgnored private var refreshing = false
@@ -253,13 +254,15 @@ public final class AccountPackagesStore {
 
     public init(
         client: PackagesClient, prefs: KeyValueStore, signedIn: @escaping () -> Bool,
-        legacyProject: @escaping () -> Bool = { true }, projectNamespace: @escaping () -> String = { "" }
+        legacyProject: @escaping () -> Bool = { true }, projectNamespace: @escaping () -> String = { "" },
+        starterPack: @escaping () -> StarterPack = { .fallback }
     ) {
         self.client = client
         self.prefs = prefs
         self.signedIn = signedIn
         self.legacyProject = legacyProject
         self.projectNamespace = projectNamespace
+        self.starterPack = starterPack
         let cachedState = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.stateKey) ?? "")
         state = cachedState.contains("packages") ? AccountPackagesState(json: cachedState) : nil
         catalog = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.catalogKey) ?? "").maps("packages")
@@ -277,6 +280,8 @@ public final class AccountPackagesStore {
     public var isLegacyProject: Bool { legacyProject() }
 
     public var ownsInstalls: Bool { !legacyProject() }
+
+    public var chosenStarterPack: StarterPack { starterPack() }
 
     public func fallbackInstalled(_ info: AccountPackageInfo) -> Bool {
         info.defaultOn || (!info.installedBefore.isEmpty && legacyProject())
@@ -324,14 +329,14 @@ public final class AccountPackagesStore {
         let own: Bool
         let entry = state?.entry(id)
         if entry == nil && info(id) == nil {
-            return PackageGate.isGated(id) ? legacyProject() : true
+            return PackageGate.isGated(id) ? legacyProject() || PackageGate.isStarter(id, pack: starterPack()) : true
         }
         if ownsInstalls {
             let accountKeeps = entry?.installed ?? true
             switch projectChoices[id] {
             case .some(true): own = accountKeeps
             case .some(false): own = false
-            case .none: own = (info(id)?.defaultOn ?? false) && accountKeeps
+            case .none: own = PackageGate.isStarter(id, pack: starterPack()) || ((info(id)?.defaultOn ?? false) && accountKeeps)
             }
         } else if let entry {
             own = entry.installed

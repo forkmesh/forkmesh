@@ -248,3 +248,17 @@ public enum PushPreviewText {
         return String(text.prefix(maxBodyChars - 1)) + "\u{2026}"
     }
 }
+
+public enum PushMeshWake {
+    public static let conversation = "#mesh"
+    public static let identifier = "mesh-room"
+    public static let localKey = "meshLocal"
+
+    public static func isWake(_ info: [AnyHashable: Any]) -> Bool {
+        info["topic"] as? String == "chat" && info["conversation"] as? String == conversation && info[localKey] == nil
+    }
+
+    public static func isLocalAlert(identifier: String, info: [AnyHashable: Any]) -> Bool {
+        identifier == Self.identifier && info[localKey] != nil
+    }
+}

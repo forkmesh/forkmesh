@@ -33,6 +33,12 @@ jobs:
           cache: pip
           cache-dependency-path: tools/requirements-ci.txt
 
+      - name: Configure Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.mod
+
       - name: Install pinned test runner
         run: python3 -m pip install --disable-pip-version-check -r tools/requirements-ci.txt
 

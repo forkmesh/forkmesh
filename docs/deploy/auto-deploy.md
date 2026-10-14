@@ -57,10 +57,17 @@ The agent runs its installed copy, so a commit cannot change how it decides;
    node.
 2. **Tests** from a clean `git archive` in a no-network sandbox with no home:
    a must-pass set (`app/tests/host/test_host_e2e.py`, `deploy/tests`, host
-   shim, request guard, apps e2e, timer, desktop and operator-alert pings),
-   plus *no new failures* in `app/tests/host` against the deployed commit
-   (baseline cached). Files run in parallel at low priority while the build
-   and upload proceed.
+   shim, request guard, apps e2e, timer, desktop and operator-alert pings,
+   the `security` suite of `tools/run_critical_tests.py` and the
+   destructive-delete scanner), `go test ./...` in `server/`, plus *no new
+   failures* in `app/tests/host` against the deployed commit (baseline
+   cached). Must-pass entries may be files, folders or single test ids. Files
+   run in parallel at low priority while the build and upload proceed; the Go
+   tests run beside them in the same sandbox with the host's Go toolchain
+   bound read-only (`GOTOOLCHAIN=local`, `GOPROXY=off`, a per-run
+   `GOCACHE`). Go is found on the agent's `PATH`, then in `/usr/local/go`,
+   `/usr/lib/go`, `~/go` or `~/.local/go`; without it every deploy fails at
+   this gate rather than skipping the Go tests.
 3. **Build** in a fresh detached worktree.
 4. **Deploy:** upload, migrate, then rolling restart (the first core alone as
    the canary, then the rest in parallel), each gated on `/readyz` and the
@@ -145,5 +152,7 @@ python3 tools/next_autodeploy.py install
 python3 tools/next_autodeploy.py status
 ```
 
-Re-run `install` after changing the agent; the unit starts disarmed. If runs
+Re-run `install` after changing the agent; the unit starts disarmed. Gate
+changes, such as the Go tests and the security must-pass set added on
+2026-10-15, take effect only after `install`. If runs
 never report a result, compare the installed copy with `tools/`.

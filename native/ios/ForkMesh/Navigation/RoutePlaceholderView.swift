@@ -12,9 +12,9 @@ struct RoutePlaceholderView: View {
         ContentUnavailableView {
             Label("Coming soon", systemImage: "hammer")
         } description: {
-            Text("This screen (\(route.kind.rawValue)) is being built by \(route.kind.owner).")
+            Text("\(route.title) is not in this version of the app yet.")
         }
-        .navigationTitle(route.kind.rawValue.capitalized)
+        .navigationTitle(route.title)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

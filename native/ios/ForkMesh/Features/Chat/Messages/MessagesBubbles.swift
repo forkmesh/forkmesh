@@ -434,6 +434,11 @@ struct MessagesTypingBubble: View {
                 .padding(.trailing, 14)
                 .background(MessagesBubbleShape(fromSelf: false, tail: true).fill(colors.receivedFill))
             }
+            Text(ChatExtras.typingLabel(names))
+                .font(.system(size: 12))
+                .foregroundStyle(colors.meta)
+                .lineLimit(1)
+                .padding(.bottom, 6)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
