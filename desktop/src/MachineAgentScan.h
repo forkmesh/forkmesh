@@ -22,6 +22,7 @@ namespace MachineAgentScan {
 QString agentKind(const QString &comm, const QByteArrayList &argv);
 QString argValue(const QByteArrayList &argv, const QList<QByteArray> &names);
 QString claudeProjectKey(const QString &cwd);
+QString recordedClaudeSession(const QString &configDir, qint64 pid);
 QString claudeTranscript(const QString &configDir, const QString &cwd,
                          const QString &sessionId, const QSet<QString> &claimed);
 qint64 processUid(qint64 pid);

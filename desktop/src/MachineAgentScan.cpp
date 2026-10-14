@@ -4,7 +4,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPair>
+#include <QRegularExpression>
 
 #include <algorithm>
 
@@ -14,6 +17,8 @@
 #endif
 
 namespace {
+
+constexpr qint64 kMaxSessionRecordBytes = 64 * 1024;
 
 const QStringList &knownKinds()
 {
@@ -122,6 +127,21 @@ QString claudeProjectKey(const QString &cwd)
             c = QLatin1Char('-');
     }
     return key;
+}
+
+QString recordedClaudeSession(const QString &configDir, qint64 pid)
+{
+    if (configDir.isEmpty() || pid <= 0)
+        return {};
+    QFile file(configDir + QStringLiteral("/sessions/%1.json").arg(pid));
+    if (file.size() > kMaxSessionRecordBytes || !file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject record = QJsonDocument::fromJson(file.readAll()).object();
+    if (qint64(record.value(QStringLiteral("pid")).toDouble()) != pid)
+        return {};
+    const QString sessionId = record.value(QStringLiteral("sessionId")).toString();
+    static const QRegularExpression safe(QStringLiteral("^[A-Za-z0-9-]+$"));
+    return safe.match(sessionId).hasMatch() ? sessionId : QString();
 }
 
 QString claudeTranscript(const QString &configDir, const QString &cwd,
@@ -274,9 +294,6 @@ QList<MachineAgent> scan(const SystemStats::ProcessTable &table,
         }
         agent.cwd = QFileInfo(QStringLiteral("/proc/%1/cwd").arg(pid)).symLinkTarget();
         if (agent.kind == QLatin1String("claude") && !agent.cwd.isEmpty()) {
-            const QString sessionId =
-                argValue(argv, {QByteArrayLiteral("--resume"), QByteArrayLiteral("-r"),
-                                QByteArrayLiteral("--session-id")});
             const QByteArrayList processEnvironment = splitNul(readProc(pid, "environ"));
             QString configDir = environValue(processEnvironment, QByteArrayLiteral("CLAUDE_CONFIG_DIR"));
             if (configDir.isEmpty()) {
@@ -286,7 +303,21 @@ QList<MachineAgent> scan(const SystemStats::ProcessTable &table,
                 configDir = home + QStringLiteral("/.claude");
             }
             agent.configDir = configDir;
-            if (!sessionId.isEmpty()) {
+            const QString recorded = recordedClaudeSession(configDir, pid);
+            const QString sessionId =
+                !recorded.isEmpty()
+                    ? recorded
+                    : argValue(argv, {QByteArrayLiteral("--resume"), QByteArrayLiteral("-r"),
+                                      QByteArrayLiteral("--session-id")});
+            if (!recorded.isEmpty()) {
+                const QString exact = QDir(configDir + QStringLiteral("/projects/")
+                                           + claudeProjectKey(agent.cwd))
+                                          .filePath(recorded + QStringLiteral(".jsonl"));
+                if (QFileInfo(exact).isFile()) {
+                    agent.transcript = exact;
+                    claimed.insert(exact);
+                }
+            } else if (!sessionId.isEmpty()) {
                 agent.transcript = claudeTranscript(configDir, agent.cwd, sessionId, claimed);
                 if (!agent.transcript.isEmpty())
                     claimed.insert(agent.transcript);

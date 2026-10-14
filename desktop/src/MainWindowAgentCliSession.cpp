@@ -1847,6 +1847,9 @@ bool MainWindow::externalIsLive(const QString &uuid) const
     for (const ExternalClaudeSession &e : m_externalClaude)
         if (e.uuid == uuid)
             return true;
+    for (const ClaudePeerSession &peer : m_claudePeerSessions)
+        if (peer.sessionId == uuid)
+            return true;
     return false;
 }
 
@@ -1891,6 +1894,16 @@ int MainWindow::registerExternalSession(const QString &uuid)
     if (!found || m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
         return 0;
     const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
+    if (!m_externalTempId.contains(uuid)) {
+        const ClaudePeerSession *peer = ClaudePeerMessaging::find(m_claudePeerSessions, {}, uuid);
+        for (auto it = m_machineAgents.constBegin(); it != m_machineAgents.constEnd(); ++it) {
+            if (it->kind == QLatin1String("claude") && !m_externalSurfaced.contains(it.key()) &&
+                ((peer && peer->pid == it->pid) || (!it->transcript.isEmpty() && it->transcript == found->path))) {
+                m_externalTempId.insert(uuid, it.key());
+                break;
+            }
+        }
+    }
     const int id = externalTempIdFor(uuid);
     if (!m_externalSurfaced.contains(id)) {
         m_externalSurfaced.insert(id, *found);

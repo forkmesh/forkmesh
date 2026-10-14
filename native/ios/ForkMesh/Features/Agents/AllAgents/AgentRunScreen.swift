@@ -361,12 +361,7 @@ struct AgentRunScreen: View {
             }
         }
         .task {
-            if let opened = center.stream(row, since: follower.next, onEnded: { _ in ended() }, onDelta: { show($0) }) {
-                stream = opened
-                if !(await opened.start()) { await load() }
-            } else {
-                await load()
-            }
+            await follow()
             let id = center.hub.addEventTap { name, _ in
                 if name == "agents.changed" && row.isDesktop && !streaming { Task { await load() } }
             }
@@ -644,6 +639,17 @@ struct AgentRunScreen: View {
         leave()
     }
 
+    private func follow() async {
+        stream?.stop()
+        stream = nil
+        if let opened = center.stream(row, since: follower.next, onEnded: { _ in ended() }, onDelta: { show($0) }) {
+            stream = opened
+            if !(await opened.start()) { await load() }
+        } else {
+            await load()
+        }
+    }
+
     private func load() async {
         if streaming { return }
         do {
@@ -701,6 +707,7 @@ struct AgentRunScreen: View {
             try await center.prompt(live, text, images: images, model: model, mode: mode, provider: provider)
         }
         notice = error.isEmpty ? center.promptNotice : ""
+        if error.isEmpty, row.isDesktop, !streaming { await follow() }
         if !error.isEmpty {
             if prompt.isEmpty { prompt = text }
             if photos.isEmpty { photos = images }
