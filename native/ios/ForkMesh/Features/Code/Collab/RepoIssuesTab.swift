@@ -72,6 +72,7 @@ struct RepoIssuesTab: View {
     private func issueRow(_ issue: Issue) -> some View {
         NavigationLink {
             IssueDetailScreen(repo: model.repo, issue: issue)
+                .shellPageClearance()
         } label: {
             CollabRow(
                 icon: IssueCard.icon(issue),
