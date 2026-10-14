@@ -39,7 +39,10 @@ card.
 `tools/cloudflare_bootstrap.py`, so attribution observes it. On the core
 nodes, `app/src/static_routes.py` sends `/mobile` to the marketing site
 (`WWW_SITE_ROUTES`), reserves the prefix (`RESERVED_ROUTE_PREFIXES`) and
-hides `/mobile.html` (`BLOCKED_STATIC_HTML_PATHS`). The site footer links it.
+hides `/mobile.html` (`BLOCKED_STATIC_HTML_PATHS`). The site footer links it,
+and the Product menu (landing page, hackathon page, this page, and the shared
+`site-header.js` menu) and the phone-size navigation drawers list "Mobile
+app" after "Desktop app".
 
 ## Traps
 

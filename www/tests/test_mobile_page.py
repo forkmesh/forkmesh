@@ -39,6 +39,16 @@ def test_the_page_navigation_marks_itself_and_leaves_no_homepage_anchors():
     assert "data-forkmesh-membership" not in nav
 
 
+def test_product_menus_list_the_mobile_app():
+    for page in ("index.html", "hackathon.html", "mobile.html"):
+        html = (WWW_PUBLIC / page).read_text(encoding="utf-8")
+        assert re.search(r'<a class="home-menu-item" href="/mobile"( aria-current="page")?>', html), page
+        assert re.search(r'<a href="/mobile"( aria-current="page")?>Mobile app</a>', html), page
+    header = (WWW_PUBLIC / "site-header.js").read_text(encoding="utf-8")
+    assert '<a href="/mobile">Mobile app</a>' in header
+    assert '"/mobile": ' in header
+
+
 def test_download_buttons_point_at_the_store_listing_and_the_signed_apk():
     assert PAGE.count(f'href="{APP_STORE}"') == 2
     assert PAGE.count('href="/#downloads"') == 2
