@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.account
 
+import android.content.pm.ApplicationInfo
+import com.forkmesh.nativeapp.App
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.AppEnv
 import com.forkmesh.nativeapp.api.PrefStore
@@ -132,6 +134,11 @@ class SettingsService(val core: AccountSettings) {
     suspend fun clearSecrets() = withContext(Dispatchers.IO) { core.clearSecrets() }
 
     companion object {
+        fun create(app: App, prefs: PrefStore, secrets: SecretStore): SettingsService {
+            val debuggable = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            return SettingsService(AccountSettings.create(prefs, secrets, AppEnv.PROD, releaseMode = !debuggable))
+        }
+
         fun forProject(
             prefs: PrefStore,
             scope: com.forkmesh.nativeapp.account.projects.ProjectScope,
