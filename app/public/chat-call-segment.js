@@ -622,7 +622,8 @@ export function chooseModel(models, width, height) {
   return (landscape ? models.landscape || models.square : models.square || models.landscape) || null;
 }
 
-export function createMatte(gl, models, { format = floatTargets(gl), guideWidth = 320, radius = 4, eps = 0.0012, hold = 0.55 } = {}) {
+export function createMatte(gl, models, { format = floatTargets(gl), guideWidth: initialGuide = 320, radius = 4, eps = 0.0012, hold = 0.55 } = {}) {
+  let guideWidth = initialGuide;
   if (!format || !(models.landscape || models.square)) return null;
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -723,6 +724,9 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth 
     },
     clearHostMask() {
       hostMask = null;
+    },
+    setGuideWidth(next) {
+      guideWidth = Math.max(96, Math.round(next));
     },
     reset() {
       first = true;
@@ -859,6 +863,7 @@ export function createHairMatte(gl, model, { format = floatTargets(gl), width = 
   const logits = net.outputs[0][0];
   let state = null;
   let fresh = true;
+  let ran = 0;
 
   function target(w, h) {
     const texture = gl.createTexture();
@@ -902,10 +907,13 @@ export function createHairMatte(gl, model, { format = floatTargets(gl), width = 
     get texture() {
       return state?.ping.texture || null;
     },
+    get ran() {
+      return ran;
+    },
     reset() {
       fresh = true;
     },
-    update(camera, w, h, region) {
+    update(camera, w, h, region, { run = true } = {}) {
       const sw = Math.min(width, w);
       const sh = Math.max(2, Math.round((sw * h) / w));
       if (!state || state.width !== sw || state.height !== sh) {
@@ -916,8 +924,11 @@ export function createHairMatte(gl, model, { format = floatTargets(gl), width = 
       const uniforms = { uCenter: region.center, uSide: region.size, uFrame: [w, h] };
       const rounds = fresh ? WARM_ROUNDS : 1;
       for (let round = 0; round < rounds; round += 1) {
-        draw(crop, net.input, [["uCam", camera], ["uPrev", state.ping.texture]], { ...uniforms, uSize: [net.inputWidth, net.inputHeight] });
-        net.run();
+        if (run || fresh) {
+          draw(crop, net.input, [["uCam", camera], ["uPrev", state.ping.texture]], { ...uniforms, uSize: [net.inputWidth, net.inputHeight] });
+          net.run();
+          ran += 1;
+        }
         draw(frame, state.pong, [["uLogits", logits.texture], ["uPrev", state.ping.texture]], {
           ...uniforms,
           uLogitSize: [net.inputWidth, net.inputHeight],
