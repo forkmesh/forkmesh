@@ -210,12 +210,10 @@ struct AgentsScreen: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            tools
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, FmSpace.x2)
-        .frame(height: 46)
+        tools
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, FmSpace.x2)
+            .frame(height: 46)
     }
 
     private var tools: some View {

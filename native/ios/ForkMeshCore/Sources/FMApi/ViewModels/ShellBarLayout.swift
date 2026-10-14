@@ -244,18 +244,20 @@ public struct ShellBarLayout: Equatable, Codable, Sendable {
     }
 
     public func barSlots<Item>(
-        _ items: [Item], ranking: [String], keep: [String] = [], id: (Item) -> String
+        _ items: [Item], ranking: [String], keep: [String] = [], limit: Int = ShellBarLayout.barLimit,
+        id: (Item) -> String
     ) -> [ShellBarSlot<Item>] {
         var shown: ShellBarLayout = self
         for kept in keep {
             shown.show(kept)
         }
         let all: [ShellBarSlot<Item>] = shown.slots(items, ranking: ranking, id: id)
-        guard all.count > ShellBarLayout.barLimit else { return all }
+        let limit: Int = max(1, limit)
+        guard all.count > limit else { return all }
         let pinned: [Bool] = all.map { (slot: ShellBarSlot<Item>) -> Bool in
             keep.contains { ShellBarLayout.holds(slot, $0, id: id) }
         }
-        var room: Int = ShellBarLayout.barLimit - pinned.filter { $0 }.count
+        var room: Int = limit - pinned.filter { $0 }.count
         var result: [ShellBarSlot<Item>] = []
         for (index, slot) in all.enumerated() {
             if pinned[index] {
@@ -269,18 +271,27 @@ public struct ShellBarLayout: Equatable, Codable, Sendable {
     }
 
     public func inBar<Item>(
-        _ itemId: String, items: [Item], ranking: [String], keep: [String] = [], id: (Item) -> String
+        _ itemId: String, items: [Item], ranking: [String], keep: [String] = [], limit: Int = ShellBarLayout.barLimit,
+        id: (Item) -> String
     ) -> Bool {
-        barSlots(items, ranking: ranking, keep: keep, id: id).contains { ShellBarLayout.holds($0, itemId, id: id) }
+        barSlots(items, ranking: ranking, keep: keep, limit: limit, id: id).contains {
+            ShellBarLayout.holds($0, itemId, id: id)
+        }
     }
 
-    public func barIsFull<Item>(_ items: [Item], ranking: [String], keep: [String] = [], id: (Item) -> String) -> Bool {
-        barSlots(items, ranking: ranking, keep: keep, id: id).count >= ShellBarLayout.barLimit
+    public func barIsFull<Item>(
+        _ items: [Item], ranking: [String], keep: [String] = [], limit: Int = ShellBarLayout.barLimit,
+        id: (Item) -> String
+    ) -> Bool {
+        barSlots(items, ranking: ranking, keep: keep, limit: limit, id: id).count >= max(1, limit)
     }
 
-    public mutating func fit<Item>(_ items: [Item], ranking: [String], keep: [String] = [], id: (Item) -> String) {
+    public mutating func fit<Item>(
+        _ items: [Item], ranking: [String], keep: [String] = [], limit: Int = ShellBarLayout.barLimit,
+        id: (Item) -> String
+    ) {
         var members: [String] = []
-        for slot in barSlots(items, ranking: ranking, keep: keep, id: id) {
+        for slot in barSlots(items, ranking: ranking, keep: keep, limit: limit, id: id) {
             switch slot {
             case let .item(item): members.append(id(item))
             case let .folder(_, inside): members.append(contentsOf: inside.map(id))
@@ -294,9 +305,10 @@ public struct ShellBarLayout: Equatable, Codable, Sendable {
     }
 
     public mutating func removeFromBar<Item>(
-        _ ids: [String], items: [Item], ranking: [String], keep: [String] = [], id: (Item) -> String
+        _ ids: [String], items: [Item], ranking: [String], keep: [String] = [], limit: Int = ShellBarLayout.barLimit,
+        id: (Item) -> String
     ) {
-        fit(items, ranking: ranking, keep: keep, id: id)
+        fit(items, ranking: ranking, keep: keep, limit: limit, id: id)
         for itemId in ids where !keep.contains(itemId) {
             bar?.removeAll { $0 == itemId }
         }
@@ -305,17 +317,17 @@ public struct ShellBarLayout: Equatable, Codable, Sendable {
     @discardableResult
     public mutating func putInBar<Item>(
         _ itemId: String, at target: String? = nil, items: [Item], ranking: [String], keep: [String] = [],
-        id: (Item) -> String
+        limit: Int = ShellBarLayout.barLimit, id: (Item) -> String
     ) -> Bool {
         var next: ShellBarLayout = self
-        next.fit(items, ranking: ranking, keep: keep, id: id)
+        next.fit(items, ranking: ranking, keep: keep, limit: limit, id: id)
         let before: [ShellBarSlot<Item>] = next.slots(items, ranking: ranking, id: id)
         let targetIndex: Int? = target.flatMap { (key: String) -> Int? in
             before.firstIndex { ShellBarLayout.slotId($0, id: id) == key }
         }
         if !before.contains(where: { ShellBarLayout.holds($0, itemId, id: id) }) {
             next.show(itemId)
-            if next.slots(items, ranking: ranking, id: id).count > ShellBarLayout.barLimit {
+            if next.slots(items, ranking: ranking, id: id).count > max(1, limit) {
                 guard let targetIndex = targetIndex else { return false }
                 let replaced: ShellBarSlot<Item> = before[targetIndex]
                 guard !keep.contains(where: { ShellBarLayout.holds(replaced, $0, id: id) }) else { return false }

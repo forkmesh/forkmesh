@@ -1,4 +1,5 @@
 import FMBase
+import FMChat
 import FMCode
 import FMControl
 import Foundation
@@ -209,6 +210,11 @@ public final class AgentOpsClient {
 
     public nonisolated static func describe(_ error: Error) -> String {
         guard let code = errorCode(error) else { return String(describing: error) }
+        if code == "merge_failed", let control = error as? LocalControlException,
+            !control.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        {
+            return ControlErrorText.withReason("The merge did not finish.", control)
+        }
         return describe(code: code)
     }
 

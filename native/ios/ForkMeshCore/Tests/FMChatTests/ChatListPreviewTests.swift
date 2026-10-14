@@ -81,6 +81,40 @@ final class ChatListPreviewTests: XCTestCase {
         return frame
     }
 
+    func testQuietRowsSayWhatTheConversationIs() {
+        XCTAssertEqual(
+            ChatListPreviews.fallback(topic: "", isPrivate: false, members: 0, mesh: true, direct: false),
+            "Phones and desktops on this network")
+        XCTAssertEqual(
+            ChatListPreviews.fallback(topic: " Weekly *design* review ", isPrivate: true, members: 4, mesh: false, direct: false),
+            "Weekly design review")
+        XCTAssertEqual(
+            ChatListPreviews.fallback(topic: "", isPrivate: false, members: 0, mesh: false, direct: false),
+            "Public \u{00B7} no messages yet")
+        XCTAssertEqual(
+            ChatListPreviews.fallback(topic: "", isPrivate: true, members: 1, mesh: false, direct: false), "Private \u{00B7} 1 member")
+        XCTAssertEqual(
+            ChatListPreviews.fallback(topic: "", isPrivate: true, members: 0, mesh: false, direct: false),
+            "Private \u{00B7} invited people only")
+        XCTAssertEqual(ChatListPreviews.fallback(topic: "", isPrivate: false, members: 0, mesh: false, direct: true), "No messages yet")
+    }
+
+    func testConnectedAppsGroupTheirCommandsByApp() {
+        let apps = ChatListPreviews.apps([
+            AppCommand(command: "deploy", appName: "Shipper", appSlug: "shipper"),
+            AppCommand(command: "hello", appName: "Hello App", appSlug: "hello-app"),
+            AppCommand(command: "rollback", appName: "Shipper", appSlug: "shipper"),
+            AppCommand(command: "status", appName: "Shipper", appSlug: "shipper"),
+            AppCommand(command: "logs", appName: "Shipper", appSlug: "shipper"),
+            AppCommand(command: "ping"),
+        ])
+        XCTAssertEqual(apps.map(\.name), ["Apps", "Hello App", "Shipper"])
+        XCTAssertEqual(apps.map(\.id), ["apps", "hello-app", "shipper"])
+        XCTAssertEqual(apps[1].detail, "/hello")
+        XCTAssertEqual(apps[2].detail, "/deploy /rollback /status +1")
+        XCTAssertEqual(ChatListPreviews.apps([]), [])
+    }
+
     @MainActor func testAChannelRowShowsItsNewestTopLevelMessage() async throws {
         let (hub, h) = try await hub()
         XCTAssertNil(hub.listPreview("#general"))

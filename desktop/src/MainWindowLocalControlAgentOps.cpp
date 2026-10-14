@@ -967,17 +967,21 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                                                      QStringLiteral("repo_unavailable"));
                     return;
                 }
+                const quint64 noticesBefore = m_operationNoticeSerial;
                 mergeWorktreeIntoMain(
                     branch, worktreePathForBranch(path, branch, WorktreeLookup::Any),
                     true,
                     [this, connectionId, requestId, sessionId, branch, path,
-                     into = check.into](bool merged) {
+                     into = check.into, noticesBefore](bool merged) {
                         if (!m_localControl)
                             return;
                         if (!merged) {
                             m_localControl->respondError(
                                 connectionId, requestId,
-                                QStringLiteral("merge_failed"));
+                                QStringLiteral("merge_failed"),
+                                m_operationNoticeSerial != noticesBefore
+                                    ? m_lastOperationNotice
+                                    : QString());
                             return;
                         }
                         notifyLocalControlAgentsChanged();

@@ -132,6 +132,9 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
 
         fun describe(error: Throwable): String {
             val code = errorCode(error) ?: return error.message ?: error.toString()
+            if (code == "merge_failed" && error is LocalControlException && error.reason.isNotBlank()) {
+                return ControlErrorText.withReason("The merge did not finish.", error)
+            }
             return describe(code)
         }
 

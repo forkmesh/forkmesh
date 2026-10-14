@@ -70,6 +70,47 @@ public enum ChatListPreviews {
         if parts.year == calendar.component(.year, from: now) { return "\(month) \(parts.day ?? 1)" }
         return "\(month) \(parts.day ?? 1), \(parts.year ?? 0)"
     }
+
+    public static func fallback(topic: String, isPrivate: Bool, members: Int, mesh: Bool, direct: Bool) -> String {
+        if mesh { return "Phones and desktops on this network" }
+        let about = plain(topic)
+        if !about.isEmpty { return about }
+        if direct { return "No messages yet" }
+        if !isPrivate { return "Public \u{00B7} no messages yet" }
+        return members > 0 ? "Private \u{00B7} \(ChatHub.membersLabel(members))" : "Private \u{00B7} invited people only"
+    }
+
+    public static func apps(_ commands: [AppCommand]) -> [ChatConnectedApp] {
+        var order: [String] = []
+        var byKey: [String: ChatConnectedApp] = [:]
+        for command in commands {
+            let name = command.appName.isEmpty ? (command.appSlug.isEmpty ? "Apps" : command.appSlug) : command.appName
+            let key = command.appSlug.isEmpty ? name.lowercased() : command.appSlug
+            if byKey[key] == nil {
+                order.append(key)
+                byKey[key] = ChatConnectedApp(id: key, name: name, commands: [])
+            }
+            byKey[key]?.commands.append("/" + command.command)
+        }
+        return order.compactMap { byKey[$0] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+}
+
+public struct ChatConnectedApp: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public var commands: [String]
+
+    public init(id: String, name: String, commands: [String]) {
+        self.id = id
+        self.name = name
+        self.commands = commands
+    }
+
+    public var detail: String {
+        let shown = commands.prefix(3).joined(separator: " ")
+        return commands.count > 3 ? "\(shown) +\(commands.count - 3)" : shown
+    }
 }
 
 extension ChatHub {
@@ -89,4 +130,14 @@ extension ChatHub {
     public func listTimeLabel(_ preview: ChatListPreview) -> String {
         ChatListPreviews.timeLabel(preview.at, now: clock.now)
     }
+
+    public func listFallback(_ conversation: String) -> String {
+        let room = office?.room(for: conversation)
+        return ChatListPreviews.fallback(
+            topic: room?.topic ?? "", isPrivate: room?.isPrivate ?? extras.isPrivate(conversation),
+            members: room?.members.count ?? 0, mesh: conversation == meshConversation,
+            direct: conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation))
+    }
+
+    public var connectedApps: [ChatConnectedApp] { ChatListPreviews.apps(appCommands.commands) }
 }
