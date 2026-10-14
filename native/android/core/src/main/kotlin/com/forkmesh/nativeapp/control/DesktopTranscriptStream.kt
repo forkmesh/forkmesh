@@ -42,6 +42,15 @@ class DesktopTranscriptStream(
         return follow()
     }
 
+    fun refollow(): Boolean {
+        synchronized(lock) {
+            if (stopped) return false
+            retry?.cancel(false)
+            retry = null
+        }
+        return follow()
+    }
+
     fun stop() {
         val link: ControlLink?
         synchronized(lock) {
