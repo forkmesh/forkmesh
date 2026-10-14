@@ -338,6 +338,7 @@ export function openViewOnceRecorder({
   let pressStartedAt = 0;
   let lastPointerDownAt = -Infinity;
   let starting = false;
+  let stopWhenStarted = false;
   let sending = false;
 
   function unavailableText() {
@@ -443,6 +444,10 @@ export function openViewOnceRecorder({
         onTick: (ms) => setTimer(ms),
       });
       starting = false;
+      if (stopWhenStarted) {
+        stopWhenStarted = false;
+        stopRecording();
+      }
       if (voiceSelect) voiceSelect.disabled = true;
       record.hidden = true;
       stopButton.hidden = false;
@@ -518,24 +523,17 @@ export function openViewOnceRecorder({
     if (kind === "voice" && performance.now() - lastPointerDownAt < 1500) return;
     void startRecording();
   });
-  stopButton.addEventListener("pointerup", () => {
+  function endPress() {
     if (!pressStartedAt) return;
     const held = performance.now() - pressStartedAt;
     pressStartedAt = 0;
-    if (held >= HOLD_THRESHOLD_MS) {
-      overlay.dataset.holdSend = "true";
-      stopRecording();
-    }
-  });
-  overlay.addEventListener("pointerup", () => {
-    if (!pressStartedAt || !recording) return;
-    const held = performance.now() - pressStartedAt;
-    pressStartedAt = 0;
-    if (held >= HOLD_THRESHOLD_MS) {
-      overlay.dataset.holdSend = "true";
-      stopRecording();
-    }
-  });
+    if (held < HOLD_THRESHOLD_MS) return;
+    overlay.dataset.holdSend = "true";
+    if (recording) stopRecording();
+    else stopWhenStarted = true;
+  }
+  overlay.addEventListener("pointerup", endPress);
+  overlay.addEventListener("pointercancel", endPress);
   stopButton.addEventListener("click", stopRecording);
   rerecord.addEventListener("click", () => {
     clearReview();
