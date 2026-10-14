@@ -13127,10 +13127,12 @@
       state.agentsView.selectedAgentId = null;
     }
     if (!state.selectedRepo) return;
-    // An issue page has no Back button: the Issues tab is the way back to the
-    // list, as on GitHub, so selecting it leaves the open issue behind.
-    if (tab === "issues" && state.repoRecordDetail?.kind === "issues") {
+    // Record pages have no Back button: the tab is the way back to the list,
+    // as on GitHub, so selecting it leaves the open record behind.
+    if (["issues", "pulls", "discussions"].includes(tab) && state.repoRecordDetail?.kind === tab) {
+      if (tab === "pulls") stopRepoPullActivityRefresh();
       state.repoRecordDetail = null;
+      state.repoRecordSection = "conversation";
     }
     navigateHistory(tab === "code"
       ? (state.repoCodeUrl || repoLinkUrl(state.selectedRepo))
@@ -13181,6 +13183,9 @@
       // to the list those were opened from.
       state.repoCompare = null;
       loadRepoCollection(state.selectedRepo, "pulls", "[data-repo-pulls]");
+    } else if (tab === "discussions") {
+      if (Array.isArray(state.repoCollectionItems.discussions)) renderRepoDiscussions({ syncQuery: true });
+      else loadRepoCollection(state.selectedRepo, "discussions", "[data-repo-discussions]");
     } else if (tab === "issues") {
       // Re-selecting returns to a freshly-read list. Rendering the prior array
       // here made both the list and its header look permanently cached.
@@ -16989,6 +16994,11 @@
         author: values.authorName || values.author || "unknown",
         date: formatRecordDate(values.updatedAt || values.createdAt || values.ts),
         updatedAtMs: Number(values.updatedAt || values.createdAt || values.ts || 0) || 0,
+        createdAtMs: Number(values.createdAt || values.ts || values.updatedAt || 0) || 0,
+        authorKey: values.author || "",
+        base: values.base || "",
+        head: values.head || "",
+        category: values.category || "",
         meta: config.meta(values),
         body: parsed.body || "",
         wantsAgent: config.dir === "issues" ? Boolean(values.wantsAgent) : false,
@@ -17053,6 +17063,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function pullStateIconHtml(stateLabel, extra = "") {
+    const value = String(stateLabel || "open").toLowerCase();
+    const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
+      : value === "merged" ? ["git-merge", "text-primary"]
+        : value === "closed" ? ["git-pull-request-closed", "text-destructive"]
+          : ["git-pull-request-draft", "text-muted-foreground"];
+    return `<i data-lucide="${icon}" class="${extra} h-4 w-4 ${tone}"></i>`;
+  }
+
   function renderRepoRecordList(items, config, kind) {
     const totalPages = Math.max(1, Math.ceil(items.length / REPO_COLLECTION_PAGE_SIZE));
     const page = state.repoCollectionPages[kind] || 1;
@@ -17096,23 +17115,21 @@
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
           </span>` : `
-          <span aria-hidden="true" class="mt-0.5 h-4 w-4 rounded border border-border bg-background"></span>
-          <i data-lucide="${config.icon}" class="mt-0.5 h-4 w-4 ${config.tone}"></i>
+          ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
-            <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(item.title)}</span>
-              ${labelParts.map((label) => `<span class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(label)}</span>`).join("")}
+            <span class="block min-w-0 leading-6">
+              <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
+              ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(numberLabel)} opened by ${escapeHtml(item.author)} ${escapeHtml(item.date)}${item.body ? ` - ${escapeHtml(item.body).slice(0, 140)}` : ""}</span>
+            <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
+              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
+            </span>
           </span>
-          <span class="self-start flex shrink-0 items-center gap-3">
-            ${item.wantsAgent ? '<i data-lucide="zap" class="h-4 w-4 text-muted-foreground" title="Assigned to agent"></i>' : ''}
-            <span class="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex"><i data-lucide="message-square" class="h-3.5 w-3.5"></i>0</span>
-            <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(stateLabel)}</span>
+          <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
+            ${item.wantsAgent ? '<i data-lucide="bot" class="h-4 w-4" title="Assigned to agent"></i>' : ""}
           </span>`;
-      const rowGrid = isIssue
-        ? "grid-cols-[1rem_minmax(0,1fr)_auto]"
-        : "grid-cols-[1rem_1.25rem_minmax(0,1fr)_auto]";
+      const rowGrid = "grid-cols-[1rem_minmax(0,1fr)_auto]";
       if (item.unavailable) {
         return `
           <div data-repo-record-unavailable="${escapeHtml(kind)}" data-repo-record-number="${escapeHtml(item.number)}" role="group" aria-disabled="true" aria-label="${escapeHtml(`${config.itemLabel} #${item.number} metadata unavailable`)}" class="grid w-full ${rowGrid} gap-3 border-t border-border bg-secondary/20 px-4 py-3 text-left">
@@ -17129,7 +17146,7 @@
         ? repoRecordUrl(state.selectedRepo, kind, item.number, "conversation")
         : "";
       return `
-        <a ${recordHref ? `href="${escapeHtml(recordHref)}" ` : ""}data-repo-record-kind="${escapeHtml(kind)}" data-repo-record-number="${escapeHtml(item.number)}" class="${isIssue ? "group grid w-full cursor-pointer gap-x-2 border-t border-border px-4 py-2 text-left first-of-type:border-t-0 transition-colors hover:bg-[rgb(var(--dashboard-subtle-rgb))]" : `grid w-full cursor-pointer gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-secondary/40`} ${rowGrid}">
+        <a ${recordHref ? `href="${escapeHtml(recordHref)}" ` : ""}data-repo-record-kind="${escapeHtml(kind)}" data-repo-record-number="${escapeHtml(item.number)}" class="group grid w-full cursor-pointer gap-x-2 border-t border-border px-4 py-2 text-left first-of-type:border-t-0 transition-colors hover:bg-[rgb(var(--dashboard-subtle-rgb))] ${rowGrid}">
           ${content}
         </a>`;
     }).join("");
@@ -18878,36 +18895,37 @@
     const meta = pullEventTypeMeta(ev);
     const anchor = pullEventAnchorLabel(ev);
     const author = ev.authorName || ev.author || (ev.type === "agent" ? "Agent" : "unknown");
-    const date = formatRecordDate(ev.ts);
     const body = String(ev.body || "").trim();
-    const commit = String(ev.hash || "").slice(0, 12);
-    const detail = ev.type === "commit" && commit
-      ? `<span class="font-mono text-[10px]">${escapeHtml(commit)}</span>`
-      : ev.type === "agent" && ev.branchName
-        ? `<span class="font-mono text-[10px]">${escapeHtml(ev.branchName)}</span>`
-        : "";
+    const commit = String(ev.hash || "").slice(0, 7);
+    if (ev.type === "commit") {
+      return renderIssueTimelineEvent("git-commit-horizontal", author.replace(/\s*<[^>]*>\s*$/, "") || author, ev.author, `<span class="min-w-0 truncate text-foreground">${escapeHtml(body || "Commit")}</span>${commit ? `<span class="font-mono text-[12px]">${escapeHtml(commit)}</span>` : ""}`, ev.ts);
+    }
+    if (!body) {
+      const icon = ev.type === "agent" ? "bot"
+        : ev.type === "review" && ev.state === "approved" ? "check"
+          : ev.type === "review" && ev.state === "changes_requested" ? "file-diff" : "eye";
+      return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
+    }
     const fullDate = formatRecordDateTime(ev.ts);
     return `
-      <div class="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-3 border-t border-border px-4 py-3 text-sm first:border-t-0">
-        ${issueActorAvatarHtml(author, ev.author, "h-7 w-7", ev.type === "agent")}
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span class="font-medium text-foreground">${escapeHtml(author)}</span>
-            <span class="rounded-md border px-1.5 py-0.5 text-[10px] uppercase ${meta.tone}">${escapeHtml(meta.label)}</span>
-            ${detail}
-            ${anchor ? `<span class="truncate font-mono">${escapeHtml(anchor)}</span>` : ""}
-            <span>&middot;</span>
-            <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>
+      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+        <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
+        <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
+          <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
+            <span class="font-semibold text-foreground">${escapeHtml(author)}</span>
+            <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
+            <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
+            ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
+            ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
           </div>
-          ${body ? `<div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>` : ""}
+          <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
         </div>
       </div>`;
   }
 
   function renderRepoPullConversation(events) {
     const rows = Array.isArray(events) ? events : [];
-    if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No conversation yet on this pull request.</div>';
-    return rows.map(renderPullConversationEvent).join("");
+    return rows.filter((ev) => ev?.type !== "open").map(renderPullConversationEvent).join("");
   }
 
   function pullTimestamp(value) {
@@ -19517,20 +19535,22 @@
 
   function renderPullReviewForm(number) {
     if (!state.session?.nodeName) {
-      return `<div class="border-t border-border bg-secondary/20 px-4 py-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-accent hover:underline">Log in</a> to comment or review this pull request.</div>`;
+      return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
     return `
-      <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid gap-2 border-t border-border bg-secondary/20 p-4">
-        ${composeIdentityHtml(state.session, "Reviewing")}
-        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Review
-          <textarea data-repo-pull-review-body rows="3" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
-        </label>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
-          <div class="flex flex-wrap items-center gap-2">
-            <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-x" class="h-4 w-4"></i>Request changes</button>
-            <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve</button>
-            <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Comment</button>
+      <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+        <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
+        <div class="grid min-w-0 gap-2">
+          <h3 class="text-[16px] font-semibold text-foreground">Add a comment</h3>
+          ${composeIdentityHtml(state.session, "Reviewing")}
+          <textarea data-repo-pull-review-body rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
+              <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>
+              <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50">Comment</button>
+            </div>
           </div>
         </div>
       </form>`;
@@ -20834,15 +20854,24 @@
     // the opening block is the description alone (issue #651). Pull requests
     // keep a slim "opened" line because their hero spends that row naming the
     // merge refs instead.
-    const openedLine = isPulls
-      ? `opened <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>`
-      : "";
-    const openingBlock = hasBody
-      ? `<div data-repo-record-description="body" class="overflow-hidden rounded-lg border border-border bg-background">
-                      ${openedLine ? `<div class="border-b border-border/40 bg-primary/10 px-4 py-2.5 text-xs text-muted-foreground">${openedLine}</div>` : ""}
-                      <div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo) || `<p class="italic text-muted-foreground">No description provided.</p>`}</div>
-                    </div>`
-      : `<p data-repo-record-description="empty" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">${openedLine ? `<span>${openedLine}</span><span>&middot;</span>` : ""}<span class="italic">No description provided.</span></p>`;
+    const isOwner = String(repo.owner || "").toLowerCase() === String(values.author || author).toLowerCase();
+    const openingBody = hasBody
+      ? `<div data-repo-record-body class="px-4 py-4 ${MD_BODY_CLASS}">${renderRecordMarkdown(displayBody, repo)}</div>`
+      : `<p class="px-4 py-4 text-[14px] italic text-muted-foreground">No description provided.</p>`;
+    const openingBlock = `
+                <div data-repo-record-description="${hasBody ? "body" : "empty"}" class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+                  <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
+                  <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
+                    <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="ml-auto flex shrink-0 items-center gap-1">
+                        <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
+                        <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
+                      </span>
+                    </div>
+                    ${openingBody}
+                  </div>
+                </div>`;
     // The conversation column opts out of the row stretch, the way the sidebar
     // beside it already does. Without that it is grown to whichever of the two
     // columns is taller and hands the surplus height down through its own
@@ -20863,12 +20892,8 @@
     // replies already are: as bare siblings of the opening comment they read as
     // loose strips of border with no left edge to line their avatars up on.
     const pullConversationSection = isPulls ? `
-          <section class="overflow-hidden rounded-lg border border-border">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
-              <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Activity</span>
-              <span class="text-[10px] text-muted-foreground">Signed reviews, comments and commits on this pull request</span>
-            </div>
-            <div data-repo-pull-conversation data-empty="${pullTimeline.length ? "false" : "true"}">${renderRepoPullConversation(pullTimeline)}</div>
+          <section class="grid min-w-0 gap-3">
+            <div data-repo-pull-conversation data-empty="${pullTimeline.length ? "false" : "true"}" class="grid min-w-0 gap-2">${renderRepoPullConversation(pullTimeline)}</div>
             ${renderPullReviewForm(number)}
           </section>` : "";
     const pullFilesSection = isPulls
@@ -20876,10 +20901,9 @@
       : "";
     const discussionConversation = parsed.discussionConversation || [];
     const discussionConversationSection = isDiscussions ? `
-        <section class="overflow-hidden rounded-lg border border-border" data-repo-record-conversation>
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Replies</span>
-            <span class="font-mono text-[10px] text-muted-foreground">${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}</span>
+        <section class="overflow-hidden rounded-md border border-border sm:ml-14">
+          <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">
+            <i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}
           </div>
           <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation)}</div>
           ${renderDiscussionReplyForm(number)}
@@ -20889,96 +20913,114 @@
     const activeSection = isPulls
       ? normalizeRepoRecordSection(state.repoRecordSection)
       : "conversation";
-    const recordTabAttrs = (name) => (name === activeSection
-      ? `aria-selected="true" class="inline-flex h-11 items-center gap-2 border-b-2 border-border px-3 text-xs font-semibold text-foreground"`
-      : `aria-selected="false" class="inline-flex h-11 items-center gap-2 border-b-2 border-transparent px-3 text-xs font-semibold text-muted-foreground"`);
+    const recordTabAttrs = (name) => `aria-selected="${name === activeSection ? "true" : "false"}" class="-mb-px inline-flex h-10 shrink-0 items-center gap-2 rounded-t-md border border-transparent px-4 text-[14px] text-muted-foreground transition-colors hover:text-foreground aria-selected:border-border aria-selected:border-b-background aria-selected:bg-background aria-selected:text-foreground"`;
     const recordPanelClass = (name) => (name === activeSection ? "min-w-0" : "hidden min-w-0");
+    const tabCounter = (attr, value) => `<span ${attr} class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground">${formatCount(value)}</span>`;
+    const pullAdds = pullPatch.files.reduce((total, file) => total + (Number(file.adds) || 0), 0);
+    const pullDels = pullPatch.files.reduce((total, file) => total + (Number(file.dels) || 0), 0);
+    const diffBlocks = Array.from({ length: 5 }, (_, index) => {
+      const total = pullAdds + pullDels;
+      const added = total ? Math.round((pullAdds / total) * 5) : 0;
+      const tone = !total ? "bg-[var(--dashboard-counter)]" : index < added ? "bg-success" : "bg-destructive";
+      return `<span class="inline-block h-2 w-2 rounded-[2px] ${tone}"></span>`;
+    }).join("");
     const recordTabs = isPulls ? `
-        <nav class="flex min-w-0 overflow-x-auto border-b border-border" aria-label="Pull request sections">
-          <button type="button" data-repo-record-tab="conversation" ${recordTabAttrs("conversation")}><i data-lucide="message-square" class="h-3.5 w-3.5"></i>Conversation<span data-repo-pull-timeline-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullTimeline.length)}</span></button>
-          <button type="button" data-repo-record-tab="commits" ${recordTabAttrs("commits")}><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5"></i>Commits<span data-repo-pull-commit-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullCommitCount)}</span></button>
-          <button type="button" data-repo-record-tab="checks" ${recordTabAttrs("checks")}><i data-lucide="circle-check" class="h-3.5 w-3.5"></i>Checks<span data-repo-pull-check-count class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullCheckCount)}</span></button>
-          <button type="button" data-repo-record-tab="files" ${recordTabAttrs("files")}><i data-lucide="files" class="h-3.5 w-3.5"></i>Files changed<span class="rounded-full bg-secondary px-1.5 py-0.5 font-mono text-[10px]">${formatCount(pullPatch.files.length)}</span></button>
-          <button type="button" data-repo-record-tab="badge" ${recordTabAttrs("badge")}><i data-lucide="fingerprint" class="h-3.5 w-3.5"></i>Badge</button>
+        <nav class="mt-6 flex min-w-0 items-end overflow-x-auto border-b border-border" aria-label="Pull request sections">
+          <button type="button" data-repo-record-tab="conversation" ${recordTabAttrs("conversation")}><i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>Conversation${tabCounter("data-repo-pull-timeline-count", pullTimeline.length)}</button>
+          <button type="button" data-repo-record-tab="commits" ${recordTabAttrs("commits")}><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-muted-foreground"></i>Commits${tabCounter("data-repo-pull-commit-count", pullCommitCount)}</button>
+          <button type="button" data-repo-record-tab="checks" ${recordTabAttrs("checks")}><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks${tabCounter("data-repo-pull-check-count", pullCheckCount)}</button>
+          <button type="button" data-repo-record-tab="files" ${recordTabAttrs("files")}><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Files changed${tabCounter("", pullPatch.files.length)}</button>
+          <button type="button" data-repo-record-tab="badge" ${recordTabAttrs("badge")}><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</button>
+          <span data-repo-pull-diffstat class="ml-auto hidden shrink-0 items-center gap-1.5 self-center pl-4 font-mono text-[12px] font-semibold sm:inline-flex"><span class="text-success">+${formatCount(pullAdds)}</span><span class="text-destructive">&minus;${formatCount(pullDels)}</span><span class="ml-0.5 inline-flex gap-px">${diffBlocks}</span></span>
         </nav>` : "";
     const sidebarSection = (label, value) => `
-      <div class="border-t border-border py-3 first:border-t-0 first:pt-0">
-        <h4 class="text-xs font-semibold text-muted-foreground">${label}</h4>
-        <p class="mt-2 text-xs text-foreground">${value}</p>
+      <div class="border-b border-border py-4 first:pt-0">
+        <h4 class="mb-2 text-[12px] font-semibold text-muted-foreground">${label}</h4>
+        <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const labelValue = labels.length
-      ? labels.map((label) => `<span class="mr-1 mt-1 inline-flex rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">${escapeHtml(label)}</span>`).join("")
-      : "No labels";
+      ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>`
+      : `<span class="text-muted-foreground">None yet</span>`;
+    const stateKey = String(recordState).toLowerCase();
+    const stateLabel = isDiscussions
+      ? (["closed", "archived"].includes(stateKey) ? recordState.charAt(0).toUpperCase() + recordState.slice(1) : "Open")
+      : stateKey === "open" ? "Open" : recordState.charAt(0).toUpperCase() + recordState.slice(1);
+    const statePillTone = stateKey === "open" || (isDiscussions && stateLabel === "Open") ? "bg-success"
+      : stateKey === "merged" ? "bg-primary"
+        : stateKey === "closed" && isPulls ? "bg-destructive" : "bg-[#6e7681]";
+    const stateIcon = isPulls
+      ? ({ open: "git-pull-request", merged: "git-merge", closed: "git-pull-request-closed" }[stateKey] || "git-pull-request-draft")
+      : stateLabel === "Open" ? "messages-square" : "circle-check";
+    const discussionCategory = values.category || "Ideas";
+    const recordUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, kind, number)}`;
+    const branchChip = (repoLabel, branch) => `<span class="inline-block max-w-full truncate rounded-md bg-[color-mix(in_srgb,var(--dashboard-link)_15%,transparent)] px-1.5 align-middle font-mono text-[12px] leading-5 text-[var(--dashboard-link)]"><span class="opacity-75">${escapeHtml(repoLabel)}:</span>${escapeHtml(branch)}</span>`;
+    const participants = Array.from(new Set([author, ...pullConversation.map((ev) => ev.authorName || ev.author).filter(Boolean),
+      ...(parsed.discussionConversation || []).map((ev) => ev.authorName || ev.author).filter(Boolean)]));
     return `
-      <article data-repo-record-detail="${escapeHtml(kind)}" class="grid gap-4 bg-background py-4 pl-4 pr-2 sm:pr-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" data-repo-record-back="${escapeHtml(kind)}" class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to ${escapeHtml(config.label)}</button>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <span class="font-mono text-xs text-muted-foreground">${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repo")} · ${recordLabel}</span>
+      <article data-repo-record-detail="${escapeHtml(kind)}" class="min-w-0 bg-background">
+        <header data-repo-record-hero class="${isPulls ? "" : "border-b border-border pb-4"}">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
+            <div class="flex shrink-0 items-center gap-2 pt-1">
+              <button type="button" data-dashboard-copy="${escapeHtml(recordUrl)}" aria-label="Copy link to this ${escapeHtml(config.itemLabel)}" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
+            </div>
           </div>
-        </div>
-        <header data-repo-record-hero class="grid gap-3">
-          <h2 class="text-2xl font-semibold leading-tight text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></h2>
-          <p class="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span data-repo-record-state class="inline-flex items-center gap-1.5 rounded-full ${["closed", "rejected", "declined"].includes(String(recordState).toLowerCase()) ? "bg-[#6e7681]" : "bg-success"} px-2.5 py-1 text-xs font-semibold text-white"><i data-lucide="${config.icon}" class="h-3.5 w-3.5"></i>${escapeHtml(recordState)}</span>
-            ${issueActorAvatarHtml(author, values.author, "h-6 w-6")}
-            <span><span class="font-semibold text-foreground">${escapeHtml(author)}</span> ${isPulls ? `wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${pullRefChip(baseRepoLabel, baseBranch)} from ${pullRefChip(headRepoLabel, headBranch)}` : `opened this ${escapeHtml(config.itemLabel)} <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time>`}</span>
-            <span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Contributor</span>
-          </p>
+          <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
+            ${isDiscussions && stateLabel === "Open"
+              ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
+              : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
+            <span class="min-w-0">${isPulls
+              ? `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+          </div>
           ${recordTabs}
         </header>
-        <div data-repo-record-layout class="grid gap-4 ${activeSection === "conversation" ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : "lg:grid-cols-1"}">
+        <div data-repo-record-layout class="mt-6 grid gap-8 ${activeSection === "conversation" ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : "lg:grid-cols-1"}">
           <div class="${recordColumnClass}">
             <div data-repo-record-panel="conversation" class="${activeSection === "conversation" ? "" : "hidden "}grid min-w-0 gap-4">
-              ${isDiscussions ? discussionConversationSection : `
-                <section data-repo-record-conversation class="grid gap-3">
-                  ${openingBlock}
-                  ${pullConversationSection}
-                </section>`}
-              ${isPulls ? `<div data-repo-pull-readiness-slot>${renderRepoPullReadiness(repo, number, parsed)}</div>` : ""}
-              ${isPulls ? `<div data-repo-pull-rules-slot>${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
-              ${isPulls ? renderRepoPullMergeControl(repo, number, parsed) : ""}
-              ${repo.isPrivate ? "" : `<section class="overflow-hidden rounded-lg border border-border" data-repo-federated-thread>
-                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
-                  <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="radio" class="h-3.5 w-3.5 text-muted-foreground"></i>Fediverse thread</span>
-                  <span class="text-[10px] text-muted-foreground">Remote provenance · separate from signed native history</span>
-                </div>
-                <div data-repo-federated-replies></div>
-              </section>`}
+              <section data-repo-record-conversation class="grid min-w-0 gap-4">
+                ${openingBlock}
+                ${isDiscussions ? discussionConversationSection : pullConversationSection}
+              </section>
+              ${isPulls ? `<div data-repo-pull-readiness-slot class="sm:ml-14">${renderRepoPullReadiness(repo, number, parsed)}</div>` : ""}
+              ${isPulls ? `<div data-repo-pull-rules-slot class="sm:ml-14">${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
+              ${isPulls ? `<div class="sm:ml-14">${renderRepoPullMergeControl(repo, number, parsed)}</div>` : ""}
+              ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
+                <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
+                  <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div data-repo-federated-replies class="border-t border-border"></div>
+              </details>`}
             </div>
             ${isPulls ? `
               <div data-repo-record-panel="commits" class="${recordPanelClass("commits")}">
-                <section class="overflow-hidden rounded-lg border border-border">
-                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Pull request commits</div>
+                <section class="overflow-hidden rounded-md border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-muted-foreground"></i>Commits</div>
                   <div data-repo-pull-commits class="divide-y divide-border">${renderRepoPullCommits(parsed.pullCommits || [])}</div>
                 </section>
               </div>
               <div data-repo-record-panel="checks" class="${recordPanelClass("checks")}">
-                <section class="overflow-hidden rounded-lg border border-border">
-                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="circle-check" class="h-3.5 w-3.5 text-muted-foreground"></i>Checks on the current head commit</div>
+                <section class="overflow-hidden rounded-md border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks on the current head commit</div>
                   <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks)}</div>
                 </section>
               </div>
               <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
               <div data-repo-record-panel="badge" class="${recordPanelClass("badge")}">
-                <section class="overflow-hidden rounded-lg border border-border">
-                  <div class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="fingerprint" class="h-3.5 w-3.5 text-muted-foreground"></i>Badge</div>
+                <section class="overflow-hidden rounded-md border border-border">
+                  <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</div>
                   ${renderRepoPullBadge(title, number, author, pullPatch.files)}
                 </section>
               </div>` : ""}
           </div>
-          <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start text-xs lg:border-l lg:border-border lg:pl-4">
+          <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
             ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
-            ${sidebarSection("Assignees", "No one assigned")}
+            ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
-            ${sidebarSection("Type", isPulls ? "Pull request" : "Discussion")}
-            ${sidebarSection("Fields", "No fields configured")}
-            ${sidebarSection("Projects", "No projects")}
-            ${sidebarSection("Milestone", metadata.find(([label]) => label === "Milestone")?.[1] || "No milestone")}
-            ${sidebarSection("Relationships", "None yet")}
-            ${sidebarSection("Development", isPulls ? "Successfully merging this pull request may close these issues." : "No branches or pull requests")}
-            ${sidebarSection("Participants", `1 participant - ${escapeHtml(author)}`)}
+            ${isPulls ? sidebarSection("Milestone", escapeHtml(metadata.find(([label]) => label === "Milestone")?.[1] || "") || `<span class="text-muted-foreground">No milestone</span>`) : ""}
+            ${isPulls ? sidebarSection("Development", `<span class="text-muted-foreground">Successfully merging this pull request may close the issues it names.</span>`) : ""}
+            ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "Participant" : "Participants"}`, `<div class="flex flex-wrap gap-1">${participants.slice(0, 12).map((name) => issueActorAvatarHtml(name, name, "h-6 w-6")).join("")}</div>`)}
           </aside>
         </div>
       </article>`;
@@ -21282,7 +21324,11 @@
   // The list chrome (views sidebar, heading, search) steps aside while one
   // issue fills the tab, so the page reads as the issue at its own URL.
   function setRepoIssueRecordOpen(open) {
-    $$("[data-repo-issues-layout]").forEach((layout) => {
+    setRepoRecordOpen("issues", open);
+  }
+
+  function setRepoRecordOpen(kind, open) {
+    $$(`[data-repo-collection-layout="${kind}"], [data-repo-record-host="${kind}"]`).forEach((layout) => {
       layout.dataset.recordOpen = open ? "true" : "false";
     });
   }
@@ -21795,7 +21841,7 @@
   function showOptimisticRepoRecord(repo, kind, number, parsed, container) {
     if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
     state.repoRecordDetail = { repo, kind, number, parsed };
-    if (kind === "issues") setRepoIssueRecordOpen(true);
+    setRepoRecordOpen(kind, true);
     container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
@@ -21856,7 +21902,7 @@
     }
     const quietRefresh = Boolean(optimistic)
       && repoRecordDetailOnScreen(repo, kind, number, container);
-    if (kind === "issues") setRepoIssueRecordOpen(true);
+    setRepoRecordOpen(kind, true);
     const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     if (!quietRefresh) {
@@ -22695,7 +22741,7 @@
     const labels = tally("label");
     const milestones = tally("milestone");
     const section = (title, rows) => rows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">${title}</h3>${rows.join("")}` : "";
-    return `
+    return `<div data-repo-collection-views-inner>
       <div class="grid gap-0.5">
         ${ISSUE_VIEWS.map((view) => row(`data-repo-issue-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -22710,8 +22756,12 @@
           String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
           `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
       </div>
-      <div class="mt-3 border-t border-border pt-2">
-        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-close" class="h-4 w-4"></i>Collapse sidebar</button>
+      ${renderCollectionViewsFooter()}</div>`;
+  }
+
+  function renderCollectionViewsFooter() {
+    return `<div class="mt-auto grid gap-0.5 pt-6">
+        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="panel-left-close" class="h-4 w-4 text-muted-foreground"></i>Collapse sidebar</button>
       </div>`;
   }
 
@@ -22833,7 +22883,7 @@
     try {
       localStorage.setItem("forkmesh.issue-views-collapsed.v1", collapsed ? "1" : "0");
     } catch (_) { /* storage unavailable: the toggle still applies now */ }
-    $$("[data-repo-issues-layout]").forEach((layout) => {
+    $$("[data-repo-collection-layout]").forEach((layout) => {
       layout.dataset.viewsCollapsed = collapsed ? "true" : "false";
     });
   }
@@ -23608,7 +23658,7 @@
   }
 
   function pullFilterButtonClass(active) {
-    return `inline-flex h-7 items-center gap-2 rounded-md px-2.5 text-xs font-medium transition-colors ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`;
+    return issueStateTabClass(active);
   }
 
   function syncPullFilterControls() {
@@ -23629,30 +23679,438 @@
     renderRepoCollection("pulls");
   }
 
+  const PULL_VIEWS = [
+    { id: "pulls", icon: "git-pull-request", label: "Pull requests" },
+    { id: "authored", icon: "smile", label: "Authored by me", filters: { author: ISSUE_FILTER_ME } },
+    { id: "mentioned", icon: "at-sign", label: "Mentioned", filters: { mentions: ISSUE_FILTER_ME } },
+  ];
+  const PULL_QUERY_SORTS = {
+    updated: "updated-desc",
+    newest: "created-desc",
+    oldest: "created-asc",
+  };
+
+  function pullQueryFilters() {
+    if (!state.pullsView.filters) {
+      state.pullsView.filters = { author: "", base: "", mentions: "", sort: "updated" };
+    }
+    return state.pullsView.filters;
+  }
+
+  function pullViewFilters(view) {
+    const account = String(state.session?.nodeName || "");
+    const filters = { author: "", mentions: "" };
+    Object.entries(view.filters || {}).forEach(([field, value]) => {
+      filters[field] = field === "author" && value === ISSUE_FILTER_ME ? account : value;
+    });
+    return filters;
+  }
+
+  function activePullView() {
+    const filters = pullQueryFilters();
+    return PULL_VIEWS.find((view) => {
+      const wanted = pullViewFilters(view);
+      return ["author", "mentions"].every((field) => String(filters[field] || "").toLowerCase()
+        === String(wanted[field] || "").toLowerCase());
+    }) || null;
+  }
+
+  function setPullView(id) {
+    const view = PULL_VIEWS.find((entry) => entry.id === id) || PULL_VIEWS[0];
+    if (view.id !== "pulls" && !state.session?.nodeName) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    Object.assign(pullQueryFilters(), pullViewFilters(view), { base: "" });
+    state.pullsView.query = "";
+    setPullFilter("open");
+  }
+
+  function setPullCollectionFilter(field, value) {
+    if (!["author", "base", "sort"].includes(field)) return;
+    pullQueryFilters()[field] = field === "sort" ? (value || "updated") : value;
+    state.repoCollectionPages.pulls = 1;
+    renderRepoCollection("pulls");
+  }
+
+  function pullMatchesQueryFilters(pull, filters = pullQueryFilters()) {
+    if (filters.author && String(pull.author || "").toLowerCase() !== filters.author.toLowerCase()
+        && String(pull.authorKey || "").toLowerCase() !== filters.author.toLowerCase()) return false;
+    if (filters.base && String(pull.base || "").toLowerCase() !== filters.base.toLowerCase()) return false;
+    if (filters.mentions === ISSUE_FILTER_ME) {
+      const account = String(state.session?.nodeName || "").toLowerCase();
+      if (!account || !String(pull.body || "").toLowerCase().includes(`@${account}`)) return false;
+    }
+    return true;
+  }
+
+  function sortRepoRecords(items, sort) {
+    const stamp = (item, field) => {
+      let value = Number(item[field] || item.updatedAtMs || 0);
+      if (value > 0 && value < 10_000_000_000) value *= 1000;
+      return Number.isFinite(value) ? value : 0;
+    };
+    if (sort === "newest") return items.slice().sort((a, b) => stamp(b, "createdAtMs") - stamp(a, "createdAtMs") || Number(b.number) - Number(a.number));
+    if (sort === "oldest") return items.slice().sort((a, b) => stamp(a, "createdAtMs") - stamp(b, "createdAtMs") || Number(a.number) - Number(b.number));
+    return items;
+  }
+
+  function serializePullQuery() {
+    const filters = pullQueryFilters();
+    const parts = ["is:pr", `state:${pullFilterState()}`];
+    if (filters.author) parts.push(`author:${issueQueryValue(filters.author)}`);
+    if (filters.base) parts.push(`base:${issueQueryValue(filters.base)}`);
+    if (filters.mentions === ISSUE_FILTER_ME) parts.push("mentions:@me");
+    if (filters.sort && filters.sort !== "updated") parts.push(`sort:${PULL_QUERY_SORTS[filters.sort] || filters.sort}`);
+    const free = String(state.pullsView.query || "").trim();
+    return `${parts.join(" ")}${free ? ` ${free}` : ""}`;
+  }
+
+  function parsePullQuery(text) {
+    const filters = { author: "", base: "", mentions: "", sort: "updated" };
+    let status = "all";
+    const free = [];
+    const sorts = Object.fromEntries(Object.entries(PULL_QUERY_SORTS).map(([key, value]) => [value, key]));
+    issueQueryTokens(text).forEach((token) => {
+      const match = /^([a-z]+):(.*)$/i.exec(token);
+      if (!match) {
+        free.push(token.replace(/"/g, ""));
+        return;
+      }
+      const key = match[1].toLowerCase();
+      const value = match[2].replace(/"/g, "").trim();
+      const lower = value.toLowerCase();
+      if (key === "is" && ["open", "closed"].includes(lower)) status = lower;
+      else if (key === "is" && lower === "merged") status = "closed";
+      else if (key === "is" && ["pr", "pull-request"].includes(lower)) { /* the whole tab is pull requests */ }
+      else if (key === "state" && ["open", "closed", "all"].includes(lower)) status = lower;
+      else if (key === "author") filters.author = lower === "@me" ? String(state.session?.nodeName || "") : value;
+      else if (key === "base") filters.base = value;
+      else if (key === "mentions" && lower === "@me") filters.mentions = ISSUE_FILTER_ME;
+      else if (key === "sort" && sorts[lower]) filters.sort = sorts[lower];
+      else free.push(token.replace(/"/g, ""));
+    });
+    return { status, filters, query: free.join(" ") };
+  }
+
+  function applyPullQueryText(text) {
+    const parsed = parsePullQuery(text);
+    Object.assign(pullQueryFilters(), parsed.filters);
+    state.pullsView.query = parsed.query;
+    setPullFilter(parsed.status);
+  }
+
+  function syncPullQueryBox({ force = false } = {}) {
+    const input = $('[data-repo-filter-query="pulls"]');
+    if (!input) return;
+    if (force || document.activeElement !== input) input.value = `${serializePullQuery()} `;
+    renderIssueQueryHighlight(input);
+  }
+
+  function renderPullViewsNav() {
+    const items = (state.repoCollectionItems.pulls || []).filter((pull) => pullIsOpen(pull) && !pull.unavailable);
+    const current = activePullView();
+    const filters = pullQueryFilters();
+    const viewCount = (view) => {
+      if (view.id === "pulls" || !state.session?.nodeName) return null;
+      const wanted = { ...filters, ...pullViewFilters(view), base: "" };
+      return items.filter((pull) => pullMatchesQueryFilters(pull, wanted)).length;
+    };
+    const bases = new Map();
+    items.forEach((pull) => {
+      const base = String(pull.base || "").trim();
+      if (base) bases.set(base, (bases.get(base) || 0) + 1);
+    });
+    const row = (attrs, active, icon, label, count) => `<button type="button" ${attrs} aria-current="${active ? "true" : "false"}" class="relative flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary${active ? " bg-secondary font-semibold" : ""}">${icon}<span class="min-w-0 flex-1 truncate">${escapeHtml(label)}</span>${count === null || count === undefined ? "" : `<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span>`}</button>`;
+    const baseRows = Array.from(bases.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8)
+      .map(([base, count]) => row(`data-repo-pull-base-view="${escapeHtml(base)}"`,
+        String(filters.base || "").toLowerCase() === base.toLowerCase(),
+        `<i data-lucide="git-branch" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, base, count));
+    return `<div data-repo-collection-views-inner>
+      <div class="grid gap-0.5">
+        ${PULL_VIEWS.map((view) => row(`data-repo-pull-view="${view.id}"`, current?.id === view.id,
+          `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
+      </div>
+      <div class="my-3 border-t border-border"></div>
+      <div class="grid gap-0.5">
+        <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/branches`)}"` : ""} data-dashboard-repo-tab="branches" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="git-branch" class="h-4 w-4 text-muted-foreground"></i>Branches</a>
+        ${baseRows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">Base branches</h3>${baseRows.join("")}` : ""}
+      </div>
+      ${renderCollectionViewsFooter()}</div>`;
+  }
+
+  function renderPullListHeader(loadedItems) {
+    const filters = pullQueryFilters();
+    const scoped = loadedItems.filter((pull) => pullMatchesQueryFilters(pull, filters));
+    const openCount = scoped.filter(pullIsOpen).length;
+    const closedCount = scoped.length - openCount;
+    const filter = pullFilterState();
+    const authors = Array.from(new Set(loadedItems.map((pull) => String(pull.author || "").trim())
+      .filter((name) => name && name !== "unknown"))).sort((a, b) => a.localeCompare(b));
+    const bases = Array.from(new Set(loadedItems.map((pull) => String(pull.base || "").trim()).filter(Boolean))).sort();
+    const select = (label, field, options, icon = "") => {
+      const current = String(filters[field] || "");
+      return `
+      <label class="relative inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-[14px] font-normal text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+        ${icon ? `<i data-lucide="${icon}" class="h-4 w-4"></i>` : ""}<span>${label}</span><i data-lucide="chevron-down" class="h-4 w-4"></i>
+        <select data-repo-pull-filter="${field}" aria-label="${label}" class="absolute inset-0 cursor-pointer opacity-0">
+          ${options.map(([value, text]) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(text)}</option>`).join("")}
+        </select>
+      </label>`;
+    };
+    const sortLabel = { updated: "Recently updated", newest: "Newest", oldest: "Oldest" }[filters.sort] || "Recently updated";
+    return `<div data-repo-pull-list-header class="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-t-md border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-1">
+        ${[["open", "git-pull-request", "Open", openCount], ["closed", "check", "Closed", closedCount]].map(([name, icon, label, count]) => `<button type="button" data-dashboard-pull-filter="${name}" aria-pressed="${name === filter ? "true" : "false"}" class="${pullFilterButtonClass(name === filter)}"><i data-lucide="${icon}" class="h-4 w-4"></i>${label}<span data-repo-collection-${name}-count="pulls" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px]">${formatCount(count)}</span></button>`).join("")}
+      </div>
+      <div class="flex min-w-0 flex-wrap items-center justify-end">
+        ${select("Author", "author", [["", "Any author"], ...authors.map((name) => [name, name])])}
+        ${bases.length > 1 ? select("Base", "base", [["", "Any base branch"], ...bases.map((name) => [name, name])]) : ""}
+        ${select(sortLabel, "sort", [["updated", "Recently updated"], ["newest", "Newest"], ["oldest", "Oldest"]], "arrow-down-wide-narrow")}
+      </div>
+    </div>`;
+  }
+
+  function syncPullCollectionChrome() {
+    const nav = $("[data-repo-pull-views]");
+    if (nav) nav.innerHTML = renderPullViewsNav();
+    const heading = $("[data-repo-pull-view-title]");
+    const view = activePullView();
+    if (heading) heading.textContent = !view || view.id === "pulls" ? "All pull requests" : view.label;
+    const select = $("[data-repo-pull-view-select]");
+    if (select) select.value = view?.id || "pulls";
+    syncPullQueryBox();
+  }
+
   // Re-render a cached pull/discussion list through the current page filter.
   // No mirror read: loadRepoCollection stashed the records it fetched.
   function renderRepoCollection(kind) {
+    if (kind === "discussions") {
+      renderRepoDiscussions();
+      return;
+    }
     const container = $(`[data-repo-${kind}]`);
     const config = repoCollectionConfig[kind];
     const loadedItems = state.repoCollectionItems[kind];
     if (!container || !config || !Array.isArray(loadedItems)) return;
+    setRepoRecordOpen(kind, false);
     const pullFilter = pullFilterState();
-    const items = kind === "pulls"
-      ? loadedItems.filter((item) => pullMatchesFilter(item, pullFilter))
-      : loadedItems;
-    // Pulls has its own search box and answers to it alone (issue #673);
-    // discussions has none, so the header box still narrows it.
-    const ownQuery = kind === "pulls" ? state.pullsView.query : "";
-    const queries = kind === "pulls" ? localFilterQueries(ownQuery) : pageFilterQueries(ownQuery);
+    const pullFilters = pullQueryFilters();
+    const items = sortRepoRecords(loadedItems.filter((item) => pullMatchesFilter(item, pullFilter)
+      && pullMatchesQueryFilters(item, pullFilters)), pullFilters.sort);
+    const ownQuery = state.pullsView.query;
+    const queries = localFilterQueries(ownQuery);
     const visible = repoRecordsMatchingQueries(items, queries);
-    if (kind === "pulls") syncPullFilterControls();
-    const empty = emptyListHtml(
-      kind === "pulls" ? pullEmptyLabel(pullFilter) : config.empty,
-      ownQuery,
-      queries);
-    container.innerHTML = visible.length
+    const empty = emptyListHtml(pullEmptyLabel(pullFilter), ownQuery, queries);
+    container.innerHTML = renderPullListHeader(loadedItems) + (visible.length
       ? renderRepoRecordList(visible, config, kind)
-      : `<div class="fm-blankslate"><i data-lucide="${kind === "pulls" ? "git-pull-request" : "messages-square"}"></i><p class="fm-blankslate-desc">${empty}</p></div>`;
+      : `<div class="fm-blankslate"><i data-lucide="git-pull-request"></i><p class="fm-blankslate-desc">${empty}</p></div>`);
+    syncPullCollectionChrome();
+    window.lucide?.createIcons();
+  }
+
+  const DISCUSSION_CATEGORIES = [
+    { name: "Announcements", emoji: "📣" },
+    { name: "Ideas", emoji: "💡" },
+    { name: "Q&A", emoji: "🙏" },
+    { name: "Show and tell", emoji: "🙌" },
+    { name: "Maintainer notes", emoji: "📝" },
+  ];
+  const DISCUSSION_SORTS = [
+    ["latest", "Latest activity"],
+    ["newest", "Date created"],
+    ["oldest", "Oldest"],
+  ];
+  const DISCUSSION_STATUSES = [
+    ["open", "Open"],
+    ["closed", "Closed"],
+    ["all", "All"],
+  ];
+
+  function discussionView() {
+    if (!state.discussionsView) {
+      state.discussionsView = { query: "", status: "open", category: "", sort: "latest" };
+    }
+    return state.discussionsView;
+  }
+
+  function discussionCategoryEmoji(category) {
+    const name = String(category || "").trim().toLowerCase();
+    return DISCUSSION_CATEGORIES.find((entry) => entry.name.toLowerCase() === name)?.emoji || "💬";
+  }
+
+  function discussionCategories() {
+    const known = DISCUSSION_CATEGORIES.map((entry) => entry.name);
+    const extra = (state.repoCollectionItems.discussions || [])
+      .map((item) => String(item.category || "").trim())
+      .filter((name) => name && !known.some((entry) => entry.toLowerCase() === name.toLowerCase()));
+    return [...known, ...Array.from(new Set(extra)).sort()];
+  }
+
+  function discussionIsOpen(item) {
+    return !["closed", "archived"].includes(String(item.state || "open").toLowerCase());
+  }
+
+  function serializeDiscussionQuery() {
+    const view = discussionView();
+    const parts = [];
+    if (view.status !== "all") parts.push(`is:${view.status}`);
+    if (view.category) parts.push(`category:${issueQueryValue(view.category)}`);
+    const free = String(view.query || "").trim();
+    return `${parts.join(" ")}${free ? `${parts.length ? " " : ""}${free}` : ""}`;
+  }
+
+  function applyDiscussionQueryText(text) {
+    const view = discussionView();
+    let status = "all";
+    let category = "";
+    const free = [];
+    issueQueryTokens(text).forEach((token) => {
+      const match = /^([a-z]+):(.*)$/i.exec(token);
+      const key = match?.[1].toLowerCase();
+      const value = match ? match[2].replace(/"/g, "").trim() : "";
+      if (key === "is" && ["open", "closed"].includes(value.toLowerCase())) status = value.toLowerCase();
+      else if (key === "category") category = discussionCategories().find((name) => name.toLowerCase() === value.toLowerCase()) || value;
+      else free.push(token.replace(/"/g, ""));
+    });
+    Object.assign(view, { status, category, query: free.join(" ") });
+    renderRepoDiscussions();
+  }
+
+  function setDiscussionFilter(field, value) {
+    const view = discussionView();
+    if (field === "status") view.status = DISCUSSION_STATUSES.some(([key]) => key === value) ? value : "open";
+    else if (field === "sort") view.sort = DISCUSSION_SORTS.some(([key]) => key === value) ? value : "latest";
+    else if (field === "category") view.category = value || "";
+    else return;
+    renderRepoDiscussions({ syncQuery: true });
+  }
+
+  function renderDiscussionCategoriesNav() {
+    const view = discussionView();
+    const row = (category, emoji, label) => {
+      const active = String(view.category || "").toLowerCase() === category.toLowerCase();
+      return `<button type="button" data-repo-discussion-category="${escapeHtml(category)}" aria-current="${active ? "true" : "false"}" class="relative flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary${active ? " bg-secondary font-semibold" : ""}"><span aria-hidden="true" class="w-4 shrink-0 text-center text-[14px] leading-none">${emoji}</span><span class="min-w-0 flex-1 truncate">${escapeHtml(label)}</span></button>`;
+    };
+    return `<div class="grid gap-0.5">
+        ${row("", `<i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>`, "View all discussions")}
+        ${discussionCategories().map((name) => row(name, discussionCategoryEmoji(name), name)).join("")}
+      </div>`;
+  }
+
+  function renderRepoDiscussionsPanel(repo) {
+    const view = discussionView();
+    const select = (field, options, prefix) => {
+      const current = view[field];
+      const label = options.find(([key]) => key === current)?.[1] || options[0][1];
+      return `<label class="relative inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-[rgb(var(--dashboard-foreground-rgb)/0.08)]">
+          <span><span class="font-normal text-muted-foreground">${prefix}</span> <span data-repo-discussion-filter-label="${field}">${escapeHtml(label)}</span></span><i data-lucide="chevron-down" class="h-4 w-4 text-muted-foreground"></i>
+          <select data-repo-discussion-filter="${field}" aria-label="${escapeHtml(prefix.replace(/:$/, ""))}" class="absolute inset-0 cursor-pointer opacity-0">
+            ${options.map(([key, text]) => `<option value="${key}"${key === current ? " selected" : ""}>${escapeHtml(text)}</option>`).join("")}
+          </select>
+        </label>`;
+    };
+    return `
+      <section data-dashboard-repo-tab-panel="discussions" class="hidden">
+        <div data-repo-record-host="discussions" class="mx-auto mt-2 grid w-full min-w-0 max-w-[80rem] gap-6">
+          <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
+            <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+              <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+              <span class="relative min-w-0 flex-1 overflow-hidden">
+                <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
+                <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+              </span>
+            </label>
+            ${select("sort", DISCUSSION_SORTS, "Sort by:")}
+            ${select("status", DISCUSSION_STATUSES, "Filter:")}
+            <details data-repo-discussion-new class="relative">
+              <summary class="inline-flex h-8 cursor-pointer list-none items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</summary>
+              <div class="fm-popover absolute right-0 top-full z-30 mt-1 w-72 p-3 text-[12px] leading-5 text-muted-foreground">
+                <p class="font-semibold text-foreground">Start it from the desktop app</p>
+                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ForkMesh desktop app.</p>
+              </div>
+            </details>
+          </div>
+          <div data-repo-discussions-columns class="grid min-w-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <aside data-repo-collection-chrome class="grid min-w-0 content-start gap-4">
+              <div>
+                <h2 class="mb-2 px-2 text-[16px] font-semibold text-foreground">Categories</h2>
+                <nav data-repo-discussion-categories aria-label="Discussion categories">${renderDiscussionCategoriesNav()}</nav>
+              </div>
+              <div class="rounded-md border border-border p-4">
+                <h3 class="text-[16px] font-semibold text-foreground">Signed conversations</h3>
+                <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply here is signed by its author's node and served by the repository's mirrors.</p>
+              </div>
+              <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="inline-flex items-center gap-2 px-2 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="heart-handshake" class="h-4 w-4"></i>Contributing guide</a>
+            </aside>
+            <div class="min-w-0">
+              <h2 data-repo-collection-chrome data-repo-discussions-heading class="mb-2 text-[16px] font-semibold text-foreground">Discussions</h2>
+              <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
+                <div data-repo-discussions></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function renderDiscussionRows(items) {
+    return items.map((item) => {
+      const href = state.selectedRepo && /^\d+$/.test(String(item.number))
+        ? repoRecordUrl(state.selectedRepo, "discussions", item.number, "conversation")
+        : "";
+      const created = item.createdAtMs || item.updatedAtMs || 0;
+      const when = formatRecordDateTime(created);
+      const category = item.category || "Ideas";
+      const open = discussionIsOpen(item);
+      return `
+        <a ${href ? `href="${escapeHtml(href)}" ` : ""}data-repo-record-kind="discussions" data-repo-record-number="${escapeHtml(item.number)}" class="group grid w-full cursor-pointer grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors first-of-type:border-t-0 hover:bg-[rgb(var(--dashboard-subtle-rgb))]">
+          <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
+          <span class="min-w-0">
+            <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
+            <span class="block text-[12px] text-muted-foreground">${escapeHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+          </span>
+          <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
+            ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
+          </span>
+        </a>`;
+    }).join("");
+  }
+
+  function renderRepoDiscussions({ syncQuery = false } = {}) {
+    const container = $("[data-repo-discussions]");
+    const loadedItems = state.repoCollectionItems.discussions;
+    if (!container || !Array.isArray(loadedItems)) return;
+    setRepoRecordOpen("discussions", false);
+    const view = discussionView();
+    const filtered = loadedItems.filter((item) => {
+      if (view.status === "open" && !discussionIsOpen(item)) return false;
+      if (view.status === "closed" && discussionIsOpen(item)) return false;
+      if (view.category && String(item.category || "Ideas").toLowerCase() !== view.category.toLowerCase()) return false;
+      return true;
+    });
+    const sorted = view.sort === "latest" ? filtered : sortRepoRecords(filtered, view.sort);
+    const queries = localFilterQueries(view.query);
+    const visible = repoRecordsMatchingQueries(sorted, queries);
+    const fallback = loadedItems.length
+      ? `No ${view.status === "all" ? "" : `${view.status} `}discussions${view.category ? ` in ${view.category}` : ""}.`
+      : repoCollectionConfig.discussions.empty;
+    container.innerHTML = visible.length
+      ? renderDiscussionRows(visible)
+      : `<div class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-desc">${emptyListHtml(fallback, view.query, queries)}</p></div>`;
+    const nav = $("[data-repo-discussion-categories]");
+    if (nav) nav.innerHTML = renderDiscussionCategoriesNav();
+    const heading = $("[data-repo-discussions-heading]");
+    if (heading) heading.textContent = view.category || "Discussions";
+    [["sort", DISCUSSION_SORTS], ["status", DISCUSSION_STATUSES]].forEach(([field, options]) => {
+      const label = $(`[data-repo-discussion-filter-label="${field}"]`);
+      if (label) label.textContent = options.find(([key]) => key === view[field])?.[1] || options[0][1];
+      const select = $(`[data-repo-discussion-filter="${field}"]`);
+      if (select) select.value = view[field];
+    });
+    const input = $('[data-repo-filter-query="discussions"]');
+    if (input && (syncQuery || document.activeElement !== input)) input.value = `${serializeDiscussionQuery()} `;
+    if (input) renderIssueQueryHighlight(input);
     window.lucide?.createIcons();
   }
 
@@ -23673,10 +24131,12 @@
     // a newly opened pull invisible even when the list is explicitly reloaded.
     if (kind === "pulls") {
       delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
+      syncPullQueryBox();
     }
     // Drop the previous repo's cache up front so a failed load can never leave
     // the page filter re-rendering rows that are no longer on screen.
     state.repoCollectionItems[kind] = null;
+    setRepoRecordOpen(kind, false);
     const discussionsOffline = kind === "discussions" && !repoIsLive(repo);
     if (discussionsOffline) {
       // The catalog count is only a last-published snapshot. When every mirror
@@ -30388,6 +30848,7 @@
     const container = $("[data-repo-pulls]");
     if (!container || !repo) return;
     state.repoCompare = null;
+    setRepoRecordOpen("pulls", true);
     const parent = repoForkParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
     const sourceLabel = repoDisplayKey(repo);
@@ -30527,6 +30988,7 @@
     state.loadedRepoTabs.pulls = true;
     stopRepoPullActivityRefresh();
     setRepoTab("pulls");
+    setRepoRecordOpen("pulls", true);
     if (navigate) navigateHistory(repoCompareUrl(repo, base, head));
     const paint = (bodyHtml) => {
       // A read that lands after the reader left for the list, a record, or
@@ -33651,7 +34113,7 @@
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
         <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
+          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
           <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
             <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
             <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
@@ -33662,18 +34124,15 @@
 
   function renderRepoCollectionPanel(kind, repo, openCount, closedCount) {
     const isPulls = kind === "pulls";
-    const config = repoCollectionConfig[kind];
-    const icon = isPulls ? "git-pull-request" : "circle-dot";
-    const title = config?.label || (isPulls ? "Pull requests" : "Issues");
     if (!isPulls) {
       // GitHub's Issues page: saved views down the left, the search box
       // carrying the filters as qualifiers, and one green action. Everything
       // marked data-repo-collection-chrome steps aside while an issue is open.
       return `
         <section data-dashboard-repo-tab-panel="issues" class="hidden">
-          <div data-repo-issues-layout data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
-            <nav data-repo-issue-views data-repo-collection-chrome aria-label="Issue views" class="hidden min-w-0 self-start pl-2 lg:sticky lg:top-4 lg:block">${renderIssueViewsNav()}</nav>
-            <div class="min-w-0">
+          <div data-repo-issues-layout data-repo-collection-layout="issues" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
+            <nav data-repo-issue-views data-repo-collection-views data-repo-collection-chrome aria-label="Issue views" class="hidden min-w-0">${renderIssueViewsNav()}</nav>
+            <div data-repo-collection-main class="min-w-0">
               <div data-repo-collection-chrome>
                 <div class="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
                   <div class="flex min-w-0 items-center gap-2">
@@ -33715,87 +34174,59 @@
           </div>
         </section>`;
     }
-    const pullStateButtons = isPulls ? [
-      ["open", "git-pull-request", "Open", "open"],
-      ["closed", "check", "Closed", "closed"],
-      ["all", "list", "All", ""],
-    ].map(([filter, filterIcon, label, countKind]) => {
-      const count = countKind === "open" ? `<span data-repo-collection-open-count="pulls">${tabCountLabel(openCount)}</span>`
-        : countKind === "closed" ? `<span data-repo-collection-closed-count="pulls">${tabCountLabel(closedCount)}</span>`
-          : "";
-      return `<button type="button" data-dashboard-pull-filter="${filter}" aria-pressed="${pullFilterState() === filter ? "true" : "false"}" class="${pullFilterButtonClass(pullFilterState() === filter)}"><i data-lucide="${filterIcon}" class="h-3.5 w-3.5 ${filter === "open" ? "text-muted-foreground" : ""}"></i>${count}${label}</button>`;
-    }).join("") : "";
-    const filters = [
-      ["Author", isPulls
-        ? ["Any author", repo.owner || "owner", repo.maintainer || "maintainer"]
-        : issueFilterOptions("author"), isPulls ? "" : "author"],
-      ["Labels", isPulls
-        ? ["Any label", "bug", "enhancement", "documentation"]
-        : issueFilterOptions("label"), isPulls ? "" : "label"],
-      ["Projects", ["Any project", "No project"]],
-      ["Milestones", isPulls
-        ? ["Any milestone", "No milestone"]
-        : issueFilterOptions("milestone"), isPulls ? "" : "milestone"],
-      ...(isPulls ? [["Reviews", ["Any review", "Review required", "Approved", "Changes requested"]]] : []),
-      [isPulls ? "Assignee" : "Assignees", isPulls
-        ? ["Anyone", "Assigned to me", "Unassigned"]
-        : issueFilterOptions("assignee"), isPulls ? "" : "assignee"],
-      ["Sort", ["Newest", "Oldest", "Recently updated", "Most commented"]],
-    ];
-
+    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
     return `
-      <section data-dashboard-repo-tab-panel="${kind}" class="hidden">
-        <div class="mt-4">
-          <div class="min-w-0">
-            ${isPulls ? `
-              <div class="mb-4 rounded-lg border border-border bg-background px-4 py-5 text-center">
-                <p class="text-sm font-semibold text-foreground">First time contributing to ${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repository")}?</p>
-                <p class="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">Review this repository's <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contribution notes</a> before opening a pull request.</p>
-              </div>` : ""}
-            <div data-repo-collection-toolbar="${kind}" class="mb-3 grid gap-2 lg:grid-cols-[auto_minmax(0,1fr)_auto]">
-              <label class="inline-flex h-9 min-w-0 items-center overflow-hidden rounded-md border border-border bg-background text-xs lg:col-span-2">
-                <span class="relative inline-flex h-full items-center gap-1.5 border-r border-border bg-secondary px-3 font-medium text-foreground">
-                  <span>Filters</span>
-                  <i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i>
-                  <select data-repo-filter-menu="${kind}" aria-label="${title} filters" class="absolute inset-0 cursor-pointer opacity-0">
-                    <option>Open ${title.toLowerCase()}</option>
-                    <option>Your ${title.toLowerCase()}</option>
-                    <option>Everything assigned</option>
-                    <option>Recently updated</option>
+      <section data-dashboard-repo-tab-panel="pulls" class="hidden">
+        <div data-repo-collection-layout="pulls" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
+          <nav data-repo-pull-views data-repo-collection-views data-repo-collection-chrome aria-label="Pull request views" class="hidden min-w-0">${renderPullViewsNav()}</nav>
+          <div data-repo-collection-main class="min-w-0">
+            <div data-repo-collection-chrome>
+              <div class="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-2">
+                  <button type="button" data-repo-issue-views-toggle aria-label="Show pull request views" class="hidden h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-open" class="h-4 w-4"></i></button>
+                  <h2 data-repo-pull-view-title class="text-[20px] font-semibold leading-8 text-foreground">All pull requests</h2>
+                  <select data-repo-pull-view-select aria-label="Pull request view" class="h-8 rounded-md border border-border bg-background px-2 text-[14px] text-foreground lg:hidden">
+                    ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
-                </span>
-                <span class="inline-flex min-w-0 flex-1 items-center gap-2 px-3">
-                  <i data-lucide="search" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
-                  <input data-repo-filter-query="${kind}" type="search" autocomplete="off" spellcheck="false" value="${isPulls ? escapeHtml(state.pullsView.query || "") : escapeHtml(state.issuesView.query || "")}" placeholder="${kind === "pulls" ? "Search pull requests by title, body, author, or #number" : "Search issues by title, body, author, or #number"}" class="min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
-                </span>
-              </label>
-              ${isPulls
-                ? `<button type="button" data-repo-pull-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>New pull request</button>`
-                : `<div class="flex items-center gap-2">
-                    <button type="button" data-repo-issues-refresh aria-busy="false" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary disabled:cursor-wait disabled:opacity-60"><i data-lucide="refresh-cw" data-repo-issues-refresh-icon class="h-3.5 w-3.5"></i><span data-repo-issues-refresh-label>Refresh</span></button>
-                    <button type="button" data-repo-issue-import class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Import CSV</button>
-                    <button type="button" data-repo-issue-new class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New issue</button>
-                  </div>`}
-              <div class="flex min-w-0 flex-wrap items-center gap-2 lg:col-span-3">
-                ${filters.map(([label, options, issueFilter]) => renderRepoCollectionFilter(label, options, issueFilter)).join("")}
+                </div>
+                <button type="button" data-repo-pull-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+              </div>
+              ${pullContributionTipDismissed(repo) ? "" : `
+              <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">
+                <i data-lucide="heart-handshake"></i>
+                <div class="fm-flash-body">
+                  <span class="fm-flash-title">First time contributing to ${escapeHtml(repository)}?</span>
+                  <p>Review this repository's <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contribution notes</a> before opening a pull request.</p>
+                </div>
+                <div class="fm-flash-actions"><button type="button" data-repo-pull-contribution-dismiss class="fm-btn fm-btn-sm">Dismiss</button></div>
+              </aside>`}
+              <div data-repo-collection-toolbar="pulls" class="mb-4">
+                <label class="flex h-9 min-w-0 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+                  <span class="relative min-w-0 flex-1 overflow-hidden">
+                    <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3 text-[14px] text-foreground"></span>
+                    <input data-repo-filter-query="pulls" type="search" autocomplete="off" spellcheck="false" aria-label="Search pull requests" value="${escapeHtml(`${serializePullQuery()} `)}" placeholder="Search pull requests by title, body, author, or #number" class="relative h-full w-full bg-transparent px-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+                  </span>
+                  <span class="inline-flex w-10 shrink-0 items-center justify-center border-l border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+                </label>
               </div>
             </div>
             <!-- overflow-clip, not overflow-hidden: hidden would make this card
                  the nearest scroll container, and the pull review pane's sticky
                  file explorer and diff headers would never leave the top of it. -->
-            <div class="overflow-clip rounded-lg border border-border bg-background">
-              <div class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-                <div class="flex min-w-0 flex-wrap items-center gap-3 text-xs">
-                  ${isPulls ? pullStateButtons : `<span class="inline-flex items-center gap-2 font-semibold text-foreground"><i data-lucide="${icon}" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-collection-open-count="${kind}">${tabCountLabel(openCount)}</span> Open</span>
-                  <span class="inline-flex items-center gap-2 text-muted-foreground"><i data-lucide="check" class="h-3.5 w-3.5"></i><span data-repo-collection-closed-count="${kind}">${tabCountLabel(closedCount)}</span> Closed</span>`}
-                </div>
-                <span class="text-[10px] text-muted-foreground">${isPulls ? "Review and merge signed patches" : "Track signed issues from the live mirror"}</span>
-              </div>
-              <div data-repo-${kind}></div>
+            <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
+              <div data-repo-pulls></div>
             </div>
           </div>
         </div>
       </section>`;
+  }
+
+  function pullContributionTipDismissed(repo) {
+    try {
+      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
+    } catch (_) {
+      return false;
+    }
   }
   function renderRepoDetail(repo) {
     const detail = $("[data-repo-detail]");
@@ -33826,6 +34257,7 @@
       },
     };
     state.pullsView = { filter: "open", query: "" };
+    state.discussionsView = null;
     // Pull requests and discussions load lazily the first time their tab is
     // opened rather than on every page load. Eagerly fetching every record's
     // blob up front is what flooded the host with requests and tripped the rate
@@ -34115,7 +34547,7 @@
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
-            <section data-dashboard-repo-tab-panel="discussions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="message-square" class="h-3.5 w-3.5 text-muted-foreground"></i>Discussions and comments</span><span class="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground">Create from desktop client for signed submissions</span></div><div data-repo-discussions></div></div></section>
+            ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
             <section data-dashboard-repo-tab-panel="insights" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex min-w-0 items-start gap-2"><i data-lucide="chart-no-axes-combined" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span><span class="block text-xs font-medium text-foreground">Insights</span><span class="mt-0.5 block text-[10px] text-muted-foreground">Repository-wide code, collaboration, and contributor activity.</span></span></span><button type="button" data-repo-insights-refresh class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-insights></div></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
@@ -34302,10 +34734,6 @@
     article.querySelectorAll("[data-repo-record-tab]").forEach((button) => {
       const active = button.dataset.repoRecordTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
-      button.classList.toggle("border-border", active);
-      button.classList.toggle("border-transparent", !active);
-      button.classList.toggle("text-foreground", active);
-      button.classList.toggle("text-muted-foreground", !active);
     });
     article.querySelectorAll("[data-repo-record-panel]").forEach((panel) => {
       panel.classList.toggle(
@@ -36688,6 +37116,37 @@
         return;
       }
 
+      const discussionCategory = event.target.closest("[data-repo-discussion-category]");
+      if (discussionCategory) {
+        setDiscussionFilter("category", discussionCategory.dataset.repoDiscussionCategory || "");
+        return;
+      }
+
+      const pullViewButton = event.target.closest("[data-repo-pull-view]");
+      if (pullViewButton) {
+        setPullView(pullViewButton.dataset.repoPullView || "pulls");
+        return;
+      }
+
+      const pullBaseView = event.target.closest("[data-repo-pull-base-view]");
+      if (pullBaseView) {
+        const value = pullBaseView.dataset.repoPullBaseView || "";
+        const current = String(pullQueryFilters().base || "");
+        setPullCollectionFilter("base", current.toLowerCase() === value.toLowerCase() ? "" : value);
+        return;
+      }
+
+      const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
+      if (pullTipDismiss && state.selectedRepo) {
+        try {
+          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
+        } catch (_) {
+          /* storage unavailable: still dismiss this rendered tip */
+        }
+        pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
+        return;
+      }
+
       const issueViewButton = event.target.closest("[data-repo-issue-view]");
       if (issueViewButton) {
         setIssueView(issueViewButton.dataset.repoIssueView || "issues");
@@ -37183,6 +37642,21 @@
 
   document.addEventListener("change", (event) => {
     if (handleRepoForgeMirrorChange(event)) return;
+    const discussionFilter = event.target.closest?.("[data-repo-discussion-filter]");
+    if (discussionFilter) {
+      setDiscussionFilter(discussionFilter.dataset.repoDiscussionFilter || "", discussionFilter.value);
+      return;
+    }
+    const pullViewSelect = event.target.closest?.("[data-repo-pull-view-select]");
+    if (pullViewSelect) {
+      setPullView(pullViewSelect.value || "pulls");
+      return;
+    }
+    const pullFilterSelect = event.target.closest?.("[data-repo-pull-filter]");
+    if (pullFilterSelect) {
+      setPullCollectionFilter(pullFilterSelect.dataset.repoPullFilter || "", pullFilterSelect.value);
+      return;
+    }
     const issueViewSelect = event.target.closest?.("[data-repo-issue-view-select]");
     if (issueViewSelect) {
       setIssueView(issueViewSelect.value || "issues");
@@ -37213,7 +37687,7 @@
   // follow the input's horizontal scroll as the caret moves.
   document.addEventListener("selectionchange", () => {
     const input = document.activeElement;
-    if (input?.matches?.('[data-repo-filter-query="issues"]')) renderIssueQueryHighlight(input);
+    if (input?.matches?.('[data-repo-filter-query="issues"], [data-repo-filter-query="pulls"], [data-repo-filter-query="discussions"]')) renderIssueQueryHighlight(input);
   });
 
   document.addEventListener("dragstart", handleIssueTaskDragStart);
@@ -37745,10 +38219,14 @@
       renderIssueQueryHighlight(event.target);
       return;
     }
+    if (event.target?.matches?.('[data-repo-filter-query="discussions"]') && state.selectedRepo) {
+      applyDiscussionQueryText(event.target.value || "");
+      renderIssueQueryHighlight(event.target);
+      return;
+    }
     if (event.target?.matches?.('[data-repo-filter-query="pulls"]') && state.selectedRepo) {
-      state.pullsView.query = event.target.value || "";
-      state.repoCollectionPages.pulls = 1;
-      renderRepoCollection("pulls");
+      applyPullQueryText(event.target.value || "");
+      renderIssueQueryHighlight(event.target);
       return;
     }
     if (event.target?.matches?.("[data-repo-branches-search]") && state.selectedRepo) {
@@ -37787,6 +38265,11 @@
     if (event.key === "Enter" && event.target?.matches?.('[data-repo-filter-query="issues"]')) {
       event.preventDefault();
       syncIssueQueryBox({ force: true });
+      return;
+    }
+    if (event.key === "Enter" && event.target?.matches?.('[data-repo-filter-query="pulls"]')) {
+      event.preventDefault();
+      syncPullQueryBox({ force: true });
       return;
     }
     const typingTarget = event.target?.matches?.("input, textarea, select, [contenteditable='true']");
