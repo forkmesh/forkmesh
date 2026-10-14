@@ -7,11 +7,11 @@
                     <p class="mt-1 text-sm text-muted-foreground">Share a public link you made about ForkMesh: an article, a post, a video or a community thread. Each link gets an explainable reach estimate and a tiny SOL appreciation estimate that anyone can send straight to the submitter's wallet.</p>
                   </div>
                   <div class="shrink-0 flex items-center gap-3 self-start">
-                    <span data-links-count class="text-xs text-muted-foreground font-mono px-2.5 py-1 rounded-full border border-border bg-secondary">Loading</span>
+                    <span data-links-count class="fm-label">Loading</span>
                     <button
                       data-links-refresh
                       type="button"
-                      class="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                      class="fm-btn fm-btn-sm"
                     >
                       <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
                       Refresh
@@ -48,7 +48,7 @@
                     </label>
                     <div class="sm:col-span-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <p data-links-result class="text-xs text-muted-foreground" role="status"></p>
-                      <button data-links-submit type="submit" class="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-60">
+                      <button data-links-submit type="submit" class="fm-btn fm-btn-cta shrink-0">
                         <i data-lucide="link" class="w-4 h-4"></i>
                         Analyze and submit
                       </button>

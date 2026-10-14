@@ -10,17 +10,9 @@
             .docs-meta { margin-top: .35rem; font-size: .75rem; color: var(--dk-faint); font-variant-numeric: tabular-nums; }
             .docs-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
             .docs-filter { width: 14rem; max-width: 100%; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .3rem .6rem; font-size: .8rem; color: var(--dk-fg); outline: none; }
-            .docs-filter:focus { border-color: var(--dk-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
-            .docs-btn { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-card); padding: .25rem .7rem; font-size: .75rem; font-weight: 500; line-height: 1.25rem; color: var(--dk-fg); white-space: nowrap; }
-            .docs-btn:hover { background: var(--dk-hover); }
-            .docs-btn:disabled { opacity: .5; pointer-events: none; }
-            .docs-btn-primary { border-color: transparent; background: var(--dk-primary); color: rgb(var(--dashboard-primary-foreground-rgb)); }
-            .docs-btn-primary:hover { background: var(--dk-primary); filter: brightness(1.1); }
-            .docs-btn-danger { border-color: rgb(var(--dashboard-destructive-rgb) / .6); background: rgb(var(--dashboard-destructive-rgb) / .12); color: var(--dk-danger); }
-            .docs-notice { margin-top: .75rem; border: 1px solid var(--dk-border); border-radius: .375rem; padding: .45rem .75rem; font-size: .8rem; color: var(--dk-muted); }
-            .docs-notice[data-tone="bad"] { border-color: rgb(var(--dashboard-destructive-rgb) / .45); background: rgb(var(--dashboard-destructive-rgb) / .1); color: var(--dk-fg); }
-            .docs-notice[data-tone="good"] { border-color: rgb(var(--dashboard-accent-rgb) / .45); background: rgb(var(--dashboard-accent-rgb) / .08); color: var(--dk-fg); }
-            .docs-notice button { margin-left: .5rem; color: var(--dk-accent); font-weight: 500; }
+            .docs-filter:focus { border-color: var(--dk-primary); box-shadow: inset 0 0 0 1px var(--dk-primary); }
+            .docs-notice { margin-top: .75rem; }
+            [data-view="docs"] .fm-flash > svg.lucide { width: 1rem; height: 1rem; }
             .docs-contents { margin-top: .75rem; border: 1px solid var(--dk-border); border-radius: .5rem; background: var(--dk-card); }
             .docs-contents > summary { cursor: pointer; padding: .45rem .75rem; font-size: .8rem; font-weight: 500; color: var(--dk-muted); }
             .docs-contents ol { margin: 0; padding: .25rem .75rem .6rem; list-style: none; columns: 2 16rem; column-gap: 1.5rem; font-size: .78rem; }
@@ -51,13 +43,15 @@
             .docs-missing { font-size: .8rem; color: var(--dk-faint); }
             .docs-editor { display: grid; gap: .5rem; }
             .docs-editor textarea { width: 100%; min-height: 16rem; resize: vertical; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .6rem .75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; line-height: 1.35rem; color: var(--dk-fg); outline: none; tab-size: 4; }
-            .docs-editor textarea:focus, .docs-editor input:focus { border-color: var(--dk-accent); box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / .15); }
+            .docs-editor textarea:focus, .docs-editor input:focus { border-color: var(--dk-primary); box-shadow: inset 0 0 0 1px var(--dk-primary); }
             .docs-editor input { width: 100%; border: 1px solid var(--dk-border); border-radius: .375rem; background: var(--dk-bg); padding: .3rem .6rem; font-size: .8rem; color: var(--dk-fg); outline: none; }
             .docs-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
             .docs-editor-status { flex: 1; min-width: 10rem; font-size: .75rem; color: var(--dk-muted); }
             .docs-editor-status[data-tone="bad"] { color: var(--dk-danger); }
-            .docs-menu { position: fixed; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: min(34rem, calc(100vw - 1rem)); border: 1px solid var(--dk-border); border-radius: .5rem; background: var(--dk-card); padding: 3px; box-shadow: 0 8px 24px rgb(0 0 0 / .22); font-size: .75rem; }
-            .docs-menu button { display: inline-flex; align-items: center; gap: .3rem; border-radius: .375rem; padding: .25rem .5rem; color: var(--dk-fg); white-space: nowrap; }
+            .docs-menu { position: fixed; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: min(34rem, calc(100vw - 1rem)); padding: 4px; font-size: 12px; }
+            .docs-menu button { display: inline-flex; align-items: center; gap: 6px; height: 28px; border-radius: 6px; padding: 0 8px; color: var(--dk-fg); white-space: nowrap; }
+            .docs-menu button svg.lucide { color: var(--dk-muted); }
+            .docs-menu button[data-danger] svg.lucide { color: currentColor; }
             .docs-menu button:hover, .docs-menu button:focus-visible { background: var(--dk-hover); outline: none; }
             .docs-menu button[data-danger] { color: var(--dk-danger); }
             .docs-menu button[data-danger]:hover { background: rgb(var(--dashboard-destructive-rgb) / .12); }
@@ -73,7 +67,7 @@
               </div>
               <div class="docs-tools">
                 <input data-docs-filter class="docs-filter" type="search" placeholder="Filter by file name" aria-label="Filter docs by file name" autocomplete="off" />
-                <button data-docs-refresh type="button" class="docs-btn"><i data-lucide="refresh-cw"></i>Refresh</button>
+                <button data-docs-refresh type="button" class="fm-btn fm-btn-sm"><i data-lucide="refresh-cw"></i>Refresh</button>
               </div>
             </header>
             <div data-docs-notice class="docs-notice" role="status" aria-live="polite" hidden></div>
@@ -85,5 +79,5 @@
               <p class="docs-missing"><span class="fm-spinner" aria-hidden="true"></span>Loading the docs...</p>
             </div>
           </div>
-          <div data-docs-menu class="docs-menu" role="toolbar" aria-label="Selection tools" hidden></div>
+          <div data-docs-menu class="docs-menu fm-popover" role="toolbar" aria-label="Selection tools" hidden></div>
           </section>
