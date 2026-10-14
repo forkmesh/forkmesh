@@ -212,6 +212,31 @@ counting as live and the machine agents came back, under new ids again.
 - **Phone.** iOS `AgentRunScreen` follows the run again after a prompt it
   sent when its follow has ended, so the reply streams in without reopening.
 
+### A follow-up's reply waited for the user to reopen the run (2026-10-14)
+
+A follow-up sent from an agent's detail page arrived, but its reply did not
+show on that page until the user pulled to refresh or opened the run again.
+
+- **iOS, desktop agents.** The screen followed the run again only when its
+  `DesktopTranscriptStream` said it had stopped. A follow the desktop had
+  dropped without telling the phone (for example when the relay connection
+  was replaced while the phone slept, so `closeLocalControlStreams` removed
+  it) still read as streaming, so nothing re-followed and `load()` skipped
+  the read. Stopping and
+  opening a new stream is not safe either: `stop()` sends `agents.unfollow`
+  from a separate task, which can reach the desktop after the new
+  `agents.follow` and remove it. `DesktopTranscriptStream.refollow()` asks
+  `agents.follow` again on the same stream from its `next`, with no unfollow
+  (the desktop replaces a connection's follow of the same session), and
+  reopens a stream that ended. `AgentRunScreen` calls it after every prompt it
+  sends and when the app comes back to the foreground; a runner run re-reads
+  its session on the foreground.
+- **Android.** `UnifiedAgentScreen` stopped reading a runner run once it was
+  idle and closed a desktop run's read when its follow ended, and a sent
+  prompt restarted neither. After a prompt it now calls `refollow()` on the
+  live desktop stream, or restarts the read (`pulls`), which picks up the
+  queued runner run and follows it live.
+
 ## Agents of other users on the machine
 
 Fixed 2026-09-30. The phone showed "Claude Code started outside ForkMesh on
