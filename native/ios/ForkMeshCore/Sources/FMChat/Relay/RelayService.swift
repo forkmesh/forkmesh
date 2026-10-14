@@ -95,7 +95,9 @@ public final class RelayService: OwnStatusAnnouncer {
     // frames then carry no `userStatus` at all, because an empty one would wipe the status peers
     // already hold for this account.
     private var ownStatusValue: UserStatus?
-    private var peers: [String: RelayPeer] = [:]
+    @ObservationIgnored private var peers: [String: RelayPeer] = [:]
+    private var rosterRevision = 0
+    @ObservationIgnored private var liveAtTick = Set<String>()
     private var history: [String: [ChatMessage]] = [:]
     @ObservationIgnored private var seenIds = Set<String>()
     private var seenNotificationIds = Set<String>()
@@ -154,6 +156,7 @@ public final class RelayService: OwnStatusAnnouncer {
     public func liveStatusFor(_ senderId: String) -> UserStatus? {
         if senderId.isEmpty { return nil }
         if senderId == nodeId { return ownStatusValue }
+        _ = rosterRevision
         guard let peer = peers[senderId], peer.online else { return nil }
         if clock.nowMillis - peer.lastSeenMs > RelayService.staleMs { return nil }
         return peer.status
@@ -186,6 +189,7 @@ public final class RelayService: OwnStatusAnnouncer {
     private var name: String { persona.name }
 
     public func roster() -> [Member] {
+        _ = rosterRevision
         let now = clock.nowMillis
         let me = persona
         var list = [
@@ -206,6 +210,7 @@ public final class RelayService: OwnStatusAnnouncer {
 
     /// Same count as `roster().filter(\.online)`, without building a Member per peer.
     public var onlineCount: Int {
+        _ = rosterRevision
         let now = clock.nowMillis
         var count = state == .connected ? 1 : 0
         for peer in peers.values where peer.online && now - peer.lastSeenMs <= RelayService.staleMs {
@@ -480,6 +485,7 @@ public final class RelayService: OwnStatusAnnouncer {
                 do { try await sleeper(RelayService.presenceInterval) } catch { return }
                 guard let self, !Task.isCancelled else { return }
                 await self.sendPresence()
+                self.noteRosterStaleness()
                 self.notifyListeners()  // re-evaluate staleness even with no inbound traffic
             }
         }
@@ -491,7 +497,7 @@ public final class RelayService: OwnStatusAnnouncer {
     public func resetForRelaySwitch() {
         history.removeAll()
         seenNotificationIds.removeAll()
-        peers.removeAll()
+        forgetPeers()
         log.removeAll()
         sharedPassphrase = ""
         sharedPassphraseScope = ""
@@ -510,7 +516,7 @@ public final class RelayService: OwnStatusAnnouncer {
         _ = send(envelopeBase("bye"))
         await flushOutbox()
         await teardownSocket()
-        peers.removeAll()
+        forgetPeers()
         setState(.offline)
     }
 
@@ -949,7 +955,10 @@ public final class RelayService: OwnStatusAnnouncer {
                 removeMessage(conversation, target)
             }
         case "bye":
-            if peers.removeValue(forKey: senderId) != nil { logLine("\(sender) left") }
+            if peers.removeValue(forKey: senderId) != nil {
+                rosterRevision &+= 1
+                logLine("\(sender) left")
+            }
         default:
             break
         }
@@ -1028,7 +1037,8 @@ public final class RelayService: OwnStatusAnnouncer {
     }
 
     private func rememberPeer(_ id: String, _ senderName: String, _ m: JSONObject) {
-        var peer = peers[id] ?? RelayPeer(order: RelayService.nextPeerOrder())
+        let before = peers[id]
+        var peer = before ?? RelayPeer(order: RelayService.nextPeerOrder())
         if !senderName.isEmpty { peer.name = senderName }
         let platform = m["platform"]?.text ?? ""
         if !platform.isEmpty { peer.platform = platform }
@@ -1043,8 +1053,32 @@ public final class RelayService: OwnStatusAnnouncer {
         if case .array(let findings)? = m["dg"] { peer.diagnostics = .array(Array(findings.prefix(64))) }
         rememberPeerStatus(&peer, m)
         peer.online = true
-        peer.lastSeenMs = clock.nowMillis
+        let now = clock.nowMillis
+        peer.lastSeenMs = now
         peers[id] = peer
+        if RelayService.rosterChanged(before, peer, now: now) { rosterRevision &+= 1 }
+    }
+
+    nonisolated static func rosterChanged(_ before: RelayPeer?, _ after: RelayPeer, now: Int64) -> Bool {
+        guard var before else { return true }
+        if !before.online || now - before.lastSeenMs > staleMs { return true }
+        before.lastSeenMs = after.lastSeenMs
+        return before != after
+    }
+
+    private func forgetPeers() {
+        if peers.isEmpty { return }
+        peers.removeAll()
+        rosterRevision &+= 1
+    }
+
+    private func noteRosterStaleness() {
+        let now = clock.nowMillis
+        let live = Set(peers.filter { $0.value.online && now - $0.value.lastSeenMs <= RelayService.staleMs }.keys)
+        if live != liveAtTick {
+            liveAtTick = live
+            rosterRevision &+= 1
+        }
     }
 
     /// Only a live hello or presence frame speaks for a peer's status. A frame without the field

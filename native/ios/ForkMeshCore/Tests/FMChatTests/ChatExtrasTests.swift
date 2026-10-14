@@ -3,6 +3,7 @@ import FMApi
 import FMBase
 import FMNet
 import Foundation
+import Observation
 import XCTest
 
 @testable import FMChat
@@ -134,6 +135,20 @@ final class ChatExtrasTests: XCTestCase {
         XCTAssertTrue(hub.edit(mine.message, text: "mine, edited"))
         XCTAssertEqual(hub.rows.last?.text, "mine, edited")
         XCTAssertFalse(hub.edit(hub.rows[0].message, text: "not mine"))
+        await h.close()
+    }
+
+    @MainActor func testTypingDoesNotRebuildTheTranscript() async throws {
+        let (hub, h) = try await hub(clock: FixedClock(Date()))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "hello"]))
+        let arrived = await waitUntil { hub.rows.count == 1 }
+        XCTAssertTrue(arrived)
+        let flag = RosterChangeFlag()
+        withObservationTracking { _ = hub.rows } onChange: { flag.set() }
+        try await h.sendProtected(peerFrame("typing", ["conversation": "#general", "active": true]))
+        let typing = await waitUntil { hub.typingLine == "Pat is typing..." }
+        XCTAssertTrue(typing)
+        XCTAssertFalse(flag.value, "a typing frame only changes the typing line")
         await h.close()
     }
 

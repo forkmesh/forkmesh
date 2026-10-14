@@ -5,29 +5,9 @@
 import SwiftUI
 import UIKit
 
-@MainActor
 enum FmAvatarImages {
-    private static let decoded: NSCache<NSString, UIImage> = {
-        let cache: NSCache<NSString, UIImage> = NSCache<NSString, UIImage>()
-        cache.countLimit = 256
-        return cache
-    }()
-
     static func image(_ base64: String) -> UIImage? {
-        if base64.isEmpty {
-            return nil
-        }
-        let key: NSString = base64 as NSString
-        if let hit = decoded.object(forKey: key) {
-            return hit
-        }
-        guard let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
-            let image = UIImage(data: data)
-        else {
-            return nil
-        }
-        decoded.setObject(image, forKey: key)
-        return image
+        FmImageCache.image(base64: base64)
     }
 }
 

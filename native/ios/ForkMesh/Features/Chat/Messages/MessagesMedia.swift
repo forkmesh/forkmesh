@@ -54,7 +54,7 @@ struct MessagesBackdrop: View {
         ZStack {
             canvas
             if let data = look.backgroundImage {
-                if let picture = UIImage(data: data) {
+                if let picture = FmImageCache.image(data) {
                     GeometryReader { (geometry: GeometryProxy) in
                         Image(uiImage: picture)
                             .resizable()
@@ -128,7 +128,7 @@ struct MessagesPhotoViewer: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                if let picture = UIImage(data: attachment.data) {
+                if let picture = FmImageCache.image(attachment.data) {
                     Image(uiImage: picture)
                         .resizable()
                         .scaledToFit()
@@ -147,7 +147,7 @@ struct MessagesPhotoViewer: View {
                         .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if let picture = UIImage(data: attachment.data) {
+                    if let picture = FmImageCache.image(attachment.data) {
                         ShareLink(item: Image(uiImage: picture), preview: SharePreview(attachment.fileName, image: Image(uiImage: picture))) {
                             Image(systemName: "square.and.arrow.up").foregroundStyle(Color.white)
                         }

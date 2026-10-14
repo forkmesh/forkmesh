@@ -83,6 +83,17 @@ since `desktop/` in Next is reference only.
 - Repo-bound v2 event signing, always on: iOS and Android inbox, review and issue writers sign `forkmesh-<kind>-v2\n<owner>/<repo>\n` (`agent/native-v2-signing`, `fix/docs-audit-item6`; see `docs/security/README.md`).
 - Open: Inbox scroll-to-top; commits by branch (needs a `ref` on the mirror history read in Next); relay picture replies and photos in LAN prompts (designed in AGENT_ATTACHMENTS.md).
 
+### iOS performance round (2026-10-13)
+
+Branch `1996-ios-performance`, not merged yet. Fixes the shell redrawing per
+relay frame and per hub-count change, hidden tabs animating, per-row Eagle
+redraws, typing rebuilding the transcript, repeated picture decodes, the
+Home grid's quadratic layout and the Market's cubic `visible`. Compiles for
+the iOS simulator on the office Mac (Debug, `f38e77327449`); ForkMeshCore
+tests pass on Linux. Left: the Genie spider's idle cost, relay/control
+frame parsing on the main actor, a device run with a signed-in account.
+Details and numbers: [README.md](README.md), Recent changes, 2026-10-13.
+
 ## Capability checklist
 
 A box is ticked when the capability is **Done** on iOS. Ticks are seeded

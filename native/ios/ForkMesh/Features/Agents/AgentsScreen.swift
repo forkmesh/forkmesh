@@ -209,10 +209,6 @@ struct AgentsScreen: View {
         dots = nil
     }
 
-    private func dialog(_ line: AgentLine) -> String {
-        listView == .eagle ? eagle.dialog(line) : ""
-    }
-
     private var tabBar: some View {
         HStack(spacing: 0) {
             tools
@@ -581,7 +577,7 @@ struct AgentsScreen: View {
             } label: {
                 AgentLineRow(
                     line: line, nowMs: nowMs, loader: loader, view: listView, trailing: retryTrailing(line),
-                    dialog: dialog(line), watch: dots?.controller, watchKeys: watchKeys(line))
+                    eagleFeed: listView == .eagle ? eagle : nil, watch: dots?.controller, watchKeys: watchKeys(line))
             }
             .buttonStyle(.plain)
         }

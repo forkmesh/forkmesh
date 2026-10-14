@@ -6259,6 +6259,8 @@ _api_metrics = _LazyModule("api_metrics")
 # (docs/attribution.md). Loaded on the first served HTML navigation.
 _attribution = _LazyModule("attribution")
 _not_found_log = _LazyModule("not_found_log")
+_probe_ban = _LazyModule("probe_ban")
+_probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
 _ids_console = _LazyModule("ids_console")
 # The hackathon growth layer (app/src/hackathon.py is its pure policy half).
@@ -13259,7 +13261,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "edd807e544f8e1cc4df37b41937f3efbe7188d5cce746d50fb3b0a181dea2098"
+    "f52ed5d3bc38da7549ac2d5ca233bcfaeb8ac212442d56b2957d838160c9c778"
 )
 
 
@@ -50406,6 +50408,8 @@ def _cron_due_phases(minute_slot):
     # delta between snapshots instead of touching the clone path itself.
     if minute % 1440 == 5:
         phases.append("attribution-clone-snapshot")
+    if minute % 5 == 0:
+        phases.append("probe-bans")
     return tuple(phases)
 
 
@@ -50523,6 +50527,8 @@ async def _run_cron_phase(env, phase, minute_slot):
     if phase == "account-device-prune":
         await ensure_schema(env)
         return await purge_stale_account_devices(env)
+    if phase == "probe-bans":
+        return await _probe_ban.sweep(env)
     if phase == "referrer-prune":
         # Both bounded referrer tables age out on the same sweep: the site
         # board's long tail, and the blog read-dedupe rows whose window has

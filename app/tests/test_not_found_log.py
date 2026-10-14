@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import ast
 import asyncio
+import hashlib
+import hmac
 import html
 import importlib.util
 import json
@@ -85,6 +87,8 @@ class Harness:
         self.audits = []
         self.shell = _load("admin_shell")
         self.log = _load("not_found_log")
+        self.probe = _load("probe_ban")
+        self.local_bans = {}
         runtime = _entry_defs("_admin_href", "json_response")
         harness = self
 
@@ -116,6 +120,10 @@ class Harness:
         async def ensure_schema(_env):
             return None
 
+        async def blind_index(_env, value):
+            return hmac.new(b"test-key", str(value).strip().lower().encode(),
+                            hashlib.sha256).hexdigest()
+
         async def bounded_json_request(request):
             return json.loads(await request.text())
 
@@ -144,11 +152,15 @@ class Harness:
             "method_name": lambda request: request.method,
             "parse_qs": parse_qs, "urlparse": urlparse,
             "_admin_shell": self.shell,
+            "_probe_ban": self.probe,
+            "_probe_ban_local": self.local_bans,
+            "blind_index": blind_index,
         })
         runtime["json_response"].__globals__["Response"] = FakeResponse
         runtime["json_response"].__globals__["json"] = json
         self.shell._bind_runtime({"d1_first": d1_first, "Date": clock})
         self.log._bind_runtime(runtime)
+        self.probe._bind_runtime(runtime)
         self.env = SimpleNamespace(
             ADMIN_PATH="ops-console",
             APP_ORIGIN="https://app.forkmesh.com",
