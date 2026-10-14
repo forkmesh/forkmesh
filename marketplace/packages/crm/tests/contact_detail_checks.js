@@ -21,6 +21,7 @@ const exported = [
   "crmOwnerMatches", "crmFocusMatches", "crmFlow", "crmInvestorFlow",
   "crmAccountChip", "crmAccountProof",
   "crmNextContact", "crmNextChannels", "crmZohoComposeUrl",
+  "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
 ];
 const page = new Function(
   "$", "$$", "session", "escapeHtml", "relativeTimeLabel",
@@ -306,6 +307,79 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     same(page.crmNextContact("follow", now).contact?.id, "new-reply", "a never-contacted lead who wrote in is a follow-up");
     check(page.crmNextContact("reach", now).contact?.id !== "new-reply", "and not a new lead");
     view.contacts = saved.contacts; view.emails = saved.emails; view.settings = saved.settings;
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { organization: view.organization, settings: view.settings };
+    const now = Date.parse("2026-10-13T12:00:00Z"); const day = 86400000;
+    const contact = {
+      id: "ada", name: "Ada Lovelace", email: "ada@example.com", company: "Engines Ltd", title: "CTO",
+      mastodon: "@ada@hachyderm.io", github: "ada", stage: "contacted", nextStep: "Send the deck",
+      notes: "Met at FOSDEM.\nLikes self-hosting.", lastContactedAt: now - 20 * day, createdAt: now - 40 * day,
+      fields: { fund_size: "$40M", empty: "" },
+    };
+    const input = {
+      contact, format: "email", mode: "follow", reason: "Last contacted 20 days ago.",
+      brief: "We build ForkMesh.", organization: "forkmesh", sender: "jett", flowName: "Investors",
+      messages: [
+        { at: now - 2 * day, direction: "inbound", via: "Zoho Mail", subject: "Re: hello", text: "Sounds good, send more.\n\nOn Mon, Oct 1, 2026 jett wrote:\n> hello" },
+        { at: now - 20 * day, direction: "outbound", via: "Zoho Mail", sender: "jett", subject: "hello", text: "Hi Ada" },
+        { at: now - day, direction: "outbound", status: "draft", via: "Mailtrap", subject: "unsent" },
+      ],
+      updates: [
+        { label: "Mastodon", handle: "@ada@hachyderm.io", url: "https://hachyderm.io/@ada", posts: [{ at: now - day, text: "Shipped a mirror", url: "https://hachyderm.io/@ada/1" }] },
+        { label: "GitHub", handle: "@ada", url: "https://github.com/ada", posts: [], error: "the service answered 403" },
+      ],
+      deckUrl: "https://forkmesh.com/pitch-deck/abc123def456", thread: "",
+    };
+    const prompt = page.crmAiPrompt(input);
+    check(prompt.startsWith("You are helping jett at forkmesh write an email to Ada Lovelace."), "the prompt opens with who writes what to whom");
+    check(prompt.includes('"Subject:" line'), "an email asks for a subject line");
+    check(prompt.includes("pick up where the conversation below left off"), "a follow-up continues the conversation");
+    check(prompt.includes("## About us: forkmesh\nWe build ForkMesh."), "the brief is in the prompt");
+    for (const line of ["- Title: CTO", "- Company: Engines Ltd", "- Pipeline: Investors, stage Contacted",
+                        "- Next step on our record: Send the deck", "- Mastodon: https://hachyderm.io/@ada",
+                        "- GitHub: https://github.com/ada", "- Their investor deck link: https://forkmesh.com/pitch-deck/abc123def456",
+                        "- Fund Size: $40M", "Met at FOSDEM.\nLikes self-hosting."]) {
+      check(prompt.includes(line), `the record line ${JSON.stringify(line)} is in the prompt`);
+    }
+    check(!prompt.includes("Empty:"), "an empty custom field is left out");
+    check(prompt.includes("- 2026-10-12: Shipped a mirror (https://hachyderm.io/@ada/1)"), "their recent posts are in the prompt");
+    check(prompt.includes("GitHub @ada (https://github.com/ada): could not be read (the service answered 403)"), "an unreadable account says so");
+    const hello = prompt.indexOf("Subject: hello"); const reply = prompt.indexOf("Subject: Re: hello");
+    check(hello > 0 && reply > hello, "past messages run oldest first");
+    check(prompt.includes("We wrote (jett) via Zoho Mail") && prompt.includes("They wrote via Zoho Mail"), "each message says who wrote it");
+    check(prompt.includes("  > Sounds good, send more.") && !prompt.includes("> hello"), "a quoted reply tail is cut");
+    check(prompt.includes("[draft, not delivered]"), "an unsent draft is marked");
+    check(prompt.endsWith("## Why now\nLast contacted 20 days ago."), "the reason closes the prompt");
+    const toot = page.crmAiPrompt({ ...input, format: "toot", mode: "reach", thread: "https://hachyderm.io/@ada/9", messages: [], updates: [] });
+    check(toot.includes("mentions @ada@hachyderm.io at the start") && toot.includes("at most 500 characters"), "a toot mentions them and fits Mastodon");
+    check(toot.includes("reply in our existing thread: https://hachyderm.io/@ada/9"), "a toot replies in the thread we have");
+    check(toot.includes("This is our first contact") && toot.includes("Nothing on record yet"), "a first contact says so");
+    check(prompt.includes('They are on our "Investors" list as an investor'), "an investor pipeline sets the investor angle");
+    check(page.crmAiPrompt({ ...input, group: "Press list" }).includes('on our "Press list" list as a journalist'), "the open list sets the angle first");
+    check(page.crmAiPrompt({ ...input, group: "", flowName: "" }).split("\n")[3] === "", "no list and no pipeline give no angle");
+    check(page.crmAiPrompt({ ...input, updates: null }).includes("Not read yet: open their profiles linked above."), "posts still being read are not reported missing");
+    check(page.crmAiPrompt({ ...input, format: "message" }).includes("under 80 words, no subject line"), "a direct message is short");
+    same(page.crmAiMessageText("Thanks!\n> old\nMore"), "Thanks!\nMore", "quoted lines drop out of a message");
+    check(page.crmAiMessageText("x".repeat(5000)).length === 900, "a long message is cut");
+    const short = page.crmAiTargetUrl("claude", "Hello there");
+    same(short, { url: "https://claude.ai/new?q=Hello%20there", filled: true }, "Claude opens with the prompt filled in");
+    same(page.crmAiTargetUrl("chatgpt", "a".repeat(20000)), { url: "https://chatgpt.com/", filled: false }, "a prompt too long for a link opens the bare site");
+    same(page.crmAiDefaultFormat({ email: "a@b.co" }), "email", "an email address picks an email");
+    same(page.crmAiDefaultFormat({ mastodon: "@a@hachyderm.io" }), "toot", "a Mastodon handle picks a toot");
+    same(page.crmAiDefaultFormat({ twitter: "@a" }), "message", "otherwise a direct message");
+    same(page.crmAiMode({ lastContactedAt: 0 }, []), "reach", "never contacted is a first contact");
+    same(page.crmAiMode({ lastContactedAt: 0 }, [{ direction: "outbound", status: "draft" }]), "reach", "an unsent draft is not contact");
+    same(page.crmAiMode({ lastContactedAt: 0 }, [{ direction: "inbound" }]), "follow", "a message from them is a conversation");
+    view.settings = {}; view.organization = "forkmesh";
+    check(page.crmAiBrief().includes("https://forkmesh.com/changelog"), "ForkMesh starts from its own brief with links");
+    view.organization = "acme";
+    same(page.crmAiBrief(), "", "another organization starts from its own saved brief only");
+    view.settings = { messageBrief: "  Acme makes anvils.  " };
+    same(page.crmAiBrief(), "Acme makes anvils.", "a saved brief wins");
+    view.organization = saved.organization; view.settings = saved.settings;
   }
 
   if (failures) {

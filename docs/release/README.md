@@ -197,6 +197,15 @@ it too, as `roll_out_release` in `tools/forkmesh-release-host.py`.
   first, and an unannounced change to `/usr/local/bin` there is an IDS
   lockdown ([../IDS.md](../IDS.md)). The release seed hosts
   (`config/fanout/release-hosts`) are therefore seeded but never rolled out.
+  Since 2026-10-13 the cores in that list come from `deploy/fleet.toml`
+  (`fleet_core_hosts`, `fmnext-<name>` and its address from
+  `fleet-instances.json`): a core added or removed with `next_fleet.py`
+  is seeded or skipped without editing the file, whose `fmnext-` lines are
+  then ignored and whose other lines still apply. When the fleet file
+  cannot be loaded, the file is used as before.
+  `tools/mac_adhoc_publish.py` seeds the same cores and, for the tester
+  lookup, the mail and the Pings, tries each core in turn instead of only
+  the first line.
   Since the Vultr fleet was retired, `config/fanout/hosts` lists no host and
   the desktop's saved host list is empty, so today the step only records the
   release as settled.

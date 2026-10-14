@@ -167,9 +167,17 @@ Each core node of the served stack has its own row, `core:<node>` ("Core
 node — n1"), listed after the fixed systems and before the mirrors. The
 roster is dynamic: every `cluster_members` row with a heartbeat in the last
 24 hours gets a row (`_status_core_rows`, capped at `STATUS_CORE_MAX` = 32),
-so one core or fifteen each get a monitor with no config change. A core that
-has been silent for a day drops off, which is how a retired core disappears.
-On Cloudflare D1 the table is empty and no core rows appear.
+so one core or fifteen each get a monitor with no config change. A new core
+appears with its first heartbeat. A core taken out with `next_fleet.py
+remove-core` disappears at once: its rqlite step deletes the core's
+`cluster_members` row through a healthy peer (`RETIRE_MEMBER_SQL` in
+`tools/next_remove_core.py`), so the removed core is neither listed red nor
+paged every five minutes for a day. A core that stops any other way (a crash,
+a deleted VM) stays red for a day, then drops off. Core ids are checked by
+pattern (`_status_batch_system_id`), not against a list, so adding or
+removing a core never blanks another row's history, unlike renaming a fixed
+system (`STATUS_SYSTEM_SUCCESSORS`). On Cloudflare D1 the table is empty and
+no core rows appear.
 
 A core row is green only when all of these hold (`_status_core_verdicts`,
 chips from `STATUS_CORE_CHECK_STEPS`):
@@ -219,6 +227,31 @@ Code or Codex login has expired (its `runner_availability` row says so, see
 Runner rows do not page continually
 by default; the "All runners" row on the admin Pings matrix (`runner:*`)
 turns that on.
+
+### The Nodes section (2026-10-13)
+
+Core and runner rows (`core:*`, `runner:*`) sit in their own **Nodes**
+section below **Systems** on `/status` (`app/public/status.html`,
+`isNodeSystem`). Owner request: nodes come and go with the fleet and change
+more often than services, so a node row shows only its last 60 one-minute
+checks and its last 24 hourly checks with the 24-hour uptime; the 30-day
+column and percentage are left out. Services and mirrors keep all three
+strips. The section is hidden when no node row is reported (a Cloudflare
+deployment). The API is unchanged: node rows still carry `days`, because the
+24-hour strip is built from `days[].hours`.
+
+The other views of `/api/status` follow the same split: the iOS and Android
+Status screens list a "Nodes" section between "Systems" and "Mirrors"
+(`StatusReport.nodeSystems`; the iOS detail page leaves out "Uptime, 30
+days" for a node), and the World status board draws no 30-day strip or
+figure for a node row. The desktop footer shows one dot per row and needs no
+change. The flag both apps labelled "Main node" is `current.mainnodeOnline`:
+whether any verified mirror serves `forkmesh/forkmesh` lately. It is not a
+core, so the apps now call it "Verified mirror".
+
+Tests: `app/browser_tests/tests/status-page-reliability.spec.js` (headless
+Chromium; `STATUS_SCREENSHOT=<png>` saves the systems card), the
+`StatusModelTests` and `InsightsTest` model tests.
 
 ## Leaderboards: My stats (2026-10-02)
 

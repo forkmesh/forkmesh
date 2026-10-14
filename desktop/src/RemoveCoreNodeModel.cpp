@@ -51,6 +51,7 @@ RemoveCorePlan parseRemoveCorePlan(const QByteArray &json)
     plan.instanceId = object.value(QStringLiteral("instance_id")).toString();
     plan.ip = object.value(QStringLiteral("ip")).toString();
     plan.leader = object.value(QStringLiteral("leader")).toString();
+    plan.promote = object.value(QStringLiteral("promote")).toString();
     plan.voter = object.value(QStringLiteral("voter")).toBool(true);
     plan.isLeader = object.value(QStringLiteral("is_leader")).toBool();
     plan.allowed = object.value(QStringLiteral("allowed")).toBool();
@@ -132,6 +133,11 @@ QString removeCoreSummaryText(const RemoveCorePlan &plan, bool destroyInstance)
                      .arg(name)
               << QString();
     lines << QStringLiteral("This will:");
+    if (!plan.promote.isEmpty())
+        lines << QStringLiteral("• make %1 an rqlite voter first (it is a non-voter now), so "
+                                "%2 voters remain; %1 is out of DNS for about a minute;")
+                     .arg(plan.promote)
+                     .arg(plan.votersAfter.size());
     if (plan.isLeader)
         lines << QStringLiteral("• hand rqlite leadership to another voter first (%1 leads now);")
                      .arg(name);

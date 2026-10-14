@@ -221,7 +221,7 @@ builds that install beside it.
   would otherwise poll for. Keepalive 4 min. Direct-message frames carry no
   sender or text; since 2026-10-13 they name the conversation, the relay
   `ref` and `keyVersion`, and the background link decrypts the message on
-  the phone (section 15). When that is not possible (no `ref`, row already
+  the phone (section 16). When that is not possible (no `ref`, row already
   received, key missing) the app reads `GET /api/chat/direct-messages`
   and takes the newest conversation with unread messages as the sender: the
   notification then says "Direct message from <name>" and carries that
@@ -1002,7 +1002,22 @@ model in `C/market/MarketModels.kt` (`MarketModel`, `MarketOptions`,
 - Items read `version` so a sort, filter or install recomposes the chip row
   and rows; LazyColumn item lambdas that only capture the model are skipped.
 
-## 15. Secure chat: receipts, DM replies and deletes, message previews (2026-10-13)
+## 15. Version, What's new and Send diagnostics (2026-10-13)
+
+Parity with the iOS You hub ([NAVIGATION.md](NAVIGATION.md), §4.x): the hub's
+last row shows `versionName (versionCode)`, opens `WhatsNewPage` from the
+bundled `changelog.json` asset ([MAC_BUILD.md](MAC_BUILD.md#whats-new-changelog-2026-10-13)),
+and has the Send diagnostics capsule. The rule, the scrubbing and the bundle
+live in core (`tools/PerformanceDiagnostics.kt`, `tools/AppChangelog.kt`,
+tested by `PerformanceDiagnosticsTest` and `AppChangelogTest`); the app side
+is `feature/tools/AboutAndDiagnostics.kt`. Android has the same stall
+telemetry as iOS (`PerformanceMonitorService` events: frame, event loop,
+sync) but no MetricKit and no performance report builder, so the OS
+diagnostics are `ApplicationExitInfo` ANRs and crashes (API 30+) and the
+bundle is a smaller report written by `DiagnosticsBundle.report`. The hub
+pages swap inside the one bottom sheet instead of pushing screens.
+
+## 16. Secure chat: receipts, DM replies and deletes, message previews (2026-10-13)
 
 Shared design for all clients: branch 1974 spec, `docs/app/chat-private-rooms.md`
 and `docs/app/chat-push-previews.md`.

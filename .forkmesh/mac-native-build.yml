@@ -269,6 +269,15 @@ jobs:
           fi
           echo "Steps from codemagic.yaml (ios-native-adhoc):"
           python3 "$m/codemagic_steps.py" ios-native-adhoc "$m/steps" --config "$m/codemagic.yaml" "${skip[@]}" | cut -f2 | sed 's/^/  /'
+          home="${FORKMESH_HOME:-$HOME/projects/forkmesh}"
+          src="${FORKMESH_CHANGELOG_REPO:-$home/src}"
+          if [ -f "$src/tools/mobile_changelog.py" ]; then
+            python3 "$src/tools/mobile_changelog.py" --repo "$src" --commit "$commit_full" \
+              --published "$home/state/mac-adhoc/published.json" --out "$m/steps/changelog.json" \
+              || echo "No changelog for this build: the app shows its version with no notes."
+          else
+            echo "No checkout at $src for the changelog: the app shows its version with no notes."
+          fi
           tar -C "$m" -c steps | mac_in "mkdir -p '$run' && tar -x -C '$run' && touch '$run/fetched'"
 
       - name: Check the App Store Connect credentials
@@ -290,6 +299,11 @@ jobs:
         run: |
           . "$HOME/mac/lib.sh"
           mac_build "Pick the ad hoc build number"
+
+      - name: Bundle the changelog
+        run: |
+          . "$HOME/mac/lib.sh"
+          mac_build "Bundle the changelog"
 
       - name: Generate the Xcode project
         run: |

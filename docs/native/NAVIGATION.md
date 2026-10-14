@@ -3592,6 +3592,63 @@ desktop older than this change (it answers `unsupported`), the strip is as
 before. The strip's accessibility label reads the desktop's latest four
 values before the phone's.
 
+### 4.x Version, What's new and Send diagnostics (2026-10-13)
+
+The user asked for the version and build number in the avatar hub, opening a
+plain-language changelog, and then for a button beside it that sends
+diagnostics to a coding agent and turns red when the app is slow.
+
+- **Where.** The last row of the hub (iOS `YouHubSheet.versionRow`, Android
+  `HubVersionRow` in `feature/tools/AboutAndDiagnostics.kt`): "Version 1.4.1
+  (219)" with "What's new" under it, and the diagnostics capsule at the end.
+  iOS reads `CFBundleShortVersionString` and `CFBundleVersion`
+  (`AppChangelog.label(infoDictionary:)`); Android reads `versionName` and
+  `versionCode` from the package manager.
+- **What's new.** iOS pushes `WhatsNewScreen` inside the hub's
+  `NavigationStack`; Android swaps the hub sheet's content for
+  `WhatsNewPage` (back returns to the hub). Each build is a section headed
+  with its version, build number and date, the running one marked
+  Installed, with area titles (Market, Calls, Projects...) over bullets. The
+  data is the bundled `Changelog.json` (iOS resource) or `changelog.json`
+  (Android asset), built per [MAC_BUILD.md](MAC_BUILD.md#whats-new-changelog-2026-10-13).
+  `AppChangelog.forRunningBuild` puts the running build first even when the
+  file was made for another build (an Xcode or debug build), with "No notes
+  were written for this build". No commit hashes are shown.
+- **Send diagnostics.** The rule is `PerformanceAlert.evaluate` (iOS
+  `FMTools/PerformanceAlert.swift`, Android `tools/PerformanceDiagnostics.kt`),
+  checked when the hub opens and every 5 s while it is open. Red ("Slow, send
+  report") when, since the last send: an OS diagnostic arrived in the last 24
+  h (iOS MetricKit hang, crash, CPU or slow-launch report; Android
+  `ApplicationExitInfo` ANR or crash, API 30+); else a main-thread
+  (`eventLoop` or `sync`) stall of 250 ms or more in the last 10 min; else 5
+  or more dropped-frame (`frame`) stalls in the last 10 min. Otherwise it is
+  a neutral "Send diagnostics". The telemetry files were not changed; the
+  rule only reads `PerformanceMonitorService.events` and the crash store.
+- **The bundle.** iOS: the existing `PerformanceReport` text
+  (`PerformanceReportBuilder`: app version and debug or release, device, OS,
+  memory, thermal state, metrics, slow events, MetricKit reports with stack
+  frames, stall log tail, app log, tab, screen and recent screens) plus the
+  build label, commit and alert. Android has no report builder, so
+  `DiagnosticsBundle.report` writes a smaller one (version, device, OS,
+  metrics, the 8 slowest events with 3 stack frames, exit reasons, last 15 log
+  lines, tab, screen and recents). The confirm sheet lists what is sent, has
+  an "Include recent log lines" toggle (it drops the log sections) and a
+  preview. `DiagnosticsBundle.scrub` removes bearer tokens and `token=`,
+  `password`, `api_key`, `cookie`, `session` values, JWTs, `"text"`, `"body"`,
+  `"message"`, `"content"`, `"prompt"`, `"title"`, `"note"`, `"subject"` JSON
+  values, emails, URL query strings, `+` phone numbers, opaque strings of 32+
+  characters and the user folder in file paths.
+- **The agent.** Send starts a run on `forkmesh/forkmesh` through the
+  composer's quick launcher (iOS `composer.launcher.send(prompt:repository:onDevice:)`,
+  Android `ComposerFeature.quick()`), with a prompt asking it to diagnose the
+  issue in the native app, fix it on a branch with tests and explain the
+  cause, followed by the bundle, cut to the 8000-character prompt limit. The
+  relay only takes image attachments (`ORG_AGENT_ATTACHMENT_TYPES`), so the
+  bundle travels in the prompt rather than as a file. On success the hub
+  closes, the Agents tab opens on the new session, and the red state clears
+  until new issues appear (the send time is kept in `UserDefaults` /
+  `PrefStore`). A failure stays on the sheet with the launcher's message.
+
 ## 5. Search, the command palette and quick actions
 
 ### 5.1 Search

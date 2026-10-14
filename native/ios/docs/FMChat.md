@@ -613,6 +613,14 @@ five face photos inlined (`app/tools/sync_native_call_faces.py` writes both the 
 Android copy; `app/tests/test_chat_call_faces.py` fails when they drift). Its `face` operation
 swaps the outgoing video with `RTCRtpSender.replaceTrack`, as the web does.
 
+The voice is engine state too: `voiceChoice` ("face", "off" or a face id), saved under
+`chat.callVoice`, and `effectiveVoice`, which `WebCallPeerFactory.voice` passes to the page's
+`setup`. `DirectCallPeer.setVoice` and `observeVoice` have default empty bodies; `WebCallPeer`
+forwards the page's `{event: "voice"}` so `engine.voice` is the voice actually applied. Audio is
+processed inside the page (an AudioWorklet), not with AVAudioEngine; see
+docs/app/chat-direct-calls.md, "Voices". `CallAudioRoute.headphonesConnected` and
+`WebCallPeer.preview` / `setMonitor` are there for the pre-call preview.
+
 The face is a real photo warped onto the caller's face over a 68-point mesh
 (docs/app/chat-direct-calls.md, "Face swap"). On iOS the landmarks come from Apple Vision:
 the page posts `{event: "landmarks", id, image}` with a 480-px JPEG of the frame,

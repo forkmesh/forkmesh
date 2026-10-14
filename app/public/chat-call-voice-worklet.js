@@ -1,0 +1,930 @@
+const TWO_PI = 2 * Math.PI;
+const EPS = 1e-9;
+const MIN_WINDOWS = 8;
+const LIMIT_CEILING = 0.95;
+const MALE_HZ = 115;
+const FEMALE_HZ = 205;
+const FEMALE_TRACT = 1.17;
+const HIST_LOW_HZ = 50;
+const HIST_STEPS_PER_SEMITONE = 4;
+const HIST_BINS = 160;
+const HIST_HALF_LIFE = 3000;
+const SEED_WEIGHT = 60;
+
+export const VOICE_LIMITS = Object.freeze({
+  ratio: [0.45, 2.6],
+  formant: [0.72, 1.42],
+  callerHz: [70, 330],
+  tract: [0.94, 1.26],
+});
+
+const clamp = (value, low, high) => (value < low ? low : value > high ? high : value);
+
+export function tractFromPitch(hz) {
+  const f = clamp(Number(hz) || MALE_HZ, VOICE_LIMITS.callerHz[0], VOICE_LIMITS.callerHz[1]);
+  const t = Math.log(f / MALE_HZ) / Math.log(FEMALE_HZ / MALE_HZ);
+  return clamp(1 + t * (FEMALE_TRACT - 1), VOICE_LIMITS.tract[0], VOICE_LIMITS.tract[1]);
+}
+
+export function voicePlanInto(out, preset, callerHz) {
+  if (!preset || !(preset.pitchHz > 0)) {
+    out.ratio = 1;
+    out.formant = 1;
+    out.brightness = 0;
+    out.breath = 0;
+    out.mix = 0;
+    return out;
+  }
+  const caller = clamp(Number(callerHz) || MALE_HZ, VOICE_LIMITS.callerHz[0], VOICE_LIMITS.callerHz[1]);
+  out.ratio = clamp(preset.pitchHz / caller, VOICE_LIMITS.ratio[0], VOICE_LIMITS.ratio[1]);
+  out.formant = clamp((preset.tract || 1) / tractFromPitch(caller), VOICE_LIMITS.formant[0], VOICE_LIMITS.formant[1]);
+  out.brightness = clamp(Number(preset.brightness) || 0, -1, 1);
+  out.breath = clamp(Number(preset.breath) || 0, 0, 1);
+  out.mix = 1;
+  return out;
+}
+
+export function voicePlan(preset, callerHz) {
+  return voicePlanInto({}, preset, callerHz);
+}
+
+export class Fft {
+  constructor(size) {
+    this.size = size;
+    this.cos = new Float64Array(size / 2);
+    this.sin = new Float64Array(size / 2);
+    this.reverse = new Uint32Array(size);
+    for (let i = 0; i < size / 2; i += 1) {
+      this.cos[i] = Math.cos((TWO_PI * i) / size);
+      this.sin[i] = Math.sin((TWO_PI * i) / size);
+    }
+    const bits = Math.round(Math.log2(size));
+    for (let i = 0; i < size; i += 1) {
+      let r = 0;
+      for (let b = 0; b < bits; b += 1) r |= ((i >> b) & 1) << (bits - 1 - b);
+      this.reverse[i] = r;
+    }
+  }
+
+  transform(re, im, inverse) {
+    const n = this.size;
+    const reverse = this.reverse;
+    for (let i = 0; i < n; i += 1) {
+      const j = reverse[i];
+      if (j > i) {
+        let t = re[i];
+        re[i] = re[j];
+        re[j] = t;
+        t = im[i];
+        im[i] = im[j];
+        im[j] = t;
+      }
+    }
+    const sign = inverse ? 1 : -1;
+    const cos = this.cos;
+    const sin = this.sin;
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1;
+      const step = n / len;
+      for (let start = 0; start < n; start += len) {
+        for (let k = 0; k < half; k += 1) {
+          const wr = cos[k * step];
+          const wi = sign * sin[k * step];
+          const a = start + k;
+          const b = a + half;
+          const xr = re[b] * wr - im[b] * wi;
+          const xi = re[b] * wi + im[b] * wr;
+          re[b] = re[a] - xr;
+          im[b] = im[a] - xi;
+          re[a] += xr;
+          im[a] += xi;
+        }
+      }
+    }
+    if (inverse) {
+      const scale = 1 / n;
+      for (let i = 0; i < n; i += 1) {
+        re[i] *= scale;
+        im[i] *= scale;
+      }
+    }
+  }
+}
+
+export class RealFft {
+  constructor(size) {
+    this.size = size;
+    this.half = size / 2;
+    this.fft = new Fft(size / 2);
+    this.zr = new Float64Array(size / 2);
+    this.zi = new Float64Array(size / 2);
+    this.wr = new Float64Array(size / 2);
+    this.wi = new Float64Array(size / 2);
+    for (let k = 0; k < size / 2; k += 1) {
+      this.wr[k] = Math.cos((TWO_PI * k) / size);
+      this.wi[k] = -Math.sin((TWO_PI * k) / size);
+    }
+  }
+
+  forward(x, re, im) {
+    const h = this.half;
+    const zr = this.zr;
+    const zi = this.zi;
+    for (let i = 0; i < h; i += 1) {
+      zr[i] = x[2 * i];
+      zi[i] = x[2 * i + 1];
+    }
+    this.fft.transform(zr, zi, false);
+    re[0] = zr[0] + zi[0];
+    im[0] = 0;
+    re[h] = zr[0] - zi[0];
+    im[h] = 0;
+    for (let k = 1; k < h; k += 1) {
+      const ar = zr[k];
+      const ai = zi[k];
+      const br = zr[h - k];
+      const bi = -zi[h - k];
+      const er = 0.5 * (ar + br);
+      const ei = 0.5 * (ai + bi);
+      const or = 0.5 * (ai - bi);
+      const oi = -0.5 * (ar - br);
+      const wr = this.wr[k];
+      const wi = this.wi[k];
+      re[k] = er + wr * or - wi * oi;
+      im[k] = ei + wr * oi + wi * or;
+    }
+  }
+
+  inverse(re, im, x) {
+    const h = this.half;
+    const zr = this.zr;
+    const zi = this.zi;
+    for (let k = 0; k < h; k += 1) {
+      const ar = re[k];
+      const ai = im[k];
+      const br = re[h - k];
+      const bi = -im[h - k];
+      const er = 0.5 * (ar + br);
+      const ei = 0.5 * (ai + bi);
+      const dr = 0.5 * (ar - br);
+      const di = 0.5 * (ai - bi);
+      const wr = this.wr[k];
+      const wi = -this.wi[k];
+      const or = dr * wr - di * wi;
+      const oi = dr * wi + di * wr;
+      zr[k] = er - oi;
+      zi[k] = ei + or;
+    }
+    this.fft.transform(zr, zi, true);
+    for (let i = 0; i < h; i += 1) {
+      x[2 * i] = zr[i];
+      x[2 * i + 1] = zi[i];
+    }
+  }
+}
+
+export class PitchDetector {
+  constructor(sampleRate, size = 1024) {
+    this.sampleRate = sampleRate;
+    this.size = size;
+    this.fft = new RealFft(size * 2);
+    this.buffer = new Float64Array(size * 2);
+    this.re = new Float64Array(size + 1);
+    this.im = new Float64Array(size + 1);
+    this.minLag = Math.max(2, Math.floor(sampleRate / 420));
+    this.maxLag = Math.min(size - 2, Math.ceil(sampleRate / 60));
+    this.nsdf = new Float64Array(this.maxLag + 2);
+    this.peaks = new Int32Array(64);
+  }
+
+  detect(samples) {
+    const n = this.size;
+    const buffer = this.buffer;
+    const re = this.re;
+    const im = this.im;
+    let mean = 0;
+    for (let i = 0; i < n; i += 1) mean += samples[i];
+    mean /= n;
+    let energy = 0;
+    for (let i = 0; i < n; i += 1) {
+      const v = samples[i] - mean;
+      buffer[i] = v;
+      energy += v * v;
+    }
+    if (Math.sqrt(energy / n) < 0.004) return 0;
+    buffer.fill(0, n);
+    this.fft.forward(buffer, re, im);
+    for (let k = 0; k <= n; k += 1) {
+      re[k] = re[k] * re[k] + im[k] * im[k];
+      im[k] = 0;
+    }
+    this.fft.inverse(re, im, buffer);
+    const nsdf = this.nsdf;
+    const maxLag = this.maxLag;
+    let m = 2 * buffer[0];
+    for (let tau = 0; tau <= maxLag + 1; tau += 1) {
+      if (tau > 0) {
+        const head = samples[tau - 1] - mean;
+        const tail = samples[n - tau] - mean;
+        m -= head * head + tail * tail;
+      }
+      nsdf[tau] = m > EPS ? (2 * buffer[tau]) / m : 0;
+    }
+    const peaks = this.peaks;
+    let count = 0;
+    let tau = 1;
+    while (tau < maxLag && nsdf[tau] > 0) tau += 1;
+    while (tau < maxLag && count < 64) {
+      while (tau < maxLag && nsdf[tau] <= 0) tau += 1;
+      let best = tau;
+      while (tau < maxLag && nsdf[tau] > 0) {
+        if (nsdf[tau] > nsdf[best]) best = tau;
+        tau += 1;
+      }
+      if (best >= this.minLag && best < maxLag) peaks[count++] = best;
+    }
+    if (!count) return 0;
+    let highest = 0;
+    for (let i = 0; i < count; i += 1) highest = Math.max(highest, nsdf[peaks[i]]);
+    if (highest < 0.6) return 0;
+    let lag = peaks[0];
+    for (let i = 0; i < count; i += 1) {
+      if (nsdf[peaks[i]] >= 0.9 * highest) {
+        lag = peaks[i];
+        break;
+      }
+    }
+    const a = nsdf[lag - 1];
+    const b = nsdf[lag];
+    const c = nsdf[lag + 1];
+    const denominator = a - 2 * b + c;
+    const shift = Math.abs(denominator) > EPS ? clamp((0.5 * (a - c)) / denominator, -1, 1) : 0;
+    return this.sampleRate / (lag + shift);
+  }
+}
+
+export class PitchShifter {
+  constructor(sampleRate) {
+    this.mask = 8191;
+    this.maxHalf = Math.floor(sampleRate * 0.0107);
+    this.unvoiced = Math.max(16, Math.floor(sampleRate * 0.005));
+    this.lookahead = this.maxHalf + Math.floor(this.maxHalf / 4);
+    this.delay = this.lookahead + this.maxHalf + 1;
+    this.input = new Float64Array(this.mask + 1);
+    this.output = new Float64Array(this.mask + 1);
+    this.markCount = 32;
+    this.markAt = new Float64Array(this.markCount);
+    this.markPeriod = new Int32Array(this.markCount);
+    this.markHalf = new Int32Array(this.markCount);
+    this.markVoiced = new Uint8Array(this.markCount);
+    this.markWrite = 0;
+    this.written = 0;
+    this.lastAt = 0;
+    this.lastVoiced = false;
+    this.next = 0;
+    this.shifting = 0;
+  }
+
+  latency() {
+    return this.delay;
+  }
+
+  at(index) {
+    return this.input[index & this.mask];
+  }
+
+  addMarks(period) {
+    const voiced = period >= 16;
+    const step = voiced ? Math.floor(period + 0.5) : this.unvoiced;
+    const half = voiced ? Math.min(step, this.maxHalf) : this.unvoiced;
+    const search = voiced ? Math.floor(step / 8) : 0;
+    const input = this.input;
+    const mask = this.mask;
+    for (;;) {
+      const guess = this.lastAt + step;
+      if (guess + search + half >= this.written) return;
+      let best = guess;
+      let measured = step;
+      if (voiced && this.lastVoiced) {
+        const reach = Math.max(8, Math.floor(half / 2));
+        const last = this.lastAt;
+        let bestScore = -Infinity;
+        for (let c = guess - search; c <= guess + search; c += 1) {
+          let dot = 0;
+          let energy = 0;
+          for (let j = -reach; j <= reach; j += 2) {
+            const v = input[(c + j) & mask];
+            dot += input[(last + j) & mask] * v;
+            energy += v * v;
+          }
+          const score = dot / Math.sqrt(energy + 1e-12);
+          if (score > bestScore) {
+            bestScore = score;
+            best = c;
+          }
+        }
+        measured = best - last;
+      }
+      this.lastAt = best;
+      this.lastVoiced = voiced;
+      const slot = this.markWrite;
+      this.markAt[slot] = best;
+      this.markPeriod[slot] = measured;
+      this.markHalf[slot] = half;
+      this.markVoiced[slot] = voiced ? 1 : 0;
+      this.markWrite = (slot + 1) % this.markCount;
+    }
+  }
+
+  placeGrains(ratio) {
+    const input = this.input;
+    const output = this.output;
+    const mask = this.mask;
+    while (this.next + this.lookahead < this.written) {
+      const s = Math.floor(this.next + 0.5);
+      let mark = -1;
+      let nearest = 0;
+      for (let i = 0; i < this.markCount; i += 1) {
+        if (this.markPeriod[i] <= 0) continue;
+        const distance = Math.abs(this.markAt[i] - s);
+        if (mark < 0 || distance < nearest) {
+          mark = i;
+          nearest = distance;
+        }
+      }
+      if (mark < 0) {
+        this.next += this.unvoiced;
+        continue;
+      }
+      const voiced = this.markVoiced[mark] === 1;
+      const period = this.markPeriod[mark];
+      const hop = voiced ? Math.max(8, period / ratio) : period;
+      const centre = this.markAt[mark];
+      let half = this.markHalf[mark];
+      if (voiced && hop > 2 * half) {
+        const room = Math.min(this.maxHalf, this.written - 1 - centre, s - (this.written - this.delay));
+        half = Math.max(half, Math.min(Math.ceil(hop / 2), room));
+      }
+      const gain = voiced ? Math.sqrt(hop / half) : 1;
+      const w = Math.PI / half;
+      for (let t = 1 - half; t < half; t += 1) {
+        output[(s + t) & mask] += gain * (0.5 + 0.5 * Math.cos(w * t)) * input[(centre + t) & mask];
+      }
+      this.next += hop;
+    }
+  }
+
+  process(sample, period, ratio) {
+    this.input[this.written & this.mask] = sample;
+    this.written += 1;
+    this.addMarks(period);
+    this.placeGrains(ratio);
+    const t = this.written - 1 - this.delay;
+    if (t < 0) return 0;
+    const slot = t & this.mask;
+    const shifted = this.output[slot];
+    this.output[slot] = 0;
+    const wanted = Math.abs(ratio - 1) > 2e-3 ? 1 : 0;
+    const step = 1 / (2 * this.unvoiced);
+    this.shifting = wanted > this.shifting
+      ? Math.min(wanted, this.shifting + step)
+      : Math.max(wanted, this.shifting - step);
+    return this.shifting * shifted + (1 - this.shifting) * this.input[slot];
+  }
+}
+
+export class PeakLimiter {
+  constructor(sampleRate) {
+    this.length = Math.max(8, Math.round(sampleRate * 0.0013));
+    this.required = new Float64Array(this.length).fill(1);
+    this.held = new Float64Array(this.length).fill(1);
+    this.delayLine = new Float64Array(this.length);
+    this.pos = 0;
+    this.heldSum = this.length;
+    this.release = 1 / (0.1 * sampleRate);
+    this.smoothed = 1;
+    this.lowAge = this.length;
+  }
+
+  latency() {
+    return this.length - 1;
+  }
+
+  process(sample) {
+    const n = this.length;
+    const pos = this.pos;
+    const magnitude = Math.abs(sample);
+    const required = this.required;
+    let minimum = 1;
+    if (magnitude > LIMIT_CEILING) {
+      required[pos] = LIMIT_CEILING / magnitude;
+      this.lowAge = 0;
+    } else {
+      required[pos] = 1;
+      if (this.lowAge < n) this.lowAge += 1;
+    }
+    if (this.lowAge < n) {
+      for (let i = 0; i < n; i += 1) if (required[i] < minimum) minimum = required[i];
+    }
+    const released = this.smoothed + this.release * (1 - this.smoothed);
+    this.smoothed = minimum < released ? minimum : released;
+    this.heldSum += this.smoothed - this.held[pos];
+    this.held[pos] = this.smoothed;
+    const next = pos + 1 === n ? 0 : pos + 1;
+    const delayed = this.delayLine[next];
+    this.delayLine[pos] = sample;
+    this.pos = next;
+    return delayed * Math.min(1, this.heldSum / n);
+  }
+}
+
+export class VoiceEngine {
+  constructor(sampleRate, userPitchHz = 0) {
+    const size = sampleRate > 32000 ? 1024 : 512;
+    this.sampleRate = sampleRate;
+    this.size = size;
+    this.hop = size / 8;
+    this.half = size / 2;
+    this.oversample = 8;
+    this.fft = new RealFft(size);
+    this.tail = size / 2;
+    this.window = new Float64Array(size);
+    this.synthesis = new Float64Array(size);
+    this.windowPower = 0;
+    this.olaScale = (size / 8) / (size / 4);
+    this.inFifo = new Float64Array(size);
+    this.outFifo = new Float64Array(size);
+    this.accum = new Float64Array(size * 2);
+    this.fifoPos = size - size / 8;
+    this.frameBuffer = new Float64Array(size);
+    this.cepstrum = new Float64Array(size);
+    this.re = new Float64Array(size / 2 + 1);
+    this.im = new Float64Array(size / 2 + 1);
+    this.cre = new Float64Array(size / 2 + 1);
+    this.cim = new Float64Array(size / 2 + 1);
+    const bins = size / 2 + 1;
+    this.anaMag = new Float64Array(bins);
+    this.envelope = new Float64Array(bins);
+    this.gain = new Float64Array(bins).fill(1);
+    this.noiseCos = new Float64Array(1024);
+    this.noiseSin = new Float64Array(1024);
+    for (let i = 0; i < 1024; i += 1) {
+      this.noiseCos[i] = Math.cos((TWO_PI * i) / 1024);
+      this.noiseSin[i] = Math.sin((TWO_PI * i) / 1024);
+    }
+    this.tilt = new Float64Array(bins).fill(1);
+    this.lifter = Math.max(12, Math.round(sampleRate / 650));
+    this.decimate = Math.max(1, Math.round(sampleRate / 12000));
+    this.pitch = new PitchDetector(sampleRate / this.decimate, 1024);
+    this.pitchRing = new Float64Array(1024);
+    this.pitchScratch = new Float64Array(1024);
+    this.pitchWrite = 0;
+    this.decAcc = 0;
+    this.decCount = 0;
+    this.framesSincePitch = 0;
+    this.userHz = 150;
+    this.pitchHist = new Float64Array(HIST_BINS);
+    this.histWeight = 1;
+    this.histTotal = 0;
+    this.histGrowth = Math.pow(2, 1 / HIST_HALF_LIFE);
+    this.setUserPitch(userPitchHz);
+    this.voiced = false;
+    this.lastPitchHz = 0;
+    this.recentPitch = new Float64Array(3);
+    this.voicedHold = 0;
+    this.shiftPitchHz = 0;
+    this.shifter = new PitchShifter(sampleRate);
+    this.limiter = new PeakLimiter(sampleRate);
+    this.preset = null;
+    this.plan = voicePlan(null, 0);
+    this.ratio = 1;
+    this.formant = 1;
+    this.brightness = 0;
+    this.tiltBrightness = 0;
+    this.breath = 0;
+    this.mix = 0;
+    this.mixTarget = 0;
+    this.mixStep = 1 / (0.03 * sampleRate);
+    this.level = 0;
+    this.agc = 1;
+    this.inPower = 0;
+    this.outPower = 0;
+    this.speechEnergy = 0;
+    this.noiseEnergy = 0;
+    this.denoiseAmount = 0;
+    this.hp = { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0 };
+    this.noiseReady = false;
+    this.denoiseFrames = 0;
+    this.minFrames = 0;
+    this.minSlot = 0;
+    this.noisePower = new Float64Array(bins);
+    this.trackPower = new Float64Array(bins);
+    this.minPower = new Float64Array(bins);
+    this.cleanPower = new Float64Array(bins);
+    this.minHistory = new Float64Array(MIN_WINDOWS * bins);
+    this.seed = 0x2545f491;
+    const rise = size - this.tail / 2;
+    const fall = size - this.tail;
+    for (let i = 0; i < size; i += 1) {
+      const hann = i < rise
+        ? 0.5 - 0.5 * Math.cos((Math.PI * i) / rise)
+        : 0.5 - 0.5 * Math.cos((TWO_PI * (i - fall)) / this.tail);
+      this.window[i] = Math.sqrt(hann);
+      this.windowPower += hann / size;
+      this.synthesis[i] = i < fall
+        ? 0
+        : (0.5 - 0.5 * Math.cos((TWO_PI * (i - fall)) / this.tail)) / this.window[i];
+    }
+    this.dry = new Float64Array(this.tail + this.shifter.latency());
+    this.dryPos = 0;
+    this.setNoiseReduction(0.6);
+    this.setVoice(null);
+  }
+
+  latencySamples() {
+    return this.dry.length + this.limiter.latency();
+  }
+
+  setVoice(preset) {
+    this.preset = preset && preset.pitchHz > 0 ? preset : null;
+    this.mixTarget = this.preset ? 1 : 0;
+  }
+
+  setUserPitch(hz) {
+    if (!(hz > 50 && hz < 500)) return;
+    this.pitchHist.fill(0);
+    this.histWeight = 1;
+    this.histTotal = 0;
+    this.addPitchReading(hz, SEED_WEIGHT);
+  }
+
+  addPitchReading(hz, weight) {
+    const position = 12 * HIST_STEPS_PER_SEMITONE * Math.log2(hz / HIST_LOW_HZ);
+    const bin = clamp(Math.floor(position), 0, HIST_BINS - 1);
+    const amount = weight * this.histWeight;
+    this.pitchHist[bin] += amount;
+    this.histTotal += amount;
+    this.histWeight *= this.histGrowth;
+    if (this.histWeight > 1e6) {
+      const scale = 1 / this.histWeight;
+      for (let i = 0; i < HIST_BINS; i += 1) this.pitchHist[i] *= scale;
+      this.histTotal *= scale;
+      this.histWeight = 1;
+    }
+    const half = this.histTotal / 2;
+    let sum = 0;
+    for (let i = 0; i < HIST_BINS; i += 1) {
+      const next = sum + this.pitchHist[i];
+      if (next >= half) {
+        const fraction = this.pitchHist[i] > 0 ? (half - sum) / this.pitchHist[i] : 0.5;
+        this.userHz = HIST_LOW_HZ * Math.pow(2, (i + fraction) / (12 * HIST_STEPS_PER_SEMITONE));
+        return;
+      }
+      sum = next;
+    }
+  }
+
+  userPitchHz() {
+    return this.userHz;
+  }
+
+  setNoiseReduction(amount) {
+    const wanted = Number.isFinite(amount) ? clamp(amount, 0, 1) : 0;
+    if (wanted > 0 && this.denoiseAmount <= 0) {
+      this.noiseReady = false;
+      this.denoiseFrames = 0;
+      this.minFrames = 0;
+    }
+    this.denoiseAmount = wanted;
+    const w0 = (TWO_PI * 70) / this.sampleRate;
+    const alpha = Math.sin(w0) / Math.SQRT2;
+    const a0 = 1 + alpha;
+    const hp = this.hp;
+    hp.b0 = (1 + Math.cos(w0)) / 2 / a0;
+    hp.b1 = -(1 + Math.cos(w0)) / a0;
+    hp.b2 = hp.b0;
+    hp.a1 = (-2 * Math.cos(w0)) / a0;
+    hp.a2 = (1 - alpha) / a0;
+  }
+
+  stats() {
+    return {
+      userPitchHz: Math.round(this.userPitchHz()),
+      pitchHz: Math.round(this.lastPitchHz),
+      voiced: this.voiced,
+      ratio: this.ratio,
+      formant: this.formant,
+      mix: this.mix,
+      latencyMs: Math.round((this.latencySamples() / this.sampleRate) * 1000),
+    };
+  }
+
+  random() {
+    let x = this.seed;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    this.seed = x >>> 0;
+    return this.seed / 4294967296;
+  }
+
+  updateTilt() {
+    const tiltDb = this.brightness * 6;
+    const binHz = this.sampleRate / this.size;
+    for (let k = 0; k <= this.half; k += 1) {
+      const hz = Math.max(k * binHz, 60);
+      this.tilt[k] = Math.pow(10, (tiltDb * Math.log2(hz / 1000)) / 20);
+    }
+    this.tiltBrightness = this.brightness;
+  }
+
+  trackPitch(sample) {
+    this.decAcc += sample;
+    this.decCount += 1;
+    if (this.decCount < this.decimate) return;
+    this.pitchRing[this.pitchWrite] = this.decAcc / this.decCount;
+    this.pitchWrite = (this.pitchWrite + 1) % this.pitchRing.length;
+    this.decAcc = 0;
+    this.decCount = 0;
+  }
+
+  analysePitch() {
+    const n = this.pitchRing.length;
+    const write = this.pitchWrite;
+    for (let i = 0; i < n; i += 1) {
+      const j = write + i;
+      this.pitchScratch[i] = this.pitchRing[j < n ? j : j - n];
+    }
+    const hz = this.pitch.detect(this.pitchScratch);
+    this.voiced = hz >= 60 && hz <= 420;
+    if (!this.voiced) {
+      if (this.voicedHold > 0) {
+        this.voicedHold -= 1;
+        if (this.voicedHold === 0) this.shiftPitchHz = 0;
+      }
+      return;
+    }
+    const recent = this.recentPitch;
+    if (this.voicedHold === 0) recent[0] = recent[1] = recent[2] = hz;
+    recent[0] = recent[1];
+    recent[1] = recent[2];
+    recent[2] = hz;
+    const a = recent[0];
+    const b = recent[1];
+    const c = recent[2];
+    this.shiftPitchHz = Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
+    this.voicedHold = 5;
+    this.lastPitchHz = hz;
+    this.addPitchReading(this.shiftPitchHz, 1);
+  }
+
+  steer() {
+    const plan = voicePlanInto(this.plan, this.preset, this.userPitchHz());
+    this.ratio += 0.25 * (plan.ratio - this.ratio);
+    this.formant += 0.15 * (plan.formant - this.formant);
+    this.brightness += 0.15 * (plan.brightness - this.brightness);
+    this.breath += 0.15 * (plan.breath - this.breath);
+    if (Math.abs(this.brightness - this.tiltBrightness) > 2e-3) this.updateTilt();
+  }
+
+  process(input, output, count) {
+    const n = this.size;
+    const hop = this.hop;
+    const latency = this.dry.length;
+    const hp = this.hp;
+    const filtering = this.denoiseAmount > 0;
+    for (let i = 0; i < count; i += 1) {
+      const sample = input ? input[i] : 0;
+      let changed = sample;
+      if (filtering) {
+        changed = hp.b0 * sample + hp.b1 * hp.x1 + hp.b2 * hp.x2 - hp.a1 * hp.y1 - hp.a2 * hp.y2;
+        hp.x2 = hp.x1;
+        hp.x1 = sample;
+        hp.y2 = hp.y1;
+        hp.y1 = changed;
+      }
+      this.trackPitch(changed);
+      this.inFifo[this.fifoPos] = changed;
+      const delayed = this.dry[this.dryPos];
+      this.dry[this.dryPos] = sample;
+      this.dryPos = this.dryPos + 1 === latency ? 0 : this.dryPos + 1;
+      if (this.mix !== this.mixTarget) {
+        this.mix = this.mixTarget > this.mix
+          ? Math.min(this.mixTarget, this.mix + this.mixStep)
+          : Math.max(this.mixTarget, this.mix - this.mixStep);
+      }
+      const filtered = this.agc * this.outFifo[this.fifoPos - (n - hop)];
+      const period = this.shiftPitchHz > 0 ? this.sampleRate / this.shiftPitchHz : 0;
+      const wet = this.shifter.process(filtered, period, this.ratio);
+      const mixed = this.mix * wet + (1 - this.mix) * delayed;
+      output[i] = this.limiter.process(mixed);
+      this.fifoPos += 1;
+      if (this.fifoPos >= n) {
+        this.fifoPos = n - hop;
+        this.frame();
+        this.outFifo.set(this.accum.subarray(0, hop), 0);
+        this.accum.copyWithin(0, hop, hop + n);
+        this.accum.fill(0, n, n + hop);
+        this.inFifo.copyWithin(0, hop, n);
+        this.levelMatch();
+      }
+    }
+  }
+
+  levelMatch() {
+    if (this.inPower < 1e-6 || this.outPower < 1e-9) return;
+    const wanted = clamp(Math.sqrt(this.inPower / this.outPower), 0.5, 4);
+    this.agc += 0.05 * (wanted - this.agc);
+  }
+
+  denoise() {
+    if (!this.noiseReady) {
+      this.denoiseFrames += 1;
+      if (this.denoiseFrames < this.oversample) return;
+    }
+    const framesPerSecond = this.sampleRate / this.hop;
+    const track = 1 - Math.exp(-1 / (0.02 * framesPerSecond));
+    const windowFrames = Math.max(1, Math.floor(0.2 * framesPerSecond));
+    const bias = 4;
+    const floorGain = Math.pow(10, (-18 * this.denoiseAmount) / 20);
+    const bins = this.half + 1;
+    let newWindow = false;
+    if (this.noiseReady) {
+      this.minFrames += 1;
+      newWindow = this.minFrames >= windowFrames;
+    }
+    const finished = this.minSlot;
+    if (newWindow) {
+      this.minFrames = 0;
+      this.minSlot = (this.minSlot + 1) % MIN_WINDOWS;
+    }
+    const history = this.minHistory;
+    let speech = 0;
+    let noise = 0;
+    for (let k = 0; k <= this.half; k += 1) {
+      const power = this.anaMag[k] * this.anaMag[k];
+      if (!this.noiseReady) {
+        this.trackPower[k] = power;
+        for (let w = 0; w < MIN_WINDOWS; w += 1) history[w * bins + k] = power;
+      } else {
+        this.trackPower[k] += track * (power - this.trackPower[k]);
+      }
+      const tracked = this.trackPower[k];
+      if (newWindow || !this.noiseReady) {
+        if (this.noiseReady) history[finished * bins + k] = this.minPower[k];
+        this.minPower[k] = tracked;
+      } else if (tracked < this.minPower[k]) {
+        this.minPower[k] = tracked;
+      }
+      let minimum = this.minPower[k];
+      for (let w = 0; w < MIN_WINDOWS; w += 1) {
+        const value = history[w * bins + k];
+        if (value < minimum) minimum = value;
+      }
+      const estimate = bias * minimum;
+      this.noisePower[k] = estimate;
+      const expected = estimate + 1e-12;
+      const posterior = power / expected;
+      const prior = Math.max((0.96 * this.cleanPower[k]) / expected + 0.04 * Math.max(posterior - 1, 0), 1e-3);
+      const gain = Math.max(prior / (1 + prior), floorGain);
+      this.cleanPower[k] = gain * gain * power;
+      this.anaMag[k] *= gain;
+      this.gain[k] = gain;
+      speech += power;
+      noise += estimate;
+    }
+    this.noiseReady = true;
+    this.speechEnergy = speech;
+    this.noiseEnergy = noise;
+  }
+
+  frame() {
+    const n = this.size;
+    const half = this.half;
+    const hop = this.hop;
+    const re = this.re;
+    const im = this.im;
+    const buffer = this.frameBuffer;
+    this.framesSincePitch += 1;
+    if (this.framesSincePitch >= 4) {
+      this.framesSincePitch = 0;
+      this.analysePitch();
+    }
+    this.steer();
+    let energyIn = 0;
+    for (let i = 0; i < n; i += 1) {
+      const v = this.inFifo[i] * this.window[i];
+      const j = i + half;
+      buffer[j < n ? j : j - n] = v;
+      energyIn += v * v;
+    }
+    this.level = Math.sqrt(((energyIn / n) * 0.375) / this.windowPower);
+    this.fft.forward(buffer, re, im);
+    const anaMag = this.anaMag;
+    for (let k = 0; k <= half; k += 1) anaMag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+    let speech = true;
+    if (this.denoiseAmount > 0) {
+      this.denoise();
+      speech = this.speechEnergy > 3 * this.noiseEnergy;
+    } else {
+      this.gain.fill(1);
+    }
+    const cre = this.cre;
+    const cim = this.cim;
+    let spectrumIn = 0;
+    for (let k = 0; k <= half; k += 1) {
+      spectrumIn += anaMag[k] * anaMag[k];
+      cre[k] = Math.log(anaMag[k] + EPS);
+      cim[k] = 0;
+    }
+    const cepstrum = this.cepstrum;
+    this.fft.inverse(cre, cim, cepstrum);
+    cepstrum.fill(0, this.lifter, n - this.lifter + 1);
+    this.fft.forward(cepstrum, cre, cim);
+    const envelope = this.envelope;
+    for (let k = 0; k <= half; k += 1) envelope[k] = Math.exp(cre[k]);
+    const formant = this.formant;
+    const breath = this.breath;
+    const breathing = breath > 1e-3;
+    let meanSource = 0;
+    if (breathing) {
+      for (let k = 1; k < half; k += 1) meanSource += anaMag[k] / (envelope[k] + EPS);
+      meanSource /= half - 1;
+    }
+    const binHz = this.sampleRate / n;
+    const tilt = this.tilt;
+    const gain = this.gain;
+    let spectrumOut = 0;
+    for (let k = 0; k <= half; k += 1) {
+      const source = k / formant;
+      const low = Math.floor(source);
+      const env = low >= half ? envelope[half] : envelope[low] + (envelope[low + 1] - envelope[low]) * (source - low);
+      const factor = (gain[k] * env * tilt[k]) / (envelope[k] + EPS);
+      let outRe = re[k] * factor;
+      let outIm = im[k] * factor;
+      if (breathing) {
+        const air = breath * meanSource * env * 0.6 * clamp((k * binHz - 800) / 3000, 0, 1);
+        if (air > 0) {
+          const slot = (this.random() * 1024) | 0;
+          outRe += air * this.noiseCos[slot];
+          outIm += air * this.noiseSin[slot];
+        }
+      }
+      re[k] = outRe;
+      im[k] = outIm;
+      spectrumOut += outRe * outRe + outIm * outIm;
+    }
+    im[0] = 0;
+    im[half] = 0;
+    if (speech) {
+      const scale = 2 / (n * n * this.windowPower);
+      const smoothing = 1 - Math.exp(-hop / (0.3 * this.sampleRate));
+      this.inPower += smoothing * (spectrumIn * scale - this.inPower);
+      this.outPower += smoothing * (spectrumOut * scale - this.outPower);
+    }
+    this.fft.inverse(re, im, buffer);
+    const scale = this.olaScale;
+    const fall = n - this.tail;
+    for (let i = fall; i < n; i += 1) {
+      const j = i + half;
+      this.accum[i - fall] += buffer[j < n ? j : j - n] * this.synthesis[i] * scale;
+    }
+  }
+}
+
+if (typeof registerProcessor === "function" && typeof AudioWorkletProcessor === "function") {
+  registerProcessor("fm-call-voice", class extends AudioWorkletProcessor {
+    constructor(options) {
+      super();
+      const seed = Number(options?.processorOptions?.userPitchHz) || 0;
+      this.engine = new VoiceEngine(sampleRate, seed);
+      this.engine.setVoice(options?.processorOptions?.preset || null);
+      this.scratch = new Float32Array(128);
+      this.sinceReport = 0;
+      this.running = true;
+      this.port.onmessage = (event) => {
+        const data = event.data || {};
+        if (data.type === "voice") this.engine.setVoice(data.preset || null);
+        else if (data.type === "pitch") this.engine.setUserPitch(Number(data.hz) || 0);
+        else if (data.type === "stop") this.running = false;
+      };
+    }
+
+    process(inputs, outputs) {
+      const output = outputs[0];
+      if (!output || !output.length) return this.running;
+      const channel = output[0];
+      const count = channel.length;
+      const input = inputs[0] && inputs[0].length ? inputs[0][0] : null;
+      if (!input && this.scratch.length !== count) this.scratch = new Float32Array(count);
+      this.engine.process(input || this.scratch, channel, count);
+      for (let c = 1; c < output.length; c += 1) output[c].set(channel);
+      this.sinceReport += count;
+      if (this.sinceReport >= sampleRate) {
+        this.sinceReport = 0;
+        this.port.postMessage({ type: "stats", ...this.engine.stats() });
+      }
+      return this.running;
+    }
+  });
+}

@@ -519,6 +519,8 @@ def test_core_lockdown_sequence(tmp_path):
     ([{"id": "n1", "voter": True, "reachable": True},
       {"id": "n2", "voter": True, "reachable": True},
       {"id": "n3", "voter": True, "reachable": True}], "no leader"),
+    ([{"id": "n%d" % i, "voter": True, "reachable": i < 4, "leader": i == 2}
+      for i in range(1, 5)], "2 of 4"),
 ])
 def test_lockdown_keeps_rqlite_when_quorum_needs_it(tmp_path, nodes, reason):
     r, actions, _ = responder(tmp_path, rqlite=FakeRqlite(nodes))
@@ -527,6 +529,14 @@ def test_lockdown_keeps_rqlite_when_quorum_needs_it(tmp_path, nodes, reason):
     assert not os.path.exists(r.rqlite_marker)
     firewall = [c for c in actions.calls if c[0] == "firewall"][0][1]
     assert "tcp dport 4002 accept" in firewall  # Raft stays up
+
+
+def test_lockdown_stops_rqlite_when_the_others_are_a_majority_of_four(tmp_path):
+    nodes = [{"id": "n%d" % i, "voter": True, "reachable": True, "leader": i == 2}
+             for i in range(1, 5)]
+    r, actions, _ = responder(tmp_path, rqlite=FakeRqlite(nodes))
+    r.handle(ids.Event("ssh_unknown_key", "lockdown", "x"))
+    assert ("stop", ("rqlite.service",)) in actions.calls
 
 
 def test_lockdown_keeps_rqlite_when_another_node_is_quarantined(tmp_path):

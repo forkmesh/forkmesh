@@ -65,6 +65,9 @@ the app on CPython, rqlite, the Go daemon and Git gateway) and **runners**
   `127.0.0.1:8080/readyz` and `/api/version` to report the new `BUILD_REV`; a
   failing node is relinked to its previous release and the rollout stops.
 - **Migrations** run once, through any healthy rqlite node.
+- **Rollout order** rotates per release: `rollout_order(fleet, rev=...)`
+  sorts the cores by sha256 of `rev:name`, so the first core (the canary of
+  `--parallel`) changes from release to release (see "No fixed main node").
 - **No leader.** Cron, Durable Object placement, DNS health votes and the
   shared certificate are leaderless (see [docs/host/README.md](../host/README.md)
   and OPERATIONS.md section 4).
@@ -226,16 +229,17 @@ the dialog the plan, the quorum impact and whether it is allowed;
 
 | # | step | about | what it does |
 |---|------|-------|--------------|
-| 1 | preflight | 5 s | `nN` must be a core in `fleet.toml`. Reads `/nodes` from a peer and refuses when fewer than 3 cores or 3 healthy rqlite voters would remain, or when the healthy voters left would not be a majority of the voters left. Refuses while an add-core run is unfinished. Checks the node's identity over SSH (below). |
-| 2 | leader | 15 s | Only if `nN` leads rqlite: `POST /leader` on it (rqlite steps down and hands leadership over), then waits until a peer reports another leader. |
-| 3 | drain | 75 s | `next_dns` drain: out of `app`/`world` (production and `.next`), held so the health loop never re-adds it; refused if it is the last node in DNS. Then waits the record TTL (60 s) plus 15 s. The drain time is recorded, so a resume waits only the remainder. |
-| 4 | stop | 15 s | IDS expectation, then `systemctl disable --now` the app, mirror daemon, Caddy, certsync, request-rules and TURN units on the node. |
-| 5 | rqlite | 30 s | Rechecks quorum, stops and disables `rqlite.service` on the node, then `DELETE /remove {"id": "nN"}` through a healthy peer, and waits until `/nodes` no longer lists it and a leader is up. Stopping first keeps a removed node from campaigning against the cluster. |
-| 6 | fleet | 2 s | Removes the `[[nodes]]` block from `deploy/fleet.toml` (`remove_core_block`, the inverse of `upsert_core_block`; the rest of the file is untouched) and drops the node's `wg_pubkeys` and `rqlite_nonvoters` entries from `fleet-state.json`. |
-| 7 | peers | 240 s | Every remaining core, one at a time, through `roll --steps files,start`: drain, re-render without `nN` (WireGuard peer, nftables allowances, mesh peers, certsync, rqlite node map), health gate, undrain. `wg-quick` reloads with `syncconf`, so the stale peer goes; the step then checks `wg show wg0 peers` no longer lists its key. Finished peers are recorded for a resume. |
-| 8 | deregister | 10 s | Forgets `nN` in `dns-health.json`, deletes its own `nN.next.forkmesh.com` A/AAAA records, and rewrites the mail SPF record when core mail is set up. Backups, status, autodeploy and `roll` read the fleet file, so nothing else lists it. |
-| 9 | commit | 2 s | Commits `deploy/fleet.toml` without the block on `fleet/remove-core-nN`, based on `main`, with the same plumbing as add-core (HEAD, index and working tree untouched), and prints `git -C <repo> merge --autostash --no-ff fleet/remove-core-nN`. Nothing is pushed. |
-| 10 | destroy | 30 s | Only with `--destroy-instance`. Looks the instance up by label at its provider, applies the provider's label/tag guard, requires the recorded instance id and address to match, deletes it, and forgets the label in `fleet-instances.json`. |
+| 1 | preflight | 5 s | `nN` must be a core in `fleet.toml`. Reads `/nodes` from a peer and refuses when fewer than 3 cores or 3 healthy rqlite voters would remain, or when the healthy voters left would not be a majority of the voters left. A reachable non-voter core that the next step promotes counts as a voter here. Refuses while an add-core run is unfinished. Checks the node's identity over SSH (below). |
+| 2 | promote | 120 s | Only when `nN` is a voter and the voters left would be fewer than 3 or even, and a reachable non-voter core exists (`promotion_candidate`, lowest number first). That core is drained, removed from rqlite as a non-voter, re-rendered as a voter (`promote_core_block` drops `rqlite_voter = false` from its block; `fleet-state.json` drops it from `rqlite_nonvoters`; its `rqlite.service` gets `-join <voters>`), its rqlite restarted, and the step waits until `/nodes` lists it as a reachable voter, then gates on health and undrains it. Otherwise it does nothing. |
+| 3 | leader | 15 s | Only if `nN` leads rqlite: `POST /leader` on it (rqlite steps down and hands leadership over), then waits until a peer reports another leader. |
+| 4 | drain | 75 s | `next_dns` drain: out of `app`/`world` (production and `.next`), held so the health loop never re-adds it; refused if it is the last node in DNS. Then waits the record TTL (60 s) plus 15 s. The drain time is recorded, so a resume waits only the remainder. |
+| 5 | stop | 15 s | IDS expectation, then `systemctl disable --now` the app, mirror daemon, Caddy, certsync, request-rules and TURN units on the node. |
+| 6 | rqlite | 30 s | Rechecks quorum, stops and disables `rqlite.service` on the node, then `DELETE /remove {"id": "nN"}` through a healthy peer, deletes its `cluster_members` row through a healthy peer (so its `/status` core row goes at once instead of paging red for a day; [../app/public-pages.md](../app/public-pages.md)), and waits until `/nodes` no longer lists it and a leader is up. Stopping first keeps a removed node from campaigning against the cluster. |
+| 7 | fleet | 2 s | Removes the `[[nodes]]` block from `deploy/fleet.toml` (`remove_core_block`, the inverse of `upsert_core_block`; the rest of the file is untouched) and drops the node's `wg_pubkeys` and `rqlite_nonvoters` entries from `fleet-state.json`. |
+| 8 | peers | 240 s | Every remaining core, one at a time, through `roll --steps files,start`: drain, re-render without `nN` (WireGuard peer, nftables allowances, mesh peers, certsync, rqlite node map), health gate, undrain. `wg-quick` reloads with `syncconf`, so the stale peer goes; the step then checks `wg show wg0 peers` no longer lists its key. Finished peers are recorded for a resume. |
+| 9 | deregister | 10 s | Forgets `nN` in `dns-health.json`, deletes its own `nN.next.forkmesh.com` A/AAAA records, and rewrites the mail SPF record when core mail is set up. Backups, status, autodeploy and `roll` read the fleet file, so nothing else lists it. |
+| 10 | commit | 2 s | Commits `deploy/fleet.toml` without the block (and with the promoted core's `rqlite_voter = false` gone) on `fleet/remove-core-nN`, based on `main`, with the same plumbing as add-core (HEAD, index and working tree untouched), and prints `git -C <repo> merge --autostash --no-ff fleet/remove-core-nN`. Nothing is pushed. |
+| 11 | destroy | 30 s | Only with `--destroy-instance`. Looks the instance up by label at its provider, applies the provider's label/tag guard, requires the recorded instance id and address to match, deletes it, and forgets the label in `fleet-instances.json`. |
 
 Without `--destroy-instance` the instance keeps running (and billing) and
 stays in `fleet-instances.json`, so the desktop still lists it. Running
@@ -281,6 +285,77 @@ Tests: `python3 -m pytest deploy/tests/test_next_remove_core.py` (quorum
 rules, leader handover, dry-run output, the plumbing commit in a temp repo,
 the identity check, and that the instance is deleted only with the flag;
 fake SSH, rqlite, Cloudflare and provider; no network).
+
+### Why a promotion step (2026-10-13)
+
+Owner request: "bring up a new core and take one down at any time". With 3
+voters, `add-core` makes `n4` a non-voter (odd voters, above). Removing any of
+the original three then left 2 healthy voters and was refused, so a new core
+could never replace an old one without hand work on rqlite. The promote step
+turns the spare non-voter into a voter first, keeping 3 voters, so
+`add-core` followed by `remove-core n1` (or any core) works with no manual
+step. rqlite cannot change a member's suffrage in place: a member that
+rejoins with the same id and address is ignored, so the non-voter is removed
+first and rejoins with `-join` (the `--replacement` render) as a voter; its
+Raft log stays on disk and catches up from the leader.
+
+### Replace a core: add one, then remove one
+
+```sh
+cd ~/projects/forkmesh/src
+python3 tools/next_fleet.py add-core                 # plan (dry run)
+python3 tools/next_fleet.py add-core --execute       # nN, non-voter, in DNS (~14 min)
+git merge --autostash --no-ff fleet/add-core-nN
+python3 tools/next_fleet.py remove-core n1           # plan: promotes nN, then removes n1
+python3 tools/next_fleet.py remove-core n1 --execute
+git merge --autostash --no-ff fleet/remove-core-n1
+python3 tools/next_fleet.py remove-core n1 --destroy-instance --execute   # later, when sure
+```
+
+The desktop runs the same two commands from Network → Hosts (**Add core
+node**, then **Remove…** on the old core's row).
+
+## No fixed main node
+
+No core is special. Every role is either rendered the same for every core
+from `deploy/fleet.toml` (a fleet change re-renders and rolls the cores, which
+`add-core` and `remove-core` do) or chosen at run time among the live cores.
+Audit of 2026-10-13, with what changed:
+
+| Role | How it is chosen |
+| --- | --- |
+| rqlite bootstrap, join | Every voter renders `-bootstrap-expect <voters> -join <all voters>`; a joining or promoted core `-join`s the others. No bootstrap node. |
+| rqlite leader | Raft elects it. `remove-core` hands it over first when the removed core leads. |
+| Voters after a removal | `remove-core` promotes a non-voter when needed (above). |
+| Migrations (`next_deploy migrate`, `next_vault`, `status_history_repair`) | The first core in fleet order whose rqlite has a leader (`find_rqlite_node`); a dead core is skipped. |
+| Rollout order (`next_deploy restart`) | Changed: the first core of a rollout rotates per release (`rollout_order(fleet, rev=...)`, sha256 of `rev:name`), so no core is always the canary. Before, `n1` always went first. |
+| Self-deploy (`deploy/core/self_deploy.py`) | Changed: the order is rendezvous per approval (sha256 of `id:name`), the first core to activate migrates, and a core without a fresh `cluster_members` heartbeat neither blocks the others nor holds the approval open ("not live, left for a roll"). Before, fleet order: `n1` always migrated, and a down `n1` stalled every self-deploy. |
+| Backups (`fmnext-backup`) | The current Raft leader (`find_leader`). |
+| Certificates (certsync) | The live core first in rendezvous order issues; the others pull. |
+| Cron, durable objects, DNS reconciler, autoscaler | `rotation_owner` / rendezvous over the live `cluster_members`. |
+| DNS records, health loop | Every core in `fleet.toml`; new cores are held until `undrain`. |
+| WireGuard, nftables, mesh peers, certsync peers, IDS keys, git upstreams | Full mesh rendered from `fleet.toml`. |
+| Runner-pool and hosted-git core lists | Changed: rendered into `app.env` as `FORKMESH_VAR_RUNNER_POOL_TARGET_NODES` and `FORKMESH_VAR_HOSTED_GIT_CORE_NODES` from the fleet's cores (`core_role_settings`), overriding the fixed `fmnext-n1,fmnext-n2,fmnext-n3` in `app/wrangler.toml` (the hosted list is empty when `[hosted] enabled = false`). The autoscaler's own default comes from the same variable, then `FORKMESH_MESH_PEERS`. |
+| IDS self-stop of rqlite in a lockdown | Changed: needs the other reachable voters to be a majority of all voters (and at least 2); it was a fixed 2, which with 4 voters could stop a node whose loss broke quorum. |
+| Release seeding (`forkmesh-release-host.py`, `mac_adhoc_publish.py`) | Changed: the cores come from `fleet.toml` (`fleet_core_hosts`); `config/fanout/release-hosts` keeps only its non-core lines when the fleet loads. The ad hoc publisher's tester lookup, mail and pings fall over to the next core instead of using only the first line. |
+| Codemagic cores push, `next_git_host` | Pushes to every core. |
+| Status page | Core rows come from `cluster_members`, runner rows from `runner_nodes`. |
+| `/nodes` reads, quorum checks | The first reachable core, any will do. |
+
+Kept as is, and why:
+
+- The edge serves Git refs that two distinct nodes sign alike
+  (`edge_routing.py`, `mirrors.PEER_QUORUM_MIN_NODES = 2`). That is a trust
+  rule over signed proofs, not a core count, and it names no core.
+- Durable Object rooms are still called "mainnode" in the code
+  (`FORKMESH_MAINNODE_ROOM`); they are placed by rendezvous like every other
+  object.
+- Cores' WireGuard addresses are `10.77.0.<n>`; `certsync` and `fleet_peers`
+  treat `10.77.0.21`-`29` as autoscaled replicas, so core numbers stay below 21.
+- `deploy/tests/test_no_main_node.py` renders a fleet with `n4` added and one
+  with `n1` removed: no rendered file of the second names `n1`, its address or
+  its WireGuard IP, every voter's rqlite flags match, and the core lists
+  follow the fleet.
 
 ## Node addresses
 

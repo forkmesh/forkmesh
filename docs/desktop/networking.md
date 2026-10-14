@@ -731,7 +731,11 @@ quorum. Only one removal runs at a time; while it runs, that row reads
 `FMNEXT-REMOVE-CORE` prefix and "Removing" wording.
 
 - **Plan.** `next_fleet.py remove-core-plan nN --json` gives what will
-  happen, the voters before and after, the leader and the provider. When the
+  happen, the voters before and after, the leader and the provider. When a
+  non-voter core must become a voter first so 3 voters remain (`promote`,
+  for example removing `n1` after Add core node made `n4` a non-voter), the
+  summary says so first: "make n4 an rqlite voter first … so 3 voters
+  remain" ([../deploy/README.md](../deploy/README.md#removing-a-core-node)). When the
   tool refuses (quorum, an unreachable cluster, an unfinished add-core) the
   reason is shown in red and the confirmation is disabled.
 - **Instance.** "Also delete the cloud instance (irreversible)" reloads the
