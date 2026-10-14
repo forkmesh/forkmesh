@@ -2344,6 +2344,38 @@ merge working as designed, so it is now an ordinary notice
 (`WorktreeMergeStep::error = false`), and it names the branch: "Can't merge
 <branch> yet: the checkout has uncommitted changes …".
 
+## Merge & clean up with an agent's uncommitted work (2026-10-14)
+
+On 2026-10-14 a phone **Merge & clean up** of `2001-customizable-bottom-navigation`
+was refused twice with "Worktree … has uncommitted changes — commit or stash
+them first (they'd be lost when it's deleted)". The agent had stopped without
+committing its last edits. The notice gave no file names and left the user to
+commit the edits somewhere else. They committed them six minutes later, and the
+merge then went through.
+
+`mergeWorktreeIntoMain` now records, in `WorktreeMergeFlow`, which agent
+sessions share the branch: whether one is still working
+(`agentSessionWorkInFlight`, which sets `agentWorking`) and which session has
+stopped (`idleAgentId`). When `prepareWorktreeMerge` finds the branch's
+worktree dirty:
+
+- **Merge & clean up, and the branch's agent has stopped**: the desktop stages
+  everything and commits it on the branch as "Agent #N: commit the changes it
+  left uncommitted", logs which files it committed and goes on with the merge.
+  The worktree is removed only after this commit, so nothing is lost. If the
+  commit fails, nothing is merged and the notice gives git's reason.
+- **The agent is still working**: "Worktree <branch> has uncommitted changes
+  (files) and its agent is still working — merge it once the agent finishes."
+  Nothing is committed while an agent is still writing.
+- **No agent owns the branch** (the user's own worktree), or a plain
+  **Merge**, which keeps the worktree: the merge is refused as before, so the
+  user's own work is never committed for them. The notice now lists the files
+  (`describeDirtyPaths`, up to five) and gives the right reason: the edits
+  would be lost when the worktree is deleted, or a plain merge would leave
+  them out.
+
+Tested in `checkErrorLogTriage` (`desktop/tests/test_window_resize.cpp`).
+
 ## After a merge from the Git page (2026-09-29)
 
 Merging the branch shown on the Git page (either **Merge to main** or
