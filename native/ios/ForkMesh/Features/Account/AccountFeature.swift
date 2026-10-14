@@ -64,6 +64,13 @@ final class SignInCoordinator {
             isAuthenticated: { auth.isAuthenticated })
     }
 
+    func requireLocalAccess(action: String) async -> Bool {
+        if needsInstance {
+            return true
+        }
+        return await requireAccount(action: action)
+    }
+
     /// `GuestSignInSheet.show` without the hand-off: the pick, or nil.
     func showGuestSheet(action: String) async -> AuthFlowStart? {
         return await withCheckedContinuation { (continuation: CheckedContinuation<AuthFlowStart?, Never>) in
@@ -130,6 +137,13 @@ enum AccountFeature {
             return true
         }
         return await coordinator.requireAccount(action: action)
+    }
+
+    static func requireLocalAccess(action: String) async -> Bool {
+        guard let coordinator = Services.get(SignInCoordinator.self) else {
+            return true
+        }
+        return await coordinator.requireLocalAccess(action: action)
     }
 
     static func openSignIn(_ start: AuthFlowStart = .login) {
