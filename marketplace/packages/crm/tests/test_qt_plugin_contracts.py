@@ -725,7 +725,7 @@ def test_the_web_contact_row_offers_the_same_right_click_moves():
     # The same three membership verbs the desktop uses.
     assert "setViews: [view.id]" in menu
     assert "views: [view.id]" in menu
-    assert "removeCrmContactsFromSheet([id], open.id)" in menu
+    assert "removeCrmContactsFromSheet(ids, open.id)" in menu
     assert "removeViews: [sheetId]" in WEB_SCRIPT
     # A shared sheet is read-only, so it gets no move menu at all.
     assert "crmActiveShared()" in menu

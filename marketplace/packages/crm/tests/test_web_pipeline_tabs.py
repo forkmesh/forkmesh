@@ -132,7 +132,7 @@ def test_new_lists_pick_a_pipeline_and_new_contacts_join_only_plain_lists():
 
 def test_contacts_move_to_pipeline_lists_and_leave_lists_that_have_siblings():
     menu = _function("openCrmContactMenu")
-    assert "crmMenuGroup(crmPipelineMoveItems([id]))" in menu
+    assert "crmMenuGroup(crmPipelineMoveItems(ids))" in menu
     assert '{ heading: "Move to pipeline list" }' in menu
     assert "(!open.flow || crmPipelineLists(open.flow).length > 1)" in menu
     assert 'crmOrganizationPath("/contacts/bulk"), "POST", { edits }' in _function("crmBulkMoveContacts")

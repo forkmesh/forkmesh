@@ -225,7 +225,7 @@ check(["name", "phone", "notes", "lastContactedAt", "commits"].every((field) => 
 check(!shown().includes("region") && !shown().includes("twitter"),
       "the All view leaves out another list's column and a deleted one");
 page.selectCrmTableView("view-a");
-same(shown(), ["stage", "name"], "a custom view shows its own columns in its own order");
+same(shown(), ["stage", "name", "mastodon-latest"], "a custom view shows its own columns in its own order, the desktop's computed ones too");
 page.selectCrmTableView("view-gone");
 same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
 
