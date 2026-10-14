@@ -15,13 +15,16 @@ public enum ChatLinkPreviewState: Equatable, Sendable {
 public final class ChatLinkPreviewService {
     public static let enabledKey = "chat/link-previews/enabled"
     public static let maxEntries = 400
-    public static let maxPageBytes = 768 * 1024
+    public static let maxPageBytes = 2 * 1024 * 1024
     public static let maxImageBytes = 6 * 1024 * 1024
     public static let maxRedirects = 4
     public static let freshFor: TimeInterval = 3 * 24 * 3600
     public static let missFor: TimeInterval = 6 * 3600
     public static let userAgent =
         "Mozilla/5.0 (compatible; ForkMeshBot/1.0; +https://forkmesh.com/bot) facebookexternalhit/1.1 Twitterbot/1.0"
+    public static let browserAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+    public static let refusals: Set<Int> = [401, 403, 429, 503]
 
     private var states: [String: ChatLinkPreviewState] = [:]
     @ObservationIgnored private var order: [String] = []
@@ -199,13 +202,14 @@ public final class ChatLinkPreviewService {
     }
 
     public nonisolated static func fetch(
-        _ start: URL, http: HTTPClient, accept: String, limit: Int, truncate: Bool = false, timeout: TimeInterval = 8
+        _ start: URL, http: HTTPClient, accept: String, limit: Int, truncate: Bool = false, timeout: TimeInterval = 8,
+        agent: String = userAgent
     ) async -> HTTPResponse? {
         var url = start
         let began = Date()
         for _ in 0...maxRedirects {
             guard ChatLinkPreviewParsing.previewable(url.absoluteString) != nil else { return nil }
-            let headers: HTTPHeaders = ["Accept": accept, "User-Agent": userAgent, "Accept-Language": "en"]
+            let headers: HTTPHeaders = ["Accept": accept, "User-Agent": agent, "Accept-Language": "en"]
             let request = HTTPRequest(
                 url: url, headers: headers, timeout: timeout, followRedirects: false, maxResponseBytes: limit)
             guard let streamed = try? await http.stream(request) else { return nil }
@@ -253,7 +257,8 @@ public final class ChatLinkPreviewService {
         found.url = url.absoluteString
         if let known = site ?? (found.siteKey.isEmpty ? nil : ChatLinkSites.site(key: found.siteKey)) {
             found.siteKey = known.key
-            if found.siteName.isEmpty || found.siteName.count > 40 { found.siteName = known.name }
+            let host = ChatLinkSites.bareHost(url.host ?? "")
+            found.siteName = known.key == "stackoverflow" && host != "stackoverflow.com" ? host : known.name
             if found.kind == .page { found.kind = known.kind }
         }
         if found.siteName.isEmpty { found.siteName = ChatLinkSites.bareHost(landed.host ?? url.host ?? "") }
@@ -266,9 +271,24 @@ public final class ChatLinkPreviewService {
     }
 
     nonisolated static func page(_ url: URL, http: HTTPClient, fallback: ChatLinkPreview?) async -> ChatLinkPreview? {
-        guard let response = await fetch(url, http: http, accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5", limit: maxPageBytes, truncate: true),
-            response.ok || response.status == 206
-        else { return fallback }
+        var best = fallback
+        for agent in [userAgent, browserAgent] {
+            guard let response = await fetch(
+                url, http: http, accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5", limit: maxPageBytes, truncate: true,
+                agent: agent)
+            else { continue }
+            if refusals.contains(response.status) { continue }
+            guard response.ok || response.status == 206 || ((100...199).contains(response.status) && !response.body.isEmpty) else {
+                return fallback
+            }
+            guard let found = parsePage(response, url: url, fallback: fallback), !found.isEmpty else { continue }
+            if best == nil || best?.isEmpty == true || !found.imageUrl.isEmpty { best = found }
+            if !found.imageUrl.isEmpty || !found.detail.isEmpty { return found }
+        }
+        return best
+    }
+
+    nonisolated static func parsePage(_ response: HTTPResponse, url: URL, fallback: ChatLinkPreview?) -> ChatLinkPreview? {
         let finalUrl = response.header("x-forkmesh-final-url").flatMap { URL(string: $0) } ?? url
         let type = (response.header("content-type") ?? "").lowercased()
         if type.hasPrefix("image/") {
@@ -405,6 +425,26 @@ public final class ChatLinkPreviewService {
                 detail: clip(ChatLinkPreviewParsing.decodeEntities(data.str("short_description")), ChatLinkPreviewParsing.maxDetail),
                 author: clip(data.strings("developers").joined(separator: ", "), 80), siteName: site.name, siteKey: site.key,
                 imageUrl: ChatLinkPreviewParsing.resolve(data.str("header_image"), against: url), kind: .app)
+        case .stackExchange:
+            guard let question = ChatLinkPreviewParsing.stackExchangeQuestion(url) else { return nil }
+            let kind = url.path.hasPrefix("/a/") ? "answers" : "questions"
+            guard let object = await json(
+                "https://api.stackexchange.com/2.3/\(kind)/\(question.id)?site=\(question.site)&filter=default", http: http),
+                let item = object.maps("items").first
+            else { return nil }
+            var parts: [String] = []
+            let score = item.int("score")
+            parts.append("\(score) \(score == 1 ? "vote" : "votes")")
+            if item["answer_count"] != nil {
+                let answers = item.int("answer_count")
+                parts.append("\(answers) \(answers == 1 ? "answer" : "answers")")
+            }
+            if item.bool("is_answered") { parts.append("answered") }
+            return ChatLinkPreview(
+                url: link, title: clip(ChatLinkPreviewParsing.decodeEntities(item.str("title")), ChatLinkPreviewParsing.maxTitle),
+                detail: parts.joined(separator: " \u{00B7} "),
+                author: clip(ChatLinkPreviewParsing.decodeEntities(item.obj("owner").str("display_name")), 80),
+                siteName: site.name, siteKey: site.key, kind: .reference)
         case .xkcd:
             guard let number = ChatLinkPreviewParsing.xkcdNumber(url),
                 let object = await json(number.isEmpty ? "https://xkcd.com/info.0.json" : "https://xkcd.com/\(number)/info.0.json", http: http)
