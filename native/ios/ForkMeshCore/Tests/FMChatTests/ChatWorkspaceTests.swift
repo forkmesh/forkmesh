@@ -241,6 +241,35 @@ final class ChatNewMessageTests: XCTestCase {
         await h.close()
     }
 
+    func testTheChatTabReopensTheLastConversation() async throws {
+        let store = InMemoryKeyValueStore()
+        let (first, h1) = try await hub()
+        first.workspace = ChatWorkspace(store: store, scope: "next")
+        first.restoreLastConversation()
+        XCTAssertEqual(first.currentConversation, "#general")
+        first.open("#ops")
+        XCTAssertEqual(ChatWorkspace(store: store, scope: "next").lastConversation, "#ops")
+        XCTAssertEqual(ChatWorkspace(store: store, scope: "other").lastConversation, "")
+        await h1.close()
+
+        let (second, h2) = try await hub()
+        second.workspace = ChatWorkspace(store: store, scope: "next")
+        second.restoreLastConversation()
+        XCTAssertEqual(second.currentConversation, "#ops")
+        XCTAssertTrue(second.relay.channels.contains("#ops"))
+        second.select("#random")
+        second.restoreLastConversation()
+        XCTAssertEqual(second.currentConversation, "#random")
+        await h2.close()
+
+        let (third, h3) = try await hub()
+        third.workspace = ChatWorkspace(store: store, scope: "next")
+        third.switchConversation("@peer-9")
+        third.restoreLastConversation()
+        XCTAssertEqual(third.currentConversation, "@peer-9", "a conversation opened from a notification wins")
+        await h3.close()
+    }
+
     func testWithoutAnAccountAnOnlinePeerGetsARelayDirectMessage() async throws {
         let (hub, h) = try await hub()
         try await h.sendProtected([

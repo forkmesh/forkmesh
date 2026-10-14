@@ -77,6 +77,8 @@ class RelayRoom(
     @Volatile
     var onLogLine: ((String) -> Unit)? = null
 
+    var onConversationSwitched: ((String) -> Unit)? = null
+
     @Volatile
     var frameObserver: ((Map<String, Any?>) -> Unit)? = null
 
@@ -777,6 +779,7 @@ class RelayRoom(
         this.conversation = conversation
         unread.remove(conversation)
         unseenBadge.remove(conversation)
+        onConversationSwitched?.invoke(conversation)
         notifyListeners()
     }
 

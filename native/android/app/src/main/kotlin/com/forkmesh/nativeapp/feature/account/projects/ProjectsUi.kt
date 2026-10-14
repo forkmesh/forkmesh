@@ -41,12 +41,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -57,7 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,12 +63,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.ui.navigation.AppNavigation
-import kotlin.math.roundToInt
 import com.forkmesh.nativeapp.account.projects.LegalLinks
 import com.forkmesh.nativeapp.account.projects.ProbeResult
 import com.forkmesh.nativeapp.account.projects.Project
@@ -238,32 +229,7 @@ object ProjectDrawer {
 fun ProjectDrawerHost() {
     val projects = Services.get<ProjectsService>() ?: return
     val open = ProjectDrawer.isOpen
-    val density = LocalDensity.current
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var panelWidth by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(open) { if (open) dragOffset = 0f }
-    val dragState = rememberDraggableState { delta -> dragOffset = (dragOffset + delta).coerceIn(-panelWidth, 0f) }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .then(
-                if (open) {
-                    Modifier.draggable(
-                        state = dragState,
-                        orientation = Orientation.Horizontal,
-                        onDragStopped = { velocity ->
-                            if (dragOffset < -panelWidth * 0.3f || velocity < -with(density) { 600.dp.toPx() }) {
-                                ProjectDrawer.close()
-                            } else {
-                                dragOffset = 0f
-                            }
-                        },
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
+    Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(
             visible = open,
             enter = fadeIn(tween(ProjectDrawer.ANIMATION_MS)),
@@ -291,8 +257,6 @@ fun ProjectDrawerHost() {
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(ProjectDrawer.WIDTH_FRACTION)
-                    .onSizeChanged { panelWidth = it.width.toFloat() }
-                    .offset { IntOffset(dragOffset.roundToInt(), 0) }
                     .background(Fm.colors.bgRaised)
                     .testTag("project-drawer"),
             ) {
