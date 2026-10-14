@@ -74,8 +74,8 @@ enum FmColors {
     static let darkBgElevated = Color(fmARGB: 0xFF26262A)
 
     static let textPrimary = Color(fmARGB: 0xFF0A0A0A)
-    static let textSecondary = Color(fmARGB: 0x990A0A0A)
-    static let textTertiary = Color(fmARGB: 0x660A0A0A)
+    static let textSecondary = Color(fmARGB: 0xB80A0A0A)
+    static let textTertiary = Color(fmARGB: 0x990A0A0A)
     static let textDisabled = Color(fmARGB: 0x400A0A0A)
 
     static let darkTextPrimary = Color(fmARGB: 0xFFF4F4F5)
@@ -89,15 +89,16 @@ enum FmColors {
     static let accentSubtle = Color(fmARGB: 0x1A007AFF)
     static let accentOnDark = Color(fmARGB: 0xFF0A84FF)
     static let accentSubtleOnDark = Color(fmARGB: 0x33164A8C)
-    static let success = Color(fmARGB: 0xFF148A45)
+    static let success = Color(fmARGB: 0xFF0F7A3B)
     static let successOnDark = Color(fmARGB: 0xFF46E07F)
     static let successBtn = FmColors.textPrimary
     static let successBtnHover = Color(fmARGB: 0xFF2A2E36)
     static let danger = Color(fmARGB: 0xFFC93532)
     static let dangerOnDark = Color(fmARGB: 0xFFFF6B6B)
-    static let warning = Color(fmARGB: 0xFFB7791F)
+    static let warning = Color(fmARGB: 0xFF8F5A0A)
     static let warningOnDark = Color(fmARGB: 0xFFE5C84C)
     static let offline = Color(fmARGB: 0xFFA0A7B2)
+    static let offlineOnLight = Color(fmARGB: 0xFF5F6672)
     static let accentEdge = Color(fmARGB: 0xFF8250DF)
     static let darkBorder = Color(fmARGB: 0xFF252529)
     static let editorGutter = Color(fmARGB: 0xFF101012)
@@ -277,7 +278,7 @@ struct FmPalette: Equatable {
     static let light = FmPalette(dark: false)
     static let darkDefault = FmPalette(dark: true)
 
-    var offline: Color { return FmColors.offline }
+    var offline: Color { return dark ? FmColors.offline : FmColors.offlineOnLight }
     var accentEdge: Color { return FmColors.accentEdge }
     var count: Color { return dark ? FmAccent.blue.onDark : FmAccent.blue.light }
 
