@@ -1,4 +1,7 @@
+import gzip
 import sys
+import urllib.parse
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -70,9 +73,65 @@ def fake_api(method, path, body=None):
     return answer
 
 
+fake_api.download = lambda path: None
+
+
+def sales(*rows):
+    header = "Provider\tSKU\tProduct Type Identifier\tUnits\tApple Identifier\n"
+    return gzip.compress((header + "".join("APPLE\tfm\t" + "\t".join(row) + "\n"
+                                           for row in rows)).encode())
+
+
+class SalesApi:
+    def __init__(self, reports):
+        self.reports = reports
+        self.asked = []
+
+    def download(self, path):
+        query = dict(urllib.parse.parse_qsl(path.split("?", 1)[1]))
+        assert query["filter[vendorNumber]"] == "85000000"
+        key = (query["filter[frequency]"], query["filter[reportDate]"])
+        self.asked.append(key)
+        return self.reports.get(key)
+
+
+def test_downloads_add_closed_months_and_daily_reports_for_the_app(capsys):
+    api = SalesApi({
+        ("MONTHLY", "2026-08"): sales(("1F", "4", "app"), ("1F", "9", "other")),
+        ("MONTHLY", "2026-09"): sales(("1F", "10", "app"), ("3F", "2", "app"), ("7F", "5", "app")),
+        ("DAILY", "2026-09-20"): sales(("1F", "100", "app")),
+        ("DAILY", "2026-10-01"): sales(("1", "3", "app"), ("IA1", "8", "app")),
+        ("DAILY", "2026-10-12"): sales(("1T", "1", "app"), ("7", "2", "app")),
+    })
+    versions = [{"attributes": {"createdDate": "2026-09-14T09:23:00Z"}},
+                {"attributes": {"createdDate": "2026-08-28T10:00:00Z"}}]
+    asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 13))
+    out = capsys.readouterr().out
+    assert ("MONTHLY", "2026-07") not in api.asked
+    assert ("MONTHLY", "2026-10") not in api.asked
+    assert ("DAILY", "2026-10-13") not in api.asked
+    assert "since 2026-08: 18 downloads, 2 redownloads, 7 updates" in out
+    assert "last 30 days: 104 downloads, 0 redownloads, 2 updates" in out
+    assert "last 7 days: 1 downloads, 0 redownloads, 2 updates" in out
+
+
+def test_a_month_too_new_for_its_monthly_report_counts_its_days(capsys):
+    api = SalesApi({
+        ("MONTHLY", "2026-09"): sales(("1F", "50", "app")),
+        ("DAILY", "2026-09-30"): sales(("1F", "6", "app")),
+        ("DAILY", "2026-10-02"): sales(("1F", "1", "app")),
+    })
+    versions = [{"attributes": {"createdDate": "2026-09-14T09:23:00Z"}}]
+    asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 5))
+    out = capsys.readouterr().out
+    assert ("MONTHLY", "2026-09") not in api.asked
+    assert "since 2026-09: 7 downloads" in out
+
+
 def test_the_report_flags_review_trouble_and_lists_groups_and_feedback(monkeypatch, capsys):
     monkeypatch.setattr(asc_store_report, "Session", lambda: fake_api)
     monkeypatch.setattr(asc_store_report, "app_id", lambda api: "app")
+    monkeypatch.setattr(asc_store_report, "vendor_number", lambda: "")
     asc_store_report.main([])
     out = capsys.readouterr().out
     assert "1.4.0 (build 19): REJECTED  <-- needs action" in out
@@ -80,6 +139,7 @@ def test_the_report_flags_review_trouble_and_lists_groups_and_feedback(monkeypat
     assert "s1: UNRESOLVED_ISSUES  <-- needs action; submitted 2026-10-08 18:29" in out
     assert "    1.4.0: REJECTED  <-- needs action" in out
     assert "Resolution Center" in out
+    assert "== Downloads ==\n  set ASC_VENDOR_NUMBER" in out
     assert "external WAITING_FOR_BETA_REVIEW; beta review not submitted" in out
     assert "in groups: forkmesh-team" in out
     groups = out.split("== TestFlight groups ==")[1]
