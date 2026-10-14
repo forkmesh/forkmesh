@@ -1019,3 +1019,29 @@ def test_rqlite_unit_digest_survives_pipefail_without_dropins(tmp_path):
     done = subprocess.run(["bash", "-euo", "pipefail", "-c", "x=$(%s); echo \"$x\"" % script],
                           capture_output=True, text=True)
     assert done.returncode == 0 and len(done.stdout.split()[0]) == 64
+
+
+
+def test_files_step_loads_the_fleet_firewall_while_ufw_is_active(tmp_path):
+    data = fleet(tmp_path)
+    vultr, _ = vultr_with([instance("fmnext-core-2", ip="203.0.113.12",
+                                    instance_id=IDS["fmnext-core-2"])])
+    ssh = FakeSsh()
+    next_fleet.install(data, "n2", ssh, Runner(execute=True), ("files",), vultr=vultr)
+    script = ssh.runs[-1][1]
+    firewall = next_fleet.FIREWALL_BEFORE_CADDY
+    assert firewall in script
+    assert script.index("nft -c -f /etc/nftables.conf") < script.index(firewall)
+    assert firewall.index("nft -c -f /etc/nftables.conf") < firewall.index("ufw --force disable")
+    assert "Status: active" in firewall
+
+
+def test_caddy_install_waits_long_enough_for_a_first_certificate():
+    settings = {"tarball": "caddy.tar.gz", "sha256": "0" * 64, "version": "2.11.4"}
+    script = next_fleet.caddy_script(settings, "1" * 64, "[Service]\n", "n4.next.example.test")
+    assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in script
+    assert next_fleet.CADDY_INSTALL_WAIT >= 120
+    assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in next_fleet.caddy_debian_script(
+        "n4.next.example.test")
+    assert "--max-time %d " % next_fleet.CADDY_INSTALL_MAX_TIME in script
+    assert next_fleet.CADDY_INSTALL_MAX_TIME > 10
