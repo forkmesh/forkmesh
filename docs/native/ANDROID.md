@@ -139,6 +139,16 @@ application id `com.forkmesh.nativeapp` installs beside it.
   `invalid_session` or `device_revoked`, because owner-signed inbox reads answer
   `unauthorized` to every app session. iOS `ApiService.endsSession` matches.
 - **Sign-out** clears local state first, then revokes the token best effort.
+- **Login** has "Forgot password?" (`AuthController.forgotPasswordUrl`, the
+  relay's `/forgot-password`). **Sign up** opens `/signup` in the browser and
+  switches the flow to the login form with a "log in here" hint, so returning
+  to the app lands on login.
+- **Update prompt.** `ClientVersionGate.DEFAULT_STORE_URL` is
+  `https://forkmesh.com/mobile` (`/download` returns 404) and is used when
+  `/api/status` sends no `androidDownloadUrl`.
+- **FmNeedsDesktopNote** ends with "Get the desktop app"
+  (`ProjectActions.desktopUrl`, the project homepage's `/desktop`). Route
+  placeholders say the screen "is not in this version of the app yet".
 - **Environment** (`C/api/AppEnv.kt`): anything but an explicit dev marker is
   prod. Release builds ignore a stored relay override.
 - **Guests** post only in `#general` and the local mesh room, named "Guest
@@ -384,7 +394,8 @@ application id `com.forkmesh.nativeapp` installs beside it.
 ## 13. Core features as plugins
 
 The Home grid, bar tabs and repository tiles follow Market packages, off by
-default in new projects (`docs/marketplace/core-plugins.md`).
+default in new projects except the starter set: Agents, Chat, Inbox, Code,
+Tour and Sign in (`docs/marketplace/core-plugins.md`).
 
 - **One gate.** `C/market/PackageGate.kt` maps hub ids, `Route.Kind`s, bar tabs
   and repository tiles (`RepoHubSection`) to package ids;
@@ -393,8 +404,10 @@ default in new projects (`docs/marketplace/core-plugins.md`).
   also needs `mobile` among its places ([NAVIGATION.md](NAVIGATION.md)).
 - **Effective install state.** `AccountPackagesStore.isInstalled` uses the
   account row, else `PackageGate.fallback` (installed when `default`, or when
-  `installedBefore` and the project is legacy). Dependencies apply. The cache
-  is per project (`ProjectScope.prefs`).
+  `installedBefore` and the project is legacy, or a `PackageGate.STARTER`
+  package in a new project). In a new project a starter package stays
+  installed until the project removes it. Dependencies apply. The cache is per
+  project (`ProjectScope.prefs`).
 - **Legacy marker.** `PackageGate.legacyProject` writes
   `packages/legacyProject` once per project, before other features install,
   from existing prefs or a saved session; it never changes.
@@ -410,8 +423,8 @@ default in new projects (`docs/marketplace/core-plugins.md`).
   when one of the user's organizations installed them (`/api/plugins/<org>`,
   refreshed at most every ten minutes, cached in
   `packages/organization/installed`).
-- **Sign in** is per phone (`packages/sign-in/on`); Settings always keeps Sign
-  out and Log in so nobody is locked out.
+- **Sign in** is per phone (`packages/sign-in/on`, on until removed); Settings
+  always keeps Sign out and Log in so nobody is locked out.
 - **Market.** `A/feature/market/MarketScreens.kt` and `C/market/MarketModels.kt`
   offer the web Market's sorts and filters, usage from
   `/api/market/installs` and `/api/market/reviews/summary`, and one-tap
