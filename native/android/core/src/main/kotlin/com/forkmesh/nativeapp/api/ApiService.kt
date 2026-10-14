@@ -631,6 +631,13 @@ open class ApiService(
         return await(future)
     }
 
+    open fun knownAccountAvatarPng(name: String): String {
+        val key = name.trim().lowercase()
+        if (key.isEmpty()) return ""
+        val future = synchronized(accountAvatarCache) { accountAvatarCache[key] } ?: return ""
+        return if (future.isDone) future.getNow("") else ""
+    }
+
     open fun accountUserStatus(name: String): UserStatus {
         val key = name.trim().lowercase()
         if (key.isEmpty()) return UserStatus()

@@ -3189,6 +3189,42 @@ Context rules, from the most specific to the least:
 The composer always shows its target as an editable chip, so the result is
 never a surprise.
 
+### 2.0.95 Chat pictures without a flash (2026-10-13, iOS and Android)
+
+The user saw a slight flash on the chat page: each avatar drew its letter
+circle, then swapped to the person's picture a moment later, and asked for it
+to load faster or not flash.
+
+- **Why it flashed (iOS).** Every avatar took two async hops after it
+  appeared: `ChatSenderAvatar` and `MessagesPersonAvatar` read the picture in
+  a `.task` (even from `ChatAvatarCache`), then `FmAvatar` decoded it in a
+  second `.task`. So each row painted the initial for a frame or more, on
+  every visit. The cache lived in memory only, so the first visit after a
+  launch also waited on the network for every person.
+- **First frame paints the picture.** `FmAvatar` decodes through
+  `FmAvatarImages` (an `NSCache` of decoded images keyed by the base64, 256
+  entries) inside `body`, so a picture seen before is drawn at once and a new
+  one is decoded once. `ChatAvatarCache` is `@Observable`; both avatar views
+  read it in `body` and only refresh it in their `.task`.
+- **Kept across launches.** `ChatAvatarCache` saves the pictures (newest 200
+  people, empty answers not kept) to Caches `chat-avatars.json`, written off
+  the main thread a second after a change. `ChatFeature.register` warms it
+  off the main thread at launch, so the chat list and transcript open with
+  the pictures from the last session; the server's answer then replaces any
+  that changed.
+- **Offline keeps the saved picture.** `ApiService.accountAvatarPngIfReached`
+  returns nil when the account read failed with an `HTTPError` (no route,
+  timeout), so a saved picture is not cleared; a missing account or no
+  picture is still "". `accountAvatarPng` is unchanged for other callers.
+- **Android.** `ApiService.knownAccountAvatarPng` returns a picture already
+  fetched this session without blocking; `ChatSenderAvatar` and the DM row's
+  `DirectAvatar` start from it, so returning to the chat page no longer
+  flashes. Android does not keep the pictures across launches yet.
+- Tests: `ApiServiceTests.testAccountAvatarTellsAnUnreachableServerFromNoPicture`
+  (iOS core), `ApiServiceTest.testKnownAccountAvatarIsReadWithoutARequest`
+  (Android core). The app sources were only parsed on Linux, not run on a
+  device.
+
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 
 Reported: "Was unable to remove tour button in app". On iOS the Tour cell's

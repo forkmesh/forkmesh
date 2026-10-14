@@ -114,7 +114,7 @@ public final class ApiService {
     @ObservationIgnored var publicRouteOwners: [String: String] = [:]
     /// Repositories (`owner/name`, lower-cased) whose public route has answered.
     @ObservationIgnored var publicRouteProven: Set<String> = []
-    @ObservationIgnored var accountAvatarCache: [String: Task<String, Never>] = [:]
+    @ObservationIgnored var accountAvatarCache: [String: Task<String?, Never>] = [:]
     @ObservationIgnored var accountLookupCache: [String: AccountLookupEntry] = [:]
     @ObservationIgnored var ownerEnrolledFor = ""
     @ObservationIgnored var ownerEnrollmentToken: ListenerToken?
@@ -490,6 +490,7 @@ final class AccountLookupEntry {
     /// Set when the name turned out not to be a user account: kept for the session instead of
     /// expiring with `accountStatusTtl`.
     var permanent = false
+    var unreachable = false
 
     init(createdAt: Date) { self.createdAt = createdAt }
 }
