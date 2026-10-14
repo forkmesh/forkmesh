@@ -4515,6 +4515,32 @@ async def _live_online_nodes(env, now):
     return nodes
 
 
+NODE_UPTIME_MAX_KEYS = 2000
+
+
+async def _credit_node_uptime(env, node_keys, now):
+    keys = sorted({str(key) for key in node_keys or () if key})
+    keys = keys[:NODE_UPTIME_MAX_KEYS]
+    for offset in range(0, len(keys), 50):
+        chunk = keys[offset:offset + 50]
+        args = []
+        for key in chunk:
+            args.extend([key, ONLINE_SAMPLE_WEIGHT_MINUTES, now])
+        try:
+            await d1_run(
+                env,
+                "INSERT INTO node_uptime_totals (node_key, minutes, "
+                "updated_at) VALUES " + ", ".join(["(?, ?, ?)"] * len(chunk)) +
+                " ON CONFLICT(node_key) DO UPDATE SET "
+                "minutes=minutes+excluded.minutes, "
+                "updated_at=excluded.updated_at",
+                *args)
+        except Exception as error:
+            print("node uptime credit failed: %s" %
+                  _safe_error_text(error)[:160])
+            return
+
+
 async def record_online_sample(env):
     # Only aligned ten-minute buckets do the decrypt/query/write work. Keep the
     # guard for direct/self-hosted callers as well as the edge phase schedule.
@@ -4525,6 +4551,7 @@ async def record_online_sample(env):
     await ensure_schema(env)
     nodes = await _live_online_nodes(env, now)
     online = len(nodes)
+    await _credit_node_uptime(env, list(nodes), now)
     # The public history exposes at most fifty node series. Bound persistence
     # to the same deterministic roster so a presence spike cannot turn one
     # ten-minute sample into an unbounded Free-plan write burst.
@@ -13332,7 +13359,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "e05a69371b70e57df8b6065a8af3c9bb8df4ebcbab1d573dbd55392cbfefadcb"
+    "a5893d085c0a40f89092da1e1b5847e10e39915039ae754ef33df3de67b58681"
 )
 
 
