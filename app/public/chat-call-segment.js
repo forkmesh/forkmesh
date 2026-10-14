@@ -4,8 +4,9 @@ export const SEGMENT_MODELS = Object.freeze({
   square: "selfie-square.fmnn",
   detector: "face-detector.fmnn",
   mesh: "face-mesh.fmnn",
+  hair: "hair-192.fmnn",
 });
-export const MODEL_GROUPS = Object.freeze({ segment: ["landscape", "square"], face: ["detector", "mesh"] });
+export const MODEL_GROUPS = Object.freeze({ segment: ["landscape", "square"], face: ["detector", "mesh"], hair: ["hair"] });
 
 const MAGIC = 0x4e4e4d46;
 
@@ -142,8 +143,9 @@ export function layerShader(op, inShape, outShape, secondShape = null, alphaRow 
     const [kh, kw] = op.kernel;
     const [sh, sw] = op.stride;
     const [pt, pl] = op.pad || [0, 0];
+    const [dh, dw] = op.dilation || [1, 1];
     const position = op.op === "conv"
-      ? `float ix = x * ${sw.toFixed(1)} + ${kx(sw, pl)}; float iy = y * ${sh.toFixed(1)} + ${ky(sh, pt)};`
+      ? `float ix = x * ${sw.toFixed(1)} + float(kx) * ${dw.toFixed(1)} - ${pl.toFixed(1)}; float iy = y * ${sh.toFixed(1)} + float(ky) * ${dh.toFixed(1)} - ${pt.toFixed(1)};`
       : `float nx = x + ${pl.toFixed(1)} - float(kx); float ny = y + ${pt.toFixed(1)} - float(ky);
       float ix = floor(nx / ${sw.toFixed(1)} + 0.001); float iy = floor(ny / ${sh.toFixed(1)} + 0.001);
       if (abs(ix * ${sw.toFixed(1)} - nx) > 0.01 || abs(iy * ${sh.toFixed(1)} - ny) > 0.01) continue;`;
@@ -209,6 +211,53 @@ export function layerShader(op, inShape, outShape, secondShape = null, alphaRow 
   } else if (op.op === "act") {
     body = `
   vec4 v = aAt(x, y, s);`;
+  } else if (op.op === "argmax") {
+    body = `
+  vec4 best = vec4(-65000.0);
+  vec4 v = vec4(0.0);
+  for (int k = 0; k < 4; k++) {
+    float dy = float(k / 2);
+    float dx = float(k) - dy * 2.0;
+    vec4 t = aAt(x * 2.0 + dx, y * 2.0 + dy, s);
+    vec4 pick = vec4(greaterThan(t, best));
+    v = mix(v, vec4(float(k)), pick);
+    best = max(best, t);
+  }`;
+  } else if (op.op === "unpool") {
+    const [bH, bW] = secondShape;
+    parts.push(fetchIn("b", "uIn2Size", bW, bH));
+    body = `
+  float px = floor(x / 2.0);
+  float py = floor(y / 2.0);
+  float k = (y - py * 2.0) * 2.0 + (x - px * 2.0);
+  vec4 index = bAt(px, py, s);
+  vec4 v = aAt(px, py, s) * vec4(lessThan(abs(index - vec4(k)), vec4(0.5)));`;
+  } else if (op.op === "concat") {
+    const [bH, bW, bC] = secondShape;
+    parts.push(fetchIn("b", "uIn2Size", bW, bH));
+    const sa = si;
+    if (inC % 4 === 0) {
+      body = `
+  vec4 v = s < ${sa.toFixed(1)} - 0.5 ? aAt(x, y, s) : bAt(x, y, s - ${sa.toFixed(1)});`;
+    } else {
+      body = `
+  vec4 v = vec4(0.0);
+  for (int j = 0; j < 4; j++) {
+    float c = s * 4.0 + float(j);
+    float pick = 0.0;
+    if (c < ${inC.toFixed(1)} - 0.5) {
+      vec4 t = aAt(x, y, floor(c / 4.0));
+      float m = c - floor(c / 4.0) * 4.0;
+      pick = m < 0.5 ? t.x : m < 1.5 ? t.y : m < 2.5 ? t.z : t.w;
+    } else if (c < ${(inC + bC).toFixed(1)} - 0.5) {
+      float d = c - ${inC.toFixed(1)};
+      vec4 t = bAt(x, y, floor(d / 4.0));
+      float m = d - floor(d / 4.0) * 4.0;
+      pick = m < 0.5 ? t.x : m < 1.5 ? t.y : m < 2.5 ? t.z : t.w;
+    }
+    if (j == 0) v.x = pick; else if (j == 1) v.y = pick; else if (j == 2) v.z = pick; else v.w = pick;
+  }`;
+    }
   } else if (op.op === "pad") {
     body = `
   vec4 v = s < ${si.toFixed(1)} - 0.5 ? aAt(x, y, s) : vec4(0.0);`;
@@ -234,14 +283,6 @@ export function layerShader(op, inShape, outShape, secondShape = null, alphaRow 
   gl_FragColor = v;
 }`);
   return parts.join("\n");
-}
-
-function kx(stride, pad) {
-  return `float(kx) - ${pad.toFixed(1)}`;
-}
-
-function ky(stride, pad) {
-  return `float(ky) - ${pad.toFixed(1)}`;
 }
 
 export function packAlpha(op, weights) {
@@ -744,6 +785,148 @@ export function createMatte(gl, models, { format = floatTargets(gl), guideWidth 
         gl.deleteFramebuffer(entry.framebuffer);
       }
       for (const program of Object.values(programs)) gl.deleteProgram(program.program);
+      gl.deleteBuffer(quad);
+    },
+  };
+}
+
+const HAIR_CROP_FRAGMENT = `
+precision highp float;
+uniform sampler2D uCam;
+uniform sampler2D uPrev;
+uniform vec2 uCenter;
+uniform float uSide;
+uniform vec2 uFrame;
+varying vec2 vUv;
+void main() {
+  vec2 p = uCenter + (vUv - 0.5) * uSide;
+  vec2 uv = p / uFrame;
+  bool inside = uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
+  vec3 c = inside ? texture2D(uCam, uv).rgb : vec3(0.0);
+  float prev = inside ? texture2D(uPrev, uv).r : 0.0;
+  gl_FragColor = vec4(c, prev);
+}`;
+
+const HAIR_FRAME_FRAGMENT = `
+precision highp float;
+uniform sampler2D uLogits;
+uniform sampler2D uPrev;
+uniform vec2 uCenter;
+uniform float uSide;
+uniform vec2 uFrame;
+uniform vec2 uLogitSize;
+uniform float uRate;
+varying vec2 vUv;
+float hairAt(vec2 t) {
+  vec4 l = texture2D(uLogits, (floor(t * uLogitSize) + 0.5) / uLogitSize);
+  return 1.0 / (1.0 + exp(clamp(l.x - l.y, -30.0, 30.0)));
+}
+void main() {
+  vec2 c = (vUv * uFrame - uCenter) / uSide + 0.5;
+  float prev = texture2D(uPrev, vUv).r;
+  float now = 0.0;
+  if (c.x >= 0.0 && c.y >= 0.0 && c.x <= 1.0 && c.y <= 1.0) {
+    vec2 t = c * uLogitSize - 0.5;
+    vec2 f = fract(t);
+    vec2 base = floor(t);
+    float a = hairAt((base + vec2(0.5, 0.5)) / uLogitSize);
+    float b = hairAt((base + vec2(1.5, 0.5)) / uLogitSize);
+    float d = hairAt((base + vec2(0.5, 1.5)) / uLogitSize);
+    float e = hairAt((base + vec2(1.5, 1.5)) / uLogitSize);
+    now = mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
+  }
+  float change = abs(now - prev);
+  float rate = mix(uRate, 1.0, smoothstep(0.1, 0.5, change));
+  gl_FragColor = vec4(mix(prev, now, rate), 0.0, 0.0, 1.0);
+}`;
+
+export function createHairMatte(gl, model, { format = floatTargets(gl), width = 256, rate = 0.5 } = {}) {
+  if (!format || !model) return null;
+  const net = createNetwork(gl, model, format);
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const crop = compileProgram(gl, MATTE_QUAD, HAIR_CROP_FRAGMENT);
+  const frame = compileProgram(gl, MATTE_QUAD, HAIR_FRAME_FRAGMENT);
+  const logits = net.outputs[0][0];
+  let state = null;
+  let fresh = true;
+
+  function target(w, h) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { texture, framebuffer, width: w, height: h };
+  }
+
+  function draw(program, out, textures, uniforms) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out.framebuffer);
+    gl.viewport(0, 0, out.width, out.height);
+    gl.useProgram(program.program);
+    textures.forEach(([name, texture], unit) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.uniform1i(program.uniforms[name], unit);
+    });
+    for (const [name, value] of Object.entries(uniforms)) {
+      if (!program.uniforms[name]) continue;
+      if (Array.isArray(value)) gl.uniform2f(program.uniforms[name], value[0], value[1]);
+      else gl.uniform1f(program.uniforms[name], value);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(0);
+  }
+
+  return {
+    get texture() {
+      return state?.ping.texture || null;
+    },
+    reset() {
+      fresh = true;
+    },
+    update(camera, w, h, region) {
+      const sw = Math.min(width, w);
+      const sh = Math.max(2, Math.round((sw * h) / w));
+      if (!state || state.width !== sw || state.height !== sh) {
+        state = { width: sw, height: sh, ping: target(sw, sh), pong: target(sw, sh) };
+        fresh = true;
+      }
+      gl.disable(gl.BLEND);
+      const uniforms = { uCenter: region.center, uSide: region.side, uFrame: [w, h] };
+      draw(crop, net.input, [["uCam", camera], ["uPrev", state.ping.texture]], uniforms);
+      net.run();
+      draw(frame, state.pong, [["uLogits", logits.texture], ["uPrev", state.ping.texture]], {
+        ...uniforms,
+        uLogitSize: [net.inputWidth, net.inputHeight],
+        uRate: fresh ? 1 : rate,
+      });
+      [state.ping, state.pong] = [state.pong, state.ping];
+      fresh = false;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return state.ping.texture;
+    },
+    dispose() {
+      net.dispose();
+      for (const entry of [state?.ping, state?.pong]) {
+        if (!entry) continue;
+        gl.deleteTexture(entry.texture);
+        gl.deleteFramebuffer(entry.framebuffer);
+      }
+      gl.deleteProgram(crop.program);
+      gl.deleteProgram(frame.program);
       gl.deleteBuffer(quad);
     },
   };

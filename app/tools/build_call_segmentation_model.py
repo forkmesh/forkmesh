@@ -111,8 +111,67 @@ def same_padding(size: int, kernel: int, stride: int) -> int:
     return max((out - 1) * stride + kernel - size, 0) // 2
 
 
-def convert(path: Path) -> bytes:
+def conv_out(size: int, kernel: int, stride: int, dilation: int, same: bool) -> int:
+    if same:
+        return -(-size // stride)
+    return (size - ((kernel - 1) * dilation + 1)) // stride + 1
+
+
+def infer_shapes(tensors, operators, inputs, size):
+    shape = lambda i: tensors[i]["shape"]
+    first = shape(inputs[0])
+    tensors[inputs[0]]["shape"] = [first[0], size[0], size[1], first[3]]
+    for op in operators:
+        name = op["name"]
+        ins = op["inputs"]
+        outs = op["outputs"]
+        options = op["options"]
+        if name in ("DEQUANTIZE", "RESHAPE"):
+            continue
+        a = shape(ins[0])
+        if name == "CONV_2D":
+            w = shape(ins[1])
+            same = options.scalar(0, "b") == 0
+            stride = [options.scalar(2, "i"), options.scalar(1, "i")]
+            dilation = [options.scalar(5, "i", 1), options.scalar(4, "i", 1)]
+            out = [1, conv_out(a[1], w[1], stride[0], dilation[0], same), conv_out(a[2], w[2], stride[1], dilation[1], same), w[0]]
+        elif name == "DEPTHWISE_CONV_2D":
+            w = shape(ins[1])
+            same = options.scalar(0, "b") == 0
+            stride = [options.scalar(2, "i"), options.scalar(1, "i")]
+            dilation = [options.scalar(6, "i", 1), options.scalar(5, "i", 1)]
+            out = [1, conv_out(a[1], w[1], stride[0], dilation[0], same), conv_out(a[2], w[2], stride[1], dilation[1], same), w[3]]
+        elif name == "MAX_POOL_2D":
+            same = options.scalar(0, "b") == 0
+            out = [1, conv_out(a[1], options.scalar(4, "i"), options.scalar(2, "i"), 1, same),
+                   conv_out(a[2], options.scalar(3, "i"), options.scalar(1, "i"), 1, same), a[3]]
+        elif name == "PAD":
+            pads = struct.unpack("<8i", tensors[ins[1]]["data"])
+            out = [1, a[1], a[2], a[3] + pads[7]]
+        elif name == "CONCATENATION":
+            out = [1, a[1], a[2], sum(shape(i)[3] for i in ins)]
+        elif name == "MaxPoolingWithArgmax2D":
+            out = [1, -(-a[1] // 2), -(-a[2] // 2), a[3]]
+            for index in outs:
+                tensors[index]["shape"] = list(out)
+            continue
+        elif name == "MaxUnpooling2D":
+            out = [1, a[1] * 2, a[2] * 2, a[3]]
+        elif name == "Convolution2DTransposeBias":
+            w = shape(ins[1])
+            _, stride_w, stride_h = struct.unpack_from("<iii", op["custom"], 0)
+            out = [1, a[1] * stride_h, a[2] * stride_w, w[0]]
+        elif name in ("MEAN", "AVERAGE_POOL_2D", "RESIZE_BILINEAR"):
+            raise ValueError(f"{name} cannot be resized")
+        else:
+            out = list(a)
+        tensors[outs[0]]["shape"] = out
+
+
+def convert(path: Path, size=None) -> bytes:
     tensors, operators, inputs, outputs = load(path)
+    if size:
+        infer_shapes(tensors, operators, inputs, size)
     constants: dict[int, list[int]] = {}
     blob = bytearray()
 
@@ -161,6 +220,16 @@ def convert(path: Path) -> bytes:
         if name == "CONCATENATION" and all(i in reshaped for i in ins):
             joined[out] = [reshaped[i] for i in ins]
             continue
+        if name == "MaxPoolingWithArgmax2D":
+            padding, stride_w, stride_h, filter_w, filter_h = struct.unpack_from("<5i", op["custom"], 0)
+            if [stride_w, stride_h, filter_w, filter_h] != [2, 2, 2, 2]:
+                raise ValueError("argmax pooling must be 2x2 with stride 2")
+            base = {"in": [ins[0]], "kernel": [2, 2], "stride": [2, 2], "pad": [0, 0], "act": "none"}
+            for kind, index in (("maxpool", op["outputs"][0]), ("argmax", op["outputs"][1])):
+                node = {**base, "op": kind, "out": index}
+                graph.append(node)
+                produced[index] = node
+            continue
         if name in ACTIVATIONS or name == "PRELU":
             act = ACTIVATIONS.get(name, "prelu")
             source = produced.get(ins[0])
@@ -185,12 +254,11 @@ def convert(path: Path) -> bytes:
             stride = [options.scalar(2, "i"), options.scalar(1, "i")]
             fused = options.scalar(4 if depthwise else 3, "b")
             dilation = [options.scalar(6 if depthwise else 5, "i", 1), options.scalar(5 if depthwise else 4, "i", 1)]
-            if dilation != [1, 1]:
-                raise ValueError("dilated convolutions are not supported")
             kh, kw = weights[1], weights[2]
             pad = [0, 0]
             if padding == 0:
-                pad = [same_padding(shape[1], kh, stride[0]), same_padding(shape[2], kw, stride[1])]
+                pad = [same_padding(shape[1], (kh - 1) * dilation[0] + 1, stride[0]),
+                       same_padding(shape[2], (kw - 1) * dilation[1] + 1, stride[1])]
             node = {
                 "op": "dw" if depthwise else "conv",
                 "in": [ins[0]],
@@ -198,6 +266,7 @@ def convert(path: Path) -> bytes:
                 "kernel": [kh, kw],
                 "stride": stride,
                 "pad": pad,
+                "dilation": dilation,
                 "act": FUSED[fused],
                 "w": store(ins[1]),
                 "b": store(ins[2]),
@@ -230,6 +299,12 @@ def convert(path: Path) -> bytes:
                 pad = [same_padding(shape[1], kernel[0], stride[0]), same_padding(shape[2], kernel[1], stride[1])]
             node = {"op": "maxpool", "in": [ins[0]], "out": out, "kernel": kernel, "stride": stride, "pad": pad,
                     "act": FUSED[options.scalar(5, "b")]}
+        elif name == "CONCATENATION":
+            if op["options"].scalar(0, "i") not in (3, -1) or len(ins) != 2:
+                raise ValueError("only two-way channel concatenation is supported")
+            node = {"op": "concat", "in": ins, "out": out, "act": FUSED[op["options"].scalar(1, "b")]}
+        elif name == "MaxUnpooling2D":
+            node = {"op": "unpool", "in": ins, "out": out, "act": "none"}
         elif name == "PAD":
             pads = struct.unpack("<8i", tensors[ins[1]]["data"])
             if any(pads[:7]):
@@ -311,8 +386,13 @@ def main(argv: list[str]) -> int:
     if not argv:
         print("usage: build_call_segmentation_model.py selfie_segmentation_landscape.tflite [output]")
         return 2
+    size = None
+    if "--size" in argv:
+        at = argv.index("--size")
+        size = [int(v) for v in argv[at + 1].split(",")]
+        argv = argv[:at] + argv[at + 2:]
     output = Path(argv[1]) if len(argv) > 1 else OUTPUT_DIR / (Path(argv[0]).stem + ".fmnn")
-    data = convert(Path(argv[0]))
+    data = convert(Path(argv[0]), size)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(data)
     print(f"wrote {output} ({len(data)} bytes)")

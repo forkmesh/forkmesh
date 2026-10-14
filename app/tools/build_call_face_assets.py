@@ -378,7 +378,7 @@ def build_face(name, original: Path, offset: int, points, selfie: Path, hair: Pa
     neck_poly = [tuple(p[4]), tuple(p[12]), (p[12][0] + neck_half * 0.08, chin[1] + span * 1.1), (p[4][0] - neck_half * 0.08, chin[1] + span * 1.1)]
     neck = polygon_mask(neck_poly, 1024, 10)
     yy = np.arange(1024, dtype=np.float32)[:, None] * np.ones((1, 1024), np.float32)
-    neck *= 1 - smoothstep(chin[1] + span * 0.25, chin[1] + span * 0.8, yy)
+    neck *= 1 - smoothstep(chin[1] + span * 0.1, chin[1] + span * 0.7, yy)
     head_zone = np.maximum(face, neck)
     xx = np.arange(1024, dtype=np.float32)[None, :] * np.ones((1024, 1), np.float32)
     center = (eyes_l + eyes_r) / 2
@@ -398,7 +398,7 @@ def build_face(name, original: Path, offset: int, points, selfie: Path, hair: Pa
     matte = np.maximum(matte, interior)
     likeness = skin_likeness(image, p, span)
     below = smoothstep(chin[1] - span * 0.1, chin[1] + span * 0.2, yy)
-    keep_neck = np.maximum(smoothstep(0.08, 0.35, box(likeness, 4)), hair_keep)
+    keep_neck = np.maximum(box(smoothstep(0.08, 0.35, box(likeness, 4)), 14), hair_keep)
     matte = matte * (1 - below + below * keep_neck)
     hair_soft = np.clip(guided_filter(image, smoothstep(0.3, 0.7, hair_prob) * matte, 6, 4e-4), 0, 1)
     skin = np.clip(matte - hair_soft, 0, 1) * np.maximum(box(face, 12), neck)

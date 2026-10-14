@@ -1,6 +1,6 @@
 import { faceFrame, liveHead, projectPose } from "./chat-call-face-geometry.js";
 import { createFaceMesh } from "./chat-call-face-mesh.js";
-import { createMatte, floatTargets, MATTE_SAMPLE } from "./chat-call-segment.js";
+import { createHairMatte, createMatte, floatTargets, MATTE_SAMPLE } from "./chat-call-segment.js";
 
 const LOW_WIDTH = 160;
 const FILL_WIDTH = 192;
@@ -13,6 +13,8 @@ const HIDE_PASSES = 4;
 const GAUSS = [0.2270, 0.1945, 0.1216, 0.0540, 0.0162];
 const MIN_UNITS = 12;
 const HALO_STRENGTH = 0.25;
+const HAIR_SIDE = 6.4;
+const HAIR_CENTER = [0, 0.5, -0.3];
 
 export const BACKGROUND_MODES = Object.freeze({ off: 0, blur: 1, image: 2 });
 
@@ -102,13 +104,26 @@ vec2 zoneAt(vec2 uv) {
 float zoneRadius(vec2 q) {
   return length((q - vec2(0.0, -0.35)) / vec2(2.55, 2.9));
 }
+uniform sampler2D uHair;
+uniform float uHasHair;
 float headZone(vec2 uv) {
   vec2 q = zoneAt(uv);
-  float head = 1.0 - smoothstep(0.82, 1.0, zoneRadius(q));
   float side = abs(q.x);
   float neck = smoothstep(0.8, 1.4, q.y) * (1.0 - smoothstep(0.55, 0.85, side));
-  float hang = smoothstep(0.7, 1.2, q.y) * (1.0 - smoothstep(2.3, 2.9, q.y)) * smoothstep(0.7, 1.05, side) * (1.0 - smoothstep(2.2, 2.7, side));
-  return max(head * (1.0 - neck), hang);
+  if (uHasHair > 0.5) {
+    float face = 1.0 - smoothstep(0.85, 1.05, length((q - vec2(0.0, 0.0)) / vec2(1.55, 1.95)));
+    float h = texture2D(uHair, uv).r;
+    for (int k = 0; k < 8; k++) {
+      float a = float(k) * 0.785398;
+      vec2 dir = vec2(cos(a), sin(a)) / uPixels;
+      h = max(h, texture2D(uHair, uv + dir * 4.0).r);
+      h = max(h, texture2D(uHair, uv + dir * 9.0).r * 0.9);
+    }
+    float hair = smoothstep(0.05, 0.25, h) * (1.0 - neck);
+    return max(face * (1.0 - neck), hair);
+  }
+  float head = 1.0 - smoothstep(0.82, 1.0, zoneRadius(q));
+  return head * (1.0 - neck);
 }
 float headHalo(vec2 uv) {
   vec2 q = zoneAt(uv);
@@ -120,21 +135,23 @@ precision highp float;
 uniform sampler2D uCam;
 uniform sampler2D uCoef;
 uniform float uHasMatte;
-uniform float uZoneOn;
 uniform vec2 uStep;
 varying vec2 vUv;
 ${MATTE_SAMPLE}
-${ZONE}
-vec4 tap(vec2 uv) {
-  vec3 c = texture2D(uCam, uv).rgb;
-  float a = uHasMatte > 0.5 ? callMatte(uCoef, c, uv) : 0.0;
-  float w = (1.0 - a) * (1.0 - a);
-  w *= 1.0 - uZoneOn * headZone(uv) * smoothstep(0.0, 0.3, a);
-  return vec4(c * w, w);
+float alphaAt(vec2 uv) {
+  return uHasMatte > 0.5 ? callMatte(uCoef, texture2D(uCam, uv).rgb, uv) : 0.0;
 }
 void main() {
-  gl_FragColor = 0.25 * (tap(vUv + vec2(-uStep.x, -uStep.y)) + tap(vUv + vec2(uStep.x, -uStep.y)) +
-    tap(vUv + vec2(-uStep.x, uStep.y)) + tap(vUv + vec2(uStep.x, uStep.y)));
+  vec2 a = vUv + vec2(-uStep.x, -uStep.y);
+  vec2 b = vUv + vec2(uStep.x, -uStep.y);
+  vec2 c = vUv + vec2(-uStep.x, uStep.y);
+  vec2 d = vUv + vec2(uStep.x, uStep.y);
+  vec3 color = 0.25 * (texture2D(uCam, a).rgb + texture2D(uCam, b).rgb + texture2D(uCam, c).rgb + texture2D(uCam, d).rgb);
+  float reach = max(max(alphaAt(a), alphaAt(b)), max(alphaAt(c), alphaAt(d)));
+  reach = max(reach, max(alphaAt(vUv + vec2(4.0 * uStep.x, 0.0)), alphaAt(vUv - vec2(4.0 * uStep.x, 0.0))));
+  reach = max(reach, max(alphaAt(vUv + vec2(0.0, 4.0 * uStep.y)), alphaAt(vUv - vec2(0.0, 4.0 * uStep.y))));
+  float w = pow(1.0 - reach, 3.0);
+  gl_FragColor = vec4(color * w, w);
 }`;
 
 const PUSH_FRAGMENT = `
@@ -216,25 +233,19 @@ void main() {
     aux = texture2D(uAux, vUv);
     zone = headZone(vUv) * uPresence * (1.0 - aux.b) * uHasMatte;
   }
-  vec3 color;
-  vec3 backdrop = cam;
+  vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
+  vec3 behind = alpha < 0.98 ? (cam - front) / (1.0 - alpha) : fill;
+  vec3 backdrop = behind;
   if (uMode > 1.5) {
-    vec2 at = uImageRect.xy + vUv * uImageRect.zw;
-    backdrop = texture2D(uBackdrop, at).rgb;
+    backdrop = texture2D(uBackdrop, uImageRect.xy + vUv * uImageRect.zw).rgb;
   } else if (uMode > 0.5) {
     backdrop = texture2D(uBackdrop, vUv).rgb;
+  } else if (uFace > 0.5) {
+    float halo = headHalo(vUv) * uPresence * uHasMatte;
+    backdrop = mix(behind, texture2D(uBackdrop, vUv).rgb, halo);
   }
-  if (uMode < 0.5) {
-    vec3 soft = uFace > 0.5 ? texture2D(uBackdrop, vUv).rgb : fill;
-    float halo = uFace > 0.5 ? headHalo(vUv) * uPresence * uHasMatte : 0.0;
-    vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
-    vec3 room = mix(cam, soft * (1.0 - alpha) + front, halo);
-    color = mix(room, soft, alpha * zone);
-  } else {
-    float keep = alpha * (1.0 - zone);
-    vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
-    color = backdrop * (1.0 - keep) + front * (1.0 - zone);
-  }
+  float keep = alpha * (1.0 - zone);
+  vec3 color = backdrop * (1.0 - keep) + front * (1.0 - zone);
   if (uFace > 0.5 && warp.a > 0.002) {
     vec4 lowCam = texture2D(uLowCam, vUv);
     vec4 lowFace = texture2D(uLowFace, vUv);
@@ -403,6 +414,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
   const imageTexture = texture(gl);
   let matte = null;
   let faceMesh = null;
+  let hairMatte = null;
   let width = 0;
   let height = 0;
   let targets = null;
@@ -418,6 +430,13 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         matte = createMatte(gl, next, { format });
       } catch (_) {
         matte = null;
+      }
+    }
+    if (!hairMatte && next.hair) {
+      try {
+        hairMatte = createHairMatte(gl, next.hair, { format });
+      } catch (_) {
+        hairMatte = null;
       }
     }
     if (!faceMesh && next.detector && next.mesh) {
@@ -541,9 +560,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     gl.useProgram(weigh.program);
     bindTextures(weigh, [["uCam", camera], ["uCoef", matte?.coefficients || camera]]);
     gl.uniform1f(weigh.uniforms.uHasMatte, hasMatte ? 1 : 0);
-    gl.uniform1f(weigh.uniforms.uZoneOn, zone ? 1 : 0);
     gl.uniform2f(weigh.uniforms.uStep, 0.25 * (width / first.width) / width, 0.25 * (height / first.height) / height);
-    setZone(weigh, zone);
     drawQuad(weigh);
     for (let level = 1; level < levels.length; level += 1) {
       const from = levels[level - 1];
@@ -689,6 +706,11 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
           blurInto(targets.wideFace, wide);
         }
       }
+      let hair = null;
+      if (showFace && hasMatte && hairMatte && lastHead) {
+        const center = projectPose(lastHead.pose, HAIR_CENTER);
+        hair = hairMatte.update(camera, w, h, { center, side: HAIR_SIDE * lastHead.pose.scale });
+      }
       let fill = camera;
       let backdrop = camera;
       let imageRect = [0, 0, 1, 1];
@@ -717,7 +739,9 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
         ["uFill", fill],
         ["uBackdrop", backdrop],
         ["uLowPlain", targets.plain.texture],
+        ["uHair", hair || camera],
       ]);
+      gl.uniform1f(composite.uniforms.uHasHair, hair ? 1 : 0);
       gl.uniform1f(composite.uniforms.uHasMatte, hasMatte ? 1 : 0);
       gl.uniform1f(composite.uniforms.uMode, hasMatte || activeMode === 0 ? activeMode : 0);
       gl.uniform1f(composite.uniforms.uFace, showFace ? 1 : 0);
@@ -735,6 +759,7 @@ export function createFaceRenderer(canvas, { models = null } = {}) {
     dispose() {
       matte?.dispose();
       faceMesh?.dispose();
+      hairMatte?.dispose();
       gl.getExtension("WEBGL_lose_context")?.loseContext();
     },
   };
