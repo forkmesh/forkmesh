@@ -129,6 +129,16 @@ tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
 `/assets/logo.svg` and list `/favicon/favicon.svg` after `favicon.ico`
 (`app/tests/test_favicon_metadata.py`); rasters stay where SVG is not accepted.
 
+That test holds every page under `app/public` and `www/public` to the same
+head: all four favicons, the manifest, `application-name`,
+`apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
+`light dark` and a description. Only the www landing page and the investor
+deck (`app/public/pitch-deck/deck.html`) may stay `color-scheme: dark`. The
+deck's CSP (`PAGE_CSP` in `app/src/pitch_deck_runtime.py`) allows
+`manifest-src 'self'` so its manifest link loads. On 15 Oct 2026 the login
+page's `#0f0f0f` theme colour and the missing tags on the OAuth consent page,
+the deck and `ios-install.html` were the last failures.
+
 ## Operations
 
 The node auto-deploy agent keeps forkmesh.com current: after each deploy
