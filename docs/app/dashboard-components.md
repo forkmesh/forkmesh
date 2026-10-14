@@ -82,3 +82,13 @@ blankslates and flashes unstyled. They are now listed in
 `dashboard_shell.PACKAGED_PAGE_COPIES` and composed from the shell and
 `partials/views/<id>.html` by `app/tools/build_dashboard_assets.py`;
 `test_dashboard_composer.py` fails when a copy differs from the composed page.
+
+## Text field focus
+
+Text fields (inputs, selects, textareas) take a 1px primary outline drawn on
+their own border when focused, instead of the shared 3px offset ring that
+buttons and links keep. The user found the ring "too much" on the repository
+clone popover, where the read-only URL field is focused and selected as soon
+as the popover opens; on a field the thin outline reads as a highlighted
+border rather than a halo. Checkboxes, radios, ranges and file pickers keep the
+shared ring.
