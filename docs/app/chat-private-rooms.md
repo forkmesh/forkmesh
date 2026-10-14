@@ -671,9 +671,55 @@ reports it (iOS `UIScreen.capturedDidChange` / screenshot notification,
 Android `FLAG_SECURE` on the viewer), the viewer says so or blanks itself;
 the web cannot detect it at all.
 
+### Web `/chat`
+
+- `chat-view-once.js`: frame validation (`viewOnceFromEntry`), AES-GCM,
+  the upload/download/consume/status client, the bubble and the one-time
+  viewer (no download link, `controlsList="nodownload"`, no context menu,
+  the object URL revoked and the bytes zeroed on close).
+- `chat-view-once-recorder.js`: capture and `MediaRecorder` (WebM/Opus where
+  the browser has it, MP4 otherwise; video 640x480 at about 0.9 Mbit/s,
+  voice 32 kbit/s), a live preview or level meter, a 60 s / 120 s timer that
+  stops by itself, and review (play back, Discard, Re-record, Send). Voice
+  messages start with a tap (tap Stop to finish) or a press: holding the
+  button for longer than 0.45 s and letting go sends at once.
+- `chat.js`: the two composer buttons (DMs only, `updateAdminChannelControls`),
+  `sendViewOnce`, `openViewOnceRecord`, `applyViewOnceState` and one
+  `GET media?ids=` per batch of rows put on screen (`queueViewOnceStatus`).
+  Deleting your own unopened message also withdraws the media.
+- **Held receipt.** The web keeps no local DM history, so it would lose an
+  unopened message on reload once the relay had deleted the frame. The
+  transport's `holdReceipt` option keeps the `forkmesh-received` for a
+  view-once frame from the other person until it is opened, has expired or
+  was withdrawn (`releaseReceipt`). Until then the relay keeps the frame (the
+  "1 message on the server" line says so) for its usual 7 days, the same as
+  the media.
+
+**Filters.** The recorder builds the stream it records from a
+`{video track, audio track}` pair and asks the registered stages for each
+(`registerViewOnceFilterStages({face, voice})` in the recorder module, each
+`(input, choice) => {track, stop}`), so a filtered track is recorded exactly
+like a raw one. `chat.js` registers the call engine's `createVoiceStage`
+(`chat-call-voice.js`) when the browser has AudioWorklet: the recorder shows a
+Voice picker (default "Your own voice", remembered in
+`forkmesh.chat.viewOnceVoice`) and "Hear yourself (headphones)", which turns
+on the stage's monitor. If a chosen voice cannot start, nothing is recorded:
+the recorder says so instead of sending the real voice. The face and
+background stage is not connected yet (its branch has not landed); `face`
+is the seam it plugs into.
+
 Tests: `app/tests/test_chat_direct_media_api.py` (upload, download, consume,
-expiry, sweep, withdraw, quotas, limits, who may do what) and
-`app/tests/test_chat_recipient_count.py` (`test_media_*`, the room frame).
+expiry, sweep, withdraw, quotas, limits, who may do what),
+`app/tests/test_chat_recipient_count.py` (`test_media_*`, the room frame),
+`app/tests/test_chat_view_once_frontend.py` (round trip through a fake
+server, wrong key, held receipts, `forkmesh-media`) and
+`app/browser_tests/tests/chat-view-once.spec.js` (Chromium with a fake camera
+and microphone: record video and voice, send, open once, deleted on the
+server, viewer gone, key dropped; hold-to-send with a changed voice; and two
+`/chat` pages talking through a mocked relay: the bubble arrives sealed, plays
+once, the sender sees "Opened", and the receipt is sent only after opening).
+The spec runs against a static server of `app/public` that also answers
+`/world/` (the config's readiness URL).
 
 ## Recipient counts ("to N")
 
