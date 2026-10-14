@@ -85,7 +85,7 @@ def build_bundle(record, env, root=None):
                         for path, (content, mode) in files.items()},
               "scripts": {"files": next_fleet.files_script(
                   manifest, "/tmp/fmnext-join-files.tar.gz"),
-                  "start": next_fleet.start_script(manifest)}}
+                  "start": next_fleet.start_script(manifest, start_ids=False)}}
     if record["pool"] == "app":
         password = str(getattr(env, "RQLITE_PASSWORD", "") or "")
         mesh = str(getattr(env, "FORKMESH_MESH_SECRET", "") or "")
