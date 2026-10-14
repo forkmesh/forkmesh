@@ -5,16 +5,12 @@ entry point `builtin:cleanup`, off by default) that lists everything Claude
 Code, Codex and agent runs leave on this computer, says what each item is
 still attached to, and deletes what the user confirms.
 
-## Why
-
-Parallel agent sessions fill the disk with transcripts, scratchpads,
-worktrees, per-agent build trees, Actions sandboxes and operator caches. The
-2026-08 and 2026-09 sweeps that recovered 30 to 80 GB at a time were done by
-hand from a shell, and every one of them had to answer the same questions
-first: does a process still have it open, does an agent or task still point
-at it, does the worktree hold unmerged commits or uncommitted edits. The
-package answers those questions on one page and deletes only through the
-guarded paths ([destructive actions](../engineering/destructive-actions.md)).
+Agent sessions fill the disk with transcripts, scratchpads, worktrees,
+per-agent build trees, Actions sandboxes and caches. The package answers,
+per item, whether a process still has it open, whether an agent or task
+still points at it, and whether a worktree holds unmerged commits or
+uncommitted edits, and deletes only through the guarded paths
+([destructive actions](../engineering/destructive-actions.md)).
 
 ## Code map
 
@@ -34,58 +30,33 @@ search box never starts one; hits come from the last scan.
 
 ## What it lists
 
-Every item has a category, size (disk blocks, hard links counted once,
-links never followed), age (newest change inside), a status and the reasons.
+Every item has a category, size (disk blocks, hard links counted once, links
+never followed), age (newest change inside), a status and the reasons.
 
-**Claude Code**
-- `~/.claude/projects/<project>`: one item per project for transcripts
-  (`<id>.jsonl`) and their session folders. The project's folder is read from
-  the `cwd` field of its newest transcript. If that folder still exists, the
-  recent sessions are **Attached** ("folder still exists") and sessions older
-  than 30 days are a separate **Orphaned** item; if it is gone, everything is
-  orphaned. `memory/` is never a member.
-- `~/.claude/{shell-snapshots,todos,debug,session-env,file-history,paste-cache,telemetry}`.
-- `/tmp/claude-<uid>/<project>/<session>` scratchpads and task output, and
-  the loose files beside them.
-- `~/.cache/claude*`.
-- `~/.local/share/claude/versions/*`: the version `claude` resolves to is
-  **Protected**, older ones are orphaned, one a process runs is in use.
-- `<data>/agent-accounts/<provider>/<account>/projects`: shown with their
-  size, always **Protected** (ForkMesh agent history, `AGENTS.md`).
-
-**Codex**: `~/.codex/sessions` (by day), `log` and `logs_*.sqlite*` (in use
-while any Codex process runs), `cache`, `tmp`, `shell_snapshots`,
-`generated_images` (attached, needs a confirm), old
-`packages/standalone/releases/*` (the one `current` points at is protected),
-and `codex-*` folders in the temp folder. `auth.json`, `config.toml`, the
-memory and goal databases, skills and rules are never listed.
-
-**Agent worktrees**: every folder in `<repo>/.worktrees`, `<repo>/.claude/worktrees`
-for each repository the desktop knows, `~/projects/forkmesh/worktrees` and
-`<tmp>/forkmesh-worktrees`. A folder with a `.git` file is matched to its
-repository through `gitdir`/`commondir` and `git worktree list --porcelain`;
-the item records branch, commits ahead of and behind `main` (or `master`),
-uncommitted files (`git status --porcelain` with `GIT_OPTIONAL_LOCKS=0`, so
-the scan never takes the index lock), lock state, agent sessions (by
-worktree path, or branch and repository) and organization task work items
-(the tasks list and the local work-item cache). A folder with its own `.git`
-folder is a clone and protected; one without `.git` is plain leftover files.
-
-**Builds and temp files**: `~/projects/forkmesh/builds/agent-N` with its
-`-tmp` folder and logs as one item (attached while worktree `N-*` or
-`agent-N*` exists or agent N runs), other build trees (attached), agent
-scratch in the temp folder (`fmNNN-*`, `fm-*`, `fmmcp-*`, `claude-*-cwd`,
-`ActionSecurity-*`, `*qt_temp*`, `ForkMesh-*`, `forkmesh-build*`,
-`chat-history-*`, owned by the user), `~/.qttest/share/ForkMeshTests/*qt_temp*`,
-Actions sandboxes (`forkmesh-run-*`, `forkmesh-discard-*`; in use while a
-run claims them), the Actions build cache (report only), Playwright browser
-builds (the newest of each browser is attached), and ccache: the folder
-`ccache -k cache_dir` names is report only, an idle second ccache folder can
-go after a confirm.
-
-**Other caches**: `~/.cache/fm-*`, `fm<digits>*`, `forkmesh-*` operator
-caches always need a per-item confirm; `forkmesh-release-*` (release timers)
-and anything with a `.git` are protected.
+- **Claude Code:** `~/.claude/projects/<project>` transcripts and session
+  folders (attached while the project folder in the newest transcript's
+  `cwd` exists; sessions older than 30 days are a separate orphaned item;
+  `memory/` is never a member), the other `~/.claude` caches, `/tmp/claude-<uid>/`
+  scratchpads, `~/.cache/claude*`, old CLI versions (the one `claude`
+  resolves to is protected), and the ForkMesh agent-account history (always
+  protected).
+- **Codex:** `~/.codex` sessions, logs (in use while Codex runs), caches,
+  temp and snapshots, generated images (confirm), old releases.
+  `auth.json`, `config.toml`, memory and goal databases, skills and rules are
+  never listed.
+- **Agent worktrees** under `<repo>/.worktrees`, `<repo>/.claude/worktrees`,
+  `~/projects/forkmesh/worktrees` and `<tmp>/forkmesh-worktrees`, matched to
+  their repository; each records branch, commits ahead/behind `main`,
+  uncommitted files (`git status --porcelain` with `GIT_OPTIONAL_LOCKS=0`),
+  lock state, agent sessions and task work items. A folder with its own
+  `.git` folder is a clone and protected.
+- **Builds and temp files:** per-agent build trees (attached while the agent
+  or its worktree exists), agent scratch in the temp folder, test temp
+  folders, Actions sandboxes (in use while a run claims them), the Actions
+  build cache (report only), Playwright browsers (newest attached), and
+  ccache (the active cache is report only).
+- **Other caches:** operator caches need a per-item confirm; release timers'
+  folders and anything with a `.git` are protected.
 
 ## Status
 

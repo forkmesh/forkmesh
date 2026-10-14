@@ -96,9 +96,9 @@ git push forkmesh docs/my-change
 first and use **Pulls → New pull request**; the signed request is queued for
 the owner even while their node is offline.
 
-**Hand work to an agent.** Assign an issue to Codex or Claude Code from the
-desktop app. Agents run in isolated worktrees with live transcripts and diffs,
-and finished work becomes a pull request.
+**Hand work to an agent.** Assign an issue to a coding agent from the desktop
+app. Agents run in isolated worktrees with live transcripts and diffs, and
+finished work becomes a pull request.
 
 The [stock Git compatibility matrix](www/docs/git-compatibility.md) lists the
 supported clone, fetch, push, partial-clone, bundle, submodule, and
@@ -110,8 +110,8 @@ signed-commit workflows and their known limitations.
   integrity-checked mirrors.
 - Create signed issues, discussions, pull requests, review conversations,
   projects, milestones, and release metadata.
-- Run multiple Codex or Claude Code agents in isolated worktrees and turn their
-  work into pull requests.
+- Run multiple coding agents in isolated worktrees and turn their work into
+  pull requests.
 - Run repository Actions on labeled desktop or server nodes with streaming
   logs, artifacts, checks, and release publishing.
 - Chat in authenticated, encrypted repository rooms (private channels and
@@ -161,18 +161,6 @@ world.forkmesh.com ┘  →  core nodes, each running the app, a replicated
                             (Git bytes + signed health)
 ```
 
-- **app** is the Python Worker code, run on CPython by the host shim in
-  `app/host/forkmesh_host/` ([docs/host](docs/host/README.md)). D1 is rqlite,
-  Durable Objects run across the three cores, and cron, DNS health and
-  certificates are leaderless. Caddy serves the static files for `app` and
-  `world`. It routes clone traffic to a mirror whose signed proof is fresh and
-  whose refs match an accepted source revision.
-- **www** is a static-asset site served by the Cloudflare Worker
-  `forkmesh-www`, not by the cores, so marketing pages never consume the
-  app's request budget ([docs/www](docs/www/README.md)).
-- **Core nodes** hold the data and secrets and run no untrusted code.
-  **Runners** hold no core secret and run agent and Actions jobs
-  ([docs/RUNNERS.md](docs/RUNNERS.md)).
 - **app** is the Python application, run on CPython by the host shim in
   `app/host/forkmesh_host/` ([docs/host](docs/host/README.md)). The core nodes
   share a replicated database and serve the static files for `app` and
@@ -202,8 +190,7 @@ marketing site.
 ### Run a mirror server
 
 The headless Go service supervises repository synchronization, the public HTTPS
-Git gateway, signed endpoint publication, and an optional Cloudflare Tunnel
-fallback. Production hosts can be created and checked from
+Git gateway, and signed endpoint publication. Production hosts can be created and checked from
 **App → Network → Hosts**. For a manual build:
 
 ```sh
@@ -281,7 +268,11 @@ GET  /api/repositories
 GET  /api/repo/{owner}/{repo}/tree
 GET  /api/status
 WS   /api/repo/{owner}/{repo}/rooms/{room}/ws
+GET  /api/chat/agent-guestbook
 ```
+
+`GET /api/chat/agent-guestbook` describes how an AI agent posts a short public
+greeting; the response carries `messageForUser` for the agent to relay.
 
 `tools/forkmesh_mcp_server.py` exposes capability-scoped tools over MCP for
 compatible AI clients:

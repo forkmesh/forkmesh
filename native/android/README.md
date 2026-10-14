@@ -10,9 +10,6 @@ The developer home page for both native apps (this one and `native/ios`) is
 [`docs/native/README.md`](../../docs/native/README.md); the reasons behind
 Android-specific decisions are in
 [`docs/native/ANDROID.md`](../../docs/native/ANDROID.md).
-Since 2026-09-27 native development happens in this repository again. From
-2026-09-24 it ran in the ForkMesh Next repository (`~/projects/forkmesh-backup/src`);
-everything from there was brought back here and its copy of `native/` removed.
 
 ## Build, test, run
 
@@ -39,8 +36,7 @@ unchanged on a healthy host.
 The **Launch native app (Android)** shortcut
 (`.forkmesh/shortcuts/launch-native-android.sh`) installs the JDK and SDK when
 missing, and targets `$ANDROID_SERIAL`, else the running `forkmesh-native-36`
-emulator (Android 36, Pixel 7 profile; the Android 37 x86_64 emulator image
-crash-loops its SurfaceFlinger on this host), else a single attached physical device,
+emulator (Android 36, Pixel 7 profile), else a single attached physical device,
 else starts `forkmesh-native-36` on its own free console port. Other emulators are
 never used or disturbed. It then builds, installs and opens the app.
 
@@ -149,16 +145,16 @@ Flutter app's data into its own stores (`core/.../migration`,
 `app/.../feature/account/projects/FlutterDataMigration.kt`), before any
 service reads them:
 
-- `flutter_secure_storage` (10.3.4 custom ciphers: RSA-OAEP or PKCS#1 wrapped
-  AES-GCM or AES-CBC keys under `<applicationId>.FlutterSecureStoragePluginKey[OAEP]`,
-  and the 9.2.4 EncryptedSharedPreferences layout from 2026-08-08 to 2026-09-14)
-  into the Keystore-backed `SecureStore`, under the same key names: node key,
+- `flutter_secure_storage` (both its custom-cipher layout: RSA-OAEP or PKCS#1
+  wrapped AES-GCM or AES-CBC keys under
+  `<applicationId>.FlutterSecureStoragePluginKey[OAEP]`, and its older
+  EncryptedSharedPreferences layout) into the Keystore-backed `SecureStore`, under the same key names: node key,
   owner key, per-project sessions (`auth/session/<projectId>`), vault device
   copy, agent credentials, `p/<projectId>/` scopes.
 - `FlutterSharedPreferences` `flutter.<key>` into the native preferences,
   including the project list and the active project. An upgraded install with
   no recorded project lands on ForkMesh; a fresh install starts on ForkMesh
-  (`app.forkmesh.com`), and a stored ForkMesh Next project is folded into it.
+  (`app.forkmesh.com`).
 - The Flutter copies are deleted only after the relay accepts the migrated
   session (`GET /api/accounts/devices`), and never while any Flutter secret
   could not be decrypted. The migration is idempotent and retries while the
@@ -174,8 +170,8 @@ the same: a reinstall under another id or key starts empty.
    the user is still signed in on every project, the vault opens, and the
    Flutter prefs files are gone after the first verified session.
 2. To build the release APK by hand, work in a worktree at the release commit
-   and use the **v3** direct-distribution key the APK is signed with since
-   v1.2.3 (`~/projects/forkmesh/data/release/android-direct-distribution-v3.jks`,
+   and use the **v3** direct-distribution signing key
+   (`~/projects/forkmesh/data/release/android-direct-distribution-v3.jks`,
    alias `forkmesh`, password file `.apk-keystore-password` next to it; never
    print it):
    ```sh

@@ -1,23 +1,12 @@
 # Status Page package and its checks
 
-`marketplace/packages/status-page` (Market id `status-page`, 2.1.0) is the
+`marketplace/packages/status-page` (Market id `status-page`) is the
 green-dots status monitor: a dot per ForkMesh system from `/api/status` on the
 desktop debug bar, under the version on iPhone and Android, and on the web's
 dashboard page `/dashboard/status-monitors`. Each check is its own package
 (`marketplace/packages/status-check-*`) that depends on it, the user can add
 their own monitors, and the install state follows the account across every
 device.
-
-## Why
-
-On 2026-10-07 the user asked to make the green-dots status monitors a plugin
-with settings, to make each check a dependent plugin, to allow custom
-monitors, and for an uninstall to remove it completely from desktop, mobile and
-web, with an install bringing it back on all of them. Until then (1.0.0,
-2026-10-02) the package only gated the desktop dots and the iOS footer, was
-switched per device (`packages/status-page/on` on the phone), had no settings,
-and Android had no dots. The manifest's `dependencies` field existed but no
-host read it.
 
 ## Code map
 
@@ -53,8 +42,8 @@ host read it.
 | `status-check-runners` | every `runner:<name>` |
 | `status-check-mirrors` | every `mirror:<name>` (off by default) |
 
-Every check is on by default except Mirrors: no surface showed mirror dots
-before 2.0.0, and a fleet of mirrors would crowd the row.
+Every check is on by default except Mirrors, since a fleet of mirrors would
+crowd the row.
 
 The checks choose which dots a user sees; they do not start or stop the
 server's sampler. `record_status_sample` keeps checking every system each
@@ -69,70 +58,32 @@ set `install.sync: "account"`, and declare a `status.monitor` contribution.
 
 ## Market nesting
 
-On 2026-10-07 the user asked for the checks to be added or removed through the
-one base Status Page package and shown nested under it. Before that, the
-Market listed each `status-check-*` package as its own card or row with its
-own Install button, 19 entries for one feature.
-
-Every Market now nests a package under its first `dependencies` entry when
-that package is in the catalog, so the checks appear only inside Status Page:
-
-- `/market` (`app/tools/build_market_catalog.py`, `nest_packages`,
-  `render_nested`): a collapsible "Includes 18 packages, added and removed
-  with it" list in the Status Page card, with each check's name, version,
-  summary and repository link.
-- Desktop (`MainWindow::refreshMarketPage`): the Status Page card has a tick
-  box per check (`marketNestedPackage-<id>`), off and locked while Status
-  Page is removed. The tab counts and search use top-level cards, and a
-  search for a check's name shows the Status Page card.
-- iPhone and Android: the Market row says "Includes 18 packages"; the
-  Status Page screen has an "Included packages" switch list under the account
-  switch. Turning a check off or on from that list skips the confirmation.
-
-Removing Status Page removes every check, and installing it brings back every
-check that is on by default (all but Mirrors). The account engine already did
-this; the desktop registry now does too when it installs Status Page itself
-(`PackageRegistry::install`), so an offline desktop agrees with the account.
+Every Market nests a package under its first `dependencies` entry, so the
+checks appear only inside Status Page: a collapsible "Includes N packages"
+list on `/market` (`nest_packages`, `render_nested` in
+`app/tools/build_market_catalog.py`), a tick box per check on the desktop card
+(`marketNestedPackage-<id>`), and an "Included packages" switch list on the
+phones. Removing Status Page removes every check; installing it brings back
+every check that is on by default, in the account engine and in the desktop
+registry (`PackageRegistry::install`).
 
 ## Account install state
 
-`GET /api/plugins/@account` answers one row per `install.sync: "account"`
-package: `{id, installed, settings, places, availablePlaces}`. `installed` is
-effective: false while anything the package depends on is removed. Rows live in
-`account_package_installs(account_bi, package, installed, settings,
-updated_at, places)`, created on first use by `plugin_data` like a package table (no
-core migration). With no row, a package is installed when its manifest says
-`install.default`, or when it sets `install.installedBefore` and the account
-was created before that date ([core-plugins.md](core-plugins.md)).
+Status Page and its checks are account-synced (`install.sync: "account"`;
+rules in [core-plugins.md](core-plugins.md)). Status Page is
+`install.default: false` with `installedBefore: "2026-10-11"`.
 
-Since 2.1.0 (2026-10-10) Status Page itself is `install.default: false` with
-`installedBefore: "2026-10-11"`: accounts created from 2026-10-11 start without
-it (and so without any check, since every check depends on it), older accounts
-keep it. The checks keep their own defaults, so installing Status Page on a new
-account brings every check but Mirrors.
-
-- `POST .../<id>/install` installs the package and, transitively, its
+- `POST /api/plugins/@account/<id>/install` installs the package and its
   dependencies.
-- `POST .../<id>/uninstall` stores the package as removed, deletes the rows of
-  every package that depends on it (back to their defaults, hidden while the
-  parent is removed), and calls `purge_account_data` for each. For Status Page
-  that deletes the custom monitors. Installing Status Page again brings back
-  every default check, with default settings and no monitors.
-- `POST .../<id>/settings` with `{"settings": {...}}` checks every key and
-  value against the manifest's `settings` and answers 400 `invalid_setting`
-  otherwise.
+- `POST .../<id>/uninstall` stores it as removed, resets dependants to their
+  defaults and calls `purge_account_data` for each (for Status Page this
+  deletes the custom monitors).
+- `POST .../<id>/settings` with `{"settings": {...}}` validates against the
+  manifest's `settings` (400 `invalid_setting`).
 - Every answer carries the full `packages` list, and install/uninstall add
-  `changed` (ids whose effective state flipped), so a client applies one
-  response instead of reloading.
-- `GET /api/plugins/` (the dashboard's Plugins column) lists account-synced
-  packages by the same effective state.
-- Organizations cannot install account-synced packages
-  (`plugin_installs_per_account`), and they are left out of an organization's
-  plugin list.
-- Deleting the account deletes its rows (`plugin_data.purge_account`).
-
-The desktop signs these calls like its other `/api/plugins` lifecycle calls
-(`kPluginRequestProof`); the web and the phones use their session.
+  `changed`, so a client applies one response.
+- Organizations cannot install account-synced packages; deleting the account
+  deletes its rows (`plugin_data.purge_account`).
 
 ## Custom monitors
 
@@ -159,25 +110,15 @@ the web shows green when the address answered at all.
 
 ## Surfaces
 
-- Desktop: the debug bar dots, the account sync and the settings page;
-  [desktop/diagnostics.md](../desktop/diagnostics.md).
-- iPhone and Android: the footer dots (above the bottom bar on Android), the
-  package page with the account switch, settings and your monitors;
-  [native/NAVIGATION.md](../native/NAVIGATION.md) 2.0.72.
-- Web: the package page at `/dashboard/status-monitors` (Plugins column)
-  shows the dots in two rows (ForkMesh systems, your monitors), the checks
-  with on/off switches, the settings (saved on change), your monitors, and
-  **Remove Status Page**. It loads on open and on **Refresh** only, so
-  `refreshMinutes` has no effect there, and it skips the desktop-only probe
-  rows. Every signed-in link to `/status` (site header and footer, the
-  "System status" pill, the dashboard sidebar, profile footer, home, mobile
-  and hackathon menus) carries `data-status-entry`. `www/public/api-client.js`
-  hides those while the account's `/api/plugins/` list lacks `status-page`
-  (`rememberStatusPage`, `refreshStatusPage`, `statusPageShown`; cached per
-  account in localStorage `forkmesh.statusPage.v1`, rechecked at most every
-  5 minutes). Signed-out visitors always see them, and the public `/status`
-  page and the links in alert pings and emails stay, because that page is
-  ForkMesh's public incident page.
+- Desktop: the debug bar dots and the package page
+  ([desktop/diagnostics.md](../desktop/diagnostics.md)).
+- iPhone and Android: footer dots and the package page
+  ([native/NAVIGATION.md](../native/NAVIGATION.md)).
+- Web: `/dashboard/status-monitors` (loads on open and Refresh only). Signed-in
+  links to `/status` carry `data-status-entry` and are hidden while the
+  account lacks `status-page` (`www/public/api-client.js`,
+  `forkmesh.statusPage.v1`). Signed-out visitors and the public `/status`
+  incident page are unaffected.
 
 ## Tests
 

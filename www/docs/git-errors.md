@@ -1,17 +1,10 @@
 # Git errors when cloning, pulling, or pushing
 
 ForkMesh serves Git over HTTPS at `https://app.forkmesh.com/<owner>/<repo>`.
-A clone or pull is usually redirected to one of the mirrors that hold the
-repository, so a line like `warning: redirecting to
-https://n2.next.forkmesh.com/<owner>/<repo>.git/` is normal.
-
-When something goes wrong, the error comes from one of two places:
-
-- **ForkMesh answered with an error.** Git prints our explanation on lines
-  that start with `remote:`, followed by a link to this page.
-- **The connection failed before ForkMesh could answer.** Git prints only its
-  own message, usually with a `curl` error. ForkMesh cannot add text to these,
-  because no answer reached your computer.
+Clones and pulls are often redirected to a mirror, so a
+`warning: redirecting to ...` line is normal. Errors ForkMesh explains are
+printed on `remote:` lines with a link to this page; connection failures show
+only Git's own message, usually with a `curl` error.
 
 ## Messages from ForkMesh
 
@@ -28,8 +21,7 @@ When something goes wrong, the error comes from one of two places:
 
 ## Errors from your own Git client
 
-These lines come from Git and curl on your computer. The request did not
-complete, so ForkMesh never saw a failure it could explain.
+These come from Git and curl on your computer; ForkMesh never saw the request.
 
 | Git prints | What happened | What to do |
 | --- | --- | --- |
@@ -38,25 +30,13 @@ complete, so ForkMesh never saw a failure it could explain.
 | `Could not resolve host`, `Failed to connect`, `Connection timed out`, `Connection refused` | Your computer could not reach ForkMesh at all. | Check your network, DNS, and any VPN or proxy. |
 | `SSL certificate problem` | Something between you and ForkMesh is presenting another certificate, or your clock is wrong. | Check the system clock, and any proxy or antivirus that intercepts HTTPS. |
 
-The ForkMesh desktop app recognizes these errors too. When a fetch, pull,
-clone, sync, or push fails this way, it says that the connection broke and
-that trying again usually works.
-
 ## Reporting a problem
 
-If an error keeps happening, open an issue on
-[forkmesh/forkmesh](https://app.forkmesh.com/forkmesh/forkmesh/issues) and
-include:
+Open an issue on
+[forkmesh/forkmesh](https://app.forkmesh.com/forkmesh/forkmesh/issues) with
+`git --version`, `curl --version`, the time of failure with time zone, and a
+trace (check it for secrets before posting):
 
-- the output of the failing command run with tracing on:
-
-  ```bash
-  GIT_TRACE_CURL=1 GIT_TRACE_CURL_NO_DATA=1 git pull origin main 2>&1 | tail -60
-  ```
-
-- the output of `git --version` and `curl --version`;
-- the date and time it failed, with your time zone.
-
-Git removes passwords and cookies from the trace by default, but read it
-before you post it. With the time and the trace, the operators can find your
-request in the mirrors' logs.
+```bash
+GIT_TRACE_CURL=1 GIT_TRACE_CURL_NO_DATA=1 git pull origin main 2>&1 | tail -60
+```

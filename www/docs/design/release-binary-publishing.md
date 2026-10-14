@@ -1,6 +1,6 @@
 # Release binary publishing
 
-Issue #304. Release binaries are never committed to git. A release is two
+Release binaries are never committed to git. A release is two
 things kept apart on purpose:
 
 - **Metadata**: small, signed text committed to the repository and synced

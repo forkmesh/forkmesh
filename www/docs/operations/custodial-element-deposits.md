@@ -1,73 +1,52 @@
 # Custodial deposit addresses for world-element purchases
 
-The World element store sells elements two ways. Operators choose whether the
-second one exists.
+The World element store accepts two payment methods. The second is optional.
 
 | | Direct | Deposit |
 |---|---|---|
 | Buyer pays | the published pool address | a temporary ForkMesh address |
 | Who holds the key | the buyer | **ForkMesh**, until the sweep lands |
-| Confirmation | buyer pastes the transaction signature | automatic, the address is watched |
+| Confirmation | buyer submits the transaction signature | automatic; the address is watched |
 | Mirror half | unsigned intent, signed on the operator's device | paid by the sweep transaction |
 
-## What "custodial" means here, precisely
+## Custody model
 
-When a buyer picks the deposit option, the Worker generates a fresh Ed25519
-keypair, stores the 32-byte seed encrypted in `world_element_purchases`, and
-gives the buyer the public key as a payment address. Once the address is
-funded, the Worker signs one transaction sending **half to the treasury and
-half to online functioning mirror nodes**, then clears `deposit_secret`.
+For a deposit, the server generates a fresh Ed25519 keypair, stores the seed
+encrypted in `world_element_purchases`, and shows the public key as the payment
+address. Once funded, it signs one transaction sending half to the treasury and
+half to eligible online mirror nodes, then clears `deposit_secret`. Until the
+sweep lands (a failed sweep is retried by cron), anyone who controls the server,
+its database, or `DATA_KEY` can move those funds. The community reward pool key
+is not involved.
 
-Between minting and sweeping, ForkMesh can move those funds — and so can
-anyone who compromises the Worker, the D1 database, or the `DATA_KEY`. That
-window is normally seconds, but a failed sweep extends it until cron retries
-(every 5 minutes). Only funds sitting in un-swept deposit addresses are at
-risk; the community reward pool is unaffected, because its signing key still
-lives only in the operator's local Qt client.
+The store shows custody text before purchase, and `/api/world/store/catalog`
+marks the deposit entry with `forkMeshHoldsDepositKey: true`. Never describe
+this method as non-custodial.
 
-The store labels this option with its own custody text before purchase, and
-`/api/world/store/catalog` returns a `paymentMethods` array where the deposit
-entry carries `forkMeshHoldsDepositKey: true`. Do not describe this option as
-non-custodial.
+## Configuration
 
-## Enabling and disabling
+Deposits are off unless `TREASURY_SOLANA_ADDRESS` (or
+`COMMUNITY_REWARD_POOL_ADDRESS`) is set. `CUSTODIAL_DEPOSITS = "0"` keeps the
+treasury but disables deposits; buyers then see only the direct method.
 
-The path is **off unless a treasury address is configured**:
+## Invariants
 
-```
-TREASURY_SOLANA_ADDRESS = "<public treasury address>"   # or COMMUNITY_REWARD_POOL_ADDRESS
-```
-
-To keep a treasury configured but refuse custodial deposits entirely:
-
-```
-CUSTODIAL_DEPOSITS = "0"
-```
-
-With deposits off the store still works; buyers just see the direct option
-only, and no key is ever generated.
-
-## Safety properties worth keeping
-
-- `_solana_rpc` (the shared read helper) still cannot send. Broadcasting goes
-  through `_solana_rpc_write`, which accepts `sendTransaction` and nothing else.
-- The sweep is idempotent on `sweep_signature` and clears the seed on success.
-- Two concurrent pollers cannot double-send: identical transactions dedupe by
-  signature on chain, and a rolled blockhash makes the second attempt fail for
-  insufficient funds.
+- The shared read helper `_solana_rpc` cannot send; only `_solana_rpc_write`
+  broadcasts, and only `sendTransaction`.
+- The sweep is idempotent on `sweep_signature` and clears the seed on success;
+  concurrent pollers cannot double-send.
 - Payees come from the signed eligibility snapshot (`_eligible_reward_snapshot`),
-  not raw presence rows, so only verified online mirrors are paid, capped at
-  `MAX_SWEEP_PAYEES`.
-- The retired per-signup donation funnel and bounty escrow stay disabled; this
-  did not revive them.
+  capped at `MAX_SWEEP_PAYEES`.
 
-## Operational checks
+## Monitoring
 
-- A funded address with `sweep_signature=''` and a non-empty `sweep_error` is
-  the case to watch — the Worker is still holding a key for real money.
-  ```sql
-  SELECT purchase_id, deposit_address, sweep_error FROM world_element_purchases
-  WHERE method='deposit' AND deposit_secret<>'' AND sweep_signature='';
-  ```
-- `treasury_not_configured` means the treasury variable was removed after the
-  address was minted; restore it and cron will finish the sweep.
+A funded address with an empty `sweep_signature` and a `sweep_error` means the
+server still holds a key for real funds:
+
+```sql
+SELECT purchase_id, deposit_address, sweep_error FROM world_element_purchases
+WHERE method='deposit' AND deposit_secret<>'' AND sweep_signature='';
+```
+
+`treasury_not_configured` means the treasury variable was removed after the
+address was minted; restore it and cron finishes the sweep.

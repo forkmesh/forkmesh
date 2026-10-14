@@ -16,8 +16,8 @@ re-renders on any change. Code outside SwiftUI uses a listener surface:
 `addListener { ... } -> ListenerToken`, `removeListener(token)` (callbacks are `@Sendable`, run on
 the main actor; use `MainActor.assumeIsolated` inside). A callback that only starts a task writes
 `Task { @MainActor in ... }` directly: a lone `Task { ... }` as the whole body of an
-`assumeIsolated` closure becomes its generic result, and Swift 6.2+ rejects it as an "ambiguous use
-of 'init(name:priority:operation:)'" (broke the iOS archive on 2026-09-30). `PerformanceMonitorService` is the
+`assumeIsolated` closure becomes its generic result, which Swift 6.2+ rejects as ambiguous.
+`PerformanceMonitorService` is the
 exception: thread-safe (lock), not main-actor.
 
 Static keys and pure static helpers (`SettingsService.canonicalServerUrl`, `AuthService.sessionKeyFor`,
@@ -49,7 +49,6 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
   `isRetiredLocalWorkerServerUrl(_)`, `migrateLocalWorkerServerUrl(prefs)`.
 - Values: `displayName`, `room` (default "world-general"), `passphrase`,
   `githubToken`, `gitlabToken` + `set...(_)`, `clearSecrets()`.
-- `bugButtonAnchor: Double` (0...1, default 0.72), `bugButtonOnLeft`, `setBugButtonPlacement(anchor:onLeft:)`.
 - `themeMode: ThemeMode` (`.system/.light/.dark`), `accent: AccentChoice` (`.blue/.purple/.teal`,
   `.label`, `fromName`), setters. Raw values are the stored names. The app's own `FmAccent` maps
   with `FmAccent.fromName(settings.accent.rawValue)`.
@@ -57,9 +56,8 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
   `hideSponsoredMessages()` (7 days); iOS UDID: `iosUdid`, `iosUdidProduct`, `iosUdidVersion`,
   `beginIosUdidRead() -> nonce`, `acceptIosUdidLink(IosUdidLink) -> Bool`.
 - `legacyProject` (the per-project `ProjectLegacyMarker`, settled once by `create` or on first read:
-  legacy when the project shows earlier use, docs/native/NAVIGATION.md 2.0.86), `settleLegacyProject()`;
-  `signInOn` / `setSignInOn` (the per-device Sign in package, default `legacyProject`); `aquariumOn`.
-  The Tour and Design switches are gone: both follow the account.
+  legacy when the project shows earlier use), `settleLegacyProject()`; `signInOn` / `setSignInOn`
+  (the per-device Sign in package, default `legacyProject`); `aquariumOn`.
 - Keys are `static let ...Key` constants ("server/url", "profile/name", "appearance/themeMode"...).
 - `prefs` and `env` are public for sibling services.
 
@@ -134,10 +132,8 @@ at startup, right after `SettingsService.create`, then build `AuthService` with 
 ## FreshInstallReset (`FreshInstallReset.swift`)
 
 Deleting the app from an iPhone removes its UserDefaults and files, but iOS
-keeps its Keychain items. A reinstall would then find the old identity key and
-session and open already signed in. After the app is deleted, the next install
-must ask you to sign in again (2026-10-09), so the first launch of an install
-erases those leftovers.
+keeps its Keychain items. So that a reinstall asks the user to sign in again,
+the first launch of a new install erases those leftovers.
 
 `FreshInstallReset(prefs:flutterPrefs:eraseKeychain:).run()` is the first step
 of `AppServices.start`, before the Flutter migration and before anything reads
@@ -147,10 +143,9 @@ the app's access groups: the session, identity, owner keys, vault copy, push
 credentials and share drop).
 
 - `install/installed` set: `.alreadyInstalled`, nothing happens.
-- No marker, but the app's `fm.` preferences or the retired Flutter app's
-  `flutter.` preferences hold anything: an update. Every earlier native launch
-  wrote `migration/flutter/*`, so an update keeps its login. The marker is set:
-  `.upgraded`.
+- No marker, but the app's `fm.` preferences or the Flutter app's `flutter.`
+  preferences hold anything: an update, which keeps its login. The marker is
+  set: `.upgraded`.
 - No marker and no preferences: a new install. `install/erasePending` is set,
   the Keychain is erased, then the marker replaces it: `.erased`. If the erase
   fails (the phone still locked after a reboot), it returns `.deferred`, and

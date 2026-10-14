@@ -1,12 +1,10 @@
 # Organization roles and the authorization matrix
 
-Every organization request in the Worker is decided by one deny-by-default
-table, `app/src/organization_rbac.py`. A role holds a capability only when
-the matrix names it; an unknown role, an empty role, or a capability the
-matrix does not list is refused for everyone, owners included. This page is
-generated from that module and checked against it by
-`app/tests/test_organization_rbac.py`, so the table below is the policy the
-deployed Worker enforces.
+Every organization request is decided by one deny-by-default table,
+`app/src/organization_rbac.py`. A role holds a capability only when the matrix
+names it; unknown roles, empty roles and unlisted capabilities are refused for
+everyone, owners included. The tables below are generated from that module and
+checked against it by `app/tests/test_organization_rbac.py`.
 
 ## Roles
 
@@ -23,9 +21,8 @@ Strongest first.
 
 ## Capabilities
 
-`read` capabilities never change organization state; `write` capabilities
-do, and no `write` row lists `auditor` or `guest`. The Engineering-floor team
-check still applies on top of the agent rows, exactly as before.
+`read` capabilities never change organization state; no `write` row lists
+`auditor` or `guest`.
 
 | Capability | Kind | owner | admin | maintainer | member | auditor | guest |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -53,37 +50,23 @@ check still applies on top of the agent rows, exactly as before.
 
 ## Role administration
 
-`organization.members.manage` says who may add, re-role or remove members;
-`organization.roles.administer` restricts the administrative roles:
+- An `owner` may assign or remove any role.
+- An `admin` may manage `maintainer`, `member`, `auditor` and `guest`
+  accounts, but cannot grant `owner`/`admin` or change an account holding one.
+- Other roles assign nothing.
+- The last `owner` can never be removed or demoted.
 
-- an `owner` may assign or remove any role;
-- an `admin` may add, re-role and remove `maintainer`, `member`, `auditor`
-  and `guest` accounts, but can neither hand out `owner`/`admin` nor touch an
-  account that currently holds one;
-- every other role may assign nothing;
-- the last `owner` can never be removed or demoted.
+Denied writes are recorded in the sensitive-action audit log with a reason
+(`insufficient_role`, `owner_role_required`, `last_owner`).
 
-Every denied write is recorded in the sensitive-action audit log with the
-reason (`insufficient_role`, `owner_role_required`, `last_owner`).
+## Enforcement points
 
-## Where the matrix is enforced
+- Organization settings, members, teams, linked repositories, integrations,
+  bot tokens and repository imports.
+- `_org_permission`, used by the Git push gate and every repository-permission
+  check: the role's baseline, raised by team grants up to the role's ceiling.
+- World building access, office chat channels, task boards and succession
+  votes, which enumerate the insider roles in SQL.
 
-- `/api/orgs/<org>` settings, `/members`, `/teams`, `/teams/<team>/members`,
-  `/repos`, the fediverse toggle, bot tokens, and repository imports into an
-  organization.
-- `_org_permission`, which the git push gate and every repository-permission
-  check use: the role's baseline, raised by team grants up to the role's
-  ceiling.
-- World building access (`restricted` admits insiders, `private` admits
-  administrators), office chat channel creation, task boards and the
-  Engineering floor roster, which enumerate the insider roles in SQL.
-- Succession votes: the D1 triggers enumerate the
-  `organization.succession.approve` roles (migration
-  `0183_organization_rbac_roles.sql`).
-
-## Rollback
-
-The role vocabulary is plain text in `org_members.role`, so a rollback
-needs no data migration: a Worker build that predates a role treats it as no
-membership, which is the deny-by-default behaviour. The down migration
-restores the previous succession triggers.
+Roles are stored as plain text in `org_members.role`; a build that does not
+know a role treats it as no membership.
