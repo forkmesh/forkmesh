@@ -461,7 +461,13 @@ def test_summary_and_output_carry_no_plaintext_or_key(rekeyed):
     summary = rekeyed["summary"]
     assert summary["problems"] == []
     assert summary["totals"]["cipher_reencrypted"] > 5
-    assert summary["totals"]["chat_reencrypted"] == 2
+    welcome_room = ("chat-channel:"
+                    + entry_module().chat_channels_api.everyone_channel_id("welcome") + ":v1")
+    conn = sqlite3.connect(rekeyed["out"])
+    rooms = [room for (room,) in conn.execute("SELECT room_key FROM chat_history")]
+    conn.close()
+    assert welcome_room in rooms
+    assert summary["totals"]["chat_reencrypted"] == len(rooms) == 3
     raw = rekeyed["out"].read_bytes()
     for secret in (KEY_A.encode(), KEY_B.encode(), PASSWORD.encode(),
                    NOTE_BODY.encode(), EMAIL.encode()):
