@@ -1,10 +1,13 @@
 import ast
 import asyncio
+import html
+import urllib.parse
 from pathlib import Path
 
 import pytest
 
 import mail_tracking
+import urls
 
 ENTRY = Path(__file__).resolve().parents[1] / "src" / "entry.py"
 
@@ -99,3 +102,34 @@ def test_tracking_tokens_accept_the_send_ids_the_app_issues():
         legacy, signature)
     assert mail_tracking.parse_token(send_id[:-1] + "." + signature) == (
         None, None)
+
+
+@pytest.mark.parametrize("action,suffix", [("c", ""), ("o", ".gif"), ("u", ""),
+                                           ("l", ".png")])
+def test_tracking_route_takes_the_send_ids_the_app_issues(action, suffix):
+    for send_id in ("0123456789abcdef0123456789abcdef",
+                    "01234567-89ab-cdef-0123-456789abcdef"):
+        token = send_id + "." + "a" * 24
+        match = urls.MAIL_TRACKING_RE.match(
+            "/api/mail/t/%s/%s%s" % (action, token, suffix))
+        assert match and match.groups() == (action, token)
+        assert mail_tracking.parse_token(match.group(2)) == (send_id, "a" * 24)
+    assert not urls.MAIL_TRACKING_RE.match("/api/mail/t/c/" + "0" * 31 + "." + "a" * 24)
+
+
+def test_a_tracked_link_redirects_to_the_unescaped_address():
+    target = ("https://forkmesh.com/ios-install.html?build=222&v=5b65889dbcb6"
+              "#" + "5b" * 32)
+    body = '<a href="%s">Install</a>' % html.escape(target)
+    found = [mail_tracking.href_target(m.group(2))
+             for m in mail_tracking.HREF_RE.finditer(body)]
+    assert found == [target]
+    signed = []
+    tracked = mail_tracking.rewrite_links(body, lambda url: signed.append(url) or (
+        mail_tracking.tracked_link("https://app.example", "tok", url, "s" * 24)))
+    assert signed == [target]
+    href = html.unescape(mail_tracking.HREF_RE.search(tracked).group(2))
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
+    assert mail_tracking.safe_target(query["u"][0]) == target
+    assert query["s"] == ["s" * 24]
+    assert "&amp;s=" in tracked

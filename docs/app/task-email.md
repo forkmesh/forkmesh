@@ -115,3 +115,17 @@ UUID), but `_ap_uuid` returns 32 hex characters. Every tracked link and open
 pixel in a Postfix-sent notification email therefore answered "This link is
 not valid." (404), and no open or click was ever recorded. The pattern now
 accepts both shapes.
+
+That fix stopped at the token parser. The route in front of it,
+`urls.MAIL_TRACKING_RE`, still matched only the 36-character shape, so on
+2026-10-14 every tracked link still answered `{"error":"not_found"}` before the
+handler ever ran. The operator saw it on the "iPhone build … is ready"
+notification emails, whose only link is the install page. The route now takes
+both shapes as well.
+
+The same report turned up a second fault. The tracker read each `href` straight
+out of the HTML, so `&amp;` stayed in the address it signed and redirected to:
+the install link landed on `ios-install.html?build=222&amp;v=…`. The tracker now
+unescapes the `href` first (`mail_tracking.href_target`, and `rewrite_links`
+for the address it wraps), so the redirect opens the address the email showed.
+The rewritten link is HTML-escaped again on the way out.

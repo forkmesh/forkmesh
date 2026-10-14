@@ -30350,7 +30350,7 @@ async def _mail_tracked_html(env, send_id, html, footer=False):
             "%s/api/mail/t/u/%s" % (base, tok))
     signatures = {}
     for match in mail_tracking.HREF_RE.finditer(html or ""):
-        target = mail_tracking.safe_target(match.group(2))
+        target = mail_tracking.href_target(match.group(2))
         if target and target not in signatures:
             signatures[target] = await blind_index(
                 env, "mail-click:%s:%s" % (send_id, target))
