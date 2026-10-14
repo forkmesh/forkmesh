@@ -482,6 +482,34 @@ QString durationText(double ms)
 
 using MetricSeries = QHash<QString, QList<QJsonObject>>;
 
+QString pageKey(const QString &url)
+{
+    const QUrl parsed(url);
+    if (!parsed.isValid() || parsed.host().isEmpty())
+        return QString();
+    QString host = parsed.host().toLower();
+    if (host.startsWith(QLatin1String("www.")))
+        host = host.mid(4);
+    QString path = parsed.path(QUrl::FullyEncoded);
+    while (path.endsWith(QLatin1Char('/')))
+        path.chop(1);
+    return host + (path.isEmpty() ? QStringLiteral("/") : path);
+}
+
+QVector<double> dailyViews(const QJsonArray &days, qint64 start, qint64 end, int buckets)
+{
+    const qint64 span = qMax<qint64>(1, end - start);
+    QVector<double> counts(qMax(1, buckets), 0);
+    for (const QJsonValue &value : days) {
+        const QJsonArray day = value.toArray();
+        const qint64 at = qint64(day.at(0).toDouble()) + kDay / 2;
+        if (at < start || at > end)
+            continue;
+        counts[qMin(int(counts.size()) - 1, int((at - start) * counts.size() / span))] += day.at(1).toDouble();
+    }
+    return counts;
+}
+
 MetricSeries seriesByChannel(const QJsonArray &metrics)
 {
     MetricSeries series;
@@ -824,8 +852,22 @@ MarketingFeature::MarketingFeature(
     m_detailChart = new LineChart;
     m_detailChart->setAccessibleName(QStringLiteral("Channel history chart"));
     m_detailChart->setMaximumHeight(210);
+    m_detailChart->setMinimumWidth(240);
     m_detailChartPanel->body()->addWidget(m_detailChart);
-    detailGrid->addPanel(m_detailChartPanel, 2);
+    m_detailViewsPanel = new DashboardPanel(QStringLiteral("Views over time"));
+    m_detailViewsPanel->setCompact();
+    m_detailViewsChart = new LineChart;
+    m_detailViewsChart->setAccessibleName(QStringLiteral("Channel views chart"));
+    m_detailViewsChart->setMaximumHeight(210);
+    m_detailViewsChart->setMinimumWidth(240);
+    m_detailViewsPanel->body()->addWidget(m_detailViewsChart);
+    auto *detailCharts = clearWidget();
+    auto *detailChartsLayout = new QHBoxLayout(detailCharts);
+    detailChartsLayout->setContentsMargins(0, 0, 0, 0);
+    detailChartsLayout->setSpacing(10);
+    detailChartsLayout->addWidget(m_detailChartPanel, 1);
+    detailChartsLayout->addWidget(m_detailViewsPanel, 1);
+    detailGrid->addPanel(detailCharts, 2);
     auto *detailSide = clearWidget();
     auto *detailSideLayout = new QVBoxLayout(detailSide);
     detailSideLayout->setContentsMargins(0, 0, 0, 0);
@@ -972,10 +1014,11 @@ MarketingFeature::MarketingFeature(
     m_detailPosts->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_detailPosts->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_detailContentPanel->body()->addWidget(m_detailPosts);
-    m_detailContent = new QTableWidget(0, 4);
+    m_detailContent = new QTableWidget(0, 6);
     m_detailContent->setObjectName(QStringLiteral("marketingChannelContentTable"));
     m_detailContent->setHorizontalHeaderLabels(
-        {QStringLiteral("Title"), QStringLiteral("Status"), QStringLiteral("When"), QStringLiteral("Campaign")});
+        {QStringLiteral("Title"), QStringLiteral("Status"), QStringLiteral("When"), QStringLiteral("Views"),
+         QStringLiteral("Visitors"), QStringLiteral("Campaign")});
     dashboardTable(m_detailContent);
     m_detailContent->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_detailContent->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -4021,13 +4064,34 @@ void MarketingFeature::renderChannelDetail()
     std::stable_sort(content.begin(), content.end(), [&when](const QJsonObject &a, const QJsonObject &b) {
         return when(a) > when(b);
     });
+    QHash<QString, QJsonObject> pageViews;
+    for (const QJsonValue &value : m_traffic.value(QStringLiteral("pages")).toArray()) {
+        const QJsonObject page = value.toObject();
+        pageViews.insert(text(page, "host") + text(page, "path"), page);
+    }
+    const QJsonObject channelTraffic = channelViews(id);
+    double contentViews = 0;
     m_detailContent->setRowCount(0);
     for (const QJsonObject &entry : std::as_const(content)) {
         const int contentRow = m_detailContent->rowCount();
         m_detailContent->insertRow(contentRow);
+        const QJsonObject page = pageViews.value(pageKey(text(entry, "url")));
+        contentViews += number(page, "views");
         const QStringList values{text(entry, "title"), channelName(text(entry, "status")),
-                                 when(entry) > 0 ? timestamp(when(entry)) : kDash, text(entry, "campaign")};
+                                 when(entry) > 0 ? timestamp(when(entry)) : kDash,
+                                 page.isEmpty() ? kDash : fullCount(number(page, "views")),
+                                 page.isEmpty() ? kDash : fullCount(number(page, "visitors")),
+                                 text(entry, "campaign")};
         for (int column = 0; column < values.size(); ++column) {
+            if (column == 3 || column == 4) {
+                QTableWidgetItem *cell = numberItem(values.at(column));
+                if (!page.isEmpty())
+                    cell->setToolTip(QStringLiteral("%1 views from %2 visitors in the last %3 days · last view %4")
+                                         .arg(fullCount(number(page, "views")), fullCount(number(page, "visitors")))
+                                         .arg(m_rangeDays).arg(timestamp(qint64(number(page, "lastAt")))));
+                m_detailContent->setItem(contentRow, column, cell);
+                continue;
+            }
             auto *cell = new QTableWidgetItem(values.at(column));
             if (column == 0) {
                 cell->setData(Qt::UserRole, text(entry, "id"));
@@ -4040,6 +4104,8 @@ void MarketingFeature::renderChannelDetail()
             m_detailContent->setItem(contentRow, column, cell);
         }
     }
+    m_detailContent->setColumnHidden(3, channelTraffic.isEmpty());
+    m_detailContent->setColumnHidden(4, channelTraffic.isEmpty());
     m_detailContent->setVisible(!content.isEmpty());
     fitTable(m_detailContent, 10);
 
@@ -4073,7 +4139,9 @@ void MarketingFeature::renderChannelDetail()
                            : QStringLiteral("%1 item%2").arg(content.size())
                                  .arg(content.size() == 1 ? QString() : QStringLiteral("s"))) +
         (postRows ? QStringLiteral(" · %1 link%2").arg(postRows).arg(postRows == 1 ? QString() : QStringLiteral("s"))
-                  : QString()));
+                  : QString()) +
+        (contentViews > 0 ? QStringLiteral(" · %1 views in %2D").arg(compactCount(qint64(contentViews))).arg(m_rangeDays)
+                          : QString()));
     m_detailPosts->setVisible(postRows > 0);
     fitTable(m_detailPosts, 12);
 
@@ -5136,10 +5204,12 @@ void MarketingFeature::renderChannelChart()
     }
     if (QAbstractButton *button = m_detailMetric->button(6))
         button->setVisible(following);
+    if (QAbstractButton *button = m_detailMetric->button(3))
+        button->setVisible(false);
     const int checked = m_detailMetric->checkedId();
     if (github && m_detailChartChannel != m_detailChannel && m_detailMetric->button(4))
         m_detailMetric->button(4)->setChecked(true);
-    else if (((!github && (checked == 4 || checked == 5)) || (!following && checked == 6)) &&
+    else if (((!github && (checked == 4 || checked == 5)) || (!following && checked == 6) || checked == 3) &&
              m_detailMetric->button(0))
         m_detailMetric->button(0)->setChecked(true);
     m_detailChartChannel = m_detailChannel;
@@ -5165,6 +5235,82 @@ void MarketingFeature::renderChannelChart()
     m_detailChart->setSeries(lines, start, now,
                              QStringLiteral("No numbers for %1 in the last %2 days.\nRefresh it or log its numbers.")
                                  .arg(line.name).arg(m_rangeDays));
+
+    LineChart::Series views;
+    views.name = QStringLiteral("Views");
+    views.color = line.color;
+    const QJsonObject traffic = channelViews(m_detailChannel);
+    if (!traffic.isEmpty()) {
+        const QVector<double> days = dailyViews(traffic.value(QStringLiteral("days")).toArray(), start, now, m_rangeDays);
+        for (int day = 0; day < days.size(); ++day) {
+            const qint64 at = start + qint64(day) * kDay + kDay / 2;
+            views.points.append({at, days.at(day), days.at(day) > 0});
+            views.history.append({at, days.at(day), true});
+        }
+        m_detailViewsPanel->hint()->setText(QStringLiteral("%1 views · %2 visitors · %3%4")
+            .arg(fullCount(number(traffic, "views")), fullCount(number(traffic, "visitors")),
+                 text(traffic, "host"), text(traffic, "path") == QLatin1String("/") ? QString() : text(traffic, "path")));
+        m_detailViewsPanel->hint()->setToolTip(QStringLiteral("Page views from Analytics, per day"));
+    } else {
+        const QJsonObject before = snapshotAt(list, start);
+        if (!before.isEmpty() && number(before, "views") > 0)
+            views.points.append({start, number(before, "views"), false});
+        for (const QJsonObject &item : list) {
+            if (missing(item, "views"))
+                continue;
+            const qint64 at = qint64(number(item, "observedAt"));
+            views.history.append({at, number(item, "views"), true});
+            if (at > start)
+                views.points.append({at, number(item, "views"), true});
+        }
+        if (std::none_of(views.points.cbegin(), views.points.cend(),
+                         [](const LineChart::Point &point) { return point.value > 0; }))
+            views.points.clear();
+        m_detailViewsPanel->hint()->setText(views.points.isEmpty() ? QString() : QStringLiteral("Recorded numbers"));
+        m_detailViewsPanel->hint()->setToolTip(QString());
+    }
+    QList<LineChart::Series> viewLines;
+    if (!views.points.isEmpty())
+        viewLines.append(views);
+    m_detailViewsChart->setSeries(viewLines, start, now,
+                                  QStringLiteral("No views for %1 in the last %2 days.\n"
+                                                 "Pages on your Analytics site and recorded numbers show here.")
+                                      .arg(line.name).arg(m_rangeDays));
+}
+
+QJsonObject MarketingFeature::channelViews(const QString &id) const
+{
+    return m_traffic.value(QStringLiteral("channelViews")).toObject().value(id).toObject();
+}
+
+QVector<double> MarketingFeature::channelSpark(const QString &id, const char *key) const
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 start = now - m_rangeDays * kDay;
+    const QJsonObject traffic = channelViews(id);
+    if (!traffic.isEmpty() && (!key || QLatin1String(key) == QLatin1String("views")))
+        return dailyViews(traffic.value(QStringLiteral("days")).toArray(), start, now, qMin(m_rangeDays, 30));
+    const QList<QJsonObject> history = seriesByChannel(m_metrics).value(id);
+    const char *metric = key;
+    if (!metric) {
+        for (const char *fallback : {"followers", "views", "reach", "posts"}) {
+            if (std::any_of(history.cbegin(), history.cend(),
+                            [fallback](const QJsonObject &item) { return number(item, fallback) > 0; })) {
+                metric = fallback;
+                break;
+            }
+        }
+    }
+    QVector<double> values;
+    if (!metric)
+        return values;
+    constexpr int samples = 16;
+    for (int sample = 0; sample < samples; ++sample) {
+        const QJsonObject snapshot = snapshotAt(history, start + (now - start) * sample / (samples - 1));
+        if (!snapshot.isEmpty())
+            values.append(number(snapshot, metric));
+    }
+    return values;
 }
 
 void MarketingFeature::activateRailStep(const QString &tile, const QString &step)
@@ -5298,6 +5444,9 @@ void MarketingFeature::loadTraffic()
         renderLanding();
         renderKeywords();
         renderCampaigns();
+        renderChannelTiles();
+        renderChannelHealth();
+        renderChannelDetail();
     });
 }
 
@@ -5773,8 +5922,14 @@ MarketingFeature::ChannelCard MarketingFeature::channelCard(const QJsonObject &i
     const QString dot = QString::fromUtf8(" \xC2\xB7 ");
 
     const Headline main = headline(id, item, health);
-    card.value = main.value;
-    card.label = main.label;
+    const QJsonObject traffic = channelViews(id);
+    const bool viewsHeadline = !main.key && number(traffic, "views") > 0;
+    card.value = viewsHeadline ? number(traffic, "views") : main.value;
+    card.label = viewsHeadline ? QStringLiteral("Views · %1D").arg(m_rangeDays) : main.label;
+    card.spark = channelSpark(id, main.key);
+    card.sparkTip = !traffic.isEmpty() && (!main.key || QLatin1String(main.key) == QLatin1String("views"))
+        ? QStringLiteral("Page views per day, last %1 days").arg(m_rangeDays)
+        : QStringLiteral("%1, last %2 days").arg(main.key ? main.label : QStringLiteral("Recorded numbers")).arg(m_rangeDays);
     const double change = number(health, main.key && QLatin1String(main.key) == QLatin1String("stars")
                                              ? "starsChange" : "followersChange");
     card.changeHtml = change == 0 ? QString()
@@ -5808,6 +5963,8 @@ MarketingFeature::ChannelCard MarketingFeature::channelCard(const QJsonObject &i
     } else {
         facts << fact(fullCount(number(health, "postsLast30d")), QStringLiteral("posts/30D"));
     }
+    if (!viewsHeadline && number(traffic, "views") > 0)
+        facts << fact(compactCount(qint64(number(traffic, "views"))), QStringLiteral("views/%1D").arg(m_rangeDays));
     if (id == QLatin1String("github")) {
         if (number(item, "stars") > 0 && number(item, "followers") > 0)
             facts << fact(compactCount(qint64(number(item, "followers"))), QStringLiteral("followers"));
@@ -5925,7 +6082,16 @@ QWidget *MarketingFeature::channelTile(const QJsonObject &item)
     valueLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     valueLabel->setToolTip(fullCount(card.value));
     valueLabel->setProperty("paused", card.paused);
-    layout->addWidget(valueLabel, 0, 1);
+    auto *valueRow = new QHBoxLayout;
+    valueRow->setContentsMargins(0, 0, 0, 0);
+    valueRow->setSpacing(8);
+    valueRow->addWidget(valueLabel);
+    auto *spark = new Sparkline;
+    spark->setValues(card.spark, brandInk(id, colors));
+    spark->setMaximumWidth(120);
+    spark->setAccessibleName(card.sparkTip);
+    valueRow->addWidget(spark, 1, Qt::AlignVCenter);
+    layout->addLayout(valueRow, 0, 1);
 
     auto *stateDot = new QLabel;
     stateDot->setFixedSize(8, 8);
@@ -6100,6 +6266,10 @@ QWidget *MarketingFeature::channelChip(const QJsonObject &item, const QJsonArray
     factsLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     factsLabel->setWordWrap(true);
     layout->addWidget(factsLabel, 1, 0, 1, 6);
+    auto *spark = new Sparkline;
+    spark->setValues(card.spark, brandInk(id, colors));
+    spark->setAccessibleName(card.sparkTip);
+    layout->addWidget(spark, 3, 0, 1, 6, Qt::AlignBottom);
     layout->setColumnStretch(1, 1);
     layout->setRowStretch(2, 1);
 
