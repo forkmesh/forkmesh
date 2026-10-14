@@ -5559,6 +5559,30 @@ void checkErrorLogTriage(MainWindow &window)
                      == QStringLiteral("Local only"),
           QStringLiteral("'Worktree x has uncommitted changes' answers the "
                          "operator's own click and stays out of the error log"));
+    check(window.testPingStatusFor(QStringLiteral("Worktree dirty-agent has "
+                                                  "uncommitted changes (draft.txt)"))
+              == QStringLiteral("Local only"),
+          QStringLiteral("the refusal names the uncommitted files"));
+
+    AgentSession idleAgent;
+    idleAgent.id = 851012;
+    idleAgent.owner = QStringLiteral("me");
+    idleAgent.name = QStringLiteral("error-log-triage");
+    idleAgent.branchName = QStringLiteral("dirty-agent");
+    idleAgent.status = AgentStatus::Success;
+    window.testAddAgentSession(idleAgent);
+    window.testClearPageNotices();
+    QApplication::processEvents();
+    window.testMergeBranchAndCleanUp(QStringLiteral("dirty-agent"));
+    QApplication::processEvents();
+    check(dirtyReady
+              && gitOutput(clone, {"show", "main:draft.txt"}).trimmed()
+                     == QStringLiteral("unsaved")
+              && gitOutput(clone, {"log", "-1", "--format=%s", "main^2"}).trimmed()
+                     == QStringLiteral("Agent #851012: commit the changes it left "
+                                       "uncommitted"),
+          QStringLiteral("Merge & clean up commits what an agent that has "
+                         "finished left uncommitted, then merges it"));
 
     const bool conflictReady =
         runGitChecked(clone, {"branch", "clash", "origin/done-already"})
