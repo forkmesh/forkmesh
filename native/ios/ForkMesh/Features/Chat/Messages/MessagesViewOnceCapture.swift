@@ -425,6 +425,7 @@ struct MessagesViewOnceRecorderSheet: View {
     @State private var video: MessagesViewOnceVideoModel = MessagesViewOnceVideoModel()
     @State private var voice: MessagesViewOnceVoiceModel = MessagesViewOnceVoiceModel()
     @State private var sendPhase: MessagesViewOncePhase?
+    @State private var captions: MessagesVideoCaptionsModel = MessagesVideoCaptionsModel()
 
     private var phase: MessagesViewOncePhase { sendPhase ?? (kind == .video ? video.phase : voice.phase) }
 
@@ -446,7 +447,15 @@ struct MessagesViewOnceRecorderSheet: View {
         .task {
             if kind == .video { await video.prepare() }
         }
+        .onChange(of: video.phase) { (_: MessagesViewOncePhase, now: MessagesViewOncePhase) in
+            if case .review(let url, _) = now {
+                captions.attach(url)
+            } else {
+                captions.reset()
+            }
+        }
         .onDisappear {
+            captions.reset()
             video.close()
             voice.close()
         }
@@ -456,7 +465,8 @@ struct MessagesViewOnceRecorderSheet: View {
         switch phase {
         case .review(let url, _):
             if kind == .video {
-                MessagesViewOnceReviewVideo(url: url)
+                MessagesViewOnceReviewVideo(url: captions.url(for: url))
+                    .id(captions.url(for: url))
             } else {
                 MessagesViewOnceReviewVoice(url: url)
             }
@@ -535,16 +545,25 @@ struct MessagesViewOnceRecorderSheet: View {
             recordButton(recording: true) { kind == .video ? video.stop() : voice.stop() }
                 .accessibilityLabel("Stop recording")
         case .review(let url, let millis):
-            HStack(spacing: FmSpace.x4) {
-                pill("Discard", systemImage: "trash") {
-                    discard()
-                    dismiss()
+            VStack(spacing: FmSpace.x3) {
+                if kind == .video {
+                    MessagesCaptionsBar(model: captions)
                 }
-                .accessibilityLabel("Discard recording")
-                pill("Re-record", systemImage: "arrow.counterclockwise") { discard() }
-                    .accessibilityLabel("Record again")
-                pill("Send", systemImage: "arrow.up.circle.fill", prominent: true) { send(url, millis) }
+                HStack(spacing: FmSpace.x4) {
+                    pill("Discard", systemImage: "trash") {
+                        discard()
+                        dismiss()
+                    }
+                    .accessibilityLabel("Discard recording")
+                    pill("Re-record", systemImage: "arrow.counterclockwise") { discard() }
+                        .accessibilityLabel("Record again")
+                    pill("Send", systemImage: "arrow.up.circle.fill", prominent: true) {
+                        send(kind == .video ? captions.url(for: url) : url, millis)
+                    }
+                    .disabled(kind == .video && captions.working)
+                    .opacity(kind == .video && captions.working ? 0.5 : 1)
                     .accessibilityLabel(kind == .video ? "Send view-once video" : "Send view-once voice message")
+                }
             }
         case .sending(let progress):
             VStack(spacing: FmSpace.x2) {

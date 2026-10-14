@@ -32,6 +32,8 @@ const RING_DEPTH = -0.75;
 const CHIN_DROP = [[5, 0.3], [6, 0.6], [7, 0.85], [8, 1], [9, 0.85], [10, 0.6], [11, 0.3]];
 export const FOREHEAD_LIFT = 0.5;
 const MAX_OPEN = 0.42;
+const NOSE_TRUST = 0.06;
+const RING_GAP = 0.05;
 
 function range(start, end) {
   return Array.from({ length: end - start }, (_, i) => start + i);
@@ -308,6 +310,10 @@ export function solvePose(model, live) {
   const r1 = c.map((v, i) => (v + d[i]) / Math.SQRT2);
   const r2 = c.map((v, i) => (v - d[i]) / Math.SQRT2);
   const scale = (s1 + s2) / 2;
+  if (noseDisagrees(model, live, r1, r2, scale)) {
+    r1[2] = -r1[2];
+    r2[2] = -r2[2];
+  }
   const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
   const t = [lm[0] - scale * dot3(r1, mm), lm[1] - scale * dot3(r2, mm)];
   return {
@@ -318,6 +324,20 @@ export function solvePose(model, live) {
     yaw: Math.asin(clampValue(-r3[0], -1, 1)),
     pitch: Math.asin(clampValue(r3[1], -1, 1)),
   };
+}
+
+export function noseTurn(points) {
+  const frame = faceFrame(points);
+  const tip = toFrame(frame, points[30]);
+  const bridge = toFrame(frame, points[27]);
+  return (tip[0] - bridge[0]) / frame.span;
+}
+
+function noseDisagrees(model, live, r1, r2, scale) {
+  const seen = noseTurn(live) - (model[30][0] - model[27][0]);
+  if (Math.abs(seen) < NOSE_TRUST) return false;
+  const turn = (r1[2] * (model[30][2] - model[27][2]));
+  return Math.sign(turn) !== Math.sign(seen) && Math.abs(turn) > NOSE_TRUST * 0.5;
 }
 
 export function projectPose(pose, point) {
@@ -348,6 +368,15 @@ export function liveHead(model, live) {
     out.push([projected[0] + wx / weight, projected[1] + wy / weight]);
   }
   return { points: out, pose };
+}
+
+export function vertexDepths(model, pose) {
+  const r3 = pose.rows[2];
+  const depths = model.map((point) => dot3(r3, point));
+  let jaw = Infinity;
+  for (const i of JAW) jaw = Math.min(jaw, depths[i]);
+  for (let v = LANDMARK_COUNT + 10; v < depths.length; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
+  return depths;
 }
 
 function dot3(a, b) {

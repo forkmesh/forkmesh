@@ -53,7 +53,7 @@ class WebCallPeers(
 
     fun previewed(): WebCallPeer? = previewPeer
 
-    fun preview(face: String, background: String, image: String): WebCallPeer {
+    fun preview(face: String, background: String, image: String, faceImage: String = ""): WebCallPeer {
         val peer = previewPeer ?: WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }.also { made ->
             try {
                 viewState.value = made.load()
@@ -64,7 +64,7 @@ class WebCallPeers(
             previewPeer = made
         }
         try {
-            peer.preview(DirectCallKind.VIDEO, voice(), face, background, image)
+            peer.preview(DirectCallKind.VIDEO, voice(), face, background, image, faceImage)
             learn(peer, true)
         } catch (error: Exception) {
             endPreview()
@@ -285,6 +285,12 @@ class WebCallPeer internal constructor(
         request("camera", listOf(off))
     }
 
+    override fun setFace(id: String, image: String) {
+        request("face", listOf(id, image))
+    }
+
+    fun faceState(): String = jsonText(request("faceState", emptyList()))
+
     override fun setFace(id: String) {
         request("face", listOf(id))
     }
@@ -297,8 +303,14 @@ class WebCallPeer internal constructor(
         voiceObserver = handler
     }
 
-    fun preview(media: DirectCallKind, voice: String, face: String = "", background: String = "", image: String = ""): String =
-        jsonText(request("preview", listOf(media.wire, voice, face, background, image)))
+    fun preview(
+        media: DirectCallKind,
+        voice: String,
+        face: String = "",
+        background: String = "",
+        image: String = "",
+        faceImage: String = "",
+    ): String = jsonText(request("preview", listOf(media.wire, voice, face, background, image, faceImage)))
 
     override fun setBackground(id: String, image: String) {
         request("background", listOf(id, image))
