@@ -68,6 +68,7 @@ def test_the_document_is_stamped_noindex_and_reports_to_its_own_token():
     # The page's CSP admits nothing external: no fonts, scripts or images
     # from other origins, and beacons only to this one.
     assert "connect-src 'self'" in deck.PAGE_CSP and "default-src 'none'" in deck.PAGE_CSP
+    assert "manifest-src 'self'" in deck.PAGE_CSP
     assert "https://fonts." not in DECK_HTML and "cdn." not in DECK_HTML
 
 

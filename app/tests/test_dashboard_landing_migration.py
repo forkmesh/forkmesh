@@ -29,7 +29,14 @@ REDIRECTS = (WWW_PUBLIC / "_redirects").read_text(encoding="utf-8")
 REPO_HOST_ROUTE_RE = (
     'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes)$"'
 )
-REPO_DIRECT_BROWSE_GATE = "and action in {"
+REPO_DIRECT_BROWSE_GATE = "and action in REPO_HOST_READ_ACTIONS"
+
+
+def _repo_host_read_actions() -> set[str]:
+    match = re.search(
+        r"REPO_HOST_READ_ACTIONS = frozenset\(\{(.*?)\}\)", ENTRY_TEXT, re.S)
+    assert match
+    return set(re.findall(r'"([^"]+)"', match.group(1)))
 
 
 def _read(path: Path) -> str:
@@ -1784,7 +1791,7 @@ def test_web_pull_submission_signs_a_portable_mirror_comparison():
     assert "const targetRepo = pullRequestTargetRepo(repo);" in submit
     assert 'fetchRepoMutation(targetRepo, "pulls", payload)' in submit
     assert "head: signedHead" in submit
-    assert '"compare", "branches"' in ENTRY_TEXT
+    assert {"compare", "merge-preview", "branches"} <= _repo_host_read_actions()
     # merge-preview resolves base/head exactly the way compare does, so the two
     # share one query builder rather than growing a second copy that could drift.
     assert 'elif operation in ("compare", "merge-preview"):' in ENTRY_TEXT
@@ -2240,7 +2247,7 @@ def test_worker_dropped_commit_comment_inbox_route():
     assert "commits_handler" not in ENTRY_TEXT
     assert REPO_HOST_ROUTE_RE in URLS_TEXT
     assert REPO_DIRECT_BROWSE_GATE in ENTRY_TEXT
-    assert '"history", "commit"' in ENTRY_TEXT
+    assert {"history", "commit"} <= _repo_host_read_actions()
     assert "return await _https_mirror_proxy(" in ENTRY_TEXT
 
 
@@ -2469,7 +2476,7 @@ def test_dashboard_repository_code_explorer_switches_between_tree_and_file_revie
     assert "text-amber-300" in dashboard_js
 
 
-def test_dashboard_repository_file_toolbar_actions_are_wired_without_web_edit():
+def test_dashboard_repository_file_toolbar_actions_are_wired_without_local_drafts():
     dashboard_js = _read(PUBLIC / "dashboard.js")
     blob_loader = dashboard_js[
         dashboard_js.index("async function loadRepositoryBlob")
@@ -2483,6 +2490,10 @@ def test_dashboard_repository_file_toolbar_actions_are_wired_without_web_edit():
         'data-repo-file-action="copy"',
         'data-repo-file-action="download"',
         'data-repo-file-action="fullscreen"',
+        'data-repo-file-action="edit"',
+        "data-repo-file-editor",
+        "repoFileEditRequest(repo, {",
+        "${repoApiBase(repo)}/file-edit",
         "bindRepoFileToolbar(viewer, repo, path, content, lines",
         "function setRepoFileMode(viewer, mode, lines, path, meta)",
         "function bindRepoFileToolbar(viewer, repo, path, content, lines, meta)",
@@ -2503,9 +2514,7 @@ def test_dashboard_repository_file_toolbar_actions_are_wired_without_web_edit():
     assert "renderRepoFileRows(lines, path, mode, meta)" in dashboard_js
 
     for marker in (
-        'data-repo-file-action="edit"',
         'aria-label="Edit local draft"',
-        "data-repo-file-editor",
         'data-repo-file-action="copy-draft"',
         'data-repo-file-action="download-draft"',
         "Local draft only",
@@ -2559,6 +2568,7 @@ def test_worker_routes_raw_repository_blobs_through_direct_https_gateway():
     ).read_text(encoding="utf-8")
     assert REPO_HOST_ROUTE_RE in URLS_TEXT
     assert REPO_DIRECT_BROWSE_GATE in ENTRY_TEXT
+    assert {"blob", "raw"} <= _repo_host_read_actions()
     assert "return await _https_mirror_proxy(" in ENTRY_TEXT
     assert "upstream.body," in ENTRY_TEXT
     assert 'response_headers["X-ForkMesh-Served-By"] = endpoint["node"]' in ENTRY_TEXT
