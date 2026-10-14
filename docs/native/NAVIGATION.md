@@ -3289,8 +3289,8 @@ and then for `@everyone` and `@here` tags that work as in Discord and Slack.
   who has posted in it or its threads, without ForkBot, apps or transient
   guests. Office and private D1 rooms use the server's member list
   (`OfficeRoom.members`). The Members page says which rule applies.
-  Since 2.0.102 `#general`, `#random` and `#welcome` also count every member
-  of the project's account directory.
+  Since 2.0.102 `#general`, `#random` and `#welcome` are server channels
+  whose members are every ForkMesh account.
 - **Messages.** 38 pt rounded-square avatars (`FmAvatar(corner:)`), the sender's
   name bold in the text colour with the time beside it, 17 pt body. Reactions
   are larger capsules with an add-reaction button after them
@@ -3508,44 +3508,53 @@ the custom background showing through.
 - `ChatListPreviewTests` covers the fallback lines and the app grouping (iOS
   core, Linux). The SwiftUI is only parsed on Linux, not built.
 
-### 2.0.102 Every member is in #general, #random and #welcome (2026-10-14, iOS)
+### 2.0.102 #general, #random and #welcome are server channels with every member (2026-10-14, iOS)
 
 The user asked for every ForkMesh member to be in the general chat and the
-random chat. The phone's general chat page should show the full member count,
-and a new `#welcome` channel should greet each new member and ask everyone to
-say hi.
+random chat, for the phone's general chat page to show the full member count,
+and for a `#welcome` channel that greets each new member and asks everyone to
+say hi. They then asked for real channels instead of relay labels, and chose to
+move every client (iPhone, web, desktop) and keep the old shared room only as
+"World". Server side: `docs/app/chat-everyone-channels.md`.
 
-- **Members.** `ChatEveryone.channels` is `#general`, `#random` and
-  `#welcome`. In the project's shared room (default room, no room passphrase,
-  `ChatHub.sharedRoom`), `ChatHub.channelMembers` adds every account from
-  `/api/accounts/users?view=world` (`refreshMemberDirectory`, the same list as
-  People and the web chat's people pane). It still adds the people online and
-  everyone who posted, so the count, the Members page and the "N members • N
-  tabs" header now cover everyone. The directory is read at launch, on sign-in,
-  when the Members page opens, on resume (at most every five minutes) and after
-  every join. A passphrase room or another room keeps the old rule.
-- **No leaving.** The three channels are on every phone (`RelayService.channels`
-  starts with all three). The Leave action is hidden for them,
-  `ChatExtras.removeChannel` refuses them, and a stored "left #random" from an
-  older build is dropped when history loads.
-- **Welcome note.** The relay already sends a signed, unencrypted
-  `forkmesh-new-member` frame to the room when an account is created (the web
-  chat shows confetti for it). The phone used to drop it because it is not a
-  cipher envelope. `RelayService` now passes it to `onNewMember`, and the hub
-  adds a ForkBot message to `#welcome`: "🎉 Welcome to ForkMesh, @name!
-  Everyone, come say hi 👋". It counts as unread and files a "New member joined"
-  ping. The frame is live only, so a phone that was offline adds the same note
-  from the directory for each account created in the last seven days, dated
-  when the account was created and without counting it as unread.
-- **Same note on every phone.** The note is built on each phone, not sent to the
-  room. Its id is `welcome-member-<name>` on every phone, so restores and
-  repeats do not duplicate it, and reactions and thread replies on it line up
-  across iPhones. A note posted from a client would have been sent once per
-  online phone.
-- The new member's own "👋 Just joined ForkMesh — hello!" (`ChatWelcome`)
-  is unchanged.
-- `ChatEveryoneTests` covers it (iOS core, Linux). Android still lists only
-  `#general` and `#random` from the relay roster.
+- **Where they come from.** The server lists the three channels first in
+  `GET /api/chat/channels` with `kind:"everyone"`. `OfficeFrames.rooms` reads
+  that into `OfficeRoom.everyone` and `memberCount`, so they go through the same
+  `OfficeChannelService` as other server channels (conversations
+  `#office/general`, `#office/random`, `#office/welcome`, shown as `#general`
+  and so on). `ChatHub.listedChannels` puts them at the top, in that order,
+  outside the "Office" group. No Leave action, since the server refuses
+  management.
+- **World.** The relay room's `#general` (`world-general`) is shown as "World"
+  with a globe (`ChatEveryone.worldConversation`, `conversationLabel`).
+  `RelayService.channels` starts with it alone. `#random` and `#welcome` relay
+  labels that older clients still advertise stay out of the list
+  (`ChatEveryone.retiredRelayLabels`). Guests have no server channels, so World
+  is all they see.
+- **Default.** `ChatHub.generalConversation` is the server #general when it is
+  listed, else World. The first time the server channels appear, the phone
+  moves from World to #general (`adoptEveryoneGeneral`, remembered as
+  `ChatWorkspace.movedToEveryone`), so a member who later opens World stays
+  there. Leaving a channel falls back to `generalConversation`.
+- **Members.** `refreshMemberDirectory` reads
+  `GET /api/chat/channels/<general>/members` (every member, at most every five
+  minutes, and when the Members page opens). `channelMembers` lists those
+  names with presence from the online list. Until it loads, `memberCount`
+  shows the server's `memberCount`. The Members page says "Every ForkMesh member
+  is in this channel."
+- **Welcome.** The server posts "🎉 Welcome to ForkMesh, @name! Everyone, come
+  say hi 👋" into #welcome as `system:welcome` when an account is created. It
+  is ordinary channel history, so it reaches phones that were offline, and it
+  files a "New member joined" ping. The new member's own "👋 Just joined
+  ForkMesh — hello!" (`ChatWelcome`) now goes to the server #welcome.
+- **Notification replies.** `ChatReplyTarget.resolve` now checks server
+  channels before relay labels, so replying to "general" from a notification
+  posts in #general, not in World.
+- This replaces the first version of this change (same branch), in which the
+  phone built the member list from the People directory and made the welcome
+  note itself.
+- `ChatEveryoneTests` covers it (iOS core, Linux). Android still shows the
+  relay `#general` and `#random` and has no Members page.
 
 ### 2.0.58 Tour can be removed from the phone (2026-10-05, iOS and Android)
 

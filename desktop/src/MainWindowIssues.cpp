@@ -13224,7 +13224,7 @@ QWidget *MainWindow::buildChatMainColumn(QWidget *header, QPushButton *&sendButt
     connect(attachButton, &QPushButton::clicked, this, &MainWindow::attachFile);
     m_messageInput = new QLineEdit;
     m_messageInput->setObjectName("messageInput");
-    m_messageInput->setPlaceholderText("Message #general");
+    m_messageInput->setPlaceholderText("Message");
     m_messageInput->setToolTip(QStringLiteral(
         "Type / to see available chat commands\n"
         "*bold*  _italic_  ~strike~  `code`  > quote  - list  <https://url|text>\n"

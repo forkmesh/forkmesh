@@ -355,7 +355,7 @@ final class ChatNewMessageTests: XCTestCase {
         XCTAssertEqual(hub.currentConversation, "#ops", "sharing stays in the room")
         XCTAssertEqual(
             h.relay.messages("#general").last?.text, "fyi\n> @Mobile Tester can you check the deploy?\n> \u{2014} Pat in #ops")
-        XCTAssertEqual(hub.notice?.text, "Shared to #general.")
+        XCTAssertEqual(hub.notice?.text, "Shared to World.")
 
         let mixed = await hub.share(
             message, text: message.text, comment: "",

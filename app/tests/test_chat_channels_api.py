@@ -156,6 +156,12 @@ class FakeRuntime:
     async def public_webhook_recipients(self):
         return sorted(self.accounts)
 
+    async def everyone_members(self):
+        return [{"username": name, "joinedAt": 0} for name in sorted(self.accounts)]
+
+    async def everyone_member_count(self):
+        return len(self.accounts)
+
     async def audit(self, actor, action, target_type="", target="",
                     outcome="success", details=None):
         self.audits.append({
@@ -1437,3 +1443,67 @@ async def test_deleting_a_channel_deletes_its_invite_link():
         f"/api/chat/channels/{channel_id}")
     assert runtime.db.execute(
         "SELECT COUNT(*) FROM chat_channel_invites").fetchone()[0] == 0
+
+
+@run_async_test
+async def test_everyone_channels_are_fixed_public_channels_for_every_member():
+    runtime = FakeRuntime()
+    await create_channel(runtime, "announcements", visibility="public")
+    ready = {}
+    await api.ensure_everyone_channels(runtime, ready)
+    await api.ensure_everyone_channels(runtime, {})
+    listed = await api.handle(runtime.use("GET", "bob"), "/api/chat/channels")
+    channels = listed["data"]["channels"]
+    assert [item["name"] for item in channels] == [
+        "general", "random", "welcome", "announcements"]
+    for item, name in zip(channels, api.EVERYONE_NAMES):
+        assert item["id"] == api.everyone_channel_id(name)
+        assert item["kind"] == "everyone"
+        assert item["visibility"] == "public"
+        assert item["memberCount"] == 3
+        assert item["canManage"] is False
+        assert "members" not in item
+    general = api.everyone_channel_id("general")
+    members = await api.handle(
+        runtime.use("GET", "bob"), f"/api/chat/channels/{general}/members")
+    assert members["status"] == 200
+    assert members["data"]["everyone"] is True
+    assert [m["username"] for m in members["data"]["members"]] == [
+        "admin", "alice", "bob"]
+    access = await api.handle(
+        runtime.use("GET", "alice"), f"/api/chat/channels/{general}/room-access")
+    assert access["status"] == 200
+    for method, path, data in (
+        ("PATCH", f"/api/chat/channels/{general}", {"topic": "x"}),
+        ("DELETE", f"/api/chat/channels/{general}", {}),
+        ("POST", f"/api/chat/channels/{general}/members", {"username": "bob"}),
+        ("POST", f"/api/chat/channels/{general}/webhooks", {"name": "x"}),
+        ("POST", f"/api/chat/channels/{general}/invite", {}),
+    ):
+        denied = await api.handle(runtime.use(method, "admin", data), path)
+        assert denied["status"] == 403, (method, path, denied)
+        assert denied["data"]["error"] == "everyone_channel_fixed"
+    taken = await create_channel(runtime, "random", visibility="public")
+    assert taken["status"] == 409
+    announcements = channels[3]["id"]
+    renamed = await api.handle(
+        runtime.use("PATCH", "admin", {"name": "welcome"}),
+        f"/api/chat/channels/{announcements}")
+    assert renamed["status"] == 409
+
+
+@run_async_test
+async def test_a_new_member_is_welcomed_in_welcome_by_the_server():
+    runtime = FakeRuntime()
+    assert await api.post_welcome(runtime, "Newbie", {}) is True
+    assert await api.post_welcome(runtime, "not a name!", {}) is False
+    [(channel_id, key_version, plain)] = runtime.webhook_deliveries
+    assert channel_id == api.everyone_channel_id("welcome")
+    assert key_version == 1
+    assert plain["channel"] == "#welcome"
+    assert plain["senderId"] == "system:welcome"
+    assert plain["sender"] == "ForkMesh"
+    assert plain["text"] == (
+        "\U0001F389 Welcome to ForkMesh, @newbie! Everyone, come say hi \U0001F44B")
+    assert runtime.webhook_notifications == []
+

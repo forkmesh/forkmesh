@@ -5626,21 +5626,24 @@ void MainWindow::showRepoMenu()
 // relay signs and originates that frame — peers can only send encrypted
 // envelopes — so this is the same celebration the World and the website run at
 // the same moment: confetti and fireworks across the window, and a ping on the
-// Pings page that opens #general so this node can be one of the people who
+// Pings page that opens #welcome so this node can be one of the people who
 // says hello.
 void MainWindow::onNewMemberJoined(const QString &accountName)
 {
     const QString name = accountName.trimmed();
     if (name.isEmpty())
         return;
-    logSystem(QStringLiteral("🎉 %1 just joined ForkMesh. Say hello in #general.")
-                  .arg(name));
+    const QString room = welcomeChannelForIdentity();
+    const QString roomLabel = chatConversationLabel(room);
+    logSystem(QStringLiteral("🎉 %1 just joined ForkMesh. Say hello in %2.")
+                  .arg(name, roomLabel));
     new forkmesh::ui::CelebrationOverlay(this);
     AppNotification item;
     item.title = QStringLiteral("🎉 Welcome %1 — they just joined ForkMesh.").arg(name);
-    item.body = QStringLiteral("Open #general and say hello.");
+    item.body = QStringLiteral("Open %1 and say hello.").arg(roomLabel);
     item.kind = QStringLiteral("desktop");
-    item.link = notificationLinkForHref(QStringLiteral("fm:chat:general"));
+    item.link.kind = QStringLiteral("chat");
+    item.link.ref = room;
     item.quiet = true;
     recordNotification(item);
 }
@@ -5851,6 +5854,8 @@ QString MainWindow::chatConversationLabel(const QString &conversation) const
         return m_discordClient->displayName(conversation);
     if (forkmesh::office::isOfficeConversation(conversation))
         return officeChannelLabel(conversation);
+    if (conversation == forkmesh::office::worldConversation())
+        return forkmesh::office::worldLabel();
     return conversation;
 }
 
@@ -5871,6 +5876,8 @@ QString MainWindow::officeChannelLabel(const QString &conversation) const
             forkmesh::office::isOfficeConversation(other)
                 ? QStringLiteral("#") +
                       forkmesh::office::roomForConversation(other)
+            : other == forkmesh::office::worldConversation()
+                ? forkmesh::office::worldLabel()
                 : other;
         if (otherLabel == label)
             return label + QStringLiteral(" · ") + organization;

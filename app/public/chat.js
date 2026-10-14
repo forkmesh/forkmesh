@@ -94,6 +94,8 @@ const PUBLIC_WORLD_ROOM_KEY_ENDPOINT =
 const PUBLIC_WORLD_CHAT_WS_PATH =
   "/api/repo/mainnode/forkmesh/rooms/world-general/ws";
 const PRIVATE_CHANNELS_ENDPOINT = "/api/chat/channels";
+const EVERYONE_CHANNEL_ORDER = Object.freeze(["general", "random", "welcome"]);
+const EVERYONE_MEMBERS_REFRESH_MS = 5 * 60 * 1000;
 const DIRECT_MESSAGES_ENDPOINT = "/api/chat/direct-messages";
 const CHAT_READS_ENDPOINT = "/api/chat/reads";
 const READ_MARK_KEY_RE =
@@ -411,6 +413,8 @@ const reactions = new Map();
 // every decrypted frame; drives the right-hand people pane.
 const roster = new Map();
 let activeChannel = "#general";
+let defaultChannelChosen = false;
+const everyoneChannelMembers = new Map();
 let savedPrivateChannelId = "";
 let savedDirectMessageId = "";
 try {
@@ -525,7 +529,7 @@ function directMessageForKey(channel) {
 }
 
 function channelDisplayLabel(channel = activeChannel) {
-  if (channel === "#general") return "#general";
+  if (channel === "#general") return "World";
   const direct = directMessageForKey(channel);
   if (direct) {
     const record = direct;
@@ -536,8 +540,23 @@ function channelDisplayLabel(channel = activeChannel) {
 }
 
 function channelWireLabel(channel = activeChannel) {
+  if (channel === "#general") return channel;
   const direct = directMessageForKey(channel);
   return direct ? "direct:" + direct.id : channelDisplayLabel(channel);
+}
+
+function isEveryoneChannel(record) {
+  return record?.kind === "everyone";
+}
+
+function defaultChannelKey() {
+  if (!userSession()) return "#general";
+  for (const record of privateChannels.values()) {
+    if (isEveryoneChannel(record) && record.name === EVERYONE_CHANNEL_ORDER[0]) {
+      return privateChannelKey(record.id);
+    }
+  }
+  return "#general";
 }
 
 function canJoinChannel(channel = activeChannel) {
@@ -561,7 +580,7 @@ async function fetchRoomPassphrase(scope = roomScopeForChannel()) {
     cache: "no-store",
   });
   if (!res.ok) {
-    const err = new Error("Public World #general key unavailable.");
+    const err = new Error("World chat key unavailable.");
     err.code = res.status === 401 || res.status === 403 ? "auth" : "server";
     throw err;
   }
@@ -830,7 +849,7 @@ function lockChatForNonUser() {
     if (empty) {
       empty.textContent = (
         "Log in as a user to join this channel. " +
-        "Guests can participate only in public World #general."
+        "Guests can chat only in World."
       );
     }
   }
@@ -922,6 +941,11 @@ const CHAT_ICON_PATHS = {
     "M4 16a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2",
   ],
   check: ["M20 6 9 17l-5-5"],
+  globe: [
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z",
+    "M2 12h20",
+    "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20",
+  ],
   gear: [
     "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
@@ -1510,15 +1534,24 @@ function bumpUnread(channel, ts) {
   renderRooms();
 }
 
+function channelListRank(name) {
+  const record = privateChannelForKey(name);
+  if (isEveryoneChannel(record)) {
+    const index = EVERYONE_CHANNEL_ORDER.indexOf(record.name);
+    return index < 0 ? EVERYONE_CHANNEL_ORDER.length : index;
+  }
+  return name === "#general"
+    ? EVERYONE_CHANNEL_ORDER.length + 1
+    : EVERYONE_CHANNEL_ORDER.length + 2;
+}
+
 function renderRooms() {
   if (!roomsEl) return;
   roomsEl.textContent = "";
   const names = [...channelMeta.keys()]
     .filter((name) => !isDirectMessageKey(name))
-    .sort((a, b) => {
-    if (a === "#general" || b === "#general") return a === "#general" ? -1 : 1;
-    return channelDisplayLabel(a).localeCompare(channelDisplayLabel(b));
-  });
+    .sort((a, b) => channelListRank(a) - channelListRank(b) ||
+      channelDisplayLabel(a).localeCompare(channelDisplayLabel(b)));
   for (const name of names) {
     const meta = channelMeta.get(name);
     const btn = document.createElement("button");
@@ -1527,17 +1560,24 @@ function renderRooms() {
     btn.dataset.channel = name;
     const channel = privateChannelForKey(name);
     const isPrivate = Boolean(channel) && channel.visibility !== "public";
+    const isWorld = name === "#general";
     const icon = document.createElement("span");
     icon.className = "chat-room-icon";
-    icon.append(chatIcon(isPrivate ? "lock" : "hash", 15));
+    icon.append(chatIcon(isPrivate ? "lock" : isWorld ? "globe" : "hash", 15));
     btn.append(icon);
     const label = document.createElement("span");
     label.className = "chat-room-name";
     // The icon already says "channel", so the list drops the leading #.
     label.textContent = channelDisplayLabel(name).replace(/^#/, "");
     btn.dataset.filter = channelDisplayLabel(name).toLowerCase();
+    if (isWorld) {
+      btn.setAttribute("aria-label", "World chat, open to visitors");
+      btn.title = "World chat, open to visitors";
+    }
     if (isPrivateChannelKey(name)) {
-      const visibilityLabel = channel?.serverVisible
+      const visibilityLabel = isEveryoneChannel(channel)
+        ? "Every ForkMesh member is in this channel"
+        : channel?.serverVisible
         ? "Server notices, visible to the server, only you can see it"
         : channel?.visibility === "public"
           ? "Public channel"
@@ -2035,10 +2075,11 @@ function setActiveChannel(name, options = {}) {
   const normalized = normalizeChannelKey(name);
   if (!normalized) return;
   if (!userSession() && normalized !== "#general") {
-    setStatus("Guests can participate only in public World #general", "authorization");
+    setStatus("Guests can chat only in World", "authorization");
     return;
   }
   const channel = ensureChannel(normalized);
+  defaultChannelChosen = true;
   if (channel === activeChannel) return;
   clearDropState();
   closeThread({ restoreFocus: false });
@@ -2074,6 +2115,7 @@ function setActiveChannel(name, options = {}) {
     meta.unreadTs = 0;
   }
   queueReadMark(channel);
+  refreshEveryoneChannelMembers(privateChannelForKey(channel));
   const label = channelDisplayLabel(channel);
   updateChannelHeading();
   if (input) input.placeholder = `Message ${label}…`;
@@ -2115,7 +2157,9 @@ function reconcilePrivateChannels(records, options = {}) {
       name,
       updatedAt: Number(value.updatedAt) || 0,
       keyVersion: Number(value.keyVersion) || 1,
-      canManage: Boolean(value.canManage),
+      kind: value.kind === "everyone" ? "everyone" : "channel",
+      memberCount: Math.max(0, Number(value.memberCount) || 0),
+      canManage: Boolean(value.canManage) && value.kind !== "everyone",
       visibility: value.visibility === "public" ? "public" : "private",
       topic: String(value.topic || "").trim().slice(0, 200),
       serverVisible: value.serverVisible === true,
@@ -2139,7 +2183,7 @@ function reconcilePrivateChannels(records, options = {}) {
 
   const activeRecord = privateChannelForKey(activeChannel);
   if (isPrivateChannelKey(activeChannel) && !activeRecord) {
-    setActiveChannel("#general");
+    setActiveChannel(defaultChannelKey());
     return;
   }
   if (activeRecord) {
@@ -2156,10 +2200,42 @@ function reconcilePrivateChannels(records, options = {}) {
     setActiveChannel(privateChannelKey(savedPrivateChannelId), {
       connect: options.connect,
     });
+  } else if (
+    options.selectSaved !== false &&
+    !defaultChannelChosen &&
+    activeChannel === "#general" &&
+    defaultChannelKey() !== "#general"
+  ) {
+    setActiveChannel(defaultChannelKey(), { connect: options.connect });
   }
+  if (activeRecord) refreshEveryoneChannelMembers(activeRecord);
   updateAdminChannelControls();
   renderRooms();
   schedulePeopleRender();
+}
+
+async function refreshEveryoneChannelMembers(record) {
+  if (!isEveryoneChannel(record) || !userSession()) return;
+  const cached = everyoneChannelMembers.get(record.id);
+  if (cached?.loading ||
+      (cached?.names && Date.now() - cached.at < EVERYONE_MEMBERS_REFRESH_MS)) {
+    return;
+  }
+  everyoneChannelMembers.set(record.id, { ...cached, loading: true });
+  let names = cached?.names || null;
+  let at = cached?.at || 0;
+  try {
+    const data = await privateChannelRequest(
+      `${PRIVATE_CHANNELS_ENDPOINT}/${record.id}/members`);
+    names = [...new Set((Array.isArray(data?.members) ? data.members : [])
+      .map((member) => String(member?.username || "").trim().toLowerCase())
+      .filter(Boolean))];
+    at = Date.now();
+  } catch (_) {}
+  everyoneChannelMembers.set(record.id, { names, at, loading: false });
+  if (privateChannelForKey(activeChannel)?.id === record.id) {
+    schedulePeopleRender();
+  }
 }
 
 function reconcileDirectMessages(records, options = {}) {
@@ -2208,7 +2284,7 @@ function reconcileDirectMessages(records, options = {}) {
 
   const activeDirect = directMessageForKey(activeChannel);
   if (isDirectMessageKey(activeChannel) && !activeDirect) {
-    setActiveChannel("#general");
+    setActiveChannel(defaultChannelKey());
     return;
   }
   if (activeDirect) {
@@ -2250,7 +2326,7 @@ async function refreshDirectMessages(options = {}) {
     if (error?.code === "auth") {
       directNextCursor = "";
       reconcileDirectMessages([], { ...options, nextCursor: "" });
-      if (isDirectMessageKey(activeChannel)) setActiveChannel("#general");
+      if (isDirectMessageKey(activeChannel)) setActiveChannel(defaultChannelKey());
     }
   }
 }
@@ -3294,7 +3370,7 @@ function schedulePeopleRender() {
 
 function noteRoster(plain) {
   const id = plain && plain.senderId;
-  if (!id) return;
+  if (!id || String(id).startsWith("system:")) return;
   const name = String(plain.sender || "").trim().slice(0, MAX_NAME) || "peer";
   const kind = plain.accountKind === "user"
     ? (id === FORKBOT_SENDER_ID ? "bot" : "user")
@@ -3506,6 +3582,9 @@ function activeRoomMembers(channel = activeChannel) {
       .filter(Boolean);
   }
   const record = privateChannelForKey(channel);
+  if (isEveryoneChannel(record)) {
+    return everyoneChannelMembers.get(record.id)?.names || null;
+  }
   if (record && record.visibility !== "public") {
     return Array.isArray(record.members) ? record.members : [];
   }
@@ -3571,7 +3650,12 @@ function renderPeople() {
   const onlineCount =
     [...bySection.user, ...bySection.guest, ...bySection.node]
       .filter(personIsOnline).length;
-  if (peopleTitleEl) {
+  const everyone = privateChannelForKey(activeChannel);
+  if (peopleTitleEl && isEveryoneChannel(everyone)) {
+    peopleTitleEl.textContent =
+      `Members · ${everyone.memberCount || bySection.user.length}`;
+    peopleTitleEl.title = "Every ForkMesh member is in this channel.";
+  } else if (peopleTitleEl) {
     peopleTitleEl.textContent = roomMembers
       ? `Members · ${bySection.user.length}`
       : `People · ${onlineCount} online`;
@@ -5081,7 +5165,7 @@ function renderActiveChannel() {
       ? `No messages in ${channelDisplayLabel(activeChannel)} yet. Say hi!`
       : (
           "Log in as a user to join this channel. " +
-          "Guests can participate only in public World #general."
+          "Guests can chat only in World."
         );
     logEl.append(empty);
     return;
@@ -5448,7 +5532,7 @@ function renderThreadEntry(
   entry = normalizedPublicWorldFrame(entry, scope);
   const channelKey = scope === "public-world-general" ? "#general" : scope;
   if (scope === "public-world-general" && entry.channel !== "#general") return;
-  if (isPrivateChannelKey(scope) && entry.channel !== channelDisplayLabel(scope)) return;
+  if (isPrivateChannelKey(scope) && entry.channel !== channelWireLabel(scope)) return;
   if ((entry.private && scope === "public-world-general") ||
       !entry.rootId || !once(entry.id)) return;
   noteRoster(entry);
@@ -6033,7 +6117,7 @@ function flushViewOnceStatusFor(record) {
 
 function makeForkbotPlain(text) {
   return makePlain("chat", {
-    channel: channelDisplayLabel(activeChannel),
+    channel: channelWireLabel(activeChannel),
     text: String(text || "").slice(0, MAX_TEXT),
     sender: "forkbot",
     senderId: FORKBOT_SENDER_ID,
@@ -6208,7 +6292,7 @@ function handleTransportState(state, detail) {
     if (!wasReady && connectedChannel === activeChannel) renderActiveChannel();
     const direct = directMessageForKey(scope);
     setStatus(scope === "public-world-general"
-      ? "Connected · public World #general"
+      ? "Connected · World"
       : direct
         ? `Connected · direct ${channelDisplayLabel(scope)}`
         : `Connected · ${

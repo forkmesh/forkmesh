@@ -346,8 +346,8 @@ struct ChatChannelMembersScreen: View {
             } header: {
                 Text("\(ChatHub.membersLabel(members.count)) \u{00B7} \(online) online")
             } footer: {
-                if ChatEveryone.contains(conversation) && hub.everyoneApplies {
-                    Text("Every member of this project is in this channel.")
+                if hub.isEveryoneChannel(conversation) {
+                    Text("Every ForkMesh member is in this channel.")
                 } else if hub.office?.room(for: conversation) == nil && !hub.extras.isPrivate(conversation) {
                     Text("Everyone online in this project's chat, and everyone who has posted here.")
                 }

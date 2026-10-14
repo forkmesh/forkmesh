@@ -32,8 +32,8 @@ public enum ChatReplyTarget {
             if let best = matches.first(where: \.online) ?? matches.first { return "@\(best.id)" }
             return name
         }
-        if channels.contains("#\(name)") { return "#\(name)" }
         if offices.contains(OfficeFrames.conversation(for: name)) { return OfficeFrames.conversation(for: name) }
+        if channels.contains("#\(name)") { return "#\(name)" }
         if let exact = others.first(where: { $0.id == name }) { return "@\(exact.id)" }
         let folded = name.lowercased()
         let matches = others.filter {

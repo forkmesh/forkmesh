@@ -319,6 +319,6 @@ extension ChatHub {
         let conversation = relay.currentConversation
         guard extras.isPrivate(conversation) else { return }
         extras.removeChannel(conversation)
-        select("#general")
+        select(generalConversation)
     }
 }

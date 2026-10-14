@@ -3626,7 +3626,7 @@ const QString kEmailNotifyHostOfflineSetting = QStringLiteral("notifications/ema
 // Pacing for the emails the keys above opt into: "digest" rolls them up,
 // "instant" sends each ping on its own the moment the relay sees it.
 const QString kEmailNotifyDeliverySetting = QStringLiteral("notifications/email/delivery");
-const QString kWelcomeChannel = QStringLiteral("#welcome");
+const QString kWelcomeChannel = QStringLiteral("#office/welcome");
 const qint64 kWelcomePingFreshMs = 5 * 60 * 1000;
 const QString kLegacyWelcomeAnnouncedSettingPrefix =
     QStringLiteral("chat/welcomeAnnounced/");
