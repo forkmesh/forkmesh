@@ -136,8 +136,12 @@
         --dashboard-card-foreground-rgb: 240 246 252;
         --dashboard-popover-rgb: 22 27 34;
         --dashboard-popover-foreground-rgb: 240 246 252;
-        --dashboard-primary-rgb: 35 134 54;
+        --dashboard-primary-rgb: 68 147 248;
         --dashboard-primary-foreground-rgb: 255 255 255;
+        --dashboard-cta-rgb: 35 134 54;
+        --dashboard-cta-foreground-rgb: 255 255 255;
+        --dashboard-success-rgb: 63 185 80;
+        --dashboard-attention-rgb: 210 153 34;
         --dashboard-secondary-rgb: 33 38 45;
         --dashboard-secondary-foreground-rgb: 201 209 217;
         --dashboard-muted-rgb: 22 27 34;
@@ -147,14 +151,19 @@
         --dashboard-destructive-rgb: 248 81 73;
         --dashboard-border-rgb: 61 68 77;
         --dashboard-ring-rgb: 88 166 255;
-        /* GitHub's repository surfaces: the page under the tab strip is one step
-           lighter than the chrome, section headers one step lighter again. */
         --dashboard-canvas-rgb: 13 17 23;
         --dashboard-subtle-rgb: 21 27 35;
+        --dashboard-scrollbar-rgb: 139 148 158;
+        --dashboard-control-font: 13px;
+        --dashboard-control-height: 32px;
+        --dashboard-control-height-sm: 28px;
+        --dashboard-menu-row-height: 30px;
+        --dashboard-control-radius: 6px;
+        /* GitHub's repository surfaces: the page under the tab strip is one step
+           lighter than the chrome, section headers one step lighter again. */
         --dashboard-counter: #2f3742;
         --dashboard-tab-underline: #f78166;
         --dashboard-open: #3fb950;
-        --dashboard-scrollbar-rgb: 139 148 158;
         --dashboard-link: #58a6ff;
         --dashboard-link-hover: #79c0ff;
         --contribution-commits: #58a6ff;
@@ -174,7 +183,7 @@
         --background: #010409;
         --foreground: #f0f6fc;
         --card: #0d1117;
-        --primary: #238636;
+        --primary: #4493f8;
         --primary-foreground: #ffffff;
         --secondary: #21262d;
         --muted-foreground: #8b949e;
@@ -191,14 +200,16 @@
         --dashboard-card-foreground-rgb: 0 0 0;
         --dashboard-popover-rgb: 255 255 255;
         --dashboard-popover-foreground-rgb: 0 0 0;
-        /* White button copy needs 4.5:1 contrast at the dashboard's small
-           type sizes. The former green (#16a34a) only reached 3.3:1. */
-        --dashboard-primary-rgb: 21 128 61;
+        --dashboard-primary-rgb: 9 105 218;
         --dashboard-primary-foreground-rgb: 255 255 255;
+        --dashboard-cta-rgb: 21 128 61;
+        --dashboard-cta-foreground-rgb: 255 255 255;
+        --dashboard-success-rgb: 26 127 55;
+        --dashboard-attention-rgb: 154 103 0;
         --dashboard-secondary-rgb: 255 255 255;
-        --dashboard-secondary-foreground-rgb: 0 0 0;
+        --dashboard-secondary-foreground-rgb: 31 35 40;
         --dashboard-muted-rgb: 255 255 255;
-        --dashboard-muted-foreground-rgb: 0 0 0;
+        --dashboard-muted-foreground-rgb: 89 99 110;
         --dashboard-accent-rgb: 9 105 218;
         --dashboard-accent-foreground-rgb: 255 255 255;
         --dashboard-destructive-rgb: 220 38 38;
@@ -206,10 +217,15 @@
         --dashboard-ring-rgb: 9 105 218;
         --dashboard-canvas-rgb: 255 255 255;
         --dashboard-subtle-rgb: 246 248 250;
+        --dashboard-scrollbar-rgb: 71 85 105;
+        --dashboard-control-font: 13px;
+        --dashboard-control-height: 32px;
+        --dashboard-control-height-sm: 28px;
+        --dashboard-menu-row-height: 30px;
+        --dashboard-control-radius: 6px;
         --dashboard-counter: rgba(129, 139, 152, 0.12);
         --dashboard-tab-underline: #fd8c73;
         --dashboard-open: #1a7f37;
-        --dashboard-scrollbar-rgb: 71 85 105;
         --dashboard-link: #0969da;
         --dashboard-link-hover: #0550ae;
         --contribution-commits: #0969da;
@@ -229,10 +245,10 @@
         --background: #ffffff;
         --foreground: #000000;
         --card: #ffffff;
-        --primary: #16a34a;
+        --primary: #0969da;
         --primary-foreground: #ffffff;
         --secondary: #ffffff;
-        --muted-foreground: #000000;
+        --muted-foreground: #59636e;
         --border: rgb(var(--dashboard-border-rgb));
         color-scheme: light;
       }
@@ -271,6 +287,116 @@
         font-weight: 400;
         line-height: 1.5;
       }
+
+      :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+        font-size: var(--dashboard-control-font);
+      }
+
+      :where(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
+        accent-color: rgb(var(--dashboard-primary-rgb));
+      }
+
+      :where(select, input, textarea):focus-visible {
+        border-color: rgb(var(--dashboard-primary-rgb));
+      }
+
+      :where(.fm-btn) { display: inline-flex; }
+      .fm-btn { align-items: center; justify-content: center; gap: 6px; height: var(--dashboard-control-height); min-height: 0; padding: 0 12px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font); font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; }
+      .fm-btn:focus-visible { outline: 2px solid rgb(var(--dashboard-primary-rgb)); outline-offset: -2px; }
+      .fm-btn:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); }
+      .fm-btn:disabled, .fm-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+      .fm-btn svg, .fm-btn i { width: 16px; height: 16px; flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-btn-sm { height: var(--dashboard-control-height-sm); padding: 0 10px; font-size: 12px; }
+      .fm-btn-sm svg, .fm-btn-sm i { width: 14px; height: 14px; }
+      .fm-btn-cta { background: rgb(var(--dashboard-cta-rgb)); border-color: rgb(var(--dashboard-foreground-rgb) / .1); color: rgb(var(--dashboard-cta-foreground-rgb)); }
+      .fm-btn-cta:hover { background: rgb(var(--dashboard-cta-rgb) / .9); }
+      .fm-btn-cta svg, .fm-btn-cta i { color: currentColor; }
+      .fm-btn-danger { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-btn-danger:hover { background: rgb(var(--dashboard-destructive-rgb)); border-color: rgb(var(--dashboard-destructive-rgb)); color: #fff; }
+      .fm-btn-danger:hover svg, .fm-btn-danger:hover i { color: currentColor; }
+      .fm-btn-invisible { border-color: transparent; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-btn-invisible:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-btn-invisible:hover svg, .fm-btn-invisible:hover i { color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-btn-icon { width: var(--dashboard-control-height); padding: 0; }
+      .fm-btn-icon.fm-btn-sm { width: var(--dashboard-control-height-sm); }
+
+      :where(.fm-flash) { display: flex; }
+      .fm-flash { align-items: flex-start; gap: 12px; padding: 12px 16px; border: 1px solid rgb(var(--fm-flash-rgb, var(--dashboard-primary-rgb)) / .4); border-radius: var(--dashboard-control-radius); background: rgb(var(--fm-flash-rgb, var(--dashboard-primary-rgb)) / .1); color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; line-height: 1.5; }
+      .fm-flash > svg, .fm-flash > i { flex: none; width: 16px; height: 16px; margin-top: 2px; color: rgb(var(--fm-flash-rgb, var(--dashboard-primary-rgb))); }
+      .fm-flash-title { display: block; font-weight: 600; }
+      .fm-flash-body { flex: 1 1 16rem; min-width: 0; }
+      .fm-flash-body p { margin: 0; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-flash { flex-wrap: wrap; }
+      :where(.fm-flash-actions) { display: flex; }
+      .fm-flash-actions { flex: none; align-items: center; gap: 8px; margin-left: auto; }
+      .fm-flash-success { --fm-flash-rgb: var(--dashboard-success-rgb); }
+      .fm-flash-warning { --fm-flash-rgb: var(--dashboard-attention-rgb); }
+      .fm-flash-danger { --fm-flash-rgb: var(--dashboard-destructive-rgb); }
+      .fm-flash-full { flex: none; align-items: center; border-radius: 0; border-top: 0; border-left: 0; border-right: 0; }
+      .fm-flash-full > svg, .fm-flash-full > i { margin-top: 0; }
+      .fm-flash-neutral { border-color: rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); }
+      .fm-flash-neutral > svg, .fm-flash-neutral > i { color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-flash > .fm-flash-icon-accent { color: rgb(var(--dashboard-primary-rgb)); }
+
+      :where(.fm-label) { display: inline-flex; }
+      .fm-label { align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 1px solid rgb(var(--fm-label-rgb, var(--dashboard-border-rgb))); border-radius: 999px; color: rgb(var(--fm-label-fg, var(--dashboard-muted-foreground-rgb))); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; }
+      .fm-label svg, .fm-label i { flex: none; width: 12px; height: 12px; }
+      .fm-label-lg { height: 24px; padding: 0 8px; }
+      a.fm-label:hover { background: rgb(var(--fm-label-rgb, var(--dashboard-border-rgb)) / .12); }
+      .fm-label-accent { --fm-label-rgb: var(--dashboard-primary-rgb); --fm-label-fg: var(--dashboard-primary-rgb); }
+      .fm-label-success { --fm-label-rgb: var(--dashboard-success-rgb); --fm-label-fg: var(--dashboard-success-rgb); }
+      .fm-label-attention { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); }
+      .fm-label-danger { --fm-label-rgb: var(--dashboard-destructive-rgb); --fm-label-fg: var(--dashboard-destructive-rgb); }
+      :where(.fm-counter) { display: inline-flex; }
+      .fm-counter { align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: rgb(var(--dashboard-foreground-rgb) / .1); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; font-weight: 500; line-height: 1; }
+
+      .fm-popover-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 4px 8px 4px 12px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-popover-title { margin: 0; font-size: var(--dashboard-control-font); font-weight: 600; }
+      .fm-popover-footer { padding: 4px; border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-popover { border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
+      .fm-menu { padding: 4px; }
+      :where(.fm-menu-item) { display: flex; }
+      .fm-menu-item { align-items: center; gap: 8px; width: 100%; height: var(--dashboard-menu-row-height); padding: 0 8px; border-radius: var(--dashboard-control-radius); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font); text-align: left; text-decoration: none; cursor: pointer; }
+      .fm-menu-item:hover, .fm-menu-item:focus-visible, .fm-menu-item[data-active="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); outline: none; }
+      .fm-menu-item svg, .fm-menu-item i { flex: none; width: 16px; height: 16px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-menu-item .fm-menu-hint { margin-left: auto; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; }
+      .fm-menu-item[aria-checked="true"]::after, .fm-menu-item[aria-selected="true"]::after { content: ""; width: 16px; height: 16px; margin-left: auto; flex: none; background: rgb(var(--dashboard-primary-rgb)); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 1.042-1.042L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'/%3E%3C/svg%3E") center / 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 1.042-1.042L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z'/%3E%3C/svg%3E") center / 16px no-repeat; }
+      .fm-menu-item-danger, .fm-menu-item-danger svg, .fm-menu-item-danger i { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-menu-item-danger:hover, .fm-menu-item-danger:focus-visible { background: rgb(var(--dashboard-destructive-rgb) / .1); }
+      .fm-menu-heading { padding: 6px 8px 2px; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 11px; font-weight: 500; }
+      .fm-menu-divider { height: 1px; margin: 4px 0; background: rgb(var(--dashboard-border-rgb) / .7); }
+
+      :where(.fm-dialog) { display: flex; }
+      .fm-dialog { flex-direction: column; max-height: min(80vh, 720px); overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 12px; background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 16px 48px rgb(1 4 9 / .5); }
+      .fm-dialog-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-dialog-title { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; }
+      .fm-dialog-heading { flex: 1; min-width: 0; }
+      .fm-dialog-desc { margin: 2px 0 0; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; font-weight: 400; line-height: 1.5; }
+      .fm-dialog-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; font-size: 14px; }
+      :where(.fm-dialog-footer) { display: flex; }
+      .fm-dialog-footer { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
+
+      :where(.fm-blankslate) { display: grid; }
+      .fm-blankslate { justify-items: center; gap: 4px; padding: 32px 24px; text-align: center; }
+      .fm-blankslate > svg, .fm-blankslate > i { width: 24px; height: 24px; margin-bottom: 8px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-blankslate-title { font-size: 16px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-blankslate-desc { max-width: 48ch; font-size: 14px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+
+      :where(.fm-toast) { display: flex; }
+      .fm-toast { align-items: center; gap: 10px; max-width: 420px; padding: 10px 12px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
+      .fm-toast > svg, .fm-toast > i { flex: none; width: 16px; height: 16px; color: rgb(var(--fm-flash-rgb, var(--dashboard-muted-foreground-rgb))); }
+
+      .fm-segmented { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); }
+      .fm-segmented > button { min-height: var(--dashboard-control-height-sm); padding: 0 10px; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; }
+      .fm-segmented > button:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-segmented > button[aria-pressed="true"] { background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
+
+      [data-runner-attention], [data-node-reconnect] { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); align-self: center; }
+      [data-runner-attention][data-state="expired"] { --fm-label-rgb: var(--dashboard-destructive-rgb); --fm-label-fg: var(--dashboard-destructive-rgb); }
+
+      [data-email-verification-hint].text-red-300 { color: rgb(var(--dashboard-destructive-rgb)); }
+
+      .fm-tooltip { padding: 4px 8px; border-radius: 6px; background: rgb(var(--dashboard-foreground-rgb)); color: rgb(var(--dashboard-background-rgb)); font-size: 12px; line-height: 1.4; }
 
       /* Repository pages follow GitHub: the header and the tab strip sit on the
          chrome colour, everything under the tabs on the lighter canvas.
@@ -595,14 +721,6 @@
         background: #0d0d10;
       }
 
-      .fm-update-notice {
-        flex: none;
-      }
-
-      .fm-update-notice[hidden] {
-        display: none;
-      }
-
       /* Streamed node terminal (agent-terminal.js). The grid is measured from
          this element's own metrics, so the font stack has to stay strictly
          monospaced or the remote program's column layout drifts. */
@@ -694,11 +812,7 @@
         place-items: center;
         border: 2px solid rgb(var(--dashboard-muted-foreground-rgb) / 0.72);
         border-radius: 0.45rem;
-        background:
-          linear-gradient(145deg, rgb(var(--dashboard-card-rgb)),
-            rgb(var(--dashboard-secondary-rgb) / 0.72));
-        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12),
-          0 1px 2px rgb(0 0 0 / 0.16);
+        background: rgb(var(--dashboard-card-rgb));
         color: white;
         transition: border-color 170ms ease, background 170ms ease,
           box-shadow 170ms ease, transform 170ms ease;
@@ -722,8 +836,6 @@
       .issue-task-toggle:checked + .issue-task-box {
         border-color: rgb(var(--dashboard-accent-rgb));
         background: rgb(var(--dashboard-accent-rgb));
-        box-shadow: 0 0 0 3px rgb(var(--dashboard-accent-rgb) / 0.12),
-          0 4px 12px rgb(var(--dashboard-accent-rgb) / 0.26);
       }
 
       .issue-task-toggle:checked + .issue-task-box .issue-task-checkmark {
@@ -856,12 +968,9 @@
         z-index: 4;
         right: 0.3rem;
         left: 0.3rem;
-        height: 3px;
+        height: 2px;
         border-radius: 999px;
-        background: linear-gradient(90deg,
-          rgb(var(--dashboard-primary-rgb)),
-          rgb(var(--dashboard-accent-rgb)));
-        box-shadow: 0 0 12px rgb(var(--dashboard-accent-rgb) / 0.55);
+        background: rgb(var(--dashboard-primary-rgb));
         content: "";
       }
 
@@ -1762,6 +1871,29 @@
         display: none;
       }
 
+      [data-global-search]:focus,
+      [data-global-search]:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+
+      [data-global-search-shell]:focus-within {
+        border-color: rgb(var(--dashboard-accent-rgb));
+        box-shadow: none;
+      }
+
+      [data-notification-kind-icon] {
+        color: rgb(var(--dashboard-muted-foreground-rgb));
+        transition: color 120ms ease;
+      }
+
+      [data-notification-open]:hover [data-notification-kind-icon],
+      [data-notification-open]:focus-visible [data-notification-kind-icon],
+      [data-notification-row]:hover [data-notification-kind-icon],
+      [data-home-feed-kind]:hover [data-notification-kind-icon] {
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
       ::selection {
         background: rgb(88 166 255 / 0.28);
       }
@@ -1820,13 +1952,13 @@
             <span data-dashboard-header-context class="min-w-0 truncate"></span>
           </h1>
           <div data-repo-header-meta class="hidden shrink-0 items-center gap-1.5">
-            <span data-repo-header-visibility class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+            <span data-repo-header-visibility class="fm-label"></span>
             <span data-repo-header-terms></span>
-            <span data-repo-availability-status class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"></span>
+            <span data-repo-availability-status class="inline-flex h-5 items-center rounded-full border border-border px-2 text-xs font-medium text-muted-foreground"></span>
           </div>
         </div>
 
-        <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-ring focus-within:text-foreground lg:flex">
+        <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground lg:flex">
           <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
           <input
             data-global-search
@@ -1860,12 +1992,12 @@
             data-global-search-panel
             id="globalSearchResults"
             role="listbox"
-            class="hidden absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl shadow-background/50"
+            class="fm-popover hidden absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden"
           >
-            <div data-global-search-results class="max-h-96 overflow-y-auto py-1"></div>
+            <div data-global-search-results class="max-h-96 overflow-y-auto p-1"></div>
             <div
               data-global-search-page-filter
-              class="hidden items-center gap-1.5 border-t border-border bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground"
+              class="hidden items-center gap-1.5 border-t border-border px-3 py-2 text-xs text-muted-foreground"
             ></div>
           </div>
         </div>
@@ -1875,9 +2007,9 @@
             data-runner-attention
             href="/dashboard/runners"
             data-state="expired"
-            class="hidden h-9 max-w-[16rem] items-center gap-1.5 rounded-md border border-border bg-red-500/10 px-2.5 text-xs font-semibold text-red-500 hover:opacity-90 transition-opacity"
+            class="fm-label fm-label-lg hidden max-w-[16rem]"
           >
-            <i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>
+            <i data-lucide="triangle-alert" aria-hidden="true"></i>
             <span data-runner-attention-text class="min-w-0 truncate"></span>
           </a>
           <button
@@ -1923,41 +2055,34 @@
             </button>
             <div
               id="notificationDropdown"
-              class="hidden fixed inset-x-3 top-16 z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
+              class="fm-popover hidden fixed inset-x-3 top-16 z-50 overflow-hidden sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80"
             >
-              <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-                <span class="text-xs font-medium text-foreground">Pings</span>
-                <span data-notification-count class="text-[10px] text-muted-foreground font-mono">0 new</span>
+              <div class="fm-popover-header">
+                <span class="fm-popover-title">Pings</span>
+                <span data-notification-count class="text-xs text-muted-foreground">0 new</span>
               </div>
-              <div data-notification-preview-list class="py-1"></div>
-              <div data-ping-pause-form class="border-t border-border p-2">
-                <div class="flex items-center justify-between gap-2 px-1 pb-1">
+              <div data-notification-preview-list class="p-1"></div>
+              <div data-ping-pause-form class="fm-popover-footer">
+                <div class="flex min-h-menu-row items-center justify-between gap-2 px-2">
                   <span data-ping-pause-state class="truncate text-xs text-muted-foreground">Notifications are on</span>
-                  <button data-ping-pause-resume type="button" hidden class="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-accent hover:bg-secondary transition-colors">
-                    Resume
-                  </button>
+                  <button data-ping-pause-resume type="button" hidden class="fm-btn fm-btn-sm fm-btn-invisible shrink-0">Resume</button>
                 </div>
-                <div data-ping-pause-menu hidden class="grid gap-1 pb-1">
-                  <button data-ping-pause-preset="3600000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 hour</button>
-                  <button data-ping-pause-preset="86400000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">For 1 day</button>
-                  <button data-ping-pause-preset="604800000" type="button" class="w-full rounded-md px-3 py-1 text-left text-xs text-foreground hover:bg-secondary transition-colors">Until next week</button>
-                  <div class="flex items-center gap-1 px-1 pt-1">
-                    <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-[#2f81f7]" />
-                    <button data-ping-pause-custom-apply type="button" class="h-8 shrink-0 rounded-md border border-border bg-secondary px-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors">Set</button>
+                <div data-ping-pause-menu hidden class="grid pb-1">
+                  <button data-ping-pause-preset="3600000" type="button" class="fm-menu-item">For 1 hour</button>
+                  <button data-ping-pause-preset="86400000" type="button" class="fm-menu-item">For 1 day</button>
+                  <button data-ping-pause-preset="604800000" type="button" class="fm-menu-item">Until next week</button>
+                  <div class="flex items-center gap-2 px-2 pt-1">
+                    <input data-ping-pause-custom type="datetime-local" aria-label="Pause notifications until" class="h-control-sm min-w-0 flex-1 rounded-control border border-border bg-background px-2 text-xs text-foreground outline-none" />
+                    <button data-ping-pause-custom-apply type="button" class="fm-btn fm-btn-sm shrink-0">Set</button>
                   </div>
                 </div>
-                <button data-ping-pause-toggle type="button" class="w-full rounded-md px-3 py-2 text-center text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                  Pause notifications
-                </button>
-                <div class="flex items-center gap-1">
-                  <button data-show-all-notifications type="button" class="min-w-0 flex-1 rounded-md px-3 py-2 text-center text-xs font-medium text-accent hover:bg-secondary transition-colors">
-                    Show all pings
-                  </button>
-                  <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                    <i data-lucide="settings" class="h-3.5 w-3.5"></i>
-                    Ping settings
-                  </a>
-                </div>
+                <button data-ping-pause-toggle type="button" class="fm-menu-item">Pause notifications</button>
+                <div class="fm-menu-divider"></div>
+                <button data-show-all-notifications type="button" class="fm-menu-item">Show all pings</button>
+                <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="fm-menu-item">
+                  <i data-lucide="settings" aria-hidden="true"></i>
+                  Ping settings
+                </a>
               </div>
             </div>
           </div>
@@ -1974,60 +2099,62 @@
             </button>
             <div
               id="agentModal"
-              class="hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain rounded-lg border border-border bg-card shadow-2xl shadow-background/40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]"
+              class="fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]"
               role="dialog"
               aria-labelledby="agentModalTitle"
             >
-              <div class="flex items-center justify-between border-b border-border px-4 py-3">
-                <div class="min-w-0">
-                  <h2 id="agentModalTitle" class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="bot" class="h-4 w-4 text-muted-foreground"></i>Start an agent</h2>
-                  <p class="mt-0.5 text-xs text-muted-foreground">Run on an agent-capable node owned by your account.</p>
+              <div class="fm-popover-header">
+                <div class="min-w-0 py-1">
+                  <h2 id="agentModalTitle" class="fm-popover-title">Start an agent</h2>
+                  <p class="text-xs text-muted-foreground">Run on an agent-capable node owned by your account.</p>
                 </div>
-                <button data-agent-modal-close type="button" aria-label="Close agent composer" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-                  <i data-lucide="x" class="h-4 w-4"></i>
+                <button data-agent-modal-close type="button" aria-label="Close agent composer" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+                  <i data-lucide="x" aria-hidden="true"></i>
                 </button>
               </div>
-              <form data-repo-agent-new-form class="grid gap-3 p-4 text-xs">
+              <form data-repo-agent-new-form class="grid gap-3 p-3 text-xs">
                 <label class="grid gap-1.5 font-medium text-foreground">Repository
-                  <select data-agent-modal-repo name="repository" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                  <select data-agent-modal-repo name="repository" required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"></select>
                 </label>
                 <label class="grid gap-1.5 font-medium text-foreground">Run on
-                  <select data-agent-modal-target name="targetNode" required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"><option value="">Choose an owned node…</option></select>
+                  <select data-agent-modal-target name="targetNode" required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"><option value="">Choose an owned node…</option></select>
                 </label>
                 <label class="grid gap-1.5 font-medium text-foreground">Agent and model
-                  <select data-repo-agent-new-agent-model required class="h-9 rounded-md border border-input bg-background px-2 text-xs text-foreground"></select>
+                  <select data-repo-agent-new-agent-model required class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground"></select>
                 </label>
                 <input data-repo-agent-new-provider name="provider" type="hidden" value="claude-code" />
                 <input data-repo-agent-new-model name="model" type="hidden" value="" />
                 <div data-agent-modal-login class="hidden flex-col gap-1.5">
-                  <button data-agent-modal-login-start type="button" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary">
-                    <i data-lucide="key" class="h-4 w-4"></i>
+                  <button data-agent-modal-login-start type="button" class="fm-btn fm-btn-sm">
+                    <i data-lucide="key" aria-hidden="true"></i>
                     <span data-agent-modal-login-label>Sign in to agent</span>
                   </button>
-                  <a data-agent-modal-login-desktop href="#" class="text-[11px] leading-4 text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground">Or hand this off to the ForkMesh desktop app</a>
+                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the ForkMesh desktop app</a>
                 </div>
                 <label class="grid gap-1.5 font-medium text-foreground">Task
-                  <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-xs leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
+                  <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
                 </label>
                 <input data-repo-agent-new-file-input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="hidden" />
                 <div class="flex flex-wrap items-center gap-2">
-                  <button data-repo-agent-new-attach type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 font-medium text-foreground hover:bg-secondary">
-                    <i data-lucide="image-plus" class="h-3.5 w-3.5"></i>
+                  <button data-repo-agent-new-attach type="button" class="fm-btn fm-btn-sm">
+                    <i data-lucide="image-plus" aria-hidden="true"></i>
                     Attach images
                   </button>
-                  <span class="text-[11px] text-muted-foreground">or paste a screenshot into the task</span>
+                  <span class="text-xs text-muted-foreground">or paste a screenshot into the task</span>
                 </div>
                 <div data-repo-agent-new-attachments class="hidden"></div>
                 <label class="flex items-center gap-2 text-foreground">
-                  <input name="createPr" type="checkbox" class="h-4 w-4 rounded border-input" />
+                  <input name="createPr" type="checkbox" class="h-4 w-4 rounded border-border" />
                   Create a pull request when the run finishes
                 </label>
-                <p class="text-[11px] leading-4 text-muted-foreground">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>
-                <p data-repo-agent-new-hint class="text-[11px] leading-4 text-muted-foreground">The request is saved durably and starts when the selected node claims it.</p>
-                <button type="submit" class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 font-semibold text-primary-foreground hover:bg-primary/90">
-                  <i data-lucide="play" class="h-4 w-4"></i>
-                  Start agent
-                </button>
+                <p class="text-xs leading-5 text-muted-foreground">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>
+                <p data-repo-agent-new-hint class="text-xs leading-5 text-muted-foreground">The request is saved durably and starts when the selected node claims it.</p>
+                <div class="flex justify-end border-t border-border pt-3">
+                  <button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">
+                    <i data-lucide="play" aria-hidden="true"></i>
+                    Start agent
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -2035,13 +2162,13 @@
           <a
             data-guest-auth-link
             href="/signup"
-            class="hidden ml-0.5 items-center whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+            class="fm-btn fm-btn-sm fm-btn-cta hidden ml-0.5"
           >Sign Up / Log In</a>
 
           <a
             data-admin-button
             href="#"
-            class="hidden ml-0.5 h-9 w-9 inline-flex items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
+            class="hidden ml-0.5 h-9 w-9 inline-flex items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             title="Admin panel"
             aria-label="Admin panel"
           >
@@ -2053,9 +2180,9 @@
             href="/dashboard/settings/nodes?from=reconnect"
             aria-label="Reconnect a node to this account"
             title="No node is connected to drain this account — link one to sync issues, chats and more"
-            class="hidden ml-0.5 inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-500/20 transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500/30 dark:text-amber-400"
+            class="fm-label fm-label-lg hidden ml-0.5"
           >
-            <i data-lucide="plug-zap" class="h-3.5 w-3.5"></i>
+            <i data-lucide="plug-zap" aria-hidden="true"></i>
             <span>Reconnect node</span>
           </a>
 
@@ -2093,17 +2220,19 @@
             </button>
             <div
               id="accountMenuDropdown"
-              class="hidden absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-lg border border-border bg-card py-1 shadow-2xl shadow-background/40"
+              class="fm-popover fm-menu hidden absolute right-0 top-full z-50 mt-2 w-56"
             >
-              <a href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Your profile</a>
-              <a data-account-menu-public-profile href="/dashboard/profile" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Public profile</a>
-              <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Membership</a>
-              <a href="/dashboard/settings" class="block px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Settings</a>
-              <button data-account-menu-status type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set a status…</button>
-              <button data-account-menu-away type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Set yourself away</button>
-              <button data-feedback-open type="button" class="block w-full border-t border-border px-3 py-2 text-left text-xs font-medium text-foreground hover:bg-secondary transition-colors">Send feedback</button>
-              <button data-account-menu-logout type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out</button>
-              <button data-account-menu-logout-all type="button" class="block w-full px-3 py-2 text-left text-xs font-medium text-red-400 hover:bg-secondary transition-colors">Log out all devices</button>
+              <a href="/dashboard/profile" class="fm-menu-item">Your profile</a>
+              <a data-account-menu-public-profile href="/dashboard/profile" class="fm-menu-item">Public profile</a>
+              <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="fm-menu-item">Membership</a>
+              <a href="/dashboard/settings" class="fm-menu-item">Settings</a>
+              <div class="fm-menu-divider" role="separator"></div>
+              <button data-account-menu-status type="button" class="fm-menu-item">Set a status…</button>
+              <button data-account-menu-away type="button" class="fm-menu-item">Set yourself away</button>
+              <button data-feedback-open type="button" class="fm-menu-item">Send feedback</button>
+              <div class="fm-menu-divider" role="separator"></div>
+              <button data-account-menu-logout type="button" class="fm-menu-item fm-menu-item-danger">Log out</button>
+              <button data-account-menu-logout-all type="button" class="fm-menu-item fm-menu-item-danger">Log out all devices</button>
             </div>
           </div>
         </div>
@@ -2112,22 +2241,16 @@
       <div
         data-email-verification-banner
         role="status"
-        class="hidden shrink-0 flex-col gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200 sm:flex-row sm:items-center sm:justify-between"
+        class="fm-flash fm-flash-warning fm-flash-full hidden"
       >
-        <div class="flex min-w-0 items-start gap-2 sm:items-center">
-          <i data-lucide="mail-warning" class="mt-0.5 h-4 w-4 shrink-0"></i>
-          <p class="min-w-0">
-            <span data-email-verification-message class="font-medium">Your email is not verified yet.</span>
-            <span data-email-verification-hint class="text-amber-300"></span>
-          </p>
+        <i data-lucide="mail-warning" aria-hidden="true"></i>
+        <div class="fm-flash-body">
+          <strong data-email-verification-message class="fm-flash-title">Your email is not verified yet.</strong>
+          <p data-email-verification-hint></p>
         </div>
-        <button
-          data-email-verification-resend
-          type="button"
-          class="shrink-0 self-start rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 transition-colors"
-        >
-          Resend verification email
-        </button>
+        <div class="fm-flash-actions">
+          <button data-email-verification-resend type="button" class="fm-btn fm-btn-sm">Resend verification email</button>
+        </div>
       </div>
 
 
@@ -2191,7 +2314,7 @@
         <div data-sidebar-top-repositories class="dashboard-nav-repos">
           <div class="dashboard-nav-repos-head">
             <span class="dashboard-nav-title">Top repositories</span>
-            <span data-sidebar-repo-count class="rounded-full border border-border bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground">0</span>
+            <span data-sidebar-repo-count class="fm-counter">0</span>
           </div>
           <div data-sidebar-repo-list class="dashboard-nav-repo-list"></div>
         </div>
@@ -2206,16 +2329,16 @@
 
 
       <main id="dashboardMain" data-dashboard-main tabindex="-1" class="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div data-update-notice hidden class="fm-update-notice" role="status" aria-live="polite">
-          <div class="flex items-center gap-3 border-b border-border bg-card px-4 py-2">
-            <i data-lucide="sparkles" class="h-4 w-4 shrink-0 text-accent"></i>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-foreground">A new version of ForkMesh is available</p>
-              <p data-update-notice-detail class="text-xs leading-5 text-muted-foreground">Update reloads this page on the new version.</p>
-            </div>
-            <button data-update-notice-apply type="button" class="inline-flex h-8 shrink-0 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">Update</button>
-            <button data-update-notice-dismiss type="button" aria-label="Dismiss update notice" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-              <i data-lucide="x" class="h-4 w-4"></i>
+        <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
+          <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
+          <div class="fm-flash-body">
+            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <p data-update-notice-detail>Update reloads this page on the new version.</p>
+          </div>
+          <div class="fm-flash-actions">
+            <button data-update-notice-apply type="button" class="fm-btn fm-btn-sm fm-btn-cta">Update</button>
+            <button data-update-notice-dismiss type="button" aria-label="Dismiss update notice" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon">
+              <i data-lucide="x" aria-hidden="true"></i>
             </button>
           </div>
         </div>
@@ -2223,201 +2346,186 @@
           <section data-view="new-repo" data-new-repo-page class="view active h-full overflow-y-auto">
             <style>
               [data-new-repo-page] .hidden { display: none !important; }
-              .nr-page { max-width: 1080px; margin: 0 auto; padding: 20px 16px 120px; }
-              @media (min-width: 640px) { .nr-page { padding: 32px 28px 120px; } }
+              .nr-page { max-width: 760px; margin: 0 auto; padding: 24px 16px 96px; color: rgb(var(--dashboard-foreground-rgb)); }
+              @media (min-width: 640px) { .nr-page { padding: 32px 24px 96px; } }
               .nr-crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-crumbs a { color: inherit; text-decoration: none; }
-              .nr-crumbs a:hover { color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-hero { display: flex; align-items: flex-start; gap: 16px; margin: 14px 0 28px; }
-              .nr-hero-icon { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.12); border: 1px solid rgb(var(--dashboard-primary-rgb) / 0.35); }
-              .nr-hero h1 { font-size: 24px; line-height: 1.25; font-weight: 650; letter-spacing: -0.01em; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-hero p { margin-top: 6px; max-width: 60ch; font-size: 14px; line-height: 1.55; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-layout { display: grid; gap: 24px; }
-              @media (min-width: 1024px) { .nr-layout { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; } }
-              .nr-card { border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 12px; background: rgb(var(--dashboard-card-rgb)); }
-              .nr-section { padding: 20px; }
-              .nr-section + .nr-section { border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-step { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-              .nr-step-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; font-size: 11px; font-weight: 700; color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); border: 1px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-step h2 { font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-sources { display: grid; gap: 10px; grid-template-columns: 1fr; }
-              @media (min-width: 560px) { .nr-sources { grid-template-columns: 1fr 1fr; } }
-              .nr-source[data-new-repo-source] { position: relative; display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 14px; text-align: left; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); transition: border-color .15s, background-color .15s, box-shadow .15s; }
-              .nr-source[data-new-repo-source]:hover { border-color: rgb(var(--dashboard-muted-foreground-rgb) / 0.6); }
-              .nr-source[data-new-repo-source]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 2px; }
-              .nr-source[data-new-repo-source][aria-pressed="true"] { border-color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.08); box-shadow: 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
-              .nr-source-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-source[aria-pressed="true"] .nr-source-icon { color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.14); }
-              .nr-source-title { display: block; font-size: 13px; font-weight: 600; }
-              .nr-source-desc { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-source-check { position: absolute; top: 12px; right: 12px; width: 16px; height: 16px; border-radius: 999px; border: 1.5px solid rgb(var(--dashboard-border-rgb)); }
-              .nr-source[aria-pressed="true"] .nr-source-check { border-color: rgb(var(--dashboard-primary-rgb)); background: radial-gradient(circle, rgb(var(--dashboard-primary-rgb)) 0 4px, transparent 4.5px); }
-              .nr-field { display: grid; gap: 6px; font-size: 12px; font-weight: 500; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-field-label { color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; font-weight: 600; }
+              .nr-crumbs a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-crumbs a:hover { text-decoration: underline; }
+              .nr-head { margin: 16px 0 0; }
+              .nr-head h1 { font-size: 24px; line-height: 1.25; font-weight: 400; }
+              .nr-head p { margin-top: 4px; font-size: 14px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-required { margin-top: 16px; font-size: 12px; font-style: italic; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-star { color: rgb(var(--dashboard-destructive-rgb)); font-style: normal; }
+              .nr-rule { border: 0; border-top: 1px solid rgb(var(--dashboard-border-rgb) / .7); margin: 20px 0; }
+              .nr-block { display: grid; gap: 20px; }
+              .nr-field { display: grid; gap: 6px; }
+              .nr-label { font-size: 14px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
               .nr-optional { font-weight: 400; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-input { width: 100%; height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 14px; transition: border-color .15s, box-shadow .15s; }
-              textarea.nr-input { height: auto; min-height: 76px; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+              .nr-help { font-size: 12px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-help code { font-size: 11px; padding: 1px 4px; border-radius: 4px; background: rgb(var(--dashboard-muted-foreground-rgb) / .15); }
+              .nr-seg { display: inline-flex; flex-wrap: wrap; width: max-content; max-width: 100%; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); overflow: hidden; }
+              .nr-seg [data-new-repo-source] { display: inline-flex; align-items: center; gap: 6px; height: var(--dashboard-control-height); min-height: 0; padding: 0 12px; font-size: var(--dashboard-control-font); font-weight: 500; background: transparent; border-right: 1px solid rgb(var(--dashboard-border-rgb)); transition: background-color .12s, color .12s; }
+              .nr-seg [data-new-repo-source]:last-child { border-right: 0; }
+              .nr-seg [data-new-repo-source]:first-child { border-radius: calc(var(--dashboard-control-radius) - 1px) 0 0 calc(var(--dashboard-control-radius) - 1px); }
+              .nr-seg [data-new-repo-source]:last-child { border-radius: 0 calc(var(--dashboard-control-radius) - 1px) calc(var(--dashboard-control-radius) - 1px) 0; }
+              .nr-seg [data-new-repo-source] svg { flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-seg [data-new-repo-source]:hover { background: rgb(var(--dashboard-foreground-rgb) / .05); color: rgb(var(--dashboard-foreground-rgb)); }
+              .nr-seg [data-new-repo-source][aria-pressed="true"] { position: relative; background: rgb(var(--dashboard-primary-rgb) / .12); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+              .nr-seg [data-new-repo-source][aria-pressed="true"] svg { color: rgb(var(--dashboard-primary-rgb)); }
+              .nr-seg [data-new-repo-source]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: -2px; }
+              .nr-input { width: 100%; height: var(--dashboard-control-height); padding: 0 12px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font); line-height: 1.4; transition: border-color .12s, box-shadow .12s; }
+              textarea.nr-input { height: auto; min-height: 64px; padding: 8px 12px; resize: vertical; }
+              select.nr-input { appearance: none; padding-right: 32px; cursor: pointer; background: rgb(var(--dashboard-secondary-rgb)) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%239198a1'%3E%3Cpath d='M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E") no-repeat right 8px center; }
               .nr-input::placeholder { color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-input:focus { outline: none; border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: 0 0 0 3px rgb(var(--dashboard-primary-rgb) / 0.18); }
-              .nr-help { font-size: 12px; line-height: 1.5; font-weight: 400; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-name-row { display: grid; gap: 10px; align-items: end; }
+              .nr-input:focus { outline: none; border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+              .nr-name-row { display: grid; gap: 8px; align-items: end; }
               @media (min-width: 560px) { .nr-name-row.nr-has-owner { grid-template-columns: minmax(0, 220px) auto minmax(0, 1fr); } }
-              .nr-slash { display: none; padding-bottom: 8px; font-size: 20px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-slash { display: none; padding-bottom: 4px; font-size: 20px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
               @media (min-width: 560px) { .nr-name-row.nr-has-owner .nr-slash { display: block; } }
-              .nr-stack { display: grid; gap: 16px; }
               .nr-two { display: grid; gap: 12px; }
-              @media (min-width: 560px) { .nr-two { grid-template-columns: 1fr 1fr; } }
-              .nr-toggle { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); cursor: pointer; }
-              .nr-toggle input { margin-top: 2px; width: 16px; height: 16px; accent-color: rgb(var(--dashboard-primary-rgb)); }
-              .nr-toggle strong { display: block; font-size: 13px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-toggle span { display: block; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-panel { display: grid; gap: 12px; padding: 16px; border-radius: 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); }
-              .nr-result { padding: 24px; }
+              @media (min-width: 560px) { .nr-two { grid-template-columns: 220px 220px; } }
+              .nr-radios { display: grid; }
+              .nr-radio { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; }
+              .nr-radio input, .nr-check input { flex: none; width: 14px; height: 14px; margin-top: 3px; accent-color: rgb(var(--dashboard-primary-rgb)); }
+              .nr-radio svg { flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-radio input:disabled ~ * { opacity: .5; }
+              .nr-title { display: block; font-size: 14px; font-weight: 600; }
+              .nr-desc { display: block; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+              .nr-panel { display: grid; gap: 12px; padding: 16px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); }
+              .nr-info { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); font-size: 13px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+              .nr-info svg { flex: none; margin-top: 2px; }
+              .nr-info a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+              .nr-info a:hover { text-decoration: underline; }
+              .nr-result { padding: 4px 0 0; }
               .nr-result-head { display: flex; align-items: center; gap: 12px; }
-              .nr-result-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; color: rgb(var(--dashboard-primary-rgb)); background: rgb(var(--dashboard-primary-rgb) / 0.14); }
-              .nr-code { overflow-x: auto; white-space: pre; padding: 12px 14px; border-radius: 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-background-rgb)); font-size: 12px; line-height: 1.7; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-actions { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 0 0 12px 12px; background: rgb(var(--dashboard-card-rgb) / 0.94); backdrop-filter: blur(6px); }
-              .nr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; padding: 0 18px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: background-color .15s, border-color .15s; }
-              .nr-btn-ghost { border: 1px solid rgb(var(--dashboard-border-rgb)); color: rgb(var(--dashboard-foreground-rgb)); background: transparent; }
-              .nr-btn-ghost:hover { background: rgb(var(--dashboard-secondary-rgb)); }
-              .nr-btn-primary { color: rgb(var(--dashboard-primary-foreground-rgb)); background: rgb(var(--dashboard-primary-rgb)); border: 1px solid transparent; }
-              .nr-btn-primary:hover { background: rgb(var(--dashboard-primary-rgb) / 0.9); }
+              .nr-result-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; color: rgb(var(--dashboard-muted-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); }
+              .nr-result-icon.nr-result-ok { color: rgb(var(--dashboard-success-rgb)); background: rgb(var(--dashboard-success-rgb) / .14); }
+              .nr-code { overflow-x: auto; white-space: pre; padding: 12px 14px; border-radius: var(--dashboard-control-radius); border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-subtle-rgb)); font-size: 12px; line-height: 1.7; color: rgb(var(--dashboard-foreground-rgb)); }
+              .nr-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+              .nr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--dashboard-control-height); padding: 0 14px; border-radius: var(--dashboard-control-radius); font-size: var(--dashboard-control-font); font-weight: 500; transition: background-color .12s, border-color .12s; }
+              .nr-btn-ghost { border: 1px solid rgb(var(--dashboard-border-rgb)); color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-secondary-rgb)); }
+              .nr-btn-ghost:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); }
+              .nr-btn-primary { color: rgb(var(--dashboard-cta-foreground-rgb)); background: rgb(var(--dashboard-cta-rgb)); border: 1px solid rgb(var(--dashboard-foreground-rgb) / .1); }
+              .nr-btn-primary:hover { background: rgb(var(--dashboard-cta-rgb) / .9); }
               .nr-btn-primary:disabled { opacity: .6; cursor: progress; }
-              .nr-aside { display: grid; gap: 16px; }
-              @media (min-width: 1024px) { .nr-aside { position: sticky; top: 24px; } }
-              .nr-aside-card { padding: 18px; }
-              .nr-aside h3 { font-size: 13px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
-              .nr-points { display: grid; gap: 12px; margin-top: 12px; }
-              .nr-point { display: flex; gap: 10px; font-size: 12px; line-height: 1.5; color: rgb(var(--dashboard-muted-foreground-rgb)); }
-              .nr-point i, .nr-point svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: rgb(var(--dashboard-primary-rgb)); }
-              .nr-point b { color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
             </style>
 
             <div class="nr-page">
               <nav class="nr-crumbs" aria-label="Breadcrumb">
                 <a href="/dashboard/repos">Repositories</a>
-                <i data-lucide="chevron-right" class="h-3.5 w-3.5"></i>
+                <span aria-hidden="true">/</span>
                 <span class="text-foreground">New</span>
               </nav>
 
-              <header class="nr-hero">
-                <div class="nr-hero-icon"><i data-lucide="git-branch-plus" class="h-6 w-6"></i></div>
-                <div class="min-w-0">
-                  <h1 id="newRepoModalTitle" data-new-repo-title>Create &amp; mirror a repository</h1>
-                  <p data-new-repo-subtitle>Describe the repo, then finish creating and mirroring it from your ForkMesh desktop node.</p>
-                </div>
+              <header class="nr-head">
+                <h1 id="newRepoModalTitle" data-new-repo-title>Create a new repository</h1>
+                <p data-new-repo-subtitle>A repository holds your project's files and history. ForkMesh keeps a copy on every core node.</p>
               </header>
+              <p class="nr-required">Required fields are marked with an asterisk (<span class="nr-star">*</span>).</p>
 
-              <div class="nr-layout">
-                <form data-new-repo-form class="nr-card" aria-labelledby="newRepoModalTitle">
-                  <div data-new-repo-details>
-                    <div class="nr-section">
-                      <div class="nr-step"><span class="nr-step-num">1</span><h2>Where does it come from?</h2></div>
-                      <div data-new-repo-source-toggle class="nr-sources" role="group" aria-label="Source">
-                        <button data-new-repo-source="empty" type="button" aria-pressed="true" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="sparkles" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">New repository</span><span class="nr-source-desc">Start fresh on ForkMesh and push with git.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="remote" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="link" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">Remote clone URL</span><span class="nr-source-desc">Copy and mirror a repository from any git URL.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="local" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="hard-drive" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">Local repository</span><span class="nr-source-desc">Publish a folder from your desktop node.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
-                        <button data-new-repo-source="provider" type="button" aria-pressed="false" class="nr-source">
-                          <span class="nr-source-icon"><i data-lucide="download-cloud" class="h-4 w-4"></i></span>
-                          <span><span class="nr-source-title">GitHub / GitLab / Codeberg</span><span class="nr-source-desc">Import issues, pulls and history from a forge.</span></span>
-                          <span class="nr-source-check" aria-hidden="true"></span>
-                        </button>
+              <form data-new-repo-form aria-labelledby="newRepoModalTitle">
+                <hr class="nr-rule" />
+                <div data-new-repo-details>
+                  <div class="nr-block">
+                    <div class="nr-field">
+                      <span class="nr-label">Start from</span>
+                      <div data-new-repo-source-toggle class="nr-seg" role="group" aria-label="Source">
+                        <button data-new-repo-source="empty" type="button" aria-pressed="true"><i data-lucide="book-marked" class="h-4 w-4"></i>Empty</button>
+                        <button data-new-repo-source="remote" type="button" aria-pressed="false"><i data-lucide="link" class="h-4 w-4"></i>Clone URL</button>
+                        <button data-new-repo-source="local" type="button" aria-pressed="false"><i data-lucide="monitor" class="h-4 w-4"></i>Local folder</button>
+                        <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
                       </div>
-                      <div class="nr-stack" style="margin-top:14px">
-                        <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" />
-                        <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
-                        <div data-new-repo-provider-options class="hidden nr-panel">
-                          <label class="nr-field">
-                            <span class="nr-field-label">Import type</span>
-                            <select data-new-repo-import-mode class="nr-input">
-                              <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
-                              <option value="stub">Create a non-mirrored stub</option>
-                            </select>
-                          </label>
-                          <label class="nr-field">
-                            <span class="nr-field-label">Provider access token <span class="nr-optional">(required for private repositories)</span></span>
-                            <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="nr-input" />
-                          </label>
-                          <p class="nr-help">The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="nr-section">
-                      <div class="nr-step"><span class="nr-step-num">2</span><h2>Name and details</h2></div>
-                      <div class="nr-stack">
-                        <div data-new-repo-name-row class="nr-name-row">
-                          <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
-                            <span class="nr-field-label">Owner</span>
-                            <select data-new-repo-owner class="nr-input"></select>
-                          </label>
-                          <span class="nr-slash" aria-hidden="true">/</span>
-                          <label data-new-repo-name-wrap class="nr-field">
-                            <span class="nr-field-label">Repository name</span>
-                            <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="nr-input" />
-                          </label>
-                        </div>
-                        <p class="nr-help" style="margin-top:-8px">Letters, numbers, <code>.</code>, <code>-</code> and <code>_</code>, up to 64 characters.</p>
-
-                        <label data-new-repo-description-wrap class="nr-field">
-                          <span class="nr-field-label">Description <span class="nr-optional">(optional)</span></span>
-                          <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" placeholder="What is this repository for?" class="nr-input"></textarea>
-                        </label>
-
-                        <label data-new-repo-visibility-wrap class="nr-field">
-                          <span class="nr-field-label">Visibility</span>
-                          <select data-new-repo-visibility class="nr-input">
-                            <option value="public">Public — listed in the catalog and browsable by anyone</option>
-                            <option value="private">Private — encrypted mirror, contents stay hidden</option>
+                      <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
+                      <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
+                      <div data-new-repo-provider-options class="hidden nr-panel">
+                        <label class="nr-field">
+                          <span class="nr-label">Import type</span>
+                          <select data-new-repo-import-mode class="nr-input">
+                            <option value="import">Full provider metadata &amp; collaboration history (no Git contents)</option>
+                            <option value="stub">Create a non-mirrored stub</option>
                           </select>
                         </label>
-                      </div>
-                    </div>
-
-                    <div data-new-repo-hosted-options class="hidden nr-section">
-                      <div class="nr-step"><span class="nr-step-num">3</span><h2>Starter files</h2></div>
-                      <div class="nr-stack">
-                        <label data-new-repo-readme-wrap class="nr-toggle">
-                          <input data-new-repo-readme type="checkbox" checked />
-                          <div><strong>Add a README</strong><span>Creates a first commit so you can clone straight away.</span></div>
+                        <label class="nr-field">
+                          <span class="nr-label">Provider access token <span class="nr-optional">(required for private repositories)</span></span>
+                          <input data-new-repo-provider-token type="password" autocomplete="off" spellcheck="false" placeholder="Request-scoped GitHub, GitLab, or Codeberg token" class="nr-input" />
                         </label>
-                        <div data-new-repo-init-wrap class="nr-two">
-                          <label class="nr-field">
-                            <span class="nr-field-label">.gitignore</span>
-                            <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
-                          </label>
-                          <label class="nr-field">
-                            <span class="nr-field-label">License</span>
-                            <select data-new-repo-license class="nr-input"><option value="">None</option></select>
-                          </label>
-                        </div>
-                        <p data-new-repo-quota class="nr-help"></p>
+                        <p class="nr-help">The token is used for this request only and is never stored. Git contents stay on the normal mirror path; provider records and selected documentation are kept in encrypted migration records and never sent to an external model.</p>
                       </div>
                     </div>
 
-                    <div class="nr-section" style="padding-top:0;border-top:0">
-                      <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
-                      <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-                          <span data-new-repo-setup-time class="text-foreground"></span>
-                          <span data-new-repo-transfer-time class="text-muted-foreground"></span>
-                        </div>
-                        <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+                    <div class="nr-field">
+                      <div data-new-repo-name-row class="nr-name-row">
+                        <label data-new-repo-owner-wrap data-new-repo-hosted-options class="hidden nr-field">
+                          <span class="nr-label">Owner <span class="nr-star">*</span></span>
+                          <select data-new-repo-owner class="nr-input"></select>
+                        </label>
+                        <span class="nr-slash" aria-hidden="true">/</span>
+                        <label data-new-repo-name-wrap class="nr-field">
+                          <span class="nr-label">Repository name <span class="nr-star">*</span></span>
+                          <input data-new-repo-name type="text" autocomplete="off" spellcheck="false" placeholder="my-project" required class="nr-input" />
+                        </label>
                       </div>
+                      <p class="nr-help">Great repository names are short and memorable. Letters, numbers, <code>.</code> <code>-</code> <code>_</code>, up to 64 characters.</p>
+                    </div>
+
+                    <label data-new-repo-description-wrap class="nr-field">
+                      <span class="nr-label">Description <span class="nr-optional">(optional)</span></span>
+                      <textarea data-new-repo-description rows="2" maxlength="240" spellcheck="true" class="nr-input"></textarea>
+                    </label>
+                  </div>
+
+                  <div data-new-repo-visibility-wrap>
+                    <hr class="nr-rule" />
+                    <div class="nr-radios" role="radiogroup" aria-label="Visibility">
+                      <label class="nr-radio">
+                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="public" checked />
+                        <i data-lucide="book" class="h-6 w-6"></i>
+                        <span><span class="nr-title">Public</span><span class="nr-desc">Listed in the catalog. Anyone can browse and clone it.</span></span>
+                      </label>
+                      <label class="nr-radio">
+                        <input data-new-repo-visibility type="radio" name="new-repo-visibility" value="private" />
+                        <i data-lucide="lock" class="h-6 w-6"></i>
+                        <span><span class="nr-title">Private</span><span data-new-repo-private-desc class="nr-desc">Encrypted mirror, contents stay hidden.</span></span>
+                      </label>
                     </div>
                   </div>
+
+                  <div data-new-repo-hosted-options class="hidden">
+                    <hr class="nr-rule" />
+                    <div class="nr-block">
+                      <div class="nr-field">
+                        <span class="nr-label">Initialize this repository with</span>
+                        <label data-new-repo-readme-wrap class="nr-check">
+                          <input data-new-repo-readme type="checkbox" checked />
+                          <span><span class="nr-title">Add a README file</span><span class="nr-desc">A first commit, so you can clone straight away.</span></span>
+                        </label>
+                      </div>
+                      <div data-new-repo-init-wrap class="nr-two">
+                        <label class="nr-field">
+                          <span class="nr-label">.gitignore</span>
+                          <select data-new-repo-gitignore class="nr-input"><option value="">None</option></select>
+                        </label>
+                        <label class="nr-field">
+                          <span class="nr-label">License</span>
+                          <select data-new-repo-license class="nr-input"><option value="">None</option></select>
+                        </label>
+                      </div>
+                      <p data-new-repo-quota class="nr-help"></p>
+                    </div>
+                  </div>
+
+                  <hr class="nr-rule" />
+                  <div class="nr-info"><i data-lucide="info" class="h-4 w-4"></i><span>You get the clone URL and a push credential right after you create it. Local folders and private URLs finish on your <a href="/desktop">ForkMesh desktop node</a>.</span></div>
+                  <p data-new-repo-hint role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground" style="margin-top:12px"></p>
+                  <div data-new-repo-migration-status class="hidden nr-panel text-xs" role="status" aria-live="polite">
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <span data-new-repo-setup-time class="text-foreground"></span>
+                      <span data-new-repo-transfer-time class="text-muted-foreground"></span>
+                    </div>
+                    <p data-new-repo-migration-phase class="text-muted-foreground"></p>
+                  </div>
+                </div>
 
                   <div data-new-repo-steps role="status" aria-live="polite" class="hidden nr-result">
                     <div class="nr-result-head">
@@ -2434,7 +2542,7 @@
 
                   <div data-new-repo-push role="status" aria-live="polite" class="hidden nr-result">
                     <div class="nr-result-head">
-                      <span class="nr-result-icon"><i data-lucide="check" class="h-5 w-5"></i></span>
+                      <span class="nr-result-icon nr-result-ok"><i data-lucide="check" class="h-5 w-5"></i></span>
                       <div>
                         <p class="text-base font-semibold text-foreground">Repository created</p>
                         <p class="text-sm text-muted-foreground"><span data-new-repo-push-repo class="font-mono text-foreground"></span></p>
@@ -2457,45 +2565,23 @@
                     </p>
                     <div class="mt-5 flex flex-wrap items-center gap-2">
                       <button data-new-repo-push-copy type="button" class="nr-btn nr-btn-ghost">
-                        <i data-lucide="copy" class="h-4 w-4"></i>
+                        <i data-lucide="copy" class="h-3.5 w-3.5"></i>
                         <span data-new-repo-push-copy-label>Copy commands</span>
                       </button>
                       <a data-new-repo-push-open href="/dashboard/repos" class="nr-btn nr-btn-primary">
-                        <i data-lucide="folder-open" class="h-4 w-4"></i>
                         Open repository
                       </a>
                     </div>
                   </div>
 
-                  <div class="nr-actions">
-                    <button data-new-repo-cancel type="button" class="nr-btn nr-btn-ghost"><span data-new-repo-cancel-label>Cancel</span></button>
-                    <button data-new-repo-submit type="submit" class="nr-btn nr-btn-primary">
-                      <i data-lucide="git-branch-plus" class="h-4 w-4"></i>
-                      <span data-new-repo-submit-label>Create &amp; mirror</span>
-                    </button>
-                  </div>
-                </form>
-
-                <aside class="nr-aside">
-                  <div class="nr-card nr-aside-card">
-                    <h3>What happens next</h3>
-                    <div class="nr-points">
-                      <p class="nr-point"><i data-lucide="server"></i><span><b>Hosted by ForkMesh.</b> A new or imported repository gets a full copy on every core node. No desktop app needed.</span></p>
-                      <p class="nr-point"><i data-lucide="terminal"></i><span><b>Plain git over HTTPS.</b> You get the clone URL and a push credential right after you create it.</span></p>
-                      <p class="nr-point"><i data-lucide="monitor"></i><span><b>Local folders and other URLs</b> finish on your desktop node, which signs and mirrors them.</span></p>
-                      <p class="nr-point"><i data-lucide="arrow-right-left"></i><span><b>Move it any time.</b> Take a hosted repository to your own node when you outgrow the quota.</span></p>
-                    </div>
-                  </div>
-                  <div class="nr-card nr-aside-card">
-                    <h3>Need the desktop app?</h3>
-                    <p class="nr-help" style="margin-top:6px">Mirroring from a local folder or a private URL runs on a ForkMesh desktop node.</p>
-                    <a href="/desktop" class="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline">
-                      <i data-lucide="download" class="h-3.5 w-3.5"></i>
-                      Download ForkMesh
-                    </a>
-                  </div>
-                </aside>
-              </div>
+                <hr class="nr-rule" />
+                <div class="nr-actions">
+                  <button data-new-repo-cancel type="button" class="nr-btn nr-btn-ghost"><span data-new-repo-cancel-label>Cancel</span></button>
+                  <button data-new-repo-submit type="submit" class="nr-btn nr-btn-primary">
+                    <span data-new-repo-submit-label>Create repository</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </section>
 
@@ -2508,8 +2594,8 @@
                     <div class="min-w-0 pt-1 lg:pt-4">
                       <div class="flex flex-wrap items-center gap-2">
                         <h1 data-profile-page-node-name class="truncate text-2xl font-semibold leading-tight text-foreground">My Profile</h1>
-                        <span data-profile-kind-badge class="hidden shrink-0 inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                          <i data-lucide="server" class="h-3 w-3"></i>
+                        <span data-profile-kind-badge class="fm-label hidden shrink-0">
+                          <i data-lucide="server" aria-hidden="true"></i>
                           Node
                         </span>
                       </div>
@@ -2518,7 +2604,7 @@
                   </div>
                   <p data-profile-bio class="mt-4 text-base leading-6 text-foreground">No bio yet.</p>
                   <div class="mt-4 grid gap-2">
-                    <a href="/dashboard/settings" class="flex w-full items-center justify-center rounded-md border border-border bg-secondary px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-background">Edit profile</a>
+                    <a href="/dashboard/settings" class="fm-btn w-full">Edit profile</a>
                   </div>
                   <div data-profile-followers class="mt-4 flex items-center gap-1 text-sm text-muted-foreground">
                     <i data-lucide="users" class="h-4 w-4"></i>
@@ -2554,7 +2640,7 @@
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="award" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Badges</h2>
-                      <span data-profile-badges-count class="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">0</span>
+                      <span data-profile-badges-count class="fm-counter">0</span>
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
@@ -2568,7 +2654,7 @@
                       <div data-profile-tips-detail hidden class="grid justify-items-center gap-3">
                         <div data-profile-tips-qr class="grid min-h-[60px] min-w-[60px] place-items-center rounded-md border border-border bg-background p-1 text-center text-[11px] text-muted-foreground"></div>
                         <code data-profile-tips-address class="w-full break-all rounded-md border border-border bg-background px-2 py-1.5 text-center font-mono text-[11px] leading-4 text-foreground"></code>
-                        <button data-profile-tips-copy type="button" class="w-full rounded-md border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background">Copy address</button>
+                        <button data-profile-tips-copy type="button" class="fm-btn fm-btn-sm w-full">Copy address</button>
                       </div>
                     </div>
                   </section>
@@ -2577,8 +2663,8 @@
                       <i data-lucide="globe" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Fediverse</h2>
                       <a data-profile-fediverse-link href="#" target="_blank" rel="noopener noreferrer" class="min-w-0 truncate text-xs text-muted-foreground hover:text-accent hover:underline"></a>
-                      <button data-profile-fediverse-popout type="button" title="Open this feed in a new window" aria-label="Open this feed in a new window" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
-                        <i data-lucide="external-link" class="h-3 w-3"></i>
+                      <button data-profile-fediverse-popout type="button" title="Open this feed in a new window" aria-label="Open this feed in a new window" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+                        <i data-lucide="external-link" aria-hidden="true"></i>
                       </button>
                     </div>
                     <div data-profile-fediverse-posts class="grid text-sm"></div>
@@ -2605,49 +2691,49 @@
       aria-labelledby="profileModalTitle"
     >
       <button data-profile-modal-backdrop type="button" aria-label="Close profile settings" class="absolute inset-0 cursor-default"></button>
-      <div class="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
-        <div class="flex items-center justify-between border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <h2 id="profileModalTitle" class="text-sm font-semibold text-foreground">Profile settings</h2>
-            <p class="mt-0.5 text-xs text-muted-foreground">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>
+      <div class="fm-dialog relative z-10 w-full max-w-lg">
+        <div class="fm-dialog-header">
+          <div class="fm-dialog-heading">
+            <h2 id="profileModalTitle" class="fm-dialog-title">Profile settings</h2>
+            <p class="fm-dialog-desc">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>
           </div>
-          <button data-profile-modal-close type="button" aria-label="Close profile settings" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-            <i data-lucide="x" class="h-4 w-4"></i>
+          <button data-profile-modal-close type="button" aria-label="Close profile settings" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+            <i data-lucide="x" aria-hidden="true"></i>
           </button>
         </div>
-        <div class="grid gap-4 p-4">
-          <div class="rounded-lg border border-border bg-background p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-xs font-medium text-foreground">Email verification</p>
-                <p data-profile-email-status class="mt-1 text-xs text-muted-foreground">Sign in to view email status.</p>
-              </div>
-              <button data-profile-verify-email type="button" class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors">
-                Send link
-              </button>
+        <div class="fm-dialog-body grid gap-4">
+          <div class="flex items-start justify-between gap-3 border-b border-border pb-4">
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-foreground">Email verification</p>
+              <p data-profile-email-status class="mt-1 text-xs text-muted-foreground">Sign in to view email status.</p>
             </div>
+            <button data-profile-verify-email type="button" class="fm-btn fm-btn-sm shrink-0">
+              Send link
+            </button>
           </div>
 
           <label class="grid gap-1.5 text-xs text-muted-foreground">
             Solana payout address
-            <input data-profile-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
-            <span class="text-[11px] leading-4 text-muted-foreground">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>
-            <span class="text-[11px] leading-4 text-amber-300">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>
+            <input data-profile-solana type="text" inputmode="latin" autocomplete="off" placeholder="Your public Solana address" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground" />
+            <span class="text-xs leading-5 text-muted-foreground">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>
+            <span class="text-xs leading-5 text-muted-foreground">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>
           </label>
 
           <form data-credential-scope class="contents">
           <label class="grid gap-1.5 text-xs text-muted-foreground">
             Current password
-            <input data-profile-password type="password" autocomplete="current-password" placeholder="Required to save payout changes" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20" />
+            <input data-profile-password type="password" autocomplete="current-password" placeholder="Required to save payout changes" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground" />
           </label>
           </form>
 
           <p data-profile-hint class="min-h-4 text-xs text-muted-foreground"></p>
-          <button data-profile-save type="button" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+        </div>
+        <div class="fm-dialog-footer">
+          <button data-profile-save type="button" class="fm-btn fm-btn-sm fm-btn-cta">
             Save profile
           </button>
-	        </div>
-	      </div>
+        </div>
+      </div>
     </div>
 
     <div
@@ -2658,26 +2744,26 @@
       aria-labelledby="profileAboutModalTitle"
     >
       <button data-profile-about-modal-backdrop type="button" aria-label="Close about editor" class="absolute inset-0 cursor-default"></button>
-      <div class="relative z-10 flex max-h-[min(760px,calc(100vh-3rem))] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
-        <div class="flex items-center justify-between border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <h2 id="profileAboutModalTitle" class="text-sm font-semibold text-foreground">Edit about yourself</h2>
-            <p class="mt-0.5 text-xs text-muted-foreground">Markdown shown on your ForkMesh profile overview.</p>
+      <div class="fm-dialog relative z-10 w-full max-w-3xl">
+        <div class="fm-dialog-header">
+          <div class="fm-dialog-heading">
+            <h2 id="profileAboutModalTitle" class="fm-dialog-title">Edit about yourself</h2>
+            <p class="fm-dialog-desc">Markdown shown on your ForkMesh profile overview.</p>
           </div>
-          <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-            <i data-lucide="x" class="h-4 w-4"></i>
+          <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+            <i data-lucide="x" aria-hidden="true"></i>
           </button>
         </div>
-        <div class="grid min-h-0 gap-4 overflow-y-auto p-4">
+        <div class="fm-dialog-body grid gap-4">
           <label class="grid gap-2 text-xs font-medium text-muted-foreground">
             About yourself
-            <textarea data-profile-about-textarea rows="14" maxlength="32000" spellcheck="true" class="min-h-72 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-ring" placeholder="# Hi, I'm ..."></textarea>
+            <textarea data-profile-about-textarea rows="14" maxlength="32000" spellcheck="true" class="min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground" placeholder="# Hi, I'm ..."></textarea>
           </label>
           <p data-profile-about-hint class="min-h-4 text-xs text-muted-foreground"></p>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-          <button data-profile-about-cancel type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">Cancel</button>
-          <button data-profile-about-save type="button" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Save about</button>
+        <div class="fm-dialog-footer">
+          <button data-profile-about-cancel type="button" class="fm-btn fm-btn-sm">Cancel</button>
+          <button data-profile-about-save type="button" class="fm-btn fm-btn-sm fm-btn-cta">Save about</button>
         </div>
       </div>
     </div>
@@ -2690,19 +2776,19 @@
       aria-labelledby="notificationModalTitle"
     >
       <button data-notification-modal-backdrop type="button" aria-label="Close pings" class="absolute inset-0 cursor-default"></button>
-      <div class="relative z-10 flex max-h-[min(760px,calc(100vh-3rem))] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
-        <div class="flex items-center justify-between border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <h2 id="notificationModalTitle" class="text-sm font-semibold text-foreground">Pings</h2>
-            <p class="mt-0.5 text-xs text-muted-foreground">Read node, repository, and network updates.</p>
+      <div class="fm-dialog relative z-10 w-full max-w-4xl">
+        <div class="fm-dialog-header">
+          <div class="fm-dialog-heading">
+            <h2 id="notificationModalTitle" class="fm-dialog-title">Pings</h2>
+            <p class="fm-dialog-desc">Read node, repository, and network updates.</p>
           </div>
           <div class="flex shrink-0 items-center gap-1">
-            <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-              <i data-lucide="settings" class="h-4 w-4"></i>
+            <a href="/dashboard/settings/notifications" data-ping-settings-link="" title="Ping settings" class="fm-btn fm-btn-sm fm-btn-invisible">
+              <i data-lucide="settings" aria-hidden="true"></i>
               Ping settings
             </a>
-            <button data-close-notification-modal type="button" aria-label="Close pings" class="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-              <i data-lucide="x" class="h-4 w-4"></i>
+            <button data-close-notification-modal type="button" aria-label="Close pings" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+              <i data-lucide="x" aria-hidden="true"></i>
             </button>
           </div>
         </div>
@@ -2727,18 +2813,18 @@
       aria-labelledby="agentLoginModalTitle"
     >
       <button data-agent-login-backdrop type="button" aria-label="Close the sign-in terminal" class="absolute inset-0 cursor-default"></button>
-      <div class="fm-agent-login-box relative z-10 flex w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
-        <div class="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <h2 id="agentLoginModalTitle" data-agent-login-title class="flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="terminal" class="h-4 w-4 text-muted-foreground"></i>Sign in on your node</h2>
-            <p data-agent-login-status class="mt-0.5 text-xs text-muted-foreground">Connecting…</p>
+      <div class="fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl">
+        <div class="fm-dialog-header">
+          <div class="fm-dialog-heading">
+            <h2 id="agentLoginModalTitle" data-agent-login-title class="fm-dialog-title flex items-center gap-2"><i data-lucide="terminal" class="h-4 w-4 text-muted-foreground"></i>Sign in on your node</h2>
+            <p data-agent-login-status class="fm-dialog-desc">Connecting…</p>
           </div>
-          <button data-agent-login-close type="button" aria-label="Close the sign-in terminal" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-            <i data-lucide="x" class="h-4 w-4"></i>
+          <button data-agent-login-close type="button" aria-label="Close the sign-in terminal" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+            <i data-lucide="x" aria-hidden="true"></i>
           </button>
         </div>
         <div data-agent-login-surface class="fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2"></div>
-        <p data-agent-login-footer class="border-t border-border px-4 py-2 text-[11px] leading-4 text-muted-foreground">
+        <p data-agent-login-footer class="border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground">
           Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command — not a shell — and the credential itself is created on the provider's site, never here.
         </p>
       </div>
@@ -2752,26 +2838,26 @@
       aria-labelledby="feedbackModalTitle"
     >
       <button data-feedback-close type="button" aria-label="Close feedback" class="absolute inset-0 cursor-default"></button>
-      <form data-feedback-form class="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-background/60">
-        <div class="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <h2 id="feedbackModalTitle" class="text-sm font-semibold text-foreground">Send feedback</h2>
-            <p class="mt-0.5 text-xs text-muted-foreground">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+      <form data-feedback-form class="fm-dialog relative z-10 w-full max-w-lg">
+        <div class="fm-dialog-header">
+          <div class="fm-dialog-heading">
+            <h2 id="feedbackModalTitle" class="fm-dialog-title">Send feedback</h2>
+            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
           </div>
-          <button data-feedback-close type="button" aria-label="Close feedback" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
-            <i data-lucide="x" class="h-4 w-4"></i>
+          <button data-feedback-close type="button" aria-label="Close feedback" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
+            <i data-lucide="x" aria-hidden="true"></i>
           </button>
         </div>
-        <div class="grid gap-3 p-4">
+        <div class="fm-dialog-body grid gap-3">
           <label class="grid gap-1.5 text-xs font-medium text-muted-foreground">
             Your feedback
-            <textarea data-feedback-message name="message" rows="6" minlength="2" maxlength="2000" required placeholder="What should we know?" class="min-h-32 resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20"></textarea>
+            <textarea data-feedback-message name="message" rows="6" minlength="2" maxlength="2000" required placeholder="What should we know?" class="min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground"></textarea>
           </label>
           <p data-feedback-status class="min-h-4 text-xs text-muted-foreground" role="status" aria-live="polite"></p>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-          <button data-feedback-close type="button" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold text-foreground hover:bg-secondary">Cancel</button>
-          <button data-feedback-submit type="submit" class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">Send feedback</button>
+        <div class="fm-dialog-footer">
+          <button data-feedback-close type="button" class="fm-btn fm-btn-sm">Cancel</button>
+          <button data-feedback-submit type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Send feedback</button>
         </div>
       </form>
     </div>
