@@ -18,6 +18,14 @@ public enum PhonePackages {
         }
     }
 
+    public static func starterPack(settings: SettingsService? = Services.get(SettingsService.self)) -> StarterPack {
+        StarterPack.fromName(settings?.starterPack)
+    }
+
+    public static func chooseStarterPack(_ pack: StarterPack, settings: SettingsService? = Services.get(SettingsService.self)) {
+        settings?.setStarterPack(pack.rawValue)
+    }
+
     public static func isRemoved(_ id: String, settings: SettingsService? = Services.get(SettingsService.self)) -> Bool {
         settings?.removedPackages.contains(id) ?? false
     }
@@ -44,6 +52,8 @@ public enum PhonePackages {
         var out: Set<String> = account?.installedGatedPackages ?? []
         if account == nil, settings?.legacyProject ?? true {
             out = PackageGate.packages.subtracting(PackageGate.organizationPackages)
+        } else if account == nil {
+            out = starterPack(settings: settings).packages
         }
         for id in PackageGate.devicePackages {
             if isOn(id, settings: settings) ?? true { out.insert(id) } else { out.remove(id) }
@@ -56,6 +66,6 @@ public enum PhonePackages {
     public static func isInstalled(_ id: String, account: AccountPackagesStore?, settings: SettingsService?) -> Bool {
         if let on = isOn(id, settings: settings) { return on }
         if isRemoved(id, settings: settings) { return false }
-        return account?.isInstalled(id) ?? (settings?.legacyProject ?? true)
+        return account?.isInstalled(id) ?? ((settings?.legacyProject ?? true) || PackageGate.isStarter(id, pack: starterPack(settings: settings)))
     }
 }

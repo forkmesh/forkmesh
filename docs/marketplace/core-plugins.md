@@ -4,8 +4,8 @@ Most of what the Home grid, the bar tabs and the repository tabs offer is a
 Market package. Each package is the feature's on/off switch, Market listing
 and install state; the feature code stays in each app (desktop, iPhone,
 Android, web). New projects and accounts start with these packages removed,
-except the phone starter set below; older ones keep what they had. Repos,
-Search, Market and Settings stay core and always show.
+except the phone starter pack below; older ones keep what they had. Repos, Search, Market and Settings stay core
+and always show.
 
 The manifest field `install.installedBefore` (`YYYY-MM-DD`, with
 `install.default: false`) installs a package for projects and accounts
@@ -41,25 +41,45 @@ locks anyone out. The phone top bar avatar always shows; `sign-in` gates only
 the guest's Sign in chip and the menu's Sign in / Sign out. On phones
 `sign-in` is on until the user removes it, in new projects too.
 
-## The phone starter set
+## Phone starter packs
 
-A new phone project starts with `agents`, `chat`, `inbox`, `code` and `tour`
-installed (iOS `PackageGate.starterPackages`, Android `PackageGate.STARTER`),
-plus `sign-in`. Web and desktop keep the off-by-default rule.
+The first time a new phone project opens (after the welcome and sign-in
+pages, before the shell), it asks once "Choose how to start" and offers three
+packs, Standard preselected, with a single Continue:
 
-Why: the 15 Oct 2026 audit found that installs since 11 Oct opened on
-Repos, Search, Market and Settings only, with no Sign in chip for guests and
-no tour, so a new user had nothing to do. The set is the three bar tabs, the
-repository Code tab and the tour; the rest stays one Market install away.
+| Pack | id | Installs |
+|---|---|---|
+| Minimal | `minimal` | `code` only (no agents, chat, inbox or tour) |
+| Standard (default) | `standard` | `agents`, `chat`, `inbox`, `code`, `tour` |
+| Everything | `everything` | every gated package except the organization packages (what a legacy project gets) |
 
-- A starter package counts as installed in a new project until that project
-  removes it. The account answer does not hide it, because a new account has
-  no row for it and the server answers `installed: false` either way.
-- Removing one in a new project records `false` for the project, as for any
-  other package; installing it again works as usual.
+`sign-in` stays a per-device switch, on by default whatever the pack. Web and
+desktop keep the off-by-default rule.
+
+- Where: iOS `StarterPack` beside `PackageGate.starterPackages` in
+  `FMApi/Navigation/PackageGate.swift`, screen `StarterPackView`, shown by
+  `AppHomeView` while `SettingsService.needsStarterPack`; Android
+  `StarterPack` beside `PackageGate.STARTER` in `C/market/PackageGate.kt`,
+  screen `StarterPackScreen`, shown by `Features.Root` while
+  `PackageGateFeature.starterPackPending`.
+- The choice is stored per project next to the project installs
+  (`<namespace>packages/starter-pack` on iOS, `packages/starterPack` in the
+  project prefs on Android). Until it is stored the project behaves as
+  `standard`, so projects created before the packs existed are unchanged.
+- Legacy projects are never asked and keep what they had.
+- A pack package counts as installed in the new project until the project
+  removes it; the account answer does not hide it, because a new account has
+  no row for it. Project choices made later in the Market override the pack,
+  in both directions.
 - Before the catalog loads, a gated package with no entry is installed when
-  the project is legacy or it is a starter package.
-- Legacy projects are unchanged.
+  the project is legacy or the package is in the chosen pack.
+
+Why: an October 2026 audit found new installs opened on Repos, Search, Market
+and Settings only, with nothing to do, so Kaif's fixed starter set (Standard)
+turned the three bar tabs, the Code tab and the tour on. A single fixed set
+forced agents on people who want a quiet start, so the owner asked for a
+choice: Minimal for code only, Everything for people who want the legacy
+layout, Standard for everyone else.
 
 Nesting: every Market nests a package under its first `dependencies` entry, so
 Pull requests sits under Branches, Special Agents under Agents, and the
@@ -105,7 +125,8 @@ The web has no projects and uses the account answer. Desktop and phones:
   `packages/projectInstalls` on Android). A package counts as installed when
   the project installed it and the account still has it, or when it is
   `install.default` and neither the project nor the account removed it, or
-  (phones) when it is in the starter set and the project did not remove it.
+  (phones) when it is in the project's starter pack and the project did not
+  remove it.
   `legacy` answers never turn a package on there.
 - Installing in a new project also installs on the account (so the web,
   settings and places work) and records it, with its dependencies, for the
