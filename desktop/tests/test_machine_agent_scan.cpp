@@ -94,6 +94,21 @@ int main(int argc, char **argv)
     check(claudeTranscript(config, QStringLiteral("/elsewhere"), QString(), {}).isEmpty(),
           "a folder with no transcripts has none");
 
+    QDir().mkpath(config + QStringLiteral("/sessions"));
+    const auto record = [&config](const QString &name, const QByteArray &body) {
+        QFile file(config + QStringLiteral("/sessions/") + name);
+        file.open(QIODevice::WriteOnly);
+        file.write(body);
+    };
+    record(QStringLiteral("4242.json"), "{\"pid\":4242,\"sessionId\":\"older\",\"cwd\":\"/work/repo\"}");
+    record(QStringLiteral("4343.json"), "{\"pid\":9999,\"sessionId\":\"older\"}");
+    record(QStringLiteral("4444.json"), "{\"pid\":4444,\"sessionId\":\"../../etc/passwd\"}");
+    check(recordedClaudeSession(config, 4242) == QLatin1String("older"),
+          "a fresh session's id is read from Claude's record for its process");
+    check(recordedClaudeSession(config, 4343).isEmpty(), "a record naming another process is ignored");
+    check(recordedClaudeSession(config, 4444).isEmpty(), "a session id that is not a plain name is ignored");
+    check(recordedClaudeSession(config, 4545).isEmpty(), "a process without a record has none");
+
     SystemStats::ProcessTable table;
     table.entries.insert(10, {1, QStringLiteral("forkmesh"), false, 0});
     table.entries.insert(11, {10, QStringLiteral("claude"), false, 0});

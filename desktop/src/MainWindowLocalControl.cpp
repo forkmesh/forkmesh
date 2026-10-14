@@ -491,6 +491,9 @@ QJsonObject MainWindow::localControlAgentsPayload()
         });
     }
     for (auto it = m_machineAgents.constBegin(); it != m_machineAgents.constEnd(); ++it) {
+        if (const auto surfaced = m_externalSurfaced.constFind(it.key());
+            surfaced != m_externalSurfaced.constEnd() && externalIsLive(surfaced->uuid))
+            continue;
         const QString folder = QFileInfo(it->cwd).fileName();
         const QString label = MachineAgentScan::label(it->kind);
         const RepositoryRecord *repo = repositoryFor(it->cwd);

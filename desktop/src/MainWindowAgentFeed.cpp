@@ -197,12 +197,24 @@ void MainWindow::scanMachineAgents()
                 if (agent.kind == QLatin1String("claude"))
                     claudePids.append(agent.pid);
             }
+            QHash<qint64, QString> recorded;
+            for (const ClaudePeerSession &peer : std::as_const(result.peers)) {
+                if (claudePids.contains(peer.pid))
+                    recorded.insert(peer.pid, peer.sessionId);
+            }
             QSet<qint64> surfacedPids;
             QSet<QString> surfacedPaths;
             for (const ExternalClaudeSession &ext : surfaced) {
                 surfacedPaths.insert(ext.path);
-                for (const qint64 pid :
-                     ClaudeSessionScan::findSessionPids(ext.uuid, ext.cwd, claudePids)) {
+                QList<qint64> pids = recorded.keys(ext.uuid);
+                if (pids.isEmpty()) {
+                    for (const qint64 pid :
+                         ClaudeSessionScan::findSessionPids(ext.uuid, ext.cwd, claudePids)) {
+                        if (!recorded.contains(pid))
+                            pids.append(pid);
+                    }
+                }
+                for (const qint64 pid : std::as_const(pids)) {
                     surfacedPids.insert(pid);
                     result.surfacedPids[ext.uuid].append(pid);
                 }
@@ -238,6 +250,8 @@ void MainWindow::applyMachineAgents(const QList<MachineAgent> &agents,
     for (const MachineAgent &agent : agents)
         next.insert(externalTempIdFor(QStringLiteral("pid:%1").arg(agent.pid)), agent);
     for (auto it = m_machineAgents.constBegin(); it != m_machineAgents.constEnd(); ++it) {
+        if (m_externalSurfaced.contains(it.key()))
+            continue;
         const auto kept = next.constFind(it.key());
         if (kept == next.constEnd() || kept->transcript != it->transcript)
             m_agentActivityExternalOffset.remove(it.key());
