@@ -22,3 +22,34 @@ World chat embed keeps its own look.
 | `app/public/dashboard/partials/views/chat.html` | Markup and stylesheet |
 | `app/public/dashboard-chat.js` | Layout, grouping, member list, emoji picker |
 | `app/public/dashboard/chat/index.html` | Built by `app/tools/build_dashboard_assets.py`; do not edit |
+
+## Colours and event-only parts
+
+The `--dc-*` properties now point at the dashboard theme tokens
+(`--dashboard-*-rgb`), so the page follows `theme.json` in both themes instead
+of a separate Discord palette. Selection, focus and links are blue: the current
+channel gets the accent tint with a blue `#`, the composer gets a blue border
+when focused, the send button is primary blue, and the unread count is a blue
+pill. Green is used only for online presence. Avatars sit on the neutral
+secondary fill, and source and member tags are outlined grey labels rather
+than filled capitals.
+
+Built by `dashboard-chat.js`: the empty and signed-out logs are `fm-blankslate`
+blocks (centred in `#fullChatMessages` and excluded from the boxed notice rule),
+the mention and slash suggestion lists are `fm-popover fm-menu` with 30px rows
+and a green dot for people active in the room, the thread dialog uses the
+`fm-dialog-header` and `fm-dialog-footer` rows with an invisible icon close,
+and message actions are small invisible buttons (Delete is `fm-btn-danger`).
+`dashboard-chat.js` is not scanned by the dashboard Tailwind build, so any
+utility class it adds must also appear in a scanned source.
+
+The standalone `/chat` page (`app/public/chat.css`) has no shell classes, so
+the same rules are written there with its own tokens: `--primary` is blue
+(join, save, send, thread reply, unread count), `--cta` is green and used only
+by the Create button in the new-channel dialog, and `--online` is the green for
+presence and the connected status dot. Its dialogs have a bordered header and
+footer row with 28px buttons; Delete confirms and channel deletion use red text
+that fills red on hover, errors are red-tinted alerts, the webhook-created box
+is a blue info alert, and members and webhooks in settings are hairline-divided
+rows instead of boxes inside the panel. The encryption chip still shows the
+lock or globe emoji that `app/public/chat.js` writes.
