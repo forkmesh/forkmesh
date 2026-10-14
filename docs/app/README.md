@@ -57,6 +57,7 @@ deployment. This page is the developer home for the App's internals.
 | `world/src/world_task_email.py` | An email for every task change; its opens, clicks and views also go to the task timeline ([task-email.md](task-email.md)) |
 | `app/src/ids_console.py` | The admin console's Intrusion detection page: node health, incident charts, groups and log over `security_incidents` (migration 0243, [../IDS.md](../IDS.md#admin-console-page)) |
 | `app/src/not_found_log.py` | 404 tracking: grouped counts, hourly chart, exceptions, the 10-hit admin Ping and the console's 404s list (migrations 0239 and 0242, [not-found-tracking.md](not-found-tracking.md)) |
+| `app/src/probe_ban.py` | Automatic bans for visitors whose 404s are scanner probes (`.env`, `.php`, `wp-*`, backups, config files): scoring, `request_block_rules` rows, the sweep and the 404s page's "Auto bans" card (migration 0259, [probe-auto-ban.md](probe-auto-ban.md)) |
 | `app/src/agent_guestbook.py`, `app/src/agent_notes.py`, `app/src/guestbook_runtime.py` | The public AI guestbook and anonymous agent notes with their admin approval queue (migration 0225, [agent-notes.md](agent-notes.md)) |
 | `marketplace/packages/*/content/worker/*.py` | Server code of marketplace packages (for example `analytics`, `calories`, `crm`); staged flat next to the app modules |
 | `app/migrations/NNNN_*.sql`, `app/migrations/down/` | Numbered migrations (roll-forward) and their down scripts; World migrations live here too. 0191 to 0199 were added for the core nodes |

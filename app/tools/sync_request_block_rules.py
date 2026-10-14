@@ -27,7 +27,8 @@ WELCOME_AGENTS = (
     'lower(http.user_agent) contains "oai-searchbot")')
 ENABLED_RULES_SQL = (
     "SELECT rule_id,match_type,pattern,priority FROM request_block_rules "
-    "WHERE enabled=1 ORDER BY priority DESC,created_at,rule_id LIMIT 1000")
+    "WHERE enabled=1 AND substr(rule_id,1,11)<>'auto-probe-' "
+    "ORDER BY priority DESC,created_at,rule_id LIMIT 1000")
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 
