@@ -510,6 +510,108 @@ target cannot be compiled on Linux: `swiftc -parse` passes for the new files, bu
 been type-checked or run on a device. That includes `CallFaceLandmarks.swift`: the Vision path
 was tested in Chromium with a stand-in host that returns Vision-shaped regions, not with Vision.
 
+## View-once video and voice messages
+
+Requested 2026-10-13 (task 1998): record a video or voice message in a direct message and have it
+deleted once the other person has played it. The wire format, server routes and deletion rules are
+in `docs/app/chat-private-rooms.md` ("View-once video and voice messages"); this is the iOS side.
+
+ForkMeshCore (`Direct/ViewOnceMedia.swift`, Linux-tested):
+
+- `ViewOnceFrames` parses and builds the sealed frame's `viewOnce` field (version 1, `video` or
+  `voice`, a 32-hex media id, a 32-byte key and 12-byte IV in base64url with or without padding, a
+  MIME type under `video/` or `audio/`, `durationMs` within the server limit, `size` within the
+  kind's limit plus 1 KiB, `parts = ceil(size / 524288)`). Anything else is not a view-once
+  message, and the row falls back to the frame's text. It also reads the outer
+  `{"kind":"forkmesh-media","v":1,"id","state"}` relay frame (only `opened`, `expired`,
+  `withdrawn`) and the `GET media` status objects.
+- `ViewOnceCrypto` seals with `AesGcm` (CryptoKit on Apple, the portable path on Linux): a fresh
+  random key and IV per message, body = ciphertext followed by the 16-byte tag, as WebCrypto
+  produces it. `split` cuts the body into 512 KiB parts.
+- `ViewOnceTransfer` drives the routes through `ChatAccountCalling` (the app's `ApiService`):
+  create, `PUT` each part as base64 JSON, `finish` (a failed upload is withdrawn with `DELETE`);
+  download every part, check index, count and total size, then decrypt; `consume`; `withdraw`;
+  `GET media/<id>` and `GET media?ids=` in batches of 50. `media_gone` (410) becomes
+  `ViewOnceError.gone`; the service then reads that media's status to tell opened, expired and
+  withdrawn apart.
+- `ViewOnceStore` holds one `ViewOnceEntry` per message: kind, MIME type, duration, whether it is
+  ours, state, and the key material for a received message that is still `ready`. The key is
+  dropped the moment the state turns final (opened, expired, withdrawn, failed), and the sender's
+  entry never holds it. Final media ids (never keys) are remembered in an optional
+  `KeyValueStore` under `chat/viewOnce/spent` (512 at most), so a history replay after a restart
+  does not pick the key up again.
+- `DirectMessageService`: a received `chat` frame with a valid `viewOnce` registers an entry and
+  becomes a `ChatMessage` whose text is "🎥 Video message" / "🎤 Voice message" (the frame's own
+  `text` and any `fileName` are ignored). The relay frame updates the state. After the first
+  `forkmesh-history-end` on each socket the service reads `GET media?ids=` once for the
+  conversation's unresolved entries and retries any `consume` that failed offline.
+  `sendViewOnce` checks size and length, encrypts, uploads, then sends the sealed frame
+  (`persist`, `notify`); if the frame cannot be sent, the upload is withdrawn. `playViewOnce`
+  downloads and decrypts in memory; `consumeViewOnce` marks it opened locally (dropping the key) and
+  calls `consume`. The outbox entry that would reseal the frame for a late device is removed once
+  the message is final, so the key does not linger there either. DM history is not written to the
+  chat history file (`ChatHistoryCodec.bounded` keeps only `#` and `@` rooms), so the key is never
+  on disk.
+- `ChatHub.canSendViewOnce`, `viewOnce(for:)` and `sendViewOnce(...)` (`ViewModels/ChatViewOnce.swift`).
+
+Tests: `Tests/FMChatTests/ViewOnceMediaTests.swift` (round trip and tamper, the WebCrypto layout,
+part counts, the frame codec and its refusals, text ignored, relay frame parsing, key dropped and
+spent ids remembered, upload/download/consume against a fake media server, failed upload withdrawn,
+quota message, the full send and receive flows over a fake socket, 410 resolved to the server's
+state, the status read once per socket and a consume retried).
+
+App (`Features/Chat/Messages/`):
+
+- `MessagesViewOnceCapture.swift`: the composer's More menu offers "View-once Video" and
+  "View-once Voice" in a one-to-one DM. Video uses `AVCaptureSession` with the front camera and
+  microphone, a live preview, and `AVAssetWriter` to H.264 480x640 at about 1 Mbit/s with AAC
+  64 kbit/s mono, so 60 s is about 8 MB, well under the 12 MiB limit. Recording stops by itself at
+  60 s, with a countdown. Voice uses `AVAudioRecorder` (AAC, 22.05 kHz, 32 kbit/s) for up to 120 s
+  with a live meter. Both end in a review step: play back, Discard, Re-record, Send (with upload
+  progress). Recordings are temporary files in `NSTemporaryDirectory()` with
+  `FileProtectionType.complete`, deleted on send, discard or close.
+- `MessagesViewOnceViewer.swift`: the bubble shows "Video message" / "Voice message", the duration
+  and the state ("Tap to play once", "Sent", "Opened", "Expired", "Withdrawn"). Only a received,
+  ready message is a button; these rows have no context menu, so no copy, save, share or forward.
+  The viewer downloads and decrypts, writes a protected temporary file, starts playback
+  (`AVPlayerLayer` for video, so there are no system share controls; `AVAudioPlayer` with a level
+  meter and progress for voice), and calls `consume` as playback starts. When playback ends or the
+  viewer closes, the player and file are dropped. Closing before playback starts leaves the
+  message unopened. A MIME type iOS cannot play (`audio/webm`, `video/webm` from a browser) is
+  reported and not consumed.
+- Screen capture: while `UIScreen.isCaptured` is true the video is blanked and a notice says so;
+  after `userDidTakeScreenshotNotification` the viewer says a screenshot was taken and that
+  ForkMesh cannot prevent screenshots or recordings. Nothing is sent to the sender.
+- `Config/ForkMesh-Info.plist`: the camera and microphone strings now mention messages.
+
+Filter seam: `MessageCaptureFilters` (in `MessagesViewOnceCapture.swift`) has `processVideo`
+(per `CVPixelBuffer`, before the writer's pixel buffer adaptor) and `processAudio` (per
+`CMSampleBuffer`) hooks on the video recorder. Only `MessagePassThroughFilters` exists today; the
+call face and voice stages (`createFaceStage` / `createVoiceStage`) run in the call WebView and
+are not wired in. Voice messages go through `AVAudioRecorder`, which has no sample hook, so a
+voice filter would need an `AVAudioEngine` recorder first.
+
+Held receipts: the phone keeps no DM history on disk, so acknowledging a view-once frame
+(`forkmesh-received`) would let the relay delete the only copy of an unopened message. A sealed
+chat frame with a valid `viewOnce` from the other account is therefore not acknowledged, live or
+replayed, while the message is unopened or its `consume` is still owed. Its refs are kept per
+message id (`heldReceipts`, at most 800) and sent once the message is final: `consume` succeeded
+or answered 410, or the relay frame or the status read said opened, expired or withdrawn. With no
+socket open at that moment the refs stay held; a later replay of a final message is acknowledged at
+once. A `consume` that failed offline is remembered under `chat/viewOnce/consume` and retried when
+the conversation's status is next read. Same rule as web (`holdReceipt`) and Android.
+
+Unsend: the sender's unopened row has an "Unsend" button (with a confirmation) that calls
+`ChatHub.unsendViewOnce`, which withdraws the media (`DELETE`); the row then says "Withdrawn".
+
+Limits: desktop and web clients that do not know `viewOnce` show only the fallback text.
+
+Verified: ForkMeshCore tests on Linux (`swift test`, the new suite and the whole package). The
+held receipts and Unsend came later and were checked with the FMChat tests and `swiftc -parse`
+only. The rest of the app target was compiled on the office Mac (Xcode 26.6, Debug, iOS Simulator x86_64, no signing,
+in a scratch folder) with no errors or warnings in the new files. Nothing was run on a device:
+capture, playback and the screen-capture notices are untested on hardware.
+
 ## Views (ForkMesh/Features/Chat)
 
 `ChatScreen(showComposer:)`, `RelaySettingsSection()`, `RelayNetworksScreen()`,

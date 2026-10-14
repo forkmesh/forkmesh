@@ -403,7 +403,7 @@ class ChatScreen : Screen() {
                                                 statuses[message.senderId]
                                             },
                                             queued = inMesh && message.self && mesh?.queued?.contains(message.id) == true,
-                                            onLongPress = if (message.ephemeral) null else ({ scope.launch { messageActionsFlow(messenger, context, navigator, row, inThread = false, status) } }),
+                                            onLongPress = if (message.ephemeral || row.viewOnce != null) null else ({ scope.launch { messageActionsFlow(messenger, context, navigator, row, inThread = false, status) } }),
                                             onToggleReaction = if (inMesh || inOffice) null else ({ value ->
                                                 scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleReaction(message, value) }
                                             }),
