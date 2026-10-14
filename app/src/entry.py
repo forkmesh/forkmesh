@@ -35100,13 +35100,6 @@ def _notification_trim_due(recipient_bi, now):
     return True
 
 
-def _notification_content_text(payload):
-    return json.dumps(
-        {key: value for key, value in (payload or {}).items()
-         if key not in ("ts", "readAt", "id")},
-        sort_keys=True, separators=(",", ":"), default=str)
-
-
 async def enqueue_notification(env, recipient, kind, title, body="", repo="",
                                href="", actor="", source="", dedupe="",
                                ts=0, meta=None, push=True, force=False,
@@ -35141,8 +35134,10 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     dedupe_value = dedupe or (kind + ":" + recipient + ":" + source + ":" +
                               repo + ":" + str(now))
     dedupe_bi = await blind_index(env, "notification:" + recipient + ":" + dedupe_value)
-    content_bi = await blind_index(
-        env, "notification-content:" + _notification_content_text(payload))
+    content_bi = await blind_index(env, "notification-content:" + json.dumps(
+        {key: value for key, value in payload.items()
+         if key not in ("ts", "readAt")},
+        sort_keys=True, separators=(",", ":"), default=str))
     await d1_run(
         env,
         """INSERT INTO notifications
