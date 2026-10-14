@@ -25,6 +25,7 @@ struct MessagesDetailsScreen: View {
     @State private var managing: OfficeRoom?
     @State private var confirmClear: Bool = false
     @State private var confirmLeave: Bool = false
+    @State private var confirmBlock: Bool = false
     @State private var viewing: MessagesPhotoBox?
     @State private var working: Bool = false
     @State private var error: String?
@@ -33,6 +34,8 @@ struct MessagesDetailsScreen: View {
     private var officeRoom: OfficeRoom? { hub.office?.room(for: conversation) }
     private var group: Bool { hub.inGroupConversation }
     private var members: [String] { officeMembers ?? hub.conversationMembers }
+    private var person: Bool { ChatHub.isPersonConversation(conversation) }
+    private var handle: String { person ? hub.conversationHandle(conversation) : "" }
 
     var body: some View {
         NavigationStack {
@@ -81,6 +84,11 @@ struct MessagesDetailsScreen: View {
                 Section {
                     if let room = officeRoom, room.canManage {
                         Button(action: { managing = room }) { Label("Group Settings", systemImage: "gearshape") }
+                    }
+                    if !handle.isEmpty {
+                        Button(role: .destructive, action: { confirmBlock = true }) {
+                            Label("Block \(handle)", systemImage: "hand.raised")
+                        }
                     }
                     Button(role: .destructive, action: { confirmClear = true }) {
                         Label("Delete Conversation", systemImage: "trash")
@@ -131,7 +139,18 @@ struct MessagesDetailsScreen: View {
                     dismiss()
                 }
             } message: {
-                Text("Its messages are removed from this phone only. Everyone else keeps their copy.")
+                Text(
+                    person
+                        ? "It is removed from this phone only, and comes back if they message you again. They keep their copy."
+                        : "Its messages are removed from this phone only. Everyone else keeps their copy.")
+            }
+            .confirmationDialog("Block \(handle)?", isPresented: $confirmBlock, titleVisibility: .visible) {
+                Button("Block", role: .destructive) {
+                    hub.setBlocked(handle, true)
+                    dismiss()
+                }
+            } message: {
+                Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
             }
             .confirmationDialog("Leave this conversation?", isPresented: $confirmLeave, titleVisibility: .visible) {
                 Button("Leave", role: .destructive) {

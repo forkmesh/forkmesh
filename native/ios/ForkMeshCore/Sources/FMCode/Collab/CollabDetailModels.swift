@@ -290,15 +290,15 @@ public func requestDesktopCommand(
         return DesktopCommandContract.unsupportedMessage
     }
     do {
-        let owner = try DesktopCommand.ownerAccount(
-            account, identityPublicKey: identity?.publicKeyB64url, repoOwner: repo.owner)
+        let owner = try DesktopCommand.ownerAccount(account, identityPublicKey: identity?.publicKeyB64url)
         guard let identity else { throw ApiException("Sign in with the repo owner account to request desktop control.") }
+        let repoOwner = RepoOwnerSigning.desktopCommandOwner(repo, account: owner)
         let ts = String(clock.nowMillis)
         let canonical = DesktopCommand.canonical(
-            owner: repo.owner, name: repo.name, command: command, target: target, ts: ts)
+            owner: repoOwner, name: repo.name, command: command, target: target, ts: ts)
         let sig = identity.sign(Array(canonical.utf8))
         let result = try await api.desktopCommand(
-            repo.owner, repo.name, ownerAccount: owner, command: command, target: target, ts: ts, sig: sig,
+            repoOwner, repo.name, ownerAccount: owner, command: command, target: target, ts: ts, sig: sig,
             payload: payload)
         return result.ok ? successMessage : failureMessage
     } catch {

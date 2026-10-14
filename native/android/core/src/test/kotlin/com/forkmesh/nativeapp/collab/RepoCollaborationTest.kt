@@ -114,7 +114,7 @@ class RepoCollaborationTest {
     }
 
     fun testPullDetailQueuesSignedDesktopMergeRequests() {
-        assertEq("owner", DesktopCommand.ownerAccount("Owner ", "key", "key", "owner"))
+        assertEq("owner", DesktopCommand.ownerAccount("Owner ", "key", "key"))
         expect(PullDetail.canRequestMerge(pull))
         expect(PullDetail.shipControlsCopy(pull).contains("desktop node will verify mergeability"))
 
@@ -151,19 +151,16 @@ class RepoCollaborationTest {
         fun message(block: () -> Unit) = assertFails<DartException>(block).toString()
         assertEq(
             "Exception: Sign in with the repo owner account to request desktop control.",
-            message { DesktopCommand.ownerAccount(null, null, "key", "owner") },
+            message { DesktopCommand.ownerAccount(null, null, "key") },
         )
         assertEq(
             "Exception: Sign in with the repo owner account to request desktop control.",
-            message { DesktopCommand.ownerAccount("owner", "key", null, "owner") },
+            message { DesktopCommand.ownerAccount("owner", "key", null) },
         )
-        assertEq(
-            "Exception: Only the repo owner can request desktop control for this repo.",
-            message { DesktopCommand.ownerAccount("mona", "key", "key", "owner") },
-        )
+        assertEq("mona", DesktopCommand.ownerAccount("Mona", "key", "key"))
         assertEq(
             "Exception: Pair this mobile device with the owner key before requesting desktop control.",
-            message { DesktopCommand.ownerAccount("owner", "other", "key", "owner") },
+            message { DesktopCommand.ownerAccount("owner", "other", "key") },
         )
         val closed = pull.copy(status = "merged")
         expect(!PullDetail.canRequestMerge(closed))

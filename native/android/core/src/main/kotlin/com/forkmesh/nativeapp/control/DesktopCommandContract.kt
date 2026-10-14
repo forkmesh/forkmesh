@@ -43,7 +43,8 @@ object DesktopCommandContract {
     }
 
     fun errorMessage(status: Int, code: String): String = when (code) {
-        "not_authorized" -> "Only the repo owner can request desktop control for this repo."
+        "not_authorized" ->
+            "Only the repo owner or an organization member with write access can request desktop control for this repo."
         "unsupported_command" -> "The server does not accept that desktop request."
         "signature_required", "invalid_signature" ->
             "The server could not verify this device's signature. Pair this device with the owner key and try again."

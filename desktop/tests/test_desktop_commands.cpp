@@ -238,6 +238,31 @@ int main(int argc, char **argv)
               "an ownerAccount other than the repository owner is refused");
     }
     {
+        QJsonObject org = row(phone, 20, QStringLiteral("acme"), QStringLiteral("repo"),
+                              QStringLiteral("pull.merge"), QStringLiteral("pull:7"), kNow,
+                              QStringLiteral("alice"));
+        org.insert(QStringLiteral("repoOwner"), QStringLiteral("acme"));
+        const dc::Command parsed = dc::parse(org);
+        check(parsed.repoOwner == QLatin1String("acme") &&
+                  dc::signedOwner(parsed, QStringLiteral("alice")) == QLatin1String("acme") &&
+                  verifyRow(org, trusted).status == dc::Status::Ok,
+              "a request signed under the organization name verifies for the member's queue");
+        check(dc::promptText(parsed, QStringLiteral("alice"), QStringLiteral("repo"),
+                             verifyRow(org, trusted), kNow)
+                  .contains(QLatin1String(" in acme/repo.")),
+              "the prompt names the organization repository the phone asked about");
+        QJsonObject swapped = org;
+        swapped.insert(QStringLiteral("repoOwner"), QStringLiteral("alice"));
+        swapped.remove(QStringLiteral("canonical"));
+        check(verifyRow(swapped, trusted).status == dc::Status::BadSignature,
+              "a relay that renames the signed repository owner breaks the signature");
+        QJsonObject unsigned_ = row(phone, 21, QStringLiteral("alice"), QStringLiteral("repo"),
+                                    QStringLiteral("pull.merge"), QStringLiteral("pull:7"), kNow);
+        unsigned_.insert(QStringLiteral("repoOwner"), QStringLiteral("acme"));
+        check(verifyRow(unsigned_, trusted).status == dc::Status::WrongRepo,
+              "a relay canonical that disagrees with repoOwner is refused");
+    }
+    {
         check(verifyRow(row(phone, 9, QStringLiteral("alice"), QStringLiteral("repo"),
                             QStringLiteral("pull.merge"), QStringLiteral("pull:7"),
                             kNow - dc::kRetentionMs - 1),

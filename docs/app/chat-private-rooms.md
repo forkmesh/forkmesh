@@ -140,6 +140,39 @@ Each row shows the newest decrypted top-level message ("You: text",
 The line is built only from messages the client already holds; no server API
 returns plaintext. Previews are repainted in a debounced batch.
 
+### Deleting a conversation and blocking (iOS)
+
+Long-press a DM row (or open its Details) for **Delete Conversation** and
+**Block**. Both are per device and never reach the server:
+
+- *Delete* hides the conversation's messages (`ChatExtras.hideMessage`) and
+  records the time in `ChatWorkspace.removedConversations`. `directRows` skips
+  the row until a message newer than that time arrives, or until you open the
+  conversation again (`ChatHub.select` restores it). Before this, Delete only
+  hid the messages, so an empty "No messages yet" row stayed in the list. A
+  relay `@node` room whose peer is gone shows as "direct message"; Delete is
+  how you get rid of it.
+- *Block* adds the lowercased account name to `ChatWorkspace.blocked`. That
+  person's DM row, messages (DMs and channels, by account name, node owner or
+  sender name), typing indicator, in-app pings and `#mesh` local alerts are
+  hidden. Messages still arrive and are kept, so unblocking (in the person
+  sheet) shows them again. The server is not told, so the blocked person can
+  still send. Push banners for their DMs are still drawn by the notification
+  extension, which cannot read the app's block list.
+
+### Typing in direct messages
+
+The iOS composer sends a sealed `{type:"typing", active, conversation}` frame
+over the DM room socket, at most every `ChatLimits.typingResend` seconds and
+once with `active: false` when the draft empties, the message is sent or you
+leave. The envelope has no `persist` or `notify`, so the relay forwards it to
+live sockets only and stores nothing, like call signalling. The receiver shows
+it only when `sender` is the room's other account (so your own other devices
+are not shown as typing) and expires it after `ChatLimits.typingTimeout`; a
+chat message from that sender clears it at once. The bubble names who is
+typing ("pat is typing...", "pat and sam are typing...", "3 people are
+typing...").
+
 ## Direct messages over the local mesh
 
 A DM is also sent over the local mesh (LAN and Bluetooth,
@@ -158,6 +191,28 @@ All clients send files in DMs as sealed `{type:"chat", fileName, fileMime,
 file}` frames. Limit 1 MiB per file (`kMaxDirectFileBytes`,
 `DirectMessageFrames.maxFileBytes`, `MAX_ATTACHMENT_BYTES`); the relay's
 retained-body cap `CHAT_HISTORY_MAX_BODY` is sized for that.
+
+On iOS a received file lives in memory (`ChatExtras.files`). Sharing or
+playing it writes the decrypted bytes to `tmp/chat-media/` with complete file
+protection. `ChatAttachmentView.sweepTemporaryFiles` deletes those files when
+the app goes to the background, and at launch also deletes leftover
+`viewonce-*` and `messages-voice*` recordings from a crash. Before, nothing
+ever deleted `tmp/chat-media/`.
+
+What is still not covered (audit 2026-10-14):
+
+- Files posted in a public `#` channel are not sealed, so the server can read
+  them (`RelayService.isControllerReadableFrame`).
+- Device keys are trusted on first use; nothing ties a key to an account.
+- The server deletes a retained DM frame when one device of the recipient
+  account acknowledges it, not when the file is viewed, and a view-once part
+  can be downloaded again until the client calls consume.
+- View-once tombstone rows (sender, recipient, size, times) are kept 30 days;
+  self-hosted SQLite has no `secure_delete`.
+- Chat history JSON (text and file names, no file bytes) uses
+  until-first-unlock protection and is included in backups.
+- The desktop writes received files up to 512 KB in plaintext into its chat
+  history; Android leaves `cacheDir/chat-media/` behind.
 
 ## Live frames (touch, drawing, movement)
 
@@ -252,4 +307,5 @@ hidden for these channels, and the members pane reads
 `test_chat_direct_messages_api.py`, `test_chat_direct_media_api.py`,
 `test_chat_direct_receipts_frontend.py`, `test_chat_view_once_frontend.py`,
 `test_chat_everyone_channels_frontend.py`,
+`native/ios/ForkMeshCore/Tests/FMChatTests/DirectTypingAndBlockingTests.swift`,
 `desktop/tests/test_chat_transport.cpp`, `office/tests/chat.test.mjs`.

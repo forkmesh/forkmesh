@@ -284,10 +284,11 @@ extension ChatHub {
     public var directRows: [ChatDirectRow] {
         var out: [ChatDirectRow] = []
         let roster = relay.roster()
-        for record in direct?.records ?? [] {
+        for record in direct?.records ?? [] where !workspace.isBlocked(record.otherUser) {
             let online = roster.contains { !$0.isSelf && $0.online && $0.owner.lowercased() == record.otherUser }
             let last = direct?.messages(record.conversation).last?.timestamp
                 ?? (record.updatedAt > 0 ? Date(epochMillis: record.updatedAt) : nil)
+            if workspace.isRemoved(record.conversation, lastActivity: last) { continue }
             out.append(
                 ChatDirectRow(conversation: record.conversation, name: record.otherUser, online: online, unread: record.unreadCount, lastAt: last))
         }
@@ -295,13 +296,86 @@ extension ChatHub {
             let id = String(conversation.dropFirst())
             let member = roster.first { $0.id == id }
             let label = conversationLabel(conversation)
+            let last = relay.messages(conversation).last?.timestamp
+            if workspace.isRemoved(conversation, lastActivity: last) { continue }
+            if workspace.isBlocked(member?.owner ?? "") || workspace.isBlocked(String(label.dropFirst())) { continue }
             out.append(
                 ChatDirectRow(
                     conversation: conversation, name: String(label.dropFirst()), online: member?.online ?? false,
-                    unread: relay.unreadCountFor(conversation), lastAt: relay.messages(conversation).last?.timestamp))
+                    unread: relay.unreadCountFor(conversation), lastAt: last))
         }
         out.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
         return out
+    }
+
+    public static func isPersonConversation(_ conversation: String) -> Bool {
+        conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
+    }
+
+    public func deleteConversation(_ conversation: String) {
+        for message in messages(in: conversation) { extras.hideMessage(message.id) }
+        guard ChatHub.isPersonConversation(conversation) else { return }
+        workspace.setStarred(conversation, false)
+        workspace.setDraft("", for: conversation)
+        workspace.removeConversation(conversation, at: clock.now)
+        if DirectMessageFrames.isDirect(conversation) {
+            direct?.clearUnread(conversation)
+            if let direct { Task { await direct.markRead(conversation) } }
+        } else {
+            relay.markConversationRead(conversation)
+        }
+        if relay.currentConversation == conversation { select(generalConversation) }
+    }
+
+    public func conversationHandle(_ conversation: String) -> String {
+        if DirectMessageFrames.isDirect(conversation) { return direct?.record(for: conversation)?.otherUser ?? "" }
+        guard conversation.hasPrefix("@") else { return "" }
+        let id = String(conversation.dropFirst())
+        if let member = relay.roster().first(where: { $0.id == id }) {
+            return member.owner.isEmpty ? member.name : member.owner
+        }
+        return relay.messages(conversation).first(where: { !$0.isSelf })?.senderName ?? ""
+    }
+
+    public func isBlocked(_ handle: String) -> Bool { workspace.isBlocked(handle) }
+
+    public func setBlocked(_ handle: String, _ on: Bool) {
+        let key = ChatWorkspace.blockKey(handle)
+        if key.isEmpty || workspace.isBlocked(key) == on { return }
+        workspace.setBlocked(key, on)
+        if on {
+            for row in directRowsIncludingBlocked where ChatWorkspace.blockKey(conversationHandle(row)) == key {
+                if relay.currentConversation == row { select(generalConversation) }
+                if DirectMessageFrames.isDirect(row) { direct?.clearUnread(row) } else { relay.markConversationRead(row) }
+            }
+            post("\(key) is blocked. You won't see their messages on this device.")
+        } else {
+            post("\(key) is unblocked.")
+        }
+    }
+
+    var directRowsIncludingBlocked: [String] {
+        (direct?.conversations ?? []) + relay.conversationsWithHistory.filter { $0.hasPrefix("@") }
+    }
+
+    func blockedSenderIds() -> Set<String> {
+        if workspace.blocked.isEmpty { return [] }
+        var ids: Set<String> = []
+        for member in relay.roster() where !member.isSelf {
+            if workspace.isBlocked(member.owner) || (member.owner.isEmpty && workspace.isBlocked(member.name)) {
+                ids.insert(member.id)
+            }
+        }
+        return ids
+    }
+
+    public func isFromBlocked(_ message: ChatMessage, blockedIds: Set<String>? = nil) -> Bool {
+        if message.isSelf || workspace.blocked.isEmpty { return false }
+        if DirectMessageFrames.isDirect(message.conversation) {
+            return workspace.isBlocked(direct?.record(for: message.conversation)?.otherUser ?? "")
+        }
+        if workspace.isBlocked(message.senderName) { return true }
+        return (blockedIds ?? blockedSenderIds()).contains(message.senderId)
     }
 
     public func isUnread(_ conversation: String) -> Bool {

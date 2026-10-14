@@ -514,13 +514,14 @@ final class CollabModelsTests: XCTestCase {
             publicKey: identity.publicKeyBytes, message: Array(canonical.utf8), signature: Array(sig)))
     }
 
-    @MainActor func testDesktopRequestsFromAnotherAccountAreRefusedLocally() async {
+    @MainActor func testDesktopRequestsFromAnotherAccountAreSignedAsThatAccount() async {
         let api = FakeCollabAPI()
         let model = await pullDetail(api, account: previewAccount)
         let merge = model.shipCommands[0]
         let message = await model.request(merge)
-        XCTAssertEqual(message, "Exception: Only the repo owner can request desktop control for this repo.")
-        XCTAssertEqual(api.commandRequests.count, 0)
+        XCTAssertEqual(message, merge.successMessage)
+        XCTAssertEqual(api.commandRequests.first?["owner"], "owner")
+        XCTAssertEqual(api.commandRequests.first?["ownerAccount"], "preview-node")
 
         let signedOut = await pullDetail(api, account: .signedOut)
         let refused = await signedOut.request(merge)

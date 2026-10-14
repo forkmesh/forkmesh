@@ -217,6 +217,25 @@ struct ChatAttachmentView: View {
         }
     }
 
+    static let mediaFolder: String = "chat-media"
+    static let leftoverPrefixes: [String] = ["viewonce-", "messages-voice"]
+
+    static func sweepTemporaryFiles(includingRecordings: Bool) {
+        let files: FileManager = FileManager.default
+        let temporary: URL = files.temporaryDirectory
+        let media: URL = temporary.appendingPathComponent(mediaFolder, isDirectory: true)
+        var targets: [URL] = ((try? files.contentsOfDirectory(at: media, includingPropertiesForKeys: nil)) ?? [])
+        if includingRecordings {
+            let names: [String] = (try? files.contentsOfDirectory(atPath: temporary.path)) ?? []
+            for name in names where leftoverPrefixes.contains(where: { name.hasPrefix($0) }) {
+                targets.append(temporary.appendingPathComponent(name))
+            }
+        }
+        for file in targets where file.standardizedFileURL.path.hasPrefix(temporary.standardizedFileURL.path) {
+            try? files.removeItem(at: file)
+        }
+    }
+
     static func makePlayer(_ attachment: ChatAttachment) -> AVPlayer? {
         guard let url = temporaryFile(attachment) else { return nil }
         let player = AVPlayer(url: url)

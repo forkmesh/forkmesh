@@ -15,10 +15,18 @@ runs them. Code: `app/src/desktop_commands.py`, table `desktop_commands`
 
 Body `{ownerAccount, command, target, ts, sig, payload}`, signed as
 `forkmesh-desktop-command-v1\n<owner>\n<repo>\n<command>\n<target>\n<ts>`.
-Checks: owner matches URL (403), allow-listed command and target (400), `ts`
-within 5 minutes (`stale_request`), valid signature (`invalid_signature`), no
-replay (`replayed_request`), at most 50 pending (429). Success rings the
-owner's node socket (topic `desktop-commands`).
+Checks: `ownerAccount` is the serving account after the org-alias rewrite, or
+holds write access in an organization that links the repo (`_org_write_allowed`,
+the org push gate), else 403 `not_authorized`; allow-listed command and target
+(400), `ts` within 5 minutes (`stale_request`), valid signature by one of
+`ownerAccount`'s keys (`invalid_signature`), no replay (`replayed_request`), at
+most 50 pending (429). The request is queued for `ownerAccount`'s own desktop
+(the serving account's queue, or the member's), and success rings that
+account's node socket (topic `desktop-commands`).
+
+The `<owner>` signed is the name the phone addressed: the serving account, or an
+organization alias (`_public_repository_owner`). The relay keeps it as
+`repoOwner` and the drain's `canonical` uses it.
 
 | Commands | Target |
 | --- | --- |
@@ -30,10 +38,26 @@ owner's node socket (topic `desktop-commands`).
 `signer` and `canonical` so the desktop verifies the phone itself. Acked rows
 are kept a day for replay protection.
 
+### Organization repos
+
+Phones used to refuse locally unless the signed-in account equalled the repo
+owner name, so a member (or the serving account itself, when the row named the
+org or a core node such as `fmnext-n1`) saw "Only the repo owner can request
+desktop control for this repo." (2026-10-14). Now the phones sign as the
+signed-in account and name the repo by its serving account when that is the
+signed-in one, else by its public name (`Repository.displayOwner`). The relay
+decides who may ask. Screens that only hold a route `owner/name` (Actions rerun,
+Releases) sign that owner as given: when it is another node's name, the
+member's desktop cannot match it to a local repo and reports "repository is not
+open on this desktop".
+
 ## Desktop consumer
 
 `desktop/src/MainWindowDesktopCommands.cpp` verifies (`DesktopCommands.*`),
 asks for approval, runs and acks. Release create/publish from a known key may
 run unattended (a Pings setting disables it;
 [../tools/mcp-releases.md](../tools/mcp-releases.md)). The queue is keyed by
-the account backing the repository; only that account can sign.
+the signed-in account; the desktop checks `ownerAccount` is that account,
+verifies the signature over `repoOwner` (falling back to the queue owner for
+rows queued before it existed) and runs the command on the local repo whose
+owner is `repoOwner` (`desktopCommandRepoOwner`).

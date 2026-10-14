@@ -104,9 +104,15 @@ and channel pushes.
   only send wakes and never advertise a token. Android gets its `#mesh`
   messages from the local alerts above, as long as its background service
   runs.
-- An iPhone that is backgrounded but still linked over Bluetooth can get both
-  a local alert and a wake push. The local alert removes wake banners already
-  delivered, but a wake that lands afterwards still shows.
+- An iPhone that is backgrounded but still linked over Bluetooth gets both a
+  local alert and a wake push. Both use the identifier `mesh-room`: the wake's
+  apns-collapse-id (`apns.collapse_id_for("chat", "#mesh")`) equals
+  `meshAlertIdentifier`, so whichever lands second replaces the first. When
+  the wake lands second, the notification extension copies the readable title
+  and text of the delivered local alert (`PushMeshWake`), so the banner stays
+  readable; it still sounds a second time. Before 2026-10-14 the wake
+  collapsed under `chat` and showed beside the local alert as a second,
+  "End-to-end encrypted" banner.
 - iOS stops background Bluetooth work after a force quit, and a suspended
   app's LAN links drop. Neither can be helped from the app.
 - Waking needs the sender to reach the internet. A `#mesh` message sent with

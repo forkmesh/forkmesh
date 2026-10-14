@@ -39,10 +39,11 @@ class _Date:
 
 
 class _Request:
-    def __init__(self, method, body=None, owner_signed=False):
+    def __init__(self, method, body=None, owner_signed=False, url=""):
         self.method = method
         self.body = body
         self.owner_signed = owner_signed
+        self.url = url
 
 
 class _Response:
@@ -61,6 +62,8 @@ class _Harness:
         self.db.row_factory = sqlite3.Row
         self.keys = {}
         self.notified = []
+        self.org_links = {}
+        self.org_writers = {}
         self.env = object()
         self.module._bind_runtime(self.runtime())
 
@@ -111,6 +114,21 @@ class _Harness:
             harness.notified.append((owner, repo, topic))
             return True
 
+        async def org_write_allowed(env, owner, repo, account):
+            for org, node in harness.org_links.get(repo.lower(), {}).items():
+                if node == owner.lower() and account in harness.org_writers.get(
+                        org, ()):
+                    return True
+            return False
+
+        async def public_repository_owner(env, request, owner, repo):
+            match = re.match(r"^https://[^/]+/api/repo/([^/]+)/([^/]+)/",
+                             request.url or "")
+            if match and match.group(2) == repo and harness.org_links.get(
+                    repo.lower(), {}).get(match.group(1).lower()) == owner:
+                return match.group(1)
+            return owner
+
         return {
             "d1_run": d1_run, "d1_first": d1_first, "d1_all": d1_all,
             "encrypt_row": encrypt_row, "decrypt_row": decrypt_row,
@@ -120,6 +138,8 @@ class _Harness:
             "ed25519_verify": ed25519_verify,
             "_authorize_owner": authorize_owner,
             "notify_repo_host": notify_repo_host,
+            "_org_write_allowed": org_write_allowed,
+            "_public_repository_owner": public_repository_owner,
             "json_response": lambda data, status=200: _Response(data, status),
             "method_name": lambda request: request.method,
             "Date": _Date,
@@ -144,9 +164,15 @@ class _Harness:
             "payload": payload if payload is not None else {"pullNumber": 7},
         }
 
-    def post(self, owner, repo, body):
+    def link(self, org, repo, node, writers=()):
+        self.org_links.setdefault(repo, {})[org] = node
+        self.org_writers.setdefault(org, set()).update(writers)
+
+    def post(self, owner, repo, body, addressed=None):
+        url = "https://app.forkmesh.com/api/repo/%s/%s/desktop-commands" % (
+            addressed or owner, repo)
         return asyncio.run(self.module.desktop_commands_handler(
-            self.env, _Request("POST", body), owner, repo))
+            self.env, _Request("POST", body, url=url), owner, repo))
 
     def drain(self, owner, repo, owner_signed=True):
         return asyncio.run(self.module.desktop_commands_handler(
@@ -188,6 +214,54 @@ def test_non_owner_account_is_refused():
     response = h.post("alice", "app", body)
     assert response.status == 403
     assert h.notified == []
+
+
+def test_org_member_queues_for_their_own_desktop_under_the_org_name():
+    h = _Harness()
+    h.link("acme", "app", "alice", writers=("bob",))
+    bob = h.enroll("bob")
+    body = h.signed_body(bob, "acme", "app", account="bob")
+    response = h.post("alice", "app", body, addressed="acme")
+    assert response.status == 200
+    assert h.notified == [("bob", "app", "desktop-commands")]
+    assert h.drain("alice", "app").data["commands"] == []
+    [command] = h.drain("bob", "app").data["commands"]
+    assert command["ownerAccount"] == "bob"
+    assert command["repoOwner"] == "acme"
+    assert command["canonical"].startswith(
+        "forkmesh-desktop-command-v1\nacme\napp\npull.merge\npull:7\n")
+
+
+def test_backing_node_account_signs_with_the_org_name_it_addressed():
+    h = _Harness()
+    h.link("acme", "app", "alice")
+    alice = h.enroll("alice")
+    body = h.signed_body(alice, "acme", "app", account="alice")
+    assert h.post("alice", "app", body, addressed="acme").status == 200
+    [command] = h.drain("alice", "app").data["commands"]
+    assert command["repoOwner"] == "acme"
+    assert h.notified == [("alice", "app", "desktop-commands")]
+
+
+def test_org_member_without_write_access_is_refused():
+    h = _Harness()
+    h.link("acme", "app", "alice", writers=("bob",))
+    carol = h.enroll("carol")
+    body = h.signed_body(carol, "acme", "app", account="carol")
+    response = h.post("alice", "app", body, addressed="acme")
+    assert response.status == 403
+    assert response.data["error"] == "not_authorized"
+    assert h.notified == []
+
+
+def test_org_member_signature_over_the_node_name_is_refused():
+    h = _Harness()
+    h.link("acme", "app", "alice", writers=("bob",))
+    bob = h.enroll("bob")
+    body = h.signed_body(bob, "alice", "app", account="bob")
+    response = h.post("alice", "app", body, addressed="acme")
+    assert response.status == 401
+    assert response.data["error"] == "invalid_signature"
 
 
 def test_signature_from_a_key_the_owner_never_enrolled_is_refused():

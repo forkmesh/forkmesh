@@ -85,6 +85,8 @@ public final class ChatWorkspace {
     public static let maxSaved = 200
     public static let maxRecents = 20
     public static let maxDraftChars = 4_000
+    public static let maxBlocked = 500
+    public static let maxRemovedConversations = 500
 
     @ObservationIgnored let store: KeyValueStore?
     @ObservationIgnored let scope: String
@@ -98,6 +100,8 @@ public final class ChatWorkspace {
     public private(set) var mentionsOnly: Set<String> = []
     public private(set) var bookmarks: [String: [ChatBookmark]] = [:]
     public private(set) var canvases: [String: ChatCanvas] = [:]
+    public private(set) var blocked: [String] = []
+    public private(set) var removedConversations: [String: Date] = [:]
 
     public init(store: KeyValueStore? = nil, scope: String = "") {
         self.store = store
@@ -136,6 +140,12 @@ public final class ChatWorkspace {
             let decoded = try? ChatWorkspace.decoder.decode([String: ChatCanvas].self, from: data)
         {
             canvases = decoded
+        }
+        blocked = store.stringList(forKey: key("blocked")) ?? []
+        if let json = store.string(forKey: key("removedConversations")), let data = json.data(using: .utf8),
+            let decoded = try? ChatWorkspace.decoder.decode([String: Date].self, from: data)
+        {
+            removedConversations = decoded
         }
     }
 
@@ -249,6 +259,57 @@ public final class ChatWorkspace {
         setNotifyLevel(.all, for: conversation)
         if bookmarks.removeValue(forKey: conversation) != nil { persistBookmarks() }
         removeCanvas(conversation)
+    }
+
+    public static func blockKey(_ handle: String) -> String {
+        handle.dartTrimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+    }
+
+    public func isBlocked(_ handle: String) -> Bool {
+        let name = ChatWorkspace.blockKey(handle)
+        return !name.isEmpty && blocked.contains(name)
+    }
+
+    public func setBlocked(_ handle: String, _ on: Bool) {
+        let name = ChatWorkspace.blockKey(handle)
+        if name.isEmpty || on == blocked.contains(name) { return }
+        if on {
+            blocked.append(name)
+            if blocked.count > ChatWorkspace.maxBlocked { blocked.removeFirst(blocked.count - ChatWorkspace.maxBlocked) }
+        } else {
+            blocked.removeAll { $0 == name }
+        }
+        store?.set(blocked, forKey: key("blocked"))
+    }
+
+    public func removeConversation(_ conversation: String, at date: Date) {
+        if conversation.isEmpty { return }
+        removedConversations[conversation] = date
+        if removedConversations.count > ChatWorkspace.maxRemovedConversations,
+            let oldest = removedConversations.min(by: { $0.value < $1.value })?.key
+        {
+            removedConversations.removeValue(forKey: oldest)
+        }
+        if lastConversation == conversation {
+            lastConversation = ""
+            store?.set("", forKey: key("lastConversation"))
+        }
+        persistRemovedConversations()
+    }
+
+    public func restoreConversation(_ conversation: String) {
+        if removedConversations.removeValue(forKey: conversation) != nil { persistRemovedConversations() }
+    }
+
+    public func isRemoved(_ conversation: String, lastActivity: Date?) -> Bool {
+        guard let removedAt = removedConversations[conversation] else { return false }
+        guard let lastActivity else { return true }
+        return lastActivity <= removedAt
+    }
+
+    func persistRemovedConversations() {
+        guard let store, let data = try? ChatWorkspace.encoder.encode(removedConversations) else { return }
+        store.set(String(decoding: data, as: UTF8.self), forKey: key("removedConversations"))
     }
 
     public func notifyLevel(_ conversation: String) -> ChatNotifyLevel {
