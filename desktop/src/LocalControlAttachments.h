@@ -28,6 +28,7 @@ constexpr int kRelayPreviewDimension = 1600;
 constexpr int kMinRelayPreviewDimension = 320;
 
 QByteArray processSalt();
+void setProcessSalt(const QByteArray &salt);
 
 QString mediaTypeForName(const QString &name);
 bool isImageType(const QString &mediaType);

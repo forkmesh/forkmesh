@@ -63,6 +63,24 @@ unheld and at least 60 s old (`removeGitLockIfStale`), including the sweep
 before a Merge click or a worktree update. The **Clear lock** button asks first
 when the lock is younger than 60 s or held.
 
+## With forkmesh-core attached (2026-10-02)
+
+The core has the same per-repository lane, with the same rules, in
+`desktop/core/internal/git`. While the desktop is connected to it,
+`routeGitIndexWrite()` hands index-writing commands from worker threads to
+`core.git.run`, so the desktop and the core queue on one lane. A command stays
+on `GitIndexWriteGuard` in these cases:
+
+- it runs on the GUI thread, or on a thread that already holds a lane;
+- the desktop's own lane for the repository is held or has waiters;
+- it is `git pull` or a `filter-branch` rewrite, which need the desktop's
+  environment;
+- its stdin is larger than 32 MB.
+
+A request the core never received runs natively. A request it received is
+never re-run. See
+[core.md](core.md#coregitrun).
+
 ## Tests
 
 `forkmesh-git-index-queue-tests` runs against real repositories in a temporary

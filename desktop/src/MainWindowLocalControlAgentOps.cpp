@@ -6,6 +6,7 @@
 #include "AgentCapabilityStore.h"
 #include "AgentPermissionController.h"
 #include "ClaudePeerMessaging.h"
+#include "CoreAgentModel.h"
 #include "ClaudeSessionScan.h"
 #include "LocalControl.h"
 #include "LocalControlAgentOps.h"
@@ -446,7 +447,9 @@ QJsonArray MainWindow::localControlAgentOpsApprovals(
     return rows;
 }
 
-QJsonObject MainWindow::localControlAgentOpsUsage()
+namespace {
+
+QList<agentops::UsageProvider> agentOpsUsageProviders()
 {
     QSettings settings;
     auto window = [&settings](const QString &id, const QString &label, const QString &pctKey,
@@ -509,12 +512,77 @@ QJsonObject MainWindow::localControlAgentOpsUsage()
                                 kCodexUsageWeekPctSetting, kCodexUsageWeekResetSetting,
                                 kCodexUsageWeekExhaustedSetting, kAgentLimitWeekMs);
     codex.accounts = accounts(QStringLiteral("codex"));
+    return {claude, codex};
+}
 
+QJsonArray usageWindowsJson(const QList<agentops::UsageWindow> &windows)
+{
+    QJsonArray out;
+    for (const agentops::UsageWindow &w : windows)
+        out.append(QJsonObject{{QStringLiteral("id"), w.id},
+                               {QStringLiteral("label"), w.label},
+                               {QStringLiteral("usedPercent"), w.usedPercent},
+                               {QStringLiteral("resetAtMs"), double(w.resetAtMs)},
+                               {QStringLiteral("exhausted"), w.exhausted}});
+    return out;
+}
+
+} // namespace
+
+QJsonObject MainWindow::localControlAgentOpsUsage()
+{
     QJsonObject summary = agentops::usageSummary(
-        {claude, codex}, m_claudeSpendUsd, m_openAiSpendUsd,
+        agentOpsUsageProviders(), m_claudeSpendUsd, m_openAiSpendUsd,
         QDateTime::currentMSecsSinceEpoch());
     summary.insert(QStringLiteral("activeProvider"), defaultAgentProvider());
     return summary;
+}
+
+QJsonObject MainWindow::localControlAgentOpsContext()
+{
+    AgentOpsState *state = agentOpsState(this);
+    QHash<QString, QPair<int, QString>> index;
+    const QJsonArray approvals = localControlAgentOpsApprovals(state->salt, &index);
+    QJsonArray approvalIndex;
+    for (auto it = index.cbegin(); it != index.cend(); ++it)
+        approvalIndex.append(QJsonObject{{QStringLiteral("id"), it.key()},
+                                         {QStringLiteral("session"), it->first},
+                                         {QStringLiteral("request"), it->second}});
+    QJsonObject out{{QStringLiteral("approvals"), approvals},
+                    {QStringLiteral("approvalIndex"), approvalIndex}};
+    if (m_agentCapabilityBroker)
+        out.insert(QStringLiteral("grants"), m_agentCapabilityBroker->persistentGrants());
+    return out;
+}
+
+QJsonObject MainWindow::localControlAgentOpsUsageInputs()
+{
+    QJsonArray providers;
+    for (const agentops::UsageProvider &provider : agentOpsUsageProviders()) {
+        QJsonArray accounts;
+        for (const agentops::UsageAccount &account : provider.accounts)
+            accounts.append(QJsonObject{{QStringLiteral("id"), account.id},
+                                        {QStringLiteral("label"), account.label},
+                                        {QStringLiteral("active"), account.active},
+                                        {QStringLiteral("signedIn"), account.signedIn},
+                                        {QStringLiteral("identity"), account.identity},
+                                        {QStringLiteral("windows"), usageWindowsJson(account.windows)}});
+        providers.append(QJsonObject{{QStringLiteral("id"), provider.id},
+                                     {QStringLiteral("label"), provider.label},
+                                     {QStringLiteral("windows"), usageWindowsJson(provider.windows)},
+                                     {QStringLiteral("accounts"), accounts},
+                                     {QStringLiteral("creditsEnabled"), provider.creditsEnabled},
+                                     {QStringLiteral("creditsUsed"), provider.creditsUsed},
+                                     {QStringLiteral("creditsLimit"), provider.creditsLimit},
+                                     {QStringLiteral("creditsCurrency"), provider.creditsCurrency}});
+    }
+    QJsonObject usage{{QStringLiteral("providers"), providers},
+                      {QStringLiteral("activeProvider"), defaultAgentProvider()}};
+    if (!std::isnan(m_claudeSpendUsd))
+        usage.insert(QStringLiteral("claudeSpendUsd"), m_claudeSpendUsd);
+    if (!std::isnan(m_openAiSpendUsd))
+        usage.insert(QStringLiteral("openAiSpendUsd"), m_openAiSpendUsd);
+    return usage;
 }
 
 void MainWindow::armLocalControlAgentOpsBell()
@@ -640,6 +708,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
     armLocalControlAgentOpsBell();
     const LocalControlServer::Device device = server->deviceFor(connectionId);
     const QString holder = agentops::confirmationHolder(device.key, connectionId);
+    const bool coreConfirmed = forkmesh::coreagentmodel::confirmedByCore(connectionId, params);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const auto audit = [this, connectionId](const QString &what) {
         logSystem(QStringLiteral("%1, requested by %2.")
@@ -844,7 +913,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
             fail(QStringLiteral("bad_request"));
             return;
         }
-        const auto result = state->confirmations.consume(
+        const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
             params.value(QStringLiteral("token")).toString(), holder,
             allow ? QStringLiteral("approve") : QStringLiteral("deny"),
             agentops::answerTarget(id, allow, lifetime), now);
@@ -887,7 +956,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
 
     if (method == QLatin1String("agentops.merge")) {
         const int sessionId = params.value(QStringLiteral("id")).toInt();
-        const auto result = state->confirmations.consume(
+        const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
             params.value(QStringLiteral("token")).toString(), holder, QStringLiteral("merge"),
             QString::number(sessionId), now);
         if (result != hostctl::ConfirmationStore::Result::Ok) {
@@ -1007,7 +1076,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
 
     if (method == QLatin1String("agentops.delete")) {
         const int sessionId = params.value(QStringLiteral("id")).toInt();
-        const auto result = state->confirmations.consume(
+        const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
             params.value(QStringLiteral("token")).toString(), holder, QStringLiteral("delete"),
             QString::number(sessionId), now);
         if (result != hostctl::ConfirmationStore::Result::Ok) {
@@ -1221,7 +1290,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
             fail(QStringLiteral("bad_request"));
             return;
         }
-        const auto result = state->confirmations.consume(
+        const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
             params.value(QStringLiteral("token")).toString(), holder, action,
             agentops::bulkTarget(action, ids), now);
         if (result != hostctl::ConfirmationStore::Result::Ok) {
@@ -1481,7 +1550,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
             fail(QStringLiteral("unknown_grant"));
             return;
         }
-        const auto result = state->confirmations.consume(
+        const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
             params.value(QStringLiteral("token")).toString(), holder, QStringLiteral("revoke"),
             grantId, now);
         if (result != hostctl::ConfirmationStore::Result::Ok) {
@@ -1572,7 +1641,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                 fail(QStringLiteral("bad_request"));
                 return;
             }
-            const auto result = state->confirmations.consume(
+            const auto result = coreConfirmed ? hostctl::ConfirmationStore::Result::Ok : state->confirmations.consume(
                 params.value(QStringLiteral("token")).toString(), holder,
                 QStringLiteral("purge"), agentops::bulkTarget(QStringLiteral("purge"), ids), now);
             if (result != hostctl::ConfirmationStore::Result::Ok) {

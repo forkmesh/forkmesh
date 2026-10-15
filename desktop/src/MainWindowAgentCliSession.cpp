@@ -924,6 +924,14 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         runtimeLaunch.memoryLimitMb = jailMb;
         runtimeLaunch.resumeFallbackPrompt = resumeFallbackPrompt;
         runtimeLaunch.options = agentRunLaunchOptions(sid, true);
+        runtimeLaunch.options.insert(QStringLiteral("processKey"),
+                                     QStringLiteral("agent-%1").arg(sid));
+        runtimeLaunch.options.insert(
+            QStringLiteral("processMeta"),
+            QJsonObject{{QStringLiteral("accountId"), m_streamAccountId.value(sid)},
+                        {QStringLiteral("worktree"), workdir},
+                        {QStringLiteral("repoPath"), guardrails.repositoryRoot},
+                        {QStringLiteral("storeKey"), m_streamSessionInfo.value(sid).repoKey()}});
         noteAgentRunToolConfig(sid, runtimeLaunch.options);
         live->setGuardrails(guardrails);
         live->startRuntime(runtimeLaunch);
@@ -1010,6 +1018,14 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         runtimeLaunch.memoryLimitMb = jailMb;
         runtimeLaunch.resumeFallbackPrompt = resumeFallbackPrompt;
         runtimeLaunch.options = agentRunLaunchOptions(sid, false);
+        runtimeLaunch.options.insert(QStringLiteral("processKey"),
+                                     QStringLiteral("agent-%1").arg(sid));
+        runtimeLaunch.options.insert(
+            QStringLiteral("processMeta"),
+            QJsonObject{{QStringLiteral("accountId"), m_streamAccountId.value(sid)},
+                        {QStringLiteral("worktree"), workdir},
+                        {QStringLiteral("repoPath"), guardrails.repositoryRoot},
+                        {QStringLiteral("storeKey"), m_streamSessionInfo.value(sid).repoKey()}});
         noteAgentRunToolConfig(sid, runtimeLaunch.options);
         const QStringList gateEnv = agentNetworkGateEnv(sid);
         QString claudeSettings;

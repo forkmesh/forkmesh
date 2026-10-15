@@ -28,6 +28,8 @@ public:
     ~ClaudeIdeBridge() override;
 
     bool start(const QString &workspaceFolder);
+    void setPreferredEndpoint(quint16 port, const QString &authToken);
+    QString authToken() const { return m_authToken; }
     void stop();
     bool isListening() const;
     quint16 port() const { return m_port; }
@@ -107,6 +109,8 @@ private:
 
     QTcpServer *m_server = nullptr;
     quint16 m_port = 0;
+    quint16 m_preferredPort = 0;
+    QString m_preferredToken;
     QString m_authToken;
     QString m_workspaceFolder;
     bool m_guardrailsEnabled = false;

@@ -7,6 +7,7 @@
 #include "LocalControlFiles.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "CoreGit.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -18,7 +19,10 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QSharedPointer>
+#include <QThreadPool>
 #include <QTimer>
+
+#include <functional>
 
 namespace filesctl = forkmesh::localcontrol::filesbrowse;
 namespace hostctl = forkmesh::localcontrol::hosts;
@@ -55,6 +59,32 @@ QProcess *startGit(QObject *parent, const QString &workingDirectory, const QStri
     process->setWorkingDirectory(workingDirectory);
     process->start(QStringLiteral("git"), args);
     return process;
+}
+
+void startLocalControlFilesGitProcess(QObject *owner, const QString &rootPath, const QStringList &args,
+                                      const std::function<void(bool, const QString &)> &finish)
+{
+    QProcess *process = startGit(owner, rootPath, args);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    QObject::connect(process, &QProcess::finished, owner,
+            [process, finish](int exitCode, QProcess::ExitStatus status) {
+                process->deleteLater();
+                finish(status == QProcess::NormalExit && exitCode == 0,
+                       QString::fromUtf8(process->readAll().left(kMaxGitOutputBytes)));
+            });
+    QObject::connect(process, &QProcess::errorOccurred, owner,
+            [process, finish](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                process->deleteLater();
+                finish(false, QStringLiteral("git is not available on the desktop."));
+            });
+    QTimer::singleShot(kGitTimeoutMs, process, [process, finish] {
+        if (process->state() == QProcess::NotRunning)
+            return;
+        process->kill();
+        finish(false, QStringLiteral("git timed out."));
+    });
 }
 
 }
@@ -292,8 +322,6 @@ void MainWindow::runLocalControlFilesGit(int connectionId, int requestId, const 
     m_filesGitRunning.insert(key);
     const QString who = localControlDeviceLabel(connectionId);
     logSystem(QStringLiteral("git %1 of %2 requested by %3.").arg(action, label, who));
-    QProcess *process = startGit(this, rootPath, args);
-    process->setProcessChannelMode(QProcess::MergedChannels);
     const auto finish = [this, key, action, rootId, label](bool ok, const QString &output) {
         if (!m_filesGitRunning.remove(key))
             return;
@@ -313,25 +341,40 @@ void MainWindow::runLocalControlFilesGit(int connectionId, int requestId, const 
         m_localControl->broadcast(QStringLiteral("files.browse.changed"),
                                   {{QStringLiteral("root"), rootId}});
     };
-    connect(process, &QProcess::finished, this,
-            [process, finish](int exitCode, QProcess::ExitStatus status) {
-                process->deleteLater();
-                finish(status == QProcess::NormalExit && exitCode == 0,
-                       QString::fromUtf8(process->readAll().left(kMaxGitOutputBytes)));
-            });
-    connect(process, &QProcess::errorOccurred, this,
-            [process, finish](QProcess::ProcessError error) {
-                if (error != QProcess::FailedToStart)
-                    return;
-                process->deleteLater();
-                finish(false, QStringLiteral("git is not available on the desktop."));
-            });
-    QTimer::singleShot(kGitTimeoutMs, process, [process, finish] {
-        if (process->state() == QProcess::NotRunning)
-            return;
-        process->kill();
-        finish(false, QStringLiteral("git timed out."));
-    });
+    const auto native = [this, rootPath, args, finish] {
+        startLocalControlFilesGitProcess(this, rootPath, args, finish);
+    };
+    if (forkmesh::coregit::attached()) {
+        QPointer<MainWindow> self(this);
+        QThreadPool::globalInstance()->start([self, rootPath, args, action, label, finish, native] {
+            forkmesh::coregit::CommandRequest request;
+            request.dir = rootPath;
+            request.args = args;
+            request.timeoutMs = kGitTimeoutMs;
+            request.env = {QStringLiteral("GIT_TERMINAL_PROMPT=0"), QStringLiteral("GIT_OPTIONAL_LOCKS=0"),
+                           QStringLiteral("LC_ALL=C")};
+            request.detail = QStringLiteral("git -C %1 %2 (phone %3 of %4)")
+                                 .arg(rootPath, args.join(QLatin1Char(' ')), action, label);
+            forkmesh::coregit::CommandResult result;
+            const bool viaCore = forkmesh::coregit::runCommand(request, &result);
+            QMetaObject::invokeMethod(
+                qApp,
+                [self, viaCore, result, finish, native] {
+                    if (!self)
+                        return;
+                    if (!viaCore) {
+                        native();
+                        return;
+                    }
+                    finish(result.ok, result.timedOut
+                                          ? QStringLiteral("git timed out.")
+                                          : QString::fromUtf8(result.output.left(kMaxGitOutputBytes)));
+                },
+                Qt::QueuedConnection);
+        });
+    } else {
+        native();
+    }
     server->respond(connectionId, requestId,
                     {{QStringLiteral("started"), true},
                      {QStringLiteral("action"), action},

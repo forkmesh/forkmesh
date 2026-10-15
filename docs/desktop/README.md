@@ -22,6 +22,7 @@ Topic pages in this folder:
 - [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules
 - [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
 - [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
+- [core.md](core.md): `forkmesh-core`, the Go background engine the desktop and phones share, and the migration checklist
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children) and what it leaves running
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
@@ -56,6 +57,7 @@ Everything is in `desktop/`.
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
 | `src/MarkdownRender.h`, `src/MarkdownDocument.h` | Markdown rendering shared by README views and packages |
 | `src/Tooltips.h` | The app-drawn tooltip window |
+| `src/CoreClient.*`, `src/Core*.*`, `src/MainWindowCore*.cpp` | The desktop's client and facades for `forkmesh-core`, the Go engine in `core/` ([core.md](core.md)) |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 
 ## Architecture

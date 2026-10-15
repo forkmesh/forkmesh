@@ -354,8 +354,26 @@ def actions_variable(conf_text: str, name: str) -> str:
         except ValueError:
             return ""
         value = variables.get(name) if isinstance(variables, dict) else None
+        if isinstance(value, str) and value.strip() == VAULT_MARKER:
+            return vault_actions_variable(name)
         return value.strip() if isinstance(value, str) else ""
     return ""
+
+
+VAULT_MARKER = "[stored in the ForkMesh vault]"
+
+
+def vault_actions_variable(name: str) -> str:
+    import forkmesh_desktop_vault
+
+    try:
+        values = forkmesh_desktop_vault.read_namespace(
+            forkmesh_desktop_vault.vault_path(FORKMESH_DATA),
+            forkmesh_desktop_vault.identity_path(FORKMESH_DATA), "actions")
+    except (ImportError, OSError, forkmesh_desktop_vault.VaultError):
+        return ""
+    found = values.get(name)
+    return found[0].decode("utf-8", "replace").strip() if found else ""
 
 
 def ios_release_tag(manifests: dict[str, dict],
@@ -1208,6 +1226,8 @@ def release_signing_key(dest: Path, installer_key: str) -> None:
     conf = LAYOUT.settings_file
     if conf.is_file():
         text = conf.read_text(errors="replace")
+        if VAULT_MARKER in text:
+            text += "\n" + vault_actions_variable("FORKMESH_RELEASE_SIGNING_KEY_PEM")
         for raw in re.findall(
             r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
             text, re.S,
@@ -1366,6 +1386,19 @@ def android_version_name(tag: str) -> str:
     return ".".join(str(part) for part in version)
 
 
+def release_password(path: Path, name: str) -> str:
+    import forkmesh_desktop_vault
+
+    try:
+        return forkmesh_desktop_vault.release_secret(path, name, FORKMESH_DATA)
+    except ImportError:
+        raise ConfigError(f"{path} points at the ForkMesh vault, which needs the Python "
+                          "cryptography package") from None
+    except forkmesh_desktop_vault.VaultError as error:
+        raise ConfigError(f"{path} points at the ForkMesh vault, which could not be read "
+                          f"({error.code})") from None
+
+
 def build_apk(repo: Path, work: Path, tag: str, commit: str, version_code: int,
               signer_sha256: str) -> Path:
     release_dir = FORKMESH_DATA / "release"
@@ -1375,7 +1408,7 @@ def build_apk(repo: Path, work: Path, tag: str, commit: str, version_code: int,
         "FORKMESH_ANDROID_KEYSTORE_PASSWORD_FILE", release_dir / ".apk-keystore-password"))
     if not keystore.is_file() or not password_file.is_file():
         raise ConfigError(f"Android keystore or its password file is missing under {release_dir}")
-    password = password_file.read_text().strip()
+    password = release_password(password_file, "apk-keystore-password")
     tree = build_tree(repo, work, "apk", tag, commit)
     tmp = work / "tmp"
     tmp.mkdir(parents=True, exist_ok=True)
@@ -1508,7 +1541,7 @@ def build_windows_installer(repo: Path, work: Path, tag: str, commit: str,
         FORKMESH_WIN_CHANNEL=channel,
         FORKMESH_WIN_JOBS=str(jobs),
         FORKMESH_WIN_CERT_PFX=base64.b64encode(pfx.read_bytes()).decode("ascii"),
-        FORKMESH_WIN_CERT_PASSWORD=password_file.read_text().strip(),
+        FORKMESH_WIN_CERT_PASSWORD=release_password(password_file, "windows-cert-password"),
         TMPDIR=str(tmp),
     )
     build_log = work / f"win-{tag}.log"

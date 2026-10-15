@@ -201,6 +201,31 @@ else
 fi
 echo "  mirror node: $MIRROR_NODE_BIN"
 
+echo "Installing forkmesh-core…"
+CORE_BIN="$USER_BIN_DIR/forkmesh-core"
+CORE_TMP="$(mktemp "$USER_BIN_DIR/.forkmesh-core.XXXXXX")"
+trap 'rm -f "${CORE_TMP:-}"' EXIT
+if [[ -x "$BUILD_DIR/forkmesh-core" ]]; then
+    install -m 0755 "$BUILD_DIR/forkmesh-core" "$CORE_TMP"
+elif command -v go >/dev/null 2>&1; then
+    (
+        cd "$SCRIPT_DIR/core"
+        CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+            -o "$CORE_TMP" ./cmd/forkmesh-core
+    )
+    chmod 0755 "$CORE_TMP"
+else
+    rm -f "$CORE_TMP"
+    CORE_TMP=""
+    echo "  Go not found: the desktop will run without forkmesh-core."
+fi
+if [[ -n "$CORE_TMP" ]]; then
+    mv -f "$CORE_TMP" "$CORE_BIN"
+    CORE_TMP=""
+    echo "  core: $CORE_BIN"
+fi
+trap - EXIT
+
 # --- 2. Install the icon into the hicolor theme -----------------------------
 # The icon name "forkmesh" is what the .desktop Icon= key and the Wayland app-id
 # resolve against. Prefer ImageMagick to render exact-size buckets (sharp at

@@ -23,6 +23,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <utility>
 
 #if defined(Q_OS_UNIX)
 #include <fcntl.h>
@@ -1389,6 +1390,23 @@ QJsonObject applyConfiguration(const QJsonObject &request,
                   true);
 }
 
+namespace {
+ConfigurationDelegate g_configurationDelegate;
+} // namespace
+
+void setConfigurationDelegate(ConfigurationDelegate delegate)
+{
+    g_configurationDelegate = std::move(delegate);
+}
+
+QJsonObject refusedConfiguration(const QJsonObject &request,
+                                 const QString &errorCode)
+{
+    return result(safeRequestId(request), safeNode(request),
+                  request.value(QStringLiteral("actionsEnabled")).toBool(false),
+                  false, 0, false, errorCode);
+}
+
 int runConfigurationStdin(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -1416,8 +1434,11 @@ int runConfigurationStdin(int argc, char *argv[])
     }
     input.fill('\0');
     input.clear();
-    QSettings settings;
-    const QJsonObject response = applyConfiguration(request, settings);
+    QJsonObject response;
+    if (!g_configurationDelegate || !g_configurationDelegate(request, &response)) {
+        QSettings settings;
+        response = applyConfiguration(request, settings);
+    }
     QByteArray encoded =
         QJsonDocument(response)
             .toJson(QJsonDocument::Compact)

@@ -13,7 +13,7 @@
 #include <QString>
 #include <QStringList>
 
-class QProcess;
+class AgentProcess;
 
 // Owns a Codex app-server process and adapts its JSONL protocol to the
 // Claude-shaped events consumed by ForkMesh's native transcript.
@@ -67,6 +67,9 @@ public:
     QStringList configOverrides() const { return m_configOverrides; }
     void setAppServerCommand(const QString &program,
                              const QStringList &arguments = QStringList());
+    bool attachProcess(const QString &key, const QJsonObject &meta, qint64 stdoutOffset,
+                       qint64 stderrOffset, qint64 pid);
+    QString processKey() const { return m_currentKey; }
 
 signals:
     void modelsListed(const QJsonArray &models);
@@ -118,6 +121,13 @@ private:
     void emitTurnResult(const QJsonObject &params);
     void emitUsage(const QJsonObject &params);
     void stopProcess(bool finalTeardown);
+    void connectProcess(AgentProcess *proc);
+    void beginCoreParse(qint64 after);
+    void endCoreParse();
+    void onCoreRunEvent(const QString &event, const QJsonObject &data);
+    void applyCoreState(const QJsonObject &state);
+    bool coreOp(const QString &op, QJsonObject params = QJsonObject());
+    void finishFromCore(int exitCode);
 
     static bool isToolItem(const QString &type);
     static QString toolName(const QJsonObject &item);
@@ -127,7 +137,7 @@ private:
     static QString messageText(const QJsonValue &value);
     static QString decisionLabel(const QJsonValue &decision);
 
-    QProcess *m_proc = nullptr;
+    AgentProcess *m_proc = nullptr;
     AgentJsonlFramer m_framer;
     qint64 m_nextRequestId = 1;
     quint64 m_nextQuestionToken = 1;
@@ -173,4 +183,14 @@ private:
     bool m_turnActive = false;
     bool m_systemInitEmitted = false;
     qint64 m_nextNormalizedSequence = 0;
+    QString m_processKey;
+    QJsonObject m_processMeta;
+    QString m_currentKey;
+    bool m_parseRequested = false;
+    bool m_coreParsed = false;
+    bool m_coreAttachPending = false;
+    qint64 m_storedOffset = 0;
+    int m_deferredExit = 0;
+    bool m_hasDeferredExit = false;
+    QSet<QString> m_coreTokens;
 };

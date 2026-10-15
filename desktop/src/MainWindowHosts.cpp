@@ -2,6 +2,7 @@
 #include "AddCoreNodeDialog.h"
 #include "RemoveCoreNodeDialog.h"
 #include "FleetAutoscalePanel.h"
+#include "CoreClient.h"
 #include "CoreNodeLogs.h"
 #include "ForkMeshVersion.h"
 #include "Tooltips.h"
@@ -1242,6 +1243,12 @@ void MainWindow::probeSavedHost(const QString &name, const QString &ip,
         }
     }
     const QString identityFile = savedHostIdentityFile(name, ip, user);
+    if (probeSavedHostThroughCore(key, name, ip, user, savedStatus, password, identityFile,
+                                  [render](const QString &status, const QString &claude,
+                                           const QString &codex, const QString &color) {
+                                      render(status, claude, codex, QColor(color));
+                                  }))
+        return;
     // A managed mirror never gets the desktop/CLI `forkmesh` binary: the Vultr
     // deploy installs the Go mirror node at /usr/local/bin/forkmesh-mirror-node
     // and supervises it with forkmesh-mirror-node.service. Probe for that too,
@@ -1462,6 +1469,9 @@ void MainWindow::runAgentCliInstall(
     const QString &sshPassword, const QString &identityFile,
     bool copyCredentials, std::function<void(bool, QString)> onFinished)
 {
+    if (runAgentCliInstallThroughCore(node, ip, user, sshPassword, identityFile, copyCredentials,
+                                      onFinished))
+        return;
     const auto report = [onFinished](bool ok, const QString &message) {
         if (onFinished)
             onFinished(ok, message);
@@ -2155,6 +2165,8 @@ void MainWindow::runHostActionsConfiguration(
     forkmesh::control::MirrorActionsConfigurationRequest request,
     const QString &sshPassword)
 {
+    if (runHostActionsConfigurationThroughCore(request, sshPassword))
+        return;
     QString error;
     forkmesh::control::MirrorActionsSshCommand command =
         forkmesh::control::buildMirrorActionsSshCommand(
@@ -3294,10 +3306,11 @@ struct MainWindow::HostLogFeed {
     qint64 startedMs = 0;
     qint64 sshUntilMs = 0;   // QUIC failed; stay on SSH until then
     int failures = 0; // consecutive short-lived connections, for the backoff
+    bool inCore = false;
 
     bool running() const
     {
-        return http3 ||
+        return inCore || http3 ||
                (process && process->state() != QProcess::NotRunning);
     }
 
@@ -3414,8 +3427,10 @@ void MainWindow::syncHostLogFeeds()
         if (existing && existing->pass == pass &&
             existing->identity == identity && existing->origin == origin)
             continue;
-        if (existing)
+        if (existing) {
+            stopHostLogFeedInCore(key);
             existing->stop();
+        }
         auto feed = QSharedPointer<HostLogFeed>::create();
         feed->node = name.isEmpty() ? ip : name;
         feed->signedNode = signedNode;
@@ -3432,6 +3447,7 @@ void MainWindow::syncHostLogFeeds()
             ++it;
             continue;
         }
+        stopHostLogFeedInCore(it.key());
         it.value()->stop();
         it = m_hostLogFeeds.erase(it);
     }
@@ -3603,6 +3619,8 @@ void MainWindow::launchHostLogFeed(const QString &key)
         return;
     }
 
+    if (launchHostLogFeedThroughCore(key))
+        return;
     QString script = QString::fromUtf8(forkmesh::hosts::kMainLogFeedScript);
     script.replace(QStringLiteral("'"), QStringLiteral("'\\''"));
     const QString remoteCmd =
@@ -4546,6 +4564,8 @@ void MainWindow::destroyVultrHostAtRow(int row)
 void MainWindow::destroyVultrHostNamed(
     const QString &name, std::function<void(bool ok, QString message)> onDone)
 {
+    if (destroyVultrHostThroughCore(name, onDone))
+        return;
     const auto setStatus = [this, onDone](const QString &text, bool finished,
                                           bool ok) {
         if (m_hostInstallStatus)
@@ -5403,4 +5423,71 @@ void MainWindow::openRunnerAgentLoginTerminal(const QString &runnerName,
                 timer->start();
                 (*poll)();
             });
+}
+
+bool MainWindow::launchHostLogFeedThroughCore(const QString &key)
+{
+    if (!coreHostJobsAttached() ||
+        !m_coreClient->hasNativeRoute(QStringLiteral("core.hosts.feed.start")))
+        return false;
+    const QSharedPointer<HostLogFeed> feed = m_hostLogFeeds.value(key);
+    if (!feed)
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    feed->inCore = true;
+    m_coreClient->request(
+        QStringLiteral("core.hosts.feed.start"),
+        {{QStringLiteral("key"), key},
+         {QStringLiteral("node"), feed->node},
+         {QStringLiteral("ip"), feed->ip},
+         {QStringLiteral("user"), feed->user},
+         {QStringLiteral("password"), feed->pass},
+         {QStringLiteral("identityFile"), feed->identity},
+         {QStringLiteral("sshUntilMs"), now < feed->sshUntilMs ? double(feed->sshUntilMs) : 0.0}},
+        [this, key, feed](bool ok, const QJsonValue &, const QString &) {
+            if (ok || m_hostLogFeeds.value(key) != feed)
+                return;
+            feed->inCore = false;
+            launchHostLogFeed(key);
+        });
+    return true;
+}
+
+void MainWindow::stopHostLogFeedInCore(const QString &key)
+{
+    const QSharedPointer<HostLogFeed> feed = m_hostLogFeeds.value(key);
+    if (!feed || !feed->inCore)
+        return;
+    feed->inCore = false;
+    if (m_coreClient && m_coreClient->isConnected())
+        m_coreClient->request(QStringLiteral("core.hosts.feed.stop"), {{QStringLiteral("key"), key}});
+}
+
+void MainWindow::onCoreHostFeedEvent(const QString &event, const QJsonObject &data)
+{
+    const QString key = data.value(QStringLiteral("key")).toString();
+    const QSharedPointer<HostLogFeed> feed = m_hostLogFeeds.value(key);
+    if (event == QLatin1String("core.hosts.feedLines")) {
+        const QString node = feed ? feed->node : data.value(QStringLiteral("node")).toString();
+        for (const QJsonValue &value : data.value(QStringLiteral("lines")).toArray()) {
+            const QJsonObject line = value.toObject();
+            forwardHostLogLine(node, line.value(QStringLiteral("source")).toInt(),
+                               line.value(QStringLiteral("text")).toString());
+        }
+        return;
+    }
+    if (!feed || !feed->inCore || !data.value(QStringLiteral("recycling")).toBool())
+        return;
+    feed->inCore = false;
+    launchHostLogFeed(key);
+}
+
+void MainWindow::detachCoreHostFeeds()
+{
+    for (auto it = m_hostLogFeeds.cbegin(); it != m_hostLogFeeds.cend(); ++it) {
+        if (!it.value()->inCore)
+            continue;
+        it.value()->inCore = false;
+        launchHostLogFeed(it.key());
+    }
 }

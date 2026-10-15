@@ -122,6 +122,11 @@ Names only:
   `FORKMESH_WIN_CERT_PFX_FILE`), `CODEMAGIC_API_TOKEN`, `CODEMAGIC_APP_ID`,
   the build Mac's key and pinned host key under `<ssh>/mac-build/`,
   `MAC_BUILD_HOST`, `MAC_BUILD_GIT_URL`.
+  Once forkmesh-core has run, the two password files hold only the marker
+  `[stored in the ForkMesh vault]`; the release host reads the passwords from
+  the desktop's encrypted vault (namespace `release`) with
+  `tools/forkmesh_desktop_vault.py`, which needs `python3-cryptography`
+  ([../desktop/core.md](../desktop/core.md#secrets-at-rest-the-vault)).
 - Build: `-DFORKMESH_BUILD_COMMIT_OVERRIDE`, `-DFORKMESH_VERSION_OVERRIDE`.
 - Installer: `FORKMESH_PUBLIC_HOSTNAME`, `FORKMESH_LINK_CODE`,
   `FORKMESH_DNS_WAIT_SECONDS` ([self-setup-node.md](self-setup-node.md)),

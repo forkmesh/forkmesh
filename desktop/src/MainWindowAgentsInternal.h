@@ -8,6 +8,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "SettingsSecretBackend.h"
 #include "AccountCapability.h"
 #include "ForkMeshPackageRegistry.h"
 #include "RepoStatsStore.h"
@@ -264,7 +265,7 @@ inline QStringList localProviderCredentialValues()
            // Genie's remote-MCP bearer credential rides inside the
            // opening prompt, so it would otherwise land in the transcript, the
            // run log and the sealed snapshot pushed to the relay.
-           << settings.value(kGenieTokenSetting).toString();
+           << forkmesh::settingsecrets::value(settings, kGenieTokenSetting);
     values << qEnvironmentVariable("ANTHROPIC_API_KEY")
            << qEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")
            << qEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN")

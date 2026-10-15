@@ -6,11 +6,15 @@
 
 #include "AgentCapabilityBroker.h"
 #include "AgentJail.h"
+#include "AgentProcess.h"
 #include "AgentResources.h"
+#include "CoreAgentRun.h"
 #include "VirtualMachineRuntime.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDateTime>
+#include <QPointer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -156,6 +160,8 @@ void CodexAppServerSession::startRuntime(const AgentRuntimeLaunch &launch)
 {
     m_configOverrides = AgentToolPolicy::codexConfigOverrides(
         AgentToolPolicy::disabledFamiliesFromOptions(launch.options));
+    m_processKey = launch.options.value(QStringLiteral("processKey")).toString();
+    m_processMeta = launch.options.value(QStringLiteral("processMeta")).toObject();
     m_workspaceSandbox = launch.options.value(QStringLiteral("workspaceWriteRoots")).isArray();
     m_workspaceWriteRoots =
         launch.options.value(QStringLiteral("workspaceWriteRoots")).toArray();
@@ -193,7 +199,40 @@ void CodexAppServerSession::start(const QString &cwd,
     m_mode = mode;
     m_effort = effort.trimmed();
 
-    QProcess *proc = new QProcess(this);
+    endCoreParse();
+    AgentProcess::Options processOptions;
+    m_currentKey.clear();
+    const bool transientParse = m_processKey.isEmpty() && forkmesh::coreagentrun::available();
+    m_parseRequested = transientParse ||
+                       (!m_processKey.isEmpty() && !m_hostSessionId.isEmpty() &&
+                        forkmesh::coreagentrun::available());
+    if (m_parseRequested) {
+        m_currentKey = transientParse
+            ? forkmesh::coreagentrun::transientKey(QStringLiteral("codex"))
+            : QStringLiteral("%1-%2").arg(m_processKey).arg(
+                  QDateTime::currentMSecsSinceEpoch());
+        processOptions.key = m_currentKey;
+        processOptions.detachable = !transientParse;
+        QJsonObject meta = m_processMeta;
+        if (transientParse)
+            meta.insert(QStringLiteral("transient"), true);
+        meta.insert(QStringLiteral("runtime"), AgentRuntimeIds::CodexAppServer);
+        meta.insert(QStringLiteral("parse"), QStringLiteral("codex"));
+        meta.insert(QStringLiteral("processKey"), m_processKey);
+        meta.insert(QStringLiteral("sessionId"), m_hostSessionId);
+        meta.insert(QStringLiteral("cwd"), m_cwd);
+        meta.insert(QStringLiteral("initialPrompt"), m_initialPrompt);
+        meta.insert(QStringLiteral("resumeThreadId"), m_resumeThreadId);
+        meta.insert(QStringLiteral("resumeFallbackPrompt"), m_resumeFallbackPrompt);
+        meta.insert(QStringLiteral("model"), m_model);
+        meta.insert(QStringLiteral("mode"), m_mode);
+        meta.insert(QStringLiteral("effort"), m_effort);
+        meta.insert(QStringLiteral("externalCallGate"), m_externalCallGate);
+        meta.insert(QStringLiteral("appVersion"), QCoreApplication::applicationVersion());
+        processOptions.meta = meta;
+        forkmesh::coreagentrun::pushCredentials();
+    }
+    AgentProcess *proc = AgentProcess::create(this, processOptions);
     m_proc = proc;
     if (!cwd.isEmpty())
         proc->setWorkingDirectory(cwd);
@@ -214,30 +253,7 @@ void CodexAppServerSession::start(const QString &cwd,
     forkmesh::agentresources::applyEnvironment(env);
     proc->setProcessEnvironment(env);
     proc->setProcessChannelMode(QProcess::SeparateChannels);
-
-    connect(proc, &QProcess::readyReadStandardOutput, this,
-            [this] { onStdout(false); });
-    connect(proc, &QProcess::readyReadStandardError, this,
-            &CodexAppServerSession::onStderr);
-    connect(proc, &QProcess::started, this,
-            &CodexAppServerSession::onProcessStarted);
-    connect(proc, &QProcess::errorOccurred, this,
-            [this, proc](QProcess::ProcessError error) {
-                if (m_proc != proc || error != QProcess::FailedToStart)
-                    return;
-                emitLocalNotice(QStringLiteral("error"),
-                                QStringLiteral("Unable to start Codex app-server: %1")
-                                    .arg(proc->errorString()));
-                m_proc = nullptr;
-                proc->deleteLater();
-                emit finished(-1);
-            });
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, proc](int code, QProcess::ExitStatus) {
-                if (m_proc != proc)
-                    return;
-                onProcessFinished(code);
-            });
+    connectProcess(proc);
 
     QString program;
     QStringList arguments;
@@ -297,14 +313,12 @@ void CodexAppServerSession::start(const QString &cwd,
         QTimer::singleShot(0, this, [this] { emit finished(-1); });
         return;
     }
-    const forkmesh::agentresources::Launch contained =
-        launch.isolated
-            ? forkmesh::agentresources::Launch{launch.program, launch.arguments}
-            : forkmesh::agentresources::contain(
-                  launch.program, launch.arguments,
-                  forkmesh::agentresources::launchLabel(
-                      QStringLiteral("codex"), env));
-    proc->start(contained.program, contained.arguments);
+    if (launch.isolated)
+        proc->start(launch.program, launch.arguments);
+    else
+        proc->startContained(launch.program, launch.arguments,
+                             forkmesh::agentresources::launchLabel(
+                                 QStringLiteral("codex"), env));
 }
 
 bool CodexAppServerSession::sendCommand(const AgentRuntimeCommand &command)
@@ -338,6 +352,7 @@ bool CodexAppServerSession::sendCommand(const AgentRuntimeCommand &command)
         if (!mode.isString() || mode.toString().trimmed().isEmpty())
             return false;
         m_mode = mode.toString().trimmed();
+        coreOp(QStringLiteral("mode"), {{QStringLiteral("mode"), m_mode}});
         return true;
     }
     return AgentRuntimeSession::sendCommand(command);
@@ -374,8 +389,246 @@ void CodexAppServerSession::resetProtocolState()
     m_nextNormalizedSequence = 0;
 }
 
+void CodexAppServerSession::connectProcess(AgentProcess *proc)
+{
+    connect(proc, &AgentProcess::readyReadStandardOutput, this,
+            [this] { onStdout(false); });
+    connect(proc, &AgentProcess::readyReadStandardError, this,
+            &CodexAppServerSession::onStderr);
+    connect(proc, &AgentProcess::started, this,
+            &CodexAppServerSession::onProcessStarted);
+    connect(proc, &AgentProcess::errorOccurred, this,
+            [this, proc](QProcess::ProcessError error) {
+                if (m_proc != proc || error != QProcess::FailedToStart)
+                    return;
+                emitLocalNotice(QStringLiteral("error"),
+                                QStringLiteral("Unable to start Codex app-server: %1")
+                                    .arg(proc->errorString()));
+                m_proc = nullptr;
+                proc->deleteLater();
+                emit finished(-1);
+            });
+    connect(proc, &AgentProcess::finished,
+            this, [this, proc](int code, QProcess::ExitStatus) {
+                if (m_proc != proc)
+                    return;
+                if (m_coreParsed)
+                    return;
+                if (m_coreAttachPending) {
+                    m_deferredExit = code;
+                    m_hasDeferredExit = true;
+                    return;
+                }
+                onProcessFinished(code);
+            });
+}
+
+bool CodexAppServerSession::attachProcess(const QString &key, const QJsonObject &meta,
+                                          qint64 stdoutOffset, qint64 stderrOffset, qint64 pid)
+{
+    stop();
+    resetProtocolState();
+    m_processMeta = meta;
+    m_processKey = meta.value(QStringLiteral("processKey")).toString();
+    m_hostSessionId = meta.value(QStringLiteral("sessionId")).toString();
+    m_cwd = meta.value(QStringLiteral("cwd")).toString();
+    m_initialPrompt = meta.value(QStringLiteral("initialPrompt")).toString();
+    m_resumeThreadId = meta.value(QStringLiteral("resumeThreadId")).toString();
+    m_resumeFallbackPrompt = meta.value(QStringLiteral("resumeFallbackPrompt")).toString();
+    m_model = meta.value(QStringLiteral("model")).toString();
+    m_mode = meta.value(QStringLiteral("mode")).toString();
+    m_effort = meta.value(QStringLiteral("effort")).toString();
+    m_externalCallGate = meta.value(QStringLiteral("externalCallGate")).toBool();
+    m_parseRequested = true;
+    AgentProcess::Options options;
+    options.attachKey = key;
+    options.detachable = true;
+    options.stdoutOffset = stdoutOffset;
+    options.stderrOffset = stderrOffset;
+    options.pid = pid;
+    options.meta = meta;
+    AgentProcess *proc = AgentProcess::create(this, options);
+    if (!proc)
+        return false;
+    m_proc = proc;
+    m_currentKey = key;
+    connectProcess(proc);
+    beginCoreParse(stdoutOffset);
+    return true;
+}
+
+void CodexAppServerSession::beginCoreParse(qint64 after)
+{
+    if (m_currentKey.isEmpty())
+        return;
+    const QString key = m_currentKey;
+    m_coreAttachPending = true;
+    m_storedOffset = qMax<qint64>(0, after);
+    QPointer<CodexAppServerSession> guard(this);
+    forkmesh::coreagentrun::subscribe(key, this, [guard, key](const QString &event, const QJsonObject &data) {
+        if (guard && guard->m_currentKey == key)
+            guard->onCoreRunEvent(event, data);
+    });
+    forkmesh::coreagentrun::attach(
+        key, m_storedOffset, this,
+        [guard, key](bool ok, const QJsonObject &state, const QString &) {
+            if (!guard || guard->m_currentKey != key)
+                return;
+            guard->m_coreAttachPending = false;
+            guard->m_coreParsed = ok;
+            if (ok) {
+                guard->applyCoreState(state);
+                return;
+            }
+            forkmesh::coreagentrun::unsubscribe(key, guard);
+            if (guard->m_proc)
+                guard->m_proc->setIdle(true);
+            if (guard->m_hasDeferredExit) {
+                guard->m_hasDeferredExit = false;
+                guard->onProcessFinished(guard->m_deferredExit);
+            }
+        });
+}
+
+void CodexAppServerSession::endCoreParse()
+{
+    if (!m_coreParsed && !m_coreAttachPending)
+        return;
+    if (!m_currentKey.isEmpty()) {
+        forkmesh::coreagentrun::unsubscribe(m_currentKey, this);
+        forkmesh::coreagentrun::detach(m_currentKey);
+    }
+    m_coreParsed = false;
+    m_coreAttachPending = false;
+    m_hasDeferredExit = false;
+}
+
+void CodexAppServerSession::applyCoreState(const QJsonObject &state)
+{
+    if (state.contains(QStringLiteral("threadId"))) {
+        const QString thread = state.value(QStringLiteral("threadId")).toString();
+        if (!thread.isEmpty())
+            m_threadId = thread;
+    }
+    if (state.contains(QStringLiteral("turnActive")))
+        m_turnActive = state.value(QStringLiteral("turnActive")).toBool();
+    if (state.contains(QStringLiteral("threadReady")))
+        m_threadReady = state.value(QStringLiteral("threadReady")).toBool();
+    if (state.contains(QStringLiteral("pendingRequests"))) {
+        m_coreTokens.clear();
+        for (const QJsonValue &token : state.value(QStringLiteral("pendingRequests")).toArray())
+            m_coreTokens.insert(token.toString());
+    }
+}
+
+bool CodexAppServerSession::coreOp(const QString &op, QJsonObject params)
+{
+    if (!m_coreParsed && !m_coreAttachPending)
+        return false;
+    params.insert(QStringLiteral("key"), m_currentKey);
+    params.insert(QStringLiteral("op"), op);
+    QPointer<CodexAppServerSession> guard(this);
+    const QString key = m_currentKey;
+    forkmesh::coreagentrun::request(
+        QStringLiteral("core.agentrun.codex"), params, this,
+        [guard, key](bool ok, const QJsonObject &state, const QString &) {
+            if (ok && guard && guard->m_currentKey == key)
+                guard->applyCoreState(state);
+        });
+    return true;
+}
+
+void CodexAppServerSession::onCoreRunEvent(const QString &event, const QJsonObject &data)
+{
+    if (event == QLatin1String("core.agentrun.reconnected")) {
+        if (m_coreParsed) {
+            m_coreParsed = false;
+            beginCoreParse(m_storedOffset);
+        }
+        return;
+    }
+    if (event == QLatin1String("core.agentrun.exit")) {
+        if (!m_coreParsed && !m_coreAttachPending)
+            return;
+        m_hasDeferredExit = false;
+        finishFromCore(data.value(QStringLiteral("code")).toInt());
+        return;
+    }
+    if (event != QLatin1String("core.agentrun.event"))
+        return;
+    const QString errorText = data.value(QStringLiteral("stderr")).toString();
+    if (!errorText.isEmpty())
+        emit stderrText(errorText);
+    if (data.contains(QStringLiteral("so"))) {
+        const qint64 so = qint64(data.value(QStringLiteral("so")).toDouble());
+        if (so > m_storedOffset)
+            m_storedOffset = so;
+    }
+    const QString raw = data.value(QStringLiteral("raw")).toString();
+    if (!raw.isEmpty())
+        emit rawLine(raw);
+    if (data.contains(QStringLiteral("models"))) {
+        m_models = data.value(QStringLiteral("models")).toArray();
+        emit modelsListed(m_models);
+    }
+    const QString line = data.value(QStringLiteral("line")).toString();
+    if (line.isEmpty())
+        return;
+    const QJsonObject ev = QJsonDocument::fromJson(line.toUtf8()).object();
+    if (ev.isEmpty())
+        return;
+    const QString type = ev.value(QStringLiteral("type")).toString();
+    if (type == AgentRuntimeEventTypes::PermissionRequested) {
+        m_coreTokens.insert(ev.value(QStringLiteral("requestId")).toString());
+    } else if (type == QLatin1String("assistant")) {
+        for (const QJsonValue &block : ev.value(QStringLiteral("message"))
+                                           .toObject()
+                                           .value(QStringLiteral("content"))
+                                           .toArray()) {
+            const QJsonObject b = block.toObject();
+            if (b.value(QStringLiteral("name")).toString() == QLatin1String("AskUserQuestion"))
+                m_coreTokens.insert(b.value(QStringLiteral("id")).toString());
+        }
+    } else if (type == QLatin1String("system") &&
+               ev.value(QStringLiteral("subtype")).toString() == QLatin1String("init")) {
+        m_threadId = ev.value(QStringLiteral("session_id")).toString();
+        m_threadReady = true;
+    } else if (type == QLatin1String("result")) {
+        m_turnActive = false;
+        if (m_proc)
+            m_proc->setIdle(true);
+    }
+    if (data.value(QStringLiteral("transient")).toBool()) {
+        emit this->event(ev);
+        return;
+    }
+    const forkmesh::coreagentrun::StoredDelivery delivery(&ev);
+    emit this->event(ev);
+}
+
+void CodexAppServerSession::finishFromCore(int exitCode)
+{
+    AgentProcess *proc = m_proc;
+    endCoreParse();
+    m_proc = nullptr;
+    if (proc) {
+        proc->disconnect(this);
+        proc->deleteLater();
+    }
+    emit finished(exitCode);
+}
+
 void CodexAppServerSession::onProcessStarted()
 {
+    if (m_parseRequested && !m_coreParsed && !m_coreAttachPending && m_proc) {
+        if (m_proc->parsedByCore()) {
+            beginCoreParse(0);
+            m_turnActive = !m_initialPrompt.trimmed().isEmpty();
+            emit started();
+            return;
+        }
+        m_proc->setIdle(true);
+    }
     emit started();
     sendRequest(
         QStringLiteral("initialize"),
@@ -394,7 +647,7 @@ void CodexAppServerSession::onProcessStarted()
 
 void CodexAppServerSession::onProcessFinished(int exitCode)
 {
-    QProcess *proc = m_proc;
+    AgentProcess *proc = m_proc;
     onStdout(true);
     onStderr();
     m_proc = nullptr;
@@ -409,6 +662,11 @@ bool CodexAppServerSession::sendUserText(const QString &text)
         return true;
     if (!running())
         return false;
+    if (m_coreParsed || m_coreAttachPending) {
+        m_turnActive = true;
+        m_proc->setIdle(false);
+        return coreOp(QStringLiteral("send"), {{QStringLiteral("text"), text}});
+    }
     if (!m_threadReady || (m_turnActive && m_turnId.isEmpty())) {
         m_queuedUserTexts.append(text);
         return true;
@@ -455,11 +713,21 @@ void CodexAppServerSession::setTurnOptions(const QString &model,
     }
     m_mode = mode;
     m_effort = effort.trimmed();
+    coreOp(QStringLiteral("options"), {{QStringLiteral("model"), model},
+                                       {QStringLiteral("mode"), mode},
+                                       {QStringLiteral("effort"), effort}});
 }
 
 bool CodexAppServerSession::respondToRequest(const QString &token,
                                              const QString &answer)
 {
+    if (m_coreParsed || m_coreAttachPending) {
+        if (!m_coreTokens.contains(token) || !acceptsInput())
+            return false;
+        m_coreTokens.remove(token);
+        return coreOp(QStringLiteral("respond"), {{QStringLiteral("token"), token},
+                                                  {QStringLiteral("answer"), answer}});
+    }
     auto it = m_pendingServerRequests.find(token);
     if (it == m_pendingServerRequests.end() || !acceptsInput())
         return false;
@@ -561,6 +829,7 @@ bool CodexAppServerSession::respondToRequest(const QString &token,
 void CodexAppServerSession::stop()
 {
     stopProcess(/*finalTeardown=*/false);
+    endCoreParse();
 }
 
 // code-health: allow(blocking-wait) waits only on the finalTeardown path from the destructor, bounded to 2.5 s
@@ -568,8 +837,15 @@ void CodexAppServerSession::stopProcess(bool finalTeardown)
 {
     if (!m_proc)
         return;
+    if (finalTeardown && m_coreParsed && m_proc->keepsRunningAfterQuit()) {
+        AgentProcess *kept = m_proc;
+        m_proc = nullptr;
+        kept->disconnect(this);
+        delete kept;
+        return;
+    }
     interrupt();
-    QProcess *proc = m_proc;
+    AgentProcess *proc = m_proc;
     m_proc = nullptr;
     proc->disconnect(this);
     if (finalTeardown) {
@@ -593,7 +869,7 @@ void CodexAppServerSession::stopProcess(bool finalTeardown)
         proc->deleteLater();
         return;
     }
-    connect(proc, &QProcess::finished, proc, &QObject::deleteLater);
+    connect(proc, &AgentProcess::finished, proc, &QObject::deleteLater);
     proc->closeWriteChannel();
     proc->terminate();
     QTimer::singleShot(1500, proc, [proc] {
@@ -604,6 +880,11 @@ void CodexAppServerSession::stopProcess(bool finalTeardown)
 
 void CodexAppServerSession::interrupt()
 {
+    if (m_coreParsed || m_coreAttachPending) {
+        if (running() && m_turnActive)
+            coreOp(QStringLiteral("interrupt"));
+        return;
+    }
     if (running() && m_turnActive && !m_threadId.isEmpty() &&
         !m_turnId.isEmpty()) {
         sendRequest(QStringLiteral("turn/interrupt"),
@@ -752,7 +1033,7 @@ void CodexAppServerSession::handleResponse(const QJsonObject &message)
             // A session cannot recover from a failed handshake or a fresh-thread
             // launch failure. Preserve the normal finished() path so the host
             // clears its Running state and reports the launch failure.
-            QProcess *proc = m_proc;
+            AgentProcess *proc = m_proc;
             if (proc) {
                 proc->closeWriteChannel();
                 proc->terminate();

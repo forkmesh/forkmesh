@@ -306,6 +306,8 @@ public:
     bool finishConflictMerge(int number, QString *error = nullptr);
     void abortConflictMerge();
     bool conflictMergeInProgress() const;
+    static bool conflictSessionLive(const QString &workTree);
+    bool purgeMergedPullPayload(int number, QString *error = nullptr) const;
 
     bool startPullFileEdit(int number, const QString &relPath, QString *content,
                            QString *error = nullptr);

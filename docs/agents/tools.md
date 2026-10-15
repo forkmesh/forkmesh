@@ -68,7 +68,7 @@ background waits instead of foreground sleeps, test output piped through
 `tail`), and the guardrail wording names the folders the lock allows.
 
 The tool efficiency ledger (`AgentToolImprovementLog.cpp`, mirrored in
-`desktop_go_new/internal/insights/`) classifies every tool result into
+`desktop/core/internal/insights/`) classifies every tool result into
 outcomes, empty probes, oversized results and known refusals, each with a
 suggested fix; finished runs are logged to `agent-runs.jsonl`
 (`AgentRunEfficiencyLog`).

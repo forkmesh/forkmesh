@@ -87,6 +87,10 @@ int MainWindow::pushRefsToManagedHosts(
     std::function<void(int succeeded, int failed)> onFinished,
     bool reconcileArtifacts, bool pruneRefs)
 {
+    if (int targets = 0; pushRefsToManagedHostsThroughCore(
+            index, wakeIfUnchanged, releaseTag, releaseArtifactHashes, onFinished,
+            reconcileArtifacts, pruneRefs, &targets))
+        return targets;
     const auto finishEmpty = [this, onFinished] {
         if (onFinished) {
             QTimer::singleShot(0, this,
@@ -1202,6 +1206,8 @@ int MainWindow::removeSshMirrorRemotesForNode(const QString &node)
     const QString target = node.trimmed();
     if (target.isEmpty())
         return 0;
+    if (int removed = 0; removeSshMirrorRemotesForNodeThroughCore(target, &removed))
+        return removed;
     loadSshMirrorGatewayHealth();
     // A remote may name the node by its address rather than by any alias, and
     // the saved host is the only place that mapping lives. Read it before the
@@ -1294,6 +1300,9 @@ int MainWindow::pushToSshMirrorRemotes(int index, bool userInitiated,
     };
     if (index < 0 || index >= m_repositories.size())
         return idle(QStringLiteral("the repository is no longer open"));
+    if (int targets = 0; pushToSshMirrorRemotesThroughCore(index, userInitiated, releaseTag,
+                                                           idleReason, pruneRefs, &targets))
+        return targets;
     loadSshMirrorGatewayHealth();
     // By value: runGitCapture below pumps the event loop, and a reference into
     // m_repositories can dangle across it (git-pump UAF family).

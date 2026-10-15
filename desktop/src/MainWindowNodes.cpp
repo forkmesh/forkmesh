@@ -1944,6 +1944,8 @@ void MainWindow::deleteMeshNodeCompletely(const QString &node,
         return;
     }
 
+    if (deleteMeshNodeThroughCore(target, nodeId))
+        return;
     m_nodeDeleteInProgress = true;
     m_nodeDeleteTarget = target;
     refreshNodeActionButtons();
@@ -2273,56 +2275,69 @@ void MainWindow::sendMeshNodeDeleteRequest(const QString &node,
         for (const QString &deleted : std::as_const(deletedNames))
             removeSshMirrorRemotesForNode(deleted);
         forgetSavedHostNamed(node);
-        m_deletedMeshNodeNames.unite(deletedNames);
-        for (const QString &deleted : std::as_const(deletedNames)) {
-            // The relay directory/catalog can keep serving its older snapshot
-            // after this process exits. Persist every relay-confirmed alias so
-            // a restart cannot resurrect the deleted row; a genuinely new
-            // catalog publication under that name clears the suppression.
-            recordDeletedMeshNode(deleted);
-            // The Mirror nodes page has its own stale relay sources and its
-            // own ledger; suppress the confirmed aliases there as well.
-            recordDecommissionedMirrorNode(deleted);
-            m_relayOnlineNodes.remove(deleted);
-            m_nodesCatalogInfo.remove(deleted);
-        }
-        for (int i = m_nodeMenuEntries.size() - 1; i >= 0; --i) {
-            if (deletedNames.contains(
-                    m_nodeMenuEntries.at(i).name.trimmed().toLower()))
-                m_nodeMenuEntries.removeAt(i);
-        }
-        m_homeRoster.removeIf([&deletedNames](const MemberInfo &member) {
-            return deletedNames.contains(
-                nodeListIdentityKey(member).trimmed().toLower());
-        });
-        for (MemberInfo &user : m_chatDirectoryUsers) {
-            QStringList nodes = user.nodeName.split(QStringLiteral(", "),
-                                                    Qt::SkipEmptyParts);
-            nodes.removeIf([&deletedNames](const QString &name) {
-                return deletedNames.contains(name.trimmed().toLower());
-            });
-            user.nodeName = nodes.join(QStringLiteral(", "));
-        }
-        m_relayOnlineNodesFetchedMs = 0;
-        m_nodesCatalogFetchedMs = 0;
-        m_chatDirectoryFetchedMs = 0;
-        m_nodeDeleteInProgress = false;
-        m_nodeDeleteTarget.clear();
-        refreshChatUserDirectory();
-        fetchRelayOnlineNodes(true);
-        fetchNodesCatalogInfo(true);
-        refreshNodesTable();
-        refreshNodeActionButtons();
-        const bool alreadyAbsent =
-            response.value(QStringLiteral("alreadyAbsent")).toBool();
-        const QString message = alreadyAbsent
-            ? QStringLiteral("Relay confirmed \"%1\" was already absent; removed its stale local entry.")
-                  .arg(node)
-            : QStringLiteral("3/3 complete — Relay confirmed deletion of \"%1\"; it has been removed from this list.")
-                  .arg(node);
-        setNodeDeleteStatus(message);
-        flashMessage(message);
+        applyRelayConfirmedNodeDeletion(
+            node, deletedNames,
+            response.value(QStringLiteral("alreadyAbsent")).toBool(), true);
     });
+}
+
+void MainWindow::applyRelayConfirmedNodeDeletion(const QString &node,
+                                                 const QSet<QString> &deletedNames,
+                                                 bool alreadyAbsent,
+                                                 bool local)
+{
+    m_deletedMeshNodeNames.unite(deletedNames);
+    for (const QString &deleted : std::as_const(deletedNames)) {
+        // The relay directory/catalog can keep serving its older snapshot
+        // after this process exits. Persist every relay-confirmed alias so
+        // a restart cannot resurrect the deleted row; a genuinely new
+        // catalog publication under that name clears the suppression.
+        if (local)
+            recordDeletedMeshNode(deleted);
+        // The Mirror nodes page has its own stale relay sources and its
+        // own ledger; suppress the confirmed aliases there as well.
+        if (local)
+            recordDecommissionedMirrorNode(deleted);
+        m_relayOnlineNodes.remove(deleted);
+        m_nodesCatalogInfo.remove(deleted);
+    }
+    for (int i = m_nodeMenuEntries.size() - 1; i >= 0; --i) {
+        if (deletedNames.contains(
+                m_nodeMenuEntries.at(i).name.trimmed().toLower()))
+            m_nodeMenuEntries.removeAt(i);
+    }
+    m_homeRoster.removeIf([&deletedNames](const MemberInfo &member) {
+        return deletedNames.contains(
+            nodeListIdentityKey(member).trimmed().toLower());
+    });
+    for (MemberInfo &user : m_chatDirectoryUsers) {
+        QStringList nodes = user.nodeName.split(QStringLiteral(", "),
+                                                Qt::SkipEmptyParts);
+        nodes.removeIf([&deletedNames](const QString &name) {
+            return deletedNames.contains(name.trimmed().toLower());
+        });
+        user.nodeName = nodes.join(QStringLiteral(", "));
+    }
+    m_relayOnlineNodesFetchedMs = 0;
+    m_nodesCatalogFetchedMs = 0;
+    m_chatDirectoryFetchedMs = 0;
+    m_nodeDeleteInProgress = false;
+    m_nodeDeleteTarget.clear();
+    refreshChatUserDirectory();
+    fetchRelayOnlineNodes(true);
+    fetchNodesCatalogInfo(true);
+    refreshNodesTable();
+    refreshNodeActionButtons();
+    const QString message = alreadyAbsent
+        ? QStringLiteral("Relay confirmed \"%1\" was already absent; removed its stale local entry.")
+              .arg(node)
+        : QStringLiteral("3/3 complete — Relay confirmed deletion of \"%1\"; it has been removed from this list.")
+              .arg(node);
+    if (local)
+        setNodeDeleteStatus(message);
+    else if (m_nodesStatus)
+        m_nodesStatus->setText(message);
+    flashMessage(message);
 }
 
 void MainWindow::forgetSavedHostNamed(const QString &node)

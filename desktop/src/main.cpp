@@ -11,6 +11,7 @@
 #endif
 #include "ForkMeshIdentity.h"
 #include "MainWindow.h"
+#include "CoreMirrorActions.h"
 #include "MirrorActionsConfiguration.h"
 #include "PlatformLogFilter.h"
 #include "PublicMirrorRuntime.h"
@@ -655,8 +656,10 @@ int main(int argc, char *argv[])
     if (rawArgs.contains(QStringLiteral("--materialize-public-mirror")))
         return runPublicMirrorMaterializer(argc, argv);
     if (rawArgs.contains(
-            QStringLiteral("--configure-mirror-actions-stdin")))
+            QStringLiteral("--configure-mirror-actions-stdin"))) {
+        forkmesh::coremirroractions::install();
         return forkmesh::mirror_actions::runConfigurationStdin(argc, argv);
+    }
 
     forkmesh::logStartupTrace(
         QStringLiteral("launch mode resolved: desktop; Qt platform=%1")

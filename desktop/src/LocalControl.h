@@ -219,6 +219,34 @@ public:
     // An authenticated connection went away (host log streams end with it).
     std::function<void(int connectionId)> onConnectionClosed;
 
+    struct CoreBridge {
+        std::function<bool(const QString &method, const QJsonObject &params)> notify;
+        std::function<void(const QString &method, const QJsonObject &params,
+                           std::function<void(bool ok, const QJsonObject &result,
+                                              const QString &error)> done)>
+            request;
+    };
+    static constexpr int kCoreConnectionBase = 1 << 24;
+    void attachCore(CoreBridge bridge);
+    void detachCore();
+    bool coreAttached() const { return m_coreAttached; }
+    static bool isCoreConnection(int connectionId)
+    {
+        return connectionId >= kCoreConnectionBase;
+    }
+    void coreOpened(const QJsonObject &params);
+    void coreClosed(const QJsonObject &params);
+    void coreRequest(const QJsonObject &params);
+    void corePairing(const QJsonObject &params);
+    void corePairingClosed(const QJsonObject &params);
+    void coreDevices(const QJsonObject &params);
+    void coreFileReceived(const QJsonObject &params);
+    void coreAccountCheck(const QJsonObject &params,
+                          std::function<void(const QString &verdict)> done);
+    bool coreRelaySend(const QJsonObject &frame);
+    static Device deviceFromJson(const QJsonObject &object);
+    static QJsonObject deviceToJson(const Device &device);
+
 private:
     QHash<QString, FamilyHandler> m_families;
     enum class State { AwaitAuth, Checking, Pending, Paired };
@@ -258,8 +286,11 @@ private:
         qint64 lastHeardMs = 0;
         qint64 accountCheckedMs = 0;
         bool accountCheckInFlight = false;
-        bool relayed() const { return !relaySession.isEmpty(); }
+        bool viaCore = false;
+        bool coreRelayed = false;
+        bool relayed() const { return viaCore ? coreRelayed : !relaySession.isEmpty(); }
     };
+    Connection *coreConnection(const QJsonObject &params, bool create);
 
     Connection *connection(int id);
     const Connection *connection(int id) const;
@@ -314,4 +345,8 @@ private:
     QStringList m_relayUndelivered;
     QStringList m_relayToldGone;
     QTimer *m_maintenanceTimer = nullptr;
+    CoreBridge m_core;
+    bool m_coreAttached = false;
+    QHash<QString, Device> m_coreDevices;
+    QList<Device> m_coreConnected;
 };

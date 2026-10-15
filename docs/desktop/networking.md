@@ -157,6 +157,11 @@ uninstall, Actions, size map, agent CLI install and sign-in, fleet binary
 upload). All authenticate with the shared fleet key (`sharedHostKeyPath()`).
 Passwords are only a fallback and travel via environment or stdin, never argv.
 
+When `forkmesh-core` is attached, the saved-host probes and every
+`runMirrorNodeSsh()` command run in the core (`desktop/core/internal/hosts`,
+same SSH command line), as do the phone's `hosts.*` and most of `fleet.*`. See
+[Hosts and fleet](core.md#hosts-and-fleet).
+
 ### Runners
 
 Network → Hosts lists the app's cloud agent runners (`hostsRunnersTable`,
@@ -236,6 +241,9 @@ sealed to the recipient's linked devices
 the room are woken via push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).
 The transport diagnostics line (`LocalMeshNode::diagnosticsLine`) is behind the
 pulse button in the `#mesh` header and refreshes only while shown.
+With `forkmesh-core` attached the room runs in the core
+(`desktop/core/internal/mesh`) and `LocalMeshNode` is a facade over it
+([core.md](core.md#local-mesh)).
 
 ### Over Bluetooth
 
@@ -308,6 +316,9 @@ moves files, without relaying content in clear.
 - Relayed frames go through a sliding-window pacer (`LocalControlStream.h`
   `SendBudget`) at 90% of the relay's advertised `controlBudget`. Both sockets
   set `TCP_NODELAY`.
+- With `forkmesh-core` attached the relay socket runs in the core with the
+  same constants and stays up while the desktop restarts
+  ([core.md](core.md#relay-socket)).
 - New request methods go in `MainWindow::handleLocalControlRequest`; agent
   changes push `agents.changed`, transcripts stream via `agents.follow` /
   `agents.output` ([../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).

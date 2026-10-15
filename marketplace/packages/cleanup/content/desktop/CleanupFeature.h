@@ -42,6 +42,7 @@ public:
 private:
     void buildPage();
     void cancelScan();
+    void startNativeScan(quint64 generation, const Context &context);
     void applyScan(const ScanResult &result);
     void render();
     bool visible(const Item &item) const;
@@ -59,6 +60,7 @@ private:
     void runPlan(const Plan &plan);
     void removeNextWorktree();
     void finishDeletion();
+    void completeDeletion(bool logged);
     void trimCcache();
 
     QString m_packageId;
@@ -78,6 +80,10 @@ private:
     QList<Outcome> m_outcomes;
     ProcessSnapshot m_deleteProcesses;
     int m_planSkipped = 0;
+    bool m_coreRecheck = false;
+    QHash<QString, QString> m_coreRefusals;
+    qsizetype m_coreLogged = -1;
+    bool m_coreLogOk = true;
 
     QLabel *m_summary = nullptr;
     QLabel *m_status = nullptr;

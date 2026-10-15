@@ -107,6 +107,8 @@ public:
     QList<ActionRun> loadAllRuns() const;    // newest first
     ActionRun createRun(ActionRun run);      // assigns id + timestamps, persists
     bool saveRun(const ActionRun &run) const; // rewrite meta.json
+    void adoptRun(const ActionRun &run) const;
+    QString rootDir() const { return m_root; }
     bool deleteRun(const ActionRun &run) const; // remove the run's dir (meta+log)
     // Same, for a batch: forgets them immediately, unlinks the trees on a worker.
     void deleteRunsInBackground(const QList<ActionRun> &runs) const;
