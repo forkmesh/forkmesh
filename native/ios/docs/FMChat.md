@@ -176,9 +176,12 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   (`ChatTextField`, a UIKit text view so Paste offers images) go through the same path.
 - **Group management** (`MessagesDetailsScreen`): name, photo, people, background, photos,
   retention and encryption summary; leave a relay private channel; delete history locally.
-- **Live touch and drawing** in direct messages: `DirectLiveEngine` batches taps, strokes and
-  motion samples into sealed `live` frames at the relay-announced pace (wire format in
-  `docs/app/chat-private-rooms.md`).
+- **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
+  strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
+  in `docs/app/chat-private-rooms.md`). While a direct conversation is visible, its motion feed
+  shares phone direction automatically and an impact sends a centred taptic tap; the peer's
+  avatar shifts, turns and changes depth with that direction. The composer control only opens
+  and closes the coloured drawing canvas.
 
 ## Workspace features
 

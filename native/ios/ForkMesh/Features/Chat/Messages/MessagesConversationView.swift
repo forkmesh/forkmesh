@@ -10,6 +10,7 @@ import UIKit
 
 struct MessagesConversationView<Drawer: View>: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.scenePhase) private var scenePhase
     let hub: ChatHub
     let onBack: (() -> Void)?
     let showsHeader: Bool
@@ -24,7 +25,7 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var tapbackTarget: ChatRow?
     @State private var viewing: MessagesPhotoBox?
     @State private var lastSeenId: String = ""
-    @State private var touching: Bool = false
+    @State private var drawing: Bool = false
     @State private var viewOnceOpen: ViewOnceEntry?
     @State private var jumpTarget: String?
 
@@ -46,6 +47,16 @@ struct MessagesConversationView<Drawer: View>: View {
                             .padding(.top, FmSpace.x2)
                     }
                 }
+                .overlay {
+                    if drawing, let live = hub.live, hub.inDirect {
+                        MessagesLiveTouchSurface(
+                            engine: live, conversation: conversation,
+                            onDone: { withAnimation(.easeOut(duration: 0.2)) { drawing = false } }
+                        )
+                        .environment(\.colorScheme, palette.dark ? .dark : .light)
+                        .transition(.opacity)
+                    }
+                }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if showsHeader {
                         header(palette).transition(.move(edge: .top).combined(with: .opacity))
@@ -58,7 +69,7 @@ struct MessagesConversationView<Drawer: View>: View {
                                 .padding(.horizontal, FmSpace.x4)
                         }
                         MessagesComposer(
-                            hub: hub, colors: palette, draft: $draft, focused: $focused, touching: $touching, onSend: onSend)
+                            hub: hub, colors: palette, draft: $draft, focused: $focused, drawing: $drawing, onSend: onSend)
                     }
                 }
                 .background {
@@ -74,22 +85,22 @@ struct MessagesConversationView<Drawer: View>: View {
             if let target = tapbackTarget {
                 tapbackOverlay(target)
             }
-            if touching, let live = hub.live, hub.inDirect {
-                MessagesLiveTouchSurface(
-                    engine: live, conversation: conversation, partner: hub.conversationName,
-                    onDone: { withAnimation(.easeOut(duration: 0.2)) { touching = false } }
-                )
-                .environment(\.colorScheme, palette.dark ? .dark : .light)
-                .transition(.opacity)
-                .zIndex(2)
-            }
             drawer
         }
         .onChange(of: conversation) { (previous: String, _: String) in
-            touching = false
+            drawing = false
             stopSharing(previous)
+            startSharing(conversation)
         }
+        .onAppear { startSharing(conversation) }
         .onDisappear { stopSharing(conversation) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                startSharing(conversation)
+            } else {
+                stopSharing(conversation)
+            }
+        }
         .sheet(isPresented: $details) {
             MessagesDetailsScreen(hub: hub, onRoute: { route in
                 details = false
@@ -191,6 +202,12 @@ struct MessagesConversationView<Drawer: View>: View {
         guard let live = hub.live else { return }
         live.setSharingMotion(conversation, false)
         if live.sharingMotion.isEmpty { DirectLiveMotionFeed.shared.stop() }
+    }
+
+    private func startSharing(_ conversation: String) {
+        guard scenePhase == .active, let live = hub.live, DirectLiveMotionFeed.shared.available else { return }
+        live.setSharingMotion(conversation, true)
+        DirectLiveMotionFeed.shared.start(live)
     }
 
     private func scrollToEnd(_ proxy: ScrollViewProxy, _ items: [ChatConversationItem], animated: Bool) {
@@ -403,7 +420,7 @@ struct MessagesComposer: View {
     let colors: MessagesColors
     @Binding var draft: String
     @Binding var focused: Bool
-    @Binding var touching: Bool
+    @Binding var drawing: Bool
     let onSend: () -> Void
     @State private var photos: [PhotosPickerItem] = []
     @State private var choosingPhotos: Bool = false
@@ -488,7 +505,7 @@ struct MessagesComposer: View {
     private var bar: some View {
         HStack(alignment: .bottom, spacing: FmSpace.x2) {
             plusMenu
-            DirectLiveTouchButton(hub: hub, dark: colors.dark, touching: $touching, focused: $focused)
+            DirectLiveTouchButton(hub: hub, dark: colors.dark, drawing: $drawing, focused: $focused)
             if recorder.recording {
                 recordingField
             } else {
