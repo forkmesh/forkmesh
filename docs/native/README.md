@@ -240,6 +240,15 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   that did not change.
 - The performance monitor ignores frame gaps that reach back into the
   background.
+- Replies that bypass `ApiService` follow the same 16 KB rule: the packages
+  transport (`ApiPackagesTransport.parse`) parses large CRM, Market and
+  marketing replies off the main actor, and `PackagesClient.crm` builds
+  `CrmOrganizationData` in a detached task. A large organization's CRM read
+  used to parse and map every contact on the main thread.
+- Anything that walks the view or accessibility tree (the Genie spider and the
+  aquarium, `GenieScreenScan`) runs on the main thread and can cost more than
+  it measures: asking SwiftUI for its accessibility elements builds them. Scan
+  on page and tab changes, then rarely, and cache everything one walk finds.
 
 ## Related docs
 

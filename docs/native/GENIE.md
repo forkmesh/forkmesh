@@ -131,7 +131,8 @@ picked up.
   `GenieClearance.place` scores spots 6 pt apart along the surfaces (a 14 pt
   grid on the glass) and moves only when that halves the coverage.
 - Every wander target goes through `place`; the overlay rechecks every 1.5 s
-  while idle (`GenieCrawler.keepClear`).
+  while idle (`GenieCrawler.keepClear`). The recheck reads the last scan's
+  buttons and bars and does not walk the views itself.
 - Buttons are views marked `.genieKeepsClear()`, every visible UIKit
   navigation bar and toolbar, and every button, link, tab, text field,
   switch, slider and picture the screen scanner finds
@@ -143,10 +144,22 @@ picked up.
   accessibility elements (how SwiftUI exposes controls), maps traits to kinds
   (`GenieLandmarks.kind`), skips its own views and the fish (`genie`,
   `shell-genie`, `aquarium` identifiers), and keeps at most 300 elements
-  (2,400 nodes, 48 deep). Scans run on the main thread inside
-  `timeSync("genie.screenScan")`; time-based rescans wait until the scan's cost
-  is at most 2% of the interval (`GenieLandmarks.spacing(afterScanTaking:)`,
-  2 s to 30 s). Tab or page changes rescan at once.
+  (2,400 nodes, 48 deep). The same scan finds the visible navigation bars and
+  toolbars (`GenieKeepClear.bars(in:)`) and caches both. Scans run on the main
+  thread inside `timeSync("genie.screenScan")`, which times the walk, the
+  tidy-up and the bar search together. `GenieScanSchedule` decides when to
+  rescan: at once after a tab or page change (`invalidate`), otherwise when
+  the scan's cost is at most 1% of the interval
+  (`GenieLandmarks.spacing(afterScanTaking:)`, 10 s to 60 s). The aquarium
+  asks every 2 s (`GenieLandmarks.poll`) and gets the cached scan between
+  rescans.
+- Why (2026-10-15, build 1.4.1+235): an iPhone 15 Pro Max on the Agents tab
+  logged a 100 to 140 ms main-thread hitch every 2 to 3 s with nothing in
+  flight. The 1.5 s keep-clear tick walked every UIView for bars on each tick
+  and rescanned the accessibility tree whenever 2 s had passed. Only the
+  accessibility walk was timed, so the 2% backoff never saw the bar walk, the
+  tidy-up, or the accessibility nodes SwiftUI builds when the walk asks for
+  them.
 - **Plays** (`GenieScreenPlayer.run`): every 16 to 34 s while idle, one play
   from a shuffled bag (`GenieScreenPlay`): still plays performed from a perch
   clear of buttons (look, read, wave, point, sniff, silk thread and others),

@@ -187,6 +187,13 @@ public final class ApiPackagesTransport: PackagesTransport {
         if method != "GET" { headers["Origin"] = api.gitOrigin }
         let response = try await api.rawRequest(
             method, api.url(path, query), headers: headers, body: body.map { JSON.encodeData(.object($0)) })
-        return PackagesReply(status: response.status, json: JSON.parseObject(response.body))
+        return PackagesReply(status: response.status, json: await Self.parse(response.body))
+    }
+
+    nonisolated static let detachedParseBytes: Int = 16 * 1024
+
+    nonisolated static func parse(_ body: Data) async -> JSONObject {
+        if body.count < detachedParseBytes { return JSON.parseObject(body) }
+        return await Task.detached(priority: .userInitiated) { JSON.parseObject(body) }.value
     }
 }
