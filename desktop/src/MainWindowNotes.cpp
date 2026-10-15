@@ -14,6 +14,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileInfo>
+#include <QUrl>
 #include <QFile>
 #include <QFontInfo>
 #include <QFontMetrics>
@@ -822,6 +824,49 @@ void MainWindow::createNote()
     m_noteDirty = true;
     m_noteTitle->selectAll();
     m_noteTitle->setFocus();
+}
+
+bool MainWindow::takeQuickAddNote(const QString &text)
+{
+    QString markdown = text.trimmed();
+    for (const QString &attachment : std::as_const(m_quickAddImages)) {
+        if (!markdown.isEmpty())
+            markdown += QStringLiteral("\n\n");
+        markdown += QStringLiteral("![%1](%2)")
+                        .arg(QFileInfo(attachment).fileName(),
+                             QUrl::fromLocalFile(attachment).toString());
+    }
+    if (markdown.isEmpty()) {
+        flashMessage(QStringLiteral("Type something before taking a note."), true,
+                     QString(), forkmesh::kLocalOperationNoticeKind);
+        return false;
+    }
+    QString title = text.trimmed().section(QLatin1Char('\n'), 0, 0).simplified();
+    if (title.isEmpty())
+        title = QStringLiteral("Untitled note");
+    if (title.size() > 120)
+        title = title.left(119).trimmed() + QString::fromUtf8("\xE2\x80\xA6");
+    QJsonArray notes = readLocalNotes();
+    const QJsonObject note = localSnapshot(
+        QJsonObject{{QStringLiteral("id"), newNoteId()}}, title, markdown,
+        QStringLiteral("local"));
+    notes.prepend(note);
+    if (!writeLocalNotes(notes)) {
+        flashMessage(QStringLiteral("Could not save the note to %1")
+                         .arg(QDir::toNativeSeparators(notesFilePath())),
+                     true);
+        return false;
+    }
+    m_localNotes = notes;
+    if (m_notesList)
+        renderNotesList(m_selectedNote.value(QStringLiteral("id")).toString());
+    nativePackageSearchIndexChanged();
+    if (m_issueQuickAdd)
+        m_issueQuickAdd->clear();
+    clearQuickAddImages();
+    flashMessage(QStringLiteral("Note saved on this computer: %1").arg(title),
+                 false, QString(), forkmesh::kLocalOperationNoticeKind);
+    return true;
 }
 
 void MainWindow::saveNote()
