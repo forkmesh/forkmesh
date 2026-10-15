@@ -241,12 +241,14 @@ messages"). On iOS they live in `DirectMessageService`:
 
 ## Message text in push notifications
 
-The push itself carries no message text. A DM push carries `ref`, `keyVersion` and
-`conversation`; a channel push `channelId` and `ref`. The notification service extension fetches
-the still-encrypted frame with the account session
+The push itself carries no plaintext. A DM push carries `ref`, `keyVersion`, `conversation` and,
+when it fits in 4 KB, the sealed `frame`; a channel push `channelId` and `ref`. The notification
+service extension asks with the account session for the room passphrase and the stored frame
 (`GET /api/chat/direct-messages/<id>/pending?ref=` or `/api/chat/channels/<id>/pending?ref=`,
-side-effect free on the server), decrypts it on the device and shows sender and text. Any failure
-leaves the server's generic alert. The extension never acknowledges, marks read or replies.
+side-effect free on the server), decrypts on the device and shows sender and text. When the
+stored DM row is already gone (the desktop received and acknowledged it first, which is the usual
+case) the route answers with an empty `frame` and `PushChatOpener.withPushedFrame` uses the one the
+push carried. Any failure leaves the server's fallback alert. The extension never acknowledges, marks read or replies.
 
 The one thing it sends is a delivery receipt: for every DM push, whatever the preview mode, it
 posts `POST /api/chat/direct-messages/<id>/delivered?ref=` (`PushChatRequest.deliveredPath`) so the
@@ -274,10 +276,18 @@ The extension reads the device key named in the shared push credential
 rooms; signaling rides the DM room's sealed socket (`direct.sendCallFrame`, `onCallFrame`).
 Missed calls post the same "Missed audio/video call" line as the web.
 
-- **Media.** `WebCallPeerFactory` loads `direct-call.html` into a `WKWebView` with an `https://`
-  base URL (a secure context for `getUserMedia`) and drives it through the `fmCall` message
-  handler. Camera and microphone are granted only to that origin, after the system permission
-  prompt. `app/tools/sync_native_call_faces.py` generates the page for both apps;
+- **Media.** `WebCallPeerFactory` loads `direct-call.html` into a `WKWebView` with the base URL
+  `https://call.forkmesh.com/` (a secure context for `getUserMedia`) and drives it through the
+  `fmCall` message handler. The page is inlined and never fetched from that host; the host is
+  only what WebKit names if it ever shows its own prompt, so it is a real ForkMesh domain rather
+  than `.invalid`. Camera and microphone are granted only to that origin, after the one-time
+  system permission prompt, by the `WKUIDelegate` method
+  `webView(_:decideMediaCapturePermissionsFor:initiatedBy:type:) async`. That is the Swift name
+  of the async form; the older spelling `requestMediaCapturePermissionFor:initiatedByFrame:`
+  without a `decisionHandler` matches nothing (the compiler only warns "nearly matches"), so
+  WebKit fell back to asking "Allow call.forkmesh.invalid to use your microphone?" on every
+  call. `FaceChangerPage` uses the same method. `app/tools/sync_native_call_faces.py` generates
+  the page for both apps;
   `app/tests/test_chat_call_faces.py` fails when they drift.
 - **Faces, voices and backgrounds** are engine state saved under `chat.callFace`,
   `chat.callVoice` and `chat.callBackground` (custom images in Application Support with complete

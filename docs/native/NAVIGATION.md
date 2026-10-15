@@ -81,7 +81,18 @@ folder is one slot); Home is always one of them (`ShellBarPrefs.keep`).
   `ShellBarSettingsSheet`): shape (capsule, panel, squares, circles, icons
   only), background (glass, clear, tinted, solid), corners, spacing, width,
   icon style and size, labels, selected-icon mark, slot count, counts,
-  activity and frequent-use glow. The default writes no key.
+  activity, badge look (`ShellBarMarks`) and frequent-use glow. The default
+  writes no key.
+- **Badge look** (`ShellBarStyle.marks`). `home` (default) draws bar badges
+  and activity exactly as `ShellHomeIcon` does, so the bar matches the grid
+  above it: solid blue `ShellHomeCountMark` pills anchored inside the icon's
+  top-right corner, the heartbeat count mirrored on the top-left, and
+  `ShellHomeActivityRing` tracing the tile (a halo for untiled icons). `plain`
+  keeps the older bare blue numbers beside the glyph. Capsule and panel bars
+  clip their content, so on them the pill is lowered until it overhangs the
+  glyph by no more than 6 pt. Home-style marks became the default after the
+  operator asked for the bar to look like the grid (2026-10-15); saves without
+  the key get it.
 
 **Home** (`ShellPage.home`, `ShellHome`) is the icon grid of every
 destination, in sections, with counts and activity:

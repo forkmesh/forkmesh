@@ -129,8 +129,8 @@ final class FaceChangerPage: NSObject, WKUIDelegate, WKNavigationDelegate {
     }
 
     func webView(
-        _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-        initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType
+        _ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType
     ) async -> WKPermissionDecision {
         isOwnOrigin(origin) ? .grant : .deny
     }

@@ -737,8 +737,10 @@ def test_only_new_messages_raise_the_direct_unread_count():
     _relay(room_type, [alice, bob], alice, _chat_frame(data="new"))
     assert namespace["_retained"] == [(DIRECT, ALICE)]
     ref = _kind(bob, "cipher")[-1]["ref"]
-    assert namespace["_retained_handles"] == [
-        {"ref": ref, "key_version": 1}]
+    handles = namespace["_retained_handles"]
+    assert [{k: v for k, v in h.items() if k != "frame"}
+            for h in handles] == [{"ref": ref, "key_version": 1}]
+    assert json.loads(handles[0]["frame"])["data"] == "new"
 
 
 def _live_frame(**extra):
