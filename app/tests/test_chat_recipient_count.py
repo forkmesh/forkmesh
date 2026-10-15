@@ -209,7 +209,7 @@ def _harness(channel=None, members=(), participants=()):
             r"(ws|revoke|webhook)$"),
         "CHAT_DIRECT_MESSAGE_DO_RE": re.compile(
             r"^/api/chat/direct-messages/([0-9a-f]{32})/"
-            r"v([1-9][0-9]*)/(ws|revoke|read|media)$"),
+            r"v([1-9][0-9]*)/(ws|revoke|read|media|delivered)$"),
         "json": json,
         "json_response": lambda data, status=200, **_kwargs: {
             "status": status, "data": data},
@@ -538,6 +538,49 @@ def test_read_announcement_reaches_only_the_other_participant():
     assert _kind(alice, "forkmesh-read") == [{"kind": "forkmesh-read", "v": 1}]
     assert bob.sent == []
     assert bob_phone.sent == []
+
+
+def _delivered_announcement(sockets, query):
+    _namespace, room_type, stored = _harness(participants=(ALICE, BOB))
+
+    class _Request:
+        method = "POST"
+        url = (
+            "https://forkmesh.internal/api/chat/direct-messages/" + DIRECT
+            + "/v1/delivered?" + query
+        )
+
+    room = room_type()
+    room.env = object()
+    room.ctx = _Context(sockets)
+    return asyncio.run(room.fetch(_Request())), stored
+
+
+def test_push_delivery_announcement_reaches_only_the_sender():
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    alice_phone = _Socket("s2", ALICE, direct_id=DIRECT)
+    bob = _Socket("s3", BOB, direct_id=DIRECT)
+    ref = "c" * 40
+
+    response, stored = _delivered_announcement(
+        [alice, alice_phone, bob], "account=" + BOB + "&ref=" + ref)
+
+    expected = [{"kind": "forkmesh-delivered", "v": 1, "refs": [ref]}]
+    assert response["status"] == 200
+    assert _kind(alice, "forkmesh-delivered") == expected
+    assert _kind(alice_phone, "forkmesh-delivered") == expected
+    assert bob.sent == []
+    assert stored == []
+
+
+def test_push_delivery_announcement_rejects_a_bad_ref():
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    response, _stored = _delivered_announcement(
+        [alice], "account=" + BOB + "&ref=xyz")
+
+    assert response["status"] == 400
+    assert alice.sent == []
 
 
 def _media_announcement(sockets, query):

@@ -38,6 +38,7 @@ final class NotificationService: UNNotificationServiceExtension {
     /// and posts the original content. Give up early enough to still deliver a
     /// deliberate fallback instead of being cut off mid-flight.
     private static let fetchTimeout: TimeInterval = 8
+    private static let receiptTimeout: TimeInterval = 5
 
     /// Alert ids already rendered by an earlier invocation, newest last. Two
     /// pings landing seconds apart otherwise both read "the newest unread row"
@@ -52,6 +53,8 @@ final class NotificationService: UNNotificationServiceExtension {
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var fallback: UNNotificationContent?
     private var task: URLSessionDataTask?
+    private var receipt: URLSessionDataTask?
+    private let receiptSent = DispatchGroup()
 
     override func didReceive(
         _ request: UNNotificationRequest,
@@ -82,6 +85,7 @@ final class NotificationService: UNNotificationServiceExtension {
             let mode = PushPreviewMode.parse(credentials?.preview)
             let chat = PushChatRequest.parse(Self.payload(request.content.userInfo))
             if let chat, !chat.threadIdentifier.isEmpty { content.threadIdentifier = chat.threadIdentifier }
+            sendDeliveryReceipt(chat, credentials: credentials)
             if mode == .nameAndMessage, PushMeshWake.isWake(request.content.userInfo) {
                 content.threadIdentifier = PushMeshWake.identifier
                 UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
@@ -187,6 +191,22 @@ final class NotificationService: UNNotificationServiceExtension {
         task?.resume()
     }
 
+    private func sendDeliveryReceipt(_ chat: PushChatRequest?, credentials: PushCredentials?) {
+        guard let chat, let credentials, let path = chat.deliveredPath,
+            let url = Self.pendingURL(origin: credentials.origin, path: path)
+        else { return }
+        var post = URLRequest(url: url)
+        post.httpMethod = "POST"
+        post.timeoutInterval = Self.receiptTimeout
+        post.setValue("Bearer " + credentials.session, forHTTPHeaderField: "Authorization")
+        post.setValue("application/json", forHTTPHeaderField: "Accept")
+        post.cachePolicy = .reloadIgnoringLocalCacheData
+        let sent = receiptSent
+        sent.enter()
+        receipt = URLSession.shared.dataTask(with: post) { _, _, _ in sent.leave() }
+        receipt?.resume()
+    }
+
     private func attachPortrait(to content: UNMutableNotificationContent, origin: String, sender: String?) {
         guard let url = Self.senderURL(origin: origin, sender: sender) else {
             deliver(content)
@@ -231,6 +251,7 @@ final class NotificationService: UNNotificationServiceExtension {
     /// assembled so far rather than letting the system post nothing.
     override func serviceExtensionTimeWillExpire() {
         task?.cancel()
+        receipt?.cancel()
         if let content = fallback { deliver(content) }
     }
 
@@ -241,7 +262,7 @@ final class NotificationService: UNNotificationServiceExtension {
     private func deliver(_ content: UNNotificationContent) {
         guard let handler = contentHandler else { return }
         contentHandler = nil
-        handler(content)
+        receiptSent.notify(queue: .global()) { handler(content) }
     }
 
     /// The banner text for a topic the relay cannot read, or nil for the inbox

@@ -56,6 +56,8 @@ CHAT_DIRECT_MESSAGE_READ_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/read/?$")
 CHAT_DIRECT_MESSAGE_PENDING_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/pending/?$")
+CHAT_DIRECT_MESSAGE_DELIVERED_RE = re.compile(
+    r"^/api/chat/direct-messages/([0-9a-f]{32})/delivered/?$")
 CHAT_DIRECT_MESSAGE_WS_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/ws/?$")
 CHAT_READS_RE = re.compile(r"^/api/chat/reads/?$")

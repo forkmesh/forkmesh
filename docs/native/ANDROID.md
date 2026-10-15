@@ -203,6 +203,11 @@ application id `com.forkmesh.nativeapp` installs beside it.
     lock-screen version "New message". The "Notification content" setting
     (`notifications/content`) chooses name and message, name only, or neither.
     Any failure falls back to a generic notification.
+  - every `direct-messages` frame, foreground or not, first posts
+    `/api/chat/direct-messages/<id>/delivered?ref=<ref>`
+    (`DirectMessagePreviews.confirmDelivery`), so the sender sees Delivered
+    while this phone has no DM socket open
+    ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks)).
 - **Relay room** (`C/chat/RelayRoom.kt`): every frame encrypted twice
   (`RoomCrypto` room key and `RoomSeal` to the room's devices), except public
   `#channel` chat. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,

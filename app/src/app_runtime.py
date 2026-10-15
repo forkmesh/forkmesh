@@ -2764,6 +2764,7 @@ class Default:
             or CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_READ_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_PENDING_RE.match(url.path)
+            or CHAT_DIRECT_MESSAGE_DELIVERED_RE.match(url.path)
         ):
             return await chat_direct_messages_api.handle(
                 _ChatDirectMessagesRuntime(self.env, request), url.path)

@@ -74,6 +74,11 @@ public struct PushChatRequest: Equatable, Sendable {
         }
     }
 
+    public var deliveredPath: String? {
+        guard case .direct(let id) = kind else { return nil }
+        return "\(PushChatRequest.directEndpoint)/\(id)/delivered?ref=\(ref)"
+    }
+
     public var threadIdentifier: String {
         if !conversation.isEmpty { return conversation }
         if case .channel(let id) = kind { return "channel:\(id)" }
