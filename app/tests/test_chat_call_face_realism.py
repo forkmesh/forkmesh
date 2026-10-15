@@ -48,6 +48,71 @@ out.turns = [-40, -20, 20, 40].map((deg) => {
     depthSlot: vertices[6],
   };
 });
+const area = (pts, [a, b, c]) => (pts[b][0] - pts[a][0]) * (pts[c][1] - pts[a][1]) - (pts[c][0] - pts[a][0]) * (pts[b][1] - pts[a][1]);
+const sliding = (deg) => {
+  const t = deg * Math.PI / 180;
+  const far = Math.sign(deg);
+  return tmpl.map(([x, y, z], i) => {
+    if (i > 16 || Math.sign(x) !== far) return [300 + 100 * (x * Math.cos(t) + z * Math.sin(t)), 300 + 100 * y];
+    let best = -Infinity;
+    for (let k = 0; k <= 20; k += 1) {
+      const s = k / 20;
+      best = Math.max(best, far * ((x * (1 - s)) * Math.cos(t) + (z + (0.2 - z) * Math.sqrt(s)) * Math.sin(t)));
+    }
+    return [300 + 100 * far * best, 300 + 100 * y];
+  });
+};
+out.turned = [-40, 40].map((deg) => {
+  const live = sliding(deg);
+  const head = geo.liveHead(maya.model, live);
+  const far = geo.JAW.filter((i) => Math.sign(tmpl[i][0]) === Math.sign(deg) && Math.abs(tmpl[i][0]) > 0.6);
+  const near = geo.JAW.filter((i) => Math.sign(tmpl[i][0]) === -Math.sign(deg) && Math.abs(tmpl[i][0]) > 0.6);
+  const rigid = (i) => geo.projectPose(head.pose, maya.model[i]);
+  const gap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) / head.pose.scale;
+  const verts = render.warpVertices(maya.mesh, maya.layout, head.points, 512, null);
+  let collapsed = 0;
+  for (let t = 0; t < maya.mesh.triangles.length; t += 1) {
+    const at = t * 3 * render.VERTEX_FLOATS;
+    if (verts[at] === verts[at + 7] && verts[at] === verts[at + 14] && verts[at + 1] === verts[at + 8] && verts[at + 1] === verts[at + 15]) collapsed += 1;
+  }
+  return {
+    farTrust: Math.max(...far.map((i) => head.jawTrust[i])),
+    nearTrust: Math.min(...near.map((i) => head.jawTrust[i])),
+    farLive: Math.max(...far.map((i) => gap(live[i], rigid(i)))),
+    farDrawn: Math.max(...far.map((i) => gap(head.points[i], rigid(i)))),
+    collapsed,
+    cheeks: geo.CHEEK_COUNT,
+  };
+});
+const frontVerts = render.warpVertices(maya.mesh, maya.layout, geo.liveHead(maya.model, turn(0)).points, 512, null);
+out.frontCollapsed = maya.mesh.triangles.filter((_, t) => {
+  const at = t * 3 * render.VERTEX_FLOATS;
+  return frontVerts[at] === frontVerts[at + 7] && frontVerts[at] === frontVerts[at + 14] && frontVerts[at + 1] === frontVerts[at + 15];
+}).length;
+const box = geo.fitTemplate(tmpl, { eyeL: [250, 300], eyeR: [350, 300], open: 1 });
+const half = (box[54][0] - box[48][0]) / 2;
+const cx = (box[48][0] + box[54][0]) / 2;
+for (const [i, j] of [[61, 67], [63, 65]]) {
+  box[i] = [cx + Math.sign(box[i][0] - cx) * 0.85 * half, box[62][1]];
+  box[j] = [cx + Math.sign(box[j][0] - cx) * 0.85 * half, box[66][1]];
+}
+const boxHead = geo.liveHead(maya.model, box);
+const boxShape = boxHead.points;
+const lipFolds = maya.mesh.triangles.filter((t) => !t.mouth && t.v.some((v) => v >= 48 && v < 68) && area(maya.layout, t.v) * area(boxShape, t.v) < 0).length;
+const rawFolds = maya.mesh.triangles.filter((t) => !t.mouth && t.v.some((v) => v >= 48 && v < 68) && area(maya.layout, t.v) * area([...box, ...boxShape.slice(68)], t.v) < 0).length;
+const reach = (i) => Math.abs(boxShape[i][0] - (boxShape[48][0] + boxShape[54][0]) / 2) / ((boxShape[54][0] - boxShape[48][0]) / 2);
+out.boxMouth = {
+  rawReach: 0.85,
+  reach: reach(61),
+  photoReach: (() => {
+    const [a, b, c] = [48, 54, 61].map((i) => geo.projectPose(boxHead.pose, maya.model[i]));
+    return Math.abs(c[0] - (a[0] + b[0]) / 2) / ((b[0] - a[0]) / 2);
+  })(),
+  sideGap: boxShape[67][1] - boxShape[61][1],
+  middleGap: boxShape[66][1] - boxShape[62][1],
+  lipFolds,
+  rawFolds,
+};
 const front = geo.liveHead(maya.model, turn(0));
 const flipped = front.pose;
 out.frontDepthNose = geo.vertexDepths(maya.model, flipped)[30];
@@ -316,12 +381,34 @@ def test_mouth_opens_in_a_smooth_feathered_mouth_shape(data):
     assert mouth["points"] >= 24
     assert mouth["smoothTurn"] < 0.6 * mouth["polygonTurn"]
     assert mouth["smoothTurn"] < 30
-    assert mouth["holeValues"] == [0, 0.5, 1]
+    assert mouth["holeValues"] == [0, 0.5, 1, 2]
     assert mouth["feathered"] >= 16
     assert mouth["centerDrop"] > 0
     assert mouth["lipDrop"] > 0
     assert mouth["regions"] == [1]
     assert "smoothstep(0.05, 0.95, vHole)" in RENDER
+
+
+def test_a_turned_head_stays_rigid_where_the_jaw_line_is_only_a_silhouette(data):
+    for case in data["turned"]:
+        assert case["farTrust"] < 0.2, case
+        assert case["nearTrust"] > 0.9, case
+        assert case["farLive"] > 0.1, case
+        assert case["farDrawn"] < 0.3 * case["farLive"], case
+        assert case["collapsed"] > 0, case
+        assert case["cheeks"] >= 10
+    assert data["frontCollapsed"] == 0
+    assert "uniform float uFace" in RENDER
+
+
+def test_a_wide_open_mouth_keeps_the_stand_in_lip_layout(data):
+    box = data["boxMouth"]
+    assert box["rawFolds"] > 0
+    assert box["lipFolds"] == 0
+    assert box["reach"] < 0.7 * box["rawReach"]
+    assert box["reach"] == pytest.approx(box["photoReach"], abs=0.06)
+    assert box["sideGap"] < 0.95 * box["middleGap"]
+    assert "cavity = max(aux.b * 2.0 - 1.0, 0.0);" in RENDER
 
 
 def test_pose_uses_landmark_depth_when_it_is_there(data):
