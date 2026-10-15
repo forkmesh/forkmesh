@@ -280,4 +280,66 @@ final class AppStoreStatusTests: XCTestCase {
         XCTAssertFalse(model.showsSpinner)
         XCTAssertEqual(model.error, AppStoreStatusText.notInstalled)
     }
+
+    @MainActor func testModelFallsBackToTheDesktopWhenTheServerLacksIt() async {
+        var desktopCalls = 0
+        let desktopReply = JSON.parseObject(
+            "{\"ok\": true, \"source\": \"desktop\", \"published\": true, \"publishedAt\": 1760000400000, \"snapshot\": \(Self.docExample)}")
+        let missing = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { throw OrgApiException("not_found", "not found") },
+            desktop: { desktopCalls += 1; return desktopReply }))
+        await missing.load()
+        XCTAssertFalse(missing.showsError)
+        XCTAssertEqual(missing.snapshot?.bundleId, "com.forkmesh.app")
+        XCTAssertEqual(missing.response?.fromDesktop, true)
+        XCTAssertEqual(
+            AppStoreStatusText.sourceLine(missing.response!, nowMillis: 1_760_000_400_000),
+            "From your desktop " + Format.relativeTimeFrom(1_760_000_400_000, nowMillis: 1_760_000_400_000))
+
+        let unpublished = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { JSON.parseObject("{\"ok\": true, \"published\": false, \"snapshot\": null}") },
+            desktop: { desktopCalls += 1; return desktopReply }))
+        await unpublished.load()
+        XCTAssertEqual(unpublished.snapshot?.bundleId, "com.forkmesh.app")
+        XCTAssertEqual(desktopCalls, 2)
+
+        let published = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { JSON.parseObject("{\"ok\": true, \"publishedAt\": 1760000300000, \"snapshot\": \(Self.docExample)}") },
+            desktop: { desktopCalls += 1; return desktopReply }))
+        await published.load()
+        XCTAssertEqual(published.response?.fromDesktop, false)
+        XCTAssertEqual(
+            AppStoreStatusText.sourceLine(published.response!, nowMillis: 1_760_000_300_000),
+            AppStoreStatusText.publishedLine(1_760_000_300_000, nowMillis: 1_760_000_300_000))
+
+        let offline = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { throw OrgApiException("http_502", "The server answered 502.") },
+            desktop: { desktopCalls += 1; return desktopReply }))
+        await offline.load()
+        XCTAssertEqual(offline.error, "The server answered 502.")
+        XCTAssertEqual(desktopCalls, 2)
+    }
+
+    @MainActor func testModelExplainsWhenTheDesktopCannotFetchItEither() async {
+        let failing: () async throws -> JSONObject = {
+            throw OrgApiException("app_store_report_failed", "missing App Store Connect credential ASC_KEY_ID.")
+        }
+        let missing = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { throw OrgApiException("http_404", "The server answered 404.") }, desktop: failing))
+        await missing.load()
+        XCTAssertTrue(missing.showsError)
+        XCTAssertEqual(
+            missing.error,
+            AppStoreStatusText.notOffered
+                + " Your desktop could not fetch it either: missing App Store Connect credential ASC_KEY_ID.")
+
+        let unpublished = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { JSON.parseObject("{\"ok\": true, \"published\": false, \"snapshot\": null}") },
+            desktop: failing))
+        await unpublished.load()
+        XCTAssertTrue(unpublished.showsEmpty)
+        XCTAssertEqual(
+            unpublished.refreshError,
+            "Your desktop could not fetch it either: missing App Store Connect credential ASC_KEY_ID.")
+    }
 }

@@ -25,6 +25,31 @@ the key and never calls Apple. Instead:
    natively. Pages show when it was published; to refresh, run the shortcut
    again (from the desktop's Shortcuts page or from a phone).
 
+### Desktop fallback (iPhone)
+
+When the server cannot provide the page, the iPhone asks the paired desktop
+instead, so the desktop's App Store Connect credentials still answer. The phone
+falls back when `GET /api/app-store-status` fails with a "not there" code
+(`not_found`, `http_404`, `method_not_allowed`, `http_405`, or a
+not-installed code) or answers with no snapshot. Other failures (offline, 5xx)
+do not trigger the fallback. Without a paired desktop the phone does not try.
+
+The request is `stats.appStoreStatus` on the desktop's owner-only `stats.`
+control family (LAN or relay). The desktop finds a checkout holding
+`native/ios/tools/asc_store_report.py` (`forkmesh/forkmesh` first) and runs it
+there with `--json`. It passes `ASC_KEY_ID`, `ASC_ISSUER_ID` and
+`ASC_VENDOR_NUMBER` from its Actions variables, kills the run after 110 s, and
+caches a good answer for 60 s. Concurrent requests share one run. It replies
+`{ok, source: "desktop", published, publishedAt, snapshot}`; a failure is
+`app_store_report_failed` (with the report's last stderr line),
+`app_store_report_unreadable` or `app_store_report_missing`. Nothing is
+published to the server: the snapshot goes only to the phone that asked. The
+page then reads "From your desktop <time>" instead of "Published <time>". If
+the desktop fails too, the phone shows the server's message followed by "Your
+desktop could not fetch it either: <reason>". An older desktop answers
+`unsupported`, which reads "This desktop's ForkMesh is too old for that.
+Update it."
+
 The snapshot is account-scoped (`dataLifecycle.scope: "account"`): only the
 account that published it can read it. It is sealed with the relay's key in
 `app_store_status_snapshots`, removed by package uninstall
@@ -143,11 +168,16 @@ is not set or the app has no App Store version yet.
   and `AppStoreStatusFeature.{h,cpp}` (the read-only rail page; `refresh()`
   is one GET, `exportData()` uses `/export`). The firewall entries are in
   `desktop/resources/network/endpoint-catalog.json`.
+- Desktop fallback: `stats.appStoreStatus` in
+  `desktop/src/MainWindowLocalControlStats.cpp`; its pure parts
+  (`appStoreStatusReply`, `appStoreReportError`) are in `LocalControlStats.cpp`,
+  tested by `desktop/tests/test_local_control_stats.cpp`.
 - Report: `native/ios/tools/asc_store_report.py`; tests
   `tools/test_asc_store_report.py` (which also checks that
   `clean_snapshot` keeps every field the report writes).
 - iPhone: `FMPackages/AppStoreStatusModels.swift` (tolerant decoding and the
-  loader), `Features/Packages/AppStoreStatusScreen.swift`, route
+  loader with the desktop fallback), `Features/Packages/AppStoreStatusScreen.swift`
+  (which supplies the `stats.appStoreStatus` call through `DesktopControlHub`), route
   `.appStoreStatus` (Insights group of the You hub). The shortcut detail
   page for `ios-app-store-status.sh` has an "Open App Store Status" button
   when the package is installed.
