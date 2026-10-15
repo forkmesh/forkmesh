@@ -16,6 +16,10 @@ const ACTIVITY_WEEKS = Array.from({ length: 52 }, (_, index) => {
   if (index === 25) return 4;
   return 0;
 });
+const TRAFFIC_DAYS = Array.from({ length: 30 }, (_, index) => ({
+  day: new Date(Date.UTC(2026, 6, 18 + index)).toISOString().slice(0, 10),
+  clones: index === 28 ? 7 : index === 16 ? 2 : 0,
+}));
 
 // Deterministic date labels: the graph formats through toLocaleDateString.
 test.use({ timezoneId: "UTC", locale: "en-US" });
@@ -80,6 +84,8 @@ async function openInsights(page) {
           { author: "alice", date: "2026-08-16", subject: "ship it" },
         ],
       };
+    } else if (url.pathname === "/api/repo/alice/proj/traffic") {
+      body = { ok: true, days: TRAFFIC_DAYS, totalClones: 9 };
     }
     return route.fulfill({
       status: 200,
@@ -164,4 +170,16 @@ test("keyboard users walk the weeks from a single tab stop", async ({ page }) =>
   // Focus leaving the graph takes the tooltip with it.
   await weeks.first().evaluate((week) => week.blur());
   await expect(tooltip).toBeHidden();
+});
+
+test("Insights shows daily clone traffic for the past 30 days", async ({ page }) => {
+  await openInsights(page);
+  const chart = page.locator("[data-repo-traffic-chart]");
+  await expect(chart).toBeVisible();
+  await expect(chart).toContainText("9 clones");
+  await expect(chart.locator("[data-repo-traffic-day]")).toHaveCount(30);
+  await expect(chart.locator('[data-repo-traffic-day="2026-08-15"]')).toHaveAttribute(
+    "aria-label",
+    "Aug 15: 7 clones",
+  );
 });

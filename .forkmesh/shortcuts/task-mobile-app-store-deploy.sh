@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# name: Remind Kaif: deploy to the App Store
-# description: Create a Tasks-page reminder assigned to Kaif (mdkaifansari04) to ship the iOS app to the App Store, with the current version, the newest release tag and the commands to check and submit it.
+# name: Remind release maintainer: deploy to the App Store
+# description: Create a Tasks-page reminder assigned to the configured release maintainer to ship the iOS app to the App Store, with the current version, the newest release tag and the commands to check and submit it.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 head=$(git log -1 --format='%h %s' main)
 tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
 version=$(sed -n 's/^MARKETING_VERSION *= *//p' native/ios/Config/Version.xcconfig)
-exec python3 -I - "$PWD" "$head" "$tag" "$version" <<'PY'
+: "${FORKMESH_RELEASE_ASSIGNEE:?set FORKMESH_RELEASE_ASSIGNEE to the release maintainer account}"
+exec python3 -I - "$PWD" "$head" "$tag" "$version" "$FORKMESH_RELEASE_ASSIGNEE" <<'PY'
 import sys
 
-root, head, tag, version = sys.argv[1:5]
+root, head, tag, version, assignee = sys.argv[1:6]
 sys.path.insert(0, root + "/tools")
 import forkmesh_mcp_server as mcp
 
-details = f"""Kaif, a reminder to deploy the iOS app to the App Store.
+details = f"""A reminder to deploy the iOS app to the App Store.
 
 - iOS version on main: {version} (native/ios/Config/Version.xcconfig)
 - Newest release tag: {tag or "none"}
@@ -31,7 +32,7 @@ task = mcp.create_task({
     "title": "Reminder: deploy the iOS app to the App Store",
     "details": details,
     "assigneeKind": "user",
-    "assignee": "mdkaifansari04",
+    "assignee": assignee,
     "repository": "forkmesh/forkmesh",
 })
 created = task.get("task") if isinstance(task.get("task"), dict) else task

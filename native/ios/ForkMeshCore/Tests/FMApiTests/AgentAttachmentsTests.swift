@@ -63,8 +63,8 @@ final class AgentAttachmentModelTests: XCTestCase {
     func testTranscriptMarkersBecomeRowsWithoutPaths() {
         let text = """
         Fix the header.
-        Attached image: /home/f/data/agent-images/paste-Ab12.png
-        {"type":"user","text":"Attached image: /home/f/shot.jpg\\n more"}
+        Attached image: /home/tester/data/agent-images/paste-Ab12.png
+        {"type":"user","text":"Attached image: /home/tester/shot.jpg\\n more"}
         Attached video: /tmp/clip.mp4
         Do it.
 
@@ -73,11 +73,11 @@ final class AgentAttachmentModelTests: XCTestCase {
         - .forkmesh/attachments/2222.png
         done
         - not/a/listed/path.png
-        Attached image: /home/f/data/agent-images/paste-Ab12.png
+        Attached image: /home/tester/data/agent-images/paste-Ab12.png
         """
         let paths = AgentTranscriptAttachments.paths(in: text)
         XCTAssertEqual(paths, [
-            "/home/f/data/agent-images/paste-Ab12.png", "/home/f/shot.jpg", "/tmp/clip.mp4",
+            "/home/tester/data/agent-images/paste-Ab12.png", "/home/tester/shot.jpg", "/tmp/clip.mp4",
             ".forkmesh/attachments/1111.jpg", ".forkmesh/attachments/2222.png",
         ])
         let refs = AgentTranscriptAttachments.references(in: text)

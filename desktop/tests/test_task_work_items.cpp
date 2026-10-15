@@ -76,7 +76,7 @@ void testDigestMatchesTheWorker()
         {QStringLiteral("repository"), QStringLiteral("forkmesh/src")},
         {QStringLiteral("branch"), QStringLiteral("feat/task-work-items")},
         {QStringLiteral("worktree"),
-         QString::fromUtf8("/home/f/src/.worktrees/012-caf\xC3\xA9 \"q\"\\\\x\t")},
+         QString::fromUtf8("/home/tester/src/.worktrees/012-caf\xC3\xA9 \"q\"\\\\x\t")},
         {QStringLiteral("node"), QStringLiteral("desk-1")},
     };
     QJsonObject body{
@@ -87,7 +87,7 @@ void testDigestMatchesTheWorker()
         {QStringLiteral("sessionToken"), QStringLiteral("ignored")},
     };
     check(updateDigest(body) ==
-              QLatin1String("e0fe1a40ee2e0bcb0c8fab66bc16e7ae09d21f76abf00b14524f56944f7bc55d"),
+              QLatin1String("ec09f1e510ca68958c21322518b3956925c79edba3a8c782e586f4f325ad7ad7"),
           "update digest matches org_task_update_digest in entry.py");
     check(updateDigest(QJsonObject{{QStringLiteral("sessionToken"), QStringLiteral("x")}})
               .isEmpty(),
