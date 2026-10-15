@@ -352,14 +352,18 @@ public struct AppStoreStatusResponse: Decodable, Equatable, Sendable {
     public var published: Bool
     public var publishedAt: Int64
     public var snapshot: AppStoreSnapshot?
+    public var fromDesktop: Bool
 
-    public init(published: Bool = false, publishedAt: Int64 = 0, snapshot: AppStoreSnapshot? = nil) {
+    public init(
+        published: Bool = false, publishedAt: Int64 = 0, snapshot: AppStoreSnapshot? = nil, fromDesktop: Bool = false
+    ) {
         self.published = published
         self.publishedAt = publishedAt
         self.snapshot = snapshot
+        self.fromDesktop = fromDesktop
     }
 
-    enum CodingKeys: String, CodingKey { case published, publishedAt, snapshot }
+    enum CodingKeys: String, CodingKey { case published, publishedAt, snapshot, source }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -367,6 +371,7 @@ public struct AppStoreStatusResponse: Decodable, Equatable, Sendable {
         let stamp = c.lenientStamp(.publishedAt)
         publishedAt = stamp > 0 ? stamp : (snapshot?.generatedAt ?? 0)
         published = snapshot != nil && (c.optionalBool(.published) ?? true)
+        fromDesktop = c.lenientString(.source) == "desktop"
     }
 
     public static func decode(_ data: Data) throws -> AppStoreStatusResponse {
@@ -393,6 +398,9 @@ public enum AppStoreStatusText {
     public static let notInstalled =
         "App Store Status is not installed for your account. Install it from the Market, then run the \(shortcutName) shortcut on your desktop."
     public static let genericError = "App Store Status is unavailable right now."
+    public static let notOffered = "This server does not offer App Store Status yet."
+    public static let desktopMethod = "stats.appStoreStatus"
+    public static let desktopTimeout: TimeInterval = 120
 
     public static func isStatusShortcut(file: String) -> Bool {
         let name = file.split(separator: "/").last.map(String.init) ?? file
@@ -402,6 +410,31 @@ public enum AppStoreStatusText {
     public static func publishedLine(_ publishedAt: Int64, nowMillis: Int64 = SystemClock().nowMillis) -> String {
         guard publishedAt > 0 else { return "" }
         return "Published \(Format.relativeTimeFrom(publishedAt, nowMillis: nowMillis))"
+    }
+
+    public static func sourceLine(
+        _ response: AppStoreStatusResponse, nowMillis: Int64 = SystemClock().nowMillis
+    ) -> String {
+        guard response.fromDesktop else { return publishedLine(response.publishedAt, nowMillis: nowMillis) }
+        guard response.publishedAt > 0 else { return "From your desktop" }
+        return "From your desktop \(Format.relativeTimeFrom(response.publishedAt, nowMillis: nowMillis))"
+    }
+
+    public static func isMissing(_ error: Error) -> Bool {
+        guard let failure = error as? OrgApiException else { return false }
+        return missingCodes.contains(failure.code)
+    }
+
+    static let missingCodes: Set<String> = [
+        "http_404", "not_found", "http_405", "method_not_allowed",
+        "plugin_not_installed", "package_not_installed", "not_installed",
+    ]
+
+    public static func desktopMessage(for error: Error) -> String {
+        let reason = (error as? OrgApiException).map { $0.message.isEmpty ? $0.code : $0.message } ?? ""
+        return reason.isEmpty
+            ? "Your desktop could not fetch it either."
+            : "Your desktop could not fetch it either: \(reason)"
     }
 
     public static func stars(_ rating: Int) -> String {
@@ -486,7 +519,7 @@ public enum AppStoreStatusText {
         guard let failure = error as? OrgApiException else { return genericError }
         switch failure.code {
         case "plugin_not_installed", "package_not_installed", "not_installed": return notInstalled
-        case "http_404": return "This server does not offer App Store Status yet."
+        case "http_404", "not_found", "http_405", "method_not_allowed": return notOffered
         default: return failure.message.isEmpty ? genericError : failure.message
         }
     }
@@ -494,14 +527,17 @@ public enum AppStoreStatusText {
 
 public struct AppStoreStatusAPI {
     public var fetch: () async throws -> JSONObject
+    public var desktop: (() async throws -> JSONObject)?
 
-    public init(fetch: @escaping () async throws -> JSONObject) {
+    public init(fetch: @escaping () async throws -> JSONObject, desktop: (() async throws -> JSONObject)? = nil) {
         self.fetch = fetch
+        self.desktop = desktop
     }
 
     @MainActor
-    public init(api: ApiService) {
+    public init(api: ApiService, desktop: (() async throws -> JSONObject)? = nil) {
         fetch = { try await api.accountApiCall("GET", AppStoreStatusText.apiPath) }
+        self.desktop = desktop
     }
 }
 
@@ -527,12 +563,33 @@ public final class AppStoreStatusModel {
     public func load() async {
         loading = true
         defer { loading = false }
+        var server: AppStoreStatusResponse?
+        var serverError: Error?
         do {
-            let payload = try await api.fetch()
-            response = try AppStoreStatusResponse.decode(payload)
-            error = ""
+            server = try AppStoreStatusResponse.decode(try await api.fetch())
         } catch {
-            self.error = AppStoreStatusText.message(for: error)
+            serverError = error
+        }
+        let missing = server.map { $0.snapshot == nil } ?? serverError.map(AppStoreStatusText.isMissing) ?? false
+        var desktopNote = ""
+        if missing, let desktop = api.desktop {
+            do {
+                let reply = try AppStoreStatusResponse.decode(try await desktop())
+                if reply.snapshot != nil {
+                    response = reply
+                    error = ""
+                    return
+                }
+            } catch {
+                desktopNote = AppStoreStatusText.desktopMessage(for: error)
+            }
+        }
+        if let server {
+            response = server
+            error = desktopNote
+        } else if let serverError {
+            let message = AppStoreStatusText.message(for: serverError)
+            error = desktopNote.isEmpty ? message : message + " " + desktopNote
         }
     }
 

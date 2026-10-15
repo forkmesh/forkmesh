@@ -299,6 +299,35 @@ static void testCodemagic()
     check(codemagicError(200) == QLatin1String("bad_answer"), "codemagic bad body");
 }
 
+static void testAppStoreStatus()
+{
+    QString error;
+    const QByteArray snapshot =
+        "{\n  \"format\": \"forkmesh-app-store-status-v1\",\n  \"generatedAt\": 5,\n"
+        "  \"versions\": []\n}\n";
+    const QJsonObject reply = appStoreStatusReply(snapshot, 1234, &error);
+    check(error.isEmpty(), "app store snapshot parses");
+    check(reply.value(QStringLiteral("published")).toBool(), "app store reply is published");
+    check(reply.value(QStringLiteral("source")).toString() == QLatin1String("desktop"),
+          "app store reply names the desktop");
+    check(reply.value(QStringLiteral("publishedAt")).toDouble() == 1234, "app store stamp");
+    check(reply.value(QStringLiteral("snapshot")).toObject().value(QStringLiteral("generatedAt"))
+                  .toInt() == 5,
+          "app store snapshot carried");
+    check(appStoreStatusReply("not json", 1, &error).isEmpty() &&
+              error == QLatin1String("app_store_report_unreadable"),
+          "app store garbage refused");
+    check(appStoreStatusReply("{\"format\": \"other\"}", 1, &error).isEmpty(),
+          "app store other format refused");
+    check(appStoreReportError("Traceback\nERROR: missing App Store Connect credential ASC_KEY_ID.\n") ==
+              QLatin1String("missing App Store Connect credential ASC_KEY_ID."),
+          "app store error is the last line without ERROR:");
+    check(appStoreReportError("") == QLatin1String("The App Store report did not finish."),
+          "app store silent failure");
+    check(appStoreReportVariables().contains(QStringLiteral("ASC_VENDOR_NUMBER")),
+          "app store vendor number passed");
+}
+
 int main()
 {
     testPrefixAndSlugs();
@@ -308,6 +337,7 @@ int main()
     testRatchetConfirmations();
     testSentry();
     testCodemagic();
+    testAppStoreStatus();
     if (failures) {
         std::cerr << failures << " failure(s)\n";
         return 1;

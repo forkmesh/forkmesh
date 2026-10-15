@@ -1,5 +1,7 @@
 import FMApi
 import FMBase
+import FMChat
+import FMControl
 import FMPackages
 import SwiftUI
 
@@ -9,9 +11,26 @@ struct AppStoreStatusScreen: View {
 
     init() {
         if let api = Services.get(ApiService.self) {
-            _model = State(initialValue: AppStoreStatusModel(api: AppStoreStatusAPI(api: api)))
+            _model = State(
+                initialValue: AppStoreStatusModel(api: AppStoreStatusAPI(api: api, desktop: Self.desktopSource())))
         } else {
             _model = State(initialValue: nil)
+        }
+    }
+
+    @MainActor
+    static func desktopSource() -> (() async throws -> JSONObject)? {
+        guard let hub = HostsFeature.hub, hub.desktop != nil else { return nil }
+        return { [weak hub] in
+            guard let hub else { throw OrgApiException("not_connected", ControlErrorText.describe(code: "not_connected")) }
+            do {
+                return try await hub.request(
+                    AppStoreStatusText.desktopMethod, [:], timeout: AppStoreStatusText.desktopTimeout)
+            } catch let failure as LocalControlException {
+                let reason = failure.code.hasPrefix("app_store_") && !failure.message.isEmpty
+                    ? failure.message : ControlErrorText.describe(failure)
+                throw OrgApiException(failure.code, reason)
+            }
         }
     }
 
@@ -55,11 +74,13 @@ private struct AppStoreStatusContent: View {
             refreshableMessage(icon: "error_outline", title: AppStoreStatusText.unavailableTitle, message: model.error)
         } else if model.showsEmpty {
             refreshableMessage(
-                icon: "phone_iphone", title: AppStoreStatusText.emptyTitle, message: AppStoreStatusText.emptyMessage)
+                icon: "phone_iphone", title: AppStoreStatusText.emptyTitle,
+                message: model.refreshError.isEmpty
+                    ? AppStoreStatusText.emptyMessage : AppStoreStatusText.emptyMessage + "\n\n" + model.refreshError)
         } else if let response = model.response, let snapshot = response.snapshot {
             ScrollView {
                 AppStoreStatusDashboard(
-                    snapshot: snapshot, publishedAt: response.publishedAt, notice: model.refreshError,
+                    snapshot: snapshot, response: response, notice: model.refreshError,
                     onDismissNotice: { model.dismissError() })
                     .padding(FmSpace.x4)
             }
@@ -81,7 +102,7 @@ private struct AppStoreStatusDashboard: View {
     @Environment(\.openURL) private var openURL
 
     let snapshot: AppStoreSnapshot
-    let publishedAt: Int64
+    let response: AppStoreStatusResponse
     let notice: String
     let onDismissNotice: () -> Void
 
@@ -111,8 +132,8 @@ private struct AppStoreStatusDashboard: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
                 TimelineView(.everyMinute) { (context: TimelineViewDefaultContext) in
-                    Text(AppStoreStatusText.publishedLine(
-                        publishedAt, nowMillis: Int64(context.date.timeIntervalSince1970 * 1000)))
+                    Text(AppStoreStatusText.sourceLine(
+                        response, nowMillis: Int64(context.date.timeIntervalSince1970 * 1000)))
                         .fmText(.bodySmall, color: fm.textSecondary)
                 }
             }

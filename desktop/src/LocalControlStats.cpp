@@ -4,6 +4,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonParseError>
 #include <QPair>
 #include <QRegularExpression>
 #include <QTime>
@@ -498,6 +500,52 @@ QString codemagicError(int httpStatus)
     if (httpStatus >= 200 && httpStatus < 300)
         return QStringLiteral("bad_answer");
     return QStringLiteral("codemagic_unreachable");
+}
+
+QString appStoreReportScript()
+{
+    return QStringLiteral("native/ios/tools/asc_store_report.py");
+}
+
+QStringList appStoreReportVariables()
+{
+    return {QStringLiteral("ASC_KEY_ID"), QStringLiteral("ASC_ISSUER_ID"),
+            QStringLiteral("ASC_VENDOR_NUMBER")};
+}
+
+QJsonObject appStoreStatusReply(const QByteArray &output, qint64 nowMs, QString *error)
+{
+    QJsonParseError parse;
+    const QJsonDocument document = QJsonDocument::fromJson(output.trimmed(), &parse);
+    const QJsonObject snapshot = document.object();
+    if (parse.error != QJsonParseError::NoError || !document.isObject() ||
+        snapshot.value(QStringLiteral("format")).toString() !=
+            QLatin1String("forkmesh-app-store-status-v1")) {
+        if (error)
+            *error = QStringLiteral("app_store_report_unreadable");
+        return {};
+    }
+    if (error)
+        error->clear();
+    return {{QStringLiteral("ok"), true},
+            {QStringLiteral("source"), QStringLiteral("desktop")},
+            {QStringLiteral("published"), true},
+            {QStringLiteral("publishedAt"), double(nowMs)},
+            {QStringLiteral("snapshot"), snapshot}};
+}
+
+QString appStoreReportError(const QByteArray &errorOutput)
+{
+    const QStringList lines =
+        QString::fromUtf8(errorOutput).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+        QString line = flatText(*it, 300);
+        if (line.startsWith(QLatin1String("ERROR:")))
+            line = line.mid(6).trimmed();
+        if (!line.isEmpty())
+            return line;
+    }
+    return QStringLiteral("The App Store report did not finish.");
 }
 
 } // namespace forkmesh::localcontrol::stats
