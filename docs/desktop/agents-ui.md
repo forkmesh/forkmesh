@@ -103,7 +103,9 @@ session with `held` (and `heldBy`) in its `meta.json`. Held sessions are never
 put on `m_agentQueue` and are skipped by `processAgentQueue` and
 `AgentStore::queuedSessionIdsOldestFirst`. **Start now**, **Start** or any
 prompt sent to it (`continueAgentSession` clears `held`) starts it under the
-normal concurrency limit. Phones can change the limit and queue order
+normal concurrency limit. A connector-created agent can carry an organization
+task (`task`), or take over its creator's task (`handoff`), which unlinks the
+creator from it. Phones can change the limit and queue order
 (`agents.queue.limit`, `agents.queue.move`; see
 [../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
 

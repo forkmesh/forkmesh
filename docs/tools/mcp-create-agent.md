@@ -16,13 +16,40 @@ task to a new agent, running at once or parked until the user starts it.
 | `paused` | no | `true` lists the agent without running it. Default `false` |
 | `priority` | no | Queue priority 1-99, 1 runs first. Default 50 |
 | `provider`, `model` | no | Default to the desktop's defaults |
+| `task` | no | 32-hex id of an organization task (`list_tasks`) to hand to the new agent |
+| `handoff` | no | `true` hands over the task the calling agent is linked to. Default `false` |
 
 It returns the new session id, `state`, `paused`, repository, branch, title,
-provider, model and priority. Refusals carry the desktop's code
-(`no_checkout`, `branch_not_found`, `protected_branch`, `worktree_mismatch`,
-`worktree_not_agent`, `rate_limited`, `unauthorized`, ...). `create_agent` is
+provider, model, priority, `task` (the linked task id, empty when none) and
+`handedOff`. Refusals carry the desktop's code (`no_checkout`,
+`branch_not_found`, `protected_branch`, `worktree_mismatch`,
+`worktree_not_agent`, `bad_task_id`, `no_task`, `task_mismatch`,
+`rate_limited`, `unauthorized`, ...). `create_agent` is
 in `WRITE_TOOLS`, so a published connector needs `FORKMESH_MCP_TOKEN`;
 `whoami` reports `canCreateAgents`.
+
+## Handing off a task
+
+`task` links the new agent to an organization task the same way the Tasks
+page's **Start agent on task** does (`orgTaskId` with `orgTaskAttached`
+false): the agent reports its status and work item on the task, the Agents
+detail shows the task chip, and the task is completed when the agent
+finishes. On a `branch` run, which `startAgentOnExistingBranch` starts
+without a task, the link is added afterwards through `recordOrgTaskFields`.
+
+`handoff` is for an agent that is itself linked to a task and wants another
+agent to finish it. The desktop takes the task id from the calling session
+(the token names it), so the caller need not know it; a `task` that differs
+is refused (`task_mismatch`) and a caller with no task gets `no_task`. After
+the new agent is created the caller is unlinked
+(`unlinkAgentSessionFromOrgTask`, shared with **Detach from task**), so its
+own end no longer completes the task and deleting it no longer deletes the
+task. Both sessions' logs record the handoff. The caller should write the
+prompt as a brief: what is done, what is left and where, since the new agent
+sees only that prompt.
+
+To hand over a branch as well, pass it as `branch` and stop working on it:
+the new agent reuses the agent worktree that holds it.
 
 ## Transport and authentication
 
@@ -55,6 +82,8 @@ The desktop re-validates everything (`parseCreateRequest`,
 
 - `repository` must have a local checkout; field lengths and characters are
   checked; `priority` is an integer 1-99.
+- `task` must be 32 lowercase hex characters after trimming and lowering
+  (`taskIdValid`); `handoff` must be a boolean.
 - `branch` must pass `handoffRefNameValid`; `main`, `master`, `trunk`,
   `HEAD`, `refs/...`, `release/...` and the checkout's own branch are refused
   (`protected_branch`). A missing branch is fetched from the served mirror

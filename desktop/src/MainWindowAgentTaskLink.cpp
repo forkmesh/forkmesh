@@ -390,14 +390,7 @@ void MainWindow::detachAgentSessionFromOrgTask(int sessionId)
     AgentSession *session = findAgentSession(sessionId);
     if (!session || session->orgTaskId.isEmpty() || !session->orgTaskAttached)
         return;
-    const QString taskId = session->orgTaskId;
-    session->orgTaskId.clear();
-    session->orgTaskAttached = false;
-    session->orgTask = false;
-    m_orgTaskAgentStatusSent.remove(sessionId);
-    m_taskWorkItemSessionsAttached.remove(sessionId);
-    if (m_agentStore)
-        m_agentStore->saveSession(*session);
+    const QString taskId = unlinkAgentSessionFromOrgTask(sessionId);
     const QString message =
         QStringLiteral("Detached agent session #%1 from organization task %2.")
             .arg(sessionId)
@@ -408,6 +401,22 @@ void MainWindow::detachAgentSessionFromOrgTask(int sessionId)
     refreshAgentTable();
     if (m_organizationTasksLoaded)
         refreshOrganizationTaskAgentRows();
+}
+
+QString MainWindow::unlinkAgentSessionFromOrgTask(int sessionId)
+{
+    AgentSession *session = findAgentSession(sessionId);
+    if (!session || session->orgTaskId.isEmpty())
+        return QString();
+    const QString taskId = session->orgTaskId;
+    session->orgTaskId.clear();
+    session->orgTaskAttached = false;
+    session->orgTask = false;
+    m_orgTaskAgentStatusSent.remove(sessionId);
+    m_taskWorkItemSessionsAttached.remove(sessionId);
+    if (m_agentStore)
+        m_agentStore->saveSession(*session);
+    return taskId;
 }
 
 #ifdef FORKMESH_WINDOW_TESTS

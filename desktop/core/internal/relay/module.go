@@ -3,7 +3,10 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +24,7 @@ const (
 	EventState = "core.relay.state"
 	EventFrame = "core.relay.event"
 	maxUIQueue = 4096
+	savedFile  = "relay.json"
 )
 
 var forwarded = map[string]bool{
@@ -42,6 +46,14 @@ type Config struct {
 	Owner    string
 	Account  string
 	Node     string
+}
+
+type saved struct {
+	Endpoint string `json:"endpoint"`
+	Owner    string `json:"owner"`
+	Account  string `json:"account,omitempty"`
+	Node     string `json:"node,omitempty"`
+	Identity string `json:"identity"`
 }
 
 type Module struct {
@@ -92,7 +104,92 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 		}
 	}
 	go m.deliver(ctx)
+	m.resume()
 	return nil
+}
+
+func (m *Module) savedPath() string {
+	if m.core == nil || m.core.Layout.State == "" {
+		return ""
+	}
+	return filepath.Join(m.core.Layout.CoreState(), savedFile)
+}
+
+func (m *Module) save(config Config, id *identity.Identity) {
+	path := m.savedPath()
+	if path == "" || id == nil {
+		return
+	}
+	raw, err := json.Marshal(saved{Endpoint: config.Endpoint, Owner: config.Owner, Account: config.Account,
+		Node: config.Node, Identity: id.PublicKey()})
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		m.core.Logger.Printf("relay: could not save the relay settings: %v", err)
+		return
+	}
+	temp := path + ".tmp"
+	if err := os.WriteFile(temp, raw, 0o600); err != nil {
+		m.core.Logger.Printf("relay: could not save the relay settings: %v", err)
+		return
+	}
+	if err := os.Rename(temp, path); err != nil {
+		m.core.Logger.Printf("relay: could not save the relay settings: %v", err)
+	}
+}
+
+func (m *Module) forget() {
+	path := m.savedPath()
+	if path == "" {
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		m.core.Logger.Printf("relay: could not remove the saved relay settings: %v", err)
+	}
+}
+
+func (m *Module) resume() {
+	path := m.savedPath()
+	if path == "" {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var last saved
+	if json.Unmarshal(raw, &last) != nil {
+		m.core.Logger.Printf("relay: ignoring unreadable %s", path)
+		return
+	}
+	target, err := url.Parse(last.Endpoint)
+	if err != nil || target.Hostname() == "" || (target.Scheme != "ws" && target.Scheme != "wss") || last.Owner == "" {
+		m.core.Logger.Printf("relay: ignoring invalid saved relay settings in %s", path)
+		return
+	}
+	id, err := m.core.RequireIdentity()
+	if err != nil {
+		m.core.Logger.Printf("relay: not reconnecting at start: %v", err)
+		return
+	}
+	if id.PublicKey() != last.Identity {
+		m.core.Logger.Printf("relay: not reconnecting at start: the node key changed since the relay was configured")
+		return
+	}
+	m.mu.Lock()
+	if m.client != nil {
+		m.mu.Unlock()
+		return
+	}
+	m.identity = id
+	m.config = Config{Endpoint: last.Endpoint, Owner: last.Owner, Account: last.Account, Node: last.Node}
+	client := m.newClient()
+	m.client = client
+	m.mu.Unlock()
+	m.own(client)
+	m.core.Logger.Printf("relay: connecting %s for %s with the settings the desktop last gave, without waiting for it", last.Endpoint, last.Owner)
+	client.Start(m.ctx)
 }
 
 func (m *Module) uiAttached() {
@@ -270,6 +367,7 @@ func (m *Module) configure(params map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.save(config, id)
 	m.mu.Lock()
 	m.identity = id
 	m.configureEpoch = m.uiEpoch
@@ -410,7 +508,10 @@ func (m *Module) register() {
 		})
 	}
 	handle("core.relay.configure", m.configure)
-	handle("core.relay.stop", func(map[string]any) (any, error) { return m.stop(), nil })
+	handle("core.relay.stop", func(map[string]any) (any, error) {
+		m.forget()
+		return m.stop(), nil
+	})
 	handle("core.relay.state", func(map[string]any) (any, error) { return m.stateOf(m.active()), nil })
 	handle("core.relay.reconnect", func(map[string]any) (any, error) {
 		client := m.active()
