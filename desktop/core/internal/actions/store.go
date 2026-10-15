@@ -223,7 +223,12 @@ func (s *Store) ToolchainBinDir() string {
 	return s.ensure(filepath.Join(s.Root, "toolchain", "bin"))
 }
 func (s *Store) BuildCacheDir(run Run) string {
-	return s.ensure(filepath.Join(s.Root, "cache", run.RepoKey()))
+	root := filepath.Join(s.Root, "cache", run.RepoKey())
+	if run.WorkflowPath == ".forkmesh/desktop-ci.yml" {
+		return s.ensure(root)
+	}
+	sum := sha256.Sum256([]byte(run.WorkflowPath))
+	return s.ensure(filepath.Join(root, "workflow-"+hex.EncodeToString(sum[:])))
 }
 
 func (s *Store) RunDir(run Run) string {

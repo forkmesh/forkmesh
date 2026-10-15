@@ -1233,10 +1233,17 @@ int main(int argc, char **argv)
         ActionRun cacheScope;
         cacheScope.owner = QStringLiteral("security");
         cacheScope.name = QStringLiteral("sandbox");
+        cacheScope.workflowPath = QStringLiteral(".forkmesh/security.yml");
         const QString witness = store.buildCacheDir(cacheScope) +
                                 QStringLiteral("/objects/witness");
         check(QFileInfo::exists(witness),
               "the kept cache lives outside the sandbox the run discards");
+
+        ActionRun separateCacheScope = cacheScope;
+        separateCacheScope.workflowPath = QStringLiteral(".forkmesh/other.yml");
+        check(store.buildCacheDir(separateCacheScope) !=
+                  store.buildCacheDir(cacheScope),
+              "workflows in one repository do not contend for one build cache");
 
         const RunResult otherRepository =
             runWorkflow(repository, cacheCommit, cacheWorkflow, &store, 115,
