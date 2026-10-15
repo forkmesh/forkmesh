@@ -25,3 +25,7 @@ auth stylesheet `www/public/auth-page-theme.css` and the map backdrop from
 
 The "Local demo login" box renders only on `localhost` and `127.0.0.1`
 (`demoLoginAllowed()` in `login.js`).
+
+After a confirmed login, an explicit local `next` path takes priority, followed
+by a same-origin referrer. Without either, the browser opens `/dashboard`
+directly rather than loading the homepage first.
