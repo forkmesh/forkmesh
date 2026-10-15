@@ -91,7 +91,7 @@ source stopped refreshing). Both numbers always come from one snapshot.
 | Discord | Refresh uses `runtime.discord_guild` (member and online counts) and stores only the newest message time (`feed.lastPostAt`, never moves back) so the posting check sees Discord activity. Falls back to the public invite or widget. **Open** uses a public invite (`openUrl`). |
 | Mastodon | Refresh records followers, following and posts, and keeps the followed handles (`mastodonFollowing`, up to 2000, never sent to clients) so they are not suggested. |
 | Apple App Store (`app-store`) | Refresh reads the public App Store lookup (`https://itunes.apple.com/lookup?id=<id>&country=<cc>`, the id and store country come from the channel link): `rating`, `ratings` (rating count) and the store listing. `downloads`, `redownloads` and `updates` (30 days to the last reported day) come from App Store Connect through the App Store desk below. No posting check. Errors: `app_store_url_unsupported`, `app_store_app_not_found`. |
-| Blog | Refresh imports the feed and records `posts` (every feed item seen so far, `marketing_feed_items`) as a snapshot, so a successful read counts as fresh numbers; before 2026-10-14 it recorded nothing and the "Numbers updated in the last 7 days" check failed however often the feed was read. Views come from Analytics (see Performance). |
+| Website | Refresh imports the feed and records `posts` (every feed item seen so far, `marketing_feed_items`) as a snapshot, so a successful read counts as fresh numbers; before 2026-10-14 it recorded nothing and the "Numbers updated in the last 7 days" check failed however often the feed was read. Views come from Analytics (see the Website channel). |
 
 Starter channels (`STARTER_CHANNELS`) are added to every organization unless
 deleted. `DELETE /api/marketing/<org>/channels/<id>` (owners and admins)
@@ -218,13 +218,15 @@ console.
   ads needing attention, content, channel to-dos, Reddit desk counts, campaign
   results from Analytics and referring websites.
 
-## Performance
+## Website channel
 
 `GET /performance?from=&to=&project=` reads the organization's Analytics
 in-process (`analytics.campaign_report`, after membership and install checks):
 totals against the previous window, campaigns by UTM tags, ads matched to
 visits by their landing-link tags, landing pages, results by subreddit, and
 ranked "where to improve" findings (rules need at least 20 visits).
+The Website desk charts the daily `visitsDays` series and lists search terms
+found in Analytics visit logs (`utm_term`).
 **Goals** (owners and admins, up to 5) define conversions as an Analytics
 event with an optional property match. Without Analytics the page says what to
 set up instead of showing zeros.
@@ -425,7 +427,7 @@ neither does a failed request.
 
 ## Surfaces
 
-- **Web**: Dashboard, Performance, Channels (cards with health, playbooks,
+- **Web**: Dashboard, Website channel, Channels (cards with health, playbooks,
   desks and actions), Ads manager and Growth.
 - **Desktop** (`MarketingDashboard.cpp`, `MarketingPages.cpp`,
   `MarketingCommon.cpp`): the same five sections from the same API, a channel
