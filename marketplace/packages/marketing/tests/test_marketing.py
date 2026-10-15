@@ -2165,8 +2165,11 @@ def test_desktop_channel_click_opens_the_channel_page():
     assert 'organizationPath(QStringLiteral("/mastodon?topics="))' in native
     assert 'organizationPath(QStringLiteral("/mastodon")),' in native
     assert "m_detailKpis->setCompact(true);" in native
-    for title in ("Followers over time", "Posts and content", "Ads", "Recorded numbers"):
+    for title in ("Followers over time", "Following over time", "Posts and content", "Ads", "Recorded numbers"):
         assert f'DashboardPanel(QStringLiteral("{title}"))' in native, title
+    assert "m_detailFollowingPanel->setVisible(following);" in native
+    assert 'm_detailFollowingChart->setAccessibleName(QStringLiteral("Channel following chart"));' in native
+    assert "detailChartsLayout->addWidget(m_detailFollowingPanel, 1);" in native
     assert "openPackageRailTile(packageId, tileId);" in host
     assert "page.widget->openRailTile(tileId);" in host
 

@@ -892,6 +892,14 @@ MarketingFeature::MarketingFeature(
     m_detailChart->setMaximumHeight(210);
     m_detailChart->setMinimumWidth(240);
     m_detailChartPanel->body()->addWidget(m_detailChart);
+    m_detailFollowingPanel = new DashboardPanel(QStringLiteral("Following over time"));
+    m_detailFollowingPanel->setCompact();
+    m_detailFollowingChart = new LineChart;
+    m_detailFollowingChart->setAccessibleName(QStringLiteral("Channel following chart"));
+    m_detailFollowingChart->setMaximumHeight(210);
+    m_detailFollowingChart->setMinimumWidth(240);
+    m_detailFollowingPanel->body()->addWidget(m_detailFollowingChart);
+    m_detailFollowingPanel->hide();
     m_detailViewsPanel = new DashboardPanel(QStringLiteral("Views over time"));
     m_detailViewsPanel->setCompact();
     m_detailViewsChart = new LineChart;
@@ -913,6 +921,7 @@ MarketingFeature::MarketingFeature(
     detailChartsLayout->setContentsMargins(0, 0, 0, 0);
     detailChartsLayout->setSpacing(10);
     detailChartsLayout->addWidget(m_detailChartPanel, 1);
+    detailChartsLayout->addWidget(m_detailFollowingPanel, 1);
     detailChartsLayout->addWidget(m_detailViewsPanel, 1);
     detailChartsLayout->addWidget(m_detailDiscordChartPanel, 1);
     detailGrid->addPanel(detailCharts, 2);
@@ -5395,6 +5404,28 @@ void MarketingFeature::renderChannelChart()
     m_detailChart->setSeries(lines, start, now,
                              QStringLiteral("No numbers for %1 in the last %2 days.\nRefresh it or log its numbers.")
                                  .arg(line.name).arg(m_rangeDays));
+
+    LineChart::Series followed;
+    followed.name = line.name;
+    followed.color = line.color;
+    const QJsonObject carriedFollowing = snapshotAt(list, start);
+    if (!carriedFollowing.isEmpty() && !missing(carriedFollowing, "following"))
+        followed.points.append({start, number(carriedFollowing, "following"), false});
+    for (const QJsonObject &item : list) {
+        if (missing(item, "following"))
+            continue;
+        const qint64 at = qint64(number(item, "observedAt"));
+        followed.history.append({at, number(item, "following"), true});
+        if (at > start)
+            followed.points.append({at, number(item, "following"), true});
+    }
+    QList<LineChart::Series> followingLines;
+    if (!followed.points.isEmpty())
+        followingLines.append(followed);
+    m_detailFollowingPanel->setVisible(following);
+    m_detailFollowingChart->setSeries(followingLines, start, now,
+        QStringLiteral("No following numbers for %1 in the last %2 days.\nRefresh it or log its numbers.")
+            .arg(line.name).arg(m_rangeDays));
 
     LineChart::Series views;
     views.name = QStringLiteral("Views");

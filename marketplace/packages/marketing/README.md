@@ -243,6 +243,11 @@ channel card with no audience number, and the sparkline on every channel card
 (daily views when Analytics has them, else the headline number's snapshots
 over the range).
 
+**Following history.** A channel that reports a `following` count (including
+Mastodon and X) shows **Following over time** beside **Followers over time**.
+It uses the channel's recorded snapshots, so teams can see changes to the
+people and accounts they follow separately from audience growth.
+
 **Referring websites** come from the core `site_referrers` counter (all-time
 visits per referring host to this instance, excluding the instance's own
 hosts); hidden when the organization's site is on another domain.
