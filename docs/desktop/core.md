@@ -948,8 +948,11 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
 
 - **Build.** `FORKMESH_PACKAGE_MODULES` (default on for Linux, off elsewhere)
   and `FORKMESH_PACKAGE_MODULE_IDS` (default: app-store-status, aquarium,
-  backups, calories, computer-security, crm, marketing, people, rss-reader,
-  sleep, steps, stretch, sugar-break, voice-changer, water). Each becomes
+  backups, calories, cleanup, computer-security, crm, marketing, people,
+  rss-reader, sleep, steps, stretch, sugar-break, voice-changer, water). Disk
+  Cleanup joined the list when the desktop's core facade moved into the tree
+  (2026-10-15): it reaches the window only through its host socket and
+  `CoreCleanup`, and loads in under a millisecond when installed. Each becomes
   `build/packages/<id>.so` with a sidecar `<id>.json` (`api`, `abi`, `package`,
   `file`, `entrypoints`); configure removes module files the configuration no
   longer builds. Modules resolve the app's symbols through the `-rdynamic`

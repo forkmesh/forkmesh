@@ -1,7 +1,7 @@
 set(FORKMESH_PACKAGE_MODULE_API 1)
 set(FORKMESH_PACKAGE_MODULE_DEFAULT
-    app-store-status aquarium backups calories computer-security crm
-    marketing people rss-reader sleep steps stretch sugar-break
+    app-store-status aquarium backups calories cleanup computer-security
+    crm marketing people rss-reader sleep steps stretch sugar-break
     voice-changer water)
 if(UNIX AND NOT APPLE)
     set(_forkmesh_package_modules_default ON)
