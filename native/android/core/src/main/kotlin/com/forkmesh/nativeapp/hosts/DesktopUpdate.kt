@@ -132,8 +132,23 @@ class DesktopUpdateStore(
         return started.message
     }
 
-    fun restartComputer(confirmation: RemoteConfirmation): String =
-        family.run(confirmation).message
+    fun restartComputer(confirmation: RemoteConfirmation): String {
+        val started = family.run(confirmation)
+        synchronized(lock) {
+            lines = listOf("==> Restarting computer", "\$ loginctl reboot")
+            state = DesktopUpdateState(
+                running = true,
+                kind = COMPUTER_RESTART_ACTION,
+                status = "Restarting computer…",
+                relaunching = true,
+            )
+            error = ""
+            beginTracking()
+            stage = DesktopUpdateStage.Restarting
+        }
+        changed()
+        return started.message
+    }
 
     fun unwatch() {
         if (synchronized(lock) { tracking }) return
@@ -198,7 +213,7 @@ class DesktopUpdateStore(
         stage = when {
             state.running -> {
                 beginTracking()
-                if (state.relaunching) DesktopUpdateStage.Restarting else DesktopUpdateStage.Running
+                if (state.relaunching || state.kind == COMPUTER_RESTART_ACTION) DesktopUpdateStage.Restarting else DesktopUpdateStage.Running
             }
             state.error.isNotEmpty() -> {
                 tracking = false

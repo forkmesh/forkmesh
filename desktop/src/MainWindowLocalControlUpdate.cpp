@@ -24,7 +24,10 @@ constexpr int kUpdateFlushMs = 500;
 QJsonObject MainWindow::localControlUpdateState() const
 {
     updatectl::RunState run;
-    run.running = restartInProgress();
+    run.running = restartInProgress() || m_computerRestarting;
+    if (m_computerRestarting) {
+        run.kind = updatectl::computerRestartActionName();
+    }
     if (m_restartSpinButton) {
         run.kind = m_restartKind == RestartKind::Update ? QStringLiteral("update")
                                                         : QStringLiteral("rebuild");
@@ -98,12 +101,40 @@ void MainWindow::startLocalControlUpdate()
 
 void MainWindow::restartComputer()
 {
-    if (QProcess::startDetached(QStringLiteral("loginctl"), {QStringLiteral("reboot")})) {
-        logSystem(QStringLiteral("=== Computer restart requested ==="));
-        return;
-    }
-    logSystem(QStringLiteral("Could not request a computer restart."));
-    flashMessage(QStringLiteral("Could not request a computer restart."));
+    QProcess *process = new QProcess(this);
+    process->setProgram(QStringLiteral("loginctl"));
+    process->setArguments({QStringLiteral("reboot")});
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    const auto failed = [this, process](const QString &message) {
+        if (!m_computerRestarting) {
+            process->deleteLater();
+            return;
+        }
+        m_computerRestarting = false;
+        setUpdateStatus(message, true);
+        logSystem(message);
+        flashMessage(message);
+        process->deleteLater();
+    };
+    connect(process, &QProcess::errorOccurred, this,
+            [failed, process](QProcess::ProcessError error) {
+                if (error == QProcess::FailedToStart)
+                    failed(QStringLiteral("Could not request a computer restart: %1")
+                               .arg(process->errorString()));
+            });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this, failed, process](int exitCode, QProcess::ExitStatus exitStatus) {
+                if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                    logSystem(QStringLiteral("=== Computer restart requested ==="));
+                    process->deleteLater();
+                    return;
+                }
+                const QString detail = QString::fromUtf8(process->readAllStandardOutput()).simplified();
+                failed(detail.isEmpty()
+                           ? QStringLiteral("Could not request a computer restart (loginctl exited %1).").arg(exitCode)
+                           : QStringLiteral("Could not request a computer restart: %1").arg(detail));
+            });
+    process->start();
 }
 
 void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId,
@@ -139,7 +170,7 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
             server->respondError(connectionId, requestId, QStringLiteral("unknown_action"));
             return;
         }
-        if (restartInProgress()) {
+        if (restartInProgress() || m_computerRestarting) {
             server->respondError(connectionId, requestId, QStringLiteral("already_running"));
             return;
         }
@@ -180,13 +211,18 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
             server->respondError(connectionId, requestId, why);
             return;
         }
-        if (restartInProgress()) {
+        if (restartInProgress() || m_computerRestarting) {
             server->respondError(connectionId, requestId, QStringLiteral("already_running"));
             return;
         }
         if (computerRestart) {
             logSystem(QStringLiteral("Computer restart requested from %1.")
                           .arg(localControlDeviceLabel(connectionId)));
+            watchLocalControlUpdate(connectionId);
+            m_computerRestarting = true;
+            m_updateFeed.reset();
+            m_updateFeed.append(QStringLiteral("==> Restarting computer\n$ loginctl reboot\n"));
+            setUpdateStatus(QStringLiteral("Restarting computer..."));
             server->respond(connectionId, requestId,
                             {{QStringLiteral("started"), true},
                              {QStringLiteral("action"), action},
