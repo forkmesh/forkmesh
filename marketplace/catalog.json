@@ -38,6 +38,7 @@
     { "id": "forkmesh-sky-office", "version": "1.0.0", "manifest": "packages/forkmesh-sky-office/manifest.json" },
     { "id": "calories", "version": "2.5.1", "manifest": "packages/calories/manifest.json" },
     { "id": "vault", "version": "1.2.0", "manifest": "packages/vault/manifest.json" },
+    { "id": "rss-reader", "version": "1.0.0", "manifest": "packages/rss-reader/manifest.json" },
     { "id": "steps", "version": "1.1.0", "manifest": "packages/steps/manifest.json" },
     { "id": "water", "version": "1.1.0", "manifest": "packages/water/manifest.json" },
     { "id": "sleep", "version": "1.1.0", "manifest": "packages/sleep/manifest.json" },

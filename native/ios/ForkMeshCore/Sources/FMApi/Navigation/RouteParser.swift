@@ -252,6 +252,7 @@ public enum RouteParser {
         case "glasses-alert": return [.glassesAlert]
         case "face-changer": return [.faceChanger]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
+        case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "people": return [.people]
         case "docs": return [.docs]
         case "repos": return [.repos(.all)]
@@ -288,6 +289,8 @@ public enum RouteParser {
             return [.search(query: query["q"] ?? "", scope: searchScope(query["scope"]))]
         case "inbox":
             return [.inbox(InboxFilter(rawValue: tail.first ?? "") ?? .all)]
+        case "rss-reader":
+            return tail.isEmpty ? [.rssReader] : nil
         default:
             return routes(segments: all, query: query, me: me)
         }

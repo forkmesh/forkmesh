@@ -64,6 +64,7 @@ object Features {
         com.forkmesh.nativeapp.feature.glasses.GlassesFeature.install(app)
         com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
+        com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.people.PeopleFeature.install()
         com.forkmesh.nativeapp.feature.docs.DocsFeature.install()
         com.forkmesh.nativeapp.feature.market.MarketFeature.install(app)

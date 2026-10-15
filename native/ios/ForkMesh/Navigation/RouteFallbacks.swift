@@ -128,6 +128,7 @@ enum NavigationRoutes {
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }
+        fallback(routes, .rssReader) { _ in AnyView(RSSReaderScreen()) }
         fallback(routes, .people) { _ in AnyView(PeopleScreen()) }
         fallback(routes, .docs) { _ in AnyView(DocsScreen()) }
         fallback(routes, .vault) { _ in AnyView(VaultScreen()) }
