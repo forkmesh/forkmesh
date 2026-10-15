@@ -121,6 +121,7 @@ REPO_SECURITY_SCANS_RE = re.compile(
     r"(lease|ingest|latest|history|triage)$")
 # Public mirror health for a logical repo group.
 REPO_MIRRORS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/mirrors$")
+REPO_TRAFFIC_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/traffic$")
 # Exact-node verification. GET preserves the existing control-plane README
 # reachability probe; POST checks the registered public Smart HTTP URL and
 # records its repository-scoped signed-ref verdict without failing over.
