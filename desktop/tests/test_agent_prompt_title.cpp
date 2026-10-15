@@ -5,6 +5,7 @@
 #include "AgentWorktree.h"
 
 #include <cstdio>
+#include <QTemporaryDir>
 
 namespace {
 
@@ -98,24 +99,45 @@ int main()
     using forkmesh::agentwt::addScript;
     expectEq(addScript(QStringLiteral("/w/7-fix"), QStringLiteral("agent/7-fix"),
                        QStringLiteral("abc123"), false),
-             QStringLiteral("git worktree prune; git worktree remove --force "
-                            "'/w/7-fix' 2>/dev/null; git worktree add -B "
+             QStringLiteral("git worktree add -b "
                             "'agent/7-fix' '/w/7-fix' 'abc123'"),
              "worktree script quotes branch, path and base");
     expectEq(addScript(QStringLiteral("/w/8"),
                        QStringLiteral("x';touch${IFS}/tmp/pwned;'"),
                        QStringLiteral("main';id;'"), false),
-             QStringLiteral("git worktree prune; git worktree remove --force "
-                            "'/w/8' 2>/dev/null; git worktree add -B "
+             QStringLiteral("git worktree add -b "
                             "'x'\\'';touch${IFS}/tmp/pwned;'\\''' '/w/8' "
                             "'main'\\'';id;'\\'''"),
              "a branch name from a pull request cannot break out of its quotes");
     expectEq(addScript(QStringLiteral("/w/9"),
                        QStringLiteral("feat';reboot;'"), QString(), true),
-             QStringLiteral("git worktree prune; git worktree remove --force "
-                            "'/w/9' 2>/dev/null; git worktree add '/w/9' "
+             QStringLiteral("git worktree add '/w/9' "
                             "'feat'\\'';reboot;'\\'''"),
              "a resumed run's branch is quoted too");
+
+    QTemporaryDir workspaces;
+    auto workspace = [&workspaces](const QString &name, const QString &branch) {
+        const QString path = workspaces.filePath(name);
+        QDir().mkpath(path);
+        const QString gitDir = workspaces.filePath(QStringLiteral("git-") + name);
+        QDir().mkpath(gitDir);
+        QFile pointer(path + QStringLiteral("/.git"));
+        pointer.open(QIODevice::WriteOnly);
+        pointer.write("gitdir: " + gitDir.toUtf8() + "\n");
+        pointer.close();
+        QFile head(gitDir + QStringLiteral("/HEAD"));
+        head.open(QIODevice::WriteOnly);
+        head.write("ref: refs/heads/" + branch.toUtf8() + "\n");
+        return path;
+    };
+    const QString original = workspace(QStringLiteral("2091-original"), QStringLiteral("2091-original"));
+    workspace(QStringLiteral("20910-unrelated"), QStringLiteral("20910-unrelated"));
+    const auto recovered = forkmesh::agentwt::existingWorkspace(workspaces.path(), 2091);
+    expectEq(recovered.path, original, "recover the existing workspace after saved names drift");
+    expectEq(recovered.branch, QStringLiteral("2091-original"), "recover its actual branch");
+    workspace(QStringLiteral("2091-other"), QStringLiteral("2091-other"));
+    expectEq(forkmesh::agentwt::existingWorkspace(workspaces.path(), 2091).path,
+             QString(), "ambiguous workspaces are never guessed");
 
     if (failures == 0)
         std::printf("agent prompt title tests passed\n");

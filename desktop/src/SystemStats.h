@@ -70,7 +70,7 @@ int threadCount();
 
 int raiseOpenFileLimit();
 
-enum class Termination { Requested, AlreadyExited, Failed, Unsupported };
+enum class Termination { Requested, AlreadyExited, PermissionDenied, Failed, Unsupported };
 Termination requestTermination(qint64 pid, QString *error = nullptr);
 
 } // namespace SystemStats

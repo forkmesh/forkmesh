@@ -41,6 +41,8 @@ struct ShellTopBarState {
 
 struct ShellTopBar: View {
     @Environment(\.fmPalette) var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var motion: GenieMotion = GenieMotion.shared
 
     let state: ShellTopBarState
     let onOpenHub: () -> Void
@@ -91,6 +93,10 @@ struct ShellTopBar: View {
                         state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng,
                         statusEmoji: state.statusEmoji, away: state.statusAway,
                         diagnosticsTroubled: state.diagnosticsTroubled, size: 36, rounded: true)
+                        .rotation3DEffect(.degrees(reduceMotion ? 0 : motion.lean.height * 8),
+                                          axis: (x: 1, y: 0, z: 0))
+                        .rotation3DEffect(.degrees(reduceMotion ? 0 : -motion.lean.width * 8),
+                                          axis: (x: 0, y: 1, z: 0))
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -128,6 +134,11 @@ struct ShellTopBar: View {
         .padding(.horizontal, FmSpace.x4)
         .padding(.vertical, FmSpace.x1)
         .accessibilityElement(children: .contain)
+        .onAppear { if !reduceMotion { motion.begin() } }
+        .onDisappear { motion.end() }
+        .onChange(of: reduceMotion) { _, reduced in
+            if reduced { motion.end() } else { motion.begin() }
+        }
         .accessibilityIdentifier("home-top-bar")
     }
 }

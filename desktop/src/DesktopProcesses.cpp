@@ -3,8 +3,10 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QList>
 #include <QSet>
+#include <QStringList>
 
 #if defined(Q_OS_LINUX)
 #include <dirent.h>
@@ -93,6 +95,98 @@ QString stateWord(QChar state)
     default:
         return QStringLiteral("unknown");
     }
+}
+
+QString descriptionFor(const Process &process)
+{
+    if (process.self)
+        return QStringLiteral("ForkMesh desktop application");
+    if (process.forkmesh)
+        return QStringLiteral("Process started by ForkMesh");
+    const QString executable = QFileInfo(process.command.section(QLatin1Char(' '), 0, 0)).fileName();
+    const QString name = executable.isEmpty() ? process.name : executable;
+    static const QHash<QString, QString> descriptions{
+        {QStringLiteral("gnome-shell"), QStringLiteral("GNOME desktop shell")},
+        {QStringLiteral("Xwayland"), QStringLiteral("X11 compatibility display server")},
+        {QStringLiteral("dockerd"), QStringLiteral("Docker container runtime")},
+        {QStringLiteral("containerd"), QStringLiteral("Container runtime service")},
+        {QStringLiteral("sshd"), QStringLiteral("Secure Shell server")},
+        {QStringLiteral("systemd"), QStringLiteral("System and service manager")},
+        {QStringLiteral("pulseaudio"), QStringLiteral("Audio server")},
+        {QStringLiteral("pipewire"), QStringLiteral("Audio and video service")},
+        {QStringLiteral("chrome"), QStringLiteral("Web browser process")},
+        {QStringLiteral("firefox"), QStringLiteral("Web browser process")},
+        {QStringLiteral("python"), QStringLiteral("Python program")},
+        {QStringLiteral("python3"), QStringLiteral("Python program")},
+        {QStringLiteral("node"), QStringLiteral("Node.js program")},
+        {QStringLiteral("cc1plus"), QStringLiteral("C++ compiler worker")},
+    };
+    if (descriptions.contains(name))
+        return descriptions.value(name);
+    return process.command.isEmpty() ? QStringLiteral("System process")
+                                     : QStringLiteral("Runs %1").arg(name);
+}
+
+QString detailTextFor(const Process &process)
+{
+    QStringList lines;
+    lines.append(QStringLiteral("Name: %1").arg(process.name));
+    lines.append(QStringLiteral("Description: %1").arg(descriptionFor(process)));
+    lines.append(QStringLiteral("PID: %1").arg(process.pid));
+    lines.append(QStringLiteral("Parent PID: %1").arg(process.parentPid));
+    lines.append(QStringLiteral("Owner: %1 (UID %2)").arg(process.user).arg(process.uid));
+    lines.append(QStringLiteral("State: %1").arg(stateWord(process.state)));
+    lines.append(QStringLiteral("CPU: %1%").arg(process.cpuPercent < 0.0
+                                                       ? QStringLiteral("-")
+                                                       : QString::number(process.cpuPercent, 'f', 1)));
+    lines.append(QStringLiteral("Resident memory: %1").arg(corelogs::compactByteSize(process.rssBytes)));
+    lines.append(QStringLiteral("Threads: %1").arg(process.threads));
+    if (process.ageSeconds >= 0)
+        lines.append(QStringLiteral("Age: %1 seconds").arg(process.ageSeconds));
+    if (!process.command.isEmpty())
+        lines.append(QStringLiteral("Command: %1").arg(process.command));
+#if defined(Q_OS_LINUX)
+    const QString base = QStringLiteral("/proc/%1").arg(process.pid);
+    const QString executable = QFileInfo(base + QStringLiteral("/exe")).symLinkTarget();
+    const QString workingDirectory = QFileInfo(base + QStringLiteral("/cwd")).symLinkTarget();
+    if (!executable.isEmpty())
+        lines.append(QStringLiteral("Executable: %1").arg(executable));
+    if (!workingDirectory.isEmpty())
+        lines.append(QStringLiteral("Working directory: %1").arg(workingDirectory));
+    const QByteArray cgroup = readSmall(base + QStringLiteral("/cgroup")).trimmed();
+    if (!cgroup.isEmpty())
+        lines.append(QStringLiteral("Control group: %1").arg(QString::fromUtf8(cgroup)));
+    QDir descriptors(base + QStringLiteral("/fd"));
+    const int descriptorCount = descriptors.entryList(QDir::NoDotAndDotDot | QDir::AllEntries).size();
+    if (descriptorCount > 0)
+        lines.append(QStringLiteral("Open file descriptors: %1").arg(descriptorCount));
+    const QByteArray io = readSmall(base + QStringLiteral("/io"));
+    QStringList ioRows;
+    for (const QByteArray &row : io.split('\n')) {
+        if (row.startsWith("read_bytes:") || row.startsWith("write_bytes:"))
+            ioRows.append(QString::fromUtf8(row).simplified());
+    }
+    if (!ioRows.isEmpty())
+        lines.append(QStringLiteral("I/O: %1").arg(ioRows.join(QStringLiteral(", "))));
+    QStringList children;
+    QDir proc(QStringLiteral("/proc"));
+    const long pageBytes = qMax(1L, sysconf(_SC_PAGESIZE));
+    for (const QString &entry : proc.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        bool numeric = false;
+        entry.toLongLong(&numeric);
+        if (!numeric)
+            continue;
+        const Process child = parseStatLine(readSmall(proc.filePath(entry + QStringLiteral("/stat"))),
+                                            pageBytes);
+        if (child.parentPid == process.pid)
+            children.append(QStringLiteral("%1 (PID %2)").arg(child.name).arg(child.pid));
+        if (children.size() == 20)
+            break;
+    }
+    if (!children.isEmpty())
+        lines.append(QStringLiteral("Children: %1").arg(children.join(QStringLiteral(", "))));
+#endif
+    return lines.join(QLatin1Char('\n'));
 }
 
 void markTree(QList<Process> &processes, qint64 rootPid)
