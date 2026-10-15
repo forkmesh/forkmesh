@@ -261,7 +261,7 @@
               <section data-analytics-install-panel class="an-card fm-blankslate" hidden>
                 <i data-lucide="chart-line"></i>
                 <h2 class="fm-blankslate-title">Analytics is not installed for <span data-analytics-install-org class="an-mono"></span></h2>
-                <p class="fm-blankslate-desc">Install first-party analytics, session replay, feature flags, and surveys for this organization. Data is sealed with this instance's key and never sent to a third party.</p>
+                <p class="fm-blankslate-desc">Install first-party analytics, session recordings, feature flags, and surveys for this organization. Data is sealed with this instance's key and never sent to a third party.</p>
                 <button data-analytics-install type="button" class="fm-btn fm-btn-sm fm-btn-cta" hidden>Install for this organization</button>
                 <p data-analytics-install-denied class="fm-blankslate-desc" hidden>Ask an organization owner or admin to install Analytics.</p>
               </section>
@@ -269,7 +269,7 @@
               <section data-analytics-no-project class="an-card fm-blankslate" hidden>
                 <i data-lucide="folder-open"></i>
                 <h2 class="fm-blankslate-title">No analytics project yet</h2>
-                <p class="fm-blankslate-desc">A project holds one site or app: its write key, events, replays, flags, and surveys.</p>
+                <p class="fm-blankslate-desc">A project holds one site or app: its write key, events, recordings, flags, and surveys.</p>
                 <button data-analytics-create-first type="button" class="fm-btn fm-btn-sm fm-btn-cta" hidden>Create the first project</button>
                 <p data-analytics-create-denied class="fm-blankslate-desc" hidden>Ask an organization owner or admin to create a project.</p>
               </section>
@@ -281,7 +281,7 @@
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="dashboards" aria-selected="false"><i data-lucide="layout-grid"></i>Dashboards</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="events" aria-selected="false"><i data-lucide="list"></i>Events</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="people" aria-selected="false"><i data-lucide="users"></i>People</button>
-                  <button type="button" role="tab" class="an-tab" data-analytics-tab="replay" aria-selected="false"><i data-lucide="play-circle"></i>Replay</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="replay" aria-selected="false"><i data-lucide="video"></i>Recordings</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="heatmaps" aria-selected="false"><i data-lucide="flame"></i>Heatmaps</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="flags" aria-selected="false"><i data-lucide="flag"></i>Flags</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="surveys" aria-selected="false"><i data-lucide="message-square"></i>Surveys</button>
@@ -468,10 +468,10 @@
                       <span data-analytics-replay-person class="fm-label" hidden></span>
                       <button data-analytics-replay-person-clear type="button" class="fm-btn fm-btn-sm" hidden>Show everyone</button>
                     </div>
-                    <div data-analytics-replay-disabled class="fm-flash fm-flash-neutral" hidden><i data-lucide="info"></i><div class="fm-flash-body">Session replay is off for this project. Turn it on under Settings → Session replay.</div></div>
+                    <div data-analytics-replay-disabled class="fm-flash fm-flash-neutral" hidden><i data-lucide="info"></i><div class="fm-flash-body"><span class="fm-flash-title">Recordings are off for this project.</span><p>When they are on, each visit is recorded so you can watch the visitor's mouse, clicks, scrolling and the pages they viewed. Typed text is always masked.</p></div><div class="fm-flash-actions"><button data-analytics-replay-enable type="button" class="fm-btn fm-btn-sm" hidden>Turn on recordings</button></div></div>
                     <section class="an-card">
-                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Session</th><th scope="col">Started</th><th scope="col" class="r">Duration</th><th scope="col" class="r">Active</th><th scope="col" class="r">Clicks</th><th scope="col" class="r">Keys</th><th scope="col" class="r">Errors</th><th scope="col">Device</th></tr></thead><tbody data-analytics-replay-list></tbody></table></div>
-                      <div data-analytics-replay-empty class="fm-blankslate" hidden><i data-lucide="play-circle"></i><p class="fm-blankslate-title">No recordings match</p></div>
+                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Visitor</th><th scope="col">Started</th><th scope="col" class="r">Duration</th><th scope="col" class="r">Active</th><th scope="col" class="r">Pages</th><th scope="col" class="r">Clicks</th><th scope="col" class="r">Keys</th><th scope="col" class="r">Errors</th><th scope="col">Device</th></tr></thead><tbody data-analytics-replay-list></tbody></table></div>
+                      <div data-analytics-replay-empty class="fm-blankslate" hidden><i data-lucide="video"></i><p class="fm-blankslate-title">No recordings match</p></div>
                       <div class="an-pad" data-analytics-replay-more-wrap hidden><button data-analytics-replay-more type="button" class="fm-btn fm-btn-sm">Load more</button></div>
                     </section>
                   </div>
@@ -494,10 +494,16 @@
                         </div>
                         <p class="an-hint" style="margin:0">Marks on the timeline are clicks, page changes, and errors; hatched stretches are inactivity. Typed text is always masked.</p>
                       </div>
-                      <section class="an-card">
-                        <div class="an-card-head"><h3>Events in this session</h3></div>
-                        <div data-analytics-replay-events class="an-event-list"></div>
-                      </section>
+                      <div class="an-stack">
+                        <section class="an-card">
+                          <div class="an-card-head"><h3>Pages viewed</h3></div>
+                          <div data-analytics-replay-pages class="an-event-list"></div>
+                        </section>
+                        <section class="an-card">
+                          <div class="an-card-head"><h3>Events in this session</h3></div>
+                          <div data-analytics-replay-events class="an-event-list"></div>
+                        </section>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -577,7 +583,7 @@
                       </div>
                     </section>
                     <section class="an-card">
-                      <div class="an-card-head"><h2>Session replay</h2></div>
+                      <div class="an-card-head"><h2>Recordings</h2></div>
                       <div class="an-pad an-form-grid">
                         <label class="an-check"><input data-analytics-set-replay-enabled type="checkbox" /> Record sessions</label>
                         <label class="an-check"><input data-analytics-set-replay-mask-text type="checkbox" /> Mask all text</label>
@@ -590,9 +596,9 @@
                       <div class="an-card-head"><h2>Quotas and retention</h2></div>
                       <div class="an-pad an-form-grid">
                         <label class="an-field">Events per day<input data-analytics-set-event-quota type="number" min="0" max="200000" class="an-input" /></label>
-                        <label class="an-field">Replay megabytes per day<input data-analytics-set-replay-quota type="number" min="0" max="400" class="an-input" /></label>
+                        <label class="an-field">Recording megabytes per day<input data-analytics-set-replay-quota type="number" min="0" max="400" class="an-input" /></label>
                         <label class="an-field">Keep events (days)<input data-analytics-set-retention type="number" min="1" max="400" class="an-input" /></label>
-                        <label class="an-field">Keep replays (days)<input data-analytics-set-replay-retention type="number" min="1" max="90" class="an-input" /></label>
+                        <label class="an-field">Keep recordings (days)<input data-analytics-set-replay-retention type="number" min="1" max="90" class="an-input" /></label>
                       </div>
                     </section>
                     <section class="an-card">

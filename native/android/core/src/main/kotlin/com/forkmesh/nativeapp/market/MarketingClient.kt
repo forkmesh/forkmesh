@@ -87,6 +87,9 @@ fun PackagesClient.importMarketingKeywords(rows: List<Map<String, Any?>>, organi
     return Triple(reply.int("created"), reply.int("updated"), reply.int("skipped"))
 }
 
+fun PackagesClient.marketingAppStore(organization: String): MarketingAppStore =
+    MarketingAppStore.fromJson(call("GET", marketingPath(organization, "app-store")))
+
 fun PackagesClient.readyPost(organization: String, channel: String = "x"): MarketingReadyPosts =
     MarketingReadyPosts.fromJson(call("GET", marketingPath(organization, "ready-post"), listOf("channel" to channel)).obj("readyPost"), channel)
 

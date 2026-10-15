@@ -20,7 +20,7 @@ from asc_appstore import ios_versions, item_version, state, submission_items  # 
 from asc_bundle_ids import APP_BUNDLE_ID, action_variables  # noqa: E402
 from asc_testflight import Session, app_id  # noqa: E402
 
-USAGE = "usage: asc_store_report.py [--feedback N] [--json] [--publish]"
+USAGE = "usage: asc_store_report.py [--feedback N] [--json] [--publish] [--marketing ORG]"
 FORMAT = "forkmesh-app-store-status-v1"
 PUBLISH_PREFIX = "/api/app-store-status"
 PUBLISH_PROOF = "forkmesh-app-store-status-request-v1"
@@ -57,6 +57,11 @@ PRODUCT_KINDS = {
 KINDS = ("downloads", "redownloads", "updates")
 MONTHLY_REPORT_DELAY = timedelta(days=7)
 RECENT_DAYS = (7, 30)
+MARKETING_PREFIX = "/api/marketing"
+MARKETING_BACKFILL_DAYS = 365
+MARKETING_OVERLAP_DAYS = 3
+MARKETING_PENDING_DAYS = 2
+MARKETING_BATCH_DAYS = 120
 
 
 def get(api, path: str, query: dict | None = None) -> dict:
@@ -155,21 +160,37 @@ def vendor_number(environ=os.environ) -> str:
     return environ.get("ASC_VENDOR_NUMBER", "").strip() or action_variables().get("ASC_VENDOR_NUMBER", "")
 
 
-def units(api, vendor: str, app: str, frequency: str, date: str) -> Counter:
+def report(api, vendor: str, app: str, frequency: str, date: str) -> dict:
+    cache = api.__dict__.setdefault("sales_reports", {})
+    key = (vendor, app, frequency, date)
+    if key in cache:
+        return cache[key]
     query = {
         "filter[frequency]": frequency, "filter[reportType]": "SALES",
         "filter[reportSubType]": "SUMMARY", "filter[version]": "1_0",
         "filter[vendorNumber]": vendor, "filter[reportDate]": date,
     }
     raw = api.download("/v1/salesReports?" + urllib.parse.urlencode(query))
-    found = Counter()
-    if not raw:
-        return found
-    for row in csv.DictReader(io.StringIO(gzip.decompress(raw).decode("utf-8")), delimiter="\t"):
+    found = {"available": raw is not None, "counts": Counter(),
+             "territories": Counter(), "devices": Counter()}
+    for row in csv.DictReader(io.StringIO(gzip.decompress(raw).decode("utf-8") if raw else ""),
+                              delimiter="\t"):
         kind = PRODUCT_KINDS.get((row.get("Product Type Identifier") or "").strip())
-        if kind and (row.get("Apple Identifier") or "").strip() == app:
-            found[kind] += int(float(row.get("Units") or 0))
+        if not kind or (row.get("Apple Identifier") or "").strip() != app:
+            continue
+        count = int(float(row.get("Units") or 0))
+        found["counts"][kind] += count
+        if kind == "downloads":
+            found["territories"][(row.get("Country Code") or "").strip().upper()] += count
+            found["devices"][(row.get("Device") or "").strip()] += count
+    for part in ("territories", "devices"):
+        found[part].pop("", None)
+    cache[key] = found
     return found
+
+
+def units(api, vendor: str, app: str, frequency: str, date: str) -> Counter:
+    return Counter(report(api, vendor, app, frequency, date)["counts"])
 
 
 def next_month(month):
@@ -215,6 +236,81 @@ def downloads(api, app: str, versions: list, vendor: str, today) -> dict:
                       if when >= today - timedelta(days=span)), Counter())
         result["recent"].append({"days": span, **counts(recent)})
     return result
+
+
+def marketing_start(stored_last: str, since: str, today):
+    start = today - timedelta(days=MARKETING_BACKFILL_DAYS)
+    try:
+        start = max(start, datetime.strptime(since + "-01", "%Y-%m-%d").date())
+    except ValueError:
+        pass
+    try:
+        return max(start, datetime.strptime(stored_last, "%Y-%m-%d").date()
+                   - timedelta(days=MARKETING_OVERLAP_DAYS))
+    except ValueError:
+        return start
+
+
+def marketing_days(api, vendor: str, app: str, start, end, today) -> list:
+    days = [start + timedelta(days=n) for n in range((end - start).days + 1)]
+    with ThreadPoolExecutor(8) as pool:
+        found = list(pool.map(lambda when: report(api, vendor, app, "DAILY", when.isoformat()),
+                              days))
+    while days and not found[-1]["available"] and (
+            today - days[-1]).days < MARKETING_PENDING_DAYS:
+        days.pop()
+        found.pop()
+    return [{"day": when.isoformat(), **counts(item["counts"]),
+             "territories": {key: value for key, value in item["territories"].items() if value > 0},
+             "devices": {key: value for key, value in item["devices"].items() if value > 0}}
+            for when, item in zip(days, found)]
+
+
+def marketing_request(method: str, path: str, body=None) -> dict:
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    import forkmesh_mcp_server
+    return forkmesh_mcp_server.marketing_request(method, path, body)
+
+
+def marketing_organization(organization: str) -> str:
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    import forkmesh_mcp_server
+    return forkmesh_mcp_server.marketing_organization(organization or None)
+
+
+def publish_marketing(snapshot: dict, api, app: str, vendor: str, today, organization: str = "",
+                      request=None) -> bool:
+    if not vendor:
+        print("\nnot sent to Marketing: set ASC_VENDOR_NUMBER to read daily downloads")
+        return False
+    days = []
+    try:
+        if request is None:
+            request = marketing_request
+            organization = marketing_organization(organization)
+        path = f"{MARKETING_PREFIX}/{organization}/app-store"
+        stored = request("GET", path).get("appStore") or {}
+        last = stored.get("lastDay") or "" if (stored.get("app") or {}).get("id") == app else ""
+        start = marketing_start(last, snapshot["downloads"].get("since", ""), today)
+        end = today - timedelta(days=1)
+        days = marketing_days(api, vendor, app, start, end, today) if start <= end else []
+        body = {"app": {"id": app, "name": snapshot["app"].get("name", ""),
+                        "bundleId": snapshot["app"].get("bundleId", APP_BUNDLE_ID)},
+                "versions": snapshot["versions"], "reviews": snapshot["reviews"]}
+        result = {}
+        for index in range(0, max(1, len(days)), MARKETING_BATCH_DAYS):
+            result = request("PUT", path, {**body, "days": days[index:index + MARKETING_BATCH_DAYS]})
+    except (Exception, SystemExit) as error:
+        print(f"\nnot sent to Marketing: {error}")
+        return False
+    summary = result.get("appStore") or {}
+    month = next((span for span in summary.get("windows", []) if span.get("days") == 30), {})
+    print(f"\nsent {len(days)} days of App Store downloads to Marketing ({organization}): "
+          f"{month.get('downloads', 0)} downloads in the 30 days to "
+          f"{summary.get('lastDay') or 'no reported day yet'}")
+    return True
 
 
 def testflight(api, app: str, snapshot: dict) -> None:
@@ -423,6 +519,7 @@ def publish(snapshot: dict, request=None) -> bool:
 def main(args: list[str]) -> None:
     shown = 5
     as_json = publishing = False
+    organization = os.environ.get("FORKMESH_MARKETING_ORG", "").strip()
     rest = list(args)
     while rest:
         arg = rest.pop(0)
@@ -432,17 +529,22 @@ def main(args: list[str]) -> None:
             as_json = True
         elif arg == "--publish":
             publishing = True
+        elif arg == "--marketing" and rest:
+            organization = rest.pop(0).strip().lower()
         else:
             raise SystemExit(USAGE)
     api = Session()
     app = app_id(api)
-    snapshot = collect(api, app, shown, vendor_number(), datetime.now(timezone.utc).date())
+    vendor = vendor_number()
+    today = datetime.now(timezone.utc).date()
+    snapshot = collect(api, app, shown, vendor, today)
     if as_json:
         print(json.dumps(snapshot, indent=2))
     else:
         render(snapshot)
     if publishing:
         publish(snapshot)
+        publish_marketing(snapshot, api, app, vendor, today, organization)
 
 
 if __name__ == "__main__":

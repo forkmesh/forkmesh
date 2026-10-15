@@ -120,6 +120,9 @@ private:
     void openEmailSuggestion(const QJsonObject &suggestion);
     void loadDiscordPosts(bool force = false);
     void renderDiscordPosts();
+    void renderDiscordChart();
+    QString channelContext(const QString &id) const;
+    void copyChannelContext(const QString &id);
     void loadReadyPost();
     void applyReadyPost(const QJsonObject &ready);
     void renderReadyPost();
@@ -222,6 +225,9 @@ private:
     bool adMatches(const QJsonObject &ad, bool withStatus) const;
     void renderGrowth();
     void renderReddit();
+    void loadAppStore();
+    void renderAppStore();
+    void showAppStore();
     void editExperiment(const QJsonObject &item = QJsonObject());
     void editFunnelWeek(const QJsonObject &week = QJsonObject());
     void deleteFunnelWeek(const QJsonObject &week);
@@ -340,12 +346,15 @@ private:
     DashboardPanel *m_detailDeskPanel = nullptr;
     TileGrid *m_detailDesk = nullptr;
     QWidget *m_detailRedditBox = nullptr;
+    QWidget *m_detailAppStoreBox = nullptr;
     QVBoxLayout *m_detailAgent = nullptr;
     DashboardPanel *m_detailChartPanel = nullptr;
     QButtonGroup *m_detailMetric = nullptr;
     LineChart *m_detailChart = nullptr;
     DashboardPanel *m_detailViewsPanel = nullptr;
     LineChart *m_detailViewsChart = nullptr;
+    DashboardPanel *m_detailDiscordChartPanel = nullptr;
+    LineChart *m_detailDiscordChart = nullptr;
     DashboardPanel *m_detailSnapshotsPanel = nullptr;
     QTableWidget *m_detailSnapshots = nullptr;
     DashboardPanel *m_detailContentPanel = nullptr;
@@ -535,6 +544,27 @@ private:
     DashboardPanel *m_redditPanel = nullptr;
     QButtonGroup *m_redditStatus = nullptr;
     QTableWidget *m_redditTable = nullptr;
+    QJsonObject m_appStore;
+    QString m_appStoreOrg;
+    QString m_appStoreError;
+    int m_appStoreSerial = 0;
+    int m_appStoreDays = 30;
+    bool m_appStoreLoading = false;
+    QLabel *m_appStoreFacts = nullptr;
+    QPushButton *m_appStoreOpen = nullptr;
+    QLabel *m_appStoreSetup = nullptr;
+    KpiStrip *m_appStoreKpis = nullptr;
+    DashboardPanel *m_appStoreChartPanel = nullptr;
+    QButtonGroup *m_appStoreRange = nullptr;
+    LineChart *m_appStoreChart = nullptr;
+    DashboardPanel *m_appStoreCountriesPanel = nullptr;
+    BarRows *m_appStoreCountries = nullptr;
+    DashboardPanel *m_appStoreDevicesPanel = nullptr;
+    BarRows *m_appStoreDevices = nullptr;
+    DashboardPanel *m_appStoreReviewsPanel = nullptr;
+    QLabel *m_appStoreReviews = nullptr;
+    DashboardPanel *m_appStoreVersionsPanel = nullptr;
+    QLabel *m_appStoreVersions = nullptr;
 };
 
 } // namespace forkmesh::marketing

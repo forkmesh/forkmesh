@@ -214,7 +214,7 @@ def test_added_channel_links_save_and_scheme_less_urls_become_https():
         "discord", "github"]
     assert set(reloaded["refreshableChannels"]) == {
         "blog", "reddit", "x", "youtube", "mastodon", "discord", "github",
-        "google-search", "email"}
+        "google-search", "email", "app-store"}
 
 
 def test_a_deleted_channel_leaves_the_dashboard_with_its_numbers_until_added_again():
@@ -637,6 +637,47 @@ def test_desktop_and_web_show_the_discord_posts_on_the_discord_channel():
     assert "m_detailDiscordPanel->setVisible(discord);" in native
     assert 'request(orgPath("/discord-posts"))' in page
     assert '${item.channel === "discord" ? discordPostsList() : ""}' in page
+
+
+def test_the_discord_page_charts_posts_over_time_next_to_views_over_time():
+    native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    assert 'm_detailDiscordChartPanel = new DashboardPanel(QStringLiteral("Posts over time"));' in native
+    assert """    detailChartsLayout->addWidget(m_detailViewsPanel, 1);
+    detailChartsLayout->addWidget(m_detailDiscordChartPanel, 1);""" in native
+    assert "m_detailDiscordChartPanel->setVisible(discord);" in native
+    render = native.split("void MarketingFeature::renderDiscordPosts()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert render.rstrip().endswith("renderDiscordChart();\n}")
+    chart = native.split("void MarketingFeature::renderDiscordChart()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert "counts[qMin(days - 1, int((at - start) / kDay))] += 1;" in chart
+    assert "m_detailDiscordChart->setSeries(lines, start, end," in chart
+
+
+def test_every_channel_copies_an_ai_context_that_checks_its_last_advice():
+    native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    page = (PACKAGE / "content" / "web" / "page.js").read_text()
+    detail = native.split("void MarketingFeature::renderChannelDetail()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert 'auto *context = action(QStringLiteral("AI context"), QStringLiteral(' in detail
+    assert "copyChannelContext(id); });" in detail
+    context = native.split("QString MarketingFeature::channelContext(const QString &id) const", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    copy = native.split("void MarketingFeature::copyChannelContext(const QString &id)", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    for text in ("## What to do", "Notes for next time", "## Since the last copy",
+                 "## Discord posts in the last %1 days", "## Playbook for %1 channels"):
+        assert text in context
+    assert "QSettings().value(contextKey(organization, id)).toMap()" in context
+    assert "QGuiApplication::clipboard()->setText(channelContext(id));" in copy
+    assert "QSettings().setValue(contextKey(organization, id)," in copy
+    card = page.split("function channelCard(", 1)[1].split("\n  }\n", 1)[0]
+    assert '<button data-marketing-channel-context="${escapeHtml(item.channel)}"' in card
+    assert "else if (data.marketingChannelContext) copyChannelContext(data.marketingChannelContext);" in page
+    web = page.split("function channelContext(channel) {", 1)[1].split("\n  }\n", 1)[0]
+    for text in ("## What to do", "Notes for next time", "## Since the last copy"):
+        assert text in web
+    assert "localStorage.setItem(contextKey(channel)" in page
 
 
 def test_the_discord_posts_are_read_again_when_the_channel_page_is_opened():
@@ -3397,3 +3438,144 @@ def test_marketing_activity_and_browser_plugin_updates_raise_pings(monkeypatch):
     assert runtime.pings == []
     assert marketing._activity_rule(
         "x-connection", "", "POST", {"name": "secret"})[3] == ""
+    assert marketing._activity_rule("app-store", "", "PUT", {})[:3] == (
+        "App Store numbers updated", "team", True)
+
+
+APP_STORE_ID = "6803060735"
+
+
+def _app_store_days(runtime, count, offset=1):
+    from datetime import timedelta, timezone
+    today = datetime.fromtimestamp(runtime.clock / 1000, timezone.utc).date()
+    return [{"day": (today - timedelta(days=offset + index)).isoformat(),
+             "downloads": index % 4, "redownloads": 1, "updates": 2,
+             "territories": {"US": index % 4}, "devices": {"iPhone": index % 4}}
+            for index in reversed(range(count))]
+
+
+def _send_app_store(runtime, days, actor="alice", **extra):
+    body = {"app": {"id": APP_STORE_ID, "name": "ForkMesh",
+                    "bundleId": "com.forkmesh.forkmesh"}, "days": days, **extra}
+    return call(runtime.use("PUT", actor, body), "/api/marketing/acme/app-store")
+
+
+def test_app_store_downloads_are_owner_sent_sealed_and_summarised_for_members():
+    runtime = Runtime()
+    days = _app_store_days(runtime, 40)
+    del days[5]
+    review = {"createdAt": "2026-10-01T10:00:00-07:00", "rating": 9, "title": "Great",
+              "territory": "usa", "body": "Mirrors   my repos"}
+    version = {"version": "1.4.0", "build": "18", "createdAt": "2026-10-01T10:00:00Z",
+               "status": {"state": "READY_FOR_SALE", "label": "Ready for sale", "tone": "good"}}
+    assert _send_app_store(runtime, days, "charlie")["status"] == 403
+    sent = _send_app_store(runtime, days, reviews=[review, {}], versions=[version])
+    assert sent["status"] == 200 and sent["data"]["stored"] == 39
+    rows = runtime.db.execute("SELECT data FROM marketing_app_store_days").fetchall()
+    assert len(rows) == 39 and all(row["data"].startswith("sealed:") for row in rows)
+    read = call(runtime.use("GET", "charlie"), "/api/marketing/acme/app-store")["data"]
+    assert read["canPublish"] is False
+    store = read["appStore"]
+    assert store["app"] == {"id": APP_STORE_ID, "name": "ForkMesh",
+                            "bundleId": "com.forkmesh.forkmesh"}
+    assert (store["firstDay"], store["lastDay"]) == (days[0]["day"], days[-1]["day"])
+    assert len(store["days"]) == 40 and store["days"][5]["downloads"] == 0
+    assert set(store["days"][0]) == {"day", "downloads", "redownloads", "updates"}
+    month = next(window for window in store["windows"] if window["days"] == 30)
+    assert month["to"] == store["lastDay"] and month["redownloads"] == 30
+    assert month["downloads"] == sum(day["downloads"] for day in days[-30:])
+    assert month["territories"] == [{"code": "US", "downloads": month["downloads"]}]
+    assert [window["comparable"] for window in store["windows"]] == [True, False, False, False]
+    assert store["total"]["updates"] == 78 and store["bestDay"]["downloads"] == 3
+    assert store["reviews"] == [{"createdAt": 1790874000000, "rating": 5, "title": "Great",
+                                 "territory": "USA", "body": "Mirrors my repos"}]
+    assert store["versions"][0]["status"]["label"] == "Ready for sale"
+    assert store["publishedBy"] == "alice" and store["fresh"] is True
+    overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
+    channel = next(item for item in overview["summary"]["channels"]
+                   if item["channel"] == "app-store")
+    assert (channel["downloads"], channel["redownloads"]) == (month["downloads"], 30)
+    assert channel["health"]["source"] == "app-store-connect"
+    assert [check["id"] for check in channel["health"]["checks"]] == ["link", "fresh"]
+    assert channel["health"]["state"] == "good"
+    settings = next(item for item in overview["settings"]["channels"] if item["id"] == "app-store")
+    assert settings["profileUrl"] == "https://apps.apple.com/app/id" + APP_STORE_ID
+    before = len(runtime.db.execute("SELECT 1 FROM marketing_metrics").fetchall())
+    _send_app_store(runtime, days[-3:])
+    assert len(runtime.db.execute("SELECT 1 FROM marketing_metrics").fetchall()) == before
+
+
+def test_app_store_days_are_validated_pruned_and_reset_for_another_app():
+    runtime = Runtime()
+    assert _send_app_store(runtime, [{"day": "2026-02-30"}])["data"]["error"] == (
+        "invalid_app_store_day")
+    assert _send_app_store(runtime, _app_store_days(runtime, 1, 900))["status"] == 400
+    assert _send_app_store(runtime, _app_store_days(runtime, 401))["data"]["error"] == (
+        "invalid_app_store_days")
+    assert call(runtime.use("PUT", body={"days": []}),
+                "/api/marketing/acme/app-store")["data"]["error"] == "app_store_app_required"
+    days = _app_store_days(runtime, 3)
+    days[0].update(downloads=-4, updates=True, territories={"usa": 2, "DE": "x", "FR": 2.9},
+                   devices={"": 3, "iPad": 1})
+    stored = _send_app_store(runtime, days)["data"]["appStore"]
+    assert stored["days"][0]["downloads"] == 0 and stored["days"][0]["updates"] == 0
+    week = stored["windows"][0]
+    assert week["territories"] == [{"code": "FR", "downloads": 2}, {"code": "US", "downloads": 1}]
+    assert {"name": "iPad", "downloads": 1} in week["devices"]
+    other = call(runtime.use("PUT", body={"app": {"id": "42"}, "days": days[-1:]}),
+                 "/api/marketing/acme/app-store")["data"]["appStore"]
+    assert other["app"]["id"] == "42" and len(other["days"]) == 1
+
+
+def test_app_store_refresh_reads_the_rating_and_listing_from_the_public_lookup():
+    runtime = Runtime()
+    _configure(runtime, **{"app-store": "https://apps.apple.com/de/app/forkmesh/id" + APP_STORE_ID})
+    lookup = "https://itunes.apple.com/lookup?id=%s&country=de" % APP_STORE_ID
+    runtime.outbound[lookup] = json.dumps({"resultCount": 1, "results": [{
+        "trackId": int(APP_STORE_ID), "trackName": "ForkMesh", "averageUserRating": 4.62,
+        "userRatingCount": 12, "version": "1.4.0", "primaryGenreName": "Developer Tools",
+        "currentVersionReleaseDate": "2026-10-10T07:00:00Z", "formattedPrice": "Free",
+        "trackViewUrl": "https://apps.apple.com/de/app/forkmesh/id6803060735?uo=4"}]})
+    refreshed = _refresh(runtime, "app-store")["data"]
+    assert refreshed["refresh"]["metrics"]["ratings"] == 12
+    channel = next(item for item in refreshed["summary"]["channels"]
+                   if item["channel"] == "app-store")
+    assert channel["rating"] == 4.62 and channel["health"]["source"] == "app-store"
+    guide = {step["id"]: step["done"] for step in channel["health"]["guide"]}
+    assert guide == {"link": True, "rating": True, "downloads": False}
+    store = call(runtime.use("GET"), "/api/marketing/acme/app-store")["data"]["appStore"]
+    assert store["lookup"]["version"] == "1.4.0" and store["lookup"]["country"] == "DE"
+    assert store["lastDay"] == "" and store["days"] == [] and store["windows"] == []
+    sent = _send_app_store(runtime, _app_store_days(runtime, 2))["data"]["appStore"]
+    assert sent["lookup"]["ratings"] == 12
+    overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
+    channel = next(item for item in overview["summary"]["channels"]
+                   if item["channel"] == "app-store")
+    assert channel["rating"] == 4.62 and channel["ratings"] == 12
+    _configure(runtime, **{"app-store": "https://apps.apple.com/app/forkmesh"})
+    assert _refresh(runtime, "app-store")["data"]["error"] == "app_store_url_unsupported"
+    assert asyncio.run(marketing.org_has_data(runtime, "org:acme"))
+    exported = asyncio.run(marketing.export_org_data(runtime, "org:acme", "acme"))
+    assert len(exported["appStore"]["days"]) == 2 and exported["appStore"]["lookup"]["ratings"] == 12
+    asyncio.run(marketing.purge_org_data(runtime, "org:acme"))
+    assert asyncio.run(marketing.org_has_data(runtime, "org:acme")) is False
+
+
+def test_the_app_store_desk_is_wired_on_the_web_surface():
+    view = (PACKAGE / "content" / "web" / "view.html").read_text()
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    manifest = json.loads((PACKAGE / "manifest.json").read_text())
+    assert "https://itunes.apple.com" in manifest["worker"]["outboundOrigins"]
+    assert marketing.APP_STORE_LOOKUP_ORIGIN in manifest["worker"]["outboundOrigins"]
+    for hook in ("data-marketing-app-store-page", "data-marketing-app-store-chart",
+                 'data-marketing-app-store-range="365"', 'data-marketing-app-store-metric="updates"',
+                 "data-marketing-app-store-countries", "data-marketing-app-store-devices",
+                 "data-marketing-app-store-reviews", "data-marketing-app-store-versions",
+                 "data-marketing-app-store-listing", "asc_store_report.py --publish"):
+        assert hook in view, hook
+    for hook in ('orgPath("/app-store")', 'name === "app-store"', '"app-store": `<button data-marketing-page="app-store"',
+                 'channel === "app-store") return appStoreDesk(item)', '["downloads", "Downloads · 30D"]',
+                 '"app-store-connect": "from App Store Connect"', '"channels", "app-store"].includes(params.get("page"))'):
+        assert hook in web, hook
+    for step in marketing._app_store_guide({}, [], 0):
+        assert step["action"] in ("link", "refresh", "app-store")

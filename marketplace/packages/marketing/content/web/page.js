@@ -10,11 +10,12 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     redditThreads: [], redditDesk: {}, channelPlaybooks: {}, performance: null,
     campaigns: [], campaignTemplates: [], keywords: [], suggestions: [], assistantAvailable: false,
     traffic: null, assistant: null, emailSuggestions: null, discordPosts: null, readyPosts: {}, readyPost: null,
+    appStore: null,
   }, view: {
     rangeDays: 30, chartMetric: "reach", channelSort: "reach", status: "", contentLimit: 50,
     page: "dashboard", adStatus: "", adChannel: "", adCurrency: "", experimentStatus: "",
     redditStatus: "", healthFilter: "", performanceDays: 28, performanceProject: "",
-    campaignStatus: "open", keywordView: "tracked",
+    campaignStatus: "open", keywordView: "tracked", appStoreRange: 30, appStoreMetric: "downloads",
   }};
 
   const DAY = 86400000;
@@ -128,6 +129,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         || ("marketingAdsOnly" in node.dataset && page !== "ads")
         || ("marketingGrowthOnly" in node.dataset && page !== "growth")
         || ("marketingRedditOnly" in node.dataset && page !== "reddit")
+        || ("marketingAppStoreOnly" in node.dataset && page !== "app-store")
         || ("marketingChannelsOnly" in node.dataset && page !== "channels")
         || ("marketingPerformanceOnly" in node.dataset && page !== "performance");
     });
@@ -135,7 +137,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (picker) picker.hidden = !state.marketing.installed || page !== "performance"
       || (state.marketing.performance?.projects || []).length < 2;
     $$(`[data-marketing-page]`).forEach((button) =>
-      button.setAttribute("aria-pressed", String(button.dataset.marketingPage === (page === "reddit" ? "channels" : page))));
+      button.setAttribute("aria-pressed", String(button.dataset.marketingPage === (["reddit", "app-store"].includes(page) ? "channels" : page))));
   }
 
   function downloadJson(payload, filename) {
@@ -451,6 +453,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-ads-page]`)?.classList.toggle("hidden", name !== "ads");
     $(`[data-marketing-growth-page]`)?.classList.toggle("hidden", name !== "growth");
     $(`[data-marketing-reddit-page]`)?.classList.toggle("hidden", name !== "reddit");
+    $(`[data-marketing-app-store-page]`)?.classList.toggle("hidden", name !== "app-store");
     $(`[data-marketing-channels-page]`)?.classList.toggle("hidden", name !== "channels");
     $(`[data-marketing-performance-page]`)?.classList.toggle("hidden", name !== "performance");
     syncHeader();
@@ -458,6 +461,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (name === "ads") renderAds();
     if (name === "growth") renderGrowth();
     if (name === "reddit") renderReddit();
+    if (name === "app-store") { renderAppStore(); void loadAppStore(); }
     if (name === "channels") renderChannelHealth();
     if (name === "performance") { renderPerformance(); void loadPerformance(); }
   }
@@ -1336,7 +1340,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   const HEALTH = [["", "All"], ["attention", "Needs attention"], ["stale", "Stale"], ["setup", "Not set up"],
     ["good", "On track"], ["paused", "Paused"]];
   const HEALTH_LABELS = Object.fromEntries(HEALTH.filter(([key]) => key));
-  const SOURCE_LABELS = { extension: "via the extension", "x-profile": "via the extension (X)", crm: "from CRM", zoho: "from CRM and Zoho Mail", refresh: "by a channel refresh", "": "logged" };
+  const SOURCE_LABELS = { extension: "via the extension", "x-profile": "via the extension (X)", crm: "from CRM", zoho: "from CRM and Zoho Mail", refresh: "by a channel refresh",
+    "app-store-connect": "from App Store Connect", "app-store": "from the App Store", "": "logged" };
   const CAPTURE_STATES = { opening: "Opening the page…", permission: "Allow access in the new tab…",
     reading: "Reading the page…", done: "Updated", error: "Update failed" };
   const CAPTURE_ERRORS = {
@@ -1590,6 +1595,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       crm: `<a href="${escapeHtml(crmPath())}" class="mk-link">Open CRM</a>`,
       zoho: `<a href="${escapeHtml(crmPath())}" class="mk-link">Connect Zoho Mail in CRM</a>`,
       refresh: `<button data-marketing-channel-refresh="${escapeHtml(item.channel)}" type="button" class="mk-link">Refresh</button>`,
+      "app-store": `<button data-marketing-page="app-store" type="button" class="mk-link">Open the App Store desk</button>`,
     };
     return `<ol class="mk-checks mk-guide" aria-label="${escapeHtml(`How to get ${name}'s numbers`)}"><li class="mk-guide-head"><b>${escapeHtml(`Get ${name}'s numbers`)}</b></li>${steps.map((step, index) => {
       const next = !step.done && steps.slice(0, index).every((before) => before.done);
@@ -1616,6 +1622,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       factCell("Queued", queued ? escapeHtml(relativeLabel(queued.scheduledAt)) : "—", "", queued ? queued.title : `${drafts} draft${drafts === 1 ? "" : "s"}`),
       factCell("Campaigns", fmtFull(live.length), waiting ? ` <small class="down">${waiting} waiting</small>` : "", live.map((campaign) => campaign.name).join(", "))];
     if (ads.length) facts.push(factCell("Ads live", `${fmtFull(ads.filter((ad) => ad.status === "active").length)}/${fmtFull(ads.length)}`));
+    if (channel === "app-store") return appStoreDesk(item);
     if (channel !== "reddit") return `<dl class="mk-facts mk-desk" aria-label="Desk">${facts.join("")}</dl>`;
     const desk = state.marketing.redditDesk || {}, summary = desk.summary || {};
     facts.push(factCell("Threads · 7D", fmtFull(summary.loggedThisWeek || 0), ` <small>${fmtFull(summary.repliedThisWeek || 0)} replied</small>`),
@@ -1624,6 +1631,20 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const places = ((desk.ideas || {}).subreddits || []).slice(0, 3).map((place) => `r/${escapeHtml(place.name)}`).join(" · ");
     return `<dl class="mk-facts mk-desk" aria-label="Reddit desk">${facts.join("")}</dl>
       <p class="mk-hint">${places ? `Post next: ${places}. ` : ""}<button data-marketing-page="reddit" type="button" class="mk-link">Open the Reddit desk</button></p>`;
+  }
+  function appStoreDesk(item) {
+    const store = shownAppStore();
+    if (!store) void loadAppStore();
+    const month = (store?.windows || []).find((entry) => entry.days === 30) || {};
+    const facts = [
+      factCell("Downloads · 30D", store?.lastDay ? fmtFull(month.downloads || 0) : "—", month.comparable ? ` <small>${escapeHtml(changeDelta(month.downloads || 0, month.previous?.downloads || 0)[1])}</small>` : ""),
+      factCell("Updates · 30D", store?.lastDay ? fmtFull(month.updates || 0) : "—"),
+      factCell("Reported to", store?.lastDay ? escapeHtml(dayLabel(store.lastDay)) : "—", "", store?.publishedAt ? `Sent ${relativeTimeLabel(store.publishedAt)}` : "")];
+    const days = (store?.days || []).slice(-30).map((day) => day.downloads || 0);
+    const spark = days.length > 1 ? (() => { const max = Math.max(1, ...days);
+      return `<svg viewBox="0 0 120 24" class="mk-app-store-spark" aria-label="Downloads per day, last 30 reported days"><path d="${days.map((value, index) => `${index ? "L" : "M"}${(index * 120 / (days.length - 1)).toFixed(1)},${(22 - value / max * 20).toFixed(1)}`).join("")}" fill="none" style="stroke:var(--mk-s1)" stroke-width="1.5"/></svg>`; })() : "";
+    return `<dl class="mk-facts mk-desk" aria-label="App Store desk">${facts.join("")}</dl>
+      <p class="mk-hint">${spark}<button data-marketing-page="app-store" type="button" class="mk-link">Open the App Store desk</button></p>`;
   }
   function channelCard({ item, settings, catalog, health }, colors) {
     const name = settings.displayName || catalog.name || item.channel;
@@ -1642,7 +1663,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       factCell("Last post", health.lastPostAt ? escapeHtml(relativeLabel(health.lastPostAt)) : "—")];
     if (item.rating) facts.push(factCell("Rating", `${item.rating.toFixed(1)}★`));
     if (reddit) facts.push(factCell("Weekly visitors", item.reach ? fmtCompact(item.reach) : "—"), factCell("Weekly contrib.", item.engagements ? fmtCompact(item.engagements) : "—"));
-    for (const [key, label] of [["stars", "Stars"], ["forks", "Forks"], ["outbound", "Emails sent · 30D"], ["closedDeals", "Closed deals"], ["closedValue", "Won value"], ["replies", "Replies · 30D"], ["visits", "Visits · 30D"], ["indexedPages", "Pages on Google"], ["reviews", "Reviews"], ["views", "Views"], ["likes", "Likes"], ["following", "Following"], ["posts", "Posts"]]) {
+    for (const [key, label] of [["downloads", "Downloads · 30D"], ["ratings", "Ratings"], ["stars", "Stars"], ["forks", "Forks"], ["outbound", "Emails sent · 30D"], ["closedDeals", "Closed deals"], ["closedValue", "Won value"], ["replies", "Replies · 30D"], ["visits", "Visits · 30D"], ["indexedPages", "Pages on Google"], ["reviews", "Reviews"], ["views", "Views"], ["likes", "Likes"], ["following", "Following"], ["posts", "Posts"]]) {
       if (item[key] && facts.length < 9) facts.push(factCell(label, fmtCompact(item[key])));
     }
     const checks = (health.checks || []).map((check) => `<li class="${check.ok ? "ok" : "missing"}">${check.ok ? CHECK_ICON : WARN_ICON}<span>${escapeHtml(check.label)}</span></li>`).join("");
@@ -1661,7 +1682,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       ${item.channel === "email" ? emailSuggestionsList() : ""}
       ${item.channel === "discord" ? discordPostsList() : ""}
       ${item.channel === "x" ? readyPostBlock() : ""}
-      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "fm-btn fm-btn-sm")}</div></div>
+      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button><button data-marketing-channel-context="${escapeHtml(item.channel)}" type="button" class="mk-link" title="${escapeHtml(`Copy ${name}'s numbers, posts and a prompt to paste into an AI chat. It suggests how to grow the channel and checks its earlier advice against the numbers each time you copy again.`)}">AI context</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "fm-btn fm-btn-sm")}</div></div>
     </article>`;
   }
 
@@ -1711,6 +1732,185 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       state.marketing.discordPosts = { org, readAt: Date.now(), ...payload.discord }; }
     catch (error) { state.marketing.discordPosts = { org, readAt: Date.now(), error: error.message }; }
     if (org === state.marketing.organization && state.view.page === "channels") renderChannelHealth();
+  }
+
+  const APP_STORE_METRICS = { downloads: "Downloads", redownloads: "Redownloads", updates: "Updates" };
+  const APP_STORE_RANGES = { 30: "30D", 90: "90D", 365: "1Y" };
+  const regionNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(undefined, { type: "region" }) : null;
+  function countryName(code) { try { return regionNames?.of(code) || code; } catch { return code; } }
+  function dayLabel(day, options = {}) {
+    return day ? new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC", ...options }) : "";
+  }
+  function shiftDay(day, delta) {
+    const date = new Date(`${day}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + delta); return date.toISOString().slice(0, 10);
+  }
+  function starText(rating) {
+    const whole = Math.max(0, Math.min(5, Math.round(rating || 0)));
+    return "★".repeat(whole) + "☆".repeat(5 - whole);
+  }
+  function shownAppStore() {
+    const store = state.marketing.appStore;
+    return store && store.org === state.marketing.organization ? store : null;
+  }
+  async function loadAppStore() {
+    const org = state.marketing.organization;
+    if (!org || !state.marketing.installed || state.marketing.appStore?.loading === org) return;
+    state.marketing.appStore = { ...(shownAppStore() || { org }), loading: org };
+    try {
+      const payload = await request(orgPath("/app-store"));
+      if (org !== state.marketing.organization) return;
+      state.marketing.appStore = { org, ...payload.appStore, canPublish: Boolean(payload.canPublish) };
+    } catch (error) {
+      if (org !== state.marketing.organization) return;
+      state.marketing.appStore = { org, error: error.message };
+    }
+    if (state.view.page === "app-store") renderAppStore();
+    if (state.view.page === "channels") renderChannelHealth();
+  }
+  function appStoreBuckets(store) {
+    const range = state.view.appStoreRange, width = range > 90 ? 7 : 1;
+    const span = Math.floor(range / width) * width;
+    const known = new Map((store.days || []).map((day) => [day.day, day]));
+    const buckets = [];
+    for (let end = 0; end < span; end += width) {
+      const to = shiftDay(store.lastDay, -end), from = shiftDay(store.lastDay, -(end + width - 1));
+      const bucket = { from, to, seen: false, downloads: 0, redownloads: 0, updates: 0 };
+      for (let day = from; day <= to; day = shiftDay(day, 1)) {
+        const entry = known.get(day); if (!entry) continue;
+        bucket.seen = true;
+        for (const key of Object.keys(APP_STORE_METRICS)) bucket[key] += entry[key] || 0;
+      }
+      buckets.unshift(bucket);
+    }
+    return buckets;
+  }
+  function renderAppStoreChart(store) {
+    const host = $(`[data-marketing-app-store-chart]`); if (!host) return;
+    const metric = state.view.appStoreMetric, weekly = state.view.appStoreRange > 90;
+    $(`[data-marketing-app-store-chart-title]`).textContent = `${APP_STORE_METRICS[metric]} per ${weekly ? "week" : "day"}`;
+    if (!store.lastDay) {
+      host.innerHTML = blankslate("chart", "No downloads yet", "App Store Connect's daily numbers appear here once the App Store report sends them.");
+      return;
+    }
+    const buckets = appStoreBuckets(store);
+    const W = 760, H = 240, L = 44, R = 10, T = 10, B = 26;
+    const max = Math.max(0, ...buckets.map((bucket) => bucket[metric]));
+    const step = niceStep(max), top = Math.max(step, Math.ceil(max / step) * step);
+    const slot = (W - L - R) / buckets.length, barWidth = Math.max(1, slot * 0.72);
+    const y = (value) => T + (1 - value / top) * (H - T - B);
+    let svg = "";
+    for (let value = 0; value <= top + step / 2; value += step) {
+      svg += `<line x1="${L}" x2="${W - R}" y1="${y(value)}" y2="${y(value)}" style="stroke:var(${value ? "--mk-line-soft" : "--mk-line"})" stroke-width="1"/>`
+        + `<text x="${L - 8}" y="${y(value) + 3.5}" text-anchor="end">${escapeHtml(fmtCompact(value))}</text>`;
+    }
+    buckets.forEach((bucket, index) => {
+      if (!bucket.seen || !bucket[metric]) return;
+      const height = Math.max(1, H - B - y(bucket[metric]));
+      svg += `<rect class="mk-day-bar" data-marketing-app-store-bar="${index}" x="${(L + index * slot + (slot - barWidth) / 2).toFixed(1)}" y="${(H - B - height).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${height.toFixed(1)}" rx="1.5"/>`;
+    });
+    for (let tick = 0; tick < 5; tick += 1) {
+      const index = Math.round((buckets.length - 1) * tick / 4);
+      svg += `<text x="${L + (index + 0.5) * slot}" y="${H - 8}" text-anchor="${tick === 0 ? "start" : tick === 4 ? "end" : "middle"}">${escapeHtml(dayLabel(buckets[index].to))}</text>`;
+    }
+    svg += `<rect data-marketing-app-store-hit x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>`;
+    const label = `${APP_STORE_METRICS[metric]} per ${weekly ? "week" : "day"}, ${dayLabel(buckets[0].from, { year: "numeric" })} to ${dayLabel(store.lastDay, { year: "numeric" })}`;
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(label)}">${svg}</svg><div data-marketing-app-store-tip class="mk-tip" hidden></div>`;
+    const chart = host.querySelector("svg"), tip = host.querySelector("[data-marketing-app-store-tip]");
+    const hit = host.querySelector("[data-marketing-app-store-hit]");
+    let active = null;
+    hit.addEventListener("pointermove", (event) => {
+      const box = chart.getBoundingClientRect();
+      const index = Math.max(0, Math.min(buckets.length - 1, Math.floor(((event.clientX - box.left) * W / box.width - L) / slot)));
+      const bucket = buckets[index];
+      active?.classList.remove("active");
+      active = host.querySelector(`[data-marketing-app-store-bar="${index}"]`); active?.classList.add("active");
+      const when = weekly ? `${dayLabel(bucket.from)} – ${dayLabel(bucket.to, { year: "numeric" })}` : dayLabel(bucket.to, { weekday: "short", year: "numeric" });
+      tip.innerHTML = `<b>${escapeHtml(when)}</b>` + (bucket.seen
+        ? Object.entries(APP_STORE_METRICS).map(([key, name]) => `<div><span>${escapeHtml(name)}</span><span class="mk-num">${escapeHtml(fmtFull(bucket[key]))}</span></div>`).join("")
+        : `<div><span>No report sent for this ${weekly ? "week" : "day"}</span></div>`);
+      tip.hidden = false;
+      const px = (L + (index + 0.5) * slot) * box.width / W, tipWidth = tip.offsetWidth;
+      tip.style.left = `${px + 12 + tipWidth > box.width ? px - 12 - tipWidth : px + 12}px`;
+    });
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; active?.classList.remove("active"); active = null; });
+  }
+  function appStoreShareRows(rows, total, name) {
+    if (!rows.length) return `<tr><td colspan="3" class="mk-hint">No downloads in this range.</td></tr>`;
+    return rows.map((row) => {
+      const share = total ? row.downloads / total * 100 : 0;
+      return `<tr><td>${escapeHtml(name(row))}</td><td><div class="mk-share"><span class="mk-track"><span class="mk-bar" style="width:${Math.max(share ? 2 : 0, share)}%"></span></span><span class="mk-num mk-hint">${share.toFixed(1)}%</span></div></td><td class="r mk-num">${escapeHtml(fmtFull(row.downloads))}</td></tr>`;
+    }).join("");
+  }
+  function appStoreNotes(store) {
+    if (!store) return "Reading the App Store numbers…";
+    if (store.error) return `Could not read the App Store numbers: ${store.error}`;
+    const notes = [];
+    if (!store.lastDay) notes.push("No downloads yet. Run native/ios/tools/asc_store_report.py --publish on the computer that holds the App Store Connect key; it sends each day's downloads here.");
+    else if (!store.fresh) notes.push(`App Store Connect last sent numbers ${relativeTimeLabel(store.publishedAt)}. Run the App Store report with --publish again to catch up.`);
+    if (!store.lookup?.lookedUpAt) notes.push("Press Refresh on the App Store channel to read the app's rating and store listing.");
+    return notes.join(" ");
+  }
+  function renderAppStore() {
+    const store = shownAppStore();
+    if (!store || (!store.loading && !store.error && !("lastDay" in store))) void loadAppStore();
+    const data = store || {}, lookup = data.lookup || {}, app = data.app || {};
+    const range = state.view.appStoreRange, rangeLabel = APP_STORE_RANGES[range] || `${range}D`;
+    $$(`[data-marketing-app-store-range]`).forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.marketingAppStoreRange) === range)));
+    $$(`[data-marketing-app-store-metric]`).forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.marketingAppStoreMetric === state.view.appStoreMetric)));
+    const title = $(`[data-marketing-app-store-title]`); if (!title) return;
+    title.textContent = lookup.name || app.name || "Apple App Store";
+    $(`[data-marketing-app-store-sent]`).textContent = data.publishedAt
+      ? `Sent from App Store Connect ${relativeTimeLabel(data.publishedAt)}${data.publishedBy ? ` by ${data.publishedBy}` : ""} · reported to ${dayLabel(data.lastDay, { year: "numeric" })}`
+      : "Downloads from App Store Connect, rating from the App Store";
+    const notes = appStoreNotes(store && ("lastDay" in store || store.error) ? store : null);
+    $(`[data-marketing-app-store-setup]`).hidden = !notes;
+    $(`[data-marketing-app-store-setup-text]`).textContent = notes;
+    const shown = (data.windows || []).find((item) => item.days === range) || {};
+    for (const [key, name] of Object.entries(APP_STORE_METRICS)) {
+      $(`[data-marketing-app-store-label="${key}"]`).textContent = `${name} · ${rangeLabel}`;
+      $(`[data-marketing-app-store-stat="${key}"]`).textContent = data.lastDay ? fmtFull(shown[key] || 0) : "—";
+      const delta = data.lastDay && shown.comparable ? changeDelta(shown[key] || 0, shown.previous?.[key] || 0) : ["", "—"];
+      const node = $(`[data-marketing-app-store-delta="${key}"]`);
+      node.className = `mk-delta mk-num ${delta[0]}`; node.textContent = delta[1];
+      node.title = shown.comparable ? `Against the ${range} days before: ${fmtFull(shown.previous?.[key] || 0)}` : "Not enough history to compare yet";
+    }
+    $(`[data-marketing-app-store-note="downloads"]`).textContent = shown.from ? `${dayLabel(shown.from)} – ${dayLabel(shown.to)}` : "";
+    $(`[data-marketing-app-store-stat="rating"]`).textContent = lookup.rating ? `${lookup.rating.toFixed(1)}★` : "—";
+    $(`[data-marketing-app-store-note="rating"]`).textContent = lookup.ratings
+      ? `${fmtFull(lookup.ratings)} rating${lookup.ratings === 1 ? "" : "s"}${lookup.country ? ` · ${lookup.country} store` : ""}`
+      : lookup.lookedUpAt ? "No ratings yet" : "Refresh to read";
+    $(`[data-marketing-app-store-stat="total"]`).textContent = data.lastDay ? fmtFull(data.total?.downloads || 0) : "—";
+    $(`[data-marketing-app-store-note="total"]`).textContent = data.firstDay ? `since ${dayLabel(data.firstDay, { year: "numeric" })}` : "";
+    $(`[data-marketing-app-store-stat="best"]`).textContent = data.bestDay ? fmtFull(data.bestDay.downloads) : "—";
+    $(`[data-marketing-app-store-note="best"]`).textContent = data.bestDay ? dayLabel(data.bestDay.day, { year: "numeric" }) : "";
+    renderAppStoreChart(data);
+    $(`[data-marketing-app-store-countries-hint]`).textContent = shown.territoryCount
+      ? `${fmtFull(shown.territoryCount)} countr${shown.territoryCount === 1 ? "y" : "ies"} · ${rangeLabel}` : "";
+    $(`[data-marketing-app-store-countries]`).innerHTML = appStoreShareRows(shown.territories || [], shown.downloads || 0, (row) => countryName(row.code));
+    $(`[data-marketing-app-store-devices]`).innerHTML = appStoreShareRows(shown.devices || [], shown.downloads || 0, (row) => row.name);
+    const reviews = data.reviews || [];
+    $(`[data-marketing-app-store-reviews-hint]`).textContent = reviews.length ? `${reviews.length} most recent, from App Store Connect` : "";
+    $(`[data-marketing-app-store-reviews]`).innerHTML = reviews.length ? reviews.map((review) => `<li><span><span class="mk-stars" aria-label="${review.rating} of 5 stars">${starText(review.rating)}</span> <b>${escapeHtml(review.title || "")}</b></span>${review.body ? `<span>${escapeHtml(review.body)}</span>` : ""}<small>${escapeHtml([review.territory, review.createdAt ? new Date(review.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : ""].filter(Boolean).join(" · "))}</small></li>`).join("")
+      : `<li class="mk-hint">No reviews yet.</li>`;
+    const url = [lookup.url, channelSettings("app-store").profileUrl].find((value) => String(value || "").startsWith("https://"));
+    $(`[data-marketing-app-store-open]`).innerHTML = url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="mk-link">Open in the App Store ↗</a>` : "";
+    const yearDate = (ts) => ts ? new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
+    $(`[data-marketing-app-store-listing]`).innerHTML = lookup.lookedUpAt ? [
+      factCell("Version", escapeHtml(lookup.version || "—")),
+      factCell("Released", escapeHtml(yearDate(lookup.releasedAt))),
+      factCell("This version", lookup.versionRating ? `${lookup.versionRating.toFixed(1)}★` : "—", lookup.versionRatings ? ` <small>${escapeHtml(fmtFull(lookup.versionRatings))}</small>` : ""),
+      factCell("Genre", escapeHtml(lookup.genre || "—")),
+      factCell("Price", escapeHtml(lookup.price || "—")),
+      factCell("Minimum iOS", escapeHtml(lookup.minimumOs || "—")),
+      factCell("First released", escapeHtml(yearDate(lookup.firstReleasedAt))),
+      factCell("Seller", escapeHtml(lookup.seller || "—")),
+      factCell("Read", escapeHtml(relativeTimeLabel(lookup.lookedUpAt))),
+    ].join("") : `<p class="mk-hint">Press Refresh on the App Store channel to read the store listing.</p>`;
+    const versions = data.versions || [];
+    $(`[data-marketing-app-store-versions]`).innerHTML = versions.length ? versions.map((row) => {
+      const tone = row.status?.tone === "good" ? "up" : row.status?.tone === "action" ? "down" : "";
+      return `<tr><td class="mk-num">${escapeHtml(row.version)}${row.build ? ` <span class="mk-hint">(${escapeHtml(row.build)})</span>` : ""}</td><td><span class="mk-chg ${tone}">${escapeHtml(row.status?.label || "")}</span></td><td class="r mk-hint">${escapeHtml(row.createdAt ? yearDate(row.createdAt) : "—")}</td></tr>`;
+    }).join("") : `<tr><td colspan="3" class="mk-hint">Versions arrive with the App Store report.</td></tr>`;
   }
 
   const READY_STATUS = { posted: "Posted", skipped: "Skipped", replaced: "Replaced" };
@@ -2173,6 +2373,92 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       "", "## Checklist", "", ...((item.tasks || []).length ? item.tasks.map((task) => `- [${task.done ? "x" : " "}] ${task.title}`) : ["- (empty)"]),
       ...(item.brief ? ["", "## Notes", "", item.brief] : [])].join("\n");
   }
+  const CONTEXT_KEYS = [["followers", "Followers"], ["following", "Following"], ["reach", "Reach"], ["engagements", "Engagements"],
+    ["views", "Views"], ["visits", "Visits"], ["posts", "Posts"], ["likes", "Likes"], ["replies", "Replies"], ["stars", "Stars"],
+    ["forks", "Forks"], ["outbound", "Emails sent"], ["closedDeals", "Closed deals"], ["indexedPages", "Pages on Google"], ["reviews", "Reviews"]];
+  const contextKey = (channel) => `forkmesh.marketing.aiContext.${state.marketing.organization}.${channel}`;
+  function contextNumbers(item) {
+    const values = Object.fromEntries(CONTEXT_KEYS.filter(([key]) => Number(item[key]) > 0).map(([key]) => [key, Number(item[key])]));
+    return { ...values, postsLast30d: Number(item.health?.postsLast30d || 0) };
+  }
+  function channelContext(channel) {
+    const item = (state.marketing.summary?.channels || []).find((entry) => entry.channel === channel) || { channel };
+    const health = item.health || {}, settings = channelSettings(channel), catalog = catalogEntry(channel);
+    const name = settings.displayName || catalog.name || channelLabel(channel), org = state.marketing.organization;
+    const now = Date.now(), range = state.view.rangeDays, start = now - range * DAY, cadence = Math.max(1, health.cadenceDays || 1);
+    const history = seriesByChannel().get(channel) || [], before = snapshotAt(history, start);
+    const day = (ts) => ts ? new Date(ts).toISOString().slice(0, 10) : "never";
+    const clip = (value, size) => { const flat = String(value || "").replace(/\s+/g, " ").trim(); return flat.length > size ? `${flat.slice(0, size - 1).trim()}…` : flat; };
+    const count = (value) => typeof value === "number" && Number.isFinite(value) ? fmtFull(value) : "—";
+    const shown = CONTEXT_KEYS.filter(([key]) => Number(item[key]) > 0 || history.some((snapshot) => Number(snapshot[key]) > 0));
+    const main = shown[0]?.[1] || "Posts in the last 30 days";
+    const lines = [`# Grow ${name} for ${org}`, "",
+      `You are the marketing analyst for the ${name} channel of ${org}. Below is everything the ForkMesh Marketing dashboard knows about the channel on ${day(now)}. Work from these numbers, and say when they are too thin to support a claim.`,
+      "", "## What to do", "",
+      `1. In two sentences, say how the channel is doing against its goal and its aim of a post every ${cadence === 1 ? "day" : `${cadence} days`}.`,
+      "2. Find what worked: match the posts and content below to the changes in the numbers after them.",
+      `3. Give the three changes most likely to raise ${main} in the next 14 days. For each: what to do, the data behind it, the number to watch, and the result you expect by when.`,
+      "4. Draft the next three posts for this channel, ready to publish.",
+      "5. Learn from last time: if this chat already holds an earlier copy of this context, or \"Since the last copy\" below has numbers, check your earlier predictions against them, say which held and which did not, and change your advice to match.",
+      "6. End with \"Notes for next time\": your predictions with the numbers to check, the data missing here that would change your advice, and a better version of this \"What to do\" list for the next copy.",
+      "", "## Channel", "", "| Field | Value |", "|---|---|",
+      `| Channel | ${cell(name)} |`, `| Category | ${cell(catalog.category)} |`,
+      `| Link | ${cell([settings.openUrl, settings.profileUrl].find((value) => String(value || "").startsWith("https://")))} |`,
+      `| About | ${cell(clip(settings.capture?.description, 400))} |`,
+      `| Status | ${settings.enabled === false ? "Paused" : "Active"} |`, `| Health | ${cell(HEALTH_LABELS[health.state])} |`,
+      `| Posting aim | every ${cadence} day${cadence === 1 ? "" : "s"} |`, `| Posts in the last 30 days | ${fmtFull(health.postsLast30d || 0)} |`,
+      `| Last post | ${day(health.lastPostAt)} |`,
+      `| Engagement rate | ${cell(typeof health.engagementRate === "number" ? `${health.engagementRate.toFixed(1)}% (${engagementExplained(health)})` : engagementExplained(health))} |`,
+      `| Numbers last read | ${cell(health.observedAt ? `${day(health.observedAt)}, ${SOURCE_LABELS[health.source] ?? `via ${health.source}`}` : "never")} |`,
+      "", "## Numbers", "",
+      ...(shown.length ? [`| Metric | Now | ${range} days ago |`, "|---|---|---|",
+        ...shown.map(([key, label]) => `| ${label} | ${count(item[key])} | ${before ? count(before[key]) : "—"} |`)] : ["No numbers recorded yet."]),
+      "", "## Since the last copy", ""];
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem(contextKey(channel)) || "null"); } catch { last = null; }
+    if (!last?.at) lines.push("This is the first copy of this context, so there is nothing to compare yet.");
+    else {
+      const current = contextNumbers(item), then = last.values || {};
+      lines.push(`Last copied on ${day(last.at)} (${relativeTimeLabel(last.at)}). Then → now:`);
+      for (const [key, label] of [...CONTEXT_KEYS, ["postsLast30d", "Posts in the last 30 days"]]) {
+        if (!(key in then) && !(key in current)) continue;
+        const was = Number(then[key] || 0), is = Number(current[key] || 0);
+        lines.push(`- ${label}: ${fmtFull(was)} → ${fmtFull(is)} (${is >= was ? "+" : "−"}${fmtFull(Math.abs(is - was))})`);
+      }
+    }
+    const recent = history.filter((snapshot) => snapshot.observedAt > start).reverse().slice(0, 40);
+    if (recent.length && shown.length) lines.push("", "## History, newest first", "",
+      `| Date | ${shown.map(([, label]) => label).join(" | ")} | Source | Note |`, `|---|${shown.map(() => "---").join("|")}|---|---|`,
+      ...recent.map((snapshot) => `| ${day(snapshot.observedAt)} | ${shown.map(([key]) => count(snapshot[key])).join(" | ")} | ${cell(SOURCE_LABELS[snapshot.source] ?? snapshot.source)} | ${cell(clip(snapshot.note, 160))} |`));
+    const when = (entry) => entry.publishedAt || entry.scheduledAt || entry.updatedAt || 0;
+    const content = (state.marketing.content || []).filter((entry) => entry.channel === channel && entry.status !== "archived")
+      .sort((a, b) => when(b) - when(a)).slice(0, 25);
+    if (content.length) lines.push("", "## Content for this channel, newest first", "", "| Date | Status | Title | Text |", "|---|---|---|---|",
+      ...content.map((entry) => `| ${day(when(entry))} | ${cell(entry.status)} | ${cell(clip(entry.title, 120))} | ${cell(clip(entry.body, 280))} |`));
+    const discord = state.marketing.discordPosts;
+    if (channel === "discord" && discord?.org === org && Array.isArray(discord.posts)) {
+      lines.push("", `## Discord posts in the last ${discord.days} days`, "",
+        `${discord.posts.length} post${discord.posts.length === 1 ? "" : "s"} in ${(discord.channels || []).map((entry) => `#${entry}`).join(", ")}, read ${relativeTimeLabel(discord.readAt)}.`);
+      if (discord.truncated) lines.push("Only the latest 50 posts of each channel were read.");
+      if (discord.contentMissing) lines.push("The bot cannot read message text, so the posts below have no text.");
+      lines.push("", ...discord.posts.slice(0, 60).map((post) => `- ${new Date(post.postedAt).toISOString().slice(0, 16).replace("T", " ")} · #${post.channel} · ${post.author}${post.bot ? " (bot)" : ""}: ${post.content ? clip(post.content, 300) : "(no text)"}`));
+    }
+    const ads = (state.marketing.ads || []).filter((ad) => ad.channel === channel);
+    if (ads.length) lines.push("", "## Ads", "", ...ads.map((ad) => `- ${ad.name}: ${ad.status}, spent ${fmtMoney(ad.spendCents, ad.currency)}`));
+    const campaigns = (state.marketing.campaigns || []).filter((campaign) => (campaign.channels || []).includes(channel) && campaign.status !== "archived");
+    if (campaigns.length) lines.push("", "## Campaigns on this channel", "",
+      ...campaigns.map((campaign) => `- ${campaign.name} (${campaign.status}, ${day(campaign.startsAt)} to ${day(campaign.endsAt)}): ${clip(campaign.message || campaign.objective, 240)}`));
+    if ((health.checks || []).length) lines.push("", "## Health checks", "", ...health.checks.map((check) => `- [${check.ok ? "x" : " "}] ${check.label}`));
+    const playbook = (state.marketing.channelPlaybooks || {})[catalog.category];
+    if (playbook) lines.push("", `## Playbook for ${catalog.category} channels`, "", `- Goal: ${playbook.goal}`,
+      ...((playbook.kpis || []).length ? [`- Track: ${playbook.kpis.join(", ")}`] : []), ...(playbook.tips || []).map((tip) => `- Tip: ${tip}`));
+    return `${lines.join("\n")}\n`;
+  }
+  function copyChannelContext(channel) {
+    const item = (state.marketing.summary?.channels || []).find((entry) => entry.channel === channel) || {};
+    copyText(channelContext(channel), `Copied the AI context for ${channelLabel(channel)}. Paste it into Claude or another AI chat, and copy it again after you act on the advice so the AI can check what worked.`);
+    try { localStorage.setItem(contextKey(channel), JSON.stringify({ at: Date.now(), values: contextNumbers(item) })); } catch {}
+  }
   async function handOff(item = null) {
     const title = item ? `@Marketing: run the ${item.name} campaign` : "@Marketing: weekly marketing review";
     const details = item ? `${campaignBrief(item)}\n\nPlan the next deliverables for this campaign, draft the posts in the Marketing package's content pipeline (campaign "${item.name}"), and update the checklist. A person approves anything that posts or spends money.`
@@ -2426,6 +2712,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     renderTrafficKpis(); renderTraffic(); renderLanding(); renderReferrers(); renderKeywords(); renderCampaigns();
     renderSuggestions(); renderAssistant(); renderAdsOverview(); renderX();
     renderAds(); renderGrowth(); renderReddit(); renderChannelHealth();
+    if (state.view.page === "app-store") renderAppStore();
   }
 
   function localDateTime(timestamp) {
@@ -2507,6 +2794,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   }
 
   const REFRESH_ERRORS = { "crm not installed": "install the CRM package for this organization first", "crm unavailable": "the CRM package is not available here",
+    "app store url unsupported": "add the app's App Store link, like https://apps.apple.com/app/id1234567890",
+    "app store app not found": "the App Store has no app with that id in this country's store",
     "discord connector not connected": "connect Discord in the organization's settings and choose its channels",
     "discord connector not allowed": "update Marketing so it may read the Discord connector",
     "discord channel required": "choose the channels to read in the organization's Discord settings",
@@ -2523,11 +2812,13 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       if (channel === "email") state.marketing.emailSuggestions = null;
       if (channel === "discord") state.marketing.discordPosts = null;
       if (channel === "x") state.marketing.readyPost = null;
+      if (channel === "app-store") void loadAppStore();
       render();
       const metrics = payload.refresh?.metrics || {};
       message("notice", channel === "email"
         ? `${name}: ${fmtFull(metrics.outbound || 0)} emails sent in 30 days · ${fmtFull(metrics.closedDeals || 0)} closed deals${metrics.closedValue ? ` worth ${fmtFull(metrics.closedValue)}` : ""}.`
         : channel === "github" ? `${name}: ${fmtFull(metrics.stars || 0)} stars · ${fmtFull(metrics.forks || 0)} forks · ${fmtFull(metrics.followers || 0)} followers.`
+        : channel === "app-store" ? `${name}: ${fmtFull(metrics.ratings || 0)} ratings · ${fmtFull(metrics.downloads || 0)} downloads in 30 days.`
         : `${name} updated.`);
     } catch (error) { message("error", `Could not refresh ${name}: ${REFRESH_ERRORS[error.message] || error.message}`); }
   }
@@ -2655,7 +2946,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const params = new URLSearchParams(location.search);
       const wanted = state.marketing.organizations.find((org) => org.name === params.get("org"));
       state.marketing.organization = (wanted || state.marketing.organizations[0]).name; select.value = state.marketing.organization; await load();
-      if (["performance", "ads", "growth", "reddit", "channels"].includes(params.get("page"))) showPage(params.get("page"));
+      if (["performance", "ads", "growth", "reddit", "channels", "app-store"].includes(params.get("page"))) showPage(params.get("page"));
       const wantedCapture = params.get("capture");
       const wantedXSetup = params.get("xsetup") === "1";
       if (wantedCapture || wantedXSetup || params.has("page")) {
@@ -2786,6 +3077,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if ("marketingKeywordImport" in data) openKeywordImport();
       else if ("marketingKeywordNew" in data) openKeyword();
       else if (data.marketingXCompose) composeFromContent(data.marketingXCompose);
+      else if (data.marketingAppStoreRange) { state.view.appStoreRange = Number(data.marketingAppStoreRange); renderAppStore(); }
+      else if (data.marketingAppStoreMetric) { state.view.appStoreMetric = data.marketingAppStoreMetric; renderAppStore(); }
       else if (data.marketingPage) showPage(data.marketingPage);
       else if (data.marketingAdEdit) openAd(adById(data.marketingAdEdit));
       else if (data.marketingAdResults) openAdResults(adById(data.marketingAdResults));
@@ -2807,6 +3100,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if (data.marketingChartMetric) { state.view.chartMetric = data.marketingChartMetric; render(); }
       else if (data.marketingChannelSort) { state.view.channelSort = data.marketingChannelSort; render(); }
       else if (data.marketingChannelLog) openMetric(data.marketingChannelLog);
+      else if (data.marketingChannelContext) copyChannelContext(data.marketingChannelContext);
       else if (data.marketingChannelDelete) void deleteChannel(data.marketingChannelDelete);
       else if (data.marketingChannelCapture) startCapture(data.marketingChannelCapture);
       else if (data.marketingChannelRefresh) void refreshChannel(data.marketingChannelRefresh);

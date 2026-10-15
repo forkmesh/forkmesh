@@ -208,6 +208,20 @@ lte is_set is_not_set`; a cohort filter's `value` is the cohort id. A
 | `survey` | `surveyId` | `shown dismissed sent responseRate questions` |
 | `campaigns` | `goals` (up to 5 series), `groupBy: campaign|content|source|landing|term`, `host`, `limit` (≤200) | `totals`, `previous` (`sessions visitors pageviews bounces bounceRate averageSessionMs conversions conversionRate goals`, plus `taggedSessions taggedShare` on `totals`), `rows: [{key, source, medium, campaign?, content?, landing?, term?, topSources? (term only), …totals, previousSessions, previousConversions, tagged, topLanding}]`, `goals` (labels), `rowCount` |
 
+### Recordings (1.5.0)
+
+The web page calls session replay **Recordings** (tab `#analytics/recordings`;
+`#analytics/replay` still works). Each recording keeps `pages`: the URLs the
+visitor moved through, in order, one entry per change (a reload of the same
+page is not repeated), at most 50. The server appends the `url` of every replay
+chunk, so a recording that spans several page loads lists each of them; older
+recordings without `pages` fall back to `startUrl`. The list shows the trail and
+its length; the player's "Pages viewed" card lists each page change from the
+recording's `meta` events with its time and seeks there on click.
+
+When replay is off for the project, the tab says so and offers owners and
+admins a "Turn on recordings" button, which PATCHes only `replay.enabled`.
+
 ### Web overview (1.4.0)
 
 The overview's referral views count **sessions** by their landing pageview's

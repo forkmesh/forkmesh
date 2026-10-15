@@ -68,6 +68,18 @@ reason (an `Error`'s message and stack, or a shape such as `undefined`,
 are dropped by `knownNonActionableBrowserError` and by
 `_client_error_is_non_actionable` on the server.
 
+## Recordings
+
+The package's Recordings tab (session replay) plays back a visit: the page as
+the visitor saw it, their mouse movement, clicks, scrolling, and each page they
+moved to, next to the analytics events of the same session. Recordings exist
+only for visitors who allowed analytics, only on public surfaces, and only
+after a project's owner or admin turns them on (off by default; the tab offers
+a "Turn on recordings" button). Typed text is always masked. Each recording
+keeps the ordered list of pages viewed, so the list shows the visitor's path
+and the player can jump to each page change. Details are in the package
+README under "Recordings".
+
 ## Security
 
 The replay player rebuilds recordings inside a script-less sandboxed iframe

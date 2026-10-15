@@ -350,12 +350,19 @@ struct MarketingChannelSheet: View {
                 if let stats {
                     Section {
                         MarketingChannelRow(overview: overview, channel: stats, refreshing: model.isWorking("refresh:" + channel))
+                        if stats.isAppStore {
+                            LabeledContent("Downloads · 30D", value: PackagesFormat.count(stats.downloads))
+                            LabeledContent("Ratings", value: PackagesFormat.count(stats.ratings))
+                        }
                         ForEach(stats.checks) { check in
                             Label(check.label, systemImage: check.ok ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(check.ok ? Color.green : Color.orange)
                                 .font(.subheadline)
                         }
                     }
+                }
+                if channel == MarketingChannelStats.appStoreChannel {
+                    MarketingAppStoreSection(model: model)
                 }
                 Section {
                     if overview.refreshable.contains(channel) {

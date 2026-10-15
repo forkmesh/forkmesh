@@ -43,6 +43,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -1017,6 +1018,73 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_performanceRedditPanel->hide();
     redditGrid->addPanel(m_performanceRedditPanel, 3);
     reddit->addWidget(redditGrid);
+
+    auto *appStore = static_cast<QVBoxLayout *>(m_detailAppStoreBox->layout());
+    auto *appStoreHead = new QHBoxLayout;
+    appStoreHead->setSpacing(10);
+    m_appStoreFacts = richLabel("marketingHint");
+    m_appStoreFacts->setAccessibleName(QStringLiteral("App Store facts"));
+    appStoreHead->addWidget(m_appStoreFacts, 1);
+    m_appStoreOpen = linkButton(QStringLiteral("Open in App Store ↗"),
+                                QStringLiteral("Open the app's page in the App Store"));
+    appStoreHead->addWidget(m_appStoreOpen, 0, Qt::AlignTop);
+    appStore->addLayout(appStoreHead);
+    m_appStoreSetup = hintLabel();
+    m_appStoreSetup->setTextFormat(Qt::PlainText);
+    m_appStoreSetup->setAccessibleName(QStringLiteral("App Store setup"));
+    appStore->addWidget(m_appStoreSetup);
+    m_appStoreKpis = new KpiStrip;
+    m_appStoreKpis->setCompact(true);
+    m_appStoreKpis->setAccessibleName(QStringLiteral("App Store numbers"));
+    appStore->addWidget(m_appStoreKpis);
+    auto *appStoreGrid = new DashboardGrid;
+    static_cast<QGridLayout *>(appStoreGrid->layout())->setSpacing(10);
+    m_appStoreChartPanel = redditPanel(QStringLiteral("Downloads over time"));
+    m_appStoreRange = new QButtonGroup(this);
+    m_appStoreChartPanel->tools()->addWidget(segmented(
+        {QStringLiteral("30D"), QStringLiteral("90D"), QStringLiteral("365D")},
+        m_appStoreRange, 0, QStringLiteral("App Store range")));
+    m_appStoreChart = new LineChart;
+    m_appStoreChart->setAccessibleName(QStringLiteral("App Store downloads chart"));
+    m_appStoreChart->setMaximumHeight(230);
+    m_appStoreChart->setMinimumWidth(240);
+    m_appStoreChartPanel->body()->addWidget(m_appStoreChart);
+    appStoreGrid->addPanel(m_appStoreChartPanel, 2);
+    m_appStoreCountriesPanel = redditPanel(QStringLiteral("Top countries"));
+    m_appStoreCountries = new BarRows;
+    m_appStoreCountries->setAccessibleName(QStringLiteral("App Store downloads by country"));
+    m_appStoreCountries->setEmptyText(QStringLiteral("No downloads in this range"));
+    m_appStoreCountriesPanel->body()->addWidget(m_appStoreCountries);
+    m_appStoreCountriesPanel->body()->addStretch(1);
+    appStoreGrid->addPanel(m_appStoreCountriesPanel, 1);
+    m_appStoreDevicesPanel = redditPanel(QStringLiteral("Devices"));
+    m_appStoreDevices = new BarRows;
+    m_appStoreDevices->setAccessibleName(QStringLiteral("App Store downloads by device"));
+    m_appStoreDevices->setEmptyText(QStringLiteral("No downloads in this range"));
+    m_appStoreDevicesPanel->body()->addWidget(m_appStoreDevices);
+    m_appStoreDevicesPanel->body()->addStretch(1);
+    appStoreGrid->addPanel(m_appStoreDevicesPanel, 1);
+    m_appStoreVersionsPanel = redditPanel(QStringLiteral("Versions"));
+    m_appStoreVersions = richLabel();
+    m_appStoreVersionsPanel->body()->addWidget(m_appStoreVersions);
+    m_appStoreVersionsPanel->body()->addStretch(1);
+    appStoreGrid->addPanel(m_appStoreVersionsPanel, 1);
+    m_appStoreReviewsPanel = redditPanel(QStringLiteral("Reviews"));
+    m_appStoreReviews = richLabel();
+    m_appStoreReviewsPanel->body()->addWidget(m_appStoreReviews);
+    m_appStoreReviewsPanel->body()->addStretch(1);
+    appStoreGrid->addPanel(m_appStoreReviewsPanel, 1);
+    appStore->addWidget(appStoreGrid);
+    connect(m_appStoreRange, &QButtonGroup::idClicked, this, [this](int id) {
+        static constexpr int windows[] = {30, 90, 365};
+        m_appStoreDays = windows[qBound(0, id, 2)];
+        renderAppStore();
+    });
+    connect(m_appStoreOpen, &QPushButton::clicked, this, [this] {
+        const QUrl url(m_appStoreOpen->property("url").toString());
+        if (url.isValid() && url.scheme() == QLatin1String("https"))
+            QDesktopServices::openUrl(url);
+    });
 
     connect(m_pageGroup, &QButtonGroup::idClicked, this, [this](int id) { showPage(id); });
     connect(m_performanceRange, &QButtonGroup::idClicked, this, [this](int id) {
@@ -2425,6 +2493,308 @@ void MarketingFeature::renderReddit()
     fitTable(m_redditTable, 12);
     m_redditPanel->hint()->setText(QStringLiteral("%1 · %2 open")
         .arg(plural(m_redditThreads.size(), QStringLiteral("thread"), QStringLiteral("threads"))).arg(open));
+}
+
+void MarketingFeature::loadAppStore()
+{
+    const QString organization = m_organization->currentData().toString();
+    if (!m_installed || organization.isEmpty())
+        return;
+    const int serial = ++m_appStoreSerial;
+    if (m_appStoreOrg != organization) {
+        m_appStore = {};
+        m_appStoreError.clear();
+    }
+    m_appStoreOrg = organization;
+    m_appStoreLoading = true;
+    if (m_detailChannel == QLatin1String("app-store"))
+        renderAppStore();
+    request(QByteArrayLiteral("GET"), organizationPath(QStringLiteral("/app-store")), {},
+            [this, serial, organization](bool ok, const QJsonObject &payload, const QString &error) {
+        if (serial != m_appStoreSerial)
+            return;
+        m_appStoreLoading = false;
+        if (organization != m_organization->currentData().toString())
+            return;
+        if (ok) {
+            m_appStore = payload.value(QStringLiteral("appStore")).toObject();
+            m_appStoreError.clear();
+        } else {
+            m_appStoreError = error.isEmpty() ? text(payload, "error") : error;
+        }
+        if (m_detailChannel == QLatin1String("app-store"))
+            renderAppStore();
+    });
+}
+
+void MarketingFeature::showAppStore()
+{
+    if (!m_detailAppStoreBox || !m_detailScroll || m_detailChannel != QLatin1String("app-store"))
+        return;
+    const QPointer<QWidget> target(m_detailAppStoreBox);
+    const QPointer<QScrollArea> area(m_detailScroll);
+    QTimer::singleShot(0, this, [target, area] {
+        if (!target || !area || !area->widget())
+            return;
+        area->widget()->layout()->activate();
+        const int top = target->mapTo(area->widget(), QPoint(0, 0)).y();
+        area->verticalScrollBar()->setValue(qMax(0, top - 8));
+    });
+}
+
+void MarketingFeature::renderAppStore()
+{
+    if (!m_appStoreKpis)
+        return;
+    const DashboardColors colors = DashboardColors::from(this);
+    const QString dot = QString::fromUtf8(" \xC2\xB7 ");
+    const QString muted = QStringLiteral("<span style=\"color:%1\">%2</span>");
+    const auto dayAt = [](const QString &day) {
+        const QDate date = QDate::fromString(day, Qt::ISODate);
+        return date.isValid() ? utcMidnight(date) : qint64(0);
+    };
+    const auto dayLabel = [&dayAt](const QString &day) {
+        const qint64 at = dayAt(day);
+        return at > 0 ? weekLabel(at) : day;
+    };
+    const auto dateLabel = [](const QJsonValue &value) {
+        return value.toDouble() > 0 ? weekLabel(qint64(value.toDouble())) : QString();
+    };
+
+    const QJsonObject lookup = m_appStore.value(QStringLiteral("lookup")).toObject();
+    QString storeUrl = text(lookup, "url");
+    if (!storeUrl.startsWith(QLatin1String("https://"))) {
+        storeUrl.clear();
+        for (const QJsonValue &value : m_settings.value(QStringLiteral("channels")).toArray()) {
+            const QString profile = text(value.toObject(), "profileUrl").trimmed();
+            if (text(value.toObject(), "id") == QLatin1String("app-store") &&
+                profile.startsWith(QLatin1String("https://")))
+                storeUrl = profile;
+        }
+    }
+    m_appStoreOpen->setProperty("url", storeUrl);
+    m_appStoreOpen->setVisible(!storeUrl.isEmpty());
+
+    QStringList facts;
+    if (!text(lookup, "name").isEmpty())
+        facts << QStringLiteral("<b>%1</b>").arg(escaped(text(lookup, "name")));
+    if (!text(lookup, "version").isEmpty())
+        facts << QStringLiteral("Version %1").arg(escaped(text(lookup, "version")));
+    if (number(lookup, "releasedAt") > 0)
+        facts << QStringLiteral("released %1").arg(dateLabel(lookup.value(QStringLiteral("releasedAt"))));
+    if (!text(lookup, "genre").isEmpty())
+        facts << escaped(text(lookup, "genre"));
+    if (!text(lookup, "price").isEmpty())
+        facts << escaped(text(lookup, "price"));
+    if (!text(lookup, "minimumOs").isEmpty())
+        facts << QStringLiteral("iOS %1 or later").arg(escaped(text(lookup, "minimumOs")));
+    QStringList lines;
+    if (!facts.isEmpty())
+        lines << facts.join(dot);
+    const qint64 publishedAt = qint64(number(m_appStore, "publishedAt"));
+    if (publishedAt > 0) {
+        QString sent = QStringLiteral("Sent from App Store Connect %1").arg(relativeLabel(publishedAt));
+        if (!text(m_appStore, "publishedBy").isEmpty())
+            sent += QStringLiteral(" by ") + text(m_appStore, "publishedBy");
+        lines << QStringLiteral("<span style=\"color:%1\">%2</span>")
+                     .arg((m_appStore.value(QStringLiteral("fresh")).toBool() ? colors.muted : colors.warn).name(),
+                          escaped(sent));
+    }
+    m_appStoreFacts->setText(lines.join(QStringLiteral("<br>")));
+    m_appStoreFacts->setVisible(!lines.isEmpty());
+
+    const QString lastDay = text(m_appStore, "lastDay");
+    const bool hasDays = !lastDay.isEmpty();
+    if (m_appStore.isEmpty() && m_appStoreLoading)
+        m_appStoreSetup->setText(QStringLiteral("Reading the App Store numbers…"));
+    else if (m_appStore.isEmpty() && !m_appStoreError.isEmpty())
+        m_appStoreSetup->setText(QStringLiteral("Could not read the App Store numbers: %1").arg(m_appStoreError));
+    else
+        m_appStoreSetup->setText(QStringLiteral(
+            "No downloads yet. Run native/ios/tools/asc_store_report.py --publish on the computer that holds the App Store Connect key; it sends each day's downloads here."));
+    m_appStoreSetup->setVisible(!hasDays);
+
+    QJsonObject window;
+    for (const QJsonValue &value : m_appStore.value(QStringLiteral("windows")).toArray()) {
+        if (int(number(value.toObject(), "days")) == m_appStoreDays)
+            window = value.toObject();
+    }
+    const QString from = window.isEmpty() ? QString() : text(window, "from");
+    const qint64 start = dayAt(from);
+    const qint64 end = dayAt(lastDay);
+    QList<QJsonObject> days;
+    for (const QJsonValue &value : m_appStore.value(QStringLiteral("days")).toArray()) {
+        const QJsonObject day = value.toObject();
+        const qint64 at = dayAt(text(day, "day"));
+        if (at > 0 && (start <= 0 || at >= start) && at <= end)
+            days << day;
+    }
+    const QString rangeLabel = from.isEmpty() ? QString()
+        : QStringLiteral("%1 – %2").arg(dayLabel(from), dayLabel(lastDay));
+
+    QList<KpiStrip::Kpi> kpis;
+    if (hasDays) {
+        const QJsonObject previous = window.value(QStringLiteral("previous")).toObject();
+        const bool comparable = window.value(QStringLiteral("comparable")).toBool();
+        KpiStrip::Kpi downloads;
+        downloads.label = QStringLiteral("Downloads");
+        downloads.value = fullCount(number(window, "downloads"));
+        downloads.tooltip = QStringLiteral("First-time downloads, %1").arg(rangeLabel);
+        if (comparable) {
+            std::tie(downloads.delta, downloads.tone) =
+                windowDelta(window.value(QStringLiteral("downloads")), previous.value(QStringLiteral("downloads")));
+            downloads.note = QStringLiteral("vs previous %1 days").arg(m_appStoreDays);
+        } else {
+            downloads.note = rangeLabel;
+        }
+        for (const QJsonObject &day : std::as_const(days))
+            downloads.spark << number(day, "downloads");
+        KpiStrip::Kpi redownloads;
+        redownloads.label = QStringLiteral("Redownloads");
+        redownloads.value = fullCount(number(window, "redownloads"));
+        redownloads.tooltip = QStringLiteral("Downloads by people who had the app before, %1").arg(rangeLabel);
+        redownloads.note = QStringLiteral("%1 days").arg(m_appStoreDays);
+        KpiStrip::Kpi updates;
+        updates.label = QStringLiteral("Updates");
+        updates.value = fullCount(number(window, "updates"));
+        updates.tooltip = QStringLiteral("App updates installed, %1").arg(rangeLabel);
+        updates.note = QStringLiteral("%1 days").arg(m_appStoreDays);
+        kpis << downloads << redownloads << updates;
+    }
+    if (hasDays || number(lookup, "ratings") > 0 || number(lookup, "rating") > 0) {
+        KpiStrip::Kpi rating;
+        rating.label = QStringLiteral("Rating");
+        rating.value = number(lookup, "rating") > 0
+            ? QString::number(number(lookup, "rating"), 'f', 1) + QChar(0x2605) : kDash;
+        if (number(lookup, "versionRatings") > 0)
+            rating.note = QStringLiteral("%1%2 this version").arg(QString::number(number(lookup, "versionRating"), 'f', 1))
+                              .arg(QChar(0x2605));
+        rating.tooltip = QStringLiteral("Average rating in the %1 App Store").arg(text(lookup, "country").isEmpty()
+                                                                                    ? QStringLiteral("US") : text(lookup, "country"));
+        KpiStrip::Kpi ratings;
+        ratings.label = QStringLiteral("Ratings");
+        ratings.value = fullCount(number(lookup, "ratings"));
+        ratings.tooltip = rating.tooltip;
+        kpis << rating << ratings;
+    }
+    if (hasDays) {
+        const QJsonObject total = m_appStore.value(QStringLiteral("total")).toObject();
+        KpiStrip::Kpi allTime;
+        allTime.label = QStringLiteral("All-time downloads");
+        allTime.value = fullCount(number(total, "downloads"));
+        allTime.note = QStringLiteral("since %1").arg(dayLabel(text(m_appStore, "firstDay")));
+        allTime.tooltip = QStringLiteral("%1 redownloads and %2 updates since %3")
+                              .arg(fullCount(number(total, "redownloads")), fullCount(number(total, "updates")),
+                                   dayLabel(text(m_appStore, "firstDay")));
+        kpis << allTime;
+        const QJsonObject best = m_appStore.value(QStringLiteral("bestDay")).toObject();
+        if (!best.isEmpty()) {
+            KpiStrip::Kpi bestDay;
+            bestDay.label = QStringLiteral("Best day");
+            bestDay.value = fullCount(number(best, "downloads"));
+            bestDay.note = dayLabel(text(best, "day"));
+            kpis << bestDay;
+        }
+    }
+    m_appStoreKpis->setKpis(kpis);
+    m_appStoreKpis->setVisible(!kpis.isEmpty());
+
+    m_appStoreChartPanel->setVisible(hasDays);
+    m_appStoreCountriesPanel->setVisible(hasDays);
+    m_appStoreDevicesPanel->setVisible(hasDays);
+    if (hasDays) {
+        m_appStoreChartPanel->hint()->setText(rangeLabel);
+        QList<LineChart::Series> series;
+        const std::pair<const char *, QString> kinds[] = {
+            {"downloads", QStringLiteral("Downloads")},
+            {"redownloads", QStringLiteral("Redownloads")},
+            {"updates", QStringLiteral("Updates")}};
+        for (int index = 0; index < 3; ++index) {
+            LineChart::Series line;
+            line.name = kinds[index].second;
+            line.color = colors.series[index];
+            for (const QJsonObject &day : std::as_const(days))
+                line.points.append({dayAt(text(day, "day")), number(day, kinds[index].first), true});
+            series << line;
+        }
+        m_appStoreChart->setSeries(days.isEmpty() ? QList<LineChart::Series>() : series,
+                                   start > 0 ? start : end - (m_appStoreDays - 1) * kDay, end,
+                                   QStringLiteral("No downloads reported in this range"));
+
+        const auto bars = [&colors](const QJsonArray &items, const char *label) {
+            double peak = 0;
+            for (const QJsonValue &value : items)
+                peak = std::max(peak, number(value.toObject(), "downloads"));
+            QList<BarRows::Row> rows;
+            for (const QJsonValue &value : items) {
+                const QJsonObject item = value.toObject();
+                BarRows::Row row;
+                row.label = text(item, label);
+                row.value = number(item, "downloads");
+                row.max = peak;
+                row.text = compactCount(qint64(row.value));
+                row.color = colors.series[0];
+                row.tooltip = QStringLiteral("%1: %2 downloads").arg(row.label, fullCount(row.value));
+                rows << row;
+            }
+            return rows;
+        };
+        m_appStoreCountries->setRows(bars(window.value(QStringLiteral("territories")).toArray(), "code"), 56);
+        const int territories = int(number(window, "territoryCount"));
+        m_appStoreCountriesPanel->hint()->setText(territories > 0
+            ? plural(territories, QStringLiteral("country"), QStringLiteral("countries")) : QString());
+        m_appStoreDevices->setRows(bars(window.value(QStringLiteral("devices")).toArray(), "name"), 96);
+        m_appStoreDevicesPanel->hint()->setText(QStringLiteral("%1 days").arg(m_appStoreDays));
+    }
+
+    QStringList versions;
+    for (const QJsonValue &value : m_appStore.value(QStringLiteral("versions")).toArray()) {
+        const QJsonObject version = value.toObject();
+        const QJsonObject status = version.value(QStringLiteral("status")).toObject();
+        const QString tone = text(status, "tone");
+        const QColor toneColor = tone == QLatin1String("good") ? colors.good
+            : tone == QLatin1String("action") ? colors.warn : colors.muted;
+        QStringList parts{QStringLiteral("<b>%1</b>").arg(escaped(text(version, "version")))};
+        if (!text(version, "build").isEmpty())
+            parts.first() += muted.arg(colors.muted.name(), QStringLiteral(" (build %1)").arg(escaped(text(version, "build"))));
+        if (!text(status, "label").isEmpty())
+            parts << QStringLiteral("<span style=\"color:%1\">%2</span>").arg(toneColor.name(), escaped(text(status, "label")));
+        if (number(version, "createdAt") > 0)
+            parts << muted.arg(colors.muted.name(), dateLabel(version.value(QStringLiteral("createdAt"))));
+        versions << parts.join(dot);
+    }
+    m_appStoreVersions->setText(versions.isEmpty()
+        ? muted.arg(colors.muted.name(), QStringLiteral("No versions sent yet"))
+        : versions.join(QStringLiteral("<br>")));
+
+    const QJsonArray reviews = m_appStore.value(QStringLiteral("reviews")).toArray();
+    QStringList reviewLines;
+    for (const QJsonValue &value : reviews) {
+        const QJsonObject review = value.toObject();
+        const int stars = qBound(0, int(number(review, "rating")), 5);
+        QStringList head{QStringLiteral("<span style=\"color:%1\">%2</span>%3")
+                             .arg(colors.warn.name(), QString(stars, QChar(0x2605)),
+                                  muted.arg(colors.muted.name(), QString(5 - stars, QChar(0x2606))))};
+        if (!text(review, "title").isEmpty())
+            head << QStringLiteral("<b>%1</b>").arg(escaped(text(review, "title")));
+        QStringList where;
+        if (!text(review, "territory").isEmpty())
+            where << escaped(text(review, "territory"));
+        if (number(review, "createdAt") > 0)
+            where << dateLabel(review.value(QStringLiteral("createdAt")));
+        if (!where.isEmpty())
+            head << muted.arg(colors.muted.name(), where.join(dot));
+        QString body = text(review, "body");
+        if (body.size() > 280)
+            body = body.left(279).trimmed() + QChar(0x2026);
+        reviewLines << head.join(QStringLiteral(" ")) +
+                           (body.isEmpty() ? QString() : QStringLiteral("<br><span style=\"font-size:11px\">%1</span>").arg(escaped(body)));
+    }
+    m_appStoreReviews->setText(reviewLines.isEmpty()
+        ? muted.arg(colors.muted.name(), QStringLiteral("No reviews yet"))
+        : reviewLines.join(QStringLiteral("<br><br>")));
+    m_appStoreReviewsPanel->hint()->setText(reviews.isEmpty() ? QString()
+        : plural(reviews.size(), QStringLiteral("review"), QStringLiteral("reviews")));
 }
 
 void MarketingFeature::editExperiment(const QJsonObject &item)

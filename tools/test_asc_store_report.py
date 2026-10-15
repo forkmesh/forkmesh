@@ -203,6 +203,67 @@ def test_publish_puts_the_snapshot_and_never_fails_the_report(monkeypatch, capsy
         capsys.readouterr().out)
 
 
+def detailed_sales(*rows):
+    header = ("Provider\tSKU\tProduct Type Identifier\tUnits\tApple Identifier\t"
+              "Country Code\tDevice\n")
+    return gzip.compress((header + "".join("APPLE\tfm\t" + "\t".join(row) + "\n"
+                                           for row in rows)).encode())
+
+
+def test_marketing_gets_each_reported_day_with_countries_and_devices(monkeypatch, capsys):
+    snapshot = collected(monkeypatch)
+    snapshot["downloads"]["since"] = "2026-08"
+    api = SalesApi({
+        ("DAILY", "2026-10-08"): detailed_sales(("1F", "3", "app", "US", "iPhone"),
+                                                ("1F", "2", "app", "DE", "iPad"),
+                                                ("7F", "4", "app", "US", "iPhone"),
+                                                ("1F", "9", "other", "US", "iPhone")),
+        ("DAILY", "2026-10-10"): detailed_sales(("3F", "1", "app", "FR", "iPhone")),
+    })
+    calls = []
+
+    def request(method, path, body=None):
+        calls.append((method, path, body))
+        if method == "GET":
+            return {"appStore": {"app": {"id": "app"}, "lastDay": "2026-10-10"}}
+        return {"appStore": {"lastDay": body["days"][-1]["day"],
+                             "windows": [{"days": 30, "downloads": 5}]}}
+
+    assert asc_store_report.publish_marketing(snapshot, api, "app", "85000000",
+                                              date(2026, 10, 13), "acme", request)
+    assert [call[:2] for call in calls] == [("GET", "/api/marketing/acme/app-store"),
+                                            ("PUT", "/api/marketing/acme/app-store")]
+    body = calls[1][2]
+    assert body["app"]["id"] == "app"
+    assert body["versions"] == snapshot["versions"] and body["reviews"] == snapshot["reviews"]
+    assert [day["day"] for day in body["days"]] == ["2026-10-07", "2026-10-08", "2026-10-09",
+                                                    "2026-10-10", "2026-10-11"]
+    assert body["days"][1] == {"day": "2026-10-08", "downloads": 5, "redownloads": 0,
+                               "updates": 4, "territories": {"US": 3, "DE": 2},
+                               "devices": {"iPhone": 3, "iPad": 2}}
+    assert body["days"][3]["territories"] == {}
+    assert ("DAILY", "2026-10-12") in api.asked
+    assert "sent 5 days of App Store downloads to Marketing (acme)" in capsys.readouterr().out
+
+
+def test_marketing_backfills_a_year_at_most_and_never_fails_the_report(monkeypatch, capsys):
+    today = date(2026, 10, 13)
+    assert asc_store_report.marketing_start("", "2026-08", today) == date(2026, 8, 1)
+    assert asc_store_report.marketing_start("", "2024-01", today) == date(2025, 10, 13)
+    assert asc_store_report.marketing_start("2026-10-01", "2026-08", today) == date(2026, 9, 28)
+    snapshot = collected(monkeypatch)
+    assert not asc_store_report.publish_marketing(snapshot, SalesApi({}), "app", "", today,
+                                                  "acme", lambda *args: {})
+    assert "set ASC_VENDOR_NUMBER" in capsys.readouterr().out
+
+    def refuse(*args):
+        raise ValueError("Marketing API 409: plugin_not_installed")
+
+    assert not asc_store_report.publish_marketing(snapshot, SalesApi({}), "app", "85000000",
+                                                  today, "acme", refuse)
+    assert "not sent to Marketing: Marketing API 409" in capsys.readouterr().out
+
+
 def test_json_mode_prints_the_snapshot(monkeypatch, capsys):
     monkeypatch.setattr(asc_store_report, "Session", lambda: fake_api)
     monkeypatch.setattr(asc_store_report, "app_id", lambda api: "app")

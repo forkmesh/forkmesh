@@ -2,7 +2,7 @@
 
 import asyncio
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 import hashlib
 import hmac
@@ -404,7 +404,30 @@ REFRESH_SOURCE = "refresh"
 SEARCH_METRICS = ("visits", "indexedPages")
 EMAIL_METRICS = ("outbound", "replies", "closedDeals", "closedValue")
 GITHUB_METRICS = ("stars", "forks")
-CHANNEL_METRICS = SEARCH_METRICS + EMAIL_METRICS + GITHUB_METRICS
+APP_STORE_METRICS = ("downloads", "redownloads", "updates", "ratings")
+CHANNEL_METRICS = SEARCH_METRICS + EMAIL_METRICS + GITHUB_METRICS + APP_STORE_METRICS
+APP_STORE_CHANNEL = "app-store"
+APP_STORE_KINDS = ("downloads", "redownloads", "updates")
+APP_STORE_SOURCE = "app-store-connect"
+APP_STORE_LOOKUP_SOURCE = "app-store"
+APP_STORE_LOOKUP_ORIGIN = "https://itunes.apple.com"
+APP_STORE_KEEP_DAYS = 800
+APP_STORE_PUSH_DAYS = 400
+APP_STORE_WINDOWS = (7, 30, 90, 365)
+APP_STORE_METRIC_DAYS = 30
+APP_STORE_TOP = 10
+APP_STORE_TERRITORIES = 250
+APP_STORE_DEVICES = 12
+APP_STORE_REVIEWS = 20
+APP_STORE_VERSIONS = 6
+APP_STORE_COUNT_LIMIT = 10 ** 9
+APP_STORE_ID_RE = re.compile(r"^[0-9]{1,20}$")
+APP_STORE_URL_ID_RE = re.compile(r"/id([0-9]{1,20})(?:[/?#]|$)")
+APP_STORE_COUNTRY_RE = re.compile(r"^[a-z]{2}$")
+APP_STORE_DAY_RE = re.compile(r"^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$")
+APP_STORE_TERRITORY_RE = re.compile(r"^[A-Z]{2}$")
+APP_STORE_REVIEW_TERRITORY_RE = re.compile(r"^[A-Z]{2,3}$")
+APP_STORE_TONES = ("action", "pending", "good", "neutral")
 GITHUB_CHANNEL = "github"
 EMAIL_CHANNEL = "email"
 EMAIL_DAYS = 30
@@ -754,8 +777,26 @@ DATA_SCHEMA_UP = [
         data TEXT NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS idx_marketing_browser_activity_account "
     "ON marketing_browser_activity(org_bi,account_bi,at)",
+    """CREATE TABLE IF NOT EXISTS marketing_app_store (
+        org_bi TEXT PRIMARY KEY,
+        updated_by_bi TEXT NOT NULL,
+        updated_by_name TEXT NOT NULL,
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS marketing_app_store_days (
+        org_bi TEXT NOT NULL,
+        day TEXT NOT NULL CHECK (length(day) = 10),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY(org_bi,day))""",
+    """CREATE TRIGGER IF NOT EXISTS trg_marketing_app_store_days_limit
+        BEFORE INSERT ON marketing_app_store_days
+        WHEN (SELECT COUNT(*) FROM marketing_app_store_days WHERE org_bi=NEW.org_bi)>=1000
+        BEGIN SELECT RAISE(ABORT,'marketing_app_store_days_full'); END""",
 ]
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS marketing_app_store_days",
+    "DROP TABLE IF EXISTS marketing_app_store",
     "DROP TABLE IF EXISTS marketing_browser_activity",
     "DROP TABLE IF EXISTS marketing_ready_posts",
     "DROP TABLE IF EXISTS marketing_posts",
@@ -845,7 +886,8 @@ def _route(path):
         r"/api/marketing/([a-z][a-z0-9-]{0,62})"
         r"(?:/(content|metrics|settings|refresh|capture|ads|experiments|funnel|links|"
         r"report|performance|reddit-rules|reddit|campaigns|keywords|x-connection|x-post|"
-        r"assistant|posts|mastodon|email-suggestions|discord-posts|ready-post|activity)"
+        r"assistant|posts|mastodon|email-suggestions|discord-posts|ready-post|activity|"
+        r"app-store)"
         r"(?:/([0-9a-f]{32}))?)?", clean) or re.fullmatch(
         r"/api/marketing/([a-z][a-z0-9-]{0,62})/(channels)/([a-z0-9][a-z0-9-]{0,31})", clean)
     if not match:
@@ -3164,6 +3206,8 @@ def _email_guide(history, now):
 def _stats_guide(channel, configured, history, now):
     if channel == EMAIL_CHANNEL:
         return _email_guide(history, now)
+    if channel == APP_STORE_CHANNEL:
+        return _app_store_guide(configured, history, now)
     if channel != "reddit":
         return []
     community = _reddit_community(configured.get("profileUrl"))
@@ -3244,7 +3288,8 @@ def _channel_health(channel, configured, history, content, now, posts=()):
             stars_change = _integer(latest.get("stars")) - _integer(baseline.get("stars"))
         elif channel == GITHUB_CHANNEL and len(_url_parts(configured.get("profileUrl"))[2]) > 1:
             change = None
-    growth = stars_change if stars_change is not None else change
+    growth = None if channel == APP_STORE_CHANNEL else (
+        stars_change if stars_change is not None else change)
     engagement = _engagement_basis(channel, history)
     rate = engagement["rate"] if engagement else None
     age_days = (now - observed) // DAY_MS if observed else None
@@ -3266,7 +3311,7 @@ def _channel_health(channel, configured, history, content, now, posts=()):
         if deals_change is not None:
             checks.append({"id": "deals", "label": "Closed deals holding or growing over 30 days",
                            "ok": deals_change >= 0})
-    elif channel != GOOGLE_CHANNEL:
+    elif channel not in (GOOGLE_CHANNEL, APP_STORE_CHANNEL):
         checks.append({"id": "posting", "label": "Posted in the last %d days" % (cadence * 2),
                        "ok": bool(last_post) and now - last_post <= cadence * 2 * DAY_MS})
     if growth is not None and channel != EMAIL_CHANNEL:
@@ -4443,6 +4488,362 @@ async def _refresh_email_channel(runtime, channel):
             "metrics": {key: max(0, _integer(report.get(key))) for key in EMAIL_METRICS}}, ""
 
 
+def _app_store_link(value):
+    parsed, host, parts = _url_parts(value)
+    if host not in ("apps.apple.com", "itunes.apple.com"):
+        return "", ""
+    match = APP_STORE_URL_ID_RE.search(parsed.path)
+    if not match:
+        return "", ""
+    country = parts[0].lower() if parts else ""
+    return match.group(1), country if APP_STORE_COUNTRY_RE.fullmatch(country) else "us"
+
+
+def _app_store_lookup(item, app_id, country, now):
+    return {"appId": app_id, "country": country.upper(),
+            "name": _clean(item.get("trackName"), 200),
+            "seller": _clean(item.get("sellerName"), 200),
+            "version": _clean(item.get("version"), 32),
+            "releasedAt": _feed_timestamp(item.get("currentVersionReleaseDate")),
+            "firstReleasedAt": _feed_timestamp(item.get("releaseDate")),
+            "genre": _clean(item.get("primaryGenreName"), 60),
+            "price": _clean(item.get("formattedPrice"), 32),
+            "minimumOs": _clean(item.get("minimumOsVersion"), 16),
+            "rating": _rating(item.get("averageUserRating")),
+            "ratings": max(0, _integer(item.get("userRatingCount"))),
+            "versionRating": _rating(item.get("averageUserRatingForCurrentVersion")),
+            "versionRatings": max(0, _integer(item.get("userRatingCountForCurrentVersion"))),
+            "url": _https(item.get("trackViewUrl")),
+            "lookedUpAt": now}
+
+
+async def _refresh_app_store_channel(runtime, channel):
+    app_id, country = _app_store_link(channel.get("profileUrl"))
+    if not app_id:
+        return None, "app_store_url_unsupported"
+    found, error = await _fetch_json(
+        runtime, APP_STORE_LOOKUP_ORIGIN + "/lookup?" + urlencode(
+            {"id": app_id, "country": country}))
+    if error:
+        return None, error
+    results = found.get("results") if isinstance(found, dict) else None
+    item = next((entry for entry in results or [] if isinstance(entry, dict)
+                 and str(entry.get("trackId") or "") == app_id), None)
+    if item is None:
+        return None, "app_store_app_not_found"
+    lookup = _app_store_lookup(item, app_id, country, runtime.now())
+    facts = [part for part in (
+        "Version " + lookup["version"] if lookup["version"] else "",
+        lookup["genre"], lookup["price"]) if part]
+    return {"url": "", "siteUrl": lookup["url"] or
+            "https://apps.apple.com/%s/app/id%s" % (country, app_id),
+            "title": lookup["name"], "description": " · ".join(facts), "items": [],
+            "metrics": {"ratings": lookup["ratings"], "rating": lookup["rating"]},
+            "source": APP_STORE_LOOKUP_SOURCE, "appStore": lookup}, ""
+
+
+def _app_store_day_shift(day, delta):
+    return (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=delta)).strftime("%Y-%m-%d")
+
+
+def _app_store_count(value):
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(APP_STORE_COUNT_LIMIT, number))
+
+
+def _app_store_territory(value):
+    value = _clean(value, 3).upper()
+    return value if APP_STORE_TERRITORY_RE.fullmatch(value) else ""
+
+
+def _app_store_counter(value, limit, name):
+    result = {}
+    for key, count in (value.items() if isinstance(value, dict) else ()):
+        key, count = name(key), _app_store_count(count)
+        if key and count and (key in result or len(result) < limit):
+            result[key] = min(APP_STORE_COUNT_LIMIT, result.get(key, 0) + count)
+    return result
+
+
+def _app_store_day(value, first, last):
+    value = value if isinstance(value, dict) else {}
+    day = _clean(value.get("day"), 10)
+    if not APP_STORE_DAY_RE.fullmatch(day) or not first <= day <= last:
+        return None
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return {"day": day,
+            **{kind: _app_store_count(value.get(kind)) for kind in APP_STORE_KINDS},
+            "territories": _app_store_counter(value.get("territories"),
+                                              APP_STORE_TERRITORIES, _app_store_territory),
+            "devices": _app_store_counter(value.get("devices"), APP_STORE_DEVICES,
+                                          lambda key: _clean(key, 32))}
+
+
+def _app_store_app(value):
+    value = value if isinstance(value, dict) else {}
+    app_id = _clean(value.get("id"), 20)
+    return {"id": app_id if APP_STORE_ID_RE.fullmatch(app_id) else "",
+            "name": _clean(value.get("name"), 120),
+            "bundleId": _clean(value.get("bundleId"), 160)}
+
+
+def _app_store_status(value):
+    value = value if isinstance(value, dict) else {}
+    state = _clean(value.get("state"), 64)
+    tone = _clean(value.get("tone"), 16)
+    return {"state": state,
+            "label": _clean(value.get("label"), 80)
+                     or state.replace("_", " ").capitalize() or "Unknown",
+            "tone": tone if tone in APP_STORE_TONES else "neutral"}
+
+
+def _app_store_version(value):
+    value = value if isinstance(value, dict) else {}
+    version = _clean(value.get("version"), 32)
+    if not version:
+        return None
+    return {"version": version, "build": _clean(value.get("build"), 32),
+            "status": _app_store_status(value.get("status")),
+            "createdAt": _feed_timestamp(value.get("createdAt"))}
+
+
+def _app_store_review(value):
+    value = value if isinstance(value, dict) else {}
+    rating = max(0, min(5, _integer(value.get("rating"))))
+    title, body = _clean(value.get("title"), 200), _clean(value.get("body"), 1000)
+    if not (rating or title or body):
+        return None
+    return {"createdAt": _feed_timestamp(value.get("createdAt")), "rating": rating,
+            "title": title, "territory": _clean(value.get("territory"), 3).upper()
+            if APP_STORE_REVIEW_TERRITORY_RE.fullmatch(_clean(value.get("territory"), 3).upper())
+            else "",
+            "body": body}
+
+
+def _app_store_list(value, limit, clean):
+    items = value[:limit] if isinstance(value, list) else []
+    return [item for item in (clean(entry) for entry in items) if item]
+
+
+async def _app_store_meta(runtime, org_bi):
+    row = await runtime.d1_first(
+        "SELECT updated_by_name,updated_at,data FROM marketing_app_store WHERE org_bi=?",
+        org_bi)
+    if not row:
+        return {}
+    data = await runtime.open(row.get("data"))
+    return data if isinstance(data, dict) else {}
+
+
+async def _write_app_store_meta(runtime, org_bi, account_bi, actor, meta, now):
+    await runtime.d1_run(
+        "INSERT INTO marketing_app_store(org_bi,updated_by_bi,updated_by_name,updated_at,"
+        "data) VALUES(?,?,?,?,?) ON CONFLICT(org_bi) DO UPDATE SET "
+        "updated_by_bi=excluded.updated_by_bi,updated_by_name=excluded.updated_by_name,"
+        "updated_at=excluded.updated_at,data=excluded.data",
+        org_bi, account_bi, actor, now, await runtime.seal(meta))
+
+
+async def _app_store_days(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT day,data FROM marketing_app_store_days WHERE org_bi=? ORDER BY day", org_bi)
+    days = []
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        days.append({"day": str(row.get("day") or ""),
+                     **{kind: _app_store_count(data.get(kind)) for kind in APP_STORE_KINDS},
+                     "territories": data.get("territories") if isinstance(
+                         data.get("territories"), dict) else {},
+                     "devices": data.get("devices") if isinstance(
+                         data.get("devices"), dict) else {}})
+    return days
+
+
+def _app_store_totals(days, first, last):
+    picked = [day for day in days if first <= day["day"] <= last]
+    return picked, {kind: sum(day[kind] for day in picked) for kind in APP_STORE_KINDS}
+
+
+def _app_store_top(days, key, name):
+    counts = {}
+    for day in days:
+        for label, count in day.get(key, {}).items():
+            counts[label] = counts.get(label, 0) + _app_store_count(count)
+    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    return [{name: label, "downloads": count} for label, count in ranked[:APP_STORE_TOP]
+            if count], len(counts)
+
+
+def _app_store_summary(meta, days, now):
+    first = days[0]["day"] if days else ""
+    last = days[-1]["day"] if days else ""
+    stored = {day["day"]: day for day in days}
+    series, cursor = [], first
+    while cursor and cursor <= last:
+        day = stored.get(cursor, {})
+        series.append({"day": cursor, **{kind: day.get(kind, 0) for kind in APP_STORE_KINDS}})
+        cursor = _app_store_day_shift(cursor, 1)
+    windows = []
+    for span in APP_STORE_WINDOWS if last else ():
+        start = _app_store_day_shift(last, 1 - span)
+        before = _app_store_day_shift(start, -span)
+        picked, totals = _app_store_totals(days, start, last)
+        _, previous = _app_store_totals(days, before, _app_store_day_shift(start, -1))
+        territories, territory_count = _app_store_top(picked, "territories", "code")
+        devices, _ = _app_store_top(picked, "devices", "name")
+        windows.append({"days": span, "from": start, "to": last, **totals,
+                        "previous": previous, "comparable": first <= before,
+                        "territories": territories, "territoryCount": territory_count,
+                        "devices": devices})
+    best = max(series, key=lambda day: (day["downloads"], day["day"]), default=None)
+    published = _integer(meta.get("publishedAt"))
+    lookup = meta.get("lookup") if isinstance(meta.get("lookup"), dict) else {}
+    return {"app": _app_store_app(meta.get("app")), "lookup": lookup,
+            "versions": _app_store_list(meta.get("versions"), APP_STORE_VERSIONS,
+                                        lambda item: item if isinstance(item, dict) else None),
+            "reviews": _app_store_list(meta.get("reviews"), APP_STORE_REVIEWS,
+                                       lambda item: item if isinstance(item, dict) else None),
+            "publishedAt": published, "publishedBy": _clean(meta.get("publishedBy"), 64),
+            "fresh": bool(published) and now - published <= FRESH_DAYS * DAY_MS,
+            "firstDay": first, "lastDay": last, "days": series,
+            "total": {kind: sum(day[kind] for day in days) for kind in APP_STORE_KINDS},
+            "bestDay": {"day": best["day"], "downloads": best["downloads"]}
+                       if best and best["downloads"] else None,
+            "windows": windows}
+
+
+async def _app_store_payload(runtime, org_bi, role, now):
+    return {"ok": True, "canPublish": role in MANAGER_ROLES,
+            "appStore": _app_store_summary(await _app_store_meta(runtime, org_bi),
+                                           await _app_store_days(runtime, org_bi), now)}
+
+
+async def _app_store_channel(runtime, org_bi, account_bi, actor, app, now):
+    settings = await _settings(runtime, org_bi)
+    entries = [dict(item) for item in settings.get("channels", [])]
+    entry = next((item for item in entries if item.get("id") == APP_STORE_CHANNEL), None)
+    if entry is None:
+        entry = {"id": APP_STORE_CHANNEL, "enabled": True,
+                 "displayName": CHANNEL_NAMES[APP_STORE_CHANNEL], "profileUrl": "",
+                 "feed": {}}
+        entries.append(entry)
+    elif entry.get("profileUrl"):
+        return
+    entry["profileUrl"] = "https://apps.apple.com/app/id" + app["id"]
+    await _write_settings(runtime, org_bi, account_bi, actor,
+                          _settings_data({**settings, "channels": entries}), now)
+
+
+async def _app_store_metric(runtime, org_bi, org_name, account_bi, actor, summary, now):
+    window = next((item for item in summary["windows"]
+                   if item["days"] == APP_STORE_METRIC_DAYS), None)
+    if window is None:
+        return
+    observed = {kind: window[kind] for kind in APP_STORE_KINDS}
+    latest = await _latest_metric(runtime, org_bi, APP_STORE_CHANNEL)
+    if (latest.get("source") == APP_STORE_SOURCE
+            and all(_integer(latest.get(kind)) == observed[kind] for kind in APP_STORE_KINDS)
+            and now - _integer(latest.get("observedAt")) < DAY_MS // 2):
+        return
+    snapshot = _metric_data({key: observed.get(key, latest.get(key, 0))
+                             for key in METRIC_KEYS + SOCIAL_METRICS + CHANNEL_METRICS})
+    snapshot["rating"] = _rating(latest.get("rating"))
+    snapshot["source"] = APP_STORE_SOURCE
+    snapshot["note"] = "App Store Connect sales, %d days to %s" % (
+        APP_STORE_METRIC_DAYS, window["to"])
+    await _insert_metric(runtime, org_bi, org_name, account_bi, actor, APP_STORE_CHANNEL,
+                         snapshot, now)
+
+
+async def _publish_app_store(runtime, org_bi, org_name, role, account_bi, actor, data):
+    now = runtime.now()
+    app = _app_store_app(data.get("app"))
+    if not app["id"]:
+        return _response(runtime, {"error": "app_store_app_required"}, 400)
+    raw_days = data.get("days")
+    if not isinstance(raw_days, list) or len(raw_days) > APP_STORE_PUSH_DAYS:
+        return _response(runtime, {"error": "invalid_app_store_days",
+                                   "limit": APP_STORE_PUSH_DAYS}, 400)
+    today = _day(now)
+    first = _app_store_day_shift(today, -APP_STORE_KEEP_DAYS)
+    last = _app_store_day_shift(today, 1)
+    days = {}
+    for item in raw_days:
+        day = _app_store_day(item, first, last)
+        if day is None:
+            return _response(runtime, {"error": "invalid_app_store_day",
+                                       "day": _clean((item if isinstance(item, dict)
+                                                      else {}).get("day"), 10)}, 400)
+        days[day["day"]] = day
+    meta = await _app_store_meta(runtime, org_bi)
+    if (meta.get("app") or {}).get("id") not in (None, "", app["id"]):
+        await runtime.d1_run("DELETE FROM marketing_app_store_days WHERE org_bi=?", org_bi)
+        meta = {}
+    await runtime.d1_run("DELETE FROM marketing_app_store_days WHERE org_bi=? AND day<?",
+                         org_bi, first)
+    for day in sorted(days):
+        await runtime.d1_run(
+            "INSERT INTO marketing_app_store_days(org_bi,day,updated_at,data) "
+            "VALUES(?,?,?,?) ON CONFLICT(org_bi,day) DO UPDATE SET "
+            "updated_at=excluded.updated_at,data=excluded.data",
+            org_bi, day, now,
+            await runtime.seal({key: value for key, value in days[day].items()
+                                if key != "day"}))
+    lookup = meta.get("lookup") if isinstance(meta.get("lookup"), dict) else {}
+    meta = {"app": app, "publishedAt": now, "publishedBy": actor,
+            "lookup": lookup if lookup.get("appId") in (None, app["id"]) else {},
+            "versions": _app_store_list(data.get("versions"), APP_STORE_VERSIONS,
+                                        _app_store_version)
+            if "versions" in data else meta.get("versions", []),
+            "reviews": _app_store_list(data.get("reviews"), APP_STORE_REVIEWS,
+                                       _app_store_review)
+            if "reviews" in data else meta.get("reviews", [])}
+    await _write_app_store_meta(runtime, org_bi, account_bi, actor, meta, now)
+    await _app_store_channel(runtime, org_bi, account_bi, actor, app, now)
+    payload = await _app_store_payload(runtime, org_bi, role, now)
+    await _app_store_metric(runtime, org_bi, org_name, account_bi, actor,
+                            payload["appStore"], now)
+    await runtime.audit(actor, "marketing.app_store.publish", "organization", org_bi)
+    return _response(runtime, {**payload, "stored": len(days)})
+
+
+async def _save_app_store_lookup(runtime, org_bi, account_bi, actor, lookup, now):
+    meta = await _app_store_meta(runtime, org_bi)
+    app_id = (meta.get("app") or {}).get("id")
+    if app_id and app_id != lookup.get("appId"):
+        return
+    await _write_app_store_meta(runtime, org_bi, account_bi, actor,
+                                {**meta, "lookup": lookup}, now)
+
+
+def _app_store_guide(configured, history, now):
+    app_id, _ = _app_store_link(configured.get("profileUrl"))
+    sales = [metric for metric in history if metric.get("source") == APP_STORE_SOURCE]
+    fresh = bool(sales) and now - _integer(sales[0].get("observedAt")) <= FRESH_DAYS * DAY_MS
+    return [
+        {"id": "link", "action": "link", "done": bool(app_id),
+         "label": "Add the app's App Store link, like "
+                  "https://apps.apple.com/app/id1234567890"},
+        {"id": "rating", "action": "refresh",
+         "done": any(metric.get("source") == APP_STORE_LOOKUP_SOURCE for metric in history),
+         "label": "Press Refresh: Marketing reads the app's rating, ratings count and "
+                  "current version from the App Store"},
+        {"id": "downloads", "action": "app-store", "done": fresh,
+         "label": "Send daily downloads from App Store Connect: run the App Store "
+                  "report with --publish (native/ios/tools/asc_store_report.py) on the "
+                  "computer that holds the App Store Connect key"},
+    ]
+
+
 async def _email_suggestions(runtime, org_bi):
     module = _crm_module()
     if module is None:
@@ -4466,6 +4867,7 @@ REFRESHERS = {
     "github": _refresh_github_channel,
     GOOGLE_CHANNEL: _refresh_google_channel,
     EMAIL_CHANNEL: _refresh_email_channel,
+    APP_STORE_CHANNEL: _refresh_app_store_channel,
 }
 
 
@@ -4551,7 +4953,7 @@ async def _refresh_channel(runtime, org_bi, org_name, role, account_bi, actor,
         latest = await _latest_metric(runtime, org_bi, channel_id)
         snapshot = _metric_data({key: observed.get(key, latest.get(key, 0))
                                  for key in METRIC_KEYS + SOCIAL_METRICS + CHANNEL_METRICS})
-        snapshot["rating"] = latest.get("rating", 0)
+        snapshot["rating"] = _rating(observed.get("rating", latest.get("rating", 0)))
         snapshot["note"] = "Channel refresh"
         snapshot["source"] = _clean(source.get("source"), 40) or REFRESH_SOURCE
         await _insert_metric(runtime, org_bi, org_name, account_bi, actor,
@@ -4572,6 +4974,9 @@ async def _refresh_channel(runtime, org_bi, org_name, role, account_bi, actor,
     }
     await _store_channel_feed(runtime, org_bi, account_bi, actor, channel_id,
                               feed_state, now, source.get("mastodonFollowing"))
+    if isinstance(source.get("appStore"), dict):
+        await _save_app_store_lookup(runtime, org_bi, account_bi, actor,
+                                     source["appStore"], now)
     await runtime.audit(actor, "marketing.channel.refresh", "organization", org_bi)
     refresh["feed"] = _feed_data(feed_state)
     return await _overview(runtime, org_bi, org_name, role, refresh, account_bi)
@@ -6564,7 +6969,8 @@ async def org_has_data(runtime, org_bi):
     for table in ("marketing_campaigns", "marketing_keywords", "marketing_content", "marketing_metrics", "marketing_settings",
                   "marketing_feed_items", "marketing_ads", "marketing_experiments",
                   "marketing_funnel", "marketing_reddit_threads", "marketing_posts",
-                  "marketing_ready_posts", "marketing_browser_activity"):
+                  "marketing_ready_posts", "marketing_browser_activity",
+                  "marketing_app_store", "marketing_app_store_days"):
         if await runtime.d1_first(
                 "SELECT 1 AS present FROM " + table + " WHERE org_bi=? LIMIT 1", org_bi):
             return True
@@ -6592,6 +6998,8 @@ async def export_org_data(runtime, org_bi, org_name):
             "keywords": await _keywords(runtime, org_bi),
             "posts": await _posts(runtime, org_bi),
             "readyPosts": await _ready_posts_overview(runtime, org_bi),
+            "appStore": {**await _app_store_meta(runtime, org_bi),
+                         "days": await _app_store_days(runtime, org_bi)},
             "settings": _public_settings(await _settings(runtime, org_bi)),
             "feedItems": [{"channel": row.get("channel"),
                            "contentId": row.get("content_id"),
@@ -6601,6 +7009,8 @@ async def export_org_data(runtime, org_bi, org_name):
 
 
 async def purge_org_data(runtime, org_bi):
+    await runtime.d1_run("DELETE FROM marketing_app_store_days WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM marketing_app_store WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM marketing_browser_activity WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM marketing_ready_posts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM marketing_posts WHERE org_bi=?", org_bi)
@@ -6678,6 +7088,7 @@ ACTIVITY_PINGS = {
     ("content", "id", "PATCH"): ("Marketing content updated", "team", True),
     ("content", "id", "DELETE"): ("Marketing content deleted", "team", False),
     ("metrics", "", "POST"): ("Channel numbers logged", "team", True),
+    ("app-store", "", "PUT"): ("App Store numbers updated", "team", True),
     ("settings", "", "PUT"): ("Marketing settings changed", "team", True),
     ("channels", "id", "DELETE"): ("Marketing channel removed", "team", False),
     ("ads", "", "POST"): ("Ad added", "team", False),
@@ -6854,7 +7265,8 @@ async def handle(runtime, path):
                ("organization", "capture"): ("POST",),
                ("organization", "posts"): ("GET", "POST"),
                ("organization", "mastodon"): ("GET", "POST"),
-               ("organization", "activity"): ("GET", "POST")}.get(
+               ("organization", "activity"): ("GET", "POST"),
+               ("organization", "app-store"): ("GET", "PUT")}.get(
                    (route[0], resource), ())
     if (item and resource in ("content", "ads", "experiments", "reddit", "campaigns",
                               "keywords", "posts")
@@ -6992,6 +7404,14 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
             return _response(runtime, {"ok": True, "browserActivity":
                                        await _browser_activity(runtime, org_bi, account_bi)})
         return await _record_browser_activity(runtime, org_bi, account_bi, data)
+    if resource == "app-store":
+        if method == "GET":
+            return _response(runtime, await _app_store_payload(runtime, org_bi, role,
+                                                               runtime.now()))
+        if role not in MANAGER_ROLES:
+            return _response(runtime, {"error": "organization_admin_required"}, 403)
+        return await _publish_app_store(runtime, org_bi, org_name, role, account_bi,
+                                        actor, data)
     if resource == "links":
         attribution = (await _settings(runtime, org_bi))["attribution"]
         url, error = _build_link(data, attribution)
