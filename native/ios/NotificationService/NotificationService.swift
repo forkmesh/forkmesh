@@ -70,20 +70,22 @@ final class NotificationService: UNNotificationServiceExtension {
         }
 
         // Chat and direct messages are sealed end to end: the relay stores
-        // ciphertext, so there is no text to go and fetch. The relay's alert
-        // already names the sender or the channel; only an alert that somehow
+        // ciphertext, and a direct message's push carries that sealed frame
+        // itself, so the text is decrypted here even after another device
+        // received it and the relay's copy is gone. Only an alert that somehow
         // arrived without a title gets the kind named here.
         if let sealed = Self.sealedTopic(request.content.userInfo["topic"]) {
             if content.title.isEmpty {
                 content.title = sealed
-                content.body = "End-to-end encrypted \u{2014} open Chat in ForkMesh to read it."
+                content.body = PushPreviewText.genericBody
             }
             let pushedOrigin = (request.content.userInfo["origin"] as? String) ?? ""
             let credentials = PushCredentialStore.load(origin: pushedOrigin)
             let origin = credentials?.origin ?? pushedOrigin
             let sender = request.content.userInfo["sender"] as? String
             let mode = PushPreviewMode.parse(credentials?.preview)
-            let chat = PushChatRequest.parse(Self.payload(request.content.userInfo))
+            let pushed = Self.payload(request.content.userInfo)
+            let chat = PushChatRequest.parse(pushed)
             if let chat, !chat.threadIdentifier.isEmpty { content.threadIdentifier = chat.threadIdentifier }
             sendDeliveryReceipt(chat, credentials: credentials)
             if mode == .nameAndMessage, PushMeshWake.isWake(request.content.userInfo) {
@@ -129,7 +131,7 @@ final class NotificationService: UNNotificationServiceExtension {
                 task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
                     if let data, (response as? HTTPURLResponse)?.statusCode == 200,
                         let message = PushChatOpener.open(
-                            JSON.parseObject(data), request: chat,
+                            PushChatOpener.withPushedFrame(JSON.parseObject(data), pushed: pushed), request: chat,
                             privateKey: PushCredentialStore.deviceKey(named: deviceKeyName), keys: Self.roomKeys),
                         let preview = PushPreviewText.preview(message, request: chat, mode: .nameAndMessage)
                     {

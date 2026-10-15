@@ -17,8 +17,8 @@ names the channel or the sender. There is no generic "something happened"
 banner any more: a push with nothing specific to say is not sent at all (see
 alert_payload). The one thing no push can carry is the text of a chat or
 direct message, which is sealed end to end and unreadable to this Worker too —
-those alerts say who or where, and say that the text is encrypted. The phone
-replaces that fallback with the text it decrypts itself, the way Signal does
+those alerts say who or where, and a direct message also carries its sealed
+frame. The phone decrypts it and shows the text itself, the way Signal does
 (docs/app/chat-push-previews.md).
 
 This deliberately hands Apple the text of pings. Every alert also sets
@@ -59,13 +59,15 @@ APNS_TEST_ALERT = {
 }
 # Chat and direct messages are end-to-end encrypted: neither this Worker nor
 # Apple can read the text, so the body says so instead of pretending.
-APNS_SEALED_BODY = "End-to-end encrypted \u2014 open Chat in ForkMesh to read it."
+APNS_SEALED_BODY = "New message"
 APNS_WORLD_CHAT_NAME = "World chat"
 APNS_DIRECT_CONVERSATION_PREFIX = "direct:"
 APNS_DIRECT_ID_RE = re.compile(r"[0-9a-f]{32}")
 APNS_CHANNEL_ID_RE = re.compile(r"[0-9a-f]{32}")
 APNS_REF_RE = re.compile(r"[0-9a-f]{40}")
 APNS_KEY_VERSION_MAX = 1_000_000_000
+APNS_FRAME_RELAY_KEYS = frozenset({
+    "ref", "recipients", "recipientNames", "historyReplay"})
 APNS_OFFICE_CONVERSATION_PREFIX = "#office/"
 APNS_OFFICE_NAME_MAX_CHARS = 32
 APNS_MESH_CONVERSATION = "#mesh"
@@ -307,7 +309,7 @@ def _fetch_fields(alert, ref, key_version):
 
 
 def direct_message_alert(sender="", started=False, conversation_id="",
-                         ref="", key_version=0):
+                         ref="", key_version=0, frame=""):
     """The banner for a direct message, which the relay cannot read."""
     sender = str(sender or "").strip()
     if started:
@@ -332,7 +334,24 @@ def direct_message_alert(sender="", started=False, conversation_id="",
         alert["conversation"] = APNS_DIRECT_CONVERSATION_PREFIX + conversation_id
         if not started:
             _fetch_fields(alert, ref, key_version)
+            sealed_frame = _sealed_frame(frame)
+            if sealed_frame and "ref" in alert:
+                alert["frame"] = sealed_frame
     return alert
+
+
+def _sealed_frame(frame):
+    if isinstance(frame, dict):
+        envelope = frame
+    else:
+        try:
+            envelope = json.loads(str(frame or ""))
+        except (TypeError, ValueError):
+            return None
+    if not isinstance(envelope, dict) or envelope.get("kind") != "cipher":
+        return None
+    return {key: value for key, value in envelope.items()
+            if key not in APNS_FRAME_RELAY_KEYS}
 
 
 def chat_message_alert(channel_name="", conversation="", channel_id="",
@@ -439,6 +458,10 @@ def alert_payload(alert, topic="", origin=""):
         key_version = _key_version(alert.get("keyVersion"))
         if key_version:
             payload["keyVersion"] = key_version
+        if "ref" in payload and str(topic or "") == "direct-messages":
+            sealed_frame = _sealed_frame(alert.get("frame"))
+            if sealed_frame:
+                payload["frame"] = sealed_frame
     sender = str(alert.get("sender") or "").strip().lower()
     if sender and len(sender) <= 64 and all(
             c.isascii() and (c.isalnum() or c in "-_.") for c in sender):
@@ -469,6 +492,8 @@ def alert_payload(alert, topic="", origin=""):
         return len(encode(text).encode("utf-8")) <= APNS_PAYLOAD_MAX_BYTES
 
     if fits(body):
+        return encode(body)
+    if payload.pop("frame", None) is not None and fits(body):
         return encode(body)
     # A long comment (or one in a script JSON escapes to six bytes a
     # character) can push the payload past Apple's limit; keep the longest
