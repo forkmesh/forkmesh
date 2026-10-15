@@ -176,6 +176,21 @@ bool marketPackageMatches(const PackageManifest &manifest,
     return true;
 }
 
+bool marketPackageMatchesCategory(const PackageManifest &manifest,
+                                  const QString &category)
+{
+    if (category.isEmpty())
+        return true;
+    if (category == QLatin1String("virtual-goods"))
+        return manifest.type.startsWith(QLatin1String("virtual."));
+    if (category == QLatin1String("agents"))
+        return manifest.type == QLatin1String("agent");
+    if (category == QLatin1String("services"))
+        return manifest.type.startsWith(QLatin1String("service."));
+    return category == QLatin1String("themes") &&
+           manifest.type == QLatin1String("theme");
+}
+
 const QString kStatusPagePackageId = QStringLiteral("status-page");
 const QString kStatusMonitorsRequestProof =
     QStringLiteral("forkmesh-status-monitors-request-v1");
@@ -370,13 +385,44 @@ QWidget *MainWindow::buildMarketSection()
     header->addWidget(publish);
     outer->addLayout(header);
 
-    auto *intro = new QLabel(QStringLiteral(
-        "Browse extensions, virtual goods, agents, services and themes. Every "
-        "ForkMesh member can publish a signed package with screenshots, "
-        "and creators retain ownership."));
-    intro->setWordWrap(true);
-    intro->setObjectName(QStringLiteral("mutedLabel"));
-    outer->addWidget(intro);
+    auto *categories = new QWidget;
+    categories->setObjectName(QStringLiteral("marketCategoryButtons"));
+    auto *categoryLayout = new QHBoxLayout(categories);
+    categoryLayout->setContentsMargins(0, 0, 0, 0);
+    categoryLayout->setSpacing(8);
+    const auto addCategoryButton =
+        [this, categories, categoryLayout](const QString &text,
+                                           const QString &category) {
+            auto *button = new QPushButton(text, categories);
+            button->setObjectName(
+                QStringLiteral("marketCategory-%1Button").arg(category));
+            button->setAccessibleName(QStringLiteral("Show %1").arg(text));
+            button->setCheckable(true);
+            connect(button, &QPushButton::clicked, this,
+                    [this, categories, button, category] {
+                        if (button->isChecked()) {
+                            for (QPushButton *other :
+                                 categories->findChildren<QPushButton *>()) {
+                                if (other != button)
+                                    other->setChecked(false);
+                            }
+                        }
+                        m_marketCategoryFilter = button->isChecked()
+                                                     ? category
+                                                     : QString();
+                        if (m_marketTabs)
+                            m_marketTabs->setCurrentIndex(m_marketAllTabIndex);
+                        applyMarketSearch();
+                    });
+            categoryLayout->addWidget(button);
+        };
+    addCategoryButton(QStringLiteral("Virtual goods"),
+                      QStringLiteral("virtual-goods"));
+    addCategoryButton(QStringLiteral("Agents"), QStringLiteral("agents"));
+    addCategoryButton(QStringLiteral("Services"), QStringLiteral("services"));
+    addCategoryButton(QStringLiteral("Themes"), QStringLiteral("themes"));
+    categoryLayout->addStretch();
+    outer->addWidget(categories);
 
     m_marketStatus = new QLabel;
     m_marketStatus->setObjectName(QStringLiteral("marketStatus"));
@@ -1218,6 +1264,7 @@ void MainWindow::applyMarketSearch()
     const QString query =
         m_marketSearch ? m_marketSearch->text().trimmed() : QString();
     const QStringList terms = marketSearchTerms(query);
+    const bool hasFilters = !terms.isEmpty() || !m_marketCategoryFilter.isEmpty();
     QSet<QString> matches;
     int total = 0;
     int installedTotal = 0;
@@ -1229,13 +1276,19 @@ void MainWindow::applyMarketSearch()
         ++total;
         if (installed)
             ++installedTotal;
-        bool matched = marketPackageMatches(manifest, terms);
+        bool matched = marketPackageMatches(manifest, terms) &&
+                       marketPackageMatchesCategory(manifest,
+                                                    m_marketCategoryFilter);
         for (const QString &nested :
              m_packageRegistry->nestedPackages(manifest.id)) {
             if (matched)
                 break;
-            matched = marketPackageMatches(
-                *m_packageRegistry->package(nested), terms);
+            const PackageManifest *nestedManifest =
+                m_packageRegistry->package(nested);
+            matched = nestedManifest &&
+                marketPackageMatches(*nestedManifest, terms) &&
+                marketPackageMatchesCategory(*nestedManifest,
+                                             m_marketCategoryFilter);
         }
         if (!matched)
             continue;
@@ -1243,8 +1296,8 @@ void MainWindow::applyMarketSearch()
         if (installed)
             ++matchedInstalled;
     }
-    const auto tabText = [&terms](const QString &label, int shown, int all) {
-        return terms.isEmpty()
+    const auto tabText = [hasFilters](const QString &label, int shown, int all) {
+        return !hasFilters
                    ? QStringLiteral("%1 (%2)").arg(label).arg(all)
                    : QStringLiteral("%1 (%2 of %3)").arg(label).arg(shown).arg(all);
     };
@@ -1306,11 +1359,13 @@ void MainWindow::applyMarketSearch()
                     guideCounts.second));
 
     if (m_marketSearchEmpty) {
-        if (!terms.isEmpty() && matches.isEmpty() && packCounts.first == 0 &&
+        if (hasFilters && matches.isEmpty() && packCounts.first == 0 &&
             guideCounts.first == 0) {
             m_marketSearchEmpty->setText(
-                QStringLiteral("No Market packages match \u201C%1\u201D.")
-                    .arg(query));
+                query.isEmpty()
+                    ? QStringLiteral("No Market packages match this category.")
+                    : QStringLiteral("No Market packages match \u201C%1\u201D.")
+                          .arg(query));
             m_marketSearchEmpty->show();
         } else {
             m_marketSearchEmpty->hide();

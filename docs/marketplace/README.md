@@ -178,6 +178,10 @@ affiliate program).
   /api/market/packages` rows carry `publisher`, `verified` and `free`.
 - **Installing.** One click installs a package and its dependencies; a pack or
   guide installs in one batch (`MainWindow::installPackageSet`).
+- **Category shortcuts.** The desktop Market filters the All list with
+  Virtual goods (`virtual.*`), Agents (`agent`), Services (`service.*`) and
+  Themes (`theme`) buttons. Clicking the selected button again clears it;
+  search terms apply with the selected category.
 
 ## Packages
 

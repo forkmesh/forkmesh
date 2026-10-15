@@ -17993,6 +17993,14 @@ else:
         QStringLiteral("marketNotInstalledList"));
     auto *marketPublish =
         window.findChild<QPushButton *>(QStringLiteral("marketPublishButton"));
+    auto *marketVirtualGoods = window.findChild<QPushButton *>(
+        QStringLiteral("marketCategory-virtual-goodsButton"));
+    auto *marketAgents = window.findChild<QPushButton *>(
+        QStringLiteral("marketCategory-agentsButton"));
+    auto *marketServices = window.findChild<QPushButton *>(
+        QStringLiteral("marketCategory-servicesButton"));
+    auto *marketThemes = window.findChild<QPushButton *>(
+        QStringLiteral("marketCategory-themesButton"));
     QSet<QString> packageCards;
     const QList<QWidget *> marketCards = marketList
         ? marketList->findChildren<QWidget *>(
@@ -18329,6 +18337,52 @@ else:
               .arg(missSearchEmptyShown)
               .arg(clearedSearchCards.size())
               .arg(clearedSearchTab));
+    QSet<QString> virtualGoodsCards;
+    QSet<QString> agentCards;
+    QSet<QString> serviceCards;
+    QSet<QString> themeCards;
+    bool categoryButtonsToggle = false;
+    if (marketVirtualGoods && marketAgents && marketServices && marketThemes) {
+        marketVirtualGoods->click();
+        QApplication::processEvents();
+        virtualGoodsCards = shownMarketCards();
+        marketAgents->click();
+        QApplication::processEvents();
+        agentCards = shownMarketCards();
+        marketServices->click();
+        QApplication::processEvents();
+        serviceCards = shownMarketCards();
+        marketThemes->click();
+        QApplication::processEvents();
+        themeCards = shownMarketCards();
+        marketThemes->click();
+        QApplication::processEvents();
+        categoryButtonsToggle = !marketThemes->isChecked() &&
+            shownMarketCards() == packageCards;
+    }
+    check(marketVirtualGoods && marketAgents && marketServices && marketThemes &&
+              marketVirtualGoods->isCheckable() && marketAgents->isCheckable() &&
+              marketServices->isCheckable() && marketThemes->isCheckable() &&
+              virtualGoodsCards ==
+                  QSet<QString>{QStringLiteral("x-banner-board"),
+                                QStringLiteral("reddit-banner-board"),
+                                QStringLiteral("forkmesh-sky-office")} &&
+              agentCards ==
+                  QSet<QString>{QStringLiteral("gemma-4"),
+                                QStringLiteral("nemotron-3-ultra"),
+                                QStringLiteral("nemotron-3.5-lightning"),
+                                QStringLiteral("muse-spark-1.3-contributor")} &&
+              serviceCards.isEmpty() &&
+              themeCards == QSet<QString>{QStringLiteral("winamp")} &&
+              categoryButtonsToggle,
+          QStringLiteral("Market category buttons filter virtual goods, agents, "
+                         "services and themes, and a second click clears the filter "
+                         "(virtual=%1, agents=%2, services=%3, themes=%4, clear=%5)")
+              .arg(QStringList(virtualGoodsCards.values()).join(QLatin1Char(',')),
+                   QStringList(agentCards.values()).join(QLatin1Char(',')),
+                   QStringList(serviceCards.values()).join(QLatin1Char(',')),
+                   QStringList(themeCards.values()).join(QLatin1Char(',')))
+              .arg(categoryButtonsToggle));
     const auto allMarketActions = [marketList](const QString &objectName) {
         return marketList
             ? marketList->findChildren<QPushButton *>(objectName)
