@@ -1121,6 +1121,7 @@ _URL_EXPORT_NAMES = (
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
     "REPO_PENDING_RE", "REPO_SUBSCRIBE_RE", "REPO_BOUNTY_RE",
     "REPO_SHARES_RE", "REPO_SECURITY_SCANS_RE", "REPO_MIRRORS_RE",
+    "REPO_TRAFFIC_RE",
     "REPO_MIRROR_REACHABILITY_RE", "REPO_ABOUT_RE", "REPO_LOGO_RE",
     "REPO_LOGO_SUGGESTIONS_RE", "REPO_AGENTS_RE", "REPO_AGENTS_LIST_RE",
     "REPO_AGENTS_ACK_RE", "REPO_AGENTS_PROMPT_RE",
@@ -47728,6 +47729,43 @@ async def _https_mirror_clone_pin(env, context):
 def _utc_day_key(timestamp_ms):
     """YYYY-MM-DD of a millisecond timestamp in UTC, the dashboard's timezone."""
     return time.strftime("%Y-%m-%d", time.gmtime(int(timestamp_ms) // 1000))
+
+
+async def repo_traffic_handler(env, request, owner, repo):
+    if method_name(request) != "GET":
+        return json_response({"error": "method_not_allowed"}, status=405)
+    await ensure_schema(env)
+    owner = str(owner or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    privacy_reader = globals().get("_repo_is_private")
+    if callable(privacy_reader) and await privacy_reader(env, owner, repo):
+        return json_response({"error": "not_found"}, status=404,
+                             cache_control="no-store")
+    now = int(Date.now())
+    start = _utc_day_key(now - 29 * 24 * 60 * 60 * 1000)
+    today = _utc_day_key(now)
+    rows = await d1_all(
+        env,
+        "SELECT day,SUM(clones) AS clones FROM product_clone_daily "
+        "WHERE owner=? AND repo=? AND day>=? AND day<=? "
+        "GROUP BY day ORDER BY day",
+        owner, repo, start, today,
+    )
+    counts = {
+        str(row.get("day") or ""): max(0, int(row.get("clones") or 0))
+        for row in rows or []
+    }
+    days = []
+    for offset in range(30):
+        day = _utc_day_key(now - (29 - offset) * 24 * 60 * 60 * 1000)
+        days.append({"day": day, "clones": counts.get(day, 0)})
+    return json_response({
+        "ok": True,
+        "owner": owner,
+        "repo": repo,
+        "days": days,
+        "totalClones": sum(day["clones"] for day in days),
+    }, cache_control="public, max-age=60")
 
 
 async def _https_mirror_route_advance(env, context, served_node, operation):
