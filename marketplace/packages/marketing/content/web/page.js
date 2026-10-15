@@ -1661,7 +1661,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       ${item.channel === "email" ? emailSuggestionsList() : ""}
       ${item.channel === "discord" ? discordPostsList() : ""}
       ${item.channel === "x" ? readyPostBlock() : ""}
-      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "fm-btn fm-btn-sm")}</div></div>
+      <div class="mk-card-foot"><span>${updated}</span><div>${captureNote(item.channel)}${open}<button data-marketing-channel-log="${escapeHtml(item.channel)}" type="button" class="mk-link">Log</button><button data-marketing-channel-context="${escapeHtml(item.channel)}" type="button" class="mk-link" title="${escapeHtml(`Copy ${name}'s numbers, posts and a prompt to paste into an AI chat. It suggests how to grow the channel and checks its earlier advice against the numbers each time you copy again.`)}">AI context</button>${state.marketing.canManageSettings ? `<button data-marketing-channel-delete="${escapeHtml(item.channel)}" type="button" class="mk-link">Delete</button>` : ""}${captureButton(item.channel, "fm-btn fm-btn-sm")}</div></div>
     </article>`;
   }
 
@@ -2172,6 +2172,92 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       results ? `- Analytics, last ${state.view.rangeDays} days: ${fmtFull(results.sessions)} visits${missingValue(results.conversions) ? "" : `, ${fmtFull(results.conversions)} conversions`}.` : "- Analytics: no measured visits yet.",
       "", "## Checklist", "", ...((item.tasks || []).length ? item.tasks.map((task) => `- [${task.done ? "x" : " "}] ${task.title}`) : ["- (empty)"]),
       ...(item.brief ? ["", "## Notes", "", item.brief] : [])].join("\n");
+  }
+  const CONTEXT_KEYS = [["followers", "Followers"], ["following", "Following"], ["reach", "Reach"], ["engagements", "Engagements"],
+    ["views", "Views"], ["visits", "Visits"], ["posts", "Posts"], ["likes", "Likes"], ["replies", "Replies"], ["stars", "Stars"],
+    ["forks", "Forks"], ["outbound", "Emails sent"], ["closedDeals", "Closed deals"], ["indexedPages", "Pages on Google"], ["reviews", "Reviews"]];
+  const contextKey = (channel) => `forkmesh.marketing.aiContext.${state.marketing.organization}.${channel}`;
+  function contextNumbers(item) {
+    const values = Object.fromEntries(CONTEXT_KEYS.filter(([key]) => Number(item[key]) > 0).map(([key]) => [key, Number(item[key])]));
+    return { ...values, postsLast30d: Number(item.health?.postsLast30d || 0) };
+  }
+  function channelContext(channel) {
+    const item = (state.marketing.summary?.channels || []).find((entry) => entry.channel === channel) || { channel };
+    const health = item.health || {}, settings = channelSettings(channel), catalog = catalogEntry(channel);
+    const name = settings.displayName || catalog.name || channelLabel(channel), org = state.marketing.organization;
+    const now = Date.now(), range = state.view.rangeDays, start = now - range * DAY, cadence = Math.max(1, health.cadenceDays || 1);
+    const history = seriesByChannel().get(channel) || [], before = snapshotAt(history, start);
+    const day = (ts) => ts ? new Date(ts).toISOString().slice(0, 10) : "never";
+    const clip = (value, size) => { const flat = String(value || "").replace(/\s+/g, " ").trim(); return flat.length > size ? `${flat.slice(0, size - 1).trim()}…` : flat; };
+    const count = (value) => typeof value === "number" && Number.isFinite(value) ? fmtFull(value) : "—";
+    const shown = CONTEXT_KEYS.filter(([key]) => Number(item[key]) > 0 || history.some((snapshot) => Number(snapshot[key]) > 0));
+    const main = shown[0]?.[1] || "Posts in the last 30 days";
+    const lines = [`# Grow ${name} for ${org}`, "",
+      `You are the marketing analyst for the ${name} channel of ${org}. Below is everything the ForkMesh Marketing dashboard knows about the channel on ${day(now)}. Work from these numbers, and say when they are too thin to support a claim.`,
+      "", "## What to do", "",
+      `1. In two sentences, say how the channel is doing against its goal and its aim of a post every ${cadence === 1 ? "day" : `${cadence} days`}.`,
+      "2. Find what worked: match the posts and content below to the changes in the numbers after them.",
+      `3. Give the three changes most likely to raise ${main} in the next 14 days. For each: what to do, the data behind it, the number to watch, and the result you expect by when.`,
+      "4. Draft the next three posts for this channel, ready to publish.",
+      "5. Learn from last time: if this chat already holds an earlier copy of this context, or \"Since the last copy\" below has numbers, check your earlier predictions against them, say which held and which did not, and change your advice to match.",
+      "6. End with \"Notes for next time\": your predictions with the numbers to check, the data missing here that would change your advice, and a better version of this \"What to do\" list for the next copy.",
+      "", "## Channel", "", "| Field | Value |", "|---|---|",
+      `| Channel | ${cell(name)} |`, `| Category | ${cell(catalog.category)} |`,
+      `| Link | ${cell([settings.openUrl, settings.profileUrl].find((value) => String(value || "").startsWith("https://")))} |`,
+      `| About | ${cell(clip(settings.capture?.description, 400))} |`,
+      `| Status | ${settings.enabled === false ? "Paused" : "Active"} |`, `| Health | ${cell(HEALTH_LABELS[health.state])} |`,
+      `| Posting aim | every ${cadence} day${cadence === 1 ? "" : "s"} |`, `| Posts in the last 30 days | ${fmtFull(health.postsLast30d || 0)} |`,
+      `| Last post | ${day(health.lastPostAt)} |`,
+      `| Engagement rate | ${cell(typeof health.engagementRate === "number" ? `${health.engagementRate.toFixed(1)}% (${engagementExplained(health)})` : engagementExplained(health))} |`,
+      `| Numbers last read | ${cell(health.observedAt ? `${day(health.observedAt)}, ${SOURCE_LABELS[health.source] ?? `via ${health.source}`}` : "never")} |`,
+      "", "## Numbers", "",
+      ...(shown.length ? [`| Metric | Now | ${range} days ago |`, "|---|---|---|",
+        ...shown.map(([key, label]) => `| ${label} | ${count(item[key])} | ${before ? count(before[key]) : "—"} |`)] : ["No numbers recorded yet."]),
+      "", "## Since the last copy", ""];
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem(contextKey(channel)) || "null"); } catch { last = null; }
+    if (!last?.at) lines.push("This is the first copy of this context, so there is nothing to compare yet.");
+    else {
+      const current = contextNumbers(item), then = last.values || {};
+      lines.push(`Last copied on ${day(last.at)} (${relativeTimeLabel(last.at)}). Then → now:`);
+      for (const [key, label] of [...CONTEXT_KEYS, ["postsLast30d", "Posts in the last 30 days"]]) {
+        if (!(key in then) && !(key in current)) continue;
+        const was = Number(then[key] || 0), is = Number(current[key] || 0);
+        lines.push(`- ${label}: ${fmtFull(was)} → ${fmtFull(is)} (${is >= was ? "+" : "−"}${fmtFull(Math.abs(is - was))})`);
+      }
+    }
+    const recent = history.filter((snapshot) => snapshot.observedAt > start).reverse().slice(0, 40);
+    if (recent.length && shown.length) lines.push("", "## History, newest first", "",
+      `| Date | ${shown.map(([, label]) => label).join(" | ")} | Source | Note |`, `|---|${shown.map(() => "---").join("|")}|---|---|`,
+      ...recent.map((snapshot) => `| ${day(snapshot.observedAt)} | ${shown.map(([key]) => count(snapshot[key])).join(" | ")} | ${cell(SOURCE_LABELS[snapshot.source] ?? snapshot.source)} | ${cell(clip(snapshot.note, 160))} |`));
+    const when = (entry) => entry.publishedAt || entry.scheduledAt || entry.updatedAt || 0;
+    const content = (state.marketing.content || []).filter((entry) => entry.channel === channel && entry.status !== "archived")
+      .sort((a, b) => when(b) - when(a)).slice(0, 25);
+    if (content.length) lines.push("", "## Content for this channel, newest first", "", "| Date | Status | Title | Text |", "|---|---|---|---|",
+      ...content.map((entry) => `| ${day(when(entry))} | ${cell(entry.status)} | ${cell(clip(entry.title, 120))} | ${cell(clip(entry.body, 280))} |`));
+    const discord = state.marketing.discordPosts;
+    if (channel === "discord" && discord?.org === org && Array.isArray(discord.posts)) {
+      lines.push("", `## Discord posts in the last ${discord.days} days`, "",
+        `${discord.posts.length} post${discord.posts.length === 1 ? "" : "s"} in ${(discord.channels || []).map((entry) => `#${entry}`).join(", ")}, read ${relativeTimeLabel(discord.readAt)}.`);
+      if (discord.truncated) lines.push("Only the latest 50 posts of each channel were read.");
+      if (discord.contentMissing) lines.push("The bot cannot read message text, so the posts below have no text.");
+      lines.push("", ...discord.posts.slice(0, 60).map((post) => `- ${new Date(post.postedAt).toISOString().slice(0, 16).replace("T", " ")} · #${post.channel} · ${post.author}${post.bot ? " (bot)" : ""}: ${post.content ? clip(post.content, 300) : "(no text)"}`));
+    }
+    const ads = (state.marketing.ads || []).filter((ad) => ad.channel === channel);
+    if (ads.length) lines.push("", "## Ads", "", ...ads.map((ad) => `- ${ad.name}: ${ad.status}, spent ${fmtMoney(ad.spendCents, ad.currency)}`));
+    const campaigns = (state.marketing.campaigns || []).filter((campaign) => (campaign.channels || []).includes(channel) && campaign.status !== "archived");
+    if (campaigns.length) lines.push("", "## Campaigns on this channel", "",
+      ...campaigns.map((campaign) => `- ${campaign.name} (${campaign.status}, ${day(campaign.startsAt)} to ${day(campaign.endsAt)}): ${clip(campaign.message || campaign.objective, 240)}`));
+    if ((health.checks || []).length) lines.push("", "## Health checks", "", ...health.checks.map((check) => `- [${check.ok ? "x" : " "}] ${check.label}`));
+    const playbook = (state.marketing.channelPlaybooks || {})[catalog.category];
+    if (playbook) lines.push("", `## Playbook for ${catalog.category} channels`, "", `- Goal: ${playbook.goal}`,
+      ...((playbook.kpis || []).length ? [`- Track: ${playbook.kpis.join(", ")}`] : []), ...(playbook.tips || []).map((tip) => `- Tip: ${tip}`));
+    return `${lines.join("\n")}\n`;
+  }
+  function copyChannelContext(channel) {
+    const item = (state.marketing.summary?.channels || []).find((entry) => entry.channel === channel) || {};
+    copyText(channelContext(channel), `Copied the AI context for ${channelLabel(channel)}. Paste it into Claude or another AI chat, and copy it again after you act on the advice so the AI can check what worked.`);
+    try { localStorage.setItem(contextKey(channel), JSON.stringify({ at: Date.now(), values: contextNumbers(item) })); } catch {}
   }
   async function handOff(item = null) {
     const title = item ? `@Marketing: run the ${item.name} campaign` : "@Marketing: weekly marketing review";
@@ -2807,6 +2893,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if (data.marketingChartMetric) { state.view.chartMetric = data.marketingChartMetric; render(); }
       else if (data.marketingChannelSort) { state.view.channelSort = data.marketingChannelSort; render(); }
       else if (data.marketingChannelLog) openMetric(data.marketingChannelLog);
+      else if (data.marketingChannelContext) copyChannelContext(data.marketingChannelContext);
       else if (data.marketingChannelDelete) void deleteChannel(data.marketingChannelDelete);
       else if (data.marketingChannelCapture) startCapture(data.marketingChannelCapture);
       else if (data.marketingChannelRefresh) void refreshChannel(data.marketingChannelRefresh);

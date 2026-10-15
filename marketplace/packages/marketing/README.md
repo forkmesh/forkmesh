@@ -279,7 +279,9 @@ asked. Nothing on the desk posts, votes or sends anything to Reddit.
 - **Discord posts** (`GET /discord-posts`, members and up): the last 6 days of
   messages in the connector's chosen public channels (10 channels, 50
   messages each) through `runtime.discord_recent_messages`; read on demand,
-  re-read when older than 60 seconds, never stored.
+  re-read when older than 60 seconds, never stored. The desktop Discord page
+  charts them as **Posts over time** (posts per day over those 6 days) next to
+  Views over time; the chart only covers the window the posts endpoint reads.
 - **Browser activity** (`POST/GET /activity`): lines the extension writes
   (`read`, `sent`, `failed`), private to the writing account, newest 40 kept.
   Every write rings the writer's devices with the payload-free account event
@@ -287,6 +289,17 @@ asked. Nothing on the desk posts, votes or sends anything to Reddit.
 - **Special agents on channel pages**: a desktop special agent whose definition
   lists the channel in `marketingChannels` appears on that channel's page with
   Open, Run now and a message line.
+- **AI context** (every channel: the desktop channel page's head and the web
+  channel card): copies one Markdown prompt to paste into Claude or another AI
+  chat. It holds the instructions (diagnose, find what worked, three changes
+  with the number to watch, three drafts, "Notes for next time") and the
+  channel's data: settings, numbers now and a range ago, history, Analytics
+  views, posted links (desktop), content, Discord posts, ads, campaigns,
+  checks and the category playbook. To make the advice improve on each run,
+  each copy saves the channel's numbers on this device (desktop `QSettings`
+  `marketing/aiContext/<org>/<channel>`, web `localStorage`), and the next
+  copy adds a "Since the last copy" section with then → now so the AI can
+  check its earlier predictions. Nothing is sent to a server.
 
 ## Surfaces
 
