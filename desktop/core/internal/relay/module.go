@@ -67,9 +67,12 @@ type Module struct {
 	uiQueue  []uiEvent
 	uiSignal chan struct{}
 
+	online onlineTracker
+
 	Timings        Timings
 	NewClient      func() *Client
 	Now            func() time.Time
+	SendOnline     func(ctx context.Context, target, userAgent string, body []byte) (int, error)
 	ReclaimWindow  time.Duration
 	uiEpoch        int64
 	configureEpoch int64
@@ -82,7 +85,7 @@ type uiEvent struct {
 
 func New() *Module {
 	return &Module{Timings: DefaultTimings(), NewClient: NewClient, Now: time.Now, uiSignal: make(chan struct{}, 1),
-		ReclaimWindow: 2 * time.Minute}
+		ReclaimWindow: 2 * time.Minute, SendOnline: PostOnline}
 }
 
 func (m *Module) Name() string { return "relay" }
@@ -407,6 +410,7 @@ func (m *Module) newClient() *Client {
 		} else {
 			m.core.Logger.Printf("relay: link lost")
 		}
+		m.linkChanged(connected)
 	}
 	client.OnState = func(state State) {
 		if m.current(client) {
