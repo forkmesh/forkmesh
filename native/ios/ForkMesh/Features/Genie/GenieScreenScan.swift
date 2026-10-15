@@ -12,43 +12,52 @@ final class GenieScreenScan {
     nonisolated static let ownPrefixes: [String] = ["genie", "shell-genie", "aquarium"]
 
     private(set) var landmarks: [GenieLandmark] = []
-    private var scanned: Date = .distantPast
-    private var spacing: Double = GenieLandmarks.refresh
-    private var stale: Bool = true
+    private var barFrames: [CGRect] = []
+    private var schedule: GenieScanSchedule = GenieScanSchedule()
 
     func invalidate() {
-        stale = true
+        schedule.invalidate()
     }
 
-    func current(now: Date = Date()) -> [GenieLandmark] {
-        if stale || now.timeIntervalSince(scanned) >= spacing {
-            rescan(now)
-        }
+    func current() -> [GenieLandmark] {
+        refresh()
         return landmarks
     }
 
     var blockers: [CGRect] { GenieLandmarks.blockers(current()) }
 
-    private func rescan(_ now: Date) {
-        scanned = now
-        stale = false
-        guard let window = GenieKeepClear.keyWindow() else {
-            landmarks = []
-            return
-        }
-        let started: TimeInterval = ProcessInfo.processInfo.systemUptime
-        let walked: [GenieLandmark] = Self.timed {
-            var walk: Walk = Walk(window: window)
-            walk.view(window.rootViewController?.view ?? window, depth: 0, inTabBar: false)
-            return walk.found
-        }
-        spacing = GenieLandmarks.spacing(afterScanTaking: ProcessInfo.processInfo.systemUptime - started)
-        landmarks = GenieLandmarks.tidy(walked, in: window.bounds)
+    var bars: [CGRect] {
+        refresh()
+        return barFrames
     }
 
-    private static func timed(_ walk: () -> [GenieLandmark]) -> [GenieLandmark] {
-        guard let monitor = Services.get(PerformanceMonitorService.self) else { return walk() }
-        return monitor.timeSync("genie.screenScan", walk)
+    private func refresh() {
+        let now: TimeInterval = ProcessInfo.processInfo.systemUptime
+        if schedule.due(at: now) {
+            rescan(now)
+        }
+    }
+
+    private func rescan(_ now: TimeInterval) {
+        guard let window = GenieKeepClear.keyWindow() else {
+            schedule.scanned(at: now, taking: 0)
+            landmarks = []
+            barFrames = []
+            return
+        }
+        let (marks, frames): ([GenieLandmark], [CGRect]) = Self.timed {
+            var walk: Walk = Walk(window: window)
+            walk.view(window.rootViewController?.view ?? window, depth: 0, inTabBar: false)
+            return (GenieLandmarks.tidy(walk.found, in: window.bounds), GenieKeepClear.bars(in: window))
+        }
+        schedule.scanned(at: now, taking: ProcessInfo.processInfo.systemUptime - now)
+        landmarks = marks
+        barFrames = frames
+    }
+
+    private static func timed<T>(_ scan: () -> T) -> T {
+        guard let monitor = Services.get(PerformanceMonitorService.self) else { return scan() }
+        return monitor.timeSync("genie.screenScan", scan)
     }
 
     @MainActor
