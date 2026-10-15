@@ -1,0 +1,90 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "app-store-status",
+  "name": "App Store Status",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Developer Tools",
+  "version": "1.0.0",
+  "summary": "See your iOS app in App Store Connect on the web, desktop, iPhone, or Android: App Review state, what needs action, downloads, TestFlight builds and groups, tester feedback, and customer reviews.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "App Store Status page with a needs-action banner, App Store versions with review state badges, download totals, TestFlight builds, groups, and the latest reviews"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:app-store-status",
+    "worker": "content/worker/app_store_status.py",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/app-store-status",
+        "title": "App Store Status",
+        "description": "Your iOS app in App Store Connect: review state, downloads, TestFlight, feedback, and reviews.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "App Store",
+          "icon": "smartphone",
+          "order": 60
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "account.appstore.read",
+      "label": "Read the App Store Connect snapshot your desktop last published, encrypted at rest",
+      "risk": "sensitive"
+    },
+    {
+      "id": "account.appstore.write",
+      "label": "Let your desktop publish a new snapshot when the iOS App Store status shortcut runs",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "account"
+  },
+  "worker": {
+    "module": "app_store_status",
+    "api": "/api/app-store-status",
+    "outboundOrigins": []
+  }
+}

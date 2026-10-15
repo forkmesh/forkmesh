@@ -174,6 +174,7 @@ object RouteCodec {
             Route.Kind.Calories -> Route.Calories
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.FaceChanger -> Route.FaceChanger
+            Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
             Route.Kind.Stats -> Route.Stats

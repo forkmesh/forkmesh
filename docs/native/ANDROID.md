@@ -460,6 +460,18 @@ default in new projects except the chosen starter pack
   validates each begin, chunk and end message (media type, 512 MiB cap, safe
   name); the file goes to the `face-changer-share` cache path and out through
   an `ACTION_SEND` chooser.
+- **App Store Status.** `A/feature/appstorestatus/` draws
+  `/dashboard/app-store-status` natively (Insights group, route
+  `appStoreStatus`). It reads `GET /api/app-store-status` through
+  `MarketFeature.client()`, so the session and the package API share one
+  client; `C/market/AppStoreStatus.kt` decodes the snapshot leniently (a
+  missing field takes its default, an unknown tone is neutral, unknown keys
+  are ignored) so an older app keeps working after the report grows. Tones
+  map to `danger`, `warning`, `success` and `textTertiary`. Pull to refresh
+  and the Refresh button only re-read the stored snapshot: a newer one needs
+  the desktop's **iOS App Store status** shortcut to run
+  ([App Store Status](../marketplace/app-store-status.md)). TestFlight public
+  links open in the browser, and only `https://` links are offered.
 
 ## 14. Chat features
 

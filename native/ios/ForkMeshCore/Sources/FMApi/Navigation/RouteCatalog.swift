@@ -173,6 +173,7 @@ public enum RouteCatalog {
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
         case .faceChanger: return "Face Changer"
+        case .appStoreStatus: return "App Store Status"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
         case .stats: return "Stats"
@@ -243,6 +244,7 @@ public enum RouteCatalog {
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
         case .faceChanger: return "theatermasks"
+        case .appStoreStatus: return "app.badge"
         case .localAI: return "cpu"
         case .activity: return "bolt"
         case .stats: return "chart.bar"
@@ -375,6 +377,7 @@ public enum HubCatalog {
     public static let insights: [HubItem] = [
         .destination(.stats),
         .destination(.status),
+        .destination(.appStoreStatus),
         .destination(.admin(section: nil), needsRegistration: true, adminOnly: true),
     ]
 

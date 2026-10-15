@@ -142,6 +142,7 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `stretch`, `food-guide` (account-scoped, sealed per account).
 - **Operations:** `analytics`, `marketing`, `status-page` and its
   `status-check-*` packages ([status-page.md](status-page.md)), `sentry`,
+  `app-store-status` ([app-store-status.md](app-store-status.md)),
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
   ([computer-security.md](computer-security.md)).
 - **Desktop and phone extras:** `capture`, `discord`,
@@ -285,5 +286,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [people.md](people.md), [aquarium.md](aquarium.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).
