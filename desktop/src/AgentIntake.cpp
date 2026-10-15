@@ -81,6 +81,12 @@ bool worktreePathValid(const QString &path)
     return QDir::cleanPath(path) == path;
 }
 
+bool taskIdValid(const QString &taskId)
+{
+    static const QRegularExpression shape(QStringLiteral("^[a-f0-9]{32}$"));
+    return shape.match(taskId).hasMatch();
+}
+
 bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
                         QString *error)
 {
@@ -101,6 +107,8 @@ bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
         stringField(params, QStringLiteral("provider"), &wrongType).trimmed();
     const QString model =
         stringField(params, QStringLiteral("model"), &wrongType).trimmed();
+    const QString task =
+        stringField(params, QStringLiteral("task"), &wrongType).trimmed().toLower();
     if (wrongType)
         return fail(error, QStringLiteral("bad_request"));
 
@@ -120,7 +128,12 @@ bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
         return fail(error, QStringLiteral("bad_provider"));
     if (!model.isEmpty() && !modelIdValid(model))
         return fail(error, QStringLiteral("bad_model"));
+    if (!task.isEmpty() && !taskIdValid(task))
+        return fail(error, QStringLiteral("bad_task_id"));
 
+    const QJsonValue handoff = params.value(QStringLiteral("handoff"));
+    if (!handoff.isUndefined() && !handoff.isNull() && !handoff.isBool())
+        return fail(error, QStringLiteral("bad_request"));
     const QJsonValue paused = params.value(QStringLiteral("paused"));
     if (!paused.isUndefined() && !paused.isNull() && !paused.isBool())
         return fail(error, QStringLiteral("bad_request"));
@@ -141,6 +154,8 @@ bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
     request.worktree = worktree;
     request.provider = provider;
     request.model = model;
+    request.task = task;
+    request.handoff = handoff.toBool(false);
     request.paused = paused.toBool(false);
     *out = request;
     return true;

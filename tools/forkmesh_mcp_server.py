@@ -2678,6 +2678,7 @@ AGENT_MAX_PATH = 4096
 AGENT_REPO_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 AGENT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 AGENT_PROVIDER_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+AGENT_TASK_RE = re.compile(r"^[a-f0-9]{32}$")
 AGENT_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]{0,99}$")
 
 
@@ -2744,6 +2745,19 @@ def create_agent_params(args):
         if not AGENT_MODEL_RE.match(model):
             raise ValueError("model is not a valid model id")
         params["model"] = model
+    task = _agent_text(args, "task").strip().lower()
+    if task:
+        if not AGENT_TASK_RE.fullmatch(task):
+            raise ValueError("task must be a 32-character hex organization "
+                             "task id")
+        params["task"] = task
+    handoff = args.get("handoff", False)
+    if handoff is None:
+        handoff = False
+    if not isinstance(handoff, bool):
+        raise ValueError("handoff must be true or false")
+    if handoff:
+        params["handoff"] = True
     paused = args.get("paused", False)
     if paused is None:
         paused = False
@@ -4618,9 +4632,13 @@ TOOLS += [
                        "worktree when one is given). With paused it is "
                        "listed but waits until the user presses Start; "
                        "otherwise it starts now or queues behind the "
-                       "concurrent-agent limit. Works only inside an agent "
-                       "the desktop launched; at most 12 agents per 10 "
-                       "minutes. Returns the new session id and its state.",
+                       "concurrent-agent limit. With task it is linked to "
+                       "that organization task, reports its status there and "
+                       "completes it when it finishes; handoff hands the "
+                       "calling agent's own task over and unlinks the "
+                       "caller. Works only inside an agent the desktop "
+                       "launched; at most 12 agents per 10 minutes. Returns "
+                       "the new session id, its state and its task.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -4642,6 +4660,16 @@ TOOLS += [
                                             "ForkMesh agent worktree of this "
                                             "repository to reuse; its branch "
                                             "is used when branch is absent"},
+                "task": {"type": "string",
+                         "description": "id of an organization task (see "
+                                        "list_tasks) to hand to the new "
+                                        "agent"},
+                "handoff": {"type": "boolean", "default": False,
+                            "description": "hand over the task this agent "
+                                           "is linked to: the new agent "
+                                           "takes it and this agent no "
+                                           "longer reports on or completes "
+                                           "it"},
                 "paused": {"type": "boolean", "default": False,
                            "description": "list the agent without running "
                                           "it until the user starts it"},
@@ -4943,7 +4971,9 @@ def handle_request(msg):
             "attach_work_item, detach_work_item, delete_task, restore_task. "
             "Desktop agents (only inside an agent the ForkMesh desktop "
             "launched; the new agent appears in the desktop's Agents list): "
-            "create_agent, optionally paused until the user starts it. "
+            "create_agent, optionally paused until the user starts it, linked "
+            "to an organization task (task) or taking over this agent's own "
+            "task (handoff). "
             "Desktop releases (same condition): list_releases, "
             "create_release (bumps, tags and starts the release workflows "
             "and mirror rollout with no dialog), publish_release. "

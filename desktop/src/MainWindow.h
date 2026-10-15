@@ -14650,6 +14650,7 @@ private:
     void linkAgentSessionToOrgTask(int sessionId, const QString &taskId,
                                    bool completeIfFinished);
     void detachAgentSessionFromOrgTask(int sessionId);
+    QString unlinkAgentSessionFromOrgTask(int sessionId);
     void resolveAgentSessionTaskWorktree(int sessionId);
     void syncAgentViewTaskButton(int sessionId);
     void showAgentTaskLinkMenu(int sessionId);

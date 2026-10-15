@@ -45,6 +45,8 @@ struct CreateRequest {
     QString worktree;
     QString provider;
     QString model;
+    QString task;
+    bool handoff = false;
     bool paused = false;
     bool hasPriority = false;
     int priority = 50;
@@ -67,6 +69,7 @@ bool repositorySlugValid(const QString &slug, QString *owner, QString *name);
 bool modelIdValid(const QString &model);
 bool providerIdValid(const QString &provider);
 bool worktreePathValid(const QString &path);
+bool taskIdValid(const QString &taskId);
 bool parseCreateRequest(const QJsonObject &params, CreateRequest *out,
                         QString *error);
 bool releaseTagValid(const QString &tag);
