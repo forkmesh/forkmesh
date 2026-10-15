@@ -391,6 +391,8 @@ struct DesktopDestination: View {
                 ProcessesScreen(store: diagnostics)
             case "fleet":
                 FleetOperationsScreen(store: fleet, hub: hub)
+            case "services":
+                MiniAppsDestination()
             default:
                 DesktopScreen(hub: hub, diagnostics: diagnostics, files: files, fleet: fleet, update: update)
             }
@@ -446,6 +448,12 @@ struct DesktopScreen: View {
                         .shellPageClearance()
                 } label: {
                     Label("Files", systemImage: "folder")
+                }
+                NavigationLink {
+                    MiniAppsDestination()
+                        .shellPageClearance()
+                } label: {
+                    Label("Background services", systemImage: "square.stack.3d.up")
                 }
                 NavigationLink {
                     DesktopLogScreen(tail: DesktopLogTail(store: diagnostics))

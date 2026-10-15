@@ -1,8 +1,8 @@
 set(FORKMESH_PACKAGE_MODULE_API 1)
 set(FORKMESH_PACKAGE_MODULE_DEFAULT
-    agent-watch analytics app-store-status aquarium backups calories
-    computer-security crm docs marketing people rss-reader sleep steps
-    stretch sugar-break voice-changer water)
+    app-store-status aquarium backups calories computer-security crm
+    marketing people rss-reader sleep steps stretch sugar-break
+    voice-changer water)
 if(UNIX AND NOT APPLE)
     set(_forkmesh_package_modules_default ON)
 else()
@@ -89,10 +89,17 @@ function(forkmesh_add_package_modules)
         FORKMESH_PACKAGE_MODULE_API=${FORKMESH_PACKAGE_MODULE_API}
         "FORKMESH_PACKAGE_MODULE_ABI=\"${_abi}\""
         "FORKMESH_PACKAGE_MODULE_RELDIR=\"${_relative}\"")
+    set(_output "${CMAKE_CURRENT_BINARY_DIR}/packages")
+    file(GLOB _existing "${_output}/*.json" "${_output}/*${CMAKE_SHARED_MODULE_SUFFIX}")
+    foreach(_file IN LISTS _existing)
+        get_filename_component(_stem "${_file}" NAME_WE)
+        if(NOT _stem IN_LIST FORKMESH_BUILT_PACKAGE_MODULES)
+            file(REMOVE "${_file}")
+        endif()
+    endforeach()
     if(NOT FORKMESH_BUILT_PACKAGE_MODULES)
         return()
     endif()
-    set(_output "${CMAKE_CURRENT_BINARY_DIR}/packages")
     set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated/package-modules")
     file(MAKE_DIRECTORY "${_output}")
     foreach(_id IN LISTS FORKMESH_BUILT_PACKAGE_MODULES)
