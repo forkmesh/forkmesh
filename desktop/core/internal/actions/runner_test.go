@@ -431,6 +431,16 @@ func TestRunnerOutputCapAndCache(t *testing.T) {
 	lock.release()
 }
 
+func TestBuildCachesAreScopedToWorkflows(t *testing.T) {
+	f := newFixture(t, "name: CI\non: push\nsteps:\n  - run: true\n", nil)
+	ci := f.run(13, "name: CI\non: push\nsteps:\n  - run: true\n")
+	desktop := ci
+	desktop.WorkflowPath = ".forkmesh/desktop-ci.yml"
+	if f.store.BuildCacheDir(ci) == f.store.BuildCacheDir(desktop) {
+		t.Fatal("workflow build caches share a directory")
+	}
+}
+
 func TestRunnerReleaseLanding(t *testing.T) {
 	workflow := "name: Release\non: [release]\nsteps:\n  - run: |\n      mkdir -p .forkmesh/releases\n      echo manifest > .forkmesh/releases/v1.json\n      echo blob > \"$FAKE_RELEASE/blob\"\n      sed -i 's/VERSION 0.1.0/VERSION 0.2.0/' desktop/CMakeLists.txt\n"
 	f := newFixture(t, workflow, map[string]string{"desktop/CMakeLists.txt": "project(ForkMesh VERSION 0.1.0)\n"})

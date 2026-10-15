@@ -130,6 +130,9 @@ Widgets; iterate on those before building the app.
 
 - `.forkmesh/desktop-ci.yml` builds and runs the critical Qt contracts; it is
   separate from `.forkmesh/ci.yml` and gates nothing.
+- Qt builds use at most two compiler jobs. The desktop workflow keeps its
+  cache independently from the Worker and deployment workflows, so parallel
+  runs do not force a cold Qt rebuild.
 - CI never builds the `forkmesh` app target; `src/main.cpp` and the app link
   are only checked by building locally.
 - `.forkmesh/release.yml` and `tools/package/*.sh` produce release binaries

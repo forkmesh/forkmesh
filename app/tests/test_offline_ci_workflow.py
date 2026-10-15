@@ -200,8 +200,9 @@ def test_qt_builds_pin_autogen_pools_to_the_sandbox_budget():
     for workflow in (DESKTOP_WORKFLOW, RELEASE_WORKFLOW):
         source = workflow.read_text(encoding="utf-8")
         assert '-DCMAKE_AUTOGEN_PARALLEL="$jobs"' in source, workflow.name
-        assert ('[ "$jobs" -gt 4 ] && jobs=4' in source or
-                'if [ "$jobs" -gt 4 ]; then jobs=4; fi' in source), workflow.name
+        max_jobs = 2 if workflow == DESKTOP_WORKFLOW else 4
+        assert (f'[ "$jobs" -gt {max_jobs} ] && jobs={max_jobs}' in source or
+                f'if [ "$jobs" -gt {max_jobs} ]; then jobs={max_jobs}; fi' in source), workflow.name
         # Sizing the pools from $jobs only works if $jobs is already computed.
         assert source.index("jobs=") < source.index("-DCMAKE_AUTOGEN_PARALLEL")
 
