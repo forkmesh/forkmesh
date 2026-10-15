@@ -89,6 +89,7 @@ private struct PackageUninstallFlow: ViewModifier {
     @Binding var request: PackageUninstallRequest?
     let market: MarketModel
     let onRemoved: (PackageRemoval) -> Void
+    let onUninstalled: () -> Void
 
     func body(content: Content) -> some View {
         content.confirmationDialog(
@@ -122,13 +123,15 @@ private struct PackageUninstallFlow: ViewModifier {
             if let removal = market.removed { onRemoved(removal) }
         }
         FmHaptics.commit()
+        onUninstalled()
     }
 }
 
 extension View {
     func packageUninstall(
-        _ request: Binding<PackageUninstallRequest?>, market: MarketModel, onRemoved: @escaping (PackageRemoval) -> Void = { _ in }
+        _ request: Binding<PackageUninstallRequest?>, market: MarketModel, onRemoved: @escaping (PackageRemoval) -> Void = { _ in },
+        onUninstalled: @escaping () -> Void = {}
     ) -> some View {
-        modifier(PackageUninstallFlow(request: request, market: market, onRemoved: onRemoved))
+        modifier(PackageUninstallFlow(request: request, market: market, onRemoved: onRemoved, onUninstalled: onUninstalled))
     }
 }

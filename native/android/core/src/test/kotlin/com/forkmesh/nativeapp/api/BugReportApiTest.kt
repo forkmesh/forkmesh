@@ -55,6 +55,21 @@ class BugReportApiTest {
         assertEq("normal", sent["severity"])
     }
 
+    fun testFeedbackOnAPluginNamesItsMarketplacePackage() {
+        val wired = Wired()
+        expect(wired.api.submitBugReport(message = "The face changer loses my outfit.", screen = "Face Changer", packageId = " face-changer ").ok)
+        val sent = wired.transport.requests.single().bodyJson()
+        assertEq("face-changer", sent["package"])
+        assertEq("Face Changer", sent["screen"])
+    }
+
+    fun testAReportWithoutAPluginLeavesThePackageOut() {
+        val wired = Wired()
+        wired.api.submitBugReport(message = "Something is broken.")
+        wired.api.submitBugReport(message = "Something is broken.", packageId = "  ")
+        wired.transport.requests.forEach { expect(!it.bodyJson().containsKey("package")) }
+    }
+
     fun testAnUnauthenticatedReportIsSentWithNoAuthorizationHeader() {
         val wired = Wired()
         expect(wired.api.submitBugReport(message = "Login loops.").ok)

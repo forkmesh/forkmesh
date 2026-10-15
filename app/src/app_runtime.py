@@ -3395,6 +3395,14 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_mirrors_handler(self.env, request, owner, repo)
 
+        traffic_match = REPO_TRAFFIC_RE.match(url.path)
+        if traffic_match:
+            owner = safe_segment(traffic_match.group(1))
+            repo = safe_segment(traffic_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await repo_traffic_handler(self.env, request, owner, repo)
+
         logo_suggestions_match = REPO_LOGO_SUGGESTIONS_RE.match(url.path)
         if logo_suggestions_match:
             owner = safe_segment(logo_suggestions_match.group(1))

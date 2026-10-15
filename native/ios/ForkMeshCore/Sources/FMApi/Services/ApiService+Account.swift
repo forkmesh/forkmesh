@@ -102,7 +102,7 @@ extension ApiService {
     /// throwing.
     public func submitBugReport(
         message: String, contact: String = "", screen: String = "", severity: String = "normal",
-        platform: String = "", appVersion: String = "", osVersion: String = "", device: String = ""
+        platform: String = "", appVersion: String = "", osVersion: String = "", device: String = "", package: String = ""
     ) async -> BugReportResult {
         let trimmed = message.dartTrimmed
         if trimmed.isEmpty { return .failure("Describe the problem first.") }
@@ -115,6 +115,7 @@ extension ApiService {
         if !appVersion.isEmpty { body["appVersion"] = .string(appVersion) }
         if !osVersion.isEmpty { body["osVersion"] = .string(osVersion) }
         if !device.isEmpty { body["device"] = .string(device) }
+        if !package.dartTrimmed.isEmpty { body["package"] = .string(package.dartTrimmed) }
         let response: HTTPResponse
         do {
             response = try await http.send(HTTPRequest(

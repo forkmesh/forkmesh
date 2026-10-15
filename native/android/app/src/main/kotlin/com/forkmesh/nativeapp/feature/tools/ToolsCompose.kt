@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.tools
 
+import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -77,7 +78,7 @@ internal fun logCategoryColor(category: LogCategory, count: Int): Color {
 }
 
 @Composable
-internal fun ToolsAppBar(title: String, navigator: Navigator, actions: @Composable RowScope.() -> Unit = {}) {
+internal fun ToolsAppBar(title: String, navigator: Navigator, pluginMenu: Boolean = true, actions: @Composable RowScope.() -> Unit = {}) {
     val c = Fm.colors
     Row(
         Modifier
@@ -93,6 +94,7 @@ internal fun ToolsAppBar(title: String, navigator: Navigator, actions: @Composab
         Spacer(Modifier.width(16.dp))
         Text(title, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.titleLarge)
         actions()
+        if (pluginMenu) PluginMenuButton()
         Spacer(Modifier.width(4.dp))
     }
 }

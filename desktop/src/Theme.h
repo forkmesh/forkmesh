@@ -841,11 +841,12 @@ QPushButton#floatingLogButton {
     color: #c9d1d9; font-size: 12px; font-weight: 600; padding: 4px 10px;
 }
 QPushButton#floatingLogButton:hover { background-color: #30363d; color: #e6edf3; }
-QPushButton#windowChromeButton, QPushButton#windowChromeCloseButton {
+QPushButton#windowChromeButton, QPushButton#windowChromeCloseButton,
+QPushButton#packageActionsButton {
     background: transparent; border: 1px solid transparent; border-radius: 6px;
     color: #8b949e; padding: 0;
 }
-QPushButton#windowChromeButton:hover {
+QPushButton#windowChromeButton:hover, QPushButton#packageActionsButton:hover {
     background-color: #161b22; color: #e6edf3; border-color: #30363d;
 }
 QPushButton#windowChromeCloseButton:hover {
@@ -2960,11 +2961,12 @@ QPushButton#serverFooterButton:hover { background-color: #eaeef2; color: #1f2328
 #globalSearchPopup::item { color: #1f2328; padding: 6px 8px; border-radius: 6px; }
 #globalSearchPopup::item:selected { background-color: #0969da; color: #ffffff; }
 #searchEmptyNotice { color: #656d76; background: transparent; }
-QPushButton#windowChromeButton, QPushButton#windowChromeCloseButton {
+QPushButton#windowChromeButton, QPushButton#windowChromeCloseButton,
+QPushButton#packageActionsButton {
     background: transparent; border: 1px solid transparent; border-radius: 6px;
     color: #656d76; padding: 0;
 }
-QPushButton#windowChromeButton:hover {
+QPushButton#windowChromeButton:hover, QPushButton#packageActionsButton:hover {
     background-color: #f6f8fa; color: #1f2328; border-color: #d0d7de;
 }
 QPushButton#windowChromeCloseButton:hover {

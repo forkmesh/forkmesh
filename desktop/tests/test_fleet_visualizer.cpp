@@ -338,6 +338,12 @@ void testDesktopProcesses()
     check(row.contains(QLatin1String("/usr/bin/chrome --flag")) &&
               row.contains(QLatin1String("80 threads")),
           "a process row spells out its command line and threads: " + row);
+    QString inspected;
+    view.onProcessClicked = [&inspected](const procs::Process &process) {
+        inspected = process.name;
+    };
+    check(clickFirst(view, row) && inspected == QLatin1String("chrome"),
+          "clicking a process opens its inspection action");
     const QString self = findTip(view, QStringLiteral("forkmesh (pid 500"));
     check(self.contains(QLatin1String("This ForkMesh desktop")),
           "the app's own row says it is this desktop: " + self);

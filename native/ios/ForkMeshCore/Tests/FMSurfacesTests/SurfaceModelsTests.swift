@@ -121,68 +121,93 @@ final class SurfaceModelsTests: XCTestCase {
         XCTAssertNil(SurfaceLink.route(from: URL(string: "https://surface/open?route=abc")!))
     }
 
-    func testContentStateDecodesServerPayload() throws {
-        let json = """
-        {"status":"needs_approval","title":"Fix","repo":"o/r","detail":"Allow?","turns":3,
-         "startedAt":1790000000123,"progress":0.5,"needsApproval":true,"extra":"ignored"}
-        """
-        let state = try JSONDecoder().decode(AgentRunAttributes.ContentState.self, from: Data(json.utf8))
-        XCTAssertEqual(state.state, .needsApproval)
-        XCTAssertEqual(state.turns, 3)
-        XCTAssertEqual(state.startedDate, Date(timeIntervalSince1970: 1_790_000_000.123))
-        XCTAssertEqual(
-            AgentRunAttributes.ContentState(status: "running", startedAt: 1_790_000_000).startedDate,
-            Date(timeIntervalSince1970: 1_790_000_000))
-        XCTAssertNil(state.approvalRoute)
-        let minimal = try JSONDecoder().decode(AgentRunAttributes.ContentState.self, from: Data("{}".utf8))
-        XCTAssertEqual(minimal.status, "running")
-        XCTAssertFalse(minimal.needsApproval)
-        let clamped = AgentRunAttributes.ContentState(status: "running", startedAt: 1_000_000_000)
-        XCTAssertNil(clamped.startedDate)
-        let attributes = try JSONDecoder().decode(
-            AgentRunAttributes.self, from: Data(#"{"sessionId":"desktop:4","repo":"o/r","title":"T"}"#.utf8))
-        XCTAssertEqual(attributes.route, .agent(id: "desktop:4"))
-    }
-
-    func testRunKeys() {
-        XCTAssertEqual(AgentRunKey.make("desktop:12"), "desktop:12")
-        XCTAssertEqual(AgentRunKey.make("node:3f2a-9_x.y"), "node:3f2a-9_x.y")
-        XCTAssertNil(AgentRunKey.make("node:a/b"))
-        XCTAssertNil(AgentRunKey.make(""))
-        XCTAssertNil(AgentRunKey.make(String(repeating: "a", count: 65)))
-        XCTAssertNil(AgentRunKey.make("node:é"))
-    }
-
-    func testPlannerStartsUpdatesAndEnds() {
+    func testSummaryFoldsAgentsShortcutsAndTimer() throws {
         let cards = [
             AgentRunCard(id: "desktop:1", title: "One", repo: "o/r", state: .running, startedAtMs: 1_790_000_000_000),
             AgentRunCard(id: "desktop:2", title: "Two", repo: "o/r", state: .needsApproval, approvalId: "ap"),
             AgentRunCard(id: "desktop:3", title: "Three", repo: "o/r", state: .completed),
-            AgentRunCard(id: "bad/id", title: "Bad", repo: "o/r", state: .running),
-            AgentRunCard(id: "desktop:5", title: "Five", repo: "o/r", state: .queued),
+            AgentRunCard(id: "desktop:4", title: "Four", repo: "o/r", state: .queued),
+            AgentRunCard(id: "desktop:5", title: "Five", repo: "o/r", state: .running),
         ]
-        let surface = AgentsSurface(runs: cards)
-        let same = AgentRunAttributes.ContentState.from(cards[0])
-        let existing: [String: AgentRunAttributes.ContentState] = [
-            "desktop:1": same,
-            "desktop:3": AgentRunAttributes.ContentState(status: "running"),
-            "desktop:9": AgentRunAttributes.ContentState(status: "running"),
+        let surface = AgentsSurface(needsYou: 1, running: 2, queued: 1, runs: cards)
+        let shortcuts = [
+            ActivityShortcutInput(
+                id: 7, title: "Deploy", repo: "o/r", running: true, startedAtMs: 1_790_000_000_000, expectedMs: 60_000),
+            ActivityShortcutInput(id: 8, title: "Lint", repo: "o/r", running: true, startedAtMs: 0, expectedMs: -1),
+            ActivityShortcutInput(id: 9, title: "Old", repo: "o/r", running: false, startedAtMs: 0, expectedMs: 1),
+            ActivityShortcutInput(id: 6, title: "Test", repo: "o/r", running: true, startedAtMs: 0, expectedMs: -1),
         ]
-        let actions = LiveActivityPlanner.plan(agents: surface, existing: existing, canStart: true, limit: 2)
-        XCTAssertEqual(actions.count, 3)
-        XCTAssertEqual(actions[0], .end("desktop:3", AgentRunAttributes.ContentState.from(cards[2])))
-        XCTAssertEqual(actions[1], .end("desktop:9", nil))
-        guard case let .start(attributes, state) = actions[2] else { return XCTFail("expected a start") }
-        XCTAssertEqual(attributes.sessionId, "desktop:2")
-        XCTAssertTrue(state.needsApproval)
-        XCTAssertEqual(state.approvalRoute, .approval(id: "ap"))
-        XCTAssertEqual(same.startedAt, 1_790_000_000_000)
-        let quiet = LiveActivityPlanner.plan(agents: surface, existing: [:], canStart: false)
-        XCTAssertTrue(quiet.isEmpty)
-        var changed = existing
-        changed["desktop:1"] = AgentRunAttributes.ContentState(status: "queued")
-        let updates = LiveActivityPlanner.plan(agents: surface, existing: changed, canStart: false)
-        XCTAssertTrue(updates.contains(.update("desktop:1", same)))
+        let timer = TimerActivitySnapshot(
+            timerId: "t", kind: .countdown, label: "Tea", endsAtMs: 1_790_000_000_500, countsFromMs: 0, paused: false,
+            pausedText: "")
+        let state = ActivitySummaryAttributes.ContentState.build(
+            agents: surface, shortcuts: shortcuts, timer: timer, unread: -2)
+        XCTAssertEqual(state.agents.map(\.id), ["desktop:1", "desktop:2", "desktop:4"])
+        XCTAssertEqual(state.activeAgents, 4)
+        XCTAssertEqual(state.shortcutsRunning, 3)
+        XCTAssertEqual(state.shortcuts.map(\.id), [8, 7])
+        XCTAssertEqual(state.unread, 0)
+        XCTAssertEqual(state.compactCount, 7)
+        XCTAssertEqual(state.summaryLine, "1 needs you, 2 running, 1 queued · 3 shortcuts")
+        XCTAssertEqual(state.route, .approval(id: "ap"))
+        XCTAssertEqual(state.pendingApproval?.id, "desktop:2")
+        XCTAssertNil(state.stoppable)
+        XCTAssertEqual(state.leadState, .needsApproval)
+        XCTAssertEqual(state.systemImage, "hand.raised.fill")
+        XCTAssertEqual(state.agents[0].startedAt, Date(timeIntervalSince1970: 1_790_000_000))
+        XCTAssertNil(state.agents[1].startedAt)
+        XCTAssertEqual(state.shortcuts[1].expectedEnd, Date(timeIntervalSince1970: 1_790_000_060))
+        XCTAssertNil(state.shortcuts[0].expectedEnd)
+        XCTAssertEqual(state.shortcuts[1].route, .shortcuts(RepoRef(owner: "o", name: "r")))
+        let decoded = try JSONDecoder().decode(
+            ActivitySummaryAttributes.ContentState.self, from: JSONEncoder().encode(state))
+        XCTAssertEqual(decoded, state)
+        XCTAssertLessThan(try JSONEncoder().encode(state).count, 4_096)
+    }
+
+    func testSummaryLinesAndRoutes() {
+        let one = AgentRunCard(id: "desktop:1", title: "One", repo: "o/r", state: .running, canStop: true)
+        let single = ActivitySummaryAttributes.ContentState.build(agents: AgentsSurface(running: 1, runs: [one]))
+        XCTAssertEqual(single.stoppable?.id, "desktop:1")
+        XCTAssertEqual(single.route, .agent(id: "desktop:1"))
+        XCTAssertEqual(single.summaryLine, "1 running")
+        let many = ActivitySummaryAttributes.ContentState(running: 5, agents: [ActivitySummaryAttributes.Agent(one)])
+        XCTAssertEqual(many.route, .agents(.running))
+        XCTAssertNil(many.stoppable)
+        let orphan = ActivitySummaryAttributes.ContentState(needsYou: 1)
+        XCTAssertFalse(orphan.isEmpty)
+        XCTAssertEqual(orphan.route, .agents(.needsYou))
+        let timer = TimerActivitySnapshot(
+            timerId: "t", kind: .countdown, label: "Tea", endsAtMs: 0, countsFromMs: 0, paused: false, pausedText: "")
+        let timed = ActivitySummaryAttributes.ContentState(timer: timer)
+        XCTAssertEqual(timed.summaryLine, "Tea")
+        XCTAssertEqual(timed.route, .timers)
+        XCTAssertEqual(timed.compactCount, 0)
+        let shortcut = ActivitySummaryAttributes.Shortcut(id: 1, title: "S", repo: "", startedAtMs: 0, expectedMs: 0)
+        XCTAssertEqual(ActivitySummaryAttributes.ContentState(shortcuts: [shortcut]).summaryLine, "1 shortcut")
+        XCTAssertTrue(ActivitySummaryAttributes.ContentState(unread: 4).isEmpty)
+        XCTAssertEqual(ActivitySummaryAttributes.ContentState().summaryLine, "All done")
+    }
+
+    func testSummaryPlannerStartsUpdatesAndEnds() {
+        let card = AgentRunCard(id: "desktop:1", title: "One", repo: "o/r", state: .running)
+        let busy = ActivitySummaryAttributes.ContentState.build(agents: AgentsSurface(running: 1, runs: [card]))
+        let idle = ActivitySummaryAttributes.ContentState()
+        XCTAssertEqual(ActivitySummaryPlanner.plan(next: busy, current: nil, canStart: true), .start(busy))
+        XCTAssertNil(ActivitySummaryPlanner.plan(next: busy, current: nil, canStart: false))
+        XCTAssertNil(ActivitySummaryPlanner.plan(next: idle, current: nil, canStart: true))
+        XCTAssertNil(ActivitySummaryPlanner.plan(next: busy, current: busy, canStart: false))
+        var queued = busy
+        queued.running = 0
+        queued.queued = 1
+        XCTAssertEqual(ActivitySummaryPlanner.plan(next: queued, current: busy, canStart: false), .update(queued))
+        XCTAssertEqual(ActivitySummaryPlanner.plan(next: idle, current: busy, canStart: true), .end(idle))
+        XCTAssertNil(ActivitySummaryPlanner.plan(next: idle, current: busy, canStart: true, agentsReliable: false))
+        var unread = idle
+        unread.unread = 3
+        XCTAssertEqual(
+            ActivitySummaryPlanner.plan(next: unread, current: busy, canStart: true, agentsReliable: false),
+            .update(unread.keepingAgents(of: busy)))
     }
 
     func testTimerSnapshotDates() {

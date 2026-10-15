@@ -24,6 +24,8 @@ abstract class Screen {
 
     open val title: String get() = javaClass.simpleName
 
+    var pluginPackage: String? = null
+
     @Composable
     abstract fun Content(navigator: Navigator)
 
@@ -91,6 +93,8 @@ class Navigator(root: Screen) {
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> { error("no Navigator in composition") }
 
+val LocalScreen = staticCompositionLocalOf<Screen?> { null }
+
 object AppNavigation {
     lateinit var navigator: Navigator
         private set
@@ -129,7 +133,7 @@ fun NavigatorHost(navigator: Navigator, onExit: () -> Unit) {
         label = "navigator",
     ) { screen ->
         holder.SaveableStateProvider(screen.key) {
-            CompositionLocalProvider(LocalNavigator provides navigator) {
+            CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen) {
                 screen.Content(navigator)
             }
         }

@@ -42,7 +42,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Area | Pages |
 | --- | --- |
 | Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md), [dashboard-colors](dashboard-colors.md), [dashboard-components](dashboard-components.md) |
-| Repositories | [repo-views](repo-views.md), [repository-file-edits](repository-file-edits.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [public-pages](public-pages.md) |
+| Repositories | [repo-views](repo-views.md), [repository-traffic](repository-traffic.md), [repository-file-edits](repository-file-edits.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [public-pages](public-pages.md) |
 | Chat | [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-formatting](chat-formatting.md), [web-chat-layout](web-chat-layout.md), [web-composer](web-composer.md) |
 | Notifications | [notification-email](notification-email.md) |
 | Tasks | [task-progress](task-progress.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |

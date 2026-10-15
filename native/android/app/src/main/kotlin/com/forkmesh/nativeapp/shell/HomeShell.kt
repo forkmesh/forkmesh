@@ -129,6 +129,7 @@ import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.navigation.LocalNavigator
+import com.forkmesh.nativeapp.ui.navigation.LocalScreen
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -509,7 +510,7 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder) {
         label = "tab-stack",
     ) { screen ->
         holder.SaveableStateProvider(screen.key) {
-            CompositionLocalProvider(LocalNavigator provides navigator) {
+            CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen) {
                 screen.Content(navigator)
             }
         }

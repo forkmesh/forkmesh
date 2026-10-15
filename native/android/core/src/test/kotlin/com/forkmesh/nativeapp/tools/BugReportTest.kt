@@ -102,6 +102,21 @@ class BugReportTest {
         expect(!sent.containsKey("device"))
     }
 
+    fun testPluginFeedbackIsTaggedWithItsPackageAndTitledForIt() {
+        val relay = Relay()
+        val step = ReportBugDraft().withMessage("Rating stars do not stick.").submit(apiAvailable = true)
+        sendBugReport(relay.api, step.draft, screen = "Notes", build = build, packageId = "notes")
+        sendBugReport(relay.api, step.draft, screen = "Notes", build = build)
+        assertEq("notes", relay.submitted[0]["package"])
+        expect(!relay.submitted[1].containsKey("package"))
+        assertEq("Feedback on Notes", ReportBugCopy.title("Notes"))
+        assertEq("Report a bug", ReportBugCopy.title(null))
+        expect(ReportBugCopy.subtitle("Notes").contains("Notes"))
+        assertEq(ReportBugCopy.SUBTITLE, ReportBugCopy.subtitle(null))
+        assertEq(ReportBugCopy.FEEDBACK_HINT, ReportBugCopy.messageHint("Notes"))
+        assertEq(ReportBugCopy.MESSAGE_HINT, ReportBugCopy.messageHint(null))
+    }
+
     fun testSeverityDefaultsToNormalSoOneFieldIsEnough() {
         val relay = Relay()
         val step = ReportBugDraft().withMessage("Just this one line.").submit(apiAvailable = true)

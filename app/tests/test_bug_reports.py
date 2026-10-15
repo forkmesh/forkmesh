@@ -493,6 +493,35 @@ def test_a_signed_in_report_opens_the_issue_as_the_reporter():
     assert "- Reporter: octo" in issue["body"]
 
 
+def test_a_plugin_report_names_the_plugin_in_title_body_and_labels():
+    runtime = _Runtime(account="")
+    module = runtime.namespace()
+
+    response = _submit(module, {
+        "message": "The feed list never refreshes after I add a source.",
+        "package": "RSS-Reader",
+        "source": "web",
+    })
+
+    assert response.status == 201
+    issue = runtime.issues[0]
+    assert issue["title"] == (
+        "[rss-reader] The feed list never refreshes after I add a source")
+    assert issue["labels"] == ["bug", "in-app-report", "plugin"]
+    assert "- Plugin: rss-reader" in issue["body"]
+
+
+def test_an_invalid_plugin_id_is_dropped_not_rejected():
+    runtime = _Runtime()
+    module = runtime.namespace()
+
+    for bad in ("../etc", "has space", "-lead", 42, None, "x" * 81):
+        record = module["normalize_report"](
+            {"message": "Something broke.", "package": bad})
+        assert record["package"] == ""
+    assert module["issue_labels"]({"package": ""}) == ["bug", "in-app-report"]
+
+
 def test_the_issue_never_carries_the_private_contact():
     runtime = _Runtime()
     module = runtime.namespace()

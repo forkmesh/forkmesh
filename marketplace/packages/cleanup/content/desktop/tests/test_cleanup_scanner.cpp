@@ -135,8 +135,8 @@ const QString kGone = QStringLiteral("aaaaaaaa-0000-0000-0000-000000000003");
 
 void testHelpers()
 {
-    check(encodeClaudeProject(QStringLiteral("/home/f/projects/forkmesh/src/.worktrees/x_y")) ==
-              QStringLiteral("-home-f-projects-forkmesh-src--worktrees-x-y"),
+    check(encodeClaudeProject(QStringLiteral("/home/tester/projects/forkmesh/src/.worktrees/x_y")) ==
+              QStringLiteral("-home-tester-projects-forkmesh-src--worktrees-x-y"),
           "Claude project folders encode every non-alphanumeric character as a dash");
     check(uuidsIn(QStringLiteral("--resume %1 x").arg(kLive)).contains(kLive),
           "session ids are read out of command lines");

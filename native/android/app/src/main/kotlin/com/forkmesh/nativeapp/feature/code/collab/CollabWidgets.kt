@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.collab
 
+import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -151,6 +152,7 @@ internal fun CollabTopBar(
                 )
             }
         }
+        PluginMenuButton()
     }
 }
 

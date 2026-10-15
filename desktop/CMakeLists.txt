@@ -902,6 +902,8 @@ set(FORKMESH_APP_SOURCES
     src/ForkMeshPackageRegistry.cpp
     src/NativePackageExtension.h
     src/NativePackageExtension.cpp
+    src/PackageFeedback.h
+    src/PackageFeedback.cpp
     src/PackageRailTile.h
     src/PackageRailTile.cpp
     src/RepoStatsStore.h
@@ -2934,6 +2936,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_native_package_extension.cpp
         src/NativePackageExtension.h
         src/NativePackageExtension.cpp
+        src/PackageFeedback.h
+        src/PackageFeedback.cpp
         src/PackageRailTile.h
         src/PackageRailTile.cpp
     )
@@ -3689,6 +3693,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-package-tests COMMAND forkmesh-package-tests)
     add_test(NAME forkmesh-native-package-tests
              COMMAND forkmesh-native-package-tests)
+    set_tests_properties(forkmesh-native-package-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)
