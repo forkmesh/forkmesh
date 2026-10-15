@@ -257,7 +257,22 @@ page.
 - **Where to post next** and **What to talk about** (`redditDesk.ideas`) are
   counted from the desk's own data: open threads, landed replies, rules on
   file, quiet subreddits, a 7-day gap after a reply, and recurring two-word
-  phrases from recent threads.
+  phrases from recent threads. A subreddit where a post or reply of ours
+  landed (5 points, 500 views or 3 comments) ranks higher (`landed`).
+- **Draft with ChatGPT** on each "Where to post next" row opens
+  `https://chatgpt.com/?hints=search&q=<prompt>` (`ideas.draftUrl` +
+  `draftPrompt`, at most 5000 characters so the address stays under
+  ChatGPT's URL limit). The prompt is built on the server from the desk:
+  what ForkMesh is, links tagged for the subreddit (home and `/desktop`), the
+  subreddit's rules on file (or its rules page if none), the posts logged
+  there, and outcomes from the team's own Reddit posts (Posted links on the
+  `reddit` channel, parsed for `/r/<name>/comments/`) and replied threads:
+  what we already posted there, our best results and our weakest. It asks
+  whether a self-promotional post is allowed at all, then for titles, a
+  disclosed body, flair and timing, and a first comment. It improves as the
+  team logs posts and their views and points: the next prompt learns from
+  them. The Reddit desk payload reads the newest 200 Reddit posted links for
+  this. ChatGPT gets only the prompt; nothing is sent to it by ForkMesh.
 
 ForkMesh's servers do not read Reddit listings, threads or rules. People log
 threads by hand, or the browser extension reads pages they open (or walks the

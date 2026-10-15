@@ -547,6 +547,32 @@ REDDIT_TOPIC_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
 REDDIT_EVIDENCE_WINDOW_MS = 180 * 24 * 60 * 60 * 1000
 REDDIT_QUIET_DAYS = 14
 REDDIT_SAME_SUBREDDIT_MS = 7 * 24 * 60 * 60 * 1000
+REDDIT_DRAFT_URL = "https://chatgpt.com/?hints=search&q="
+REDDIT_DRAFT_PROMPT_LIMIT = 5000
+REDDIT_DRAFT_RULES = 15
+REDDIT_DRAFT_RULE_TEXT = 180
+REDDIT_DRAFT_RECENT = 8
+REDDIT_DRAFT_HISTORY = 6
+REDDIT_DRAFT_POSTS_LIMIT = 200
+REDDIT_LANDED_POINTS = 5
+REDDIT_LANDED_VIEWS = 500
+REDDIT_LANDED_COMMENTS = 3
+REDDIT_POST_PATH_RE = re.compile(r"^/r/([A-Za-z0-9_]{2,21})/comments/")
+REDDIT_DRAFT_PRODUCT = (
+    "ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories "
+    "across independent hosts, without relying on any single hosting provider.",
+    "Open source. Git stays the source of truth: repository bytes live on hosts developers "
+    "run. Any node can mirror a public repository, and clones are served from a live, signed, "
+    "integrity-checked mirror, so a repository stays reachable when its source host goes "
+    "offline.",
+    "Issues, discussions, pull requests, reviews and releases are signed records stored in the "
+    "repository under .forkmesh/, not only in a hosted database.",
+    "The desktop app (Linux, macOS, Windows) is a node, and it runs several coding agents side "
+    "by side, each in its own git worktree.",
+    "It is actively developed and not yet a finished replacement for every centralized forge "
+    "workflow: say so if asked.")
+REDDIT_DRAFT_LINKS = (("Docs", "https://www.forkmesh.com/docs/"),
+                      ("Source", "https://forkmesh.com/forkmesh/forkmesh"))
 REDDIT_TOPIC_STOPWORDS = frozenset(
     "the a an and or but for with without from into onto about over under of in on at to by "
     "is are was were be been being do does did doing have has had having can could should "
@@ -2858,7 +2884,146 @@ def _reddit_topic_matches(topic, title):
     return bool(words) and all(word in lower for word in words)
 
 
-def _reddit_where_to_post(desk, threads, now):
+def _reddit_post_subreddit(url):
+    parts = urlparse(str(url or ""))
+    if (parts.hostname or "").lower() not in REDDIT_HOSTS:
+        return ""
+    match = REDDIT_POST_PATH_RE.match(parts.path or "")
+    return match.group(1) if match else ""
+
+
+def _reddit_outcomes(threads, posts):
+    outcomes = []
+    for post in posts or ():
+        subreddit = _reddit_post_subreddit(post.get("url")) if post.get("channel") == "reddit" else ""
+        if not subreddit:
+            continue
+        outcomes.append({
+            "kind": "post", "subreddit": subreddit, "title": post.get("title") or post["url"],
+            "at": post.get("postedAt") or post.get("createdAt") or 0,
+            "views": post.get("views"), "score": post.get("likes"),
+            "comments": post.get("replies")})
+    for thread in threads:
+        if thread["status"] != "replied" or not thread["subreddit"]:
+            continue
+        outcomes.append({
+            "kind": "reply", "subreddit": thread["subreddit"],
+            "title": thread["title"] or thread["url"],
+            "at": thread["decidedAt"] or thread["updatedAt"],
+            "views": thread.get("commentViews"), "score": thread.get("commentScore"),
+            "comments": None})
+    return outcomes
+
+
+def _reddit_outcome_rank(item):
+    return ((item["views"] or 0) + 20 * max(item["score"] or 0, 0)
+            + 10 * (item["comments"] or 0))
+
+
+def _reddit_outcome_landed(item):
+    return ((item["score"] or 0) >= REDDIT_LANDED_POINTS or (item["views"] or 0) >= REDDIT_LANDED_VIEWS
+            or (item["comments"] or 0) >= REDDIT_LANDED_COMMENTS)
+
+
+def _reddit_outcome_line(item):
+    counts = []
+    for key, label in (("views", "views"), ("score", "points"), ("comments", "comments")):
+        if item[key] is not None:
+            counts.append("%s %s" % (_number(item[key]), label))
+    return "- %s in r/%s, %s: \"%s\" (%s)" % (
+        "Our post" if item["kind"] == "post" else "Our reply to",
+        item["subreddit"], _day(item["at"]), _clean(item["title"], 160),
+        ", ".join(counts) or "no numbers read yet")
+
+
+def _reddit_draft_history(name, outcomes):
+    here = [item for item in outcomes if item["subreddit"].lower() == name.lower()]
+    measured = sorted([item for item in outcomes if any(
+        item[key] is not None for key in ("views", "score", "comments"))],
+        key=lambda item: (-_reddit_outcome_rank(item), -item["at"]))
+    best = [item for item in measured if _reddit_outcome_landed(item)][:REDDIT_DRAFT_HISTORY // 2]
+    worst = [item for item in measured if not _reddit_outcome_landed(item)][-2:]
+    lines = []
+    if here:
+        lines += ["", "What we already posted in r/%s (do not repeat these):" % name]
+        lines += [_reddit_outcome_line(item)
+                  for item in sorted(here, key=lambda item: -item["at"])[:REDDIT_DRAFT_HISTORY]]
+    if best:
+        lines += ["", "Our best results on Reddit so far (copy what made them work):"]
+        lines += [_reddit_outcome_line(item) for item in best]
+    if worst:
+        lines += ["", "Our weakest results (avoid what held them back):"]
+        lines += [_reddit_outcome_line(item) for item in worst]
+    if not outcomes:
+        lines += ["", "We have no Reddit results on record yet, so this draft sets the baseline."]
+    return lines
+
+
+def _reddit_draft_prompt(item, logged, outcomes, attribution):
+    name = item["name"]
+    home, _ = _reddit_tagged_link(name, "/", attribution)
+    download, _ = _reddit_tagged_link(name, "/desktop", attribution)
+    lines = [
+        "Help me write a Reddit post for r/%s that fits the community, follows its rules, and "
+        "brings people who would genuinely use it to try ForkMesh. I work on ForkMesh and will "
+        "say so in the post." % name,
+        "",
+        "If you can browse, first read r/%s's rules (%s) and its top posts this month "
+        "(%s/r/%s/top/?t=month), and match what does well there." % (
+            name, item["rulesUrl"], REDDIT_ORIGIN, name),
+        "",
+        "Give me:",
+        "1. Whether a post about our own project is allowed here under these rules. If it is "
+        "not, say so and instead draft a helpful, non-promotional comment for one of the recent "
+        "posts below.",
+        "2. Three title options in this subreddit's usual style.",
+        "3. The post body in Markdown: first person, plain and specific, leading with the "
+        "problem this community has, saying plainly that I work on ForkMesh, with at most one "
+        "link (use the tagged links below exactly as given).",
+        "4. Which flair to pick, and the best day and time to post here.",
+        "5. A short first comment that answers the most likely objection.",
+        "No marketing language, hype, emoji or hashtags, and never ask for upvotes.",
+        "",
+        "About ForkMesh:"]
+    lines += ["- " + text for text in REDDIT_DRAFT_PRODUCT]
+    lines += ["", "Links (tagged so we can see which subreddit sent each visit):"]
+    if home:
+        lines.append("- Website: " + home)
+    if download:
+        lines.append("- Desktop download: " + download)
+    lines += ["- %s: %s" % pair for pair in REDDIT_DRAFT_LINKS]
+    lines += ["", "The subreddit: r/%s (%s/r/%s/)" % (name, REDDIT_ORIGIN, name)]
+    rules = item.get("rules") or []
+    if item["rulesRead"]:
+        lines += ["", "Its rules (read %s):" % _day(item.get("rulesReadAt"))]
+        for index, rule in enumerate(rules[:REDDIT_DRAFT_RULES], 1):
+            text = _clean(rule.get("title"), 120) or "Untitled rule"
+            detail = _clean(rule.get("description"), REDDIT_DRAFT_RULE_TEXT)
+            lines.append("%d. %s%s" % (index, text, ": " + detail if detail else ""))
+        if not rules:
+            lines.append("The rules page listed no rules.")
+    else:
+        lines += ["", "Its rules are not on file yet: read %s before drafting." % item["rulesUrl"]]
+    lines += _reddit_draft_history(name, outcomes)
+    recent = sorted(logged, key=lambda entry: -(entry["postedAt"] or entry["createdAt"]))
+    if recent:
+        lines += ["", "Recent posts there that we logged:"]
+        for entry in recent[:REDDIT_DRAFT_RECENT]:
+            counts = []
+            if entry.get("score") is not None:
+                counts.append("%s points" % _number(entry["score"]))
+            if entry.get("comments") is not None:
+                counts.append("%s comments" % _number(entry["comments"]))
+            lines.append("- \"%s\"%s" % (_clean(entry["title"] or entry["url"], 160),
+                                         " (%s)" % ", ".join(counts) if counts else ""))
+    prompt = "\n".join(lines)
+    if len(prompt) > REDDIT_DRAFT_PROMPT_LIMIT:
+        prompt = prompt[:REDDIT_DRAFT_PROMPT_LIMIT].rsplit("\n", 1)[0]
+    return prompt
+
+
+def _reddit_where_to_post(desk, threads, now, posts=(), attribution=None):
+    outcomes = _reddit_outcomes(threads, posts)
     by_subreddit = {}
     for thread in threads:
         key = str(thread.get("subreddit") or "").lower()
@@ -2872,6 +3037,8 @@ def _reddit_where_to_post(desk, threads, now):
         last_logged = max([entry["createdAt"] for entry in logged] + [0])
         last_replied = max([entry["decidedAt"] for entry in replied] + [0])
         quiet_days = (now - last_logged) // DAY_MS if last_logged else None
+        landed = sum(1 for entry in outcomes if entry["subreddit"].lower() == item["name"].lower()
+                     and _reddit_outcome_landed(entry))
         blockers = []
         if not item["rulesRead"]:
             blockers.append("Read r/%s's rules on self-promotion first" % item["name"])
@@ -2896,9 +3063,16 @@ def _reddit_where_to_post(desk, threads, now):
             "lastThreadAt": last_logged, "lastReplyAt": last_replied,
             "quietDays": quiet_days, "ready": not blockers and item["rulesRead"],
             "reason": reason, "blockers": blockers,
+            "landed": landed,
             "score": len(open_now) * 4 + len(replied) * 3 + (2 if item["rulesRead"] else 0)
+                     + 2 * min(landed, 2)
                      + (1 if quiet_days is None or quiet_days >= REDDIT_QUIET_DAYS else 0)})
     places.sort(key=lambda item: (-item["score"], item["name"].lower()))
+    watched = {item["name"]: item for item in desk["subreddits"]}
+    for place in places[:REDDIT_IDEA_LIMIT]:
+        place["draftPrompt"] = _reddit_draft_prompt(
+            {**watched[place["name"]], **place}, by_subreddit.get(place["name"].lower(), []),
+            outcomes, attribution or {})
     return places[:REDDIT_IDEA_LIMIT]
 
 
@@ -2938,18 +3112,19 @@ def _reddit_what_to_talk_about(desk, threads, content, now):
     return ideas[:REDDIT_TOPIC_LIMIT]
 
 
-def _reddit_ideas(desk, threads, content, now):
-    places = _reddit_where_to_post(desk, threads, now)
+def _reddit_ideas(desk, threads, content, now, posts=(), attribution=None):
+    places = _reddit_where_to_post(desk, threads, now, posts, attribution)
     topics = _reddit_what_to_talk_about(desk, threads, content, now)
     return {
         "subreddits": places, "topics": topics,
         "ready": [item["name"] for item in places if item["ready"]][:5],
         "rulesMissing": [item["name"] for item in places if not item["rulesRead"]][:10],
         "quietDays": REDDIT_QUIET_DAYS, "windowDays": REDDIT_TOPIC_WINDOW_MS // DAY_MS,
+        "draftUrl": REDDIT_DRAFT_URL,
     }
 
 
-def _reddit_desk(settings, threads, now, content=()):
+def _reddit_desk(settings, threads, now, content=(), posts=()):
     desk = _reddit_watch_links(settings["reddit"])
     store = settings.get("redditRules") or {}
     for item in desk["subreddits"]:
@@ -2961,7 +3136,8 @@ def _reddit_desk(settings, threads, now, content=()):
     return {**desk,
             "summary": _reddit_summary(threads, now),
             "rulesOnFile": sum(1 for item in desk["subreddits"] if item["rulesRead"]),
-            "ideas": _reddit_ideas(desk, threads, content, now),
+            "ideas": _reddit_ideas(desk, threads, content, now, posts,
+                                   settings.get("attribution")),
             "statuses": list(REDDIT_STATUSES),
             "sources": list(REDDIT_SOURCES),
             "landingOrigin": REDDIT_LANDING_ORIGIN, "utm": dict(REDDIT_UTM)}
@@ -3412,7 +3588,7 @@ async def _overview(runtime, org_bi, org_name, role, refresh=None, account_bi=""
         "experimentsSummary": _experiments_summary(experiments),
         "funnel": funnel, "funnelReport": _funnel_report(funnel, settings["targets"]),
         "redditThreads": threads,
-        "redditDesk": _reddit_desk(settings, threads, now, content),
+        "redditDesk": _reddit_desk(settings, threads, now, content, posts),
         "posts": posts, "postsSummary": _posts_summary(posts),
         "adPlatforms": _ad_platforms(),
         "refreshableChannels": list(REFRESHERS),
@@ -5322,8 +5498,9 @@ async def _report(runtime, org_bi, org_name):
 async def _reddit_payload(runtime, org_bi, extra=None):
     settings = await _settings(runtime, org_bi)
     threads = await _reddit_threads(runtime, org_bi, settings["attribution"])
+    posts = await _reddit_posts(runtime, org_bi)
     payload = {"ok": True, "redditThreads": threads,
-               "redditDesk": _reddit_desk(settings, threads, runtime.now())}
+               "redditDesk": _reddit_desk(settings, threads, runtime.now(), (), posts)}
     payload.update(extra or {})
     return payload
 
@@ -5567,6 +5744,14 @@ async def _posts(runtime, org_bi):
         "SELECT " + POST_COLUMNS + " FROM marketing_posts WHERE org_bi=? ORDER BY "
         "CASE WHEN posted_at>0 THEN posted_at ELSE created_at END DESC,post_id LIMIT ?",
         org_bi, MAX_POSTS)
+    return [await _post_project(runtime, row) for row in rows or []]
+
+
+async def _reddit_posts(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT " + POST_COLUMNS + " FROM marketing_posts WHERE org_bi=? AND channel=? ORDER BY "
+        "CASE WHEN posted_at>0 THEN posted_at ELSE created_at END DESC,post_id LIMIT ?",
+        org_bi, "reddit", REDDIT_DRAFT_POSTS_LIMIT)
     return [await _post_project(runtime, row) for row in rows or []]
 
 

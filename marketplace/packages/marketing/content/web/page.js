@@ -1093,7 +1093,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         <td class="r mk-num">${fmtFull(item.threads)}</td>
         <td class="r mk-num">${fmtFull(item.open)}</td>
         <td class="r mk-num">${fmtFull(item.replied)}</td>
-        <td>${blockers}${item.rulesRead ? "" : ` ${outLink(item.rulesUrl, "Read the rules ↗", `class="mk-link" style="padding:0"`)}`}</td></tr>`;
+        <td>${blockers}${item.rulesRead ? "" : ` ${outLink(item.rulesUrl, "Read the rules ↗", `class="mk-link" style="padding:0"`)}`}${item.draftPrompt && ideas.draftUrl ? `<small style="display:block;font-size:11.5px">${outLink(ideas.draftUrl + encodeURIComponent(item.draftPrompt), "Draft with ChatGPT ↗", `class="mk-link" style="padding:0" data-marketing-reddit-draft title="Opens ChatGPT with ForkMesh, our tagged links, r/${escapeHtml(item.name)}'s rules and recent posts, and how our past Reddit posts did"`)}</small>` : ""}</td></tr>`;
     }).join("");
     const empty = $(`[data-marketing-reddit-places-empty]`);
     if (empty) empty.hidden = places.length > 0;
