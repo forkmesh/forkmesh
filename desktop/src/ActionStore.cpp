@@ -367,8 +367,17 @@ QString ActionStore::sandboxDir() const
 
 QString ActionStore::buildCacheDir(const ActionRun &run) const
 {
-    const QString path =
+    const QString root =
         m_root + QStringLiteral("/cache/") + run.repoKey();
+    const QString path = run.workflowPath ==
+                                 QStringLiteral(".forkmesh/desktop-ci.yml")
+                             ? root
+                             : root + QStringLiteral("/workflow-") +
+                                   QString::fromLatin1(
+                                       QCryptographicHash::hash(
+                                           run.workflowPath.toUtf8(),
+                                           QCryptographicHash::Sha256)
+                                           .toHex());
     QDir().mkpath(path);
     return path;
 }

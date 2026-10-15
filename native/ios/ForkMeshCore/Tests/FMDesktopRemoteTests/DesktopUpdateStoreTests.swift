@@ -73,9 +73,17 @@ final class DesktopUpdateStoreTests: XCTestCase {
         let store = DesktopUpdateStore(channel: channel)
         let confirmation = try await store.prepareComputerRestart()
         XCTAssertEqual(channel.last("update.prepare")?.str("action"), "computerRestart")
-        XCTAssertEqual(try await store.restartComputer(confirmation), "The computer is restarting.")
+        let message = try await store.restartComputer(confirmation)
+        XCTAssertEqual(message, "The computer is restarting.")
         XCTAssertEqual(channel.last("update.run")?.str("action"), "computerRestart")
-        XCTAssertEqual(store.stage, .idle)
+        XCTAssertEqual(store.stage, .restarting)
+        XCTAssertEqual(store.lines, ["==> Restarting computer", "$ loginctl reboot"])
+        XCTAssertEqual(store.state.kind, "computerRestart")
+        channel.emit("update.progress", [
+            "run": 2, "running": true, "kind": "computerRestart",
+            "lines": ["==> Restarting computer", "$ loginctl reboot"],
+        ])
+        XCTAssertEqual(store.stage, .restarting)
     }
 
     @MainActor func testFailureStopsTracking() async {

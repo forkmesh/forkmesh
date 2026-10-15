@@ -45,7 +45,7 @@ jobs:
           jobs=$(( (memory_mb - 2048) / 2048 ))
           if [ "$jobs" -lt 1 ]; then jobs=1; fi
           if [ "$jobs" -gt "$cpus" ]; then jobs="$cpus"; fi
-          if [ "$jobs" -gt 4 ]; then jobs=4; fi
+          if [ "$jobs" -gt 2 ]; then jobs=2; fi
           echo "building with -j$jobs (${cpus} cpus, ${memory_mb} MiB budget)"
 
           # AUTOGEN_PARALLEL defaults to AUTO, and AUTO means the *host's* core
