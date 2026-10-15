@@ -43,7 +43,7 @@ final class ChatLinkPreviewTests: XCTestCase {
 
     func testOnlyPublicWebLinksArePreviewed() {
         for blocked in [
-            "http://localhost/x", "https://127.0.0.1/", "https://10.0.0.5/a", "https://192.168.1.201/", "https://172.20.1.1",
+            "http://localhost/x", "https://127.0.0.1/", "https://10.0.0.5/a", "https://192.168.1.1/", "https://172.20.1.1",
             "https://169.254.169.254/latest", "https://[::1]/", "https://[fd00::1]/", "https://[fe80::1]/", "https://printer.local/",
             "https://router/", "ftp://example.com/", "javascript:alert(1)", "https://user:pw@example.com/", "https://example.com:8080/",
             "https://100.64.0.1/", "https://0x7f.0.0.1/", "https://2130706433/", "https://10.77.0.3/", "https://[::ffff:127.0.0.1]/",

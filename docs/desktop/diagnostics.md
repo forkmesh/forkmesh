@@ -86,6 +86,16 @@ The desktop has no toasts or floating cards; information is shown inline.
   `src/SystemPressure.*` reads Linux PSI to tell system-wide starvation from an
   app freeze.
 
+### Desktop resource diagnostics
+
+The CPU quadrant in the debug bar opens **Logs → Desktop**. The page samples
+the machine every two seconds, groups CPU and resident memory by process name,
+and lists the busiest processes with their command, parent, owner, state,
+threads, age and ForkMesh ownership. Selecting a row opens the full command
+line and an explicit normal-termination control. PID 1 and the ForkMesh
+desktop process are protected; stopping another process always asks first and
+uses the platform's normal termination request.
+
 ### Diagnostic report
 
 The Report tool copies a Markdown report meant for a coding agent.

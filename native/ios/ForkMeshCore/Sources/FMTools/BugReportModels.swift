@@ -24,7 +24,8 @@ public struct BugSeverity: Equatable, Sendable {
 
 /// What `submitBugReport` is handed (ApiService's signature, as a closure for tests).
 public typealias BugReportSubmit = @MainActor (_ message: String, _ contact: String, _ screen: String, _ severity: String,
-                                               _ platform: String, _ appVersion: String, _ osVersion: String) async -> BugReportResult
+                                               _ platform: String, _ appVersion: String, _ osVersion: String,
+                                               _ package: String) async -> BugReportResult
 
 @MainActor
 @Observable
@@ -33,12 +34,15 @@ public final class ReportBugModel {
     public static let subtitle = "Opens a public issue. Your contact stays private."
     public static let messageHint = "What happened, and what did you expect instead?"
     public static let severityLabel = "How bad is it?"
+    public static let feedbackHint = "What works, what is missing, or what went wrong?"
     public static let thanks = "Thanks — your report reached the ForkMesh team."
 
     @ObservationIgnored private let submitter: BugReportSubmit?
     public let screen: String
     public let build: AppBuild
     public let signedIn: Bool
+    public let package: String
+    public let packageName: String
 
     public var message = "" { didSet { if !problem.isEmpty && !message.dartTrimmed.isEmpty { problem = "" } } }
     public var contact = ""
@@ -47,31 +51,49 @@ public final class ReportBugModel {
     public private(set) var busy = false
 
     /// `submit` nil is a harness without an ApiService: reporting is unavailable.
-    public init(screen: String = "", build: AppBuild, signedIn: Bool, submit: BugReportSubmit?) {
+    public init(
+        screen: String = "", package: String = "", packageName: String = "", build: AppBuild, signedIn: Bool,
+        submit: BugReportSubmit?
+    ) {
         self.screen = screen
+        self.package = package.dartTrimmed
+        self.packageName = packageName.dartTrimmed.isEmpty ? package.dartTrimmed : packageName.dartTrimmed
         self.build = build
         self.signedIn = signedIn
         submitter = submit
     }
 
-    public convenience init(screen: String = "", build: AppBuild, signedIn: Bool, api: ApiService?) {
+    public convenience init(
+        screen: String = "", package: String = "", packageName: String = "", build: AppBuild, signedIn: Bool, api: ApiService?
+    ) {
         let submit: BugReportSubmit? = api.map { api in
-            { message, contact, screen, severity, platform, appVersion, osVersion in
+            { message, contact, screen, severity, platform, appVersion, osVersion, package in
                 await api.submitBugReport(message: message, contact: contact, screen: screen, severity: severity,
-                                          platform: platform, appVersion: appVersion, osVersion: osVersion)
+                                          platform: platform, appVersion: appVersion, osVersion: osVersion, package: package)
             }
         }
-        self.init(screen: screen, build: build, signedIn: signedIn, submit: submit)
+        self.init(screen: screen, package: package, packageName: packageName, build: build, signedIn: signedIn, submit: submit)
+    }
+
+    public var isFeedback: Bool { !package.isEmpty }
+    public var heading: String { isFeedback ? "Feedback on \(packageName)" : ReportBugModel.title }
+    public var intro: String { isFeedback ? "Goes to the ForkMesh team, tagged with \(packageName)." : ReportBugModel.subtitle }
+    public var hint: String { isFeedback ? ReportBugModel.feedbackHint : ReportBugModel.messageHint }
+    public var thanksText: String { isFeedback ? ReportBugModel.feedbackThanks(packageName) : ReportBugModel.thanks }
+
+    public static func feedbackThanks(_ name: String) -> String {
+        "Thanks — your feedback on \(name) reached the ForkMesh team."
     }
 
     public var contactLabel: String { signedIn ? "Reply to (optional)" : "Email or handle (optional)" }
     public var contactHint: String { signedIn ? "Only if you want the reply somewhere else" : "Only if you want a reply" }
-    public var submitLabel: String { busy ? "Sending…" : "Send report" }
+    public var submitLabel: String { busy ? "Sending…" : isFeedback ? "Send feedback" : "Send report" }
 
     /// "Attached: ForkMesh 1.2.2+13 · ios · code · your account."
     public var attached: String {
         var parts = ["ForkMesh \(build.version)", build.platform]
         if !screen.isEmpty { parts.append(screen) }
+        if isFeedback && packageName != screen { parts.append(packageName) }
         parts.append(signedIn ? "your account" : "no account")
         return "Attached: \(parts.joined(separator: " · "))."
     }
@@ -82,7 +104,7 @@ public final class ReportBugModel {
         if busy { return false }
         let text = message.dartTrimmed
         if text.isEmpty {
-            problem = "Describe what went wrong."
+            problem = isFeedback ? "Describe the problem or idea." : "Describe what went wrong."
             return false
         }
         busy = true
@@ -92,7 +114,7 @@ public final class ReportBugModel {
             problem = "Reporting is unavailable in this build."
             return false
         }
-        let result = await submitter(text, contact, screen, severity, build.platform, build.version, build.osVersion)
+        let result = await submitter(text, contact, screen, severity, build.platform, build.version, build.osVersion, package)
         if !result.ok {
             busy = false
             problem = result.message

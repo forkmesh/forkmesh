@@ -129,7 +129,7 @@ func unixOnly(t *testing.T) {
 func TestHelpers(t *testing.T) {
 	unixOnly(t)
 	root := sandbox(t)
-	if got := EncodeClaudeProject("/home/f/projects/forkmesh/src/.worktrees/x_y"); got != "-home-f-projects-forkmesh-src--worktrees-x-y" {
+	if got := EncodeClaudeProject("/home/tester/projects/forkmesh/src/.worktrees/x_y"); got != "-home-tester-projects-forkmesh-src--worktrees-x-y" {
 		t.Errorf("encode %q", got)
 	}
 	if !UUIDsIn("--resume " + kLive + " x")[kLive] {

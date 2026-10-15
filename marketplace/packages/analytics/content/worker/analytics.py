@@ -2202,12 +2202,15 @@ def _campaign_sessions(events, filters, goals, context):
             entry = sessions[key] = {
                 "first": event, "start": event["t"], "end": event["t"],
                 "actor": context.actor(event), "pageviews": 0,
-                "interactions": 0, "landing": "", "goals": [0] * len(goals)}
+                "interactions": 0, "landing": "", "goals": [0] * len(goals),
+                "pageviewDays": {}}
         if event["t"] < entry["start"]:
             entry["first"], entry["start"] = event, event["t"]
         entry["end"] = max(entry["end"], event["t"])
         if event["e"] == "$pageview":
             entry["pageviews"] += 1
+            day = event["t"] // DAY_MS * DAY_MS
+            entry["pageviewDays"][day] = entry["pageviewDays"].get(day, 0) + 1
             if not entry["landing"] or event["t"] <= entry["start"]:
                 entry["landing"] = _path_name(event, "$pageview")
         elif event["e"] in ("$autocapture", "$rageclick"):
@@ -2246,6 +2249,8 @@ def campaigns(events, query, context, start, end):
     group = _text(query.get("groupBy"), 20)
     group = group if group in CAMPAIGN_GROUPS else "campaign"
     limit = _bounded(query.get("limit"), 1, 200, 50)
+    daily = query.get("daily")
+    include_days = daily is True or (isinstance(daily, list) and group in daily)
     own_host = _text(query.get("host"), 253).strip().lower()
     own_host = own_host[4:] if own_host.startswith("www.") else own_host
     span = max(1, end - start)
@@ -2287,6 +2292,12 @@ def campaigns(events, query, context, start, end):
                "previousConversions": before["conversions"],
                "tagged": any(entry["channel"]["tagged"] for entry in members),
                "topLanding": _top(landing, 3)}
+        if include_days:
+            days = {}
+            for entry in members:
+                for day, views in entry["pageviewDays"].items():
+                    days[day] = days.get(day, 0) + views
+            row["days"] = [[day, days[day]] for day in sorted(days)]
         if group == "landing":
             row["landing"] = key[0]
         elif group == "term":

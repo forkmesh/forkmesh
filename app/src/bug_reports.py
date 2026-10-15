@@ -90,12 +90,20 @@ SEVERITIES = ("low", "normal", "high", "crash")
 DEFAULT_ISSUE_REPO = "forkmesh/forkmesh"
 ISSUE_REPO_DISABLED = ("off", "none", "disabled", "false", "0")
 ISSUE_LABELS = ("bug", "in-app-report")
+PLUGIN_LABEL = "plugin"
 MAX_ISSUE_TITLE = 120
 SEGMENT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}")
 
 
 def _text(value, maximum):
     return clean_string(value, maximum).strip()
+
+
+def _package(value):
+    if not isinstance(value, str):
+        return ""
+    candidate = _text(value, 81).lower()
+    return candidate if SEGMENT_RE.fullmatch(candidate) else ""
 
 
 def _choice(value, allowed, fallback):
@@ -127,6 +135,7 @@ def normalize_report(data):
         "appVersion": _text(data.get("appVersion"), MAX_VERSION),
         "osVersion": _text(data.get("osVersion"), MAX_VERSION),
         "device": _text(data.get("device"), MAX_DEVICE),
+        "package": _package(data.get("package")),
     }
 
 
@@ -211,6 +220,8 @@ def issue_title(record):
     if len(text) > MAX_ISSUE_TITLE:
         text = text[:MAX_ISSUE_TITLE - 3].rstrip() + "..."
     prefix = "Crash: " if record.get("severity") == "crash" else ""
+    if record.get("package"):
+        prefix = "[%s] %s" % (record["package"], prefix)
     return prefix + (text or "In-app bug report")
 
 
@@ -222,6 +233,7 @@ def issue_body(record, account, report_id):
     """
     context = [
         ("Severity", record.get("severity")),
+        ("Plugin", record.get("package")),
         ("Screen", record.get("screen")),
         ("Source", record.get("source")),
         ("Platform", record.get("platform")),
@@ -241,6 +253,13 @@ def issue_body(record, account, report_id):
     return "\n".join(lines)
 
 
+def issue_labels(record):
+    labels = list(ISSUE_LABELS)
+    if record.get("package"):
+        labels.append(PLUGIN_LABEL)
+    return labels
+
+
 async def file_issue(env, record, account, report_id, target):
     """Queue the report as an issue; the proposed issue number, or 0."""
     owner, repo = target
@@ -248,7 +267,7 @@ async def file_issue(env, record, account, report_id, target):
         ok, item = await _forkbot_enqueue_issue(
             env, owner, repo, issue_title(record),
             issue_body(record, account, report_id), account,
-            source="app-report", labels=list(ISSUE_LABELS),
+            source="app-report", labels=issue_labels(record),
             authenticated_requester=account)
     except Exception as exc:
         ok, item = False, str(exc)
@@ -299,6 +318,7 @@ def capability_document(env=None):
             "appVersion": "optional client build identifier",
             "osVersion": "optional operating-system version",
             "device": "optional device model",
+            "package": "optional marketplace package id the report is about",
         },
         "limits": {
             "bodyBytes": MAX_BODY_BYTES,

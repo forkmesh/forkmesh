@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.rssreader
 
+import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -93,6 +94,7 @@ internal fun RssScaffold(
                         }
                     }
                     actions()
+                    PluginMenuButton()
                 }
                 HorizontalDivider(thickness = 1.dp, color = c.border)
             }

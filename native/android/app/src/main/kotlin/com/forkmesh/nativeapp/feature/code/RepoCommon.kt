@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code
 
+import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.foundation.BorderStroke
@@ -160,6 +161,7 @@ internal fun CodeAppBar(
     titleStyle: TextStyle = Fm.text.titleLarge,
     actions: @Composable RowScope.() -> Unit = {},
     bottom: (@Composable () -> Unit)? = null,
+    pluginMenu: Boolean = true,
 ) {
     val c = Fm.colors
     Column(
@@ -181,6 +183,7 @@ internal fun CodeAppBar(
             Spacer(Modifier.width(FmSpace.x4))
             Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = titleStyle)
             actions()
+            if (pluginMenu) PluginMenuButton()
         }
         bottom?.invoke()
     }
@@ -192,6 +195,7 @@ internal fun DetailScaffold(
     navigator: Navigator,
     actions: @Composable RowScope.() -> Unit = {},
     status: FmStatus? = null,
+    pluginMenu: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Column(
@@ -199,7 +203,7 @@ internal fun DetailScaffold(
             .fillMaxSize()
             .background(Fm.colors.bgBase),
     ) {
-        CodeAppBar(title, navigator, actions = actions)
+        CodeAppBar(title, navigator, actions = actions, pluginMenu = pluginMenu)
         if (status != null) {
             FmInlineStatus(
                 status,

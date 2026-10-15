@@ -681,6 +681,7 @@ struct PackageDetailScreen: View {
     @State private var exporting = false
     @State private var rating = false
     @State private var quickRating = false
+    @State private var reporting = false
     @State private var accountAction: AccountPackageAction?
     @State private var monitorName = ""
     @State private var monitorURL = ""
@@ -770,6 +771,8 @@ struct PackageDetailScreen: View {
         .sheet(isPresented: $rating) {
             NavigationStack { RatePackageSheet(model: reviews) }
         }
+        .pluginFeedbackSheet(
+            isPresented: $reporting, packageId: packageId, name: market.package(packageId)?.name ?? packageId, screen: "market")
         .confirmationDialog(
             accountAction?.title ?? "",
             isPresented: Binding(get: { accountAction != nil }, set: { if !$0 { accountAction = nil } }),
@@ -792,6 +795,12 @@ struct PackageDetailScreen: View {
         }
         .disabled(reviews.page == nil)
         .accessibilityIdentifier("market-package-more-rate")
+        Button {
+            reporting = true
+        } label: {
+            Label(PluginMenu.feedbackLabel, systemImage: "exclamationmark.bubble")
+        }
+        .accessibilityIdentifier("market-package-more-feedback")
         if let uninstall = market.uninstallAction(package, signedIn: PackagesFeature.signedIn) {
             Divider()
             PackageUninstallMenuItems(package: package, uninstall: uninstall) { (organization: String) in

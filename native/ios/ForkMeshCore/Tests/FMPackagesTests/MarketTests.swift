@@ -260,6 +260,32 @@ final class MarketTests: XCTestCase {
         XCTAssertEqual(model.visible.map(\.id), ["crm"])
     }
 
+    @MainActor func testRefreshInstallsLoadsWhatUninstallNeedsAndSkipsTheShopWindow() async {
+        let transport = FakePackagesTransport()
+        transport.on("GET", "/api/market/packages", ["packages": [packageJSON("widgets", scope: "organization")]])
+        transport.on("GET", "/api/plugins/acme", [
+            "organization": "acme", "role": "admin", "canManage": true, "plugins": [["id": "widgets", "installed": true]],
+        ])
+        let model = MarketModel(client: PackagesClient(transport: transport))
+        await model.refreshInstalls(organizations: ["acme"])
+        let widgets = model.package("widgets")!
+        XCTAssertTrue(model.isInstalled(widgets))
+        XCTAssertEqual(model.uninstallAction(widgets, signedIn: true), .organization(["acme"]))
+        XCTAssertEqual(model.partialError, "")
+        XCTAssertFalse(transport.paths.contains("GET /api/market/installs"))
+        XCTAssertFalse(transport.paths.contains("GET /api/market/reviews/summary"))
+        XCTAssertFalse(model.loading)
+    }
+
+    @MainActor func testRefreshInstallsSaysWhenAnOrganizationCouldNotBeRead() async {
+        let transport = FakePackagesTransport()
+        transport.on("GET", "/api/market/packages", ["packages": [packageJSON("widgets", scope: "organization")]])
+        let model = MarketModel(client: PackagesClient(transport: transport))
+        await model.refreshInstalls(organizations: ["acme"])
+        XCTAssertEqual(model.partialError, "Couldn't load your organizations' packages.")
+        XCTAssertNil(model.uninstallAction(model.package("widgets")!, signedIn: true))
+    }
+
     @MainActor func testUninstallOfAnAlreadyRemovedPackageClearsIt() async {
         let transport = FakePackagesTransport()
         transport.on("POST", "/api/plugins/acme/crm/uninstall", status: 409, ["error": "plugin_not_installed"])

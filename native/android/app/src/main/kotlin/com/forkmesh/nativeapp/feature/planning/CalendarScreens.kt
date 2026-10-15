@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.planning
 
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -301,15 +302,21 @@ class EventScreen(private val eventId: String, private val shared: CalendarModel
         @Suppress("UNUSED_EXPRESSION") version
         val event = model.event(eventId)
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar(event?.title ?: "Event", navigator) {
-                if (event != null && model.canEdit(event)) {
+            val plugin = rememberScreenPluginMenu()
+            ToolsAppBar(event?.title ?: "Event", navigator, pluginMenu = false) {
+                val editable = event != null && model.canEdit(event)
+                if (editable || plugin != null) {
                     Box {
                         FmIconButton("more_vert", "More", onPressed = { menu = true }, color = Fm.colors.textPrimary)
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            FmDropdownMenuItem("Edit", onClick = { menu = false; navigator.push(EventEditorScreen(model, event.id, CalendarEventDraft.of(event))) })
-                            FmDropdownMenuItem("Delete", onClick = { menu = false; confirmDelete = true }, textColor = Fm.colors.danger)
+                            if (event != null && editable) {
+                                FmDropdownMenuItem("Edit", onClick = { menu = false; navigator.push(EventEditorScreen(model, event.id, CalendarEventDraft.of(event))) })
+                                FmDropdownMenuItem("Delete", onClick = { menu = false; confirmDelete = true }, textColor = Fm.colors.danger)
+                            }
+                            plugin?.Items(close = { menu = false }, divided = editable)
                         }
                     }
+                    plugin?.Host()
                 }
             }
             when {

@@ -32,6 +32,7 @@ import com.forkmesh.nativeapp.feature.tools.vault.VaultScreen
 import com.forkmesh.nativeapp.model.NotificationDeepLink
 import com.forkmesh.nativeapp.model.RepoDetailTab
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.market.PackageMenu
 import com.forkmesh.nativeapp.navigation.AppTab
 import com.forkmesh.nativeapp.navigation.ComposeTarget
 import com.forkmesh.nativeapp.navigation.GuestGate
@@ -116,7 +117,9 @@ object NavigationFeature {
         return registeredScreen(route)
     }
 
-    fun registeredScreen(route: Route): Screen = registry[route.kind]?.build?.invoke(route) ?: RoutePlaceholderScreen(route)
+    fun registeredScreen(route: Route): Screen = (registry[route.kind]?.build?.invoke(route) ?: RoutePlaceholderScreen(route)).also { screen ->
+        if (screen.pluginPackage == null) screen.pluginPackage = PackageMenu.packageFor(route.kind)
+    }
 
     fun install(app: App) {
         this.app = app

@@ -707,7 +707,7 @@ int main(int argc, char *argv[])
         // `git worktree list --porcelain`: records are separated by blank lines,
         // but a new "worktree " line alone must also close the previous record.
         const QVector<WorktreeRecord> worktrees = parseWorktreePorcelain(
-            {QStringLiteral("worktree /home/f/projects/forkmesh"),
+            {QStringLiteral("worktree /home/tester/projects/forkmesh"),
              QStringLiteral("HEAD 1111111111111111111111111111111111111111"),
              QStringLiteral("branch refs/heads/main"),
              QStringLiteral("worktree /tmp/forkmesh-worktrees/issue-0-s28"),
@@ -719,7 +719,7 @@ int main(int argc, char *argv[])
         check(worktrees.size() == 3, "every worktree record is parsed");
         check(worktrees.at(0).branch == QStringLiteral("main") &&
                   worktrees.at(0).path ==
-                      QStringLiteral("/home/f/projects/forkmesh"),
+                      QStringLiteral("/home/tester/projects/forkmesh"),
               "worktree branches lose their refs/heads/ prefix");
         check(worktrees.at(1).branch ==
                   QStringLiteral("agent/adhoc-28-search"),

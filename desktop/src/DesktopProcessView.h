@@ -22,6 +22,7 @@ public:
     explicit DesktopProcessView(QWidget *parent = nullptr);
 
     std::function<desktopprocs::Snapshot(qint64)> sampleSource;
+    std::function<void(const desktopprocs::Process &)> onProcessClicked;
 
     void setSnapshot(const desktopprocs::Snapshot &snapshot);
     void sampleNow();

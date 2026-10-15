@@ -145,7 +145,9 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
         var moreMenu by remember { mutableStateOf(false) }
         Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
             Column(Modifier.fillMaxSize()) {
-                ToolsAppBar(if (selecting) "${selection.size} selected" else model.organization.ifEmpty { "CRM" }, navigator) {
+                val plugin = rememberScreenPluginMenu()
+                ToolsAppBar(if (selecting) "${selection.size} selected" else model.organization.ifEmpty { "CRM" }, navigator, pluginMenu = !selecting && data == null) {
+                    plugin?.Host()
                     if (selecting) {
                         FmIconButton("close", "Done", onPressed = { selecting = false; selection = emptySet() }, color = Fm.colors.textPrimary)
                     } else {
@@ -197,6 +199,7 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
                                     FmDropdownMenuItem(if (data.settings.mailProvider == "gmail") "Open Gmail" else "Open Zoho Mail", onClick = { moreMenu = false; crmOpen(context, data.settings.composeUrl("")) }, icon = "mail")
                                     FmDropdownMenuItem("CRM settings", onClick = { moreMenu = false; navigator.push(CrmSettingsScreen(model)) }, icon = "settings")
                                     FmDropdownMenuItem("Refresh", onClick = { moreMenu = false; reload++ }, icon = "refresh")
+                                    plugin?.Items(close = { moreMenu = false }, divided = true)
                                 }
                             }
                         }

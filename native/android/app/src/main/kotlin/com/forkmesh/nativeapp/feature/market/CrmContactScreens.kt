@@ -150,9 +150,11 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
         val data = model.data
         val contact = model.contact(ref.contactId)
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar(contact?.displayName ?: "Contact", navigator) {
+            val plugin = rememberScreenPluginMenu()
+            ToolsAppBar(contact?.displayName ?: "Contact", navigator, pluginMenu = contact == null) {
                 if (contact != null) {
                     FmTextButton(onClick = { navigator.push(ContactEditorScreen(model, contact)) }) { Text("Edit") }
+                    plugin?.Host()
                     Box {
                         FmIconButton("more_vert", "More", onPressed = { menu = true }, color = Fm.colors.textPrimary)
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -166,6 +168,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
                             }, icon = "link")
                             FmDropdownMenuItem("Merge into…", onClick = { menu = false; navigator.push(CrmMergeScreen(model, contact)) }, icon = "merge")
                             FmDropdownMenuItem("Delete contact", onClick = { menu = false; confirmDelete = true }, icon = "delete", textColor = Fm.colors.danger)
+                            plugin?.Items(close = { menu = false }, divided = true)
                         }
                     }
                 }

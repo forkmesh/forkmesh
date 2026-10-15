@@ -74,7 +74,7 @@ def test_feedback_dialog_posts_to_the_feedback_api_as_web():
     assert 'maxlength="2000"' in MODALS
     assert "<button data-feedback-open" in HEADER
     assert "<button data-feedback-open" in SIDEBAR
-    assert 'fetch("/api/feedback"' in FEEDBACK_JS
+    assert 'fetch(plugin ? "/api/bug-reports" : "/api/feedback"' in FEEDBACK_JS
     assert 'source: "web", vote: "feedback", message' in FEEDBACK_JS
     assert 'params.get("feedback") !== "1"' in FEEDBACK_JS
     assert "history.replaceState" in FEEDBACK_JS

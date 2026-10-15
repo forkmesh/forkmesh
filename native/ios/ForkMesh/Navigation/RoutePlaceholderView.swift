@@ -30,6 +30,7 @@ struct RouteDestinationView: View {
             RemovedPackageView(packageId: package, route: route)
         } else if let services = AppServices.current {
             services.routes.destination(for: route)
+                .pluginMenu(for: route)
                 .task(id: route) {
                     guard let package = PackageGate.packageId(for: route), PackagesFeature.signedIn else { return }
                     PackageActivity.shared.report(package, kind: .open, client: PackagesFeature.client)
