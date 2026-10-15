@@ -117,8 +117,11 @@ Everything is in `desktop/`.
   [www/docs/operations/polling-elimination.md](../../www/docs/operations/polling-elimination.md).
 - **Branch lifecycle.** Deleting an agent, a branch row or a worktree deletes
   every copy of the branch (local, `origin/<b>`, `forkmesh-mesh/<b>`) and
-  writes a tombstone so the mesh converge does not bring it back. A branch the
-  upstream deleted is deleted locally under strict conditions (see
+  writes a tombstone so the mesh converge does not bring it back. Branches can
+  be selected for one-confirmation bulk deletion; rows attached to a worktree,
+  the default branch and active agent branches stay protected. Refresh fetches
+  with `--prune`, so stale remote-tracking rows do not remain in the list. A
+  branch the upstream deleted is deleted locally under strict conditions (see
   [Traps](#traps)).
 - **Actions.** `.forkmesh` workflows run in disposable workspaces checked out
   from the bare mirror. Push triggers are matched over the whole pushed range.

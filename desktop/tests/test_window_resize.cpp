@@ -6579,6 +6579,26 @@ void checkSavedSearches(MainWindow &window)
     QApplication::processEvents();
     waitFor([&] { return !window.testSearchPageRunning(); });
 
+    QTreeWidgetItem *projectFile = nullptr;
+    if (resultsTree)
+        for (int i = 0; i < resultsTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *bucket = resultsTree->topLevelItem(i);
+            if (bucket->text(0).startsWith(QStringLiteral("Project files")) &&
+                bucket->childCount() > 0) {
+                projectFile = bucket->child(0);
+                break;
+            }
+        }
+    if (resultsTree && projectFile) {
+        resultsTree->setCurrentItem(projectFile);
+        resultsTree->setFocus();
+        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(resultsTree, &enter);
+        QApplication::processEvents();
+    }
+    check(projectFile && window.testFileExplorerPreview().contains(needle),
+          QStringLiteral("Enter opens a project-file search result in the file preview"));
+
     bell = rowWidget() ? rowWidget()->findChild<QToolButton *>(
                              QStringLiteral("savedSearchAlertToggle"))
                        : nullptr;
