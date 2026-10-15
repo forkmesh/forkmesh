@@ -365,8 +365,6 @@ async def _pending(runtime, account_bi, conversation_id):
         ref + ";",
     )
     frame = str((stored or {}).get("body") or "")
-    if not frame:
-        return _response(runtime, {"error": "not_found"}, status=404)
     return _response(
         runtime,
         {

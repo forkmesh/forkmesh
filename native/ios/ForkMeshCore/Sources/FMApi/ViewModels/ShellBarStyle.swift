@@ -113,6 +113,25 @@ public enum ShellBarSelection: String, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum ShellBarMarks: String, CaseIterable, Codable, Sendable {
+    case home
+    case plain
+
+    public var title: String {
+        switch self {
+        case .home: return "Like Home"
+        case .plain: return "Plain"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .home: return "app.badge"
+        case .plain: return "number"
+        }
+    }
+}
+
 public enum ShellBarSize: String, CaseIterable, Codable, Sendable {
     case small
     case medium
@@ -196,12 +215,13 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
     public var showCounts: Bool = false
     public var showActivity: Bool = true
     public var highlightFrequent: Bool = false
+    public var marks: ShellBarMarks = .home
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case shape, fill, icons, size, labels, selection, width, corner, spacing, limit, showCounts, showActivity
-        case highlightFrequent
+        case highlightFrequent, marks
     }
 
     public init(from decoder: Decoder) throws {
@@ -221,6 +241,7 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
         showActivity = (try? values.decodeIfPresent(Bool.self, forKey: .showActivity)) ?? base.showActivity
         highlightFrequent =
             (try? values.decodeIfPresent(Bool.self, forKey: .highlightFrequent)) ?? base.highlightFrequent
+        marks = (try? values.decodeIfPresent(ShellBarMarks.self, forKey: .marks)) ?? base.marks
     }
 
     public static func unit(_ value: Double) -> Double {

@@ -10043,7 +10043,7 @@ async def _chat_direct_passphrase(env, conversation_id, key_version):
 
 async def _chat_direct_message_retained(
         env, conversation_id, account_bi, retained_at, ref="",
-        key_version=0):
+        key_version=0, frame=""):
     await _contribution_run_batch(env, [
         (
             "UPDATE chat_direct_conversations "
@@ -10073,7 +10073,7 @@ async def _chat_direct_message_retained(
             env, recipient, "direct-messages",
             _apns_module().direct_message_alert(
                 sender, conversation_id=conversation_id, ref=ref,
-                key_version=key_version))
+                key_version=key_version, frame=frame))
 
 
 # conversation_id -> {sender account_bi: (peer name, sender name)}. A direct
@@ -53806,7 +53806,8 @@ class ForkMeshRoom(DurableObject):
                         self.env, direct_id, account_bi, int(Date.now()),
                         ref=msg_id[:40],
                         key_version=int(
-                            _ws_attr(ws, "direct_version", 0) or 0))
+                            _ws_attr(ws, "direct_version", 0) or 0),
+                        frame=message)
             elif not direct_id and envelope.get("notify") is True:
                 # A direct message names its recipient above. Every other
                 # message wakes the room's audience instead. The relay only

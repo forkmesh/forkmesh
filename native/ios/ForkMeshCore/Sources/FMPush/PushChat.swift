@@ -202,6 +202,16 @@ public enum PushChatOpener {
         return message(plain, request: request)
     }
 
+    public static func withPushedFrame(_ pending: JSONObject, pushed: JSONObject) -> JSONObject {
+        if pending["frame"]?.objectValue?.isEmpty == false || pending["frame"]?.stringValue?.isEmpty == false {
+            return pending
+        }
+        guard let frame = pushed["frame"]?.objectValue, !frame.isEmpty else { return pending }
+        var merged = pending
+        merged["frame"] = .object(frame)
+        return merged
+    }
+
     public static func message(_ plain: JSONObject, request: PushChatRequest) -> PushChatMessage? {
         let type = plain["type"]?.text ?? ""
         guard type == "chat" || type == "thread-reply" else { return nil }

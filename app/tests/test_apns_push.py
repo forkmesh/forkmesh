@@ -246,7 +246,8 @@ def test_no_push_is_ever_the_ambiguous_new_activity_notice(apns):
 def test_sealed_conversations_name_who_or_where(apns):
     dm = apns.direct_message_alert("alice")
     assert dm["title"] == "\U0001F4E8 Direct message from alice"
-    assert "encrypted" in dm["body"]
+    assert dm["body"] == "New message"
+    assert "encrypted" not in json.dumps(dm).lower()
     assert apns.direct_message_alert("alice", started=True)["title"] == (
         "\U0001F44B alice started a direct conversation with you")
     assert apns.direct_message_alert()["title"] == "\U0001F4E8 New direct message"
@@ -379,11 +380,58 @@ def test_a_direct_message_push_names_the_ciphertext_to_fetch(apns):
     assert payload["sender"] == "alice"
     assert payload["aps"]["thread-id"] == "direct:" + _DIRECT_ID
     assert payload["aps"]["mutable-content"] == 1
-    assert "encrypted" in payload["aps"]["alert"]["body"]
-    for key in ("ref", "keyVersion", "text", "body", "channelId"):
+    assert payload["aps"]["alert"]["body"] == "New message"
+    for key in ("ref", "keyVersion", "text", "body", "channelId", "frame"):
         assert key not in payload["aps"]
     assert set(payload) == {
         "aps", "conversation", "ref", "keyVersion", "sender", "topic"}
+
+
+_FRAME = {"kind": "cipher", "v": 1, "iv": "a" * 16, "data": "b" * 600,
+          "persist": True, "notify": True}
+
+
+def test_a_direct_message_push_carries_its_sealed_frame(apns):
+    alert = apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, ref=_REF, key_version=3,
+        frame=json.dumps(_FRAME))
+    encoded = apns.alert_payload(alert, "direct-messages")
+    payload = json.loads(encoded)
+    assert payload["frame"] == _FRAME
+    assert payload["ref"] == _REF
+    relayed = dict(_FRAME, ref=_REF, recipients=1, recipientNames=["bob"],
+                   historyReplay=True)
+    assert apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, ref=_REF,
+        frame=json.dumps(relayed))["frame"] == _FRAME
+    assert "frame" not in payload["aps"]
+    assert len(encoded.encode("utf-8")) <= apns.APNS_PAYLOAD_MAX_BYTES
+    assert apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, ref=_REF, key_version=3,
+        frame=_FRAME)["frame"] == _FRAME
+    for bad in ("", "not json", "[1]", json.dumps({"kind": "plain"})):
+        assert "frame" not in apns.direct_message_alert(
+            "alice", conversation_id=_DIRECT_ID, ref=_REF, frame=bad)
+    assert "frame" not in apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, frame=_FRAME)
+    assert "frame" not in apns.direct_message_alert(
+        "alice", started=True, conversation_id=_DIRECT_ID, ref=_REF,
+        frame=_FRAME)
+    for topic in ("chat", "pings"):
+        assert "frame" not in json.loads(apns.alert_payload(alert, topic))
+
+
+def test_a_frame_too_big_for_apple_stays_on_the_relay(apns):
+    huge = dict(_FRAME, data="b" * 5000)
+    alert = apns.direct_message_alert(
+        "alice", conversation_id=_DIRECT_ID, ref=_REF, key_version=3,
+        frame=huge)
+    encoded = apns.alert_payload(alert, "direct-messages")
+    payload = json.loads(encoded)
+    assert "frame" not in payload
+    assert payload["ref"] == _REF
+    assert payload["aps"]["alert"]["body"] == "New message"
+    assert len(encoded.encode("utf-8")) <= apns.APNS_PAYLOAD_MAX_BYTES
 
 
 def test_a_push_never_carries_a_malformed_fetch_handle(apns):
