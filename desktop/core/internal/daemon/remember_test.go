@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"forkmesh.com/desktop-core/internal/paths"
 )
@@ -41,5 +42,30 @@ func TestRememberRecallForget(t *testing.T) {
 	}
 	if found, _ := core.Recall("owners.json", &missing); found {
 		t.Fatal("forgotten file recalled")
+	}
+}
+
+func TestPreviousStopReadsTheLastCleanStop(t *testing.T) {
+	root := t.TempDir()
+	core := NewCore(paths.Layout{Project: "p", State: filepath.Join(root, "state")}, "test", log.New(io.Discard, "", 0))
+	if stopped, restart := core.PreviousStop(); !stopped.IsZero() || restart {
+		t.Fatalf("no previous run: %v %v", stopped, restart)
+	}
+	dir := filepath.Join(root, "core")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	core.recordStart(dir)
+	core.recordStop(dir)
+	again := NewCore(core.Layout, "test", log.New(io.Discard, "", 0))
+	again.recordStart(dir)
+	stopped, restart := again.PreviousStop()
+	if stopped.IsZero() || restart || time.Since(stopped) > time.Minute {
+		t.Fatalf("clean stop %v %v", stopped, restart)
+	}
+	crashed := NewCore(core.Layout, "test", log.New(io.Discard, "", 0))
+	crashed.recordStart(dir)
+	if stopped, _ := crashed.PreviousStop(); !stopped.IsZero() {
+		t.Fatalf("a crash has no stop time: %v", stopped)
 	}
 }

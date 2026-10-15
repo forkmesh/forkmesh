@@ -302,3 +302,29 @@ func TestQuotingSurvivesHostilePaths(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureTrayEntryRestoresAMissingOne(t *testing.T) {
+	m, _, home := manager(t, "linux", true)
+	binary := fakeBinary(t, home)
+	if wrote, err := m.EnsureTrayEntry("forkmesh"); wrote || err != nil {
+		t.Fatalf("not enabled: %v %v", wrote, err)
+	}
+	desktop := fakeDesktop(t, binary)
+	if _, err := m.Enable(binary, "forkmesh"); err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(home, ".config/autostart/forkmesh-tray-forkmesh.desktop")
+	if err := os.Remove(entry); err != nil {
+		t.Fatal(err)
+	}
+	if wrote, err := m.EnsureTrayEntry("forkmesh"); !wrote || err != nil {
+		t.Fatalf("missing entry not restored: %v %v", wrote, err)
+	}
+	raw, err := os.ReadFile(entry)
+	if err != nil || desktopExecBinary(string(raw)) != desktop {
+		t.Fatalf("entry %q %v", raw, err)
+	}
+	if wrote, err := m.EnsureTrayEntry("forkmesh"); wrote || err != nil {
+		t.Fatalf("rewrote a present entry: %v %v", wrote, err)
+	}
+}

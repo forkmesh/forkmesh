@@ -46,7 +46,7 @@ const (
 	ProtocolMin = 1
 )
 
-var Features = []string{"cancel", "progress", "peer-uid", "token-always"}
+var Features = []string{"cancel", "progress", "peer-uid", "token-always", "online-ping"}
 
 const CancelMethod = "core.cancel"
 

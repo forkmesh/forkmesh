@@ -314,6 +314,27 @@ its control channel while the desktop restarts.
   through `Core.Remember/Recall/Forget` (`internal/daemon/remember.go`: one
   file name inside `state/core/`, mode 0600, written to a temp file and
   renamed).
+- **"<node> is online" ping** (`internal/relay/online.go`). The phone's
+  "ForkMesh is online" notification came only from the window's first
+  heartbeat, so a core started at boot reached the relay with nobody told
+  until someone logged in and the window opened (reported after the
+  2026-10-15 reboots). The core now sends it itself when its relay link comes
+  up: on the first connection after the core starts, and again when the link
+  comes back after at least 10 minutes down. It posts the same
+  `desktop-online` ping as `MainWindow::announceDesktopOnline` to
+  `/api/notifications/desktop` (https on the relay's host), signed with the
+  node key as `forkmesh-account-desktop-ping-v1\n<owner>\n<resource>\n<ts>`,
+  pingId `<ms>-online`. The body says "Back online after <span> offline." using
+  the previous clean stop in `stopped.json`, or "ForkMesh started on this
+  desktop and reached the relay." after a crash or on first run. It skips the
+  ping when the previous stop was a requested restart (an update) less than
+  10 minutes ago, when Settings turns off `notifications/phonePings` or
+  `notifications/phoneOnlinePing` (read from the desktop's settings file), and
+  when no non-web device of the owner in `data/local_control/paired-devices.json`
+  was seen in the last 30 days. The core advertises the IPC feature
+  `online-ping`; a window whose relay socket is held by such a core sends no
+  online ping of its own, so a restarted window no longer pings by itself.
+  The log says `relay: told your phone "<node> is online"` or why it could not.
 - **Traps.** The relay connection now comes from the `forkmesh-core`
   executable, so a path-keyed firewall needs its own rule for it. If only the
   IPC link drops, both processes may briefly hold a node socket.
@@ -969,14 +990,32 @@ and service plug-ins running, and the next window re-attaches to the same core.
     a dead tray is taken over). Every launcher may start it; extra copies exit.
   - Started by the desktop each time its engine client connects (detached, so
     it outlives the window; not under the `offscreen`/`minimal` platforms or a
-    non-default state folder); by the engine at `serve` startup when a
-    graphical session is present (Linux: `DISPLAY` or `WAYLAND_DISPLAY`; macOS
+    non-default state folder). Detaching was not enough under a systemd user
+    unit: closing a window that runs as a service (`forkmesh-source.service`
+    on the source box) runs `systemctl --user stop` on that unit, which kills
+    every process in its cgroup, the tray included, so the icon vanished with
+    the window. When `INVOCATION_ID` is set, the desktop and the engine now
+    start the tray through `systemd-run --user --scope --collect
+    --unit=forkmesh-tray-<project>`, which puts it in its own scope (if that
+    scope already exists, a tray is running and the new start fails
+    harmlessly). They also drop the service variables (`INVOCATION_ID`,
+    `JOURNAL_STREAM`, `SYSTEMD_EXEC_PID`, `MANAGERPID`, `NOTIFY_SOCKET`,
+    `LISTEN_*`, `WATCHDOG_*`) from the tray's environment and from everything
+    the tray starts. Otherwise a window opened from a tray the engine started
+    inherited the engine unit's cgroup and `INVOCATION_ID`, and closing that
+    window stopped `forkmesh-core-<project>.service`. Without `systemd-run`,
+    or outside a unit, the tray is started detached as before. Other
+    starters: the engine at `serve` startup when a graphical session is present (Linux: `DISPLAY` or `WAYLAND_DISPLAY`; macOS
     and Windows always) and the desktop binary sits next to `forkmesh-core`
     (`forkmesh`, `ForkMesh` in the macOS bundle, `forkmesh.exe`), which covers
     the LaunchAgent, the Run key and the XDG autostart entry; and, on Linux
     with the systemd unit, by `~/.config/autostart/forkmesh-tray-<project>.desktop`,
     because a unit started at boot has no display. That entry is written with
     the unit (only when the desktop binary is there) and removed on disable.
+    Start-at-boot turned on before the tray existed has no entry, so at every
+    `serve` the engine writes it when the systemd unit is enabled, the entry is
+    missing and the desktop binary is there (`Manager.EnsureTrayEntry`). Its
+    log says "tray: added the tray to the log-in items".
     The engine skips the tray when run with `--state-dir` or test overrides.
   - One icon at a time. The desktop window keeps its own `QSystemTrayIcon`,
     because notification balloons need a visible icon in the process that

@@ -56,6 +56,7 @@ QString kind();
 QString settingKey();
 QString onlineKind();
 QString onlineSettingKey();
+QString coreOnlineFeature();
 
 bool phoneLinked(const QList<Phone> &phones, const QString &account,
                  qint64 nowMs);
