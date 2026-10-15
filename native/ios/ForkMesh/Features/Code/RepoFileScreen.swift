@@ -14,9 +14,9 @@ struct RepoFileScreen: View {
     @State private var notice: FmNotice?
     @State private var showTools: Bool = false
 
-    init(repo: Repository, path: String, ref: String = "", servedBlobSha: String = "") {
+    init(repo: Repository, path: String, ref: String = "") {
         _model = State(initialValue: RepoFileModel(
-            client: RepoServices.client, repo: repo, path: path, ref: ref, servedBlobSha: servedBlobSha))
+            client: RepoServices.client, repo: repo, path: path, ref: ref))
     }
 
     var body: some View {
@@ -37,9 +37,7 @@ struct RepoFileScreen: View {
                 // blob; the editor still refuses binary or oversized bytes.
                 if model.editable {
                     NavigationLink {
-                        QuickEditScreen(
-                            repo: model.repo, path: model.path, ref: model.ref,
-                            servedBlobSha: model.servedBlobSha)
+                        QuickEditScreen(repo: model.repo, path: model.path, ref: model.ref)
                             .shellPageClearance()
                     } label: {
                         FmIcon("edit_outlined", label: "Edit this file")

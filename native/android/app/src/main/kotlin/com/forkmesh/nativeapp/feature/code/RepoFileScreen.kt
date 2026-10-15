@@ -81,7 +81,7 @@ import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
 
-internal class RepoFileScreen(val repo: Repository, val path: String, val ref: String = "", val servedBlobSha: String = "") : Screen() {
+internal class RepoFileScreen(val repo: Repository, val path: String, val ref: String = "") : Screen() {
     private val blob = AsyncValue<RepoBlob>().apply { reload { repoApi.blob(repo.owner, repo.name, path, ref = ref) } }
     private val image = AsyncValue<ImageBitmap>()
     private var document: CodeDocument? = null
@@ -106,7 +106,7 @@ internal class RepoFileScreen(val repo: Repository, val path: String, val ref: S
                     FmIconButton(
                         "edit_outlined",
                         "Edit this file",
-                        onPressed = { navigator.push(QuickEditScreen(repo, path, ref, servedBlobSha)) },
+                        onPressed = { navigator.push(QuickEditScreen(repo, path, ref)) },
                         color = c.textPrimary,
                         iconSize = 24.dp,
                     )

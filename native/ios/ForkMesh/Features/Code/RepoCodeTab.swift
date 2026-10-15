@@ -7,8 +7,6 @@ import SwiftUI
 struct RepoFileTarget: Hashable {
     let path: String
     let ref: String
-    /// Blob id from the tree listing ("" from a search hit: no claim).
-    let servedBlobSha: String
 }
 
 struct RepoCodeTab: View {
@@ -42,7 +40,7 @@ struct RepoCodeTab: View {
             await model.start()
         }
         .navigationDestination(item: $openedFile) { (target: RepoFileTarget) in
-            RepoFileScreen(repo: model.repo, path: target.path, ref: target.ref, servedBlobSha: target.servedBlobSha)
+            RepoFileScreen(repo: model.repo, path: target.path, ref: target.ref)
                 .shellPageClearance()
         }
         .sheet(isPresented: $goToFileShown) {
@@ -51,7 +49,7 @@ struct RepoCodeTab: View {
                 ref: model.selectedRef,
                 onFileSelected: { (path: String) in
                     goToFileShown = false
-                    openedFile = RepoFileTarget(path: path, ref: model.selectedRef, servedBlobSha: "")
+                    openedFile = RepoFileTarget(path: path, ref: model.selectedRef)
                 })
         }
     }
@@ -68,7 +66,7 @@ struct RepoCodeTab: View {
                 if entry.isDirectory {
                     Task { await model.openDir(entry.path) }
                 } else {
-                    openedFile = RepoFileTarget(path: entry.path, ref: model.selectedRef, servedBlobSha: entry.sha)
+                    openedFile = RepoFileTarget(path: entry.path, ref: model.selectedRef)
                 }
             }
         } else {
