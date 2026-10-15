@@ -78,6 +78,8 @@ public final class GenieSession {
     public nonisolated static let greeting = "How can I help you?"
     public nonisolated static let handOffNotice = "I don't know how to do that yet, so I'm asking an agent to do it and teach me for next time."
     public nonisolated static let maxClarifications = 2
+    public nonisolated static let declined = "Okay, I won't."
+    public nonisolated static let stoppedListening = "Okay, I've stopped listening."
 
     @ObservationIgnored public let brain: GenieBrain
     @ObservationIgnored let voice: GenieVoice
@@ -88,6 +90,10 @@ public final class GenieSession {
     @ObservationIgnored public var onReply: @MainActor (String) -> Void = { _ in }
     @ObservationIgnored public var canOverhear: @MainActor () -> Bool = { true }
     @ObservationIgnored public var greeter: @MainActor () -> GenieHint? = { nil }
+    @ObservationIgnored public var onTakeUp: @MainActor () -> Void = {}
+    @ObservationIgnored public var onSettle: @MainActor () -> Void = {}
+    @ObservationIgnored public var onStopListening: @MainActor () -> Void = {}
+    @ObservationIgnored private var heardRun = false
     @ObservationIgnored private var ambientTask: Task<Void, Never>?
     @ObservationIgnored private var utterance = 0
     @ObservationIgnored private var spottedKey = ""
@@ -142,8 +148,12 @@ public final class GenieSession {
     }
 
     public func perform(_ spot: GenieSpot, said: String? = nil) {
+        perform(spot, said: said, overheard: false)
+    }
+
+    private func perform(_ spot: GenieSpot, said: String?, overheard: Bool) {
         offer = nil
-        start { session in
+        start(overheard: overheard) { session in
             session.add(said ?? spot.title, fromUser: true)
             session.phase = .thinking
             session.clarifications = 0
@@ -198,23 +208,34 @@ public final class GenieSession {
         guard !text.isEmpty, task == nil else { return }
         let spot = brain.toolbox.spot(text)
         overheard = GenieOverheard(id: utterance, text: text, spot: spot, final: final)
-        if let spot { announce(spot, runs: spot.runsAlone) }
+        if let spot { announce(spot, runs: true) }
         guard final else { return }
         utterance += 1
-        if let spot, spot.runsAlone {
-            perform(spot, said: text)
-        } else if spot == nil, GenieSpotter.calledByName(text) {
-            let request = GenieSpotter.withoutWakeWord(text)
-            if request.split(separator: " ").count < 2 {
-                start { session in
-                    await session.speak("Yes?")
-                    if Task.isCancelled { return }
-                    await session.listen(fresh: true)
-                }
-            } else {
-                submit(request)
-            }
+        if GenieWords.stopsListening(text) {
+            stopListeningAsked()
+            return
         }
+        onTakeUp()
+        let named = GenieSpotter.calledByName(text)
+        let request = named ? GenieSpotter.withoutWakeWord(text) : text
+        if let spot {
+            perform(spot, said: text, overheard: !named)
+        } else if named, request.split(separator: " ").count < 2 {
+            start { session in
+                await session.speak("Yes?")
+                if Task.isCancelled { return }
+                await session.listen(fresh: true)
+            }
+        } else {
+            start(overheard: !named) { session in await session.act(request, fresh: true) }
+        }
+    }
+
+    private func stopListeningAsked() {
+        overheard = nil
+        setAlwaysListening(false)
+        onStopListening()
+        start { session in await session.speak(GenieSession.stoppedListening) }
     }
 
     public func talk() {
@@ -255,7 +276,7 @@ public final class GenieSession {
         await task?.value
     }
 
-    private func start(_ work: @escaping @MainActor (GenieSession) async -> Void) {
+    private func start(overheard: Bool = false, _ work: @escaping @MainActor (GenieSession) async -> Void) {
         run += 1
         let token = run
         task?.cancel()
@@ -263,12 +284,15 @@ public final class GenieSession {
         voice.stopListening()
         voice.stopSpeaking()
         problem = nil
+        heardRun = overheard
         task = Task { @MainActor [weak self] in
             guard let self else { return }
             await work(self)
             if token == self.run {
                 self.task = nil
+                self.heardRun = false
                 if self.phase != .finished { self.phase = .idle }
+                self.onSettle()
             }
         }
     }
@@ -314,6 +338,17 @@ public final class GenieSession {
     }
 
     private func act(_ text: String, fresh: Bool) async {
+        if GenieWords.stopsListening(text) {
+            add(text, fromUser: true)
+            if alwaysListening {
+                setAlwaysListening(false)
+                onStopListening()
+                await speak(GenieSession.stoppedListening)
+            } else {
+                await speak("I'm not always listening right now.")
+            }
+            return
+        }
         let offered = offer
         offer = nil
         if fresh, let spot = offered?.spot, let yes = GenieWords.isYes(text), GenieWords.words(text).count <= 4 {
@@ -366,11 +401,21 @@ public final class GenieSession {
     }
 
     private func handOff(_ reason: String) async {
+        let handoff = brain.handoff(reason: reason, settings: settings())
+        if heardRun {
+            let allowed = await askConfirmation("I don't know how to do that yet. Ask an agent to: \(handoff.request)")
+            if Task.isCancelled { return }
+            guard allowed else {
+                await speak(GenieSession.declined)
+                return
+            }
+        } else {
+            phase = .handingOff
+            await speak(GenieSession.handOffNotice)
+            if Task.isCancelled { return }
+        }
         phase = .handingOff
-        await speak(GenieSession.handOffNotice)
-        if Task.isCancelled { return }
-        phase = .handingOff
-        let message = await launch(brain.handoff(reason: reason, settings: settings()))
+        let message = await launch(handoff)
         if Task.isCancelled { return }
         await speak(message)
         if Task.isCancelled { return }
@@ -386,8 +431,11 @@ public final class GenieSession {
             guard let self else { return }
             let heard = await self.voice.listen { [weak self] words in self?.hearing = words }
             self.hearing = ""
+            if Task.isCancelled { return }
             if case .words(let words) = heard, let yes = GenieWords.isYes(words) {
                 self.resolveConfirm(yes)
+            } else if self.heardRun {
+                self.resolveConfirm(false)
             }
         }
         let allowed = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
