@@ -103,10 +103,13 @@ RESERVED_ROUTE_PREFIXES = CORE_RESERVED_ROUTE_PREFIXES | PLUGIN_WWW_SITE_ROUTES
 # marketing origin like /features. Everything else under /hackathon (the
 # personalised invite and squad pages, and the participant HQ) needs D1 and
 # is owned by the App Worker.
-WWW_HACKATHON_PAGES = frozenset({"leaderboard", "projects", "rules"})
+WWW_HACKATHON_PAGES = frozenset({"archive", "leaderboard", "projects", "rules"})
+WWW_HACKATHON_ARCHIVE_PAGES = frozenset({
+    "revenue-contest-2026", "revenue-contest-2026-rules"})
 
 WWW_SITE_ROUTES = frozenset({
     "about",
+    "affiliates",
     "blog",
     "careers",
     "changelog",
@@ -312,6 +315,9 @@ def external_site_route(pathname):
     # /hackathon/squad/<code> stay with the Worker that has the data.
     if (parts[0] == "hackathon" and len(parts) == 2
             and unquote(parts[1]) in WWW_HACKATHON_PAGES):
+        return "www"
+    if (parts[0] == "hackathon" and len(parts) == 3 and parts[1] == "archive"
+            and unquote(parts[2]) in WWW_HACKATHON_ARCHIVE_PAGES):
         return "www"
     if parts[0] in WWW_SITE_ROUTES and (
         len(parts) == 1 or parts[0] in {"blog", "docs"}

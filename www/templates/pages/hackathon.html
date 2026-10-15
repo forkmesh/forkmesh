@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% block title %}ForkMesh September Revenue Contest{% endblock %}
+{% block title %}ForkMesh Plugin Race{% endblock %}
 {% block chrome %}
 {% endblock %}
 {% block meta %}
-<meta name="description" content="Open to everyone, 15 September to 15 October 2026 (UTC). Bring new companies onto a paid ForkMesh plan through Patreon, earn 50% of their first month, and compete for $100, $50 and $25 cash prizes.">
+<meta name="description" content="Build a ForkMesh plugin that works on desktop, iOS and the web. The first 10 plugins to reach 10 ratings from verified people win 0.1 SOL each. 19 October to 18 December 2026, UTC.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="ForkMesh September Revenue Contest">
-<meta property="og:description" content="Bring new companies onto a paid ForkMesh plan through Patreon, earn 50% of their first month, and compete for cash prizes. 15 September to 15 October 2026, UTC.">
+<meta property="og:title" content="ForkMesh Plugin Race">
+<meta property="og:description" content="Build a ForkMesh plugin that works on desktop, iOS and the web. The first 10 plugins to reach 10 ratings from verified people win 0.1 SOL each. 19 October to 18 December 2026, UTC.">
 <meta property="og:url" content="https://forkmesh.com/hackathon">
+<link rel="canonical" href="https://forkmesh.com/hackathon">
 <meta name="twitter:card" content="summary_large_image">
 <!-- Page-scoped Tailwind build (assets/hackathon/tailwind.input.css). It supplies the
      column counts and responsive steps for the sections below; hackathon.css supplies
@@ -26,19 +27,19 @@
      hero card overlaid, exactly where the authored source parks its canvas overlays. -->
 <div id="canvas-container">
   <div id="plume-host"></div>
-  <div id="loader"><span>loading contest</span></div>
+  <div id="loader"><span>loading race</span></div>
   <div id="herocard">
     <div class="inner">
-      <div class="eyebrow"><span>Open to everyone</span><hr class="rule" data-line><span class="live">15 Sep – 15 Oct 2026 · UTC</span></div>
-      <h1 class="f-h0">ForkMesh September Revenue Contest</h1>
-      <p class="lede f-h4">Bring new companies onto a paid ForkMesh plan through Patreon, earn commission, and compete for cash prizes.</p>
+      <div class="eyebrow"><span>Open to every builder</span><hr class="rule" data-line><span class="live">19 Oct – 18 Dec 2026 · UTC</span></div>
+      <h1 class="f-h0">ForkMesh Plugin Race</h1>
+      <p class="lede f-h4">Build a plugin that works on desktop, iOS and the web. The first 10 to reach 10 ratings from verified people win 0.1 SOL each.</p>
       <div class="cta-row">
-        <a class="cta primary arcade" href="/#support-forkmesh">
+        <a class="cta primary arcade" href="#enter">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2 12.1 7l5.2.45-3.94 3.43 1.18 5.1L10 13.28l-4.54 2.7 1.18-5.1L2.7 7.45 7.9 7 10 2.2Z"/></svg>
-          <span>Get the Patreon link</span>
+          <span>Enter the race</span>
         </a>
-        <a class="cta ghost arcade metal" href="#commission">
-          <span>See the commission</span>
+        <a class="cta ghost arcade metal" href="#board">
+          <span>See the board</span>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.1075 14.2752 4.2763-4.29004-4.2625-4.2625h1.9112l4.2625 4.27625-4.2763 4.27629h-1.9112ZM2.5 10.8102V9.17391h13.8188v1.63629H2.5Z"/></svg>
         </a>
       </div>
@@ -139,8 +140,8 @@
 
     <div class="home-mobile-panel" id="home-mobile-panel">
       <div class="home-mobile-group">
-        <p class="home-mobile-heading">Revenue Contest</p>
-        <a href="#commission">Commission</a><a href="#prizes">Prizes</a><a href="#how">How it works</a><a href="#rules">Rules</a><a href="/hackathon/rules">Official rules</a>
+        <p class="home-mobile-heading">Plugin Race</p>
+        <a href="#prize">Prize</a><a href="#build">What to build</a><a href="#who">Who can enter</a><a href="#board">Board</a><a href="#enter">Enter</a><a href="/hackathon/rules">Official rules</a><a href="/hackathon/archive">Past hackathons</a>
       </div>
       <div class="home-mobile-group">
         <p class="home-mobile-heading">Product</p>
@@ -174,153 +175,216 @@
 <div class="vrules" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <main id="top">
 
-  <!-- ============================= commission ============================= -->
-  <section class="grid-layout tracks" id="commission">
-    <img class="ill ill-joystick" src="/assets/hackathon/ill-joystick.webp" alt="" aria-hidden="true">
-    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Commission</h2></div>
-    <hr class="rule sec-line" data-line>
-    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <p class="f-h1" data-ps>Earn 50% of each eligible customer’s first month</p>
-      <p class="f-h4" data-ps style="margin-top:22px">Customers pay through Patreon. The Patreon link is on the <a class="actionable" href="/#support-forkmesh">ForkMesh homepage</a>.</p>
-    </div>
-    <div class="sec-body grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>$5 plan</span></p>
-        <h3 class="award f-h2" data-ps>$2.50</h3>
-        <p class="sub f-p" data-ps>50% of the first month</p>
-      </article>
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>$10 plan</span></p>
-        <h3 class="award f-h2" data-ps>$5</h3>
-        <p class="sub f-p" data-ps>50% of the first month</p>
-      </article>
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>$50 plan</span></p>
-        <h3 class="award f-h2" data-ps>$25</h3>
-        <p class="sub f-p" data-ps>50% of the first month</p>
-      </article>
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>$100 plan</span></p>
-        <h3 class="award f-h2" data-ps>$50</h3>
-        <p class="sub f-p" data-ps>50% of the first month</p>
-      </article>
-    </div>
-  </section>
-
-  <!-- ============================== prizes ================================ -->
-  <section class="grid-layout prizes" id="prizes">
+  <section class="grid-layout prizes" id="prize">
     <img class="ill ill-lantern" src="/assets/hackathon/ill-lantern.webp" alt="" aria-hidden="true">
-    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Leaderboard</h2></div>
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Prize</h2></div>
     <hr class="rule sec-line" data-line>
     <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <p class="f-h1" data-ps>Ranked by revenue, not by signups</p>
-      <p class="f-h4" data-ps style="margin-top:22px">Rankings are based on total eligible first-month revenue generated, not number of signups.</p>
+      <p class="f-h1" data-ps>Ten plugins get paid. The rest still ship.</p>
+      <p class="f-h4" data-ps style="margin-top:22px">The first 10 plugins to reach 10 ratings from verified people win 0.1 SOL each. No judges, no lottery. The board below shows the race as it happens.</p>
     </div>
     <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-3">
       <article class="prize top framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>1st place</span><span class="flag" data-ps>Top prize</span></p>
-        <h3 class="award f-h2" data-ps>$100</h3>
-        <p class="sub f-p" data-ps>Minimum $200 in eligible first-month revenue. Plus every commission you earned</p>
+        <p class="who"><span data-ps>Each winner</span><span class="flag" data-ps>Paid in SOL</span></p>
+        <h3 class="award f-h2" data-ps>0.1 SOL</h3>
+        <p class="sub f-p" data-ps>Sent to the Solana address in your account settings within 14 days of the win.</p>
       </article>
       <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>2nd place</span></p>
-        <h3 class="award f-h2" data-ps>$50</h3>
-        <p class="sub f-p" data-ps>Minimum $100 in eligible first-month revenue. Plus every commission you earned</p>
+        <p class="who"><span data-ps>Prizes</span><span class="flag" data-race-left></span></p>
+        <h3 class="award f-h2" data-ps>10 plugins</h3>
+        <p class="sub f-p" data-ps>One prize per plugin. You can enter up to three.</p>
       </article>
       <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>3rd place</span></p>
-        <h3 class="award f-h2" data-ps>$25</h3>
-        <p class="sub f-p" data-ps>Minimum $50 in eligible first-month revenue. Plus every commission you earned</p>
+        <p class="who"><span data-ps>Finish line</span></p>
+        <h3 class="award f-h2" data-ps>10 ratings</h3>
+        <p class="sub f-p" data-ps>From 10 different people who passed the checks, each 3 stars or more.</p>
       </article>
     </div>
-    <p class="sec-note f-p" data-ps>To win any prize you also need at least 3 different eligible customers. If you rank for a place but are below its minimum, you take the highest lower place whose minimum you meet, and a place nobody qualifies for is not awarded. Prizes are paid in addition to commissions. Commissions and contest revenue are final once a subscription has stayed paid and in good standing for 30 days. The full terms are in the <a class="actionable" href="/hackathon/rules">official rules</a>.</p>
   </section>
 
-  <!-- ============================ how it works ============================ -->
-  <section class="grid-layout steps" id="how">
-    <img class="ill ill-cat" src="/assets/hackathon/ill-cat.webp" alt="" aria-hidden="true">
-    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>How it works</h2></div>
+  <section class="grid-layout tracks" id="build">
+    <img class="ill ill-joystick" src="/assets/hackathon/ill-joystick.webp" alt="" aria-hidden="true">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>What to build</h2></div>
     <hr class="rule sec-line" data-line>
     <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <p class="f-h1" data-ps>Four steps, in this order</p>
+      <p class="f-h1" data-ps>One plugin, three places it has to work</p>
+      <p class="f-h4" data-ps style="margin-top:22px">Make something people who use ForkMesh will keep using. It has to run in the desktop app, the iOS app and the web dashboard, and you publish it in the community marketplace.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <article class="track framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="idx" data-ps>01 · Desktop</span>
+        <h3 class="f-h3" data-ps>The desktop app</h3>
+        <p data-ps>Where people run their node, their agents and their repositories. A plugin here sits in the sidebar next to everything else.</p>
+        <div class="tags"><span>Linux</span><span>macOS</span><span>Windows</span></div>
+      </article>
+      <article class="track framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="idx" data-ps>02 · iOS</span>
+        <h3 class="f-h3" data-ps>The iPhone app</h3>
+        <p data-ps>The same plugin on a phone. Think about what someone needs when they are away from their desk, and keep it quick.</p>
+        <div class="tags"><span>iPhone</span><span>iPad</span></div>
+      </article>
+      <article class="track framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="idx" data-ps>03 · Web</span>
+        <h3 class="f-h3" data-ps>The web dashboard</h3>
+        <p data-ps>app.forkmesh.com, in any browser. Plenty of people only ever see ForkMesh here, so it has to work just as well.</p>
+        <div class="tags"><span>app.forkmesh.com</span></div>
+      </article>
+    </div>
+    <p class="sec-note f-p" data-ps>Useful means it does a real job: it saves someone time, shows them something they could not see, or connects ForkMesh to a tool they already use. We review every entry before it goes on the board. Themes with no function, copies of an existing package, and placeholders are not accepted. The <a class="actionable" href="/market">marketplace</a> shows what already exists, and the <a class="actionable" href="/docs">docs</a> cover how packages are built.</p>
+  </section>
+
+  <section class="grid-layout steps" id="who">
+    <img class="ill ill-cat" src="/assets/hackathon/ill-cat.webp" alt="" aria-hidden="true">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Who can enter</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Four checks, for builders and raters alike</p>
+      <p class="f-h4" data-ps style="margin-top:22px">A rating only counts when the person leaving it has passed all four checks, the same as the people building. That keeps the race between real people.</p>
     </div>
     <ol class="sec-body grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <span class="num" data-ps>1</span>
-        <h3 class="f-h3" data-ps>Pick your companies</h3>
-        <p data-ps>Choose up to 10 companies at a time that are not already ForkMesh customers.</p>
+        <h3 class="f-h3" data-ps>A ForkMesh account</h3>
+        <p data-ps>With a verified email address and in good standing. <a class="actionable" href="/signup?next=%2Fhackathon">Make one here</a> if you do not have one yet.</p>
       </li>
       <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <span class="num" data-ps>2</span>
-        <h3 class="f-h3" data-ps>Post your list</h3>
-        <p data-ps>Claim them publicly before any outreach. The first valid public claim gets the company.</p>
+        <h3 class="f-h3" data-ps>Our member check</h3>
+        <p data-ps>Your account is at least 7 days old, and the <a class="actionable" href="/desktop">desktop app</a> on your computer has proved its key on two days, a day apart. It is the same check we use before a referral counts.</p>
       </li>
       <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <span class="num" data-ps>3</span>
-        <h3 class="f-h3" data-ps>Start selling</h3>
-        <p data-ps>Bring them onto a paid plan through the Patreon link on the homepage. A referral counts once the payment succeeds.</p>
+        <h3 class="f-h3" data-ps>Post about it three times</h3>
+        <p data-ps>One public post each on X, Reddit and Mastodon, with <strong>#ForkMeshPluginRace</strong> in it. Say what you plan to build, or what you want someone else to build.</p>
       </li>
       <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <span class="num" data-ps>4</span>
-        <h3 class="f-h3" data-ps>Climb the board</h3>
-        <p data-ps>Earn 50% of each first month, and rank on the total first-month revenue you bring in.</p>
+        <h3 class="f-h3" data-ps>A Discord account</h3>
+        <p data-ps>Join the <a class="actionable" href="https://discord.gg/forkmesh">ForkMesh Discord</a> and give us your username. Builders help each other there, and it is where we announce winners.</p>
       </li>
     </ol>
   </section>
 
-  <!-- ================================ rules =============================== -->
-  <section class="grid-layout prizes" id="rules">
-    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Rules</h2></div>
+  <section class="grid-layout steps" id="how">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>How it works</h2></div>
     <hr class="rule sec-line" data-line>
     <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <p class="f-h1" data-ps>Open to everyone, fair to everyone</p>
-      <p class="f-h4" data-ps style="margin-top:22px">The contest runs from 15 September 2026, 00:00 UTC, to 15 October 2026, 23:59 UTC.</p>
+      <p class="f-h1" data-ps>From idea to 0.1 SOL</p>
     </div>
-    <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-3">
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>Claims</span></p>
-        <ul>
-          <li data-ps>You may claim a maximum of 10 companies at a time.</li>
-          <li data-ps>Claims must be posted publicly before outreach to prevent overlap. First valid public claim gets the company.</li>
-          <li data-ps>Claims expire after 7 days without meaningful outreach or activity.</li>
-        </ul>
+    <ol class="sec-body grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>1</span>
+        <h3 class="f-h3" data-ps>Qualify</h3>
+        <p data-ps>Sign in, add your three post links and your Discord username below, and watch the four checks turn green.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>2</span>
+        <h3 class="f-h3" data-ps>Build and publish</h3>
+        <p data-ps>Make the plugin, test it on desktop, iOS and web, and publish a release to the community marketplace after 19 October.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>3</span>
+        <h3 class="f-h3" data-ps>Enter it</h3>
+        <p data-ps>Tell us what it does and how to try it in each place. Once we accept it, it shows up on the board.</p>
+      </li>
+      <li class="step framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <span class="num" data-ps>4</span>
+        <h3 class="f-h3" data-ps>Get rated</h3>
+        <p data-ps>People try it and rate it in the marketplace. At 10 counted ratings you cross the line. The first ten across win.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="grid-layout boards" id="board">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Board</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Who is closest to the line</p>
+      <p class="f-h4" data-ps style="margin-top:22px" data-race-summary>Accepted plugins and their counted ratings, updated every time you load the page.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3">
+      <div class="board framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="bhead"><h3 class="f-h3">Plugins</h3><span class="by">Counted ratings · 10 to win</span></div>
+        <ol class="race-board" data-race-board hidden></ol>
+        <div class="empty" data-race-empty><div class="lines with-diagonal-lines"></div><p>No plugins on the board yet. Be the first.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid-layout prizes" id="enter">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Enter</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-intro framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <p class="f-h1" data-ps>Qualify first, then enter your plugin</p>
+      <p class="f-h4" data-ps style="margin-top:22px">Raters only need step one. You can qualify now; plugin entries open on 19 October.</p>
+    </div>
+    <div class="sec-body grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <article class="prize framed race-panel"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span>Step 1</span><span class="flag" data-race-status></span></p>
+        <h3 class="f-h3">Qualify</h3>
+        <div class="race-signed-out" data-race-signed-out>
+          <p class="race-copy">You need a ForkMesh account to take part. Sign in and come back to this page.</p>
+          <div class="cta-row">
+            <a class="cta primary arcade" href="/login?next=%2Fhackathon"><span>Sign in</span></a>
+            <a class="cta ghost arcade metal" href="/signup?next=%2Fhackathon"><span>Create an account</span></a>
+          </div>
+        </div>
+        <form class="race-form" data-race-entrant hidden novalidate>
+          <ul class="race-checks" data-race-checks></ul>
+          <label>Link to your X post<input name="x" type="url" inputmode="url" autocomplete="off" placeholder="https://x.com/you/status/…"></label>
+          <label>Link to your Reddit post<input name="reddit" type="url" inputmode="url" autocomplete="off" placeholder="https://www.reddit.com/r/…/comments/…"></label>
+          <label>Link to your Mastodon post<input name="mastodon" type="url" inputmode="url" autocomplete="off" placeholder="https://mastodon.social/@you/…"></label>
+          <label>Your Discord username<input name="discord" type="text" autocomplete="off" spellcheck="false" placeholder="yourname"></label>
+          <label class="race-tick" data-race-accept><input name="acceptRules" type="checkbox"> I have read the <a class="actionable" href="/hackathon/rules">official rules</a>.</label>
+          <div class="cta-row"><button class="cta primary arcade" type="submit"><span>Save and check</span></button></div>
+          <p class="race-msg" data-race-msg role="status" aria-live="polite"></p>
+        </form>
       </article>
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>What counts</span></p>
-        <ul>
-          <li data-ps>Referrals must be new ForkMesh paid customers and cannot already be in an active ForkMesh sales conversation.</li>
-          <li data-ps>One customer counts as one referral. Related accounts or entities may be treated as one customer when appropriate.</li>
-          <li data-ps>A referral counts after successful payment through Patreon. Refunds, chargebacks, fraudulent payments or reversals do not count.</li>
-          <li data-ps>The customer must pay with their own payment method. A payment made or funded by the entrant, or by anyone acting for the entrant, does not count.</li>
-          <li data-ps>Subscriptions must remain paid and in good standing for 30 days before commissions and contest revenue are final.</li>
-        </ul>
-      </article>
-      <article class="prize framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-        <p class="who"><span data-ps>Fair play</span></p>
-        <ul>
-          <li data-ps>No self-referrals, fake accounts, duplicate customers, artificial upgrades, or coordinated purchases intended to manipulate the contest.</li>
-          <li data-ps>ForkMesh may verify referrals and resolve disputes, duplicate claims, or suspected abuse.</li>
-          <li data-ps>The contest ends 15 October 2026, 23:59 UTC.</li>
-          <li data-ps>ForkMesh may modify or clarify rules as needed. Changes will be communicated publicly.</li>
-        </ul>
+      <article class="prize framed race-panel"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <p class="who"><span>Step 2</span><span class="flag">Builders</span></p>
+        <h3 class="f-h3">Enter your plugin</h3>
+        <p class="race-copy" data-race-plugin-locked>Pass all four checks first. Then you can enter up to three plugins here.</p>
+        <form class="race-form" data-race-plugin hidden novalidate>
+          <label>Package name in the community marketplace<input name="package" type="text" autocomplete="off" spellcheck="false" placeholder="my-plugin"></label>
+          <label>What it does, in a sentence or two<textarea name="summary" rows="3" maxlength="300"></textarea></label>
+          <label>How to try it in the desktop app<input name="desktop" type="text" maxlength="300"></label>
+          <label>How to try it on iOS<input name="ios" type="text" maxlength="300"></label>
+          <label>How to try it on the web<input name="web" type="text" maxlength="300"></label>
+          <div class="cta-row"><button class="cta primary arcade" type="submit"><span>Enter this plugin</span></button></div>
+          <p class="race-msg" data-race-plugin-msg role="status" aria-live="polite"></p>
+        </form>
+        <ul class="race-mine" data-race-mine hidden></ul>
       </article>
     </div>
-    <p class="sec-note f-p" data-ps>The <a class="actionable" href="/hackathon/rules">official rules</a> carry the same terms and apply if anything on this page disagrees.</p>
+    <p class="sec-note f-p" data-ps>Prizes go to the Solana address in your <a class="actionable" href="https://app.forkmesh.com/dashboard/settings">account settings</a>. Add it before you win and we can pay you straight away.</p>
+  </section>
+
+  <section class="grid-layout faq" id="faq">
+    <div class="framed label sec-head"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><h2 class="f-h3" data-ps>Questions</h2></div>
+    <hr class="rule sec-line" data-line>
+    <div class="sec-body list">
+      <details><summary class="f-h4">Why do raters have to qualify too?<i class="mk"></i></summary><p class="ans">Because ten ratings from throwaway accounts would win the race for whoever made the most accounts. Asking everyone to pass the same checks means ten ratings are ten real people.</p></details>
+      <details><summary class="f-h4">What is the member check, exactly?<i class="mk"></i></summary><p class="ans">Your account has to be at least a week old, and the ForkMesh desktop app on your computer has to have proved its signing key to us on two occasions at least a day apart, and been online in the last two days. Install the <a class="actionable" href="/desktop">desktop app</a>, sign in, and leave it running for a day.</p></details>
+      <details><summary class="f-h4">You could not check one of my posts. Now what?<i class="mk"></i></summary><p class="ans">Some networks do not let us read a post from our servers. When that happens the post shows as waiting and someone on the team checks it by hand, usually within a day. You do not need to do anything.</p></details>
+      <details><summary class="f-h4">Do low ratings count?<i class="mk"></i></summary><p class="ans">Ratings of 3 stars and up count toward the 10. Lower ratings still appear in the marketplace and still help you improve the plugin, they just do not move you up the board.</p></details>
+      <details><summary class="f-h4">Can my friends rate my plugin?<i class="mk"></i></summary><p class="ans">Yes, if they pass the four checks and have actually used it. Trading ratings, paying for them, or asking for five stars in return for anything gets everyone involved disqualified.</p></details>
+      <details><summary class="f-h4">Do I need a crypto wallet?<i class="mk"></i></summary><p class="ans">Only if you want the prize. Any Solana address you control works. Save it in your account settings. We never ask for keys or seed phrases, and nobody from ForkMesh will ever ask you for one.</p></details>
+      <details><summary class="f-h4">Where did the revenue contest go?<i class="mk"></i></summary><p class="ans">It ended on 15 October. Its page and rules are in the <a class="actionable" href="/hackathon/archive">hackathon archive</a>, and the commission carries on in the <a class="actionable" href="/affiliates">affiliate program</a>.</p></details>
+    </div>
   </section>
 
   <hr class="rule grid-layout" data-line style="display:block;height:1px">
 
-  <!-- ============================== closing =============================== -->
   <div class="grid-layout contact" id="join">
     <img class="ill ill-crt" src="/assets/hackathon/ill-crt.webp" alt="" aria-hidden="true">
     <div class="box framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       <div class="lines with-diagonal-lines"></div>
       <h2 class="f-h3" data-ps>Start</h2>
-      <p class="lead f-h1" data-ps>Pick your 10 companies, post your list, start selling, and climb the leaderboard.</p>
+      <p class="lead f-h1" data-ps>Build something people need. Get ten honest ratings.</p>
       <div class="cta-row">
-        <a class="cta primary arcade" href="/#support-forkmesh">
+        <a class="cta primary arcade" href="#enter">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2 12.1 7l5.2.45-3.94 3.43 1.18 5.1L10 13.28l-4.54 2.7 1.18-5.1L2.7 7.45 7.9 7 10 2.2Z"/></svg>
-          <span>Get the Patreon link</span>
+          <span>Enter the race</span>
         </a>
         <a class="cta ghost arcade metal" href="/hackathon/rules">
           <span>Read the rules</span>
@@ -336,14 +400,14 @@
 
   <div class="grid-layout fcard-wrap">
     <div class="fcard framed"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <p class="tag">15 Sep – 15 Oct 2026 · UTC</p>
-      <h3 class="f-h2" data-ps>One month to climb the board.</h3>
-      <p class="sub f-h4" data-ps>Opens 15 September, 00:00 UTC. Closes 15 October, 23:59 UTC.</p>
+      <p class="tag">19 Oct – 18 Dec 2026 · UTC</p>
+      <h3 class="f-h2" data-ps>Ten slots. Ten ratings each.</h3>
+      <p class="sub f-h4" data-ps>Opens 19 October, 00:00 UTC. Closes 18 December, 23:59 UTC, or when all ten prizes are won.</p>
       <div class="cta-row">
-        <a class="cta primary arcade" href="/#support-forkmesh"><span>Get the Patreon link</span></a>
-        <a class="cta ghost arcade metal" href="#rules"><span>Rules</span></a>
+        <a class="cta primary arcade" href="#enter"><span>Enter the race</span></a>
+        <a class="cta ghost arcade metal" href="/hackathon/rules"><span>Rules</span></a>
       </div>
-      <p class="fine">Commissions and contest revenue are final after 30 paid days.</p>
+      <p class="fine">Tag your posts #ForkMeshPluginRace.</p>
     </div>
   </div>
 
@@ -352,9 +416,9 @@
   </div>
 
   <div class="grid-layout bottom">
-    <div class="links f-h3"><a class="blink" href="#top">Contest</a><a class="blink" href="#commission">Commission</a><a class="blink" href="#prizes">Prizes</a><a class="blink" href="#how">How it works</a><a class="blink" href="#rules">Rules</a><a class="blink" href="/hackathon/rules">Official rules</a></div>
+    <div class="links f-h3"><a class="blink" href="#top">Race</a><a class="blink" href="#prize">Prize</a><a class="blink" href="#build">What to build</a><a class="blink" href="#who">Who can enter</a><a class="blink" href="#board">Board</a><a class="blink" href="#enter">Enter</a><a class="blink" href="/hackathon/rules">Official rules</a><a class="blink" href="/hackathon/archive">Archive</a></div>
     <div class="social"><a href="https://x.com/forkmesh" rel="noopener" aria-label="ForkMesh on X" title="X"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.2 2.6h4.1l3.8 5.1 4.3-5.1h2.4l-5.6 6.6 6 8.2h-4.1l-4-5.4-4.6 5.4H3.1l6-7.1-5.9-7.7Zm2.3 1.5 8.5 11.4h1.6L7.1 4.1H5.5Z"/></svg></a><a href="https://reddit.com/r/forkmesh" rel="noopener" aria-label="ForkMesh on Reddit" title="Reddit"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2a7.8 7.8 0 1 0 0 15.6 7.8 7.8 0 0 0 0-15.6Zm4.3 6.1a1.1 1.1 0 0 1 .76 1.9 2.3 2.3 0 0 1 .04.42c0 2.02-2.28 3.66-5.1 3.66s-5.1-1.64-5.1-3.66c0-.14.01-.28.04-.42a1.1 1.1 0 1 1 1.25-1.78A6.2 6.2 0 0 1 9.6 7.3l.62-2.9 2.02.43a.95.95 0 1 1 .1.86l-1.4-.3-.54 2.5c1.3.05 2.48.4 3.4.95a1.1 1.1 0 0 1 .5-.54ZM7.6 10.6a.95.95 0 1 1 1.9 0 .95.95 0 0 1-1.9 0Zm4.85.95a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Zm-.36 1.5c.18.18.18.46 0 .64-.63.63-1.83.68-2.09.68-.26 0-1.46-.05-2.09-.68a.45.45 0 1 1 .64-.64c.4.4 1.24.54 1.45.54.21 0 1.06-.14 1.45-.54.18-.18.46-.18.64 0Z"/></svg></a><a href="/market" aria-label="ForkMesh Marketplace" title="Marketplace"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.2 3.2h13.6v2.1l-1.1 2.4a2.2 2.2 0 0 1-2 1.3 2.2 2.2 0 0 1-1.8-.95A2.2 2.2 0 0 1 10 9.05a2.2 2.2 0 0 1-1.9-.95 2.2 2.2 0 0 1-1.8.95 2.2 2.2 0 0 1-2-1.3L3.2 5.3V3.2Zm1.1 7.1h1.6v5.2h8.2v-5.2h1.6v6.7H4.3v-6.7Zm3.2 1.3h4.9v3.9H7.5v-3.9Z"/></svg></a></div>
-    <p class="copy f-p">© ForkMesh 2026 · Commission, prizes, dates and eligibility are governed by the <a class="actionable" href="/hackathon/rules">official rules</a>.</p>
+    <p class="copy f-p">© ForkMesh 2026 · Prizes, dates and eligibility are governed by the <a class="actionable" href="/hackathon/rules">official rules</a>.</p>
   </div>
 </footer>
 </div>
@@ -364,59 +428,52 @@
 <div id="machine" aria-label="Machine-readable index">
   <div id="crt-host"></div>
   <button id="machine-close" class="f-nav">[esc] close</button>
-  <pre class="sr-only">FORKMESH SEPTEMBER REVENUE CONTEST :: MACHINE-READABLE INDEX
+  <pre class="sr-only">FORKMESH PLUGIN RACE :: MACHINE-READABLE INDEX
 
-# PLAIN-TEXT MIRROR OF THE FORKMESH REVENUE CONTEST PAGE FOR AI AGENTS,
+# PLAIN-TEXT MIRROR OF THE FORKMESH PLUGIN RACE PAGE FOR AI AGENTS,
 # CRAWLERS, AND HUMANS WHO PREFER IT RAW.
 
 ── ABOUT ─────────────────────────────────────────────────────────
-NAME .......... FORKMESH SEPTEMBER REVENUE CONTEST
-OPEN_TO ....... EVERYONE
-STARTS ........ 2026-09-15 00:00 UTC
-ENDS .......... 2026-10-15 23:59 UTC
-FORMAT ........ BRING NEW COMPANIES ONTO A PAID FORKMESH PLAN THROUGH
-                PATREON, EARN COMMISSION, COMPETE FOR CASH PRIZES
-PATREON ....... LINKED FROM THE FORKMESH HOMEPAGE (/#SUPPORT-FORKMESH)
+NAME .......... FORKMESH PLUGIN RACE
+OPEN_TO ....... EVERY BUILDER WHO PASSES THE FOUR CHECKS
+STARTS ........ 2026-10-19 00:00 UTC
+ENDS .......... 2026-12-18 23:59 UTC, OR WHEN ALL 10 PRIZES ARE WON
+HASHTAG ....... #FORKMESHPLUGINRACE
 RULES ......... /HACKATHON/RULES
 
-── COMMISSION ────────────────────────────────────────────────────
-50% OF EACH ELIGIBLE CUSTOMER'S FIRST MONTH.
-- $5 PLAN ..... $2.50
-- $10 PLAN .... $5
-- $50 PLAN .... $25
-- $100 PLAN ... $50
+── PRIZE ─────────────────────────────────────────────────────────
+0.1 SOL EACH FOR THE FIRST 10 PLUGINS TO REACH 10 COUNTED RATINGS.
+ONE PRIZE PER PLUGIN. UP TO 3 PLUGINS PER BUILDER.
+PAID TO THE SOLANA ADDRESS IN ACCOUNT SETTINGS WITHIN 14 DAYS.
 
-── LEADERBOARD ───────────────────────────────────────────────────
-RANKED BY TOTAL ELIGIBLE FIRST-MONTH REVENUE GENERATED, NOT SIGNUPS.
-- 1ST ......... $100
-- 2ND ......... $50
-- 3RD ......... $25
-PRIZES ARE PAID IN ADDITION TO COMMISSIONS.
+── THE PLUGIN ────────────────────────────────────────────────────
+- USEFUL: DOES A REAL JOB FOR SOMEONE USING FORKMESH.
+- WORKS ON DESKTOP, IOS AND WEB.
+- PUBLISHED BY THE ENTRANT IN THE COMMUNITY MARKETPLACE DURING THE RACE.
+- REVIEWED AND ACCEPTED BY FORKMESH BEFORE IT JOINS THE BOARD.
 
-── HOW_IT_WORKS ──────────────────────────────────────────────────
-1. PICK UP TO 10 COMPANIES.
-2. POST YOUR LIST PUBLICLY BEFORE OUTREACH. FIRST VALID PUBLIC CLAIM WINS.
-3. SELL THROUGH THE PATREON LINK. COUNTS AFTER SUCCESSFUL PAYMENT.
-4. CLIMB THE LEADERBOARD.
+── FOUR CHECKS (BUILDERS AND RATERS) ─────────────────────────────
+1. FORKMESH ACCOUNT, VERIFIED EMAIL, GOOD STANDING.
+2. MEMBER CHECK: ACCOUNT 7+ DAYS OLD, DESKTOP APP KEY PROVED ON TWO
+   DAYS A DAY APART, ONLINE IN THE LAST 48 HOURS.
+3. PUBLIC POSTS ON X, REDDIT AND MASTODON WITH #FORKMESHPLUGINRACE.
+4. DISCORD ACCOUNT, IN THE FORKMESH DISCORD.
 
-── RULES ─────────────────────────────────────────────────────────
-* MAXIMUM 10 CLAIMED COMPANIES AT A TIME.
-* CLAIMS MUST BE POSTED PUBLICLY BEFORE OUTREACH. FIRST VALID PUBLIC CLAIM
-  GETS THE COMPANY.
-* CLAIMS EXPIRE AFTER 7 DAYS WITHOUT MEANINGFUL OUTREACH OR ACTIVITY.
-* REFERRALS MUST BE NEW FORKMESH PAID CUSTOMERS, NOT ALREADY IN AN ACTIVE
-  FORKMESH SALES CONVERSATION.
-* NO SELF-REFERRALS, FAKE ACCOUNTS, DUPLICATE CUSTOMERS, ARTIFICIAL
-  UPGRADES, OR COORDINATED PURCHASES.
-* ONE CUSTOMER COUNTS AS ONE REFERRAL. RELATED ACCOUNTS MAY COUNT AS ONE.
-* REFUNDS, CHARGEBACKS, FRAUDULENT PAYMENTS OR REVERSALS DO NOT COUNT.
-* FINAL AFTER 30 DAYS PAID AND IN GOOD STANDING.
-* FORKMESH MAY VERIFY REFERRALS AND RESOLVE DISPUTES.
-* FORKMESH MAY MODIFY OR CLARIFY RULES; CHANGES ARE COMMUNICATED PUBLICLY.
+── A RATING COUNTS WHEN ──────────────────────────────────────────
+* IT IS 3 STARS OR MORE, LEFT IN THE MARKETPLACE DURING THE RACE.
+* THE RATER PASSED ALL FOUR CHECKS AND IS NOT THE BUILDER.
+* EACH PERSON COUNTS ONCE PER PLUGIN.
+* IT COUNTS FROM THE LATER OF THE RATING AND THE RATER QUALIFYING.
+
+── API ───────────────────────────────────────────────────────────
+GET  /API/PLUGIN-RACE ............ RULES, BOARD, YOUR CHECKS
+POST /API/PLUGIN-RACE/ENTRANT .... POST LINKS, DISCORD USERNAME
+POST /API/PLUGIN-RACE/PLUGINS .... ENTER A PLUGIN
 
 ── LINKS ─────────────────────────────────────────────────────────
-PATREON ....... /#SUPPORT-FORKMESH
-RULES ......... /HACKATHON/RULES</pre>
+RULES ......... /HACKATHON/RULES
+ARCHIVE ....... /HACKATHON/ARCHIVE
+DISCORD ....... HTTPS://DISCORD.GG/FORKMESH</pre>
 </div>
 
 <canvas id="vhs-overlay" aria-hidden="true"></canvas>
@@ -429,6 +486,7 @@ RULES ......... /HACKATHON/RULES</pre>
 <script src="/assets/hackathon/vendor/threeui-particle-scroll.js"></script>
 <script src="/assets/hackathon/vendor/threeui-terrain-plume.js"></script>
 <script src="/assets/hackathon/hackathon.js"></script>
+<script src="/assets/hackathon/race.js?v=${version}" defer></script>
 <script src="/home-nav.js?v=${version}" defer></script>
 <script src="/home-theme.js?v=${version}" defer></script>
 <script src="/home-header-auth.js?v=${version}" defer></script>

@@ -123,7 +123,10 @@ settings).
 campaign tag (`slug`, used as `utm_campaign`), owner, landing page, channels,
 audience, message, offer, hashtags, keywords, budget, targets, a checklist of
 up to 40 steps, brief and notes. Content, ads and posted links join a campaign
-by name, tag or landing page. Routes: `GET/POST /campaigns`,
+by name, tag or landing page. A posted link also joins when its title or note
+carries one of the campaign's branded hashtags: one that starts with
+`#ForkMesh` and is longer than it, such as `#ForkMeshPluginRace`. Bare
+`#ForkMesh` and generic tags never attribute a post. Routes: `GET/POST /campaigns`,
 `GET/PATCH/DELETE /campaigns/<id>`. Each campaign returns `stats` (content by
 status, next post, ads and spend per currency, uncovered channels, checklist
 progress, posts and their engagement). `campaignTemplates` offers prefilled

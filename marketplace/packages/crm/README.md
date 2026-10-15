@@ -312,6 +312,16 @@ changes, settings and a Zoho connection.
   mailbox refreshes share one ping per member, action and item for 10
   minutes. The first rings the phone; later ones update it silently.
 
+## Leads from the platform
+
+`record_lead(runtime, org, lead)` is the hook `plugin_data.deliver_lead` calls
+(today only the affiliate program, `docs/app/affiliates.md`). It adds one
+contact to the organization's CRM with the flow, stage, source, tags, custom
+fields and note it is given, and returns `created`. It never touches a
+contact that already has the email; it returns `exists` and that contact's
+id. It returns `not_installed`, `invalid_email` or `crm_full` instead of
+raising, so the caller can keep the lead.
+
 ## Surfaces
 
 - **Web**: lists and pipelines, the contacts table, board, detail card,

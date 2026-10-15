@@ -2560,6 +2560,10 @@ class Default:
         # public unsigned plan the owner's desktop already signs locally.
         if MICROJOBS_RE.match(url.path):
             return await microjobs_handler(self.env, request, url.path)
+        if AFFILIATES_RE.match(url.path):
+            return await affiliates_handler(self.env, request, url.path)
+        if PLUGIN_RACE_RE.match(url.path):
+            return await plugin_race_handler(self.env, request, url.path)
 
         # The hackathon growth layer: campaign, join, the participant's own
         # standing, share presses, public boards, squad pages and unfurl

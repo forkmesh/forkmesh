@@ -99,7 +99,7 @@ DEFAULT_RETENTION_DAYS = 400
 
 DEFAULT_ALLOWED_SOURCES = ("reddit", "mastodon", "x", "hn", "direct", "search", "docs", "blog", "discord", "email")
 DEFAULT_ALLOWED_MEDIUMS = ("social", "referral", "organic", "comparison", "email")
-DEFAULT_ALLOWED_CAMPAIGNS = ("forever_launch", "search_to_clone_478", "category_comparison_509", "reddit_scout", "changelog", "start_instance", "revenue_contest", "product_update", "promotion", "repo_mirrored")
+DEFAULT_ALLOWED_CAMPAIGNS = ("forever_launch", "search_to_clone_478", "category_comparison_509", "reddit_scout", "changelog", "start_instance", "revenue_contest", "product_update", "promotion", "repo_mirrored", "plugin_race")
 DEFAULT_BOT_UA_PATTERNS = (
     "bot", "crawler", "spider", "crawl", "slurp", "curl/", "wget/",
     "python-requests", "python-urllib", "go-http-client", "java/",

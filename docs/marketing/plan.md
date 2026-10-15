@@ -97,9 +97,22 @@ With fewer than 50 subscribers, rates are reported as counts.
 
 Launches, blog posts and events for the next eight weeks.
 
+| Date | What |
+| --- | --- |
+| 16 October 2026 | Plugin Race and affiliate launch posts, tagged `#ForkMeshPluginRace` and `utm_campaign=plugin_race` ([brief](campaigns/plugin-race-and-affiliates-2026-10-16.md)) |
+| 19 October 2026 | The Plugin Race opens |
+| 18 December 2026 | The Plugin Race closes, unless all ten prizes are won first |
+
 ## Log
 
 One dated entry per run.
+
+- **2026-10-15.** The September Revenue Contest closed and moved to
+  /hackathon/archive. /hackathon is now the Plugin Race, and the commission
+  carries on as the affiliate program at /affiliates. Both launch together
+  under one tracking hashtag, `#ForkMeshPluginRace`
+  ([brief](campaigns/plugin-race-and-affiliates-2026-10-16.md)). Nothing is
+  posted until the brief's gates pass.
 
 - **2026-10-15.** Herald's ready X post is the core-retirement story from
   the 2026-10-14 blog. "Is your repo mirrored?"

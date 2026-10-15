@@ -314,6 +314,11 @@ ACCOUNT_AVATAR_RE = re.compile(r"^/api/accounts/([^/]+)/avatar$")
 # /api/microjobs/claims submits one verified claim. Both live behind one
 # pattern so the isolated microjobs module owns its whole subtree.
 MICROJOBS_RE = re.compile(r"^/api/microjobs(?:/claims)?/?$")
+AFFILIATES_RE = re.compile(
+    r"^/api/(?:admin/)?affiliates"
+    r"(?:/(?:join|leads|leads/[a-f0-9-]{8,64}/activity))?/?$")
+PLUGIN_RACE_RE = re.compile(
+    r"^/api/(?:admin/)?plugin-race(?:/(?:entrant|plugins))?/?$")
 # Hackathon API subtree: the campaign, join, the participant's own view,
 # share presses, the public boards, squad pages and the unfurl cards all
 # live behind one pattern so the isolated runtime module owns the whole
