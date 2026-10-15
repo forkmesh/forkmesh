@@ -99,6 +99,9 @@ kept under `market/windows/<id>/geometry`.
 `outbound_text` / `outbound_json` (limited to `outboundOrigins`; returns the
 `Link` header as `link`), `request_origin`, `ai_json` (bounded Workers AI) and
 mail sending. Desktop callers sign with a per-package `REQUEST_PROOF` string.
+`notify(recipient, "plugin_activity", title, body, href, dedupe, meta, push)`
+files a ping; `push=False` updates the inbox row without a phone banner, which
+the CRM and Marketing activity pings use to fold a burst into one ring.
 
 **Data lifecycle.** `dataLifecycle.scope` is `organization` (installs go
 through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,

@@ -1427,6 +1427,10 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         actor, "crm.zoho.import", "organization", org_name,
         details={"created": created, "updated": updated},
     )
+    if created:
+        await _activity_notify(
+            runtime, org_bi, org_name, actor, "New email in the CRM mailbox", "team", True,
+            "%d new message%s" % (created, "" if created == 1 else "s"))
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
         "mail": await _mail_messages(runtime, org_bi),
@@ -4610,6 +4614,10 @@ async def _sync_toots(runtime, org_bi, org_name, account_bi, actor, data):
     if logged:
         await runtime.audit(actor, "crm.toots.sync", "organization", org_name,
                             details={"logged": logged, "checked": len(statuses)})
+        await _activity_notify(
+            runtime, org_bi, org_name, actor,
+            "%d Mastodon post%s logged in the CRM" % (logged, "" if logged == 1 else "s"),
+            "team", False)
     return _response(runtime, {
         "ok": True, "skipped": False, "checked": len(statuses), "logged": logged,
         "contacts": contacts, "mastodon": _mastodon_project(config)})
@@ -5417,6 +5425,134 @@ async def mailtrap_webhook_event(runtime, event, status, now):
     )
 
 
+ACTIVITY_HREF = "/dashboard/crm"
+ACTIVITY_BURST_MS = 10 * 60 * 1000
+ACTIVITY_RECIPIENTS = 10
+ACTIVITY_SEEN_MAX = 512
+ACTIVITY_NAMED_ITEMS = frozenset({
+    "import", "lookup", "bulk", "merge", "delete-column", "evidence", "send", "link",
+    "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange"})
+ACTIVITY_PINGS = {
+    ("contacts", "", "POST"): ("New CRM contact", "team", False),
+    ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
+    ("contacts", "bulk", "POST"): ("CRM contacts updated", "team", True),
+    ("contacts", "merge", "POST"): ("CRM contacts merged", "team", False),
+    ("contacts", "delete-column", "POST"): ("CRM column removed", "team", False),
+    ("contacts", "evidence", "POST"): ("CRM account evidence recorded", "team", True),
+    ("contacts", "id", "PATCH"): ("CRM contact updated", "team", True),
+    ("contacts", "id", "DELETE"): ("CRM contact deleted", "team", False),
+    ("emails", "", "POST"): ("Email tracked in the CRM", "others", False),
+    ("emails", "send", "POST"): ("Email sent from the CRM", "others", False),
+    ("emails", "link", "POST"): ("Email linked in the CRM", "others", False),
+    ("emails", "toot", "POST"): ("Mastodon post logged in the CRM", "team", False),
+    ("emails", "id", "PATCH"): ("Tracked email updated", "team", True),
+    ("emails", "id", "DELETE"): ("Tracked email deleted", "team", False),
+    ("mail", "id", "PATCH"): ("CRM email moved", "team", True),
+    ("mail", "id", "DELETE"): ("CRM email deleted", "team", False),
+    ("outreach", "send", "POST"): ("Outreach email sent", "team", False),
+    ("outreach", "team", "POST"): ("Outreach team changed", "team", True),
+    ("decks", "", "POST"): ("Pitch deck link created", "team", False),
+    ("decks", "id", "DELETE"): ("Pitch deck link revoked", "team", False),
+    ("views", "", "POST"): ("CRM sheet created", "team", False),
+    ("views", "copy", "POST"): ("CRM sheet copied", "team", False),
+    ("views", "id", "PATCH"): ("CRM sheet updated", "team", True),
+    ("views", "id", "DELETE"): ("CRM sheet deleted", "team", False),
+    ("settings", "", "PUT"): ("CRM settings changed", "team", True),
+    ("zoho", "exchange", "POST"): ("Zoho Mail connected to the CRM", "team", False),
+}
+ACTIVITY_DETAIL_FIELDS = ("subject", "title", "name", "url")
+_ACTIVITY_SEEN = {}
+
+
+def _activity_clock():
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _response_status(response):
+    if isinstance(response, dict):
+        return _integer(response.get("status"))
+    return _integer(getattr(response, "status", 0))
+
+
+def _activity_rule(resource, item, method, data):
+    shape = item if item in ACTIVITY_NAMED_ITEMS else ("id" if item else "")
+    rule = ACTIVITY_PINGS.get((resource, shape, method))
+    if rule is None:
+        return None
+    data = data if isinstance(data, dict) else {}
+    if data.get("preview") or resource == "settings" and set(data) <= {"tableViews"}:
+        return None
+    detail = ""
+    if resource != "zoho":
+        for field in ACTIVITY_DETAIL_FIELDS:
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                detail = _clean(value, 140)
+                break
+    return (*rule, detail)
+
+
+async def _activity_recipients(runtime, org_bi, actor, audience):
+    names = [actor] if actor and audience != "others" else []
+    if audience == "self":
+        return names
+    rows = await runtime.d1_all(
+        "SELECT name FROM org_members WHERE org_bi=? AND role IN ('owner','admin') "
+        "ORDER BY created_at LIMIT ?", org_bi, ACTIVITY_RECIPIENTS)
+    for row in rows or []:
+        name = _clean(row.get("name"), 64).lower()
+        if name and name != actor and name not in names:
+            names.append(name)
+    return names[:ACTIVITY_RECIPIENTS]
+
+
+def _activity_first_in_burst(key, now):
+    if len(_ACTIVITY_SEEN) >= ACTIVITY_SEEN_MAX:
+        for stale in [k for k, at in _ACTIVITY_SEEN.items()
+                      if now - at >= ACTIVITY_BURST_MS]:
+            _ACTIVITY_SEEN.pop(stale, None)
+        if len(_ACTIVITY_SEEN) >= ACTIVITY_SEEN_MAX:
+            _ACTIVITY_SEEN.clear()
+    first = key not in _ACTIVITY_SEEN
+    _ACTIVITY_SEEN.setdefault(key, now)
+    return first
+
+
+async def _activity_ping(runtime, method, org_bi, org_name, actor, resource, item,
+                         data, response):
+    if not 200 <= _response_status(response) < 400:
+        return
+    rule = _activity_rule(resource, item, method, data)
+    if rule is None:
+        return
+    await _activity_notify(runtime, org_bi, org_name, actor, *rule, item=item)
+
+
+async def _activity_notify(runtime, org_bi, org_name, actor, title, audience, burst,
+                           detail="", item=""):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not actor:
+        return
+    dedupe, push = "", True
+    if burst:
+        now = _activity_clock()
+        dedupe = ":".join(("crm-activity", org_bi, title, item or "", actor,
+                           str(now // ACTIVITY_BURST_MS)))
+        push = _activity_first_in_burst(dedupe, now)
+    try:
+        recipients = await _activity_recipients(runtime, org_bi, actor, audience)
+    except Exception:
+        return
+    for recipient in recipients:
+        who = "you" if recipient == actor else actor
+        body = "By %s in %s" % (who, org_name) + (": " + detail if detail else "")
+        try:
+            await notify(recipient, "plugin_activity", title, body=body,
+                         href=ACTIVITY_HREF, dedupe=dedupe, push=push)
+        except Exception:
+            pass
+
+
 async def handle(runtime, path):
     route = _route(path)
     if route is None:
@@ -5541,6 +5677,16 @@ async def handle(runtime, path):
     # that installed an earlier CRM release without leaving tables for an
     # organization that never opted in.
     await _ensure_data_schema(runtime, org_bi)
+    response = await _organization_resource(
+        runtime, method, org_bi, org_name, role, account_bi, actor, resource, item, data)
+    if method not in ("GET", "HEAD"):
+        await _activity_ping(runtime, method, org_bi, org_name, actor, resource, item,
+                             data, response)
+    return response
+
+
+async def _organization_resource(runtime, method, org_bi, org_name, role, account_bi,
+                                 actor, resource, item, data):
     if not resource:
         return await _summary(runtime, org_bi, org_name, account_bi, actor, role)
     if resource == "views":
