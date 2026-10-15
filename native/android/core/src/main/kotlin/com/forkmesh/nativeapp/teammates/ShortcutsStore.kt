@@ -60,8 +60,13 @@ data class ShortcutEntry(
 }
 
 internal fun startedAt(json: Map<String, Any?>, nowMs: Long): Long {
+    val startedAt = json.long("startedAtMs")
     val elapsed = json.long("elapsedMs", -1)
-    return if (json.bool("running") && elapsed >= 0) nowMs - elapsed else 0
+    return when {
+        json.bool("running") && startedAt > 0 -> startedAt
+        json.bool("running") && elapsed >= 0 -> nowMs - elapsed
+        else -> 0
+    }
 }
 
 data class ShortcutProgress(val fraction: Float?, val text: String) {

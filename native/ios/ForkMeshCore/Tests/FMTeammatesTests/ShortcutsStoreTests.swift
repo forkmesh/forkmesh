@@ -173,10 +173,10 @@ final class ShortcutsStoreTests: XCTestCase {
         XCTAssertEqual(status.progress(nowMs: 1_035_000)?.text, "1m 05s of about 1m 30s · 25s left")
 
         var run = ShortcutRun(
-            json: ["id": 7, "repo": "f/r", "file": "ship.sh", "running": true, "elapsedMs": 2_000, "expectedMs": 4_000],
+            json: ["id": 7, "repo": "f/r", "file": "ship.sh", "running": true, "startedAtMs": 8_000, "expectedMs": 4_000],
             nowMs: 10_000)
         XCTAssertEqual(run.progress(nowMs: 11_000)?.fraction ?? 0, 0.75, accuracy: 0.001)
-        run.absorb(["id": 7, "running": true, "elapsedMs": 9_000, "expectedMs": 4_000, "chunk": "x\n"], nowMs: 12_000)
+        run.absorb(["id": 7, "running": true, "startedAtMs": 3_000, "expectedMs": 4_000, "chunk": "x\n"], nowMs: 12_000)
         XCTAssertEqual(run.startedAtMs, 8_000)
         run.absorb(["id": 7, "running": false, "ok": true, "message": "done (exit 0)"], nowMs: 13_000)
         XCTAssertNil(run.progress(nowMs: 13_000))

@@ -169,11 +169,11 @@ class ShortcutsTest {
         assertEq("1m 05s of about 1m 30s · 25s left", status.progress(1_035_000)?.text)
 
         var run = ShortcutRun.from(
-            mapOf("id" to 7L, "repo" to "f/r", "file" to "ship.sh", "running" to true, "elapsedMs" to 2_000L, "expectedMs" to 4_000L),
+            mapOf("id" to 7L, "repo" to "f/r", "file" to "ship.sh", "running" to true, "startedAtMs" to 8_000L, "expectedMs" to 4_000L),
             nowMs = 10_000,
         )
         assertEq(0.75f, run.progress(11_000)?.fraction)
-        run = run.absorb(mapOf("id" to 7L, "running" to true, "elapsedMs" to 9_000L, "expectedMs" to 4_000L, "chunk" to "x\n"), nowMs = 12_000)
+        run = run.absorb(mapOf("id" to 7L, "running" to true, "startedAtMs" to 3_000L, "expectedMs" to 4_000L, "chunk" to "x\n"), nowMs = 12_000)
         assertEq(8_000L, run.startedAtMs)
         run = run.absorb(mapOf("id" to 7L, "running" to false, "ok" to true, "message" to "done (exit 0)"), nowMs = 13_000)
         assertEq(null, run.progress(13_000))
