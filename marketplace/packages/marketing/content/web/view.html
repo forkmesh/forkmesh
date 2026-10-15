@@ -256,6 +256,14 @@
             .mk-desk dd { font-size: 12.5px; }
             .mk-desk-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
             .mk-desk-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+            .mk-reviews { list-style: none; margin: 0; padding: 0; max-height: 26rem; overflow-y: auto; }
+            .mk-reviews li { display: grid; gap: 3px; padding: .65rem 1rem; border-top: 1px solid var(--mk-line-soft); font-size: 13px; }
+            .mk-reviews li:first-child { border-top: 0; }
+            .mk-reviews .mk-stars { color: var(--mk-warn); letter-spacing: 1px; }
+            .mk-reviews small { color: var(--mk-muted); font: 11.5px var(--mk-mono); }
+            .mk-chart .mk-day-bar { fill: var(--mk-s1); }
+            .mk-app-store-spark { width: 120px; height: 24px; margin-right: 8px; vertical-align: middle; overflow: visible; }
+            .mk-chart .mk-day-bar.active { fill: var(--mk-fg); opacity: .8; }
             .mk-facts dd small.up { color: var(--mk-good); }
             .mk-facts dd small.down { color: var(--mk-bad); }
             .mk-checks li.missing { color: var(--mk-muted); }
@@ -889,6 +897,77 @@
                     <div data-marketing-reddit-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><p class="fm-blankslate-title">No threads in this view</p><p class="fm-blankslate-desc">Open a watch link, read the thread on Reddit, then paste its address here.</p><button data-marketing-reddit-open type="button" class="fm-btn fm-btn-sm">Log thread</button></div>
                   </section>
                   <p class="mk-hint">The Reddit desk works from your own browser. ForkMesh’s servers never fetch or post to Reddit: you open each link yourself, and either log the thread by hand or let the <a href="/dashboard/extension" class="underline">ForkMesh browser extension</a> fill the log from the pages you open (watched subreddits, watched searches, threads and rules pages), then send it here from the extension’s popup. Nothing is ever posted, voted or sent to Reddit.</p>
+                </div>
+
+                <div data-marketing-app-store-page class="mk-page hidden">
+                  <div class="mk-desk-head"><button data-marketing-page="channels" type="button" class="mk-link">‹ All channels</button><h2 data-marketing-app-store-title>Apple App Store</h2><span data-marketing-app-store-sent class="mk-hint">Downloads from App Store Connect, rating from the App Store</span></div>
+                  <section data-marketing-app-store-setup class="fm-flash" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span data-marketing-app-store-setup-text></span></section>
+                  <section class="mk-kpis mk-kpis-6" aria-label="App Store numbers">
+                    <div class="mk-kpi"><span class="mk-kpi-label" data-marketing-app-store-label="downloads">Downloads · 30D</span><span data-marketing-app-store-stat="downloads" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-delta="downloads" class="mk-delta">—</span><span data-marketing-app-store-note="downloads"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label" data-marketing-app-store-label="redownloads">Redownloads · 30D</span><span data-marketing-app-store-stat="redownloads" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-delta="redownloads" class="mk-delta">—</span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label" data-marketing-app-store-label="updates">Updates · 30D</span><span data-marketing-app-store-stat="updates" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-delta="updates" class="mk-delta">—</span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Rating</span><span data-marketing-app-store-stat="rating" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-note="rating"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">All-time downloads</span><span data-marketing-app-store-stat="total" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-note="total"></span></span></div>
+                    <div class="mk-kpi"><span class="mk-kpi-label">Best day</span><span data-marketing-app-store-stat="best" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-app-store-note="best"></span></span></div>
+                  </section>
+
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph">
+                        <h2 data-marketing-app-store-chart-title>Downloads over time</h2>
+                        <div class="mk-ph-tools">
+                          <div class="mk-seg" role="group" aria-label="App Store chart metric">
+                            <button data-marketing-app-store-metric="downloads" type="button" aria-pressed="true">Downloads</button>
+                            <button data-marketing-app-store-metric="redownloads" type="button" aria-pressed="false">Redownloads</button>
+                            <button data-marketing-app-store-metric="updates" type="button" aria-pressed="false">Updates</button>
+                          </div>
+                          <div class="mk-seg" role="group" aria-label="App Store range">
+                            <button data-marketing-app-store-range="30" type="button" aria-pressed="true">30D</button>
+                            <button data-marketing-app-store-range="90" type="button" aria-pressed="false">90D</button>
+                            <button data-marketing-app-store-range="365" type="button" aria-pressed="false">1Y</button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mk-pb">
+                        <div data-marketing-app-store-chart class="mk-chart"></div>
+                      </div>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Top countries</h2><span data-marketing-app-store-countries-hint class="mk-hint"></span></div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table mk-table-dense">
+                          <thead><tr><th>Country</th><th>Share of downloads</th><th class="r">Downloads</th></tr></thead>
+                          <tbody data-marketing-app-store-countries></tbody>
+                        </table>
+                      </div>
+                      <div class="mk-ph"><h2>Devices</h2></div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table mk-table-dense">
+                          <thead><tr><th>Device</th><th>Share of downloads</th><th class="r">Downloads</th></tr></thead>
+                          <tbody data-marketing-app-store-devices></tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </div>
+
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Reviews</h2><span data-marketing-app-store-reviews-hint class="mk-hint"></span></div>
+                      <ul data-marketing-app-store-reviews class="mk-reviews"></ul>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Store listing</h2><span data-marketing-app-store-open></span></div>
+                      <dl data-marketing-app-store-listing class="mk-facts mk-pb"></dl>
+                      <div class="mk-ph"><h2>Versions</h2></div>
+                      <div class="mk-table-wrap">
+                        <table class="mk-table mk-table-dense">
+                          <thead><tr><th>Version</th><th>Status</th><th class="r">Created</th></tr></thead>
+                          <tbody data-marketing-app-store-versions></tbody>
+                        </table>
+                      </div>
+                    </section>
+                  </div>
+                  <p class="mk-hint">Downloads, redownloads, updates, countries and devices come from App Store Connect's daily sales reports. Apple publishes a day's report the next morning, Pacific time, so every range ends on the last reported day. The App Store Connect key never leaves the computer that runs the App Store report (<code>native/ios/tools/asc_store_report.py --publish</code>); it sends the daily numbers here. Rating, ratings count and the store listing are read from the public App Store by Refresh.</p>
                 </div>
 
                 <section data-marketing-catalog-page class="hidden">

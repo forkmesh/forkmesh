@@ -132,6 +132,10 @@ QString sourceLabel(const QString &source)
         return QStringLiteral("CRM and Zoho Mail");
     if (source == QLatin1String("refresh"))
         return QStringLiteral("channel refresh");
+    if (source == QLatin1String("app-store-connect"))
+        return QStringLiteral("App Store Connect");
+    if (source == QLatin1String("app-store"))
+        return QStringLiteral("App Store");
     return source.isEmpty() ? QStringLiteral("logged") : source;
 }
 
@@ -173,6 +177,7 @@ QString channelUrlPlaceholder(const QString &id)
         {QStringLiteral("mastodon"), QStringLiteral("https://mastodon.social/@name")},
         {QStringLiteral("discord"), QStringLiteral("https://discord.gg/invite")},
         {QStringLiteral("github"), QStringLiteral("https://github.com/name")},
+        {QStringLiteral("app-store"), QStringLiteral("https://apps.apple.com/app/id1234567890")},
     };
     return examples.value(id, QStringLiteral("https://public-profile"));
 }
@@ -222,6 +227,10 @@ QString refreshErrorText(const QString &id, const QString &code, const QString &
         return QStringLiteral("Reddit has no such subreddit or profile; check the channel link");
     if (code == QLatin1String("reddit_feed_invalid"))
         return QStringLiteral("Reddit answered with something that is not a feed; try again later");
+    if (code == QLatin1String("app_store_url_unsupported"))
+        return QStringLiteral("use the app's App Store link, like https://apps.apple.com/app/id1234567890");
+    if (code == QLatin1String("app_store_app_not_found"))
+        return QStringLiteral("the App Store has no app with that id in this country; check the channel link");
     if (code.startsWith(QLatin1String("channel_http_")))
         return QStringLiteral("the site answered %1").arg(code.mid(13));
     if (code == QLatin1String("discord_secret_required"))
@@ -594,6 +603,10 @@ Headline headline(const QString &id, const QJsonObject &item, const QJsonObject 
         return {number(item, "outbound"), QStringLiteral("Emails sent · 30D"), "outbound"};
     if (id == QLatin1String("github") && number(item, "stars") > 0)
         return {number(item, "stars"), QStringLiteral("Stars"), "stars"};
+    if (id == QLatin1String("app-store") && number(item, "downloads") > 0)
+        return {number(item, "downloads"), QStringLiteral("Downloads · 30D"), "downloads"};
+    if (id == QLatin1String("app-store") && number(item, "ratings") > 0)
+        return {number(item, "ratings"), QStringLiteral("Ratings"), "ratings"};
     if (number(item, "followers") > 0)
         return {number(item, "followers"),
                 id == QLatin1String("youtube") ? QStringLiteral("Subscribers")
@@ -898,6 +911,13 @@ MarketingFeature::MarketingFeature(
     redditBoxLayout->setSpacing(10);
     detailGrid->addPanel(m_detailRedditBox, 3);
     m_detailRedditBox->hide();
+    m_detailAppStoreBox = clearWidget();
+    m_detailAppStoreBox->setAccessibleName(QStringLiteral("App Store desk"));
+    auto *appStoreBoxLayout = new QVBoxLayout(m_detailAppStoreBox);
+    appStoreBoxLayout->setContentsMargins(0, 0, 0, 0);
+    appStoreBoxLayout->setSpacing(10);
+    detailGrid->addPanel(m_detailAppStoreBox, 3);
+    m_detailAppStoreBox->hide();
     m_detailHealth = detailBox(QStringLiteral("Health and settings"), 1);
     m_detailPlaybook = detailBox(QStringLiteral("Playbook"), 1);
 
@@ -1781,6 +1801,8 @@ void MarketingFeature::loadOrganization()
         loadTraffic();
         if (m_page == 1 || m_detailChannel == QLatin1String("reddit"))
             loadPerformance();
+        if (m_detailChannel == QLatin1String("app-store") && !m_appStoreLoading)
+            loadAppStore();
         if (firstBlogRead)
             refreshChannel(QStringLiteral("blog"));
     });
@@ -1860,6 +1882,11 @@ bool MarketingFeature::refreshChannel(const QString &id)
             loadDiscordPosts(true);
         if (id == QLatin1String("x") && m_detailChannel == id)
             loadReadyPost();
+        if (id == QLatin1String("app-store") && m_detailChannel == id && !m_appStoreLoading)
+            loadAppStore();
+        if (id == QLatin1String("app-store") && metrics.value(QStringLiteral("ratings")).toDouble() > 0)
+            message += QStringLiteral(" · %1 ratings")
+                .arg(qint64(metrics.value(QStringLiteral("ratings")).toDouble()));
         if (id == QLatin1String("github"))
             message += QStringLiteral(" · %1 stars · %2 forks")
                 .arg(qint64(metrics.value(QStringLiteral("stars")).toDouble()))
@@ -2220,6 +2247,11 @@ void MarketingFeature::renderChannels()
                              .arg(qint64(channel.value(QStringLiteral("reach")).toDouble()))
                       << QStringLiteral("Weekly contributions: %1")
                              .arg(qint64(channel.value(QStringLiteral("engagements")).toDouble()));
+        if (id == QLatin1String("app-store"))
+            statusTip << QStringLiteral("Downloads in 30 days: %1")
+                             .arg(qint64(channel.value(QStringLiteral("downloads")).toDouble()))
+                      << QStringLiteral("Ratings: %1")
+                             .arg(qint64(channel.value(QStringLiteral("ratings")).toDouble()));
         if (id == QLatin1String("email"))
             statusTip << QStringLiteral("Emails sent in 30 days: %1")
                              .arg(qint64(channel.value(QStringLiteral("outbound")).toDouble()))
@@ -3428,6 +3460,9 @@ QList<forkmesh::market::NativePackageRailTile> MarketingFeature::railTiles() con
         const qint64 stars = qint64(channel.value(QStringLiteral("stars")).toDouble());
         const qint64 forks = qint64(channel.value(QStringLiteral("forks")).toDouble());
         const qint64 engagements = qint64(channel.value(QStringLiteral("engagements")).toDouble());
+        const bool appStore = id == QLatin1String("app-store");
+        const qint64 downloads = qint64(channel.value(QStringLiteral("downloads")).toDouble());
+        const qint64 ratings = qint64(channel.value(QStringLiteral("ratings")).toDouble());
         const QJsonArray guide = health.value(QStringLiteral("guide")).toArray();
         const int posts = health.value(QStringLiteral("postsLast30d")).toInt();
         const int cadence = qMax(1, health.value(QStringLiteral("cadenceDays")).toInt());
@@ -3448,6 +3483,13 @@ QList<forkmesh::market::NativePackageRailTile> MarketingFeature::railTiles() con
         } else if (github && stars > 0) {
             tile.count = compactCount(stars);
             tile.countLabel = stars == 1 ? QStringLiteral("star") : QStringLiteral("stars");
+        } else if (appStore && downloads > 0) {
+            tile.count = compactCount(downloads);
+            tile.countLabel = downloads == 1 ? QStringLiteral("download in 30 days")
+                                             : QStringLiteral("downloads in 30 days");
+        } else if (appStore && ratings > 0) {
+            tile.count = compactCount(ratings);
+            tile.countLabel = ratings == 1 ? QStringLiteral("rating") : QStringLiteral("ratings");
         } else if (followers > 0) {
             tile.count = compactCount(followers);
             tile.countLabel = reddit ? (followers == 1 ? QStringLiteral("member") : QStringLiteral("members"))
@@ -3493,6 +3535,10 @@ QList<forkmesh::market::NativePackageRailTile> MarketingFeature::railTiles() con
                             .arg(QLocale().toString(qint64(change.toDouble())));
             numbers << line;
         }
+        if (appStore && downloads > 0)
+            numbers << QStringLiteral("%1 downloads in 30 days").arg(count(downloads));
+        if (appStore && ratings > 0)
+            numbers << QStringLiteral("%1 ratings").arg(count(ratings));
         if (reddit && reach > 0)
             numbers << QStringLiteral("%1 weekly visitors").arg(count(reach));
         if (reddit && engagements > 0)
@@ -3565,10 +3611,15 @@ QList<forkmesh::market::NativePackageRailTile> MarketingFeature::railTiles() con
                         const QJsonObject guideStep = guideValue.toObject();
                         if (guideStep.value(QStringLiteral("done")).toBool())
                             continue;
-                        const bool link = text(guideStep, "action") == QLatin1String("link");
+                        const QString action = text(guideStep, "action");
+                        const bool link = action == QLatin1String("link");
                         if (link && !m_canManageSettings)
                             continue;
-                        step(link ? "link" : "capture", text(guideStep, "label"));
+                        step(link ? "link"
+                             : action == QLatin1String("refresh") ? "refresh"
+                             : action == QLatin1String("app-store") ? "app-store"
+                                                                    : "capture",
+                             text(guideStep, "label"));
                     }
                 } else if (hasLink && google) {
                     step("refresh", QStringLiteral("Refresh visits from Google (%1)").arg(when));
@@ -3657,6 +3708,8 @@ void MarketingFeature::openChannel(const QString &id)
     applyView();
     if (opened && id == QLatin1String("reddit") && m_performance.isEmpty())
         loadPerformance();
+    if (opened && id == QLatin1String("app-store") && !m_appStoreLoading)
+        loadAppStore();
 }
 
 void MarketingFeature::closeChannel()
@@ -3891,6 +3944,20 @@ void MarketingFeature::renderChannelDetail()
         engagement.label = QStringLiteral("Replies · 30D");
         engagement.value = fullCount(number(item, "replies"));
         engagement.note = QStringLiteral("linked in CRM");
+    }
+    if (id == QLatin1String("app-store")) {
+        reachKpi = {};
+        reachKpi.label = QStringLiteral("Ratings");
+        reachKpi.value = number(item, "ratings") > 0 ? fullCount(number(item, "ratings")) : kDash;
+        reachKpi.tooltip = QStringLiteral("Ratings in the App Store, read by Refresh");
+        if (number(item, "rating") > 0)
+            reachKpi.note = QString::number(number(item, "rating"), 'f', 1) + QChar(0x2605);
+        engagement = {};
+        engagement.label = QStringLiteral("Updates · 30D");
+        engagement.value = number(item, "updates") > 0 ? fullCount(number(item, "updates")) : kDash;
+        engagement.tooltip = QStringLiteral("App updates in the last 30 reported days, from App Store Connect");
+        if (number(item, "redownloads") > 0)
+            engagement.note = QStringLiteral("%1 redownloads").arg(compactCount(qint64(number(item, "redownloads"))));
     }
     if (id == QLatin1String("github")) {
         reachKpi = {};
@@ -4207,6 +4274,12 @@ void MarketingFeature::renderChannelDetail()
     m_detailRedditBox->setVisible(reddit);
     if (reddit)
         renderReddit();
+    const bool appStore = id == QLatin1String("app-store");
+    m_detailAppStoreBox->setVisible(appStore);
+    if (appStore && !m_appStoreLoading && m_appStoreOrg != m_organization->currentData().toString())
+        loadAppStore();
+    else if (appStore)
+        renderAppStore();
     renderChannelDesk(id);
     renderChannelAgents(id);
     renderChannelChart();
@@ -5329,6 +5402,8 @@ void MarketingFeature::activateRailStep(const QString &tile, const QString &step
         refreshChannel(tile);
     } else if (step == QLatin1String("capture")) {
         captureWithExtension(tile);
+    } else if (step == QLatin1String("app-store")) {
+        showAppStore();
     } else if (step == QLatin1String("metrics")) {
         addMetric(tile);
     } else if (step == QLatin1String("post")) {
@@ -5960,6 +6035,11 @@ MarketingFeature::ChannelCard MarketingFeature::channelCard(const QJsonObject &i
             facts << fact(compactCount(qint64(number(item, "closedValue"))), QStringLiteral("won"));
         if (number(item, "replies") > 0)
             facts << fact(compactCount(qint64(number(item, "replies"))), QStringLiteral("replies"));
+    } else if (id == QLatin1String("app-store")) {
+        if (number(item, "ratings") > 0 && !(main.key && QLatin1String(main.key) == QLatin1String("ratings")))
+            facts << fact(compactCount(qint64(number(item, "ratings"))), QStringLiteral("ratings"));
+        if (number(item, "updates") > 0)
+            facts << fact(compactCount(qint64(number(item, "updates"))), QStringLiteral("updates/30D"));
     } else {
         facts << fact(fullCount(number(health, "postsLast30d")), QStringLiteral("posts/30D"));
     }

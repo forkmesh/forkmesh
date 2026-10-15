@@ -16,6 +16,9 @@ public final class MarketingModel {
     public var performanceProject = ""
     public private(set) var report: MarketingReport?
     public private(set) var readyPost: MarketingReadyState?
+    public private(set) var loadingAppStore = false
+    public var appStoreRange = 30
+    private var loadedAppStore: MarketingAppStoreReply?
 
     @ObservationIgnored private let client: PackagesClient
     @ObservationIgnored private let clock: @MainActor () -> Int64
@@ -222,6 +225,31 @@ public final class MarketingModel {
         do {
             performance = try await client.marketingPerformance(
                 organization: organization, days: performanceDays, project: performanceProject, now: now)
+        } catch {
+            errorText = PackagesError.describe(error)
+        }
+    }
+
+    public var appStoreReply: MarketingAppStoreReply? {
+        guard let reply = loadedAppStore, reply.organization == organization else { return nil }
+        return reply
+    }
+
+    public var appStore: MarketingAppStore? { appStoreReply?.appStore }
+
+    public var appStoreChartDays: [MarketingAppStoreDay] { appStore?.chartDays(range: appStoreRange) ?? [] }
+
+    public var appStoreWindow: MarketingAppStoreWindow? { appStore?.window(days: appStoreRange) }
+
+    public func loadAppStore() async {
+        let organization = organization
+        guard !organization.isEmpty else { return }
+        loadingAppStore = true
+        defer { loadingAppStore = false }
+        do {
+            let reply = try await client.appStore(org: organization)
+            guard organization == self.organization else { return }
+            loadedAppStore = reply
         } catch {
             errorText = PackagesError.describe(error)
         }

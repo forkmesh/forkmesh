@@ -562,6 +562,11 @@ enum MarketingChannelFacts {
             return ["\(PackagesFormat.count(channel.visits)) visits from Google in 30d",
                     "\(PackagesFormat.count(channel.indexedPages)) pages on Google"].joined(separator: " · ")
         }
+        if channel.isAppStore {
+            var parts = ["\(PackagesFormat.count(channel.downloads)) downloads in 30d", "\(PackagesFormat.count(channel.ratings)) ratings"]
+            if channel.rating > 0 { parts.append(MarketingAppStore.ratingText(channel.rating)) }
+            return parts.joined(separator: " · ")
+        }
         var parts: [String] = []
         if channel.isGitHub {
             parts.append("\(PackagesFormat.count(channel.stars)) stars")

@@ -279,6 +279,11 @@ public enum MarketingForms {
             case "github":
                 result = [MarketingField("stars", "Stars", .count), MarketingField("forks", "Forks", .count),
                           MarketingField("followers", "Followers", .count)]
+            case "app-store":
+                result = [MarketingField("downloads", "Downloads (30 days)", .count),
+                          MarketingField("redownloads", "Redownloads (30 days)", .count),
+                          MarketingField("updates", "Updates (30 days)", .count),
+                          MarketingField("ratings", "Ratings", .count)]
             default:
                 result = [MarketingField("followers", "Followers", .count), MarketingField("posts", "Posts", .count)]
             }
@@ -597,7 +602,9 @@ public enum MarketingForms {
                                  ("engagements", stats.engagements), ("clicks", stats.clicks), ("views", stats.views),
                                  ("posts", stats.posts), ("visits", stats.visits), ("indexedPages", stats.indexedPages),
                                  ("outbound", stats.outbound), ("replies", stats.replies), ("closedDeals", stats.closedDeals),
-                                 ("closedValue", stats.closedValue), ("stars", stats.stars), ("forks", stats.forks)]
+                                 ("closedValue", stats.closedValue), ("stars", stats.stars), ("forks", stats.forks),
+                                 ("downloads", stats.downloads), ("redownloads", stats.redownloads), ("updates", stats.updates),
+                                 ("ratings", stats.ratings)]
             {
                 json[key] = .int(value)
             }

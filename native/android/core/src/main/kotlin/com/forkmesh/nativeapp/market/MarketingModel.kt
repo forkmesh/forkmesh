@@ -27,6 +27,11 @@ class MarketingModel(
     var readyPost: MarketingReadyPosts? = null
         private set
     private var readyOrganization = ""
+    var appStoreRange: Int = 30
+    private var appStoreLoaded: MarketingAppStore? = null
+    private var appStoreOrganization = ""
+
+    val appStore: MarketingAppStore? get() = appStoreLoaded?.takeIf { appStoreOrganization == organization }
 
     val overview: MarketingOverview? get() = packages.payload
     val organization: String get() = packages.organization
@@ -230,6 +235,18 @@ class MarketingModel(
             } catch (error: Exception) {
                 PackagesException.describe(error)
             }
+        }
+    }
+
+    fun loadAppStore() = busy("app-store") {
+        val org = organization
+        try {
+            appStoreLoaded = client.marketingAppStore(org)
+            appStoreOrganization = org
+            true
+        } catch (error: Exception) {
+            errorText = PackagesException.describe(error)
+            false
         }
     }
 

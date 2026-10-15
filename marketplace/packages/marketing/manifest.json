@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.36.0",
+  "version": "1.37.0",
   "summary": "One marketing command center: web traffic by channel and search keywords from Analytics, every channel's stats, campaigns planned with the Marketing agent, content, ads across 100 channels, and posting to X.",
   "screenshots": [
     { "path": "preview/market.png", "alt": "Marketing dashboard with channel KPIs, performance trends, and a cross-channel content pipeline" }
@@ -50,7 +50,7 @@
     { "id": "organization.crm.read", "label": "Read the organization's CRM and Zoho Mail sync to count email and closed deals and suggest emails to send", "risk": "sensitive" },
     { "id": "organization.discord.read", "label": "Read the member and online counts of the organization's connected Discord server", "risk": "sensitive" },
     { "id": "organization.discord.messages.read", "label": "Read the last 6 days of posts in the channels chosen for the organization's Discord connector, without storing them", "risk": "sensitive" },
-    { "id": "external.feed.read", "label": "Read configured public channel feeds and profile statistics from approved origins", "risk": "sensitive" },
+    { "id": "external.feed.read", "label": "Read configured public channel feeds, profile statistics and App Store ratings from approved origins", "risk": "sensitive" },
     { "id": "external.link.open", "label": "Open configured channel profiles, published content, and ad consoles after an explicit click", "risk": "sensitive" },
     { "id": "external.social.post", "label": "Post to the organization's connected X account when an owner or admin presses Post", "risk": "high" },
     { "id": "external.social.follow", "label": "Follow suggested people from the organization's Mastodon account when an owner or admin presses Follow", "risk": "high" },
@@ -79,7 +79,8 @@
       "https://mas.to",
       "https://infosec.exchange",
       "https://discord.com",
-      "https://api.github.com"
+      "https://api.github.com",
+      "https://itunes.apple.com"
     ]
   }
 }

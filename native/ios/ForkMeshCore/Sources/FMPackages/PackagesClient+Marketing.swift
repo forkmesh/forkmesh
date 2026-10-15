@@ -88,6 +88,10 @@ extension PackagesClient {
         return MarketingAdvice(json: try await call("POST", marketingPath(organization, "assistant"), body: body))
     }
 
+    public func appStore(org organization: String) async throws -> MarketingAppStoreReply {
+        MarketingAppStoreReply(organization: organization, json: try await call("GET", marketingPath(organization, "app-store")))
+    }
+
     public func marketingReport(organization: String) async throws -> MarketingReport {
         MarketingReport(json: try await call("GET", marketingPath(organization, "report")))
     }
