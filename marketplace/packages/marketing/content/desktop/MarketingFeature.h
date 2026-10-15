@@ -351,6 +351,8 @@ private:
     DashboardPanel *m_detailChartPanel = nullptr;
     QButtonGroup *m_detailMetric = nullptr;
     LineChart *m_detailChart = nullptr;
+    DashboardPanel *m_detailFollowingPanel = nullptr;
+    LineChart *m_detailFollowingChart = nullptr;
     DashboardPanel *m_detailViewsPanel = nullptr;
     LineChart *m_detailViewsChart = nullptr;
     DashboardPanel *m_detailDiscordChartPanel = nullptr;
