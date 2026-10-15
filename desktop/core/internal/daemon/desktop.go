@@ -19,6 +19,7 @@ import (
 
 const (
 	headlessGrace        = time.Minute
+	headlessBootGrace    = 10 * time.Second
 	headlessQuickExit    = 2 * time.Minute
 	headlessBackoffMin   = time.Minute
 	headlessBackoffMax   = 30 * time.Minute
@@ -34,6 +35,8 @@ type headlessDesktop struct {
 	allowed   bool
 	start     func(cmd *exec.Cmd) error
 	alive     func(pid int) bool
+	booted    func() time.Time
+	seenUI    bool
 	cmd       *exec.Cmd
 	exited    chan struct{}
 	startedAt time.Time
@@ -83,11 +86,40 @@ func lockHolder(path string) int {
 	return pid
 }
 
+func bootTime() time.Time {
+	raw, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return time.Time{}
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if value, ok := strings.CutPrefix(line, "btime "); ok {
+			if seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				return time.Unix(seconds, 0)
+			}
+		}
+	}
+	return time.Time{}
+}
+
+func (c *Core) windowOpen(path string) bool {
+	pid := lockHolder(path)
+	if pid <= 0 {
+		return false
+	}
+	if info, err := os.Stat(path); err == nil && c.desktop.booted != nil {
+		if booted := c.desktop.booted(); !booted.IsZero() && info.ModTime().Before(booted) {
+			return false
+		}
+	}
+	return c.desktop.alive(pid)
+}
+
 func (c *Core) initHeadless(options Options) {
 	defaultState := options.StateDir == "" || filepath.Clean(options.StateDir) == filepath.Clean(c.Layout.CoreState())
 	c.desktop.allowed = runtime.GOOS == "linux" && defaultState && options.Env == nil && options.Home == ""
 	c.desktop.start = func(cmd *exec.Cmd) error { return cmd.Start() }
 	c.desktop.alive = processAlive
+	c.desktop.booted = bootTime
 }
 
 func (c *Core) HeadlessDesktopEnabled() bool {
@@ -116,6 +148,13 @@ func (c *Core) tickHeadless(now time.Time, ui *ipc.Conn, idle time.Duration) {
 	if !c.desktop.allowed {
 		return
 	}
+	c.desktop.mu.Lock()
+	c.desktop.seenUI = c.desktop.seenUI || ui != nil
+	grace := headlessGrace
+	if !c.desktop.seenUI {
+		grace = headlessBootGrace
+	}
+	c.desktop.mu.Unlock()
 	if ui != nil && !ui.Headless() {
 		c.desktop.mu.Lock()
 		c.desktop.backoff = 0
@@ -145,7 +184,7 @@ func (c *Core) tickHeadless(now time.Time, ui *ipc.Conn, idle time.Duration) {
 		}
 		return
 	}
-	if !wanted || ui != nil || idle < headlessGrace {
+	if !wanted || ui != nil || idle < grace {
 		return
 	}
 	c.desktop.mu.Lock()
@@ -154,7 +193,7 @@ func (c *Core) tickHeadless(now time.Time, ui *ipc.Conn, idle time.Duration) {
 	if wait {
 		return
 	}
-	if pid := lockHolder(filepath.Join(c.Layout.State, windowLockFile)); pid > 0 && c.desktop.alive(pid) {
+	if c.windowOpen(filepath.Join(c.Layout.State, windowLockFile)) {
 		return
 	}
 	c.launchHeadless(now)
