@@ -683,7 +683,7 @@ def test_market_ratings_migration_is_reversible():
         connection.close()
 
 
-def test_operating_expenses_migration_is_reversible():
+def test_operating_expenses_migration_seeds_linked_cursor_reimbursement():
     up = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
         encoding="utf-8"
     )
@@ -696,18 +696,117 @@ def test_operating_expenses_migration_is_reversible():
             "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)"
         )
         connection.executescript(up)
+        row = connection.execute(
+            "SELECT * FROM operating_expenses WHERE expense_id=?",
+            ("cursor-e45e60f2-0007",),
+        ).fetchone()
+        assert row is not None
         columns = [
             value[1] for value in connection.execute(
                 "PRAGMA table_info(operating_expenses)")
         ]
-        assert {"expense_id", "vendor", "amount_minor", "currency"} <= set(columns)
-        assert connection.execute(
-            "SELECT COUNT(*) FROM operating_expenses"
-        ).fetchone()[0] == 0
+        seeded = dict(zip(columns, row))
+        assert seeded["vendor"] == "Cursor"
+        assert seeded["paid_by_name"] == "mdkaifansari04"
+        assert seeded["amount_minor"] == 2360
+        assert seeded["original_amount_minor"] == 234359
+        assert seeded["original_currency"] == "INR"
+        assert seeded["external_reference"] == "E45E60F2-0007"
+        assert seeded["payment_method_summary"] == ""
+        assert seeded["incurred_at"] == 1785427200000
+        assert seeded["reimbursement_status"] == "outstanding"
         connection.executescript(down)
         assert connection.execute(
             "SELECT name FROM sqlite_master WHERE name='operating_expenses'"
         ).fetchone() is None
+    finally:
+        connection.close()
+
+
+def test_jett_ai_expenses_are_exact_matched_debts_and_reversible():
+    schema = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
+        encoding="utf-8"
+    )
+    up = (
+        ROOT / "migrations" / "0168_jett_ai_operating_expenses.sql"
+    ).read_text(encoding="utf-8")
+    down = (
+        ROOT / "migrations" / "down" /
+        "0168_jett_ai_operating_expenses.sql"
+    ).read_text(encoding="utf-8")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)"
+        )
+        connection.executescript(schema)
+        connection.executescript(up)
+        totals = connection.execute(
+            "SELECT COUNT(*),SUM(amount_minor),"
+            "SUM(CASE WHEN vendor='OpenAI' THEN amount_minor ELSE 0 END),"
+            "SUM(CASE WHEN vendor='Anthropic' THEN amount_minor ELSE 0 END) "
+            "FROM operating_expenses WHERE paid_by_name='jett' "
+            "AND reimbursement_status='outstanding'"
+        ).fetchone()
+        invoices = dict(connection.execute(
+            "SELECT external_reference,amount_minor FROM operating_expenses "
+            "WHERE paid_by_name='jett'"
+        ))
+
+        assert totals == (11, 105_891, 59_999, 45_892)
+        assert invoices["9RUQ8RRU-0005"] == 17_527
+        assert invoices["9RUQ8RRU-0004"] == 9_165
+        assert invoices["9RUQ8RRU-0003"] == 2_178
+        assert invoices["8RYATVG1-0010"] == 21_775
+        assert invoices["8RYATVG1-0009"] == 2_178
+        assert invoices["8RYATVG1-0008"] == 12_264
+        assert invoices["8RYATVG1-0006"] == 9_675
+        assert "authoritative\n-- payment-time USD value" in up
+
+        connection.executescript(down)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM operating_expenses "
+            "WHERE paid_by_name='jett'"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM operating_expenses"
+        ).fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_jett_anthropic_invoice_0012_is_an_exact_outstanding_debt():
+    schema = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
+        encoding="utf-8"
+    )
+    up = (
+        ROOT / "migrations" / "0185_jett_anthropic_expense_2026_09_12.sql"
+    ).read_text(encoding="utf-8")
+    down = (
+        ROOT / "migrations" / "down" /
+        "0185_jett_anthropic_expense_2026_09_12.sql"
+    ).read_text(encoding="utf-8")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)"
+        )
+        connection.executescript(schema)
+        before = connection.execute(
+            "SELECT COUNT(*) FROM operating_expenses").fetchone()[0]
+        connection.executescript(up)
+        connection.executescript(up)  # re-applying never duplicates it
+        assert connection.execute(
+            "SELECT vendor,paid_by_name,amount_minor,currency,incurred_at,"
+            "reimbursement_status,reimbursed_at "
+            "FROM operating_expenses WHERE external_reference='8RYATVG1-0012'"
+        ).fetchall() == [
+            ("Anthropic", "jett", 21_775, "USD", 1_789_171_200_000,
+             "outstanding", 0),
+        ]
+        connection.executescript(down)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM operating_expenses").fetchone()[0] == before
     finally:
         connection.close()
 
@@ -730,26 +829,66 @@ def test_payment_card_identifier_scrub_is_irreversible():
         )
         connection.executescript(schema)
         connection.execute(
-            "INSERT INTO operating_expenses "
-            "(expense_id,vendor,description,paid_by_name,amount_minor,currency,"
-            "external_reference,incurred_at,recorded_at,payment_method_summary) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            ("sample", "Example", "Example expense", "contributor", 1, "USD",
-             "sample", 1, 1, "private payment-card detail"),
+            "UPDATE operating_expenses SET payment_method_summary=? "
+            "WHERE expense_id=?",
+            ("private payment-card detail", "cursor-e45e60f2-0007"),
         )
         connection.executescript(up)
         assert connection.execute(
             "SELECT payment_method_summary FROM operating_expenses "
             "WHERE expense_id=?",
-            ("sample",),
+            ("cursor-e45e60f2-0007",),
         ).fetchone()[0] == ""
 
+        # A rollback must not recreate privacy-sensitive data.
         connection.executescript(down)
         assert connection.execute(
             "SELECT payment_method_summary FROM operating_expenses "
             "WHERE expense_id=?",
-            ("sample",),
+            ("cursor-e45e60f2-0007",),
         ).fetchone()[0] == ""
+    finally:
+        connection.close()
+
+
+def test_jett_business_expenses_are_exact_outstanding_debts():
+    schema = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
+        encoding="utf-8"
+    )
+    up = (
+        ROOT / "migrations" / "0170_jett_business_expenses.sql"
+    ).read_text(encoding="utf-8")
+    down = (
+        ROOT / "migrations" / "down" /
+        "0170_jett_business_expenses.sql"
+    ).read_text(encoding="utf-8")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)"
+        )
+        connection.executescript(schema)
+        connection.executescript(up)
+        rows = connection.execute(
+            "SELECT vendor,amount_minor,currency,incurred_at,"
+            "reimbursement_status,payment_method_summary "
+            "FROM operating_expenses WHERE paid_by_name='jett' "
+            "ORDER BY incurred_at DESC"
+        ).fetchall()
+        assert rows == [
+            ("Business registration", 20_300, "USD", 1_787_702_400_000,
+             "outstanding", ""),
+            ("Apple", 10_000, "USD", 1_785_974_400_000,
+             "outstanding", ""),
+            ("Cloudflare", 1_046, "USD", 1_781_049_600_000,
+             "outstanding", ""),
+        ]
+        assert sum(row[1] for row in rows) == 31_346
+        connection.executescript(down)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM operating_expenses "
+            "WHERE paid_by_name='jett'"
+        ).fetchone()[0] == 0
     finally:
         connection.close()
 

@@ -1,3 +1,5 @@
+-- Reverse 0166. The table is the complete source of this optional accounting
+-- feature, including its seeded Cursor reimbursement.
 DROP INDEX IF EXISTS idx_operating_expenses_reimbursement;
 DROP INDEX IF EXISTS idx_operating_expenses_incurred;
 DROP TABLE IF EXISTS operating_expenses;
