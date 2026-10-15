@@ -607,3 +607,15 @@ bottom bar.
   own list so rows scroll under the glass (Repos and Inbox do).
 - The kit gallery (`--ez fm_kit_gallery true --ei fm_kit_section 10`) shows a
   glass capsule over colour stripes to check the blur.
+- **Top bar** (`TopBar`, `A/shell/HomeShell.kt`), as iOS `Shell/ShellTopBar.swift`
+  on a phone: no fill, 16 dp side and 4 dp vertical padding; the 40 dp project
+  icon (`AccountFeature.ProjectSlot`, opens the project drawer), the Glasses
+  chip, then the new-agent button and the avatar (36 dp, 12 dp corners). A
+  guest sees a person icon and a "Sign in" chip instead, and no guest banner.
+  Search is not in the phone bar (iOS shows it only on iPad); it is on Home.
+  The telemetry strip is the iOS one: 12 x 10 dp sparklines centred in the
+  row, coloured by `TelemetryMetric.health` (the iOS warning and bad limits).
+- **New-agent button** (`PromptButton`): a 44 dp accent gradient circle with a
+  white plus and an accent glow that grows with running agents; each running
+  agent adds a small four-point star (static; iOS animates them with the
+  accelerometer).

@@ -1,5 +1,11 @@
 package com.forkmesh.nativeapp.feature.composer
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.shell.LaunchFlight
 import com.forkmesh.nativeapp.ui.SoundCue
@@ -18,7 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -231,40 +236,61 @@ fun PromptButton(
     tabLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 48.dp,
+    size: Dp = 44.dp,
     onLongClick: (() -> Unit)? = null,
+    running: Int = 0,
 ) {
     val drafts = remember { ComposerFeature.drafts }
     val hasDraft = remember(tabLabel) { !drafts?.load(PromptDraftStore.SHELL).isNullOrBlank() }
+    val accent = Fm.colors.accent
+    val glow = accent.copy(alpha = 0.35f + minOf(running, 8) / 8f * 0.25f)
     Box(modifier) {
-        Surface(
-            modifier = Modifier.size(size),
-            shape = CircleShape,
-            color = Fm.colors.textPrimary,
-            shadowElevation = 4.dp,
+        Box(
+            Modifier
+                .size(size)
+                .shadow(10.dp, CircleShape, ambientColor = glow, spotColor = glow)
+                .clip(CircleShape)
+                .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent, accent.copy(alpha = 0.7f))))
+                .drawBehind {
+                    val stars = minOf(running, 8)
+                    for (i in 0 until stars) {
+                        val angle = i * 2.399963f
+                        val r = this.size.minDimension * (0.22f + 0.05f * (i % 3))
+                        val center = Offset(this.size.width / 2 + r * kotlin.math.cos(angle), this.size.height / 2 + r * kotlin.math.sin(angle))
+                        drawSparkle(center, this.size.minDimension * 0.07f, Color.White.copy(alpha = 0.85f))
+                    }
+                }
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                    onLongClickLabel = onLongClick?.let { "Command palette" },
+                )
+                .semantics { contentDescription = "New agent" },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .combinedClickable(
-                        role = Role.Button,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                        onLongClickLabel = onLongClick?.let { "Command palette" },
-                    )
-                    .semantics { contentDescription = "Prompt" },
-                contentAlignment = Alignment.Center,
-            ) {
-                FmIcon("auto_awesome", size = size * 0.46f, tint = Fm.colors.bgBase)
-            }
+            FmIcon("add", size = size * 0.62f, tint = Color.White)
         }
         if (hasDraft) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .size(10.dp)
-                    .background(Fm.colors.accent, CircleShape),
+                    .background(Fm.colors.warning, CircleShape),
             )
         }
     }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSparkle(center: Offset, radius: Float, color: Color) {
+    val waist = radius * 0.22f
+    val path = Path().apply {
+        moveTo(center.x, center.y - radius)
+        quadraticTo(center.x + waist, center.y - waist, center.x + radius, center.y)
+        quadraticTo(center.x + waist, center.y + waist, center.x, center.y + radius)
+        quadraticTo(center.x - waist, center.y + waist, center.x - radius, center.y)
+        quadraticTo(center.x - waist, center.y - waist, center.x, center.y - radius)
+        close()
+    }
+    drawPath(path, color)
 }

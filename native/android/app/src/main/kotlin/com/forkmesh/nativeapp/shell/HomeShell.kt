@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.shell
 
+import androidx.compose.foundation.border
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -334,6 +335,7 @@ class HomeShell : Screen() {
             lastSurfaces = surfaces
         }
         val agentsOn = surfaces.agents
+        val guest = Services.get<AuthService>()?.isGuest?.collectAsState()?.value == true
         val shellScope = rememberCoroutineScope()
         LaunchedEffect(Unit) {
             AccountFeature.startNotifications()
@@ -377,23 +379,22 @@ class HomeShell : Screen() {
             Column(Modifier.fillMaxSize()) {
                 if (!shellChromeHidden && atRoot) {
                     TopBar(
+                        navigator = tabNav,
                         connection = relay.connection,
-                        onlineCount = relay.onlineCount,
                         name = account.label,
                         statusEmoji = account.userStatus.displayEmoji(rememberNowMillis()),
                         away = account.userStatus.away,
-                        onSearch = { NavigationFeature.open(Route.Search("", SearchScope.Everything)) },
-                        onPalette = { paletteOpen = true },
+                        guest = guest,
+                        showsSignIn = surfaces.signIn,
                         onAvatar = { hubOpen = true },
+                        onSignIn = { AccountFeature.openSignIn() },
                         prompt = {
-                            if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, size = 38.dp, onLongClick = { paletteOpen = true })
+                            if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, onLongClick = { paletteOpen = true }, running = agentsSurface.activeCount)
                         },
                     )
-                    ToolsFeature.TelemetryStrip(tabNav)
                 } else if (!shellChromeHidden) {
-                    Spacer(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).windowInsetsTopHeight(WindowInsets.statusBars))
+                    Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars))
                 }
-                if (!shellChromeHidden && surfaces.signIn) AccountFeature.GuestBanner()
                 if (!shellChromeHidden && noInstance) NoInstanceBanner() else if (!shellChromeHidden) ConnectionBanner(relay.connection)
                 if (!shellChromeHidden) FmInlineStatusLine(
                     linkProblem,
@@ -561,47 +562,69 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
 
 @Composable
 private fun TopBar(
+    navigator: Navigator,
     connection: RelayConnection,
-    onlineCount: Int,
     name: String,
     statusEmoji: String,
     away: Boolean,
-    onSearch: () -> Unit,
-    onPalette: () -> Unit,
+    guest: Boolean,
+    showsSignIn: Boolean,
     onAvatar: () -> Unit,
+    onSignIn: () -> Unit,
     prompt: @Composable () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
+    Box(
+        Modifier
             .fillMaxWidth()
-            .background(Fm.colors.bgRaised)
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(start = FmSpace.x4, end = FmSpace.x3, top = FmSpace.x3, bottom = FmSpace.x3),
+            .padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
+    ) {
+        ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot() }
+            Spacer(Modifier.width(FmSpace.x3))
+            if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
+            Spacer(Modifier.weight(1f))
+            prompt()
+            if (guest) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onAvatar)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "You: projects, tools and settings"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmIcon("account_circle", size = 28.dp, tint = Fm.colors.textPrimary)
+                }
+                if (showsSignIn) SignInChip(onSignIn)
+            } else {
+                Spacer(Modifier.width(FmSpace.x2))
+                AvatarWithDot(name, connection, statusEmoji, away, onAvatar)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignInChip(onClick: () -> Unit) {
+    val c = Fm.colors
+    Row(
+        Modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, c.border, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .semantics { role = Role.Button }
+            .padding(horizontal = FmSpace.x3),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f, fill = false)) {
-                AccountFeature.ProjectTitle(
-                    icon = true,
-                    subtitle = if (connection == RelayConnection.Connected) {
-                        "Connected - $onlineCount ${if (onlineCount == 1) "node" else "nodes"} online"
-                    } else {
-                        null
-                    },
-                )
-            }
-            if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
-        }
-        IconButton(onClick = onSearch) {
-            FmIcon("search", size = 22.dp, tint = Fm.colors.textPrimary, contentDescription = "Search")
-        }
-        IconButton(onClick = onPalette) {
-            FmIcon("keyboard_command_key", size = 22.dp, tint = Fm.colors.textPrimary, contentDescription = "Command palette")
-        }
-        Spacer(Modifier.width(FmSpace.x1))
-        prompt()
+        FmIcon("person_outline", size = 18.dp, tint = c.textPrimary)
         Spacer(Modifier.width(FmSpace.x2))
-        AvatarWithDot(name, connection, statusEmoji, away, onAvatar)
+        Text("Sign in", style = Fm.text.labelLarge, color = c.textPrimary)
     }
 }
 
@@ -619,8 +642,8 @@ private fun AvatarWithDot(name: String, connection: RelayConnection, statusEmoji
     Box {
         Box(
             Modifier
-                .size(34.dp)
-                .clip(CircleShape)
+                .size(36.dp)
+                .clip(RoundedCornerShape(FmRadius.md))
                 .clickable(onClick = onClick)
                 .semantics {
                     role = Role.Button

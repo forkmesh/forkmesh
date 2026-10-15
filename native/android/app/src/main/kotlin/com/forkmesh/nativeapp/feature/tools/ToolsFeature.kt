@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.tools
 
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -103,6 +104,17 @@ object ToolsFeature {
             onOpenMetric = { metric -> navigator.push(TelemetryScreen(telemetry, focusMetric = metric)) },
             onOpenLogs = { category -> navigator.push(TelemetryScreen(telemetry, logCategory = category)) },
         )
+    }
+
+    @Composable
+    fun TelemetryStripCompact(navigator: Navigator, modifier: Modifier = Modifier) {
+        val telemetry = Services.get<AppTelemetry>() ?: return
+        val settings = Services.get<SettingsService>()
+        if (settings != null) {
+            val shown by settings.showTelemetryStrip.collectAsState()
+            if (!shown) return
+        }
+        TelemetryStripCompactView(telemetry, onOpen = { navigator.push(TelemetryScreen(telemetry)) }, modifier = modifier)
     }
 
     @Composable

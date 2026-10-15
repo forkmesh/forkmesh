@@ -377,4 +377,15 @@ class AppTelemetryTest {
         assertEq("2m ago", agoLabel(120))
         assertEq("1h5m ago", agoLabel(3900))
     }
+
+    fun testHealthMatchesTheIosLimits() {
+        assertEq(TelemetryHealth.Good, TelemetryMetric.Fps.health(doubleArrayOf(60.0, 58.0)))
+        assertEq(TelemetryHealth.Warning, TelemetryMetric.Fps.health(doubleArrayOf(60.0, 30.0)))
+        assertEq(TelemetryHealth.Bad, TelemetryMetric.Fps.health(doubleArrayOf(Double.NaN, 20.0)))
+        assertEq(TelemetryHealth.Good, TelemetryMetric.Frame.health(doubleArrayOf(16.0, 49.0)))
+        assertEq(TelemetryHealth.Warning, TelemetryMetric.Frame.health(doubleArrayOf(16.0, 50.0)))
+        assertEq(TelemetryHealth.Bad, TelemetryMetric.Stall.health(doubleArrayOf(0.0, 1.0)))
+        assertEq(null, TelemetryMetric.Mem.health(doubleArrayOf(Double.NaN)))
+        assertEq(null, TelemetryMetric.Net.health(DoubleArray(0)))
+    }
 }
