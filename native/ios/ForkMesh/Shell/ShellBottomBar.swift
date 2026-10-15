@@ -927,13 +927,13 @@ struct ShellBarCellLabel: View {
         if pillCounts {
             Text(verbatim: text)
                 .font(.system(.caption2, design: .rounded, weight: .bold).monospacedDigit())
-                .foregroundStyle(unread ? Color.white : fm.count)
+                .foregroundStyle(unread ? fm.onPrimary : fm.count)
                 .contentTransition(.numericText(value: Double(value)))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 5)
                 .frame(minWidth: 18, minHeight: 18)
-                .background(Capsule().fill(unread ? fm.count : fm.count.opacity(0.16)))
+                .background(Capsule().fill(unread ? fm.accent : fm.count.opacity(0.16)))
                 .padding(1.5)
                 .background(Capsule().fill(fm.bgBase))
         } else {
@@ -951,40 +951,52 @@ struct ShellHeartbeatCount: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
-    static let period: Double = 1.1
+    static let crossing: Double = 225
 
     let count: Int
 
-    static func beat(_ phase: Double) -> Double {
+    static func sinceCrossing(_ t: Double) -> Double {
+        let turn: Double = ShellActivityHalo.turn
+        let head: Double = 360 * Double(ShellActivityHalo.arc)
+        let spin: Double = t.truncatingRemainder(dividingBy: turn) / turn
+        let lag: Double = (spin - (crossing - head) / 360).truncatingRemainder(dividingBy: 1)
+        return (lag < 0 ? lag + 1 : lag) * turn
+    }
+
+    static func beat(_ since: Double) -> Double {
+        let turn: Double = ShellActivityHalo.turn
         func bump(_ center: Double, _ width: Double) -> Double {
-            let x: Double = max(0, 1 - abs(phase - center) / width)
+            let gap: Double = abs(since - center)
+            let x: Double = max(0, 1 - min(gap, turn - gap) / width)
             return x * x * (3 - 2 * x)
         }
-        return bump(0.07, 0.07) + 0.6 * bump(0.25, 0.08)
+        return bump(0, 0.09) + 0.6 * bump(0.22, 0.09)
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { (context: TimelineViewDefaultContext) in
-            let t: Double = context.date.timeIntervalSinceReferenceDate
-            let phase: Double = t.truncatingRemainder(dividingBy: ShellHeartbeatCount.period) / ShellHeartbeatCount.period
-            let beat: Double = reduceMotion ? 0 : ShellHeartbeatCount.beat(phase)
-            let ripple: Double = reduceMotion ? 1 : min(1, phase / 0.6)
+            let since: Double = ShellHeartbeatCount.sinceCrossing(context.date.timeIntervalSinceReferenceDate)
+            let beat: Double = reduceMotion ? 0 : ShellHeartbeatCount.beat(since)
+            let ripple: Double = reduceMotion ? 1 : min(1, since / 0.6)
             Text(verbatim: ShellBottomBar.badgeText(count))
-                .fmText(.labelSmall, color: fm.count, weight: FmType.emphasis, tracking: 0, tabular: true)
+                .fmText(.labelSmall, color: fm.onPrimary, weight: FmType.emphasis, tracking: 0, tabular: true)
                 .contentTransition(.numericText(value: Double(count)))
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minWidth: 16, minHeight: 16)
+                .padding(.horizontal, 4)
+                .frame(minWidth: 18, minHeight: 18)
                 .background {
                     ZStack {
-                        Circle()
-                            .fill(fm.count.opacity(0.12 + 0.14 * beat))
-                        Circle()
-                            .stroke(fm.count.opacity(reduceMotion ? 0 : 0.5 * (1 - ripple)), lineWidth: 1.25)
+                        Capsule()
+                            .fill(fm.accent)
+                            .shadow(color: fm.accent.opacity((fm.dark ? 0.45 : 0.25) + 0.4 * beat), radius: 3 + 3 * beat, y: 1)
+                        Capsule()
+                            .stroke(fm.accent.opacity(reduceMotion ? 0 : 0.6 * (1 - ripple)), lineWidth: 1.25)
                             .scaleEffect(1 + 0.7 * ripple)
                     }
-                    .frame(width: 18, height: 18)
                 }
+                .padding(1.5)
+                .background(Capsule().fill(fm.bgBase))
                 .scaleEffect(1 + 0.22 * beat)
         }
         .allowsHitTesting(false)
