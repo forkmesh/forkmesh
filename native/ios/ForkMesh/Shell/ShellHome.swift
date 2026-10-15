@@ -86,6 +86,10 @@ struct ShellHome: View {
         style.headed ? headerHeight : (style.grouped ? FmSpace.x2 : 0)
     }
 
+    private var gridTop: CGFloat {
+        style.headed ? 0 : FmSpace.x4
+    }
+
     private var searchVisible: Bool {
         searchShown || voiceOver || !query.isEmpty
     }
@@ -94,7 +98,7 @@ struct ShellHome: View {
         let across: Int = style.across
         let rows: Int = shown.reduce(0) { $0 + ($1.items.count + across - 1) / across }
         let fixed: CGFloat =
-            (searchVisible ? searchBlockHeight : 0) + CGFloat(shown.count) * sectionLead + FmSpace.x3
+            (searchVisible ? searchBlockHeight : 0) + gridTop + CGFloat(shown.count) * sectionLead + FmSpace.x3
         return CGFloat(
             ShellBarOrder.fittedTile(
                 height: Double(viewHeight), fixed: Double(fixed), rows: rows, tile: Double(gridTileHeight),
@@ -167,7 +171,7 @@ struct ShellHome: View {
                 }
             }
             .padding(.horizontal, FmSpace.x1)
-            .padding(.top, style.headed ? 0 : FmSpace.x2)
+            .padding(.top, gridTop)
             .padding(.bottom, FmSpace.x3)
             .background(alignment: .top) { pullSensor }
             if layout.shown.isEmpty && trimmedQuery.isEmpty {
