@@ -1047,7 +1047,14 @@ and service plug-ins running, and the next window re-attaches to the same core.
     folder the project's default, the desktop binary next to `forkmesh-core`,
     `state/core/control-info.json` present (the desktop signed in once), no
     desktop attached for 1 minute, and no live window holding
-    `state/forkmesh.lock`. Turned off with `headlessDesktop: false` in
+    `state/forkmesh.lock`. While no desktop has attached since the core
+    started (a computer start), the wait is 10 s instead of a minute: after
+    the first fix the phone still showed no sessions for well over a minute
+    after a reboot, and a window opened at login takes over anyway. A lock
+    file written before the machine booted (`btime` in `/proc/stat`) is
+    ignored whatever its pid says: the window started at boot gets a low pid,
+    the next boot hands that pid to another process, and the stale lock then
+    looked held forever. Turned off with `headlessDesktop: false` in
     `config/core/daemon.json` (`forkmesh-core headless off`, `core.daemon.set
     {headlessDesktop}`, Settings → General → STARTUP "Run ForkMesh without a
     window while none is open"); on by default.
