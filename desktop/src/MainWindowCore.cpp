@@ -7,6 +7,7 @@
 #include "LocalControl.h"
 #include "MainWindow.h"
 #include "NodeEventSocket.h"
+#include "TrayMode.h"
 
 #include <QDialog>
 #include <QJsonArray>
@@ -52,6 +53,9 @@ void MainWindow::sendCoreControlInfo()
 
 void MainWindow::onCoreConnectedChanged(bool connected)
 {
+    if (connected && m_coreClient &&
+        m_coreClient->stateDirectory() == forkmesh::core::defaultStateDirectory())
+        forkmesh::tray::launch();
     if (!ensureLocalControlServer())
         return;
     if (connected) {

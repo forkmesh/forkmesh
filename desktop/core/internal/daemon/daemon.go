@@ -257,6 +257,7 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 		tick = time.Second
 	}
 	go core.supervise(ctx, options.Linger, tick)
+	core.startTray(options)
 	core.IPC.Serve(ctx)
 	for i := len(modules) - 1; i >= 0; i-- {
 		if stopper, ok := modules[i].(Stopper); ok {
