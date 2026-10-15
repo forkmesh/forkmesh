@@ -200,6 +200,21 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   or a floating bubble) instead of a card; the overlay is click-through and
   deletes itself.
 - `voice/inputEnabled` (on) shows the dictation mic.
+- The agent/model dropdown (`quickAddAgentModelSelector`,
+  `fillAgentModelSelector`) also offers destinations that start no agent
+  (`quickAddProviderIsPromptAction`): **Manual · create issue**,
+  **ActivityPub · post**, **Take a note** (`takeQuickAddNote`: a local note in
+  `<data>/notes/notes.json`, first line as title, attachments as image links)
+  and **Task · assign**. Task shows an assignee picker
+  (`quickAddTaskAssignee`, last pick in `tasks/composerAssignee`) listing the
+  organization's task members, you first; submitting posts `/api/tasks` with
+  `assigneeKind: user` and that member, or unassigned to General. Members
+  come from the task catalog (`organizationTaskMemberNames`); picking Task
+  before the catalog was read starts the launch read.
+- The dropdown's last row, **Edit models…**, opens the Models board
+  (`openComposerModelsPage`), whose **Show** column ticks which models the
+  dropdown lists (`agents/composerHiddenModels`, same list as Settings →
+  Composer models).
 
 ### Provider accounts and usage
 
@@ -283,6 +298,8 @@ repository (`AgentModelStats::parseGitHistory` credits each merge to the most
 frequent model trailer on its merged side; `ForkMesh-Agent:` wins over
 `Co-Authored-By`). The git columns count history on disk and differ from
 **Merged** on purpose.
+The **Show** checkbox exists only for rows in the composer catalog; models
+seen only in past runs cannot be offered there.
 
 **Portraits.** Icons in `resources/agent-ui/icons/` are 256 px palette PNG
 robot faces (WebP is avoided because Qt's decoder plugin is not always

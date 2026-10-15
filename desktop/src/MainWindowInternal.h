@@ -4389,6 +4389,11 @@ const QString kFallbackAgentProvider = QStringLiteral("openai");
 // an agent. Keep them out of the normal provider catalog (they cannot become
 // a default coding agent), but preserve a deliberate prompt selection.
 const QString kActivityPubPromptProvider = QStringLiteral("activitypub");
+const QString kNotePromptProvider = QStringLiteral("note");
+const QString kTaskPromptProvider = QStringLiteral("task");
+const QString kEditComposerModelsRow = QStringLiteral("edit-models");
+const QString kQuickAddTaskAssigneeSetting =
+    QStringLiteral("tasks/composerAssignee");
 
 bool quickAddProviderIsPromptAction(const QString &provider);
 
