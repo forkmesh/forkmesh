@@ -32,6 +32,7 @@ type Status struct {
 	Location  string `json:"location"`
 	Binary    string `json:"binary,omitempty"`
 	Project   string `json:"project"`
+	AtBoot    bool   `json:"atBoot"`
 }
 
 type Manager struct {
@@ -76,6 +77,10 @@ func (m Manager) xdgEntry(project string) string {
 	return filepath.Join(m.configHome(), "autostart", Label(project)+".desktop")
 }
 
+func (m Manager) lingerMarker() string {
+	return filepath.Join(m.configHome(), "systemd", "user", "forkmesh-core.linger")
+}
+
 func (m Manager) launchAgent(project string) string {
 	return filepath.Join(m.Home, "Library", "LaunchAgents", "com.forkmesh.core."+project+".plist")
 }
@@ -89,6 +94,45 @@ func (m Manager) hasSystemd() bool {
 	}
 	_, err := m.Run("systemctl", "--user", "show-environment")
 	return err == nil
+}
+
+func (m Manager) lingering() bool {
+	if m.LookPath == nil || m.Run == nil {
+		return false
+	}
+	if _, err := m.LookPath("loginctl"); err != nil {
+		return false
+	}
+	out, err := m.Run("loginctl", "show-user", strconv.Itoa(m.UID), "--property=Linger", "--value")
+	return err == nil && strings.TrimSpace(string(out)) == "yes"
+}
+
+func (m Manager) enableLinger() {
+	if m.lingering() {
+		return
+	}
+	if _, err := m.LookPath("loginctl"); err != nil {
+		return
+	}
+	if _, err := m.Run("loginctl", "--no-ask-password", "enable-linger", strconv.Itoa(m.UID)); err != nil {
+		return
+	}
+	_ = writeFile(m.lingerMarker(), "")
+}
+
+func (m Manager) releaseLinger() {
+	if _, err := os.Stat(m.lingerMarker()); err != nil {
+		return
+	}
+	if units, _ := filepath.Glob(filepath.Join(filepath.Dir(m.lingerMarker()), "forkmesh-core-*.service")); len(units) > 0 {
+		return
+	}
+	if m.Run != nil {
+		if _, err := m.Run("loginctl", "--no-ask-password", "disable-linger", strconv.Itoa(m.UID)); err != nil {
+			return
+		}
+	}
+	_ = removeFile(m.lingerMarker())
 }
 
 func Arguments(project string) []string {
@@ -126,7 +170,8 @@ func (m Manager) Status(project string) Status {
 	default:
 		unit, entry := m.systemdUnit(project), m.xdgEntry(project)
 		if enabled, binary := fileBinary(unit, execStartBinary); enabled {
-			return Status{Enabled: true, Mechanism: MechanismSystemd, Location: unit, Binary: binary, Project: project}
+			return Status{Enabled: true, Mechanism: MechanismSystemd, Location: unit, Binary: binary, Project: project,
+				AtBoot: m.lingering()}
 		}
 		if enabled, binary := fileBinary(entry, desktopExecBinary); enabled {
 			return Status{Enabled: true, Mechanism: MechanismXDG, Location: entry, Binary: binary, Project: project}
@@ -175,6 +220,7 @@ func (m Manager) Enable(binary, project string) (Status, error) {
 			if out, err := m.Run("systemctl", "--user", "enable", Label(project)+".service"); err != nil {
 				return m.Status(project), fmt.Errorf("autostart: systemctl enable: %v: %s", err, strings.TrimSpace(string(out)))
 			}
+			m.enableLinger()
 		} else if err := writeFile(m.xdgEntry(project), DesktopEntry(binary, project)); err != nil {
 			return m.Status(project), err
 		}
@@ -212,6 +258,7 @@ func (m Manager) Disable(project string) (Status, error) {
 				_, _ = m.Run("systemctl", "--user", "daemon-reload")
 			}
 		}
+		m.releaseLinger()
 		if err := removeFile(m.xdgEntry(project)); err != nil && failure == nil {
 			failure = err
 		}
