@@ -221,3 +221,44 @@ def test_worker_inbox_routes_pass_the_route_repository_to_every_verifier():
     microjobs = (ROOT / "src" / "microjobs_runtime.py").read_text(encoding="utf-8")
     start = microjobs.index("if not await verify_issue_event(")
     assert "_event_signing_repo_keys(self.request, owner, repo)" in microjobs[start:start + 200]
+
+
+def _discussion_answer(signer, number, target, repo="alice/project"):
+    ev = {"type": "answer", "author": signer.pub, "ts": 1790000000000,
+          "target": target}
+    content = hashlib.sha256(
+        EV["discussion_event_content"](ev).encode()).hexdigest()
+    body = "answer\n%d\n%s\n%d\n%s" % (number, signer.pub, ev["ts"], content)
+    ev["sig"] = signer.sign(
+        "forkmesh-discussion-event-v2\n" + repo + "\n" + body)
+    return ev
+
+
+def test_discussion_answer_events_sign_their_target():
+    signer = _Signer()
+    verify = EV["verify_discussion_event"]
+    ev = _discussion_answer(signer, 4, "reply-1")
+    assert EV["discussion_event_content"](ev) == "reply-1"
+    assert _run(verify(4, ev, ("alice/project",), False)) is True
+    assert _run(verify(4, dict(ev, target="reply-2"),
+                       ("alice/project",), False)) is False
+    cleared = _discussion_answer(signer, 4, "")
+    assert _run(verify(4, cleared, ("alice/project",), False)) is True
+    unnumbered = _discussion_answer(signer, 0, "reply-1")
+    assert _run(verify(0, unnumbered, ("alice/project",), False)) is False
+
+
+def test_discussion_answers_record_owner_approval_but_no_contribution():
+    entry = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
+    handler = entry[entry.index("async def discussions_handler"):]
+    handler = handler[:handler.index('    if method == "GET":')]
+    assert ('event.get("type") == "answer" and await '
+            '_discussion_answer_by_owner(') in handler
+    assert 'item["meta"] = {"ownerApproved": True}' in handler
+    tally = handler.index("await _record_contributor(")
+    assert 'if event.get("type") in ("open", "comment"):' in handler[
+        tally - 120:tally]
+    helper = entry[entry.index("async def _discussion_answer_by_owner"):]
+    helper = helper[:helper.index("\nasync def ")]
+    assert "allow_admin=False" in helper
+    assert "_org_owner_of_linked_repo(env, owner, repo, actor)" in helper
