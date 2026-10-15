@@ -23,6 +23,7 @@ const Category kCategories[] = {
     {"file", "Files", "file", "#58a6ff"},
     {"code", "Code", "code", "#58a6ff"},
     {"worktree-code", "Code in worktrees", "code", "#d29922"},
+    {"project-file", "Project files", "file-directory", "#58a6ff"},
 };
 constexpr int kCategoryCount = int(sizeof(kCategories) / sizeof(kCategories[0]));
 

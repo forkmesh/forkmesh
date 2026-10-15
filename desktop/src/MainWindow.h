@@ -6045,6 +6045,9 @@ private:
                                                          const QString &ref,
                                                          const QString &query,
                                                          int cap);
+    static QVector<GlobalSearchHit> scanProjectFileHits(const QString &workDir,
+                                                        const QString &query,
+                                                        int cap);
     QDialog *m_searchDialog = nullptr;
     QLineEdit *m_searchInput = nullptr;
     QListWidget *m_searchList = nullptr;

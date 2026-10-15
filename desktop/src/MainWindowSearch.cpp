@@ -31,6 +31,7 @@ constexpr int kMaxCodeHits = 80; // file contents: the one deliberately longer l
 constexpr int kMaxCommits = 200; // rows `git log` is allowed to walk back over
 constexpr int kGrepTimeoutMs = 8000;
 constexpr int kGitTimeoutMs = 5000;
+constexpr int kProjectGrepTimeoutMs = 20000;
 constexpr int kMaxPageFindMatches = 2000;
 constexpr int kMaxPageFindModelIndexes = 100000;
 
@@ -57,7 +58,7 @@ struct HitBag {
     }
 };
 
-// code-health: allow(blocking-wait) sync git primitive; every caller (runGlobalSearch waves, scanGitCatalogHits/scanWorktreeCodeHits/scanSavedSearchGitHits) runs in a runOffThread work lambda
+// code-health: allow(blocking-wait) sync git primitive; every caller (runGlobalSearch waves, scanGitCatalogHits/scanWorktreeCodeHits/scanProjectFileHits/scanSavedSearchGitHits) runs in a runOffThread work lambda
 QStringList gitLines(const QString &dir, const QStringList &args, int timeoutMs)
 {
     if (dir.isEmpty())
@@ -1036,6 +1037,36 @@ QVector<GlobalSearchHit> MainWindow::scanWorktreeCodeHits(const QString &gitDir,
     return hits;
 }
 
+QVector<GlobalSearchHit> MainWindow::scanProjectFileHits(const QString &workDir,
+                                                         const QString &query,
+                                                         int cap)
+{
+    QVector<GlobalSearchHit> hits;
+    if (workDir.isEmpty() || query.isEmpty() || cap <= 0 ||
+        !QFileInfo::exists(QDir(workDir).filePath(QStringLiteral(".git"))))
+        return hits;
+    for (const QString &raw :
+         gitLines(workDir,
+                  {QStringLiteral("grep"), QStringLiteral("--untracked"),
+                   QStringLiteral("-n"), QStringLiteral("-I"), QStringLiteral("-i"),
+                   QStringLiteral("-F"), QStringLiteral("-e"), query},
+                  kProjectGrepTimeoutMs)) {
+        if (hits.size() >= cap)
+            break;
+        const CodeRow row = parseGrepRow(raw, QString());
+        if (!row.valid)
+            continue;
+        GlobalSearchHit hit;
+        hit.kind = QStringLiteral("project-file");
+        hit.path = QDir(workDir).filePath(row.path);
+        hit.line = row.line;
+        hit.primary = QStringLiteral("%1:%2").arg(row.path).arg(row.line);
+        hit.detail = row.text.left(160);
+        hits.append(hit);
+    }
+    return hits;
+}
+
 QVector<GlobalSearchHit> MainWindow::scanSavedSearchGitHits(const QString &gitDir,
                                                             const QString &ref,
                                                             const QString &query,
@@ -1547,7 +1578,8 @@ void MainWindow::activateGlobalSearchHit(const GlobalSearchHit &hit)
     } else if (hit.kind == QLatin1String("file") ||
                hit.kind == QLatin1String("code")) {
         openRepoFileAtLine(hit.path, hit.line);
-    } else if (hit.kind == QLatin1String("worktree-code")) {
+    } else if (hit.kind == QLatin1String("worktree-code") ||
+               hit.kind == QLatin1String("project-file")) {
         revealFileInExplorer(hit.path, hit.line); // the worktree's file on disk
     }
 }

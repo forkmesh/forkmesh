@@ -8097,7 +8097,8 @@ QString savedSearchHitKey(const GlobalSearchHit &hit)
     else if (hit.kind == QLatin1String("repo"))
         identity = hit.primary; // the slug; the row index is not stable
     else if (hit.kind == QLatin1String("file-content") ||
-             hit.kind == QLatin1String("worktree-code"))
+             hit.kind == QLatin1String("worktree-code") ||
+             hit.kind == QLatin1String("project-file"))
         identity = hit.path + QLatin1Char('\n') + hit.detail; // lines shift
     else if (hit.kind == QLatin1String("commit-message") ||
              hit.kind == QLatin1String("history"))
@@ -8481,6 +8482,8 @@ QVector<GlobalSearchHit> MainWindow::searchPageKindHits(const SearchPageInputs &
                                      kMaxSearchPageRecords);
     if (kind == QLatin1String("worktree-code"))
         return scanWorktreeCodeHits(in.dir, in.ref, in.query, kMaxSearchPageRecords);
+    if (kind == QLatin1String("project-file"))
+        return scanProjectFileHits(in.dir, in.query, kMaxSearchPageRecords);
     return {};
 }
 
@@ -8835,6 +8838,12 @@ void MainWindow::openSearchResultsPage(const QString &query)
         QString::fromLatin1(worktreeCodeCategory.title),
         QString::fromLatin1(worktreeCodeCategory.icon),
         QStringLiteral("worktree-code"));
+    const Category &projectFileCategory =
+        categoryAt(categoryIndexOf(QStringLiteral("project-file")));
+    QTreeWidgetItem *projectFileBucket = makeBucket(
+        QString::fromLatin1(projectFileCategory.title),
+        QString::fromLatin1(projectFileCategory.icon),
+        QStringLiteral("project-file"));
 
     m_searchPending = 0;
     if (!dir.isEmpty()) {
@@ -8948,6 +8957,9 @@ void MainWindow::openSearchResultsPage(const QString &query)
                 });
     startWorker({worktreeCodeBucket}, [inputs] {
         return searchPageKindHits(*inputs, QStringLiteral("worktree-code"));
+    });
+    startWorker({projectFileBucket}, [inputs] {
+        return searchPageKindHits(*inputs, QStringLiteral("project-file"));
     });
     updateSearchStatus();
 }
@@ -9988,7 +10000,8 @@ void MainWindow::runNextSavedSearchAlertCheck()
                       QStringLiteral("milestone"), QStringLiteral("pull"),
                       QStringLiteral("discussion"), QStringLiteral("project"),
                       QStringLiteral("agent"), QStringLiteral("action"),
-                      QStringLiteral("git-catalog"), QStringLiteral("worktree-code")})
+                      QStringLiteral("git-catalog"), QStringLiteral("worktree-code"),
+                      QStringLiteral("project-file")})
                     hits += searchPageKindHits(*inputs, kind);
                 hits += scanSavedSearchGitHits(inputs->dir, inputs->ref,
                                                inputs->query, kMaxSearchPageRecords);

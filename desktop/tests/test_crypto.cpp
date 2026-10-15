@@ -760,6 +760,10 @@ int main(int argc, char *argv[])
                   categoryIndexOf(QStringLiteral("code")) <
                       categoryIndexOf(QStringLiteral("worktree-code")),
               "code found only in a worktree is its own group after the tree's code");
+        check(categoryIndexOf(QStringLiteral("project-file")) < categoryCount() &&
+                  categoryIndexOf(QStringLiteral("code")) <
+                      categoryIndexOf(QStringLiteral("project-file")),
+              "files on disk in the project folder are their own group after the tree's code");
 
         // Branch, worktree and commit search cover every branch except the pull
         // ledger's, local or remote-tracking.
