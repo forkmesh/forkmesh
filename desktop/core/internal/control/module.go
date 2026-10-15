@@ -120,6 +120,7 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 		m.ReceiveDir = ReceivedFilesDirectory(core.Layout)
 	}
 	m.devices = LoadDevices(m.StorePath)
+	m.recallInfo()
 	m.relay = newRelayWriter(m)
 	m.notifier = newNotifier(m)
 	m.registerMethods()
@@ -408,12 +409,12 @@ func (m *Module) registerMethods() {
 	handle("control.info", func(ctx context.Context, req *rpc.Request) (any, error) {
 		params := req.Object()
 		m.call(func() any {
-			m.name = leftUTF16(jsonString(params["name"]), maxNameChars)
-			m.user = leftUTF16(jsonString(params["user"]), maxNameChars)
-			m.node = strings.ToLower(strings.TrimSpace(jsonString(params["node"])))
+			m.applyInfo(savedInfo{Name: jsonString(params["name"]), User: jsonString(params["user"]),
+				Node: jsonString(params["node"])})
 			m.relay.configureFrom(params)
 			return nil
 		})
+		m.rememberInfo()
 		return map[string]any{}, nil
 	})
 	handle("control.relay.in", func(ctx context.Context, req *rpc.Request) (any, error) {

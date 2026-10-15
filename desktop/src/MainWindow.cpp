@@ -1461,6 +1461,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
     // Stop WebSocket-backed services while the event loop can still drain
     // their close frames. Letting QObject destruction tear down their TCP
     // children produces code 1006 close events in the Durable Objects.
+    if (m_nodeEventSocket)
+        m_nodeEventSocket->stop(false);
     stopNodeEventSocket();
     if (m_officeChannelMirror)
         m_officeChannelMirror->stop();

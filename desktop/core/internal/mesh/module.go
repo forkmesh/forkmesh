@@ -39,6 +39,7 @@ type Module struct {
 	mu     sync.Mutex
 	node   *Node
 	events *pump
+	saved  startParams
 }
 
 func New() *Module { return &Module{} }
@@ -60,6 +61,7 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 			node.DetachBridges()
 		}
 	}
+	m.resume()
 	return nil
 }
 
@@ -100,7 +102,7 @@ type startParams struct {
 	AccountKind string `json:"accountKind"`
 	Version     string `json:"version"`
 	Platform    string `json:"platform"`
-	SealKey     string `json:"sealKey"`
+	SealKey     string `json:"sealKey,omitempty"`
 	HistoryFile string `json:"historyFile"`
 	Control     bool   `json:"control"`
 }
@@ -281,6 +283,7 @@ func (m *Module) startMesh(params startParams) (any, error) {
 	if m.node != nil && m.node.Running() && m.node.Matches(nodeID, historyFile, publicKeyID(key)) {
 		m.node.SetIdentity(params.UserName, params.NodeName, params.OwnerUser, params.AccountKind)
 		m.node.SetControl(params.Control)
+		m.remember(params)
 		return m.startReply(m.node, true), nil
 	}
 	if m.node != nil {
@@ -302,6 +305,7 @@ func (m *Module) startMesh(params startParams) (any, error) {
 	node = created
 	m.node = node
 	node.Start()
+	m.remember(params)
 	return m.startReply(node, false), nil
 }
 
@@ -342,7 +346,9 @@ func (m *Module) register() {
 		m.mu.Lock()
 		node := m.node
 		m.node = nil
+		m.saved = startParams{}
 		m.mu.Unlock()
+		m.forget()
 		if node != nil {
 			node.Close()
 		}
@@ -364,6 +370,14 @@ func (m *Module) register() {
 			return nil, err
 		}
 		node.SetIdentity(params.UserName, params.NodeName, params.OwnerUser, params.AccountKind)
+		m.mu.Lock()
+		if m.saved.NodeID != "" {
+			updated := m.saved
+			updated.UserName, updated.NodeName, updated.OwnerUser, updated.AccountKind =
+				params.UserName, params.NodeName, params.OwnerUser, params.AccountKind
+			m.remember(updated)
+		}
+		m.mu.Unlock()
 		return map[string]any{}, nil
 	}))
 	handle("core.mesh.sendChat", withNode(func(node *Node, req *rpc.Request) (any, error) {
@@ -406,6 +420,13 @@ func (m *Module) register() {
 			return nil, err
 		}
 		node.SetControl(params.Enabled)
+		m.mu.Lock()
+		if m.saved.NodeID != "" {
+			updated := m.saved
+			updated.Control = params.Enabled
+			m.remember(updated)
+		}
+		m.mu.Unlock()
 		return map[string]any{}, nil
 	}))
 	handle("core.mesh.connect", withNode(func(node *Node, req *rpc.Request) (any, error) {

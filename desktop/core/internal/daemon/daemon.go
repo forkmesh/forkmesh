@@ -222,6 +222,7 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 	core.cancel = cancel
 	core.initLifecycle(options)
 	core.recordStart(stateDir)
+	core.recallOwners()
 	if id, err := identity.Load(layout.IdentityKey()); err == nil {
 		core.Identity = id
 	} else {
@@ -308,6 +309,9 @@ func (c *Core) registerBuiltins() {
 			}
 		}
 		c.Set("control.owners", names)
+		if err := c.Remember(ownersFile, names); err != nil {
+			c.Logger.Printf("could not save the node owners: %v", err)
+		}
 		return map[string]any{"owners": names}, nil
 	})
 	c.Registry.Handle("core.shutdown", "core", func(ctx context.Context, req *rpc.Request) (any, error) {
