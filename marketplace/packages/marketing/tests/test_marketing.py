@@ -3332,3 +3332,68 @@ def test_the_clues_the_walk_and_the_engagement_formula_reach_every_surface():
     assert 'files: ["reddit-walk.js"]' in background
     assert '{ type: "fm-reddit-scan" }' in background
     assert '"fm-reddit-scan"' in (extension / "reddit.js").read_text()
+
+
+class PingRuntime(Runtime):
+    def __init__(self):
+        super().__init__()
+        self.pings = []
+
+    async def notify(self, recipient, kind, title, **kwargs):
+        self.pings.append(dict(kwargs, recipient=recipient, kind=kind, title=title))
+
+
+def test_marketing_activity_and_browser_plugin_updates_raise_pings(monkeypatch):
+    monkeypatch.setattr(marketing, "_activity_clock", lambda: 5_000_000)
+    marketing._ACTIVITY_SEEN.clear()
+    runtime = PingRuntime()
+    created = call(runtime.use("POST", "charlie", {
+        "title": "Launch story", "body": "Draft", "channel": "blog"}),
+        "/api/marketing/acme/content")
+    assert created["status"] == 201
+    assert [(ping["recipient"], ping["kind"], ping["title"], ping["body"], ping["href"])
+            for ping in runtime.pings] == [
+        ("charlie", "plugin_activity", "New marketing content",
+         "By you in acme: Launch story", "/dashboard/marketing"),
+        ("alice", "plugin_activity", "New marketing content",
+         "By charlie in acme: Launch story", "/dashboard/marketing")]
+
+    runtime.pings.clear()
+    for page in ("home", "profile"):
+        assert call(runtime.use("POST", "charlie", {
+            "kind": "read", "site": "x", "page": page,
+            "text": f"Read @forkmesh on X ({page})."}),
+            "/api/marketing/acme/activity")["status"] == 201
+    assert [(ping["recipient"], ping["title"], ping["body"], ping["push"])
+            for ping in runtime.pings] == [
+        ("charlie", "Browser plugin read X",
+         "By you in acme: Read @forkmesh on X (home).", True),
+        ("charlie", "Browser plugin read X",
+         "By you in acme: Read @forkmesh on X (profile).", False)]
+    assert runtime.pings[0]["dedupe"] == runtime.pings[1]["dedupe"] != ""
+
+    runtime.pings.clear()
+    assert call(runtime.use("POST", "charlie", {
+        "kind": "sent", "site": "reddit", "page": "r/selfhosted",
+        "text": "Sent the r/selfhosted numbers to Marketing."}),
+        "/api/marketing/acme/activity")["status"] == 201
+    assert [(ping["recipient"], ping["title"], ping["dedupe"], ping["push"])
+            for ping in runtime.pings] == [
+        ("charlie", "Browser plugin sent an update to Reddit", "", True),
+        ("alice", "Browser plugin sent an update to Reddit", "", True)]
+
+    runtime.pings.clear()
+    path = "/api/marketing/acme/posts"
+    post = {"url": "https://x.com/forkmesh/status/1900000000000000002", "channel": "x",
+            "title": "Second post", "postedAt": 1_995_000_000_000, "views": 900}
+    assert call(runtime.use("POST", "charlie", {"posts": [post]}), path)["status"] == 200
+    assert [ping["title"] for ping in runtime.pings] == ["1 new channel post found"] * 2
+    runtime.pings.clear()
+    assert call(runtime.use("POST", "charlie", {"posts": [dict(post, views=1500)]}),
+                path)["status"] == 200
+    assert call(runtime.use("POST", "charlie", {"kind": "nope"}),
+                "/api/marketing/acme/activity")["status"] == 400
+    assert call(runtime.use("GET", "charlie"), "/api/marketing/acme/content")["status"] == 200
+    assert runtime.pings == []
+    assert marketing._activity_rule(
+        "x-connection", "", "POST", {"name": "secret"})[3] == ""

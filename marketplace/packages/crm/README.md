@@ -279,6 +279,29 @@ Evidence is not a column, so exports and shared sheets omit it.
   are dropped. `GET /views/activity?view=<id>` returns up to 200 entries, only
   for lists the caller can open.
 
+## Activity pings
+
+Every successful change raises a `plugin_activity` ping (`ACTIVITY_PINGS` in
+`content/worker/crm.py`), opening `/dashboard/crm`: contacts added, edited,
+merged, deleted or bulk-updated, columns removed, account evidence, emails
+tracked, sent, linked, edited or deleted, Mastodon toots logged, mailbox
+messages moved or deleted, outreach sends and team changes, deck links, list
+changes, settings and a Zoho connection.
+
+- **Who**: the member who acted ("By you in acme") and the organization's
+  owners and admins (at most 10 in all). A tracked, sent or linked email
+  already celebrates on the sender's devices, so it pings only the others;
+  an import pings the importer itself and the others get one folded ping.
+- **Quiet**: reads, lookups, list opens, list reordering, an import preview,
+  a column-width (`tableViews`-only) settings save and failed requests.
+- **Syncs ping only for something new**: a Mastodon sync pings when it logged
+  toots ("3 Mastodon posts logged in the CRM"); a Zoho Mail refresh pings
+  when new messages arrived ("New email in the CRM mailbox"), not for
+  re-read ones.
+- **Bursts fold**: contact, email and list edits, bulk updates, settings and
+  mailbox refreshes share one ping per member, action and item for 10
+  minutes. The first rings the phone; later ones update it silently.
+
 ## Surfaces
 
 - **Web**: lists and pipelines, the contacts table, board, detail card,
