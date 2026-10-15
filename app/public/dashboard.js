@@ -32557,7 +32557,43 @@
     }
   }
 
-  function renderRepoInsights(repo, commits = [], stats = null, unavailable = false) {
+  function repoTrafficDayLabel(day) {
+    const date = new Date(`${day}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return String(day || "");
+    return date.toLocaleDateString(undefined, {
+      timeZone: "UTC", month: "short", day: "numeric",
+    });
+  }
+
+  function repoTrafficChart(traffic) {
+    const days = (Array.isArray(traffic?.days) ? traffic.days : [])
+      .slice(-30)
+      .filter((item) => item && item.day)
+      .map((item) => ({
+        day: String(item.day),
+        clones: Math.max(0, Number(item.clones) || 0),
+      }));
+    if (!days.length) {
+      return '<p class="mt-3 text-xs leading-5 text-muted-foreground">Clone traffic has not been recorded yet.</p>';
+    }
+    const total = Number.isFinite(Number(traffic?.totalClones))
+      ? Math.max(0, Number(traffic.totalClones))
+      : days.reduce((sum, item) => sum + item.clones, 0);
+    const maximum = Math.max(1, ...days.map((item) => item.clones));
+    const bars = days.map((item) => {
+      const height = item.clones ? Math.max(3, Math.round(item.clones / maximum * 48)) : 1;
+      const count = `${formatCount(item.clones)} ${item.clones === 1 ? "clone" : "clones"}`;
+      const label = `${repoTrafficDayLabel(item.day)}: ${count}`;
+      return `<span data-repo-traffic-day="${escapeHtml(item.day)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="group relative flex min-w-[3px] flex-1 items-end"><span class="w-full rounded-sm ${item.clones ? "bg-primary/75" : "bg-border"}" style="height:${height}px"></span><span class="sr-only">${escapeHtml(label)}</span></span>`;
+    }).join("");
+    return `<div data-repo-traffic-chart class="mt-3" aria-label="Clone traffic over the past 30 days">
+      <div class="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span>Last 30 days</span><span class="font-mono">${formatCount(total)} ${total === 1 ? "clone" : "clones"}</span></div>
+      <div class="flex h-12 items-end gap-px" aria-label="Daily clone traffic">${bars}</div>
+      <div class="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>${escapeHtml(repoTrafficDayLabel(days[0].day))}</span><span>${escapeHtml(repoTrafficDayLabel(days[days.length - 1].day))}</span></div>
+    </div>`;
+  }
+
+  function renderRepoInsights(repo, commits = [], stats = null, unavailable = false, traffic = null) {
     const contributors = repoInsightsStatsContributors(stats, commits);
     const statCommitTotal = normalizedCount(stats?.commitCount);
     const catalogCommitTotal = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
@@ -32625,7 +32661,8 @@
           </section>
           <aside class="rounded-lg border border-border bg-secondary/20 p-4">
             <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>ForkMesh traffic</div>
-            <p class="mt-3 text-xs leading-5 text-muted-foreground">Serving and clone traffic is reported by active managed mirror nodes. Open the Mirror Nodes tab for per-node counters.</p>
+            ${repoTrafficChart(traffic)}
+            <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>
         </div>
         ${repoInsightsLanguages(stats)}
@@ -32662,15 +32699,19 @@
     if (!container || !repo) return;
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading insights from the live mirror...")}</div>`;
     try {
-      const [historyResult, statsResult] = await Promise.allSettled([
+      const [historyResult, statsResult, trafficResult] = await Promise.allSettled([
         fetchRepoJson(repoLiveUrl(repo, "history")),
         fetchRepoJson(repoLiveUrl(repo, "stats")),
+        fetchJson(`${repoApiBase(repo)}/traffic`),
       ]);
       if (historyResult.status === "rejected" && statsResult.status === "rejected") throw new Error("mirror unavailable");
       const history = historyResult.status === "fulfilled" ? historyResult.value : {};
       const stats = statsResult.status === "fulfilled" ? statsResult.value : null;
+      const traffic = trafficResult.status === "fulfilled" && trafficResult.value?.ok
+        ? trafficResult.value
+        : null;
       const commits = Array.isArray(history?.commits) ? history.commits : [];
-      container.innerHTML = renderRepoInsights(repo, commits, stats);
+      container.innerHTML = renderRepoInsights(repo, commits, stats, false, traffic);
       void linkRepoInsightsContributors(container);
     } catch (_) {
       container.innerHTML = renderRepoInsights(repo, [], null, true);
