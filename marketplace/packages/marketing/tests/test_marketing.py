@@ -1689,6 +1689,71 @@ def test_extension_reads_add_x_posts_and_update_their_stats():
     assert not asyncio.run(marketing.org_has_data(runtime, "org:acme"))
 
 
+def test_reddit_posts_entered_by_hand_and_read_by_the_extension_stay_one_row():
+    runtime = Runtime()
+    path = "/api/marketing/acme/posts"
+    hour = 3600 * 1000
+    manual = call(runtime.use("POST", "charlie", {
+        "url": "https://old.reddit.com/r/selfhosted/comments/abc123/?utm_source=share",
+        "channel": "reddit", "title": "Our launch post", "postedAt": 1_990_000_000_000,
+        "views": 120, "likes": 9, "replies": 4}), path)
+    assert manual["status"] == 201
+    post = manual["data"]["post"]
+    assert (post["channel"], post["url"], post["source"], post["views"]) == (
+        "reddit", "https://www.reddit.com/r/selfhosted/comments/abc123", "manual", 120)
+    comment = call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/selfhosted/comments/abc123/comment/def456/"}),
+        path)["data"]["post"]
+    assert comment["channel"] == "reddit"
+    for url in ("https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/",
+                "https://reddit.com/r/SelfHosted/comments/ABC123"):
+        denied = call(runtime.use("POST", body={"url": url, "channel": "reddit"}), path)
+        assert (denied["status"], denied["data"]["error"], denied["data"]["postId"]) == (
+            409, "post_exists", post["id"]), url
+    edited = call(runtime.use("PATCH", body={"title": "Launch", "url": post["url"]}),
+                  f"{path}/{post['id']}")
+    assert edited["status"] == 200
+    read = call(runtime.use("POST", "charlie", {"posts": [
+        {"url": "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/",
+         "channel": "reddit", "title": "Read title", "postedAt": 1_991_000_000_000,
+         "checkedAt": runtime.now() + hour, "views": 800, "likes": 30, "replies": 11},
+        {"url": "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/def456/",
+         "channel": "reddit", "title": "Comment in r/selfhosted", "checkedAt": 1_000 * hour,
+         "views": 40},
+        {"url": "https://www.reddit.com/r/git/comments/zzz999/new_one/", "channel": "reddit",
+         "title": "New one", "checkedAt": 1_000 * hour, "views": 5}]}), path)["data"]
+    assert (read["created"], read["updated"]) == (1, 2)
+    posts = [item for item in call(runtime.use("GET"), path)["data"]["posts"]
+             if item["channel"] == "reddit"]
+    assert len(posts) == 3
+    kept = next(item for item in posts if item["id"] == post["id"])
+    assert (kept["title"], kept["source"], kept["views"], kept["likes"], kept["postedAt"],
+            kept["url"]) == (
+        "Launch", "manual", 800, 30, 1_990_000_000_000,
+        "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post")
+    assert next(item for item in posts if item["id"] == comment["id"])["views"] == 40
+
+
+def test_the_web_reddit_page_lists_and_edits_our_posts_and_asks_the_extension():
+    view = (PACKAGE / "content/web/view.html").read_text()
+    page = (PACKAGE / "content/web/page.js").read_text()
+    reddit = view[view.index("data-marketing-reddit-page"):view.index("data-marketing-app-store-page")]
+    for marker in ("data-marketing-reddit-posts", "data-marketing-reddit-posts-update",
+                   "data-marketing-reddit-post-new", "data-marketing-reddit-posts-empty"):
+        assert marker in reddit, marker
+    assert "data-marketing-reddit-post-dialog" in view
+    for snippet in ('item.channel === "reddit"', 'orgPath(`/posts${id ? `/${id}` : ""}`)',
+                    '"marketing-reddit-posts-update"', '"marketing-reddit-posts-progress"',
+                    "posts: payload.posts || []", "renderRedditPosts();"):
+        assert snippet in page, snippet
+    extension = PACKAGE.parent / "browser-extension/content/extension"
+    bridge = (extension / "dashboard.js").read_text()
+    background = (extension / "background.js").read_text()
+    assert '"fm-reddit-accounts-update"' in bridge and "redditPosts: true" in bridge
+    assert '"fm-reddit-accounts-update": redditAccountsUpdate' in background
+    assert "/user/${encodeURIComponent(account)}/${tab}/" in background
+
+
 def test_x_post_images_are_kept_from_x_only_and_survive_a_read_without_them():
     runtime = Runtime()
     path = "/api/marketing/acme/posts"

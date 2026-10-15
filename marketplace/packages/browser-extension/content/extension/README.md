@@ -210,6 +210,14 @@ older than six hours.
   Marketing's posted links (`channel: reddit`), then opens each one not read
   in 30 minutes (up to 25 per press) in a background tab to read its views,
   which Reddit shows only to the author.
+- **Update from the extension** on Marketing's Reddit page
+  (`fm-reddit-accounts-update`, from the dashboard or the popup only, the
+  extension's organization must be the page's): for each account on the
+  desk's accounts list it opens `https://www.reddit.com/user/<name>/submitted/`
+  and then `/comments/` in one background tab at a time, reads them like
+  **Update u/<name> posts and views**, closes the tab, then starts the views
+  check for every account. Progress goes back to open Marketing pages as
+  `fm-reddit-posts-progress`.
 - **Walk the watch list**: started only by you, it opens one tab and visits up
   to 24 stops (watched subreddits' `/new/`, watched searches over the last
   week, unread rules pages). `reddit-walk.js` paces each page with scrolling

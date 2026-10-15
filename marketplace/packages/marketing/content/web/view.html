@@ -858,6 +858,19 @@
                     </section>
                   </div>
 
+                  <section data-marketing-reddit-posts-panel class="mk-panel">
+                    <div class="mk-ph"><h2>Your posts</h2><div class="mk-ph-tools"><span data-marketing-reddit-posts-count class="mk-hint"></span><button data-marketing-reddit-posts-update type="button" class="mk-link" title="The ForkMesh browser extension opens each of your accounts' Reddit profiles in a background tab, records their posts and comments here, then reads each one's views">Update from the extension</button><button data-marketing-reddit-post-new type="button" class="mk-link">Add post</button></div></div>
+                    <p data-marketing-reddit-posts-status class="mk-pb mk-hint" hidden></p>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table">
+                        <thead><tr><th>Post</th><th class="r">Views</th><th class="r">Points</th><th class="r">Comments</th><th>Numbers read</th><th class="r"><span class="sr-only">Actions</span></th></tr></thead>
+                        <tbody data-marketing-reddit-posts></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-reddit-posts-more class="mk-more" hidden><button data-marketing-reddit-posts-more-button type="button" class="fm-btn fm-btn-sm"></button></div>
+                    <div data-marketing-reddit-posts-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg><p class="fm-blankslate-title">No posts recorded yet</p><p class="fm-blankslate-desc">Add a post or comment you made on Reddit, or press Update from the extension to read your accounts' profiles.</p></div>
+                  </section>
+
                   <section class="mk-panel">
                     <div class="mk-ph"><h2>Where to post next</h2><span data-marketing-reddit-ideas-hint class="mk-hint"></span></div>
                     <div class="mk-table-wrap">
@@ -1223,6 +1236,24 @@
                   <p class="text-xs text-muted-foreground sm:col-span-2">A monitored thread’s views, points and comments, and those of its comment (or your reply when no comment is set), are read by the ForkMesh browser extension from your own signed-in Reddit tab. Reddit shows view counts only to the person who posted, so open it from that account. Pasting a comment link as the thread address fills this in.</p>
                 </div>
                 </div><div class="fm-dialog-footer"><button data-marketing-reddit-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save thread</button></div>
+              </form>
+            </dialog>
+
+            <dialog data-marketing-reddit-post-dialog class="fm-dialog mk-dialog w-full max-w-xl backdrop:bg-background/80">
+              <form data-marketing-reddit-post-form>
+                <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 data-marketing-reddit-post-title>Add post</h2><p>A post or comment you made on Reddit. Its numbers are what Reddit showed you; the ForkMesh browser extension updates them when it reads your profile, and fills them for you on the next Update.</p></div><button data-marketing-dialog-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="fm-dialog-body">
+                <input data-marketing-reddit-post-id type="hidden" />
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Address<input id="marketing-reddit-post-url" data-marketing-reddit-post-url type="url" maxlength="1000" required placeholder="https://www.reddit.com/r/…/comments/…" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Title<input id="marketing-reddit-post-name" data-marketing-reddit-post-name maxlength="300" placeholder="As it reads on Reddit" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Posted on<input id="marketing-reddit-post-date" data-marketing-reddit-post-date type="date" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Views<input id="marketing-reddit-post-views" data-marketing-reddit-post-stat="views" type="number" min="0" step="1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Points<input id="marketing-reddit-post-likes" data-marketing-reddit-post-stat="likes" type="number" min="0" step="1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground">Comments<input id="marketing-reddit-post-replies" data-marketing-reddit-post-stat="replies" type="number" min="0" step="1" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" /></label>
+                  <label class="grid gap-1 text-xs text-muted-foreground sm:col-span-2">Note<textarea id="marketing-reddit-post-note" data-marketing-reddit-post-note maxlength="2000" rows="3" placeholder="What it was about, and how it went" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea></label>
+                  <p class="text-xs text-muted-foreground sm:col-span-2">Leave a number empty when you don't know it. Saving numbers records a new reading, so the post's history keeps the earlier ones.</p>
+                </div>
+                </div><div class="fm-dialog-footer"><button data-marketing-reddit-post-delete type="button" class="fm-btn fm-btn-sm fm-btn-danger mk-dialog-start hidden">Delete</button><button data-marketing-dialog-close type="button" class="fm-btn fm-btn-sm">Cancel</button><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Save post</button></div>
               </form>
             </dialog>
 
