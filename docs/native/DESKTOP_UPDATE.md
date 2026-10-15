@@ -2,11 +2,13 @@
 
 The desktop page of the phone app (iOS `DesktopScreen`, Android
 `DesktopScreen`) has a **ForkMesh on this desktop** section. It shows the
-version the desktop runs and a **Rebuild and restart** button. The button runs
-the same quick rebuild and relaunch as the **Restart** button next to
-**Resize** in the desktop's rail and debug bar (`quickRebuildRestart`): it
-rebuilds the desktop's local source checkout and relaunches, without pulling
-from a mirror, and the build log streams onto the page while it runs.
+version the desktop runs, a **Rebuild and restart** button, and a **Restart
+computer** button. Rebuild and restart runs the same quick rebuild and
+relaunch as the **Restart** button next to **Resize** in the desktop's rail
+and debug bar (`quickRebuildRestart`): it rebuilds the desktop's local source
+checkout and relaunches, without pulling from a mirror, and the build log
+streams onto the page while it runs. Restart computer asks the desktop to
+restart the whole operating system after an owner-only confirmation.
 
 The protocol action is named `updateRestart`; on every desktop that has the
 `update.` family it runs the quick rebuild, never a pull. A failed pull must
@@ -36,7 +38,8 @@ user is not the desktop's owner gets `not_owner`.
 | `update.status` | The run state (below), the last 300 log lines as `lines`, `seq`, `version` and `startedAtMs`. It also subscribes the connection to `update.progress`. |
 | `update.unwatch` | Ends the subscription. |
 | `update.prepare {action: "updateRestart"}` | A confirmation token, as for `diag.prepare`. `already_running` while a rebuild or update runs. |
-| `update.run {action, token}` | `{started, action, subject, message}`, then the rebuild starts on the next event-loop turn so the answer leaves first. |
+| `update.prepare {action: "computerRestart"}` | A separate confirmation token for restarting the entire computer. |
+| `update.run {action, token}` | `{started, action, subject, message}`, then the requested rebuild or computer restart starts on the next event-loop turn so the answer leaves first. |
 
 The run state is `{run, running, kind, percent, phase, activity, status,
 error, relaunching}`: `percent`, `phase` and `activity` (the countdown text

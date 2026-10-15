@@ -476,6 +476,30 @@ func TestPhoneFamilyIsNativeOnceConfigured(t *testing.T) {
 	}
 }
 
+func TestPhoneCanRestartComputer(t *testing.T) {
+	s := newSandbox(t)
+	core, module, ui, _ := startModule(t)
+	module.HasUI = func() bool { return true }
+	called := ""
+	module.CallUI = func(ctx context.Context, method string, params any) ([]byte, error) {
+		called = method
+		return []byte(`{"started":true}`), nil
+	}
+	coretest.MustCall(t, core, ui, "core.update.config", Config{ClientDir: s.clientDir}, nil)
+	phone := coretest.NewPeer("phone", rpc.LAN)
+	phone.Dev.User = "alice"
+	var prepared map[string]any
+	coretest.MustCall(t, core, phone, "update.prepare", map[string]any{"action": computerRestartActionName}, &prepared)
+	if prepared["subject"] != computerRestartSubjectName || !strings.Contains(prepared["summary"].(string), "entire computer") {
+		t.Fatalf("prepared %v", prepared)
+	}
+	var ran map[string]any
+	coretest.MustCall(t, core, phone, "update.run", map[string]any{"action": computerRestartActionName, "token": prepared["token"]}, &ran)
+	if called != "ui.update.reboot" || ran["message"] != "The computer is restarting." {
+		t.Fatalf("called %q, ran %v", called, ran)
+	}
+}
+
 func TestDesktopRunStateReachesPhones(t *testing.T) {
 	s := newSandbox(t)
 	core, _, ui, _ := startModule(t)

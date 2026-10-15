@@ -116,6 +116,9 @@ class DesktopUpdateStore(
 
     fun prepare(): RemoteConfirmation = family.prepare(mapOf("action" to ACTION))
 
+    fun prepareComputerRestart(): RemoteConfirmation =
+        family.prepare(mapOf("action" to COMPUTER_RESTART_ACTION))
+
     fun run(confirmation: RemoteConfirmation): String {
         val started = family.run(confirmation)
         synchronized(lock) {
@@ -128,6 +131,9 @@ class DesktopUpdateStore(
         changed()
         return started.message
     }
+
+    fun restartComputer(confirmation: RemoteConfirmation): String =
+        family.run(confirmation).message
 
     fun unwatch() {
         if (synchronized(lock) { tracking }) return
@@ -245,6 +251,7 @@ class DesktopUpdateStore(
 
     companion object {
         const val ACTION = "updateRestart"
+        const val COMPUTER_RESTART_ACTION = "computerRestart"
         const val MAX_LINES = 400
         const val RESTART_WAIT_MS = 20 * 60 * 1000L
         const val RESTART_POLL_MS = 3000L

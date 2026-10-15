@@ -63,6 +63,21 @@ final class DesktopUpdateStoreTests: XCTestCase {
         XCTAssertEqual(store.lines.count, 4, "other families' events are ignored")
     }
 
+    @MainActor func testRestartComputerUsesItsOwnConfirmedAction() async throws {
+        let channel = FakeRemoteChannel()
+        channel.replies["update.prepare"] = [
+            "token": "reboot", "action": "computerRestart", "subject": "computer",
+            "summary": "Restart this entire computer.",
+        ]
+        channel.replies["update.run"] = ["started": true, "message": "The computer is restarting."]
+        let store = DesktopUpdateStore(channel: channel)
+        let confirmation = try await store.prepareComputerRestart()
+        XCTAssertEqual(channel.last("update.prepare")?.str("action"), "computerRestart")
+        XCTAssertEqual(try await store.restartComputer(confirmation), "The computer is restarting.")
+        XCTAssertEqual(channel.last("update.run")?.str("action"), "computerRestart")
+        XCTAssertEqual(store.stage, .idle)
+    }
+
     @MainActor func testFailureStopsTracking() async {
         let channel = FakeRemoteChannel()
         channel.replies["update.status"] = Self.idleStatus

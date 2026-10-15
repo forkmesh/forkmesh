@@ -114,6 +114,12 @@ void MainWindow::registerCoreOpsHandlers()
             QTimer::singleShot(0, this, [this] { startLocalControlUpdate(); });
         });
     m_coreClient->handle(
+        QStringLiteral("ui.update.reboot"),
+        [this](const QJsonObject &, const CoreClient::Responder &respond) {
+            respond({{QStringLiteral("started"), true}}, QString());
+            QTimer::singleShot(250, this, [this] { restartComputer(); });
+        });
+    m_coreClient->handle(
         QStringLiteral("ui.update.relaunch"),
         [this](const QJsonObject &params, const CoreClient::Responder &respond) {
             const QString appPath = params.value(QStringLiteral("appPath")).toString();

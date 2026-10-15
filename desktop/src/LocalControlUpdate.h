@@ -11,6 +11,9 @@ QString familyPrefix();
 QString actionName();
 QString subjectName();
 QString actionSummary(int agentsRunning, const QString &version);
+QString computerRestartActionName();
+QString computerRestartSubjectName();
+QString computerRestartSummary(int agentsRunning);
 
 inline constexpr int kMaxBacklogLines = 300;
 inline constexpr int kMaxBatchLines = 150;

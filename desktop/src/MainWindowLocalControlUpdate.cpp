@@ -7,6 +7,7 @@
 
 #include <QDateTime>
 #include <QJsonObject>
+#include <QProcess>
 #include <QPushButton>
 #include <QTimer>
 
@@ -95,6 +96,16 @@ void MainWindow::startLocalControlUpdate()
     flushLocalControlUpdate();
 }
 
+void MainWindow::restartComputer()
+{
+    if (QProcess::startDetached(QStringLiteral("loginctl"), {QStringLiteral("reboot")})) {
+        logSystem(QStringLiteral("=== Computer restart requested ==="));
+        return;
+    }
+    logSystem(QStringLiteral("Could not request a computer restart."));
+    flashMessage(QStringLiteral("Could not request a computer restart."));
+}
+
 void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId,
                                                  const QString &method,
                                                  const QJsonObject &params)
@@ -122,7 +133,9 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
         return;
     }
     if (method == QLatin1String("update.prepare")) {
-        if (params.value(QStringLiteral("action")).toString() != updatectl::actionName()) {
+        const QString action = params.value(QStringLiteral("action")).toString();
+        const bool computerRestart = action == updatectl::computerRestartActionName();
+        if (action != updatectl::actionName() && !computerRestart) {
             server->respondError(connectionId, requestId, QStringLiteral("unknown_action"));
             return;
         }
@@ -135,24 +148,29 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
             if (isStoppableAgentSession(session.id))
                 ++agentsRunning;
         const QString token = m_updateControlConfirmations.issue(
-            device.key, updatectl::actionName(), updatectl::subjectName(),
+            device.key, action,
+            computerRestart ? updatectl::computerRestartSubjectName() : updatectl::subjectName(),
             QDateTime::currentMSecsSinceEpoch());
         server->respond(
             connectionId, requestId,
             {{QStringLiteral("token"), token},
-             {QStringLiteral("action"), updatectl::actionName()},
-             {QStringLiteral("subject"), updatectl::subjectName()},
+             {QStringLiteral("action"), action},
+             {QStringLiteral("subject"), computerRestart ? updatectl::computerRestartSubjectName()
+                                                          : updatectl::subjectName()},
              {QStringLiteral("summary"),
-              updatectl::actionSummary(agentsRunning, QStringLiteral(FORKMESH_VERSION))},
+              computerRestart ? updatectl::computerRestartSummary(agentsRunning)
+                              : updatectl::actionSummary(agentsRunning, QStringLiteral(FORKMESH_VERSION))},
              {QStringLiteral("expiresInMs"), double(hostctl::ConfirmationStore::kLifetimeMs)}});
         return;
     }
     if (method == QLatin1String("update.run")) {
         const QString action = params.value(QStringLiteral("action")).toString();
+        const bool computerRestart = action == updatectl::computerRestartActionName();
         const hostctl::ConfirmationStore::Result verdict = m_updateControlConfirmations.consume(
             params.value(QStringLiteral("token")).toString(), device.key, action,
-            updatectl::subjectName(), QDateTime::currentMSecsSinceEpoch());
-        if (action != updatectl::actionName() ||
+            computerRestart ? updatectl::computerRestartSubjectName() : updatectl::subjectName(),
+            QDateTime::currentMSecsSinceEpoch());
+        if ((action != updatectl::actionName() && !computerRestart) ||
             verdict != hostctl::ConfirmationStore::Result::Ok) {
             const QString why = action != updatectl::actionName()
                                     ? QStringLiteral("unknown_action")
@@ -164,6 +182,17 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
         }
         if (restartInProgress()) {
             server->respondError(connectionId, requestId, QStringLiteral("already_running"));
+            return;
+        }
+        if (computerRestart) {
+            logSystem(QStringLiteral("Computer restart requested from %1.")
+                          .arg(localControlDeviceLabel(connectionId)));
+            server->respond(connectionId, requestId,
+                            {{QStringLiteral("started"), true},
+                             {QStringLiteral("action"), action},
+                             {QStringLiteral("subject"), updatectl::computerRestartSubjectName()},
+                             {QStringLiteral("message"), QStringLiteral("The computer is restarting.")}});
+            QTimer::singleShot(250, this, [this] { restartComputer(); });
             return;
         }
         logSystem(QStringLiteral("Rebuild and restart requested from %1.")

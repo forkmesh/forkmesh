@@ -4015,6 +4015,7 @@ private:
     void watchLocalControlUpdate(int connectionId);
     void flushLocalControlUpdate();
     void startLocalControlUpdate();
+    void restartComputer();
     struct UpdateWatcher {
         qint64 sentSeq = 0;
         QJsonObject sentState;

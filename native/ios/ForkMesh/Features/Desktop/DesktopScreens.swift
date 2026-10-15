@@ -409,6 +409,7 @@ struct DesktopScreen: View {
     let fleet: FleetStore
     let update: DesktopUpdateStore
     @State private var pendingUpdate: PendingConfirmation?
+    @State private var pendingComputerRestart: PendingConfirmation?
 
     var body: some View {
         List {
@@ -480,7 +481,9 @@ struct DesktopScreen: View {
                     Label("Memory and processes", systemImage: "memorychip")
                 }
             }
-            DesktopUpdateSection(store: update, pending: $pendingUpdate)
+            DesktopUpdateSection(
+                store: update, pending: $pendingUpdate,
+                pendingComputerRestart: $pendingComputerRestart)
             if let backups = diagnostics.backups {
                 DesktopBackupsSection(backups: backups)
             }
@@ -520,8 +523,15 @@ struct DesktopScreen: View {
         }
         .sheet(item: $pendingUpdate) { item in
             NavigationStack {
-                RemoteConfirmSheet(title: item.title, confirmation: item.confirmation) { confirmation, _ in
+                RemoteConfirmSheet(title: item.title, confirmation: item.confirmation, destructive: item.destructive) { confirmation, _ in
                     try await update.run(confirmation)
+                }
+            }
+        }
+        .sheet(item: $pendingComputerRestart) { item in
+            NavigationStack {
+                RemoteConfirmSheet(title: item.title, confirmation: item.confirmation, destructive: item.destructive) { confirmation, _ in
+                    try await update.restartComputer(confirmation)
                 }
             }
         }

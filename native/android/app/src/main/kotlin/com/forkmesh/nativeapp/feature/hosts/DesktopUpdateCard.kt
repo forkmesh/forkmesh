@@ -49,7 +49,9 @@ internal fun DesktopUpdateCard(store: DesktopUpdateStore) {
     val c = Fm.colors
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<RemoteConfirmation?>(null) }
+    var pendingComputerRestart by remember { mutableStateOf<RemoteConfirmation?>(null) }
     var preparing by remember { mutableStateOf(false) }
+    var preparingComputerRestart by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
     FmCard(Modifier.fillMaxWidth()) {
@@ -88,18 +90,46 @@ internal fun DesktopUpdateCard(store: DesktopUpdateStore) {
                         }
                     }),
                 )
+                FmToneButton(
+                    "Restart computer",
+                    icon = "power_settings_new",
+                    tone = FmTone.Danger,
+                    onPressed = if (store.busy || preparingComputerRestart || !store.loaded) null else ({
+                        preparingComputerRestart = true
+                        notice = ""
+                        scope.launch {
+                            try {
+                                pendingComputerRestart = offMain { store.prepareComputerRestart() }
+                                error = ""
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                error = describeRemote(failure)
+                            } finally {
+                                preparingComputerRestart = false
+                            }
+                        }
+                    }),
+                )
             }
             DesktopUpdateProgress(store)
             FmInlineStatusLine(notice, isError = false, onDismiss = { notice = "" })
             if (error.isNotEmpty()) Text(error, style = Fm.text.bodySmall.copy(color = c.danger))
             Text(
-                "Rebuilds ForkMesh from the desktop's source checkout and restarts it, like the desktop's Restart button. The build log streams here while it runs.",
+                "Rebuild and restart rebuilds ForkMesh from the desktop's source checkout. Restart computer restarts this entire computer and closes every running program.",
                 style = Fm.text.labelSmall.copy(color = c.textTertiary),
             )
         }
     }
     pending?.let { confirmation ->
         RemoteConfirmDialog("Rebuild and restart", confirmation, perform = { conf, _ -> store.run(conf) }, onDone = { notice = it }) { pending = null }
+    }
+    pendingComputerRestart?.let { confirmation ->
+        RemoteConfirmDialog(
+            "Restart computer", confirmation, destructive = true,
+            perform = { conf, _ -> store.restartComputer(conf) },
+            onDone = { notice = it },
+        ) { pendingComputerRestart = null }
     }
 }
 

@@ -48,6 +48,7 @@ public enum DesktopUpdateStage: Equatable, Sendable {
 @Observable
 public final class DesktopUpdateStore {
     public static let action = "updateRestart"
+    public static let computerRestartAction = "computerRestart"
     public static let maxLines = 400
     public static let restartWaitMs = 20 * 60 * 1000
     public static let restartPollMs = 3000
@@ -109,6 +110,10 @@ public final class DesktopUpdateStore {
         try await family.prepare(["action": .string(Self.action)])
     }
 
+    public func prepareComputerRestart() async throws -> RemoteConfirmation {
+        try await family.prepare(["action": .string(Self.computerRestartAction)])
+    }
+
     @discardableResult
     public func run(_ confirmation: RemoteConfirmation) async throws -> String {
         let started = try await family.run(confirmation)
@@ -120,6 +125,11 @@ public final class DesktopUpdateStore {
         beginTracking()
         stage = .running
         revision &+= 1
+        return started.message
+    }
+
+    public func restartComputer(_ confirmation: RemoteConfirmation) async throws -> String {
+        let started = try await family.run(confirmation)
         return started.message
     }
 
