@@ -13,6 +13,7 @@ final class ShellBarStyleTests: XCTestCase {
         XCTAssertEqual(style.limit, ShellBarLayout.barLimit)
         XCTAssertFalse(style.showCounts)
         XCTAssertTrue(style.showActivity)
+        XCTAssertEqual(style.marks, .home)
         XCTAssertTrue(style.isDefault)
         let metrics: ShellBarMetrics = style.metrics(available: 366, count: 6, cell: 64, height: 52)
         XCTAssertEqual(metrics.slot, 58)
@@ -101,6 +102,7 @@ final class ShellBarStyleTests: XCTestCase {
         style.showCounts = true
         style.showActivity = false
         style.highlightFrequent = true
+        style.marks = .plain
         style.save(store)
         XCTAssertEqual(ShellBarStyle.load(store), style)
         ShellBarStyle().save(store)
@@ -118,6 +120,11 @@ final class ShellBarStyleTests: XCTestCase {
         XCTAssertEqual(style.corner, 1)
         XCTAssertEqual(style.spacing, 0)
         XCTAssertEqual(style.fill, .glass)
+        XCTAssertEqual(style.marks, .home)
+        store.set("{\"marks\":\"plain\"}", forKey: ShellBarStyle.key)
+        XCTAssertEqual(ShellBarStyle.load(store).marks, .plain)
+        store.set("{\"marks\":\"sparkly\"}", forKey: ShellBarStyle.key)
+        XCTAssertEqual(ShellBarStyle.load(store).marks, .home)
         store.set("not json", forKey: ShellBarStyle.key)
         XCTAssertEqual(ShellBarStyle.load(store), ShellBarStyle())
         var wild: ShellBarStyle = ShellBarStyle()

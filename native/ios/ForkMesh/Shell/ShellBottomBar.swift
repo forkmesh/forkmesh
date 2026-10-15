@@ -739,13 +739,15 @@ struct ShellBarCellLabel: View {
 
     private var activity: Bool { look.showActivity }
 
+    private var homeMarks: Bool { look.marks == .home }
+
     var body: some View {
         VStack(spacing: spacing) {
             glyph
-                .frame(height: glyphHeight)
+                .frame(width: homeMarks ? glyphHeight : nil, height: glyphHeight)
                 .background {
                     if item.active && activity {
-                        ShellActivityHalo(size: (tiled ? tileSide : iconSize) + 10)
+                        activityMark
                             .transition(.scale.combined(with: .opacity))
                     } else if heat > 0 {
                         Circle()
@@ -765,31 +767,16 @@ struct ShellBarCellLabel: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if item.badge > 0 {
-                        countMark(badgeText, value: item.badge, unread: true)
-                            .keyframeAnimator(initialValue: 1.0, trigger: item.pulse) { badge, scale in
-                                badge.scaleEffect(scale)
-                            } keyframes: { (_: Double) in
-                                KeyframeTrack {
-                                    SpringKeyframe(1.6, duration: 0.18)
-                                    SpringKeyframe(0.9, duration: 0.16)
-                                    SpringKeyframe(1.0, duration: 0.2)
-                                }
-                            }
-                            .alignmentGuide(.trailing) { (d: ViewDimensions) in d[.leading] }
-                            .offset(x: pillCounts ? -8 : -2, y: pillCounts ? -9 : -6)
-                            .transition(.scale.combined(with: .opacity))
-                            .accessibilityHidden(true)
-                    } else if showsCounts, let count = item.count, count > 0 {
-                        countMark(ShellBottomBar.countText(count), value: count, unread: false)
-                            .alignmentGuide(.trailing) { (d: ViewDimensions) in d[.leading] }
-                            .offset(x: pillCounts ? -8 : -2, y: pillCounts ? -9 : -6)
-                            .transition(.scale.combined(with: .opacity))
-                            .accessibilityHidden(true)
+                    if homeMarks {
+                        homeCountAnchor
+                    } else {
+                        plainCount
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if item.live > 0 && activity {
+                    if homeMarks {
+                        homeLiveAnchor
+                    } else if item.live > 0 && activity {
                         ShellHeartbeatCount(count: item.live)
                             .alignmentGuide(.leading) { (d: ViewDimensions) in d[.trailing] }
                             .offset(x: 2, y: -6)
@@ -806,6 +793,89 @@ struct ShellBarCellLabel: View {
             }
         }
         .shellBarLift(!look.shape.backed, dark: fm.dark)
+    }
+
+    @ViewBuilder private var activityMark: some View {
+        if homeMarks {
+            ShellHomeActivityRing(
+                size: tiled ? tileSide + 5 : iconSize + 14, corner: tiled ? tileSide * 0.3 + 2.5 : nil)
+        } else {
+            ShellActivityHalo(size: (tiled ? tileSide : iconSize) + 10)
+        }
+    }
+
+    @ViewBuilder private var plainCount: some View {
+        if item.badge > 0 {
+            countMark(badgeText, value: item.badge, unread: true)
+                .keyframeAnimator(initialValue: 1.0, trigger: item.pulse) { badge, scale in
+                    badge.scaleEffect(scale)
+                } keyframes: { (_: Double) in
+                    KeyframeTrack {
+                        SpringKeyframe(1.6, duration: 0.18)
+                        SpringKeyframe(0.9, duration: 0.16)
+                        SpringKeyframe(1.0, duration: 0.2)
+                    }
+                }
+                .alignmentGuide(.trailing) { (d: ViewDimensions) in d[.leading] }
+                .offset(x: pillCounts ? -8 : -2, y: pillCounts ? -9 : -6)
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityHidden(true)
+        } else if showsCounts, let count = item.count, count > 0 {
+            countMark(ShellBottomBar.countText(count), value: count, unread: false)
+                .alignmentGuide(.trailing) { (d: ViewDimensions) in d[.leading] }
+                .offset(x: pillCounts ? -8 : -2, y: pillCounts ? -9 : -6)
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var anchorInset: CGFloat {
+        tiled ? min(12, tileSide * 0.28) : (glyphHeight - iconSize) / 2 + iconSize * 0.3
+    }
+
+    private var anchorDrop: CGFloat {
+        let drop: CGFloat = tiled ? min(10, tileSide * 0.22) : (glyphHeight - iconSize) / 2 + 6
+        return look.shape.separate ? drop : max(drop, ShellBarCellLabel.markHeight - 6)
+    }
+
+    static let markHeight: CGFloat = 22
+
+    private var homeCountAnchor: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .overlay(alignment: .bottomLeading) {
+                if item.badge > 0 {
+                    ShellHomeCountMark(text: badgeText, value: item.badge, unread: true)
+                        .keyframeAnimator(initialValue: 1.0, trigger: item.pulse) { badge, scale in
+                            badge.scaleEffect(scale, anchor: .bottomLeading)
+                        } keyframes: { (_: Double) in
+                            KeyframeTrack {
+                                SpringKeyframe(1.4, duration: 0.18)
+                                SpringKeyframe(0.92, duration: 0.16)
+                                SpringKeyframe(1.0, duration: 0.2)
+                            }
+                        }
+                        .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
+                } else if showsCounts, let count = item.count, count > 0 {
+                    ShellHomeCountMark(text: ShellBottomBar.countText(count), value: count, unread: false)
+                        .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
+                }
+            }
+            .offset(x: -anchorInset, y: anchorDrop)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var homeLiveAnchor: some View {
+        if item.live > 0 && activity {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .overlay(alignment: .bottomTrailing) {
+                    ShellHeartbeatCount(count: item.live)
+                        .fixedSize()
+                }
+                .offset(x: anchorInset, y: anchorDrop)
+                .transition(.scale.combined(with: .opacity))
+        }
     }
 
     private var labelSize: CGFloat { (10 * CGFloat(look.size.scale)).rounded() }
