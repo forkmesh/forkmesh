@@ -53,6 +53,24 @@ enum WidgetRoute {
     static func url(_ route: Route) -> URL? { SurfaceLink.url(for: route) }
 }
 
+struct WidgetRouteLink<Content: View>: View {
+    let route: Route
+    let content: Content
+
+    init(_ route: Route, @ViewBuilder content: () -> Content) {
+        self.route = route
+        self.content = content()
+    }
+
+    var body: some View {
+        if let url = WidgetRoute.url(route) {
+            Link(destination: url) { content }
+        } else {
+            content
+        }
+    }
+}
+
 struct SignedOutWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
