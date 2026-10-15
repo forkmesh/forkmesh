@@ -292,6 +292,15 @@ its control channel while the desktop restarts.
   mode) sends `core.relay.stop`; a desktop quit sends nothing, so the core keeps
   the socket. If a newly attached desktop sends no configure within 2 minutes,
   the core closes the socket.
+- **Reconnect at start.** Every accepted configure writes
+  `state/core/relay.json` (mode 0600: endpoint, owner, account, node and the
+  node public key; no signature or token, each attempt signs afresh with the
+  node key). When the core starts it reconnects from that file without waiting
+  for a desktop, so a core started at boot (Computer start, below) is reachable
+  from the phone and the web before anyone logs in. Without this the boot-time
+  core served only its local socket until a window opened. `core.relay.stop`
+  (sign-out, offline mode) deletes the file; a key that no longer matches the
+  saved public key skips the reconnect; the 2-minute reclaim close keeps it.
 - **Traps.** The relay connection now comes from the `forkmesh-core`
   executable, so a path-keyed firewall needs its own rule for it. If only the
   IPC link drops, both processes may briefly hold a node socket.
@@ -901,6 +910,9 @@ and service plug-ins running, and the next window re-attaches to the same core.
     when the computer starts" or "Starts when you log in" plus the
     `loginctl enable-linger` hint. Lingering also keeps the user's processes
     running after log-out and starts the user's other enabled units at boot.
+    The boot-time core reconnects to the relay from the settings the desktop
+    last gave (Relay socket → Reconnect at start); the desktop has to have been
+    signed in once with the core attached.
   - macOS and Windows start the engine when the user signs in (with automatic
     sign-in, that is at boot); a boot-time service there needs administrator
     rights and is not offered.
