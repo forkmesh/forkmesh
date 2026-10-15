@@ -100,7 +100,7 @@ const chrome = {
     async update(id, options) { if (options.url) tabsVisited.push(options.url); return { id }; },
     async query() { return []; },
     async remove(id) { tabsRemoved.push(id); },
-    async sendMessage(id, request) { tabMessages.push([id, request]); return tabReply(request); },
+    async sendMessage(id, request) { tabMessages.push([id, request]); return tabReply(request, id); },
   },
   alarms: {
     onAlarm: noop,
@@ -523,6 +523,46 @@ function message(request, sender) {
   tabReply = () => null;
   check("a page the reader cannot answer says so", (await message({ type: "fm-reddit-profile-update", tabId: PROFILE_TAB }, POPUP)).error
     === "reddit_profile_not_read");
+
+  const DASHBOARD = { id: "ext", url: "https://app.forkmesh.com/dashboard/marketing?org=acme&page=reddit", tab: { id: 9 } };
+  check("a Reddit page cannot ask for every account's posts", (await message({ type: "fm-reddit-accounts-update" }, TAB)).error === "forbidden_sender");
+  check("the dashboard of another organization is refused", (await message({ type: "fm-reddit-accounts-update", organization: "other" }, DASHBOARD)).error
+    === "reddit_organization_mismatch");
+  browserActor = "alice";
+  const tabUrl = (id) => tabsCreated[id - 41] || "";
+  tabReply = (request, id) => {
+    const url = tabUrl(id);
+    if (request.type === "fm-reddit-read") return { ok: true, monitor: { postId: request.postId, title: "", views: 60, score: 2, comments: 0,
+      commentId: request.commentId, commentViews: request.commentId ? 12 : null, commentScore: request.commentId ? 1 : null } };
+    if (request.type !== "fm-reddit-profile-read" || !url.includes("/user/forkmesh/")) return null;
+    return { ok: true, account: "forkmesh", items: url.endsWith("/submitted/")
+      ? [{ kind: "post", postId: "fff002", commentId: "", subreddit: "forkmesh", url: "https://www.reddit.com/r/forkmesh/comments/fff002/release_notes/",
+        title: "Release notes", score: 6, comments: 2, views: null, postedAt: 0 }]
+      : [{ kind: "comment", postId: "hhh888", commentId: "kkk777", subreddit: "git", url: "https://www.reddit.com/r/git/comments/hhh888/worktrees_for_agents/kkk777/",
+        title: "Worktrees for agents", score: 3, comments: null, views: null, postedAt: 0 }] };
+  };
+  const accountTabsBefore = tabsCreated.length;
+  const everyone = await message({ type: "fm-reddit-accounts-update", organization: "acme" }, DASHBOARD);
+  const profileTabs = tabsCreated.slice(accountTabsBefore);
+  check("Update from the dashboard opens each account's posts and comments in a background tab", everyone.ok
+    && ["ada_lovelace", "forkmesh"].every((name) => profileTabs.includes(`https://www.reddit.com/user/${name}/submitted/`)
+      && profileTabs.includes(`https://www.reddit.com/user/${name}/comments/`)), JSON.stringify(profileTabs));
+  check("it says what each account gave", everyone.accounts.length === 2 && !everyone.accounts[0].read
+    && everyone.accounts[1].read && everyone.accounts[1].found === 2 && everyone.accounts[1].linksAdded === 2
+    && /^u\/ada_lovelace: the profile did not load.*u\/forkmesh: 2 posts and comments read, 2 new links and 0 updated\./.test(everyone.text), everyone.text);
+  await new Promise((resolve) => {
+    const poll = async () => {
+      const stats = await message({ type: "fm-reddit-stats" }, POPUP);
+      if (stats.mineCheck?.done && !stats.mineChecking) resolve();
+      else setTimeout(poll, 5);
+    };
+    void poll();
+  });
+  const allPosts = (await alice("GET", "/api/marketing/acme/posts")).data.posts.filter((item) => item.channel === "reddit");
+  const release = allPosts.find((item) => item.url === "https://www.reddit.com/r/forkmesh/comments/fff002");
+  check("the new links land in Marketing posts with their views", release && release.views === 60
+    && allPosts.some((item) => item.url.endsWith("/kkk777") && item.views === 12), JSON.stringify(allPosts.map((item) => [item.url, item.views])));
+  check("every profile tab is closed again", profileTabs.every((url, index) => tabsRemoved.includes(41 + accountTabsBefore + index)));
 
   await message({ type: "fm-reddit-error", message: "boom", page: "/r/git/" }, TAB);
   check("errors land in the widget", (await message({ type: "fm-reddit-stats" }, POPUP)).errors[0].message === "/r/git/ boom");

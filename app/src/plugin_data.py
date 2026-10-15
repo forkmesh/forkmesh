@@ -156,6 +156,23 @@ async def deliver_reminders(runtime):
     return {"ok": True, "delivered": delivered}
 
 
+async def deliver_lead(runtime, org_name, lead):
+    for plugin in sorted(REGISTRY):
+        module = _data_module(plugin)
+        hook = getattr(module, "record_lead", None)
+        if hook is None:
+            continue
+        try:
+            result = await hook(runtime, org_name, lead)
+        except Exception as error:
+            if "no such table" not in str(error).lower():
+                raise
+            continue
+        if isinstance(result, dict) and result.get("ok"):
+            return dict(result, plugin=plugin)
+    return {"ok": False, "status": "no_receiver"}
+
+
 async def purge_account(runtime, account_bi, account_name):
     """Purge every account-scoped package's rows when the account is deleted.
 

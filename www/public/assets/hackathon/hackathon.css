@@ -636,3 +636,60 @@ html.light footer .fcard::after{
   background:repeating-linear-gradient(180deg,rgba(0,0,0,.06) 0 1px,rgba(255,255,255,.5) 1px 3px)}
 html.light footer .fcard h3,html.light footer .fcard .sub,
 html.light footer .fcard .tag,html.light footer .fcard .fine{text-shadow:none}
+
+[hidden]{display:none!important}
+.race-panel{gap:16px}
+.race-panel h3{color:var(--w1)}
+.race-copy{color:var(--w2);font-weight:500;font-size:.9375rem;line-height:1.375rem;text-wrap:pretty}
+.race-form{display:flex;flex-direction:column;gap:14px}
+.race-form label{display:flex;flex-direction:column;gap:7px;font-family:var(--mono);font-size:11px;
+  line-height:16px;letter-spacing:.1em;text-transform:uppercase;color:var(--g1)}
+.race-form input:not([type="checkbox"]),.race-form textarea{width:100%;padding:11px 14px;color:var(--foreground);
+  background:var(--field);border:1px solid var(--line);border-radius:3px;outline:none;
+  font:500 15px/22px var(--sans);letter-spacing:-.01em;text-transform:none;transition:border-color .2s,background .2s}
+.race-form textarea{resize:vertical;min-height:84px}
+.race-form input::placeholder,.race-form textarea::placeholder{color:var(--g1)}
+.race-form input:focus,.race-form textarea:focus{border-color:color-mix(in srgb,var(--o),transparent 38%);background:var(--field-focus)}
+.race-form .race-tick{flex-direction:row;align-items:center;gap:10px;font-family:var(--sans);font-size:.875rem;
+  letter-spacing:0;text-transform:none;color:var(--w2);font-weight:500}
+.race-form .race-tick input{width:16px;height:16px;accent-color:var(--accent)}
+.race-form .cta-row{display:flex;flex-wrap:wrap;gap:12px}
+.race-msg{min-height:20px;color:var(--w2);font-size:.875rem;line-height:1.25rem;font-weight:500}
+.race-msg[data-tone="bad"]{color:var(--o)}
+.race-panel .race-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.race-panel .race-checks li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;
+  border:1px solid var(--line);color:var(--w2);font-size:.8125rem;line-height:1.125rem;font-weight:600}
+.race-panel .race-checks li::before{display:none}
+.race-panel .race-checks li span{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--g1)}
+.race-panel .race-checks li[data-state="confirmed"]{border-color:color-mix(in srgb,var(--accent),transparent 55%)}
+.race-panel .race-checks li[data-state="confirmed"] span{color:var(--accent)}
+.race-panel .race-checks li[data-state="missing"] span,.race-panel .race-checks li[data-state="rejected"] span{color:var(--o)}
+.race-panel .race-mine{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.race-panel .race-mine li{padding-left:0;display:flex;justify-content:space-between;gap:12px;color:var(--w2);font-size:.875rem;font-weight:500}
+.race-panel .race-mine li::before{display:none}
+.race-board{display:flex;flex-direction:column}
+.race-board li{display:grid;grid-template-columns:3.25rem minmax(0,1fr) auto;align-items:center;gap:16px;
+  padding:16px 22px;border-bottom:1px solid var(--line-soft)}
+.race-board li:last-child{border-bottom:0}
+.race-board .pos{font-family:var(--mono);font-size:1.25rem;font-weight:700;color:var(--g1)}
+.race-board li[data-won] .pos{color:var(--o)}
+.race-board .name{display:flex;flex-direction:column;gap:3px;min-width:0}
+.race-board .name a,.race-board .name b{color:var(--w1);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.race-board .name span{color:var(--w2);font-size:.8125rem;line-height:1.125rem;font-weight:500;text-wrap:pretty}
+.race-board .meter{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-family:var(--mono);
+  font-size:12px;letter-spacing:.06em;color:var(--w1)}
+.race-board .bar{display:block;width:clamp(80px,14vw,180px);height:4px;background:var(--line-soft)}
+.race-board .bar i{display:block;height:100%;background:var(--o)}
+@media (max-width:639px){
+  .race-panel .race-checks{grid-template-columns:1fr}
+  .race-board li{grid-template-columns:2.25rem minmax(0,1fr);padding:14px 16px}
+  .race-board .meter{grid-column:2;align-items:flex-start}}
+.aff-log{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.aff-log input{flex:1 1 220px;min-width:0;padding:7px 10px;color:var(--foreground);background:var(--field);
+  border:1px solid var(--line);border-radius:3px;outline:none;font:500 13px/18px var(--sans)}
+.aff-log input:focus{border-color:color-mix(in srgb,var(--o),transparent 38%);background:var(--field-focus)}
+.aff-log button{padding:7px 12px;border:1px solid var(--line);border-radius:3px;background:transparent;
+  color:var(--w1);font:600 12px/18px var(--sans);cursor:pointer}
+.aff-log button:hover{border-color:color-mix(in srgb,var(--o),transparent 38%)}
+.aff-log button:focus-visible{outline:2px solid color-mix(in srgb,var(--o),transparent 20%);outline-offset:2px}
+.aff-log .race-msg{flex-basis:100%;min-height:0}

@@ -1,6 +1,7 @@
 """The official rules of the ForkMesh September Revenue Contest.
 
-/hackathon/rules is the document that applies when any other page disagrees,
+/hackathon/archive/revenue-contest-2026-rules is the document that applied
+when any other page disagreed,
 so every term that decides who gets paid has to be stated on it, and nothing
 may be left pending on a page that names cash amounts.
 """
@@ -9,7 +10,8 @@ import re
 from pathlib import Path
 
 RULES = (Path(__file__).resolve().parents[1] / "public" / "hackathon"
-         / "rules.html").read_text(encoding="utf-8")
+         / "archive" / "revenue-contest-2026-rules.html").read_text(
+             encoding="utf-8")
 TEXT = " ".join(re.sub(r"<[^>]+>", "", RULES).lower().split())
 
 

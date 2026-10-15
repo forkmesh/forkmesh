@@ -5599,6 +5599,8 @@ def _post_url(value):
         if match:
             return "https://x.com/%s/status/%s" % (match.group(1).lower(), match.group(2))
     path = parsed.path.rstrip("/") or "/"
+    if _host_matches(host, CHANNEL_HOSTS["reddit"]) and not port:
+        return _https(REDDIT_ORIGIN + path)
     return _https("https://" + host + (":%d" % port if port else "") + path
                   + ("?" + parsed.query if parsed.query else ""))
 
@@ -5610,6 +5612,28 @@ def _post_channel(value, url):
     host = urlparse(url).hostname or ""
     return next((channel for channel, domains in CHANNEL_HOSTS.items()
                  if _host_matches(host, domains)), "")
+
+
+def _reddit_post_key(url):
+    found = _reddit_url_parts(url)
+    if not found:
+        return ""
+    rest = found[2]
+    comment = rest[1].lower() if len(rest) >= 2 else ""
+    return found[1] + ("_" + comment if REDDIT_ID_RE.fullmatch(comment) else "")
+
+
+async def _reddit_post_keys(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT " + POST_COLUMNS + ",url_bi FROM marketing_posts WHERE org_bi=? AND channel=?",
+        org_bi, "reddit")
+    found = {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        key = _reddit_post_key(data.get("url") if isinstance(data, dict) else "")
+        if key:
+            found.setdefault(key, []).append(row)
+    return found
 
 
 def _post_count(value):
@@ -5817,6 +5841,10 @@ async def _save_post(runtime, row, org_bi, org_name, account_bi, actor, data):
     url_bi = await _post_url_bi(runtime, org_bi, envelope["url"])
     duplicate = await runtime.d1_first(
         "SELECT post_id FROM marketing_posts WHERE org_bi=? AND url_bi=?", org_bi, url_bi)
+    key = _reddit_post_key(envelope["url"]) if channel == "reddit" else ""
+    if key and not duplicate:
+        duplicate = next((match for match in (await _reddit_post_keys(runtime, org_bi)).get(key, [])
+                          if not row or match["post_id"] != row["post_id"]), None)
     if duplicate and (not row or duplicate["post_id"] != row["post_id"]):
         return _response(runtime, {"error": "post_exists",
                                    "postId": duplicate["post_id"]}, 409)
@@ -5839,6 +5867,7 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
     now = runtime.now()
     created = updated = skipped = 0
     full = ready_closed = False
+    reddit_keys = None
     for index, item in enumerate(items):
         url = _post_url(item.get("url")) if isinstance(item, dict) else ""
         channel = _post_channel(item.get("channel"), url) if url else ""
@@ -5849,6 +5878,11 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
         row = await runtime.d1_first(
             "SELECT " + POST_COLUMNS + ",url_bi FROM marketing_posts "
             "WHERE org_bi=? AND url_bi=?", org_bi, url_bi)
+        reddit_key = _reddit_post_key(url) if not row and channel == "reddit" else ""
+        if reddit_key:
+            if reddit_keys is None:
+                reddit_keys = await _reddit_post_keys(runtime, org_bi)
+            row = (reddit_keys.get(reddit_key) or [None])[0]
         existing = await runtime.open(row.get("data")) if row else None
         existing = existing if isinstance(existing, dict) else None
         fields = {key: item[key] for key in ("title", "postedAt", "checkedAt", "images")
@@ -6139,8 +6173,24 @@ def _campaign_page(url):
     return host + (parsed.path.rstrip("/") or "/") if host else ""
 
 
+HASHTAG_RE = re.compile(r"#[^\W_][\w]*", re.UNICODE)
+
+
+def _tracking_hashtags(campaign):
+    return {tag.lower() for tag in campaign.get("hashtags") or ()
+            if tag.lower().startswith("#forkmesh") and tag.lower() != "#forkmesh"}
+
+
+def _carries_hashtag(text, tags):
+    return bool(tags) and bool(
+        tags & {tag.lower() for tag in HASHTAG_RE.findall(str(text or ""))})
+
+
 def _campaign_post(campaign, post):
     if _campaign_matches(campaign, post.get("campaign")):
+        return True
+    if _carries_hashtag(" ".join((post.get("title") or "", post.get("note") or "")),
+                        _tracking_hashtags(campaign)):
         return True
     if campaign["slug"] and _url_tags(post["url"]).get("campaign") == campaign["slug"]:
         return True
@@ -6929,15 +6979,15 @@ async def _handle_ready_post(runtime, method, org_bi, role, account_bi, actor, d
 
 HACKATHON_TEMPLATE = {
     "key": "revenue-contest-2026-09",
-    "label": "From forkmesh.com/hackathon",
-    "status": "active",
+    "label": "From forkmesh.com/hackathon/archive",
+    "status": "completed",
     "startsAt": 1789430400000,
     "endsAt": 1792108740000,
     "name": "September Revenue Contest",
     "slug": "revenue_contest",
     "objective": "sales",
-    "source": "https://forkmesh.com/hackathon",
-    "landingUrl": "https://forkmesh.com/hackathon",
+    "source": "https://forkmesh.com/hackathon/archive/revenue-contest-2026",
+    "landingUrl": "https://forkmesh.com/hackathon/archive/revenue-contest-2026",
     "audience": "Open to everyone: people who can bring companies that are not yet "
                 "ForkMesh customers onto a paid plan through Patreon.",
     "message": "Bring new companies onto a paid ForkMesh plan through Patreon, earn "
@@ -6958,8 +7008,9 @@ HACKATHON_TEMPLATE = {
              "Prizes: 1st $100, 2nd $50, 3rd $25, each plus every commission earned. "
              "Commissions become final after 30 paid days.\n\n"
              "Calls to action: Get the Patreon link (forkmesh.com/#support-forkmesh), "
-             "read the rules (forkmesh.com/hackathon/rules), follow the leaderboard "
-             "(forkmesh.com/hackathon/leaderboard).",
+             "read the rules (forkmesh.com/hackathon/archive/revenue-contest-2026-rules). "
+             "Ended 15 October 2026; the commission continues as the affiliate program "
+             "(forkmesh.com/affiliates).",
     "tasks": [
         {"title": "Announce the contest on X and r/forkmesh", "done": True},
         {"title": "Announce the contest on Discord", "done": True},
@@ -7016,8 +7067,62 @@ START_INSTANCE_TEMPLATE = {
 }
 
 
+PLUGIN_RACE_TEMPLATE = {
+    "key": "plugin-race-2026-10",
+    "label": "From forkmesh.com/hackathon and forkmesh.com/affiliates",
+    "status": "planned",
+    "startsAt": 1792108800000,
+    "endsAt": 1797638399000,
+    "name": "Plugin Race and affiliate launch",
+    "slug": "plugin_race",
+    "objective": "community",
+    "source": "https://forkmesh.com/hackathon",
+    "landingUrl": "https://forkmesh.com/hackathon",
+    "audience": "Developers who could build a ForkMesh plugin that works on desktop, iOS "
+                "and the web, ForkMesh users who would rate one honestly, and people who "
+                "know businesses that should be on ForkMesh.",
+    "message": "Build a ForkMesh plugin that works on desktop, iOS and the web. The first 10 "
+               "plugins to reach 10 ratings from verified people win 0.1 SOL each. And the "
+               "revenue contest's deal is now open all year: bring a company onto a paid "
+               "plan and earn half of its first month.",
+    "offer": "0.1 SOL to each of the first 10 plugins to reach 10 counted ratings; 50% of "
+             "each eligible customer's first month for affiliates, on the contest's rules.",
+    "channels": ["x", "reddit", "mastodon", "discord", "email", "blog"],
+    "hashtags": ["#ForkMeshPluginRace", "#ForkMesh"],
+    "keywords": ["forkmesh plugin race", "forkmesh hackathon", "forkmesh affiliate",
+                 "forkmesh plugin"],
+    "currency": "USD",
+    "budgetCents": 0,
+    "brief": "One launch for two programs, tracked with one hashtag: #ForkMeshPluginRace.\n\n"
+             "Every entrant must post about the race on X, Reddit and Mastodon with the "
+             "hashtag, so the tag also measures reach. Posts saved under Posted links count "
+             "toward this campaign when their title or note carries the hashtag, and every "
+             "link we post carries utm_campaign=plugin_race.\n\n"
+             "Race: 19 October to 18 December 2026 (UTC), forkmesh.com/hackathon, rules at "
+             "forkmesh.com/hackathon/rules. Affiliates: forkmesh.com/affiliates, claims land "
+             "in the CRM tagged affiliate.\n\n"
+             "Drafts, tagged links and gates: "
+             "docs/marketing/campaigns/plugin-race-and-affiliates-2026-10-16.md.",
+    "tasks": [
+        {"title": "Check forkmesh.com/hackathon and /affiliates are live and answer 200",
+         "done": False},
+        {"title": "Discord announcement with @everyone", "done": False},
+        {"title": "Post on X, Mastodon and r/forkmesh from the ForkMesh accounts",
+         "done": False},
+        {"title": "Send the announcement email to opted-in members", "done": False},
+        {"title": "Save every launch post under Posted links", "done": False},
+        {"title": "Search #ForkMeshPluginRace on X, Mastodon and Reddit twice a week and "
+                  "save entrant posts", "done": False},
+        {"title": "Post the board weekly", "done": False},
+        {"title": "Announce each winner and the payout transaction", "done": False},
+        {"title": "Recap when the tenth prize is won or on 18 December", "done": False},
+    ],
+}
+
+
 def _campaign_templates():
-    return [dict(HACKATHON_TEMPLATE), dict(START_INSTANCE_TEMPLATE)]
+    return [dict(HACKATHON_TEMPLATE), dict(START_INSTANCE_TEMPLATE),
+            dict(PLUGIN_RACE_TEMPLATE)]
 
 
 ASSISTANT_SCHEMA = {

@@ -123,7 +123,10 @@ settings).
 campaign tag (`slug`, used as `utm_campaign`), owner, landing page, channels,
 audience, message, offer, hashtags, keywords, budget, targets, a checklist of
 up to 40 steps, brief and notes. Content, ads and posted links join a campaign
-by name, tag or landing page. Routes: `GET/POST /campaigns`,
+by name, tag or landing page. A posted link also joins when its title or note
+carries one of the campaign's branded hashtags: one that starts with
+`#ForkMesh` and is longer than it, such as `#ForkMeshPluginRace`. Bare
+`#ForkMesh` and generic tags never attribute a post. Routes: `GET/POST /campaigns`,
 `GET/PATCH/DELETE /campaigns/<id>`. Each campaign returns `stats` (content by
 status, next post, ads and spend per currency, uncovered channels, checklist
 progress, posts and their engagement). `campaignTemplates` offers prefilled
@@ -181,7 +184,13 @@ channel takes it from the host; duplicates answer 409 `post_exists`),
 30 minutes replace the last one, older readings are ignored), bulk import
 `POST /posts` with `{"posts": [...]}` (at most 500; used by the extension),
 and `DELETE /posts/<id>`. Links are normalised (X/Twitter status links become
-`https://x.com/<handle>/status/<id>`). Optional `campaign` and up to four
+`https://x.com/<handle>/status/<id>`; any `reddit.com` host becomes
+`www.reddit.com` without its query). A Reddit post or comment is one link
+whatever its slug or host: saving a link whose post and comment id match an
+existing `reddit` row answers 409 `post_exists` with that row's `postId`, and
+the extension's bulk import updates the matching row instead of adding a
+second one, so a post entered by hand and later read by the extension stays a
+single row. Optional `campaign` and up to four
 `pbs.twimg.com` `images`. A posted link counts as a post in its channel's
 health.
 
@@ -250,6 +259,16 @@ page.
   both and the reply's comment link. Optional browser-read `author`,
   `comments`, `score`, `postedAt` and `source`. Monitored threads keep view
   and score readings (at most 180 history points).
+- **Your posts**: the `reddit` posted links (see Posted links), newest first,
+  with views, points and comments and when they were read. **Add post** logs
+  one by hand (address, title, posting day, numbers, note; numbers that
+  changed add a history reading), **Edit** changes or deletes it. **Update
+  from the extension** asks the browser extension to open each account on the
+  watch list at `/user/<name>/submitted/` and `/comments/` in a background
+  tab, record their posts and comments, then read up to 25 links' views; the
+  panel shows the result and reloads as views arrive. Before 1.39.0 the web
+  page showed none of these links (only the desktop's Posted links panel
+  did), so posts the extension recorded looked missing from the Reddit page.
 - **Tagged links**: `utm_source=reddit&utm_medium=social&utm_campaign=reddit_scout&utm_content=<subreddit>`.
 - **Subreddit rules** (`POST/GET /reddit-rules`, any member): stored under
   `redditRules`, at most 30 rules per subreddit and 200 subreddits; settings

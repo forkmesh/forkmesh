@@ -53,11 +53,35 @@ public struct GenieLandmark: Equatable, Sendable {
     public var center: CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
 }
 
+public struct GenieScanSchedule: Equatable, Sendable {
+    public private(set) var scannedAt: Double?
+    public private(set) var spacing: Double = GenieLandmarks.refresh
+    public private(set) var stale: Bool = true
+
+    public init() {}
+
+    public mutating func invalidate() {
+        stale = true
+    }
+
+    public func due(at now: Double) -> Bool {
+        guard let scannedAt else { return true }
+        return stale || now - scannedAt >= spacing
+    }
+
+    public mutating func scanned(at now: Double, taking seconds: Double) {
+        scannedAt = now
+        stale = false
+        spacing = GenieLandmarks.spacing(afterScanTaking: seconds)
+    }
+}
+
 public enum GenieLandmarks {
     public nonisolated static let cap: Int = 300
-    public nonisolated static let refresh: Double = 2
-    public nonisolated static let mainShare: Double = 0.02
-    public nonisolated static let slowest: Double = 30
+    public nonisolated static let refresh: Double = 10
+    public nonisolated static let poll: Double = 2
+    public nonisolated static let mainShare: Double = 0.01
+    public nonisolated static let slowest: Double = 60
     public nonisolated static let smallest: CGFloat = 6
     public nonisolated static let largest: Double = 0.35
     public nonisolated static let longest: Int = 80

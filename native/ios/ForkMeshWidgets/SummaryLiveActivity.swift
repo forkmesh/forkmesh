@@ -133,7 +133,7 @@ struct SummaryAgentRow: View {
     let showsDetail: Bool
 
     var body: some View {
-        Link(destination: WidgetRoute.url(agent.route)) {
+        WidgetRouteLink(agent.route) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Image(systemName: agent.state.systemImage)
@@ -170,7 +170,7 @@ struct SummaryShortcutRow: View {
     let shortcut: ActivitySummaryAttributes.Shortcut
 
     var body: some View {
-        Link(destination: WidgetRoute.url(shortcut.route)) {
+        WidgetRouteLink(shortcut.route) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.horizontal.fill")
@@ -209,7 +209,7 @@ struct SummaryTimerRow: View {
     let timer: TimerActivitySnapshot
 
     var body: some View {
-        Link(destination: WidgetRoute.url(timer.route)) {
+        WidgetRouteLink(timer.route) {
             HStack(spacing: 6) {
                 Image(systemName: timer.kind.systemImage)
                     .foregroundStyle(.orange)

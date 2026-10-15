@@ -20,7 +20,7 @@ final class GenieKeepClear {
     }
 
     var buttons: [CGRect] {
-        marked + GenieKeepClear.bars() + GenieScreenScan.shared.blockers
+        marked + GenieScreenScan.shared.bars + GenieScreenScan.shared.blockers
     }
 
     static func keyWindow() -> UIWindow? {
@@ -29,8 +29,8 @@ final class GenieKeepClear {
         return scene?.windows.first(where: { $0.isKeyWindow })
     }
 
-    static func bars() -> [CGRect] {
-        guard let window = keyWindow(), let root = window.rootViewController?.view else {
+    static func bars(in window: UIWindow) -> [CGRect] {
+        guard let root = window.rootViewController?.view else {
             return []
         }
         var out: [CGRect] = []

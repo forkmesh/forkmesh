@@ -57,6 +57,10 @@ LANDING_JS = (WWW_PUBLIC / "hackathon.js").read_text(encoding="utf-8")
 PROJECTS_PAGE = (WWW_PUBLIC / "hackathon" / "projects.html").read_text(
     encoding="utf-8")
 RULES_PAGE = (WWW_PUBLIC / "hackathon" / "rules.html").read_text(encoding="utf-8")
+ARCHIVE = WWW_PUBLIC / "hackathon" / "archive"
+CONTEST_PAGE = (ARCHIVE / "revenue-contest-2026.html").read_text(encoding="utf-8")
+CONTEST_RULES = (ARCHIVE / "revenue-contest-2026-rules.html").read_text(
+    encoding="utf-8")
 BOARD_PAGE = (
     WWW_PUBLIC / "hackathon" / "leaderboard.html"
 ).read_text(encoding="utf-8")
@@ -1080,13 +1084,18 @@ def test_the_landing_page_reaches_the_pages_this_feature_serves():
     # feature does own is the contract between that page and the runtime:
     # every place the landing page sends a visitor must exist.
     assert 'href="/hackathon/rules"' in LANDING
-    # The revenue contest sends people to the Patreon link on the homepage.
-    assert 'href="/#support-forkmesh"' in LANDING
+    assert 'href="/hackathon/archive"' in LANDING
+    assert '/assets/hackathon/race.js' in LANDING
+    # The archived revenue contest still explains that customers paid through
+    # the Patreon link on the homepage, and points at its archived rules.
+    assert 'href="/#support-forkmesh"' in CONTEST_PAGE
+    assert 'href="/hackathon/archive/revenue-contest-2026-rules"' in CONTEST_PAGE
     assert 'id="support-forkmesh"' in (WWW_PUBLIC / "index.html").read_text(
         encoding="utf-8")
     assert "/hackathon/me" in static_routes.DASHBOARD_PAGE_ASSETS
     assert (WWW_PUBLIC / "hackathon" / "leaderboard.html").is_file()
     assert (WWW_PUBLIC / "hackathon" / "rules.html").is_file()
+    assert (WWW_PUBLIC / "hackathon" / "archive.html").is_file()
 
 
 def test_subpages_reuse_the_landing_design_system():
@@ -1108,10 +1117,27 @@ def test_subpages_reuse_the_landing_design_system():
     assert "prefers-reduced-motion" in LANDING_CSS
 
 
-def test_landing_page_states_the_rules_that_keep_the_contest_honest():
-    # Every term that decides who gets paid is stated on the page that
-    # advertises the money, not only in the linked rules.
+def test_landing_page_states_the_terms_of_the_plugin_race():
     text = " ".join(re.sub(r"<[^>]+>", "", LANDING).lower().split())
+    for phrase in ("19 oct – 18 dec 2026", "0.1 sol", "first 10 plugins",
+                   "10 ratings", "desktop, ios and the web", "#forkmeshpluginrace",
+                   "x, reddit and mastodon", "discord", "verified email",
+                   "at least 7 days old", "3 stars or more"):
+        assert phrase in text, phrase
+    rules = " ".join(re.sub(r"<[^>]+>", "", RULES_PAGE).lower().split())
+    for phrase in ("19 october 2026, 00:00 utc", "18 december 2026, 23:59 utc",
+                   "first 10 plugins to reach 10 counted ratings each win 0.1 sol",
+                   "the desktop app, the ios app, and the web dashboard",
+                   "the rating is 3 stars or more", "#forkmeshpluginrace",
+                   "last updated 15 october 2026"):
+        assert phrase in rules, phrase
+
+
+def test_archived_contest_page_keeps_the_rules_that_kept_it_honest():
+    # Every term that decided who got paid is still stated on the archived
+    # page that advertised the money, not only in the linked rules.
+    assert "Archived" in CONTEST_PAGE
+    text = " ".join(re.sub(r"<[^>]+>", "", CONTEST_PAGE).lower().split())
     assert "15 september 2026, 00:00 utc" in text
     assert "15 october 2026, 23:59 utc" in text
     assert "50% of each eligible customer’s first month" in text
@@ -1128,12 +1154,12 @@ def test_landing_page_states_the_rules_that_keep_the_contest_honest():
     assert "minimum $50 in eligible first-month revenue" in text
     assert "at least 3 different eligible customers" in text
     assert "own payment method" in text
-    # The rules page is linked from the page that advertises the prizes.
-    assert '/hackathon/rules' in LANDING
+    # The rules page is linked from the page that advertised the prizes.
+    assert '/hackathon/archive/revenue-contest-2026-rules' in CONTEST_PAGE
 
 
 def test_prize_minimums_stop_one_small_payment_winning_a_prize():
-    text = " ".join(re.sub(r"<[^>]+>", "", RULES_PAGE).lower().split())
+    text = " ".join(re.sub(r"<[^>]+>", "", CONTEST_RULES).lower().split())
     for prize, minimum in (("$100", "$200"), ("$50", "$100"), ("$25", "$50")):
         assert (prize + ", with a minimum of " + minimum
                 + " in eligible first-month revenue") in text

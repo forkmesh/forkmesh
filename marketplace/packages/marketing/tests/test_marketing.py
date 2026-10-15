@@ -1689,6 +1689,71 @@ def test_extension_reads_add_x_posts_and_update_their_stats():
     assert not asyncio.run(marketing.org_has_data(runtime, "org:acme"))
 
 
+def test_reddit_posts_entered_by_hand_and_read_by_the_extension_stay_one_row():
+    runtime = Runtime()
+    path = "/api/marketing/acme/posts"
+    hour = 3600 * 1000
+    manual = call(runtime.use("POST", "charlie", {
+        "url": "https://old.reddit.com/r/selfhosted/comments/abc123/?utm_source=share",
+        "channel": "reddit", "title": "Our launch post", "postedAt": 1_990_000_000_000,
+        "views": 120, "likes": 9, "replies": 4}), path)
+    assert manual["status"] == 201
+    post = manual["data"]["post"]
+    assert (post["channel"], post["url"], post["source"], post["views"]) == (
+        "reddit", "https://www.reddit.com/r/selfhosted/comments/abc123", "manual", 120)
+    comment = call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/selfhosted/comments/abc123/comment/def456/"}),
+        path)["data"]["post"]
+    assert comment["channel"] == "reddit"
+    for url in ("https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/",
+                "https://reddit.com/r/SelfHosted/comments/ABC123"):
+        denied = call(runtime.use("POST", body={"url": url, "channel": "reddit"}), path)
+        assert (denied["status"], denied["data"]["error"], denied["data"]["postId"]) == (
+            409, "post_exists", post["id"]), url
+    edited = call(runtime.use("PATCH", body={"title": "Launch", "url": post["url"]}),
+                  f"{path}/{post['id']}")
+    assert edited["status"] == 200
+    read = call(runtime.use("POST", "charlie", {"posts": [
+        {"url": "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/",
+         "channel": "reddit", "title": "Read title", "postedAt": 1_991_000_000_000,
+         "checkedAt": runtime.now() + hour, "views": 800, "likes": 30, "replies": 11},
+        {"url": "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/def456/",
+         "channel": "reddit", "title": "Comment in r/selfhosted", "checkedAt": 1_000 * hour,
+         "views": 40},
+        {"url": "https://www.reddit.com/r/git/comments/zzz999/new_one/", "channel": "reddit",
+         "title": "New one", "checkedAt": 1_000 * hour, "views": 5}]}), path)["data"]
+    assert (read["created"], read["updated"]) == (1, 2)
+    posts = [item for item in call(runtime.use("GET"), path)["data"]["posts"]
+             if item["channel"] == "reddit"]
+    assert len(posts) == 3
+    kept = next(item for item in posts if item["id"] == post["id"])
+    assert (kept["title"], kept["source"], kept["views"], kept["likes"], kept["postedAt"],
+            kept["url"]) == (
+        "Launch", "manual", 800, 30, 1_990_000_000_000,
+        "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post")
+    assert next(item for item in posts if item["id"] == comment["id"])["views"] == 40
+
+
+def test_the_web_reddit_page_lists_and_edits_our_posts_and_asks_the_extension():
+    view = (PACKAGE / "content/web/view.html").read_text()
+    page = (PACKAGE / "content/web/page.js").read_text()
+    reddit = view[view.index("data-marketing-reddit-page"):view.index("data-marketing-app-store-page")]
+    for marker in ("data-marketing-reddit-posts", "data-marketing-reddit-posts-update",
+                   "data-marketing-reddit-post-new", "data-marketing-reddit-posts-empty"):
+        assert marker in reddit, marker
+    assert "data-marketing-reddit-post-dialog" in view
+    for snippet in ('item.channel === "reddit"', 'orgPath(`/posts${id ? `/${id}` : ""}`)',
+                    '"marketing-reddit-posts-update"', '"marketing-reddit-posts-progress"',
+                    "posts: payload.posts || []", "renderRedditPosts();"):
+        assert snippet in page, snippet
+    extension = PACKAGE.parent / "browser-extension/content/extension"
+    bridge = (extension / "dashboard.js").read_text()
+    background = (extension / "background.js").read_text()
+    assert '"fm-reddit-accounts-update"' in bridge and "redditPosts: true" in bridge
+    assert '"fm-reddit-accounts-update": redditAccountsUpdate' in background
+    assert "/user/${encodeURIComponent(account)}/${tab}/" in background
+
+
 def test_x_post_images_are_kept_from_x_only_and_survive_a_read_without_them():
     runtime = Runtime()
     path = "/api/marketing/acme/posts"
@@ -2476,7 +2541,8 @@ def test_performance_page_contracts():
 def test_start_instance_template_links_the_start_page_post():
     runtime = Runtime()
     templates = call(runtime.use("GET"), "/api/marketing/acme")["data"]["campaignTemplates"]
-    assert [item["slug"] for item in templates] == ["revenue_contest", "start_instance"]
+    assert [item["slug"] for item in templates] == [
+        "revenue_contest", "start_instance", "plugin_race"]
     template = templates[1]
     post = "https://forkmesh.com/blog/start-your-own-forkmesh/"
     assert template["source"] == post and template["landingUrl"] == post
@@ -2498,9 +2564,10 @@ def test_start_instance_template_links_the_start_page_post():
 def test_campaigns_are_sealed_join_content_and_ads_and_drive_suggestions():
     runtime = Runtime()
     template = call(runtime.use("GET"), "/api/marketing/acme")["data"]["campaignTemplates"][0]
-    assert template["landingUrl"] == "https://forkmesh.com/hackathon"
+    assert template["landingUrl"] == "https://forkmesh.com/hackathon/archive/revenue-contest-2026"
     assert template["startsAt"] == 1789430400000 and template["slug"] == "revenue_contest"
-    created = call(runtime.use("POST", "charlie", {**template, "targetVisits": 500}),
+    created = call(runtime.use("POST", "charlie", {**template, "targetVisits": 500,
+                                                   "status": "active"}),
                    "/api/marketing/acme/campaigns")
     assert created["status"] == 201
     campaign = created["data"]["campaign"]
@@ -2508,7 +2575,7 @@ def test_campaigns_are_sealed_join_content_and_ads_and_drive_suggestions():
     assert campaign["channels"] == ["x", "reddit", "blog", "discord", "linkedin"]
     assert campaign["targetVisits"] == 500 and campaign["targetConversions"] is None
     assert campaign["stats"]["taggedLink"].startswith(
-        "https://forkmesh.com/hackathon?utm_source=forkmesh&utm_medium=social"
+        "https://forkmesh.com/hackathon/archive/revenue-contest-2026?utm_source=forkmesh&utm_medium=social"
         "&utm_campaign=revenue_contest")
     stored = runtime.db.execute("SELECT data FROM marketing_campaigns").fetchone()[0]
     assert stored.startswith("sealed:")
@@ -2518,7 +2585,7 @@ def test_campaigns_are_sealed_join_content_and_ads_and_drive_suggestions():
          "/api/marketing/acme/content")
     call(runtime.use("POST", body={"name": "Promo", "channel": "reddit", "status": "active",
                                    "spendCents": 900, "destinationUrl":
-                                   "https://forkmesh.com/hackathon?utm_campaign=revenue_contest"}),
+                                   "https://forkmesh.com/hackathon/archive/revenue-contest-2026?utm_campaign=revenue_contest"}),
          "/api/marketing/acme/ads")
     overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
     stats = overview["campaigns"][0]["stats"]
@@ -2547,10 +2614,11 @@ def test_campaigns_are_sealed_join_content_and_ads_and_drive_suggestions():
     assert "no_campaign" in {entry["code"] for entry in empty["suggestions"]}
 
 
-def test_contest_template_is_active_and_its_posted_links_join_it():
+def test_contest_template_is_archived_and_its_posted_links_join_it():
     runtime = Runtime()
     template = call(runtime.use("GET"), "/api/marketing/acme")["data"]["campaignTemplates"][0]
-    assert template["status"] == "active" and template["landingUrl"] == "https://forkmesh.com/hackathon"
+    assert template["status"] == "completed" and template["landingUrl"] == (
+        "https://forkmesh.com/hackathon/archive/revenue-contest-2026")
     assert "$5 / $10 / $50 / $100" in template["offer"] and "$25 plans" not in template["offer"]
     done = {task["title"] for task in template["tasks"] if task["done"]}
     assert done == {"Announce the contest on X and r/forkmesh", "Announce the contest on Discord"}
@@ -2565,7 +2633,7 @@ def test_contest_template_is_active_and_its_posted_links_join_it():
         "url": "https://discord.com/channels/1/2/3", "campaign": "revenue_contest",
         "replies": 4}), path)
     call(runtime.use("POST", body={
-        "url": "https://forkmesh.com/hackathon/", "channel": "blog"}), path)
+        "url": "https://forkmesh.com/hackathon/archive/revenue-contest-2026/", "channel": "blog"}), path)
     call(runtime.use("POST", body={
         "url": "https://forkmesh.com/blog/x/?utm_campaign=revenue_contest", "channel": "blog"}),
         path)
@@ -3674,3 +3742,35 @@ def test_the_app_store_desk_is_wired_on_the_web_surface():
         assert hook in web, hook
     for step in marketing._app_store_guide({}, [], 0):
         assert step["action"] in ("link", "refresh", "app-store")
+
+
+def test_plugin_race_template_tracks_its_hashtag_across_posted_links():
+    runtime = Runtime()
+    templates = call(runtime.use("GET"), "/api/marketing/acme")["data"]["campaignTemplates"]
+    template = templates[2]
+    assert template["slug"] == "plugin_race"
+    assert template["landingUrl"] == "https://forkmesh.com/hackathon"
+    assert template["hashtags"][0] == "#ForkMeshPluginRace"
+    assert "plugin-race-and-affiliates-2026-10-16.md" in template["brief"]
+    campaign = call(runtime.use("POST", "charlie", template),
+                    "/api/marketing/acme/campaigns")["data"]["campaign"]
+    assert campaign["hashtags"] == ["#ForkMeshPluginRace", "#ForkMesh"]
+    path = "/api/marketing/acme/posts"
+    call(runtime.use("POST", body={
+        "url": "https://mastodon.social/@ana/113000000000000001", "likes": 3,
+        "title": "Building a stale-repo finder for #ForkMeshPluginRace"}), path)
+    call(runtime.use("POST", body={
+        "url": "https://x.com/someone/status/1900000000000000009",
+        "note": "Entrant post, tagged #forkmeshpluginrace."}), path)
+    call(runtime.use("POST", body={
+        "url": "https://x.com/forkmesh/status/1900000000000000010",
+        "title": "Release notes #ForkMesh"}), path)
+    call(runtime.use("POST", body={
+        "url": "https://x.com/forkmesh/status/1900000000000000011",
+        "title": "#ForkMeshPluginRaceFan is a different tag"}), path)
+    stats = call(runtime.use("GET"), f"/api/marketing/acme/campaigns/{campaign['id']}")[
+        "data"]["campaign"]["stats"]
+    assert stats["posts"] == 2
+    assert stats["postChannels"] == ["mastodon", "x"]
+    assert marketing._tracking_hashtags({"hashtags": ["#ForkMesh", "#SelfHosted"]}) == set()
+

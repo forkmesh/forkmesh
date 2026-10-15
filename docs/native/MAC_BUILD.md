@@ -401,3 +401,10 @@ compile. Keep to these:
   failed on `PackageUninstallRequest.init` reading `AccountPackagesStore`).
 - `JSONValue` literals take only integer literals; wrap computed `Int`s as
   `JSONValue(x)`.
+- `JSON.encode` takes a `JSONValue` or a `JSONObject`, and a bare dictionary
+  literal fits both; write `JSON.encode([...] as JSONObject)` (the 2026-10-15
+  ad hoc build failed on `MiniAppClient.cachedApps`).
+- `WidgetRoute.url` returns `URL?`, which `Link(destination:)` does not take;
+  widgets wrap a tappable row in `WidgetRouteLink(route) { … }`, which links
+  only when the route has a URL (the 2026-10-15 ad hoc build failed on
+  `SummaryLiveActivity`'s agent, shortcut and timer rows).

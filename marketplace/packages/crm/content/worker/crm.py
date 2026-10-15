@@ -5342,6 +5342,49 @@ async def _save_settings(runtime, org_bi, actor_bi, actor, data):
     return _response(runtime, {"ok": True, "settings": await _settings(runtime, org_bi)})
 
 
+LEAD_FIELDS = ("name", "email", "company", "title", "phone", "website", "source",
+               "notes", "flow", "stage", "nextStep", "tags", "fields")
+
+
+async def record_lead(runtime, org_name, lead):
+    org_name = _clean(org_name, 64).lower()
+    if not ORG_RE.fullmatch(org_name) or not isinstance(lead, dict):
+        return {"ok": False, "status": "invalid_lead"}
+    org_bi = await runtime.blind("org:" + org_name)
+    if not await runtime.plugin_installed(org_bi, PLUGIN_ID):
+        return {"ok": False, "status": "not_installed"}
+    await _ensure_data_schema(runtime, org_bi)
+    actor = _clean(lead.get("actor"), 64).lower()
+    contact = _flow_placement(
+        _contact_data({key: lead[key] for key in LEAD_FIELDS if key in lead}),
+        await _org_flows(runtime, org_bi))
+    if lead.get("email") and not contact.get("email"):
+        return {"ok": False, "status": "invalid_email"}
+    if not contact.get("email") and not contact.get("name"):
+        return {"ok": False, "status": "name_or_email_required"}
+    email_bi = await _unique_email_bi(runtime, org_bi, contact.get("email"))
+    prior = await runtime.d1_first(
+        "SELECT contact_id FROM crm_contacts WHERE org_bi=? AND email_bi=?",
+        org_bi, email_bi) if email_bi else None
+    if prior:
+        return {"ok": True, "status": "exists", "contactId": prior["contact_id"]}
+    contact_id = runtime.new_id()
+    now = runtime.now()
+    try:
+        await runtime.d1_run(
+            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
+            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
+            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            contact_id, org_bi, org_name, email_bi, "", actor, "", actor, now,
+            now, await runtime.seal(contact),
+        )
+    except Exception as error:
+        if "crm_contact_catalog_full" in str(error):
+            return {"ok": False, "status": "crm_full"}
+        raise
+    await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
+    await _record_contact_changes(runtime, org_bi, "", actor, [(None, contact)])
+    return {"ok": True, "status": "created", "contactId": contact_id}
 
 
 async def org_has_data(runtime, org_bi):

@@ -146,7 +146,7 @@ struct AquariumLayer: View {
             }
             while !Task.isCancelled {
                 AquariumDirector.shared.see(GenieScreenScan.shared.current())
-                try? await Task.sleep(for: .seconds(GenieLandmarks.refresh))
+                try? await Task.sleep(for: .seconds(GenieLandmarks.poll))
             }
         }
     }
