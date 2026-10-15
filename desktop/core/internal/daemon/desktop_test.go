@@ -141,6 +141,7 @@ func waitStopped(t *testing.T, core *Core) {
 func TestHeadlessDesktopStartsAfterGraceWithoutWindow(t *testing.T) {
 	f := newHeadlessFixture(t)
 	core := f.core
+	core.desktop.seenUI = true
 	now := time.Now()
 	core.tickHeadless(now, nil, headlessGrace-time.Second)
 	if f.startCount() != 0 {
@@ -169,6 +170,43 @@ func TestHeadlessDesktopStartsAfterGraceWithoutWindow(t *testing.T) {
 	core.tickHeadless(now.Add(time.Hour), nil, time.Hour)
 	if f.startCount() != 1 {
 		t.Fatal("started while turned off")
+	}
+}
+
+func TestHeadlessDesktopStartsSoonAfterBoot(t *testing.T) {
+	f := newHeadlessFixture(t)
+	core := f.core
+	now := time.Now()
+	core.tickHeadless(now, nil, headlessBootGrace-time.Second)
+	if f.startCount() != 0 {
+		t.Fatal("started before the boot grace")
+	}
+	core.tickHeadless(now, nil, headlessBootGrace)
+	if f.startCount() != 1 {
+		t.Fatal("waited for the window grace although no window has opened since the engine started")
+	}
+}
+
+func TestHeadlessDesktopIgnoresLockFromEarlierBoot(t *testing.T) {
+	f := newHeadlessFixture(t)
+	core := f.core
+	now := time.Now()
+	lock := filepath.Join(core.Layout.State, windowLockFile)
+	_ = os.MkdirAll(core.Layout.State, 0o700)
+	_ = os.WriteFile(lock, []byte("777\nForkMesh\nhost\n"), 0o600)
+	f.mu.Lock()
+	f.locked = 777
+	f.mu.Unlock()
+	core.desktop.booted = func() time.Time { return now.Add(-time.Hour) }
+	core.tickHeadless(now, nil, time.Hour)
+	if f.startCount() != 0 {
+		t.Fatal("started while a window from this boot holds the lock")
+	}
+	written := now.Add(-2 * time.Hour)
+	_ = os.Chtimes(lock, written, written)
+	core.tickHeadless(now, nil, time.Hour)
+	if f.startCount() != 1 {
+		t.Fatal("a lock left by the last boot blocked the start because its pid was reused")
 	}
 }
 
