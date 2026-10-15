@@ -16,6 +16,15 @@ full-file rewrites are too costly for growing seen-key lists).
   Record keys from other repositories include `owner/name`.
 - Issues, pulls, discussions, projects and milestones are searched in every
   repository on the node, the open one first.
+- **Project files** (`project-file`, `scanProjectFileHits` in
+  `MainWindowSearch.cpp`) searches every file on disk in the repository's
+  working folder: `git grep --untracked`, so uncommitted edits and new files
+  count, not only the committed tree that **Code** reads. Files matched by
+  `.gitignore` are skipped: including them took over 60 s on the ForkMesh
+  checkout (build trees, `.worktrees/`) against about 4 s without. A mirror
+  (no `.git` entry, so no working folder) and an unscoped search have no
+  project folder. The results page and background runs both search it, and a
+  hit opens the file from disk.
 - The bell enables pings: `checkSavedSearchAlerts` reruns searches off the GUI
   thread every 15 minutes while any search has its bell or security flag on,
   and files one ping per run that found never-seen results.

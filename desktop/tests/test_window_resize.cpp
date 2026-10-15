@@ -6349,7 +6349,7 @@ void checkSavedSearches(MainWindow &window)
               rowText().contains(needle),
           QStringLiteral("the saved search is listed in the column beside the results"));
     check(rowText().contains(QStringLiteral("forkmesh/saved-search-probe")) &&
-              rowText().contains(QStringLiteral("4 results")) &&
+              rowText().contains(QStringLiteral("5 results")) &&
               rowText().contains(QStringLiteral("Code")) &&
               rowText().contains(QStringLiteral("Commit messages")),
           QStringLiteral("the saved search row shows its scope, result count and "
@@ -6365,13 +6365,19 @@ void checkSavedSearches(MainWindow &window)
 
     // A later commit adds occurrences; the background check pings exactly once.
     commitFile(QStringLiteral("second.txt"), QStringLiteral("follow-up %1").arg(needle));
+    {
+        QFile draft(QDir(tree.path()).filePath(QStringLiteral("draft.local")));
+        if (draft.open(QIODevice::WriteOnly))
+            draft.write(QStringLiteral("uncommitted %1\n").arg(needle).toUtf8());
+    }
     const int pingsBefore = window.testNotificationsTitled(needle);
     window.testCheckSavedSearchAlerts();
     check(waitFor([&] { return window.testSavedSearchAlertsIdle(); }),
           QStringLiteral("the background saved-search check completes"));
     check(window.testNotificationsTitled(needle) == pingsBefore + 1,
           QStringLiteral("new results for a saved search file one ping"));
-    check(rowText().contains(QStringLiteral("3 new")),
+    check(rowText().contains(QStringLiteral("6 new")) &&
+              rowText().contains(QStringLiteral("3 Project files")),
           QStringLiteral("the saved search row counts the unviewed new results (%1)")
               .arg(rowText()));
     window.testCheckSavedSearchAlerts();
@@ -6394,7 +6400,7 @@ void checkSavedSearches(MainWindow &window)
                      !window.testSearchPageRunning();
           }) &&
               !rowText().contains(QStringLiteral(" new")) &&
-              rowText().contains(QStringLiteral("7 results")),
+              rowText().contains(QStringLiteral("11 results")),
           QStringLiteral("running a saved search from the list marks its new "
                          "results seen (%1)").arg(rowText()));
 
@@ -6442,7 +6448,7 @@ void checkSavedSearches(MainWindow &window)
     QApplication::processEvents();
     waitFor([&] { return window.testSavedSearchAlertsIdle(); });
     check(window.testSecurityAlarms().size() == 1 &&
-              window.testSecurityAlarms().first().results == 7 &&
+              window.testSecurityAlarms().first().results == 11 &&
               window.testSecurityAlarmBannerVisible() &&
               window.testSecurityAlarmToneActive(),
           QStringLiteral("a security-pertinent search with results raises the alarm"));
