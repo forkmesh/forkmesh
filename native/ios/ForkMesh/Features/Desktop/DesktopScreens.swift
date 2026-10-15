@@ -125,7 +125,7 @@ private struct FleetStateDot: View {
     }
 }
 
-private enum BuildMacShortcut: CaseIterable, Identifiable {
+enum BuildMacShortcut: CaseIterable, Identifiable {
     case iosAdHoc
     case macDesktop
 
