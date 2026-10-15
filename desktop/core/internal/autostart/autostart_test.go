@@ -156,6 +156,70 @@ func TestSystemdStartsAtLoginWhenLingerRefused(t *testing.T) {
 	}
 }
 
+func fakeDesktop(t *testing.T, engine string) string {
+	path := filepath.Join(filepath.Dir(engine), "forkmesh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSystemdAddsTrayAtLogin(t *testing.T) {
+	m, _, home := manager(t, "linux", true)
+	binary := fakeBinary(t, home)
+	desktop := fakeDesktop(t, binary)
+	entry := filepath.Join(home, ".config/autostart/forkmesh-tray-forkmesh.desktop")
+	if _, err := m.Enable(binary, "forkmesh"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := desktopExecBinary(string(raw)); got != desktop {
+		t.Fatalf("tray binary %q, want %q", got, desktop)
+	}
+	if !strings.Contains(string(raw), " --tray --project forkmesh\n") {
+		t.Fatalf("tray entry:\n%s", raw)
+	}
+	if _, err := m.Disable("forkmesh"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(entry); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tray entry left behind: %v", err)
+	}
+}
+
+func TestSystemdSkipsTrayWithoutDesktop(t *testing.T) {
+	m, _, home := manager(t, "linux", true)
+	if _, err := m.Enable(fakeBinary(t, home), "forkmesh"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config/autostart/forkmesh-tray-forkmesh.desktop")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tray entry without a desktop binary: %v", err)
+	}
+}
+
+func TestXDGEngineEntryStartsItsOwnTray(t *testing.T) {
+	m, _, home := manager(t, "linux", false)
+	binary := fakeBinary(t, home)
+	fakeDesktop(t, binary)
+	if _, err := m.Enable(binary, "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config/autostart/forkmesh-tray-work.desktop")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tray entry beside an XDG engine entry: %v", err)
+	}
+}
+
+func TestDesktopBinaryBesideEngine(t *testing.T) {
+	for goos, want := range map[string]string{"linux": "/opt/fm/forkmesh", "darwin": "/opt/fm/ForkMesh", "windows": "/opt/fm/forkmesh.exe"} {
+		if got := DesktopBinary(goos, "/opt/fm/forkmesh-core"); got != filepath.FromSlash(want) {
+			t.Fatalf("%s: %q", goos, got)
+		}
+	}
+}
+
 func TestXDGFallbackWithoutSystemd(t *testing.T) {
 	m, _, home := manager(t, "linux", false)
 	binary := fakeBinary(t, home)

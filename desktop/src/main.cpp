@@ -18,6 +18,7 @@
 #include "PublicMirrorRuntime.h"
 #include "QtRuntimeDiagnostics.h"
 #include "SingleInstance.h"
+#include "TrayMode.h"
 #include "SystemOpenFolder.h"
 #include "SplitterHairline.h"
 #include "StartupSplash.h"
@@ -597,6 +598,8 @@ int main(int argc, char *argv[])
             std::printf("ForkMesh %s\n", FORKMESH_VERSION);
             return 0;
         }
+        if (qstrcmp(argv[i], "--tray") == 0)
+            return forkmesh::tray::run(argc, argv);
         if (qstrcmp(argv[i], "--build-commit") == 0) {
             std::printf("%s\n", FORKMESH_BUILD_COMMIT);
             static const QRegularExpression exactCommit(

@@ -28,10 +28,9 @@ std::function<void(const QString &)> g_activationHandler;
 
 bool acquireSingleInstance(const QString &activationTarget)
 {
-    const QString dir = forkmesh::paths::stateRoot();
-    QDir().mkpath(dir);
+    QDir().mkpath(forkmesh::paths::stateRoot());
 
-    g_lockFile = new QLockFile(dir + QStringLiteral("/forkmesh.lock"));
+    g_lockFile = new QLockFile(singleInstanceLockPath());
     if (!g_lockFile->tryLock()) {
         QLocalSocket socket;
         socket.connectToServer(serverName());
@@ -87,9 +86,8 @@ void rehomeSingleInstanceLock()
     const QString legacyLock = forkmesh::paths::adoptProjectStateRoot();
     if (legacyLock.isEmpty())
         return;
-    const QString dir = forkmesh::paths::stateRoot();
-    QDir().mkpath(dir);
-    auto *lock = new QLockFile(dir + QStringLiteral("/forkmesh.lock"));
+    QDir().mkpath(forkmesh::paths::stateRoot());
+    auto *lock = new QLockFile(singleInstanceLockPath());
     if (!lock->tryLock()) {
         // Someone else already owns the project lock; keep the one we hold.
         delete lock;
@@ -102,6 +100,11 @@ void rehomeSingleInstanceLock()
     // Gone only when empty: anything unknown left in ~/.forkmesh stays, and
     // shows up on the storage map.
     QDir().rmdir(QFileInfo(legacyLock).absolutePath());
+}
+
+QString singleInstanceLockPath()
+{
+    return forkmesh::paths::stateRoot() + QStringLiteral("/forkmesh.lock");
 }
 
 void releaseSingleInstance()

@@ -479,8 +479,23 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         forkmesh::StartupTraceStep step(
             QStringLiteral("MainWindow: register the system tray icon"));
         m_trayIcon = new QSystemTrayIcon(this);
-        m_trayIcon->setIcon(style()->standardIcon(QStyle::SP_MessageBoxInformation));
+        m_trayIcon->setIcon(QIcon(QStringLiteral(":/app/forkmesh.png")));
         m_trayIcon->setToolTip("ForkMesh");
+        const auto bringForward = [this] {
+            setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+            show();
+            raise();
+            activateWindow();
+        };
+        auto *trayMenu = new QMenu(this);
+        connect(trayMenu->addAction(QStringLiteral("Open ForkMesh")), &QAction::triggered, this,
+                bringForward);
+        m_trayIcon->setContextMenu(trayMenu);
+        connect(m_trayIcon, &QSystemTrayIcon::activated, this,
+                [bringForward](QSystemTrayIcon::ActivationReason reason) {
+                    if (reason == QSystemTrayIcon::Trigger)
+                        bringForward();
+                });
         if (QSystemTrayIcon::isSystemTrayAvailable())
             m_trayIcon->show();
     }

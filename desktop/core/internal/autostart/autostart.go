@@ -77,6 +77,12 @@ func (m Manager) xdgEntry(project string) string {
 	return filepath.Join(m.configHome(), "autostart", Label(project)+".desktop")
 }
 
+func TrayLabel(project string) string { return "forkmesh-tray-" + project }
+
+func (m Manager) trayEntry(project string) string {
+	return filepath.Join(m.configHome(), "autostart", TrayLabel(project)+".desktop")
+}
+
 func (m Manager) lingerMarker() string {
 	return filepath.Join(m.configHome(), "systemd", "user", "forkmesh-core.linger")
 }
@@ -137,6 +143,29 @@ func (m Manager) releaseLinger() {
 
 func Arguments(project string) []string {
 	return []string{"serve", "--project", project, "--background"}
+}
+
+func TrayArguments(project string) []string {
+	return []string{"--tray", "--project", project}
+}
+
+func DesktopBinary(goos, engine string) string {
+	name := "forkmesh"
+	switch goos {
+	case "darwin":
+		name = "ForkMesh"
+	case "windows":
+		name = "forkmesh.exe"
+	}
+	return filepath.Join(filepath.Dir(engine), name)
+}
+
+func (m Manager) writeTrayEntry(engine, project string) error {
+	desktop := DesktopBinary(m.GOOS, engine)
+	if info, err := os.Stat(desktop); err != nil || info.IsDir() {
+		return removeFile(m.trayEntry(project))
+	}
+	return writeFile(m.trayEntry(project), TrayDesktopEntry(desktop, project))
 }
 
 func validate(binary, project string) error {
@@ -221,8 +250,14 @@ func (m Manager) Enable(binary, project string) (Status, error) {
 				return m.Status(project), fmt.Errorf("autostart: systemctl enable: %v: %s", err, strings.TrimSpace(string(out)))
 			}
 			m.enableLinger()
-		} else if err := writeFile(m.xdgEntry(project), DesktopEntry(binary, project)); err != nil {
-			return m.Status(project), err
+			if err := m.writeTrayEntry(binary, project); err != nil {
+				return m.Status(project), err
+			}
+		} else {
+			if err := writeFile(m.xdgEntry(project), DesktopEntry(binary, project)); err != nil {
+				return m.Status(project), err
+			}
+			_ = removeFile(m.trayEntry(project))
 		}
 	}
 	return m.Status(project), nil
@@ -260,6 +295,9 @@ func (m Manager) Disable(project string) (Status, error) {
 		}
 		m.releaseLinger()
 		if err := removeFile(m.xdgEntry(project)); err != nil && failure == nil {
+			failure = err
+		}
+		if err := removeFile(m.trayEntry(project)); err != nil && failure == nil {
 			failure = err
 		}
 	}
@@ -381,6 +419,23 @@ func DesktopEntry(binary, project string) string {
 		"Terminal=false",
 		"X-GNOME-Autostart-enabled=true",
 		"X-GNOME-Autostart-Delay=5",
+		"",
+	}, "\n")
+}
+
+func TrayDesktopEntry(binary, project string) string {
+	command := []string{desktopQuote(binary)}
+	command = append(command, TrayArguments(project)...)
+	return strings.Join([]string{
+		"[Desktop Entry]",
+		"Type=Application",
+		"Name=ForkMesh tray (" + project + ")",
+		"Exec=" + strings.Join(command, " "),
+		"Icon=forkmesh",
+		"NoDisplay=true",
+		"Terminal=false",
+		"X-GNOME-Autostart-enabled=true",
+		"X-GNOME-Autostart-Delay=10",
 		"",
 	}, "\n")
 }

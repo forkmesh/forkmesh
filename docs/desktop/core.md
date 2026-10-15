@@ -924,6 +924,43 @@ and service plug-ins running, and the next window re-attaches to the same core.
   - Paths are quoted for each format (tested with spaces, `%`, `$`, quotes and
     backslashes); the project must be a valid slug and the binary an existing
     absolute path. Disabling removes only the entry it wrote.
+- **Tray icon** (`desktop/src/TrayMode.cpp`, `forkmesh --tray [--project <slug>]`).
+  A small Qt process with no window shows the ForkMesh icon in the system tray
+  while the engine runs, so a core started at boot or left running after the
+  window closed is visible and can be stopped. The engine stays pure Go
+  (`CGO_ENABLED=0`): the tray is drawn by the desktop binary's
+  `QSystemTrayIcon`, not a Go tray library.
+  - It polls `state/core/endpoint.json` every 2 s and shows the icon while the
+    recorded pid is alive, with the tooltip "ForkMesh background engine
+    <version>" (plus the project for a project other than the home one). It
+    exits once the engine has been gone for 30 s, or after 60 s if the engine
+    never appeared; with no system tray for 2 minutes it exits quietly.
+  - Menu: "Open ForkMesh" (starts the desktop detached; a running window comes
+    forward through the single-instance socket), "Stop background engine"
+    (`forkmesh-core stop`), "Hide icon" (exits the tray). Clicking the icon
+    opens ForkMesh.
+  - One tray per project: `state/core/tray.lock` (`QLockFile`; a lock left by
+    a dead tray is taken over). Every launcher may start it; extra copies exit.
+  - Started by the desktop each time its engine client connects (detached, so
+    it outlives the window; not under the `offscreen`/`minimal` platforms or a
+    non-default state folder); by the engine at `serve` startup when a
+    graphical session is present (Linux: `DISPLAY` or `WAYLAND_DISPLAY`; macOS
+    and Windows always) and the desktop binary sits next to `forkmesh-core`
+    (`forkmesh`, `ForkMesh` in the macOS bundle, `forkmesh.exe`), which covers
+    the LaunchAgent, the Run key and the XDG autostart entry; and, on Linux
+    with the systemd unit, by `~/.config/autostart/forkmesh-tray-<project>.desktop`,
+    because a unit started at boot has no display. That entry is written with
+    the unit (only when the desktop binary is there) and removed on disable.
+    The engine skips the tray when run with `--state-dir` or test overrides.
+  - One icon at a time. The desktop window keeps its own `QSystemTrayIcon`,
+    because notification balloons need a visible icon in the process that
+    shows them; it uses the ForkMesh icon, clicking it or its "Open ForkMesh"
+    item brings the window forward. While a window for the project runs (the
+    pid in `state/forkmesh.lock`, the single-instance lock, is alive) the tray
+    process hides its icon, and shows it again within 2 s of the window
+    closing.
+  - On macOS the tray sets the accessory activation policy so it has no Dock
+    icon.
 - **Single instance.** `core.lock` is an exclusive lock on every platform
   (`flock`; `LockFileEx` on Windows, which previously only opened the file). A
   second `serve --background` exits 0 so a supervisor does not restart-loop

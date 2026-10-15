@@ -713,6 +713,8 @@ set(FORKMESH_APP_SOURCES
     src/DatabaseManagerWidget.cpp
     src/SingleInstance.h
     src/SingleInstance.cpp
+    src/TrayMode.h
+    src/TrayMode.cpp
     src/StartupSplash.h
     src/StartupSplash.cpp
     src/DesktopDisplayReadiness.h
