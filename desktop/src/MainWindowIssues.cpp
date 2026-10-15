@@ -6668,6 +6668,14 @@ void MainWindow::quickAddIssue()
         publishQuickAddToActivityPub(title);
         return;
     }
+    if (quickAddProvider == kNotePromptProvider) {
+        takeQuickAddNote(m_issueQuickAdd->toPlainText());
+        return;
+    }
+    if (quickAddProvider == kTaskPromptProvider) {
+        createQuickAddOrganizationTask();
+        return;
+    }
     if (quickAddProvider != QLatin1String("manual")) {
         const QString provider = quickAddProvider;
         const QString model = (provider == QLatin1String("claude-code") ||

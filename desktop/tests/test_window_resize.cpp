@@ -10806,6 +10806,20 @@ void checkAgentToolEfficiency(MainWindow &window)
               QStringLiteral("sorting by runs puts the used model first, with its "
                              "agent icon (%1)")
                   .arg(top ? top->text() : QString()));
+        QTableWidgetItem *show = modelTable->item(0, AgentModelTable::ShowColumn);
+        const QString showKey =
+            show ? show->data(Qt::UserRole + 1).toString() : QString();
+        const bool startedShown = show && show->checkState() == Qt::Checked;
+        if (show && !showKey.isEmpty())
+            show->setCheckState(Qt::Unchecked);
+        const bool hiddenSaved = forkmesh::ui::hiddenComposerModels().contains(showKey);
+        if (show && !showKey.isEmpty())
+            show->setCheckState(Qt::Checked);
+        check(!showKey.isEmpty() && startedShown && hiddenSaved &&
+                  !forkmesh::ui::hiddenComposerModels().contains(showKey),
+              QStringLiteral("the Show checkbox hides and restores a model in the "
+                             "composer dropdown (key=%1)")
+                  .arg(showKey));
     }
     if (auto *modelsBack =
             window.findChild<QPushButton *>(QStringLiteral("agentModelsBack")))
@@ -32049,6 +32063,50 @@ else:
                     return true;
             return false;
         };
+        {
+            const int noteRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kNotePromptProvider)
+                                    : -1;
+            const int taskRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kTaskPromptProvider)
+                                    : -1;
+            const int editRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kEditComposerModelsRow)
+                                    : -1;
+            QComboBox *assignee = seeded.findChild<QComboBox *>(
+                QStringLiteral("quickAddTaskAssignee"));
+            const bool assigneeHiddenForAgents = assignee && !assignee->isVisible();
+            if (taskRow >= 0)
+                quickAgentModel->setCurrentIndex(taskRow);
+            QApplication::processEvents();
+            const bool taskPicked =
+                seeded.testQuickAddAgentProvider() ==
+                forkmesh::ui::kTaskPromptProvider;
+            const bool assigneeShownForTask =
+                assignee && assignee->isVisible() && assignee->count() >= 1 &&
+                assignee->itemData(0).toString() == QStringLiteral("unassigned");
+            seeded.testSetQuickAddAgentProvider(QStringLiteral("claude-code"));
+            QApplication::processEvents();
+            check(noteRow >= 0 && taskRow >= 0 &&
+                      quickAgentModel->itemText(noteRow) ==
+                          QStringLiteral("Take a note") &&
+                      editRow == quickAgentModel->count() - 1 &&
+                      quickAgentModel->itemText(editRow) ==
+                          QStringLiteral("Edit models…") &&
+                      assigneeHiddenForAgents && taskPicked &&
+                      assigneeShownForTask && assignee && !assignee->isVisible(),
+                  QString("composer dropdown offers Take a note, Task · assign "
+                          "with an assignee picker, and Edit models… last "
+                          "(note %1, task %2, edit %3 of %4, picked %5)")
+                      .arg(noteRow)
+                      .arg(taskRow)
+                      .arg(editRow)
+                      .arg(quickAgentModel ? quickAgentModel->count() : -1)
+                      .arg(taskPicked));
+        }
         int cloudflareRow = -1;
         for (int i = 0; quickAgentModel && i < quickAgentModel->count(); ++i) {
             if (quickAgentModel->itemData(i).toString() ==

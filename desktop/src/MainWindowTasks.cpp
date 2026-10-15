@@ -3004,6 +3004,7 @@ void MainWindow::refreshOrganizationTaskBadge()
             }
             m_organizationTasksStartupPayload = payload;
             m_organizationTasksLoadedAt = QDateTime::currentMSecsSinceEpoch();
+            refreshQuickAddTaskAssignees();
             setOrganizationTaskBadge(openOrganizationTaskCount(
                 payload.value(QStringLiteral("tasks")).toArray()));
         });
@@ -3075,6 +3076,7 @@ void MainWindow::applyOrganizationTasks(const QJsonObject &payload)
         !m_organizationTaskMembers.contains(selectedMember))
         m_organizationTaskAssigneeFilter = QStringLiteral("all");
     rebuildOrganizationTaskPeopleStrip();
+    refreshQuickAddTaskAssignees();
     m_organizationTaskDepartments.clear();
     for (const QJsonValue &value :
          payload.value(QStringLiteral("departments")).toArray()) {
@@ -4526,21 +4528,29 @@ void MainWindow::createQuickAddOrganizationTask()
         flashMessage(attachmentError, true);
         return;
     }
+    const QString assignment = quickAddTaskAssignment();
+    const QString assignee = assignment.startsWith(QLatin1String("user:"))
+                                 ? assignment.mid(5)
+                                 : QString();
     QJsonObject body{
         {QStringLiteral("title"), title},
         {QStringLiteral("details"), promptTextWithoutAttachments(prompt)},
         {QStringLiteral("department"), QStringLiteral("general")},
         {QStringLiteral("destination"), QStringLiteral("department")},
-        {QStringLiteral("assigneeKind"), QStringLiteral("unassigned")},
+        {QStringLiteral("assigneeKind"),
+         assignee.isEmpty() ? QStringLiteral("unassigned")
+                            : QStringLiteral("user")},
         {QStringLiteral("repository"), repository},
         {QStringLiteral("priority"), 50},
     };
+    if (!assignee.isEmpty())
+        body.insert(QStringLiteral("assignee"), assignee);
     if (!attachments.isEmpty())
         body.insert(QStringLiteral("attachments"), attachments);
     requestOrganizationTasks(
         QByteArrayLiteral("POST"), QStringLiteral("/api/tasks"), body,
-        [this, prompt](bool ok, const QJsonObject &payload,
-                       const QString &error) {
+        [this, prompt, assignee](bool ok, const QJsonObject &payload,
+                                 const QString &error) {
             if (!ok) {
                 flashMessage(QStringLiteral("Task creation failed: %1").arg(error),
                              true);
@@ -4551,8 +4561,90 @@ void MainWindow::createQuickAddOrganizationTask()
             clearQuickAddImages();
             openCreatedOrganizationTask(
                 payload.value(QStringLiteral("task")).toObject());
-            flashMessage(QStringLiteral("Task added to General."));
+            flashMessage(assignee.isEmpty()
+                             ? QStringLiteral("Task added to General.")
+                             : QStringLiteral("Task assigned to %1.")
+                                   .arg(assignee));
         });
+}
+
+QStringList MainWindow::organizationTaskMemberNames() const
+{
+    if (!m_organizationTaskMembers.isEmpty())
+        return m_organizationTaskMembers;
+    QStringList members;
+    for (const QJsonValue &value :
+         m_organizationTasksStartupPayload.value(QStringLiteral("members"))
+             .toArray()) {
+        const QString member = value.toString().trimmed().toLower();
+        if (!member.isEmpty() && !members.contains(member))
+            members.append(member);
+    }
+    return members;
+}
+
+QString MainWindow::organizationTaskActorName() const
+{
+    if (!m_organizationTaskActor.trimmed().isEmpty())
+        return m_organizationTaskActor.trimmed().toLower();
+    return m_organizationTasksStartupPayload.value(QStringLiteral("actor"))
+        .toString()
+        .trimmed()
+        .toLower();
+}
+
+void MainWindow::refreshQuickAddTaskAssignees()
+{
+    if (!m_quickAddTaskAssignee)
+        return;
+    const QString actor = organizationTaskActorName();
+    QStringList members = organizationTaskMemberNames();
+    std::sort(members.begin(), members.end(),
+              [&actor](const QString &left, const QString &right) {
+                  if ((left == actor) != (right == actor))
+                      return left == actor;
+                  return left < right;
+              });
+    const QString current =
+        m_quickAddTaskAssignee->currentIndex() >= 0
+            ? m_quickAddTaskAssignee->currentData().toString()
+            : QSettings().value(kQuickAddTaskAssigneeSetting).toString();
+    const QIcon nobody =
+        themedOcticon(QStringLiteral("person"), QColor("#8b949e"), 18);
+    {
+        const QSignalBlocker blocker(m_quickAddTaskAssignee);
+        m_quickAddTaskAssignee->clear();
+        m_quickAddTaskAssignee->addItem(nobody, QStringLiteral("Unassigned"),
+                                        QStringLiteral("unassigned"));
+        m_quickAddTaskAssignee->setItemData(
+            0, QStringLiteral("Add the task to General with nobody assigned"),
+            Qt::ToolTipRole);
+        for (const QString &member : std::as_const(members)) {
+            const QPixmap face = chatSenderAvatarSource(QString(), member);
+            const QString label = member == actor
+                                      ? QStringLiteral("%1 (you)").arg(member)
+                                      : member;
+            m_quickAddTaskAssignee->addItem(face.isNull() ? nobody : QIcon(face),
+                                            label,
+                                            QStringLiteral("user:") + member);
+            m_quickAddTaskAssignee->setItemData(
+                m_quickAddTaskAssignee->count() - 1,
+                QStringLiteral("Assign the task to %1").arg(member),
+                Qt::ToolTipRole);
+        }
+    }
+    const int index = m_quickAddTaskAssignee->findData(current);
+    m_quickAddTaskAssignee->setCurrentIndex(-1);
+    m_quickAddTaskAssignee->setCurrentIndex(index >= 0 ? index : 0);
+}
+
+QString MainWindow::quickAddTaskAssignment() const
+{
+    if (!m_quickAddTaskAssignee || !m_quickAddAgentProvider ||
+        m_quickAddAgentProvider->currentData().toString() != kTaskPromptProvider ||
+        m_quickAddTaskAssignee->currentIndex() < 0)
+        return QStringLiteral("unassigned");
+    return m_quickAddTaskAssignee->currentData().toString();
 }
 
 void MainWindow::createOrganizationTaskFollowUp()

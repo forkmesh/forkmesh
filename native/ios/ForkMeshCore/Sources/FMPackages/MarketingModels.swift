@@ -133,6 +133,10 @@ public struct MarketingChannelStats: Equatable, Sendable, Identifiable {
     public var closedValue: Int64 = 0
     public var stars: Int64 = 0
     public var forks: Int64 = 0
+    public var downloads: Int64 = 0
+    public var redownloads: Int64 = 0
+    public var updates: Int64 = 0
+    public var ratings: Int64 = 0
     public var rating: Double = 0
     public var health: String = ""
     public var checks: [MarketingHealthCheck] = []
@@ -169,6 +173,10 @@ public struct MarketingChannelStats: Equatable, Sendable, Identifiable {
         closedValue = json.int64("closedValue")
         stars = json.int64("stars")
         forks = json.int64("forks")
+        downloads = json.int64("downloads")
+        redownloads = json.int64("redownloads")
+        updates = json.int64("updates")
+        ratings = json.int64("ratings")
         rating = json.double("rating")
         let health = json.obj("health")
         self.health = health.str("state")
@@ -196,6 +204,10 @@ public struct MarketingChannelStats: Equatable, Sendable, Identifiable {
     public var isEmail: Bool { id == "email" }
 
     public var isGitHub: Bool { id == "github" }
+
+    public var isAppStore: Bool { id == MarketingChannelStats.appStoreChannel }
+
+    public static let appStoreChannel = "app-store"
 
     public var missingChecks: [String] { checks.filter { !$0.ok }.map(\.label) }
 

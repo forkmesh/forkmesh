@@ -21,6 +21,10 @@ the key and never calls Apple. Instead:
    identity key (`forkmesh_mcp_server.package_request`, proof
    `forkmesh-app-store-status-request-v1`). A publish failure is printed and
    never fails the report. `--json` prints the snapshot instead of the text.
+   The same `--publish` run also sends each day's downloads, countries and
+   devices, the versions and the reviews to Marketing's App Store channel
+   (`/api/marketing/<org>/app-store`); see "App Store desk" in
+   [../../marketplace/packages/marketing/README.md](../../marketplace/packages/marketing/README.md).
 3. Every client reads `GET /api/app-store-status` and renders the snapshot
    natively. Pages show when it was published; to refresh, run the shortcut
    again (from the desktop's Shortcuts page or from a phone).

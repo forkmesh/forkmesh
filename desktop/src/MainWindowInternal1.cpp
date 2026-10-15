@@ -1049,7 +1049,8 @@ bool agentSelectorTakesModel(const QString &provider)
 bool quickAddProviderIsPromptAction(const QString &provider)
 {
     return provider == QLatin1String("manual") ||
-           provider == kActivityPubPromptProvider;
+           provider == kActivityPubPromptProvider ||
+           provider == kNotePromptProvider || provider == kTaskPromptProvider;
 }
 
 bool agentProviderIsKnown(const QString &provider)

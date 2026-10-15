@@ -522,6 +522,29 @@ def test_cohorts_actions_and_groups_feed_the_insights():
     assert big["series"][0]["total"] == 1
 
 
+def test_recordings_keep_the_trail_of_pages_viewed():
+    runtime = Runtime()
+    item = project(runtime)
+    call(runtime.use("PATCH", body={"replay": {"enabled": True}}),
+         f"/api/analytics/acme/projects/{item['id']}")
+    chunk = {"sessionId": "sess-pages-0001", "distinctId": "anon-2", "seq": 0,
+             "startedAt": NOW - 60000, "encoding": "json",
+             "events": json.dumps([{"t": NOW - 60000, "k": "meta", "d": {}}])}
+    for seq, url in enumerate(["https://example.test/", "https://example.test/",
+                               "https://example.test/docs", "https://example.test/pricing",
+                               "https://example.test/"]):
+        capture(runtime, item["writeKey"], [], dict(chunk, seq=seq, url=url))
+    listing = call(runtime.use("GET"),
+                   f"/api/analytics/acme/projects/{item['id']}/recordings")["data"]
+    trail = ["https://example.test/", "https://example.test/docs",
+             "https://example.test/pricing", "https://example.test/"]
+    assert listing["recordings"][0]["pages"] == trail
+    assert listing["recordings"][0]["startUrl"] == "https://example.test/"
+    played = call(runtime.use("GET"), f"/api/analytics/acme/projects/{item['id']}"
+                  "/recordings/sess-pages-0001")["data"]
+    assert played["recording"]["pages"] == trail
+
+
 def test_replay_chunks_are_sealed_paged_and_gated_by_the_project_setting():
     runtime = Runtime()
     item = project(runtime)

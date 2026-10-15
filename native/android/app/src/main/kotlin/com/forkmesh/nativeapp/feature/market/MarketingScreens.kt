@@ -650,6 +650,11 @@ internal object MarketingChannelFacts {
             if (channel.closedValue > 0) parts.add("${MarketingText.count(channel.closedValue)} won")
             return parts.joinToString(" · ")
         }
+        if (channel.isAppStore) {
+            val parts = mutableListOf("${MarketingText.count(channel.downloads)} downloads in 30d")
+            parts.add(if (channel.rating > 0) String.format(java.util.Locale.ROOT, "%.1f★ from %s ratings", channel.rating, MarketingText.count(channel.ratings)) else "${MarketingText.count(channel.ratings)} ratings")
+            return parts.joinToString(" · ")
+        }
         if (channel.isGoogle) return "${MarketingText.count(channel.visits)} visits from Google in 30d · ${MarketingText.count(channel.indexedPages)} pages on Google"
         val parts = mutableListOf<String>()
         if (channel.isGitHub) {

@@ -445,12 +445,17 @@ data class MarketingChannelStats(
     val postsLast30d: Long = 0,
     val lastPostAt: Long = 0,
     val profileUrl: String = "",
+    val downloads: Long = 0,
+    val redownloads: Long = 0,
+    val updates: Long = 0,
+    val ratings: Long = 0,
 ) {
     val healthTitle: String get() = HEALTH_TITLES[health].orEmpty()
     val canCapture: Boolean get() = profileUrl.startsWith("https://") && !isEmail
     val isGoogle: Boolean get() = id == "google-search"
     val isEmail: Boolean get() = id == "email"
     val isGitHub: Boolean get() = id == "github"
+    val isAppStore: Boolean get() = id == "app-store"
     val missingChecks: List<String> get() = checks.filter { !it.ok }.map { it.label }
 
     fun captureUrl(organization: String): String =
@@ -481,6 +486,8 @@ data class MarketingChannelStats(
                 engagementRate = (health["engagementRate"] as? Number)?.toDouble(),
                 postsLast30d = health.long("postsLast30d"), lastPostAt = health.long("lastPostAt"),
                 profileUrl = settings.maps("channels").firstOrNull { it.str("id") == id }?.str("profileUrl").orEmpty(),
+                downloads = json.long("downloads"), redownloads = json.long("redownloads"), updates = json.long("updates"),
+                ratings = json.long("ratings"),
             )
         }
     }

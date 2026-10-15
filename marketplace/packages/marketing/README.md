@@ -90,6 +90,7 @@ source stopped refreshing). Both numbers always come from one snapshot.
 | GitHub | `stars`, `forks`, `followers` from the public API (summed over the account's own repositories for an account link). Growth is measured by stars; there is no engagement rate. |
 | Discord | Refresh uses `runtime.discord_guild` (member and online counts) and stores only the newest message time (`feed.lastPostAt`, never moves back) so the posting check sees Discord activity. Falls back to the public invite or widget. **Open** uses a public invite (`openUrl`). |
 | Mastodon | Refresh records followers, following and posts, and keeps the followed handles (`mastodonFollowing`, up to 2000, never sent to clients) so they are not suggested. |
+| Apple App Store (`app-store`) | Refresh reads the public App Store lookup (`https://itunes.apple.com/lookup?id=<id>&country=<cc>`, the id and store country come from the channel link): `rating`, `ratings` (rating count) and the store listing. `downloads`, `redownloads` and `updates` (30 days to the last reported day) come from App Store Connect through the App Store desk below. No posting check. Errors: `app_store_url_unsupported`, `app_store_app_not_found`. |
 | Blog | Refresh imports the feed and records `posts` (every feed item seen so far, `marketing_feed_items`) as a snapshot, so a successful read counts as fresh numbers; before 2026-10-14 it recorded nothing and the "Numbers updated in the last 7 days" check failed however often the feed was read. Views come from Analytics (see Performance). |
 
 Starter channels (`STARTER_CHANNELS`) are added to every organization unless
@@ -263,6 +264,70 @@ threads by hand, or the browser extension reads pages they open (or walks the
 watch list at a reader's pace in one tab) and sends what it read only when
 asked. Nothing on the desk posts, votes or sends anything to Reddit.
 
+## App Store desk
+
+The `app-store` channel has its own page (`?page=app-store`, "Open the App
+Store desk" on the channel card) with downloads over time and the store's
+other numbers, on the web, the desktop channel page, iPhone and Android.
+
+**Where downloads come from.** App Store Connect only gives downloads to an
+API key with access to Sales and Trends (the Admin, Finance or Sales role;
+Sales is the least it needs), and that `.p8` stays on the computer that
+runs `native/ios/tools/asc_store_report.py`. The server never holds it and
+never calls App Store Connect. With `--publish` the report reads App Store
+Connect's daily SUMMARY sales reports (`/v1/salesReports`, the vendor number
+from `ASC_VENDOR_NUMBER`) and PUTs them to
+`/api/marketing/<org>/app-store`, signed with the desktop's identity key
+(`forkmesh_mcp_server.marketing_request`). The organization is `--marketing
+ORG`, `FORKMESH_MARKETING_ORG`, or the only organization with Marketing
+installed. It asks Marketing for the last stored day and sends from three
+days before it (late reports get corrected), or backfills up to 365 days
+(Apple keeps daily reports for a year) from the first App Store version's
+month, in batches of 120 days. A missing report for a day less than two days
+old is left out, since Apple publishes a day's report the next morning,
+Pacific time; an older missing report means no sales and is sent as zeros.
+A failure is printed and never fails the report. The iOS App Store status
+shortcut runs it, so the desk updates whenever the store status does.
+
+**Storage.** `marketing_app_store_days` keeps one sealed row per day
+(downloads, redownloads, updates, and first-time downloads by country and by
+device), at most 800 days; older rows are dropped on each send.
+`marketing_app_store` keeps one sealed row per organization: the app (id,
+name, bundle id), the newest App Store versions and customer reviews from
+the report, the last public lookup, and who sent the numbers when. Sending
+numbers for a different app id clears the stored days. Each send also
+records a metric snapshot (source `app-store-connect`) with the 30-day
+counts, so channel health, the channel card and the weekly snapshots see
+them; an identical send within 12 hours records none.
+
+**API.** `GET /api/marketing/<org>/app-store` (any member) returns
+`{ok, canPublish, appStore}`. `appStore` has `app`, `lookup`, `versions`,
+`reviews`, `publishedAt`, `publishedBy`, `fresh` (sent within 7 days),
+`firstDay`/`lastDay`, `days` (every day from the first to the last, gaps as
+zeros, for the chart), `total`, `bestDay`, and `windows` for 7, 30, 90 and
+365 days. Each window ends on `lastDay`, not today, and carries the three
+counts, `previous` (the same span before it), `comparable` (the stored days
+reach back over the previous span, so a change is meaningful), the top 10
+`territories` and `devices`, and `territoryCount`. `PUT` (owners and admins)
+takes `{app: {id, name, bundleId}, days: [{day, downloads, redownloads,
+updates, territories, devices}], versions, reviews}`; at most 400 days per
+request, each within the last 800 days. It adds the `app-store` channel with
+`https://apps.apple.com/app/id<id>` as its link if the organization does not
+have one.
+
+**What the desk shows.** Downloads, redownloads and updates for 30 days, 90
+days or a year with the change against the span before (only when
+`comparable`), rating and ratings count, all-time downloads, best day, a bar
+chart per day (per week for a year) with a choice of downloads, redownloads
+or updates, top countries and devices with their share of downloads, recent
+reviews, the store listing (version, release date, genre, price, minimum
+iOS) and the newest App Store versions with their review state.
+
+Not covered: App Store impressions, product page views and conversion rate
+need App Store Connect's Analytics Reports API (asynchronous report
+requests); proceeds are left out because Marketing moves and reports no
+money.
+
 ## Other channel tools
 
 - **Mastodon people to follow** (`GET /mastodon?topics=`): suggestions,
@@ -300,6 +365,29 @@ asked. Nothing on the desk posts, votes or sends anything to Reddit.
   `marketing/aiContext/<org>/<channel>`, web `localStorage`), and the next
   copy adds a "Since the last copy" section with then → now so the AI can
   check its earlier predictions. Nothing is sent to a server.
+
+## Activity pings
+
+Every successful change raises a `plugin_activity` ping (`ACTIVITY_PINGS` in
+`content/worker/marketing.py`): content, numbers, App Store numbers,
+settings, channels, ads, experiments, funnel, Reddit threads and rules,
+campaigns, keywords, the X connection, X posts, Mastodon follows, refreshes,
+captures, the ready post and posted links. Reads, the AI assistant and link building raise none, and
+neither does a failed request.
+
+- **Who**: the member who acted ("By you in acme") and the organization's
+  owners and admins (at most 10 in all). Pings open `/dashboard/marketing`.
+- **Browser plugin** (`POST /activity`): `read` lines ping only the writer;
+  `sent` lines also ping owners and admins; `failed` lines ping the writer.
+  The line's text is the ping body.
+- **Syncs ping only for something new**: an extension post sync
+  (`POST /posts {"posts": [...]}`) pings only when it added posts ("2 new
+  channel posts found"); refreshed numbers on known posts stay quiet.
+- **Bursts fold**: edits, number logs (App Store ones too), refreshes,
+  captures, Reddit thread adds and `read` lines share one ping per member,
+  action and item for 10 minutes. The first rings the phone; later ones update that ping in the
+  inbox without a banner (`push=False`, an in-process memo of 512 keys).
+- Pings follow each person's Pings settings under "App package activity".
 
 ## Surfaces
 

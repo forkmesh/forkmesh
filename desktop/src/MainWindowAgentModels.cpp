@@ -85,7 +85,8 @@ QWidget *MainWindow::buildAgentModelsPage()
     auto *subtitle = new QLabel(
         QStringLiteral("Every model's runs, outcomes, approximate cost and tool "
                        "efficiency on this device, with merges backfilled from "
-                       "commit trailers. Click a column to sort."));
+                       "commit trailers. Tick Show to list a model in the "
+                       "composer dropdown. Click a column to sort."));
     subtitle->setObjectName(QStringLiteral("agentModelsSubtitle"));
     subtitle->setWordWrap(false);
     subtitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -119,6 +120,19 @@ QWidget *MainWindow::buildAgentModelsPage()
     layout->addWidget(header);
 
     m_agentModelTable = new AgentModelTable;
+    m_agentModelTable->composerShows = [](const QString &key) {
+        return !hiddenComposerModels().contains(key);
+    };
+    m_agentModelTable->composerShowChanged = [this](const QString &key, bool shown) {
+        QSet<QString> hidden = hiddenComposerModels();
+        if (shown)
+            hidden.remove(key);
+        else
+            hidden.insert(key);
+        saveHiddenComposerModels(hidden);
+        refreshAgentModelSelectors();
+        refreshComposerModelVisibilityList();
+    };
     connect(hideUnused, &QCheckBox::toggled, this,
             [this](bool on) { m_agentModelTable->setHideUnused(on); });
     layout->addWidget(m_agentModelTable, 1);
@@ -132,6 +146,20 @@ QWidget *MainWindow::buildAgentModelsPage()
     });
     timer->start();
     return page;
+}
+
+void MainWindow::openComposerModelsPage()
+{
+    openAgentsOverview();
+    if (!m_agentPageStack) {
+        flashMessage(QStringLiteral("Open a repository to edit the composer's "
+                                    "models."),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    setAgentPageTab(3);
+    if (m_agentModelTable)
+        m_agentModelTable->setFocus();
 }
 
 void MainWindow::refreshAgentModelBoard()
@@ -156,6 +184,12 @@ void MainWindow::refreshAgentModelBoard()
         catalog, m_agentSessions, retired, git, tools,
         QDateTime::currentMSecsSinceEpoch());
 
+    m_agentModelTable->composerKeyFor = [choices](const AgentModelStatsRow &row) {
+        if (row.catalogIndex < 0 || row.catalogIndex >= choices.size())
+            return QString();
+        const ComposerModelChoice &choice = choices.at(row.catalogIndex);
+        return composerModelKey(choice.provider, choice.model);
+    };
     m_agentModelTable->iconFor = [choices](const AgentModelStatsRow &row) {
         if (row.catalogIndex >= 0 && row.catalogIndex < choices.size())
             return choices.at(row.catalogIndex).icon;

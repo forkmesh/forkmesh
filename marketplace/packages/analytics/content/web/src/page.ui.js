@@ -31,7 +31,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     stickiness: ["insights", "builder", "stickiness"], lifecycle: ["insights", "builder", "lifecycle"],
     actions: ["insights", "actions"], annotations: ["insights", "annotations"],
     groups: ["people", "groups"], cohorts: ["people", "cohorts"],
-    experiments: ["flags", "experiments"],
+    experiments: ["flags", "experiments"], recordings: ["replay"],
   };
   const RANGE_SPANS = { "24h": DAY, "7d": 7 * DAY, "14d": 14 * DAY, "30d": 30 * DAY, "90d": 90 * DAY };
   const OPERATOR_LABELS = {
@@ -1634,7 +1634,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     $(`[data-analytics-events-list]`).innerHTML = view.rows.map((row, index) => {
       const open = view.open.has(index);
       const detail = open ? `<tr><td colspan="5"><div class="an-stack-tight">
-        <dl class="an-kv"><dt>Distinct id</dt><dd class="an-mono">${h(row.distinctId)}</dd><dt>Session</dt><dd>${row.sessionId ? `<span class="an-mono">${h(row.sessionId)}</span> · <button type="button" class="an-link" data-analytics-replay-open="${h(row.sessionId)}">Watch replay</button>` : "—"}</dd>${Object.keys(row.groups || {}).length ? `<dt>Groups</dt><dd>${h(Object.entries(row.groups).map(([type, key]) => `${type}: ${key}`).join(", "))}</dd>` : ""}</dl>
+        <dl class="an-kv"><dt>Distinct id</dt><dd class="an-mono">${h(row.distinctId)}</dd><dt>Session</dt><dd>${row.sessionId ? `<span class="an-mono">${h(row.sessionId)}</span> · <button type="button" class="an-link" data-analytics-replay-open="${h(row.sessionId)}">Watch recording</button>` : "—"}</dd>${Object.keys(row.groups || {}).length ? `<dt>Groups</dt><dd>${h(Object.entries(row.groups).map(([type, key]) => `${type}: ${key}`).join(", "))}</dd>` : ""}</dl>
         <pre class="an-pre">${h(JSON.stringify(row.properties || {}, null, 2))}</pre></div></td></tr>` : "";
       return `<tr><th scope="row"><span class="an-break">${h(eventLabel(row.event))}</span>${EVENT_LABELS[row.event] ? ` <span class="an-hint an-mono">${h(row.event)}</span>` : ""}</th><td><button type="button" class="an-link an-mono" data-analytics-person-open="${h(row.personId)}" title="Open this person">${h(shortId(row.distinctId))}</button></td><td><div class="an-clip" title="${h(eventPlace(row.properties))}">${h(eventPlace(row.properties)) || "—"}</div></td><td style="white-space:nowrap" title="${h(fmtDateTime(row.timestamp))}">${h(fmtDateTime(row.timestamp))}</td><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-event-toggle="${index}" aria-expanded="${open}">${open ? "Hide" : "Details"}</button></td></tr>${detail}`;
     }).join("");
@@ -1817,6 +1817,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     if (!state.replay.open) showReplayView(false);
     const view = state.replay, parameters = new URLSearchParams();
     $(`[data-analytics-replay-disabled]`).hidden = Boolean(settings().replay?.enabled);
+    $(`[data-analytics-replay-enable]`).hidden = !canManage();
     const minimum = Number($(`[data-analytics-replay-duration]`).value) || 0;
     if (minimum) parameters.set("minDurationMs", String(minimum));
     if ($(`[data-analytics-replay-errors]`).checked) parameters.set("errors", "1");
@@ -1833,14 +1834,44 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   function renderRecordings() {
     const view = state.replay;
     $(`[data-analytics-replay-list]`).innerHTML = view.rows.map((row) => `<tr>
-      <th scope="row"><button type="button" class="an-link an-mono" data-analytics-replay-open="${h(row.sessionId)}">${h(shortId(row.distinctId || row.sessionId))}</button><div class="an-hint an-clip" title="${h(row.startUrl)}">${h(row.startUrl) || "—"}</div></th>
+      <th scope="row"><button type="button" class="an-link an-mono" data-analytics-replay-open="${h(row.sessionId)}">${h(shortId(row.distinctId || row.sessionId))}</button><div class="an-hint an-clip" title="${h(recordingPages(row).join("\n"))}">${h(recordingPages(row).map(pagePath).join(" → ")) || "—"}</div></th>
       <td style="white-space:nowrap" title="${h(fmtDateTime(row.startedAt))}">${h(relTime(row.startedAt))}</td>
       <td class="r">${h(fmtDuration(row.durationMs))}</td><td class="r">${h(fmtDuration(row.activeMs))}</td>
+      <td class="r">${h(fmtInt(recordingPages(row).length))}</td>
       <td class="r">${h(fmtInt(row.clicks))}</td><td class="r">${h(fmtInt(row.keys))}</td>
       <td class="r">${row.errors ? `<span class="fm-label fm-label-danger">${h(fmtInt(row.errors))}</span>` : "0"}</td>
       <td>${h(deviceText(row.device))}</td></tr>`).join("");
     $(`[data-analytics-replay-empty]`).hidden = view.rows.length > 0;
     $(`[data-analytics-replay-more-wrap]`).hidden = !view.nextBefore;
+  }
+
+  function recordingPages(recording) {
+    const pages = Array.isArray(recording?.pages) ? recording.pages.filter(Boolean) : [];
+    return pages.length ? pages : recording?.startUrl ? [recording.startUrl] : [];
+  }
+  function pagePath(url) {
+    try { const parsed = new URL(String(url)); return `${parsed.pathname}${parsed.search}${parsed.hash}` || "/"; } catch (_) { return plainValue(url); }
+  }
+  function renderReplayPages(recording, player) {
+    const visits = player ? player.marks.filter((mark) => mark.kind === "navigation") : [];
+    const rows = visits.length ? visits.map((mark) => ({ at: mark.at, url: mark.label }))
+      : recordingPages(recording).map((url) => ({ at: null, url }));
+    $(`[data-analytics-replay-pages]`).innerHTML = rows.length ? rows.map((row) => row.at === null
+      ? `<div class="an-event-item"><span class="an-clip" title="${h(row.url)}">${h(pagePath(row.url))}</span></div>`
+      : `<button type="button" class="an-event-item" data-analytics-replay-jump="${Math.round(row.at)}"><span><b class="an-mono">${h(fmtClock(row.at))}</b> ${h(pagePath(row.url))}</span><span class="an-hint an-clip">${h(row.url)}</span></button>`).join("")
+      : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No pages were recorded.</p></div>`;
+  }
+  async function enableRecordings() {
+    if (!canManage()) return;
+    const button = $(`[data-analytics-replay-enable]`); button.disabled = true;
+    try {
+      const payload = await request(projectPath(), "PATCH", { replay: { enabled: true } });
+      applyProject(payload.project);
+      await loadRecordings(false);
+      state.loadedTabs = new Set(["replay:"]);
+      setMessage("notice", "Recordings are on. Sites start recording new visits within about five minutes.");
+    } catch (error) { fail(error, "Could not turn on recordings"); }
+    finally { button.disabled = false; }
   }
 
   function setReplayNote(text) {
@@ -1908,6 +1939,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     $(`[data-analytics-replay-toggle]`).textContent = "Play";
     $(`[data-analytics-replay-meta]`).textContent = "";
     $(`[data-analytics-replay-events]`).innerHTML = "";
+    $(`[data-analytics-replay-pages]`).innerHTML = "";
     $(`[data-analytics-replay-track]`).innerHTML = ""; $(`[data-analytics-replay-marks]`).innerHTML = "";
     renderReplayTime(0);
     setReplayNote("Loading the recording…");
@@ -1937,12 +1969,13 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       player.setSkipInactivity($(`[data-analytics-replay-skip]`).checked);
       const ready = player.load(events);
       renderReplayTrack(player); renderReplayTime(0);
+      renderReplayPages(recording, player);
       replayControls(ready);
       if (recording) void loadReplayEvents(recording, player);
     } catch (error) {
       if (isAbort(error)) return;
       setReplayNote(error.message === "gzip_unsupported"
-        ? "This browser cannot decompress recordings. Open the replay in a current version of Chrome, Edge, Firefox, or Safari."
+        ? "This browser cannot decompress recordings. Open the recording in a current version of Chrome, Edge, Firefox, or Safari."
         : `Could not load the recording: ${error.message}`);
     }
   }
@@ -2643,6 +2676,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["[data-analytics-replay-more]", () => void loadRecordings(true).catch((error) => fail(error))],
     ["[data-analytics-replay-person-clear]", () => { state.replay.personId = ""; void loadRecordings(false).catch((error) => fail(error)); }],
     ["[data-analytics-replay-back]", () => closeRecording()],
+    ["[data-analytics-replay-enable]", () => void enableRecordings()],
     ["[data-analytics-replay-delete]", () => void deleteRecording()],
     ["[data-analytics-replay-toggle]", () => state.replay.player?.toggle()],
     ["[data-analytics-replay-jump]", (node) => { const player = state.replay.player; if (!player) return; player.seek(Number(node.dataset.analyticsReplayJump) || 0); if (!player.playing) player.play(); }],

@@ -4787,6 +4787,12 @@ private:
                                  const QString &prefillDetails,
                                  std::function<void()> onCreated);
     void createQuickAddOrganizationTask();
+    QStringList organizationTaskMemberNames() const;
+    QString organizationTaskActorName() const;
+    void refreshQuickAddTaskAssignees();
+    QString quickAddTaskAssignment() const;
+    bool takeQuickAddNote(const QString &text);
+    void openComposerModelsPage();
     void createOrganizationTaskFollowUp();
     void moveOrganizationTaskToIssue();
     void addOrganizationTaskToPrompt();
@@ -12095,6 +12101,7 @@ private:
     QLabel *m_quickAddCharCount = nullptr; // characters left in the title (max 16000)
     QComboBox *m_quickAddAgentProvider = nullptr;
     QComboBox *m_quickAddAgentModelSelector = nullptr;
+    QComboBox *m_quickAddTaskAssignee = nullptr;
     QComboBox *m_quickAddClaudeModel = nullptr;
     // Permission-mode chooser: Ask before edits/Edit automatically/
     // Plan mode/Auto mode, styled like the provider/model combos beside it and

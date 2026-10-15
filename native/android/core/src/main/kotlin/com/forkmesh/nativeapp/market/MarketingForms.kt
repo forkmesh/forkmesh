@@ -263,6 +263,12 @@ object MarketingForms {
                         MarketingField("forks", "Forks", MarketingFieldKind.Count),
                         MarketingField("followers", "Followers", MarketingFieldKind.Count),
                     )
+                    "app-store" -> listOf(
+                        MarketingField("downloads", "Downloads (30 days)", MarketingFieldKind.Count),
+                        MarketingField("redownloads", "Redownloads (30 days)", MarketingFieldKind.Count),
+                        MarketingField("updates", "Updates (30 days)", MarketingFieldKind.Count),
+                        MarketingField("ratings", "Ratings", MarketingFieldKind.Count),
+                    )
                     else -> listOf(MarketingField("followers", "Followers", MarketingFieldKind.Count), MarketingField("posts", "Posts", MarketingFieldKind.Count))
                 }
                 head + listOf(
@@ -548,6 +554,7 @@ object MarketingForms {
                     "clicks" to stats.clicks, "views" to stats.views, "posts" to stats.posts, "visits" to stats.visits,
                     "indexedPages" to stats.indexedPages, "outbound" to stats.outbound, "replies" to stats.replies,
                     "closedDeals" to stats.closedDeals, "closedValue" to stats.closedValue, "stars" to stats.stars, "forks" to stats.forks,
+                    "downloads" to stats.downloads, "redownloads" to stats.redownloads, "updates" to stats.updates, "ratings" to stats.ratings,
                 ),
             )
             if (stats.rating > 0) json["rating"] = stats.rating

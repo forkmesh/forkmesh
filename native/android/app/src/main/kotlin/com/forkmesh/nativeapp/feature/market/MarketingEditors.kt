@@ -31,6 +31,7 @@ import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
+import com.forkmesh.nativeapp.market.MarketingAppStore
 import com.forkmesh.nativeapp.market.MarketingDraft
 import com.forkmesh.nativeapp.market.MarketingField
 import com.forkmesh.nativeapp.market.MarketingFieldKind
@@ -278,6 +279,7 @@ class MarketingChannelScreen(private val model: MarketingModel, private val chan
                         FmListRow(check.label, leading = { FmIcon(if (check.ok) "check_circle" else "radio_button_unchecked", tint = if (check.ok) MarketingTint.green else MarketingTint.orange) }, showChevron = false)
                     }
                 }
+                if (channel == MarketingAppStore.CHANNEL) MarketingAppStoreSection(model, runner)
                 MarketingHeader("Update")
                 if (channel in overview.refreshable) FmListRow("Refresh now", leading = { FmIcon("refresh") }, onTap = { runner.run({ refreshChannel(channel) }) })
                 MarketingRunnerStatus(runner, model, Modifier.padding(horizontal = 16.dp))

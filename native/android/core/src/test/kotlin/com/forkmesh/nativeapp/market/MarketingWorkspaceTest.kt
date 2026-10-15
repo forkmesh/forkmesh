@@ -535,4 +535,147 @@ class MarketingWorkspaceTest {
         assertEq(false, model.closeReadyPost("posted"))
         expect(model.working.isEmpty())
     }
+
+    private fun appStoreJson(): Map<String, Any?> {
+        val days = (1..44).map { index ->
+            mapOf("day" to java.time.LocalDate.of(2026, 9, 1).plusDays(index - 1L).toString(), "downloads" to index.toLong(), "redownloads" to 1L, "updates" to 2L)
+        }
+        return mapOf(
+            "ok" to true, "canPublish" to true,
+            "appStore" to mapOf(
+                "app" to mapOf("id" to "6803060735", "name" to "ForkMesh", "bundleId" to "com.forkmesh.forkmesh"),
+                "lookup" to mapOf(
+                    "appId" to "6803060735", "country" to "US", "name" to "ForkMesh", "version" to "2.4", "releasedAt" to 1_790_000_000_000L,
+                    "genre" to "Developer Tools", "price" to "Free", "rating" to 4.6, "ratings" to 12L, "url" to "https://apps.apple.com/us/app/id6803060735",
+                ),
+                "versions" to listOf(
+                    mapOf("version" to "2.4", "build" to "88", "status" to mapOf("state" to "READY_FOR_SALE", "label" to "Ready for sale", "tone" to "good"), "createdAt" to 5L),
+                    mapOf("build" to "no version"),
+                ),
+                "reviews" to listOf(
+                    mapOf("createdAt" to 7L, "rating" to 4L, "title" to "Handy", "territory" to "USA", "body" to "Nice"),
+                    mapOf("rating" to 0L),
+                ),
+                "publishedAt" to 9_000L, "publishedBy" to "alice", "fresh" to true,
+                "firstDay" to "2026-09-01", "lastDay" to "2026-10-14",
+                "days" to days.filter { it["day"] != "2026-10-10" } + listOf(mapOf("day" to "bogus", "downloads" to 99L)),
+                "total" to mapOf("downloads" to 990L, "redownloads" to 44L, "updates" to 88L),
+                "bestDay" to mapOf("day" to "2026-10-14", "downloads" to 44L),
+                "windows" to listOf(
+                    mapOf(
+                        "days" to 7L, "from" to "2026-10-08", "to" to "2026-10-14", "downloads" to 287L, "redownloads" to 7L, "updates" to 14L,
+                        "previous" to mapOf("downloads" to 238L, "redownloads" to 7L, "updates" to 14L), "comparable" to true,
+                        "territories" to listOf(mapOf("code" to "US", "downloads" to 200L), mapOf("code" to "DE", "downloads" to 87L)), "territoryCount" to 2L,
+                        "devices" to listOf(mapOf("name" to "iPhone", "downloads" to 250L), mapOf("name" to "iPad", "downloads" to 37L)),
+                    ),
+                    mapOf(
+                        "days" to 30L, "from" to "2026-09-15", "to" to "2026-10-14", "downloads" to 885L,
+                        "previous" to mapOf("downloads" to 105L), "comparable" to false,
+                    ),
+                    mapOf("days" to 90L, "downloads" to 990L, "previous" to mapOf("downloads" to 0L), "comparable" to true),
+                ),
+            ),
+        )
+    }
+
+    fun testAppStoreParsesTheReportAndHelpers() {
+        val store = MarketingAppStore.fromJson(appStoreJson())
+        expect(!store.isEmpty)
+        expect(store.canPublish)
+        assertEq("ForkMesh", store.name)
+        assertEq("com.forkmesh.forkmesh", store.app.bundleId)
+        assertEq("4.6★", store.lookup.ratingText)
+        assertEq(12L, store.lookup.ratings)
+        assertEq("Free", store.lookup.price)
+        assertEq(listOf("2.4 (88)"), store.versions.map { it.title })
+        assertEq(AppStoreTone.GOOD, store.versions.first().status.tone)
+        assertEq(1, store.reviews.size)
+        assertEq("★★★★☆", store.reviews.first().starsText)
+        assertEq(43, store.days.size)
+        assertEq(990L, store.total.downloads)
+        assertEq("2026-10-14", store.bestDay?.day)
+        assertEq(44L, store.bestDay?.downloads)
+
+        val week = store.window(7)!!
+        assertEq(287L, week.counts.downloads)
+        assertEq(238L, week.previous.downloads)
+        assertEq("+21%", week.changeText)
+        assertEq(listOf("US", "DE"), week.territories.map { it.label })
+        assertEq(2, week.territoryCount)
+        assertEq("iPhone", week.devices.first().label)
+        assertEq(null, store.window(30)?.downloadsChange)
+        assertEq("", store.window(30)?.changeText)
+        assertEq(null, store.window(90)?.downloadsChange)
+        assertEq(null, store.window(365))
+
+        assertEq(-50.0, MarketingAppStore.change(5, 10, true))
+        assertEq(null, MarketingAppStore.change(5, 10, false))
+        assertEq("-50%", MarketingAppStore.changeText(-50.0))
+        assertEq("0%", MarketingAppStore.changeText(0.2))
+        assertEq(listOf(1L, 1L, 2L, 5L, 10L, 50L, 100L, 2000L), listOf(0L, 1L, 2L, 3L, 7L, 44L, 100L, 1001L).map(MarketingAppStore::axisMax))
+
+        val month = store.chartDays(30)
+        assertEq(30, month.size)
+        assertEq("2026-09-15", month.first().day)
+        assertEq("2026-10-14", month.last().day)
+        assertEq(0L, month.first { it.day == "2026-10-10" }.downloads)
+        assertEq(44L, month.last().downloads)
+        val year = store.chartDays(365)
+        assertEq(44, year.size)
+        assertEq("2026-09-01", year.first().day)
+        assertEq(emptyList<MarketingAppStoreDay>(), store.chartDays(0))
+
+        assertEq("Sent from App Store Connect 2h ago by alice", store.sentText("2h ago"))
+        assertEq("Sent from App Store Connect 2h ago", store.copy(publishedBy = "").sentText("2h ago"))
+        assertEq("14 Oct", MarketingAppStore.dayLabel("2026-10-14"))
+        assertEq("United States", MarketingAppStore.countryName("US"))
+        assertEq("USA", MarketingAppStore.countryName("USA"))
+
+        val empty = MarketingAppStore.fromJson(mapOf("ok" to true, "appStore" to mapOf("app" to mapOf<String, Any?>(), "lookup" to mapOf<String, Any?>(), "bestDay" to null, "lastDay" to "")))
+        expect(empty.isEmpty)
+        expect(empty.lookup.isEmpty)
+        assertEq(null, empty.bestDay)
+        assertEq(emptyList<MarketingAppStoreDay>(), empty.chartDays(30))
+        assertEq("", empty.sentText("now"))
+        assertEq("App Store", empty.name)
+        expect(MarketingAppStore.EMPTY_TEXT.startsWith("No downloads yet. Run native/ios/tools/asc_store_report.py --publish"))
+        expect(MarketingAppStore.fromJson(emptyMap()).isEmpty)
+    }
+
+    fun testAppStoreLoadsAndChannelCarriesItsNumbers() {
+        val transport = FakeTransport()
+        val json = overviewJson().toMutableMap()
+        val summary = (json["summary"] as Map<*, *>).entries.associate { it.key.toString() to it.value }.toMutableMap()
+        summary["channels"] = (summary["channels"] as List<*>) + mapOf(
+            "channel" to "app-store", "downloads" to 885L, "redownloads" to 30L, "updates" to 60L, "ratings" to 12L, "rating" to 4.6,
+            "health" to mapOf("state" to "good", "source" to "app-store-connect"),
+        )
+        json["summary"] = summary
+        transport.answer("GET", "/api/marketing", mapOf("organizations" to listOf(mapOf("name" to "acme", "installed" to true))))
+        transport.answer("GET", "/api/marketing/acme", json)
+        val model = MarketingModel(PackagesClient(transport), zone = utc, clock = { 1_000L })
+        model.refresh()
+        val channel = model.overview!!.stats("app-store")!!
+        expect(channel.isAppStore)
+        assertEq(885L, channel.downloads)
+        assertEq(30L, channel.redownloads)
+        assertEq(60L, channel.updates)
+        assertEq(12L, channel.ratings)
+        assertEq("app-store-connect", channel.source)
+        val metric = MarketingForms.metricDraft(model.overview!!, "app-store", utc)
+        assertEq("885", metric["downloads"])
+        assertEq("12", metric["ratings"])
+        expect(metric.fields.any { it.key == "downloads" })
+
+        assertEq(null, model.appStore)
+        transport.answer("GET", "/api/marketing/acme/app-store", appStoreJson())
+        assertEq(true, model.loadAppStore())
+        assertEq("2026-10-14", model.appStore?.lastDay)
+        expect(transport.last("GET", "/api/marketing/acme/app-store") != null)
+        transport.answer("GET", "/api/marketing/acme/app-store", mapOf("error" to "forbidden"), 403)
+        assertEq(false, model.loadAppStore())
+        expect(model.errorText.isNotEmpty())
+        assertEq("2026-10-14", model.appStore?.lastDay)
+        expect(model.working.isEmpty())
+    }
 }
