@@ -940,9 +940,15 @@ and service plug-ins running, and the next window re-attaches to the same core.
     because a unit started at boot has no display. That entry is written with
     the unit (only when the desktop binary is there) and removed on disable.
     The engine skips the tray when run with `--state-dir` or test overrides.
+  - One icon at a time. The desktop window keeps its own `QSystemTrayIcon`,
+    because notification balloons need a visible icon in the process that
+    shows them; it uses the ForkMesh icon, clicking it or its "Open ForkMesh"
+    item brings the window forward. While a window for the project runs (the
+    pid in `state/forkmesh.lock`, the single-instance lock, is alive) the tray
+    process hides its icon, and shows it again within 2 s of the window
+    closing.
   - On macOS the tray sets the accessory activation policy so it has no Dock
-    icon. The desktop window keeps its own tray icon for notification balloons,
-    so while the window is open two icons can show.
+    icon.
 - **Single instance.** `core.lock` is an exclusive lock on every platform
   (`flock`; `LockFileEx` on Windows, which previously only opened the file). A
   second `serve --background` exits 0 so a supervisor does not restart-loop

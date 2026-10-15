@@ -3,6 +3,7 @@
 #include "AppPaths.h"
 #include "CoreClient.h"
 #include "DesktopDisplayReadiness.h"
+#include "SingleInstance.h"
 
 #include <QAction>
 #include <QApplication>
@@ -54,6 +55,14 @@ bool pidAlive(qint64 pid)
         return false;
     return ::kill(pid_t(pid), 0) == 0 || errno == EPERM;
 #endif
+}
+
+bool desktopWindowRunning()
+{
+    qint64 pid = 0;
+    QString host;
+    QString application;
+    return QLockFile(singleInstanceLockPath()).getLockInfo(&pid, &host, &application) && pidAlive(pid);
 }
 
 QString toolTip(const core::Endpoint &endpoint, const QString &project)
@@ -162,6 +171,11 @@ int run(int argc, char *argv[])
         }
         if (running) {
             lastSeen.start();
+            if (desktopWindowRunning()) {
+                if (icon.isVisible())
+                    icon.hide();
+                return;
+            }
             const QString tip = toolTip(endpoint, project);
             if (icon.toolTip() != tip)
                 icon.setToolTip(tip);

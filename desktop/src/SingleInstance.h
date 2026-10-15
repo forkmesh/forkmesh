@@ -13,6 +13,8 @@ void onSingleInstanceActivation(
 
 void releaseSingleInstance();
 
+QString singleInstanceLockPath();
+
 // Moves the held lock from the legacy ~/.forkmesh into the project's state
 // folder once the layout migration allows it. The new lock is taken before the
 // old one is dropped, so there is never a moment without one.
