@@ -15,6 +15,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -904,6 +905,86 @@ func TestRestartedDesktopMustReclaimTheSocket(t *testing.T) {
 	}
 	if f.module.Client() != nil {
 		t.Fatal("unclaimed socket kept")
+	}
+}
+
+func restartCore(t *testing.T, previous *daemon.Core) (*daemon.Core, *Module) {
+	t.Helper()
+	core := daemon.NewCore(previous.Layout, "test", log.New(io.Discard, "", 0))
+	module := New()
+	module.Timings = fastTimings()
+	coretest.Start(t, core, module)
+	return core, module
+}
+
+func TestStartReconnectsWithTheLastSettingsUntilStopped(t *testing.T) {
+	f := newFixture(t, defaultHello(), nil)
+	f.configure(t, "alice", "al ice", "box-1")
+	f.relay.next(t)
+	f.waitState(t, func(s State) bool { return s.Connected })
+	path := filepath.Join(f.core.Layout.CoreState(), savedFile)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last saved
+	if err := json.Unmarshal(raw, &last); err != nil {
+		t.Fatal(err)
+	}
+	if last != (saved{Endpoint: f.relay.endpoint(), Owner: "alice", Account: "al ice", Node: "box-1", Identity: f.id.PublicKey()}) {
+		t.Fatalf("saved %+v", last)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", info.Mode())
+	}
+	f.module.Stop()
+
+	core, module := restartCore(t, f.core)
+	server := f.relay.next(t)
+	if owner := server.request.URL.Query().Get("owner"); owner != "alice" {
+		t.Fatalf("owner %q", owner)
+	}
+	if agent := server.request.Header.Get("User-Agent"); agent != "ForkMeshDesktop/test (account=al%20ice; node=box-1)" {
+		t.Fatalf("user agent %q", agent)
+	}
+	deadline := time.Now().Add(wait)
+	for module.Client() == nil || !module.Client().State().Connected {
+		if time.Now().After(deadline) {
+			t.Fatal("restarted core never connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	ui := coretest.NewPeer("ui", rpc.UI)
+	core.Hub.Add(ui)
+	var state State
+	coretest.MustCall(t, core, ui, "core.relay.configure", map[string]any{
+		"url": SignedURL(f.relay.endpoint(), "alice", f.id, time.Now()), "account": "al ice", "node": "box-1"}, &state)
+	if !state.Connected || f.relay.count.Load() != 2 {
+		t.Fatalf("reclaimed state %+v after %d connections", state, f.relay.count.Load())
+	}
+	coretest.MustCall(t, core, ui, "core.relay.stop", nil, nil)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stop kept the saved settings: %v", err)
+	}
+	module.Stop()
+
+	_, again := restartCore(t, core)
+	time.Sleep(150 * time.Millisecond)
+	if again.Client() != nil || f.relay.count.Load() != 2 {
+		t.Fatal("a stopped relay reconnected at start")
+	}
+}
+
+func TestStartSkipsSavedSettingsForAnotherNodeKey(t *testing.T) {
+	f := newFixture(t, defaultHello(), nil)
+	f.configure(t, "alice", "alice", "box-1")
+	f.relay.next(t)
+	f.module.Stop()
+	writeIdentity(t, f.core)
+	_, module := restartCore(t, f.core)
+	time.Sleep(150 * time.Millisecond)
+	if module.Client() != nil || f.relay.count.Load() != 1 {
+		t.Fatal("reconnected with a different node key")
 	}
 }
 
