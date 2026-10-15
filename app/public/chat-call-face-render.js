@@ -22,6 +22,7 @@ const LOOK_GAIN = 0.55;
 const PHOTO_SOFTEN = 0.35;
 const GRAIN = 0.012;
 const LIP_SHADOW = 0.22;
+const MOUTH_EDGE = 0.6;
 const OUTFIT_REACH = 0.35;
 const OUTFIT_DETAIL = 0.4;
 const OUTFIT_SHADE = [0.75, 1.12];
@@ -87,7 +88,7 @@ void main() {
   float open = 1.0 - smoothstep(0.05, 0.95, vHole);
   if (uAuxPass > 0.5) {
     float skin = texture2D(uAux, vUv, 2.5).g;
-    gl_FragColor = vec4(skin * aux.r * open, aux.b, 1.0 - open, vRegion);
+    gl_FragColor = vec4(skin * aux.r * open, aux.b, 0.5 * (1.0 - open) + 0.5 * smoothstep(1.0, 2.0, vHole), vRegion);
   } else {
     vec2 uv = gaze(gaze(vUv, uEyeL, uLook.xy), uEyeR, uLook.zw);
     vec3 color = lid(lid(texture2D(uPhoto, uv, SOFTEN).rgb, uEyeL, uClose.x), uEyeR, uClose.y);
@@ -314,10 +315,14 @@ void main() {
   vec4 warp = vec4(0.0);
   vec4 aux = vec4(0.0);
   float zone = 0.0;
+  float hole = 0.0;
+  float cavity = 0.0;
   if (uFace > 0.5) {
     warp = texture2D(uWarp, vUv);
     aux = texture2D(uAux, vUv);
-    zone = headZone(vUv) * uPresence * (1.0 - aux.b) * uHasMatte;
+    hole = min(aux.b * 2.0, 1.0);
+    cavity = max(aux.b * 2.0 - 1.0, 0.0);
+    zone = headZone(vUv) * uPresence * (1.0 - hole) * uHasMatte;
   }
   vec3 front = clamp(cam - (1.0 - alpha) * fill, vec3(0.0), vec3(alpha));
   vec3 behind = alpha < 0.98 ? (cam - front) / (1.0 - alpha) : fill;
@@ -333,6 +338,7 @@ void main() {
   }
   float keep = alpha * (1.0 - zone);
   vec3 color = backdrop * (1.0 - keep) + front * (1.0 - zone);
+  if (uFace > 0.5) color *= mix(1.0, mix(${MOUTH_EDGE.toFixed(2)}, 1.0, smoothstep(0.0, 1.0, cavity)), hole * uPresence);
   if (uFace > 0.5 && warp.a > 0.002) {
     vec4 lowCam = texture2D(uLowCam, vUv);
     vec4 lowFace = texture2D(uLowFace, vUv);
@@ -355,7 +361,7 @@ void main() {
     float skin = clamp(aux.r / max(warp.a, 0.002), 0.0, 1.0);
     skin = smoothstep(0.15, 0.85, skin);
     vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin) + grain(vUv * uPixels) * ${GRAIN.toFixed(3)}, 0.0, 1.0);
-    float lip = aux.b * (1.0 - aux.b) * 4.0;
+    float lip = hole * (1.0 - hole) * 4.0;
     color *= 1.0 - ${LIP_SHADOW.toFixed(2)} * lip * uPresence;
     color = mix(color, face, warp.a * uPresence);
     if (uTongue > 0.001) color = mix(color, cam, tongueAt(vUv, cam) * uTongue * uPresence);
@@ -453,14 +459,21 @@ export function vertexRegion(v, extraStart = Infinity) {
   return v <= 26 ? 0.25 : 1;
 }
 
+function signedArea(points, [a, b, c]) {
+  const [p, q, r] = [points[a], points[b], points[c]];
+  return (q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1]);
+}
+
 export function warpVertices(mesh, layout, livePoints, photoSize, depths = null) {
   const out = new Float32Array(mesh.triangles.length * 3 * VERTEX_FLOATS);
   const extraStart = mesh.extraStart ?? Infinity;
   let at = 0;
   for (const triangle of mesh.triangles) {
+    const folded = Boolean(triangle.cull) && signedArea(layout, triangle.v) * signedArea(livePoints, triangle.v) < 0;
     triangle.v.forEach((v, k) => {
-      out[at++] = livePoints[v][0];
-      out[at++] = livePoints[v][1];
+      const placed = livePoints[folded ? triangle.v[0] : v];
+      out[at++] = placed[0];
+      out[at++] = placed[1];
       out[at++] = layout[v][0] / photoSize;
       out[at++] = layout[v][1] / photoSize;
       out[at++] = triangle.hole ? triangle.hole[k] : triangle.mouth ? 1 : 0;

@@ -577,7 +577,15 @@ when a phrase or answer changes.
 
   Apple requires the app's name in every phrase and allows ten App Shortcuts
   per app; other intents (Stop all agents, Start a timer, Open agent run, Open
-  inbox, Open approvals) are Shortcuts actions without a built-in phrase. Merge
+  inbox, Open approvals, Start a new iOS build) are Shortcuts actions without a
+  built-in phrase. **Start a new iOS build** (`StartIOSBuildIntent`,
+  `Intents/BuildIntents.swift`) runs the office MacBook's
+  `deploy-native-ios-ad-hoc-mac.sh` through `ShortcutsStore`, the same
+  prepare/run pair as the Desktops page's iOS button (`BuildMacShortcut`): a
+  shortcut keeps the intent's title as its name, so "Hey Siri, start a new iOS
+  build" works without saying ForkMesh. It speaks its own confirmation (the
+  desktop's summary is written for the screen) and declines while that
+  shortcut is already running, since a second run would restart it. Merge
   and delete spend the desktop's confirmation token; the spoken confirmation
   and `.requiresAuthentication` stand in for the in-app Face ID prompt. A cold
   launch from Siri's compose request is picked up in `HomeShell.start()`.

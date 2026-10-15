@@ -8,6 +8,7 @@
 #include "RailFolders.h"
 #include "RailGroups.h"
 #include "AgentFolders.h"
+#include "AgentCliTasks.h"
 #include "RailShortcuts.h"
 #include "MessageRow.h" // ThreadReplySummary is returned by value below
 #include "ClientErrorReports.h"
@@ -14140,6 +14141,10 @@ private:
         QString shown;          // last state pushed to the list/pill/transcript
     };
     QHash<int, AgentBackgroundWork> m_agentBackgroundWork;
+    QHash<int, forkmesh::agentclitasks::Ledger> m_agentCliTasks;
+    QSet<int> m_agentResultAwaitingCliTasks;
+    void trackAgentCliTask(int sessionId, const QJsonObject &event);
+    void settleAgentAfterCliTasks(int sessionId);
     QHash<int, int> m_agentRelaunchAttempts;
     void notifyAgentWaiting(int sessionId, bool needsPermission);
     // The counterpart for a run that reached the end: a ping on the Pings page

@@ -1559,6 +1559,7 @@ async function redditMineCheck(account = "") {
         }
         state.mineCheck = check;
         await redditSave(state);
+        await redditPostsBroadcast(check);
       });
     }
     if (due.length) {
@@ -1566,12 +1567,31 @@ async function redditMineCheck(account = "") {
         const state = await redditState();
         state.mineCheck = { ...(state.mineCheck || {}), done: true, finishedAt: Date.now() };
         await redditSave(state);
+        await redditPostsBroadcast(state.mineCheck);
       });
     }
     return due.length;
   } finally {
     redditMineChecking = false;
   }
+}
+
+async function redditPostsBroadcast(check) {
+  for (const tab of await chrome.tabs.query({ url: FORKMESH_ORIGINS.map((origin) => `${origin}/dashboard/marketing*`) }).catch(() => [])) {
+    if (Number.isInteger(tab.id)) await chrome.tabs.sendMessage(tab.id, { type: "fm-reddit-posts-progress", check }).catch(() => null);
+  }
+}
+
+async function redditMineRecord(state, base, account, items, result) {
+  const now = Date.now();
+  for (const raw of Array.isArray(items) ? items.slice(0, 100) : []) {
+    const item = redditMineItem(raw, account);
+    if (!item) continue;
+    result.found += 1;
+    redditMineKeep(state, item, now);
+  }
+  redditMineTrim(state);
+  await redditSendMine(state, base, result);
 }
 
 async function redditProfileRead(tabId) {
@@ -1622,15 +1642,7 @@ async function redditProfileUpdate({ tabId }) {
       }
     }
     const account = redditAccount(state, result.account) || result.account;
-    const now = Date.now();
-    for (const raw of Array.isArray(read.items) ? read.items.slice(0, 100) : []) {
-      const item = redditMineItem(raw, account);
-      if (!item) continue;
-      result.found += 1;
-      redditMineKeep(state, item, now);
-    }
-    redditMineTrim(state);
-    await redditSendMine(state, base, result);
+    await redditMineRecord(state, base, account, read.items, result);
     await redditSave(state);
   });
   const state = await redditState();
@@ -1641,6 +1653,87 @@ async function redditProfileUpdate({ tabId }) {
   if (result.checking) void redditMineCheck(result.account).catch(() => null);
   await refreshMark([`reddit:user:${lower}`], Number(tabId), true);
   return { ...(await redditStats()), profile: result, text: redditProfileText(result) };
+}
+
+const REDDIT_PROFILE_TABS = ["submitted", "comments"];
+let redditAccountsUpdating = false;
+
+async function redditProfileTab(url) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    if (!tab?.id || !(await redditWaitForTab(tab.id))) return null;
+    let last = null;
+    for (let attempt = 0; attempt < REDDIT_CHECK_TRIES; attempt += 1) {
+      await captureSleep(REDDIT_CHECK_RETRY_MS);
+      const reply = await redditProfileRead(tab.id);
+      if (!reply) continue;
+      last = reply;
+      if (Array.isArray(reply.items) && reply.items.length) break;
+    }
+    return last;
+  } finally {
+    if (tab?.id) await chrome.tabs.remove(tab.id).catch(() => null);
+  }
+}
+
+function redditAccountsText(result) {
+  const lines = result.accounts.map((entry) => {
+    const name = `u/${entry.account}`;
+    if (entry.error) return `${name}: Marketing refused the links (${refreshError(entry.error)}).`;
+    if (!entry.read) return `${name}: the profile did not load; open it once in a tab, then try again.`;
+    return entry.found
+      ? `${name}: ${activityCount(entry.found, "post or comment", "posts and comments")} read, ${activityCount(entry.linksAdded, "new link", "new links")} and ${entry.linksUpdated} updated.`
+      : `${name}: no posts or comments were found on the profile.`;
+  });
+  if (result.checking) lines.push(`Reading the views of ${activityCount(result.checking, "link", "links")} in background tabs; this page updates as they are read.`);
+  else if (result.busy) lines.push("A views check is already running; press Update again when it ends to read the rest.");
+  return lines.join(" ");
+}
+
+async function redditAccountsUpdate({ organization }) {
+  if (!(await settings()).sessionToken) throw new ApiError("not_signed_in", 401);
+  if (redditAccountsUpdating) throw new ApiError("reddit_accounts_running", 409);
+  redditAccountsUpdating = true;
+  try {
+    if (organization && String(organization) !== await xOrganization()) throw new ApiError("reddit_organization_mismatch", 409);
+    const accounts = await redditSerial(async () => {
+      const state = await redditState();
+      await redditFetchWatch(state);
+      await redditSave(state);
+      return [...state.watch.accounts];
+    });
+    if (!accounts.length) throw new ApiError("reddit_accounts_empty", 409);
+    const result = { at: Date.now(), accounts: [], checking: 0, busy: false };
+    for (const account of accounts) {
+      const entry = { account, read: false, found: 0, linksAdded: 0, linksUpdated: 0, error: "" };
+      result.accounts.push(entry);
+      for (const tab of REDDIT_PROFILE_TABS) {
+        const read = await redditProfileTab(`https://www.reddit.com/user/${encodeURIComponent(account)}/${tab}/`).catch(() => null);
+        if (!read || read.account.toLowerCase() !== account.toLowerCase()) continue;
+        entry.read = true;
+        try {
+          await redditSerial(async () => {
+            const state = await redditState();
+            await redditMineRecord(state, await redditBase(), account, read.items, entry);
+            await redditSave(state);
+          });
+        } catch (error) {
+          if (!error?.status || error.status === 401) throw error;
+          entry.error = error.code || "request_failed";
+          break;
+        }
+      }
+      await refreshMark([`reddit:user:${account.toLowerCase()}`], null, entry.read);
+    }
+    const state = await redditState();
+    result.busy = redditMineChecking;
+    result.checking = redditMineChecking ? 0 : Math.min(REDDIT_MINE_CHECK_LIMIT, Object.values(state.mine).filter((item) =>
+      Date.now() - Number(item.readAt || 0) >= REDDIT_MINE_FRESH_MS).length);
+    if (result.checking) void redditMineCheck("").catch(() => null);
+    return { ok: true, ...result, text: redditAccountsText(result) };
+  } finally {
+    redditAccountsUpdating = false;
+  }
 }
 
 const redditAutoCheck = ({ on }) => redditSerial(async () => {
@@ -2688,7 +2781,7 @@ async function xSetupBack() {
 
 const X_SETUP_PORTAL_ONLY = new Set(["fm-x-setup-keys", "fm-x-setup-mark", "fm-x-setup-forget", "fm-x-setup-back"]);
 
-const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop"]);
+const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop", "fm-reddit-accounts-update"]);
 
 const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-sync",
   "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
@@ -2766,6 +2859,7 @@ const HANDLERS = {
   "fm-reddit-monitor-remove": redditMonitorRemove,
   "fm-reddit-check": redditCheck,
   "fm-reddit-profile-update": redditProfileUpdate,
+  "fm-reddit-accounts-update": redditAccountsUpdate,
   "fm-reddit-auto-check": redditAutoCheck,
   "fm-reddit-walk": redditWalkStart,
   "fm-reddit-walk-state": redditWalkStatus,

@@ -727,6 +727,8 @@ set(FORKMESH_APP_SOURCES
     src/PingSyncState.cpp
     src/DesktopPingForward.h
     src/DesktopPingForward.cpp
+    src/AgentCliTasks.h
+    src/AgentCliTasks.cpp
     src/DesktopPowerAlert.h
     src/DesktopPowerAlert.cpp
     src/PowerSourceReader.h
@@ -4197,6 +4199,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-desktop-ping-forward-tests
         COMMAND forkmesh-desktop-ping-forward-tests)
+
+    qt_add_executable(forkmesh-agent-cli-tasks-tests
+        tests/test_agent_cli_tasks.cpp
+        src/AgentCliTasks.h
+        src/AgentCliTasks.cpp
+    )
+    target_include_directories(forkmesh-agent-cli-tasks-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-agent-cli-tasks-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-cli-tasks-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-agent-cli-tasks-tests
+        COMMAND forkmesh-agent-cli-tasks-tests)
 
     qt_add_executable(forkmesh-desktop-power-alert-tests
         tests/test_desktop_power_alert.cpp

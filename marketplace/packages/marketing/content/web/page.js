@@ -7,14 +7,14 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     settings: {}, summary: {}, channelCatalog: [], addingChannel: "",
     canManageSettings: false, ads: [], adsSummary: {}, adPlatforms: [],
     experiments: [], experimentsSummary: {}, funnel: [], funnelReport: {},
-    redditThreads: [], redditDesk: {}, channelPlaybooks: {}, performance: null,
+    redditThreads: [], redditDesk: {}, posts: [], channelPlaybooks: {}, performance: null,
     campaigns: [], campaignTemplates: [], keywords: [], suggestions: [], assistantAvailable: false,
     traffic: null, assistant: null, emailSuggestions: null, discordPosts: null, readyPosts: {}, readyPost: null,
     appStore: null,
   }, view: {
     rangeDays: 30, chartMetric: "reach", channelSort: "reach", status: "", contentLimit: 50,
     page: "dashboard", adStatus: "", adChannel: "", adCurrency: "", experimentStatus: "",
-    redditStatus: "", healthFilter: "", performanceDays: 28, performanceProject: "",
+    redditStatus: "", redditPostsAll: false, healthFilter: "", performanceDays: 28, performanceProject: "",
     campaignStatus: "open", keywordView: "tracked", appStoreRange: 30, appStoreMetric: "downloads",
   }};
 
@@ -1004,6 +1004,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     renderRedditRules(desk);
     renderRedditIdeas(desk);
     renderRedditWalk();
+    renderRedditPosts();
     for (const key of ["loggedThisWeek", "repliedThisWeek", "skippedThisWeek", "open"]) {
       const node = $(`[data-marketing-reddit-stat="${key}"]`);
       if (node) node.textContent = threads.length ? fmtFull(summary[key] || 0) : "—";
@@ -1234,6 +1235,132 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     try { await request(orgPath(`/reddit/${id}`), "DELETE", {}); $(`[data-marketing-reddit-dialog]`).close(); message("notice", "Thread deleted."); await load(); }
     catch (error) { message("error", `Could not delete the thread: ${error.message}`); }
   }
+  const REDDIT_POSTS_SHOWN = 25;
+  const redditPosts = { available: false, requests: new Set(), sequence: 0, running: false };
+  const REDDIT_POSTS_ERRORS = {
+    not_signed_in: "Sign in to the ForkMesh browser extension first (click its toolbar icon).",
+    reddit_accounts_empty: "No Reddit accounts on the watch list yet. Add yours under Watch list, or open your Reddit profile and press Update in the extension.",
+    reddit_accounts_running: "The extension is already updating your posts.",
+    reddit_organization_mismatch: "The extension is set to another organization: choose this one in its popup, then try again.",
+    extension_unavailable: "The browser extension did not answer. Reload this page.",
+    forbidden_sender: "Reload this page and try again.",
+  };
+  const redditSubreddit = (url) => /\/r\/([A-Za-z0-9_]{2,21})(?:\/|$)/.exec(String(url || ""))?.[1] || "";
+  const redditPostById = (id) => (state.marketing.posts || []).find((item) => item.id === id);
+
+  function redditPostList() {
+    return (state.marketing.posts || []).filter((item) => item.channel === "reddit")
+      .sort((a, b) => ((b.postedAt || b.createdAt) - (a.postedAt || a.createdAt)) || String(a.id).localeCompare(String(b.id)));
+  }
+
+  function renderRedditPosts() {
+    const body = $(`[data-marketing-reddit-posts]`); if (!body) return;
+    const posts = redditPostList();
+    const shown = state.view.redditPostsAll ? posts : posts.slice(0, REDDIT_POSTS_SHOWN);
+    const views = posts.reduce((sum, item) => sum + (Number.isFinite(item.views) ? item.views : 0), 0);
+    $(`[data-marketing-reddit-posts-count]`).textContent = posts.length
+      ? `${fmtFull(posts.length)} post${posts.length === 1 ? "" : "s"} · ${fmtFull(views)} view${views === 1 ? "" : "s"}` : "";
+    $(`[data-marketing-reddit-posts-empty]`).hidden = posts.length > 0;
+    $(`[data-marketing-reddit-posts-more]`).hidden = posts.length <= REDDIT_POSTS_SHOWN;
+    $(`[data-marketing-reddit-posts-more-button]`).textContent = state.view.redditPostsAll ? "Show fewer" : `Show all ${fmtFull(posts.length)}`;
+    const count = (value) => Number.isFinite(value) ? fmtFull(value) : "—";
+    body.innerHTML = shown.map((item) => {
+      const where = redditSubreddit(item.url);
+      const meta = [where ? `r/${where}` : "", item.postedAt ? `posted ${utcDate(item.postedAt)}` : "",
+        item.source === "extension" ? "from the browser extension" : `added by ${item.createdBy || "a teammate"}`].filter(Boolean).join(" · ");
+      return `<tr>
+        <td>${outLink(item.url, `<b>${escapeHtml(item.title || item.url)}</b><small>${escapeHtml(meta)}</small>`, `class="mk-content-title" aria-label="Open on Reddit"`)}${item.note ? `<small style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(item.note)}</small>` : ""}</td>
+        <td class="r mk-num">${count(item.views)}</td><td class="r mk-num">${count(item.likes)}</td><td class="r mk-num">${count(item.replies)}</td>
+        <td><small class="mk-hint">${item.checkedAt ? escapeHtml(relativeTimeLabel(item.checkedAt)) : "not yet"}</small></td>
+        <td class="r"><button data-marketing-reddit-post-edit="${escapeHtml(item.id)}" type="button" class="mk-link">Edit</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  function redditPostsStatus(text, error = false) {
+    const node = $(`[data-marketing-reddit-posts-status]`); if (!node) return;
+    node.textContent = text || "";
+    node.hidden = !text;
+    node.style.color = error ? "var(--mk-bad)" : "";
+  }
+
+  function updateRedditPosts() {
+    if (!redditPosts.available) {
+      message("notice", "Install the ForkMesh browser extension (Extension page) and reload this page to update your Reddit posts from here.");
+      return;
+    }
+    if (redditPosts.running) return;
+    redditPosts.running = true;
+    $(`[data-marketing-reddit-posts-update]`).disabled = true;
+    redditPostsStatus("The extension is reading your accounts' Reddit profiles in a background tab…");
+    const request = `reddit-posts-${++redditPosts.sequence}`;
+    redditPosts.requests.add(request);
+    window.postMessage({ source: "forkmesh-marketing-page", type: "marketing-reddit-posts-update", request, organization: state.marketing.organization }, location.origin);
+  }
+
+  function redditPostsDone(response) {
+    redditPosts.running = false;
+    const button = $(`[data-marketing-reddit-posts-update]`); if (button) button.disabled = false;
+    if (!response.ok) { redditPostsStatus(REDDIT_POSTS_ERRORS[response.error] || response.message || "The extension could not update your posts.", true); return; }
+    redditPostsStatus(response.text || "Your posts are updated.");
+    void load();
+  }
+
+  function redditPostsProgress(check) {
+    if (!check) return;
+    const read = Number(check.read || 0), total = Number(check.total || 0);
+    if (check.done) {
+      redditPostsStatus(`Views read for ${fmtFull(read)} of ${fmtFull(total)} link${total === 1 ? "" : "s"}${check.missed ? `; Reddit showed no views for ${fmtFull(check.missed)}` : ""}.`);
+      void load();
+    } else if (total) redditPostsStatus(`Reading views: ${fmtFull(read + Number(check.missed || 0))} of ${fmtFull(total)} links…`);
+  }
+
+  function redditPostDay(ts) { return ts ? utcDate(ts) : ""; }
+
+  function openRedditPost(item = null) {
+    $(`[data-marketing-reddit-post-title]`).textContent = item ? "Edit post" : "Add post";
+    $(`[data-marketing-reddit-post-id]`).value = item?.id || "";
+    $(`[data-marketing-reddit-post-url]`).value = item?.url || "";
+    $(`[data-marketing-reddit-post-name]`).value = item?.title || "";
+    $(`[data-marketing-reddit-post-date]`).value = item ? redditPostDay(item.postedAt) : utcDate(Date.now());
+    $(`[data-marketing-reddit-post-note]`).value = item?.note || "";
+    $$(`[data-marketing-reddit-post-stat]`).forEach((input) => {
+      const value = item?.[input.dataset.marketingRedditPostStat];
+      input.value = Number.isFinite(value) ? String(value) : "";
+    });
+    $(`[data-marketing-reddit-post-delete]`).classList.toggle("hidden", !item);
+    $(`[data-marketing-reddit-post-dialog]`).showModal();
+  }
+
+  async function saveRedditPost(event) {
+    event.preventDefault();
+    const id = $(`[data-marketing-reddit-post-id]`).value;
+    const existing = id ? redditPostById(id) : null;
+    const body = { url: $(`[data-marketing-reddit-post-url]`).value, channel: "reddit",
+      title: $(`[data-marketing-reddit-post-name]`).value, note: $(`[data-marketing-reddit-post-note]`).value };
+    const day = $(`[data-marketing-reddit-post-date]`).value;
+    if (redditPostDay(existing?.postedAt) !== day) body.postedAt = day ? Math.min(Date.parse(`${day}T12:00:00Z`), Date.now()) : 0;
+    const stats = {};
+    $$(`[data-marketing-reddit-post-stat]`).forEach((input) => {
+      if (input.value.trim() !== "") stats[input.dataset.marketingRedditPostStat] = Math.max(0, Math.round(Number(input.value)));
+    });
+    const changed = !existing || Object.entries(stats).some(([key, value]) => existing[key] !== value);
+    if (Object.keys(stats).length && changed) Object.assign(body, stats);
+    try { await request(orgPath(`/posts${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
+      $(`[data-marketing-reddit-post-dialog]`).close(); message("notice", "Post saved."); await load(); }
+    catch (error) {
+      const found = error.status === 409 ? redditPostById(error.payload?.postId) : null;
+      if (found) { $(`[data-marketing-reddit-post-dialog]`).close(); message("notice", "That post is already recorded; here it is."); openRedditPost(found); }
+      else message("error", `Could not save the post: ${error.message}`);
+    }
+  }
+
+  async function deleteRedditPost() {
+    const id = $(`[data-marketing-reddit-post-id]`).value; if (!id || !confirm("Delete this post from Marketing? It stays on Reddit.")) return;
+    try { await request(orgPath(`/posts/${id}`), "DELETE", {}); $(`[data-marketing-reddit-post-dialog]`).close(); message("notice", "Post deleted."); await load(); }
+    catch (error) { message("error", `Could not delete the post: ${error.message}`); }
+  }
+
   function openRedditWatch() {
     const canSave = state.marketing.canManageSettings, watch = state.marketing.settings.reddit || {};
     $(`[data-marketing-reddit-watch-subreddits]`).value = (watch.subreddits || []).join("\n");
@@ -1480,6 +1607,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const data = event.data;
     if (data.type === "marketing-ready") {
       if (data.xSetup) xSetup.available = true;
+      if (data.redditPosts) redditPosts.available = true;
       if (data.redditWalk && !redditWalk.available) {
         redditWalk.available = true;
         askRedditWalk("marketing-reddit-walk-state");
@@ -1488,6 +1616,11 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       return;
     }
     if (data.type === "marketing-reddit-walk-update") { redditWalkProgress(data.walk); return; }
+    if (data.type === "marketing-reddit-posts-progress") { redditPostsProgress(data.check); return; }
+    if (data.type === "marketing-reddit-posts-update") {
+      if (redditPosts.requests.delete(data.request)) redditPostsDone(data.response || {});
+      return;
+    }
     if (String(data.type).startsWith("marketing-reddit-walk")) {
       if (!redditWalk.requests.delete(data.request)) return;
       const response = data.response || {};
@@ -2860,6 +2993,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       experiments: payload.experiments || [], experimentsSummary: payload.experimentsSummary || {},
       funnel: payload.funnel || [], funnelReport: payload.funnelReport || {},
       redditThreads: payload.redditThreads || [], redditDesk: payload.redditDesk || {},
+      posts: payload.posts || [],
       channelPlaybooks: payload.channelPlaybooks || state.marketing.channelPlaybooks || {},
       campaigns: payload.campaigns || [], campaignTemplates: payload.campaignTemplates || [],
       keywords: payload.keywords || [], suggestions: payload.suggestions || [],
@@ -3003,6 +3137,11 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-reddit-watch-edit]`)?.addEventListener("click", openRedditWatch);
     $(`[data-marketing-reddit-rules-copy]`)?.addEventListener("click", copyRedditRules);
     $(`[data-marketing-reddit-walk]`)?.addEventListener("click", toggleRedditWalk);
+    $(`[data-marketing-reddit-posts-update]`)?.addEventListener("click", updateRedditPosts);
+    $(`[data-marketing-reddit-post-new]`)?.addEventListener("click", () => openRedditPost());
+    $(`[data-marketing-reddit-post-form]`)?.addEventListener("submit", saveRedditPost);
+    $(`[data-marketing-reddit-post-delete]`)?.addEventListener("click", () => void deleteRedditPost());
+    $(`[data-marketing-reddit-posts-more-button]`)?.addEventListener("click", () => { state.view.redditPostsAll = !state.view.redditPostsAll; renderRedditPosts(); });
     $(`[data-marketing-reddit-watch-form]`)?.addEventListener("submit", saveRedditWatch);
     $(`[data-marketing-link-copy]`)?.addEventListener("click", () => copyText($(`[data-marketing-link-output]`).textContent, "Link copied."));
     $(`[data-marketing-report-open]`)?.addEventListener("click", () => void openReport());
@@ -3089,6 +3228,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if (data.marketingFunnelEdit) openFunnel(funnelById(data.marketingFunnelEdit));
       else if (data.marketingFunnelDelete) void deleteFunnel(data.marketingFunnelDelete);
       else if ("marketingFunnelOpen" in data) openFunnel();
+      else if (data.marketingRedditPostEdit) openRedditPost(redditPostById(data.marketingRedditPostEdit));
       else if (data.marketingRedditEdit) openRedditThread(redditThreadById(data.marketingRedditEdit));
       else if ("marketingRedditOpen" in data) openRedditThread();
       else if ("marketingRedditTab" in data) { state.view.redditStatus = data.marketingRedditTab; renderReddit(); }

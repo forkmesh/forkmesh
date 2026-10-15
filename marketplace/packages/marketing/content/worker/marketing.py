@@ -5599,6 +5599,8 @@ def _post_url(value):
         if match:
             return "https://x.com/%s/status/%s" % (match.group(1).lower(), match.group(2))
     path = parsed.path.rstrip("/") or "/"
+    if _host_matches(host, CHANNEL_HOSTS["reddit"]) and not port:
+        return _https(REDDIT_ORIGIN + path)
     return _https("https://" + host + (":%d" % port if port else "") + path
                   + ("?" + parsed.query if parsed.query else ""))
 
@@ -5610,6 +5612,28 @@ def _post_channel(value, url):
     host = urlparse(url).hostname or ""
     return next((channel for channel, domains in CHANNEL_HOSTS.items()
                  if _host_matches(host, domains)), "")
+
+
+def _reddit_post_key(url):
+    found = _reddit_url_parts(url)
+    if not found:
+        return ""
+    rest = found[2]
+    comment = rest[1].lower() if len(rest) >= 2 else ""
+    return found[1] + ("_" + comment if REDDIT_ID_RE.fullmatch(comment) else "")
+
+
+async def _reddit_post_keys(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT " + POST_COLUMNS + ",url_bi FROM marketing_posts WHERE org_bi=? AND channel=?",
+        org_bi, "reddit")
+    found = {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        key = _reddit_post_key(data.get("url") if isinstance(data, dict) else "")
+        if key:
+            found.setdefault(key, []).append(row)
+    return found
 
 
 def _post_count(value):
@@ -5817,6 +5841,10 @@ async def _save_post(runtime, row, org_bi, org_name, account_bi, actor, data):
     url_bi = await _post_url_bi(runtime, org_bi, envelope["url"])
     duplicate = await runtime.d1_first(
         "SELECT post_id FROM marketing_posts WHERE org_bi=? AND url_bi=?", org_bi, url_bi)
+    key = _reddit_post_key(envelope["url"]) if channel == "reddit" else ""
+    if key and not duplicate:
+        duplicate = next((match for match in (await _reddit_post_keys(runtime, org_bi)).get(key, [])
+                          if not row or match["post_id"] != row["post_id"]), None)
     if duplicate and (not row or duplicate["post_id"] != row["post_id"]):
         return _response(runtime, {"error": "post_exists",
                                    "postId": duplicate["post_id"]}, 409)
@@ -5839,6 +5867,7 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
     now = runtime.now()
     created = updated = skipped = 0
     full = ready_closed = False
+    reddit_keys = None
     for index, item in enumerate(items):
         url = _post_url(item.get("url")) if isinstance(item, dict) else ""
         channel = _post_channel(item.get("channel"), url) if url else ""
@@ -5849,6 +5878,11 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
         row = await runtime.d1_first(
             "SELECT " + POST_COLUMNS + ",url_bi FROM marketing_posts "
             "WHERE org_bi=? AND url_bi=?", org_bi, url_bi)
+        reddit_key = _reddit_post_key(url) if not row and channel == "reddit" else ""
+        if reddit_key:
+            if reddit_keys is None:
+                reddit_keys = await _reddit_post_keys(runtime, org_bi)
+            row = (reddit_keys.get(reddit_key) or [None])[0]
         existing = await runtime.open(row.get("data")) if row else None
         existing = existing if isinstance(existing, dict) else None
         fields = {key: item[key] for key in ("title", "postedAt", "checkedAt", "images")

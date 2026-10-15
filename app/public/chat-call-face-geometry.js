@@ -24,11 +24,35 @@ const DEPTH = [
 ];
 
 const POSE_WEIGHTS = DEPTH.map((_, i) => (i <= 16 ? 0.4 : i <= 26 ? 0.8 : i <= 35 ? 1.4 : i <= 47 ? 1.4 : 0));
-const RESIDUAL_SOURCES = range(0, 36);
 const RESIDUAL_SIGMA = 0.55;
 const RESIDUAL_ANCHOR = 0.08;
-const FOREHEAD_DEPTH = -0.05;
-const RING_DEPTH = -0.75;
+const FOREHEAD_CURVE = 1.5;
+const FOREHEAD_BACK = -0.12;
+const RING_DEPTH = -1;
+const HEAD_CENTER = [0, -0.2, -1.1];
+const RING_START = 78;
+const SIDE_REACH = 0.4;
+const SIDE_BACK = 0.35;
+const JAW_FOLLOW = 0.7;
+const JAW_FACING = [0.08, 0.38];
+const JAW_NORMAL_Z = 0.55;
+const FIELD_SOURCES = [
+  ...range(17, 36).map((i) => [i, 1]),
+  [36, 1], [39, 1], [42, 1], [45, 1],
+];
+const CHEEK_SOURCES = [...FIELD_SOURCES, [48, 0.6], [54, 0.6], [57, 0.5]];
+const CHEEK_SIDE = [
+  [[[2, 0.5], [31, 0.5]], 0.2],
+  [[[1, 0.5], [41, 0.5]], 0.16],
+  [[[4, 0.5], [48, 0.5]], 0.18],
+  [[[3, 0.4], [31, 0.3], [48, 0.3]], 0.2],
+  [[[6, 0.5], [59, 0.5]], 0.1],
+  [[[40, 0.5], [31, 0.5]], 0.08],
+  [[[0, 0.55], [36, 0.45]], 0.1],
+];
+const CHEEK_MIDDLE = [
+  [[[8, 0.5], [57, 0.5]], 0.08],
+];
 const CHIN_DROP = [[5, 0.3], [6, 0.6], [7, 0.85], [8, 1], [9, 0.85], [10, 0.6], [11, 0.3]];
 export const FOREHEAD_LIFT = 0.5;
 const MAX_OPEN = 0.42;
@@ -39,8 +63,13 @@ const NOSE_RIGID = 0.85;
 const DEPTH_SPREAD = 0.04;
 const LIP_STEPS = 4;
 const MOUTH_FEATHER = 0.14;
+const MOUTH_DEEP = 0.4;
 const UPPER_INNER = [60, 61, 62, 63, 64];
 const LOWER_INNER = [60, 67, 66, 65, 64];
+const UPPER_OUTER = [48, 49, 50, 51, 52, 53, 54];
+const LOWER_OUTER = [48, 59, 58, 57, 56, 55, 54];
+const LIP_KEEP = 0.65;
+const CORNER_TAPER = 0.35;
 const OPEN_PROFILE = { 55: 0.45, 56: 0.8, 57: 1, 58: 0.8, 59: 0.45, 65: 0.8, 66: 1, 67: 0.8 };
 const LIFT_PROFILE = { 61: 0.7, 62: 1, 63: 0.7 };
 
@@ -295,14 +324,23 @@ function buildMouth() {
   const lower = lipSamples(LOWER_INNER).map(reference);
   const contourCount = extras.length;
   const last = upper.length - 1;
-  const inner = (from, to) => from.map((ref, k) => (k === 0 || k === last ? ref : reference(blendWeights(ref.weights, to[k].weights, MOUTH_FEATHER))));
-  const innerUpper = inner(upper, lower);
-  const innerLower = inner(lower, upper);
-  return { extras, upper, lower, innerUpper, innerLower, contourCount };
+  const inner = (from, to, amount) => from.map((ref, k) => (k === 0 || k === last ? ref : reference(blendWeights(ref.weights, to[k].weights, amount))));
+  const innerUpper = inner(upper, lower, MOUTH_FEATHER);
+  const innerLower = inner(lower, upper, MOUTH_FEATHER);
+  const deepUpper = inner(upper, lower, MOUTH_DEEP);
+  const deepLower = inner(lower, upper, MOUTH_DEEP);
+  return { extras, upper, lower, innerUpper, innerLower, deepUpper, deepLower, contourCount };
 }
 
 const MOUTH = buildMouth();
 export const MOUTH_EXTRA_COUNT = MOUTH.extras.length;
+const CHEEKS = [
+  ...CHEEK_SIDE,
+  ...CHEEK_SIDE.map(([weights, lift]) => [weights.map(([i, w]) => [MIRROR[i], w]), lift]),
+  ...CHEEK_MIDDLE,
+];
+export const CHEEK_COUNT = CHEEKS.length;
+export const EXTRA_COUNT = CHEEK_COUNT + MOUTH_EXTRA_COUNT;
 
 function combine(points, weights) {
   let dims = Infinity;
@@ -316,6 +354,14 @@ function combine(points, weights) {
 
 export function mouthExtras(points) {
   return MOUTH.extras.map((weights) => combine(points, weights));
+}
+
+export function cheekExtras(points, lift = false) {
+  return CHEEKS.map(([weights, bulge]) => {
+    const point = combine(points, weights);
+    if (lift && point.length > 2) point[2] += bulge;
+    return point;
+  });
 }
 
 export function mouthContour(points) {
@@ -341,32 +387,68 @@ export function headLayout(points, ring, forehead = FOREHEAD_LIFT) {
     out.push([points[i][0] - frame.uy[0] * lift, points[i][1] - frame.uy[1] * lift]);
   }
   for (const point of ring) out.push([point[0], point[1]]);
-  return out.concat(mouthExtras(out));
+  for (const [anchor, point] of sideAnchors(out, ring.length)) {
+    out.push([out[anchor][0] + (point[0] - out[anchor][0]) * SIDE_REACH, out[anchor][1] + (point[1] - out[anchor][1]) * SIDE_REACH]);
+  }
+  return out.concat(cheekExtras(out), mouthExtras(out));
+}
+
+function sideAnchors(layout, count) {
+  const edge = [...JAW, ...range(LANDMARK_COUNT, LANDMARK_COUNT + 10)];
+  return layout.slice(RING_START, RING_START + count).map((point) => {
+    let best = edge[0];
+    let near = Infinity;
+    for (const i of edge) {
+      const d = (layout[i][0] - point[0]) ** 2 + (layout[i][1] - point[1]) ** 2;
+      if (d < near) {
+        near = d;
+        best = i;
+      }
+    }
+    return [best, point];
+  });
+}
+
+export function ringCount(length) {
+  return (length - EXTRA_COUNT - RING_START) / 2;
+}
+
+function vertexDepth(i, count, anchors) {
+  if (i < LANDMARK_COUNT) return DEPTH[i];
+  if (i < RING_START) return DEPTH[i - LANDMARK_COUNT + 17] * FOREHEAD_CURVE + FOREHEAD_BACK;
+  if (i < RING_START + count) return RING_DEPTH;
+  return vertexDepth(anchors[i - RING_START - count][0], count, anchors) - SIDE_BACK;
 }
 
 export function headModel(points, ring) {
   const frame = faceFrame(points);
   const layout = headLayout(points, ring);
-  const base = layout.slice(0, layout.length - MOUTH_EXTRA_COUNT).map((point, i) => {
+  const anchors = sideAnchors(layout, ring.length);
+  const base = layout.slice(0, layout.length - EXTRA_COUNT).map((point, i) => {
     const [a, b] = toFrame(frame, point);
-    const z = i < LANDMARK_COUNT ? DEPTH[i] : i < LANDMARK_COUNT + 10 ? FOREHEAD_DEPTH : RING_DEPTH;
-    return [a / frame.span, b / frame.span, z];
+    return [a / frame.span, b / frame.span, vertexDepth(i, ring.length, anchors)];
   });
-  return base.concat(mouthExtras(base));
+  return base.concat(cheekExtras(base, true), mouthExtras(base));
+}
+
+function triangleArea(points, [a, b, c]) {
+  return (points[b][0] - points[a][0]) * (points[c][1] - points[a][1]) - (points[c][0] - points[a][0]) * (points[b][1] - points[a][1]);
 }
 
 export function buildHeadMesh(model, template) {
   const open = fitTemplate(template, { eyeL: [-0.5, 0], eyeR: [0.5, 0], open: 0.6 });
-  const start = model.length - MOUTH_EXTRA_COUNT;
+  const start = model.length - EXTRA_COUNT;
+  const mouthStart = start + CHEEK_COUNT;
   const base = model.slice(0, start).map((point, i) => (i < LANDMARK_COUNT ? open[i] : [point[0], point[1]]));
-  const layout = base.concat(mouthExtras(open));
-  const vertex = (ref) => (ref.landmark !== undefined ? ref.landmark : start + ref.extra);
+  const layout = base.concat(cheekExtras(base), mouthExtras(open));
+  const vertex = (ref) => (ref.landmark !== undefined ? ref.landmark : mouthStart + ref.extra);
   const contour = [...MOUTH.upper.map(vertex), ...MOUTH.lower.slice(1, -1).reverse().map(vertex)];
   const onContour = new Set(contour);
   const polygon = contour.map((v) => layout[v]);
-  const triangles = delaunay(layout.slice(0, start + MOUTH.contourCount))
+  const triangles = delaunay(layout.slice(0, mouthStart + MOUTH.contourCount))
     .filter((v) => !(v.every((i) => onContour.has(i)) && insidePolygon(polygon, centroid(layout, v))))
-    .map((v) => ({ v, hole: [0, 0, 0], mouth: false }));
+    .filter((v) => Math.abs(triangleArea(model, v)) > 1e-9)
+    .map((v) => ({ v, hole: [0, 0, 0], mouth: false, cull: !v.some((i) => (i >= 48 && i < LANDMARK_COUNT) || i >= mouthStart) }));
   const corners = new Set([UPPER_INNER[0], UPPER_INNER[UPPER_INNER.length - 1]]);
   const add = (v, hole) => {
     if (new Set(v).size < 3) return;
@@ -384,8 +466,10 @@ export function buildHeadMesh(model, template) {
   };
   strip(MOUTH.upper, MOUTH.innerUpper, 0, 1);
   strip(MOUTH.lower, MOUTH.innerLower, 0, 1);
-  strip(MOUTH.innerUpper, MOUTH.innerLower, 1, 1);
-  return { triangles, count: layout.length, extraStart: start };
+  strip(MOUTH.innerUpper, MOUTH.deepUpper, 1, 2);
+  strip(MOUTH.innerLower, MOUTH.deepLower, 1, 2);
+  strip(MOUTH.deepUpper, MOUTH.deepLower, 2, 2);
+  return { triangles, count: layout.length, extraStart: start, mouthStart };
 }
 
 export function hasDepth(live) {
@@ -442,12 +526,12 @@ function dominantEigenvector(matrix) {
   return [v[0][best], v[1][best], v[2][best], v[3][best]];
 }
 
-export function solvePoseWithDepth(model, live) {
+export function solvePoseWithDepth(model, live, weights = POSE_WEIGHTS) {
   let total = 0;
   const mm = [0, 0, 0];
   const lm = [0, 0, 0];
   for (let i = 0; i < LANDMARK_COUNT; i += 1) {
-    const w = POSE_WEIGHTS[i];
+    const w = weights[i];
     if (!w) continue;
     total += w;
     for (let k = 0; k < 3; k += 1) {
@@ -461,7 +545,7 @@ export function solvePoseWithDepth(model, live) {
   }
   const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   for (let i = 0; i < LANDMARK_COUNT; i += 1) {
-    const w = POSE_WEIGHTS[i];
+    const w = weights[i];
     if (!w) continue;
     for (let a = 0; a < 3; a += 1) {
       for (let b = 0; b < 3; b += 1) S[a][b] += w * (model[i][a] - mm[a]) * (live[i][b] - lm[b]);
@@ -480,7 +564,7 @@ export function solvePoseWithDepth(model, live) {
   let num = 0;
   let den = 0;
   for (let i = 0; i < LANDMARK_COUNT; i += 1) {
-    const w = POSE_WEIGHTS[i];
+    const w = weights[i];
     if (!w) continue;
     const m = [model[i][0] - mm[0], model[i][1] - mm[1], model[i][2] - mm[2]];
     const px = dot3(r1, m);
@@ -501,16 +585,16 @@ export function solvePoseWithDepth(model, live) {
   };
 }
 
-export function solvePose(model, live) {
+export function solvePose(model, live, weights = POSE_WEIGHTS) {
   if (hasDepth(live)) {
-    const pose = solvePoseWithDepth(model, live);
+    const pose = solvePoseWithDepth(model, live, weights);
     if (pose) return pose;
   }
   let total = 0;
   const mm = [0, 0, 0];
   const lm = [0, 0];
   for (let i = 0; i < LANDMARK_COUNT; i += 1) {
-    const w = POSE_WEIGHTS[i];
+    const w = weights[i];
     if (!w) continue;
     total += w;
     for (let k = 0; k < 3; k += 1) mm[k] += w * model[i][k];
@@ -523,7 +607,7 @@ export function solvePose(model, live) {
   const mtm = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   const ltm = [[0, 0, 0], [0, 0, 0]];
   for (let i = 0; i < LANDMARK_COUNT; i += 1) {
-    const w = POSE_WEIGHTS[i];
+    const w = weights[i];
     if (!w) continue;
     const m = [model[i][0] - mm[0], model[i][1] - mm[1], model[i][2] - mm[2]];
     const l = [live[i][0] - lm[0], live[i][1] - lm[1]];
@@ -580,6 +664,15 @@ export function projectPose(pose, point) {
   return [pose.t[0] + pose.scale * dot3(r1, point), pose.t[1] + pose.scale * dot3(r2, point)];
 }
 
+export function projectOutline(pose, point) {
+  const center = projectPose(pose, HEAD_CENTER);
+  const c = Math.cos(pose.roll);
+  const s = Math.sin(pose.roll);
+  const dx = (point[0] - HEAD_CENTER[0]) * pose.scale;
+  const dy = (point[1] - HEAD_CENTER[1]) * pose.scale;
+  return [center[0] + dx * c - dy * s, center[1] + dx * s + dy * c];
+}
+
 export function rigidNose(model, live, pose, out) {
   const rigid = NOSE.map((i) => projectPose(pose, model[i]));
   let sx = 0;
@@ -598,31 +691,147 @@ export function rigidNose(model, live, pose, out) {
   return out;
 }
 
-export function liveHead(model, live) {
-  const pose = solvePose(model, live);
-  const out = live.slice(0, LANDMARK_COUNT).map((point) => [point[0], point[1]]);
-  rigidNose(model, live, pose, out);
-  const end = model.length - MOUTH_EXTRA_COUNT;
-  const residuals = [];
-  for (const i of RESIDUAL_SOURCES) {
-    const projected = projectPose(pose, model[i]);
-    residuals.push([i, live[i][0] - projected[0], live[i][1] - projected[1]]);
+export function jawTrust(model, pose) {
+  const r3 = pose.rows[2];
+  return JAW.map((i) => {
+    const [x, y] = model[i];
+    const facing = dot3(r3, normalize3([x, Math.max(0, y - 1) * 0.8, JAW_NORMAL_Z]));
+    return smoothstepValue(JAW_FACING[0], JAW_FACING[1], facing);
+  });
+}
+
+function residualField(model, sources, at) {
+  let wx = 0;
+  let wy = 0;
+  let weight = RESIDUAL_ANCHOR;
+  for (const [i, dx, dy, trust] of sources) {
+    if (!trust) continue;
+    const d2 = (at[0] - model[i][0]) ** 2 + (at[1] - model[i][1]) ** 2;
+    const w = trust * Math.exp(-d2 / (2 * RESIDUAL_SIGMA * RESIDUAL_SIGMA));
+    wx += w * dx;
+    wy += w * dy;
+    weight += w;
   }
-  for (let v = LANDMARK_COUNT; v < end; v += 1) {
-    const projected = projectPose(pose, model[v]);
-    let wx = 0;
-    let wy = 0;
-    let weight = RESIDUAL_ANCHOR;
-    for (const [i, dx, dy] of residuals) {
-      const d2 = (model[v][0] - model[i][0]) ** 2 + (model[v][1] - model[i][1]) ** 2;
-      const w = Math.exp(-d2 / (2 * RESIDUAL_SIGMA * RESIDUAL_SIGMA));
-      wx += w * dx;
-      wy += w * dy;
-      weight += w;
+  return [wx / weight, wy / weight];
+}
+
+function mouthAxes(points) {
+  const a = points[48];
+  const b = points[54];
+  const half = Math.hypot(b[0] - a[0], b[1] - a[1]) / 2;
+  if (!(half > 1e-6)) return null;
+  const ux = [(b[0] - a[0]) / (2 * half), (b[1] - a[1]) / (2 * half)];
+  const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  return {
+    local: (p) => [((p[0] - mid[0]) * ux[0] + (p[1] - mid[1]) * ux[1]) / half, ((p[0] - mid[0]) * -ux[1] + (p[1] - mid[1]) * ux[0]) / half],
+    place: ([s, t]) => [mid[0] + (s * ux[0] - t * ux[1]) * half, mid[1] + (s * ux[1] + t * ux[0]) * half],
+  };
+}
+
+function lipCurve(local, indices) {
+  return indices.map((i) => local[i]).sort((p, q) => p[0] - q[0]);
+}
+
+function curveAt(curve, s) {
+  if (s <= curve[0][0]) return curve[0][1];
+  for (let k = 1; k < curve.length; k += 1) {
+    const [s1, t1] = curve[k];
+    if (s <= s1) {
+      const [s0, t0] = curve[k - 1];
+      return s1 - s0 > 1e-9 ? t0 + ((t1 - t0) * (s - s0)) / (s1 - s0) : t1;
     }
-    out.push([projected[0] + wx / weight, projected[1] + wy / weight]);
   }
-  return { points: out.concat(mouthExtras(out)), pose };
+  return curve[curve.length - 1][1];
+}
+
+export function regularMouth(reference, points) {
+  const modelAxes = mouthAxes(reference);
+  const liveAxes = mouthAxes(points);
+  if (!modelAxes || !liveAxes) return points;
+  const ref = [];
+  const seen = [];
+  for (let i = 48; i < 68; i += 1) {
+    ref[i] = modelAxes.local(reference[i]);
+    seen[i] = liveAxes.local(points[i]);
+  }
+  const refUpper = lipCurve(ref, UPPER_OUTER);
+  const refLower = lipCurve(ref, LOWER_OUTER);
+  const refInnerUpper = lipCurve(ref, UPPER_INNER);
+  const refInnerLower = lipCurve(ref, LOWER_INNER);
+  const upper = lipCurve(seen, UPPER_OUTER);
+  const lower = lipCurve(seen, LOWER_OUTER);
+  const innerUpper = lipCurve(seen, UPPER_INNER);
+  const innerLower = lipCurve(seen, LOWER_INNER);
+  const placed = [];
+  for (const i of [49, 50, 51, 52, 53]) placed[i] = [ref[i][0], curveAt(upper, ref[i][0])];
+  for (const i of [55, 56, 57, 58, 59]) placed[i] = [ref[i][0], curveAt(lower, ref[i][0])];
+  placed[48] = seen[48];
+  placed[54] = seen[54];
+  const top = lipCurve(placed, UPPER_OUTER);
+  const bottom = lipCurve(placed, LOWER_OUTER);
+  const reach = Math.max(Math.abs(ref[60][0]), Math.abs(ref[64][0]), 1e-3);
+  const centerGap = Math.max(0, curveAt(innerLower, 0) - curveAt(innerUpper, 0));
+  const inner = (s) => {
+    const roof = curveAt(top, s) + LIP_KEEP * Math.max(0, curveAt(refInnerUpper, s) - curveAt(refUpper, s));
+    const floor = curveAt(bottom, s) - LIP_KEEP * Math.max(0, curveAt(refLower, s) - curveAt(refInnerLower, s));
+    const seenUpper = curveAt(innerUpper, s);
+    const seenLower = curveAt(innerLower, s);
+    const a = Math.max(seenUpper, roof);
+    const b = Math.min(seenLower, floor);
+    if (b <= a) {
+      const seam = clampValue((seenUpper + seenLower) / 2, Math.min(roof, floor), Math.max(roof, floor));
+      return [seam, seam];
+    }
+    const middle = (a + b) / 2;
+    const room = Math.min(b - a, centerGap * Math.pow(Math.max(0, 1 - (s / reach) ** 2), CORNER_TAPER));
+    return [middle - room / 2, middle + room / 2];
+  };
+  for (const [up, down] of [[61, 67], [62, 66], [63, 65]]) {
+    const s = (ref[up][0] + ref[down][0]) / 2;
+    const [a, b] = inner(s);
+    placed[up] = [s, a];
+    placed[down] = [s, b];
+  }
+  for (const i of [60, 64]) {
+    const s = ref[i][0];
+    const a = curveAt(top, s);
+    const b = curveAt(bottom, s);
+    placed[i] = [s, clampValue(seen[i][1], Math.min(a, b), Math.max(a, b))];
+  }
+  const out = points.slice();
+  for (let i = 48; i < 68; i += 1) out[i] = liveAxes.place(placed[i]);
+  return out;
+}
+
+export function liveHead(model, live) {
+  const first = solvePose(model, live);
+  const trust = jawTrust(model, first);
+  const pose = solvePose(model, live, POSE_WEIGHTS.map((w, i) => (i < JAW.length ? w * trust[i] : w)));
+  const settled = jawTrust(model, pose);
+  const start = model.length - EXTRA_COUNT;
+  const outlineEnd = RING_START + ringCount(model.length);
+  const projected = model.map((point, v) => (v >= RING_START && v < outlineEnd ? projectOutline(pose, point) : projectPose(pose, point)));
+  const source = ([i, trust]) => [i, live[i][0] - projected[i][0], live[i][1] - projected[i][1], trust];
+  const jaw = JAW.map((i) => source([i, settled[i] * JAW_FOLLOW]));
+  const field = FIELD_SOURCES.map(source).concat(jaw);
+  const cheekField = CHEEK_SOURCES.map(source).concat(jaw);
+  const out = live.slice(0, LANDMARK_COUNT).map((point) => [point[0], point[1]]);
+  for (const i of JAW) {
+    const follow = settled[i] * JAW_FOLLOW;
+    const [fx, fy] = residualField(model, cheekField, model[i]);
+    out[i] = [
+      projected[i][0] + follow * jaw[i][1] + (1 - follow) * fx,
+      projected[i][1] + follow * jaw[i][2] + (1 - follow) * fy,
+    ];
+  }
+  rigidNose(model, live, pose, out);
+  const mouth = regularMouth(projected, out);
+  for (let i = 48; i < LANDMARK_COUNT; i += 1) out[i] = mouth[i];
+  for (let v = LANDMARK_COUNT; v < start + CHEEK_COUNT; v += 1) {
+    const [fx, fy] = residualField(model, v < start ? field : cheekField, model[v]);
+    out.push([projected[v][0] + fx, projected[v][1] + fy]);
+  }
+  return { points: out.concat(mouthExtras(out)), pose, jawTrust: settled };
 }
 
 export function vertexDepths(model, pose) {
@@ -630,8 +839,13 @@ export function vertexDepths(model, pose) {
   const depths = model.map((point) => dot3(r3, point));
   let jaw = Infinity;
   for (const i of JAW) jaw = Math.min(jaw, depths[i]);
-  for (let v = LANDMARK_COUNT + 10; v < depths.length - MOUTH_EXTRA_COUNT; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
+  for (let v = RING_START; v < depths.length - EXTRA_COUNT; v += 1) depths[v] = Math.min(depths[v], jaw - RING_GAP);
   return depths;
+}
+
+function smoothstepValue(low, high, value) {
+  const t = clampValue((value - low) / (high - low), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function dot3(a, b) {
