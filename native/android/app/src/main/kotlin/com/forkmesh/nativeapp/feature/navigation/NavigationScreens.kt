@@ -154,26 +154,7 @@ fun RoutePage(
 ) {
     val c = Fm.colors
     Column(Modifier.fillMaxSize().background(c.bgBase)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(c.bgRaised)
-                .windowInsetsPadding(fmSafeAreaInsets(bottom = false))
-                .height(56.dp)
-                .padding(end = FmSpace.x1),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
-                FmIconButton("arrow_back", "Back", onPressed = { navigator.pop() }, color = c.textPrimary, iconSize = 24.dp)
-            }
-            Spacer(Modifier.width(FmSpace.x2))
-            Text(
-                title,
-                Modifier.weight(1f).semantics { heading() },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = Fm.text.titleLarge,
-            )
+        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }) {
             actions()
             PluginMenuButton()
         }

@@ -1,5 +1,26 @@
 package com.forkmesh.nativeapp.ui.kit
 
+import com.forkmesh.nativeapp.ui.theme.FmSpace
+import com.forkmesh.nativeapp.ui.theme.FmIcon
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.border
@@ -65,8 +86,9 @@ fun FmBackdropHost(modifier: Modifier = Modifier, overlay: @Composable BoxScope.
                     layer.record { this@drawWithContent.drawContent() }
                     drawLayer(layer)
                 },
-                content = content,
-            )
+            ) {
+                CompositionLocalProvider(LocalFmBackdrop provides null) { content() }
+            }
             overlay()
         }
     }
@@ -119,4 +141,62 @@ fun Modifier.fmGlass(shape: Shape, tint: Color? = null, shadow: Boolean = true):
 @Composable
 fun FmGlassSurface(shape: Shape, modifier: Modifier = Modifier, tint: Color? = null, shadow: Boolean = true, content: @Composable BoxScope.() -> Unit) {
     Box(modifier.fmGlass(shape, tint, shadow), content = content)
+}
+
+@Composable
+fun FmNavBar(
+    title: String,
+    onBack: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val c = Fm.colors
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(c.bgBase)
+            .windowInsetsPadding(fmSafeAreaInsets(bottom = false))
+            .height(52.dp)
+            .padding(horizontal = FmSpace.x4),
+    ) {
+        Text(
+            title,
+            Modifier.align(Alignment.Center).padding(horizontal = 72.dp).semantics { heading() },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = Fm.text.titleMedium,
+        )
+        if (onBack != null) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .size(44.dp)
+                    .fmGlass(CircleShape)
+                    .clickable(onClick = onBack)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Back"
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                FmIcon("chevron_left", size = 30.dp, tint = c.textPrimary)
+            }
+        }
+        FmNavActions(Modifier.align(Alignment.CenterEnd), actions)
+    }
+}
+
+@Composable
+private fun FmNavActions(modifier: Modifier, actions: @Composable RowScope.() -> Unit) {
+    Layout(
+        content = { Row(verticalAlignment = Alignment.CenterVertically, content = actions) },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val row = measurables.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+        if (row.width == 0) {
+            layout(0, 0) {}
+        } else {
+            layout(row.width, row.height) { row.place(0, 0) }
+        }
+    }
 }

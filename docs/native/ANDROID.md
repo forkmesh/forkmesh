@@ -619,3 +619,11 @@ bottom bar.
   white plus and an accent glow that grows with running agents; each running
   agent adds a small four-point star (static; iOS animates them with the
   accelerometer).
+- **Pushed-page header** (`FmNavBar`, `A/ui/kit/FmGlass.kt`), the iOS 26 inline
+  navigation bar: page-coloured, 52 dp, title centred in `titleMedium`, a 44 dp
+  glass circle with `chevron_left` for Back, actions on the right.
+  `ToolsAppBar`, `CodeAppBar` and `RoutePage` all draw it.
+- Glass inside a recorded page does not sample its own page (that would draw a
+  layer into itself): `FmBackdropHost` clears `LocalFmBackdrop` for its
+  content, so such glass uses the solid fill. Only the host's overlay (the tab
+  bar) blurs.
