@@ -1408,6 +1408,11 @@ public:
     QStringList testNativePackageIds() const;
     void testShowNativePackage(const QString &id);
     QWidget *testNativePackageWindow(const QString &id) const;
+    QPushButton *testPackageActionsButton() const
+    {
+        return m_packageActionsButton;
+    }
+    QStringList testPackageActionsMenu(const QString &id);
     // Sidebar rows as rendered: "[Group]" headers, "Group > #channel" members,
     // bare "#channel" for the top level.
     QStringList testChatSidebarRows() const;
@@ -4149,6 +4154,15 @@ private:
     // Right-click on a package's rail button: settings, export, remove.
     void attachPackageRailMenu(QPushButton *button, const QString &entrypoint);
     QMenu *buildPackageRailMenu(const QString &entrypoint, QWidget *parent);
+    void addPackageFeedbackActions(QMenu *menu, const QString &id);
+    QMenu *buildPackageActionsMenu(const QString &id, QWidget *parent);
+    QPushButton *createPackageActionsButton(std::function<QString()> packageId,
+                                            QWidget *parent);
+    void showPackageActionsMenu(QPushButton *button, const QString &id);
+    void openPackageRating(const QString &id);
+    void showPackageFeedbackDialog(const QString &id);
+    QString currentNativePackageId() const;
+    void updatePackageActionsButton();
     void syncPackageRuntime();
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
@@ -10595,6 +10609,7 @@ private:
     QString m_adBannerId; // the ad on screen; empty while the strip is hidden
     QUrl m_adBannerUrl;
     QPushButton *m_viewModeButton = nullptr;
+    QPushButton *m_packageActionsButton = nullptr;
     forkmesh::ui::AppViewMode m_viewMode = forkmesh::ui::AppViewMode::Standard;
     // Agents' list|detail splitter and its Workspace-only terminal pane.
     QSplitter *m_agentWorkspaceSplit = nullptr;

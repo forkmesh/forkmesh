@@ -93,6 +93,51 @@ moves the page widget into a top-level window
 and closing the window docks it back (`dockNativePackageWindow`). Geometry is
 kept under `market/windows/<id>/geometry`.
 
+**Plugin page menu.** Every installed plugin page has a ⋯ button at the top
+right on the web, the desktop and both phones. Its menu always holds the same
+three actions, so a user never has to go back to the Market or Apps page to
+manage the plugin they are looking at:
+
+- **Rate** opens the package's reviews (`docs/MARKETPLACE_RATINGS.md`).
+- **Send feedback or report a bug** posts to `/api/bug-reports` with
+  `package: <id>`. The report becomes a public issue titled `[<id>] …` and
+  labelled `plugin`. It does not depend on the `bug-reports` package being
+  installed.
+- **Uninstall** uses the surface's normal removal flow, including its
+  confirmation and dependents.
+
+On the web, `build_app_plugins._mark_plugin_body` stamps
+`data-plugin-package` and `data-plugin-name` on each staged plugin page's
+`<body>`, and `dashboard/js/09-plugin-menu.js` shows the header's
+`[data-plugin-menu]` only when that stamp is present. Rate links to
+`/market-reviews?market=forkmesh&package=<id>`. Feedback reuses the
+dashboard's feedback dialog in its per-plugin mode. Uninstall calls
+`POST /api/plugins/@account/<id>/uninstall`, then returns to Apps. It is
+disabled, with the reason shown, when the account cannot remove the plugin
+itself: it is built in, installed by an organization, not installed, or the
+user is signed out.
+
+On the desktop the ⋯ (`packageActionsButton`) sits in the window's top bar,
+just left of the view switcher, and shows only while a native package page
+(or the placeholder of one open in its own window) is the current section
+(`MainWindow::updatePackageActionsButton`). Package pages draw their own
+headers with their own buttons at the right, so a button floated over the page
+would cover them, and wrapping every page in a host header would change what
+the section stack holds. A page in its own window has no top bar, so
+`openNativePackageWindow` adds a slim `nativePackageWindowHeader` row above
+the page for the same button. The menu comes from `buildPackageActionsMenu`:
+Rate opens `/market-reviews?market=<marketplaceId>&package=<id>` on the
+active host in the browser, because the desktop usually has no account session
+to post a review with. Feedback opens `PackageFeedbackDialog`
+(`desktop/src/PackageFeedback.{h,cpp}`), which posts anonymously, or with the
+session bearer when there is one, with `source: "desktop"`; the payload and
+the reply wording are pure helpers tested in `forkmesh-native-package-tests`.
+Uninstall is `requestPackageRemoval(id, true)`, so it always asks first, and
+it is disabled for `managedExternally` packages as on the rail. The rail's
+right-click menu offers the same Rate and feedback items
+(`addPackageFeedbackActions`), which also covers built-in packages that have
+no native page.
+
 **Worker runtime.** A package module receives `_PluginApiRuntime`
 (`app/src/entry.py`): `session`, `json_body`, `organization`,
 `plugin_installed`, `notify`, `new_secret`, `seal_with` / `open_with`,

@@ -17,12 +17,16 @@ struct ReportBugSheet: View {
 
     /// `screen` is where in the app the report was opened from; `onFinished` hears whether a
     /// report was filed once the sheet closes itself.
-    init(screen: String = "", onClose: (() -> Void)? = nil, onFinished: ((Bool) -> Void)? = nil) {
+    init(
+        screen: String = "", package: String = "", packageName: String = "", onClose: (() -> Void)? = nil,
+        onFinished: ((Bool) -> Void)? = nil
+    ) {
         let build: AppBuild = Services.get(AppConfig.self)?.build
             ?? AppBuild(infoDictionary: Bundle.main.infoDictionary)
         let signedIn: Bool = Services.get(AuthService.self)?.isAuthenticated ?? false
         _model = State(initialValue: ReportBugModel(
-            screen: screen, build: build, signedIn: signedIn, api: Services.get(ApiService.self)))
+            screen: screen, package: package, packageName: packageName, build: build, signedIn: signedIn,
+            api: Services.get(ApiService.self)))
         self.onClose = onClose
         self.onFinished = onFinished
     }
@@ -50,9 +54,9 @@ struct ReportBugSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: FmSpace.x3) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(ReportBugModel.title)
+                Text(model.heading)
                     .fmText(.titleLarge)
-                Text(ReportBugModel.subtitle)
+                Text(model.intro)
                     .fmText(.bodySmall, color: fm.textTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -66,7 +70,7 @@ struct ReportBugSheet: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: FmSpace.x4) {
-            FmTextField(text: $model.message, hint: ReportBugModel.messageHint, multiline: true, autofocus: true)
+            FmTextField(text: $model.message, hint: model.hint, multiline: true, autofocus: true)
                 .frame(minHeight: 96, alignment: .top)
                 .disabled(model.busy)
                 .accessibilityIdentifier("report-bug-message")

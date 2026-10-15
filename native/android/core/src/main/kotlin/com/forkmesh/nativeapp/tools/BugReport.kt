@@ -70,6 +70,14 @@ object ReportBugCopy {
     const val BUTTON_LABEL = "Report a bug"
     const val BUTTON_HINT = "Double tap to describe a problem. Drag to move this button."
 
+    const val FEEDBACK_HINT = "What works, what is missing, or what went wrong?"
+
+    fun title(packageName: String?): String = packageName?.let { "Feedback on $it" } ?: TITLE
+
+    fun subtitle(packageName: String?): String = packageName?.let { "Goes to the ForkMesh team, tagged with $it." } ?: SUBTITLE
+
+    fun messageHint(packageName: String?): String = if (packageName != null) FEEDBACK_HINT else MESSAGE_HINT
+
     fun contactLabel(signedIn: Boolean): String = if (signedIn) "Reply to (optional)" else "Email or handle (optional)"
 
     fun contactHint(signedIn: Boolean): String =
@@ -111,7 +119,7 @@ data class ReportBugDraft(
     fun refused(message: String): ReportBugDraft = copy(busy = false, problem = message)
 }
 
-fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build: AppBuild): BugReportResult =
+fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build: AppBuild, packageId: String? = null): BugReportResult =
     api.submitBugReport(
         message = draft.message.trim(),
         contact = draft.contact,
@@ -120,4 +128,5 @@ fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build:
         platform = build.platform,
         appVersion = build.version,
         osVersion = build.osVersion,
+        packageId = packageId,
     )

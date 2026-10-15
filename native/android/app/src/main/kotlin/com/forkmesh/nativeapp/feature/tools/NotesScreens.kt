@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.tools
 
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -222,27 +223,33 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         }
         val existing = id != null
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase).imePadding()) {
-            ToolsAppBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", navigator) {
+            val plugin = rememberScreenPluginMenu()
+            ToolsAppBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", navigator, pluginMenu = false) {
                 if (canEdit && !loading && error.isEmpty()) {
                     FmTextButton(onClick = { save() }, enabled = !saving && (!existing || dirty)) { Text(if (saving) "Saving…" else "Save") }
                 }
-                if (existing && note != null) {
+                val owned = existing && note != null
+                if (owned || plugin != null) {
                     Box {
                         FmIconButton("more_vert", "More", onPressed = { menu = true }, color = Fm.colors.textPrimary)
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            FmDropdownMenuItem(text = "History", onClick = { menu = false; showHistory = true })
-                            com.forkmesh.nativeapp.feature.planning.NoteConvertItems(note, id, { titleText }, { markdown }, status, scope) { menu = false }
-                            if (NotesLogic.role(note) == "owner") {
-                                FmDropdownMenuItem(text = "Share", onClick = { menu = false; showShare = true })
-                                if (note?.get("visibility") == "public") {
-                                    FmDropdownMenuItem(text = "Make private", onClick = { menu = false; setVisibility("private") })
-                                } else {
-                                    FmDropdownMenuItem(text = "Publish", onClick = { menu = false; setVisibility("public") })
+                            if (owned) {
+                                FmDropdownMenuItem(text = "History", onClick = { menu = false; showHistory = true })
+                                com.forkmesh.nativeapp.feature.planning.NoteConvertItems(note, id, { titleText }, { markdown }, status, scope) { menu = false }
+                                if (NotesLogic.role(note) == "owner") {
+                                    FmDropdownMenuItem(text = "Share", onClick = { menu = false; showShare = true })
+                                    if (note?.get("visibility") == "public") {
+                                        FmDropdownMenuItem(text = "Make private", onClick = { menu = false; setVisibility("private") })
+                                    } else {
+                                        FmDropdownMenuItem(text = "Publish", onClick = { menu = false; setVisibility("public") })
+                                    }
+                                    FmDropdownMenuItem(text = "Delete", onClick = { menu = false; confirmDelete = true })
                                 }
-                                FmDropdownMenuItem(text = "Delete", onClick = { menu = false; confirmDelete = true })
                             }
+                            plugin?.Items(close = { menu = false }, divided = owned)
                         }
                     }
+                    plugin?.Host()
                 }
             }
             when {
