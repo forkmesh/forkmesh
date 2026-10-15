@@ -101,8 +101,12 @@ out.pose = [[0, 0], [0.4, 0], [0, 0.3], [-0.3, -0.2]].map(([yaw, pitch]) => {
   const project = rotate(yaw, pitch);
   const live = theo.model.slice(0, 68).map(project);
   const result = geo.liveHead(theo.model, live);
-  const error = Math.max(...result.points.map((point, i) => Math.hypot(point[0] - project(theo.model[i])[0], point[1] - project(theo.model[i])[1])));
-  return { yaw: result.pose.yaw, pitch: result.pose.pitch, scale: result.pose.scale, error };
+  const outline = (i) => i >= 78 && i < 78 + geo.ringCount(theo.model.length);
+  const expected = (i) => (outline(i) ? geo.projectOutline(result.pose, theo.model[i]) : project(theo.model[i]));
+  const error = Math.max(...result.points.map((point, i) => Math.hypot(point[0] - expected(i)[0], point[1] - expected(i)[1])));
+  const ring = result.points.filter((_, i) => outline(i));
+  const width = (Math.max(...ring.map((p) => p[0])) - Math.min(...ring.map((p) => p[0]))) / result.pose.scale;
+  return { yaw: result.pose.yaw, pitch: result.pose.pitch, scale: result.pose.scale, error, width };
 });
 const template = faces.faceTemplate();
 const anchors = { eyeL: [300, 200], eyeR: [380, 210], mouth: [336, 300] };
@@ -380,7 +384,7 @@ def test_head_mesh_covers_hair_and_leaves_the_mouth_open():
     for mesh in _faces()["mesh"]:
         assert mesh["triangles"] > 150
         assert mesh["valid"] is True
-        assert mesh["vertices"] == 68 + 10 + 28 + mesh["extras"]
+        assert mesh["vertices"] == 68 + 10 + 2 * 28 + mesh["extras"]
         assert mesh["extras"] >= 40
         assert mesh["ring"] == 28
         assert mesh["ringInside"] is True
@@ -391,11 +395,13 @@ def test_head_mesh_covers_hair_and_leaves_the_mouth_open():
 
 
 def test_pose_solver_recovers_turns_and_places_the_hair_ring():
-    for case, (yaw, pitch) in zip(_faces()["pose"], [(0, 0), (0.4, 0), (0, 0.3), (-0.3, -0.2)]):
+    cases = _faces()["pose"]
+    for case, (yaw, pitch) in zip(cases, [(0, 0), (0.4, 0), (0, 0.3), (-0.3, -0.2)]):
         assert abs(case["scale"] - 60) < 0.5
         assert abs(abs(case["yaw"]) - abs(yaw)) < 0.03
         assert abs(abs(case["pitch"]) - abs(pitch)) < 0.03
         assert case["error"] < 0.05
+        assert case["width"] == pytest.approx(cases[0]["width"], rel=0.01)
 
 
 def test_template_fit_puts_the_face_on_the_tracked_eyes_and_mouth():

@@ -178,19 +178,66 @@ own nose through the solved pose, shifted by the nose group's mean offset
 from the live points, and keeps 15% of the live positions
 (`NOSE_RIGID = 0.85`). Neighbouring cheek triangles absorb the difference.
 
+**Turning the head.** The stand-in used to be pinned to every live landmark,
+including the jaw line. On a turned head the far jaw line is only the cheek's
+silhouette (Vision and the face mesh both report it there), so the photo's
+far jaw was dragged onto the cheek while the hair ring, placed from the pose,
+stayed out: the head stretched across the near cheek and showed a step at eye
+level. `liveHead` now places the head as one rigid 3D object through the
+solved pose and only adds a smooth residual (a Gaussian field over brows,
+nose and eye corners) for the caller's own proportions:
+
+- Jaw points follow the live jaw only as far as they face the camera
+  (`jawTrust`: the pose's view direction against an outward jaw normal,
+  `JAW_FACING` 0.08-0.38, at most `JAW_FOLLOW` 0.7). The pose is solved twice,
+  the second time with the jaw weights scaled by that trust, so a sliding
+  silhouette cannot bend yaw or scale.
+- 15 cheek and chin vertices (`CHEEK_COUNT`, after the side ring) sit between
+  the jaw and the nose, eyes and mouth with a forward bulge in depth, so the
+  far cheek foreshortens and the near cheek widens like a curved surface
+  instead of one flat triangle from nose to ear. The lip corners and lower
+  lip also feed their field, so cheeks follow a smile and the chin follows a
+  dropping lower lip.
+- The forehead row curves back toward the temples (brow depth x1.5 - 0.12).
+- The hair ring is a silhouette, not a surface: `projectOutline` keeps its
+  shape and only moves it with the head centre (`HEAD_CENTER`, 1.1 eye spans
+  behind the eyes) and roll, the way a round head's outline behaves. A ring
+  rotated as a flat curve swung behind the face on the far side and took the
+  hair with it.
+- A side ring (one point per hair-ring point, `SIDE_REACH` 0.4 of the way out
+  from the nearest jaw or forehead point, `SIDE_BACK` 0.35 behind it) carries
+  the photo's face edge: on the far side that strip folds away behind the
+  cheek and only hair fills the outline; on the near side it opens out.
+- Triangles that fold on screen (opposite winding to the photo) are drawn
+  collapsed, except around the lips, so a turned-away surface never smears
+  past the silhouette. Photo triangles with zero area are dropped.
+
 **Mouth opening.** The mouth used to open as the polygon of the 8 inner-lip
 points with a hard edge, so it looked like a box. `buildHeadMesh` now adds
-54 vertices after the hair ring (`MOUTH_EXTRA_COUNT`): each lip is a
+mouth vertices after the cheeks (`MOUTH_EXTRA_COUNT`): each lip is a
 Catmull-Rom curve through its inner-lip points (corners kept sharp, 4
 samples per segment), plus an inner ring 14% of the way to the other lip
-(`MOUTH_FEATHER`). Every extra vertex is a fixed linear combination of the
-68 landmarks, so the photo layout, the 3D model and the live points stay
-consistent. Triangles carry a per-corner `hole` value (0 on the lip line, 1
-on the inner ring, 0.5 at the corners); the warp shader turns it into a soft
-edge with `smoothstep`, and the composite darkens the feather band slightly
-as a lip shadow. Through the opening the caller's own teeth and tongue show.
-The template fit used by the fallback tracker drops the lower lip with a
-centre-weighted profile instead of a flat shift.
+(`MOUTH_FEATHER`) and a deep ring 40% of the way (`MOUTH_DEEP`). Every extra
+vertex is a fixed linear combination of the 68 landmarks, so the photo
+layout, the 3D model and the live points stay consistent. Triangles carry a
+per-corner `hole` value (0 on the lip line, 1 on the inner ring, 2 on the
+deep ring, at most 0.5 at the corners); the warp shader turns 0-1 into a
+soft edge with `smoothstep` and writes the hole and the depth past it into
+the aux target's blue channel (half each). The composite darkens the feather
+band as a lip shadow and shades the opening from 60% at the lips
+(`MOUTH_EDGE`) to full brightness at the deep ring, so the caller's teeth and
+tongue read as inside a mouth rather than behind a cut-out.
+
+Even with curves the opening was still a box (and the stand-in's lips
+smeared in a spiral) when the tracker put the quarter points of the inner
+lip almost at the corners, as Vision does on a wide-open mouth: the lip
+triangles folded over. `regularMouth` now rebuilds the 20 lip points in the
+mouth's own frame: every lip point keeps the posed stand-in's position along
+the mouth (its photo spacing, foreshortened by the pose) and takes only its
+height from the live lip curves; the inner lips keep at least 65% of the
+stand-in's lip thickness (`LIP_KEEP`); and the opening tapers into the
+corners (`CORNER_TAPER`). The template fit used by the fallback tracker drops
+the lower lip with a centre-weighted profile instead of a flat shift.
 
 **Blinks.** `createBlinkTracker` (in `chat-call-face-expression.js`) turned
 false blinks into closed eyes less often: the image edge baseline now moves

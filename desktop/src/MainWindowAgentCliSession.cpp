@@ -324,6 +324,8 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
                      steer.isEmpty() ? continueWhereLeftOffPrompt() : steer);
     }
     m_streamSessionInfo[sid] = session;
+    m_agentCliTasks.remove(sid);
+    m_agentResultAwaitingCliTasks.remove(sid);
     if (ClaudeStreamSession *old = m_streamSessions.take(sid))
         old->deleteLater();
     if (CodexAppServerSession *old = m_codexStreams.take(sid))
@@ -748,9 +750,12 @@ void MainWindow::finishCliTranscriptRun(int sid, bool codex, int exitCode)
     const QString stranded = agentBackgroundWorkNote(sid);
     m_agentBackgroundWork.remove(sid);
     applyAgentBackgroundWork();
+    m_agentCliTasks.remove(sid);
+    const bool awaitedCliTasks = m_agentResultAwaitingCliTasks.remove(sid);
     bool backupQueued = false;
     if (AgentSession *as = findAgentSession(sid)) {
-        const bool completedResult = m_agentCompletionChecks.contains(sid);
+        const bool completedResult =
+            m_agentCompletionChecks.contains(sid) || awaitedCliTasks;
         if (completedResult) {
             m_agentCompletionChecks.remove(sid);
             if (as->status == AgentStatus::Running) {

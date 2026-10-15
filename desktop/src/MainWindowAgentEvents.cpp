@@ -324,6 +324,8 @@ static constexpr qint64 kAgentCompletionMaxWaitMs = 15 * 60 * 1000;
 // How long the stop signal gets to take effect before we complete anyway.
 static constexpr qint64 kAgentCompletionKillGraceMs = 10000;
 
+static constexpr int kAgentCliTaskSettleMs = 30000;
+
 } // namespace
 
 bool MainWindow::approveAgentGuardrailDirectory(int sessionId,
@@ -659,6 +661,11 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
             live && !live->merged && live->status == AgentStatus::Success)
             markAgentSessionRunning(sessionId);
     }
+    if (agentEventShowsWorkInFlight(type) &&
+        forkmesh::transcripttools::parentToolUseId(ev).isEmpty())
+        m_agentResultAwaitingCliTasks.remove(sessionId);
+    if (forkmesh::agentclitasks::isTaskEvent(ev) && !isExternalSession(sessionId))
+        trackAgentCliTask(sessionId, ev);
 
     if (ev.value(QStringLiteral("type")).toString() == QLatin1String("assistant")) {
         const qint64 out = m_sessionOutputTokens[sessionId].add(
@@ -816,6 +823,7 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         QString resultFailure;
         if (AgentSession *as = findAgentSession(sessionId)) {
             bool awaitSubprocesses = false;
+            QString cliTasksNotice;
             const int turns = ev.value(QStringLiteral("num_turns")).toInt();
             const qint64 dur = static_cast<qint64>(
                 ev.value(QStringLiteral("duration_ms")).toDouble());
@@ -832,6 +840,7 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
             if (activeRun && ClaudeTranscriptView::resultIsError(ev)) {
                 erroredResult = true;
                 m_agentCompletionChecks.remove(sessionId);
+                m_agentResultAwaitingCliTasks.remove(sessionId);
                 m_agentBackgroundWork.remove(sessionId);
                 as->status = AgentStatus::Failed;
                 as->finishedAtMs = QDateTime::currentMSecsSinceEpoch();
@@ -844,9 +853,16 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
                 // drains; completeAgentSessionWhenSubprocessesExit() then makes
                 // the Success transition atomically. A new turn clears this
                 // pending check in markAgentSessionRunning().
-                m_agentCompletionChecks.insert(sessionId);
-                awaitSubprocesses = true;
+                const auto tasks = m_agentCliTasks.constFind(sessionId);
+                if (tasks != m_agentCliTasks.constEnd() && tasks->openBackground() > 0) {
+                    m_agentResultAwaitingCliTasks.insert(sessionId);
+                    cliTasksNotice = forkmesh::agentclitasks::waitingNotice(*tasks);
+                } else {
+                    m_agentCompletionChecks.insert(sessionId);
+                    awaitSubprocesses = true;
+                }
             } else if (userStopped) {
+                m_agentResultAwaitingCliTasks.remove(sessionId);
                 m_agentCompletionChecks.remove(sessionId);
                 m_agentBackgroundWork.remove(sessionId);
             }
@@ -859,6 +875,8 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
                 completeAgentSessionWhenSubprocessesExit(sessionId);
             else
                 updateAgentStatusCell(sessionId);
+            if (!cliTasksNotice.isEmpty())
+                noteAgentSessionNotice(sessionId, cliTasksNotice);
         }
         if (erroredResult) {
             QString fallbackFailure = resultFailure;
@@ -1635,6 +1653,7 @@ bool MainWindow::applyCliExitWithoutResult(int sessionId, bool codex, int exitCo
 
 void MainWindow::markAgentSessionRunning(int sessionId)
 {
+    m_agentResultAwaitingCliTasks.remove(sessionId);
     m_agentCompletionChecks.remove(sessionId);
     m_agentBackgroundWork.remove(sessionId);
     applyAgentBackgroundWork();
@@ -1686,6 +1705,35 @@ void MainWindow::completeAgentSessionWhenSubprocessesExit(int sessionId)
         [this, sessionId](QList<SystemStats::DescendantProcess> subprocesses) {
             applyAgentSubprocessCompletionScan(sessionId, subprocesses);
         });
+}
+
+void MainWindow::trackAgentCliTask(int sessionId, const QJsonObject &event)
+{
+    forkmesh::agentclitasks::Ledger &ledger = m_agentCliTasks[sessionId];
+    const forkmesh::agentclitasks::Change change = ledger.apply(event);
+    const bool settled = ledger.openBackground() == 0;
+    if (ledger.isEmpty())
+        m_agentCliTasks.remove(sessionId);
+    if (change != forkmesh::agentclitasks::Change::Closed || !settled ||
+        !m_agentResultAwaitingCliTasks.contains(sessionId))
+        return;
+    QTimer::singleShot(kAgentCliTaskSettleMs, this,
+                       [this, sessionId] { settleAgentAfterCliTasks(sessionId); });
+}
+
+void MainWindow::settleAgentAfterCliTasks(int sessionId)
+{
+    if (!m_agentResultAwaitingCliTasks.contains(sessionId))
+        return;
+    if (const auto tasks = m_agentCliTasks.constFind(sessionId);
+        tasks != m_agentCliTasks.constEnd() && tasks->openBackground() > 0)
+        return;
+    m_agentResultAwaitingCliTasks.remove(sessionId);
+    const AgentSession *live = findAgentSession(sessionId);
+    if (!live || live->status != AgentStatus::Running)
+        return;
+    m_agentCompletionChecks.insert(sessionId);
+    completeAgentSessionWhenSubprocessesExit(sessionId);
 }
 
 void MainWindow::applyAgentSubprocessCompletionScan(
