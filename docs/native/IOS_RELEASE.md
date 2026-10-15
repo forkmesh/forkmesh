@@ -148,6 +148,10 @@ desktop's Actions variables, or the office Mac; the private key at
 The shortcut also publishes the same data (`asc_store_report.py --publish`) to
 the **App Store Status** package page, so the web, desktop, iPhone and Android
 show it laid out as a page. `--json` prints that snapshot instead of the text.
+It also sends daily downloads (with countries and devices), the versions and
+the reviews to the Marketing package's App Store channel, which charts
+downloads over time; `--marketing ORG` (or `FORKMESH_MARKETING_ORG`) names the
+organization when more than one has Marketing installed.
 See [../marketplace/app-store-status.md](../marketplace/app-store-status.md).
 
 ## TestFlight feedback to tasks
