@@ -93,8 +93,8 @@ object CodeFeature {
 
     fun patchFilesScreen(title: String, patch: String): Screen = PatchFilesScreen(title, patch)
 
-    fun quickEditScreen(repo: Repository, path: String, ref: String = "", servedBlobSha: String = ""): Screen =
-        QuickEditScreen(repo, path, ref, servedBlobSha)
+    fun quickEditScreen(repo: Repository, path: String, ref: String = ""): Screen =
+        QuickEditScreen(repo, path, ref)
 
     suspend fun openBranchTarget(repo: Repository, branch: String, navigator: Navigator, host: Screen) {
         if (branch.isEmpty()) return

@@ -52,7 +52,7 @@ Syntax highlighting renders FMDiff's `CodeHighlighter` tokens.
 - Code tab: `RepoCodeTabModel` (`tree`, `branches`, `path`, `selectedRef`, `openDir(_:refresh:)`,
   `switchRef`, `up`, `crumbs: [RepoCrumb]`, `branchNames`, `branchPillLabel`, `entryMeta`, `entryGlyph`),
   `RepoGoToFileModel` (`query`, `search()`, `results: RepoFuture?`), `RepoFileModel`
-  (`blob`, `rawURL`, `editable`, `servedBlobSha`, static `preview(for:) -> RepoFilePreview`),
+  (`blob`, `rawURL`, `editable`, static `preview(for:) -> RepoFilePreview`),
   `RepoCodePreview` (lines, lazily cached `pieces(i)`, `gutterWidth`, `estimatedWidth`, `statusLine`).
 - Commits: `RepoCommitsTabModel` (`view: RepoGitView`, `commits`, `branches`, `refresh()`,
   `commitRows()`, `branchRows`, `cloneURL`), `RepoCommitDetailModel` (`detail`, `summary`,
@@ -76,7 +76,7 @@ Syntax highlighting renders FMDiff's `CodeHighlighter` tokens.
   repository screen (header, actions, section grid with counts, README), which pushes
   `RepoSectionScreen(repo:section:ref:full:)` per section. `CodeCurrentRepo.open(_:)` pushes it
   on the current tab's router path; `CodeCurrentRepo.remember(_:)` records the repository in use.
-- `RepoFileScreen(repo:path:ref:servedBlobSha:)`, `RepoCommitDetailScreen(repo:commit:)`.
+- `RepoFileScreen(repo:path:ref:)`, `RepoCommitDetailScreen(repo:commit:)`.
 - `MirrorImportSheet(onDone: (String?) -> Void)`: present as a sheet; `onDone` gets the notice
   (nil on Cancel); the presenter dismisses and shows the notice.
 - `CodeEditorView(text: Binding<String>, language: CodeLang, indentUnit: String = "  ",

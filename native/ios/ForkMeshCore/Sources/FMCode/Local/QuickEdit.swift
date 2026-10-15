@@ -20,15 +20,12 @@ public enum QuickEditBlocker: String, Sendable {
     case notUtf8
     /// Past `QuickEdit.maxBytes`.
     case tooLarge
-    /// The blob id the serving node reported disagrees with the bytes it sent.
-    case bytesDisagree
 
     public var title: String {
         switch self {
         case .binary: return "Binary file"
         case .notUtf8: return "Not a text file"
         case .tooLarge: return "File too large"
-        case .bytesDisagree: return "Cannot edit safely"
         }
     }
 
@@ -41,10 +38,6 @@ public enum QuickEditBlocker: String, Sendable {
                 + "that could not be read, so it has to be changed from a clone."
         case .tooLarge:
             return "Files over \(QuickEdit.maxBytes / 1024) KB are edited from a clone, not in the quick editor."
-        case .bytesDisagree:
-            return "The content served for this file does not match what the repository "
-                + "records for it. A change made here could not be applied cleanly, so "
-                + "the editor will not build one. Clone the repository instead."
         }
     }
 }
@@ -55,12 +48,11 @@ public enum QuickEdit {
     public static let maxBytes = 512 * 1024
 
     /// Why `bytes` cannot be edited here, or nil when they can. What the file
-    /// *is* comes before what is wrong with it; the blob-id cross-check is last.
-    public static func blocker(bytes: [UInt8], servedBlobSha: String = "", maxBytes: Int = QuickEdit.maxBytes) -> QuickEditBlocker? {
+    /// *is* comes before what is wrong with it.
+    public static func blocker(bytes: [UInt8], maxBytes: Int = QuickEdit.maxBytes) -> QuickEditBlocker? {
         if bytes.count > maxBytes { return .tooLarge }
         if bytes.contains(0) { return .binary }
         if (try? Utf8.decode(bytes)) == nil { return .notUtf8 }
-        if !GitBlobId.servedAgrees(servedBlobSha, GitBlobId.of(bytes)) { return .bytesDisagree }
         return nil
     }
 
@@ -122,7 +114,6 @@ public final class QuickEditModel {
     public let path: String
     /// The branch being browsed; becomes the pull request's base.
     public let ref: String
-    public let servedBlobSha: String
 
     /// The editor text.
     public var text = ""
@@ -137,22 +128,21 @@ public final class QuickEditModel {
     @ObservationIgnored let submit: SubmitPull?
 
     public init(
-        repo: Repository, path: String, ref: String = "", servedBlobSha: String = "",
+        repo: Repository, path: String, ref: String = "",
         readBytes: @escaping @MainActor (_ owner: String, _ name: String, _ path: String, _ ref: String, _ maxBytes: Int) async throws -> Data,
         submit: SubmitPull?
     ) {
         self.repo = repo
         self.path = path
         self.ref = ref
-        self.servedBlobSha = servedBlobSha
         self.readBytes = readBytes
         self.submit = submit
     }
 
     /// The app wiring over ApiService and InboxService.
-    public convenience init(repo: Repository, path: String, ref: String = "", servedBlobSha: String = "", api: ApiService, inbox: InboxService?) {
+    public convenience init(repo: Repository, path: String, ref: String = "", api: ApiService, inbox: InboxService?) {
         self.init(
-            repo: repo, path: path, ref: ref, servedBlobSha: servedBlobSha,
+            repo: repo, path: path, ref: ref,
             readBytes: { owner, name, path, ref, max in try await api.rawBytes(owner, name, path, ref: ref, maxBytes: max) },
             submit: inbox.map { inbox in
                 { owner, name, title, base, head, patch, description, author in
@@ -173,7 +163,7 @@ public final class QuickEditModel {
         do {
             let data = try await readBytes(repo.owner, repo.name, path, ref, QuickEdit.maxBytes)
             let raw = [UInt8](data)
-            if let blocker = QuickEdit.blocker(bytes: raw, servedBlobSha: servedBlobSha) {
+            if let blocker = QuickEdit.blocker(bytes: raw) {
                 loading = false
                 self.blocker = blocker
                 return

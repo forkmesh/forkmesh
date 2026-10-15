@@ -1,6 +1,5 @@
 package com.forkmesh.nativeapp.code
 
-import com.forkmesh.nativeapp.localrepos.gitBlobId
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 import java.time.ZoneOffset
@@ -21,13 +20,6 @@ class QuickEditTest {
 
     fun testSizeIsJudgedBeforeContent() {
         assertEq(QuickEditBlocker.TooLarge, QuickEdit.blockerFor(ByteArray(3), maxBytes = 2))
-    }
-
-    fun testRefusesWhenTheServedBlobIdDisagrees() {
-        val bytes = "hello\n".toByteArray()
-        assertEq(QuickEditBlocker.BytesDisagree, QuickEdit.blockerFor(bytes, servedBlobSha = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"))
-        assertEq(null, QuickEdit.blockerFor(bytes, servedBlobSha = gitBlobId(bytes).hex))
-        assertEq(null, QuickEdit.blockerFor(bytes, servedBlobSha = ""))
     }
 
     fun testHeadFollowsTheCrossNodeConvention() {

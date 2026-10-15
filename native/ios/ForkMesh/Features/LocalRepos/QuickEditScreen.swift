@@ -21,11 +21,10 @@ struct QuickEditScreen: View {
     @State private var notice: FmNotice?
 
     /// `ref` is the branch being browsed (the pull request's base, never a
-    /// bare commit id); `servedBlobSha` the blob id the tree listing reported,
-    /// used only to cross-check the bytes ("" = no claim).
-    init(repo: Repository, path: String, ref: String = "", servedBlobSha: String = "") {
+    /// bare commit id).
+    init(repo: Repository, path: String, ref: String = "") {
         _model = State(initialValue: QuickEditModel(
-            repo: repo, path: path, ref: ref, servedBlobSha: servedBlobSha,
+            repo: repo, path: path, ref: ref,
             api: Services.require(ApiService.self), inbox: Services.get(InboxService.self)))
     }
 
@@ -61,7 +60,7 @@ struct QuickEditScreen: View {
             FmSkeletonList(rows: 8, hasLeading: false, label: "Loading file")
         } else if let blocker = model.blocker {
             FmEmptyState(
-                icon: blocker == .bytesDisagree ? "error_outline" : "text_snippet_outlined",
+                icon: "text_snippet_outlined",
                 title: blocker.title, message: blocker.message)
         } else if let error = model.error {
             FmEmptyState(icon: "error_outline", title: "Could not read file", message: error)

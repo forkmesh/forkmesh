@@ -58,7 +58,6 @@ internal class QuickEditScreen(
     val repo: Repository,
     val path: String,
     val ref: String = "",
-    private val servedBlobSha: String = "",
 ) : Screen() {
     private val editor = CodeEditorState(codeLangForPath(path))
     private var bytes by mutableStateOf<ByteArray?>(null)
@@ -82,7 +81,7 @@ internal class QuickEditScreen(
             val served = withContext(Dispatchers.IO) {
                 repoApi.rawBytes(repo.owner, repo.name, path, ref = ref, maxBytes = QuickEdit.maxBytes)
             }
-            val found = QuickEdit.blockerFor(served, servedBlobSha)
+            val found = QuickEdit.blockerFor(served)
             if (found != null) {
                 loading = false
                 blocker = found
@@ -178,7 +177,7 @@ internal class QuickEditScreen(
                 when {
                     loading -> FmSkeletonList(rows = 8, hasLeading = false, label = "Loading file")
                     shownBlocker != null -> FmEmptyState(
-                        if (shownBlocker == QuickEditBlocker.BytesDisagree) "error_outline" else "text_snippet_outlined",
+                        "text_snippet_outlined",
                         QuickEdit.blockerTitle(shownBlocker),
                         message = QuickEdit.blockerMessage(shownBlocker),
                     )

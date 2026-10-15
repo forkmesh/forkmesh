@@ -103,6 +103,8 @@ reinstall, choosing the same folder reloads its `index.json`.
   base and reports blockers, changed and binary paths; `submit(...)` pushes first.
 - `GitBlobId.of(bytes)`, `LocalPatch.forFile(...)` (mode-less `index` line; refuses binary and
   non-UTF-8).
+- Quick edits use the raw file response as the patch pre-image. A tree listing can lag that
+  response, so its blob id never prevents a person from preparing a federated pull request.
 
 ## Clone to this device: mirrors, failover, shallow
 
