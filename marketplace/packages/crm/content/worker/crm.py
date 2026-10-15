@@ -3281,13 +3281,18 @@ async def _import_ping(runtime, actor, title, body, dedupe):
                  dedupe=dedupe)
 
 
-async def _celebrate_tracked_email(runtime, actor, send_id, subject, contact):
+async def _celebrate_tracked_email(runtime, actor, send_id, subject, contact,
+                                   provider="", created=False):
     notify = getattr(runtime, "notify", None)
     if notify is None or not actor or not send_id:
         return
     label = _contact_label(contact)
     body = ("“%s” with %s" % (subject, label)) if subject else ("With " + label)
-    await notify(actor, "plugin_activity", "🎉 Email tracked in the CRM",
+    title = "🎉 Email tracked in the CRM"
+    if provider == "mastodon":
+        title = ("🎉 New CRM contact from Mastodon" if created
+                 else "🎉 Mastodon post tracked in the CRM")
+    await notify(actor, "plugin_activity", title,
                  body=body, href="/dashboard/crm",
                  dedupe="crm-email-tracked:" + send_id,
                  meta={"celebrate": EMAIL_TRACKED_CELEBRATION})
@@ -4364,7 +4369,8 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     )
     if not existing and not quiet:
         await _celebrate_tracked_email(runtime, actor, send_id,
-                                       envelope["subject"], contact_data)
+                                       envelope["subject"], contact_data,
+                                       provider, contact_created)
     return ({
         "ok": True,
         "contactCreated": contact_created,
@@ -5460,6 +5466,7 @@ ACTIVITY_PINGS = {
     ("settings", "", "PUT"): ("CRM settings changed", "team", True),
     ("zoho", "exchange", "POST"): ("Zoho Mail connected to the CRM", "team", False),
 }
+ACTIVITY_MASTODON_LINK = ("Mastodon post linked in the CRM", "others", False)
 ACTIVITY_DETAIL_FIELDS = ("subject", "title", "name", "url")
 _ACTIVITY_SEEN = {}
 
@@ -5480,6 +5487,8 @@ def _activity_rule(resource, item, method, data):
     if rule is None:
         return None
     data = data if isinstance(data, dict) else {}
+    if (resource, shape) == ("emails", "link") and data.get("provider") == "mastodon":
+        rule = ACTIVITY_MASTODON_LINK
     if data.get("preview") or resource == "settings" and set(data) <= {"tableViews"}:
         return None
     detail = ""

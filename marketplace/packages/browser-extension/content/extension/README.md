@@ -92,6 +92,19 @@ matches on its own, and the panel says how a record was found.
 press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
 
+**Your Mastodon posts** (on by default, **Add people I mention on Mastodon**):
+open one of your own posts on its permalink, like
+`https://mastodon.social/@forkmesh/113489…`, and after the page settles
+(1.5 s) everyone the post mentions is linked to the CRM, one record each
+(hashtags and your own accounts are skipped, at most ten people). Someone the
+CRM does not know becomes a contact named from the page, or `@name@instance`.
+The CRM pings you for each person ("🎉 New CRM contact from Mastodon"). The
+post is yours when its author is the account signed in to Mastodon in that tab
+or the Mastodon account saved in the CRM's settings (read once per ten
+minutes). A post is logged once: the extension remembers the last 500, and the
+popup shows who was logged last. Timelines, profiles and other people's posts
+send nothing.
+
 **Mail you send** (on by default, **Track emails I send**): sends from Gmail or
 Zoho Mail are linked to the first recipient that already has a record (people
 outside your domain first) and move **Last contacted**. Gmail sends are linked
@@ -216,8 +229,8 @@ already read are reported.
 
 ## What leaves the browser
 
-- **CRM**: only when you press a button or send a message: provider message
-  and thread ids, subject, addresses or handles, direction, date, permalink,
+- **CRM**: only when you press a button, send a message, or open your own
+  Mastodon post on its permalink: provider message and thread ids, subject, addresses or handles, direction, date, permalink,
   the contact details shown in the panel, and the chosen flow and stage. The
   email body is read in the page only to prefill fields and is never sent. A
   Mastodon post's content warning or opening line stands in for a subject. A

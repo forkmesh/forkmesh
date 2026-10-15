@@ -221,6 +221,16 @@ center (`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
     logged as inbound.
   - *From the browser extension*: on the toot's page, the CRM header's FM
     panel links it (`POST /emails/link`), as for any Mastodon conversation.
+    Opening one of your own toots on its permalink
+    (`https://<instance>/@<you>/<id>`) links it on its own, one
+    `POST /emails/link` per person it mentions with `createContact: true`, so
+    a person the CRM does not know becomes a contact. "Your own" is the
+    account signed in to Mastodon in that tab or the account saved under
+    Settings → Mastodon toots. Each new link pings you: "🎉 New CRM contact
+    from Mastodon" when it created the contact, "🎉 Mastodon post tracked in
+    the CRM" otherwise; owners and admins get "Mastodon post linked in the
+    CRM". Switch it off with **Add people I mention on Mastodon** in the
+    extension's popup.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.
