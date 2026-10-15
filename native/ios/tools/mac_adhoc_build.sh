@@ -118,22 +118,26 @@ if [ "$completed" = "0" ]; then
 fi
 
 cd "$tree/native/ios"
+echo "--- build Mac: macOS $(sw_vers -productVersion 2>/dev/null || echo '?'), $(xcodebuild -version 2>/dev/null | head -n 1 || echo 'no Xcode'), $(df -h "$HOME" 2>/dev/null | awk 'NR == 2 { print $4 }') free, commit ${CM_COMMIT:0:12}, step $((completed + 1)) of $(grep -c . "$steps/index.tsv")"
 index=0
 ran=0
+build_started=$SECONDS
 while IFS=$'\t' read -r file name; do
   [ -n "$file" ] || continue
   index=$((index + 1))
   [ "$index" -le "$completed" ] && continue
   echo "==> $name ($(date +%H:%M:%S))"
   load_cm_env
+  step_started=$SECONDS
   if ! bash "$steps/$file" < /dev/null; then
-    echo "!! $name failed" >&2
+    echo "!! $name failed after $((SECONDS - step_started)) s" >&2
     exit 1
   fi
+  echo "<== $name ok in $((SECONDS - step_started)) s"
   echo "$index" > "$done_file"
   ran=1
   [ "$name" = "$through" ] && break
 done < "$steps/index.tsv"
 if [ "$ran" = 1 ] && [ "$(cat "$done_file" 2>/dev/null || echo 0)" = "$(grep -c . "$steps/index.tsv")" ]; then
-  echo "==> done ($(date +%H:%M:%S))"
+  echo "==> done ($(date +%H:%M:%S), $((SECONDS - build_started)) s)"
 fi

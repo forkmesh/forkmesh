@@ -968,15 +968,16 @@ git config extensions.partialClone origin
 git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
   '/app/src/apns.py' '/app/src/app_runtime.py' '/marketplace/packages/vault/tests/fixtures/'
 attempt=1
-until git fetch -q --depth=1 --no-tags --filter=blob:none origin "$2"; do
+until git fetch -q --depth=1 --no-tags --filter=blob:none origin "$2" &&
+    git -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD; do
   if [ "$attempt" -ge 6 ]; then
     echo "could not fetch $2 from $1" >&2
     exit 1
   fi
+  echo "fetch or checkout attempt $attempt of 6 failed; retrying in 20 s" >&2
   sleep 20
   attempt=$((attempt + 1))
 done
-git -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD
 git clean -ffdxq
 git log -1 --format='checked out %h: %s'
 """

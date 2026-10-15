@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import mac_adhoc_publish
 import mobile_changelog
@@ -41,6 +42,31 @@ STORE_LOCK = "ios-app-store "
 STORE_RUNS = "release/ios-main-"
 STORE_SUBMIT_STEP = "Submit to the App Store"
 STORE_WHATS_NEW = "Bug fixes and improvements."
+RULE_WIDTH = 72
+MAC_TREE = re.compile(r"/Users/[^/\s]+/ci/tree/")
+STEP_DONE = re.compile(r"^<== (?P<name>.+) ok in (?P<seconds>\d+) s$")
+STEP_FAILED = re.compile(r"^!! (?P<name>.+) failed after (?P<seconds>\d+) s$")
+ERROR_LINE = re.compile(r"(?:^|\s)(?:error|fatal):\s|^ERROR:|^!! ")
+ERROR_LIMIT = 40
+CAUSE_LINES = 8
+PING_KEY = "mac-adhoc-failure"
+FAILURE_HINTS = (
+    (re.compile(r"\.swift:\d+:\d+: error:"),
+     "Swift does not compile at this commit. Fix it on main (docs/native/MAC_BUILD.md, "
+     "\"Swift rules the Mac archive enforces\") and run the shortcut again."),
+    (re.compile(r"early EOF|index-pack failed|promisor remote|could not fetch"),
+     "The Mac could not fetch the commit from the cores. Run the shortcut again; if it "
+     "repeats, check the source publisher (docs/tools/source-publisher.md)."),
+    (re.compile(r"still serves"),
+     "The cores never served main. Check the source publisher "
+     "(docs/tools/source-publisher.md)."),
+    (re.compile(r"not on the local network|lost the office Mac"),
+     "The office Mac is off or away. Wake it, check tools/office-mac.sh --find, then run again."),
+    (re.compile(r"held ~/ci/lock"),
+     "Another build holds the Mac. See tools/mac_adhoc_deploy.py --status, or --unstick."),
+    (re.compile(r"without an IPA|^!! Export", re.M),
+     "The archive built but no IPA was exported. Read the export log in the artifacts folder."),
+)
 
 TAKE_TURN_SCRIPT = r"""
 mkdir -p ci
@@ -197,6 +223,14 @@ STORE_SUBMITTED_SCRIPT = r"""
 grep -F "for App Review:" "$1/jobs/all/log" 2>/dev/null | tail -n 1 || true
 """
 
+MAC_FACTS_SCRIPT = r"""
+printf 'macOS %s, %s, %s free, up %s\n' \
+  "$(sw_vers -productVersion 2>/dev/null || echo '?')" \
+  "$(xcodebuild -version 2>/dev/null | head -n 1 || echo 'no Xcode')" \
+  "$(df -h . 2>/dev/null | awk 'NR == 2 { print $4 }')" \
+  "$(uptime 2>/dev/null | sed -e 's/.* up *//' -e 's/, *[0-9]* users*.*//')"
+"""
+
 BRING_BACK_SCRIPT = r"""
 set -euo pipefail
 shopt -s nullglob
@@ -211,6 +245,133 @@ class Stopped(Exception):
 
 def say(message: str) -> None:
     RELEASE.log(message)
+
+
+def clock_text(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def rule(title: str = "", char: str = "─") -> str:
+    if not title:
+        return char * RULE_WIDTH
+    head = f"{char * 2} {title} "
+    return head + char * max(3, RULE_WIDTH - len(head))
+
+
+def fit(text: str, width: int) -> str:
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+class Timeline:
+    def __init__(self, clock=time.monotonic, out=None):
+        self.clock = clock
+        self.out = out
+        self.started = clock()
+        self.phases: list[dict] = []
+        self.errors: list[str] = []
+        self.facts: dict[str, str] = {}
+
+    def write(self, text: str) -> None:
+        sink = self.out or sys.stdout
+        sink.write(text + "\n")
+        sink.flush()
+
+    def banner(self, title: str, details: list[tuple[str, str]]) -> None:
+        self.write(rule(char="━"))
+        self.write(f"  {title}")
+        for name, value in details:
+            self.write(f"  {name:<10} {value}")
+        self.write(rule(char="━"))
+
+    @property
+    def current(self) -> dict | None:
+        return self.phases[-1] if self.phases and self.phases[-1]["ok"] is None else None
+
+    def begin(self, title: str) -> None:
+        self.end()
+        self.phases.append({"title": title, "start": self.clock(), "seconds": 0.0, "ok": None,
+                            "steps": {}})
+        self.write("")
+        self.write(rule(f"{len(self.phases)}. {title}"))
+
+    def end(self, ok: bool = True) -> None:
+        phase = self.current
+        if phase is None:
+            return
+        phase["seconds"] = self.clock() - phase["start"]
+        phase["ok"] = ok
+        mark = "✓" if ok else "✗"
+        state = "done" if ok else "FAILED"
+        self.write(f"   {mark} {phase['title']} {state} in {clock_text(phase['seconds'])}")
+
+    def fact(self, name: str, value: str) -> None:
+        self.facts[name] = value
+        say(f"{name}: {value}")
+
+    def note(self, line: str) -> None:
+        text = MAC_TREE.sub("", line.rstrip())
+        timed = STEP_DONE.match(text) or STEP_FAILED.match(text)
+        if timed and self.phases:
+            self.phases[-1]["steps"][timed["name"]] = {"seconds": int(timed["seconds"]),
+                                                       "ok": text.startswith("<== ")}
+        if ERROR_LINE.search(text) and text not in self.errors and len(self.errors) < ERROR_LIMIT:
+            self.errors.append(text[:400])
+
+    def cause(self, fallback: str = "") -> list[str]:
+        specific = [line for line in self.errors
+                    if not line.startswith("!! ") and not line.endswith("Every error:")]
+        lines = specific or self.errors
+        if not lines:
+            given = [line.strip() for line in fallback.splitlines() if line.strip()]
+            lines = [line for line in given if ERROR_LINE.search(line)] or given
+        return [MAC_TREE.sub("", line) for line in lines][:CAUSE_LINES]
+
+    def failed_phase(self) -> dict | None:
+        failed = [phase for phase in self.phases if phase["ok"] is False]
+        return failed[-1] if failed else (self.phases[-1] if self.phases else None)
+
+    def summary(self) -> None:
+        self.end()
+        rows = []
+        for phase in self.phases:
+            mark = {True: "✓", False: "✗", None: "·"}[phase["ok"]]
+            rows.append((f"{mark} {phase['title']}", phase["seconds"]))
+            for name, step in phase["steps"].items():
+                rows.append((f"    {'✓' if step['ok'] else '✗'} {name}", step["seconds"]))
+        width = RULE_WIDTH - 12
+        self.write("")
+        self.write(rule("Timing"))
+        for label, seconds in rows:
+            self.write(f"  {fit(label, width):<{width}} {clock_text(seconds):>8}")
+        self.write(f"  {'Total':<{width}} {clock_text(self.clock() - self.started):>8}")
+        self.write(rule())
+
+    def failure(self, error: str) -> None:
+        phase = self.failed_phase()
+        where = f" in \"{phase['title']}\"" if phase else ""
+        self.write("")
+        self.write(rule("✗ FAILED" + where, "━"))
+        for line in self.cause(error):
+            self.write(f"  {fit(line, 400)}")
+        hint = failure_hint(self.cause(error) + [error])
+        if hint:
+            self.write("")
+            self.write(f"  Fix: {hint}")
+        self.write(rule(char="━"))
+
+
+TIMELINE = Timeline()
+
+
+def failure_hint(lines: list[str]) -> str:
+    text = "\n".join(lines)
+    for pattern, hint in FAILURE_HINTS:
+        if pattern.search(text):
+            return hint
+    return ""
 
 
 def stop(signum, frame):
@@ -238,6 +399,14 @@ def wait_for_commit(repo: Path, url: str, timeout: float = MIRROR_TIMEOUT_SECOND
                             f"{main[:12]}, after {int(timeout) // 60} minutes "
                             "(docs/tools/source-publisher.md)")
         sleep(interval)
+
+
+def describe_mac(mac) -> None:
+    try:
+        facts = mac.run(MAC_FACTS_SCRIPT, timeout=60).strip()
+    except (RELEASE.CompletionError, OSError, subprocess.SubprocessError) as exc:
+        facts = f"could not read its versions ({str(exc)[:200]})"
+    TIMELINE.fact("Office Mac", f"{mac.address}, {facts}" if facts else mac.address)
 
 
 def find_mac(key_dir: Path = RELEASE.MAC_BUILD_KEY_DIR):
@@ -287,13 +456,27 @@ def remote(script: str, *args: str, lock: str = "") -> str:
                      *(shlex.quote(arg) for arg in args)])
 
 
+def relay(lines, out=None, sink=None) -> None:
+    out = out or sys.stdout
+    for raw in lines:
+        if sink is not None:
+            sink.write(raw)
+            sink.flush()
+        text = raw.decode("utf-8", "replace")
+        out.write(text)
+        out.flush()
+        TIMELINE.note(text)
+
+
 def follow_build(mac, run_dir: str, lock: str, popen=subprocess.Popen,
-                 sleep=time.sleep) -> int:
+                 sleep=time.sleep, out=None) -> int:
     command = mac.command(remote(JOB_SCRIPT, run_dir, lock=lock))
     code = RELEASE.MAC_UNREACHABLE
     for attempt in range(RECONNECTS + 1):
-        process = popen(command, stdin=subprocess.DEVNULL)
+        process = popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
         try:
+            relay(process.stdout, out)
             code = process.wait()
         finally:
             if process.poll() is None:
@@ -339,9 +522,13 @@ def stop_on_mac(mac, run_dir: str, run=subprocess.run) -> None:
 
 
 def fetch_on_mac(mac, url: str, commit: str, lock: str) -> str:
+    TIMELINE.begin("Fetch the commit on the Mac")
+    say(f"fetching {commit[:12]} from {url} into ~/ci/tree")
     say("office Mac " + mac.run(RELEASE.MAC_IOS_FETCH_SCRIPT, url, commit, timeout=900,
                                 lock=lock).strip())
-    return mac.run("git -C ci/tree log -1 --format=%s", timeout=60).strip()
+    subject = mac.run("git -C ci/tree log -1 --format=%s", timeout=60).strip()
+    TIMELINE.facts["Commit"] = f"{commit[:12]} {subject}"
+    return subject
 
 
 def write_changelog(dest: Path, commit: str, repo: Path = ROOT, published: Path = PUBLISHED) -> bool:
@@ -360,12 +547,15 @@ def write_changelog(dest: Path, commit: str, repo: Path = ROOT, published: Path 
 
 def send_steps(mac, script: str, *args: str, lock: str, name: str = WORKFLOW,
                overrides: dict[str, str] | None = None, commit: str = "") -> list[str]:
+    TIMELINE.begin("Write the build steps")
     with tempfile.TemporaryDirectory(prefix="mac-adhoc-steps-") as scratch:
         names = write_steps(mac.run("cat ci/tree/codemagic.yaml", timeout=60),
                             mac.run("cat ci/tree/native/ios/tools/codemagic_steps.py",
                                     timeout=60),
                             Path(scratch) / "steps", name, overrides)
-        say(f"steps from codemagic.yaml ({name}): " + ", ".join(names))
+        say(f"{len(names)} steps from codemagic.yaml ({name}):")
+        for number, step in enumerate(names, 1):
+            say(f"  {number:>2}. {step}")
         if commit:
             write_changelog(Path(scratch) / "steps" / "changelog.json", commit)
         packed = subprocess.Popen(["tar", "-C", scratch, "-c", "steps"], stdout=subprocess.PIPE)
@@ -406,6 +596,8 @@ def build_record(commit: str, subject: str, started: int, locked: int, built: in
 def build_on_mac(mac, url: str, commit: str, artifacts: Path, started: int) -> Path | None:
     stamp = time.strftime("%Y%m%d%H%M%S")
     run_dir = f"ci/{commit[:12]}-{stamp}"
+    TIMELINE.begin("Take the office Mac's build lock")
+    TIMELINE.fact("Mac run", f"~/{run_dir}")
     mac.run(TAKE_TURN_SCRIPT, run_dir, timeout=60)
     say(f"waiting for the office Mac's build lock as {run_dir}")
     with ios_lock(mac, run_dir) as lock:
@@ -414,6 +606,7 @@ def build_on_mac(mac, url: str, commit: str, artifacts: Path, started: int) -> P
         locked = int(time.time())
         try:
             subject = prepare_build(mac, url, commit, run_dir, lock, started, locked)
+            TIMELINE.begin("Build on the office Mac")
             say(f"building {commit[:12]} ({subject}) on the office Mac ({mac.address})")
             code = follow_build(mac, run_dir, lock)
         except (Stopped, KeyboardInterrupt):
@@ -428,6 +621,7 @@ def build_on_mac(mac, url: str, commit: str, artifacts: Path, started: int) -> P
                 return None
             raise ToolError(f"the build failed on the office Mac (exit {code}); "
                             f"its files are in ~/{run_dir} there")
+        TIMELINE.begin("Bring the IPA and logs back")
         dest = artifacts / "shortcut" / stamp / "mac-adhoc" / commit[:12]
         dest.mkdir(parents=True, exist_ok=True)
         bundle = dest / "out.tar"
@@ -439,22 +633,19 @@ def build_on_mac(mac, url: str, commit: str, artifacts: Path, started: int) -> P
         raise ToolError(f"the Mac finished without an IPA (logs in {dest})")
     record = build_record(commit, subject, started, locked, int(time.time()))
     (dest / "build.json").write_text(json.dumps(record, indent=2))
-    minutes, seconds = divmod(record["buildSeconds"], 60)
-    say(f"built in {minutes} min {seconds:02d} s on the Mac; artifacts: {dest}")
+    ipa = sorted((dest / "ipa").glob("*.ipa"))[0]
+    say(f"{ipa.name}: {ipa.stat().st_size / 1e6:.1f} MB, sha256 {RELEASE.sha256_file(ipa)[:12]}")
+    say(f"built in {clock_text(record['buildSeconds'])} on the Mac after waiting "
+        f"{clock_text(record['waitSeconds'])} for it; artifacts: {dest}")
     return dest
 
 
 def stream(mac, command: str, log: Path, popen=subprocess.Popen, out=None) -> int:
-    out = out or sys.stdout
     process = popen(mac.command(command), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT)
     try:
         with log.open("wb") as sink:
-            for line in process.stdout:
-                sink.write(line)
-                sink.flush()
-                out.write(line.decode("utf-8", "replace"))
-                out.flush()
+            relay(process.stdout, out, sink)
         return process.wait()
     finally:
         if process.poll() is None:
@@ -481,10 +672,14 @@ def build_desktop_on_mac(mac, repo: Path, commit: str, artifacts: Path) -> Path:
     build_log = dest / "mac-build.log"
     subject = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%s", commit],
                              capture_output=True, text=True, check=False).stdout.strip()
+    TIMELINE.facts["Commit"] = f"{commit[:12]} {subject}"
+    TIMELINE.begin("Take the office Mac's build lock")
     say(f"waiting for the office Mac's build lock as {DESKTOP_LOCK}{commit[:12]}")
     with RELEASE.mac_lock(mac, DESKTOP_LOCK + commit[:12]) as lock:
         try:
+            TIMELINE.begin("Send the desktop source to the Mac")
             send_desktop_source(mac, repo, commit, lock)
+            TIMELINE.begin("Build the macOS desktop app")
             say(f"building the universal macOS desktop app from {commit[:12]} ({subject}) "
                 f"on the office Mac ({mac.address}); log {build_log}")
             code = stream(mac, remote(RELEASE.MAC_DESKTOP_BUILD_SCRIPT, DESKTOP_SOURCE, commit,
@@ -495,6 +690,7 @@ def build_desktop_on_mac(mac, repo: Path, commit: str, artifacts: Path) -> Path:
         if code != 0:
             raise ToolError(f"the macOS desktop build failed on the office Mac (exit {code}); "
                             f"its log is {build_log}")
+        TIMELINE.begin("Bring the .dmg back")
         digest, built = RELEASE.mac_dmg_result(build_log.read_text(errors="replace"))
         dmg = dest / Path(built).name
         mac.run('cat "$1"', built, output=dmg, timeout=1800)
@@ -506,12 +702,14 @@ def build_desktop_on_mac(mac, repo: Path, commit: str, artifacts: Path) -> Path:
 
 def build_desktop(args) -> int:
     commit = next_codemagic.local_main(args.repo)
+    if args.execute:
+        TIMELINE.begin("Find the office Mac")
     mac = find_mac()
     if not args.execute:
         say(f"main is {commit[:12]}; office Mac at {mac.address}, building the macOS desktop app")
         say("(dry run: pass --execute to build it on the Mac)")
         return 0
-    say(f"office Mac at {mac.address}")
+    describe_mac(mac)
     build_desktop_on_mac(mac, args.repo, commit, args.artifacts)
     return 0
 
@@ -525,6 +723,8 @@ def submit_on_mac(mac, url: str, commit: str, whats_new: str, artifacts: Path) -
     run_dir = f"{STORE_RUNS}{commit[:12]}-{stamp}"
     name = f"{STORE_LOCK}{commit[:12]}-{stamp}"
     started = int(time.time())
+    TIMELINE.begin("Take the office Mac's build lock")
+    TIMELINE.fact("Mac run", f"~/{run_dir}")
     say(f"waiting for the office Mac's build lock as {name!r}")
     with RELEASE.mac_lock(mac, name) as lock:
         locked = int(time.time())
@@ -535,6 +735,7 @@ def submit_on_mac(mac, url: str, commit: str, whats_new: str, artifacts: Path) -
             if STORE_SUBMIT_STEP not in names:
                 raise ToolError(f"{STORE_WORKFLOW} at {commit[:12]} has no "
                                 f"{STORE_SUBMIT_STEP!r} step")
+            TIMELINE.begin("Build, upload and submit on the office Mac")
             say(f"building {commit[:12]} ({subject}) on the office Mac ({mac.address}), "
                 "uploading it and submitting it for App Review")
             code = follow_build(mac, run_dir, lock)
@@ -544,6 +745,7 @@ def submit_on_mac(mac, url: str, commit: str, whats_new: str, artifacts: Path) -
         if code != 0:
             raise ToolError(f"the App Store build failed on the office Mac (exit {code}); "
                             f"its files are in ~/{run_dir} there")
+        TIMELINE.begin("Check the App Review submission")
         values = RELEASE.cm_env_values(mac.run('cat "$1/steps/cm_env"', run_dir, timeout=60))
         submitted = mac.run(STORE_SUBMITTED_SCRIPT, run_dir, timeout=60).strip()
     if not submitted:
@@ -573,9 +775,11 @@ def submit_app_store(args, url: str) -> int:
             f"FORKMESH_IOS_APP_STORE=1; What's New: {args.whats_new}")
         say("(dry run: pass --execute to build, upload and submit it for App Review)")
         return 0
+    TIMELINE.begin("Wait for the cores to serve main")
     commit = wait_for_commit(args.repo, url, args.mirror_timeout)
+    TIMELINE.begin("Find the office Mac")
     mac = find_mac()
-    say(f"office Mac at {mac.address}")
+    describe_mac(mac)
     submit_on_mac(mac, url, commit, args.whats_new, args.artifacts)
     return 0
 
@@ -792,44 +996,139 @@ def launch(argv: list[str], repo: Path, environ=os.environ, run=subprocess.run) 
     return follow(unit, log)
 
 
-def deploy(args) -> int:
+def mode_label(args) -> str:
+    if args.desktop:
+        return "macOS desktop build"
+    if args.app_store:
+        return "iOS App Store build"
+    return "iOS ad hoc build"
+
+
+def tool_commit() -> str:
+    done = subprocess.run(["git", "-C", str(ROOT), "log", "-1", "--format=%h"],
+                          capture_output=True, text=True, check=False)
+    return done.stdout.strip() or "unknown"
+
+
+def open_banner(args, url: str) -> None:
+    log = os.environ.get(UNIT_ENV, "")
+    TIMELINE.facts["Log"] = log or "this terminal only"
+    TIMELINE.banner(f"ForkMesh {mode_label(args)} on the office Mac", [
+        ("Source", url if not args.desktop else f"{args.repo} ({DESKTOP_SOURCE})"),
+        ("Started", time.strftime("%Y-%m-%d %H:%M:%S %Z")),
+        ("Tool", f"tools/mac_adhoc_deploy.py at {tool_commit()}, Python "
+                 f"{sys.version.split()[0]}"),
+        ("Log", log or "this terminal only"),
+    ])
+
+
+def failure_notifier(url: str):
+    import next_autodeploy
+
+    return next_autodeploy.Notifier(
+        origin=urlsplit(url).hostname or "", node=next_autodeploy.settings_node_name(RELEASE.LAYOUT),
+        key_path=RELEASE.LAYOUT.identity_key, say=say)
+
+
+def failure_ping(label: str, error: str) -> tuple[str, str]:
+    phase = TIMELINE.failed_phase()
+    cause = TIMELINE.cause(error)
+    total = clock_text(TIMELINE.clock() - TIMELINE.started)
+    where = (f" in \"{phase['title']}\" after {clock_text(phase['seconds'])}" if phase else "")
+    lines = [f"The {label} failed{where} (total {total}).", "Cause:"]
+    lines += [f"  {fit(line, 300)}" for line in cause]
+    hint = failure_hint(cause + [error])
+    if hint:
+        lines.append(f"Fix: {hint}")
+    lines += [f"{name}: {value}" for name, value in TIMELINE.facts.items()]
+    lines.append("Check: python3 tools/mac_adhoc_deploy.py --status")
+    title = f"{label} failed" + (f": {phase['title']}" if phase else "")
+    return fit(title, 120), "\n".join(lines)[:2000]
+
+
+def notify_failure(label: str, error: str, url: str, notifier=None) -> bool:
+    title, body = failure_ping(label, error)
+    try:
+        notifier = notifier or failure_notifier(url)
+        return notifier.send(title, body, PING_KEY)
+    except (OSError, ValueError, ImportError) as exc:
+        say(f"notify: the failure Ping could not be sent ({exc})")
+        return False
+
+
+def ship_adhoc(args, url: str, started: int) -> int:
+    TIMELINE.begin("Wait for the cores to serve main")
+    commit = wait_for_commit(args.repo, url, args.mirror_timeout)
+    TIMELINE.begin("Find the office Mac")
+    mac = find_mac()
+    describe_mac(mac)
+    dest = build_on_mac(mac, url, commit, args.artifacts, started)
+    if dest is None:
+        return 0
+    TIMELINE.begin("Publish and email the install link")
+    publish = ["--execute", "--artifacts", str(args.artifacts),
+               "--runs", str(args.artifacts / "runs")]
+    for address in args.to:
+        publish += ["--to", address]
+    code = mac_adhoc_publish.main(publish)
+    if code != 0:
+        raise ToolError(f"the publisher exited {code} after the build succeeded "
+                        f"(artifacts {dest}); see its output above")
+    return 0
+
+
+def dry_run(args, url: str) -> int:
+    served = next_codemagic.served_main(url)
+    main_commit = next_codemagic.local_main(args.repo)
+    mac = find_mac()
+    say(f"main is {main_commit[:12]}; {url} serves {served[:12] or 'nothing'}")
+    say(f"office Mac at {mac.address}, building {WORKFLOW}")
+    say("(dry run: pass --execute to build on the Mac and email the link)")
+    return 0
+
+
+def run_mode(args, url: str, started: int) -> int:
+    if args.desktop:
+        return build_desktop(args)
+    if args.app_store:
+        return submit_app_store(args, url)
+    if not args.execute:
+        return dry_run(args, url)
+    return ship_adhoc(args, url, started)
+
+
+def deploy(args, notify=notify_failure) -> int:
+    global TIMELINE
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGHUP, stop)
     started = int(time.time())
     url = RELEASE.mac_setting("MAC_BUILD_GIT_URL", RELEASE.MAC_BUILD_GIT_URL)
+    TIMELINE = Timeline()
+    if args.execute:
+        open_banner(args, url)
     try:
-        if args.desktop:
-            return build_desktop(args)
-        if args.app_store:
-            return submit_app_store(args, url)
-        if not args.execute:
-            served = next_codemagic.served_main(url)
-            main_commit = next_codemagic.local_main(args.repo)
-            mac = find_mac()
-            say(f"main is {main_commit[:12]}; {url} serves {served[:12] or 'nothing'}")
-            say(f"office Mac at {mac.address}, building {WORKFLOW}")
-            say("(dry run: pass --execute to build on the Mac and email the link)")
-            return 0
-        commit = wait_for_commit(args.repo, url, args.mirror_timeout)
-        mac = find_mac()
-        say(f"office Mac at {mac.address}")
-        dest = build_on_mac(mac, url, commit, args.artifacts, started)
-        if dest is None:
-            return 0
-        publish = ["--execute", "--artifacts", str(args.artifacts),
-                   "--runs", str(args.artifacts / "runs")]
-        for address in args.to:
-            publish += ["--to", address]
-        return mac_adhoc_publish.main(publish)
+        code = run_mode(args, url, started)
     except Stopped as reason:
+        TIMELINE.end(ok=False)
         say(f"stopped ({reason}); the office Mac's build lock is released")
+        if args.execute:
+            TIMELINE.summary()
         return 130
     except KeyboardInterrupt:
         return 130
     except (ToolError, RELEASE.CompletionError, OSError, subprocess.SubprocessError,
             tarfile.TarError) as error:
-        print(f"mac_adhoc_deploy: {error}", file=sys.stderr)
+        TIMELINE.end(ok=False)
+        print(f"mac_adhoc_deploy: {error}", file=sys.stderr, flush=True)
+        if args.execute:
+            TIMELINE.summary()
+            TIMELINE.failure(str(error))
+            notify(mode_label(args), str(error), url)
         return 1
+    if args.execute:
+        TIMELINE.summary()
+        say(f"the {mode_label(args)} finished")
+    return code
 
 
 def main(argv=None) -> int:

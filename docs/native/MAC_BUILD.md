@@ -64,8 +64,11 @@ can log in as `build` on the Mac.
   outside `native/ios/` must add it there and to `MAC_IOS_FETCH_SCRIPT` in
   `tools/forkmesh-release-host.py`.
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
-  out with `git clean -ffdx`. Fetch and checkout retry (six times, 20 s apart)
-  because a core may advertise a commit before it holds every blob.
+  out with `git clean -ffdx`. Fetch and checkout retry together (six times,
+  20 s apart) because a core may advertise a commit before it holds every blob,
+  and the checkout fetches the blobs lazily: on 2026-10-14 it died with
+  `fatal: early EOF` / `could not fetch ... from promisor remote` while the
+  fetch alone was retried.
 - When the fetch fails, the step asks the cores for `main` and prints one
   `ERROR:` line naming the cause (commit not published yet, broken on the
   Mac's side, or the cores unreadable from the desktop too). The "Action
@@ -158,6 +161,34 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   (`mac_adhoc_publish.py --execute --artifacts ~/projects/forkmesh/data/mac-adhoc`).
   That folder is not the Actions artifacts folder, so the timer never sends
   these builds twice.
+
+### Terminal output, timing and the failure Ping
+
+- `--execute` opens with a banner (mode, source, start time, the tool's commit
+  and Python, the unit log), then prints each phase under a numbered rule
+  (wait for the cores, find the Mac, take the lock, fetch, write the steps,
+  build, bring the IPA back, publish) and closes it with `✓`/`✗` and its time.
+- Finding the Mac prints its macOS and Xcode versions, free disk and uptime
+  (`MAC_FACTS_SCRIPT`). The step list is printed numbered.
+- `mac_adhoc_build.sh` prints a `--- build Mac:` line (versions, free disk,
+  commit, first step) and, after each step, `<== <step> ok in N s` or
+  `!! <step> failed after N s`. The tool reads those lines, so step times are
+  the Mac's own and survive a reconnect replaying the log.
+- Every run ends with a Timing table: each phase, the Mac's steps under the
+  build phase, and the total.
+- The Mac's output passes through `relay`, which keeps every distinct line with
+  `error:`, `fatal:`, `ERROR:` or `!! ` (paths under `~/ci/tree/` shortened).
+  A failure prints a `✗ FAILED in "<phase>"` box with those lines (compiler
+  errors first; else the failing `mac.run`'s `fatal:`/`ERROR:` lines) and a
+  `Fix:` hint from `FAILURE_HINTS` (Swift error, fetch from the cores, cores
+  behind, Mac away, lock held, no IPA).
+- The same text goes to the admins as an operator Ping (`notify_failure`, key
+  `mac-adhoc-failure`, `POST /api/accounts/admin-operator-alert` on the
+  `MAC_BUILD_GIT_URL` host, signed with this desktop's node identity like
+  `next_autodeploy.Notifier`): title `<mode> failed: <phase>`, then the cause,
+  the fix, the commit, the Mac, the Mac run folder, the log and
+  `--status`. Stop, Ctrl-C, a cancelled run and a dry run send nothing; a Ping
+  that cannot be sent is logged and does not change the exit code.
 
 ## The macOS desktop shortcut
 
@@ -365,7 +396,8 @@ compile. Keep to these:
   type checker's budget.
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
-- Main-actor APIs called from static helpers need the helper marked
-  `@MainActor`.
+- Main-actor APIs called from static helpers or from a plain struct's `init`
+  need that helper or `init` marked `@MainActor` (the 2026-10-14 ad hoc build
+  failed on `PackageUninstallRequest.init` reading `AccountPackagesStore`).
 - `JSONValue` literals take only integer literals; wrap computed `Int`s as
   `JSONValue(x)`.
