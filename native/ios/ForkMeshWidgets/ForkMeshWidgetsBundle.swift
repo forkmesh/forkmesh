@@ -8,8 +8,7 @@ struct ForkMeshWidgetsBundle: WidgetBundle {
         AgentsWidget()
         InboxWidget()
         TimerWidget()
-        AgentRunLiveActivity()
-        TimerLiveActivity()
+        SummaryLiveActivity()
         WalkLiveActivity()
         if #available(iOS 18.0, *) {
             NewAgentControl()

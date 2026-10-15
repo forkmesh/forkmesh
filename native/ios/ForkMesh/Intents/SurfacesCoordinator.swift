@@ -6,6 +6,7 @@ import FMBase
 import FMControl
 import FMPlanning
 import FMSurfaces
+import FMTeammates
 import Foundation
 import Observation
 import UIKit
@@ -36,6 +37,7 @@ final class SurfacesCoordinator {
     private var lastWorkRefreshMs: Int64 = 0
     private var workTask: Task<Void, Never>?
     private var pickingUpShare = false
+    private var observingShortcuts = false
 
     init(services: AppServices) {
         self.services = services
@@ -68,6 +70,7 @@ final class SurfacesCoordinator {
         }
         observeAgents()
         observeApprovals()
+        observeShortcuts()
         watchActivities()
         sessionChanged()
         appResumed()
@@ -93,6 +96,19 @@ final class SurfacesCoordinator {
             Task { @MainActor [weak self] in
                 self?.schedulePublish()
                 self?.observeApprovals()
+            }
+        }
+    }
+
+    private func observeShortcuts() {
+        guard let store = TeammatesFeature.shortcuts else { return }
+        observingShortcuts = true
+        withObservationTracking {
+            _ = store.runs
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.schedulePublish()
+                self?.observeShortcuts()
             }
         }
     }
@@ -140,13 +156,24 @@ final class SurfacesCoordinator {
         }
         let agents: AgentsSurface = currentAgents()
         lastAgents = agents
+        if !observingShortcuts { observeShortcuts() }
         AgentVoiceSource.rowsChanged(HostsFeature.agents?.rows ?? [])
         let notifications: NotificationService = services.notifications
         let inbox: InboxSurface = InboxSurface.build(
             unread: notifications.unreadCount, notifications: notifications.notifications)
         write(SurfaceSnapshot(
             generatedAtMs: generated, signedIn: true, agents: agents, inbox: inbox, work: work, timer: timer))
-        updateAgentActivities(agents)
+        updateSummaryActivity(ActivitySummaryAttributes.ContentState.build(
+            agents: agents, shortcuts: currentShortcuts(), timer: timer, unread: notifications.unreadCount))
+    }
+
+    private func currentShortcuts() -> [ActivityShortcutInput] {
+        let runs: [ShortcutRun] = Services.get(ShortcutsStore.self)?.newestRuns ?? []
+        return runs.map { (run: ShortcutRun) -> ActivityShortcutInput in
+            ActivityShortcutInput(
+                id: run.id, title: run.title, repo: run.repo, running: run.running, startedAtMs: run.startedAtMs,
+                expectedMs: run.expectedMs)
+        }
     }
 
     private func write(_ snapshot: SurfaceSnapshot) {
@@ -161,61 +188,52 @@ final class SurfacesCoordinator {
         return !center.loading && center.desktopNote.isEmpty && center.cloudNote.isEmpty
     }
 
-    private func updateAgentActivities(_ agents: AgentsSurface) {
+    private func updateSummaryActivity(_ next: ActivitySummaryAttributes.ContentState) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        var existing: [String: AgentRunAttributes.ContentState] = [:]
-        var byKey: [String: Activity<AgentRunAttributes>] = [:]
-        for activity in Activity<AgentRunAttributes>.activities
-        where activity.activityState == .active || activity.activityState == .stale {
-            existing[activity.attributes.sessionId] = activity.content.state
-            byKey[activity.attributes.sessionId] = activity
+        let live: [Activity<ActivitySummaryAttributes>] = Activity<ActivitySummaryAttributes>.activities.filter {
+            $0.activityState == .active || $0.activityState == .stale
         }
-        let canStart: Bool = UIApplication.shared.applicationState == .active
-        let reliable: Bool = agentSourceReliable
-        for action in LiveActivityPlanner.plan(agents: agents, existing: existing, canStart: canStart) {
-            switch action {
-            case let .start(attributes, state):
-                do {
-                    _ = try Activity.request(
-                        attributes: attributes,
-                        content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(SurfacesCoordinator.staleActivityAfter)),
-                        pushType: nil)
-                } catch {
-                    Log.warning("surfaces", "Live Activity not started: \(error)")
-                }
-            case let .update(key, state):
-                guard let activity = byKey[key] else { continue }
-                let content = ActivityContent(
-                    state: state, staleDate: Date().addingTimeInterval(SurfacesCoordinator.staleActivityAfter))
-                Task { await activity.update(content) }
-            case let .end(key, state):
-                guard let activity = byKey[key] else { continue }
-                if state == nil && !reliable { continue }
-                let final: ActivityContent<AgentRunAttributes.ContentState>? = state.map {
-                    ActivityContent(state: $0, staleDate: nil)
-                }
-                endActivity(activity, final: final)
+        for extra in live.dropFirst() {
+            Task { await extra.end(nil, dismissalPolicy: .immediate) }
+        }
+        let current: Activity<ActivitySummaryAttributes>? = live.first
+        let canStart: Bool = UIApplication.shared.applicationState == .active && signedIn
+        guard let action = ActivitySummaryPlanner.plan(
+            next: next, current: current?.content.state, canStart: canStart, agentsReliable: agentSourceReliable)
+        else { return }
+        var stale: Date = Date().addingTimeInterval(SurfacesCoordinator.staleActivityAfter)
+        if let ends = next.timer?.endsAt { stale = max(stale, ends.addingTimeInterval(60)) }
+        switch action {
+        case let .start(state):
+            do {
+                _ = try Activity.request(
+                    attributes: ActivitySummaryAttributes(), content: ActivityContent(state: state, staleDate: stale),
+                    pushType: nil)
+            } catch {
+                Log.warning("surfaces", "Live Activity not started: \(error)")
             }
-        }
-    }
-
-    private func endActivity(
-        _ activity: Activity<AgentRunAttributes>, final: ActivityContent<AgentRunAttributes.ContentState>?
-    ) {
-        Task {
-            await activity.end(final, dismissalPolicy: .after(Date().addingTimeInterval(SurfacesCoordinator.dismissAfter)))
+        case let .update(state):
+            guard let current else { return }
+            Task { await current.update(ActivityContent(state: state, staleDate: stale)) }
+        case let .end(state):
+            guard let current else { return }
+            Task {
+                await current.end(
+                    ActivityContent(state: state, staleDate: nil),
+                    dismissalPolicy: .after(Date().addingTimeInterval(SurfacesCoordinator.dismissAfter)))
+            }
         }
     }
 
     private func watchActivities() {
         Task { [weak self] in
-            for await activity in Activity<AgentRunAttributes>.activityUpdates {
+            for await activity in Activity<ActivitySummaryAttributes>.activityUpdates {
                 self?.activityAppeared(activity)
             }
         }
     }
 
-    private func activityAppeared(_ activity: Activity<AgentRunAttributes>) {
+    private func activityAppeared(_ activity: Activity<ActivitySummaryAttributes>) {
         if !signedIn {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
         }
@@ -224,34 +242,6 @@ final class SurfacesCoordinator {
     private func timerChanged(_ snapshot: TimerActivitySnapshot?) {
         timer = snapshot
         schedulePublish()
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let current: [Activity<PlanningTimerAttributes>] = Activity<PlanningTimerAttributes>.activities
-        guard let snapshot else {
-            for activity in current {
-                Task { await activity.end(nil, dismissalPolicy: .immediate) }
-            }
-            return
-        }
-        let stale: Date? = snapshot.endsAt?.addingTimeInterval(60)
-        let content = ActivityContent(state: snapshot, staleDate: stale)
-        var matched = false
-        for activity in current {
-            if activity.attributes.timerId == snapshot.timerId && !matched {
-                matched = true
-                if activity.content.state != snapshot {
-                    Task { await activity.update(content) }
-                }
-            } else {
-                Task { await activity.end(nil, dismissalPolicy: .immediate) }
-            }
-        }
-        if matched || UIApplication.shared.applicationState != .active { return }
-        do {
-            _ = try Activity.request(
-                attributes: PlanningTimerAttributes(timerId: snapshot.timerId), content: content, pushType: nil)
-        } catch {
-            Log.warning("surfaces", "Timer Live Activity not started: \(error)")
-        }
     }
 
     private func sessionChanged() {
@@ -281,7 +271,7 @@ final class SurfacesCoordinator {
         ShareHandoffStore.appGroup()?.removeAll()
         ShareKeychainDrop().clear()
         _ = SurfaceCommandCenter.shared.drainPending()
-        for activity in Activity<AgentRunAttributes>.activities {
+        for activity in Activity<ActivitySummaryAttributes>.activities {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
         }
         write(SurfaceSnapshot.signedOut(at: now))
@@ -312,9 +302,10 @@ final class SurfacesCoordinator {
         lastRefreshMs = now
         Task {
             let configured: [WidgetInfo] = await SurfacesCoordinator.configuredWidgets()
-            let live: Bool = !Activity<AgentRunAttributes>.activities.isEmpty
+            let live: Bool = !Activity<ActivitySummaryAttributes>.activities.isEmpty
             if configured.isEmpty && !live { return }
             await center.refresh()
+            if live { await Services.get(ShortcutsStore.self)?.loadRun() }
         }
     }
 
