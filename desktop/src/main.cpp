@@ -600,6 +600,11 @@ int main(int argc, char *argv[])
         }
         if (qstrcmp(argv[i], "--tray") == 0)
             return forkmesh::tray::run(argc, argv);
+        if (qstrcmp(argv[i], "--headless") == 0) {
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+            qputenv("FORKMESH_NO_SPLASH", "1");
+            forkmesh::setBackgroundInstance();
+        }
         if (qstrcmp(argv[i], "--build-commit") == 0) {
             std::printf("%s\n", FORKMESH_BUILD_COMMIT);
             static const QRegularExpression exactCommit(
@@ -742,7 +747,21 @@ int main(int argc, char *argv[])
     {
         forkmesh::StartupTraceStep step(
             QStringLiteral("acquire the single-instance lock"));
-        if (!forkmesh::acquireSingleInstance(localActionLink)) {
+        bool takingOver = false;
+        const auto waitForBackgroundInstance = [&takingOver] {
+            if (!takingOver) {
+                takingOver = true;
+                forkmesh::logStartupTrace(QStringLiteral(
+                    "ForkMesh runs without a window; asked it to hand over"));
+                forkmesh::ui::showStartupSplash(QStringLiteral(FORKMESH_VERSION),
+                                                QStringLiteral(FORKMESH_BUILD_COMMIT));
+                forkmesh::ui::startupStep(QStringLiteral(
+                    "Taking over from ForkMesh running without a window"));
+            }
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 50);
+        };
+        if (!forkmesh::acquireSingleInstance(localActionLink,
+                                             waitForBackgroundInstance)) {
             qInfo().noquote()
                 << "ForkMesh is already running; focusing the existing window.";
             return 0;
@@ -1002,6 +1021,12 @@ int main(int argc, char *argv[])
     forkmesh::enableGracefulTerminationShutdown(&app, [&app, window]() {
         qInfo().noquote() << QStringLiteral(
             "Stop requested (SIGTERM/SIGINT): shutting down.");
+        window->close();
+        app.quit();
+    });
+    forkmesh::onSingleInstanceYield([&app, window]() {
+        qInfo().noquote() << QStringLiteral(
+            "ForkMesh without a window is handing over to a window: shutting down.");
         window->close();
         app.quit();
     });

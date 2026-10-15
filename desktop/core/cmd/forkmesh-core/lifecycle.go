@@ -138,7 +138,18 @@ func startDetached(args []string) int {
 }
 
 func background(args []string) int {
-	flags, project, stateDir, _, err := projectFlags("background", args)
+	return daemonToggle("background", "background", args, func(config *daemon.DaemonConfig) any { return config.Background },
+		func(config *daemon.DaemonConfig, on bool) { config.Background = on })
+}
+
+func headless(args []string) int {
+	return daemonToggle("headless", "headlessDesktop", args, func(config *daemon.DaemonConfig) any {
+		return config.HeadlessDesktop == nil || *config.HeadlessDesktop
+	}, func(config *daemon.DaemonConfig, on bool) { config.HeadlessDesktop = &on })
+}
+
+func daemonToggle(command, key string, args []string, get func(*daemon.DaemonConfig) any, set func(*daemon.DaemonConfig, bool)) int {
+	flags, project, stateDir, _, err := projectFlags(command, args)
 	if err != nil || flags.NArg() != 1 {
 		usage()
 		return 2
@@ -147,9 +158,9 @@ func background(args []string) int {
 	var params map[string]any
 	switch action {
 	case "on":
-		params = map[string]any{"background": true}
+		params = map[string]any{key: true}
 	case "off":
-		params = map[string]any{"background": false}
+		params = map[string]any{key: false}
 	case "status":
 	default:
 		usage()
@@ -177,7 +188,7 @@ func background(args []string) int {
 		_ = json.Unmarshal(raw, &config)
 	}
 	if params != nil {
-		config.Background = action == "on"
+		set(&config, action == "on")
 		config.UpdatedMs = time.Now().UnixMilli()
 		raw, _ := json.MarshalIndent(config, "", "  ")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -193,7 +204,7 @@ func background(args []string) int {
 			return 1
 		}
 	}
-	printJSON(map[string]any{"background": config.Background, "running": false, "configPath": path})
+	printJSON(map[string]any{key: get(&config), "running": false, "configPath": path})
 	return 0
 }
 

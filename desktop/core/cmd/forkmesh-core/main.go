@@ -30,6 +30,7 @@ Usage:
   forkmesh-core stop [--project <slug>]
   forkmesh-core start [--project <slug>]
   forkmesh-core background on|off|status [--project <slug>]
+  forkmesh-core headless on|off|status [--project <slug>]
   forkmesh-core autostart enable|disable|status [--project <slug>] [--binary <path>]
   forkmesh-core plugins list|sign|verify|trust [--project <slug>] [<package dir>|<signer key> [name]]
   forkmesh-core version
@@ -56,6 +57,8 @@ func main() {
 		os.Exit(startDetached(os.Args[2:]))
 	case "background":
 		os.Exit(background(os.Args[2:]))
+	case "headless":
+		os.Exit(headless(os.Args[2:]))
 	case "autostart":
 		os.Exit(autostartCommand(os.Args[2:]))
 	case "plugins":

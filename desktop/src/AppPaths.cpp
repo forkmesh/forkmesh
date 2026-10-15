@@ -1,6 +1,7 @@
 #include "AppPaths.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -799,7 +800,11 @@ QString singleInstanceServerName()
         state == join(home, QStringLiteral(".forkmesh")) ||
         state == join(home, QStringLiteral("projects/") + slug + QStringLiteral("/state"));
     if (!defaultPlace)
-        name += QLatin1Char('-') + QString::number(qHash(state, 0x464d), 16);
+        name += QLatin1Char('-') +
+                QString::fromLatin1(QCryptographicHash::hash(state.toUtf8(),
+                                                             QCryptographicHash::Sha256)
+                                        .toHex()
+                                        .left(16));
     return name;
 }
 

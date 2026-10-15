@@ -75,6 +75,12 @@ CoreDaemonSettings::CoreDaemonSettings(CoreClient *client, QWidget *parent)
         "without opening the window. On Linux it is a systemd user unit with lingering turned on, "
         "so it starts at boot before anyone logs in; on macOS (a login item) and Windows (the Run "
         "key) it starts when you sign in."));
+    m_headless = new QCheckBox(QStringLiteral("Run ForkMesh without a window while none is open"));
+    m_headless->setToolTip(QStringLiteral(
+        "While the background engine runs and no window is open, it starts ForkMesh without a "
+        "window, so your phone can list, start and prompt agents and use everything else the "
+        "desktop does. Opening ForkMesh takes over from it. Linux only."));
+    m_headless->hide();
     m_status = new QLabel;
     m_status->setObjectName(QStringLiteral("modeHint"));
     m_status->setWordWrap(true);
@@ -85,6 +91,7 @@ CoreDaemonSettings::CoreDaemonSettings(CoreClient *client, QWidget *parent)
     m_services->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(m_background);
     layout->addWidget(m_autostart);
+    layout->addWidget(m_headless);
     layout->addWidget(m_status);
     layout->addWidget(m_servicesLabel);
     layout->addLayout(m_services);
@@ -101,6 +108,10 @@ CoreDaemonSettings::CoreDaemonSettings(CoreClient *client, QWidget *parent)
         if (on && m_client)
             params.insert(QStringLiteral("binary"), QDir::cleanPath(m_client->binaryPath()));
         setDaemon(params);
+    });
+    connect(m_headless, &QCheckBox::toggled, this, [this](bool on) {
+        if (!m_applying)
+            setDaemon({{QStringLiteral("headlessDesktop"), on}});
     });
     if (m_client) {
         connect(m_client, &CoreClient::connectedChanged, this, [this](bool) { refresh(); });
@@ -121,6 +132,7 @@ void CoreDaemonSettings::refresh()
                            m_client->hasNativeRoute(QStringLiteral("core.daemon.get"));
     m_background->setEnabled(connected);
     m_autostart->setEnabled(connected);
+    m_headless->setEnabled(connected);
     if (!connected) {
         m_status->setText(m_client ? QStringLiteral("The background engine is not running.")
                                    : QStringLiteral("The background engine is turned off."));
@@ -148,6 +160,9 @@ void CoreDaemonSettings::applyState(const QJsonObject &state)
     m_background->setChecked(state.value(QStringLiteral("background")).toBool());
     const QJsonObject autostart = state.value(QStringLiteral("autostart")).toObject();
     m_autostart->setChecked(autostart.value(QStringLiteral("enabled")).toBool());
+    const QJsonObject headless = state.value(QStringLiteral("headlessDesktop")).toObject();
+    m_headless->setChecked(headless.value(QStringLiteral("enabled")).toBool());
+    m_headless->setVisible(headless.value(QStringLiteral("supported")).toBool());
     m_applying = false;
     QStringList parts;
     if (m_client)

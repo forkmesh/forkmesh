@@ -7,6 +7,7 @@
 #include "LocalControl.h"
 #include "MainWindow.h"
 #include "NodeEventSocket.h"
+#include "SingleInstance.h"
 #include "TrayMode.h"
 
 #include <QDialog>
@@ -14,15 +15,37 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSettings>
+#include <QTimer>
+
+namespace {
+
+constexpr int kBackgroundCoreWaitMs = 90000;
+
+}
 
 void MainWindow::startCoreClient()
 {
     forkmesh::corevault::install(this, [this](const QString &text) { logSystem(text); });
-    if (m_coreClient || forkmesh::core::disabledByEnvironment() ||
-        !QSettings().value(QStringLiteral("core/enabled"), true).toBool())
+    if (m_coreClient)
         return;
+    if (forkmesh::core::disabledByEnvironment() ||
+        !QSettings().value(QStringLiteral("core/enabled"), true).toBool()) {
+        if (forkmesh::isBackgroundInstance())
+            forkmesh::requestBackgroundQuit();
+        return;
+    }
     m_coreClient = new CoreClient(this);
     m_coreClient->setProject(forkmesh::paths::projectSlug());
+    if (forkmesh::isBackgroundInstance()) {
+        m_coreClient->setHeadless(true);
+        m_coreClient->setAutoLaunch(false);
+        QTimer::singleShot(kBackgroundCoreWaitMs, this, [this] {
+            if (m_coreClient && m_coreClient->isConnected())
+                return;
+            logSystem(QStringLiteral("ForkMesh without a window found no background engine; quitting."));
+            forkmesh::requestBackgroundQuit();
+        });
+    }
     connect(m_coreClient, &CoreClient::logLine, this,
             [this](const QString &text) { logSystem(text); });
     connect(m_coreClient, &CoreClient::connectedChanged, this,
@@ -53,6 +76,11 @@ void MainWindow::sendCoreControlInfo()
 
 void MainWindow::onCoreConnectedChanged(bool connected)
 {
+    if (!connected && forkmesh::isBackgroundInstance()) {
+        logSystem(QStringLiteral("The background engine stopped; ForkMesh without a window quits with it."));
+        forkmesh::requestBackgroundQuit();
+        return;
+    }
     if (connected && m_coreClient &&
         m_coreClient->stateDirectory() == forkmesh::core::defaultStateDirectory())
         forkmesh::tray::launch();
