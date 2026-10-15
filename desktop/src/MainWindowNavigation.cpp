@@ -652,10 +652,10 @@ QWidget *MainWindow::buildBreadcrumb()
     });
 
     auto *resourceChart = new ResourceQuadrantSparkline;
-    for (ResourceQuadrantSparkline::Resource resource : {
-             ResourceQuadrantSparkline::Cpu, ResourceQuadrantSparkline::Swap}) {
-        resourceChart->setClickHandler(resource, [this] { showDiagnosticsDialog(); });
-    }
+    resourceChart->setClickHandler(ResourceQuadrantSparkline::Cpu,
+                                   [this] { showDesktopResourceDiagnostics(); });
+    resourceChart->setClickHandler(ResourceQuadrantSparkline::Swap,
+                                   [this] { showDiagnosticsDialog(); });
     resourceChart->setClickHandler(ResourceQuadrantSparkline::Memory,
                                    [this] { showHighMemoryProcessPanel(); });
     resourceChart->setClickHandler(ResourceQuadrantSparkline::Disk, [this] {
