@@ -8191,6 +8191,7 @@ private:
                                      const QStringList &merged,
                                      const QStringList &mergedRemote);
     void deleteSelectedBranches();
+    void refreshBranchesFromRemotes();
     QWidget *buildReleasesTab();
     void loadReleasesPanel();
     void promptNewRelease();
@@ -12394,6 +12395,8 @@ private:
     QLabel *m_branchesSummary = nullptr;
     QPushButton *m_branchPullAllButton = nullptr; // safe bulk fast-forward action
     QPushButton *m_branchDeleteMergedButton = nullptr; // "Delete merged" header action
+    QPushButton *m_branchDeleteSelectedButton = nullptr;
+    bool m_branchRefreshRunning = false;
     QTextBrowser *m_branchDiffView = nullptr;
     QString m_branchDiffBranch;
     int m_branchDiffPullNumber = -1;
