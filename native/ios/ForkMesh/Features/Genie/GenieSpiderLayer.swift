@@ -444,12 +444,16 @@ struct GenieSpiderLayer: View {
                     hub.openBubble()
                 }
                 .transition(.move(edge: onLeft ? .trailing : .leading).combined(with: .opacity))
+            } else if hub.alwaysListening && DictationMeter.shared.voicing && !hub.busy {
+                GenieWavePill()
+                    .transition(.move(edge: onLeft ? .trailing : .leading).combined(with: .opacity))
             }
         }
         .frame(width: bubbleWidth, alignment: onLeft ? .trailing : .leading)
         .fixedSize(horizontal: false, vertical: true)
         .offset(x: onLeft ? -reach : reach)
         .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: hub.ticker?.id)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: DictationMeter.shared.voicing)
     }
 
     @ViewBuilder private var spoken: some View {
