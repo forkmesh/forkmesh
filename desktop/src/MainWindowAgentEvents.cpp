@@ -1,4 +1,6 @@
 
+#include "CoreAgentRun.h"
+#include "CoreAgentStore.h"
 #include "MainWindow.h"
 #include "AgentActivityFeed.h"
 #include "AgentLogText.h"
@@ -583,10 +585,11 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     // enter a UI buffer, the persistent transcript store, an owner-sealed sync
     // snapshot, or a copyable raw-output surface. This is intentionally at the
     // common ingestion point so future stream providers cannot bypass it.
-    QJsonObject ev =
-        redactProviderCredentials(
-            QJsonValue(event), localProviderCredentialValues())
-            .toObject();
+    const bool storedByCore = forkmesh::coreagentrun::deliveringStored(event);
+    QJsonObject ev = storedByCore ? event
+                                  : redactProviderCredentials(
+                                        QJsonValue(event), localProviderCredentialValues())
+                                        .toObject();
     if (const QString accountId = m_streamAccountId.value(sessionId);
         !accountId.isEmpty() &&
         (!ev.value(QStringLiteral("session_id")).toString().isEmpty() ||
@@ -617,7 +620,8 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     recordAgentToolEfficiency(sessionId, ev);
     if (const auto streamInfo = m_streamSessionInfo.constFind(sessionId);
         m_agentStore && streamInfo != m_streamSessionInfo.constEnd()) {
-        m_agentStore->appendEvent(*streamInfo, ev);
+        if (!storedByCore)
+            m_agentStore->appendEvent(*streamInfo, ev);
         const QString etype = ev.value(QStringLiteral("type")).toString();
         QString logText;
         if (etype == QLatin1String("_local_user")) {
@@ -634,7 +638,9 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         } else if (etype == QLatin1String("user")) {
             logText = AgentLogText::userEvent(ev);
         }
-        if (!logText.isEmpty())
+        if (!logText.isEmpty() && storedByCore)
+            forkmesh::coreagentstore::notifyLogAppended(sessionId);
+        else if (!logText.isEmpty())
             m_agentStore->appendLog(*streamInfo, logText);
     }
 
@@ -1654,7 +1660,8 @@ bool MainWindow::applyCliExitWithoutResult(int sessionId, bool codex, int exitCo
 void MainWindow::markAgentSessionRunning(int sessionId)
 {
     m_agentResultAwaitingCliTasks.remove(sessionId);
-    m_agentCompletionChecks.remove(sessionId);
+    if (m_agentCompletionChecks.remove(sessionId))
+        cancelCoreBackgroundWork(sessionId);
     m_agentBackgroundWork.remove(sessionId);
     applyAgentBackgroundWork();
     m_agentRelaunchAttempts.remove(sessionId);
@@ -1700,6 +1707,8 @@ void MainWindow::completeAgentSessionWhenSubprocessesExit(int sessionId)
     // back on the GUI thread; the re-arm below keeps one scan per session in
     // flight.
     const qint64 processId = agentSessionProcessId(sessionId);
+    if (watchCoreBackgroundWork(sessionId, processId))
+        return;
     runOffThread<QList<SystemStats::DescendantProcess>>(
         [processId] { return SystemStats::descendantProcesses(processId); },
         [this, sessionId](QList<SystemStats::DescendantProcess> subprocesses) {
@@ -1909,7 +1918,8 @@ QString MainWindow::agentBackgroundWorkNote(int sessionId) const
 // user: flag the session "Waiting" in the list and raise a top-bar notification.
 void MainWindow::notifyAgentWaiting(int sessionId, bool needsPermission)
 {
-    m_agentCompletionChecks.remove(sessionId);
+    if (m_agentCompletionChecks.remove(sessionId))
+        cancelCoreBackgroundWork(sessionId);
     m_agentBackgroundWork.remove(sessionId);
     applyAgentBackgroundWork();
     AgentSession *s = findAgentSession(sessionId);

@@ -174,6 +174,8 @@ private:
 const NativePackageContribution *nativePackageContribution(
     const QString &entrypoint, const QString &packageType = QString());
 QList<QString> nativePackageEntrypoints();
+void setNativePackageLoader(std::function<bool(const QString &entrypoint)> loader);
+void unregisterNativePackageEntrypoint(const QString &entrypoint);
 
 // Lifecycle paths are host-owned because the host enforces the matching
 // package boundary. Keeping construction and validation beside that boundary

@@ -1,4 +1,5 @@
 #include "ActionRunner.h"
+#include "ActionSandboxClaims.h"
 #include "AgentResources.h"
 
 #include "CrashHandler.h"
@@ -118,12 +119,15 @@ void releaseSandboxClaim(const QString &root)
 {
     if (root.isEmpty())
         return;
+    forkmesh::actions::unlockSandboxClaim(root);
     QMutexLocker locker(&liveSandboxMutex());
     liveSandboxRoots().remove(QFileInfo(root).fileName());
 }
 
 bool sandboxIsClaimed(const QString &name)
 {
+    if (forkmesh::actions::coreClaimedSandboxes().contains(name))
+        return true;
     QMutexLocker locker(&liveSandboxMutex());
     return liveSandboxRoots().contains(name);
 }
@@ -497,6 +501,8 @@ ActionSandboxSweep ActionRunner::reclaimSandboxes(const QString &base,
             if (sandboxIsClaimed(name))
                 continue;
             const QString path = dir.absoluteFilePath(name);
+            if (forkmesh::actions::sandboxClaimedElsewhere(path))
+                continue;
             // Both prefixes end in "-<ms>"; a tree whose name says nothing is
             // aged by its own timestamp rather than kept forever.
             bool parsed = false;
@@ -520,8 +526,10 @@ ActionSandboxSweep ActionRunner::reclaimSandboxes(const QString &base,
 
 QSet<QString> ActionRunner::claimedSandboxNames()
 {
+    QSet<QString> names = forkmesh::actions::coreClaimedSandboxes();
     QMutexLocker locker(&liveSandboxMutex());
-    return liveSandboxRoots();
+    names.unite(liveSandboxRoots());
+    return names;
 }
 
 QString ActionRunner::removeUnclaimedSandbox(const QString &base, const QString &path)
@@ -537,7 +545,7 @@ QString ActionRunner::removeUnclaimedSandbox(const QString &base, const QString 
     if (!name.startsWith(QLatin1String("forkmesh-run-")) &&
         !name.startsWith(kSandboxDiscardPrefix))
         return QStringLiteral("%1 is not an Actions sandbox tree").arg(path);
-    if (sandboxIsClaimed(name))
+    if (sandboxIsClaimed(name) || forkmesh::actions::sandboxClaimedElsewhere(path))
         return QStringLiteral("a running Action still uses %1").arg(name);
     QString why;
     if (!forkmesh::safedelete::removeTree(path, root, &why,
@@ -622,6 +630,9 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
                          const QMap<QString, QString> &variables)
 {
     if (m_busy)
+        return;
+    if (m_coreLink &&
+        m_coreLink->start(run, workflow, mirrorPath, workTreePath, variables))
         return;
     m_busy = true;
     m_stopping = false;
@@ -716,6 +727,7 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
         m_sandboxRoot,
         QFileDevice::ReadOwner | QFileDevice::WriteOwner |
             QFileDevice::ExeOwner);
+    forkmesh::actions::lockSandboxClaim(m_sandboxRoot);
 
     // Everything above is discarded when the run ends, so a C++ build starts
     // with no objects and a cold ccache every time — around fifteen minutes
@@ -865,6 +877,8 @@ bool ActionRunner::retryCheckoutAfterWorktreeRace()
 void ActionRunner::stop()
 {
     if (!m_busy)
+        return;
+    if (m_coreRun && m_coreLink && m_coreLink->stop())
         return;
     m_stopping = true;
     emitLog(QString());

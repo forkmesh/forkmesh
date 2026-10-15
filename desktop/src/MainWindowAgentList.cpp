@@ -20,6 +20,7 @@
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
+#include "CoreAgentPages.h"
 #include "NodeEventSocket.h"
 #include "UsageLimitCalendar.h"
 
@@ -443,6 +444,7 @@ void MainWindow::initAgents()
     }
     m_agentSessions = m_agentStore->loadAllSessions();
     for (AgentSession &session : m_agentSessions) {
+        const bool coreAdopted = adoptCoreAgentAtStartup(session);
         // No process survives a ForkMesh restart. Put a prompt that was handed
         // to a not-yet-announced process back in front of the pending prompts,
         // then keep that durable combined value mirrored in memory for the
@@ -480,7 +482,7 @@ void MainWindow::initAgents()
             m_agentStore->saveSession(session);
             continue;
         }
-        if (session.status == AgentStatus::Running) {
+        if (session.status == AgentStatus::Running && !coreAdopted) {
             session.status = AgentStatus::Queued;
             session.lastError.clear();
             session.finishedAtMs = 0;
@@ -830,6 +832,16 @@ void MainWindow::runAgentTranscriptSearch()
                 QStringLiteral("search agent transcripts"),
                 forkmesh::ActionTelemetry::Execution::Worker);
             QHash<int, AgentTranscriptHit> hits;
+            QHash<int, forkmesh::coreagents::TranscriptHit> routed;
+            if (forkmesh::coreagents::searchTranscripts(store, sessions, query, &routed)) {
+                for (auto it = routed.cbegin(); it != routed.cend(); ++it) {
+                    AgentTranscriptHit hit;
+                    hit.count = it->count;
+                    hit.snippet = it->snippet;
+                    hits.insert(it.key(), hit);
+                }
+                return hits;
+            }
             for (const AgentSession &session : sessions) {
                 AgentTranscriptHit hit;
                 hit.count = store.searchTranscript(session, query, &hit.snippet);
@@ -1168,6 +1180,7 @@ void MainWindow::showAgentSessionImages(int sessionId)
 void MainWindow::refreshAgentTable()
 {
     scheduleTeammateRailRefresh();
+    scheduleCoreAgentModelPush();
     if (!m_agentTable)
         return;
     if (m_agentTableRefreshing)
@@ -1430,6 +1443,56 @@ void MainWindow::startAgentDiffStatsRefresh(const QList<AgentSession> &sessions,
                     QStringLiteral("refresh diff and worktree status"),
                     forkmesh::ActionTelemetry::Execution::Worker);
                 AgentDiffBatch batch;
+                const auto postStat = [this, generation, repoIndex](int id, const AgentDiffStat &stat,
+                                                                    const QString &signature) {
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, generation, repoIndex, id, stat, signature] {
+                            applyAgentDiffStatResult(generation, repoIndex, id, stat, signature);
+                        },
+                        Qt::QueuedConnection);
+                };
+                const auto fromCore = [](const forkmesh::coreagents::DiffStat &in) {
+                    AgentDiffStat out;
+                    out.files = in.files;
+                    out.ahead = in.ahead;
+                    out.behind = in.behind;
+                    out.conflicted = in.conflicted;
+                    out.base = in.base;
+                    out.worktree = in.worktree;
+                    out.dirty = in.dirty;
+                    out.added = in.added;
+                    out.removed = in.removed;
+                    return out;
+                };
+                {
+                    QList<AgentSession> mine;
+                    for (const AgentSession &session : sessions)
+                        if (session.owner == owner && session.name == name)
+                            mine.append(session);
+                    forkmesh::coreagents::DiffRequest request;
+                    request.gitDir = agentGitDir;
+                    request.configuredBase = configuredBase;
+                    request.checkedOut = checkedOut;
+                    request.selectedSessionId = selectedSessionId;
+                    request.oldSignatures = oldSignatures;
+                    request.cachedIds = cachedIds;
+                    forkmesh::coreagents::DiffResult routed;
+                    if (forkmesh::coreagents::diffStats(
+                            store, mine, request,
+                            [&postStat, &fromCore](int id, const forkmesh::coreagents::DiffStat &stat,
+                                                   const QString &signature) {
+                                postStat(id, fromCore(stat), signature);
+                            },
+                            &routed)) {
+                        batch.base = routed.base;
+                        for (auto it = routed.stats.cbegin(); it != routed.stats.cend(); ++it)
+                            batch.stats.insert(it.key(), fromCore(it.value()));
+                        batch.signatures = routed.signatures;
+                        batch.liveIds = routed.liveIds;
+                        return batch;
+                    }
+                }
                 batch.base = backgroundDefaultBranch(
                     agentGitDir, configuredBase, checkedOut);
                 const QHash<QString, QString> worktrees =

@@ -1,6 +1,6 @@
 # FMMiniApps
 
-Mini-apps: the owner's desktop background services ([service plug-ins](../../../desktop_go_new/docs/service-plugins.md))
+Mini-apps: the owner's desktop background services ([service plug-ins](../../../docs/desktop/service-plugins.md))
 shown on the phone as native SwiftUI cards. `import FMMiniApps` (with `FMControl` for the link
 and `FMBase` for JSON). The screens are `ForkMesh/Features/MiniApps/` (Desktop → Background
 services).

@@ -1,5 +1,7 @@
 
 #include "ForkMeshVersion.h"
+#include "CoreDiag.h"
+#include "CoreVitals.h"
 #include "Tooltips.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
@@ -383,9 +385,14 @@ void MainWindow::updateFooterDiagnostics()
     }
     double cpuPct = -1.0;
     long rssMb = -1;
+    const bool coreApp = forkmesh::corevitals::appCpuPercent(&cpuPct);
+    if (coreApp) {
+        rssMb = long(forkmesh::corevitals::residentBytes() / (1024 * 1024));
+        m_diagLastCpuTicks = 0;
+    }
 #if defined(__linux__)
     QFile stat(QStringLiteral("/proc/self/stat"));
-    if (stat.open(QIODevice::ReadOnly)) {
+    if (!coreApp && stat.open(QIODevice::ReadOnly)) {
         const QByteArray s = stat.readAll();
         const int rp = s.lastIndexOf(')'); // comm field may hold spaces/parens
         const QList<QByteArray> f = s.mid(rp + 2).split(' ');
@@ -404,7 +411,7 @@ void MainWindow::updateFooterDiagnostics()
         }
     }
     QFile statm(QStringLiteral("/proc/self/statm"));
-    if (statm.open(QIODevice::ReadOnly)) {
+    if (!coreApp && statm.open(QIODevice::ReadOnly)) {
         const QList<QByteArray> p = statm.readAll().split(' ');
         if (p.size() > 1)
             rssMb = static_cast<long>((p.at(1).toULongLong() * sysconf(_SC_PAGESIZE)) /
@@ -425,8 +432,8 @@ void MainWindow::updateFooterDiagnostics()
     }
     double hostMemoryPct = -1.0;
     if (resources) {
-        const qint64 total = SystemStats::totalMemoryBytes();
-        const qint64 avail = SystemStats::availableMemoryBytes();
+        const qint64 total = forkmesh::corevitals::totalMemoryBytes();
+        const qint64 avail = forkmesh::corevitals::availableMemoryBytes();
         double pct = -1.0;
         if (total > 0 && avail >= 0 && avail <= total)
             pct = 100.0 * double(total - avail) / double(total);
@@ -455,8 +462,8 @@ void MainWindow::updateFooterDiagnostics()
                 : QStringLiteral("Host memory in use"));
     }
     if (resources) {
-        const qint64 total = SystemStats::totalSwapBytes();
-        const qint64 free = SystemStats::freeSwapBytes();
+        const qint64 total = forkmesh::corevitals::totalSwapBytes();
+        const qint64 free = forkmesh::corevitals::freeSwapBytes();
         double pct = -1.0;
         if (total > 0 && free >= 0 && free <= total)
             pct = 100.0 * double(total - free) / double(total);
@@ -486,8 +493,8 @@ void MainWindow::updateFooterDiagnostics()
 #endif
     if (resources) {
         const QString path = QDir::homePath();
-        const qint64 total = SystemStats::diskTotalBytes(path);
-        const qint64 free = SystemStats::diskFreeBytes(path);
+        const qint64 total = forkmesh::corevitals::diskTotalBytes(path);
+        const qint64 free = forkmesh::corevitals::diskFreeBytes(path);
         double pct = -1.0;
         if (total > 0 && free >= 0 && free <= total)
             pct = 100.0 * double(total - free) / double(total);
@@ -519,8 +526,8 @@ void MainWindow::updateFooterDiagnostics()
 
 void MainWindow::checkFileDescriptorPressure()
 {
-    const int limit = SystemStats::openFileSoftLimit();
-    const int open = SystemStats::openFileCount();
+    const int limit = forkmesh::corevitals::openFileSoftLimit();
+    const int open = forkmesh::corevitals::openFileCount();
     if (limit <= 0 || open <= 0)
         return; // platform doesn't expose them; nothing to police
     const double used = 100.0 * double(open) / double(limit);
@@ -533,7 +540,7 @@ void MainWindow::checkFileDescriptorPressure()
                       .arg(open)
                       .arg(limit)
                       .arg(used, 0, 'f', 0)
-                      .arg(SystemStats::threadCount()));
+                      .arg(forkmesh::corevitals::threadCount()));
     } else if (used < 55.0) {
         m_fdPressureAlertArmed = true;
     }
@@ -836,6 +843,7 @@ void MainWindow::onUiStall(qint64 peakMs, const QString &stallId,
     m_stallLog.append(entry);
     while (m_stallLog.size() > 100)
         m_stallLog.removeFirst();
+    forkmesh::corediag::pushStall(entry);
     updateFooterDiagnostics();
     maybeTriggerStallMonitoringTeammates();
 }
@@ -928,6 +936,7 @@ void MainWindow::clearStallLog()
 {
     m_stallCount = 0;
     m_stallLog.clear();
+    forkmesh::corediag::clearStalls();
     m_triggeredTeammateLogMonitors.clear();
     m_lastStallReportSignature.clear();
     m_lastStallReportMs = 0;
@@ -2179,8 +2188,8 @@ void MainWindow::continueHighMemoryAutoKill(qint64 pid, int waitedSeconds)
     if (!m_highMemoryDialog || !m_highMemoryAutoKilledPids.contains(pid) ||
         !QSettings().value(kHighMemoryAutoKillSetting, false).toBool())
         return;
-    const qint64 total = SystemStats::totalMemoryBytes();
-    const qint64 avail = SystemStats::availableMemoryBytes();
+    const qint64 total = forkmesh::corevitals::totalMemoryBytes();
+    const qint64 avail = forkmesh::corevitals::availableMemoryBytes();
     if (total <= 0 || avail < 0 || avail > total) {
         endHighMemoryAutoKill();
         return;

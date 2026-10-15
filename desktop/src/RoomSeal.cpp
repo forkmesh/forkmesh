@@ -12,6 +12,8 @@
 #include <QRegularExpression>
 #include <QMutex>
 #include <QSettings>
+
+#include "SettingsSecretBackend.h"
 #include <QTimer>
 #include <QUrl>
 
@@ -410,16 +412,20 @@ RoomSeal::RoomSeal(const QString &roomName, const QString &storageScope)
     // not remain in settings after this room upgrades.
     forkmesh::settings::drop(settings, legacyPhraseSetting(m_roomName));
     QByteArray privateKey = QByteArray::fromBase64(
-        settings.value(privateKeySetting()).toByteArray());
+        forkmesh::settingsecrets::value(settings, privateKeySetting()).toLatin1());
     if (privateKey.size() != kKeyBytes) {
         privateKey = randomBytes(kKeyBytes);
-        settings.setValue(privateKeySetting(), privateKey.toBase64());
+        forkmesh::settingsecrets::store(settings, privateKeySetting(),
+                                        QString::fromLatin1(privateKey.toBase64()),
+                                        privateKey.toBase64());
     }
     if (!initialize(privateKey, true)) {
         // A corrupt/unsupported stored key is replaced once. Failure after
         // that leaves the room closed rather than falling back to plaintext.
         privateKey = randomBytes(kKeyBytes);
-        settings.setValue(privateKeySetting(), privateKey.toBase64());
+        forkmesh::settingsecrets::store(settings, privateKeySetting(),
+                                        QString::fromLatin1(privateKey.toBase64()),
+                                        privateKey.toBase64());
         initialize(privateKey, true);
     }
 }

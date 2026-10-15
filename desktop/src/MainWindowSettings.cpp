@@ -1,9 +1,12 @@
 
 #include "AwsSettingsPanel.h"
+#include "CoreDaemonSettings.h"
 #include "HiddenTerms.h"
 #include "OfficeChannelMirror.h"
 #include "ProcessReaper.h"
 #include "CoreNodeLogs.h"
+#include "CoreOps.h"
+#include "CoreStats.h"
 #include "PingSettingsPanel.h"
 #include "AgentResources.h"
 #include "AdBannerModel.h"
@@ -3845,6 +3848,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     startupGroup->addWidget(parts.autoUpdateCheck);
     startupGroup->addWidget(parts.autoRestartCheck);
     startupGroup->addWidget(parts.reopenAfterCloseCheck);
+    startupGroup->addWidget(new CoreDaemonSettings(m_coreClient));
 
     auto *agentBehaviourLabel = new QLabel("AGENT BEHAVIOUR");
     agentBehaviourLabel->setObjectName("sectionLabel");
@@ -6133,6 +6137,8 @@ void MainWindow::rebuildAndRelaunch()
         m_rebuildButton->setEnabled(true);
         return;
     }
+    if (startCoreCleanRebuild(clientDir))
+        return;
     setRestartPhase(QStringLiteral("clearing the build cache"));
     setUpdateStatus("Clearing build cache...");
     const QString refused =
@@ -6149,6 +6155,8 @@ void MainWindow::rebuildAndRelaunch()
 
 void MainWindow::maybeAutoUpdate()
 {
+    if (coreOpsAttached() && forkmesh::coreops::can(this, QStringLiteral("autoUpdate")))
+        return;
     if (!QSettings().value(kAutoUpdateSetting, false).toBool())
         return;
     if (!QSettings().value(kAutoUpdateRestartSetting, true).toBool())
@@ -9445,6 +9453,7 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
     // Counted once, here, whatever happens to it later: the digest is what the
     // 7- and 30-day views draw from once this line has aged out of the buffer.
     noteNetworkLogDigestLine(now.toMSecsSinceEpoch(), badge);
+    forkmesh::corestats::noteLogLine(m_coreClient, line, badge);
 
     queueNetworkLogAppend(line);
     ++m_networkLogDiskLines;

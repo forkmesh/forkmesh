@@ -88,10 +88,29 @@ def desktop_token(path=None) -> str:
         if raw.startswith("@ByteArray(") and raw.endswith(")"):
             raw = raw[len("@ByteArray("):-1]
         try:
-            return str(json.loads(raw).get("CODEMAGIC_API_TOKEN") or "")
+            token = str(json.loads(raw).get("CODEMAGIC_API_TOKEN") or "")
         except ValueError:
             return ""
+        if token.strip() == VAULT_MARKER:
+            return vault_token(Path(path or DESKTOP_CONF))
+        return token
     return ""
+
+
+VAULT_MARKER = "[stored in the ForkMesh vault]"
+
+
+def vault_token(conf: Path) -> str:
+    import forkmesh_desktop_vault
+
+    data = conf.resolve().parents[2] / "data"
+    try:
+        values = forkmesh_desktop_vault.read_namespace(
+            forkmesh_desktop_vault.vault_path(data), forkmesh_desktop_vault.identity_path(data), "actions")
+    except (ImportError, OSError, forkmesh_desktop_vault.VaultError):
+        return ""
+    found = values.get("CODEMAGIC_API_TOKEN")
+    return found[0].decode("utf-8", "replace").strip() if found else ""
 
 
 def api_token() -> str:

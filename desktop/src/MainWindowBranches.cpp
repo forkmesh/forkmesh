@@ -1,4 +1,5 @@
 
+#include "CoreGit.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "SecretDiffBanner.h"
@@ -1737,6 +1738,24 @@ void startDetachedGit(DetachedGitRequest request)
     watcher->setFuture(QtConcurrent::run(
         [processRequest = std::move(processRequest), cancelled,
          source = request.source] {
+            forkmesh::coregit::DetachedRequest routed;
+            routed.dir = processRequest.workingDirectory;
+            routed.args = processRequest.arguments;
+            routed.timeoutMs = processRequest.timeoutMs;
+            routed.mergeStderr = processRequest.channelMode == QProcess::MergedChannels;
+            routed.detail = processRequest.activityDetail;
+            routed.routine = processRequest.activityRoutine;
+            routed.queuedMs = processRequest.activityQueuedMs;
+            routed.source = source;
+            forkmesh::coregit::DetachedResult viaCore;
+            if (!cancelled->load(std::memory_order_relaxed) &&
+                forkmesh::coregit::runDetached(routed, &viaCore)) {
+                WorkerProcessResult result;
+                result.started = true;
+                result.ok = viaCore.ok;
+                result.output = viaCore.output;
+                return result;
+            }
             return runWorkerProcess(processRequest, cancelled, source);
         }));
 }

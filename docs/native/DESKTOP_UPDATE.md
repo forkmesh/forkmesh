@@ -74,3 +74,16 @@ back.
 
 A desktop too old to have the family answers `unsupported`; the page then
 says to update it once on the desktop instead of showing the button.
+
+## With forkmesh-core
+
+Since issue 1336, a desktop attached to `forkmesh-core` hands the rebuild to
+the core (`desktop/core/internal/update`,
+[README](../desktop/core.md#rebuild--restart-backups-and-cleanup)).
+The core answers the `update.` family itself, with the same JSON, and the
+relay or LAN link to the phone stays up through the restart, because the
+phone talks to the core, not to the desktop. `startedAtMs` and `version`
+still describe the desktop process, so the restart detection above is
+unchanged. If the desktop quits while the build runs, the core finishes the
+build and starts the desktop again. A failed pull stops the run and leaves the
+checkout untouched, as before.

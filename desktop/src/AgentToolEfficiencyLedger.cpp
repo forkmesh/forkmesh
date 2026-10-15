@@ -5,6 +5,7 @@
 #include "AgentTokenPricing.h"
 #include "AgentToolCatalog.h"
 #include "AgentToolImprovementLog.h"
+#include "CoreInsightsHook.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -74,6 +75,24 @@ bool fromJsonArray(const QJsonValue &value, QVector<qint64> *out, int cap)
     return true;
 }
 
+QJsonObject toolBlocksOnly(const QJsonObject &event)
+{
+    const QString type = event.value(QStringLiteral("type")).toString();
+    const QString wanted = type == QLatin1String("assistant") ? QStringLiteral("tool_use")
+                                                             : QStringLiteral("tool_result");
+    QJsonArray blocks;
+    for (const QJsonValue &value : event.value(QStringLiteral("message"))
+                                       .toObject()
+                                       .value(QStringLiteral("content"))
+                                       .toArray())
+        if (value.toObject().value(QStringLiteral("type")).toString() == wanted)
+            blocks.append(value);
+    if (blocks.isEmpty())
+        return {};
+    return {{QStringLiteral("type"), type},
+            {QStringLiteral("message"), QJsonObject{{QStringLiteral("content"), blocks}}}};
+}
+
 } // namespace
 
 AgentToolEfficiencyLedger::AgentToolEfficiencyLedger(QString persistPath)
@@ -141,6 +160,19 @@ QString AgentToolEfficiencyLedger::pendingKey(int sessionId,
 bool AgentToolEfficiencyLedger::ingest(const SessionContext &context,
                                        const QJsonObject &event, qint64 nowMs)
 {
+    if (forkmesh::coreinsights::owns(m_persistPath)) {
+        if (forkmesh::coreinsights::deliveringCoreEvent())
+            return false;
+        const QJsonObject reduced = toolBlocksOnly(event);
+        if (!reduced.isEmpty())
+            forkmesh::coreinsights::forward(QStringLiteral("core.insights.ingest"),
+                                            {{QStringLiteral("sessionId"), context.sessionId},
+                                             {QStringLiteral("provider"), context.provider},
+                                             {QStringLiteral("model"), context.model},
+                                             {QStringLiteral("workdir"), context.workdir},
+                                             {QStringLiteral("event"), reduced}});
+        return false;
+    }
     const qint64 now = nowOr(nowMs);
     const QString type = event.value(QStringLiteral("type")).toString();
     const QJsonArray content = event.value(QStringLiteral("message"))
@@ -386,6 +418,12 @@ AgentToolEfficiencyLedger::observationFor(const PendingCall &call)
 
 void AgentToolEfficiencyLedger::setDisabledFamilies(const QSet<QString> &families)
 {
+    if (forkmesh::coreinsights::owns(m_persistPath)) {
+        QStringList sorted(families.cbegin(), families.cend());
+        sorted.sort();
+        forkmesh::coreinsights::forward(QStringLiteral("core.insights.disabled"),
+                                        {{QStringLiteral("families"), QJsonArray::fromStringList(sorted)}});
+    }
     if (m_disabled == families)
         return;
     m_disabled = families;
@@ -394,6 +432,12 @@ void AgentToolEfficiencyLedger::setDisabledFamilies(const QSet<QString> &familie
 
 void AgentToolEfficiencyLedger::abandonSession(int sessionId, qint64 nowMs)
 {
+    if (forkmesh::coreinsights::owns(m_persistPath)) {
+        if (!forkmesh::coreinsights::deliveringCoreEvent())
+            forkmesh::coreinsights::forward(QStringLiteral("core.insights.abandon"),
+                                            {{QStringLiteral("sessionId"), sessionId}});
+        return;
+    }
     m_lastCompletion.remove(sessionId);
     QVector<AgentToolCallObservation> abandoned;
     for (auto it = m_pending.begin(); it != m_pending.end();) {
@@ -576,6 +620,8 @@ void AgentToolEfficiencyLedger::bumpActivity(qint64 nowMs, qint64 savedTokens)
 
 void AgentToolEfficiencyLedger::notify()
 {
+    if (!forkmesh::coreinsights::owns(m_persistPath))
+        forkmesh::coreinsights::hooks().toolsLocalDirty = true;
     if (changed)
         changed();
 }
@@ -764,6 +810,8 @@ bool AgentToolEfficiencyLedger::fromJson(const QJsonObject &json, QString *error
             !fromJsonArray(o.value(QStringLiteral("recentSaved")), &s.recentSaved,
                            kRecentSamples))
             return fail(error, QStringLiteral("ledger recentSaved invalid"));
+        if (const QJsonValue inFlight = o.value(QStringLiteral("inFlight")); inFlight.isDouble())
+            s.inFlight = nonNegative(inFlight);
         const QJsonObject names = o.value(QStringLiteral("runtimeNames")).toObject();
         for (auto n = names.constBegin(); n != names.constEnd(); ++n)
             if (n.value().isDouble() && n.value().toDouble() > 0)
@@ -864,6 +912,8 @@ bool AgentToolEfficiencyLedger::save(QString *error) const
 {
     if (m_persistPath.isEmpty())
         return fail(error, QStringLiteral("no ledger path"));
+    if (forkmesh::coreinsights::owns(m_persistPath))
+        return true;
     return forkmesh::diskwrite::writeNow(
         m_persistPath, QJsonDocument(toJson()).toJson(QJsonDocument::Compact),
         error);
@@ -871,12 +921,19 @@ bool AgentToolEfficiencyLedger::save(QString *error) const
 
 void AgentToolEfficiencyLedger::saveLater() const
 {
+    if (forkmesh::coreinsights::owns(m_persistPath))
+        return;
     forkmesh::diskwrite::writeLater(
         m_persistPath, QJsonDocument(toJson()).toJson(QJsonDocument::Compact));
 }
 
 void AgentToolEfficiencyLedger::clear()
 {
+    if (forkmesh::coreinsights::owns(m_persistPath)) {
+        forkmesh::coreinsights::forward(QStringLiteral("core.insights.clear"),
+                                        {{QStringLiteral("what"), QStringLiteral("tools")}});
+        return;
+    }
     m_families.clear();
     m_usage.clear();
     m_models.clear();

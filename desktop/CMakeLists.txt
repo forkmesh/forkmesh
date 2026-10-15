@@ -526,6 +526,19 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowTimers.cpp
     src/MainWindowMcp.cpp
     src/MainWindowLocalControl.cpp
+    src/MainWindowCore.cpp
+    src/MainWindowCoreActionQueue.cpp
+    src/MainWindowCoreActions.cpp
+    src/MainWindowCoreAgentModel.cpp
+    src/MainWindowCoreAgentRunner.cpp
+    src/MainWindowCoreAgents.cpp
+    src/MainWindowCoreDiag.cpp
+    src/MainWindowCoreHostJobs.cpp
+    src/MainWindowCoreHosts.cpp
+    src/MainWindowCoreInsights.cpp
+    src/MainWindowCoreMergeQueue.cpp
+    src/MainWindowCoreMirrorPush.cpp
+    src/MainWindowCoreOps.cpp
     src/MainWindowLocalControlHosts.cpp
     src/MainWindowLocalControlAgentOps.cpp
     src/MainWindowPingForward.cpp
@@ -829,6 +842,44 @@ set(FORKMESH_APP_SOURCES
     src/LocalMeshNode.cpp
     src/LocalControl.h
     src/LocalControl.cpp
+    src/CoreActions.h
+    src/CoreActions.cpp
+    src/ActionSandboxClaims.h
+    src/CoreCleanup.h
+    src/CoreCleanup.cpp
+    src/CoreClient.h
+    src/CoreClient.cpp
+    src/CoreDaemonSettings.h
+    src/CoreDaemonSettings.cpp
+    src/CoreProcess.h
+    src/CoreProcess.cpp
+    src/CoreAgentPages.h
+    src/CoreAgentPages.cpp
+    src/CoreAgentRun.h
+    src/CoreAgentStore.h
+    src/CoreDiag.h
+    src/CoreDiag.cpp
+    src/CoreGit.h
+    src/CoreGit.cpp
+    src/CoreInsightsHook.h
+    src/CoreTerminal.h
+    src/CoreTerminal.cpp
+    src/CoreVault.h
+    src/CoreVault.cpp
+    src/CoreMesh.h
+    src/CoreMesh.cpp
+    src/CoreMirrorActions.h
+    src/CoreMirrorActions.cpp
+    src/CorePulls.h
+    src/CorePulls.cpp
+    src/CoreSecrets.h
+    src/CoreSecrets.cpp
+    src/CoreStats.h
+    src/CoreStats.cpp
+    src/CoreVitals.h
+    src/CoreVitals.cpp
+    src/VaultFile.h
+    src/VaultFile.cpp
     src/LocalControlStream.h
     src/LocalControlStream.cpp
     src/LocalControlHosts.h
@@ -873,6 +924,7 @@ set(FORKMESH_APP_SOURCES
     src/MeshFirewall.cpp
     src/NodeEventSocket.h
     src/NodeEventSocket.cpp
+    src/NodeEventSocketCore.cpp
     src/AgentLoginPty.h
     src/AgentLoginPty.cpp
     src/ClaudeAccountRouting.h
@@ -904,6 +956,8 @@ set(FORKMESH_APP_SOURCES
     src/ForkMeshPackageRegistry.cpp
     src/NativePackageExtension.h
     src/NativePackageExtension.cpp
+    src/PackageModules.h
+    src/PackageModules.cpp
     src/PackageFeedback.h
     src/PackageFeedback.cpp
     src/PackageRailTile.h
@@ -929,6 +983,8 @@ set(FORKMESH_APP_SOURCES
     src/FederatedThreadView.cpp
     src/PullStore.h
     src/PullStore.cpp
+    src/PullStoreCore.h
+    src/PullStoreCore.cpp
     src/GitIndexQueue.h
     src/GitIndexQueue.cpp
     src/PullReviewModel.h
@@ -954,6 +1010,7 @@ set(FORKMESH_APP_SOURCES
     src/ActionRunner.cpp
     src/AgentStore.h
     src/AgentStore.cpp
+    src/CoreAgentStore.cpp
     src/AgentCloudSessions.h
     src/AgentCloudSessions.cpp
     src/AgentCloudStream.h
@@ -1000,6 +1057,8 @@ set(FORKMESH_APP_SOURCES
     src/UsageLimitCalendar.cpp
     src/AgentRunner.h
     src/AgentRunner.cpp
+    src/AgentProcess.h
+    src/AgentProcess.cpp
     src/TeammateStore.h
     src/TeammateStore.cpp
     src/TeammateMood.h
@@ -1040,6 +1099,7 @@ set(FORKMESH_APP_SOURCES
     src/RemoveCoreNodeModel.cpp
     src/RemoveCoreNodeDialog.h
     src/RemoveCoreNodeDialog.cpp
+    src/TerminalBackend.h
     src/TerminalWidget.h
     src/TerminalWidget.cpp
     src/ClaudeIdeBridge.h
@@ -1060,6 +1120,7 @@ set(FORKMESH_APP_SOURCES
     src/AgentRuntimeRegistry.cpp
     src/ClaudeStreamSession.h
     src/ClaudeStreamSession.cpp
+    src/CoreAgentRun.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
     src/CodexTranscriptStyle.h
@@ -1179,9 +1240,11 @@ set(FORKMESH_APP_SOURCES
     ${FORKMESH_MAIN_WINDOW_SOURCES}
 )
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForkMeshPackageModules.cmake")
+forkmesh_package_modules_partition()
 qt_add_executable(forkmesh
     src/main.cpp
-    ${FORKMESH_APP_SOURCES}
+    ${FORKMESH_APP_EXECUTABLE_SOURCES}
     src/forkmesh_autogen.cpp
 )
 add_dependencies(forkmesh forkmesh-version-header)
@@ -1225,6 +1288,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ActionRunner.h
     src/AddCoreNodeDialog.h
     src/AgentLoginPty.h
+    src/AgentProcess.h
     src/AgentRunner.h
     src/AgentRuntimeSession.h
     src/BackoffNetworkAccessManager.h
@@ -1234,6 +1298,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeStreamSession.h
     src/ClaudeTranscriptView.h
     src/GenieSpiderWidget.h
+    src/CoreClient.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
     src/MainWindow.h
@@ -1253,7 +1318,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
 # core unity file. The descriptor is therefore the only place a native package
 # declares its Q_OBJECT headers.
 qt_wrap_cpp(FORKMESH_MARKETPLACE_MOC_SOURCES
-    ${FORKMESH_MARKETPLACE_MOC_HEADERS}
+    ${FORKMESH_APP_MARKETPLACE_MOC_HEADERS}
     TARGET forkmesh
 )
 # CodexAppServerSession is compiled as a regular moc unit rather than included
@@ -1330,6 +1395,7 @@ set_source_files_properties(
     src/ActionRunner.h
     src/AddCoreNodeDialog.h
     src/AgentLoginPty.h
+    src/AgentProcess.h
     src/AgentRunner.h
     src/AgentRuntimeSession.h
     src/BackoffNetworkAccessManager.h
@@ -1340,6 +1406,7 @@ set_source_files_properties(
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
     src/GenieSpiderWidget.h
+    src/CoreClient.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
     src/MainWindow.h
@@ -1380,6 +1447,45 @@ if(UNIX)
         target_link_libraries(forkmesh-term PRIVATE util)
     endif()
 endif()
+
+option(FORKMESH_BUILD_CORE "Build forkmesh-core, the Go background engine, beside the app" ON)
+find_program(FORKMESH_GO_EXECUTABLE NAMES go)
+set(FORKMESH_CORE_BINARY
+    "${CMAKE_CURRENT_BINARY_DIR}/forkmesh-core${CMAKE_EXECUTABLE_SUFFIX}")
+if(FORKMESH_BUILD_CORE AND FORKMESH_GO_EXECUTABLE)
+    set(FORKMESH_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core")
+    file(GLOB_RECURSE FORKMESH_CORE_SOURCES CONFIGURE_DEPENDS
+        "${FORKMESH_CORE_DIR}/*.go" "${FORKMESH_CORE_DIR}/go.mod")
+    set(FORKMESH_CORE_GO_ENV CGO_ENABLED=0)
+    if(CMAKE_CROSSCOMPILING AND WIN32)
+        list(APPEND FORKMESH_CORE_GO_ENV GOOS=windows GOARCH=amd64)
+    endif()
+    if(APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "arm64" AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+        list(APPEND FORKMESH_CORE_GO_ENV GOOS=darwin GOARCH=arm64)
+    elseif(APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+        list(APPEND FORKMESH_CORE_GO_ENV GOOS=darwin GOARCH=amd64)
+    endif()
+    add_custom_command(
+        OUTPUT "${FORKMESH_CORE_BINARY}"
+        COMMAND ${CMAKE_COMMAND} -E env ${FORKMESH_CORE_GO_ENV}
+                "${FORKMESH_GO_EXECUTABLE}" build -trimpath
+                "-ldflags=-s -w -X main.version=${FORKMESH_VERSION}"
+                -o "${FORKMESH_CORE_BINARY}" ./cmd/forkmesh-core
+        WORKING_DIRECTORY "${FORKMESH_CORE_DIR}"
+        DEPENDS ${FORKMESH_CORE_SOURCES}
+        COMMENT "Building forkmesh-core (Go)"
+        VERBATIM)
+    add_custom_target(forkmesh-core-go ALL DEPENDS "${FORKMESH_CORE_BINARY}")
+    add_dependencies(forkmesh forkmesh-core-go)
+    if(APPLE)
+        add_custom_command(TARGET forkmesh POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${FORKMESH_CORE_BINARY}" "$<TARGET_FILE_DIR:forkmesh>/"
+            VERBATIM)
+    endif()
+elseif(FORKMESH_BUILD_CORE)
+    message(STATUS "Go not found: forkmesh-core is not built; the desktop runs without it")
+endif()
 if(UNIX AND NOT APPLE)
     target_link_libraries(forkmesh PRIVATE util)
     # XDG Desktop Portal screenshot path (see ScreenCaptureOverlay).
@@ -1393,6 +1499,7 @@ if(UNIX AND NOT APPLE)
     # allocator-backed unwinder that can corrupt an interrupted malloc/free.
     target_compile_options(forkmesh PRIVATE -fno-omit-frame-pointer)
 endif()
+forkmesh_add_package_modules()
 
 # The file/folder tree icons under icons/ are loaded at runtime through
 # MainWindow::iconsDir() (MainWindowRepoDetail.cpp), which falls back to a
@@ -1433,12 +1540,18 @@ if(APPLE)
         "ForkMesh.app/Contents/Resources/forkmesh")
     install(TARGETS forkmesh BUNDLE DESTINATION ".")
     install(TARGETS forkmesh-term RUNTIME DESTINATION "ForkMesh.app/Contents/MacOS")
+    if(TARGET forkmesh-core-go)
+        install(PROGRAMS "${FORKMESH_CORE_BINARY}" DESTINATION "ForkMesh.app/Contents/MacOS")
+    endif()
 else()
     set(FORKMESH_RESOURCE_INSTALL_ROOT
         "${CMAKE_INSTALL_DATADIR}/forkmesh")
     install(TARGETS forkmesh RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
     if(UNIX)
         install(TARGETS forkmesh-term RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    endif()
+    if(TARGET forkmesh-core-go)
+        install(PROGRAMS "${FORKMESH_CORE_BINARY}" DESTINATION "${CMAKE_INSTALL_BINDIR}")
     endif()
 endif()
 # The installed Cloudflare bootstrap bundle does not include this CMake file,
@@ -1666,6 +1779,8 @@ if(FORKMESH_BUILD_TESTS)
         src/DiscussionStore.cpp
         src/PullStore.h
         src/PullStore.cpp
+        src/PullStoreCore.h
+        src/PullStoreCore.cpp
         src/GitIndexQueue.h
         src/GitIndexQueue.cpp
         src/PullReviewModel.h
@@ -1679,6 +1794,7 @@ if(FORKMESH_BUILD_TESTS)
         src/GlobalSearchMatch.cpp
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         # AgentStore resumes sessions against the runtime contract.
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
@@ -2089,6 +2205,8 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_pull_store_retire.cpp
         src/PullStore.h
         src/PullStore.cpp
+        src/PullStoreCore.h
+        src/PullStoreCore.cpp
         src/AppPaths.h
         src/AppPaths.cpp
         src/ForkMeshIdentity.h
@@ -2396,6 +2514,9 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeRegistry.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/CoreAgentRun.cpp
+        src/AgentProcess.h
+        src/AgentProcess.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2441,6 +2562,7 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentTokenPricing.h
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
     )
@@ -2448,7 +2570,7 @@ if(FORKMESH_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(forkmesh-agent-model-stats-tests PRIVATE
         FORKMESH_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
-    target_link_libraries(forkmesh-agent-model-stats-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-model-stats-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-model-stats-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
@@ -2469,6 +2591,9 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/CoreAgentRun.cpp
+        src/AgentProcess.h
+        src/AgentProcess.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2501,10 +2626,14 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentJail.h
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/CoreAgentRun.cpp
+        src/AgentProcess.h
+        src/AgentProcess.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2514,7 +2643,7 @@ if(FORKMESH_BUILD_TESTS)
     )
     target_compile_definitions(forkmesh-agent-transport-tests PRIVATE
         FORKMESH_AGENT_TRANSPORT_TESTS=1)
-    target_link_libraries(forkmesh-agent-transport-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-transport-tests PRIVATE Qt6::Core Qt6::Network)
 
     # Deleting an agent has to stay recoverable for the retention window, and
     # the bin has to be swept once that window passes (issue #578).
@@ -2522,12 +2651,13 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_agent_recycle_bin.cpp
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
     )
     target_include_directories(forkmesh-agent-recycle-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(forkmesh-agent-recycle-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-recycle-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-recycle-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
@@ -2540,12 +2670,13 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentCloudSessions.cpp
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
     )
     target_include_directories(forkmesh-agent-cloud-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(forkmesh-agent-cloud-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-cloud-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-cloud-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
@@ -2581,6 +2712,7 @@ if(FORKMESH_BUILD_TESTS)
         src/RunnerLogin.cpp
         src/RunnerListView.h
         src/RunnerListView.cpp
+        src/TerminalBackend.h
         src/TerminalWidget.h
         src/TerminalWidget.cpp
     )
@@ -2652,6 +2784,7 @@ if(FORKMESH_BUILD_TESTS)
         src/LocalControlHandoff.h
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
     )
@@ -2797,6 +2930,8 @@ if(FORKMESH_BUILD_TESTS)
         src/DiscussionStore.cpp
         src/PullStore.h
         src/PullStore.cpp
+        src/PullStoreCore.h
+        src/PullStoreCore.cpp
         src/GitRefusal.h
         src/GitRefusal.cpp
         src/GitIndexQueue.h
@@ -2807,6 +2942,7 @@ if(FORKMESH_BUILD_TESTS)
         src/PullAiReview.cpp
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
         src/ActionStore.h
@@ -3418,6 +3554,7 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/AgentJail.h
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentResumeIdentity.h
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
@@ -3425,6 +3562,9 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/ClaudeStreamSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/CoreAgentRun.cpp
+        src/AgentProcess.h
+        src/AgentProcess.cpp
         src/CodexTranscriptStyle.h
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
@@ -3657,6 +3797,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     #   cmake --build build --target check (builds the tests, then runs them)
     # The desktop smoke tests need an offscreen Qt platform.
     enable_testing()
+    forkmesh_add_package_module_tests()
     add_test(NAME forkmesh-cove-files-tests COMMAND forkmesh-cove-files-tests)
     add_test(NAME forkmesh-project-invite-tests
              COMMAND forkmesh-project-invite-tests)

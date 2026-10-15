@@ -132,6 +132,7 @@ void MainWindow::startNodeEventSocket()
     if (m_nodeEventSocket)
         return; // already running; the socket reconnects on its own
     m_nodeEventSocket = new NodeEventSocket(this);
+    m_nodeEventSocket->setCoreClient(m_coreClient);
     m_nodeEventSocket->setClientIdentity(
         m_accountName.isEmpty()
             ? QSettings().value(kAccountNameSetting).toString().trimmed()

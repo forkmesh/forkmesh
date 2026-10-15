@@ -10,6 +10,7 @@
 #include "ContributorPayoutReceipt.h"
 #include "IssueBurnup.h"
 #include "MainWindowInternal.h"
+#include "CoreVitals.h"
 #include "QtRuntimeDiagnostics.h"
 #include "RepoStatsStore.h"
 #include "RestartTiming.h"
@@ -641,10 +642,13 @@ void MainWindow::sampleStatsHistory()
         while (samples.size() > kStatsSampleCap)
             samples.removeFirst();
     };
-    push(m_statsCpuSamples, qMax(0.0, SystemStats::cpuPercent()));
-    push(m_statsRssSamples, SystemStats::residentBytes() / (1024.0 * 1024.0));
-    const qint64 total = SystemStats::totalMemoryBytes();
-    const qint64 available = SystemStats::availableMemoryBytes();
+    double appCpu = -1.0;
+    if (!forkmesh::corevitals::appCpuPercent(&appCpu))
+        appCpu = SystemStats::cpuPercent();
+    push(m_statsCpuSamples, qMax(0.0, appCpu));
+    push(m_statsRssSamples, forkmesh::corevitals::residentBytes() / (1024.0 * 1024.0));
+    const qint64 total = forkmesh::corevitals::totalMemoryBytes();
+    const qint64 available = forkmesh::corevitals::availableMemoryBytes();
     push(m_statsHostMemorySamples,
          total > 0 ? 100.0 * double(total - available) / double(total) : 0.0);
     m_statsSampleLabels.append(
@@ -2716,7 +2720,7 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         const double last = m_statsCpuSamples.isEmpty() ? 0.0 : m_statsCpuSamples.last();
         data.value = percentText(last);
         data.note = QString::fromUtf8("this app \xC2\xB7 host %1%")
-                        .arg(qRound(qMax(0.0, SystemStats::hostCpuPercent())));
+                        .arg(qRound(qMax(0.0, forkmesh::corevitals::hostCpuPercent())));
         data.series.labels = m_statsSampleLabels;
         data.series.values = m_statsCpuSamples;
         data.unit = QStringLiteral("%");
@@ -2726,8 +2730,8 @@ StatsTileData MainWindow::statsTileData(const QString &id)
     }
     if (id == QLatin1String("memory")) {
         StatsTileData data;
-        data.value = StatsDashboard::compactBytes(SystemStats::residentBytes());
-        data.note = QString::fromUtf8("resident \xC2\xB7 %1 threads").arg(SystemStats::threadCount());
+        data.value = StatsDashboard::compactBytes(forkmesh::corevitals::residentBytes());
+        data.note = QString::fromUtf8("resident \xC2\xB7 %1 threads").arg(forkmesh::corevitals::threadCount());
         data.series.labels = m_statsSampleLabels;
         data.series.values = m_statsRssSamples;
         data.unit = QStringLiteral("MB");
@@ -2735,8 +2739,8 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         return data;
     }
     if (id == QLatin1String("host-memory")) {
-        const qint64 total = SystemStats::totalMemoryBytes();
-        const qint64 available = SystemStats::availableMemoryBytes();
+        const qint64 total = forkmesh::corevitals::totalMemoryBytes();
+        const qint64 available = forkmesh::corevitals::availableMemoryBytes();
         if (total <= 0)
             return unavailable(QStringLiteral("Host memory is not readable here"));
         StatsTileData data;
@@ -2752,8 +2756,8 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         return data;
     }
     if (id == QLatin1String("swap")) {
-        const qint64 total = SystemStats::totalSwapBytes();
-        const qint64 free = SystemStats::freeSwapBytes();
+        const qint64 total = forkmesh::corevitals::totalSwapBytes();
+        const qint64 free = forkmesh::corevitals::freeSwapBytes();
         if (total <= 0)
             return unavailable(QStringLiteral("No swap configured"));
         StatsTileData data;
@@ -2773,8 +2777,8 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         QString path = repoGitDir();
         if (path.isEmpty())
             path = QDir::homePath();
-        const qint64 total = SystemStats::diskTotalBytes(path);
-        const qint64 free = SystemStats::diskFreeBytes(path);
+        const qint64 total = forkmesh::corevitals::diskTotalBytes(path);
+        const qint64 free = forkmesh::corevitals::diskFreeBytes(path);
         if (total <= 0)
             return unavailable(QStringLiteral("Disk usage is not readable here"));
         StatsTileData data;
@@ -2791,8 +2795,8 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         return data;
     }
     if (id == QLatin1String("open-files")) {
-        const int open = SystemStats::openFileCount();
-        const int limit = SystemStats::openFileSoftLimit();
+        const int open = forkmesh::corevitals::openFileCount();
+        const int limit = forkmesh::corevitals::openFileSoftLimit();
         if (open < 0)
             return unavailable(QStringLiteral("Open files are not readable here"));
         StatsTileData data = number(open, limit > 0
@@ -2803,7 +2807,7 @@ StatsTileData MainWindow::statsTileData(const QString &id)
         return data;
     }
     if (id == QLatin1String("threads"))
-        return number(SystemStats::threadCount(), QStringLiteral("in this process"));
+        return number(forkmesh::corevitals::threadCount(), QStringLiteral("in this process"));
     if (id == QLatin1String("app-uptime")) {
         if (!m_debugSessionUptime.isValid())
             return unavailable(QStringLiteral("Launch time not recorded"));

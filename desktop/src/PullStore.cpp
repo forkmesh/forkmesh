@@ -1,4 +1,5 @@
 #include "PullStore.h"
+#include "PullStoreCore.h"
 #include "PullDecision.h"
 #include "GitRefusal.h"
 #include "AppPaths.h"
@@ -41,6 +42,11 @@
 #include <csignal>
 #include <unistd.h>
 #endif
+
+#define FM_PULLSTORE_CORE                                                                          \
+    forkmesh::pullstorecore::Store { m_workTree, m_mirror, m_authorName, m_signingRepoKey, m_identity }
+#define FM_PULLSTORE_NATIVE_SESSION                                                                \
+    (!m_amBranch.isEmpty() || !m_amBase.isEmpty() || !m_amRestoreRef.isEmpty() || !m_editWorkTree.isEmpty())
 
 namespace {
 
@@ -135,7 +141,20 @@ bool runGit(const QString &dir, const QStringList &args, QByteArray *output = nu
 {
     const bool rewriting = args.contains(QStringLiteral("filter-branch"));
     const int waitMs = forkmesh::gitTimeoutMsForArgs(args, timeoutMs);
-    const forkmesh::GitAttempt attempt = forkmesh::runGitIndexSerialized(
+    forkmesh::GitAttempt attempt;
+    bool routed = false;
+    if (!rewriting && forkmesh::gitArgsWriteIndex(args)) {
+        forkmesh::GitIndexWriteRequest request;
+        request.dir = dir;
+        request.args = args;
+        request.timeoutMs = waitMs;
+        routed = forkmesh::routeGitIndexWrite(request, &attempt);
+        if (routed && !attempt.ok)
+            attempt.error = attempt.timedOut ? QStringLiteral("git timed out")
+                                             : attempt.error.left(300);
+    }
+    if (!routed)
+        attempt = forkmesh::runGitIndexSerialized(
         dir, args, [&dir, &args, rewriting, waitMs] {
             forkmesh::GitAttempt run;
             QProcess process;
@@ -1703,6 +1722,8 @@ bool PullStore::materializePullMetadataRef(int number, QString *error) const
 
 bool PullStore::materializePullRef(const PullRequest &pr, QString *error) const
 {
+    if (auto routedResult = forkmesh::pullstorecore::materializePullRef(FM_PULLSTORE_CORE, pr, error))
+        return *routedResult;
     if (!materializePullMetadataRef(pr.number, error))
         return false;
     // Only a branch-backed PR declares its named head authoritative. A stored-
@@ -1850,6 +1871,8 @@ PullStore::BranchSource PullStore::ensureLocalBranch(const QString &branch,
                                                      int *pullNumber,
                                                      QString *error) const
 {
+    if (auto routedSource = forkmesh::pullstorecore::ensureLocalBranch(FM_PULLSTORE_CORE, branch, pullNumber, error))
+        return *routedSource;
     if (pullNumber)
         *pullNumber = 0;
     const QString name = branch.trimmed();
@@ -2191,6 +2214,8 @@ bool PullStore::addComment(int number, const QString &body, QString *error)
     PullEvent ev;
     ev.type = "comment";
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(number, ev,
                        QStringLiteral("pull #%1: comment").arg(number), error);
@@ -2208,6 +2233,8 @@ bool PullStore::addReview(int number, const QString &state, const QString &body,
     ev.type = "review";
     ev.state = state;
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(number, ev,
                        QStringLiteral("pull #%1: review (%2)").arg(number).arg(state),
@@ -2237,6 +2264,8 @@ bool PullStore::addLineComment(int number, const QString &path, const QString &s
     ev.body = stripEdgeNewlines(body);
     ev.patchset = anchor.patchset;
     ev.anchorLines = anchor.anchorLines;
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(
         number, ev,
@@ -2274,6 +2303,8 @@ bool PullStore::addThreadComment(int number, const QString &path,
     ev.suggestionPatch = stripEdgeNewlines(suggestionPatch);
     ev.patchset = anchor.patchset;
     ev.anchorLines = anchor.anchorLines;
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(
         number, ev,
@@ -2298,6 +2329,8 @@ bool PullStore::addThreadReply(int number, const QString &threadId,
     ev.threadId = threadId;
     ev.parentId = parentId;
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(number, ev,
                        QStringLiteral("pull #%1: thread reply").arg(number),
@@ -2318,6 +2351,8 @@ bool PullStore::setThreadState(int number, const QString &threadId,
     ev.threadId = threadId;
     ev.state = state;
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(
         number, ev,
@@ -2340,6 +2375,8 @@ bool PullStore::setSuggestionState(int number, const QString &threadId,
     ev.state = state;
     ev.appliedCommit = appliedCommit;
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     ev = makeSignedEvent(number, ev);
     return appendEvent(
         number, ev,
@@ -2348,6 +2385,8 @@ bool PullStore::setSuggestionState(int number, const QString &threadId,
 
 bool PullStore::applyRemoteEvent(int number, const PullEvent &ev, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::applyEvent(FM_PULLSTORE_CORE, number, ev, error))
+        return *routedResult;
     if (!canWrite())
         return false;
     return appendEvent(
@@ -2377,6 +2416,8 @@ QString PullStore::branchReviewDir(const QString &branch) const
 
 QList<PullEvent> PullStore::readBranchReviewEvents(const QString &branch) const
 {
+    if (auto routedEvents = forkmesh::pullstorecore::readBranchReviewEvents(FM_PULLSTORE_CORE, branch))
+        return *routedEvents;
     if (branch.isEmpty())
         return {};
     if (canWrite()) {
@@ -2505,6 +2546,8 @@ bool PullStore::addBranchThreadComment(const QString &branch, const QString &pat
     ev.body = stripEdgeNewlines(body);
     ev.patchset = anchor.patchset;
     ev.anchorLines = anchor.anchorLines;
+    if (auto routedResult = forkmesh::pullstorecore::addBranchEvent(FM_PULLSTORE_CORE, branch, ev, error))
+        return *routedResult;
     ev = makeSignedBranchEvent(branch, ev);
     return appendBranchEvent(
         branch, ev,
@@ -2524,6 +2567,8 @@ bool PullStore::addBranchThreadReply(const QString &branch,
     ev.threadId = threadId;
     ev.parentId = parentId;
     ev.body = stripEdgeNewlines(body);
+    if (auto routedResult = forkmesh::pullstorecore::addBranchEvent(FM_PULLSTORE_CORE, branch, ev, error))
+        return *routedResult;
     ev = makeSignedBranchEvent(branch, ev);
     return appendBranchEvent(
         branch, ev, QStringLiteral("branch %1: reply on thread").arg(branch),
@@ -2538,6 +2583,8 @@ bool PullStore::setBranchThreadState(const QString &branch,
     ev.type = "thread-state";
     ev.threadId = threadId;
     ev.state = state;
+    if (auto routedResult = forkmesh::pullstorecore::addBranchEvent(FM_PULLSTORE_CORE, branch, ev, error))
+        return *routedResult;
     ev = makeSignedBranchEvent(branch, ev);
     return appendBranchEvent(
         branch, ev,
@@ -2565,6 +2612,8 @@ bool PullStore::validReviewBranchName(const QString &branch)
 bool PullStore::applyRemoteBranchEvent(const QString &branch,
                                        const PullEvent &ev, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::applyBranchEvent(FM_PULLSTORE_CORE, branch, ev, error))
+        return *routedResult;
     if (!validReviewBranchName(branch) ||
         (ev.type != QLatin1String("thread-comment") &&
          ev.type != QLatin1String("thread-reply") &&
@@ -2911,6 +2960,8 @@ QHash<QString, PullLoadCacheEntry> &pullLoadCache()
 
 QList<PullRequest> PullStore::loadAll(QString *error) const
 {
+    if (auto routedPulls = forkmesh::pullstorecore::loadAll(FM_PULLSTORE_CORE))
+        return *routedPulls;
     const bool writable = canWrite();
     const QString cacheKey = m_workTree + QLatin1Char('\x1f') + m_mirror +
                              QLatin1Char('\x1f') +
@@ -3097,6 +3148,8 @@ QList<PullRequest> PullStore::loadAll(QString *error) const
 
 QList<PullRequest> PullStore::loadAllIncludingArchived(QString *error) const
 {
+    if (auto routedPulls = forkmesh::pullstorecore::loadAllIncludingArchived(FM_PULLSTORE_CORE))
+        return *routedPulls;
     QList<PullRequest> pulls = loadAll(error);
     QSet<int> known;
     for (const PullRequest &pull : std::as_const(pulls))
@@ -3222,6 +3275,9 @@ QList<PullRequest> PullStore::loadAllIncludingArchived(QString *error) const
 // code-health: allow(git-in-loop, dir-walk-in-loop) git loops cover at most 2 checkouts (x 2 legacy JSON paths); removeRecursively only runs on a failure path that returns
 bool PullStore::restoreArchivedPull(int number, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.restoreArchived"), {{QStringLiteral("number"), number}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral(
@@ -3407,6 +3463,9 @@ int PullStore::createPull(const QString &title, const QString &description,
                           const QString &patch, const QString &commits,
                           bool branchBacked, QString *error)
 {
+    if (auto routedNumber = forkmesh::pullstorecore::createPull(FM_PULLSTORE_CORE, title, description, base, head,
+                                                                patch, commits, branchBacked, error))
+        return *routedNumber;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("This repository is read-only on this node.");
@@ -3456,6 +3515,9 @@ int PullStore::createPull(const QString &title, const QString &description,
 
 bool PullStore::setStatus(int number, const QString &status, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.setStatus"), {{QStringLiteral("number"), number}, {QStringLiteral("status"), status}}, error))
+        return *routedResult;
     if (!canWrite())
         return false;
     if (status == QLatin1String("closed"))
@@ -3479,6 +3541,11 @@ bool PullStore::recordRewardPayment(int number, const QString &rewardId,
                                     const QString &chainSignature,
                                     QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.recordReward"), {{QStringLiteral("number"), number},
+             {QStringLiteral("rewardId"), rewardId},
+             {QStringLiteral("signature"), chainSignature}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("This repository is read-only on this node.");
@@ -3534,6 +3601,9 @@ bool PullStore::recordRewardPayment(int number, const QString &rewardId,
 bool PullStore::isBranchBehindBase(int number, bool *behind, QString *error,
                                    int *behindCount) const
 {
+    if (auto routedResult =
+            forkmesh::pullstorecore::isBranchBehindBase(FM_PULLSTORE_CORE, number, behind, error, behindCount))
+        return *routedResult;
     if (behind)
         *behind = false;
     if (behindCount)
@@ -3580,6 +3650,9 @@ bool PullStore::isBranchBehindBase(int number, bool *behind, QString *error,
 
 bool PullStore::updateBranchFromBase(int number, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.update"), {{QStringLiteral("number"), number}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Updating needs a local working tree.");
@@ -3774,6 +3847,11 @@ static QString amBlockedMessage(const QString &workTree)
 bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
                           bool ownerReviewOverride)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.merge"), {{QStringLiteral("number"), number},
+             {QStringLiteral("requirePeerReview"), requirePeerReview},
+             {QStringLiteral("ownerReviewOverride"), ownerReviewOverride}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Merging needs a local working tree.");
@@ -3937,6 +4015,9 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
 
 bool PullStore::prefetchForeignLedger(const QString &remoteUrl, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.prefetchForeign"), {{QStringLiteral("remoteUrl"), remoteUrl}}, error))
+        return *routedResult;
     if (!canWrite() || remoteUrl.trimmed().isEmpty())
         return false;
     const QString dir = metaWorkTree();
@@ -3958,6 +4039,9 @@ bool PullStore::prefetchForeignLedger(const QString &remoteUrl, QString *error)
 QList<int> PullStore::adoptForeignPulls(const QString &remoteUrl, QString *error,
                                         bool fetchFirst)
 {
+    if (auto routedAdopted = forkmesh::pullstorecore::adoptForeignPulls(FM_PULLSTORE_CORE, remoteUrl, error,
+                                                                        fetchFirst))
+        return *routedAdopted;
     QList<int> adopted;
     if (!canWrite() || remoteUrl.trimmed().isEmpty())
         return adopted;
@@ -4101,6 +4185,9 @@ QList<int> PullStore::adoptForeignPulls(const QString &remoteUrl, QString *error
 QList<int> PullStore::reconcileMergedPulls(QString *error,
                                            QList<int> *rewardsAdvanced)
 {
+    if (auto routedFlipped =
+            forkmesh::pullstorecore::reconcileMergedPulls(FM_PULLSTORE_CORE, error, rewardsAdvanced))
+        return *routedFlipped;
     QList<int> flipped;
     if (rewardsAdvanced)
         rewardsAdvanced->clear();
@@ -4259,8 +4346,22 @@ QString PullStore::syntheticMbox(const PullRequest &pr)
     return out;
 }
 
+bool PullStore::conflictSessionLive(const QString &workTree)
+{
+    return !workTree.isEmpty() && amSessionLive(workTree);
+}
+
+bool PullStore::purgeMergedPullPayload(int number, QString *error) const
+{
+    return purgePullPayloadHistory(number, error);
+}
+
 bool PullStore::conflictMergeInProgress() const
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedState = forkmesh::pullstorecore::sessionInProgress(FM_PULLSTORE_CORE))
+            return *routedState;
+    }
     return (!m_workTree.isEmpty() && !amStateDir(m_workTree).isEmpty() &&
             amSessionLive(m_workTree)) ||
            (!m_editWorkTree.isEmpty() &&
@@ -4425,6 +4526,12 @@ bool PullStore::beginPullBranch(int number, QStringList *conflicted,
 bool PullStore::startConflictMerge(int number, QStringList *conflicted,
                                    bool *resolvedClean, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionStart(
+                FM_PULLSTORE_CORE, number, QStringLiteral("conflict"), QString(), conflicted, resolvedClean,
+                nullptr, error))
+            return *routedResult;
+    }
     if (resolvedClean)
         *resolvedClean = false;
     bool clean = false;
@@ -4441,6 +4548,12 @@ bool PullStore::startConflictMerge(int number, QStringList *conflicted,
 bool PullStore::startConflictAgentEdit(int number, QStringList *conflicted,
                                        bool *resolvedClean, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionStart(
+                FM_PULLSTORE_CORE, number, QStringLiteral("agentConflict"), QString(), conflicted,
+                resolvedClean, nullptr, error))
+            return *routedResult;
+    }
     if (resolvedClean)
         *resolvedClean = false;
     bool clean = false;
@@ -4457,6 +4570,11 @@ bool PullStore::startConflictAgentEdit(int number, QStringList *conflicted,
 bool PullStore::startPullFileEdit(int number, const QString &relPath,
                                   QString *content, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionStart(
+                FM_PULLSTORE_CORE, number, QStringLiteral("file"), relPath, nullptr, nullptr, content, error))
+            return *routedResult;
+    }
     QStringList conflicted;
     bool clean = false;
     if (!beginPullBranch(number, &conflicted, &clean, error))
@@ -4486,6 +4604,11 @@ bool PullStore::startPullFileEdit(int number, const QString &relPath,
 bool PullStore::finishPullFileEdit(int number, const QString &relPath,
                                    const QString &content, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionFinish(
+                FM_PULLSTORE_CORE, number, QStringLiteral("file"), relPath, content, QString(), error))
+            return *routedResult;
+    }
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Editing needs a local working tree.");
@@ -4522,6 +4645,10 @@ bool PullStore::finishPullFileEdit(int number, const QString &relPath,
 
 QString PullStore::agentEditWorkTree() const
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedTree = forkmesh::pullstorecore::sessionEditWorkTree(FM_PULLSTORE_CORE))
+            return *routedTree;
+    }
     return m_editWorkTree;
 }
 
@@ -4725,6 +4852,8 @@ void PullStore::discardPullEditWorkTree()
 bool PullStore::checkoutForReview(const PullRequest &pr, const QString &dir,
                                   PullReviewCheckout *out, QString *error) const
 {
+    if (auto routedResult = forkmesh::pullstorecore::checkoutForReview(FM_PULLSTORE_CORE, pr, dir, out, error))
+        return *routedResult;
     if (out)
         *out = PullReviewCheckout{};
     const QString host = canWrite() ? m_workTree : m_mirror;
@@ -4849,6 +4978,8 @@ bool PullStore::checkoutForReview(const PullRequest &pr, const QString &dir,
 
 void PullStore::discardReviewCheckout(const QString &dir) const
 {
+    if (forkmesh::pullstorecore::discardReviewCheckout(FM_PULLSTORE_CORE, dir))
+        return;
     if (dir.trimmed().isEmpty())
         return;
     const QString host = canWrite() ? m_workTree : m_mirror;
@@ -4864,6 +4995,12 @@ void PullStore::discardReviewCheckout(const QString &dir) const
 
 bool PullStore::startPullAgentEdit(int number, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionStart(
+                FM_PULLSTORE_CORE, number, QStringLiteral("agentEdit"), QString(), nullptr, nullptr, nullptr,
+                error))
+            return *routedResult;
+    }
     QString worktreeError;
     if (beginPullEditWorkTree(number, &worktreeError))
         return true;
@@ -4890,6 +5027,11 @@ bool PullStore::startPullAgentEdit(int number, QString *error)
 bool PullStore::finishPullAgentEdit(int number, const QString &commitMsg,
                                     QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionFinish(
+                FM_PULLSTORE_CORE, number, QStringLiteral("agentEdit"), QString(), QString(), commitMsg, error))
+            return *routedResult;
+    }
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Editing needs a local working tree.");
@@ -4948,6 +5090,9 @@ bool PullStore::moveBranchToEditTip(QString *error)
 
 bool PullStore::deletePullFile(int number, const QString &relPath, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.deleteFile"), {{QStringLiteral("number"), number}, {QStringLiteral("path"), relPath}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Editing needs a local working tree.");
@@ -5053,6 +5198,11 @@ bool PullStore::finalizeOnPullBranch(int number, const QString &commitMsg,
 
 bool PullStore::finishConflictMerge(int number, QString *error)
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION) {
+        if (auto routedResult = forkmesh::pullstorecore::sessionFinish(
+                FM_PULLSTORE_CORE, number, QStringLiteral("conflict"), QString(), QString(), QString(), error))
+            return *routedResult;
+    }
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("Merging needs a local working tree.");
@@ -5097,6 +5247,8 @@ bool PullStore::finishConflictMerge(int number, QString *error)
 
 void PullStore::abortConflictMerge()
 {
+    if (!FM_PULLSTORE_NATIVE_SESSION && forkmesh::pullstorecore::sessionAbort(FM_PULLSTORE_CORE))
+        return;
     if (m_workTree.isEmpty())
         return;
     if (!m_editWorkTree.isEmpty()) {
@@ -5131,6 +5283,9 @@ bool PullStore::checkMergeable(int number, bool *clean,
                                QStringList *conflictFiles, QString *error,
                                bool keepGuiAlive) const
 {
+    if (auto routedResult =
+            forkmesh::pullstorecore::checkMergeable(FM_PULLSTORE_CORE, number, clean, conflictFiles, error))
+        return *routedResult;
     if (clean)
         *clean = false;
     if (conflictFiles)
@@ -5242,6 +5397,9 @@ QString PullStore::baseTip() const
 
 bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.applyPull"), {{QStringLiteral("pull"), forkmesh::pullstorecore::pullToJson(incoming)}}, error))
+        return *routedResult;
     if (!canWrite())
         return false;
     PullRequest pr = incoming;
@@ -5332,6 +5490,9 @@ void PullStore::removeMaterializedPullRefs(int number, bool keepTombstone) const
 
 bool PullStore::deletePull(int number, bool rewriteHistory, QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::call(
+            FM_PULLSTORE_CORE, QStringLiteral("core.pulls.delete"), {{QStringLiteral("number"), number}, {QStringLiteral("rewriteHistory"), rewriteHistory}}, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("This repository is read-only on this node.");
@@ -5387,6 +5548,9 @@ bool PullStore::deletePulls(const QList<int> &numbers, bool rewriteHistory,
                             QList<int> *deleted, QList<int> *missing,
                             QString *error)
 {
+    if (auto routedResult = forkmesh::pullstorecore::deletePulls(FM_PULLSTORE_CORE, numbers, rewriteHistory,
+                                                                 deleted, missing, error))
+        return *routedResult;
     if (!canWrite()) {
         if (error)
             *error = QStringLiteral("This repository is read-only on this node.");
@@ -5490,6 +5654,19 @@ bool PullStore::deletePulls(const QList<int> &numbers, bool rewriteHistory,
     // ledger ref once for every path instead of once per pull.
     return rewritePullHistoryWithoutPaths(metaDir, present.first(), relPaths,
                                           error);
+}
+
+bool forkmesh::pullstorecore::rewriteLedgerHistory(const QString &workTree, const QString &mirror, int number,
+                                                   const QStringList &paths, QString *error)
+{
+    if (!validRewritePaths(number, paths)) {
+        if (error)
+            *error = QStringLiteral("bad_request");
+        return false;
+    }
+    const PullStore store(workTree, mirror, nullptr);
+    const QString meta = store.metaWorkTree();
+    return rewritePullHistoryWithoutPaths(meta.isEmpty() ? workTree : meta, number, paths, error);
 }
 
 bool PullStore::purgePullPayloadHistory(int number, QString *error) const

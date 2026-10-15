@@ -6,14 +6,45 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QImageReader>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QPainter>
 #include <QRandomGenerator>
 #include <QSet>
 
 namespace forkmesh::localcontrol::attachments {
 
+namespace {
+
+QMutex &saltMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
+
+QByteArray &sharedSalt()
+{
+    static QByteArray salt;
+    return salt;
+}
+
+} // namespace
+
+void setProcessSalt(const QByteArray &salt)
+{
+    if (salt.size() < 16)
+        return;
+    const QMutexLocker lock(&saltMutex());
+    sharedSalt() = salt;
+}
+
 QByteArray processSalt()
 {
+    {
+        const QMutexLocker lock(&saltMutex());
+        if (!sharedSalt().isEmpty())
+            return sharedSalt();
+    }
     static const QByteArray salt = [] {
         QByteArray bytes(32, Qt::Uninitialized);
         QRandomGenerator::system()->generate(

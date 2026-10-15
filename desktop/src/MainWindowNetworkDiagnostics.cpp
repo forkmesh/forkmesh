@@ -1142,7 +1142,8 @@ void MainWindow::updateNetworkDeployBlink()
     const bool installing = m_hostInstallDeploying && m_hostInstallProcess &&
                             m_hostInstallProcess->state() != QProcess::NotRunning;
     const bool deploying =
-        m_vultrProvisionActive || installing || m_hostDeployRemaining > 0;
+        m_vultrProvisionActive || installing || m_hostDeployRemaining > 0 ||
+        coreHostInstallBusy();
     if (auto *railButton =
             dynamic_cast<ActivityRailButton *>(m_networkNavButton))
         railButton->setActivityBlink(deploying);

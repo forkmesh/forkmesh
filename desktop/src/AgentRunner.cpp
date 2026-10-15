@@ -6,11 +6,14 @@
 
 #include "AgentJail.h"
 #include "AgentScratch.h"
+#include "AgentProcess.h"
 #include "AgentResources.h"
+#include "AgentRuntimeSession.h"
 #include "AgentWorktree.h"
 #include "SafeDelete.h"
 #include "VirtualMachineRuntime.h"
 #include "BackgroundActivity.h"
+#include "CoreAgentRun.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -18,6 +21,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -550,30 +554,200 @@ void AgentRunner::launch(Phase phase, const QString &program,
     m_processStartedAtMs = 0;
     m_lastOutputAtMs = 0;
     m_currentProgram = program;
-    m_process = new QProcess(this);
+    endCoreParse();
+    m_coreKey.clear();
+    AgentProcess::Options options;
+    if (phase == Phase::Agent && forkmesh::coreagentrun::available()) {
+        m_coreKey = QStringLiteral("runner-%1-%2")
+                        .arg(m_session.id)
+                        .arg(QDateTime::currentMSecsSinceEpoch());
+        options.key = m_coreKey;
+        options.detachable = true;
+        options.meta = coreProcessMeta();
+        forkmesh::coreagentrun::pushCredentials();
+    }
+    m_process = AgentProcess::create(this, options);
     m_process->setProcessChannelMode(QProcess::MergedChannels);
     if (!workingDir.isEmpty())
         m_process->setWorkingDirectory(workingDir);
 
     m_process->setProcessEnvironment(processEnvironment(phase));
+    connectProcess(phase, program);
 
-    connect(m_process, &QProcess::readyReadStandardOutput, this, [this] {
-        m_lastOutputAtMs = QDateTime::currentMSecsSinceEpoch();
-        const QString chunk = QString::fromUtf8(m_process->readAllStandardOutput());
-        emitLog(chunk);
-        const QString hint = detectAuthIssue(chunk);
-        if (!hint.isEmpty()) {
-            emitLog(QStringLiteral("==> ") + hint);
-            emit needsAttention(m_session.id, hint);
+    m_process->setProgram(program);
+    m_process->setArguments(args);
+    m_process->start();
+    if (phase == Phase::Agent) {
+        if (!m_noOutputTimer) {
+            m_noOutputTimer = new QTimer(this);
+            m_noOutputTimer->setInterval(15000);
+            connect(m_noOutputTimer, &QTimer::timeout, this,
+                    &AgentRunner::onNoOutputTimeout);
         }
+        emitLog(QStringLiteral("==> Waiting for agent output..."));
+        m_noOutputTimer->start();
+    }
+}
+
+QJsonObject AgentRunner::coreProcessMeta() const
+{
+    QJsonObject meta{{QStringLiteral("runtime"), AgentRuntimeIds::ManagedRunner},
+                     {QStringLiteral("parse"), QStringLiteral("log")},
+                     {QStringLiteral("sessionId"), QString::number(m_session.id)},
+                     {QStringLiteral("storeKey"), m_session.repoKey()},
+                     {QStringLiteral("provider"), m_session.provider},
+                     {QStringLiteral("repoPath"), m_repoPath},
+                     {QStringLiteral("worktree"), m_worktree},
+                     {QStringLiteral("promptFile"), m_promptFilePath},
+                     {QStringLiteral("program"), m_currentProgram}};
+    if (!m_config.apiKey.isEmpty())
+        meta.insert(QStringLiteral("_secrets"), QJsonArray{m_config.apiKey});
+    return meta;
+}
+
+void AgentRunner::handleOutput(const QString &chunk, bool store)
+{
+    m_lastOutputAtMs = QDateTime::currentMSecsSinceEpoch();
+    if (store)
+        emitLog(chunk);
+    else
+        emit logLine(m_session.id, chunk);
+    const QString hint = detectAuthIssue(chunk);
+    if (!hint.isEmpty()) {
+        emitLog(QStringLiteral("==> ") + hint);
+        emit needsAttention(m_session.id, hint);
+    }
+}
+
+void AgentRunner::finishProcess(int exitCode)
+{
+    if (m_noOutputTimer)
+        m_noOutputTimer->stop();
+    endCoreParse();
+    onProcessFinished(exitCode);
+}
+
+void AgentRunner::beginCoreParse()
+{
+    if (m_coreKey.isEmpty())
+        return;
+    const QString key = m_coreKey;
+    m_coreAttachPending = true;
+    QPointer<AgentRunner> guard(this);
+    forkmesh::coreagentrun::subscribe(key, this, [guard, key](const QString &event, const QJsonObject &data) {
+        if (guard && guard->m_coreKey == key)
+            guard->onCoreRunEvent(event, data);
     });
-    connect(m_process, &QProcess::finished, this,
+    forkmesh::coreagentrun::attach(
+        key, 0, this, [guard, key](bool ok, const QJsonObject &, const QString &) {
+            if (!guard || guard->m_coreKey != key)
+                return;
+            guard->m_coreAttachPending = false;
+            guard->m_coreParsed = ok;
+            if (ok)
+                return;
+            forkmesh::coreagentrun::unsubscribe(key, guard);
+            if (guard->m_hasDeferredExit) {
+                guard->m_hasDeferredExit = false;
+                guard->finishProcess(guard->m_deferredExit);
+            }
+        });
+}
+
+void AgentRunner::endCoreParse()
+{
+    if (!m_coreKey.isEmpty() && (m_coreParsed || m_coreAttachPending)) {
+        forkmesh::coreagentrun::unsubscribe(m_coreKey, this);
+        forkmesh::coreagentrun::detach(m_coreKey);
+    }
+    m_coreParsed = false;
+    m_coreAttachPending = false;
+    m_hasDeferredExit = false;
+}
+
+void AgentRunner::onCoreRunEvent(const QString &event, const QJsonObject &data)
+{
+    if (event == QLatin1String("core.agentrun.reconnected")) {
+        if (m_coreParsed) {
+            m_coreParsed = false;
+            beginCoreParse();
+        }
+        return;
+    }
+    if (event == QLatin1String("core.agentrun.exit")) {
+        if (!m_coreParsed && !m_coreAttachPending)
+            return;
+        m_hasDeferredExit = false;
+        finishProcess(data.value(QStringLiteral("code")).toInt());
+        return;
+    }
+    if (event != QLatin1String("core.agentrun.event"))
+        return;
+    const QString text = data.value(QStringLiteral("text")).toString();
+    if (!text.isEmpty())
+        handleOutput(text, false);
+}
+
+bool AgentRunner::attachCoreProcess(const AgentSession &session, const Config &config,
+                                    const QString &key, const QJsonObject &meta, qint64 pid)
+{
+    if (m_busy || key.isEmpty())
+        return false;
+    AgentProcess::Options options;
+    options.attachKey = key;
+    options.detachable = true;
+    options.pid = pid;
+    options.meta = meta;
+    AgentProcess *process = AgentProcess::create(this, options);
+    if (!process)
+        return false;
+    m_session = session;
+    m_config = config;
+    m_issue = Issue();
+    m_repoPath = meta.value(QStringLiteral("repoPath")).toString();
+    m_worktree = meta.value(QStringLiteral("worktree")).toString();
+    m_promptFilePath = meta.value(QStringLiteral("promptFile")).toString();
+    m_currentProgram = meta.value(QStringLiteral("program")).toString();
+    m_prompt.clear();
+    m_restorePreviousPatch = false;
+    m_attentionRaised = false;
+    m_stopping = false;
+    m_busy = true;
+    m_phase = Phase::Agent;
+    m_process = process;
+    m_coreKey = key;
+    m_processStartedAtMs = QDateTime::currentMSecsSinceEpoch();
+    m_lastOutputAtMs = m_processStartedAtMs;
+    connectProcess(Phase::Agent, m_currentProgram);
+    beginCoreParse();
+    if (!m_noOutputTimer) {
+        m_noOutputTimer = new QTimer(this);
+        m_noOutputTimer->setInterval(15000);
+        connect(m_noOutputTimer, &QTimer::timeout, this, &AgentRunner::onNoOutputTimeout);
+    }
+    m_noOutputTimer->start();
+    emitLog(QStringLiteral("==> Re-attached to the agent process (pid %1) after the ForkMesh restart.")
+                .arg(pid));
+    return true;
+}
+
+void AgentRunner::connectProcess(Phase phase, const QString &program)
+{
+    connect(m_process, &AgentProcess::readyReadStandardOutput, this, [this] {
+        handleOutput(QString::fromUtf8(m_process->readAllStandardOutput()), true);
+    });
+    connect(m_process, &AgentProcess::finished, this,
             [this](int exitCode, QProcess::ExitStatus) {
-                if (m_noOutputTimer)
-                    m_noOutputTimer->stop();
-                onProcessFinished(exitCode);
+                if (m_coreParsed)
+                    return;
+                if (m_coreAttachPending) {
+                    m_hasDeferredExit = true;
+                    m_deferredExit = exitCode;
+                    return;
+                }
+                finishProcess(exitCode);
             });
-    connect(m_process, &QProcess::started, this, [this] {
+    connect(m_process, &AgentProcess::started, this, [this] {
         m_processStartedAtMs = QDateTime::currentMSecsSinceEpoch();
         m_lastOutputAtMs = m_processStartedAtMs;
         // The follow-up is no longer merely handed to a prospective process:
@@ -588,8 +762,10 @@ void AgentRunner::launch(Phase phase, const QString &program,
         emitLog(QStringLiteral("==> Started process pid %1: %2")
                     .arg(m_process ? m_process->processId() : 0)
                     .arg(m_currentProgram));
+        if (m_process && !m_coreKey.isEmpty() && m_process->parsedByCore())
+            beginCoreParse();
     });
-    connect(m_process, &QProcess::errorOccurred, this,
+    connect(m_process, &AgentProcess::errorOccurred, this,
             [this](QProcess::ProcessError error) {
                 if (m_noOutputTimer)
                     m_noOutputTimer->stop();
@@ -606,20 +782,6 @@ void AgentRunner::launch(Phase phase, const QString &program,
         QStringLiteral("Agent session #%1: %2").arg(m_session.id).arg(program));
     connect(m_process, &QObject::destroyed, this,
             [activity] { forkmesh::BackgroundActivity::end(activity); });
-
-    m_process->setProgram(program);
-    m_process->setArguments(args);
-    m_process->start();
-    if (phase == Phase::Agent) {
-        if (!m_noOutputTimer) {
-            m_noOutputTimer = new QTimer(this);
-            m_noOutputTimer->setInterval(15000);
-            connect(m_noOutputTimer, &QTimer::timeout, this,
-                    &AgentRunner::onNoOutputTimeout);
-        }
-        emitLog(QStringLiteral("==> Waiting for agent output..."));
-        m_noOutputTimer->start();
-    }
 }
 
 void AgentRunner::onProcessFinished(int exitCode)
@@ -825,6 +987,7 @@ void AgentRunner::complete(bool ok, const QString &status, const QString &messag
 {
     if (!m_busy && m_phase == Phase::Idle)
         return;
+    endCoreParse();
     if (m_process) {
         if (m_noOutputTimer)
             m_noOutputTimer->stop();
