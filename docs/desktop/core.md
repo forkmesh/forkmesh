@@ -881,15 +881,29 @@ and service plug-ins running, and the next window re-attaches to the same core.
 | --- | --- | --- |
 | Default | The desktop launches it on demand | 2 minutes after the last window detaches, once no module is busy |
 | Background | `serve --background`, or `background: true` in `config/core/daemon.json` (Settings → General → STARTUP, `forkmesh-core background on`) | Only on `forkmesh-core stop`, `core.shutdown`, a signal, or log-out |
-| Login start | `forkmesh-core autostart enable` or the STARTUP checkbox; implies `--background` | As background |
+| Computer start | `forkmesh-core autostart enable` or the STARTUP checkbox "Start the background engine when the computer starts"; implies `--background` | As background |
 
-- **Login start** (`internal/autostart`, `core.daemon.set {autostart, binary}`):
+- **Computer start** (`internal/autostart`, `core.daemon.set {autostart, binary}`):
   - Linux: a systemd user unit `~/.config/systemd/user/forkmesh-core-<project>.service`
     (`Restart=on-failure`, `RestartSec=5`, at most 5 starts in 10 minutes,
     `KillMode=process` so agents started by the core outlive a core restart,
     `Nice=5`, idle I/O class, `NoNewPrivileges`, the ForkMesh path variables
     unset), enabled with `systemctl --user enable`. Without a user systemd it
     writes `~/.config/autostart/forkmesh-core-<project>.desktop`.
+  - Boot before log-in (Linux): a user unit only starts at boot when the user
+    lingers, so enabling also runs `loginctl --no-ask-password enable-linger
+    <uid>` when lingering is off. If that succeeds it leaves the marker
+    `~/.config/systemd/user/forkmesh-core.linger`; disabling the last
+    `forkmesh-core-*.service` runs `disable-linger` only when that marker is
+    there, so lingering the user turned on themselves is never turned off. If
+    polkit refuses, the unit still starts at log-in. The status carries
+    `atBoot` (systemd unit enabled and `Linger=yes`), and Settings shows "Starts
+    when the computer starts" or "Starts when you log in" plus the
+    `loginctl enable-linger` hint. Lingering also keeps the user's processes
+    running after log-out and starts the user's other enabled units at boot.
+  - macOS and Windows start the engine when the user signs in (with automatic
+    sign-in, that is at boot); a boot-time service there needs administrator
+    rights and is not offered.
   - macOS: `~/Library/LaunchAgents/com.forkmesh.core.<project>.plist`
     (`RunAtLoad`, `KeepAlive` on unsuccessful exit, `ProcessType`
     `Background`, low-priority I/O), loaded with `launchctl bootstrap`.
@@ -925,8 +939,8 @@ and service plug-ins running, and the next window re-attaches to the same core.
   answers), `stop`, `status`, `background on|off|status`,
   `autostart enable|disable|status [--binary <path>]`.
 - **Desktop.** Settings → General → STARTUP shows "Keep the background engine
-  running after ForkMesh closes", "Start the background engine when you log
-  in", the core's version, pid and last stop, and one checkbox per service
+  running after ForkMesh closes", "Start the background engine when the
+  computer starts", the core's version, pid and last stop, and one checkbox per service
   plug-in (enabling asks for consent and lists its permissions)
   (`CoreDaemonSettings`).
 

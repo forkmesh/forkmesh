@@ -12,6 +12,7 @@ type recorder struct {
 	calls    []string
 	fail     map[string]bool
 	regValue string
+	linger   bool
 }
 
 func (r *recorder) run(name string, args ...string) ([]byte, error) {
@@ -21,6 +22,19 @@ func (r *recorder) run(name string, args ...string) ([]byte, error) {
 		if strings.HasPrefix(call, prefix) {
 			return []byte("failed"), errors.New("exit status 1")
 		}
+	}
+	if name == "loginctl" {
+		switch {
+		case args[0] == "show-user" && r.linger:
+			return []byte("yes\n"), nil
+		case args[0] == "show-user":
+			return []byte("no\n"), nil
+		case strings.Contains(call, "enable-linger"):
+			r.linger = true
+		case strings.Contains(call, "disable-linger"):
+			r.linger = false
+		}
+		return nil, nil
 	}
 	if name == "reg" && args[0] == "query" {
 		if r.regValue == "" {
@@ -83,6 +97,62 @@ func TestSystemdUnitRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(rec.calls, "\n"), "systemctl --user disable forkmesh-core-forkmesh.service") {
 		t.Fatalf("calls %v", rec.calls)
+	}
+}
+
+func TestSystemdStartsAtBootThroughLinger(t *testing.T) {
+	m, rec, home := manager(t, "linux", true)
+	binary := fakeBinary(t, home)
+	if status := m.Status("forkmesh"); status.AtBoot {
+		t.Fatalf("at boot before enable %+v", status)
+	}
+	status, err := m.Enable(binary, "forkmesh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.AtBoot || !rec.linger {
+		t.Fatalf("status %+v calls %v", status, rec.calls)
+	}
+	if !strings.Contains(strings.Join(rec.calls, "\n"), "loginctl --no-ask-password enable-linger 501") {
+		t.Fatalf("calls %v", rec.calls)
+	}
+	if _, err := m.Enable(binary, "work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Disable("forkmesh"); err != nil || !rec.linger {
+		t.Fatalf("linger dropped while another project starts at boot: %v", err)
+	}
+	if status, err := m.Disable("work"); err != nil || rec.linger || status.AtBoot {
+		t.Fatalf("linger kept after the last project: %+v %v", status, err)
+	}
+	if _, err := os.Stat(m.lingerMarker()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker left behind: %v", err)
+	}
+}
+
+func TestSystemdKeepsLingerItDidNotTurnOn(t *testing.T) {
+	m, rec, home := manager(t, "linux", true)
+	rec.linger = true
+	if _, err := m.Enable(fakeBinary(t, home), "forkmesh"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Disable("forkmesh"); err != nil || !rec.linger {
+		t.Fatalf("turned off linger the user had on: %v calls %v", err, rec.calls)
+	}
+	if strings.Contains(strings.Join(rec.calls, "\n"), "enable-linger") {
+		t.Fatalf("calls %v", rec.calls)
+	}
+}
+
+func TestSystemdStartsAtLoginWhenLingerRefused(t *testing.T) {
+	m, rec, home := manager(t, "linux", true)
+	rec.fail["loginctl --no-ask-password enable-linger"] = true
+	status, err := m.Enable(fakeBinary(t, home), "forkmesh")
+	if err != nil || !status.Enabled || status.AtBoot {
+		t.Fatalf("status %+v %v", status, err)
+	}
+	if _, err := os.Stat(m.lingerMarker()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("marker written after refusal: %v", err)
 	}
 }
 
