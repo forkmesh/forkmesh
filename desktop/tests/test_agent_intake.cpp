@@ -77,6 +77,15 @@ static void testParse()
           "paused and priority are carried");
     check(request.title == QLatin1String("Login redirect"), "the title is simplified");
     check(request.model == QLatin1String("claude-opus-4-1[1m]"), "a bracketed model id is kept");
+    check(request.task.isEmpty() && !request.handoff, "no task is handed over by default");
+
+    QJsonObject handed = minimal;
+    handed.insert(QStringLiteral("task"), QStringLiteral(" 0123456789ABCDEF0123456789abcdef "));
+    handed.insert(QStringLiteral("handoff"), true);
+    check(parseCreateRequest(handed, &request, &error), "a task handoff parses");
+    check(request.task == QLatin1String("0123456789abcdef0123456789abcdef"),
+          "the task id is trimmed and lowered");
+    check(request.handoff, "handoff is carried");
 
     auto with = [&minimal](const QString &key, const QJsonValue &value) {
         QJsonObject params = minimal;
@@ -92,6 +101,17 @@ static void testParse()
     check(parseError(with(QStringLiteral("repository"), QStringLiteral("../etc"))) ==
               QLatin1String("bad_repository"),
           "a traversal repository is refused");
+    check(parseError(with(QStringLiteral("task"), QStringLiteral("42"))) ==
+              QLatin1String("bad_task_id"),
+          "a short task id is refused");
+    check(parseError(with(QStringLiteral("task"), QString(32, QLatin1Char('g')))) ==
+              QLatin1String("bad_task_id"),
+          "a non-hex task id is refused");
+    check(parseError(with(QStringLiteral("task"), 7)) == QLatin1String("bad_request"),
+          "a numeric task id is refused");
+    check(parseError(with(QStringLiteral("handoff"), QStringLiteral("yes"))) ==
+              QLatin1String("bad_request"),
+          "a non-boolean handoff is refused");
     check(parseError(with(QStringLiteral("prompt"), QStringLiteral("   "))) ==
               QLatin1String("bad_task"),
           "an empty prompt is refused");

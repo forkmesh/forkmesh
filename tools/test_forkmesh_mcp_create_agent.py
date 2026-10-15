@@ -50,9 +50,10 @@ def test_tool_is_listed_as_a_write():
     assert schema["required"] == ["repository", "prompt"]
     assert set(schema["properties"]) == {
         "repository", "prompt", "title", "branch", "worktree", "paused",
-        "priority", "provider", "model"}
+        "priority", "provider", "model", "task", "handoff"}
     assert schema["properties"]["prompt"]["maxLength"] == 8000
     assert schema["properties"]["paused"]["type"] == "boolean"
+    assert schema["properties"]["handoff"]["type"] == "boolean"
     assert "create_agent" in srv.WRITE_TOOLS
     assert "create_agent" not in srv.DESTRUCTIVE_TOOLS
     listed = {t["name"]: t for t in srv.tools_list_payload()["tools"]}
@@ -101,6 +102,10 @@ def test_params_are_normalized():
     {"priority": 2.5},
     {"priority": True},
     {"priority": "5"},
+    {"task": "42"},
+    {"task": "g" * 32},
+    {"task": 7},
+    {"handoff": "yes"},
 ])
 def test_bad_input_is_refused_before_any_request(change, monkeypatch):
     sent = []
@@ -109,6 +114,18 @@ def test_bad_input_is_refused_before_any_request(change, monkeypatch):
     with pytest.raises(ValueError):
         srv.create_agent({**GOOD, **change})
     assert sent == []
+
+
+def test_task_and_handoff_are_carried():
+    task = "0123456789ABCDEF0123456789abcdef"
+    params = srv.create_agent_params({**GOOD, "task": f" {task} ",
+                                      "handoff": True})
+    assert params == {**GOOD, "task": task.lower(), "handoff": True,
+                      "paused": False}
+    assert srv.create_agent_params({**GOOD, "handoff": False}) == {
+        **GOOD, "paused": False}
+    assert srv.create_agent_params({**GOOD, "handoff": None}) == {
+        **GOOD, "paused": False}
 
 
 def test_prompt_at_the_limit_is_accepted():

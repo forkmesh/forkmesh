@@ -167,7 +167,7 @@ Agent, window and release tools need the desktop's intake socket
 | Pull requests | `open_pr_from_branch`, `get_pr_diff` | The PR carries the MCP marker |
 | CRM | `crm_list_organizations`, `crm_get_pipeline`, `crm_list_contacts`, `crm_get_contact`, `crm_list_activity`, `crm_update_contact`, `crm_find_duplicates`, `crm_check_accounts`, `crm_merge_contacts` | Signed CRM API |
 | Tasks | `list_tasks`, `get_task`, `create_task`, `update_task`, `complete_task`, `reopen_task`, `attach_work_item`, `detach_work_item`, `delete_task`, `restore_task` | Signed `/api/tasks`; delete is soft |
-| Agents | `create_agent` | Desktop socket; 12 per 10 minutes |
+| Agents | `create_agent` | Desktop socket; 12 per 10 minutes; `task` / `handoff` hand an organization task to the new agent |
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page` | Desktop socket; the user can stop a page being shared |
 
