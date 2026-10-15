@@ -124,6 +124,10 @@ destination, in sections, with counts and activity:
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
 - Home is built to fit one screen when possible (`fittedTile`).
+- Without section headers the grid starts 16 pt below the top chrome
+  (`gridTop`, counted in the fit), so the count pills that sit above the
+  first row's icons are not clipped by the bar. The operator asked for this
+  on 2026-10-15; at 8 pt the pills were cut off.
 
 **Top chrome** (`ShellTopBar`). The project icon (`ShellProjectSlot`, 40 pt,
 opens the project drawer), the telemetry strip centred (tiny health-coloured
