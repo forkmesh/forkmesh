@@ -145,6 +145,11 @@ Credentials: `ASC_KEY_ID` and `ASC_ISSUER_ID` from the environment, the
 desktop's Actions variables, or the office Mac; the private key at
 `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`.
 
+The shortcut also publishes the same data (`asc_store_report.py --publish`) to
+the **App Store Status** package page, so the web, desktop, iPhone and Android
+show it laid out as a page. `--json` prints that snapshot instead of the text.
+See [../marketplace/app-store-status.md](../marketplace/app-store-status.md).
+
 ## TestFlight feedback to tasks
 
 `.forkmesh/shortcuts/testflight-feedback-to-tasks.sh` runs

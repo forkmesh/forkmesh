@@ -4,20 +4,28 @@ from __future__ import annotations
 import csv
 import gzip
 import io
+import json
 import os
 import sys
+import time
 import urllib.parse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from asc_appstore import ios_versions, item_version, state, submission_items  # noqa: E402
-from asc_bundle_ids import action_variables  # noqa: E402
+from asc_bundle_ids import APP_BUNDLE_ID, action_variables  # noqa: E402
 from asc_testflight import Session, app_id  # noqa: E402
 
-USAGE = "usage: asc_store_report.py [--feedback N]"
+USAGE = "usage: asc_store_report.py [--feedback N] [--json] [--publish]"
+FORMAT = "forkmesh-app-store-status-v1"
+PUBLISH_PREFIX = "/api/app-store-status"
+PUBLISH_PROOF = "forkmesh-app-store-status-request-v1"
+PAGE_PATH = "/dashboard/app-store-status"
+TOOLS_DIR = Path(__file__).resolve().parents[3] / "tools"
 VERSIONS_SHOWN = 4
 SUBMISSIONS_SHOWN = 4
 BUILDS_SHOWN = 3
@@ -25,11 +33,28 @@ NEEDS_ACTION = frozenset({
     "REJECTED", "METADATA_REJECTED", "INVALID_BINARY", "DEVELOPER_REJECTED",
     "UNRESOLVED_ISSUES", "MISSING_EXPORT_COMPLIANCE",
 })
+PENDING = frozenset({
+    "WAITING_FOR_REVIEW", "IN_REVIEW", "READY_FOR_REVIEW", "PROCESSING", "PROCESSING_EXCEPTION",
+    "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "WAITING_FOR_EXPORT_COMPLIANCE",
+    "PENDING_DEVELOPER_RELEASE", "PENDING_APPLE_RELEASE", "READY_FOR_BETA_SUBMISSION",
+    "WAITING_FOR_BETA_SUBMISSION", "ACCEPTED", "COMPLETING",
+})
+GOOD = frozenset({
+    "READY_FOR_SALE", "READY_FOR_DISTRIBUTION", "VALID", "IN_BETA_TESTING", "BETA_APPROVED",
+    "APPROVED", "COMPLETE", "READY_FOR_TESTING", "PROCESSING_DONE",
+})
+LABELS = {
+    "READY_FOR_SALE": "Ready for sale",
+    "READY_FOR_DISTRIBUTION": "Ready for distribution",
+    "IN_BETA_TESTING": "In beta testing",
+    "UNRESOLVED_ISSUES": "Unresolved issues",
+}
 PRODUCT_KINDS = {
     "1": "downloads", "1F": "downloads", "1T": "downloads",
     "3": "redownloads", "3F": "redownloads", "3T": "redownloads",
     "7": "updates", "7F": "updates", "7T": "updates",
 }
+KINDS = ("downloads", "redownloads", "updates")
 MONTHLY_REPORT_DELAY = timedelta(days=7)
 RECENT_DAYS = (7, 30)
 
@@ -38,12 +63,26 @@ def get(api, path: str, query: dict | None = None) -> dict:
     return api("GET", path + ("?" + urllib.parse.urlencode(query) if query else ""))
 
 
-def optional(api, path: str, query: dict | None = None):
+def optional(api, problems: list, path: str, query: dict | None = None):
     try:
         return get(api, path, query)
     except SystemExit as error:
-        print(f"  (unavailable: {str(error)[:200]})")
+        problems.append(str(error)[:200])
         return None
+
+
+def status(value: str | None, empty: str = "Unknown") -> dict:
+    value = value or ""
+    if value in NEEDS_ACTION:
+        tone = "action"
+    elif value in PENDING:
+        tone = "pending"
+    elif value in GOOD:
+        tone = "good"
+    else:
+        tone = "neutral"
+    label = LABELS.get(value) or (value.replace("_", " ").capitalize() if value else empty)
+    return {"state": value, "label": label, "tone": tone}
 
 
 def flag(value: str) -> str:
@@ -67,41 +106,48 @@ def related(row: dict, name: str, extra: dict):
     return None
 
 
-def heading(title: str) -> None:
-    print(f"\n== {title} ==")
+def unavailable(snapshot: dict, section: str, problems: list) -> None:
+    if problems:
+        snapshot["unavailable"][section] = problems[0]
 
 
-def app_store(api, app: str) -> list:
-    heading("App Store versions")
+def app_store(api, app: str, snapshot: dict) -> list:
     versions = sorted(ios_versions(api, app),
                       key=lambda row: row["attributes"].get("createdDate", ""), reverse=True)
-    if not versions:
-        print("  none")
+    problems = []
     for row in versions[:VERSIONS_SHOWN]:
         a = row["attributes"]
-        build = optional(api, f"/v1/appStoreVersions/{row['id']}/build") or {}
-        number = ((build.get("data") or {}).get("attributes") or {}).get("version", "no build")
-        print(f"  {a['versionString']} (build {number}): {flag(state(row))}"
-              f"; release {a.get('releaseType')}; created {day(a.get('createdDate'))}")
+        build = optional(api, problems, f"/v1/appStoreVersions/{row['id']}/build") or {}
+        number = ((build.get("data") or {}).get("attributes") or {}).get("version", "")
+        snapshot["versions"].append({
+            "version": a.get("versionString") or "", "build": number,
+            "status": status(state(row)), "releaseType": a.get("releaseType") or "",
+            "createdAt": a.get("createdDate") or ""})
+    unavailable(snapshot, "versions", problems)
 
-    heading("App Review submissions")
     found = get(api, "/v1/reviewSubmissions",
                 {"filter[app]": app, "filter[platform]": "IOS", "limit": "50"})
     rows = sorted(found.get("data", []),
                   key=lambda row: row["attributes"].get("submittedDate") or "", reverse=True)
     names = {row["id"]: row["attributes"]["versionString"] for row in versions}
-    if not rows:
-        print("  none")
     for row in rows[:SUBMISSIONS_SHOWN]:
         a = row["attributes"]
-        print(f"  {row['id']}: {flag(a.get('state', ''))}; submitted {day(a.get('submittedDate'))}")
-        for item in submission_items(api, row["id"]):
-            name = names.get(item_version(item), "other item")
-            print(f"    {name}: {flag(item['attributes'].get('state') or '')}")
-    if any(row["attributes"].get("state") == "UNRESOLVED_ISSUES" for row in rows) or any(
-            state(row) in NEEDS_ACTION for row in versions[:1]):
-        print("  Apple's message is in App Store Connect -> App Review (Resolution Center); "
-              "the API does not return its text.")
+        items = [{"name": names.get(item_version(item), "other item"),
+                  "status": status(item["attributes"].get("state"))}
+                 for item in submission_items(api, row["id"])]
+        snapshot["submissions"].append({"id": row["id"], "status": status(a.get("state")),
+                                        "submittedAt": a.get("submittedDate") or "",
+                                        "items": items})
+    latest = versions[:1]
+    if latest and state(latest[0]) in NEEDS_ACTION:
+        a = latest[0]["attributes"]
+        snapshot["attention"].append(
+            f"{a.get('versionString')} is {status(state(latest[0]))['label'].lower()}: Apple's "
+            "message is in App Store Connect -> App Review (Resolution Center)")
+    if any(row["attributes"].get("state") == "UNRESOLVED_ISSUES" for row in rows):
+        snapshot["attention"].append(
+            "An App Review submission has unresolved issues: reply in App Store Connect -> "
+            "App Review (Resolution Center); the API does not return Apple's text")
     return versions
 
 
@@ -130,23 +176,23 @@ def next_month(month):
     return (month.replace(day=1) + timedelta(days=32)).replace(day=1)
 
 
-def tally(found: Counter) -> str:
-    return (f"{found['downloads']} downloads, {found['redownloads']} redownloads, "
-            f"{found['updates']} updates")
+def counts(found: Counter) -> dict:
+    return {kind: found[kind] for kind in KINDS}
 
 
-def downloads(api, app: str, versions: list, vendor: str, today) -> None:
-    heading("Downloads")
+def downloads(api, app: str, versions: list, vendor: str, today) -> dict:
+    result = {"available": False, "note": "", "since": "", "total": counts(Counter()),
+              "recent": []}
     if not vendor:
-        print("  set ASC_VENDOR_NUMBER (App Store Connect -> Payments and Financial Reports, "
-              "the number under the account name) in the environment or the desktop's "
-              "Actions variables")
-        return
+        result["note"] = ("set ASC_VENDOR_NUMBER (App Store Connect -> Payments and Financial "
+                          "Reports, the number under the account name) in the environment or "
+                          "the desktop's Actions variables")
+        return result
     created = [row["attributes"].get("createdDate") for row in versions]
     created = [stamp[:10] for stamp in created if stamp]
     if not created:
-        print("  none: the app has no App Store version yet")
-        return
+        result["note"] = "none: the app has no App Store version yet"
+        return result
     first = datetime.strptime(min(created), "%Y-%m-%d").date().replace(day=1)
     try:
         total = Counter()
@@ -160,104 +206,243 @@ def downloads(api, app: str, versions: list, vendor: str, today) -> None:
             daily = dict(zip(days, pool.map(
                 lambda when: units(api, vendor, app, "DAILY", when.isoformat()), days)))
     except SystemExit as error:
-        print(f"  (unavailable: {str(error)[:200]})")
-        return
+        result["error"] = str(error)[:200]
+        return result
     total += sum((found for when, found in daily.items() if when >= month), Counter())
-    print(f"  since {first.strftime('%Y-%m')}: {tally(total)}")
+    result.update(available=True, since=first.strftime("%Y-%m"), total=counts(total))
     for span in RECENT_DAYS:
         recent = sum((found for when, found in daily.items()
                       if when >= today - timedelta(days=span)), Counter())
-        print(f"  last {span} days: {tally(recent)}")
-    print("  (App Store Connect Sales reports; a day's report arrives the next morning, Pacific time)")
+        result["recent"].append({"days": span, **counts(recent)})
+    return result
 
 
-def testflight(api, app: str) -> None:
-    heading("TestFlight builds")
+def testflight(api, app: str, snapshot: dict) -> None:
     found = get(api, "/v1/builds", {
         "filter[app]": app, "sort": "-uploadedDate", "limit": str(BUILDS_SHOWN),
         "include": "preReleaseVersion,buildBetaDetail,betaAppReviewSubmission,betaGroups",
     })
     extra = included(found)
-    if not found.get("data"):
-        print("  none")
     for row in found.get("data", []):
         a = row["attributes"]
         version = (related(row, "preReleaseVersion", extra) or {}).get("attributes", {})
         detail = (related(row, "buildBetaDetail", extra) or {}).get("attributes", {})
         review = (related(row, "betaAppReviewSubmission", extra) or {}).get("attributes", {})
         groups = [g["attributes"]["name"] for g in related(row, "betaGroups", extra) or []]
-        print(f"  {version.get('version', '?')} ({a.get('version')}): {a.get('processingState')}"
-              f"; uploaded {day(a.get('uploadedDate'))}"
-              f"{'; EXPIRED' if a.get('expired') else ''}")
-        print(f"    internal {flag(detail.get('internalBuildState') or '?')}"
-              f"; external {flag(detail.get('externalBuildState') or '?')}"
-              f"; beta review {review.get('betaReviewState') or 'not submitted'}")
-        print(f"    in groups: {', '.join(groups) or 'none'}")
+        snapshot["builds"].append({
+            "version": version.get("version") or "", "build": a.get("version") or "",
+            "processing": status(a.get("processingState")),
+            "uploadedAt": a.get("uploadedDate") or "", "expired": bool(a.get("expired")),
+            "internal": status(detail.get("internalBuildState")),
+            "external": status(detail.get("externalBuildState")),
+            "betaReview": status(review.get("betaReviewState"), "Not submitted"),
+            "groups": groups})
 
-    heading("TestFlight groups")
     groups = get(api, f"/v1/apps/{app}/betaGroups", {"limit": "200"}).get("data", [])
-    if not groups:
-        print("  none")
     for row in sorted(groups, key=lambda g: (not g["attributes"].get("isInternalGroup"),
                                              g["attributes"]["name"])):
         a = row["attributes"]
         testers = get(api, f"/v1/betaGroups/{row['id']}/betaTesters", {"limit": "1"})
         count = testers.get("meta", {}).get("paging", {}).get("total", len(testers.get("data", [])))
-        kind = "internal" if a.get("isInternalGroup") else "external"
-        notes = [f"{count} tester{'s' if count != 1 else ''}"]
-        notes.append("every build" if a.get("hasAccessToAllBuilds") else "chosen builds")
-        if not a.get("isInternalGroup"):
-            if a.get("publicLinkEnabled"):
-                limit = (f", limit {a.get('publicLinkLimit')}"
-                         if a.get("publicLinkLimitEnabled") else "")
-                notes.append(f"public link ON {a.get('publicLink') or ''}{limit}".rstrip())
-            else:
-                notes.append("public link off")
-        notes.append("feedback on" if a.get("feedbackEnabled") else "feedback off")
-        print(f"  {a['name']} ({kind}): {'; '.join(notes)}")
+        internal = bool(a.get("isInternalGroup"))
+        linked = not internal and bool(a.get("publicLinkEnabled"))
+        snapshot["groups"].append({
+            "name": a.get("name") or "", "internal": internal, "testers": int(count or 0),
+            "allBuilds": bool(a.get("hasAccessToAllBuilds")), "publicLinkEnabled": linked,
+            "publicLink": (a.get("publicLink") or "") if linked else "",
+            "publicLinkLimit": int(a.get("publicLinkLimit") or 0)
+            if linked and a.get("publicLinkLimitEnabled") else 0,
+            "feedbackEnabled": bool(a.get("feedbackEnabled"))})
 
 
-def feedback(api, app: str, shown: int) -> None:
-    heading("TestFlight tester feedback")
+def feedback(api, app: str, shown: int, snapshot: dict) -> None:
     entries = []
+    problems = []
     for kind in ("betaFeedbackScreenshotSubmissions", "betaFeedbackCrashSubmissions"):
-        found = optional(api, f"/v1/apps/{app}/{kind}", {"sort": "-createdDate", "limit": str(shown)})
+        found = optional(api, problems, f"/v1/apps/{app}/{kind}",
+                         {"sort": "-createdDate", "limit": str(shown)})
         for row in (found or {}).get("data", []):
             entries.append(("crash" if "Crash" in kind else "screenshot", row["attributes"]))
+    unavailable(snapshot, "feedback", problems)
     entries.sort(key=lambda entry: entry[1].get("createdDate", ""), reverse=True)
-    if not entries:
-        print("  none")
     for kind, a in entries[:shown]:
-        who = a.get("email") or "anonymous"
-        device = " ".join(filter(None, [a.get("deviceModel"), a.get("osVersion")]))
-        comment = " ".join((a.get("comment") or "").split()) or "(no comment)"
-        print(f"  {day(a.get('createdDate'))} {kind} from {who} ({device or '?'}): {comment[:300]}")
+        snapshot["feedback"].append({
+            "kind": kind, "createdAt": a.get("createdDate") or "",
+            "from": a.get("email") or "anonymous",
+            "device": " ".join(filter(None, [a.get("deviceModel"), a.get("osVersion")])),
+            "comment": " ".join((a.get("comment") or "").split())[:300]})
+
+    problems = []
+    found = optional(api, problems, f"/v1/apps/{app}/customerReviews",
+                     {"sort": "-createdDate", "limit": str(shown)})
+    unavailable(snapshot, "reviews", problems)
+    for row in (found or {}).get("data", []):
+        a = row["attributes"]
+        snapshot["reviews"].append({
+            "createdAt": a.get("createdDate") or "", "rating": int(a.get("rating") or 0),
+            "title": a.get("title") or "", "territory": a.get("territory") or "",
+            "body": " ".join((a.get("body") or "").split())[:300]})
+
+
+def collect(api, app: str, shown: int, vendor: str, today) -> dict:
+    snapshot = {"format": FORMAT, "generatedAt": int(time.time() * 1000),
+                "app": {"id": app, "bundleId": APP_BUNDLE_ID}, "attention": [],
+                "versions": [], "submissions": [], "downloads": {}, "builds": [],
+                "groups": [], "feedback": [], "reviews": [], "unavailable": {}}
+    versions = app_store(api, app, snapshot)
+    snapshot["downloads"] = downloads(api, app, versions, vendor, today)
+    if snapshot["downloads"].get("error"):
+        snapshot["unavailable"]["downloads"] = snapshot["downloads"].pop("error")
+    testflight(api, app, snapshot)
+    feedback(api, app, shown, snapshot)
+    for build in snapshot["builds"][:1]:
+        for key in ("internal", "external"):
+            if build[key]["tone"] == "action":
+                snapshot["attention"].append(
+                    f"TestFlight build {build['version']} ({build['build']}): "
+                    f"{key} testing is {build[key]['label'].lower()}")
+    return snapshot
+
+
+def heading(title: str) -> None:
+    print(f"\n== {title} ==")
+
+
+def problem(snapshot: dict, section: str) -> bool:
+    message = snapshot["unavailable"].get(section)
+    if message:
+        print(f"  (unavailable: {message})")
+    return bool(message)
+
+
+def tally(found: dict) -> str:
+    return (f"{found['downloads']} downloads, {found['redownloads']} redownloads, "
+            f"{found['updates']} updates")
+
+
+def render_downloads(found: dict, error: str = "") -> None:
+    heading("Downloads")
+    if error:
+        print(f"  (unavailable: {error})")
+        return
+    if not found["available"]:
+        print(f"  {found['note']}")
+        return
+    print(f"  since {found['since']}: {tally(found['total'])}")
+    for recent in sorted(found["recent"], key=lambda span: span["days"]):
+        print(f"  last {recent['days']} days: {tally(recent)}")
+    print("  (App Store Connect Sales reports; a day's report arrives the next morning, Pacific time)")
+
+
+def render(snapshot: dict) -> None:
+    print(f"App Store Connect app {snapshot['app']['id']}")
+    heading("App Store versions")
+    problem(snapshot, "versions")
+    if not snapshot["versions"]:
+        print("  none")
+    for row in snapshot["versions"]:
+        print(f"  {row['version']} (build {row['build'] or 'no build'}): "
+              f"{flag(row['status']['state'])}; release {row['releaseType'] or None}"
+              f"; created {day(row['createdAt'])}")
+
+    heading("App Review submissions")
+    if not snapshot["submissions"]:
+        print("  none")
+    for row in snapshot["submissions"]:
+        print(f"  {row['id']}: {flag(row['status']['state'])}; submitted {day(row['submittedAt'])}")
+        for item in row["items"]:
+            print(f"    {item['name']}: {flag(item['status']['state'])}")
+    if any("Resolution Center" in line for line in snapshot["attention"]):
+        print("  Apple's message is in App Store Connect -> App Review (Resolution Center); "
+              "the API does not return its text.")
+
+    render_downloads(snapshot["downloads"], snapshot["unavailable"].get("downloads", ""))
+
+    heading("TestFlight builds")
+    if not snapshot["builds"]:
+        print("  none")
+    for row in snapshot["builds"]:
+        print(f"  {row['version'] or '?'} ({row['build']}): {row['processing']['state']}"
+              f"; uploaded {day(row['uploadedAt'])}{'; EXPIRED' if row['expired'] else ''}")
+        print(f"    internal {flag(row['internal']['state'] or '?')}"
+              f"; external {flag(row['external']['state'] or '?')}"
+              f"; beta review {row['betaReview']['state'] or 'not submitted'}")
+        print(f"    in groups: {', '.join(row['groups']) or 'none'}")
+
+    heading("TestFlight groups")
+    if not snapshot["groups"]:
+        print("  none")
+    for row in snapshot["groups"]:
+        count = row["testers"]
+        notes = [f"{count} tester{'s' if count != 1 else ''}"]
+        notes.append("every build" if row["allBuilds"] else "chosen builds")
+        if not row["internal"]:
+            if row["publicLinkEnabled"]:
+                limit = f", limit {row['publicLinkLimit']}" if row["publicLinkLimit"] else ""
+                notes.append(f"public link ON {row['publicLink']}{limit}".rstrip())
+            else:
+                notes.append("public link off")
+        notes.append("feedback on" if row["feedbackEnabled"] else "feedback off")
+        print(f"  {row['name']} ({'internal' if row['internal'] else 'external'}): "
+              f"{'; '.join(notes)}")
+
+    heading("TestFlight tester feedback")
+    if not problem(snapshot, "feedback") and not snapshot["feedback"]:
+        print("  none")
+    for row in snapshot["feedback"]:
+        print(f"  {day(row['createdAt'])} {row['kind']} from {row['from']} "
+              f"({row['device'] or '?'}): {row['comment'] or '(no comment)'}")
 
     heading("App Store customer reviews")
-    found = optional(api, f"/v1/apps/{app}/customerReviews", {"sort": "-createdDate", "limit": str(shown)})
-    rows = (found or {}).get("data", [])
-    if found is not None and not rows:
+    if not problem(snapshot, "reviews") and not snapshot["reviews"]:
         print("  none")
-    for row in rows:
-        a = row["attributes"]
-        body = " ".join((a.get("body") or "").split())
-        print(f"  {day(a.get('createdDate'))} {'*' * int(a.get('rating') or 0)} "
-              f"{a.get('title') or ''} ({a.get('territory')}): {body[:300]}")
+    for row in snapshot["reviews"]:
+        print(f"  {day(row['createdAt'])} {'*' * row['rating']} {row['title']} "
+              f"({row['territory']}): {row['body']}")
+
+
+def publish(snapshot: dict, request=None) -> bool:
+    try:
+        if request is None:
+            if str(TOOLS_DIR) not in sys.path:
+                sys.path.insert(0, str(TOOLS_DIR))
+            import forkmesh_mcp_server
+            request = forkmesh_mcp_server.package_request
+            origin = forkmesh_mcp_server.crm_origin()
+        else:
+            origin = ""
+        request("App Store Status", PUBLISH_PREFIX, PUBLISH_PROOF, "PUT",
+                PUBLISH_PREFIX + "/snapshot", snapshot)
+    except Exception as error:
+        print(f"\nnot published to the App Store Status page: {error}")
+        return False
+    print(f"\npublished to the App Store Status page: {origin}{PAGE_PATH}")
+    return True
 
 
 def main(args: list[str]) -> None:
     shown = 5
-    if args[:1] == ["--feedback"] and len(args) == 2 and args[1].isdigit():
-        shown = int(args[1])
-    elif args:
-        raise SystemExit(USAGE)
+    as_json = publishing = False
+    rest = list(args)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--feedback" and rest and rest[0].isdigit():
+            shown = int(rest.pop(0))
+        elif arg == "--json":
+            as_json = True
+        elif arg == "--publish":
+            publishing = True
+        else:
+            raise SystemExit(USAGE)
     api = Session()
     app = app_id(api)
-    print(f"App Store Connect app {app}")
-    versions = app_store(api, app)
-    downloads(api, app, versions, vendor_number(), datetime.now(timezone.utc).date())
-    testflight(api, app)
-    feedback(api, app, shown)
+    snapshot = collect(api, app, shown, vendor_number(), datetime.now(timezone.utc).date())
+    if as_json:
+        print(json.dumps(snapshot, indent=2))
+    else:
+        render(snapshot)
+    if publishing:
+        publish(snapshot)
 
 
 if __name__ == "__main__":

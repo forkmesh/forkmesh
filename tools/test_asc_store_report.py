@@ -1,4 +1,5 @@
 import gzip
+import json
 import sys
 import urllib.parse
 from datetime import date
@@ -8,7 +9,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "native" / "ios" / "tools"))
+sys.path.insert(0, str(ROOT / "marketplace" / "packages" / "app-store-status" / "content" / "worker"))
 
+import app_store_status  # noqa: E402
 import asc_store_report  # noqa: E402
 from asc_bundle_ids import credentials, token  # noqa: E402
 
@@ -105,7 +108,8 @@ def test_downloads_add_closed_months_and_daily_reports_for_the_app(capsys):
     })
     versions = [{"attributes": {"createdDate": "2026-09-14T09:23:00Z"}},
                 {"attributes": {"createdDate": "2026-08-28T10:00:00Z"}}]
-    asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 13))
+    asc_store_report.render_downloads(
+        asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 13)))
     out = capsys.readouterr().out
     assert ("MONTHLY", "2026-07") not in api.asked
     assert ("MONTHLY", "2026-10") not in api.asked
@@ -122,7 +126,8 @@ def test_a_month_too_new_for_its_monthly_report_counts_its_days(capsys):
         ("DAILY", "2026-10-02"): sales(("1F", "1", "app")),
     })
     versions = [{"attributes": {"createdDate": "2026-09-14T09:23:00Z"}}]
-    asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 5))
+    asc_store_report.render_downloads(
+        asc_store_report.downloads(api, "app", versions, "85000000", date(2026, 10, 5)))
     out = capsys.readouterr().out
     assert ("MONTHLY", "2026-09") not in api.asked
     assert "since 2026-09: 7 downloads" in out
@@ -149,6 +154,63 @@ def test_the_report_flags_review_trouble_and_lists_groups_and_feedback(monkeypat
     assert "screenshot from t@example.com (iPhone16_2 27.0): Show time as 5:45pm" in out
     assert "(unavailable: ERROR: App Store Connect GET answered 404)" in out
     assert out.rstrip().endswith("== App Store customer reviews ==\n  none")
+
+
+def collected(monkeypatch):
+    monkeypatch.setattr(asc_store_report, "vendor_number", lambda: "")
+    return asc_store_report.collect(fake_api, "app", 5, "", date(2026, 10, 13))
+
+
+def test_the_snapshot_carries_labels_tones_and_attention(monkeypatch):
+    snapshot = collected(monkeypatch)
+    assert snapshot["format"] == "forkmesh-app-store-status-v1"
+    assert snapshot["app"]["id"] == "app"
+    assert snapshot["versions"][0] == {
+        "version": "1.4.0", "build": "19", "releaseType": "AFTER_APPROVAL",
+        "createdAt": "2026-09-16T09:45:00Z",
+        "status": {"state": "REJECTED", "label": "Rejected", "tone": "action"}}
+    assert snapshot["versions"][1]["status"]["tone"] == "good"
+    assert snapshot["versions"][1]["build"] == ""
+    assert snapshot["submissions"][0]["items"][0]["name"] == "1.4.0"
+    assert len(snapshot["attention"]) == 2
+    build = snapshot["builds"][0]
+    assert build["external"] == {"state": "WAITING_FOR_BETA_REVIEW",
+                                 "label": "Waiting for beta review", "tone": "pending"}
+    assert build["betaReview"] == {"state": "", "label": "Not submitted", "tone": "neutral"}
+    assert [group["name"] for group in snapshot["groups"]] == ["forkmesh-team", "outside"]
+    assert snapshot["groups"][1]["publicLink"] == "https://testflight.apple.com/join/x"
+    assert snapshot["feedback"][0]["comment"] == "Show time as 5:45pm"
+    assert snapshot["unavailable"] == {
+        "feedback": "ERROR: App Store Connect GET answered 404"}
+    assert snapshot["downloads"]["available"] is False
+    assert json.loads(json.dumps(snapshot)) == snapshot
+    assert app_store_status.clean_snapshot(snapshot) == snapshot
+
+
+def test_publish_puts_the_snapshot_and_never_fails_the_report(monkeypatch, capsys):
+    snapshot = collected(monkeypatch)
+    sent = []
+    assert asc_store_report.publish(snapshot, lambda *args: sent.append(args))
+    assert sent == [("App Store Status", "/api/app-store-status",
+                     "forkmesh-app-store-status-request-v1", "PUT",
+                     "/api/app-store-status/snapshot", snapshot)]
+
+    def refuse(*args):
+        raise ValueError("App Store Status API 401: invalid_session")
+
+    assert not asc_store_report.publish(snapshot, refuse)
+    assert "not published to the App Store Status page: App Store Status API 401" in (
+        capsys.readouterr().out)
+
+
+def test_json_mode_prints_the_snapshot(monkeypatch, capsys):
+    monkeypatch.setattr(asc_store_report, "Session", lambda: fake_api)
+    monkeypatch.setattr(asc_store_report, "app_id", lambda api: "app")
+    monkeypatch.setattr(asc_store_report, "vendor_number", lambda: "")
+    asc_store_report.main(["--json", "--feedback", "2"])
+    assert json.loads(capsys.readouterr().out)["versions"][0]["version"] == "1.4.0"
+    with pytest.raises(SystemExit, match="usage"):
+        asc_store_report.main(["--bogus"])
 
 
 def test_store_report_credentials_have_an_actionable_error(tmp_path, monkeypatch):

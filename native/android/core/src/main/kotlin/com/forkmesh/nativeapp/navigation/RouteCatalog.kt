@@ -146,6 +146,7 @@ object RouteCatalog {
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.FaceChanger -> "Face Changer"
+        Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
         Route.Kind.Stats -> "Stats"
@@ -209,6 +210,7 @@ object RouteCatalog {
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.FaceChanger -> "face"
+        Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
         Route.Kind.Stats -> "bar_chart"
@@ -314,6 +316,7 @@ object HubCatalog {
     val insights: List<HubItem> = listOf(
         HubItem.destination(Route.Stats, needsRegistration = true),
         HubItem.destination(Route.Status, needsRegistration = true),
+        HubItem.destination(Route.AppStoreStatus, needsRegistration = true),
         HubItem.destination(Route.Admin(null), needsRegistration = true, adminOnly = true),
     )
 

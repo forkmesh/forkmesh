@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "AppStoreStatusModel.h",
+    "AppStoreStatusModel.cpp",
+    "AppStoreStatusFeature.h",
+    "AppStoreStatusFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_app_store_status.cpp",
+    "AppStoreStatusModel.h",
+    "AppStoreStatusModel.cpp",
+    "AppStoreStatusFeature.h",
+    "AppStoreStatusFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
+}

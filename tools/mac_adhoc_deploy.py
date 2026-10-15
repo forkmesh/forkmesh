@@ -907,7 +907,7 @@ def store_status(run=subprocess.run, feedback: int | None = None) -> int:
         print(f"mac_adhoc_deploy: no App Store Connect key at {key} "
               "(docs/native/IOS_RELEASE.md)", file=sys.stderr)
         return 1
-    command = [sys.executable, "-u", str(STORE_REPORT)]
+    command = [sys.executable, "-u", str(STORE_REPORT), "--publish"]
     if feedback is not None:
         command.extend(["--feedback", str(feedback)])
     return run(command, env={**os.environ, **ids}).returncode

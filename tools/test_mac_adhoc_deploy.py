@@ -747,7 +747,7 @@ def test_store_status_runs_the_report_with_the_key_ids(tmp_path, monkeypatch):
     assert runs == []
     (keys / "AuthKey_K.p8").write_text("key")
     assert mac_adhoc_deploy.store_status(run) == 0
-    assert runs[0][0][-1] == str(mac_adhoc_deploy.STORE_REPORT)
+    assert runs[0][0][-2:] == [str(mac_adhoc_deploy.STORE_REPORT), "--publish"]
     assert runs[0][1:] == ("K", "I")
     assert mac_adhoc_deploy.STORE_REPORT.is_file()
 
@@ -767,4 +767,4 @@ def test_store_status_passes_the_requested_feedback_count(tmp_path, monkeypatch)
 
     assert mac_adhoc_deploy.store_status(run, 2) == 0
     assert commands == [[mac_adhoc_deploy.sys.executable, "-u", str(mac_adhoc_deploy.STORE_REPORT),
-                         "--feedback", "2"]]
+                         "--publish", "--feedback", "2"]]

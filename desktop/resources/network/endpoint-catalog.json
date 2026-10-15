@@ -1962,6 +1962,32 @@
       ]
     },
     {
+      "pattern": "app.forkmesh.com/api/app-store-status",
+      "method": "GET",
+      "importance": 3,
+      "description": "Reads the App Store Connect snapshot your desktop last published: review state, downloads, TestFlight, feedback and reviews",
+      "trigger": "Opening the App Store Status page and its Refresh button",
+      "modestPerHour": 6,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/app-store-status/content/desktop/AppStoreStatusFeature.cpp: AppStoreStatusFeature::refresh"
+      ]
+    },
+    {
+      "pattern": "app.forkmesh.com/api/app-store-status/*",
+      "method": "GET",
+      "importance": 3,
+      "description": "Exports the App Store Connect snapshot saved for your account",
+      "trigger": "Removing App Store Status from the rail",
+      "modestPerHour": 2,
+      "alternative": "none: on-demand",
+      "requestNeeded": 100,
+      "source": [
+        "marketplace/packages/app-store-status/content/desktop/AppStoreStatusFeature.cpp: AppStoreStatusFeature::exportData"
+      ]
+    },
+    {
       "pattern": "app.forkmesh.com/api/analytics",
       "method": "GET",
       "importance": 4,

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">App Store Status page with a needs-action banner, App Store versions with review state badges, download totals, TestFlight builds, groups, and the latest reviews</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="64" y="84" font-size="30" font-weight="600" fill="#f4f5f7">App Store Status</text>
+    <text x="64" y="112" font-size="16" fill="#9aa1ad">com.forkmesh.app · published 3 minutes ago</text>
+    <rect x="1092" y="58" width="124" height="36" rx="8" fill="#20242d" stroke="#333a47"/>
+    <text x="1154" y="82" font-size="15" fill="#e6e8eb" text-anchor="middle">Refresh</text>
+
+    <rect x="64" y="132" width="1152" height="56" rx="10" fill="#2a1619" stroke="#6b2a31"/>
+    <circle cx="92" cy="160" r="9" fill="none" stroke="#f0707a" stroke-width="2.5"/>
+    <text x="114" y="156" font-size="15" font-weight="600" fill="#f6c6ca">Needs action</text>
+    <text x="114" y="176" font-size="14" fill="#e3a9ae">1.4.0 is rejected: Apple's message is in App Store Connect → App Review (Resolution Center)</text>
+
+    <rect x="64" y="204" width="564" height="196" rx="10" fill="#1b1f27" stroke="#2a2f3a"/>
+    <text x="84" y="234" font-size="16" font-weight="600" fill="#f4f5f7">App Store versions</text>
+    <line x1="64" x2="628" y1="248" y2="248" stroke="#2a2f3a"/>
+    <text x="84" y="278" font-size="16" font-weight="600" fill="#e6e8eb">1.4.0 <tspan fill="#9aa1ad" font-weight="400">build 19</tspan></text>
+    <text x="84" y="298" font-size="13" fill="#8a919d">created Sep 16 · after approval</text>
+    <rect x="514" y="264" width="92" height="26" rx="13" fill="none" stroke="#c2454f"/>
+    <text x="560" y="282" font-size="13" fill="#f0707a" text-anchor="middle">Rejected</text>
+    <line x1="64" x2="628" y1="316" y2="316" stroke="#2a2f3a"/>
+    <text x="84" y="346" font-size="16" font-weight="600" fill="#e6e8eb">1.3.0 <tspan fill="#9aa1ad" font-weight="400">build 17</tspan></text>
+    <text x="84" y="366" font-size="13" fill="#8a919d">created Sep 14 · after approval</text>
+    <rect x="420" y="332" width="186" height="26" rx="13" fill="none" stroke="#2f9e6a"/>
+    <text x="513" y="350" font-size="13" fill="#4cc38a" text-anchor="middle">Ready for distribution</text>
+
+    <rect x="652" y="204" width="564" height="196" rx="10" fill="#1b1f27" stroke="#2a2f3a"/>
+    <text x="672" y="234" font-size="16" font-weight="600" fill="#f4f5f7">Downloads</text>
+    <line x1="652" x2="1216" y1="248" y2="248" stroke="#2a2f3a"/>
+    <text x="672" y="276" font-size="13" fill="#8a919d">Since 2026-08</text>
+    <text x="672" y="312" font-size="30" font-weight="600" fill="#f4f5f7">1,284</text>
+    <text x="672" y="332" font-size="13" fill="#8a919d">downloads</text>
+    <text x="812" y="312" font-size="30" font-weight="600" fill="#f4f5f7">96</text>
+    <text x="812" y="332" font-size="13" fill="#8a919d">redownloads</text>
+    <text x="952" y="312" font-size="30" font-weight="600" fill="#f4f5f7">2,410</text>
+    <text x="952" y="332" font-size="13" fill="#8a919d">updates</text>
+    <text x="672" y="372" font-size="14" fill="#c4c9d1">Last 7 days: 41 downloads · 3 redownloads · 188 updates</text>
+
+    <rect x="64" y="416" width="564" height="248" rx="10" fill="#1b1f27" stroke="#2a2f3a"/>
+    <text x="84" y="446" font-size="16" font-weight="600" fill="#f4f5f7">TestFlight builds</text>
+    <line x1="64" x2="628" y1="460" y2="460" stroke="#2a2f3a"/>
+    <text x="84" y="490" font-size="16" font-weight="600" fill="#e6e8eb">1.4.1 <tspan fill="#9aa1ad" font-weight="400">build 21</tspan></text>
+    <rect x="540" y="476" width="66" height="26" rx="13" fill="none" stroke="#2f9e6a"/>
+    <text x="573" y="494" font-size="13" fill="#4cc38a" text-anchor="middle">Valid</text>
+    <text x="84" y="516" font-size="13" fill="#8a919d">Internal</text>
+    <rect x="140" y="502" width="124" height="22" rx="11" fill="none" stroke="#2f9e6a"/>
+    <text x="202" y="518" font-size="12" fill="#4cc38a" text-anchor="middle">In beta testing</text>
+    <text x="276" y="516" font-size="13" fill="#8a919d">External</text>
+    <rect x="336" y="502" width="178" height="22" rx="11" fill="none" stroke="#b7791f"/>
+    <text x="425" y="518" font-size="12" fill="#e5a93a" text-anchor="middle">Waiting for beta review</text>
+    <text x="84" y="542" font-size="13" fill="#8a919d">groups: forkmesh-team, outside</text>
+    <line x1="64" x2="628" y1="560" y2="560" stroke="#2a2f3a"/>
+    <text x="84" y="590" font-size="16" font-weight="600" fill="#e6e8eb">forkmesh-team</text>
+    <text x="84" y="610" font-size="13" fill="#8a919d">3 testers · every build · feedback on</text>
+    <rect x="530" y="576" width="76" height="26" rx="13" fill="none" stroke="#3a4250"/>
+    <text x="568" y="594" font-size="13" fill="#c4c9d1" text-anchor="middle">Internal</text>
+    <text x="84" y="640" font-size="13" fill="#8a919d">outside · 1 tester · <tspan fill="#5aa9f0">public link</tspan> · feedback on</text>
+
+    <rect x="652" y="416" width="564" height="248" rx="10" fill="#1b1f27" stroke="#2a2f3a"/>
+    <text x="672" y="446" font-size="16" font-weight="600" fill="#f4f5f7">Customer reviews</text>
+    <line x1="652" x2="1216" y1="460" y2="460" stroke="#2a2f3a"/>
+    <text x="672" y="490" font-size="16" fill="#e5a93a">★★★★★ <tspan fill="#e6e8eb" font-weight="600">Finally, Git on my phone</tspan></text>
+    <text x="672" y="510" font-size="13" fill="#8a919d">USA · Oct 12</text>
+    <text x="672" y="532" font-size="14" fill="#c4c9d1">Agents, pull requests and chat in one app.</text>
+    <line x1="652" x2="1216" y1="552" y2="552" stroke="#2a2f3a"/>
+    <text x="672" y="582" font-size="16" fill="#e5a93a">★★★★<tspan fill="#4a505c">★</tspan> <tspan fill="#e6e8eb" font-weight="600">Fast mirrors</tspan></text>
+    <text x="672" y="602" font-size="13" fill="#8a919d">GBR · Oct 9</text>
+    <text x="672" y="624" font-size="14" fill="#c4c9d1">Would love widgets for build status.</text>
+  </g>
+</svg>

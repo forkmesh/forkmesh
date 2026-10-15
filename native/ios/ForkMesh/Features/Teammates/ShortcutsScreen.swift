@@ -1,5 +1,6 @@
 import FMApi
 import FMControl
+import FMPackages
 import FMTeammates
 import SwiftUI
 
@@ -207,6 +208,16 @@ struct ShortcutDetailScreen: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(repo.isEmpty)
+                }
+                if AppStoreStatusText.isStatusShortcut(file: entry.file), PackageGate.shows(Route.appStoreStatus) {
+                    NavigationLink {
+                        AppStoreStatusScreen()
+                            .shellPageClearance()
+                    } label: {
+                        Label(AppStoreStatusText.openTitle, systemImage: "app.badge")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("shortcut-open-app-store-status")
                 }
                 if !error.isEmpty {
                     Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.footnote).frame(maxWidth: .infinity, alignment: .leading).fmMessageTools(error)

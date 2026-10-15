@@ -256,6 +256,15 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   `FmShareBridge`), `ShareTransferWriter` checks the type (video, image,
   audio), size (512 MiB at most) and name, and writes it to one temporary
   folder that each new share empties.
+- **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
+  Insights group): the App Store Connect snapshot the desktop last published,
+  read from `GET /api/app-store-status` and drawn natively
+  (`AppStoreStatusModels.swift` decodes it leniently: a missing field takes
+  its default, an unknown tone is neutral). Pull to refresh re-reads the
+  snapshot; a newer one needs the **iOS App Store status** shortcut to run
+  again, and that shortcut's detail page links here
+  ([App Store Status](../marketplace/app-store-status.md)). Android:
+  `Route.AppStoreStatus`, `AppStoreStatus.kt`, `feature/appstorestatus/`.
 - **People** (`.people`, `/dashboard/people`): a campfire of five engagement
   rings with Follow and Message ([People](../marketplace/people.md)).
 - **Docs** (`.docs`): the public documentation library bundled with the app.

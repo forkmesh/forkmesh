@@ -39,6 +39,7 @@ FIRST_PARTY_PACKAGES = {
     "agent-watch": "Watch",
     "agents": "Agents",
     "analytics": "Analytics",
+    "app-store-status": "App Store Status",
     "aquarium": "Aquarium",
     "backups": "Backups",
     "branches": "Branches",

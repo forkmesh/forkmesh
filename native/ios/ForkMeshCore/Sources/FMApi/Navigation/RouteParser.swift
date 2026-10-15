@@ -251,6 +251,7 @@ public enum RouteParser {
         case "speech": return [.speech]
         case "glasses-alert": return [.glassesAlert]
         case "face-changer": return [.faceChanger]
+        case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "people": return [.people]
         case "docs": return [.docs]
         case "repos": return [.repos(.all)]

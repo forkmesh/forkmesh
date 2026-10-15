@@ -1,0 +1,60 @@
+          <section data-view="app-store-status" class="view active h-full overflow-y-auto">
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">App Store Status</h1>
+                  <p data-asc-subtitle class="mt-1 text-sm text-muted-foreground">Your iOS app in App Store Connect, as your desktop last saw it.</p>
+                </div>
+                <button data-asc-refresh type="button" class="fm-btn"><i data-lucide="refresh-cw"></i>Refresh</button>
+              </div>
+              <div data-asc-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-asc-message-text class="fm-flash-body"></p></div>
+              <div data-asc-loading class="text-sm text-muted-foreground">Loading…</div>
+
+              <section data-asc-empty class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="smartphone"></i>
+                <h2 class="fm-blankslate-title">Nothing published yet</h2>
+                <p class="fm-blankslate-desc">Only your desktop holds the App Store Connect key. Run the <strong>iOS App Store status</strong> shortcut from the desktop's Shortcuts page or from your phone, and this page fills in on the web, desktop, iPhone, and Android.</p>
+              </section>
+
+              <div data-asc-app class="hidden grid gap-4">
+                <div data-asc-attention role="alert" class="fm-flash fm-flash-danger hidden"><i data-lucide="triangle-alert"></i><div class="fm-flash-body"><p class="fm-flash-title">Needs action</p><ul data-asc-attention-list class="mt-1 grid gap-1 text-sm"></ul></div></div>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">App Store versions</h2>
+                    <div data-asc-versions class="divide-y divide-border"></div>
+                  </section>
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">App Review submissions</h2>
+                    <div data-asc-submissions class="divide-y divide-border"></div>
+                  </section>
+                </div>
+                <section class="rounded-lg border border-border bg-card">
+                  <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-2.5">
+                    <h2 class="text-sm font-semibold text-foreground">Downloads</h2>
+                    <p class="text-xs text-muted-foreground">App Store Connect Sales reports; a day's report arrives the next morning, Pacific time</p>
+                  </div>
+                  <div data-asc-downloads></div>
+                </section>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">TestFlight builds</h2>
+                    <div data-asc-builds class="divide-y divide-border"></div>
+                  </section>
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">TestFlight groups</h2>
+                    <div data-asc-groups class="divide-y divide-border"></div>
+                  </section>
+                </div>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">Tester feedback</h2>
+                    <div data-asc-feedback class="divide-y divide-border"></div>
+                  </section>
+                  <section class="rounded-lg border border-border bg-card">
+                    <h2 class="border-b border-border px-4 py-2.5 text-sm font-semibold text-foreground">Customer reviews</h2>
+                    <div data-asc-reviews class="divide-y divide-border"></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </section>
