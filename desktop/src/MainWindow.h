@@ -10631,6 +10631,7 @@ private:
                        const QString &coveName, const QString &inviterName,
                        const QString &shareUrl, qint64 ts);
     void quickRebuildRestart();
+    void runRebuildRestartShortcut(QPushButton *button);
     void maybeStartQueuedRebuild();
     void changeMirrorLocation();
     void changePreviewCacheLocation();

@@ -136,6 +136,7 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 	}
 	desktop("core.update.config", m.handleConfig)
 	desktop("core.update.start", m.handleStart)
+	desktop("core.update.rebuild", m.handleRebuild)
 	desktop("core.update.prebuilt", m.handlePrebuilt)
 	desktop("core.update.cancel", m.handleCancel)
 	desktop("core.update.state", m.handleState)
@@ -620,6 +621,26 @@ func (m *Module) handleRun(ctx context.Context, req *rpc.Request) (any, error) {
 		"subject": subjectName,
 		"message": "Rebuilding. The desktop restarts when the build is done.",
 	}, nil
+}
+
+func (m *Module) handleRebuild(ctx context.Context, req *rpc.Request) (any, error) {
+	if m.running() {
+		return nil, rpc.Fail("already_running")
+	}
+	m.mu.Lock()
+	ready := m.config != nil
+	previous := m.feed.Run()
+	m.mu.Unlock()
+	if !ready && !m.hasUI() {
+		return nil, rpc.Fail("not_configured")
+	}
+	label := paramString(req, "requestedBy")
+	if label == "" {
+		label = "the Rebuild & restart shortcut"
+	}
+	m.core.LogUI("Rebuild and restart requested by %s.", label)
+	go m.startFromPhone(label)
+	return map[string]any{"started": true, "previousRun": previous}, nil
 }
 
 func (m *Module) startFromPhone(label string) {

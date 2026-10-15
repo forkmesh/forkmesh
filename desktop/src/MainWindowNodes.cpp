@@ -2564,8 +2564,7 @@ QWidget *MainWindow::buildNodeProfilePanel()
     connect(m_profileRebuildButton, &QPushButton::clicked, this, [this] {
         if (cancelRestartIfRunning())
             return;
-        startRestartSpin(m_profileRebuildButton);
-        quickRebuildRestart();
+        runRebuildRestartShortcut(m_profileRebuildButton);
     });
     m_profileUpdateButton = makeProfileActionButton(
         "download", "Update",

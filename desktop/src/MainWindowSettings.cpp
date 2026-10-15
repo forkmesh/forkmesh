@@ -1,5 +1,6 @@
 
 #include "AwsSettingsPanel.h"
+#include "CoreClient.h"
 #include "CoreDaemonSettings.h"
 #include "HiddenTerms.h"
 #include "OfficeChannelMirror.h"
@@ -38,6 +39,8 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QColor>
+#include <QDir>
+#include <QFile>
 #include <QColorDialog>
 #include <QCompleter>
 #include <QDesktopServices>
@@ -3677,8 +3680,7 @@ void MainWindow::buildSettingsFooterParts(SettingsSectionParts &parts)
     connect(m_rebuildButton, &QPushButton::clicked, this, [this] {
         if (cancelRestartIfRunning())
             return;
-        startRestartSpin(m_rebuildButton);
-        quickRebuildRestart();
+        runRebuildRestartShortcut(m_rebuildButton);
     });
 
     auto *loginButton = new QPushButton("Log in to a user account…");
@@ -6095,6 +6097,44 @@ void MainWindow::quickRebuildRestart()
     // build dir's type forces one full rebuild on the first run after this.
     buildAndRelaunch(clientDir, QString(), QString(),
                      QStringLiteral("RelWithDebInfo"));
+}
+
+void MainWindow::runRebuildRestartShortcut(QPushButton *button)
+{
+    const QString repoRoot = QDir::cleanPath(workingClientDir() + QStringLiteral("/.."));
+    const QString shortcut = repoRoot + QStringLiteral("/.forkmesh/shortcuts/rebuild-and-restart.sh");
+    const QString canonicalRoot = QFileInfo(repoRoot).canonicalFilePath();
+    int repoIndex = -1;
+    for (int i = 0; i < m_repositories.size() && !canonicalRoot.isEmpty() && repoIndex < 0; ++i)
+        if (QFileInfo(m_repositories.at(i).localPath).canonicalFilePath() == canonicalRoot)
+            repoIndex = i;
+    const bool usable = repoIndex >= 0 && coreOpsAttached() && m_coreClient &&
+                        m_coreClient->hasNativeRoute(QStringLiteral("core.update.rebuild")) &&
+                        QFileInfo::exists(repoRoot + QStringLiteral("/tools/rebuild_restart_log.py"));
+    if (usable && !QFileInfo::exists(shortcut)) {
+        QDir().mkpath(QFileInfo(shortcut).absolutePath());
+        QFile file(shortcut);
+        if (file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+            file.write(
+                "#!/usr/bin/env bash\n"
+                "# name: Rebuild & restart\n"
+                "# description: Rebuild the desktop app and the Go background engine (forkmesh-core) "
+                "from this checkout and relaunch, logging every phase with timings and the modules "
+                "that were compiled.\n"
+                "set -euo pipefail\n\n"
+                "repo=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/../..\" && pwd)\"\n"
+                "exec python3 \"$repo/tools/rebuild_restart_log.py\" \"$@\"\n");
+            file.close();
+            file.setPermissions(file.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
+            logRestart(QStringLiteral("created the Rebuild & restart shortcut at %1").arg(shortcut));
+        }
+    }
+    if (usable && QFileInfo::exists(shortcut) && runShortcut(shortcut, repoIndex)) {
+        logRestart(QStringLiteral("rebuild & restart handed to the shortcut %1").arg(shortcut));
+        return;
+    }
+    startRestartSpin(button);
+    quickRebuildRestart();
 }
 
 void MainWindow::maybeStartQueuedRebuild()
