@@ -71,7 +71,7 @@ struct CalendarScreen: View {
                             }
                             .accessibilityLabel("New event")
                         }
-                        ToolbarItem(placement: .secondaryAction) {
+                        ToolbarItem(placement: .primaryAction) {
                             Button("Today") { Task { await model.goToToday() } }
                         }
                     }

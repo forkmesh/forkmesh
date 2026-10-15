@@ -37,7 +37,7 @@ final class PhotoAgentsApi: AgentsApi {
         try await inner.agentSessionPage(owner, name, ownerAccount: ownerAccount)
     }
     func agentTranscript(_ owner: String, _ name: String, _ id: Int, ownerAccount: String) async throws -> AgentTranscript {
-        AgentTranscript(status: "done", transcript: "Fix this\nAttached image: /home/f/agent-images/paste-1.png\nDone.")
+        AgentTranscript(status: "done", transcript: "Fix this\nAttached image: /home/tester/agent-images/paste-1.png\nDone.")
     }
     func agentLaunchOptions(_ owner: String, _ repo: String) async throws -> AgentLaunchOptions {
         try await inner.agentLaunchOptions(owner, repo)

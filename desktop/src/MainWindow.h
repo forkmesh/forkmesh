@@ -314,6 +314,7 @@ class DatabaseManagerWidget;
 class DesktopProcessView;
 class FleetVisualizer;
 class QueryInspector;
+namespace desktopprocs { struct Process; }
 }
 class QButtonGroup;
 class QGridLayout;
@@ -1408,6 +1409,11 @@ public:
     QStringList testNativePackageIds() const;
     void testShowNativePackage(const QString &id);
     QWidget *testNativePackageWindow(const QString &id) const;
+    QPushButton *testPackageActionsButton() const
+    {
+        return m_packageActionsButton;
+    }
+    QStringList testPackageActionsMenu(const QString &id);
     // Sidebar rows as rendered: "[Group]" headers, "Group > #channel" members,
     // bare "#channel" for the top level.
     QStringList testChatSidebarRows() const;
@@ -4149,6 +4155,15 @@ private:
     // Right-click on a package's rail button: settings, export, remove.
     void attachPackageRailMenu(QPushButton *button, const QString &entrypoint);
     QMenu *buildPackageRailMenu(const QString &entrypoint, QWidget *parent);
+    void addPackageFeedbackActions(QMenu *menu, const QString &id);
+    QMenu *buildPackageActionsMenu(const QString &id, QWidget *parent);
+    QPushButton *createPackageActionsButton(std::function<QString()> packageId,
+                                            QWidget *parent);
+    void showPackageActionsMenu(QPushButton *button, const QString &id);
+    void openPackageRating(const QString &id);
+    void showPackageFeedbackDialog(const QString &id);
+    QString currentNativePackageId() const;
+    void updatePackageActionsButton();
     void syncPackageRuntime();
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
@@ -4599,6 +4614,8 @@ private:
     void sendDiagnosticsReportToAgent();
     void resetDiagnosticsReportBaseline();
     void showDiagnosticsDialog();
+    void showDesktopResourceDiagnostics();
+    void showDesktopProcessDetails(const forkmesh::desktopprocs::Process &process);
     void showHighMemoryProcessPanel(bool activate = true);
     void updateHighMemoryHeading();
     void refreshHighMemoryProcessTable();
@@ -8191,6 +8208,7 @@ private:
                                      const QStringList &merged,
                                      const QStringList &mergedRemote);
     void deleteSelectedBranches();
+    void refreshBranchesFromRemotes();
     QWidget *buildReleasesTab();
     void loadReleasesPanel();
     void promptNewRelease();
@@ -10595,6 +10613,7 @@ private:
     QString m_adBannerId; // the ad on screen; empty while the strip is hidden
     QUrl m_adBannerUrl;
     QPushButton *m_viewModeButton = nullptr;
+    QPushButton *m_packageActionsButton = nullptr;
     forkmesh::ui::AppViewMode m_viewMode = forkmesh::ui::AppViewMode::Standard;
     // Agents' list|detail splitter and its Workspace-only terminal pane.
     QSplitter *m_agentWorkspaceSplit = nullptr;
@@ -11956,6 +11975,7 @@ private:
     int m_logFleetVisualizerTabIndex = -1;
     forkmesh::QueryInspector *m_queryInspector = nullptr;
     forkmesh::DesktopProcessView *m_desktopProcessView = nullptr;
+    int m_logDesktopResourceTabIndex = -1;
     // D1's account-wide daily row metrics and direct bound-database storage
     // measurement from /api/accounts/admin-d1-usage-report.
     QJsonObject m_logD1UsageReport;
@@ -12394,6 +12414,8 @@ private:
     QLabel *m_branchesSummary = nullptr;
     QPushButton *m_branchPullAllButton = nullptr; // safe bulk fast-forward action
     QPushButton *m_branchDeleteMergedButton = nullptr; // "Delete merged" header action
+    QPushButton *m_branchDeleteSelectedButton = nullptr;
+    bool m_branchRefreshRunning = false;
     QTextBrowser *m_branchDiffView = nullptr;
     QString m_branchDiffBranch;
     int m_branchDiffPullNumber = -1;

@@ -447,12 +447,38 @@ default in new projects except the chosen starter pack
   (`PackageInstallMode.DESKTOP`) offer no phone install. The list pads the
   safe area and insets so the last row is reachable.
   Sorts include Most opened and Installed first, as on iOS. Installed cards
-  show Uninstall and each package page has a ⋯ menu with Rate and Uninstall,
-  both driven by `MarketModel.uninstallAction` and confirmed through
+  show Uninstall and each package page has a ⋯ menu with Rate, Send feedback
+  or report a bug, and Uninstall, the uninstall driven by
+  `MarketModel.uninstallAction` and confirmed through
   `A/feature/market/PackageUninstall.kt`: account packages leave every
   device, per-phone and organization packages with a phone switch hide on
   this phone, and the organization-wide removal stays on the package page's
   Organizations section.
+- **Plugin ⋯ menu.** Every plugin's own screens carry the same ⋯ at the top
+  right of their app bar (user request, 2026-10-15): Rate <name> (or Edit
+  your rating), Send feedback or report a bug, a divider, then Uninstall (one
+  row per organization for organization packages). A screen opened through
+  `NavigationFeature.screen(route)` is tagged with its package
+  (`Screen.pluginPackage`, from `C/market/PackageMenu.kt`, which reuses
+  `PackageGate.ROUTE_KINDS`); `NavigatorHost` and the shell's tab stacks
+  provide the screen as `LocalScreen`, and `ToolsAppBar`, `CodeAppBar` /
+  `DetailScaffold`, `RoutePage`, `CollabTopBar`, `RssScaffold` and
+  `OrgScreenHeader` draw `PluginMenuButton()` for a tagged screen, so new
+  plugin screens get the menu without extra code. Tab roots (Agents, Inbox,
+  Chat), the composer and the shared repository page reached through commit
+  links are not tagged. Screens that already had a ⋯ (note editor, event,
+  CRM, CRM contact, Coves, Special agents) pass `pluginMenu = false` and add
+  `PluginMenu.Items(divided = true)` under their own items, so each screen
+  keeps one ⋯. Screens a plugin pushes directly (not by route) carry no menu;
+  the plugin's entry screen does. `A/feature/market/PluginMenu.kt` loads the
+  catalog and the viewer's review only when the menu first opens, pushes
+  `RateScreen` (which loads the review page itself when it was not loaded),
+  and opens `ReportBugSheet` with the package: the sheet is titled "Feedback
+  on <name>" and `POST /api/bug-reports` carries `package` (left out when
+  there is none) so the public issue is tagged with the plugin. Feedback
+  never depends on the Bug reports package being installed. After a
+  successful uninstall the plugin screen pops; an organization removal waits
+  for its export to be saved first, and a failure shows a dialog.
 - **Face Changer.** `A/feature/facechanger/` hosts `/dashboard/face-changer`
   in a WebView limited to the server's host (`C/market/FaceChangerPage.kt`),
   grants the camera and microphone only there after the runtime prompt, and

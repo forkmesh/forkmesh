@@ -95,7 +95,7 @@ object SettingsArea {
 @Composable
 internal fun SettingsPage(title: String, navigator: Navigator, actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}, content: LazyListScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-        ToolsAppBar(title, navigator, actions)
+        ToolsAppBar(title, navigator, actions = actions)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x3), content = content)
     }
 }

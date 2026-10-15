@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "ProcessReaper.h"
 #include "AppPaths.h"
+#include "BackoffNetworkAccessManager.h"
 #include "ClaudeStreamSession.h"
 #include "CodexAppServerSession.h"
 
@@ -9,6 +10,7 @@
 #include "LedgerFeature.h"
 #include "MainWindowInternal.h"
 #include "NativePackageExtension.h"
+#include "PackageFeedback.h"
 #include "ServerNode.h"
 #include "SettingsSectionsView.h"
 
@@ -18,6 +20,7 @@
 #include <QDesktopServices>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
 #include <QFont>
 #include <functional>
 #include <memory>
@@ -2427,6 +2430,7 @@ QMenu *MainWindow::buildPackageRailMenu(const QString &entrypoint,
             });
         });
     }
+    addPackageFeedbackActions(menu, id);
     menu->addSeparator();
     QAction *remove = menu->addAction(
         QStringLiteral("Remove %1…").arg(name), this,
@@ -2438,6 +2442,213 @@ QMenu *MainWindow::buildPackageRailMenu(const QString &entrypoint,
     }
     addButtonPlacementActions(menu, parent);
     return menu;
+}
+
+void MainWindow::addPackageFeedbackActions(QMenu *menu, const QString &id)
+{
+    const PackageManifest *manifest =
+        m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
+    if (!menu || !manifest)
+        return;
+    const QString name = manifest->name.isEmpty() ? id : manifest->name;
+    QAction *rate = menu->addAction(
+        QString::fromUtf8("Rate %1\xE2\x80\xA6").arg(name), this,
+        [this, id] { openPackageRating(id); });
+    rate->setObjectName(QStringLiteral("packageRateAction"));
+    rate->setToolTip(
+        QStringLiteral("Rate and review %1 on ForkMesh in your browser")
+            .arg(name));
+    QAction *feedback = menu->addAction(
+        QString::fromUtf8("Send feedback or report a bug\xE2\x80\xA6"), this,
+        [this, id] { showPackageFeedbackDialog(id); });
+    feedback->setObjectName(QStringLiteral("packageFeedbackAction"));
+}
+
+QMenu *MainWindow::buildPackageActionsMenu(const QString &id, QWidget *parent)
+{
+    const PackageManifest *manifest =
+        m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
+    if (!manifest)
+        return nullptr;
+    const QString name = manifest->name.isEmpty() ? id : manifest->name;
+    auto *menu = new QMenu(parent);
+    menu->setObjectName(QStringLiteral("packageActionsMenu"));
+    menu->setToolTipsVisible(true);
+    addPackageFeedbackActions(menu, id);
+    menu->addSeparator();
+    QAction *uninstall = menu->addAction(
+        QString::fromUtf8("Uninstall %1\xE2\x80\xA6").arg(name), this,
+        [this, id] { requestPackageRemoval(id, true); });
+    uninstall->setObjectName(QStringLiteral("packageUninstallAction"));
+    if (manifest->managedExternally) {
+        uninstall->setEnabled(false);
+        uninstall->setToolTip(
+            QStringLiteral("External packages are removed with marketctl"));
+    } else if (!m_packageRegistry->isInstalled(id)) {
+        uninstall->setEnabled(false);
+    }
+    return menu;
+}
+
+QPushButton *MainWindow::createPackageActionsButton(
+    std::function<QString()> packageId, QWidget *parent)
+{
+    auto *button = new QPushButton(parent);
+    button->setObjectName(QStringLiteral("packageActionsButton"));
+    button->setCursor(Qt::PointingHandCursor);
+    button->setFocusPolicy(Qt::NoFocus);
+    button->setFixedSize(32, 30);
+    forkmesh::ui::setOcticon(button, QStringLiteral("kebab-horizontal"), 16);
+    button->setAccessibleName(QStringLiteral("Plugin options"));
+    button->setToolTip(QStringLiteral("Plugin options"));
+    connect(button, &QPushButton::clicked, this,
+            [this, button, packageId = std::move(packageId)] {
+                showPackageActionsMenu(button, packageId());
+            });
+    return button;
+}
+
+void MainWindow::showPackageActionsMenu(QPushButton *button, const QString &id)
+{
+    if (!button || id.isEmpty())
+        return;
+    for (QMenu *stale : button->findChildren<QMenu *>(
+             QStringLiteral("packageActionsMenu"), Qt::FindDirectChildrenOnly))
+        stale->deleteLater();
+    QMenu *menu = buildPackageActionsMenu(id, button);
+    if (!menu)
+        return;
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QSize hint = menu->sizeHint();
+    menu->popup(button->mapToGlobal(
+        QPoint(button->width() - hint.width(), button->height())));
+}
+
+void MainWindow::openPackageRating(const QString &id)
+{
+    const PackageManifest *manifest =
+        m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
+    if (!manifest)
+        return;
+    const QUrl url = forkmesh::market::packageRatingUrl(
+        activeRelayOrigin(), manifest->marketplaceId, id);
+    if (!url.isValid()) {
+        flashMessage(QStringLiteral(
+            "No ForkMesh host is set, so there is no page to open."));
+        return;
+    }
+    QDesktopServices::openUrl(url);
+}
+
+void MainWindow::showPackageFeedbackDialog(const QString &id)
+{
+    const PackageManifest *manifest =
+        m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
+    if (!manifest)
+        return;
+    QWidget *anchor = this;
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.id == id && page.window && page.window->isActiveWindow())
+            anchor = page.window;
+    }
+    QList<QWidget *> hosts{this};
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.window)
+            hosts.append(page.window);
+    }
+    for (QWidget *host : std::as_const(hosts)) {
+        for (auto *existing : host->findChildren<QDialog *>(
+                 QStringLiteral("packageFeedbackDialog"))) {
+            if (existing->property("forkmeshPackageId").toString() == id &&
+                existing->isVisible()) {
+                existing->raise();
+                existing->activateWindow();
+                return;
+            }
+        }
+    }
+    QString appVersion;
+    if (const auto *network =
+            qobject_cast<BackoffNetworkAccessManager *>(m_networkAccess))
+        appVersion = network->clientVersion();
+    const forkmesh::market::PackageFeedbackReport base =
+        forkmesh::market::packageFeedbackReport(
+            id, manifest->name, manifest->version, appVersion);
+    auto sender = [this](const QJsonObject &payload,
+                         forkmesh::market::PackageFeedbackReplyHandler done) {
+        const QString origin = activeRelayOrigin();
+        const QUrl url(origin + QStringLiteral("/api/bug-reports"));
+        if (origin.isEmpty() || !url.isValid() || !m_networkAccess) {
+            done(0, {}, QStringLiteral("no ForkMesh host is set"));
+            return;
+        }
+        QNetworkRequest request(url);
+        request.setHeader(QNetworkRequest::ContentTypeHeader,
+                          QStringLiteral("application/json"));
+        request.setRawHeader("accept", "application/json");
+        request.setTransferTimeout(20000);
+        const QString sessionToken = accountSessionTokenForUrl(url);
+        if (!sessionToken.isEmpty())
+            request.setRawHeader("Authorization",
+                                 QByteArrayLiteral("Bearer ") +
+                                     sessionToken.toUtf8());
+        QNetworkReply *reply = m_networkAccess->post(
+            request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+        connect(reply, &QNetworkReply::finished, this,
+                [reply, done = std::move(done)] {
+                    reply->deleteLater();
+                    const int status =
+                        reply->attribute(
+                                 QNetworkRequest::HttpStatusCodeAttribute)
+                            .toInt();
+                    done(status, reply->read(64 * 1024),
+                         status > 0 ? QString() : reply->errorString());
+                });
+    };
+    auto *dialog = new forkmesh::market::PackageFeedbackDialog(
+        base, std::move(sender), anchor);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowModality(Qt::WindowModal);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+QString MainWindow::currentNativePackageId() const
+{
+    if (!m_sectionStack)
+        return {};
+    const QWidget *current = m_sectionStack->currentWidget();
+    if (!current)
+        return {};
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if ((page.widget && current == page.widget) ||
+            (page.placeholder && current == page.placeholder))
+            return page.id;
+    }
+    return {};
+}
+
+void MainWindow::updatePackageActionsButton()
+{
+    if (!m_packageActionsButton)
+        return;
+    const QString id = currentNativePackageId();
+    const PackageManifest *manifest =
+        m_packageRegistry && !id.isEmpty() ? m_packageRegistry->package(id)
+                                           : nullptr;
+    if (!manifest) {
+        m_packageActionsButton->hide();
+        return;
+    }
+    const QString name = manifest->name.isEmpty() ? id : manifest->name;
+    m_packageActionsButton->setToolTip(
+        QStringLiteral("%1 options: rate it, send feedback or report a bug, "
+                       "or uninstall it")
+            .arg(name));
+    m_packageActionsButton->setAccessibleName(
+        QStringLiteral("%1 options").arg(name));
+    m_packageActionsButton->show();
 }
 
 void MainWindow::attachPackageRailMenu(QPushButton *button,
@@ -2957,6 +3168,7 @@ void MainWindow::syncNativePackagePages()
     applyRailCaptionPreference(); // the new package pages joined the rail
     applyRailOrder();
     schedulePackageRailRefresh();
+    updatePackageActionsButton();
 }
 
 QUrl MainWindow::nativePackageLinkUrl(const QString &id) const
@@ -3353,7 +3565,22 @@ void MainWindow::openNativePackageWindow(const QString &id)
         window->setWindowTitle(QStringLiteral("%1 - ForkMesh").arg(name));
         auto *windowLayout = new QVBoxLayout(window);
         windowLayout->setContentsMargins(0, 0, 0, 0);
-        windowLayout->addWidget(page.widget);
+        windowLayout->setSpacing(0);
+        auto *header = new QWidget(window);
+        header->setObjectName(QStringLiteral("nativePackageWindowHeader"));
+        auto *headerRow = new QHBoxLayout(header);
+        headerRow->setContentsMargins(8, 4, 8, 0);
+        headerRow->addStretch(1);
+        QPushButton *actions =
+            createPackageActionsButton([id] { return id; }, header);
+        actions->setToolTip(
+            QStringLiteral("%1 options: rate it, send feedback or report a "
+                           "bug, or uninstall it")
+                .arg(name));
+        actions->setAccessibleName(QStringLiteral("%1 options").arg(name));
+        headerRow->addWidget(actions);
+        windowLayout->addWidget(header);
+        windowLayout->addWidget(page.widget, 1);
         page.widget->show();
         window->installEventFilter(this);
         if (!window->restoreGeometry(
@@ -4365,6 +4592,21 @@ QStringList MainWindow::testPackageRailMenuActions(const QString &entrypoint)
     for (QAction *action : menu->actions()) {
         if (!action->isSeparator())
             texts << action->text();
+    }
+    return texts;
+}
+
+QStringList MainWindow::testPackageActionsMenu(const QString &id)
+{
+    QStringList texts;
+    std::unique_ptr<QMenu> menu(buildPackageActionsMenu(id, this));
+    if (!menu)
+        return texts;
+    for (QAction *action : menu->actions()) {
+        if (!action->isSeparator())
+            texts << action->text() +
+                         (action->isEnabled() ? QString()
+                                              : QStringLiteral(" (disabled)"));
     }
     return texts;
 }

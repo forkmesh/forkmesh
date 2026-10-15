@@ -421,11 +421,11 @@ void testRunRules()
           QStringLiteral("a rule that could break shell quoting is dropped"));
 
     const QStringList logRules = agentrules::appLogReadRules(
-        QStringLiteral("/home/f/projects/forkmesh/data/network_log.txt"),
-        QStringLiteral("/home/f/projects/forkmesh/data/network_log.d"));
+        QStringLiteral("/home/tester/projects/forkmesh/data/network_log.txt"),
+        QStringLiteral("/home/tester/projects/forkmesh/data/network_log.d"));
     check(logRules == QStringList{
-                          QStringLiteral("Read(//home/f/projects/forkmesh/data/network_log.txt)"),
-                          QStringLiteral("Read(//home/f/projects/forkmesh/data/network_log.d/**)")},
+                          QStringLiteral("Read(//home/tester/projects/forkmesh/data/network_log.txt)"),
+                          QStringLiteral("Read(//home/tester/projects/forkmesh/data/network_log.d/**)")},
           QStringLiteral("a log monitor reads the live app log and its rotated segments"));
     const QJsonArray logAllow =
         QJsonDocument::fromJson(
@@ -434,7 +434,7 @@ void testRunRules()
             .value(QStringLiteral("permissions")).toObject()
             .value(QStringLiteral("allow")).toArray();
     check(logAllow.size() == 2 &&
-              logAllow.contains(QStringLiteral("Read(//home/f/projects/forkmesh/data/network_log.txt)")),
+              logAllow.contains(QStringLiteral("Read(//home/tester/projects/forkmesh/data/network_log.txt)")),
           QStringLiteral("the log read rules survive the settings rule filter"));
     check(agentrules::appLogReadRules(QStringLiteral("C:\\Users\\f\\ForkMesh\\network_log.txt"),
                                       QStringLiteral("C:\\Users\\f\\ForkMesh\\network_log.d")) ==

@@ -10,16 +10,16 @@ import XCTest
 @MainActor
 final class RecordingReports {
     struct Sent {
-        let message, contact, screen, severity, platform, appVersion, osVersion: String
+        let message, contact, screen, severity, platform, appVersion, osVersion, package: String
     }
 
     var answer = BugReportResult(ok: true, id: String(repeating: "a", count: 32), message: "")
     private(set) var sent: [Sent] = []
 
     var submit: BugReportSubmit {
-        { [self] message, contact, screen, severity, platform, appVersion, osVersion in
+        { [self] message, contact, screen, severity, platform, appVersion, osVersion, package in
             self.sent.append(Sent(message: message, contact: contact, screen: screen, severity: severity,
-                                  platform: platform, appVersion: appVersion, osVersion: osVersion))
+                                  platform: platform, appVersion: appVersion, osVersion: osVersion, package: package))
             return self.answer
         }
     }
@@ -92,6 +92,50 @@ final class BugReportTests: XCTestCase {
         let guest = ReportBugModel(build: build, signedIn: false, submit: nil)
         XCTAssertEqual(guest.attached, "Attached: ForkMesh 1.2.2+13 · ios · no account.")
         XCTAssertEqual(guest.contactHint, "Only if you want a reply")
+    }
+
+    @MainActor
+    func testPluginFeedbackIsTaggedWithItsPackageAndTitledForIt() async {
+        let reports = RecordingReports()
+        let model = ReportBugModel(
+            screen: "Notes", package: " notes ", packageName: "Notes", build: build, signedIn: true, submit: reports.submit)
+        XCTAssertTrue(model.isFeedback)
+        XCTAssertEqual(model.heading, "Feedback on Notes")
+        XCTAssertTrue(model.intro.contains("Notes"))
+        XCTAssertEqual(model.hint, ReportBugModel.feedbackHint)
+        XCTAssertEqual(model.submitLabel, "Send feedback")
+        XCTAssertEqual(model.attached, "Attached: ForkMesh 1.2.2+13 · ios · Notes · your account.")
+        XCTAssertEqual(model.thanksText, ReportBugModel.feedbackThanks("Notes"))
+        let filed = await model.submit()
+        XCTAssertFalse(filed)
+        XCTAssertEqual(model.problem, "Describe the problem or idea.")
+        model.message = "Rating stars do not stick."
+        let sent = await model.submit()
+        XCTAssertTrue(sent)
+        XCTAssertEqual(reports.sent.first?.package, "notes")
+        XCTAssertEqual(reports.sent.first?.screen, "Notes")
+    }
+
+    @MainActor
+    func testAPlainReportCarriesNoPackageAndKeepsItsCopy() async {
+        let reports = RecordingReports()
+        let model = ReportBugModel(screen: "agents", build: build, signedIn: false, submit: reports.submit)
+        XCTAssertFalse(model.isFeedback)
+        XCTAssertEqual(model.heading, ReportBugModel.title)
+        XCTAssertEqual(model.intro, ReportBugModel.subtitle)
+        XCTAssertEqual(model.hint, ReportBugModel.messageHint)
+        XCTAssertEqual(model.submitLabel, "Send report")
+        XCTAssertEqual(model.thanksText, ReportBugModel.thanks)
+        model.message = "Broken."
+        _ = await model.submit()
+        XCTAssertEqual(reports.sent.first?.package, "")
+    }
+
+    @MainActor
+    func testFeedbackWithoutANameFallsBackToThePackageId() {
+        let model = ReportBugModel(screen: "crm", package: "crm", build: build, signedIn: true, submit: nil)
+        XCTAssertEqual(model.heading, "Feedback on crm")
+        XCTAssertEqual(model.attached, "Attached: ForkMesh 1.2.2+13 · ios · crm · your account.")
     }
 
     @MainActor

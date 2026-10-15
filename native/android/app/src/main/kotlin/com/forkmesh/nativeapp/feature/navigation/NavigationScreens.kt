@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.navigation
 
+import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -172,6 +173,7 @@ fun RoutePage(
                 style = Fm.text.titleLarge,
             )
             actions()
+            PluginMenuButton()
         }
         Box(Modifier.weight(1f).fillMaxWidth(), content = content)
     }

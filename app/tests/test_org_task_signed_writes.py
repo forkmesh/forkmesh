@@ -791,14 +791,14 @@ WORK_ITEMS_DIGEST_VECTOR = (
         "workItems": [{
             "repository": "forkmesh/src",
             "branch": "feat/task-work-items",
-            "worktree": "/home/f/src/.worktrees/012-café \"q\"\\\\x\t",
+            "worktree": "/home/tester/src/.worktrees/012-café \"q\"\\\\x\t",
             "node": "desk-1",
         }],
         "priority": 7,
         "flag": True,
         "none": None,
     },
-    "e0fe1a40ee2e0bcb0c8fab66bc16e7ae09d21f76abf00b14524f56944f7bc55d",
+    "ec09f1e510ca68958c21322518b3956925c79edba3a8c782e586f4f325ad7ad7",
 )
 
 

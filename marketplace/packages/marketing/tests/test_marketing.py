@@ -2328,6 +2328,30 @@ def test_performance_counts_views_for_each_blog_post_and_per_day():
     assert pages == {("forkmesh.com", "/blog/new"): (5, 5), ("forkmesh.com", "/blog/old"): (3, 3)}
 
 
+def test_performance_counts_google_referrer_views_per_day():
+    runtime, analytics = _analytics_runtime()
+    runtime.db.execute(
+        "INSERT INTO analytics_projects VALUES(?,?,?,?,?,?,?,?,?)",
+        ("a" * 32, "org:acme", "acme", "fma_" + "0" * 40, 1, "alice", 1, 1,
+         'sealed:{"name": "Site"}'))
+    call(runtime.use("PUT", body={
+        "analytics": {"host": "acme.com"},
+        "channels": [{"id": "google-search", "enabled": True,
+                      "profileUrl": "https://www.google.com/search?q=site:acme.com"}]}),
+        "/api/marketing/acme/settings")
+    _seed_visits(runtime, analytics,
+                 [({"$referrer": "https://www.google.com/search?q=acme"}, ["/", "/docs"]),
+                  ({"$referrer": "https://www.google.co.uk/search?q=acme"}, ["/pricing"]),
+                  ({"$referrer": "https://mail.google.com/"}, ["/"]),
+                  ({"utm_source": "google", "utm_medium": "cpc"}, ["/", "/pricing"])])
+    perf = call(runtime.use("GET", params={"from": runtime.clock - 7 * marketing.DAY_MS}),
+                "/api/marketing/acme/performance")["data"]["performance"]
+    google = perf["channelViews"]["google-search"]
+    assert (google["host"], google["path"], google["sessions"], google["views"],
+            google["visitors"]) == ("Google", "", 2, 3, 2)
+    assert sum(count for _, count in google["days"]) == 3
+
+
 def test_performance_explains_missing_analytics_and_the_report_still_renders():
     runtime = Runtime()
     perf = call(runtime.use("GET"), "/api/marketing/acme/performance")
@@ -2772,7 +2796,7 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
     refreshed = call(runtime.use("POST", body={"channel": "google-search"}),
                      "/api/marketing/acme/refresh")
     assert refreshed["status"] == 200, refreshed
-    assert refreshed["data"]["refresh"]["metrics"]["visits"] == 6
+    assert refreshed["data"]["refresh"]["metrics"]["visits"] == 3
     assert refreshed["data"]["refresh"]["feed"]["title"] == "site:acme.com"
 
     captured = call(runtime.use("POST", "charlie", {
@@ -2780,10 +2804,10 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
         "metrics": {"indexedPages": 1230}}), "/api/marketing/acme/capture")
     assert captured["status"] == 201, captured
     assert (captured["data"]["metrics"]["indexedPages"],
-            captured["data"]["metrics"]["visits"]) == (1230, 6)
+            captured["data"]["metrics"]["visits"]) == (1230, 3)
     row = next(item for item in call(runtime.use("GET"), "/api/marketing/acme")["data"][
         "summary"]["channels"] if item["channel"] == "google-search")
-    assert (row["visits"], row["indexedPages"]) == (6, 1230)
+    assert (row["visits"], row["indexedPages"]) == (3, 1230)
     assert "posting" not in {check["id"] for check in row["health"]["checks"]}
     fresh = Runtime()
     assert "google-search" in [item["channel"] for item in call(
@@ -2791,11 +2815,15 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
 
     again = call(runtime.use("POST", body={"channel": "google-search"}),
                  "/api/marketing/acme/refresh")["data"]["refresh"]["metrics"]
-    assert (again["visits"], again["indexedPages"]) == (6, 1230)
+    assert (again["visits"], again["indexedPages"]) == (3, 1230)
     elsewhere = call(runtime.use("POST", "charlie", {
         "channel": "google-search", "url": "https://www.bing.com/search?q=site:acme.com",
         "metrics": {"indexedPages": 5}}), "/api/marketing/acme/capture")
     assert elsewhere["data"]["error"] == "capture_host_mismatch"
+    desktop = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    assert 'QStringLiteral("Views from Google over time")' in desktop
+    assert 'QStringLiteral("Pages on Google")' in desktop
+    assert '"indexedPages", "following"' in desktop
 
 
 def test_google_channel_link_falls_back_to_the_instance_host():

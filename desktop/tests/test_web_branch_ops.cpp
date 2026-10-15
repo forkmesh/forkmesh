@@ -534,6 +534,9 @@ void testMergeAndCleanUpRemovesTheBranchAndItsWorktree()
     check(merged.branchDeleted, "clean-up deletes the merged branch");
     check(revision(path, QStringLiteral("refs/heads/feature/own")).isEmpty(),
           "the branch is gone");
+    check(revision(path, QStringLiteral("refs/forkmesh/trash/deleted/feature/own"))
+              == merged.branchOid,
+          "clean-up leaves a tombstone so replication cannot restore the branch");
     check(!QDir(linked).exists(), "its worktree is gone");
     check(merged.message.contains(QStringLiteral("worktree")),
           "the report says the worktree went too");
