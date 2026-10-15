@@ -576,6 +576,13 @@ func (j *job) install() outcome {
 			j.out.restartLog("could not install the Go mirror-node companion beside " + appPath)
 		}
 	}
+	if canonical(built) != canonical(appPath) {
+		if count, err := installPackageModules(built, appPath); err != nil {
+			j.out.restartLog("could not install the package modules beside " + appPath + ": " + err.Error())
+		} else if count > 0 {
+			j.out.restartLog("installed the package modules into " + installedModuleDir(appPath))
+		}
+	}
 	if j.cancelled() {
 		return outcomeCancelled
 	}

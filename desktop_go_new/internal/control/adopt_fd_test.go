@@ -46,7 +46,7 @@ func TestAdoptOverIPCDescriptor(t *testing.T) {
 	}
 	defer ipcConn.Close()
 	line, _ := json.Marshal(map[string]any{"id": 1, "method": "control.adopt", "params": map[string]any{
-		"peer": phoneSide.LocalAddr().String(), "pass": "fd",
+		"token": endpoint.Token, "peer": phoneSide.LocalAddr().String(), "pass": "fd",
 		"hello": base64.StdEncoding.EncodeToString(hs.hello())}})
 	rights := syscall.UnixRights(int(file.Fd()))
 	if _, _, err := ipcConn.(*net.UnixConn).WriteMsgUnix(append(line, '\n'), rights, nil); err != nil {

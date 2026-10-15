@@ -41,7 +41,14 @@ type Endpoint struct {
 	Protocol int    `json:"protocol"`
 }
 
-const Protocol = 1
+const (
+	Protocol    = 2
+	ProtocolMin = 1
+)
+
+var Features = []string{"cancel", "progress", "peer-uid", "token-always"}
+
+const CancelMethod = "core.cancel"
 
 type AdoptParams struct {
 	Peer     string `json:"peer"`
@@ -124,18 +131,18 @@ func (s *Server) Listen(dir string) (Endpoint, error) {
 			return Endpoint{}, fmt.Errorf("ipc: another core is serving %s", socket)
 		}
 		_ = os.Remove(socket)
-		listener, err := net.Listen("unix", socket)
-		if err != nil {
-			return Endpoint{}, err
+		if listener, err := net.Listen("unix", socket); err != nil {
+			s.Logger.Printf("ipc: no unix socket at %s (%v); serving loopback TCP only", socket, err)
+		} else {
+			_ = os.Chmod(socket, 0o600)
+			s.listeners = append(s.listeners, listener)
+			endpoint.Unix = socket
 		}
-		_ = os.Chmod(socket, 0o600)
-		s.listeners = append(s.listeners, listener)
-		endpoint.Unix = socket
 	}
 	tcp, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		if len(s.listeners) == 0 {
-			return Endpoint{}, err
+			return Endpoint{}, fmt.Errorf("ipc: no listener: %w", err)
 		}
 	} else {
 		s.listeners = append(s.listeners, tcp)
@@ -237,7 +244,7 @@ func readFirstLine(conn net.Conn) ([]byte, []byte, *os.File, error) {
 	}
 }
 
-func (s *Server) serveConn(ctx context.Context, raw net.Conn, needsToken bool) {
+func (s *Server) serveConn(ctx context.Context, raw net.Conn, isTCP bool) {
 	first, rest, passed, err := readFirstLine(raw)
 	if err != nil {
 		if passed != nil {
@@ -252,14 +259,26 @@ func (s *Server) serveConn(ctx context.Context, raw net.Conn, needsToken bool) {
 		return
 	}
 	var auth struct {
-		Token string `json:"token"`
-		Role  string `json:"role"`
-		Name  string `json:"name"`
-		PID   int    `json:"pid"`
+		Token    string `json:"token"`
+		Role     string `json:"role"`
+		Name     string `json:"name"`
+		PID      int    `json:"pid"`
+		Protocol int    `json:"protocol"`
 	}
 	_ = json.Unmarshal(hello.Params, &auth)
-	if needsToken && subtle.ConstantTimeCompare([]byte(auth.Token), []byte(s.token)) != 1 {
+	if !isTCP && !sameUserPeer(raw) {
+		writeLine(raw, rpc.Response(hello.ID, nil, rpc.Fail("forbidden")))
+		raw.Close()
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(auth.Token), []byte(s.token)) != 1 {
 		writeLine(raw, rpc.Response(hello.ID, nil, rpc.Fail("bad_token")))
+		raw.Close()
+		return
+	}
+	if auth.Protocol != 0 && auth.Protocol < ProtocolMin {
+		writeLine(raw, rpc.Response(hello.ID, map[string]any{"protocol": Protocol, "protocolMin": ProtocolMin},
+			rpc.Fail("protocol_unsupported")))
 		raw.Close()
 		return
 	}
@@ -280,6 +299,7 @@ func (s *Server) serveConn(ctx context.Context, raw net.Conn, needsToken bool) {
 		role = rpc.UI
 	}
 	conn := newConn(s, raw, role, auth.Name, auth.PID)
+	conn.protocol = auth.Protocol
 	s.mu.Lock()
 	s.conns[conn] = struct{}{}
 	previous := s.ui
@@ -291,7 +311,7 @@ func (s *Server) serveConn(ctx context.Context, raw net.Conn, needsToken bool) {
 	conn.start()
 	reply := map[string]any{
 		"version": s.Version, "project": s.Project, "pid": os.Getpid(), "protocol": Protocol,
-		"routes": s.Registry.Routes(),
+		"protocolMin": ProtocolMin, "features": Features, "routes": s.Registry.Routes(),
 	}
 	if s.HelloExtra != nil {
 		for key, value := range s.HelloExtra() {
@@ -384,6 +404,10 @@ type pending struct {
 	reply chan rpc.Message
 }
 
+type inflightCall struct {
+	cancel context.CancelFunc
+}
+
 type Conn struct {
 	server    *Server
 	raw       net.Conn
@@ -397,14 +421,16 @@ type Conn struct {
 	nextCall  atomic.Int64
 	mu        sync.Mutex
 	pending   map[int64]*pending
+	cancels   map[int64]*inflightCall
 	inflight  sync.WaitGroup
+	protocol  int
 }
 
 func newConn(server *Server, raw net.Conn, transport rpc.Transport, name string, pid int) *Conn {
 	id := server.nextID.Add(1)
 	return &Conn{server: server, raw: raw, transport: transport, name: name, pid: pid,
 		id: string(transport) + ":" + strconv.FormatInt(id, 10), out: make(chan []byte, sendQueueDepth),
-		done: make(chan struct{}), pending: map[int64]*pending{}}
+		done: make(chan struct{}), pending: map[int64]*pending{}, cancels: map[int64]*inflightCall{}}
 }
 
 func (c *Conn) ID() string               { return c.id }
@@ -413,6 +439,7 @@ func (c *Conn) Device() rpc.Device       { return rpc.Device{Name: c.name, Platf
 func (c *Conn) Done() <-chan struct{}    { return c.done }
 func (c *Conn) PID() int                 { return c.pid }
 func (c *Conn) PeerPID() (int, bool)     { return peerPID(c.raw) }
+func (c *Conn) Protocol() int            { return c.protocol }
 func (c *Conn) Send(event string, data any) bool {
 	return c.SendRaw(rpc.EventFrame(event, data))
 }
@@ -573,15 +600,33 @@ func (c *Conn) handleLine(ctx context.Context, line []byte) {
 		if call != nil {
 			call.reply <- message
 		}
+	case message.Method == CancelMethod:
+		var params struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(message.Params, &params)
+		cancelled := c.cancel(params.ID)
+		if message.ID > 0 {
+			c.SendRaw(rpc.Response(message.ID, map[string]any{"id": params.ID, "cancelled": cancelled}, nil))
+		}
 	case message.Method != "":
 		request := &rpc.Request{Peer: c, ID: message.ID, Method: message.Method, Params: message.Params}
 		if request.ID <= 0 {
 			_, _ = c.server.Registry.Dispatch(ctx, request)
 			return
 		}
+		requestCtx, cancel := context.WithCancel(ctx)
+		call := &inflightCall{cancel: cancel}
+		c.mu.Lock()
+		if previous := c.cancels[request.ID]; previous != nil {
+			previous.cancel()
+		}
+		c.cancels[request.ID] = call
+		c.mu.Unlock()
 		c.inflight.Add(1)
 		go func() {
 			defer c.inflight.Done()
+			defer c.finish(request.ID, call)
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					c.server.Logger.Printf("ipc: %s panicked: %v", request.Method, recovered)
@@ -590,10 +635,37 @@ func (c *Conn) handleLine(ctx context.Context, line []byte) {
 					}
 				}
 			}()
-			result, err := c.server.Registry.Dispatch(ctx, request)
-			if request.ID > 0 {
-				c.SendRaw(rpc.Response(request.ID, result, err))
+			result, err := c.server.Registry.Dispatch(requestCtx, request)
+			if err != nil && errors.Is(requestCtx.Err(), context.Canceled) && ctx.Err() == nil {
+				err = rpc.Fail("cancelled")
 			}
+			c.SendRaw(rpc.Response(request.ID, result, err))
 		}()
 	}
+}
+
+func (c *Conn) cancel(id int64) bool {
+	c.mu.Lock()
+	call := c.cancels[id]
+	c.mu.Unlock()
+	if call == nil {
+		return false
+	}
+	call.cancel()
+	return true
+}
+
+func (c *Conn) finish(id int64, call *inflightCall) {
+	call.cancel()
+	c.mu.Lock()
+	if c.cancels[id] == call {
+		delete(c.cancels, id)
+	}
+	c.mu.Unlock()
+}
+
+func (c *Conn) Inflight() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.cancels)
 }

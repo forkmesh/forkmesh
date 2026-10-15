@@ -65,8 +65,11 @@ public:
     bool hasNativeRoute(const QString &method) const;
     QStringList nativeRoutes() const;
 
-    void request(const QString &method, const QJsonObject &params = {},
-                 Reply reply = {}, int timeoutMs = 120000);
+    int request(const QString &method, const QJsonObject &params = {},
+                Reply reply = {}, int timeoutMs = 120000);
+    bool cancel(int id);
+    int protocol() const { return m_protocol; }
+    bool supports(const QString &feature) const { return m_features.contains(feature); }
     bool notify(const QString &method, const QJsonObject &params = {});
     void handle(const QString &method, Handler handler);
 
@@ -76,6 +79,7 @@ public:
 signals:
     void connectedChanged(bool connected);
     void coreEvent(const QString &event, const QJsonObject &data);
+    void progress(int id, const QJsonValue &data);
     void logLine(const QString &text);
 
 private:
@@ -126,4 +130,6 @@ private:
     QTimer *m_retry = nullptr;
     QTimer *m_sweep = nullptr;
     QString m_lastError;
+    int m_protocol = 0;
+    QSet<QString> m_features;
 };

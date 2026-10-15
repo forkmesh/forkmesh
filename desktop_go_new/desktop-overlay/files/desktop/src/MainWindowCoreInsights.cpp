@@ -100,6 +100,11 @@ void MainWindow::registerCoreInsightsHandlers()
             current.active = false;
             forkmesh::coreinsights::hooks().shortcutRunning = false;
             forkmesh::coreinsights::hooks().shortcutPath.clear();
+            if (auto *run = shortcutRunById(std::exchange(forkmesh::coreinsights::hooks().coreRunId, 0))) {
+                run->running = false;
+                run->message = QStringLiteral("detached from forkmesh-core");
+                refreshShortcutRunPicker();
+            }
             if (!wasActive)
                 return;
             if (m_agentToolLedger) {
@@ -170,8 +175,8 @@ void MainWindow::registerCoreInsightsHandlers()
         QStringLiteral("ui.insights.shortcutRun"),
         [this](const QJsonObject &, const CoreClient::Responder &respond) {
             QJsonObject answer;
-            if (m_shortcutRun.id > 0)
-                answer.insert(QStringLiteral("run"), insightctl::shortcutRunRow(m_shortcutRun, true));
+            if (const auto *run = shortcutRunById(m_shortcutShownRun))
+                answer.insert(QStringLiteral("run"), insightctl::shortcutRunRow(*run, true));
             respond(answer, QString());
         });
     m_coreClient->handle(
@@ -348,8 +353,12 @@ bool MainWindow::stopShortcutInCore()
     CoreClient *client = insightsState().client;
     if (!forkmesh::coreinsights::hooks().shortcutRunning || !client || !client->isConnected())
         return false;
-    if (m_shortcutOutput)
-        m_shortcutOutput->appendPlainText(QStringLiteral("^C stopping…"));
+    if (auto *run = shortcutRunById(forkmesh::coreinsights::hooks().coreRunId)) {
+        run->output = insightctl::appendShortcutOutput(run->output, QStringLiteral("^C stopping…\n"),
+                                                       kMaxShortcutOutputChars);
+        if (m_shortcutOutput && run->id == m_shortcutShownRun)
+            m_shortcutOutput->appendPlainText(QStringLiteral("^C stopping…"));
+    }
     client->request(QStringLiteral("core.insights.shortcut.stop"), {},
                     [](bool, const QJsonValue &, const QString &) {});
     return true;
@@ -357,57 +366,53 @@ bool MainWindow::stopShortcutInCore()
 
 void MainWindow::onCoreInsightsEvent(const QString &event, const QJsonObject &data)
 {
+    forkmesh::coreinsights::Hooks &hooks = forkmesh::coreinsights::hooks();
     if (event == QLatin1String("core.insights.shortcut.started")) {
-        const QJsonObject run = data.value(QStringLiteral("run")).toObject();
-        forkmesh::coreinsights::hooks().shortcutRunning = true;
-        forkmesh::coreinsights::hooks().shortcutPath = data.value(QStringLiteral("path")).toString();
-        if (!m_shortcutProcess) {
-            m_shortcutRun = {};
-            m_shortcutRun.id = run.value(QStringLiteral("id")).toInt();
-            m_shortcutRun.repo = run.value(QStringLiteral("repo")).toString();
-            m_shortcutRun.file = run.value(QStringLiteral("file")).toString();
-            m_shortcutRun.name = run.value(QStringLiteral("name")).toString();
-            m_shortcutRun.running = true;
-            m_shortcutRun.startedAtMs = qint64(run.value(QStringLiteral("startedAtMs")).toDouble());
-        }
-        if (m_shortcutOutput)
-            m_shortcutOutput->clear();
-        if (m_shortcutRunStatus)
-            m_shortcutRunStatus->setText(
-                QStringLiteral("running %1…").arg(run.value(QStringLiteral("file")).toString()));
-        if (m_shortcutStopButton)
-            m_shortcutStopButton->show();
+        const QJsonObject coreRun = data.value(QStringLiteral("run")).toObject();
+        hooks.shortcutRunning = true;
+        hooks.shortcutPath = data.value(QStringLiteral("path")).toString();
+        insightctl::ShortcutRun run;
+        run.id = ++m_shortcutRunCounter;
+        run.repo = coreRun.value(QStringLiteral("repo")).toString();
+        run.file = coreRun.value(QStringLiteral("file")).toString();
+        run.name = coreRun.value(QStringLiteral("name")).toString();
+        run.running = true;
+        run.startedAtMs = qint64(coreRun.value(QStringLiteral("startedAtMs")).toDouble());
+        hooks.coreRunId = run.id;
+        m_shortcutRuns.append(run);
+        showShortcutRun(run.id);
         loadShortcutsPanel();
         return;
     }
     if (event == QLatin1String("core.insights.shortcut.output")) {
         const QString chunk = data.value(QStringLiteral("chunk")).toString();
-        if (m_shortcutOutput)
-            m_shortcutOutput->appendPlainText(chunk.trimmed());
-        if (!m_shortcutProcess)
-            m_shortcutRun.output =
-                insightctl::appendShortcutOutput(m_shortcutRun.output, chunk, kMaxShortcutOutputChars);
+        if (auto *run = shortcutRunById(hooks.coreRunId)) {
+            run->output = insightctl::appendShortcutOutput(run->output, chunk, kMaxShortcutOutputChars);
+            if (m_shortcutOutput && run->id == m_shortcutShownRun)
+                m_shortcutOutput->appendPlainText(chunk.trimmed());
+        }
         return;
     }
     if (event == QLatin1String("core.insights.shortcut.finished")) {
-        forkmesh::coreinsights::hooks().shortcutRunning = false;
-        forkmesh::coreinsights::hooks().shortcutPath.clear();
+        const QString path = std::exchange(hooks.shortcutPath, QString());
+        hooks.shortcutRunning = false;
+        const int runId = std::exchange(hooks.coreRunId, 0);
         const QString message = data.value(QStringLiteral("message")).toString();
-        if (!m_shortcutProcess) {
-            m_shortcutRun.running = false;
-            m_shortcutRun.ok = data.value(QStringLiteral("ok")).toBool();
-            m_shortcutRun.message = message;
+        if (auto *run = shortcutRunById(runId)) {
+            run->running = false;
+            run->ok = data.value(QStringLiteral("ok")).toBool();
+            run->message = message;
+            run->output = insightctl::appendShortcutOutput(run->output, message + QLatin1Char('\n'),
+                                                           kMaxShortcutOutputChars);
         }
-        if (m_shortcutRunStatus)
-            m_shortcutRunStatus->setText(QStringLiteral("%1 — %2")
-                                             .arg(data.value(QStringLiteral("file")).toString(), message));
-        if (m_shortcutStopButton)
-            m_shortcutStopButton->hide();
+        if (runId == m_shortcutShownRun)
+            showShortcutRun(runId);
+        else
+            refreshShortcutRunPicker();
         loadShortcutsPanel();
-        if (!m_shortcutProcess && !m_shortcutRestartPath.isEmpty()) {
-            const QString again = std::exchange(m_shortcutRestartPath, QString());
-            const int againRepo = std::exchange(m_shortcutRestartRepo, -1);
-            QTimer::singleShot(0, this, [this, again, againRepo] { runShortcut(again, againRepo); });
+        if (!path.isEmpty() && m_shortcutRestarts.contains(path)) {
+            const int againRepo = m_shortcutRestarts.take(path);
+            QTimer::singleShot(0, this, [this, path, againRepo] { runShortcut(path, againRepo); });
         }
         return;
     }

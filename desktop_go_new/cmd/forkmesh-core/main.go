@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -23,10 +24,14 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `forkmesh-core %s: the ForkMesh desktop's background engine.
 
 Usage:
-  forkmesh-core serve [--project <slug>] [--linger 2m]
+  forkmesh-core serve [--project <slug>] [--linger 2m] [--background]
   forkmesh-core call [--project <slug>] <method> [json params]
   forkmesh-core status [--project <slug>]
   forkmesh-core stop [--project <slug>]
+  forkmesh-core start [--project <slug>]
+  forkmesh-core background on|off|status [--project <slug>]
+  forkmesh-core autostart enable|disable|status [--project <slug>] [--binary <path>]
+  forkmesh-core plugins list|sign|verify|trust [--project <slug>] [<package dir>|<signer key> [name]]
   forkmesh-core version
 `, version)
 }
@@ -47,6 +52,16 @@ func main() {
 		os.Exit(call(append(os.Args[2:], "core.status")))
 	case "stop":
 		os.Exit(call(append(os.Args[2:], "core.shutdown")))
+	case "start":
+		os.Exit(startDetached(os.Args[2:]))
+	case "background":
+		os.Exit(background(os.Args[2:]))
+	case "autostart":
+		os.Exit(autostartCommand(os.Args[2:]))
+	case "plugins":
+		os.Exit(pluginsCommand(os.Args[2:]))
+	case "plugin-shim":
+		os.Exit(pluginShim(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println(version)
 	case "help", "--help", "-h":
@@ -63,20 +78,42 @@ func serve(args []string) int {
 	linger := flags.Duration("linger", 2*time.Minute, "how long to keep running with no desktop attached (0 runs until stopped)")
 	stateDir := flags.String("state-dir", "", "override the endpoint directory")
 	foreground := flags.Bool("log-stderr", false, "log to stderr instead of logs/core")
+	backgroundMode := flags.Bool("background", false, "keep running with no desktop attached (system startup)")
+	hideConsole := flags.Bool("hide-console", false, "detach from the console window (Windows)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	if *hideConsole {
+		detachConsole()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	options := daemon.Options{Project: *project, Version: version, Linger: *linger, StateDir: *stateDir}
+	options := daemon.Options{Project: *project, Version: version, Linger: *linger, StateDir: *stateDir,
+		Background: *backgroundMode}
 	if *foreground {
 		options.LogWriter = os.Stderr
 	}
-	if err := daemon.Run(ctx, options, modules()); err != nil {
+	err := daemon.Run(ctx, options, modules())
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, daemon.ErrRestart):
+		stop()
+		if err := reexec(); err != nil {
+			fmt.Fprintln(os.Stderr, "forkmesh-core: restart:", err)
+			return 1
+		}
+		return 0
+	case errors.Is(err, daemon.ErrAlreadyRunning):
+		fmt.Fprintln(os.Stderr, "forkmesh-core:", err)
+		if *backgroundMode {
+			return 0
+		}
+		return 1
+	default:
 		fmt.Fprintln(os.Stderr, "forkmesh-core:", err)
 		return 1
 	}
-	return 0
 }
 
 func call(args []string) int {

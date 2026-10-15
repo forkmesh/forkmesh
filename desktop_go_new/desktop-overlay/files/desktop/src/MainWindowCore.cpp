@@ -190,12 +190,13 @@ void MainWindow::registerCoreControlHandlers()
     m_coreClient->handle(
         QStringLiteral("ui.insights.shortcutState"),
         [this](const QJsonObject &, const CoreClient::Responder &respond) {
-            respond({{QStringLiteral("active"), m_shortcutProcess != nullptr},
-                     {QStringLiteral("running"), m_shortcutRun.running},
-                     {QStringLiteral("repo"), m_shortcutRun.repo},
-                     {QStringLiteral("file"), m_shortcutRun.file},
+            const auto *run = shortcutRunById(m_shortcutShownRun);
+            respond({{QStringLiteral("active"), !m_shortcutProcesses.isEmpty()},
+                     {QStringLiteral("running"), run && run->running},
+                     {QStringLiteral("repo"), run ? run->repo : QString()},
+                     {QStringLiteral("file"), run ? run->file : QString()},
                      {QStringLiteral("lastOutput"),
-                      forkmesh::localcontrol::insights::lastOutputLine(m_shortcutRun.output)}},
+                      run ? forkmesh::localcontrol::insights::lastOutputLine(run->output) : QString()}},
                     QString());
         });
     registerCoreHostsHandlers();

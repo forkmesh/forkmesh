@@ -20,7 +20,7 @@ for entry in "$REPO"/* "$REPO"/.forkmesh; do
 done
 cp -a "$OVERLAY/files/." "$STAGE/"
 for patch in "$OVERLAY"/patches/[0-9]*.patch; do
-  (cd "$STAGE" && git apply --whitespace=nowarn "$patch") || {
+  (cd "$STAGE" && GIT_CEILING_DIRECTORIES="$ROOT" git apply --whitespace=nowarn "$patch") || {
     echo "stage: $(basename "$patch") does not apply to this checkout; rebase the overlay (see desktop_go_new/docs/README.md)" >&2
     exit 1
   }
