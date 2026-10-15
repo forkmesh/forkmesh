@@ -69,10 +69,12 @@ CoreDaemonSettings::CoreDaemonSettings(CoreClient *client, QWidget *parent)
         "forkmesh-core keeps phone connections, host jobs, terminals, agents and background "
         "services running while the window is closed. When off it stops two minutes after the "
         "window closes, once its work is done."));
-    m_autostart = new QCheckBox(QStringLiteral("Start the background engine when you log in"));
+    m_autostart = new QCheckBox(QStringLiteral("Start the background engine when the computer starts"));
     m_autostart->setToolTip(QStringLiteral(
-        "Registers forkmesh-core with the system (a systemd user unit, a login item or the "
-        "Windows Run key) so background work resumes after a restart without opening the window."));
+        "Registers forkmesh-core with the system so background work resumes after a restart "
+        "without opening the window. On Linux it is a systemd user unit with lingering turned on, "
+        "so it starts at boot before anyone logs in; on macOS (a login item) and Windows (the Run "
+        "key) it starts when you sign in."));
     m_status = new QLabel;
     m_status->setObjectName(QStringLiteral("modeHint"));
     m_status->setWordWrap(true);
@@ -156,10 +158,16 @@ void CoreDaemonSettings::applyState(const QJsonObject &state)
     if (!exit.isEmpty())
         parts << exit;
     QString text = parts.join(QStringLiteral(" · "));
-    if (autostart.value(QStringLiteral("enabled")).toBool())
-        text += QStringLiteral("\nStarts at login through %1:\n%2")
-                    .arg(autostart.value(QStringLiteral("mechanism")).toString(),
-                         autostart.value(QStringLiteral("location")).toString());
+    if (autostart.value(QStringLiteral("enabled")).toBool()) {
+        const bool atBoot = autostart.value(QStringLiteral("atBoot")).toBool();
+        const QString mechanism = autostart.value(QStringLiteral("mechanism")).toString();
+        text += QStringLiteral("\n%1 through %2:\n%3")
+                    .arg(atBoot ? QStringLiteral("Starts when the computer starts")
+                                : QStringLiteral("Starts when you log in"),
+                         mechanism, autostart.value(QStringLiteral("location")).toString());
+        if (!atBoot && mechanism == QLatin1String("systemd-user"))
+            text += QStringLiteral("\nTo start it before you log in, run: loginctl enable-linger");
+    }
     m_status->setText(text);
 }
 
