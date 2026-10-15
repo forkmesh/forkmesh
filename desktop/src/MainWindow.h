@@ -6244,7 +6244,9 @@ private:
                              const QString &accent = QString(),
                              const QString &copyLink = QString(),
                              const QString &authorId = QString(),
-                             const std::function<void()> &onDelete = {});
+                             const std::function<void()> &onDelete = {},
+                             const QList<QPair<QString, std::function<void()>>>
+                                 &extraActions = {});
     QWidget *buildRepoSecurityTab();
     QWidget *buildRepoQualityTab();
     QWidget *buildInsightsTab();
@@ -6286,6 +6288,7 @@ private:
     void createDiscussionDialog();
     void postDiscussionComment();
     void deleteDiscussionComment(int number, const QString &eventId);
+    void markDiscussionAnswer(int number, const QString &commentId);
     void setDiscussionStatus(const QString &status);
     void deleteCurrentDiscussion();
     void startDiscussionFromComposer();

@@ -5141,7 +5141,9 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
                                      const QString &headerHtml, const QString &body,
                                      const QString &accent, const QString &copyLink,
                                      const QString &authorId,
-                                     const std::function<void()> &onDelete)
+                                     const std::function<void()> &onDelete,
+                                     const QList<QPair<QString, std::function<void()>>>
+                                         &extraActions)
 {
     if (!layout)
         return;
@@ -5192,8 +5194,16 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
     header->setTextFormat(Qt::RichText);
     headerRow->addWidget(header);
     headerRow->addStretch();
-    if (!copyLink.isEmpty() || !body.trimmed().isEmpty() || bool(onDelete)) {
+    if (!copyLink.isEmpty() || !body.trimmed().isEmpty() || bool(onDelete) ||
+        !extraActions.isEmpty()) {
         auto *menu = new QMenu(card);
+        for (const auto &extra : extraActions) {
+            QAction *extraAction = menu->addAction(extra.first);
+            const std::function<void()> run = extra.second;
+            connect(extraAction, &QAction::triggered, this, [run]() { run(); });
+        }
+        if (!extraActions.isEmpty())
+            menu->addSeparator();
         if (!copyLink.isEmpty()) {
             QAction *copyLinkAction = menu->addAction("Copy link");
             connect(copyLinkAction, &QAction::triggered, this, [this, copyLink]() {
