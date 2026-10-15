@@ -2798,6 +2798,36 @@ def test_every_tracked_email_rings_a_celebration_on_the_senders_devices():
     assert len(runtime.pings) == 3
 
 
+def test_a_linked_mastodon_post_pings_who_it_added_to_the_crm(monkeypatch):
+    monkeypatch.setattr(crm, "_activity_clock", lambda: 5_000_000)
+    crm._ACTIVITY_SEEN.clear()
+    runtime = Runtime()
+    post = {"provider": "mastodon", "messageId": "113489000000000001",
+            "direction": "outbound", "handle": "@grace@hachyderm.io",
+            "account": "forkmesh@mastodon.social", "subject": "Shipping today",
+            "providerUrl": "https://mastodon.social/@forkmesh/113489000000000001"}
+    added = call(runtime.use("POST", "charlie", post), "/api/crm/acme/emails/link")
+    assert added["status"] == 201 and added["data"]["contactCreated"] is True
+    assert added["data"]["contact"]["mastodon"] == "@grace@hachyderm.io"
+    assert [(ping["recipient"], ping["title"], ping["body"]) for ping in runtime.pings] == [
+        ("charlie", "🎉 New CRM contact from Mastodon",
+         "“Shipping today” with @grace@hachyderm.io"),
+        ("alice", "Mastodon post linked in the CRM", "By charlie in acme: Shipping today")]
+
+    runtime.pings.clear()
+    again = call(runtime.use("POST", "charlie", post), "/api/crm/acme/emails/link")
+    assert again["data"]["relinked"] is True
+    assert [ping["recipient"] for ping in runtime.pings] == ["alice"]
+
+    runtime.pings.clear()
+    later = call(runtime.use("POST", "charlie", dict(
+        post, messageId="113489000000000002",
+        providerUrl="https://mastodon.social/@forkmesh/113489000000000002")),
+        "/api/crm/acme/emails/link")
+    assert later["data"]["contactCreated"] is False
+    assert runtime.pings[0]["title"] == "🎉 Mastodon post tracked in the CRM"
+
+
 def test_crm_activity_pings_the_member_and_the_organization_managers(monkeypatch):
     monkeypatch.setattr(crm, "_activity_clock", lambda: 5_000_000)
     crm._ACTIVITY_SEEN.clear()

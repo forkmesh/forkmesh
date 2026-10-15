@@ -107,6 +107,21 @@ async function renderSent() {
   note("[data-sent-status]", intro + recent);
 }
 
+async function renderToots() {
+  const result = await send({ type: "fm-toot-settings" });
+  if (!result.ok) return note("[data-toot-status]", humanError(result));
+  $("[data-track-toots]").checked = Boolean(result.track);
+  const last = result.last;
+  const intro = result.track
+    ? "Open one of your own Mastodon posts and everyone it mentions is logged in the CRM, new people as contacts, with a ping for each."
+    : "Your Mastodon posts are not logged on their own; use the panel on the post instead.";
+  const people = last?.contacts?.length ? last.contacts.join(", ") : "";
+  const recent = !last ? "" : last.error && !people
+    ? ` Last post not logged (${ago(last.at)}): ${last.error}.`
+    : people ? ` Last logged ${ago(last.at)}: ${people}${last.created ? ` (${last.created} new)` : ""}.` : "";
+  note("[data-toot-status]", intro + recent);
+}
+
 async function renderStatus(status) {
   const current = status || await send({ type: "fm-status" });
   $("[data-account]").textContent = current.connected ? current.account || "" : "";
@@ -129,6 +144,7 @@ async function renderStatus(status) {
   await renderHere();
   await renderOrganizations();
   await renderSent();
+  await renderToots();
   await renderMastodon();
   await renderNote();
   await renderX();
@@ -939,6 +955,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("[data-track-sent]").addEventListener("change", async (event) => {
     await send({ type: "fm-sent-set-track", track: event.target.checked });
     await renderSent();
+  });
+  $("[data-track-toots]").addEventListener("change", async (event) => {
+    await send({ type: "fm-toot-set-track", track: event.target.checked });
+    await renderToots();
   });
   $("[data-note-section]").addEventListener("toggle", (event) => {
     if (event.target.open) void loadNoteContacts();
