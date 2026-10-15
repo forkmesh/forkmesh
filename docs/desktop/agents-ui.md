@@ -244,6 +244,43 @@ reset ping or startup (`restoreUsageLimitAgentHolds`) continues it through
 `continueAgentSession` if it is still failed on that limit. Only the refusal
 is parsed, never the log tail. Setting: `agents/usageLimitAutoContinue` (on).
 
+### When a run counts as done
+
+The "Agent #N is done!" ping (`notifyAgentDone`) only goes out once a run
+reaches Success. A clean `result` from the Claude CLI ends a turn, not the
+task. An agent that started background work (a background subagent, a
+`run_in_background` shell, a Monitor) gets a `result` while that work is still
+running, and the CLI starts a new turn when each task reports back. Before
+2026-10-15 every such `result` set the run to Success and sent a ping, so one
+task could ping several times before it was finished (session #2066 pinged
+four times).
+
+Now `forkmesh::agentclitasks::Ledger` (`AgentCliTasks.h`) keeps the run's
+`system` `task_started` / `task_updated` / `task_notification` events per
+session (`m_agentCliTasks`). A task counts against the run while it is
+backgrounded (`is_backgrounded`, or a `task_updated` patch that moves it to the
+background), until a notification or a terminal status (`completed`, `failed`,
+`killed`, `stopped`) closes it. A clean `result` that arrives while any
+background task is open keeps the session Running, with no Success and no
+ping. It posts a transcript notice naming the tasks and marks the session in
+`m_agentResultAwaitingCliTasks`. The turn the CLI starts when the tasks report
+back ends with its own `result`, and that one goes through the usual
+subprocess drain to Success and the single done ping.
+
+Fallbacks:
+
+- If the last task closes and no new top-level turn starts within 30 s
+  (`kAgentCliTaskSettleMs`), `settleAgentAfterCliTasks` finishes the run from
+  the held `result`.
+- If the CLI exits while a run is held, `finishCliTranscriptRun` treats the
+  held `result` as the completion.
+- A new CLI process for the session clears the ledger, so tasks from a stopped
+  process cannot hold the next run.
+
+A background task that never reports back keeps the run Running until it is
+stopped. The unit test is `forkmesh-agent-cli-tasks-tests`
+(`desktop/tests/test_agent_cli_tasks.cpp`).
+
 ## Workspace layout in the new interface
 
 In the new interface (`app/design` = `next`) the Agents page has a **New**
