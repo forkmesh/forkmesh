@@ -11752,13 +11752,13 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         return int((rec or {}).get("created_at") or 0)
 
     async def notify(self, recipient, kind, title, body="", href="",
-                     dedupe="", meta=None):
+                     dedupe="", meta=None, push=True):
         """Queue one ping of a package-owned kind; core kinds stay the core's."""
         if kind not in PLUGIN_NOTIFICATION_KINDS:
             return False
         return await enqueue_notification(
             self.env, recipient, kind, title, body=body, href=href,
-            source="plugin", dedupe=dedupe, meta=meta)
+            source="plugin", dedupe=dedupe, meta=meta, push=bool(push))
 
     def new_secret(self):
         """Fresh 256-bit key material for a package's own row encryption.
