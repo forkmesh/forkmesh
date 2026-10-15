@@ -39,6 +39,7 @@ final class DirectLiveMotionFeed {
     private let manager: CMMotionManager = CMMotionManager()
     private weak var engine: DirectLiveEngine?
     private var resting: CMAcceleration?
+    private var lastTap: Int64 = 0
 
     var available: Bool { manager.isDeviceMotionAvailable || manager.isAccelerometerAvailable }
 
@@ -67,6 +68,7 @@ final class DirectLiveMotionFeed {
         if manager.isDeviceMotionActive { manager.stopDeviceMotionUpdates() }
         if manager.isAccelerometerActive { manager.stopAccelerometerUpdates() }
         resting = nil
+        lastTap = 0
         engine = nil
     }
 
@@ -85,9 +87,21 @@ final class DirectLiveMotionFeed {
             stop()
             return
         }
+        sendTap(engine, push: push)
         engine.addMotion(
             DirectLiveMotionSample(
                 at: engine.now, gx: gravity.x, gy: gravity.y, gz: gravity.z, ax: push.x, ay: push.y, az: push.z))
+    }
+
+    private func sendTap(_ engine: DirectLiveEngine, push: CMAcceleration) {
+        let impact: Double = sqrt(push.x * push.x + push.y * push.y + push.z * push.z)
+        let now: Int64 = engine.now
+        guard impact >= 1.4, now - lastTap >= 500 else { return }
+        lastTap = now
+        for conversation in engine.sharingMotion {
+            engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
+        }
+        DirectLiveHaptics.sent()
     }
 }
 
@@ -180,7 +194,6 @@ struct MessagesLiveTouchSurface: View {
     @Environment(\.fmPalette) private var fm
     let engine: DirectLiveEngine
     let conversation: String
-    let partner: String
     let onDone: () -> Void
     @State private var color: UInt32 = DirectLiveFrames.colors[1]
     @State private var strokeId: String = ""
@@ -199,15 +212,11 @@ struct MessagesLiveTouchSurface: View {
                             .onEnded { (value: DragGesture.Value) in ended(value, size: geometry.size) })
                     .accessibilityElement()
                     .accessibilityLabel("Touch canvas")
-                    .accessibilityHint("Tap to make \(partner)'s phone tap back. Drag to draw on the background.")
+                    .accessibilityHint("Drag to draw on the background.")
                     .accessibilityAddTraits(.allowsDirectInteraction)
-                    .accessibilityAction(named: "Send a tap") {
-                        engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
-                    }
             }
-            .ignoresSafeArea()
             VStack {
-                Text("Tap to buzz \(partner). Draw on the background.")
+                Text("Draw on the background.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(fm.textPrimary)
                     .padding(.horizontal, 14)
@@ -225,7 +234,6 @@ struct MessagesLiveTouchSurface: View {
     }
 
     private var toolbar: some View {
-        let sharing: Bool = engine.isSharingMotion(conversation)
         return HStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -248,16 +256,6 @@ struct MessagesLiveTouchSurface: View {
                     }
                 }
             }
-            toolButton(
-                sharing ? "figure.walk.motion" : "iphone.gen3.radiowaves.left.and.right",
-                label: sharing ? "Stop sharing movement" : "Share my movement", on: sharing
-            ) {
-                let next: Bool = !sharing
-                engine.setSharingMotion(conversation, next)
-                if next { DirectLiveMotionFeed.shared.start(engine) }
-                FmHaptics.selection()
-            }
-            .disabled(!DirectLiveMotionFeed.shared.available)
             toolButton("trash", label: "Clear drawing", on: false) {
                 engine.clearInk(conversation)
                 FmHaptics.tap()
@@ -296,10 +294,7 @@ struct MessagesLiveTouchSurface: View {
     }
 
     private func ended(_ value: DragGesture.Value, size: CGSize) {
-        if strokeId.isEmpty {
-            engine.tap(conversation, at: DirectLiveGeometry.point(value.location, in: size))
-            DirectLiveHaptics.sent()
-        } else {
+        if !strokeId.isEmpty {
             engine.extendStroke(conversation, id: strokeId, to: DirectLiveGeometry.point(value.location, in: size))
             engine.endStroke(conversation, id: strokeId)
         }
@@ -345,30 +340,22 @@ struct MessagesLivePartnerMotion: View {
 
     private func card(_ sample: DirectLiveMotionSample?) -> some View {
         let roll: Double = sample?.steadyRoll ?? 0
-        let pitch: Double = (sample?.pitch ?? 0) * 0.6
+        let pitch: Double = sample?.pitch ?? 0
+        let depth: Double = min(max(pitch / (.pi / 2), -1), 1)
         let jolt: Double = min(sample?.jolt ?? 0, 2)
-        let shake: CGSize = CGSize(width: CGFloat(sample?.ax ?? 0) * 10, height: CGFloat(-(sample?.ay ?? 0)) * 10)
+        let direction: CGSize = CGSize(
+            width: CGFloat(roll) * 17 + CGFloat(sample?.ax ?? 0) * 6,
+            height: CGFloat(depth) * 17 - CGFloat(sample?.ay ?? 0) * 6)
         return VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .stroke(Color(fmARGB: 0xFFFF375F).opacity(min(0.9, jolt * 0.8)), lineWidth: 2)
                     .frame(width: 58 + CGFloat(jolt) * 18, height: 58 + CGFloat(jolt) * 18)
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(fmARGB: 0xFF64D2FF), Color(fmARGB: 0xFFBF5AF2)], startPoint: .top,
-                            endPoint: .bottom)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.white.opacity(0.9), lineWidth: 2)
-                    )
-                    .overlay(alignment: .top) {
-                        Capsule().fill(Color.black.opacity(0.6)).frame(width: 10, height: 3).padding(.top, 4)
-                    }
-                    .frame(width: 30, height: 56)
-                    .rotation3DEffect(.radians(pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+                MessagesPersonAvatar(name: partner, size: 52)
+                    .rotation3DEffect(.radians(-pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                     .rotationEffect(.radians(roll))
-                    .offset(shake)
+                    .scaleEffect(1 + CGFloat(depth) * 0.12)
+                    .offset(direction)
             }
             .frame(width: 84, height: 84)
             Text(partner)
@@ -386,26 +373,25 @@ struct DirectLiveTouchButton: View {
     @Environment(\.fmPalette) private var fm
     let hub: ChatHub
     let dark: Bool
-    @Binding var touching: Bool
+    @Binding var drawing: Bool
     @Binding var focused: Bool
 
     var body: some View {
-        if let engine = hub.live, hub.inDirect {
-            let on: Bool = touching || engine.isSharingMotion(hub.relay.currentConversation)
+        if hub.live != nil, hub.inDirect {
             Button(action: {
                 focused = false
-                withAnimation(.easeOut(duration: 0.2)) { touching.toggle() }
+                withAnimation(.easeOut(duration: 0.2)) { drawing.toggle() }
                 FmHaptics.selection()
             }) {
-                Image(systemName: "hand.tap.fill")
+                Image(systemName: "pencil.tip")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(on ? Color.white : (dark ? Color.white : Color.black.opacity(0.7)))
+                    .foregroundStyle(drawing ? Color.white : (dark ? Color.white : Color.black.opacity(0.7)))
                     .frame(width: 38, height: 38)
-                    .background(Circle().fill(on ? fm.accent : Color.clear))
+                    .background(Circle().fill(drawing ? fm.accent : Color.clear))
                     .chatGlass(Circle(), border: fm.border)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(touching ? "Close touch" : "Touch: tap, draw and share movement")
+            .accessibilityLabel(drawing ? "Stop drawing" : "Draw")
             .accessibilityIdentifier("chat-live-touch-button")
         }
     }
