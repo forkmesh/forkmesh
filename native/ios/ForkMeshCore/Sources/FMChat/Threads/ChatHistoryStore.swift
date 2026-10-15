@@ -15,6 +15,7 @@ public struct ChatHistorySnapshot: Equatable, Sendable {
     public var removedMessages: [String] = []
     public var looks: [String: ChatLook] = [:]
     public var lookEvents: [ChatLookEvent] = []
+    public var receipts: [String: ChatReceipt] = [:]
 
     public init() {}
 }
@@ -27,7 +28,11 @@ public enum ChatHistoryCodec {
     ) -> [ChatMessage] {
         var out: [ChatMessage] = []
         for key in conversations.keys.sorted() {
-            if key == "#team" || key == meshConversation || !(key.hasPrefix("#") || key.hasPrefix("@")) { continue }
+            if key == "#team" || key == meshConversation
+                || !(key.hasPrefix("#") || key.hasPrefix("@") || DirectMessageFrames.isDirect(key))
+            {
+                continue
+            }
             var list = conversations[key] ?? []
             if let retention { list = list.filter { !retention.isExpired($0.timestamp, key: key, now: now) } }
             var kept: [ChatMessage] = []
@@ -51,6 +56,7 @@ public enum ChatHistoryCodec {
         ]
         if message.isSelf { object["self"] = true }
         if !message.fileName.isEmpty { object["f"] = .string(message.fileName) }
+        if let quote = message.replyTo { object["r"] = DirectMessageFrames.replyFields(quote) }
         return .object(object)
     }
 
@@ -63,7 +69,8 @@ public enum ChatHistoryCodec {
             senderName: String((object["s"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars)),
             text: String((object["t"]?.text ?? "").prefix(ChatLimits.maxTextChars)),
             timestamp: Date(epochMillis: object["ts"]?.int64Value ?? 0), isSelf: object["self"]?.isTrue == true,
-            fileName: String((object["f"]?.text ?? "").prefix(ChatLimits.maxFileNameChars)))
+            fileName: String((object["f"]?.text ?? "").prefix(ChatLimits.maxFileNameChars)),
+            replyTo: DirectMessageFrames.replyQuote(object["r"]))
     }
 
     public static func encode(_ snapshot: ChatHistorySnapshot) -> Data {
@@ -85,6 +92,8 @@ public enum ChatHistoryCodec {
         for (id, root) in snapshot.replyRoots { roots[id] = .string(root) }
         var looks: JSONObject = [:]
         for (conversation, look) in snapshot.looks { looks[conversation] = ChatLookFrames.encode(look) }
+        var receipts: JSONObject = [:]
+        for (id, receipt) in snapshot.receipts { receipts[id] = .string(receipt.rawValue) }
         let root: JSONObject = [
             "v": .int(Int64(version)),
             "messages": .array(snapshot.messages.map(encodeMessage)),
@@ -99,6 +108,7 @@ public enum ChatHistoryCodec {
             "removed": JSONValue(snapshot.removedMessages),
             "looks": .object(looks),
             "lookEvents": .array(snapshot.lookEvents.map(ChatLookFrames.encodeEvent)),
+            "receipts": .object(receipts),
         ]
         return JSON.encodeData(.object(root))
     }
@@ -129,6 +139,9 @@ public enum ChatHistoryCodec {
             snapshot.looks[conversation] = ChatLookFrames.decode(value.objectOrEmpty)
         }
         snapshot.lookEvents = (root["lookEvents"]?.objects ?? []).compactMap(ChatLookFrames.decodeEvent)
+        for (id, value) in root["receipts"]?.objectOrEmpty ?? [:] {
+            if let receipt = ChatReceipt(rawValue: value.text) { snapshot.receipts[id] = receipt }
+        }
         return snapshot
     }
 
@@ -155,6 +168,7 @@ public struct ChatHistoryParts: Sendable {
     public var removedMessages: [String] = []
     public var looks: [String: ChatLook] = [:]
     public var lookEvents: [ChatLookEvent] = []
+    public var receipts: [String: ChatReceipt] = [:]
     public var retention: ChatRetention?
     public var now = Date()
 
@@ -177,6 +191,7 @@ public struct ChatHistoryParts: Sendable {
         snapshot.removedMessages = removedMessages
         snapshot.looks = looks
         snapshot.lookEvents = lookEvents.filter { !isExpired($0.conversation, $0.timestamp) }
+        snapshot.receipts = receipts.filter { kept.contains($0.key) }
         return snapshot
     }
 

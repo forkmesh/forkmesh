@@ -39,8 +39,10 @@ returns to the repository in use, remembered across launches
 and says so inline. Android follows `CodeButton.plan`.
 
 The **new agent button** opens the composer (tap) or the command palette (long
-press). On iPhone it is a 44 pt circle left of the avatar in the top bar, the
-chat room header and the DM header (`ShellNewAgentButton`), showing one
+press). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
+chat room header (`ShellNewAgentButton`); the DM and group conversation header
+leaves it and the avatar out to make room for the name, and opening the channel
+list brings the top bar back. It shows one
 four-point star per running agent (`ShellCounts.shared.agents`, at most 24)
 drawn by `ShellSparkleField`, which tilts with the accelerometer
 (`ShellSparkleTilt`, 30 Hz while visible). Reduce Motion stops the motion;
@@ -187,6 +189,11 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
   N tabs"), the new agent button and avatar. Tapping the pill opens the
   channel details sheet (`Channels/ChatChannelSheet.swift`) or the DM's
   encryption explanation.
+- DMs and groups use the conversation header instead: back circle, a pill with
+  the avatar and the name beside it over the presence and server-copies line,
+  and the call buttons ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)).
+- The channel list opens with "Recent" (the five newest conversations) and a
+  small "N online" pill in that header; there are no count tiles.
 - The channel list is a full-width drawer from the left that hides the room
   header and shows the shell top bar; it closes with its × button, picking a
   room, or Back on Android. Drawers do not follow swipes. Opening it hides the

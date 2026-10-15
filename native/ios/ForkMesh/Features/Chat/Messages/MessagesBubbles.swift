@@ -6,46 +6,122 @@ import SwiftUI
 import UIKit
 
 struct MessagesBubbleShape: Shape {
+    static let joinedRadius: CGFloat = 5
+
     let fromSelf: Bool
     let tail: Bool
+    var joinsAbove: Bool = false
+    var joinsBelow: Bool = false
 
     func path(in rect: CGRect) -> Path {
         let width: CGFloat = rect.width
         let height: CGFloat = rect.height
         let radius: CGFloat = min(18, height / 2, (width - 5) / 2)
-        let control: CGFloat = radius * 0.45
+        let joined: CGFloat = min(MessagesBubbleShape.joinedRadius, radius)
+        let top: CGFloat = joinsAbove ? joined : radius
+        let bottom: CGFloat = joinsBelow && !tail ? joined : radius
+        let control: CGFloat = 0.45
         var path: Path = Path()
-        path.move(to: CGPoint(x: 5 + radius, y: height))
+        path.move(to: CGPoint(x: 5 + bottom, y: height))
         path.addLine(to: CGPoint(x: width - radius, y: height))
         path.addCurve(
-            to: CGPoint(x: width, y: height - radius), control1: CGPoint(x: width - control, y: height),
-            control2: CGPoint(x: width, y: height - control))
+            to: CGPoint(x: width, y: height - radius), control1: CGPoint(x: width - radius * control, y: height),
+            control2: CGPoint(x: width, y: height - radius * control))
         path.addLine(to: CGPoint(x: width, y: radius))
         path.addCurve(
-            to: CGPoint(x: width - radius, y: 0), control1: CGPoint(x: width, y: control),
-            control2: CGPoint(x: width - control, y: 0))
-        path.addLine(to: CGPoint(x: 5 + radius, y: 0))
+            to: CGPoint(x: width - radius, y: 0), control1: CGPoint(x: width, y: radius * control),
+            control2: CGPoint(x: width - radius * control, y: 0))
+        path.addLine(to: CGPoint(x: 5 + top, y: 0))
         path.addCurve(
-            to: CGPoint(x: 5, y: radius), control1: CGPoint(x: 5 + control, y: 0), control2: CGPoint(x: 5, y: control))
+            to: CGPoint(x: 5, y: top), control1: CGPoint(x: 5 + top * control, y: 0),
+            control2: CGPoint(x: 5, y: top * control))
         if tail {
-            path.addLine(to: CGPoint(x: 5, y: height - 10))
+            path.addLine(to: CGPoint(x: 5, y: max(top, height - 10)))
             path.addCurve(to: CGPoint(x: 0, y: height), control1: CGPoint(x: 5, y: height - 1), control2: CGPoint(x: 0, y: height))
             path.addLine(to: CGPoint(x: -1, y: height))
             path.addCurve(
                 to: CGPoint(x: 12, y: height - 4), control1: CGPoint(x: 4, y: height + 1), control2: CGPoint(x: 8, y: height - 1))
             path.addCurve(
-                to: CGPoint(x: 5 + radius, y: height), control1: CGPoint(x: 15, y: height),
-                control2: CGPoint(x: 5 + radius, y: height))
+                to: CGPoint(x: 5 + bottom, y: height), control1: CGPoint(x: 15, y: height),
+                control2: CGPoint(x: 5 + bottom, y: height))
         } else {
-            path.addLine(to: CGPoint(x: 5, y: height - radius))
+            path.addLine(to: CGPoint(x: 5, y: height - bottom))
             path.addCurve(
-                to: CGPoint(x: 5 + radius, y: height), control1: CGPoint(x: 5, y: height - control),
-                control2: CGPoint(x: 5 + control, y: height))
+                to: CGPoint(x: 5 + bottom, y: height), control1: CGPoint(x: 5, y: height - bottom * control),
+                control2: CGPoint(x: 5 + bottom * control, y: height))
         }
         path.closeSubpath()
         guard fromSelf else { return path.offsetBy(dx: rect.minX, dy: rect.minY) }
         let mirror: CGAffineTransform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -width, y: 0)
         return path.applying(mirror).offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
+struct MessagesEqualWidthStack: Layout {
+    var spacing: CGFloat
+
+    private func width(_ proposal: ProposedViewSize, _ subviews: Subviews) -> CGFloat {
+        let limit: CGFloat = proposal.width ?? .infinity
+        return subviews.map { min($0.sizeThatFits(.unspecified).width, limit) }.max() ?? 0
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let shared: CGFloat = width(proposal, subviews)
+        let heights: [CGFloat] = subviews.map { $0.sizeThatFits(ProposedViewSize(width: shared, height: nil)).height }
+        return CGSize(width: shared, height: heights.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y: CGFloat = bounds.minY
+        for subview in subviews {
+            let height: CGFloat = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+            subview.place(
+                at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
+            y += height + spacing
+        }
+    }
+}
+
+struct MessagesReplyQuote: View {
+    let quote: ChatReplyQuote
+    let author: String
+    let inSent: Bool
+    let colors: MessagesColors
+    var onTap: (() -> Void)? = nil
+
+    private var bar: Color { inSent ? Color.white : MessagesColors.blue }
+    private var title: Color { inSent ? Color.white : MessagesColors.blue }
+    private var excerpt: Color { inSent ? Color.white.opacity(0.88) : colors.receivedText.opacity(0.78) }
+    private var fill: Color {
+        if inSent { return Color.white.opacity(0.2) }
+        return colors.dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            bar.frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(author)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(title)
+                    .lineLimit(1)
+                Text(quote.text.isEmpty ? "Message" : quote.text)
+                    .font(.system(size: 14))
+                    .foregroundStyle(excerpt)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fill)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture { onTap?() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Reply to \(author): \(quote.text)")
+        .accessibilityAddTraits(onTap == nil ? [] : .isButton)
     }
 }
 
@@ -80,6 +156,8 @@ struct MessagesBubbleRow: View {
     let actions: ChatRowActions
     let onTapback: () -> Void
     let onPhoto: (ChatAttachment) -> Void
+    var quoteAuthor: String = ""
+    var onQuote: (() -> Void)? = nil
     @State private var confirmDelete: Bool = false
     @State private var selecting: Bool = false
 
@@ -87,6 +165,9 @@ struct MessagesBubbleRow: View {
     private var message: ChatMessage { row.message }
     private var mine: Bool { message.isSelf }
     private var copyText: String { row.text.isEmpty ? message.fileName : row.text }
+    private var jumbo: Bool { bubble.jumbo && message.replyTo == nil }
+    private var joinsAbove: Bool { !bubble.position.startsRun }
+    private var joinsBelow: Bool { !bubble.position.hasTail }
 
     var body: some View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
@@ -132,7 +213,7 @@ struct MessagesBubbleRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
-        .padding(.top, bubble.position.startsRun ? 8 : 1)
+        .padding(.top, bubble.position.startsRun ? 8 : 2)
         .padding(.horizontal, 10)
         .sheet(isPresented: $selecting) { FmSelectableTextSheet(text: copyText) }
         .confirmationDialog("Delete message?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -152,7 +233,7 @@ struct MessagesBubbleRow: View {
 
     private var receiptPlace: ReceiptPlace {
         guard bubble.receipt != nil else { return .none }
-        if !row.text.isEmpty { return bubble.jumbo ? .below : .text }
+        if !row.text.isEmpty { return jumbo ? .below : .text }
         guard let attachment = row.attachment else { return message.fileName.isEmpty ? .below : .shell }
         if attachment.kind == .image { return FmImageCache.image(attachment.data) == nil ? .below : .photo }
         return .shell
@@ -222,15 +303,26 @@ struct MessagesBubbleRow: View {
                 }
             }
             if !row.text.isEmpty {
-                if bubble.jumbo {
+                if jumbo {
                     Text(row.text)
                         .font(.system(size: 52))
                         .padding(.horizontal, 6)
                         .accessibilityLabel(row.text)
                 } else {
                     bubbleShell {
-                        withReceipt(.text) {
-                            MessagesBubbleText(text: row.text, color: mine ? colors.sentText : colors.receivedText)
+                        if let quote = message.replyTo {
+                            MessagesEqualWidthStack(spacing: 6) {
+                                MessagesReplyQuote(
+                                    quote: quote, author: quoteAuthor.isEmpty ? quote.senderName : quoteAuthor, inSent: mine,
+                                    colors: colors, onTap: onQuote)
+                                withReceipt(.text) {
+                                    MessagesBubbleText(text: row.text, color: mine ? colors.sentText : colors.receivedText)
+                                }
+                            }
+                        } else {
+                            withReceipt(.text) {
+                                MessagesBubbleText(text: row.text, color: mine ? colors.sentText : colors.receivedText)
+                            }
                         }
                     }
                 }
@@ -245,14 +337,26 @@ struct MessagesBubbleRow: View {
         }
     }
 
+    private var shellShape: MessagesBubbleShape {
+        MessagesBubbleShape(fromSelf: mine, tail: bubble.position.hasTail, joinsAbove: joinsAbove, joinsBelow: joinsBelow)
+    }
+
+    private var photoShape: UnevenRoundedRectangle {
+        let near: CGFloat = MessagesBubbleShape.joinedRadius
+        let top: CGFloat = joinsAbove ? near : 18
+        let bottom: CGFloat = joinsBelow ? near : 18
+        return UnevenRoundedRectangle(
+            topLeadingRadius: mine ? 18 : top, bottomLeadingRadius: mine ? 18 : bottom,
+            bottomTrailingRadius: mine ? bottom : 18, topTrailingRadius: mine ? top : 18, style: .continuous)
+    }
+
     private func bubbleShell<Inner: View>(@ViewBuilder _ inner: () -> Inner) -> some View {
-        let tail: Bool = bubble.position.hasTail
-        return inner()
+        inner()
             .padding(.vertical, 7)
             .padding(.leading, mine ? 12 : 17)
             .padding(.trailing, mine ? 17 : 12)
-            .background(MessagesBubbleShape(fromSelf: mine, tail: tail).fill(mine ? colors.sentFill : colors.receivedFill))
-            .contentShape(MessagesBubbleShape(fromSelf: mine, tail: tail))
+            .background(shellShape.fill(mine ? colors.sentFill : colors.receivedFill))
+            .contentShape(shellShape)
     }
 
     @ViewBuilder private func photo(_ attachment: ChatAttachment) -> some View {
@@ -262,10 +366,8 @@ struct MessagesBubbleRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: MessagesBubbleRow.photoSize(picture).width, height: MessagesBubbleRow.photoSize(picture).height)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .clipShape(photoShape)
+                    .overlay(photoShape.stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
                     .overlay(alignment: .bottomTrailing) {
                         if receiptPlace == .photo {
                             receiptBadge(tint: Color.white, fill: Color(white: 0.15), accent: Color.white)
@@ -305,8 +407,8 @@ struct MessagesBubbleRow: View {
             }
             ChatReactionMenu(onPick: onReact)
         }
-        if let onThread = actions.onThread {
-            Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+        if let onReply = actions.onReply ?? actions.onThread {
+            Button(action: onReply) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         }
         ChatMessageLaterMenu(actions: actions)
         if !copyText.isEmpty {

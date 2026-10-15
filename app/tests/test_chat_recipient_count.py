@@ -32,6 +32,7 @@ FUNCTIONS = {
     "chat_direct_media_frame",
     "chat_live_budget_frame",
     "chat_live_envelope",
+    "chat_direct_receipt_envelope",
 }
 NOW = 1_800_000_000_000
 ALICE = "a" * 64
@@ -191,6 +192,8 @@ def _harness(channel=None, members=(), participants=()):
         "ROOM_LIVE_MAX_PER_WINDOW": 150,
         "ROOM_LIVE_MAX_BYTES": 16 * 1024,
         "ROOM_LIVE_ACCESS_RECHECK_MS": 5_000,
+        "ROOM_RECEIPT_MAX_PER_WINDOW": 40,
+        "ROOM_RECEIPT_MAX_BYTES": 8 * 1024,
         "_maintenance_socket_closed": lambda *_args: False,
         "_chat_direct_message_retained": direct_retained,
         "_retained": retained,
@@ -500,6 +503,44 @@ def test_receiving_a_direct_message_tells_the_sender_it_was_delivered():
     assert _kind(alice, "forkmesh-delivered") == expected
     assert _kind(alice_phone, "forkmesh-delivered") == expected
     assert _kind(bob, "forkmesh-delivered") == []
+
+
+def test_received_frames_are_not_dropped_by_the_message_budget():
+    namespace, room_type, stored = _harness(participants=(ALICE, BOB))
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    bob = _Socket("s2", BOB, direct_id=DIRECT)
+    _relay(room_type, [alice, bob], alice, _chat_frame())
+    ref = _kind(bob, "cipher")[0]["ref"]
+    namespace["ROOM_MSG_MAX_PER_WINDOW"] = 2
+    for index in range(3):
+        _relay(room_type, [alice, bob], bob, _chat_frame(data="key-%d" % index))
+    sent_before = len(bob.sent)
+
+    _relay(room_type, [alice, bob], bob, json.dumps(
+        {"kind": "forkmesh-received", "v": 1, "refs": [ref]}))
+
+    assert [row for row in stored if row[1].startswith(ref)] == []
+    assert _kind(alice, "forkmesh-delivered")[-1]["refs"] == [ref]
+    assert bob.attachment["rc_count"] == 1
+    assert bob.attachment["rl_count"] == 3
+    assert len(bob.sent) > sent_before
+
+
+def test_received_frames_have_their_own_bounded_budget():
+    namespace, room_type, _stored = _harness(participants=(ALICE, BOB))
+    namespace["ROOM_RECEIPT_MAX_PER_WINDOW"] = 2
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    bob = _Socket("s2", BOB, direct_id=DIRECT)
+    receipt = json.dumps({"kind": "forkmesh-received", "v": 1, "refs": ["e" * 40]})
+
+    for _ in range(4):
+        _relay(room_type, [alice, bob], bob, receipt)
+
+    assert len(_kind(alice, "forkmesh-delivered")) == 2
+    assert namespace["chat_direct_receipt_envelope"](
+        json.dumps({"kind": "forkmesh-received", "refs": ["e" * 40] * 400})) is None
+    assert namespace["chat_direct_receipt_envelope"](
+        json.dumps({"kind": "cipher", "data": "forkmesh-received"})) is None
 
 
 def test_superseding_a_direct_message_is_not_a_delivery():

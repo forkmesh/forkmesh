@@ -75,6 +75,13 @@ it. Clients show "N messages on the server" or "Not stored on the server".
   (at most 64 refs) after opening a frame; `chat_direct_received` deletes the
   matching rows not sent by the acknowledging account. A frame the device
   cannot open is not acknowledged.
+- `forkmesh-received` and `forkmesh-superseded` on a DM socket have their own
+  budget (`ROOM_RECEIPT_MAX_PER_WINDOW`, 40 per 10 s, frames up to 8 KiB,
+  `chat_direct_receipt_envelope`) and are handled before the 20-frame message
+  limit. Before 2026-10-15 they shared that limit: a reconnecting phone sends a
+  key advertisement and a burst of resealed frames first, so its ack was
+  dropped without a reply, and the copies stayed on the server while the
+  sender already saw Delivered (from the push path) and Read.
 - The relay reports `{"kind":"forkmesh-server-copies","v":1,"stored":N}`
   after a store, a receipt, and on join. Unacknowledged rows expire after 7
   days.
@@ -125,13 +132,20 @@ iOS, Android):
   same phone.
 - `{"kind":"forkmesh-read","v":1}`: sent when `_mark_read` moves the reader's
   `last_read_count`. A hidden tab defers its `/read` until visible.
-- Channels reach only sending and sent. Ticks are not persisted and change
-  only while the sender's client has the conversation open.
+- Channels reach only sending and sent. Ticks change only while the sender's
+  client has the conversation open. iOS saves delivered and read marks with its
+  local DM history, and `forkmesh-read` marks every earlier own message read;
+  other clients keep ticks in memory only.
 
 ## Replies, reactions, edits and deletes in DMs
 
 DMs use the same sealed frames as channels: `thread-reply` (persist and
-notify), `reaction`, `edit` and `delete` (persist). Reply and react work on
+notify), `reaction`, `edit` and `delete` (persist).
+
+A quoted reply (Signal style, iOS since 2026-10-15) is an ordinary `chat` frame
+with `"replyTo": {"id", "senderId", "sender", "text"}`, the text cut to 280
+characters. It appears in the conversation, not in a thread. Clients that do not
+know the field show the message text alone. Reply and react work on
 any message; edit and delete for everyone only on one's own. A receiver
 applies an edit or delete only when the frame's `senderId` equals the target's
 `senderId`. After a delete the sender also sends `forkmesh-superseded` for the

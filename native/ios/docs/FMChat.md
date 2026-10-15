@@ -135,8 +135,14 @@ nothing.
 relay change `scheduleSave` saves again 2 s later. The main thread only takes a copy-on-write
 snapshot (`historyParts()`); bounding (200 messages and 2 MB of text per channel), retention
 filtering, encoding and the protected atomic write run on a serial utility queue
-(`ChatHistoryWriter`), which skips the write when the snapshot is unchanged. Only `#` and `@`
-rooms are written; direct-message history is never stored on disk.
+(`ChatHistoryWriter`), which skips the write when the snapshot is unchanged. `#`, `@` and
+`direct:` rooms are written. Direct messages are saved because the relay deletes its copy as
+soon as the other person's device takes it; before 2026-10-15 only the replay of undelivered
+copies brought a DM back after a relaunch, so a sent message either vanished or came back at
+"Sent". `DirectMessageService.onChange` schedules the save; `restore(_:receipts:)` loads the
+messages when `hub.direct` is set (it is set after `attachHistory`). The file also keeps
+`receipts` (message id to `delivered` or `read`) for the kept messages, so a mark does not drop
+back to "Sent" after a relaunch. Signing out clears the service, and the next save drops the DMs.
 
 ## Disappearing messages
 
@@ -155,7 +161,12 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 
 - **Layout** (`ChatConversationLayout`): time lines after 15-minute gaps or a new day, runs of
   one sender, sender names in groups, a receipt mark under own messages, large emoji-only
-  messages.
+  messages. Bubbles in one run join on the sender's side: `MessagesBubbleShape` takes
+  `joinsAbove` and `joinsBelow` and drops those corners to 5 pt, photos use the same corners,
+  rows in a run are 2 pt apart, and only the last bubble has the tail.
+- **Header** (`MessagesConversationView.header`): back circle, then one glass pill with the
+  avatar and, to its right, the name over "Online · N messages on the server", then the call
+  buttons. It has no new agent button or own avatar; those stay in the channel list's top bar.
 - **Shared look** (`Threads/ChatLook.swift`): background, group name and group photo travel as
   sealed `look` frames, last-writer-wins on `(ts, id)`; each change is shown as an event.
   Pictures are capped at 600 KB because a frame is base64-encoded three times and the room
@@ -199,7 +210,11 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   channels do.
 - **Channel list on open**: the list is saved on the phone and shown as soon as chat opens,
   then refreshed from the server, retrying if the first load fails.
-- **People**: the Online tile opens everyone online; a name opens the DM with that account, an
+- **Channel list top** (`ChatChannelSidebar.recentSection`): "Recent" lists the five newest
+  conversations of any kind (`ChatHub.recentConversations(limit:)`, by the last message or the
+  DM's `updatedAt`) so one tap goes back to a chat. Its header carries a small "N online" pill.
+  The Channels, Unread and Online count tiles were removed on 2026-10-15.
+- **People**: the "N online" pill opens everyone online; a name opens the DM with that account, an
   avatar opens the person card (`ChatPersonSheet`: picture, presence, status, bio, local time,
   Message button, profile link). Local time uses the profile's time zone, else the time zone the
   person's phone shares in chat (`ChatLocalTime`).
@@ -223,13 +238,31 @@ messages"). On iOS they live in `DirectMessageService`:
 - **Dedupe.** A resend keeps the message id, so receivers drop the second copy.
 - **Unconfirmed sends.** A DM the server has not confirmed within a few seconds is sent again
   over a fresh connection, so it does not stay at "Sending".
+- **Delivered entries leave the outbox.** `forkmesh-delivered` removes those messages from the
+  outbox and `reseal` skips anything `delivered` or `read`. Before, a new device key (the
+  sender's own laptop, say) resent messages the other person already had, and each resend was a
+  new server copy that stayed until their phone opened the room again.
+- **Acks are retried.** `flushReceived` keeps its refs when the socket is gone and sends them
+  right after the next connect, instead of dropping them.
+- **Server copies label** is cleared when the socket drops or closes, so a stale count is never
+  shown; the relay sends a fresh count on join.
 
 ### Receipts, deletes, reactions and replies
 
 - **Receipt marks** (`ChatReceipt`: `sending`, `sent`, `delivered`, `read`; only moves
   forward). DMs: `forkmesh-recipients` makes a ref `sent`, `forkmesh-delivered` `delivered`,
-  `forkmesh-read` `read`. Office rooms reach `sent` only. Drawn by `ChatReceiptMark` inside
+  `forkmesh-read` `read`. `forkmesh-read` marks every own message in the DM's history read
+  (except ones still sending), not only refs seen since launch. Delivered and read marks are
+  saved with the history file. Office rooms reach `sent` only. Drawn by `ChatReceiptMark` inside
   the sender's own bubble.
+- **Quoted replies** (DMs): Reply in a message's menu sets `ChatHub.replyingTo`; the composer
+  shows the quote with a cancel button, and the next text sent carries
+  `"replyTo": {"id", "senderId", "sender", "text"}` (text up to 280 characters,
+  `ChatReplyQuote`) in the sealed `chat` frame. The bubble draws the quote above the text with a
+  bar on the left (`MessagesReplyQuote`, "You" for own messages), and tapping it scrolls to the
+  original when it is loaded. Switching conversation cancels a pending reply. Other clients
+  ignore the field and show the text alone. `thread-reply` frames from other clients still show
+  as "N replies" under the root.
 - **Delete for everyone**: a sealed `delete` frame, removal from the outbox, and a
   `forkmesh-superseded` for the original ref. A received delete is honoured only from the
   target's sender; a delete arriving before its target is held (64 per room). Removed ids are

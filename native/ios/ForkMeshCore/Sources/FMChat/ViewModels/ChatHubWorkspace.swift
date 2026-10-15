@@ -308,6 +308,18 @@ extension ChatHub {
         return out
     }
 
+    public func recentConversations(limit: Int = 5) -> [String] {
+        var stamped: [(conversation: String, at: Date)] = []
+        var listed = Set<String>()
+        for row in directRows where listed.insert(row.conversation).inserted {
+            if let at = row.lastAt { stamped.append((row.conversation, at)) }
+        }
+        for conversation in listedChannels + [meshConversation] where listed.insert(conversation).inserted {
+            if let at = listPreview(conversation)?.at { stamped.append((conversation, at)) }
+        }
+        return stamped.sorted { $0.at > $1.at }.prefix(max(0, limit)).map(\.conversation)
+    }
+
     public static func isPersonConversation(_ conversation: String) -> Bool {
         conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
     }

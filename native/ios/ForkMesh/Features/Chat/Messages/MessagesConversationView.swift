@@ -10,7 +10,6 @@ import UIKit
 
 struct MessagesConversationView<Drawer: View>: View {
     @Environment(\.fmPalette) private var fm
-    @Environment(\.chatShellActions) private var shell
     let hub: ChatHub
     let onBack: (() -> Void)?
     let showsHeader: Bool
@@ -27,6 +26,7 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var lastSeenId: String = ""
     @State private var touching: Bool = false
     @State private var viewOnceOpen: ViewOnceEntry?
+    @State private var jumpTarget: String?
 
     private var look: ChatLook { hub.conversationLook }
 
@@ -104,6 +104,7 @@ struct MessagesConversationView<Drawer: View>: View {
         let items: [ChatConversationItem] = hub.conversationItems
         let typing: [String] = hub.conversationTyping
         let group: Bool = hub.inGroupConversation
+        let known: Set<String> = Set(items.map(\.id))
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -111,7 +112,7 @@ struct MessagesConversationView<Drawer: View>: View {
                         MessagesEmptyIntro(hub: hub, colors: palette)
                     }
                     ForEach(items) { (item: ChatConversationItem) in
-                        itemView(item, palette: palette, group: group)
+                        itemView(item, palette: palette, group: group, known: known)
                             .id(item.id)
                     }
                     if !typing.isEmpty {
@@ -139,12 +140,19 @@ struct MessagesConversationView<Drawer: View>: View {
             .onTabReselect(.chat) {
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) }
             }
+            .onChange(of: jumpTarget) { _, target in
+                guard let target else { return }
+                jumpTarget = nil
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .center) }
+            }
         }
     }
 
     static var endId: String { "messages-end" }
 
-    @ViewBuilder private func itemView(_ item: ChatConversationItem, palette: MessagesColors, group: Bool) -> some View {
+    @ViewBuilder private func itemView(
+        _ item: ChatConversationItem, palette: MessagesColors, group: Bool, known: Set<String>
+    ) -> some View {
         switch item {
         case .time(_, let date):
             TimelineView(.everyMinute) { (context: TimelineViewDefaultContext) in
@@ -160,19 +168,23 @@ struct MessagesConversationView<Drawer: View>: View {
                     onOpen: { viewOnceOpen = entry },
                     onUnsend: { Task { await hub.unsendViewOnce(entry.messageId) } })
             } else {
-                messageRow(bubble, palette: palette, group: group)
+                messageRow(bubble, palette: palette, group: group, known: known)
             }
         }
     }
 
-    private func messageRow(_ bubble: ChatBubble, palette: MessagesColors, group: Bool) -> some View {
-        MessagesBubbleRow(
+    private func messageRow(_ bubble: ChatBubble, palette: MessagesColors, group: Bool, known: Set<String>) -> some View {
+        let quote: ChatReplyQuote? = bubble.row.message.replyTo
+        let shown: Bool = quote.map { known.contains($0.id) } ?? false
+        return MessagesBubbleRow(
             bubble: bubble, group: group, colors: palette, actions: actions(bubble.row),
             onTapback: {
                 FmHaptics.selection()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tapbackTarget = bubble.row }
             },
-            onPhoto: { viewing = MessagesPhotoBox(attachment: $0) })
+            onPhoto: { viewing = MessagesPhotoBox(attachment: $0) },
+            quoteAuthor: quote.map { hub.replyAuthor($0, in: bubble.row.message.conversation) } ?? "",
+            onQuote: shown ? { jumpTarget = quote?.id } : nil)
     }
 
     private func stopSharing(_ conversation: String) {
@@ -228,53 +240,58 @@ struct MessagesConversationView<Drawer: View>: View {
         withAnimation(.easeOut(duration: 0.18)) { tapbackTarget = nil }
     }
 
+    private var headerDetail: String {
+        [hub.conversationSubtitle, hub.serverCopiesLine].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+    }
+
     private func header(_ palette: MessagesColors) -> some View {
-        MessagesHeaderLayout(spacing: FmSpace.x2) {
-            HStack(alignment: .top) {
-                if let onBack {
-                    Button(action: onBack) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 19, weight: .semibold))
-                                .foregroundStyle(palette.dark ? Color.white : Color.black)
-                                .frame(width: 44, height: 44)
-                            if hub.otherRoomsUnread {
-                                Circle().fill(fm.danger).frame(width: 9, height: 9).padding(7)
-                            }
+        let ink: Color = palette.dark ? Color.white : Color.black
+        let detail: String = headerDetail
+        return HStack(alignment: .center, spacing: FmSpace.x2) {
+            if let onBack {
+                Button(action: onBack) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(ink)
+                            .frame(width: 44, height: 44)
+                        if hub.otherRoomsUnread {
+                            Circle().fill(fm.danger).frame(width: 9, height: 9).padding(7)
                         }
-                        .chatGlass(Circle(), border: fm.border)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Conversations")
-                } else {
-                    Color.clear.frame(width: 44, height: 44)
+                    .chatGlass(Circle(), border: fm.border)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Conversations")
             }
-            .zIndex(1)
             Button(action: { details = true }) {
-                VStack(spacing: 4) {
-                    MessagesConversationAvatar(hub: hub, size: 50)
-                    HStack(spacing: 2) {
-                        Text(hub.conversationName)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(palette.meta)
+                HStack(spacing: FmSpace.x2) {
+                    MessagesConversationAvatar(hub: hub, size: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 3) {
+                            Text(hub.conversationName)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(ink)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(palette.meta)
+                        }
+                        if !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: 12))
+                                .foregroundStyle(palette.meta)
+                                .lineLimit(1)
+                                .accessibilityIdentifier("chat-direct-server-copies")
+                        }
                     }
-                    .foregroundStyle(palette.dark ? Color.white : Color.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .chatGlass(Capsule(), border: fm.border)
-                    if !hub.serverCopiesLine.isEmpty {
-                        Text(hub.serverCopiesLine)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(palette.meta)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("chat-direct-server-copies")
-                    }
+                    .layoutPriority(1)
                 }
-                .frame(maxWidth: 220)
+                .padding(.leading, 3)
+                .padding(.trailing, FmSpace.x3)
+                .padding(.vertical, 3)
+                .frame(minHeight: 44)
+                .chatGlass(Capsule(), border: fm.border)
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
@@ -283,24 +300,9 @@ struct MessagesConversationView<Drawer: View>: View {
                     .filter { !$0.isEmpty }.joined(separator: ", "))
             .accessibilityHint("Shows details, people, photos and the background")
             .accessibilityIdentifier("chat-room-header")
-            HStack(alignment: .top) {
-                DirectCallHeaderButtons(hub: hub, dark: palette.dark)
-                if let onNewAgent = shell.onNewAgent {
-                    ShellNewAgentButton(onNewAgent: onNewAgent, onPalette: shell.onPalette)
-                }
-                if let onHub = shell.onHub {
-                    Button(action: onHub) {
-                        FmAvatar(name: shell.name, avatarPng: shell.avatarPng, size: 30, fontSize: FmType.meta)
-                            .frame(width: 44, height: 44)
-                            .chatGlass(Circle(), border: fm.border)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("You: projects, tools and settings")
-                } else {
-                    Color.clear.frame(width: 44, height: 44)
-                }
-            }
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            Spacer(minLength: 0)
+            DirectCallHeaderButtons(hub: hub, dark: palette.dark)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)
@@ -311,48 +313,6 @@ struct MessagesConversationView<Drawer: View>: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
-    }
-}
-
-struct MessagesHeaderLayout: Layout {
-    var spacing: CGFloat
-
-    private struct Frames {
-        var leading: CGSize
-        var title: CGSize
-        var trailing: CGSize
-        var titleX: CGFloat
-        var trailingX: CGFloat
-
-        var height: CGFloat { max(leading.height, title.height, trailing.height) }
-    }
-
-    private func frames(_ width: CGFloat, _ subviews: Subviews) -> Frames {
-        let leading: CGSize = subviews[0].sizeThatFits(.unspecified)
-        let trailing: CGSize = subviews[2].sizeThatFits(.unspecified)
-        let room: CGFloat = max(0, width - leading.width - trailing.width - spacing * 2)
-        let fitted: CGSize = subviews[1].sizeThatFits(ProposedViewSize(width: room, height: nil))
-        let title: CGSize = CGSize(width: min(fitted.width, room), height: fitted.height)
-        let low: CGFloat = leading.width + spacing
-        let high: CGFloat = width - trailing.width - spacing - title.width
-        let titleX: CGFloat = max(low, min((width - title.width) / 2, high))
-        let trailingX: CGFloat = max(low, width - trailing.width)
-        return Frames(leading: leading, title: title, trailing: trailing, titleX: titleX, trailingX: trailingX)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard subviews.count == 3 else { return .zero }
-        let width: CGFloat = proposal.width ?? 360
-        return CGSize(width: width, height: frames(width, subviews).height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard subviews.count == 3 else { return }
-        let laid: Frames = frames(bounds.width, subviews)
-        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: ProposedViewSize(laid.leading))
-        subviews[1].place(at: CGPoint(x: bounds.minX + laid.titleX, y: bounds.minY), proposal: ProposedViewSize(laid.title))
-        subviews[2].place(
-            at: CGPoint(x: bounds.minX + laid.trailingX, y: bounds.minY), proposal: ProposedViewSize(laid.trailing))
     }
 }
 
@@ -456,6 +416,36 @@ struct MessagesComposer: View {
     private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let quote = hub.reply(in: hub.currentConversation), hub.composeBlocked == nil {
+                replyBar(quote)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            composer
+        }
+        .animation(.easeOut(duration: 0.18), value: hub.replyingTo)
+    }
+
+    private func replyBar(_ quote: ChatReplyQuote) -> some View {
+        HStack(alignment: .center, spacing: FmSpace.x2) {
+            MessagesReplyQuote(
+                quote: quote, author: hub.replyAuthor(quote, in: hub.currentConversation), inSent: false, colors: colors)
+            Button(action: { hub.cancelReply() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 22))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(colors.meta)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel reply")
+        }
+        .padding(.leading, FmSpace.x3)
+        .padding(.trailing, FmSpace.x1)
+        .padding(.top, FmSpace.x2)
+    }
+
+    private var composer: some View {
         Group {
             if let blocked = hub.composeBlocked {
                 GuestComposeNotice(action: blocked, onLogIn: {

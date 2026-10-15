@@ -542,6 +542,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let channel: String = message.conversation
         var react: ((String) -> Void)? = nil
         var thread: (() -> Void)? = nil
+        var reply: (() -> Void)? = nil
         var edit: (() -> Void)? = nil
         var delete: (() -> Void)? = nil
         var profile: (() -> Void)? = nil
@@ -550,6 +551,13 @@ private struct ChatTranscript<Drawer: View>: View {
             react = { (value: String) in hub.toggleReaction(message, value: value) }
             if ChatHub.hasThreads(channel) {
                 thread = { onRoute(.thread(channel: channel, id: message.id)) }
+            }
+            if DirectMessageFrames.isDirect(channel) {
+                let text: String = row.text
+                reply = {
+                    hub.startReply(message, text: text)
+                    composerFocused = true
+                }
             }
         }
         if row.editable {
@@ -592,6 +600,7 @@ private struct ChatTranscript<Drawer: View>: View {
             saved: hub.workspace.isSaved(message.id),
             onSave: ephemeralNote ? nil : { hub.toggleSaved(message, text: text) },
             onShare: ephemeralNote ? nil : { sharing = ChatShareRequest(message: message, text: text) },
+            onReply: reply,
             onRemind: ephemeralNote ? nil : { (option: ChatReminderOption) in
                 let place: String = hub.conversationLabel(message.conversation)
                 Task { onNotice(await ChatReminders.schedule(option, message: message, text: text, place: place)) }
@@ -762,6 +771,7 @@ struct ChatRowActions {
     var saved: Bool = false
     var onSave: (() -> Void)? = nil
     var onShare: (() -> Void)? = nil
+    var onReply: (() -> Void)? = nil
     var onRemind: ((ChatReminderOption) -> Void)? = nil
 }
 

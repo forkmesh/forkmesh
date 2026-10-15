@@ -105,10 +105,12 @@ public struct ChatMessage: Equatable, Hashable, Sendable, Identifiable {
     public var fileName: String
     public var recipients: Int?
     public var app: AppMessage?
+    public var replyTo: ChatReplyQuote?
 
     public init(
         id: String, conversation: String, senderId: String, senderName: String, text: String,
-        timestamp: Date, isSelf: Bool = false, fileName: String = "", recipients: Int? = nil, app: AppMessage? = nil
+        timestamp: Date, isSelf: Bool = false, fileName: String = "", recipients: Int? = nil, app: AppMessage? = nil,
+        replyTo: ChatReplyQuote? = nil
     ) {
         self.id = id
         self.conversation = conversation
@@ -120,5 +122,22 @@ public struct ChatMessage: Equatable, Hashable, Sendable, Identifiable {
         self.fileName = fileName
         self.recipients = recipients
         self.app = app
+        self.replyTo = replyTo
+    }
+}
+
+public struct ChatReplyQuote: Equatable, Hashable, Sendable {
+    public static let maxTextChars = 280
+
+    public var id: String
+    public var senderId: String
+    public var senderName: String
+    public var text: String
+
+    public init(id: String, senderId: String, senderName: String, text: String) {
+        self.id = id
+        self.senderId = senderId
+        self.senderName = senderName
+        self.text = text
     }
 }
