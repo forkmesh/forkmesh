@@ -3,14 +3,13 @@ package com.forkmesh.nativeapp.code
 import com.forkmesh.nativeapp.localrepos.PatchBuildResult
 import com.forkmesh.nativeapp.localrepos.PatchBuilder
 import com.forkmesh.nativeapp.localrepos.gitBlobId
-import com.forkmesh.nativeapp.localrepos.servedBlobIdAgrees
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.time.Instant
 import java.time.ZoneOffset
 
-enum class QuickEditBlocker { Binary, NotUtf8, TooLarge, BytesDisagree }
+enum class QuickEditBlocker { Binary, NotUtf8, TooLarge }
 
 object QuickEdit {
     const val maxBytes: Int = 512 * 1024
@@ -19,7 +18,6 @@ object QuickEdit {
         QuickEditBlocker.Binary -> "Binary file"
         QuickEditBlocker.NotUtf8 -> "Not a text file"
         QuickEditBlocker.TooLarge -> "File too large"
-        QuickEditBlocker.BytesDisagree -> "Cannot edit safely"
     }
 
     fun blockerMessage(blocker: QuickEditBlocker): String = when (blocker) {
@@ -29,15 +27,12 @@ object QuickEdit {
             "This file is not valid UTF-8. Editing it here would rewrite the bytes that could not be read, so it has to be changed from a clone."
         QuickEditBlocker.TooLarge ->
             "Files over ${maxBytes / 1024} KB are edited from a clone, not in the quick editor."
-        QuickEditBlocker.BytesDisagree ->
-            "The content served for this file does not match what the repository records for it. A change made here could not be applied cleanly, so the editor will not build one. Clone the repository instead."
     }
 
-    fun blockerFor(bytes: ByteArray, servedBlobSha: String = "", maxBytes: Int = QuickEdit.maxBytes): QuickEditBlocker? {
+    fun blockerFor(bytes: ByteArray, maxBytes: Int = QuickEdit.maxBytes): QuickEditBlocker? {
         if (bytes.size > maxBytes) return QuickEditBlocker.TooLarge
         if (bytes.any { it.toInt() == 0 }) return QuickEditBlocker.Binary
         if (decodeStrict(bytes) == null) return QuickEditBlocker.NotUtf8
-        if (!servedBlobIdAgrees(servedBlobSha, gitBlobId(bytes))) return QuickEditBlocker.BytesDisagree
         return null
     }
 

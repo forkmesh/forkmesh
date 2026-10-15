@@ -218,19 +218,15 @@ public final class RepoFileModel {
     public let repo: Repository
     public let path: String
     public let ref: String
-    /// Blob id from the tree listing, when the serving node reported one; the
-    /// quick editor cross-checks it.
-    public let servedBlobSha: String
     public let blob = RepoFuture<RepoBlob>()
 
     @ObservationIgnored private let client: RepoClient
 
-    public init(client: RepoClient, repo: Repository, path: String, ref: String = "", servedBlobSha: String = "") {
+    public init(client: RepoClient, repo: Repository, path: String, ref: String = "") {
         self.client = client
         self.repo = repo
         self.path = path
         self.ref = ref
-        self.servedBlobSha = servedBlobSha
     }
 
     public func start() async {

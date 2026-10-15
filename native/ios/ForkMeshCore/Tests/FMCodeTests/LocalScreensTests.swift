@@ -258,11 +258,6 @@ final class LocalScreensTests: XCTestCase {
         XCTAssertEqual(QuickEdit.blocker(bytes: [UInt8](repeating: 0, count: 2048), maxBytes: 1024), .tooLarge)
         // Size is judged before content, so a huge binary reads as huge.
         XCTAssertEqual(QuickEdit.blocker(bytes: [0, 0, 0], maxBytes: 2), .tooLarge)
-        let bytes = Array("hello\n".utf8)
-        XCTAssertEqual(QuickEdit.blocker(bytes: bytes, servedBlobSha: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"), .bytesDisagree)
-        XCTAssertNil(QuickEdit.blocker(bytes: bytes, servedBlobSha: GitBlobId.of(bytes).hex))
-        XCTAssertNil(QuickEdit.blocker(bytes: bytes, servedBlobSha: ""))
-        XCTAssertEqual(QuickEditBlocker.bytesDisagree.title, "Cannot edit safely")
         XCTAssertTrue(QuickEditBlocker.tooLarge.message.contains("512 KB"))
     }
 
@@ -278,11 +273,11 @@ final class LocalScreensTests: XCTestCase {
         XCTAssertTrue(QuickEdit.submitFailure("ApiException: inbox_full").contains("inbox is full"))
     }
 
-    private func quickModel(_ bytes: [UInt8], status: Int = 200, servedBlobSha: String = "") -> (QuickEditModel, SubmittedPulls) {
+    private func quickModel(_ bytes: [UInt8], status: Int = 200) -> (QuickEditModel, SubmittedPulls) {
         let submitted = SubmittedPulls()
         let model = QuickEditModel(
             repo: Repository(owner: "owner", name: "repo", defaultBranch: "main"),
-            path: "README.md", ref: "main", servedBlobSha: servedBlobSha,
+            path: "README.md", ref: "main",
             readBytes: { _, _, path, _, _ in
                 if status != 200 { throw ApiException("Could not read \(path) (HTTP \(status)).") }
                 return Data(bytes)
@@ -315,9 +310,6 @@ final class LocalScreensTests: XCTestCase {
         let (binary, _) = quickModel([0x89, 0x50, 0x4e, 0x00])
         await binary.load()
         XCTAssertEqual(binary.blocker, .binary)
-        let (disagree, _) = quickModel(Array("hello\n".utf8), servedBlobSha: "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
-        await disagree.load()
-        XCTAssertEqual(disagree.blocker, .bytesDisagree)
         let (missing, _) = quickModel([], status: 404)
         await missing.load()
         XCTAssertNil(missing.blocker)
