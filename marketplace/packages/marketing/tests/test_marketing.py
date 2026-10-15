@@ -2076,11 +2076,13 @@ def test_desktop_has_every_web_marketing_section():
     view = (PACKAGE / "content" / "web" / "view.html").read_text()
     build = json.loads((desktop / "build.json").read_text())
     assert {"MarketingCommon.h", "MarketingCommon.cpp", "MarketingPages.cpp"} <= set(build["sources"])
-    for page, label in (("dashboard", "Dashboard"), ("performance", "Performance"),
-                        ("channels", "Channels"), ("ads", "Ads manager"),
-                        ("growth", "Growth")):
+    for page, label in (("dashboard", "Dashboard"), ("channels", "Channels"),
+                        ("ads", "Ads manager"), ("growth", "Growth")):
         assert f'data-marketing-page="{page}" type="button" aria-pressed' in view, page
         assert f'QStringLiteral("{label}")' in pages, label
+    assert 'data-marketing-page="performance"' not in view
+    assert 'data-marketing-website-page' in view
+    assert 'QStringLiteral("Website")' in pages
     for title in ("Where to improve", "Ads measured by Analytics", "Landing pages",
                   "Spend by channel", "Needs attention", "Funnel",
                   "Link builder", "Experiment backlog", "Weekly funnel"):
@@ -2509,7 +2511,7 @@ def test_overview_panels_are_movable_and_referrers_sit_high():
     page = (PACKAGE / "content" / "web" / "page.js").read_text()
     native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
     dashboard = (PACKAGE / "content" / "desktop" / "MarketingDashboard.cpp").read_text()
-    grid = view[view.index("data-marketing-panels"):view.index("data-marketing-performance-page")]
+    grid = view[view.index("data-marketing-panels"):view.index("data-marketing-website-page")]
     keys = re.findall(r'data-marketing-panel="([a-z]+)"', grid)
     assert len(keys) == len(set(keys)) == 13
     assert keys.index("referrers") < keys.index("campaigns") < keys.index("landing")
@@ -2521,14 +2523,16 @@ def test_overview_panels_are_movable_and_referrers_sit_high():
     assert 'marketingDropTarget=\\"true\\"' in dashboard
 
 
-def test_performance_page_contracts():
+def test_website_channel_contracts():
     view = (PACKAGE / "content" / "web" / "view.html").read_text()
     page = (PACKAGE / "content" / "web" / "page.js").read_text()
-    for hook in ('data-marketing-page="performance"', "data-marketing-performance-page",
+    for hook in ('data-marketing-website-page', 'data-marketing-page="website"',
                  "data-marketing-performance-insights", "data-marketing-goals-dialog",
-                 "data-marketing-funnel-analytics", 'href="/dashboard/analytics"'):
+                 "data-marketing-funnel-analytics", "data-marketing-website-visits-chart",
+                 "data-marketing-website-search-terms", 'href="/dashboard/analytics"'):
         assert hook in view, hook
     assert 'orgPath("/performance")' in page and "renderPerformance()" in page
+    assert "renderWebsiteVisits" in page and 'channel === "blog"' in page
     assert '{ analytics }' in page
     for level in marketing.INSIGHT_LEVELS:
         assert level in page, level
@@ -2817,6 +2821,7 @@ def test_traffic_channels_group_sources_and_analytics_reports_search_terms():
     assert channels["paid"]["topSources"] == [{"value": "google", "count": 3}]
     terms = {row["term"]: row["sessions"] for row in perf["keywords"]}
     assert terms == {"git mirror": 3, "(not provided)": 2}
+    assert sum(count for _, count in perf["visitsDays"]) == 14
 
 
 def test_dashboard_command_center_is_wired_on_the_web_surface():
@@ -3738,7 +3743,7 @@ def test_the_app_store_desk_is_wired_on_the_web_surface():
         assert hook in view, hook
     for hook in ('orgPath("/app-store")', 'name === "app-store"', '"app-store": `<button data-marketing-page="app-store"',
                  'channel === "app-store") return appStoreDesk(item)', '["downloads", "Downloads · 30D"]',
-                 '"app-store-connect": "from App Store Connect"', '"channels", "app-store"].includes(params.get("page"))'):
+                 '"app-store-connect": "from App Store Connect"', '"website", "ads", "growth", "reddit", "channels", "app-store"].includes(page)'):
         assert hook in web, hook
     for step in marketing._app_store_guide({}, [], 0):
         assert step["action"] in ("link", "refresh", "app-store")

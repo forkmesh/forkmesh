@@ -107,6 +107,15 @@ npm run test:device-tiers                         # adaptive-rendering matrix
 python3 tools/world_bench.py --gate              # performance gate (see below)
 ```
 
+`world/tests/test_world_dev_server.py` drives `WorldDevHandler` over a
+`socketpair`, whose buffer on macOS is 8 KB. The handler writes all of
+`index.html` (about 22 KB) before it returns. If the test called the handler
+on its own thread before reading, `sendall` blocked with nobody reading and
+`pytest world/tests` hung at that test (15 Oct 2026). So the test runs the
+handler on a thread while the client reads, and both sockets have a 10 s
+timeout. The server itself is not affected, because `ThreadingHTTPServer`
+gives each connection its own thread.
+
 The desktop's World page prefers a local dev server at
 `http://127.0.0.1:8788/world/` when one answers (`worldDevServerUrl` in
 `desktop/src/ControlNode.cpp`; the setting value `off` disables it; only

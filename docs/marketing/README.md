@@ -92,7 +92,7 @@ Each Marketing run is one week of this loop, written out in the playbook:
    the operator and next week's plan.
 
 Analytics (consent-gated) gives per-campaign visits, bounces and conversions
-in the Marketing package's Performance page; treat it as a sample and compare
+in the Marketing package's Website channel; treat it as a sample and compare
 campaigns with each other, not with `/admin/acquisition`. Pages served
 straight from assets are not seen by `/admin/acquisition`.
 

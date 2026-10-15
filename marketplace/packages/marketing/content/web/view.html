@@ -445,7 +445,6 @@
                 <div class="mk-head-r">
                   <div data-marketing-requires-install class="mk-seg" role="group" aria-label="Marketing section" hidden>
                     <button data-marketing-page="dashboard" type="button" aria-pressed="true">Dashboard</button>
-                    <button data-marketing-page="performance" type="button" aria-pressed="false">Performance</button>
                     <button data-marketing-page="channels" type="button" aria-pressed="false">Channels</button>
                     <button data-marketing-page="ads" type="button" aria-pressed="false">Ads manager</button>
                     <button data-marketing-page="growth" type="button" aria-pressed="false">Growth</button>
@@ -455,13 +454,13 @@
                     <button data-marketing-range="30" type="button" aria-pressed="true">30D</button>
                     <button data-marketing-range="90" type="button" aria-pressed="false">90D</button>
                   </div>
-                  <div data-marketing-requires-install data-marketing-performance-only class="mk-seg" role="group" aria-label="Performance window" hidden>
+                  <div data-marketing-requires-install data-marketing-website-only class="mk-seg" role="group" aria-label="Website window" hidden>
                     <button data-marketing-performance-range="7" type="button" aria-pressed="false">7D</button>
                     <button data-marketing-performance-range="28" type="button" aria-pressed="true">28D</button>
                     <button data-marketing-performance-range="90" type="button" aria-pressed="false">90D</button>
                   </div>
                   <select data-marketing-performance-project aria-label="Analytics project" class="mk-select" hidden></select>
-                  <button data-marketing-goals-open data-marketing-requires-install data-marketing-performance-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Goals</button>
+                  <button data-marketing-goals-open data-marketing-requires-install data-marketing-website-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Goals</button>
                   <button data-marketing-ad-new data-marketing-requires-install data-marketing-ads-only type="button" class="fm-btn fm-btn-cta" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New ad</button>
                   <button data-marketing-report-open data-marketing-requires-install data-marketing-growth-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Weekly report</button>
                   <button data-marketing-funnel-new data-marketing-requires-install data-marketing-growth-only type="button" class="fm-btn" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v6l-4 2v-8Z"/></svg>Log week</button>
@@ -632,13 +631,14 @@
                     </section>
 
                     <section data-marketing-panel="landing" class="mk-panel mk-span-4">
-                      <div class="mk-ph"><h2>Top landing pages</h2><button data-marketing-page="performance" type="button" class="mk-link">Performance</button></div>
+                      <div class="mk-ph"><h2>Top landing pages</h2><button data-marketing-page="website" type="button" class="mk-link">Website</button></div>
                       <div data-marketing-landing class="mk-pb mk-bars"></div>
                     </section>
                   </div>
                 </div>
 
-                <div data-marketing-performance-page class="mk-page hidden">
+                <div data-marketing-website-page class="mk-page hidden">
+                  <div class="mk-desk-head"><button data-marketing-page="channels" type="button" class="mk-link">‹ All channels</button><h2>Website</h2><span class="mk-hint">Visits and search terms recorded by Analytics</span></div>
                   <section data-marketing-performance-setup class="fm-flash" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
                     <div class="fm-flash-body"><span class="fm-flash-title">Connect Analytics</span><ul data-marketing-performance-setup-list class="mk-insights"></ul></div>
                     <div class="fm-flash-actions"><a href="/dashboard/analytics" class="fm-btn fm-btn-sm">Open Analytics</a></div>
@@ -651,6 +651,18 @@
                       <div class="mk-kpi"><span class="mk-kpi-label">Bounce rate</span><span data-marketing-performance-stat="bounceRate" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-delta="bounceRate" class="mk-delta">—</span></span></div>
                       <div class="mk-kpi"><span class="mk-kpi-label">Tagged visits</span><span data-marketing-performance-stat="taggedShare" class="mk-kpi-value mk-num">—</span><span class="mk-kpi-sub"><span data-marketing-performance-note="taggedShare"></span></span></div>
                     </section>
+
+                    <div class="mk-row">
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Visits over time</h2><span class="mk-hint">Analytics pageview log</span></div>
+                        <div data-marketing-website-visits-chart class="mk-pb mk-chart"></div>
+                      </section>
+                      <section class="mk-panel">
+                        <div class="mk-ph"><h2>Search terms</h2><span class="mk-hint">Found in visit logs</span></div>
+                        <div class="mk-table-wrap"><table class="mk-table"><thead><tr><th>Term</th><th class="r">Visits</th><th class="r">Bounce</th></tr></thead><tbody data-marketing-website-search-terms></tbody></table></div>
+                        <div data-marketing-website-search-terms-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><p class="fm-blankslate-title">No search terms found</p><p class="fm-blankslate-desc">Terms appear when tracked links carry a search term.</p></div>
+                      </section>
+                    </div>
 
                     <div class="mk-row">
                       <section class="mk-panel">
