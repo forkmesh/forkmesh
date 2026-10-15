@@ -48,10 +48,16 @@ class FakeRuntime:
         self.room_access_calls = []
         self.account_events = []
         self.read_announcements = []
+        self.delivered_announcements = []
 
     async def announce_read(self, conversation_id, key_version, account_bi):
         self.read_announcements.append(
             (conversation_id, key_version, account_bi))
+
+    async def announce_delivered(
+            self, conversation_id, key_version, account_bi, ref):
+        self.delivered_announcements.append(
+            (conversation_id, key_version, account_bi, ref))
 
     async def notify_account(self, owner, topic, started_by=""):
         # Payload-free push to one account's clients (adhoc #1604).

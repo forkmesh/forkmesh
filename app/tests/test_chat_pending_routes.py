@@ -258,3 +258,60 @@ def test_pending_routes_are_wired_and_their_paths_redacted():
         assert re.search(
             r'if path\.startswith\("' + re.escape(prefix) + r'"\):\n'
             r'        return "' + re.escape(prefix) + r'\[opaque\]"', redact)
+
+
+async def _direct_delivered(runtime, actor, conversation_id, ref=REF,
+                            method="POST"):
+    return await direct_api.handle(
+        runtime.use(method, actor, query={"ref": ref}),
+        f"/api/chat/direct-messages/{conversation_id}/delivered",
+    )
+
+
+def test_a_push_delivery_receipt_tells_the_sender_and_keeps_the_copy():
+    async def run():
+        runtime, conversation_id, _room = await _direct_setup()
+        tables = ("chat_history", "chat_direct_conversations",
+                  "chat_direct_participants")
+        before = _snapshot(runtime.db, tables)
+        response = await _direct_delivered(runtime, "bob", conversation_id)
+        assert response["status"] == 200
+        assert response["data"] == {"ok": True}
+        assert runtime.delivered_announcements == [
+            (conversation_id, 1, "bi:bob", REF)]
+        assert _snapshot(runtime.db, tables) == before
+        assert runtime.read_announcements == []
+        assert runtime.account_events == []
+        assert runtime.passphrases == []
+    asyncio.run(run())
+
+
+def test_a_delivery_receipt_needs_a_waiting_frame_from_the_other_person():
+    async def run():
+        runtime, conversation_id, room = await _direct_setup()
+        _store(runtime, room, "d" * 40 + ":" + "bi:bob")
+        own = await _direct_delivered(
+            runtime, "bob", conversation_id, ref="d" * 40)
+        assert own["status"] == 404
+        gone = await _direct_delivered(
+            runtime, "bob", conversation_id, ref="c" * 40)
+        assert gone["status"] == 404
+        for actor, target in (("carol", conversation_id),
+                              ("admin", conversation_id),
+                              ("bob", "e" * 32)):
+            denied = await _direct_delivered(runtime, actor, target)
+            assert denied["status"] == 404
+        for bad in ("", "xyz", REF + "0"):
+            invalid = await _direct_delivered(
+                runtime, "bob", conversation_id, ref=bad)
+            assert invalid["status"] == 400
+            assert invalid["data"] == {"error": "invalid_ref"}
+        unauthenticated = await _direct_delivered(
+            runtime, "nobody", conversation_id)
+        assert unauthenticated["status"] == 401
+        fetched = await _direct_delivered(
+            runtime, "bob", conversation_id, method="GET")
+        assert fetched["status"] == 405
+        assert fetched["headers"]["allow"] == "POST"
+        assert runtime.delivered_announcements == []
+    asyncio.run(run())

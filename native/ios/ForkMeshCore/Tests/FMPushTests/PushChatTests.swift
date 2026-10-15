@@ -29,11 +29,15 @@ final class PushChatTests: XCTestCase {
         XCTAssertEqual(direct.sender, "pat")
         XCTAssertEqual(
             direct.pendingPath, "/api/chat/direct-messages/\(PushChatTests.directId)/pending?ref=\(PushChatTests.ref)")
+        XCTAssertEqual(
+            direct.deliveredPath,
+            "/api/chat/direct-messages/\(PushChatTests.directId)/delivered?ref=\(PushChatTests.ref)")
         XCTAssertEqual(direct.threadIdentifier, "direct:\(PushChatTests.directId)")
         let channel = try XCTUnwrap(
             PushChatRequest.parse(["topic": "chat", "channelId": .string(PushChatTests.channelId), "ref": .string(PushChatTests.ref)]))
         XCTAssertEqual(channel.kind, .channel(PushChatTests.channelId))
         XCTAssertEqual(channel.pendingPath, "/api/chat/channels/\(PushChatTests.channelId)/pending?ref=\(PushChatTests.ref)")
+        XCTAssertNil(channel.deliveredPath)
         XCTAssertEqual(channel.threadIdentifier, "channel:\(PushChatTests.channelId)")
         XCTAssertNil(PushChatRequest.parse(directPayload(["ref": "ABC"])))
         XCTAssertNil(PushChatRequest.parse(directPayload(["ref": .string(String(repeating: "A", count: 40))])))

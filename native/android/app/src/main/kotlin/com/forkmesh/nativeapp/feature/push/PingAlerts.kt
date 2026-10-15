@@ -107,13 +107,14 @@ object PingAlerts {
         event: DirectMessageEvent? = null,
         secrets: SecretStore? = null,
     ) {
+        val calling = ChatAccountCalling { method, path, body -> api.accountApiCall(method, path, body) }
+        if (event != null) DirectMessagePreviews.confirmDelivery(calling, event)
         if (AppLifecycle.foreground.value) return
         val settings = if (node.isEmpty()) null else settingsFor(projectId, api, node)
         val now = System.currentTimeMillis()
         if (pingAlertsHeld(settings, now)) return
         val content = notificationContent(context)
         if (event != null && secrets != null && content != NotificationContent.NOTHING) {
-            val calling = ChatAccountCalling { method, path, body -> api.accountApiCall(method, path, body) }
             val preview = DirectMessagePreviews.fetch(calling, event, secrets)
             if (preview != null) {
                 val notice = DirectMessagePreviews.notice(preview, content)

@@ -496,7 +496,7 @@ CHAT_CHANNEL_DO_RE = re.compile(
 CHAT_DIRECT_TICKET_TTL_MS = 60 * 1000
 CHAT_DIRECT_MESSAGE_DO_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/"
-    r"v([1-9][0-9]*)/(ws|revoke|read|media)$")
+    r"v([1-9][0-9]*)/(ws|revoke|read|media|delivered)$")
 OFFICE_MEETING_TICKET_TTL_MS = 60 * 1000
 OFFICE_ENTRY_TICKET_TTL_MS = 5 * 60 * 1000
 # Revalidate an Office socket's exact revocable account session at most once
@@ -1114,7 +1114,7 @@ _URL_EXPORT_NAMES = (
     "CHAT_CHANNEL_INVITE_RE", "CHAT_INVITE_RE", "CHAT_CHANNEL_WS_RE",
     "CHAT_DIRECT_MESSAGES_RE", "CHAT_DIRECT_MESSAGE_USERS_RE",
     "CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE", "CHAT_DIRECT_MESSAGE_READ_RE",
-    "CHAT_DIRECT_MESSAGE_PENDING_RE",
+    "CHAT_DIRECT_MESSAGE_PENDING_RE", "CHAT_DIRECT_MESSAGE_DELIVERED_RE",
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
     "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE",
@@ -10578,6 +10578,24 @@ async def _announce_chat_direct_read(
     await room_object.fetch(request)
 
 
+async def _announce_chat_direct_delivered(
+        env, conversation_id, key_version, account_bi, ref):
+    room_name = (
+        "chat-direct:" + str(conversation_id)
+        + ":v" + str(int(key_version))
+    )
+    room_id = env.FORKMESH_MAINNODE_ROOM.idFromName(room_name)
+    target_url = (
+        "https://forkmesh.internal/api/chat/direct-messages/"
+        + str(conversation_id) + "/v" + str(int(key_version))
+        + "/delivered?account=" + quote(str(account_bi), safe="")
+        + "&ref=" + quote(str(ref), safe="")
+    )
+    room_object = env.FORKMESH_MAINNODE_ROOM.get(room_id)
+    request = JsRequest.new(target_url, to_js({"method": "POST"}))
+    await room_object.fetch(request)
+
+
 async def _announce_chat_direct_media(
         env, conversation_id, key_version, account_bi, media_id, state):
     room_name = (
@@ -11126,6 +11144,11 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
     async def announce_read(self, conversation_id, key_version, account_bi):
         await _announce_chat_direct_read(
             self.env, conversation_id, key_version, account_bi)
+
+    async def announce_delivered(
+            self, conversation_id, key_version, account_bi, ref):
+        await _announce_chat_direct_delivered(
+            self.env, conversation_id, key_version, account_bi, ref)
 
     async def passphrase(self, conversation_id, key_version):
         return await _chat_direct_passphrase(
@@ -53156,6 +53179,20 @@ class ForkMeshRoom(DurableObject):
             ).get("account") or [""]
             self._send_to_other_accounts(
                 reader[0], chat_direct_read_frame())
+            await durable_object_traffic_flush(self)
+            return json_response({"ok": True})
+        if (
+            private_path
+            and private_path.group(3) == "delivered"
+            and method_name(request) == "POST"
+        ):
+            query = parse_qs(parsed_url.query, keep_blank_values=False)
+            refs = chat_direct_refs(query.get("ref") or [])
+            if not refs:
+                return json_response({"error": "invalid_ref"}, status=400)
+            self._send_to_other_accounts(
+                (query.get("account") or [""])[0],
+                chat_direct_delivered_frame(refs))
             await durable_object_traffic_flush(self)
             return json_response({"ok": True})
         if (

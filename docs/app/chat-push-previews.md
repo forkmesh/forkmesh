@@ -30,6 +30,17 @@ non-members or gone rows, 400 `invalid_ref`. They are strictly read-only: no
 read marks, acknowledgements, deletions or receipts. Logged paths are redacted
 and query strings dropped.
 
+## Delivery receipt route
+
+`POST /api/chat/direct-messages/<id>/delivered?ref=<40 hex>` (participants) is
+the one write a push handler makes. It needs a stored row for that ref sent by
+the other participant, then asks the room to send
+`{"kind":"forkmesh-delivered","v":1,"refs":[ref]}` to the sender's open sockets
+(`_announce_chat_direct_delivered`, room path `.../v<n>/delivered`). It does not
+delete the row, mark anything read or count as `forkmesh-received`: the phone
+keeps no DM history, so the app still needs the server copy when it opens.
+404 for non-members, own messages or gone rows; 400 `invalid_ref`.
+
 Clients: `native/ios/NotificationService`
 ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)) and Android
 `BackgroundLinkService` ([native/ANDROID.md](../native/ANDROID.md)). Both

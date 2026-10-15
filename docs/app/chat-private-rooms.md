@@ -112,12 +112,17 @@ iOS, Android):
 | --- | --- | --- |
 | Sending | One dotted ring | On screen, relay has not acknowledged |
 | Sent | One ring with a tick | `forkmesh-recipients` arrived, or the frame came back relayed or replayed |
-| Delivered | Two overlapping rings with ticks | `forkmesh-delivered` named its ref (DMs only) |
+| Delivered | Two overlapping rings with ticks | `forkmesh-delivered` named its ref (DMs only): a recipient device acknowledged it, or a recipient phone got its push |
 | Read | Two filled rings in the accent colour | `forkmesh-read` arrived after it was sent (DMs only) |
 
 - `{"kind":"forkmesh-delivered","v":1,"refs":[...]}`: forwarded by
   `ForkMeshRoom._direct_received` to the other account's sockets when a
-  device acknowledges.
+  device acknowledges, and by the room's `delivered` path when a recipient
+  phone posts `/api/chat/direct-messages/<id>/delivered?ref=` on receiving the
+  push ([chat-push-previews.md](chat-push-previews.md#delivery-receipt-route)).
+  Without the second path a recipient whose app was closed showed only Sent
+  until they opened the conversation, while Signal showed Delivered for the
+  same phone.
 - `{"kind":"forkmesh-read","v":1}`: sent when `_mark_read` moves the reader's
   `last_read_count`. A hidden tab defers its `/read` until visible.
 - Channels reach only sending and sent. Ticks are not persisted and change

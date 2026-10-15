@@ -246,7 +246,13 @@ The push itself carries no message text. A DM push carries `ref`, `keyVersion` a
 the still-encrypted frame with the account session
 (`GET /api/chat/direct-messages/<id>/pending?ref=` or `/api/chat/channels/<id>/pending?ref=`,
 side-effect free on the server), decrypts it on the device and shows sender and text. Any failure
-leaves the server's generic alert. The extension never acknowledges, marks read or sends anything.
+leaves the server's generic alert. The extension never acknowledges, marks read or replies.
+
+The one thing it sends is a delivery receipt: for every DM push, whatever the preview mode, it
+posts `POST /api/chat/direct-messages/<id>/delivered?ref=` (`PushChatRequest.deliveredPath`) so the
+sender's mark turns Delivered while the app is closed, the way Signal's does. The server copy is
+kept, because the app reads it when it opens. The banner waits for that request (5 s timeout)
+before it is posted, since iOS may end the extension as soon as the banner is handed over.
 
 Logic is in **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBase and FMCrypto):
 

@@ -36,6 +36,7 @@ class DirectMessagePreviewTest {
         val frame = mapOf("type" to "event", "topic" to "direct-messages", "conversation" to "direct:$id", "ref" to ref, "keyVersion" to 3L)
         assertEq(DirectMessageEvent(id, ref, 3), DirectMessagePreviews.event(frame))
         assertEq("/api/chat/direct-messages/$id/pending?ref=$ref", DirectMessagePreviews.event(frame)?.pendingPath)
+        assertEq("/api/chat/direct-messages/$id/delivered?ref=$ref", DirectMessagePreviews.event(frame)?.deliveredPath)
         assertEq(1, DirectMessagePreviews.event(frame - "keyVersion")?.keyVersion)
         assertEq(null, DirectMessagePreviews.event(frame - "ref"))
         assertEq(null, DirectMessagePreviews.event(frame + ("ref" to "A".repeat(40))))
@@ -62,6 +63,14 @@ class DirectMessagePreviewTest {
         assertEq(null, stranger.read(RoomSeal.PRIVATE_KEY_STORE_KEY))
         api.failures["GET /api/chat/direct-messages/$id/pending"] = OrgApiException("not_found", "gone")
         assertEq(null, DirectMessagePreviews.fetch(api, event, store))
+    }
+
+    fun testDeliveryIsConfirmedWithAPostThatReadsNothing() {
+        val api = FakeAccountApi()
+        expect(DirectMessagePreviews.confirmDelivery(api, event))
+        assertEq(Triple("POST", "/api/chat/direct-messages/$id/delivered?ref=$ref", null), api.calls.single())
+        api.failures["POST /api/chat/direct-messages/$id/delivered"] = OrgApiException("not_found", "gone")
+        expect(!DirectMessagePreviews.confirmDelivery(api, event))
     }
 
     fun testOnlySealedFramesForThisConversationArePreviewed() {

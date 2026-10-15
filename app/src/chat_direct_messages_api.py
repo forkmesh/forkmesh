@@ -17,6 +17,8 @@ READ_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/read/?$")
 PENDING_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/pending/?$")
+DELIVERED_RE = re.compile(
+    r"^/api/chat/direct-messages/([0-9a-f]{32})/delivered/?$")
 CURSOR_RE = re.compile(r"^([0-9]{1,20})\.([0-9a-f]{32})$")
 REF_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -378,6 +380,31 @@ async def _pending(runtime, account_bi, conversation_id):
     )
 
 
+async def _delivered(runtime, account_bi, conversation_id):
+    ref = str(runtime.query_params().get("ref") or "").strip().lower()
+    if not REF_RE.fullmatch(ref):
+        return _response(runtime, {"error": "invalid_ref"}, status=400)
+    row = await _participant_conversation(
+        runtime, account_bi, conversation_id)
+    if not row:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    key_version = int(row.get("key_version") or 1)
+    stored = await runtime.d1_first(
+        "SELECT msg_id FROM chat_history "
+        "WHERE room_key=? AND msg_id>=? AND msg_id<? "
+        "AND substr(msg_id,42,16)<>? LIMIT 1",
+        "chat-direct:" + conversation_id + ":v" + str(key_version),
+        ref + ":",
+        ref + ";",
+        str(account_bi)[:16],
+    )
+    if not stored:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    await runtime.announce_delivered(
+        conversation_id, key_version, account_bi, ref)
+    return _response(runtime, {"ok": True})
+
+
 async def handle(runtime, path):
     """Serve direct-message discovery, collection, and participant access."""
     await runtime.ensure_schema()
@@ -387,12 +414,15 @@ async def handle(runtime, path):
     room_access = ROOM_ACCESS_RE.fullmatch(normalized_path)
     read = READ_RE.fullmatch(normalized_path)
     pending = PENDING_RE.fullmatch(normalized_path)
-    if not (collection or users or room_access or read or pending):
+    delivered = DELIVERED_RE.fullmatch(normalized_path)
+    if not (
+        collection or users or room_access or read or pending or delivered
+    ):
         return _response(runtime, {"error": "not_found"}, status=404)
 
     method = runtime.method()
     allowed = "GET, POST" if collection else (
-        "POST" if read else "GET"
+        "POST" if read or delivered else "GET"
     )
     if method not in {value.strip() for value in allowed.split(",")}:
         return _response(
@@ -425,5 +455,7 @@ async def handle(runtime, path):
             runtime, account_bi, read.group(1))
     if pending:
         return await _pending(runtime, account_bi, pending.group(1))
+    if delivered:
+        return await _delivered(runtime, account_bi, delivered.group(1))
     return await _room_access(
         runtime, account_bi, actor, room_access.group(1))

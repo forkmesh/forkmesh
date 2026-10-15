@@ -29,6 +29,8 @@ data class DirectMessageEvent(val conversationId: String, val ref: String, val k
     val conversation: String get() = DirectMessageFrames.PREFIX + conversationId
 
     val pendingPath: String get() = "${DirectMessageFrames.ENDPOINT}/$conversationId/pending?ref=$ref"
+
+    val deliveredPath: String get() = "${DirectMessageFrames.ENDPOINT}/$conversationId/delivered?ref=$ref"
 }
 
 data class DirectMessagePreview(
@@ -66,6 +68,13 @@ object DirectMessagePreviews {
         open(event, api.accountApiCall("GET", event.pendingPath, null), secrets)
     } catch (_: Exception) {
         null
+    }
+
+    fun confirmDelivery(api: ChatAccountCalling, event: DirectMessageEvent): Boolean = try {
+        api.accountApiCall("POST", event.deliveredPath, null)
+        true
+    } catch (_: Exception) {
+        false
     }
 
     fun open(event: DirectMessageEvent, payload: Map<String, Any?>, secrets: SecretStore): DirectMessagePreview? {
