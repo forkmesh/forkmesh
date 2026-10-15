@@ -517,7 +517,6 @@ struct ActionRunScreen: View {
     let model: RepoActionsModel
     let runId: Int
     @State private var confirming: ActionsControlKind?
-    @State private var composing: ComposeTarget?
     @State private var desktopNotice: String?
 
     private var run: ActionsRunSummary? { model.run(runId) }
@@ -586,9 +585,6 @@ struct ActionRunScreen: View {
                 }
             }
         }
-        .sheet(item: Binding(get: { composing.map(CIComposeBox.init) }, set: { composing = $0?.target })) { (box: CIComposeBox) in
-            CIComposeHandoff(target: box.target)
-        }
     }
 
     private var actionsMenu: some View {
@@ -602,7 +598,7 @@ struct ActionRunScreen: View {
                 }
                 if run.status == .failed {
                     Button("Send to agent") {
-                        composing = CIPrompts.fixFailedRun(run, repo: model.repo)
+                        FmMessageHandoff.compose(CIPrompts.fixFailedRun(run, repo: model.repo))
                     }
                 }
             }
@@ -706,27 +702,6 @@ struct ActionRunScreen: View {
                     }
                 }
             }
-        }
-    }
-}
-
-struct CIComposeBox: Identifiable {
-    let target: ComposeTarget
-    var id: String { target.text ?? "" }
-}
-
-struct CIComposeHandoff: View {
-    @Environment(\.dismiss) private var dismiss
-    let target: ComposeTarget
-
-    var body: some View {
-        NavigationStack {
-            RouteDestinationView(route: .compose(target))
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                    }
-                }
         }
     }
 }

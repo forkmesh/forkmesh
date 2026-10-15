@@ -56,7 +56,10 @@ struct FmMessageTools: View {
 enum FmMessageHandoff {
     static func send(_ text: String) {
         guard MessageHandoff.canHandOff(text) else { return }
-        let target: ComposeTarget = MessageHandoff.composeTarget(text)
+        compose(MessageHandoff.composeTarget(text))
+    }
+
+    static func compose(_ target: ComposeTarget) {
         let request: () -> Void = {
             if let navigator = AppNavigator.shared {
                 navigator.router.requestCompose(target)
