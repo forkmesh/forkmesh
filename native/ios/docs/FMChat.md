@@ -276,10 +276,18 @@ The extension reads the device key named in the shared push credential
 rooms; signaling rides the DM room's sealed socket (`direct.sendCallFrame`, `onCallFrame`).
 Missed calls post the same "Missed audio/video call" line as the web.
 
-- **Media.** `WebCallPeerFactory` loads `direct-call.html` into a `WKWebView` with an `https://`
-  base URL (a secure context for `getUserMedia`) and drives it through the `fmCall` message
-  handler. Camera and microphone are granted only to that origin, after the system permission
-  prompt. `app/tools/sync_native_call_faces.py` generates the page for both apps;
+- **Media.** `WebCallPeerFactory` loads `direct-call.html` into a `WKWebView` with the base URL
+  `https://call.forkmesh.com/` (a secure context for `getUserMedia`) and drives it through the
+  `fmCall` message handler. The page is inlined and never fetched from that host; the host is
+  only what WebKit names if it ever shows its own prompt, so it is a real ForkMesh domain rather
+  than `.invalid`. Camera and microphone are granted only to that origin, after the one-time
+  system permission prompt, by the `WKUIDelegate` method
+  `webView(_:decideMediaCapturePermissionsFor:initiatedBy:type:) async`. That is the Swift name
+  of the async form; the older spelling `requestMediaCapturePermissionFor:initiatedByFrame:`
+  without a `decisionHandler` matches nothing (the compiler only warns "nearly matches"), so
+  WebKit fell back to asking "Allow call.forkmesh.invalid to use your microphone?" on every
+  call. `FaceChangerPage` uses the same method. `app/tools/sync_native_call_faces.py` generates
+  the page for both apps;
   `app/tests/test_chat_call_faces.py` fails when they drift.
 - **Faces, voices and backgrounds** are engine state saved under `chat.callFace`,
   `chat.callVoice` and `chat.callBackground` (custom images in Application Support with complete

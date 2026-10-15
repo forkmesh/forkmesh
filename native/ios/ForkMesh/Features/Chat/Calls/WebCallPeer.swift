@@ -102,7 +102,7 @@ private final class WebCallMessageProxy: NSObject, WKScriptMessageHandler {
 
 @MainActor
 final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
-    static let origin = URL(string: "https://call.forkmesh.invalid/")
+    static let origin = URL(string: "https://call.forkmesh.com/")
 
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
@@ -401,8 +401,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     }
 
     func webView(
-        _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-        initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType
+        _ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType
     ) async -> WKPermissionDecision {
         origin.host == WebCallPeer.origin?.host ? .grant : .deny
     }
