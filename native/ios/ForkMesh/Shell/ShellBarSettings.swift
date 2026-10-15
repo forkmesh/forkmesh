@@ -152,11 +152,14 @@ struct ShellBarSettingsForm: View {
                 SwiftUI.Label("Labels", systemImage: "character.textbox")
             }
             Button {
-                edit { $0.icons = prefs.home.icons }
+                edit {
+                    $0.icons = prefs.home.icons
+                    $0.marks = .home
+                }
             } label: {
                 SwiftUI.Label("Match the Home icons (\(prefs.home.icons.title))", systemImage: "square.grid.3x3")
             }
-            .disabled(style.icons == prefs.home.icons)
+            .disabled(style.icons == prefs.home.icons && style.marks == .home)
             .accessibilityIdentifier("shell-bar-match-home")
         } header: {
             Text("Icons")
@@ -197,6 +200,18 @@ struct ShellBarSettingsForm: View {
                 SwiftUI.Label("Show activity", systemImage: "waveform.path.ecg")
             }
             .accessibilityIdentifier("shell-bar-activity")
+            LabeledContent {
+                Picker("Badges", selection: binding(\.marks)) {
+                    ForEach(ShellBarMarks.allCases, id: \.self) { (marks: ShellBarMarks) in
+                        Text(marks.title).tag(marks)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .accessibilityIdentifier("shell-bar-marks")
+            } label: {
+                SwiftUI.Label("Badges", systemImage: style.marks.symbol)
+            }
             Toggle(isOn: binding(\.highlightFrequent)) {
                 SwiftUI.Label("Highlight frequently used", systemImage: "sparkle")
             }
@@ -204,7 +219,7 @@ struct ShellBarSettingsForm: View {
         } header: {
             Text("What the bar shows")
         } footer: {
-            Text("A folder counts as one icon. More icons than fit scroll sideways. Unread badges always show; activity is the ring and heartbeat count on anything running.")
+            Text("A folder counts as one icon. More icons than fit scroll sideways. Unread badges always show; activity is the ring and heartbeat count on anything running. Like Home draws them as on the Home screen: solid blue count pills on the icon's corner and the ring around its tile.")
         }
     }
 
