@@ -393,13 +393,13 @@ struct ShellBarFolderLabel: View {
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text(verbatim: ShellBottomBar.badgeText(badge))
-                            .fmText(.labelSmall, color: Color.white, tracking: 0, tabular: true)
+                            .fmText(.labelSmall, color: fm.onPrimary, tracking: 0, tabular: true)
                             .contentTransition(.numericText(value: Double(badge)))
                             .lineLimit(1)
                             .fixedSize()
                             .padding(.horizontal, 4)
                             .frame(minWidth: 16, minHeight: 16)
-                            .background(Capsule().fill(fm.count))
+                            .background(Capsule().fill(fm.accent))
                             .offset(x: 14, y: -6)
                             .accessibilityHidden(true)
                     }

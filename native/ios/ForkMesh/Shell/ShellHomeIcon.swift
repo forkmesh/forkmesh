@@ -221,7 +221,7 @@ struct ShellHomeCountMark: View {
     var body: some View {
         Text(verbatim: text)
             .font(.system(.caption2, design: .rounded, weight: .bold).monospacedDigit())
-            .foregroundStyle(unread ? Color.white : fm.count)
+            .foregroundStyle(unread ? fm.onPrimary : fm.count)
             .contentTransition(.numericText(value: Double(value)))
             .lineLimit(1)
             .fixedSize()
@@ -230,9 +230,9 @@ struct ShellHomeCountMark: View {
             .background {
                 if unread {
                     Capsule()
-                        .fill(LinearGradient(colors: [fm.count, fm.count.opacity(0.82)], startPoint: .top, endPoint: .bottom))
+                        .fill(LinearGradient(colors: [fm.accent, fm.accent.opacity(0.82)], startPoint: .top, endPoint: .bottom))
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5))
-                        .shadow(color: fm.count.opacity(fm.dark ? 0.45 : 0.25), radius: 3, y: 1)
+                        .shadow(color: fm.accent.opacity(fm.dark ? 0.45 : 0.25), radius: 3, y: 1)
                 } else {
                     Capsule()
                         .fill(fm.dark ? fm.bgElevated : fm.bgRaised)
