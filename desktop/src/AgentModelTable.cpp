@@ -90,6 +90,8 @@ AgentModelTable::AgentModelTable(QWidget *parent) : QTableWidget(parent)
     setObjectName(QStringLiteral("agentModelTable"));
     setColumnCount(ColumnCount);
     const QList<QPair<QString, QString>> headers = {
+        {QStringLiteral("Show"), QStringLiteral("Tick to list the model in the prompt "
+                                                "composer's dropdown")},
         {QStringLiteral("Model"), QStringLiteral("The model, with the face its agents wear")},
         {QStringLiteral("Agent"), QStringLiteral("The CLI or API that runs it")},
         {QStringLiteral("Runs"), QStringLiteral("Agent runs on this desktop, deleted ones included")},
@@ -152,6 +154,21 @@ AgentModelTable::AgentModelTable(QWidget *parent) : QTableWidget(parent)
     setSortingEnabled(true);
     connect(horizontalHeader(), &QHeaderView::sortIndicatorChanged, this,
             [this] { fitColumns(); });
+    connect(this, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *cell) {
+        if (m_filling || !cell || cell->column() != ShowColumn)
+            return;
+        const QString key = cell->data(Qt::UserRole + 1).toString();
+        if (key.isEmpty())
+            return;
+        const bool shown = cell->checkState() == Qt::Checked;
+        m_filling = true;
+        cell->setData(Qt::UserRole, shown ? 1.0 : 0.0);
+        cell->setToolTip(shown ? QStringLiteral("Listed in the composer dropdown")
+                               : QStringLiteral("Hidden from the composer dropdown"));
+        m_filling = false;
+        if (composerShowChanged)
+            composerShowChanged(key, shown);
+    });
 }
 
 void AgentModelTable::fitColumns()
@@ -163,6 +180,8 @@ void AgentModelTable::fitColumns()
         const QTableWidgetItem *head = horizontalHeaderItem(column);
         int width = headers.horizontalAdvance(head ? head->text() : QString()) +
                     (column == sorted ? 22 : 10);
+        if (column == ShowColumn)
+            width = qMax(width, 28);
         for (int r = 0; r < rowCount(); ++r)
             if (const QTableWidgetItem *cell = item(r, column))
                 width = qMax(width, cells.horizontalAdvance(cell->text()) + 10 +
@@ -180,6 +199,7 @@ void AgentModelTable::refresh(const QVector<AgentModelStatsRow> &rows)
         if (const QTableWidgetItem *model = item(current->row(), ModelColumn))
             selectedKey = model->data(Qt::UserRole + 1).toString();
 
+    m_filling = true;
     setSortingEnabled(false);
     clearContents();
     setRowCount(rows.size());
@@ -195,6 +215,24 @@ void AgentModelTable::refresh(const QVector<AgentModelStatsRow> &rows)
         if (iconFor)
             model->setIcon(iconFor(row));
         setItem(r, ModelColumn, model);
+        const QString composerKey = composerKeyFor ? composerKeyFor(row) : QString();
+        const bool offered = !composerKey.isEmpty();
+        const bool shown = offered && (!composerShows || composerShows(composerKey));
+        auto *show = new NumberItem(QString(), offered ? (shown ? 1.0 : 0.0) : -1.0);
+        show->setTextAlignment(Qt::AlignCenter);
+        if (offered) {
+            show->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable |
+                           Qt::ItemIsSelectable);
+            show->setData(Qt::UserRole + 1, composerKey);
+            show->setCheckState(shown ? Qt::Checked : Qt::Unchecked);
+            show->setToolTip(shown ? QStringLiteral("Listed in the composer dropdown")
+                                   : QStringLiteral("Hidden from the composer dropdown"));
+        } else {
+            show->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            show->setToolTip(QStringLiteral("Seen in past runs; not offered in the "
+                                            "composer dropdown"));
+        }
+        setItem(r, ShowColumn, show);
         auto *agent = new QTableWidgetItem(row.agentName);
         agent->setToolTip(row.provider);
         setItem(r, AgentColumn, agent);
@@ -251,6 +289,7 @@ void AgentModelTable::refresh(const QVector<AgentModelStatsRow> &rows)
     }
     setSortingEnabled(true);
     sortItems(sortColumn, sortOrder);
+    m_filling = false;
     applyFilter();
     fitColumns();
     if (!selectedKey.isEmpty())

@@ -269,6 +269,33 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   you manage, with the data export to save after. Nothing is removed without a
   confirmation (`PackageUninstall.swift`). Android mirrors it with the same
   rules (`MarketModel.uninstallAction`, `PackageUninstall.kt`).
+  The package page's ⋯ menu also has "Send feedback or report a bug".
+- **Plugin pages** (iOS): every installed plugin's own screen has a ⋯ menu at
+  the top right (accessibility id `plugin-more`) with "Rate <name>", "Send
+  feedback or report a bug" and, when this phone can remove it, Uninstall.
+  `RouteDestinationView` applies `pluginMenu(for:)` (`PluginMenuViews.swift`)
+  to every route `PluginMenu.packageId(for:)` (FMPackages) names: the home
+  screen of each package with a phone screen. Detail screens (a contact, a
+  note, a cove), the Market itself, the Agents, Inbox and Chat tabs and the
+  tour get none. To decide whether Uninstall is offered, opening a plugin page
+  loads only the catalog, the account's packages and your organizations'
+  installs (`MarketModel.refreshInstalls`, without the install counts and
+  ratings the Market shows); the package's reviews load when the rating sheet
+  opens. Rate opens the same
+  `RatePackageSheet` as the Market; feedback opens `ReportBugSheet` titled
+  "Feedback on <name>", which sends `package` to `POST /api/bug-reports` so
+  the issue is tagged with the plugin. It is offered whether or not the
+  Report a bug package is installed, since it is about the plugin, not the
+  floating bug button. Uninstall uses the Market's confirmation and rules;
+  once it is done the page closes (after the data export is saved, for an
+  organization package).
+  One ⋯ per screen: a screen that already has its own ⋯ menu adds
+  `PluginMenuItems()` to the end of that menu instead, and
+  `PluginMenu.screenOwnsMenu` lists those routes so the shared button stays
+  off them (CRM, Special Agents, and Coves for a repository; Coves without a
+  repository is the repository picker and gets the shared button).
+  Calendar's Today moved from the system overflow (which draws its own ⋯) to
+  a plain button for the same reason.
 - **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): the Market
   package's web page in a web view on the server's own https origin, with the
   camera and microphone granted only to that origin. A recorded clip (or a
@@ -555,11 +582,21 @@ when a phrase or answer changes.
 
 ### 6.2 Widgets, Live Activities and controls
 
-- **Live Activities** per running agent (face, title, step, elapsed time,
-  tokens; Stop, and Approve with authentication), timers, and walks. The app
-  updates them locally; they go stale after 15 minutes. They are requested
-  without a push type: the served stack has no `liveactivity` sender or token
-  route.
+- **One summary Live Activity** (`ActivitySummaryAttributes`,
+  `ForkMeshWidgets/SummaryLiveActivity.swift`) instead of one per agent, so the
+  Dynamic Island holds a single item: agents needing you, running and queued;
+  the first three active agents with their elapsed time; running desktop
+  shortcuts with a progress bar timed from the last run's duration; the
+  planning timer; and the unread count on the Lock Screen. Approve (with
+  authentication) shows for the first pending request, Stop when exactly one
+  agent runs. Compact view: the lead icon and a count of agents plus
+  shortcuts, then a shortcut's progress ring, the timer, or the elapsed time.
+  `ActivitySummaryPlanner` starts it while the app is in front, updates it,
+  and ends it when nothing is left (kept while the agent list is failing to
+  load). Walks keep their own Live Activity, since a walk starts in the
+  background. The app updates them locally; they go stale after 15 minutes
+  (or a minute after the timer ends). They are requested without a push type:
+  the served stack has no `liveactivity` sender or token route.
 - **Widgets**: running agents, Inbox count and top items, a pinned
   repository's open PRs, the timer; Lock Screen accessories for running agents
   and unread items. Data is shared through the keychain group

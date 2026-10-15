@@ -355,6 +355,34 @@ def test_mail_you_send_is_tracked_on_the_recipient_who_has_a_record():
     assert '{ type: "fm-sent-set-track", track: event.target.checked }' in POPUP
 
 
+def test_your_own_mastodon_post_logs_the_people_it_mentions():
+    assert '"fm-track-toot": trackToot' in BACKGROUND
+    assert 'POPUP_ONLY.add("fm-toot-set-track");' in BACKGROUND
+    track = BACKGROUND.split("const trackToot = ", 1)[1].split("\n});\n", 1)[0]
+    assert "if (!state.track || !current.sessionToken || !current.organization)" in track
+    assert "author !== mine && author !== await tootOrgAccount(current.organization)" in track
+    assert "createContact: true" in track
+    assert "index ? `${statusId}/${person.handle}` : statusId" in track
+    assert "if (state.seen[key])" in track
+    assert "const PERMALINK = /^\\/(?:deck\\/)?@([^/]+)\\/(\\d{5,25})\\/?$/;" in MASTODON
+    assert 'detailed.querySelectorAll("a.mention:not(.hashtag)")' in MASTODON
+    assert 'author.handle !== fullHandle(decodeURIComponent(path[1]))' in MASTODON
+    assert '{ type: "fm-track-toot", toot }' in MASTODON
+    assert "data-track-toots" in POPUP_HTML and "data-toot-status" in POPUP_HTML
+    assert '{ type: "fm-toot-set-track", track: event.target.checked }' in POPUP
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_your_own_mastodon_post_adds_contacts_and_pings_through_the_crm_worker():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings",
+         str(PACKAGE / "tests" / "background_mastodon_toot_harness.js")],
+        capture_output=True, text=True, timeout=300,
+        env={"PATH": "/usr/local/bin:/usr/bin:/bin", "PYTHON": sys.executable})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
+
+
 def test_a_zoho_subject_is_never_the_folder_name_and_stays_editable():
     assert "const ZOHO_FOLDER_NAMES = /^(inbox|sent|sent items|spam|" in CONTENT
     assert "bare === folder || ZOHO_FOLDER_NAMES.test(bare)" in CONTENT

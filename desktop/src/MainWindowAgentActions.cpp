@@ -1028,13 +1028,23 @@ void MainWindow::updateQuickAddEnterTarget()
         m_quickAddAgentProvider
             ? m_quickAddAgentProvider->currentData().toString()
             : QString();
-    const QString newPromptTooltip =
+    QString newPromptTooltip =
         provider == kActivityPubPromptProvider
             ? QStringLiteral("Publish this prompt to the current repository's "
                              "ActivityPub followers")
             : provider == QLatin1String("manual")
                   ? QStringLiteral("Create an issue from this prompt")
                   : QStringLiteral("Send to a new agent");
+    if (provider == kNotePromptProvider) {
+        newPromptTooltip = QStringLiteral("Save this prompt as a note");
+    } else if (provider == kTaskPromptProvider) {
+        const QString assignment = quickAddTaskAssignment();
+        newPromptTooltip =
+            assignment.startsWith(QLatin1String("user:"))
+                ? QStringLiteral("Create a task assigned to %1")
+                      .arg(assignment.mid(5))
+                : QStringLiteral("Create an unassigned task in General");
+    }
     auto apply = [](QPushButton *button, bool isTarget,
                      const QString &baseTooltip) {
         if (!button)
@@ -1093,6 +1103,10 @@ void MainWindow::updateQuickAddTargetAgentLabel()
         m_issueQuickAdd->setPlaceholderText(
             provider == kActivityPubPromptProvider
                 ? QStringLiteral("write a post for ActivityPub")
+            : provider == kNotePromptProvider
+                ? QStringLiteral("take a note")
+            : provider == kTaskPromptProvider
+                ? QStringLiteral("describe the task to assign")
                 : forkmesh::ui::workspaceLayoutNew()
                       ? QStringLiteral("Describe a task to start a new session")
                       : QStringLiteral("enter prompt"));

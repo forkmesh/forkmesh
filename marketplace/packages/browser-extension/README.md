@@ -9,8 +9,9 @@ own. What it does is documented in `content/extension/README.md`:
 
 - fills and saves logins from the Password Vault (`vault` package);
 - links Gmail, Zoho Mail and Mastodon conversations to CRM contacts, links
-  mail you send to the recipient's record, and files pages under a contact
-  (`crm` package);
+  mail you send to the recipient's record, logs the people your own Mastodon
+  posts mention (adding the new ones as contacts), and files pages under a
+  contact (`crm` package);
 - reads channel counts, the organization's X profile and posts, and Reddit
   pages for the Marketing package, only when asked, and guides an owner or
   admin through X's developer console to connect X for posting;

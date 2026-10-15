@@ -333,6 +333,7 @@ struct ForkMeshShortcuts: AppShortcutsProvider {
                 "\(.applicationName) \(\.$change) listening",
                 "\(\.$change) the \(.applicationName) microphone",
                 "\(\.$change) speech recognition in \(.applicationName)",
+                "Turn the \(.applicationName) Genie \(\.$change)",
                 "Toggle listening in \(.applicationName)",
                 "Toggle \(.applicationName) listening",
             ],

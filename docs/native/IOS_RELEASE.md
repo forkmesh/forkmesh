@@ -233,8 +233,9 @@ Credential Exchange import destination for Apple Passwords.
 
 ## Widgets, Live Activities and the watch
 
-The Home Screen widgets, Live Activities (running agents, timers, walks; drawn
-by the widget extension) and the watch app ship in every build. The App Store
+The Home Screen widgets, Live Activities (one summary of agents, shortcuts and
+the timer, and walks; drawn by the widget extension) and the watch app ship in
+every build. The App Store
 Connect API cannot create or assign App Groups, so they share data through
 keychain groups, which every profile allows:
 

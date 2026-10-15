@@ -628,6 +628,12 @@ def test_login_exposes_localhost_only_demo_credentials():
     assert '"/dashboard.html"' not in login_js
 
 
+def test_login_defaults_to_the_dashboard_without_an_intermediate_homepage():
+    login_js = _read(PUBLIC / "login.js")
+
+    assert ': nextPath() || referrerPath() || "/dashboard";' in login_js
+
+
 def test_login_credential_fields_live_in_one_real_form():
     """A form-less login is one Chrome declines to autofill (adhoc #133).
 

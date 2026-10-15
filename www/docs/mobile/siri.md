@@ -35,7 +35,7 @@ agent out and Siri lists your agents and asks which one.
 | Merge | "Merge and clean up agent 754 in ForkMesh" |
 | Delete | "Delete agent 754 in ForkMesh", "Delete all agents in ForkMesh" |
 | Open a screen | "Open inbox in ForkMesh", "Open *owner/repository* in ForkMesh" |
-| Listening | "Start listening in ForkMesh", "Stop listening in ForkMesh" |
+| Listening | "Start listening in ForkMesh", "Turn the ForkMesh Genie on", "Stop listening in ForkMesh" |
 
 - Starting an agent opens the prompt composer, even if the app was closed.
 - Approving, merging and deleting read a summary from the desktop, ask for

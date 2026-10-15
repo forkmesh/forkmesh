@@ -286,6 +286,20 @@ def _write_extension_zip(target: Path, folder: Path, prefix: str) -> None:
             archive.writestr(info, path.read_bytes())
 
 
+def _mark_plugin_body(document: str, entry: dict) -> str:
+    anchor = 'data-page="%s">' % entry["key"]
+    if document.count(anchor) != 1:
+        raise MarketplaceError(
+            f"dashboard page {entry['key']} has no unique body anchor"
+        )
+    item = entry["item"]
+    return document.replace(anchor, 'data-page="%s" data-plugin-package="%s" data-plugin-name="%s">' % (
+        entry["key"],
+        html.escape(item.package_id, quote=True),
+        html.escape(str(item.manifest["name"]), quote=True),
+    ))
+
+
 def stage_web(destination: Path, catalog_path: Path = CATALOG) -> dict[str, str]:
     """Fill dashboard page/navigation sockets in a deployment asset tree."""
     entries = _web_entries(catalog_path)
@@ -327,6 +341,7 @@ def stage_web(destination: Path, catalog_path: Path = CATALOG) -> dict[str, str]
             view=entry["item"].entrypoint.read_text(encoding="utf-8"),
             plugin_script=script_tag,
         ).replace(PLUGIN_NAV_MARKER, navigation)
+        document = _mark_plugin_body(document, entry)
         # Core pages are marked active while their authored nav is already in
         # the shell. Plugin navigation is injected only above, so apply the
         # same server-rendered active state after the socket is filled.

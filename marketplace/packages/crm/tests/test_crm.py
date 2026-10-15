@@ -2798,6 +2798,76 @@ def test_every_tracked_email_rings_a_celebration_on_the_senders_devices():
     assert len(runtime.pings) == 3
 
 
+def test_a_linked_mastodon_post_pings_who_it_added_to_the_crm(monkeypatch):
+    monkeypatch.setattr(crm, "_activity_clock", lambda: 5_000_000)
+    crm._ACTIVITY_SEEN.clear()
+    runtime = Runtime()
+    post = {"provider": "mastodon", "messageId": "113489000000000001",
+            "direction": "outbound", "handle": "@grace@hachyderm.io",
+            "account": "forkmesh@mastodon.social", "subject": "Shipping today",
+            "providerUrl": "https://mastodon.social/@forkmesh/113489000000000001"}
+    added = call(runtime.use("POST", "charlie", post), "/api/crm/acme/emails/link")
+    assert added["status"] == 201 and added["data"]["contactCreated"] is True
+    assert added["data"]["contact"]["mastodon"] == "@grace@hachyderm.io"
+    assert [(ping["recipient"], ping["title"], ping["body"]) for ping in runtime.pings] == [
+        ("charlie", "🎉 New CRM contact from Mastodon",
+         "“Shipping today” with @grace@hachyderm.io"),
+        ("alice", "Mastodon post linked in the CRM", "By charlie in acme: Shipping today")]
+
+    runtime.pings.clear()
+    again = call(runtime.use("POST", "charlie", post), "/api/crm/acme/emails/link")
+    assert again["data"]["relinked"] is True
+    assert [ping["recipient"] for ping in runtime.pings] == ["alice"]
+
+    runtime.pings.clear()
+    later = call(runtime.use("POST", "charlie", dict(
+        post, messageId="113489000000000002",
+        providerUrl="https://mastodon.social/@forkmesh/113489000000000002")),
+        "/api/crm/acme/emails/link")
+    assert later["data"]["contactCreated"] is False
+    assert runtime.pings[0]["title"] == "🎉 Mastodon post tracked in the CRM"
+
+
+def test_crm_activity_pings_the_member_and_the_organization_managers(monkeypatch):
+    monkeypatch.setattr(crm, "_activity_clock", lambda: 5_000_000)
+    crm._ACTIVITY_SEEN.clear()
+    runtime = Runtime()
+    created = call(runtime.use("POST", "charlie", {"name": "Ada Lovelace"}),
+                   "/api/crm/acme/contacts")
+    assert created["status"] == 201
+    assert [(ping["recipient"], ping["title"], ping["body"], ping["href"])
+            for ping in runtime.pings] == [
+        ("charlie", "New CRM contact", "By you in acme: Ada Lovelace", "/dashboard/crm"),
+        ("alice", "New CRM contact", "By charlie in acme: Ada Lovelace", "/dashboard/crm")]
+
+    runtime.pings.clear()
+    contact_id = created["data"]["contact"]["id"]
+    for company in ("Analytical Engines", "Difference Engines"):
+        assert call(runtime.use("PATCH", "charlie", {"company": company}),
+                    f"/api/crm/acme/contacts/{contact_id}")["status"] == 200
+    assert [ping["push"] for ping in runtime.pings] == [True, True, False, False]
+    assert len({ping["dedupe"] for ping in runtime.pings}) == 1
+
+    runtime.pings.clear()
+    sent = call(runtime.use("POST", "charlie", {
+        "to": "linus@example.com", "subject": "Hello",
+        "text": "A one-off note", "fromEmail": "hello@acme.example",
+    }), "/api/crm/acme/emails/send")
+    assert sent["status"] == 201
+    assert [(ping["recipient"], ping["title"]) for ping in runtime.pings] == [
+        ("charlie", "🎉 Email tracked in the CRM"),
+        ("alice", "Email sent from the CRM")]
+    assert runtime.pings[-1]["body"] == "By charlie in acme: Hello"
+
+    runtime.pings.clear()
+    assert call(runtime.use("PUT", "charlie", {"tableViews": {}}),
+                "/api/crm/acme/settings")["status"] == 200
+    assert call(runtime.use("PATCH", "charlie", {"company": "x" * 5000}),
+                "/api/crm/acme/contacts/" + "f" * 32)["status"] == 404
+    assert call(runtime.use("GET", "charlie"), "/api/crm/acme/contacts")["status"] == 200
+    assert runtime.pings == []
+
+
 async def _refused():
     return {"accepted": False, "messageId": "", "error": "rejected"}
 
@@ -2907,7 +2977,11 @@ def test_toot_sync_logs_sent_toots_that_mention_known_contacts():
     assert toots["117441498168443300/ada@hachyderm.io"]["contactId"] == ada["id"]
     contact = call(runtime.use("GET"), f"/api/crm/acme/contacts/{mike['id']}")["data"]["contact"]
     assert contact["lastContactedAt"] == 1792015047736
-    assert not runtime.pings
+    assert not [ping for ping in runtime.pings if ping.get("meta")]
+    synced_pings = [ping for ping in runtime.pings
+                    if ping["title"] == "3 Mastodon posts logged in the CRM"]
+    assert [(ping["recipient"], ping["body"]) for ping in synced_pings] == [
+        ("charlie", "By you in acme"), ("alice", "By charlie in acme")]
 
     again = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/emails/toots")
     assert again["data"]["skipped"] is True

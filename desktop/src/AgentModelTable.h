@@ -13,6 +13,7 @@ class AgentModelTable : public QTableWidget
 {
 public:
     enum Column {
+        ShowColumn,
         ModelColumn,
         AgentColumn,
         RunsColumn,
@@ -45,6 +46,9 @@ public:
     explicit AgentModelTable(QWidget *parent = nullptr);
 
     std::function<QIcon(const AgentModelStatsRow &)> iconFor;
+    std::function<QString(const AgentModelStatsRow &)> composerKeyFor;
+    std::function<bool(const QString &)> composerShows;
+    std::function<void(const QString &, bool)> composerShowChanged;
 
     void refresh(const QVector<AgentModelStatsRow> &rows);
     void setHideUnused(bool hide);
@@ -56,4 +60,5 @@ private:
     void fitColumns();
 
     bool m_hideUnused = false;
+    bool m_filling = false;
 };

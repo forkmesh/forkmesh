@@ -141,6 +141,8 @@ def test_dashboard_package_is_written_only_to_deploy_stage(tmp_path):
         "/dashboard-plugins/demo-plugin/page/page.js"
     ) < plugin_html.index("/dashboard.js")
     assert (destination / "dashboard-plugins/demo-plugin/page/page.js").is_file()
+    assert 'data-page="demo-plugin.page" data-plugin-package="demo-plugin" data-plugin-name="' in plugin_html
+    assert "data-plugin-menu-toggle" in plugin_html
     assert not (APP / "public" / "dashboard-plugins").exists()
     assert "demo-plugin" not in (APP / "src" / "plugin_registry.py").read_text(
         encoding="utf-8"

@@ -366,6 +366,29 @@ money.
   copy adds a "Since the last copy" section with then → now so the AI can
   check its earlier predictions. Nothing is sent to a server.
 
+## Activity pings
+
+Every successful change raises a `plugin_activity` ping (`ACTIVITY_PINGS` in
+`content/worker/marketing.py`): content, numbers, App Store numbers,
+settings, channels, ads, experiments, funnel, Reddit threads and rules,
+campaigns, keywords, the X connection, X posts, Mastodon follows, refreshes,
+captures, the ready post and posted links. Reads, the AI assistant and link building raise none, and
+neither does a failed request.
+
+- **Who**: the member who acted ("By you in acme") and the organization's
+  owners and admins (at most 10 in all). Pings open `/dashboard/marketing`.
+- **Browser plugin** (`POST /activity`): `read` lines ping only the writer;
+  `sent` lines also ping owners and admins; `failed` lines ping the writer.
+  The line's text is the ping body.
+- **Syncs ping only for something new**: an extension post sync
+  (`POST /posts {"posts": [...]}`) pings only when it added posts ("2 new
+  channel posts found"); refreshed numbers on known posts stay quiet.
+- **Bursts fold**: edits, number logs (App Store ones too), refreshes,
+  captures, Reddit thread adds and `read` lines share one ping per member,
+  action and item for 10 minutes. The first rings the phone; later ones update that ping in the
+  inbox without a banner (`push=False`, an in-process memo of 512 keys).
+- Pings follow each person's Pings settings under "App package activity".
+
 ## Surfaces
 
 - **Web**: Dashboard, Performance, Channels (cards with health, playbooks,

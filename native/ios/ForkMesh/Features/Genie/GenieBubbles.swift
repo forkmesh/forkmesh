@@ -21,6 +21,54 @@ enum GenieText {
     }
 }
 
+struct GenieWaveform: View {
+    var meter: DictationMeter = DictationMeter.shared
+    var color: Color = GenieInk.glow
+    var height: CGFloat = 16
+
+    var body: some View {
+        let levels: [Float] = meter.levels
+        return Canvas { (context: inout GraphicsContext, size: CGSize) in
+            let step: CGFloat = size.width / CGFloat(max(levels.count, 1))
+            let bar: CGFloat = max(step * 0.55, 1.5)
+            for (index, level) in levels.enumerated() {
+                let tall: CGFloat = max(bar, size.height * CGFloat(level))
+                let rect: CGRect = CGRect(
+                    x: CGFloat(index) * step + (step - bar) / 2, y: (size.height - tall) / 2, width: bar, height: tall)
+                context.fill(Path(roundedRect: rect, cornerRadius: bar / 2), with: .color(color.opacity(0.4 + 0.6 * Double(level))))
+            }
+        }
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
+    }
+}
+
+struct GenieWavePill: View {
+    var body: some View {
+        HStack(spacing: FmSpace.x1) {
+            Image(systemName: "ear.fill")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(GenieInk.glow)
+            GenieWaveform(height: 16)
+                .frame(width: 96)
+        }
+        .padding(.horizontal, FmSpace.x3)
+        .padding(.vertical, FmSpace.x2)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(GenieSheet.night.opacity(0.88)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.25), radius: 8, y: 3)
+        .environment(\.colorScheme, .dark)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Hearing sound"))
+        .accessibilityIdentifier("genie-wave")
+    }
+}
+
 struct GenieGrip: Equatable {
     var pinch: CGFloat = 1
     var pinching: Bool = false
@@ -41,10 +89,15 @@ struct GenieTickerView: View {
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(GenieInk.glow)
                 .padding(.top, 2)
-            Text(GenieText.highlighted(ticker.segments, base: Color.white.opacity(ticker.final ? 0.95 : 0.8)))
-                .font(.footnote)
-                .lineLimit(3)
-                .multilineTextAlignment(onLeft ? .trailing : .leading)
+            VStack(alignment: onLeft ? .trailing : .leading, spacing: FmSpace.x1) {
+                Text(GenieText.highlighted(ticker.segments, base: Color.white.opacity(ticker.final ? 0.95 : 0.8)))
+                    .font(.footnote)
+                    .lineLimit(3)
+                    .multilineTextAlignment(onLeft ? .trailing : .leading)
+                if DictationMeter.shared.live {
+                    GenieWaveform(height: 14)
+                }
+            }
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.vertical, FmSpace.x2)
@@ -182,6 +235,10 @@ struct GenieMiniBubble: View {
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineLimit(1)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: status)
+            if DictationMeter.shared.live {
+                GenieWaveform(height: 14)
+                    .frame(maxWidth: 90)
+            }
             Spacer(minLength: 0)
             small("xmark", label: "Close", id: "genie-bubble-close") { hub.closeBubble() }
         }

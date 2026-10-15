@@ -2328,6 +2328,30 @@ def test_performance_counts_views_for_each_blog_post_and_per_day():
     assert pages == {("forkmesh.com", "/blog/new"): (5, 5), ("forkmesh.com", "/blog/old"): (3, 3)}
 
 
+def test_performance_counts_google_referrer_views_per_day():
+    runtime, analytics = _analytics_runtime()
+    runtime.db.execute(
+        "INSERT INTO analytics_projects VALUES(?,?,?,?,?,?,?,?,?)",
+        ("a" * 32, "org:acme", "acme", "fma_" + "0" * 40, 1, "alice", 1, 1,
+         'sealed:{"name": "Site"}'))
+    call(runtime.use("PUT", body={
+        "analytics": {"host": "acme.com"},
+        "channels": [{"id": "google-search", "enabled": True,
+                      "profileUrl": "https://www.google.com/search?q=site:acme.com"}]}),
+        "/api/marketing/acme/settings")
+    _seed_visits(runtime, analytics,
+                 [({"$referrer": "https://www.google.com/search?q=acme"}, ["/", "/docs"]),
+                  ({"$referrer": "https://www.google.co.uk/search?q=acme"}, ["/pricing"]),
+                  ({"$referrer": "https://mail.google.com/"}, ["/"]),
+                  ({"utm_source": "google", "utm_medium": "cpc"}, ["/", "/pricing"])])
+    perf = call(runtime.use("GET", params={"from": runtime.clock - 7 * marketing.DAY_MS}),
+                "/api/marketing/acme/performance")["data"]["performance"]
+    google = perf["channelViews"]["google-search"]
+    assert (google["host"], google["path"], google["sessions"], google["views"],
+            google["visitors"]) == ("Google", "", 2, 3, 2)
+    assert sum(count for _, count in google["days"]) == 3
+
+
 def test_performance_explains_missing_analytics_and_the_report_still_renders():
     runtime = Runtime()
     perf = call(runtime.use("GET"), "/api/marketing/acme/performance")
@@ -2772,7 +2796,7 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
     refreshed = call(runtime.use("POST", body={"channel": "google-search"}),
                      "/api/marketing/acme/refresh")
     assert refreshed["status"] == 200, refreshed
-    assert refreshed["data"]["refresh"]["metrics"]["visits"] == 6
+    assert refreshed["data"]["refresh"]["metrics"]["visits"] == 3
     assert refreshed["data"]["refresh"]["feed"]["title"] == "site:acme.com"
 
     captured = call(runtime.use("POST", "charlie", {
@@ -2780,10 +2804,10 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
         "metrics": {"indexedPages": 1230}}), "/api/marketing/acme/capture")
     assert captured["status"] == 201, captured
     assert (captured["data"]["metrics"]["indexedPages"],
-            captured["data"]["metrics"]["visits"]) == (1230, 6)
+            captured["data"]["metrics"]["visits"]) == (1230, 3)
     row = next(item for item in call(runtime.use("GET"), "/api/marketing/acme")["data"][
         "summary"]["channels"] if item["channel"] == "google-search")
-    assert (row["visits"], row["indexedPages"]) == (6, 1230)
+    assert (row["visits"], row["indexedPages"]) == (3, 1230)
     assert "posting" not in {check["id"] for check in row["health"]["checks"]}
     fresh = Runtime()
     assert "google-search" in [item["channel"] for item in call(
@@ -2791,11 +2815,15 @@ def test_google_channel_counts_google_visits_and_pages_on_google():
 
     again = call(runtime.use("POST", body={"channel": "google-search"}),
                  "/api/marketing/acme/refresh")["data"]["refresh"]["metrics"]
-    assert (again["visits"], again["indexedPages"]) == (6, 1230)
+    assert (again["visits"], again["indexedPages"]) == (3, 1230)
     elsewhere = call(runtime.use("POST", "charlie", {
         "channel": "google-search", "url": "https://www.bing.com/search?q=site:acme.com",
         "metrics": {"indexedPages": 5}}), "/api/marketing/acme/capture")
     assert elsewhere["data"]["error"] == "capture_host_mismatch"
+    desktop = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    assert 'QStringLiteral("Views from Google over time")' in desktop
+    assert 'QStringLiteral("Pages on Google")' in desktop
+    assert '"indexedPages", "following"' in desktop
 
 
 def test_google_channel_link_falls_back_to_the_instance_host():
@@ -3373,6 +3401,73 @@ def test_the_clues_the_walk_and_the_engagement_formula_reach_every_surface():
     assert 'files: ["reddit-walk.js"]' in background
     assert '{ type: "fm-reddit-scan" }' in background
     assert '"fm-reddit-scan"' in (extension / "reddit.js").read_text()
+
+
+class PingRuntime(Runtime):
+    def __init__(self):
+        super().__init__()
+        self.pings = []
+
+    async def notify(self, recipient, kind, title, **kwargs):
+        self.pings.append(dict(kwargs, recipient=recipient, kind=kind, title=title))
+
+
+def test_marketing_activity_and_browser_plugin_updates_raise_pings(monkeypatch):
+    monkeypatch.setattr(marketing, "_activity_clock", lambda: 5_000_000)
+    marketing._ACTIVITY_SEEN.clear()
+    runtime = PingRuntime()
+    created = call(runtime.use("POST", "charlie", {
+        "title": "Launch story", "body": "Draft", "channel": "blog"}),
+        "/api/marketing/acme/content")
+    assert created["status"] == 201
+    assert [(ping["recipient"], ping["kind"], ping["title"], ping["body"], ping["href"])
+            for ping in runtime.pings] == [
+        ("charlie", "plugin_activity", "New marketing content",
+         "By you in acme: Launch story", "/dashboard/marketing"),
+        ("alice", "plugin_activity", "New marketing content",
+         "By charlie in acme: Launch story", "/dashboard/marketing")]
+
+    runtime.pings.clear()
+    for page in ("home", "profile"):
+        assert call(runtime.use("POST", "charlie", {
+            "kind": "read", "site": "x", "page": page,
+            "text": f"Read @forkmesh on X ({page})."}),
+            "/api/marketing/acme/activity")["status"] == 201
+    assert [(ping["recipient"], ping["title"], ping["body"], ping["push"])
+            for ping in runtime.pings] == [
+        ("charlie", "Browser plugin read X",
+         "By you in acme: Read @forkmesh on X (home).", True),
+        ("charlie", "Browser plugin read X",
+         "By you in acme: Read @forkmesh on X (profile).", False)]
+    assert runtime.pings[0]["dedupe"] == runtime.pings[1]["dedupe"] != ""
+
+    runtime.pings.clear()
+    assert call(runtime.use("POST", "charlie", {
+        "kind": "sent", "site": "reddit", "page": "r/selfhosted",
+        "text": "Sent the r/selfhosted numbers to Marketing."}),
+        "/api/marketing/acme/activity")["status"] == 201
+    assert [(ping["recipient"], ping["title"], ping["dedupe"], ping["push"])
+            for ping in runtime.pings] == [
+        ("charlie", "Browser plugin sent an update to Reddit", "", True),
+        ("alice", "Browser plugin sent an update to Reddit", "", True)]
+
+    runtime.pings.clear()
+    path = "/api/marketing/acme/posts"
+    post = {"url": "https://x.com/forkmesh/status/1900000000000000002", "channel": "x",
+            "title": "Second post", "postedAt": 1_995_000_000_000, "views": 900}
+    assert call(runtime.use("POST", "charlie", {"posts": [post]}), path)["status"] == 200
+    assert [ping["title"] for ping in runtime.pings] == ["1 new channel post found"] * 2
+    runtime.pings.clear()
+    assert call(runtime.use("POST", "charlie", {"posts": [dict(post, views=1500)]}),
+                path)["status"] == 200
+    assert call(runtime.use("POST", "charlie", {"kind": "nope"}),
+                "/api/marketing/acme/activity")["status"] == 400
+    assert call(runtime.use("GET", "charlie"), "/api/marketing/acme/content")["status"] == 200
+    assert runtime.pings == []
+    assert marketing._activity_rule(
+        "x-connection", "", "POST", {"name": "secret"})[3] == ""
+    assert marketing._activity_rule("app-store", "", "PUT", {})[:3] == (
+        "App Store numbers updated", "team", True)
 
 
 APP_STORE_ID = "6803060735"

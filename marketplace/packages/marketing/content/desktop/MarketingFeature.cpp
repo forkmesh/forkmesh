@@ -884,7 +884,8 @@ MarketingFeature::MarketingFeature(
     m_detailMetric = new QButtonGroup(this);
     m_detailChartPanel->tools()->addWidget(segmented(
         {QStringLiteral("Followers"), QStringLiteral("Reach"), QStringLiteral("Engagements"),
-         QStringLiteral("Views"), QStringLiteral("Stars"), QStringLiteral("Forks"), QStringLiteral("Following")},
+         QStringLiteral("Views"), QStringLiteral("Stars"), QStringLiteral("Forks"),
+         QStringLiteral("Pages"), QStringLiteral("Following")},
         m_detailMetric, 0, QStringLiteral("Channel chart metric")));
     m_detailChart = new LineChart;
     m_detailChart->setAccessibleName(QStringLiteral("Channel history chart"));
@@ -5345,9 +5346,10 @@ void MarketingFeature::renderChannelChart()
     if (m_detailChannel.isEmpty() || !m_detailChart)
         return;
     const DashboardColors colors = DashboardColors::from(this);
-    static const char *keys[] = {"followers", "reach", "engagements", "views", "stars", "forks", "following"};
-    static const char *labels[] = {"Followers", "Reach", "Engagements", "Views", "Stars", "Forks", "Following"};
+    static const char *keys[] = {"followers", "reach", "engagements", "views", "stars", "forks", "indexedPages", "following"};
+    static const char *labels[] = {"Followers", "Reach", "Engagements", "Views", "Stars", "Forks", "Pages on Google", "Following"};
     const bool github = m_detailChannel == QLatin1String("github");
+    const bool google = m_detailChannel == QLatin1String("google-search");
     const QList<QJsonObject> list = seriesByChannel(m_metrics).value(m_detailChannel);
     const bool following = m_detailChannel == QLatin1String("x") ||
         std::any_of(list.cbegin(), list.cend(), [](const QJsonObject &item) { return !missing(item, "following"); });
@@ -5356,17 +5358,22 @@ void MarketingFeature::renderChannelChart()
             button->setVisible(github);
     }
     if (QAbstractButton *button = m_detailMetric->button(6))
+        button->setVisible(google);
+    if (QAbstractButton *button = m_detailMetric->button(7))
         button->setVisible(following);
     if (QAbstractButton *button = m_detailMetric->button(3))
         button->setVisible(false);
     const int checked = m_detailMetric->checkedId();
-    if (github && m_detailChartChannel != m_detailChannel && m_detailMetric->button(4))
+    if (google && m_detailChartChannel != m_detailChannel && m_detailMetric->button(6))
+        m_detailMetric->button(6)->setChecked(true);
+    else if (github && m_detailChartChannel != m_detailChannel && m_detailMetric->button(4))
         m_detailMetric->button(4)->setChecked(true);
-    else if (((!github && (checked == 4 || checked == 5)) || (!following && checked == 6) || checked == 3) &&
+    else if (((!github && (checked == 4 || checked == 5)) || (!google && checked == 6)
+              || (!following && checked == 7) || checked == 3) &&
              m_detailMetric->button(0))
         m_detailMetric->button(0)->setChecked(true);
     m_detailChartChannel = m_detailChannel;
-    const int metric = qBound(0, m_detailMetric->checkedId(), 6);
+    const int metric = qBound(0, m_detailMetric->checkedId(), 7);
     m_detailChartPanel->titleLabel()->setText(QStringLiteral("%1 over time").arg(QLatin1String(labels[metric])));
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const qint64 start = now - m_rangeDays * kDay;
@@ -5425,6 +5432,8 @@ void MarketingFeature::renderChannelChart()
     QList<LineChart::Series> viewLines;
     if (!views.points.isEmpty())
         viewLines.append(views);
+    m_detailViewsPanel->titleLabel()->setText(google ? QStringLiteral("Views from Google over time")
+                                                      : QStringLiteral("Views over time"));
     m_detailViewsChart->setSeries(viewLines, start, now,
                                   QStringLiteral("No views for %1 in the last %2 days.\n"
                                                  "Pages on your Analytics site and recorded numbers show here.")

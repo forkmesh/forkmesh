@@ -416,6 +416,120 @@ chrome.runtime.onInstalled.addListener(() => void syncMastodon());
 chrome.runtime.onStartup.addListener(() => void syncMastodon());
 chrome.permissions.onRemoved.addListener(() => void syncMastodon());
 
+const TOOT_KEY = "mastodonToots";
+const TOOT_ACCOUNT_KEY = "mastodonTootAccount";
+const TOOT_ACCOUNT_MS = 10 * 60 * 1000;
+const TOOT_PEOPLE = 10;
+const TOOT_SEEN = 500;
+const TOOT_ID = /^\d{5,25}$/;
+const TOOT_HANDLE = /^[a-z0-9_.-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+const TOOT_RETRY = new Set(["not_signed_in", "forkmesh_unreachable", "rate_limited"]);
+
+let tootQueue = Promise.resolve();
+const tootSerial = (work) => (tootQueue = tootQueue.then(work, work));
+
+const tootHandle = (value) => {
+  const handle = String(value || "").trim().toLowerCase().replace(/^@/, "");
+  return TOOT_HANDLE.test(handle) ? handle : "";
+};
+
+async function tootState() {
+  const stored = (await chrome.storage.local.get([TOOT_KEY]))[TOOT_KEY] || {};
+  return { track: stored.track !== false, seen: stored.seen || {}, last: stored.last || null };
+}
+
+async function tootSettings() {
+  const { track, last } = await tootState();
+  return { ok: true, track, last };
+}
+
+async function setTrackToots({ track }) {
+  const state = await tootState();
+  await chrome.storage.local.set({ [TOOT_KEY]: { ...state, track: Boolean(track) } });
+  return tootSettings();
+}
+
+async function tootOrgAccount(organization) {
+  const cached = (await chrome.storage.session.get([TOOT_ACCOUNT_KEY]))[TOOT_ACCOUNT_KEY];
+  if (cached?.organization === organization && Date.now() - cached.at < TOOT_ACCOUNT_MS) return cached.account;
+  const payload = await api(orgPath(organization, "/settings")).catch(() => null);
+  const account = tootHandle(payload?.settings?.mastodon?.account);
+  if (payload) {
+    await chrome.storage.session.set({ [TOOT_ACCOUNT_KEY]: { organization, account, at: Date.now() } });
+  }
+  return account;
+}
+
+function tootPeople(toot, ...ours) {
+  const people = [];
+  for (const person of Array.isArray(toot.people) ? toot.people : []) {
+    const handle = tootHandle(person?.handle);
+    if (handle && !ours.includes(handle) && !people.some((item) => item.handle === handle)) {
+      people.push({ handle, name: String(person?.name || "").trim().slice(0, 120) });
+    }
+  }
+  return people.slice(0, TOOT_PEOPLE);
+}
+
+async function tootRemember(state, key, last) {
+  const seen = { ...state.seen, [key]: Date.now() };
+  const kept = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, TOOT_SEEN);
+  await chrome.storage.local.set({ [TOOT_KEY]: { track: state.track, seen: Object.fromEntries(kept), last } });
+}
+
+const trackToot = ({ toot }) => tootSerial(async () => {
+  const current = await settings();
+  const state = await tootState();
+  const post = toot && typeof toot === "object" ? toot : {};
+  if (!state.track || !current.sessionToken || !current.organization) return { ok: true, tracked: false };
+  const statusId = String(post.statusId || "");
+  let permalink;
+  try { permalink = new URL(String(post.providerUrl || "")); } catch { permalink = null; }
+  if (!TOOT_ID.test(statusId) || permalink?.protocol !== "https:") throw new ApiError("invalid_toot", 400);
+  const key = `${permalink.hostname}/${statusId}`;
+  if (state.seen[key]) return { ok: true, tracked: false, seen: true };
+  const author = tootHandle(post.author?.handle);
+  const mine = tootHandle(post.mine);
+  if (!author) return { ok: true, tracked: false };
+  if (author !== mine && author !== await tootOrgAccount(current.organization)) {
+    return { ok: true, tracked: false, mine: false };
+  }
+  const people = tootPeople(post, author, mine);
+  const sentAt = Number(post.sentAt);
+  const logged = [];
+  const failed = [];
+  let created = 0;
+  for (const [index, person] of people.entries()) {
+    try {
+      const result = await link({
+        organization: current.organization,
+        message: {
+          provider: "mastodon", direction: "outbound", createContact: true,
+          messageId: index ? `${statusId}/${person.handle}` : statusId,
+          threadId: TOOT_ID.test(String(post.threadId || "")) ? String(post.threadId) : statusId,
+          handle: person.handle, contactName: person.name, account: author,
+          subject: String(post.subject || ""), sentAt, providerUrl: permalink.href,
+        },
+      });
+      if (result.contactCreated) created += 1;
+      logged.push(String(result.contact?.name || `@${person.handle}`));
+    } catch (error) {
+      if (TOOT_RETRY.has(error?.code) || !error?.status || error.status >= 500) {
+        await chrome.storage.local.set({ [TOOT_KEY]: { ...state, last: {
+          at: Date.now(), providerUrl: permalink.href, contacts: logged, created, error: error?.message || "request failed",
+        } } });
+        throw error;
+      }
+      failed.push(`@${person.handle}`);
+    }
+  }
+  await tootRemember(state, key, {
+    at: Date.now(), providerUrl: permalink.href, contacts: logged, created,
+    error: failed.length ? `not logged: ${failed.join(", ")}` : "",
+  });
+  return { ok: true, tracked: logged.length > 0, logged: logged.length, created, contacts: logged };
+});
+
 
 // --- X profile for Marketing ---------------------------------------------
 // x.js reads the tracked profile's pages as they are opened in a tab and
@@ -2579,6 +2693,7 @@ const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "
 const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-sync",
   "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
   "fm-refresh-plan", "fm-refresh-run", "fm-refresh-channel"]);
+POPUP_ONLY.add("fm-toot-set-track");
 const CAPTURE_PAGE_ONLY = new Set(["fm-marketing-capture-job", "fm-marketing-capture-continue"]);
 
 
@@ -2626,6 +2741,9 @@ const HANDLERS = {
   "fm-mastodon-hosts": syncMastodon,
   "fm-mastodon-add": addMastodon,
   "fm-mastodon-remove": removeMastodon,
+  "fm-track-toot": trackToot,
+  "fm-toot-settings": tootSettings,
+  "fm-toot-set-track": setTrackToots,
   "fm-open-extensions": openExtensions,
   "fm-host-pattern": grantHost,
   "fm-x-handle": async () => ({ ok: true, handle: (await xState()).handle }),

@@ -208,37 +208,40 @@ struct CrmScreen: View {
 
     private var moreMenu: some View {
         Menu {
-            if model.activeTab.isContacts {
-                Button("Select contacts", systemImage: "checkmark.circle") { selecting = true }
-                if model.activeFlow != nil {
-                    Picker("Layout", selection: $board) {
-                        Label("List", systemImage: "list.bullet").tag(false)
-                        Label("Board", systemImage: "rectangle.split.3x1").tag(true)
+            Group {
+                if model.activeTab.isContacts {
+                    Button("Select contacts", systemImage: "checkmark.circle") { selecting = true }
+                    if model.activeFlow != nil {
+                        Picker("Layout", selection: $board) {
+                            Label("List", systemImage: "list.bullet").tag(false)
+                            Label("Board", systemImage: "rectangle.split.3x1").tag(true)
+                        }
+                    }
+                    CrmFilterMenu(model: model)
+                    if let item = model.data?.contactTabs.first(where: { $0.tab == model.activeTab }), item.view != nil || item.flow != nil {
+                        Button("\(item.title) settings", systemImage: "slider.horizontal.3") { sheet = .tabSettings(item) }
                     }
                 }
-                CrmFilterMenu(model: model)
-                if let item = model.data?.contactTabs.first(where: { $0.tab == model.activeTab }), item.view != nil || item.flow != nil {
-                    Button("\(item.title) settings", systemImage: "slider.horizontal.3") { sheet = .tabSettings(item) }
+                Divider()
+                Button("Pipelines", systemImage: "point.3.connected.trianglepath.dotted") { sheet = .pipelines }
+                Button(model.noteDrafts.isEmpty ? "Unsent drafts" : "Unsent drafts (\(model.noteDrafts.count))", systemImage: "pencil.and.list.clipboard") {
+                    sheet = .noteDrafts
                 }
-            }
-            Divider()
-            Button("Pipelines", systemImage: "point.3.connected.trianglepath.dotted") { sheet = .pipelines }
-            Button(model.noteDrafts.isEmpty ? "Unsent drafts" : "Unsent drafts (\(model.noteDrafts.count))", systemImage: "pencil.and.list.clipboard") {
-                sheet = .noteDrafts
-            }
-            Button("Export CSV", systemImage: "square.and.arrow.up") { Task { await export() } }
-            Button("Sync mail", systemImage: "arrow.triangle.2.circlepath") { Task { await syncMail() } }
-            if let url = model.data?.settings.composeURL(to: "") {
-                Button(model.data?.settings.mailProvider == "gmail" ? "Open Gmail" : "Open Zoho Mail", systemImage: "envelope") {
-                    openURL(url)
+                Button("Export CSV", systemImage: "square.and.arrow.up") { Task { await export() } }
+                Button("Sync mail", systemImage: "arrow.triangle.2.circlepath") { Task { await syncMail() } }
+                if let url = model.data?.settings.composeURL(to: "") {
+                    Button(model.data?.settings.mailProvider == "gmail" ? "Open Gmail" : "Open Zoho Mail", systemImage: "envelope") {
+                        openURL(url)
+                    }
                 }
+                Button("CRM settings", systemImage: "gearshape") { sheet = .settings }
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.load() } }
             }
-            Button("CRM settings", systemImage: "gearshape") { sheet = .settings }
-            Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.load() } }
+            .disabled(model.data == nil)
+            PluginMenuItems()
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }
-        .disabled(model.data == nil)
     }
 
     private func export() async {

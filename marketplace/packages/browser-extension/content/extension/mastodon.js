@@ -5,7 +5,9 @@
 // Above the open post it places panel.js's compact CRM header, whose "Look
 // up" button puts the contact's pipeline, stage, owner and history over the
 // conversation, and whose FM button opens the panel that links the thread to
-// the record. Opening a conversation asks ForkMesh for nothing by itself.
+// the record. Opening someone else's conversation asks ForkMesh for nothing
+// by itself; your own post, open on its permalink, logs the people it
+// mentions.
 //
 // Mastodon knows people by handle (@name@instance) rather than by address, so
 // a linked conversation carries the handle and the CRM matches the contact on
@@ -152,6 +154,35 @@
     };
   }
 
+  const PERMALINK = /^\/(?:deck\/)?@([^/]+)\/(\d{5,25})\/?$/;
+  const OWN_SETTLE = 1500;
+
+  function ownPost() {
+    const path = location.pathname.match(PERMALINK);
+    const detailed = document.querySelector(".detailed-status");
+    if (!path || !detailed) return null;
+    const author = accountOf(detailed);
+    if (!author.handle || author.handle !== fullHandle(decodeURIComponent(path[1]))) return null;
+    const { message } = readPage();
+    if (message.messageId !== path[2]) return null;
+    const names = new Map();
+    for (const status of document.querySelectorAll(".status__wrapper, .status")) {
+      const person = accountOf(status);
+      if (person.handle && person.name) names.set(person.handle, person.name);
+    }
+    const people = [];
+    for (const mention of detailed.querySelectorAll("a.mention:not(.hashtag)")) {
+      const handle = mentionHandle(mention);
+      if (handle && !people.some((item) => item.handle === handle)) {
+        people.push({ handle, name: names.get(handle) || "" });
+      }
+    }
+    return {
+      statusId: path[2], threadId: message.threadId, author, mine: myHandle(), people,
+      subject: message.subject, sentAt: message.sentAt, providerUrl: message.providerUrl,
+    };
+  }
+
   // --- CRM header above the open conversation ------------------------------
 
   const { host, panel, place } = crm.header({ read: async () => readPage().message });
@@ -170,11 +201,34 @@
     const { message, anchor } = page;
     if (!message.messageId || !anchor?.parentNode) { host.remove(); return; }
     place(anchor);
+    scheduleOwn();
     const key = `${message.messageId}|${message.handle}`;
     if (key === shown) return;
     shown = key;
     if (asked) { asked = false; void panel.load(message); }
     else void panel.present(message);
+  }
+
+  const tried = new Set();
+  let ownTimer = 0;
+  function scheduleOwn() {
+    if (ownTimer) return;
+    ownTimer = setTimeout(() => { ownTimer = 0; logOwnPost(); }, OWN_SETTLE);
+  }
+
+  function logOwnPost() {
+    let toot;
+    try { toot = ownPost(); } catch { return; }
+    if (!toot?.people.length || tried.has(toot.statusId)) return;
+    tried.add(toot.statusId);
+    try {
+      chrome.runtime.sendMessage({ type: "fm-track-toot", toot }, (response) => {
+        if (chrome.runtime.lastError || !response?.tracked) return;
+        shown = "";
+        asked = true;
+        schedule(0);
+      });
+    } catch { }
   }
 
   let timer = 0;

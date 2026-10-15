@@ -1,5 +1,9 @@
 package com.forkmesh.nativeapp.feature.account.orgs
 
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Row
+import com.forkmesh.nativeapp.feature.market.PluginMoreMenu
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +26,7 @@ fun OrgScreenHeader(
     subtitle: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val plugin = rememberScreenPluginMenu()
     Box(
         modifier
             .fillMaxWidth()
@@ -31,7 +36,16 @@ fun OrgScreenHeader(
             title = title,
             subtitle = subtitle,
             leading = { FmIconButton(icon = "arrow_back", label = "Back", onPressed = onBack, color = Fm.colors.textPrimary) },
-            trailing = trailing,
+            trailing = if (plugin == null) {
+                trailing
+            } else {
+                {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        trailing?.invoke()
+                        PluginMoreMenu(plugin)
+                    }
+                }
+            },
         )
     }
 }

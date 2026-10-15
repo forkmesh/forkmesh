@@ -32557,7 +32557,43 @@
     }
   }
 
-  function renderRepoInsights(repo, commits = [], stats = null, unavailable = false) {
+  function repoTrafficDayLabel(day) {
+    const date = new Date(`${day}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return String(day || "");
+    return date.toLocaleDateString(undefined, {
+      timeZone: "UTC", month: "short", day: "numeric",
+    });
+  }
+
+  function repoTrafficChart(traffic) {
+    const days = (Array.isArray(traffic?.days) ? traffic.days : [])
+      .slice(-30)
+      .filter((item) => item && item.day)
+      .map((item) => ({
+        day: String(item.day),
+        clones: Math.max(0, Number(item.clones) || 0),
+      }));
+    if (!days.length) {
+      return '<p class="mt-3 text-xs leading-5 text-muted-foreground">Clone traffic has not been recorded yet.</p>';
+    }
+    const total = Number.isFinite(Number(traffic?.totalClones))
+      ? Math.max(0, Number(traffic.totalClones))
+      : days.reduce((sum, item) => sum + item.clones, 0);
+    const maximum = Math.max(1, ...days.map((item) => item.clones));
+    const bars = days.map((item) => {
+      const height = item.clones ? Math.max(3, Math.round(item.clones / maximum * 48)) : 1;
+      const count = `${formatCount(item.clones)} ${item.clones === 1 ? "clone" : "clones"}`;
+      const label = `${repoTrafficDayLabel(item.day)}: ${count}`;
+      return `<span data-repo-traffic-day="${escapeHtml(item.day)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="group relative flex min-w-[3px] flex-1 items-end"><span class="w-full rounded-sm ${item.clones ? "bg-primary/75" : "bg-border"}" style="height:${height}px"></span><span class="sr-only">${escapeHtml(label)}</span></span>`;
+    }).join("");
+    return `<div data-repo-traffic-chart class="mt-3" aria-label="Clone traffic over the past 30 days">
+      <div class="mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span>Last 30 days</span><span class="font-mono">${formatCount(total)} ${total === 1 ? "clone" : "clones"}</span></div>
+      <div class="flex h-12 items-end gap-px" aria-label="Daily clone traffic">${bars}</div>
+      <div class="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>${escapeHtml(repoTrafficDayLabel(days[0].day))}</span><span>${escapeHtml(repoTrafficDayLabel(days[days.length - 1].day))}</span></div>
+    </div>`;
+  }
+
+  function renderRepoInsights(repo, commits = [], stats = null, unavailable = false, traffic = null) {
     const contributors = repoInsightsStatsContributors(stats, commits);
     const statCommitTotal = normalizedCount(stats?.commitCount);
     const catalogCommitTotal = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
@@ -32625,7 +32661,8 @@
           </section>
           <aside class="rounded-lg border border-border bg-secondary/20 p-4">
             <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>ForkMesh traffic</div>
-            <p class="mt-3 text-xs leading-5 text-muted-foreground">Serving and clone traffic is reported by active managed mirror nodes. Open the Mirror Nodes tab for per-node counters.</p>
+            ${repoTrafficChart(traffic)}
+            <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>
         </div>
         ${repoInsightsLanguages(stats)}
@@ -32662,15 +32699,19 @@
     if (!container || !repo) return;
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading insights from the live mirror...")}</div>`;
     try {
-      const [historyResult, statsResult] = await Promise.allSettled([
+      const [historyResult, statsResult, trafficResult] = await Promise.allSettled([
         fetchRepoJson(repoLiveUrl(repo, "history")),
         fetchRepoJson(repoLiveUrl(repo, "stats")),
+        fetchJson(`${repoApiBase(repo)}/traffic`),
       ]);
       if (historyResult.status === "rejected" && statsResult.status === "rejected") throw new Error("mirror unavailable");
       const history = historyResult.status === "fulfilled" ? historyResult.value : {};
       const stats = statsResult.status === "fulfilled" ? statsResult.value : null;
+      const traffic = trafficResult.status === "fulfilled" && trafficResult.value?.ok
+        ? trafficResult.value
+        : null;
       const commits = Array.isArray(history?.commits) ? history.commits : [];
-      container.innerHTML = renderRepoInsights(repo, commits, stats);
+      container.innerHTML = renderRepoInsights(repo, commits, stats, false, traffic);
       void linkRepoInsightsContributors(container);
     } catch (_) {
       container.innerHTML = renderRepoInsights(repo, [], null, true);
@@ -40714,6 +40755,21 @@
 
   let feedbackReturnFocus = null;
   let feedbackCloseTimer = 0;
+  let feedbackPlugin = null;
+  const FEEDBACK_GENERAL_COPY = Object.freeze({
+    title: "Send feedback",
+    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.",
+    placeholder: "What should we know?",
+  });
+
+  function feedbackCopy(plugin) {
+    if (!plugin) return FEEDBACK_GENERAL_COPY;
+    return {
+      title: `Feedback on ${plugin.name}`,
+      desc: `Report a bug or suggest an improvement for ${plugin.name}. It is filed as a public issue tagged with this plugin; your contact details are never published.`,
+      placeholder: "What happened, or what would make it better?",
+    };
+  }
 
   function setFeedbackStatus(text, tone = "") {
     const status = $("[data-feedback-status]");
@@ -40722,13 +40778,21 @@
     status.className = `min-h-4 text-xs ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
   }
 
-  function setFeedbackModalOpen(open) {
+  function setFeedbackModalOpen(open, plugin = null) {
     const modal = $("[data-feedback-modal]");
     if (!modal) return;
     window.clearTimeout(feedbackCloseTimer);
     modal.classList.toggle("hidden", !open);
     modal.classList.toggle("flex", open);
     if (open) {
+      feedbackPlugin = plugin && plugin.id ? { id: String(plugin.id), name: String(plugin.name || plugin.id) } : null;
+      const copy = feedbackCopy(feedbackPlugin);
+      const title = $("#feedbackModalTitle");
+      if (title) title.textContent = copy.title;
+      const desc = modal.querySelector(".fm-dialog-desc");
+      if (desc) desc.textContent = copy.desc;
+      const field = $("[data-feedback-message]");
+      if (field) field.placeholder = copy.placeholder;
       feedbackReturnFocus = document.activeElement;
       const submit = $("[data-feedback-submit]");
       if (submit) {
@@ -40749,7 +40813,7 @@
     const field = form.querySelector("[data-feedback-message]");
     const submit = form.querySelector("[data-feedback-submit]");
     const message = String(field?.value || "").trim();
-    if (message.length < 2) {
+    if (message.length < (feedbackPlugin ? 4 : 2)) {
       setFeedbackStatus("Write a few words first.", "bad");
       field?.focus();
       return;
@@ -40757,22 +40821,43 @@
     if (submit) submit.disabled = true;
     setFeedbackStatus("Sending...");
     try {
-      const response = await fetch("/api/feedback", {
+      const plugin = feedbackPlugin;
+      const headers = { accept: "application/json", "content-type": "application/json" };
+      const token = state.session?.sessionToken || "";
+      if (plugin && token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+      const response = await fetch(plugin ? "/api/bug-reports" : "/api/feedback", {
         method: "POST",
         cache: "no-store",
         credentials: "same-origin",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify({ source: "web", vote: "feedback", message }),
+        headers,
+        body: JSON.stringify(plugin ? pluginFeedbackPayload(plugin, message) : { source: "web", vote: "feedback", message }),
       });
+      if (response.status === 429) {
+        if (submit) submit.disabled = false;
+        setFeedbackStatus("Too many reports from here in the last hour. Please try again later.", "bad");
+        return;
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
-      setFeedbackStatus("Thank you. Your feedback reached the ForkMesh team.", "good");
+      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : "Thank you. Your feedback reached the ForkMesh team.", "good");
       if (submit) submit.textContent = "Sent";
       feedbackCloseTimer = window.setTimeout(() => setFeedbackModalOpen(false), 1400);
     } catch (_) {
       if (submit) submit.disabled = false;
       setFeedbackStatus("Feedback could not be sent. Please try again.", "bad");
     }
+  }
+
+  function pluginFeedbackPayload(plugin, message) {
+    return {
+      message,
+      package: plugin.id,
+      screen: currentPage(),
+      source: "web",
+      platform: "web",
+      severity: "normal",
+      device: String(navigator.userAgent || "").slice(0, 120),
+    };
   }
 
   function openFeedbackFromQuery() {
@@ -40916,6 +41001,155 @@
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
   }
 
+  const pluginMenuState = { plugin: null, account: null, loading: null };
+
+  function currentPluginPage() {
+    const id = String(document.body?.dataset?.pluginPackage || "");
+    if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(id)) return null;
+    return { id, name: String(document.body.dataset.pluginName || id) };
+  }
+
+  function pluginReviewUrl(id) {
+    return `/market-reviews?market=forkmesh&package=${encodeURIComponent(id)}`;
+  }
+
+  function setPluginMenuOpen(open) {
+    const dropdown = $("[data-plugin-menu-dropdown]");
+    if (!dropdown) return;
+    dropdown.classList.toggle("hidden", !open);
+    $("[data-plugin-menu-toggle]")?.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) void refreshPluginMenuUninstall();
+  }
+
+  async function loadPluginAccountState() {
+    if (pluginMenuState.account) return pluginMenuState.account;
+    if (!pluginMenuState.loading) {
+      const headers = { accept: "application/json" };
+      const token = state.session?.sessionToken || "";
+      if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+      pluginMenuState.loading = fetch("/api/plugins/@account", { headers, cache: "no-store", credentials: "same-origin" })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload.ok === false) return { signedOut: response.status === 401, packages: [] };
+          return { signedOut: false, packages: Array.isArray(payload.packages) ? payload.packages : [] };
+        })
+        .catch(() => ({ signedOut: false, packages: [], failed: true }))
+        .then((result) => {
+          pluginMenuState.loading = null;
+          if (!result.failed) pluginMenuState.account = result;
+          return result;
+        });
+    }
+    return pluginMenuState.loading;
+  }
+
+  function pluginUninstallAvailability(plugin, account) {
+    if (!plugin) return { enabled: false, reason: "" };
+    if (!account) return { enabled: false, reason: "Checking…" };
+    if (account.signedOut) return { enabled: false, reason: "Sign in to uninstall plugins." };
+    const row = account.packages.find((item) => String(item?.id || "") === plugin.id);
+    if (!row) return { enabled: false, reason: "Built in or installed by your organization. Manage it from Apps." };
+    if (!row.installed) return { enabled: false, reason: "Not installed on your account." };
+    return { enabled: true, reason: "" };
+  }
+
+  function renderPluginMenuUninstall(availability) {
+    const button = $("[data-plugin-menu-uninstall]");
+    if (!button) return;
+    button.disabled = !availability.enabled;
+    button.setAttribute("aria-disabled", availability.enabled ? "false" : "true");
+    button.title = availability.reason;
+    button.classList.toggle("opacity-50", !availability.enabled);
+    const hint = $("[data-plugin-menu-uninstall-hint]");
+    if (hint) {
+      hint.textContent = availability.reason;
+      hint.hidden = !availability.reason;
+    }
+  }
+
+  async function refreshPluginMenuUninstall() {
+    const plugin = pluginMenuState.plugin;
+    if (!plugin) return;
+    if (!pluginMenuState.account) renderPluginMenuUninstall(pluginUninstallAvailability(plugin, null));
+    renderPluginMenuUninstall(pluginUninstallAvailability(plugin, await loadPluginAccountState()));
+  }
+
+  async function uninstallCurrentPlugin() {
+    const plugin = pluginMenuState.plugin;
+    if (!plugin) return;
+    const availability = pluginUninstallAvailability(plugin, pluginMenuState.account);
+    if (!availability.enabled) return;
+    setPluginMenuOpen(false);
+    if (!window.confirm(`Uninstall ${plugin.name}? Its links and screens disappear from the web, the desktop app and the mobile app on your account, and anything it stored for your account is deleted. Plugins that need it are removed too.`)) return;
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = state.session?.sessionToken || "";
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    try {
+      const response = await fetch(`/api/plugins/@account/${encodeURIComponent(plugin.id)}/uninstall`, {
+        method: "POST",
+        headers,
+        cache: "no-store",
+        credentials: "same-origin",
+        body: "{}",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.error || `HTTP ${response.status}`);
+      const account = String(state.session?.nodeName || "");
+      const changed = Array.isArray(payload.changed) && payload.changed.length ? payload.changed.map(String) : [plugin.id];
+      for (const id of changed) window.ForkMeshAPI?.rememberPlugin?.(account, id, false);
+      void window.ForkMeshAPI?.refreshPlugins?.(true);
+      window.dispatchEvent(new CustomEvent("forkmesh:plugins-changed", { detail: { changed } }));
+      location.assign("/dashboard/apps");
+    } catch (error) {
+      showErrorNotice(`${plugin.name} could not be uninstalled: ${error.message}`);
+    }
+  }
+
+  function initPluginMenu() {
+    const root = $("[data-plugin-menu]");
+    const plugin = currentPluginPage();
+    if (!root || !plugin) return;
+    pluginMenuState.plugin = plugin;
+    root.classList.remove("hidden");
+    root.classList.add("flex");
+    const toggle = $("[data-plugin-menu-toggle]");
+    if (toggle) {
+      toggle.setAttribute("aria-label", `${plugin.name} options`);
+      toggle.title = `${plugin.name} options`;
+    }
+    const rate = $("[data-plugin-menu-rate]");
+    if (rate) {
+      rate.href = pluginReviewUrl(plugin.id);
+      rate.textContent = `Rate ${plugin.name}`;
+    }
+    const uninstall = $("[data-plugin-menu-uninstall-label]");
+    if (uninstall) uninstall.textContent = `Uninstall ${plugin.name}…`;
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-plugin-menu-toggle]")) {
+        event.preventDefault();
+        setAccountMenuOpen(false);
+        setPluginMenuOpen($("[data-plugin-menu-dropdown]")?.classList.contains("hidden"));
+        return;
+      }
+      if (event.target.closest("[data-plugin-menu-feedback]")) {
+        event.preventDefault();
+        setPluginMenuOpen(false);
+        setFeedbackModalOpen(true, plugin);
+        return;
+      }
+      if (event.target.closest("[data-plugin-menu-uninstall]")) {
+        event.preventDefault();
+        void uninstallCurrentPlugin();
+        return;
+      }
+      if (!event.target.closest("[data-plugin-menu]")) setPluginMenuOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || $("[data-plugin-menu-dropdown]")?.classList.contains("hidden")) return;
+      setPluginMenuOpen(false);
+      toggle?.focus();
+    });
+  }
   // initReferralsPage lives in 09-referrals.js (a per-page chunk).
   function initReferralsPage(...args) {
     return loadDashboardChunk("referrals").then((chunk) => chunk.initReferralsPage(...args));
@@ -42578,6 +42812,7 @@
       watchDashboardUserStatus();
       startUserActivity();
       initDashboardFeedback();
+      initPluginMenu();
       initDashboardUpdateNotice();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();

@@ -221,6 +221,16 @@ center (`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
     logged as inbound.
   - *From the browser extension*: on the toot's page, the CRM header's FM
     panel links it (`POST /emails/link`), as for any Mastodon conversation.
+    Opening one of your own toots on its permalink
+    (`https://<instance>/@<you>/<id>`) links it on its own, one
+    `POST /emails/link` per person it mentions with `createContact: true`, so
+    a person the CRM does not know becomes a contact. "Your own" is the
+    account signed in to Mastodon in that tab or the account saved under
+    Settings → Mastodon toots. Each new link pings you: "🎉 New CRM contact
+    from Mastodon" when it created the contact, "🎉 Mastodon post tracked in
+    the CRM" otherwise; owners and admins get "Mastodon post linked in the
+    CRM". Switch it off with **Add people I mention on Mastodon** in the
+    extension's popup.
 - **Unsent drafts**: a note paragraph starting `DRAFT, not sent.` (optional
   `Subject:` line). **Drafts (N)** lists them; sending or confirming a
   Mastodon reply rewrites the marker to `DRAFT, sent <date> by <name>.`.
@@ -278,6 +288,29 @@ Evidence is not a column, so exports and shared sheets omit it.
   clear; names, field names and subjects are sealed. Rows older than 90 days
   are dropped. `GET /views/activity?view=<id>` returns up to 200 entries, only
   for lists the caller can open.
+
+## Activity pings
+
+Every successful change raises a `plugin_activity` ping (`ACTIVITY_PINGS` in
+`content/worker/crm.py`), opening `/dashboard/crm`: contacts added, edited,
+merged, deleted or bulk-updated, columns removed, account evidence, emails
+tracked, sent, linked, edited or deleted, Mastodon toots logged, mailbox
+messages moved or deleted, outreach sends and team changes, deck links, list
+changes, settings and a Zoho connection.
+
+- **Who**: the member who acted ("By you in acme") and the organization's
+  owners and admins (at most 10 in all). A tracked, sent or linked email
+  already celebrates on the sender's devices, so it pings only the others;
+  an import pings the importer itself and the others get one folded ping.
+- **Quiet**: reads, lookups, list opens, list reordering, an import preview,
+  a column-width (`tableViews`-only) settings save and failed requests.
+- **Syncs ping only for something new**: a Mastodon sync pings when it logged
+  toots ("3 Mastodon posts logged in the CRM"); a Zoho Mail refresh pings
+  when new messages arrived ("New email in the CRM mailbox"), not for
+  re-read ones.
+- **Bursts fold**: contact, email and list edits, bulk updates, settings and
+  mailbox refreshes share one ping per member, action and item for 10
+  minutes. The first rings the phone; later ones update it silently.
 
 ## Surfaces
 

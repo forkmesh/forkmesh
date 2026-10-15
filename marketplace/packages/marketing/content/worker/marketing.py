@@ -2404,7 +2404,7 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "from": start, "to": end, "project": _text(params.get("project"), 32)
         or analytics_settings["project"], "host": host,
         "goals": _analytics_goal_series(analytics_settings["goals"]),
-        "groups": PERFORMANCE_GROUPS, "limit": 200,
+        "groups": PERFORMANCE_GROUPS, "daily": ["source"], "limit": 200,
         "pages": _channel_page_sections(settings), "pageLimit": 500}, now)
     perf["status"] = report.get("status") or "unavailable"
     if perf["status"] != "ok":
@@ -2427,6 +2427,10 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
             (results.get("source") or results["campaign"])["rows"], has_goals),
         "keywords": _keyword_rows((results.get("term") or {}).get("rows") or [])})
     perf.update(_channel_page_views(settings, results.get("pages") or {}))
+    google = _google_referrer_traffic(results["source"]["rows"])
+    if google["views"]:
+        perf["channelViews"][GOOGLE_CHANNEL] = {"host": "Google", "path": "",
+                                                  **google}
     perf["insights"] = _performance_insights(perf)
     return perf
 
@@ -4423,6 +4427,19 @@ def _google_source(source):
     return bool(GOOGLE_SOURCE_RE.fullmatch(str(source or "").lower()))
 
 
+def _google_referrer_traffic(rows):
+    matched = [row for row in rows if _google_source(row.get("source"))
+               and row.get("medium") == "organic"]
+    days = {}
+    for row in matched:
+        for day, views in row.get("days") or []:
+            days[_integer(day)] = days.get(_integer(day), 0) + _integer(views)
+    return {"sessions": sum(_integer(row.get("sessions")) for row in matched),
+            "views": sum(_integer(row.get("pageviews")) for row in matched),
+            "visitors": sum(_integer(row.get("visitors")) for row in matched),
+            "days": [[day, days[day]] for day in sorted(days) if day]}
+
+
 async def _google_visits(runtime, org_bi, settings, now):
     module = _analytics_module()
     if module is None:
@@ -4435,9 +4452,7 @@ async def _google_visits(runtime, org_bi, settings, now):
     status = report.get("status") or "unavailable"
     if status != "ok":
         return None, "analytics_" + status
-    rows = report["results"]["source"]["rows"]
-    return sum(_integer(row.get("sessions")) for row in rows
-               if _google_source(row.get("source"))), ""
+    return _google_referrer_traffic(report["results"]["source"]["rows"])["sessions"], ""
 
 
 async def _refresh_google_channel(runtime, channel):
@@ -5687,6 +5702,11 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
                     runtime, org_bi, account_bi, actor, channel, envelope.get("title"), url)
     if created or updated:
         await runtime.audit(actor, "marketing.post.import", "organization", org_bi)
+    if created:
+        await _activity_notify(
+            runtime, org_bi, org_name, actor,
+            "%d new channel post%s found" % (created, "" if created == 1 else "s"),
+            "team", True)
     posts = await _posts(runtime, org_bi)
     return _response(runtime, {"ok": True, "created": created, "updated": updated,
                                "skipped": skipped, "full": full,
@@ -7074,6 +7094,151 @@ async def _record_browser_activity(runtime, org_bi, account_bi, data):
                                await _browser_activity(runtime, org_bi, account_bi)}, 201)
 
 
+ACTIVITY_HREF = "/dashboard/marketing"
+ACTIVITY_BURST_MS = 10 * 60 * 1000
+ACTIVITY_RECIPIENTS = 10
+ACTIVITY_SEEN_MAX = 512
+ACTIVITY_PINGS = {
+    ("content", "", "POST"): ("New marketing content", "team", False),
+    ("content", "id", "PATCH"): ("Marketing content updated", "team", True),
+    ("content", "id", "DELETE"): ("Marketing content deleted", "team", False),
+    ("metrics", "", "POST"): ("Channel numbers logged", "team", True),
+    ("app-store", "", "PUT"): ("App Store numbers updated", "team", True),
+    ("settings", "", "PUT"): ("Marketing settings changed", "team", True),
+    ("channels", "id", "DELETE"): ("Marketing channel removed", "team", False),
+    ("ads", "", "POST"): ("Ad added", "team", False),
+    ("ads", "id", "PATCH"): ("Ad updated", "team", True),
+    ("ads", "id", "DELETE"): ("Ad removed", "team", False),
+    ("experiments", "", "POST"): ("Experiment added", "team", False),
+    ("experiments", "id", "PATCH"): ("Experiment updated", "team", True),
+    ("experiments", "id", "DELETE"): ("Experiment removed", "team", False),
+    ("funnel", "", "POST"): ("Funnel numbers logged", "team", True),
+    ("funnel", "id", "DELETE"): ("Funnel entry removed", "team", False),
+    ("reddit", "", "POST"): ("Reddit thread added", "team", True),
+    ("reddit", "id", "PATCH"): ("Reddit thread updated", "team", True),
+    ("reddit", "id", "DELETE"): ("Reddit thread removed", "team", False),
+    ("reddit-rules", "", "POST"): ("Subreddit rules saved", "team", True),
+    ("campaigns", "", "POST"): ("Campaign added", "team", False),
+    ("campaigns", "id", "PATCH"): ("Campaign updated", "team", True),
+    ("campaigns", "id", "DELETE"): ("Campaign removed", "team", False),
+    ("keywords", "", "POST"): ("Keyword added", "team", True),
+    ("keywords", "id", "PATCH"): ("Keyword updated", "team", True),
+    ("keywords", "id", "DELETE"): ("Keyword removed", "team", True),
+    ("x-connection", "", "POST"): ("X account connected", "team", False),
+    ("x-connection", "", "DELETE"): ("X account disconnected", "team", False),
+    ("x-post", "", "POST"): ("Post sent to X", "team", False),
+    ("mastodon", "", "POST"): ("Followed on Mastodon", "team", False),
+    ("refresh", "", "POST"): ("Marketing channel refreshed", "team", True),
+    ("ready-post", "", "PUT"): ("Ready post saved", "team", True),
+    ("ready-post", "", "PATCH"): ("Ready post saved", "team", True),
+    ("capture", "", "POST"): ("Channel captured from the browser", "team", True),
+    ("posts", "", "POST"): ("Channel post added", "team", False),
+    ("posts", "id", "PATCH"): ("Channel post updated", "team", True),
+    ("posts", "id", "DELETE"): ("Channel post removed", "team", False),
+}
+ACTIVITY_BROWSER = {
+    "read": ("Browser plugin read %s", "self", True),
+    "sent": ("Browser plugin sent an update to %s", "team", False),
+    "failed": ("Browser plugin could not update %s", "self", False),
+}
+ACTIVITY_SITE_NAMES = {"x": "X", "reddit": "Reddit"}
+ACTIVITY_DETAIL_FIELDS = ("title", "name", "subject", "text", "channel", "url")
+_ACTIVITY_SEEN = {}
+
+
+def _activity_clock():
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _response_status(response):
+    if isinstance(response, dict):
+        return _integer(response.get("status"))
+    return _integer(getattr(response, "status", 0))
+
+
+def _activity_rule(resource, item, method, data):
+    if resource == "activity" and method == "POST":
+        entry = _browser_activity_data(data if isinstance(data, dict) else {})
+        if entry is None:
+            return None
+        title, audience, burst = ACTIVITY_BROWSER[entry["kind"]]
+        site = entry["site"]
+        site = ACTIVITY_SITE_NAMES.get(site) or site or "a page"
+        return title % site, audience, burst, entry["text"]
+    rule = ACTIVITY_PINGS.get((resource, "id" if item else "", method))
+    if rule is None or resource == "posts" and isinstance(data, dict) and "posts" in data:
+        return None
+    detail = ""
+    if isinstance(data, dict) and resource != "x-connection":
+        for field in ACTIVITY_DETAIL_FIELDS:
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                detail = _clean(value, 140)
+                break
+    return (*rule, detail)
+
+
+async def _activity_recipients(runtime, org_bi, actor, audience):
+    names = [actor] if actor else []
+    if audience == "self":
+        return names
+    rows = await runtime.d1_all(
+        "SELECT name FROM org_members WHERE org_bi=? AND role IN ('owner','admin') "
+        "ORDER BY created_at LIMIT ?", org_bi, ACTIVITY_RECIPIENTS)
+    for row in rows or []:
+        name = _clean(row.get("name"), 64).lower()
+        if name and name not in names:
+            names.append(name)
+    return names[:ACTIVITY_RECIPIENTS]
+
+
+def _activity_first_in_burst(key, now):
+    if len(_ACTIVITY_SEEN) >= ACTIVITY_SEEN_MAX:
+        for stale in [k for k, at in _ACTIVITY_SEEN.items()
+                      if now - at >= ACTIVITY_BURST_MS]:
+            _ACTIVITY_SEEN.pop(stale, None)
+        if len(_ACTIVITY_SEEN) >= ACTIVITY_SEEN_MAX:
+            _ACTIVITY_SEEN.clear()
+    first = key not in _ACTIVITY_SEEN
+    _ACTIVITY_SEEN.setdefault(key, now)
+    return first
+
+
+async def _activity_ping(runtime, method, org_bi, org_name, actor, resource, item,
+                         data, response):
+    if not 200 <= _response_status(response) < 400:
+        return
+    rule = _activity_rule(resource, item, method, data)
+    if rule is None:
+        return
+    await _activity_notify(runtime, org_bi, org_name, actor, *rule, item=item)
+
+
+async def _activity_notify(runtime, org_bi, org_name, actor, title, audience, burst,
+                           detail="", item=""):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not actor:
+        return
+    dedupe, push = "", True
+    if burst:
+        now = _activity_clock()
+        dedupe = ":".join(("marketing-activity", org_bi, title, item or "", actor,
+                           str(now // ACTIVITY_BURST_MS)))
+        push = _activity_first_in_burst(dedupe, now)
+    try:
+        recipients = await _activity_recipients(runtime, org_bi, actor, audience)
+    except Exception:
+        return
+    for recipient in recipients:
+        who = "you" if recipient == actor else actor
+        body = "By %s in %s" % (who, org_name) + (": " + detail if detail else "")
+        try:
+            await notify(recipient, "plugin_activity", title, body=body,
+                         href=ACTIVITY_HREF, dedupe=dedupe, push=push)
+        except Exception:
+            pass
+
+
 async def _notify_changed(runtime, actor):
     notify = getattr(runtime, "notify_account", None)
     if notify is None or not actor:
@@ -7158,6 +7323,8 @@ async def handle(runtime, path):
                                             account_bi, actor, resource, item, data)
     if method not in ("GET", "HEAD"):
         await _notify_changed(runtime, actor)
+        await _activity_ping(runtime, method, org_bi, org_name, actor, resource, item,
+                             data, response)
     return response
 
 

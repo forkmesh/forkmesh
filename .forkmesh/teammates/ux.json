@@ -10,8 +10,9 @@
     "enabled": true,
     "focus": "Observe, Simplify & Repair",
     "id": "ux",
-    "improvementCycles": 3,
+    "improvementCycles": 4,
     "improvementNotes": [
+        "Exercise keyboard activation on representative search-result types, not merely result visibility and counts.",
         "Model fixed-channel action eligibility once in shared chat state, then exercise every menu surface against that rule.",
         "When auditing shared desktop search, verify that empty-state language, visible results, and accessibility descriptions all reflect the same filtered state.",
         "Verify shared-search filtering states against both visible-table output and the accessibility description whenever a desktop package implements `setHostSearchQuery`."
@@ -58,7 +59,7 @@
         "Usability Regression Testing"
     ],
     "specialty": "User Experience",
-    "updatedAtMs": 1791986843655,
+    "updatedAtMs": 1792075711596,
     "version": 2,
     "workflow": ""
 }

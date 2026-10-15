@@ -158,6 +158,7 @@
       watchDashboardUserStatus();
       startUserActivity();
       initDashboardFeedback();
+      initPluginMenu();
       initDashboardUpdateNotice();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();

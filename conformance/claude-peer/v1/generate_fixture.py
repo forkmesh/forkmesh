@@ -75,11 +75,11 @@ ESCAPE_CASES = [
 ]
 
 KEY_CASES = [
-    {"configDir": "/home/f/.claude", "pid": 2157256, "socketPath": "/run/user/1001/cc-socks/2157256.sock",
-     "observedKeyName": "2157256.697bd4df39f7be005b0a5c5188020539fb143bd04c1c6d7735d28ac47492a736.key"},
-    {"configDir": "/home/f/projects/forkmesh/data/agent-accounts/claude/a591eff2-5553-4d1f-bd5e-1402b848e3b3",
-     "pid": 1938727, "socketPath": "/run/user/1001/cc-socks/1938727.sock",
-     "observedKeyName": "1938727.7ff9fed16c550a7e96c898df996e53b74dce1ad9627ff64d02e21ff2af25aa84.key"},
+    {"configDir": "/home/tester/.claude", "pid": 123456, "socketPath": "/run/user/1000/cc-socks/123456.sock",
+     "observedKeyName": "123456.7715a0278accbb9293545eac9312694eaa4d83fb42ed43c5714d790f51c0f66e.key"},
+    {"configDir": "/home/tester/projects/example/data/agent-accounts/claude/00000000-0000-4000-8000-000000000001",
+     "pid": 654321, "socketPath": "/run/user/1000/cc-socks/654321.sock",
+     "observedKeyName": "654321.b192febde76c13a52d5e82ef5d60d466934b3ee2214ce846396c1b650301491e.key"},
 ]
 
 INBOUND_CASES = [

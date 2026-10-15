@@ -35,6 +35,7 @@ final class PromptDictation {
     private var generation: Int = 0
     private var heard: Bool = false
     private var settled: Bool = false
+    private var metered: Int?
 
     private(set) var listening: Bool = false
     private(set) static var isListening: Bool = false
@@ -238,7 +239,9 @@ final class PromptDictation {
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw PromptDictationError.noMicrophone
         }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: tap)
+        let meter: Int = DictationMeter.shared.begin()
+        metered = meter
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: DictationMeter.tap(tap, session: meter))
         engine = fresh
         fresh.prepare()
         try fresh.start()
@@ -288,6 +291,10 @@ final class PromptDictation {
             engine.inputNode.removeTap(onBus: 0)
         }
         engine = nil
+        if let meter = metered {
+            DictationMeter.shared.end(meter)
+        }
+        metered = nil
         task?.cancel()
         task = nil
         request = nil

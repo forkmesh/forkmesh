@@ -2247,6 +2247,7 @@ QWidget *MainWindow::buildChatPage()
                 updateRepoActivityRail();
                 renderPageNotices();
                 noteGeniePage();
+                updatePackageActionsButton();
                 if (index == 4)
                     setLogOverlayExpanded(false);
                 else
@@ -2931,6 +2932,10 @@ QWidget *MainWindow::buildNetworkLogDock()
                                      QStringLiteral("manual"));
     m_quickAddAgentProvider->addItem(QStringLiteral("ActivityPub"),
                                      kActivityPubPromptProvider);
+    m_quickAddAgentProvider->addItem(QStringLiteral("Note"),
+                                     kNotePromptProvider);
+    m_quickAddAgentProvider->addItem(QStringLiteral("Task"),
+                                     kTaskPromptProvider);
     m_quickAddAgentProvider->addItem(QStringLiteral("Codex"), kCodexProvider);
     m_quickAddAgentProvider->addItem(QStringLiteral("OpenAI"),
                                      QStringLiteral("openai"));
@@ -2947,8 +2952,10 @@ QWidget *MainWindow::buildNetworkLogDock()
         "What picks this prompt up: CC (Claude Code) or Codex run the CLI agents, "
         "OpenAI/Claude API run the headless API agents, CF AI runs a headless "
         "agent on a relay Cloudflare Workers AI model, Local uses the installed "
-        "Llama server, Manual files an issue, and ActivityPub publishes a post "
-        "to this repository's fediverse followers.");
+        "Llama server, Manual files an issue, Note saves a note on this "
+        "computer, Task assigns an organization task to the member you pick, "
+        "and ActivityPub publishes a post to this repository's fediverse "
+        "followers.");
     m_quickAddAgentProvider->setMaxVisibleItems(30);
     m_quickAddAgentProvider->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_quickAddClaudeModel = new FullPopupComboBox;
@@ -2963,6 +2970,34 @@ QWidget *MainWindow::buildNetworkLogDock()
         new AgentChoiceDescriptionDelegate(m_quickAddAgentModelSelector));
     m_quickAddAgentModelSelector->setToolTip(
         "Choose the agent and model that will handle this prompt.");
+    m_quickAddTaskAssignee = new FullPopupComboBox;
+    m_quickAddTaskAssignee->setObjectName("quickAddTaskAssignee");
+    m_quickAddTaskAssignee->setIconSize(QSize(18, 18));
+    m_quickAddTaskAssignee->view()->setIconSize(QSize(22, 22));
+    m_quickAddTaskAssignee->setMaxVisibleItems(30);
+    m_quickAddTaskAssignee->setVisible(false);
+    connect(m_quickAddTaskAssignee,
+            QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int index) {
+                if (index < 0)
+                    return;
+                const QString assignment =
+                    m_quickAddTaskAssignee->itemData(index).toString();
+                QSettings().setValue(kQuickAddTaskAssigneeSetting, assignment);
+                const QString who = m_quickAddTaskAssignee->itemText(index);
+                const QString tip =
+                    assignment.startsWith(QLatin1String("user:"))
+                        ? QStringLiteral("Submitting assigns the task to %1.")
+                              .arg(who)
+                        : QStringLiteral("Submitting adds the task to General "
+                                         "with nobody assigned.");
+                m_quickAddTaskAssignee->setToolTip(
+                    tip + QStringLiteral(" Click to pick someone else in your "
+                                         "organization."));
+                m_quickAddTaskAssignee->setAccessibleName(
+                    QStringLiteral("Task assignee: %1").arg(who));
+                updateQuickAddEnterTarget();
+            });
     auto refreshQuickAddModelPicker = [this]() {
         if (!m_quickAddAgentProvider || !m_quickAddClaudeModel)
             return;
@@ -3174,6 +3209,14 @@ QWidget *MainWindow::buildNetworkLogDock()
         m_quickAddAgentProvider->setVisible(false);
         m_quickAddClaudeModel->setVisible(false);
         m_quickAddAgentModelSelector->setVisible(true);
+        const bool task = provider == kTaskPromptProvider;
+        if (task) {
+            refreshQuickAddTaskAssignees();
+            if (organizationTaskMemberNames().isEmpty() &&
+                m_organizationTasksStartupPayload.isEmpty())
+                refreshOrganizationTaskBadge();
+        }
+        m_quickAddTaskAssignee->setVisible(task);
         m_quickAddModeSelector->setVisible(claudeCode || codex);
         if (m_quickAddSpeedSelector) {
             m_quickAddSpeedSelector->setVisible(claudeCode || codex);
@@ -3203,6 +3246,12 @@ QWidget *MainWindow::buildNetworkLogDock()
                     return;
                 const QString provider =
                     m_quickAddAgentModelSelector->itemData(index).toString();
+                if (provider == kEditComposerModelsRow) {
+                    refreshQuickAddAgentModelSelector();
+                    QTimer::singleShot(0, this,
+                                       [this] { openComposerModelsPage(); });
+                    return;
+                }
                 const QString model = m_quickAddAgentModelSelector
                                           ->itemData(index, Qt::UserRole + 1)
                                           .toString();
@@ -3338,6 +3387,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     agentBoxRow->setContentsMargins(6, 1, 4, 1);
     agentBoxRow->setSpacing(2);
     agentBoxRow->addWidget(m_quickAddAgentModelSelector);
+    agentBoxRow->addWidget(m_quickAddTaskAssignee);
     agentBoxRow->addWidget(m_quickAddAgentProvider);
     agentBoxRow->addWidget(m_quickAddClaudeModel);
     agentBoxRow->addWidget(m_quickAddModeSelector);
@@ -6630,6 +6680,15 @@ void MainWindow::fillAgentModelSelector(QComboBox *selector,
                   kActivityPubPromptProvider, QString(),
                   QStringLiteral("Publish this prompt to the repository's "
                                  "ActivityPub followers"));
+        addChoice(themedOcticon(QStringLiteral("pencil"), QColor("#8b949e"), 22),
+                  QStringLiteral("Take a note"), kNotePromptProvider, QString(),
+                  QStringLiteral("Save this prompt as a note on this computer "
+                                 "instead of starting an agent"));
+        addChoice(themedOcticon(QStringLiteral("people"), QColor("#8b949e"), 22),
+                  QStringLiteral("Task · assign"), kTaskPromptProvider,
+                  QString(),
+                  QStringLiteral("Create an organization task and assign it to "
+                                 "the member picked beside this menu"));
     }
     const QString chosenAccount = topBarUserName().trimmed();
     const QString chosenEmail = m_accountEmail.trimmed();
@@ -6668,6 +6727,14 @@ void MainWindow::fillAgentModelSelector(QComboBox *selector,
     for (const ComposerModelChoice &entry : unranked)
         addChoice(entry.icon, entry.label, entry.provider,
                   entry.model, entry.tooltip);
+    if (includeManual)
+        addChoice(themedOcticon(QStringLiteral("gear"), QColor("#58a6ff"), 22),
+                  QStringLiteral("Edit models…"), kEditComposerModelsRow,
+                  QString(),
+                  QStringLiteral("Open the Models page and tick the models this "
+                                 "menu lists"));
+    selector->setMaxVisibleItems(qMax(selector->maxVisibleItems(),
+                                      selector->count()));
 
     int selected = -1;
     for (int i = 0; i < selector->count(); ++i) {

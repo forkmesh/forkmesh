@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.market
 
+import com.forkmesh.nativeapp.feature.tools.ReportBugSheet
+import com.forkmesh.nativeapp.market.PackageMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -107,6 +109,8 @@ private fun marketModel(filter: MarketFilter): MarketModel? =
             starterPack = PackageGateFeature::starterPack
         }
     }?.also { sharedMarket = it })?.also { it.filter = filter }
+
+internal fun currentMarketModel(): MarketModel? = marketModel(sharedMarket?.filter ?: MarketFilter.ALL)
 
 internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? PackagePhoneSurface.Native)?.destination) {
     "crm" -> Route.Crm(null)
@@ -318,6 +322,7 @@ class PackageScreen(private val packageId: String) : Screen() {
     private var version by mutableIntStateOf(0)
     private var loading by mutableStateOf(true)
     private var menu by mutableStateOf(false)
+    private var feedback by mutableStateOf(false)
     private var rating by mutableStateOf(false)
     private var viewReported = false
     private val orgStatus = FmStatus()
@@ -341,6 +346,10 @@ class PackageScreen(private val packageId: String) : Screen() {
             if (outcome.problem != null) status.error(outcome.problem) else status.show(outcome.note)
         }
         uninstaller.Dialog()
+        if (feedback) {
+            val name = PackageMenu.name(packageId, market.pkg(packageId)?.name)
+            ReportBugSheet(screen = "Market · $name", packageId = packageId, packageName = name) { feedback = false }
+        }
         val accountVersion by StatusPageFeature.version.collectAsState()
         LaunchedEffect(Unit) {
             if (!viewReported) {
@@ -382,10 +391,12 @@ class PackageScreen(private val packageId: String) : Screen() {
                                 onClick = { menu = false; navigator.push(RateScreen(reviews)) },
                                 icon = "star",
                             )
+                            FmDropdownMenuItem(PackageMenu.FEEDBACK, onClick = { menu = false; feedback = true }, icon = "feedback")
                             market.uninstallAction(pkg, signedIn)?.let { action ->
+                                HorizontalDivider(thickness = Dp.Hairline, color = Fm.colors.border)
                                 PackageUninstall.requests(pkg, action).forEach { request ->
                                     FmDropdownMenuItem(
-                                        request.organization?.let { "Uninstall from $it" } ?: "Uninstall",
+                                        PackageMenu.uninstallLabel(request.organization),
                                         onClick = {
                                             menu = false
                                             orgStatus.clear()
@@ -643,6 +654,13 @@ class RateScreen(private val model: PackageReviewsModel) : Screen() {
     @Composable
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
+        LaunchedEffect(model) {
+            if (model.page != null) return@LaunchedEffect
+            withContext(Dispatchers.IO) { model.refresh() }
+            val mine = model.page?.viewer?.review
+            if (mine != null && draft == ReviewDraft()) draft = ReviewDraft.of(mine)
+            version++
+        }
         @Suppress("UNUSED_EXPRESSION") version
         model.draft = draft
         val rules = model.rules

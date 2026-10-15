@@ -75,8 +75,10 @@ void answerBuildMac(QObject *context, LocalControlServer *server, int connection
     if (waiters.size() > 1)
         return;
     QString host = ActionStore::variables().value(QStringLiteral("MAC_BUILD_HOST")).trimmed();
-    if (host.isEmpty())
-        host = QStringLiteral("192.168.1.201");
+    if (host.isEmpty()) {
+        server->respond(connectionId, requestId, {{QStringLiteral("configured"), false}});
+        return;
+    }
     auto *probe = new QProcess(context);
     auto answered = QSharedPointer<bool>::create(false);
     auto finish = [probe, answered](bool reachable) {

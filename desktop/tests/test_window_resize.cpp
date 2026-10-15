@@ -6349,7 +6349,7 @@ void checkSavedSearches(MainWindow &window)
               rowText().contains(needle),
           QStringLiteral("the saved search is listed in the column beside the results"));
     check(rowText().contains(QStringLiteral("forkmesh/saved-search-probe")) &&
-              rowText().contains(QStringLiteral("4 results")) &&
+              rowText().contains(QStringLiteral("5 results")) &&
               rowText().contains(QStringLiteral("Code")) &&
               rowText().contains(QStringLiteral("Commit messages")),
           QStringLiteral("the saved search row shows its scope, result count and "
@@ -6365,13 +6365,19 @@ void checkSavedSearches(MainWindow &window)
 
     // A later commit adds occurrences; the background check pings exactly once.
     commitFile(QStringLiteral("second.txt"), QStringLiteral("follow-up %1").arg(needle));
+    {
+        QFile draft(QDir(tree.path()).filePath(QStringLiteral("draft.local")));
+        if (draft.open(QIODevice::WriteOnly))
+            draft.write(QStringLiteral("uncommitted %1\n").arg(needle).toUtf8());
+    }
     const int pingsBefore = window.testNotificationsTitled(needle);
     window.testCheckSavedSearchAlerts();
     check(waitFor([&] { return window.testSavedSearchAlertsIdle(); }),
           QStringLiteral("the background saved-search check completes"));
     check(window.testNotificationsTitled(needle) == pingsBefore + 1,
           QStringLiteral("new results for a saved search file one ping"));
-    check(rowText().contains(QStringLiteral("3 new")),
+    check(rowText().contains(QStringLiteral("6 new")) &&
+              rowText().contains(QStringLiteral("3 Project files")),
           QStringLiteral("the saved search row counts the unviewed new results (%1)")
               .arg(rowText()));
     window.testCheckSavedSearchAlerts();
@@ -6394,7 +6400,7 @@ void checkSavedSearches(MainWindow &window)
                      !window.testSearchPageRunning();
           }) &&
               !rowText().contains(QStringLiteral(" new")) &&
-              rowText().contains(QStringLiteral("7 results")),
+              rowText().contains(QStringLiteral("11 results")),
           QStringLiteral("running a saved search from the list marks its new "
                          "results seen (%1)").arg(rowText()));
 
@@ -6442,7 +6448,7 @@ void checkSavedSearches(MainWindow &window)
     QApplication::processEvents();
     waitFor([&] { return window.testSavedSearchAlertsIdle(); });
     check(window.testSecurityAlarms().size() == 1 &&
-              window.testSecurityAlarms().first().results == 7 &&
+              window.testSecurityAlarms().first().results == 11 &&
               window.testSecurityAlarmBannerVisible() &&
               window.testSecurityAlarmToneActive(),
           QStringLiteral("a security-pertinent search with results raises the alarm"));
@@ -6572,6 +6578,26 @@ void checkSavedSearches(MainWindow &window)
     window.testSetSearchHidesVariables(true);
     QApplication::processEvents();
     waitFor([&] { return !window.testSearchPageRunning(); });
+
+    QTreeWidgetItem *projectFile = nullptr;
+    if (resultsTree)
+        for (int i = 0; i < resultsTree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *bucket = resultsTree->topLevelItem(i);
+            if (bucket->text(0).startsWith(QStringLiteral("Project files")) &&
+                bucket->childCount() > 0) {
+                projectFile = bucket->child(0);
+                break;
+            }
+        }
+    if (resultsTree && projectFile) {
+        resultsTree->setCurrentItem(projectFile);
+        resultsTree->setFocus();
+        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(resultsTree, &enter);
+        QApplication::processEvents();
+    }
+    check(projectFile && window.testFileExplorerPreview().contains(needle),
+          QStringLiteral("Enter opens a project-file search result in the file preview"));
 
     bell = rowWidget() ? rowWidget()->findChild<QToolButton *>(
                              QStringLiteral("savedSearchAlertToggle"))
@@ -10800,6 +10826,20 @@ void checkAgentToolEfficiency(MainWindow &window)
               QStringLiteral("sorting by runs puts the used model first, with its "
                              "agent icon (%1)")
                   .arg(top ? top->text() : QString()));
+        QTableWidgetItem *show = modelTable->item(0, AgentModelTable::ShowColumn);
+        const QString showKey =
+            show ? show->data(Qt::UserRole + 1).toString() : QString();
+        const bool startedShown = show && show->checkState() == Qt::Checked;
+        if (show && !showKey.isEmpty())
+            show->setCheckState(Qt::Unchecked);
+        const bool hiddenSaved = forkmesh::ui::hiddenComposerModels().contains(showKey);
+        if (show && !showKey.isEmpty())
+            show->setCheckState(Qt::Checked);
+        check(!showKey.isEmpty() && startedShown && hiddenSaved &&
+                  !forkmesh::ui::hiddenComposerModels().contains(showKey),
+              QStringLiteral("the Show checkbox hides and restores a model in the "
+                             "composer dropdown (key=%1)")
+                  .arg(showKey));
     }
     if (auto *modelsBack =
             window.findChild<QPushButton *>(QStringLiteral("agentModelsBack")))
@@ -18570,6 +18610,14 @@ else:
         const bool watchOffersReturn =
             window.testPackageRailMenuActions(watchEntrypoint)
                 .contains(QStringLiteral("Return to main window"));
+        QPushButton *watchWindowActions =
+            watchWindow ? watchWindow->findChild<QPushButton *>(
+                              QStringLiteral("packageActionsButton"))
+                        : nullptr;
+        const bool watchWindowActionsShown =
+            watchWindowActions && !watchWindowActions->isHidden() &&
+            watchWindowActions->window() == watchWindow &&
+            watchWindowActions->parentWidget() != watchPage;
         if (watchWindow)
             watchWindow->close();
         QApplication::processEvents();
@@ -18585,9 +18633,51 @@ else:
                   .arg(watchOffersWindow)
                   .arg(watchPoppedOut)
                   .arg(watchOffersReturn));
+        {
+            const QString watchName = window.testPackageName(watchPackage);
+            const QStringList expectedActions{
+                QString::fromUtf8("Rate %1\xE2\x80\xA6").arg(watchName),
+                QString::fromUtf8("Send feedback or report a bug\xE2\x80\xA6"),
+                QString::fromUtf8("Uninstall %1\xE2\x80\xA6").arg(watchName)};
+            const QStringList pageActions =
+                window.testPackageActionsMenu(watchPackage);
+            QPushButton *chromeActions = window.testPackageActionsButton();
+            int popupActions = -1;
+            if (chromeActions && !chromeActions->isHidden()) {
+                chromeActions->click();
+                QApplication::processEvents();
+                if (QMenu *popup = chromeActions->findChild<QMenu *>(
+                        QStringLiteral("packageActionsMenu"))) {
+                    popupActions = 0;
+                    for (QAction *action : popup->actions())
+                        popupActions += action->isSeparator() ? 0 : 1;
+                    popup->close();
+                }
+                QApplication::processEvents();
+            }
+            const QStringList railActions =
+                window.testPackageRailMenuActions(watchEntrypoint);
+            check(chromeActions && !chromeActions->isHidden() &&
+                      popupActions == 3 && pageActions == expectedActions &&
+                      watchWindowActionsShown &&
+                      railActions.contains(expectedActions.at(0)) &&
+                      railActions.contains(expectedActions.at(1)),
+                  QStringLiteral("a plugin page has a top-right options button "
+                                 "with Rate, feedback and Uninstall, in the main "
+                                 "window and in its own window, and the rail "
+                                 "menu offers Rate and feedback too (page=%1 "
+                                 "popup=%2 window=%3)")
+                      .arg(pageActions.join(QStringLiteral(" | ")))
+                      .arg(popupActions)
+                      .arg(watchWindowActionsShown));
+        }
         window.testShowMarketSection();
         QApplication::processEvents();
         QPushButton *removeWatch = findWatchAction(QStringLiteral("Remove"));
+        check(window.testPackageActionsButton() &&
+                  window.testPackageActionsButton()->isHidden(),
+              QStringLiteral("the plugin options button leaves the top bar "
+                             "with the plugin page"));
         if (removeWatch)
             removeWatch->click();
         QApplication::processEvents();
@@ -30807,7 +30897,7 @@ else:
         // passes hundreds of pathspecs, so the pathspec list is summarised
         // rather than pasted (or blindly chopped two files in).
         {
-            QStringList many{"-C", "/home/f/projects/forkmesh", "diff", "main",
+            QStringList many{"-C", "/home/tester/projects/forkmesh", "diff", "main",
                              "--"};
             for (int i = 0; i < 291; ++i)
                 many << QStringLiteral(":(literal)app/tests/"
@@ -32043,6 +32133,50 @@ else:
                     return true;
             return false;
         };
+        {
+            const int noteRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kNotePromptProvider)
+                                    : -1;
+            const int taskRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kTaskPromptProvider)
+                                    : -1;
+            const int editRow = quickAgentModel
+                                    ? quickAgentModel->findData(
+                                          forkmesh::ui::kEditComposerModelsRow)
+                                    : -1;
+            QComboBox *assignee = seeded.findChild<QComboBox *>(
+                QStringLiteral("quickAddTaskAssignee"));
+            const bool assigneeHiddenForAgents = assignee && !assignee->isVisible();
+            if (taskRow >= 0)
+                quickAgentModel->setCurrentIndex(taskRow);
+            QApplication::processEvents();
+            const bool taskPicked =
+                seeded.testQuickAddAgentProvider() ==
+                forkmesh::ui::kTaskPromptProvider;
+            const bool assigneeShownForTask =
+                assignee && assignee->isVisible() && assignee->count() >= 1 &&
+                assignee->itemData(0).toString() == QStringLiteral("unassigned");
+            seeded.testSetQuickAddAgentProvider(QStringLiteral("claude-code"));
+            QApplication::processEvents();
+            check(noteRow >= 0 && taskRow >= 0 &&
+                      quickAgentModel->itemText(noteRow) ==
+                          QStringLiteral("Take a note") &&
+                      editRow == quickAgentModel->count() - 1 &&
+                      quickAgentModel->itemText(editRow) ==
+                          QStringLiteral("Edit models…") &&
+                      assigneeHiddenForAgents && taskPicked &&
+                      assigneeShownForTask && assignee && !assignee->isVisible(),
+                  QString("composer dropdown offers Take a note, Task · assign "
+                          "with an assignee picker, and Edit models… last "
+                          "(note %1, task %2, edit %3 of %4, picked %5)")
+                      .arg(noteRow)
+                      .arg(taskRow)
+                      .arg(editRow)
+                      .arg(quickAgentModel ? quickAgentModel->count() : -1)
+                      .arg(taskPicked));
+        }
         int cloudflareRow = -1;
         for (int i = 0; quickAgentModel && i < quickAgentModel->count(); ++i) {
             if (quickAgentModel->itemData(i).toString() ==
