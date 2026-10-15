@@ -96,6 +96,10 @@ in the Marketing package's Performance page; treat it as a sample and compare
 campaigns with each other, not with `/admin/acquisition`. Pages served
 straight from assets are not seen by `/admin/acquisition`.
 
+The Google channel counts organic Google referrers from Analytics, excluding
+tagged Google ads. Its channel page charts those referred pageviews over time
+and snapshots the browser-captured Pages on Google count over time.
+
 ## Guardrails and why
 
 - **A person approves spend and commitments.** Marketing prepares ad plans,

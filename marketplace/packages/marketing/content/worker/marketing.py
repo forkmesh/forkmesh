@@ -2404,7 +2404,7 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "from": start, "to": end, "project": _text(params.get("project"), 32)
         or analytics_settings["project"], "host": host,
         "goals": _analytics_goal_series(analytics_settings["goals"]),
-        "groups": PERFORMANCE_GROUPS, "limit": 200,
+        "groups": PERFORMANCE_GROUPS, "daily": ["source"], "limit": 200,
         "pages": _channel_page_sections(settings), "pageLimit": 500}, now)
     perf["status"] = report.get("status") or "unavailable"
     if perf["status"] != "ok":
@@ -2427,6 +2427,10 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
             (results.get("source") or results["campaign"])["rows"], has_goals),
         "keywords": _keyword_rows((results.get("term") or {}).get("rows") or [])})
     perf.update(_channel_page_views(settings, results.get("pages") or {}))
+    google = _google_referrer_traffic(results["source"]["rows"])
+    if google["views"]:
+        perf["channelViews"][GOOGLE_CHANNEL] = {"host": "Google", "path": "",
+                                                  **google}
     perf["insights"] = _performance_insights(perf)
     return perf
 
@@ -4423,6 +4427,19 @@ def _google_source(source):
     return bool(GOOGLE_SOURCE_RE.fullmatch(str(source or "").lower()))
 
 
+def _google_referrer_traffic(rows):
+    matched = [row for row in rows if _google_source(row.get("source"))
+               and row.get("medium") == "organic"]
+    days = {}
+    for row in matched:
+        for day, views in row.get("days") or []:
+            days[_integer(day)] = days.get(_integer(day), 0) + _integer(views)
+    return {"sessions": sum(_integer(row.get("sessions")) for row in matched),
+            "views": sum(_integer(row.get("pageviews")) for row in matched),
+            "visitors": sum(_integer(row.get("visitors")) for row in matched),
+            "days": [[day, days[day]] for day in sorted(days) if day]}
+
+
 async def _google_visits(runtime, org_bi, settings, now):
     module = _analytics_module()
     if module is None:
@@ -4435,9 +4452,7 @@ async def _google_visits(runtime, org_bi, settings, now):
     status = report.get("status") or "unavailable"
     if status != "ok":
         return None, "analytics_" + status
-    rows = report["results"]["source"]["rows"]
-    return sum(_integer(row.get("sessions")) for row in rows
-               if _google_source(row.get("source"))), ""
+    return _google_referrer_traffic(report["results"]["source"]["rows"])["sessions"], ""
 
 
 async def _refresh_google_channel(runtime, channel):

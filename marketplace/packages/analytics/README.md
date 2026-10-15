@@ -275,6 +275,11 @@ one event load). The caller is responsible for its own membership check;
 Marketing calls it only after resolving the member's organization. The
 Marketing package's Performance page is the first caller.
 
+With `daily: true` (or a list of group names), each selected campaign row also
+includes `days` (`[[UTC day start in ms, pageviews], ...]`). Marketing uses the
+organic Google-referrer rows for the Google channel's views-over-time chart;
+tagged Google campaigns remain paid traffic rather than search-referrer traffic.
+
 With `pages` (up to 20 `{key, host, path}` sections) the report also returns
 `results.pages`: page views and visitors per `host` + `path` (`rows`, at most
 `pageLimit`, default 200, cap 500; `www.` is dropped from hosts and trailing
