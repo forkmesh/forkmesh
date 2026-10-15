@@ -639,6 +639,47 @@ def test_desktop_and_web_show_the_discord_posts_on_the_discord_channel():
     assert '${item.channel === "discord" ? discordPostsList() : ""}' in page
 
 
+def test_the_discord_page_charts_posts_over_time_next_to_views_over_time():
+    native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    assert 'm_detailDiscordChartPanel = new DashboardPanel(QStringLiteral("Posts over time"));' in native
+    assert """    detailChartsLayout->addWidget(m_detailViewsPanel, 1);
+    detailChartsLayout->addWidget(m_detailDiscordChartPanel, 1);""" in native
+    assert "m_detailDiscordChartPanel->setVisible(discord);" in native
+    render = native.split("void MarketingFeature::renderDiscordPosts()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert render.rstrip().endswith("renderDiscordChart();\n}")
+    chart = native.split("void MarketingFeature::renderDiscordChart()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert "counts[qMin(days - 1, int((at - start) / kDay))] += 1;" in chart
+    assert "m_detailDiscordChart->setSeries(lines, start, end," in chart
+
+
+def test_every_channel_copies_an_ai_context_that_checks_its_last_advice():
+    native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
+    page = (PACKAGE / "content" / "web" / "page.js").read_text()
+    detail = native.split("void MarketingFeature::renderChannelDetail()", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    assert 'auto *context = action(QStringLiteral("AI context"), QStringLiteral(' in detail
+    assert "copyChannelContext(id); });" in detail
+    context = native.split("QString MarketingFeature::channelContext(const QString &id) const", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    copy = native.split("void MarketingFeature::copyChannelContext(const QString &id)", 1)[1].split(
+        "\nvoid MarketingFeature::", 1)[0]
+    for text in ("## What to do", "Notes for next time", "## Since the last copy",
+                 "## Discord posts in the last %1 days", "## Playbook for %1 channels"):
+        assert text in context
+    assert "QSettings().value(contextKey(organization, id)).toMap()" in context
+    assert "QGuiApplication::clipboard()->setText(channelContext(id));" in copy
+    assert "QSettings().setValue(contextKey(organization, id)," in copy
+    card = page.split("function channelCard(", 1)[1].split("\n  }\n", 1)[0]
+    assert '<button data-marketing-channel-context="${escapeHtml(item.channel)}"' in card
+    assert "else if (data.marketingChannelContext) copyChannelContext(data.marketingChannelContext);" in page
+    web = page.split("function channelContext(channel) {", 1)[1].split("\n  }\n", 1)[0]
+    for text in ("## What to do", "Notes for next time", "## Since the last copy"):
+        assert text in web
+    assert "localStorage.setItem(contextKey(channel)" in page
+
+
 def test_the_discord_posts_are_read_again_when_the_channel_page_is_opened():
     native = (PACKAGE / "content" / "desktop" / "MarketingFeature.cpp").read_text()
     page = (PACKAGE / "content" / "web" / "page.js").read_text()
