@@ -22,8 +22,9 @@ var (
 )
 
 type DaemonConfig struct {
-	Background bool  `json:"background"`
-	UpdatedMs  int64 `json:"updatedMs,omitempty"`
+	Background      bool  `json:"background"`
+	HeadlessDesktop *bool `json:"headlessDesktop,omitempty"`
+	UpdatedMs       int64 `json:"updatedMs,omitempty"`
 }
 
 type lifecycle struct {
@@ -225,20 +226,23 @@ func (c *Core) supervise(ctx context.Context, linger time.Duration, tick time.Du
 		}
 		ticks++
 		c.mu.Lock()
-		online := c.IPC.UI() != nil
+		ui := c.IPC.UI()
+		online := ui != nil
+		window := online && !ui.Headless()
 		if online {
 			c.lastUI = time.Now()
 		}
 		idle := time.Since(c.lastUI)
 		c.mu.Unlock()
-		busy := !online && c.busy()
-		if online || busy {
+		c.tickHeadless(time.Now(), ui, idle)
+		busy := !window && c.busy()
+		if window || busy {
 			c.life.trimmed = false
 		} else if !c.life.trimmed && idle > time.Minute {
 			c.life.trimmed = true
 			debug.FreeOSMemory()
 		}
-		if !online && !busy && ticks%upgradeEvery == 0 && c.upgradeReady() {
+		if !window && !busy && ticks%upgradeEvery == 0 && c.upgradeReady() {
 			c.Logger.Printf("the forkmesh-core binary was replaced; restarting on it")
 			c.Restart()
 			return
@@ -261,6 +265,7 @@ func (c *Core) daemonState() map[string]any {
 		"binary":           c.life.executable,
 		"lastExit":         c.life.lastExit,
 		"configPath":       c.life.configPath,
+		"headlessDesktop":  c.headlessState(),
 	}
 }
 
@@ -278,9 +283,10 @@ func (c *Core) registerLifecycle() {
 	}))
 	c.Registry.Handle("core.daemon.set", "core", local(func(ctx context.Context, req *rpc.Request) (any, error) {
 		var params struct {
-			Background *bool  `json:"background"`
-			Autostart  *bool  `json:"autostart"`
-			Binary     string `json:"binary"`
+			Background      *bool  `json:"background"`
+			HeadlessDesktop *bool  `json:"headlessDesktop"`
+			Autostart       *bool  `json:"autostart"`
+			Binary          string `json:"binary"`
 		}
 		if err := req.Bind(&params); err != nil {
 			return nil, err
@@ -292,6 +298,14 @@ func (c *Core) registerLifecycle() {
 				return nil, rpc.Fail("config_write_failed")
 			}
 			c.Logger.Printf("background mode %s", map[bool]string{true: "on", false: "off"}[*params.Background])
+		}
+		if params.HeadlessDesktop != nil {
+			config := c.reloadConfig()
+			config.HeadlessDesktop = params.HeadlessDesktop
+			if err := c.saveConfig(config); err != nil {
+				return nil, rpc.Fail("config_write_failed")
+			}
+			c.Logger.Printf("desktop without a window %s", map[bool]string{true: "on", false: "off"}[*params.HeadlessDesktop])
 		}
 		if params.Autostart != nil {
 			var err error

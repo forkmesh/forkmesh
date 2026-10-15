@@ -6,7 +6,20 @@
 
 namespace forkmesh {
 
-bool acquireSingleInstance(const QString &activationTarget = QString());
+bool acquireSingleInstance(const QString &activationTarget = QString(),
+                           const std::function<void()> &whileWaiting = {});
+
+void setBackgroundInstance();
+
+bool isBackgroundInstance();
+
+void onSingleInstanceYield(std::function<void()> handler);
+
+void requestBackgroundQuit();
+
+qint64 backgroundInstancePid();
+
+QString backgroundInstanceMarkerPath();
 
 void onSingleInstanceActivation(
     std::function<void(const QString &activationTarget)> handler);

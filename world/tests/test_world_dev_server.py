@@ -106,6 +106,7 @@ def test_foreign_origin_is_not_laundered_into_the_upstream_origin():
 
 def test_rebound_host_is_refused_before_serving_or_proxying():
     import socket
+    import threading
     import types
 
     class Handler(dev.WorldDevHandler):
@@ -121,11 +122,19 @@ def test_rebound_host_is_refused_before_serving_or_proxying():
     def get(host):
         client, served = socket.socketpair()
         client.settimeout(10)
+        served.settimeout(10)
         client.sendall((
             "GET /world/ HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n"
             % host).encode("latin-1"))
-        Handler(served, ("127.0.0.1", 50000), server)
-        served.close()
+
+        def serve():
+            try:
+                Handler(served, ("127.0.0.1", 50000), server)
+            finally:
+                served.close()
+
+        worker = threading.Thread(target=serve, daemon=True)
+        worker.start()
         response = b""
         while True:
             chunk = client.recv(65536)
@@ -133,6 +142,8 @@ def test_rebound_host_is_refused_before_serving_or_proxying():
                 break
             response += chunk
         client.close()
+        worker.join(10)
+        assert not worker.is_alive()
         return int(response.split(b" ", 2)[1])
 
     assert get("attacker.example:8788") == 421

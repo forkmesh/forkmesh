@@ -68,6 +68,7 @@ type Core struct {
 	uiOnline bool
 	values   map[string]any
 	life     lifecycle
+	desktop  headlessDesktop
 }
 
 func (c *Core) Set(key string, value any) {
@@ -221,6 +222,7 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 	core := NewCore(layout, options.Version, logger)
 	core.cancel = cancel
 	core.initLifecycle(options)
+	core.initHeadless(options)
 	core.recordStart(stateDir)
 	core.recallOwners()
 	if id, err := identity.Load(layout.IdentityKey()); err == nil {
@@ -259,6 +261,7 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 	go core.supervise(ctx, options.Linger, tick)
 	core.startTray(options)
 	core.IPC.Serve(ctx)
+	core.stopHeadless("the engine is stopping", true)
 	for i := len(modules) - 1; i >= 0; i-- {
 		if stopper, ok := modules[i].(Stopper); ok {
 			stopper.Stop()

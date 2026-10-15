@@ -2,12 +2,21 @@
 #include "AppPaths.h"
 
 #include <QDebug>
+#include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QLockFile>
+#include <QSaveFile>
+#include <QTimer>
+
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <thread>
 
 namespace forkmesh {
 
@@ -20,32 +29,122 @@ QString serverName()
     return forkmesh::paths::singleInstanceServerName();
 }
 
+constexpr int kYieldWaitMs = 45000;
+constexpr int kYieldPollMs = 150;
+constexpr int kYieldExitDeadlineMs = 25000;
+const QByteArray kYieldReply("yield\n");
+
 QLockFile *g_lockFile = nullptr;
 QLocalServer *g_server = nullptr;
 std::function<void(const QString &)> g_activationHandler;
+std::function<void()> g_yieldHandler;
+bool g_background = false;
+std::atomic_bool g_quitRequested{false};
+
+bool askRunningInstance(const QString &activationTarget)
+{
+    QLocalSocket socket;
+    socket.connectToServer(serverName());
+    if (!socket.waitForConnected(500))
+        return false;
+    const QByteArray target = activationTarget.toUtf8();
+    socket.write(target.isEmpty() ? QByteArray("activate")
+                                  : QByteArray("activate\n") + target.left(4096));
+    socket.waitForBytesWritten(500);
+    QByteArray reply = socket.readAll();
+    while (reply.size() < kYieldReply.size() && socket.waitForReadyRead(1500))
+        reply += socket.readAll();
+    reply += socket.readAll();
+    socket.disconnectFromServer();
+    return reply.startsWith(kYieldReply);
+}
+
+bool waitForYieldedLock(const std::function<void()> &whileWaiting)
+{
+    QElapsedTimer waited;
+    waited.start();
+    while (waited.elapsed() < kYieldWaitMs) {
+        if (whileWaiting)
+            whileWaiting();
+        if (g_lockFile->tryLock(kYieldPollMs))
+            return true;
+    }
+    return false;
+}
+
+void writeBackgroundMarker()
+{
+    QSaveFile marker(backgroundInstanceMarkerPath());
+    if (!marker.open(QIODevice::WriteOnly))
+        return;
+    marker.write(QByteArray::number(QCoreApplication::applicationPid()) + '\n');
+    marker.commit();
+}
 
 } // namespace
 
-bool acquireSingleInstance(const QString &activationTarget)
+void setBackgroundInstance()
+{
+    g_background = true;
+}
+
+bool isBackgroundInstance()
+{
+    return g_background;
+}
+
+void onSingleInstanceYield(std::function<void()> handler)
+{
+    g_yieldHandler = std::move(handler);
+    if (g_quitRequested && g_yieldHandler)
+        QTimer::singleShot(0, g_yieldHandler);
+}
+
+void requestBackgroundQuit()
+{
+    if (!g_background || g_quitRequested.exchange(true))
+        return;
+    std::thread([] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kYieldExitDeadlineMs));
+        std::_Exit(0);
+    }).detach();
+    QTimer::singleShot(0, [] {
+        if (g_yieldHandler)
+            g_yieldHandler();
+    });
+}
+
+QString backgroundInstanceMarkerPath()
+{
+    return forkmesh::paths::stateRoot() + QStringLiteral("/forkmesh-background.pid");
+}
+
+qint64 backgroundInstancePid()
+{
+    QFile marker(backgroundInstanceMarkerPath());
+    if (!marker.open(QIODevice::ReadOnly))
+        return 0;
+    return marker.readLine(32).trimmed().toLongLong();
+}
+
+bool acquireSingleInstance(const QString &activationTarget,
+                           const std::function<void()> &whileWaiting)
 {
     QDir().mkpath(forkmesh::paths::stateRoot());
 
     g_lockFile = new QLockFile(singleInstanceLockPath());
     if (!g_lockFile->tryLock()) {
-        QLocalSocket socket;
-        socket.connectToServer(serverName());
-        if (socket.waitForConnected(500)) {
-            const QByteArray target = activationTarget.toUtf8();
-            socket.write(target.isEmpty() ? QByteArray("activate")
-                                          : QByteArray("activate\n") +
-                                                target.left(4096));
-            socket.waitForBytesWritten(500);
-            socket.disconnectFromServer();
+        const bool yielded = !g_background && askRunningInstance(activationTarget);
+        if (!yielded || !waitForYieldedLock(whileWaiting)) {
+            delete g_lockFile;
+            g_lockFile = nullptr;
+            return false;
         }
-        delete g_lockFile;
-        g_lockFile = nullptr;
-        return false;
     }
+    if (g_background)
+        writeBackgroundMarker();
+    else if (backgroundInstancePid() > 0)
+        QFile::remove(backgroundInstanceMarkerPath());
 
     QLocalServer::removeServer(serverName());
     g_server = new QLocalServer();
@@ -54,6 +153,15 @@ bool acquireSingleInstance(const QString &activationTarget)
         while (QLocalSocket *socket = g_server->nextPendingConnection()) {
             socket->waitForReadyRead(200);
             const QByteArray message = socket->read(4128);
+            if (g_background) {
+                if (message.startsWith("activate")) {
+                    socket->write(kYieldReply);
+                    socket->waitForBytesWritten(500);
+                    requestBackgroundQuit();
+                }
+                socket->deleteLater();
+                continue;
+            }
             socket->deleteLater();
             if (g_activationHandler) {
                 const QByteArray prefix("activate\n");
@@ -109,6 +217,8 @@ QString singleInstanceLockPath()
 
 void releaseSingleInstance()
 {
+    if (g_background && backgroundInstancePid() == QCoreApplication::applicationPid())
+        QFile::remove(backgroundInstanceMarkerPath());
     if (g_server) {
         g_server->close();
         g_server->deleteLater();

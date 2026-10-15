@@ -250,14 +250,16 @@ void CoreClient::openDevice()
 void CoreClient::onDeviceConnected()
 {
     m_helloSent = true;
+    QJsonObject params{{QStringLiteral("role"), QStringLiteral("ui")},
+                       {QStringLiteral("token"), m_endpoint.token},
+                       {QStringLiteral("name"), QStringLiteral("forkmesh-desktop")},
+                       {QStringLiteral("protocol"), 2},
+                       {QStringLiteral("pid"), double(QCoreApplication::applicationPid())}};
+    if (m_headless)
+        params.insert(QStringLiteral("headless"), true);
     write({{QStringLiteral("id"), 0x7fffffff},
            {QStringLiteral("method"), QStringLiteral("core.hello")},
-           {QStringLiteral("params"),
-            QJsonObject{{QStringLiteral("role"), QStringLiteral("ui")},
-                        {QStringLiteral("token"), m_endpoint.token},
-                        {QStringLiteral("name"), QStringLiteral("forkmesh-desktop")},
-                        {QStringLiteral("protocol"), 2},
-                        {QStringLiteral("pid"), double(QCoreApplication::applicationPid())}}}});
+           {QStringLiteral("params"), params}});
 }
 
 void CoreClient::onReadyRead()
