@@ -175,6 +175,7 @@ object RouteCodec {
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
+            Route.Kind.RssReader -> Route.RssReader
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
             Route.Kind.Stats -> Route.Stats

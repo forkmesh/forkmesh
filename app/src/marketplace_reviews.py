@@ -82,6 +82,7 @@ FIRST_PARTY_PACKAGES = {
     "people": "People",
     "pull-requests": "Pull requests",
     "reddit-banner-board": "Reddit Banner Board",
+    "rss-reader": "RSS Reader",
     "releases": "Releases",
     "sentry": "Sentry",
     "shortcuts": "Shortcuts",

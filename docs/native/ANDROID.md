@@ -472,6 +472,42 @@ default in new projects except the chosen starter pack
   the desktop's **iOS App Store status** shortcut to run
   ([App Store Status](../marketplace/app-store-status.md)). TestFlight public
   links open in the browser, and only `https://` links are offered.
+- **RSS Reader** (`rss-reader`, route `rssReader`, Personal group;
+  `/dashboard/rss`, `forkmesh://rss`, `forkmesh://rss-reader`). Local only:
+  `C/rssreader/` holds everything testable on the host JVM (parsing, the
+  guid rule, sanitizing, discovery, reader extraction, OPML, the library and
+  storage) and `A/feature/rssreader/` the Compose screens and
+  `RssReaderService`. Nothing is sent to an account; the only traffic is the
+  feed, page and icon requests ([RSS Reader](../marketplace/rss-reader.md)).
+  - **XML**: an in-tree forgiving parser (`RssXml`), identical on the JVM and
+    on Android, that copes with HTML entities, bare `&`, and undeclared `dc:`
+    / `content:` prefixes; it skips `<!DOCTYPE …>` without reading it, so
+    there are no external entities and no XXE.
+  - **Guid**: guid, then link, then `rdf:about`; else `title|published-ms`
+    (just the title when the feed gave no date); Python's whitespace set is
+    collapsed and the result cut to 600 code points
+    (`RssParserTest.testGuidRuleMatchesTheContract`).
+  - **Storage**: JSON under `filesDir/rss-reader/` (`library.json` for feeds,
+    folders, settings and activity; `articles/<feedId>.json`;
+    `icons/<feedId>`), written to a temporary file and renamed; saves are
+    debounced and rewrite only what changed.
+  - **Fetching**: `RssUrlConnectionHttp` follows up to five redirects by hand
+    so permanent ones (301/308) land in `previousUrls`, sends conditional
+    GETs, caps feeds at 2 MB and sends `ForkMesh-Reader/1.0 (Android)`.
+    Refresh runs when the reader opens and on pull to refresh through a
+    six-thread pool, with no timers; a feed is due 30 minutes after its last
+    check and failures back off up to a day.
+  - **Cleartext** stays off (`network_security_config.xml` unchanged): an
+    http feed is fetched over https and keeps its http address (`viaHttps` in
+    Feed Info); when https fails too the feed's error is `http_only`.
+  - **Article view**: a `WebView` with JavaScript, file and content access,
+    DOM storage and geolocation off; the HTML is sanitized again from the
+    allowlist and carries a `default-src 'none'` CSP. With Load Remote Images
+    off, images and media become links and the CSP drops http(s). Link taps
+    open the browser through an `ACTION_VIEW` Intent; the feed icon is a
+    `data:` URI from the on-device cache.
+  - **Appearance**: Light or Dark wraps the reader in
+    `ForkMeshTheme(dark = …)`; Automatic follows the app.
 
 ## 14. Chat features
 

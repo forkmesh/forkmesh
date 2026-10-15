@@ -147,6 +147,7 @@ object RouteCatalog {
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
+        Route.Kind.RssReader -> "RSS Reader"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
         Route.Kind.Stats -> "Stats"
@@ -211,6 +212,7 @@ object RouteCatalog {
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
+        Route.Kind.RssReader -> "feed"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
         Route.Kind.Stats -> "bar_chart"
@@ -309,6 +311,7 @@ object HubCatalog {
         HubItem.destination(Route.Calories, guestAction = "use the calorie counter"),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.FaceChanger),
+        HubItem.destination(Route.RssReader),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
         HubItem.destination(Route.Activity),
     )

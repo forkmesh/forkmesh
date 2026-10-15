@@ -22,7 +22,7 @@ public enum PackageGate {
         "orgs": "organizations", "world": "world", "people": "people", "docs": "docs",
         "notes": "notes", "tasks": "tasks", "calendar": "calendar", "timers": "timers", "ledger": "ledger",
         "tour": "tour", "designSystem": "design-system", "status": "status-page", "speech": "speech",
-        "glassesAlert": "glasses-alert", "faceChanger": "face-changer", "appStoreStatus": "app-store-status", "vault": "vault", "calories": "calories", "steps": "steps", "water": "water",
+        "glassesAlert": "glasses-alert", "faceChanger": "face-changer", "appStoreStatus": "app-store-status", "rssReader": "rss-reader", "vault": "vault", "calories": "calories", "steps": "steps", "water": "water",
         "sleep": "sleep", "sugarBreak": "sugar-break", "stretch": "stretch", "foodGuide": "food-guide",
         "signIn": "sign-in", "signOut": "sign-in", "workflows": "workflows",
         "crm": "crm", "marketing": "marketing", "analytics": "analytics", "competitor": "competitor",
@@ -46,7 +46,7 @@ public enum PackageGate {
         .competitors: "competitor", .ledger: "ledger",
         .vault: "vault", .coves: "coves", .cove: "coves", .calories: "calories", .steps: "steps", .water: "water",
         .sleep: "sleep", .sugarBreak: "sugar-break", .stretch: "stretch", .foodGuide: "food-guide", .speech: "speech",
-        .glassesAlert: "glasses-alert", .faceChanger: "face-changer", .appStoreStatus: "app-store-status", .localAI: "on-device-ai", .activity: "activity", .people: "people", .docs: "docs",
+        .glassesAlert: "glasses-alert", .faceChanger: "face-changer", .appStoreStatus: "app-store-status", .rssReader: "rss-reader", .localAI: "on-device-ai", .activity: "activity", .people: "people", .docs: "docs",
         .stats: "stats", .status: "status-page", .orgs: "organizations", .org: "organizations", .tour: "tour",
     ]
 

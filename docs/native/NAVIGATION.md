@@ -276,6 +276,18 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   again, and that shortcut's detail page links here
   ([App Store Status](../marketplace/app-store-status.md)). Android:
   `Route.AppStoreStatus`, `AppStoreStatus.kt`, `feature/appstorestatus/`.
+- **RSS Reader** (`.rssReader`, `/dashboard/rss`, `forkmesh://rss-reader`,
+  Personal group): a local-only feed reader laid out after NetNewsWire. Feeds
+  are fetched, parsed and stored on the phone (`RSSReader*.swift` in
+  FMPackages; storage, refresh and App Transport Security in
+  [RSS_READER_IOS.md](RSS_READER_IOS.md)). Feeds screen: Smart Feeds (Today,
+  All Unread, Starred) and "On This iPhone" (folders and feeds sorted
+  together), a filter for feeds with unread articles, a floating Settings
+  button and a + menu (Add Feed, Add Folder); the timeline and the article
+  view (JavaScript off, sanitized, reader view) push on the current stack.
+  The About screen credits NetNewsWire
+  ([RSS Reader](../marketplace/rss-reader.md)). Android: `Route.RssReader`,
+  `feature/rssreader/`.
 - **People** (`.people`, `/dashboard/people`): a campfire of five engagement
   rings with Follow and Message ([People](../marketplace/people.md)).
 - **Docs** (`.docs`): the public documentation library bundled with the app.

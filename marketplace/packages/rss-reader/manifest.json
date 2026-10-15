@@ -1,0 +1,75 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "rss-reader",
+  "name": "RSS Reader",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "An RSS, Atom and JSON Feed reader for iPhone, Android and the desktop that stays on your device: feeds are checked from the device itself, with smart feeds, folders, stars, OPML import and export and reader view. Inspired by NetNewsWire.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "RSS Reader with smart feeds and folders on the left, an article timeline with unread dots and stars in the middle, and the selected article with its toolbar on the right"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence. Design inspired by NetNewsWire (MIT, Ranchero Software); no NetNewsWire code is included."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:rss-reader",
+    "settings": "builtin:package"
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": true
+  },
+  "permissions": [
+    {
+      "id": "network.feeds.fetch",
+      "label": "Check the feeds you subscribe to straight from this device, and fetch an article page when you ask for reader view",
+      "risk": "low"
+    },
+    {
+      "id": "storage.local.write",
+      "label": "Keep your subscriptions, articles and read state on this device only; nothing is sent to ForkMesh",
+      "risk": "low"
+    },
+    {
+      "id": "files.opml.readwrite",
+      "label": "Import and export your subscriptions as an OPML file you pick",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "places": [
+      "mobile",
+      "desktop"
+    ]
+  },
+  "lifecycle": {
+    "migrations": []
+  }
+}

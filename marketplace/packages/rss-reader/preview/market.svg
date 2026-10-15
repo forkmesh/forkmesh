@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-labelledby="t">
+  <title id="t">RSS Reader with smart feeds and folders on the left, an article timeline with unread dots and stars in the middle, and the selected article with its toolbar on the right</title>
+  <rect width="1280" height="720" fill="#0f1115"/>
+  <rect x="32" y="32" width="1216" height="656" rx="16" fill="#171a21" stroke="#2a2f3a"/>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <rect x="33" y="33" width="279" height="654" rx="15" fill="#12151b"/>
+    <line x1="312" y1="33" x2="312" y2="687" stroke="#2a2f3a"/>
+    <line x1="682" y1="33" x2="682" y2="687" stroke="#2a2f3a"/>
+    <text x="56" y="78" font-size="20" font-weight="600" fill="#f4f5f7">Feeds</text>
+    <text x="56" y="98" font-size="12" fill="#9aa3b2">Updating… 12 feeds checked</text>
+    <rect x="262" y="60" width="34" height="34" rx="7" fill="#238636"/>
+    <path d="M279 69v16M271 77h16" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="56" y="138" font-size="13" font-weight="600" fill="#f4f5f7">Smart Feeds</text>
+    <circle cx="66" cy="166" r="6" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+    <text x="84" y="171" font-size="14" fill="#f4f5f7">Today</text><text x="290" y="171" font-size="12" text-anchor="end" fill="#9aa3b2">42</text>
+    <rect x="46" y="182" width="254" height="30" rx="6" fill="#1b2a40"/>
+    <circle cx="66" cy="197" r="6" fill="none" stroke="#9aa3b2" stroke-width="2"/><circle cx="66" cy="197" r="2.5" fill="#9aa3b2"/>
+    <text x="84" y="202" font-size="14" fill="#f4f5f7">All Unread</text><text x="290" y="202" font-size="12" text-anchor="end" fill="#9aa3b2">318</text>
+    <path d="M66 220l2.3 4.7 5.2.8-3.8 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.8-3.6 5.2-.8z" fill="none" stroke="#9aa3b2" stroke-width="1.6"/>
+    <text x="84" y="233" font-size="14" fill="#f4f5f7">Starred</text><text x="290" y="233" font-size="12" text-anchor="end" fill="#9aa3b2">3</text>
+    <text x="56" y="274" font-size="13" font-weight="600" fill="#f4f5f7">On This Computer</text>
+    <rect x="58" y="292" width="16" height="12" rx="2" fill="none" stroke="#9aa3b2" stroke-width="1.6"/>
+    <text x="84" y="303" font-size="14" fill="#f4f5f7">Engineering</text><text x="290" y="303" font-size="12" text-anchor="end" fill="#9aa3b2">96</text>
+    <rect x="80" y="320" width="16" height="16" rx="4" fill="#3d63dd"/><text x="88" y="332" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">E</text>
+    <text x="104" y="333" font-size="14" fill="#f4f5f7">Example Engineering</text><text x="290" y="333" font-size="12" text-anchor="end" fill="#9aa3b2">54</text>
+    <rect x="80" y="350" width="16" height="16" rx="4" fill="#8250df"/><text x="88" y="362" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">O</text>
+    <text x="104" y="363" font-size="14" fill="#f4f5f7">Open Source Weekly</text><text x="290" y="363" font-size="12" text-anchor="end" fill="#9aa3b2">42</text>
+    <rect x="58" y="380" width="16" height="16" rx="4" fill="#d1242f"/><text x="66" y="392" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">S</text>
+    <text x="84" y="393" font-size="14" fill="#f4f5f7">Space &amp; Science Daily</text><text x="290" y="393" font-size="12" text-anchor="end" fill="#9aa3b2">131</text>
+    <rect x="58" y="410" width="16" height="16" rx="4" fill="#238636"/><text x="66" y="422" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">F</text>
+    <text x="84" y="423" font-size="14" fill="#f4f5f7">The ForkMesh Blog</text><text x="290" y="423" font-size="12" text-anchor="end" fill="#9aa3b2">4</text>
+    <rect x="58" y="440" width="16" height="16" rx="4" fill="#bf8700"/><text x="66" y="452" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">W</text>
+    <text x="84" y="453" font-size="14" fill="#f4f5f7">Weekend Cooking</text><text x="290" y="453" font-size="12" text-anchor="end" fill="#9aa3b2">33</text>
+
+    <text x="336" y="78" font-size="18" font-weight="600" fill="#f4f5f7">All Unread</text>
+    <text x="336" y="98" font-size="12" fill="#9aa3b2">318 unread</text>
+    <rect x="328" y="116" width="338" height="30" rx="6" fill="#0f1115" stroke="#2a2f3a"/>
+    <text x="352" y="136" font-size="13" fill="#6b7383">Search articles</text>
+    <g>
+      <rect x="313" y="158" width="369" height="92" fill="#1b2a40"/>
+      <circle cx="334" cy="180" r="4.5" fill="#4493f8"/>
+      <text x="350" y="185" font-size="14" font-weight="600" fill="#f4f5f7">Faster builds with incremental caching</text>
+      <text x="350" y="206" font-size="12" fill="#9aa3b2">We cut our median build from nine minutes to two</text>
+      <text x="350" y="222" font-size="12" fill="#9aa3b2">by caching every step that can be replayed safely.</text>
+      <text x="350" y="240" font-size="11" fill="#6b7383">Example Engineering · Dana Lee        2:20 PM</text>
+    </g>
+    <line x1="313" y1="250" x2="682" y2="250" stroke="#2a2f3a"/>
+    <circle cx="334" cy="272" r="4.5" fill="#4493f8"/>
+    <text x="350" y="277" font-size="14" font-weight="600" fill="#f4f5f7">A new telescope maps the early universe</text>
+    <text x="350" y="298" font-size="12" fill="#9aa3b2">The first images show galaxies forming far sooner</text>
+    <text x="350" y="314" font-size="12" fill="#9aa3b2">than models predicted, astronomers said on Monday.</text>
+    <text x="350" y="332" font-size="11" fill="#6b7383">Space &amp; Science Daily        1:05 PM</text>
+    <line x1="313" y1="342" x2="682" y2="342" stroke="#2a2f3a"/>
+    <path d="M334 360l1.7 3.4 3.8.6-2.8 2.7.7 3.8-3.4-1.8-3.4 1.8.7-3.8-2.8-2.7 3.8-.6z" fill="#d29922"/>
+    <text x="350" y="369" font-size="14" font-weight="500" fill="#9aa3b2">Release notes: offline sync and folders</text>
+    <text x="350" y="390" font-size="12" fill="#9aa3b2">Everything new this month, from faster mirrors to</text>
+    <text x="350" y="406" font-size="12" fill="#9aa3b2">subscriptions that follow you to every device.</text>
+    <text x="350" y="424" font-size="11" fill="#6b7383">The ForkMesh Blog        Oct 13</text>
+    <line x1="313" y1="434" x2="682" y2="434" stroke="#2a2f3a"/>
+    <circle cx="334" cy="456" r="4.5" fill="#4493f8"/>
+    <text x="350" y="461" font-size="14" font-weight="600" fill="#f4f5f7">Contributor spotlight: the docs team</text>
+    <text x="350" y="482" font-size="12" fill="#9aa3b2">How a handful of volunteers rewrote the guides.</text>
+    <text x="350" y="500" font-size="11" fill="#6b7383">Open Source Weekly        Oct 13</text>
+    <line x1="313" y1="510" x2="682" y2="510" stroke="#2a2f3a"/>
+    <circle cx="334" cy="532" r="4.5" fill="#4493f8"/>
+    <text x="350" y="537" font-size="14" font-weight="600" fill="#f4f5f7">One-pan autumn vegetables</text>
+    <text x="350" y="558" font-size="12" fill="#9aa3b2">Roast everything together and finish with herbs.</text>
+    <text x="350" y="576" font-size="11" fill="#6b7383">Weekend Cooking        Oct 12</text>
+
+    <text x="716" y="92" font-size="15" font-weight="600" fill="#58a6ff">Example Engineering</text>
+    <text x="716" y="114" font-size="14" fill="#58a6ff">Dana Lee</text>
+    <rect x="1168" y="72" width="48" height="48" rx="9" fill="#3d63dd"/><text x="1192" y="105" font-size="26" font-weight="700" text-anchor="middle" fill="#fff">E</text>
+    <line x1="716" y1="136" x2="1216" y2="136" stroke="#2a2f3a"/>
+    <text x="716" y="180" font-size="28" font-weight="700" fill="#f4f5f7">Faster builds with</text>
+    <text x="716" y="214" font-size="28" font-weight="700" fill="#f4f5f7">incremental caching</text>
+    <text x="716" y="244" font-size="13" font-weight="700" letter-spacing=".6" fill="#9aa3b2">OCT 14, 2026 AT 2:20 PM</text>
+    <text x="716" y="288" font-size="16" fill="#d7dbe2">We cut our median build from nine minutes to two by</text>
+    <text x="716" y="312" font-size="16" fill="#d7dbe2">caching every step that can be replayed safely. Here is</text>
+    <text x="716" y="336" font-size="16" fill="#d7dbe2">how the cache keys work, what we refused to cache, and</text>
+    <text x="716" y="360" font-size="16" fill="#d7dbe2">the one bug that taught us to hash the toolchain too.</text>
+    <rect x="716" y="384" width="500" height="150" rx="8" fill="#1e222b"/>
+    <path d="M760 500l70-62 50 40 40-28 76 50" fill="none" stroke="#4493f8" stroke-width="4" stroke-linejoin="round"/>
+    <text x="716" y="566" font-size="16" fill="#d7dbe2">The short version: hash inputs, not timestamps.</text>
+    <line x1="683" y1="628" x2="1247" y2="628" stroke="#2a2f3a"/>
+    <circle cx="726" cy="656" r="9" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+    <path d="M770 646l3 6.2 6.8 1-4.9 4.8 1.2 6.8-6.1-3.2-6.1 3.2 1.2-6.8-4.9-4.8 6.8-1z" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+    <circle cx="965" cy="656" r="10" fill="none" stroke="#9aa3b2" stroke-width="2"/><path d="M960 653l5 5 5-5" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+    <rect x="1150" y="646" width="15" height="20" rx="2" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+    <path d="M1200 662v-16M1194 652l6-6 6 6M1192 658v8h16v-8" fill="none" stroke="#9aa3b2" stroke-width="2"/>
+  </g>
+</svg>

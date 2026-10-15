@@ -84,7 +84,7 @@ data class MarketPackage(
             "crm" to "crm", "marketing" to "marketing", "analytics" to "analytics", "competitor" to "competitors",
             "ledger" to "ledger", "vault" to "vault", "calories" to "calories", "notes" to "notes", "tasks" to "tasks",
             "calendar" to "calendar", "timers" to "timers", "tour" to "tour", "status-page" to "status",
-            "glasses-alert" to "glassesAlert", "face-changer" to "faceChanger", "app-store-status" to "appStoreStatus", "people" to "people", "docs" to "docs", "agents" to "agents", "inbox" to "inbox", "code" to "code", "chat" to "chat",
+            "glasses-alert" to "glassesAlert", "face-changer" to "faceChanger", "app-store-status" to "appStoreStatus", "rss-reader" to "rssReader", "people" to "people", "docs" to "docs", "agents" to "agents", "inbox" to "inbox", "code" to "code", "chat" to "chat",
             "bug-reports" to "reportBug", "desktops" to "desktops", "special-agents" to "teammates", "shortcuts" to "shortcuts",
             "hosts" to "hosts", "network" to "network", "coves" to "coves", "on-device-ai" to "localAI", "activity" to "activity",
             "stats" to "stats", "organizations" to "orgs", "sign-in" to "signIn", "issues" to "repo-issues", "commits" to "repo-commits", "branches" to "repo-branches",

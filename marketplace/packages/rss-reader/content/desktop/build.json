@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "RssReaderModel.h",
+    "RssReaderModel.cpp",
+    "RssReaderFetch.h",
+    "RssReaderFetch.cpp",
+    "RssReaderFeature.h",
+    "RssReaderFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_rss_reader.cpp",
+    "RssReaderModel.h",
+    "RssReaderModel.cpp",
+    "RssReaderFetch.h",
+    "RssReaderFetch.cpp",
+    "RssReaderFeature.h",
+    "RssReaderFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
+}

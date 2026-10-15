@@ -88,6 +88,7 @@ public enum PackageRoutes {
         case "glassesAlert": return .glassesAlert
         case "faceChanger": return .faceChanger
         case "appStoreStatus": return .appStoreStatus
+        case "rssReader": return .rssReader
         case "people": return .people
         case "docs": return .docs
         case "notes": return .notes
