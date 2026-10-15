@@ -30,3 +30,5 @@ func peerPID(raw net.Conn) (int, bool) {
 	}
 	return pid, true
 }
+
+func sameUserPeer(raw net.Conn) bool { return true }

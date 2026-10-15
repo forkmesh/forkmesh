@@ -34,10 +34,25 @@ type Peer interface {
 }
 
 type Request struct {
-	Peer   Peer
-	ID     int64
-	Method string
-	Params json.RawMessage
+	Peer     Peer
+	ID       int64
+	Method   string
+	Params   json.RawMessage
+	progress func(data any) bool
+}
+
+const ProgressEvent = "core.progress"
+
+func (r *Request) SetProgress(send func(data any) bool) { r.progress = send }
+
+func (r *Request) Progress(data any) bool {
+	if r.progress != nil {
+		return r.progress(data)
+	}
+	if r.Peer == nil || r.ID <= 0 {
+		return false
+	}
+	return r.Peer.Send(ProgressEvent, map[string]any{"id": r.ID, "method": r.Method, "progress": data})
 }
 
 func (r *Request) Bind(target any) error {

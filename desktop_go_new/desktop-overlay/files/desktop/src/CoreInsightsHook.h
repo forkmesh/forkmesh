@@ -19,6 +19,7 @@ struct Hooks {
     bool guardrailsLocalDirty = false;
     bool shortcutRunning = false;
     QString shortcutPath;
+    int coreRunId = 0;
 };
 
 inline Hooks &hooks()

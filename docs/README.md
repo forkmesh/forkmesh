@@ -15,6 +15,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Subsystem | Code | Home page |
 | --- | --- | --- |
 | Desktop app (Qt) | `desktop/` | [desktop/README.md](desktop/README.md) |
+| Desktop background engine and plug-ins (`forkmesh-core`) | `desktop_go_new/` | [desktop_go_new/docs/README.md](../desktop_go_new/docs/README.md) ([service plug-ins](../desktop_go_new/docs/service-plugins.md)) |
 | Agent runs | `desktop/src/*Agent*`, `server/`, `app/src` | [agents/README.md](agents/README.md) |
 | Go daemon (mirror, core, runner roles) | `server/` | [server/README.md](server/README.md) |
 | App (Python on the core nodes) | `app/` | [app/README.md](app/README.md) |

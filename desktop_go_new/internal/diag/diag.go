@@ -27,6 +27,7 @@ type watcher struct {
 type Module struct {
 	Owners         func() []string
 	Interval       time.Duration
+	IdleInterval   time.Duration
 	UIState        func(ctx context.Context, roots bool) (desktopState, error)
 	DesktopPID     func() int
 	Sessions       func() []agents.Session
@@ -97,20 +98,45 @@ func (m *Module) Stop() {
 	}
 }
 
+func (m *Module) observed() bool {
+	m.mu.Lock()
+	watchers := len(m.watchers)
+	m.mu.Unlock()
+	return watchers > 0 || (m.core != nil && m.core.UI() != nil)
+}
+
 func (m *Module) sampleLoop() {
 	interval := m.Interval
 	if interval <= 0 {
 		interval = time.Second
 	}
+	idle := m.IdleInterval
+	if idle <= 0 {
+		idle = 30 * time.Second
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	last := time.Now()
+	wasIdle := false
 	for {
 		select {
 		case <-m.ctx.Done():
 			return
 		case <-ticker.C:
-			m.sampleOnce()
 		}
+		if !m.observed() {
+			wasIdle = true
+			if time.Since(last) < idle {
+				continue
+			}
+		} else if wasIdle {
+			wasIdle = false
+			m.mu.Lock()
+			m.samples = nil
+			m.mu.Unlock()
+		}
+		last = time.Now()
+		m.sampleOnce()
 	}
 }
 

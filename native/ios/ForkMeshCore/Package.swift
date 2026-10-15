@@ -77,6 +77,7 @@ let modules: [Module] = [
     // Coves (encrypted file vaults) and secrets (WS21).
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
+    Module(name: "FMMiniApps", deps: ["FMBase", "FMChat", "FMControl"]),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]
 

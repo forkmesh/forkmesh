@@ -20,6 +20,9 @@ builds and behaves as before.
 | `desktop_go_new/desktop-overlay/patches/20-marketplace.patch` | The Disk Cleanup package's core facade |
 | `desktop_go_new/desktop-overlay/patches/upstream-*.patch` | Changes to tools, tests, the site and the docs, kept for a later merge into `main`; not applied by the build |
 | `desktop_go_new/tools/forkmesh_desktop_vault.py` | Read-only Python vault reader for the release host |
+| `desktop_go_new/tools/desktop_reconnect_test.sh` | End-to-end lifecycle test against a built desktop and core |
+| `desktop_go_new/tools/check_package_modules.py` | Checks every package module resolves its symbols (CTest `forkmesh-package-modules-resolve`) |
+| `desktop_go_new/examples/service-plugins/` | Example service plug-in packages |
 
 ### Building the integrated desktop
 
@@ -79,9 +82,11 @@ writes both the vault and the plaintext.
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/forkmesh-core` | The binary: `serve`, `call <method> [json]`, `status`, `stop`, `version`; `modules.go` lists the modules |
-| `internal/daemon` | `Core`: layout, identity, registry, hub, settings cache, built-ins (`core.ping`, `core.status`, `core.routes`, `core.owners`, `core.shutdown`), single-instance lock, linger |
-| `internal/ipc` | Local transport: newline-delimited JSON, requests both ways, `control.adopt` socket hand-off, peer credentials |
+| `cmd/forkmesh-core` | The binary: `serve`, `start`, `call <method> [json]`, `status`, `stop`, `background`, `autostart`, `plugins`, `version`; `modules.go` lists the modules |
+| `internal/daemon` | `Core`: layout, identity, registry, hub, settings cache, built-ins (`core.ping`, `core.status`, `core.routes`, `core.owners`, `core.shutdown`, `core.daemon.*`), single-instance lock, linger, background mode, crash record, in-place upgrade |
+| `internal/autostart` | Login start: systemd user unit or XDG autostart entry, LaunchAgent, Windows Run key |
+| `internal/ipc` | Local transport: newline-delimited JSON, protocol 2 (cancel, progress), requests both ways, `control.adopt` socket hand-off, peer credentials |
+| `internal/plugins` | Service plug-ins: discovery, signatures, consent, sandboxed processes, `core.plugins.*`, `plugin.<id>.*` ([service-plugins.md](service-plugins.md)) |
 | `internal/rpc` | Method registry (exact names and `prefix.` families), `ErrDelegate`, `DelegateWith`, peers, hub broadcast |
 | `internal/paths` | The `~/projects/<project>` layout, identical to `tools/forkmesh_paths.py` (a test runs both) |
 | `internal/identity` | The Ed25519 node key from `data/identity/ed25519.pem` |
@@ -129,11 +134,13 @@ worker threads.
 - **Linger.** The core outlives the desktop by `--linger` (2 minutes by
   default) and stays up while a module reports `Busy()` (an open phone
   connection, a PTY, a running job), so phone channels, terminals and jobs
-  survive a desktop restart.
+  survive a desktop restart. In background mode it never exits for want of a
+  desktop ([Independent lifecycle](#independent-lifecycle)).
 - **Upgrades.** When the binary on disk is newer than the running core, the
   desktop asks it to `core.shutdown` and starts the new one. The hello and
   `core.status` list busy modules, and the upgrade is deferred while work that
-  cannot survive a restart runs.
+  cannot survive a restart runs. With no desktop attached the core upgrades
+  itself.
 - **Off switch.** `FORKMESH_CORE=0` or `core/enabled=false`: the desktop runs
   with no core.
 - **Who answers a method.** Modules register exact method names on
@@ -161,15 +168,32 @@ worker threads.
 ### Local IPC (desktop and CLI to core)
 
 - **Transport.** A Unix socket `state/core/core.sock` (0600, in a 0700 folder)
-  on Linux and macOS; loopback TCP with the 192-bit endpoint token everywhere
-  (Windows uses this).
+  on Linux and macOS; loopback TCP everywhere (Windows uses this). When the
+  socket path is too long for the platform (about 104–108 bytes, a deep
+  `HOME`), the core serves TCP only instead of failing to start.
+- **Authentication.** Every connection, socket or TCP, must present the 192-bit
+  token from the 0600 `endpoint.json` in its first line (`bad_token`). On Linux
+  a socket peer must also run as the same user (`SO_PEERCRED`, `forbidden`).
 - **Hello.** First line:
-  `{"id":N,"method":"core.hello","params":{"role":"ui"|"cli","token":…,"pid":…}}`.
-  The reply carries the version and route table. A newer `ui` hello takes over.
+  `{"id":N,"method":"core.hello","params":{"role":"ui"|"cli","token":…,"pid":…,"protocol":2}}`.
+  The reply carries `version`, `protocol` (2), `protocolMin` (1), `features`
+  (`cancel`, `progress`, `peer-uid`, `token-always`) and the route table. A
+  client older than `protocolMin` gets `protocol_unsupported`; a client that
+  sends no `protocol` is treated as 1. A newer `ui` hello takes over.
 - **Messages.** Requests `{id,method,params}`, responses `{id,ok,result}` or
   `{id,ok:false,error}`, events `{event,data}`, notifications (requests with no
   id). Both sides may send requests. Notifications from one connection are
   handled in order; requests run concurrently.
+- **Cancel.** `{"method":"core.cancel","params":{"id":N}}` (or with its own id,
+  answered `{id, cancelled}`) cancels that connection's request `N`; the
+  request answers `cancelled`. A dropped connection does not cancel anything:
+  work a closed desktop started keeps running. `CoreClient::cancel(id)`.
+- **Progress.** A handler calls `req.Progress(data)`; only the requesting
+  connection gets `{"event":"core.progress","data":{"id","method","progress"}}`.
+  `CoreClient` emits `progress(id, data)` while the request is pending.
+- **No polling.** State changes are pushed as events (`core.daemon.changed`,
+  `core.plugins.changed`, each module's own); the desktop only asks again after
+  a reconnect.
 
 ### Phone sockets
 
@@ -852,12 +876,161 @@ truncated vault files, swapped entries, a different identity, and casual
 older complete vault file, values in freed process memory, or plaintext written
 before the migration.
 
+## Independent lifecycle
+
+The desktop and the core are managed separately: the window can close, crash
+or restart while the core keeps phone channels, host jobs, terminals, agents
+and service plug-ins running, and the next window re-attaches to the same core.
+
+| Mode | How it starts | When it stops |
+| --- | --- | --- |
+| Default | The desktop launches it on demand | 2 minutes after the last window detaches, once no module is busy |
+| Background | `serve --background`, or `background: true` in `config/core/daemon.json` (Settings → General → STARTUP, `forkmesh-core background on`) | Only on `forkmesh-core stop`, `core.shutdown`, a signal, or log-out |
+| Login start | `forkmesh-core autostart enable` or the STARTUP checkbox; implies `--background` | As background |
+
+- **Login start** (`internal/autostart`, `core.daemon.set {autostart, binary}`):
+  - Linux: a systemd user unit `~/.config/systemd/user/forkmesh-core-<project>.service`
+    (`Restart=on-failure`, `RestartSec=5`, at most 5 starts in 10 minutes,
+    `KillMode=process` so agents started by the core outlive a core restart,
+    `Nice=5`, idle I/O class, `NoNewPrivileges`, the ForkMesh path variables
+    unset), enabled with `systemctl --user enable`. Without a user systemd it
+    writes `~/.config/autostart/forkmesh-core-<project>.desktop`.
+  - macOS: `~/Library/LaunchAgents/com.forkmesh.core.<project>.plist`
+    (`RunAtLoad`, `KeepAlive` on unsuccessful exit, `ProcessType`
+    `Background`, low-priority I/O), loaded with `launchctl bootstrap`.
+  - Windows: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\forkmesh-core-<project>`;
+    `--hide-console` detaches the console window.
+  - Paths are quoted for each format (tested with spaces, `%`, `$`, quotes and
+    backslashes); the project must be a valid slug and the binary an existing
+    absolute path. Disabling removes only the entry it wrote.
+- **Single instance.** `core.lock` is an exclusive lock on every platform
+  (`flock`; `LockFileEx` on Windows, which previously only opened the file). A
+  second `serve --background` exits 0 so a supervisor does not restart-loop
+  against a core the desktop already started.
+- **Crash recovery.** `state/core/running.json` is written at start and removed
+  at a clean stop (which writes `stopped.json`). A marker left behind means the
+  previous core died; the new one logs it and reports
+  `lastExit: {kind: "crash", pid, version, startedMs}` in `core.status` and
+  `core.daemon.get` (`first` and `clean` otherwise). The desktop relaunches a
+  core that vanishes; under a supervisor the unit restarts it.
+- **In-place upgrade.** With no desktop attached and nothing busy, the core
+  checks every 10 s whether its executable was replaced. When the new file has
+  been stable for two checks and `<binary> version` runs, it stops cleanly and
+  re-executes itself (same pid on Unix; a new detached process on Windows). A
+  binary that does not run is ignored until it changes again.
+- **Idle footprint.** A minute after the last desktop detaches with nothing
+  busy, the core returns freed memory to the system once
+  (`debug.FreeOSMemory`). Module busy checks only run while no desktop is
+  attached.
+- **Methods (desktop and CLI only).** `core.daemon.get`; `core.daemon.set
+  {background?, autostart?, binary?}` (answers the new state and broadcasts
+  `core.daemon.changed`; errors `bad_binary`, `bad_project`,
+  `autostart_failed`, `config_write_failed`); `core.daemon.restart`.
+- **CLI.** `forkmesh-core start` (detached background core, waits until it
+  answers), `stop`, `status`, `background on|off|status`,
+  `autostart enable|disable|status [--binary <path>]`.
+- **Desktop.** Settings → General → STARTUP shows "Keep the background engine
+  running after ForkMesh closes", "Start the background engine when you log
+  in", the core's version, pid and last stop, and one checkbox per service
+  plug-in (enabling asks for consent and lists its permissions)
+  (`CoreDaemonSettings`).
+
+## Service plug-ins
+
+Marketplace packages with a `service` block run inside `forkmesh-core` as
+separate sandboxed processes, so their work continues without the window and
+the owner's phones can use them as mini-apps. Signatures, consent, the
+sandbox, the protocol and the methods are in
+[service-plugins.md](service-plugins.md); the phone side is
+[native/ios/docs/FMMiniApps.md](../../native/ios/docs/FMMiniApps.md).
+
+## Desktop package modules
+
+Optional marketplace packages that only talk to the window through
+`NativePackageRegistration` are built as separate shared modules instead of
+being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
+`src/PackageModules.{h,cpp}`).
+
+- **Build.** `FORKMESH_PACKAGE_MODULES` (default on for Linux, off elsewhere)
+  and `FORKMESH_PACKAGE_MODULE_IDS` (default: app-store-status, aquarium,
+  backups, calories, computer-security, crm, marketing, people, rss-reader,
+  sleep, steps, stretch, sugar-break, voice-changer, water). Each becomes
+  `build/packages/<id>.so` with a sidecar `<id>.json` (`api`, `abi`, `package`,
+  `file`, `entrypoints`); configure removes module files the configuration no
+  longer builds. Modules resolve the app's symbols through the `-rdynamic`
+  export the stall watchdog already needs, so the app binary does not grow.
+  Stay compiled in: packages installed by default (agent-watch, analytics,
+  docs: as modules they were loaded at every start and cost about 30 ms and
+  3 MB, see [Measurements](#measurements)), packages with a `desktopFactory`
+  (sentry, vscodium), and the ones the window references directly. Sources the
+  window calls from a modular package stay in the app through
+  `FORKMESH_PACKAGE_HOST_SHARED_SOURCES` (agent-watch's
+  `AgentNetworkSampler.cpp`, for builds that list agent-watch).
+- **Loading.** At start the app reads only the sidecars (from `packages/` beside
+  the binary, `../lib/forkmesh/packages`, the install prefix's
+  `lib/forkmesh/packages`, and `../PlugIns/forkmesh-packages` on macOS). A
+  module is loaded the first time `nativePackageContribution()` asks for its
+  entrypoint, which happens only for packages installed on this desktop: a
+  package that is not installed is never mapped.
+- **Versioned API.** The sidecar's `api` must equal the app's
+  `FORKMESH_PACKAGE_MODULE_API` (1) and its `abi` the app's build identity
+  (version, compiler, Qt, build type), checked before `dlopen`. After loading,
+  the exported `forkmesh_package_module_api/abi/id` must match again, or the
+  module's entrypoints are unregistered. A refused or broken module only
+  removes that package's page; the log says why (`[package module] …`).
+- **Trust.** Modules load only from the application's own folders, never from
+  user-installed marketplace content. A module file or its folder that another
+  user (or a group other than the user's own) can write is refused.
+- **Install.** `install.sh` copies the modules to `~/.local/lib/forkmesh/packages`
+  and removes ones the build no longer produces; Rebuild & restart / auto-update
+  (`internal/update`) does the same beside the installed app; `cmake --install`
+  puts them in `<libdir>/forkmesh/packages`.
+- **Test.** `ctest -R forkmesh-package-modules-resolve` checks that every
+  module's undefined symbols are provided by the app or its own libraries, so a
+  new window-to-package reference fails the build's tests instead of the user's
+  start.
+
+## Measurements
+
+Taken 2026-10-15 on the 36-core Linux build box while other agents were
+building (load average 9–33). Debug builds with `-O0 -g0`, the same stage, run
+offscreen in a fresh sandboxed `HOME` (no packages installed), interleaved
+A/B: "compiled in" is `-DFORKMESH_PACKAGE_MODULES=OFF`, "modules" the default.
+
+| | Compiled in | Modules | Change |
+| --- | --- | --- | --- |
+| `forkmesh` file | 206.4 MB | 188.8 MB (+ 29.7 MB in 15 modules, loaded only when installed) | −8.5 % |
+| `forkmesh` text segment | 129.2 MB | 118.6 MB | −8.2 % |
+| Resident memory 8 s after start, median of 12 | 178.5 MB | 175.2 MB | −3.3 MB |
+| Window shown (`[startup +Nms]`), median of 12 | 608 ms | 632 ms | within noise at this load |
+| Editing a module package's source | recompiles the file, relinks the app (2.7 s link) | recompiles the file, relinks only its module | no app relink |
+
+An earlier list that also modularised the three packages installed by default
+measured +28 ms and +3 MB (n = 15), which is why they stay compiled in.
+
+Idle `forkmesh-core` with no desktop attached, 75 s, same machine, side by
+side:
+
+| | Before (`HEAD` of 2026-10-15) | After |
+| --- | --- | --- |
+| CPU time | 7 ticks (70 ms) | 3 ticks (30 ms) |
+| Resident memory | 21.8 MB | 20.8 MB |
+| Files opened in 20 s | 115 (1 Hz vitals sampler) | 0 |
+
+The idle saving comes from the vitals sampler: with no watcher and no desktop
+it samples every 30 s instead of every second, and its 30-second history starts
+fresh when someone watches again.
+
 ## Configuration
 
 `FORKMESH_CORE=0` / `core/enabled` (off switch), `FORKMESH_CORE_BIN` (binary
-path), `serve --linger`, `core/agentProcesses` (agents in the core, default
-on), `core/gitReads` (git reads through the core, default on),
-`core/vaultFinalize` / `FORKMESH_VAULT_FINALIZE`.
+path), `serve --linger`, `serve --background`, `core/agentProcesses` (agents in
+the core, default on), `core/gitReads` (git reads through the core, default
+on), `core/vaultFinalize` / `FORKMESH_VAULT_FINALIZE`. The core's own settings
+live in `config/core/daemon.json` (`background`), which the core alone writes
+(`core.daemon.set`, or the file directly through `forkmesh-core background`
+while no core runs). CMake: `FORKMESH_PACKAGE_MODULES` and
+`FORKMESH_PACKAGE_MODULE_IDS`.
 
 ## Build and test
 
@@ -882,19 +1055,40 @@ on), `core/gitReads` (git reads through the core, default on),
   `TestLiveDesktop` in `internal/control` (opt-in via `FORKMESH_LIVE_MESH`,
   `FORKMESH_LIVE_SEED`, `FORKMESH_LIVE_CALLS`) drives a sandboxed desktop as a
   paired phone.
+- Lifecycle tests: `cmd/forkmesh-core/daemon_integration_test.go` builds the
+  binary and runs it in a temp `HOME` with no desktop (background start, CLI,
+  crash record, background setting against linger, in-place upgrade);
+  `go test -short` skips them. Unix sockets need a short temp path: run with
+  `TMPDIR` set to a short folder when the checkout is deep.
+- Desktop end to end: `tools/desktop_reconnect_test.sh <forkmesh> <forkmesh-core> [sandbox]`
+  starts the real desktop offscreen in a sandboxed `HOME` and checks that the
+  core survives a desktop crash, that a new desktop re-attaches to the same
+  core, that a service plug-in keeps its process across the UI restart, that the
+  desktop relaunches a killed core (which reports the crash), that background
+  mode keeps the core after the window quits, and that `stop` ends the core and
+  its plug-ins.
+- Package modules: `ctest -R forkmesh-package-modules-resolve`.
 - Manual checks: `forkmesh-core status`, `forkmesh-core call core.routes`,
-  `forkmesh-core call core.vitals`.
+  `forkmesh-core call core.vitals`, `forkmesh-core plugins list`.
 
 ## Operations
 
-- Log: `logs/core/forkmesh-core.log`, rolled to `.1` at 8 MB.
+- Log: `logs/core/forkmesh-core.log`, rolled to `.1` at 8 MB; service
+  plug-ins log to `logs/core/plugins/<id>.log` (1 MiB, rolled once).
 - The desktop's system log shows core starts, connects, restarts and a missing
   binary.
 
 ## Security
 
-- **Access.** The socket is owner-only; TCP needs the token from the 0600
-  endpoint file. `core.*` methods refuse phone and relay peers.
+- **Access.** The socket is owner-only, and every connection (socket or TCP)
+  needs the token from the 0600 endpoint file; on Linux a socket peer must be
+  the same user. `core.*` methods refuse phone and relay peers.
+- **Service plug-ins** run only when signed by a trusted key and enabled by the
+  user, in a separate process with a reduced environment, resource limits,
+  `no_new_privs` and (Linux) no network unless granted; phones reach only
+  methods the manifest lists, and only the owner ([service-plugins.md](service-plugins.md)).
+- **Package modules** (in-process native code) load only from the app's own
+  folders and only when API and build identity match.
 - **Phone channel.** Same handshake, keys and approval rules as the C++;
   account checks go through the desktop's account session
   (`ui.control.accountCheck`).
@@ -919,9 +1113,22 @@ on), `core/gitReads` (git reads through the core, default on),
   be lost.
 - **Firewalls.** Network traffic the core now makes (relay socket, host jobs,
   downloads) comes from the `forkmesh-core` binary path.
+- **Two cores under a supervisor.** A login-started core and a desktop-started
+  one cannot both run (the lock); the second exits 0. If the desktop started the
+  core first, the systemd unit stays inactive until the next login.
+- **Stale modules after a manual copy.** Copying only `forkmesh` over an
+  installed app leaves modules from the old build; they are refused (ABI
+  mismatch) and those package pages disappear until `install.sh` or an update
+  installs the matching modules.
 
 ## Not yet in the core
 
+- Package modules are Linux-only by default; macOS and Windows build the same
+  packages into the app until their symbol export (`-undefined dynamic_lookup`,
+  an import library for the executable) is set up and tested.
+- Network isolation for service plug-ins exists only on Linux; macOS
+  (`sandbox-exec`/App Sandbox) and Windows (job objects, AppContainer) run them
+  with the reduced environment only.
 - Agent launching: the queue pump, parking, usage-limit holds, resume,
   continue, takeover and handoff.
 - `teammates.*` (except `options`), `insights.usage`, `wallet.*`,

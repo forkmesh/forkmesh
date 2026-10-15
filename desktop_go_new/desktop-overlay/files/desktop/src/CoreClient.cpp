@@ -256,6 +256,7 @@ void CoreClient::onDeviceConnected()
             QJsonObject{{QStringLiteral("role"), QStringLiteral("ui")},
                         {QStringLiteral("token"), m_endpoint.token},
                         {QStringLiteral("name"), QStringLiteral("forkmesh-desktop")},
+                        {QStringLiteral("protocol"), 2},
                         {QStringLiteral("pid"), double(QCoreApplication::applicationPid())}}}});
 }
 
@@ -360,6 +361,13 @@ void CoreClient::handleLine(const QByteArray &line)
         return;
     }
     const QString event = message.value(QStringLiteral("event")).toString();
+    if (event == QLatin1String("core.progress")) {
+        const QJsonObject data = message.value(QStringLiteral("data")).toObject();
+        const int requestId = data.value(QStringLiteral("id")).toInt();
+        if (m_pending.contains(requestId))
+            emit progress(requestId, data.value(QStringLiteral("progress")));
+        return;
+    }
     if (!event.isEmpty())
         emit coreEvent(event, message.value(QStringLiteral("data")).toObject());
 }
@@ -437,6 +445,10 @@ void CoreClient::finishHello(const QJsonObject &result)
         }
         m_upgradeTimer->start();
     }
+    m_protocol = result.value(QStringLiteral("protocol")).toInt(1);
+    m_features.clear();
+    for (const QJsonValue &feature : result.value(QStringLiteral("features")).toArray())
+        m_features.insert(feature.toString());
     m_exact.clear();
     m_families.clear();
     const QJsonArray routes = result.value(QStringLiteral("routes")).toArray();
@@ -487,13 +499,13 @@ bool CoreClient::write(const QJsonObject &object)
     return m_device->write(encodeLine(object)) > 0;
 }
 
-void CoreClient::request(const QString &method, const QJsonObject &params, Reply reply,
-                         int timeoutMs)
+int CoreClient::request(const QString &method, const QJsonObject &params, Reply reply,
+                        int timeoutMs)
 {
     if (!m_connected) {
         if (reply)
             reply(false, QJsonValue(), QStringLiteral("core_unavailable"));
-        return;
+        return 0;
     }
     const int id = m_nextId++;
     if (m_nextId >= 0x7ffffff0)
@@ -508,7 +520,22 @@ void CoreClient::request(const QString &method, const QJsonObject &params, Reply
         const Pending failed = m_pending.take(id);
         if (failed.reply)
             failed.reply(false, QJsonValue(), QStringLiteral("core_unavailable"));
+        return 0;
     }
+    return id;
+}
+
+bool CoreClient::cancel(int id)
+{
+    if (id <= 0 || !m_pending.contains(id))
+        return false;
+    const Pending pending = m_pending.take(id);
+    if (m_connected && supports(QStringLiteral("cancel")))
+        write({{QStringLiteral("method"), QStringLiteral("core.cancel")},
+               {QStringLiteral("params"), QJsonObject{{QStringLiteral("id"), id}}}});
+    if (pending.reply)
+        pending.reply(false, QJsonValue(), QStringLiteral("cancelled"));
+    return true;
 }
 
 bool CoreClient::notify(const QString &method, const QJsonObject &params)
