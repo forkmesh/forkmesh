@@ -53,6 +53,9 @@ public protocol CollabInbox: AnyObject {
     func reviewPull(_ owner: String, _ name: String, _ number: Int, _ state: String, _ body: String) async throws
     func submitNewDiscussion(_ owner: String, _ name: String, title: String, body: String, category: String) async throws
     func commentOnDiscussion(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws
+    func markDiscussionAnswer(
+        _ owner: String, _ name: String, _ number: Int, target: String, sessionToken: String
+    ) async throws
     func setThreadSubscription(
         _ owner: String, _ name: String, node: String, source: String, number: Int, subscribed: Bool
     ) async throws

@@ -242,6 +242,27 @@ final class InboxServiceTests: XCTestCase {
         verify(fx, "forkmesh-discussion-event-v2\no/r\ncomment\n3\n\(author)\n1770000000000\n\(sha256Hex("Reply"))", reply.obj("event")["sig"])
     }
 
+    func testDiscussionAnswersSignTheirTargetAndCarryTheSession() async throws {
+        let fx = try fixture()
+        try await fx.inbox.markDiscussionAnswer("o", "r", 3, target: "reply-1", sessionToken: "tok")
+        try await fx.inbox.markDiscussionAnswer("o", "r", 3, target: "", sessionToken: "")
+        let author = fx.author
+        let marked = fx.body(0)
+        XCTAssertEqual(fx.path(0), "/api/repo/o/r/discussions")
+        XCTAssertEqual(marked["number"], 3)
+        XCTAssertEqual(marked["sessionToken"], "tok")
+        XCTAssertEqual(marked.obj("event")["type"], "answer")
+        XCTAssertEqual(marked.obj("event")["target"], "reply-1")
+        verify(
+            fx, "forkmesh-discussion-event-v2\no/r\nanswer\n3\n\(author)\n1770000000000\n\(sha256Hex("reply-1"))",
+            marked.obj("event")["sig"])
+        XCTAssertNil(fx.body(1)["sessionToken"])
+        verify(
+            fx, "forkmesh-discussion-event-v2\no/r\nanswer\n3\n\(author)\n1770000000000\n\(sha256Hex(""))",
+            fx.body(1).obj("event")["sig"])
+        XCTAssertEqual(InboxService.discussionContent("answer", ["target": "reply-1"]), "reply-1")
+    }
+
     func testEventSigningPrefixNamesTheRepository() async throws {
         XCTAssertEqual(EventSigning.prefix("issue-event", owner: " Alice ", name: "Project"), "forkmesh-issue-event-v2\nalice/project\n")
         XCTAssertEqual(EventSigning.repoKey("a/b", "c"), "")

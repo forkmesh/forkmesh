@@ -151,7 +151,9 @@ public enum PublishedRecords {
             author: meta["authorName"] ?? meta["author"] ?? "",
             category: meta["category"] ?? "general",
             updatedMs: DartCore.intTryParse(meta["updatedAt"] ?? meta["ts"] ?? "") ?? 0,
-            events: events)
+            events: events.filter { $0.type != "answer" },
+            authorKey: meta["author"] ?? "",
+            answer: events.last { $0.type == "answer" })
     }
 
     public static func discussionEventFromMarkdown(_ md: String) -> DiscussionEvent {
@@ -161,7 +163,9 @@ public enum PublishedRecords {
             body: bodyWithoutFrontMatter(md),
             author: meta["author"] ?? "",
             authorName: meta["authorName"] ?? "",
-            ts: DartCore.intTryParse(meta["ts"] ?? "") ?? 0)
+            ts: DartCore.intTryParse(meta["ts"] ?? "") ?? 0,
+            id: meta["id"] ?? "",
+            target: meta["target"] ?? "")
     }
 
     // MARK: Markdown helpers
