@@ -18610,6 +18610,14 @@ else:
         const bool watchOffersReturn =
             window.testPackageRailMenuActions(watchEntrypoint)
                 .contains(QStringLiteral("Return to main window"));
+        QPushButton *watchWindowActions =
+            watchWindow ? watchWindow->findChild<QPushButton *>(
+                              QStringLiteral("packageActionsButton"))
+                        : nullptr;
+        const bool watchWindowActionsShown =
+            watchWindowActions && !watchWindowActions->isHidden() &&
+            watchWindowActions->window() == watchWindow &&
+            watchWindowActions->parentWidget() != watchPage;
         if (watchWindow)
             watchWindow->close();
         QApplication::processEvents();
@@ -18625,9 +18633,51 @@ else:
                   .arg(watchOffersWindow)
                   .arg(watchPoppedOut)
                   .arg(watchOffersReturn));
+        {
+            const QString watchName = window.testPackageName(watchPackage);
+            const QStringList expectedActions{
+                QString::fromUtf8("Rate %1\xE2\x80\xA6").arg(watchName),
+                QString::fromUtf8("Send feedback or report a bug\xE2\x80\xA6"),
+                QString::fromUtf8("Uninstall %1\xE2\x80\xA6").arg(watchName)};
+            const QStringList pageActions =
+                window.testPackageActionsMenu(watchPackage);
+            QPushButton *chromeActions = window.testPackageActionsButton();
+            int popupActions = -1;
+            if (chromeActions && !chromeActions->isHidden()) {
+                chromeActions->click();
+                QApplication::processEvents();
+                if (QMenu *popup = chromeActions->findChild<QMenu *>(
+                        QStringLiteral("packageActionsMenu"))) {
+                    popupActions = 0;
+                    for (QAction *action : popup->actions())
+                        popupActions += action->isSeparator() ? 0 : 1;
+                    popup->close();
+                }
+                QApplication::processEvents();
+            }
+            const QStringList railActions =
+                window.testPackageRailMenuActions(watchEntrypoint);
+            check(chromeActions && !chromeActions->isHidden() &&
+                      popupActions == 3 && pageActions == expectedActions &&
+                      watchWindowActionsShown &&
+                      railActions.contains(expectedActions.at(0)) &&
+                      railActions.contains(expectedActions.at(1)),
+                  QStringLiteral("a plugin page has a top-right options button "
+                                 "with Rate, feedback and Uninstall, in the main "
+                                 "window and in its own window, and the rail "
+                                 "menu offers Rate and feedback too (page=%1 "
+                                 "popup=%2 window=%3)")
+                      .arg(pageActions.join(QStringLiteral(" | ")))
+                      .arg(popupActions)
+                      .arg(watchWindowActionsShown));
+        }
         window.testShowMarketSection();
         QApplication::processEvents();
         QPushButton *removeWatch = findWatchAction(QStringLiteral("Remove"));
+        check(window.testPackageActionsButton() &&
+                  window.testPackageActionsButton()->isHidden(),
+              QStringLiteral("the plugin options button leaves the top bar "
+                             "with the plugin page"));
         if (removeWatch)
             removeWatch->click();
         QApplication::processEvents();

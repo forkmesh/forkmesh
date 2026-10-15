@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.coves
 
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -240,7 +241,9 @@ class CovesScreen(private val repo: CoveRepo) : Screen() {
             }
         }
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
-            ToolsAppBar("Coves", navigator) {
+            val plugin = rememberScreenPluginMenu()
+            ToolsAppBar("Coves", navigator, pluginMenu = false) {
+                plugin?.Host()
                 FmIconButton("refresh", "Refresh", onPressed = { scope.launch(Dispatchers.IO) { model.load() } })
                 FmIconButton("add", "New cove", onPressed = if (model.busy) null else ({ create() }))
                 Box {
@@ -250,6 +253,7 @@ class CovesScreen(private val repo: CoveRepo) : Screen() {
                             menu = false
                             model.lockAll()
                         })
+                        plugin?.Items(close = { menu = false }, divided = true)
                     }
                 }
             }

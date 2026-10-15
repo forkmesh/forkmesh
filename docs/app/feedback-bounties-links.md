@@ -13,6 +13,7 @@ Three dashboard surfaces backed by existing server APIs.
 | Path | Responsibility |
 | --- | --- |
 | `app/public/dashboard/partials/modals.html` (`data-feedback-modal`), `js/09-feedback.js` | Feedback dialog |
+| `app/public/dashboard/partials/header.html` (`data-plugin-menu`), `js/09-plugin-menu.js` | ⋯ menu on plugin pages (`docs/marketplace/README.md`) |
 | `app/public/dashboard/partials/views/bounties.html`, `js/09-bounties.js` | Bounties page (lazy chunk) |
 | `app/public/dashboard/partials/views/links.html`, `js/09-links.js` | Link rewards page (lazy chunk) |
 | `app/src/dashboard_shell.py`, `dashboard_bundle.py`, `static_routes.py` | Page registration, chunks and routes |
@@ -26,6 +27,11 @@ All checks are on the server.
 
 - **Feedback** is anonymous. The server stores the fixed path
   `/dashboard#feedback`, never the visitor's page, and pings admins.
+- **Plugin feedback** is the same dialog opened from a plugin page's ⋯ menu.
+  It retitles itself "Feedback on <plugin>" and posts to `/api/bug-reports`
+  with the plugin id, the page id and source `web` instead of to
+  `/api/feedback`. The report becomes a public issue, so the dialog says so;
+  opening the dialog from the account menu resets it to general feedback.
 - **Bounties** need an organization member; `GET /api/tasks` answers
   `org_member_required` otherwise. A bid is filed by and assigned to the
   signed-in member; the amount is a request, not a payment.

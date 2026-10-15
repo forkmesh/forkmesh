@@ -156,7 +156,13 @@ internal fun BugReportOverlayView(screen: String, sharedText: MutableStateFlow<S
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReportBugSheet(screen: String, initialMessage: String = "", onClosed: () -> Unit) {
+internal fun ReportBugSheet(
+    screen: String,
+    initialMessage: String = "",
+    packageId: String? = null,
+    packageName: String? = null,
+    onClosed: () -> Unit,
+) {
     var draft by remember { mutableStateOf(ReportBugDraft(message = initialMessage)) }
     var sent by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -168,7 +174,7 @@ internal fun ReportBugSheet(screen: String, initialMessage: String = "", onClose
         if (!step.send) return
         val api = Services.require<ApiService>()
         scope.launch {
-            val result = withContext(Dispatchers.IO) { sendBugReport(api, draft, screen, DiagnosticsRuntime.build) }
+            val result = withContext(Dispatchers.IO) { sendBugReport(api, draft, screen, DiagnosticsRuntime.build, packageId) }
             if (!result.ok) draft = draft.refused(result.message) else sent = true
         }
     }
@@ -176,9 +182,9 @@ internal fun ReportBugSheet(screen: String, initialMessage: String = "", onClose
         Column(Modifier.imePadding()) {
             Row(Modifier.padding(start = FmSpace.x4, top = FmSpace.x4, end = FmSpace.x3, bottom = FmSpace.x3), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(ReportBugCopy.TITLE, style = Fm.text.titleLarge.copy(color = c.textPrimary))
+                    Text(ReportBugCopy.title(packageName), style = Fm.text.titleLarge.copy(color = c.textPrimary))
                     Spacer(Modifier.height(2.dp))
-                    Text(ReportBugCopy.SUBTITLE, style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                    Text(ReportBugCopy.subtitle(packageName), style = Fm.text.bodySmall.copy(color = c.textTertiary))
                 }
                 FmIconButton("close", ReportBugCopy.CLOSE, onPressed = if (draft.busy) null else onClosed, color = c.textPrimary)
             }
@@ -200,7 +206,7 @@ internal fun ReportBugSheet(screen: String, initialMessage: String = "", onClose
                     FmTextField(
                         value = draft.message,
                         onValueChange = { draft = draft.withMessage(it) },
-                        hint = ReportBugCopy.MESSAGE_HINT,
+                        hint = ReportBugCopy.messageHint(packageName),
                         minLines = 4,
                         maxLines = 8,
                         autofocus = true,

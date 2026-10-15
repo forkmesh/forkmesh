@@ -546,6 +546,7 @@ open class ApiService(
         appVersion: String = "",
         osVersion: String = "",
         device: String = "",
+        packageId: String? = null,
     ): BugReportResult {
         val trimmed = message.trim()
         if (trimmed.isEmpty()) return BugReportResult.failure("Describe the problem first.")
@@ -559,6 +560,7 @@ open class ApiService(
         if (appVersion.isNotEmpty()) payload["appVersion"] = appVersion
         if (osVersion.isNotEmpty()) payload["osVersion"] = osVersion
         if (device.isNotEmpty()) payload["device"] = device
+        packageId?.trim()?.takeIf { it.isNotEmpty() }?.let { payload["package"] = it }
         val response = try {
             exchange(
                 "POST",

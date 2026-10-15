@@ -77,6 +77,32 @@ final class ApiBugReportTests: XCTestCase {
         }
     }
 
+    func testFeedbackOnAPluginNamesItsMarketplacePackage() async throws {
+        let relay = FakeBugRelay()
+        let api = wire(relay)
+
+        let result = await api.submitBugReport(message: "The face changer loses my outfit.", screen: "Face Changer", package: " face-changer ")
+
+        XCTAssertTrue(result.ok)
+        let sent = try XCTUnwrap(relay.submitted.first)
+        XCTAssertEqual(sent["package"], "face-changer")
+        XCTAssertEqual(sent["screen"], "Face Changer")
+        XCTAssertTrue(try XCTUnwrap(relay.http.requests.first).bodyText.hasSuffix(#""package":"face-changer"}"#))
+    }
+
+    func testAReportWithoutAPluginLeavesThePackageOut() async {
+        let relay = FakeBugRelay()
+        let api = wire(relay)
+
+        _ = await api.submitBugReport(message: "Something is broken.")
+        _ = await api.submitBugReport(message: "Something is broken.", package: "  ")
+
+        XCTAssertEqual(relay.submitted.count, 2)
+        for sent in relay.submitted {
+            XCTAssertFalse(sent.contains("package"))
+        }
+    }
+
     func testAnUnauthenticatedReportIsSentWithNoAuthorizationHeader() async {
         // The bug most worth hearing about is the one in the login flow, so this call must not
         // require, or wait for, a session.
