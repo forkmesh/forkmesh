@@ -39,6 +39,8 @@ QString intakeErrorMessage(const QString &code)
         return QStringLiteral("model is not a valid model id.");
     if (code == QLatin1String("bad_priority"))
         return QStringLiteral("priority must be a whole number from 1 to 99.");
+    if (code == QLatin1String("bad_task_id"))
+        return QStringLiteral("task must be a 32-character hex organization task id.");
     return QStringLiteral("The request is malformed.");
 }
 
@@ -219,6 +221,26 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
     }
 
     const QString requester = QStringLiteral("Agent #%1").arg(requesterId);
+    QString taskId = request.task;
+    if (request.handoff) {
+        const AgentSession *caller = findAgentSession(requesterId);
+        const QString own =
+            caller ? caller->orgTaskId.trimmed().toLower() : QString();
+        if (own.isEmpty())
+            return intake::errorReply(
+                QStringLiteral("no_task"),
+                QStringLiteral("%1 is not linked to an organization task, so it has "
+                               "none to hand off; pass task to link the new agent "
+                               "to one.")
+                    .arg(requester));
+        if (!taskId.isEmpty() && taskId != own)
+            return intake::errorReply(
+                QStringLiteral("task_mismatch"),
+                QStringLiteral("%1 is linked to task %2, not %3; handoff hands over "
+                               "the calling agent's own task.")
+                    .arg(requester, own, taskId));
+        taskId = own;
+    }
     int id = 0;
     if (!branch.isEmpty()) {
         if (!forkmesh::localcontrol::handoffRefNameValid(branch))
@@ -243,7 +265,7 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
     } else {
         id = startAdHocAgentForRepo(repoIndex, request.prompt, provider,
                                     false, model, request.title,
-                                    false, false, QString(),
+                                    false, false, taskId,
                                     QString(), QString(),
                                     request.hasPriority ? request.priority : 50,
                                     false, QString(), false,
@@ -270,10 +292,44 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
                 : QStringLiteral("==> Created by %1 through the ForkMesh connector.\n")
                       .arg(requester));
     }
+    if (!taskId.isEmpty()) {
+        if (AgentSession *session = findAgentSession(id);
+            session && session->orgTaskId.isEmpty()) {
+            session->orgTask = true;
+            session->orgTaskAttached = false;
+            recordOrgTaskFields(id, taskId, QString(), false);
+        }
+        if (AgentSession *session = findAgentSession(id); session && m_agentStore)
+            m_agentStore->appendLog(
+                *session,
+                request.handoff
+                    ? QStringLiteral("==> %1 handed over organization task %2.\n")
+                          .arg(requester, taskId)
+                    : QStringLiteral("==> Linked to organization task %1.\n")
+                          .arg(taskId));
+    }
+    if (request.handoff) {
+        unlinkAgentSessionFromOrgTask(requesterId);
+        if (AgentSession *caller = findAgentSession(requesterId); caller && m_agentStore)
+            m_agentStore->appendLog(
+                *caller,
+                QStringLiteral("==> Handed organization task %1 to agent #%2.\n")
+                    .arg(taskId)
+                    .arg(id));
+        refreshAgentTaskLinkUi(requesterId);
+        if (m_organizationTasksLoaded)
+            refreshOrganizationTaskAgentRows();
+    }
     reloadAgents();
     notifyLocalControlAgentsChanged();
     const QString started =
-        request.paused
+        request.handoff
+            ? QStringLiteral("%1 handed task %2 to %3 agent #%4 for %5.")
+                  .arg(requester, taskId,
+                       request.paused ? QStringLiteral("paused") : QStringLiteral("new"))
+                  .arg(id)
+                  .arg(slug)
+        : request.paused
             ? QStringLiteral("%1 added a paused agent for %2. Start it from "
                              "the Agents list.")
                   .arg(requester, slug)
@@ -295,6 +351,8 @@ QJsonObject MainWindow::createAgentFromIntake(int requesterId,
         {QStringLiteral("provider"), provider},
         {QStringLiteral("model"), created ? created->model : model},
         {QStringLiteral("priority"), created ? created->priority : request.priority},
+        {QStringLiteral("task"), created ? created->orgTaskId : taskId},
+        {QStringLiteral("handedOff"), request.handoff},
     };
 }
 
