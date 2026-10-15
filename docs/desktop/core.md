@@ -45,6 +45,17 @@ The stage built only the `forkmesh` target, so the overlay never noticed that
 `CodexAppServerSession.cpp` and `AgentStore.cpp` without the core sources they
 now call. That test target now links `CoreAgentRun.cpp`, `AgentProcess.cpp`
 and `CoreAgentStore.cpp` like the other agent test targets.
+The same gap hid more breakage that only a full test build shows:
+`forkmesh-agent-model-stats-tests`, `-transport-tests`, `-recycle-tests` and
+`-cloud-tests` compile `CoreAgentStore.cpp` and now link `Qt6::Network`;
+`forkmesh-pull-store-retire-tests` links `PullStoreCore.cpp`;
+`MainWindowCore.cpp` includes `<QDialog>` for a window-test hook in
+`MainWindow.h`. Building a package module runs `qt_wrap_cpp` on its headers,
+which marks them `SKIP_AUTOMOC` for the whole directory after `CMakeLists.txt`
+has cleared that flag for the AUTOMOC test targets, so
+`forkmesh-window-tests` and `forkmesh-perf-tests` lost the module headers' moc
+output (`VoiceAudioPipeline`'s vtable). `forkmesh_add_package_modules` clears
+the flag again right after wrapping.
 
 ### Secrets: copy until finalized
 

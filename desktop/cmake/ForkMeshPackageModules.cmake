@@ -134,6 +134,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
             set(_mocs "")
             qt_wrap_cpp(_mocs ${_headers} TARGET ${_target})
             target_sources(${_target} PRIVATE ${_mocs})
+            set_source_files_properties(${_headers} PROPERTIES SKIP_AUTOMOC OFF)
             set(_mocs "")
         endif()
         set_target_properties(${_target} PROPERTIES

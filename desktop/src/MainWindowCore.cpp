@@ -8,6 +8,7 @@
 #include "MainWindow.h"
 #include "NodeEventSocket.h"
 
+#include <QDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>

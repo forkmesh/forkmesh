@@ -2203,6 +2203,8 @@ if(FORKMESH_BUILD_TESTS)
         tests/test_pull_store_retire.cpp
         src/PullStore.h
         src/PullStore.cpp
+        src/PullStoreCore.h
+        src/PullStoreCore.cpp
         src/AppPaths.h
         src/AppPaths.cpp
         src/ForkMeshIdentity.h
@@ -2566,7 +2568,7 @@ if(FORKMESH_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(forkmesh-agent-model-stats-tests PRIVATE
         FORKMESH_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/..")
-    target_link_libraries(forkmesh-agent-model-stats-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-model-stats-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-model-stats-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
@@ -2639,7 +2641,7 @@ if(FORKMESH_BUILD_TESTS)
     )
     target_compile_definitions(forkmesh-agent-transport-tests PRIVATE
         FORKMESH_AGENT_TRANSPORT_TESTS=1)
-    target_link_libraries(forkmesh-agent-transport-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-transport-tests PRIVATE Qt6::Core Qt6::Network)
 
     # Deleting an agent has to stay recoverable for the retention window, and
     # the bin has to be swept once that window passes (issue #578).
@@ -2653,7 +2655,7 @@ if(FORKMESH_BUILD_TESTS)
     )
     target_include_directories(forkmesh-agent-recycle-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(forkmesh-agent-recycle-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-recycle-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-recycle-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
@@ -2672,7 +2674,7 @@ if(FORKMESH_BUILD_TESTS)
     )
     target_include_directories(forkmesh-agent-cloud-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(forkmesh-agent-cloud-tests PRIVATE Qt6::Core)
+    target_link_libraries(forkmesh-agent-cloud-tests PRIVATE Qt6::Core Qt6::Network)
     if(APPLE)
         set_target_properties(forkmesh-agent-cloud-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
