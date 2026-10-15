@@ -79,7 +79,7 @@ extension MiniAppClient {
                 .object(["id": .string($0.id), "name": .string($0.name), "version": .string($0.version),
                          "summary": .string($0.summary), "methods": JSONValue($0.methods), "events": JSONValue($0.events)])
             }
-            settings.prefs.set(JSON.encode(["plugins": .array(rows)]), forKey: Self.appsKey)
+            settings.prefs.set(JSON.encode(["plugins": .array(rows)] as JSONObject), forKey: Self.appsKey)
         }
     }
 }
