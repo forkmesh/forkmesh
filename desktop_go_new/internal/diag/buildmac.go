@@ -17,7 +17,7 @@ const (
 	buildMacStaleLockSeconds = 4 * 60 * 60
 	buildMacProbeTimeout     = 12 * time.Second
 	buildMacCacheMs          = 20000
-	buildMacDefaultHost      = "192.168.1.201"
+	buildMacDefaultHost      = ""
 )
 
 var buildMacJobJunk = regexp.MustCompile(`[^A-Za-z0-9 ._/+-]`)
@@ -94,6 +94,9 @@ func (b *buildMac) status(ctx context.Context, sshDir string, variables func() s
 	key := filepath.Join(dir, "id_ed25519")
 	knownHosts := filepath.Join(dir, "known_hosts")
 	if !fileExists(key) || !fileExists(knownHosts) {
+		return map[string]any{"configured": false}, nil
+	}
+	if macBuildHost(variables()) == "" {
 		return map[string]any{"configured": false}, nil
 	}
 	b.mu.Lock()

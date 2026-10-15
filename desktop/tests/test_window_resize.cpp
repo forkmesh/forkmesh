@@ -30847,7 +30847,7 @@ else:
         // passes hundreds of pathspecs, so the pathspec list is summarised
         // rather than pasted (or blindly chopped two files in).
         {
-            QStringList many{"-C", "/home/f/projects/forkmesh", "diff", "main",
+            QStringList many{"-C", "/home/tester/projects/forkmesh", "diff", "main",
                              "--"};
             for (int i = 0; i < 291; ++i)
                 many << QStringLiteral(":(literal)app/tests/"

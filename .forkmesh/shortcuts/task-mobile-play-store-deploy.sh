@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# name: Remind Kaif: deploy to the Play Store
-# description: Create a Tasks-page reminder assigned to Kaif (mdkaifansari04) to ship the Android app to Google Play from the ForkMesh Google account, with the current version, the newest release tag and the commands to build the bundle.
+# name: Remind release maintainer: deploy to the Play Store
+# description: Create a Tasks-page reminder assigned to the configured release maintainer to ship the Android app to Google Play, with the current version, the newest release tag and the commands to build the bundle.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -9,14 +9,15 @@ tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
 gradle=native/android/app/build.gradle.kts
 version=$(sed -n 's/.*versionName = versionNameOverride.ifEmpty { "\(.*\)" }.*/\1/p' "$gradle")
 code=$(sed -n 's/.*versionCode = versionCodeOverride ?: \([0-9]*\).*/\1/p' "$gradle")
-exec python3 -I - "$PWD" "$head" "$tag" "$version" "$code" <<'PY'
+: "${FORKMESH_RELEASE_ASSIGNEE:?set FORKMESH_RELEASE_ASSIGNEE to the release maintainer account}"
+exec python3 -I - "$PWD" "$head" "$tag" "$version" "$code" "$FORKMESH_RELEASE_ASSIGNEE" <<'PY'
 import sys
 
-root, head, tag, version, code = sys.argv[1:6]
+root, head, tag, version, code, assignee = sys.argv[1:7]
 sys.path.insert(0, root + "/tools")
 import forkmesh_mcp_server as mcp
 
-details = f"""Kaif, a reminder to deploy the Android app to the Google Play Store, using the ForkMesh Google account we already created.
+details = f"""A reminder to deploy the Android app to the Google Play Store.
 
 - Android version on main: {version} / versionCode {code} (native/android/app/build.gradle.kts)
 - Newest release tag: {tag or "none"}
@@ -38,7 +39,7 @@ task = mcp.create_task({
     "title": "Reminder: deploy the Android app to the Play Store",
     "details": details,
     "assigneeKind": "user",
-    "assignee": "mdkaifansari04",
+    "assignee": assignee,
     "repository": "forkmesh/forkmesh",
 })
 created = task.get("task") if isinstance(task.get("task"), dict) else task

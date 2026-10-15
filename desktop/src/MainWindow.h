@@ -314,6 +314,7 @@ class DatabaseManagerWidget;
 class DesktopProcessView;
 class FleetVisualizer;
 class QueryInspector;
+namespace desktopprocs { struct Process; }
 }
 class QButtonGroup;
 class QGridLayout;
@@ -4599,6 +4600,8 @@ private:
     void sendDiagnosticsReportToAgent();
     void resetDiagnosticsReportBaseline();
     void showDiagnosticsDialog();
+    void showDesktopResourceDiagnostics();
+    void showDesktopProcessDetails(const forkmesh::desktopprocs::Process &process);
     void showHighMemoryProcessPanel(bool activate = true);
     void updateHighMemoryHeading();
     void refreshHighMemoryProcessTable();
@@ -8191,6 +8194,7 @@ private:
                                      const QStringList &merged,
                                      const QStringList &mergedRemote);
     void deleteSelectedBranches();
+    void refreshBranchesFromRemotes();
     QWidget *buildReleasesTab();
     void loadReleasesPanel();
     void promptNewRelease();
@@ -11956,6 +11960,7 @@ private:
     int m_logFleetVisualizerTabIndex = -1;
     forkmesh::QueryInspector *m_queryInspector = nullptr;
     forkmesh::DesktopProcessView *m_desktopProcessView = nullptr;
+    int m_logDesktopResourceTabIndex = -1;
     // D1's account-wide daily row metrics and direct bound-database storage
     // measurement from /api/accounts/admin-d1-usage-report.
     QJsonObject m_logD1UsageReport;
@@ -12394,6 +12399,8 @@ private:
     QLabel *m_branchesSummary = nullptr;
     QPushButton *m_branchPullAllButton = nullptr; // safe bulk fast-forward action
     QPushButton *m_branchDeleteMergedButton = nullptr; // "Delete merged" header action
+    QPushButton *m_branchDeleteSelectedButton = nullptr;
+    bool m_branchRefreshRunning = false;
     QTextBrowser *m_branchDiffView = nullptr;
     QString m_branchDiffBranch;
     int m_branchDiffPullNumber = -1;
