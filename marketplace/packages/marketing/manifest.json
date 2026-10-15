@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "summary": "One marketing command center: web traffic by channel and search keywords from Analytics, every channel's stats, campaigns planned with the Marketing agent, content, ads across 100 channels, and posting to X.",
   "screenshots": [
     { "path": "preview/market.png", "alt": "Marketing dashboard with channel KPIs, performance trends, and a cross-channel content pipeline" }
