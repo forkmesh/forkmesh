@@ -530,7 +530,11 @@ public final class DirectMessageService {
         cancelReconnects()
         if foreground {
             backoff.removeAll()
-            watchWanted()
+            Task { [weak self] in
+                guard let self else { return }
+                for socket in Array(self.sockets.values) { await self.close(socket) }
+                self.watchWanted()
+            }
         }
     }
 

@@ -60,6 +60,31 @@ func TestHelloAdvertisesProtocolAndFeatures(t *testing.T) {
 	}
 }
 
+func TestHelloMarksHeadlessDesktop(t *testing.T) {
+	server, endpoint := startServer(t, rpc.NewRegistry())
+	for _, tc := range []struct {
+		params map[string]any
+		want   bool
+	}{
+		{map[string]any{"role": "ui", "token": endpoint.Token, "protocol": Protocol}, false},
+		{map[string]any{"role": "ui", "token": endpoint.Token, "protocol": Protocol, "headless": true}, true},
+	} {
+		client, hello := dialHello(t, endpoint, tc.params)
+		if hello.OK == nil || !*hello.OK {
+			t.Fatalf("hello: %+v", hello)
+		}
+		ui := server.UI()
+		if ui == nil || ui.Headless() != tc.want {
+			t.Fatalf("ui %v headless want %v", ui, tc.want)
+		}
+		client.conn.Close()
+		deadline := time.Now().Add(2 * time.Second)
+		for server.UI() != nil && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
 func TestHelloRefusesTooOldProtocol(t *testing.T) {
 	if ProtocolMin <= 1 {
 		_, endpoint := startServer(t, rpc.NewRegistry())

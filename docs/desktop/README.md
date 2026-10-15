@@ -66,7 +66,14 @@ Everything is in `desktop/`.
   app-level project; each has its own lock and single-instance socket. The
   default project is `forkmesh`. A second launch hands its target (a
   `forkmesh://` link, a folder path or a `file://` URL) to the running window
-  over that socket; macOS delivers it as a `QFileOpenEvent`.
+  over that socket; macOS delivers it as a `QFileOpenEvent`. If the running
+  instance is the one the engine runs without a window, it answers `yield`
+  and quits, and the new launch takes the lock and opens the window
+  ([core.md](core.md), Independent lifecycle). The socket name carries the
+  project and, for a state folder outside the default place, the first 16
+  hex digits of the SHA-256 of that folder. Until 2026-10-15 it used
+  `qHash`, which Qt seeds per process, so two launches of a sandboxed
+  profile never found each other's socket.
 - **Projects.** The project picker lists every slug-named folder in the
   projects root, hidden folders and symlinks excluded. Removing a project
   never deletes it: `project.json` is set aside so the folder is unlisted, and

@@ -220,6 +220,10 @@ lasts 60 s, is spent by any attempt, at most 32 outstanding).
 | `teammates.list/get/briefing/stats/room/selectRepo/prepare/run`, `insights.usage` | Desktop (Team page selection, session totals and the chat model are desktop state) |
 | `wallet.*`, `discord.*`, `pings.*`, `stats.sentry` | Desktop (tip queue and passphrase dialog, the Discord client and chat model, the notification list, the Sentry package's in-memory client) |
 
+Rows marked Desktop need a desktop process. With no window open, a core in
+background mode on Linux runs one without a window (Independent lifecycle →
+Desktop without a window), so they keep working from the phone.
+
 `secrets.*` writes go through the desktop: once the core has spent the token it
 asks `ui.secrets.apply`, the desktop re-checks and writes through the vault
 facade, and the core logs the request and notifies phones with
@@ -750,7 +754,10 @@ accounts) remains in the desktop.
 - **Without a desktop.** Lists, queue, follows, transcripts, diffs, files,
   worktrees, merge stats and the recycle bin still answer; `agents.stop` stops
   the session's processes and saves it Stopped; `agents.queue.move` updates
-  priorities. Starting or prompting answers `desktop_unavailable`.
+  priorities. Starting or prompting answers `desktop_unavailable`. In
+  background mode on Linux the core starts the desktop without a window
+  (Independent lifecycle), so this applies only to its first minute or
+  when that is turned off.
 - **Core-confirmed requests.** For actions the desktop executes, the core
   checks and spends the token, then delegates with `_coreConfirmed: <secret>`;
   the desktop skips its own check only when the secret matches and the request
@@ -957,9 +964,11 @@ and service plug-ins running, and the next window re-attaches to the same core.
     socket → Reconnect at start and What else the boot-time core restores;
     Local mesh → Start without the desktop), so the phone reaches it before
     anyone logs in. The desktop has to have been signed in once with the core
-    attached. Phone requests the desktop executes (`agents.start` and the
-    other "Desktop" rows under Phone families) answer `desktop_unavailable`
-    until a window opens.
+    attached. A minute later the core starts the desktop without a window
+    (below), which serves the requests only the desktop executes
+    (`agents.start` and the other "Desktop" rows under Phone families) and
+    pushes the agent list context; until then they answer
+    `desktop_unavailable`.
   - macOS and Windows start the engine when the user signs in (with automatic
     sign-in, that is at boot); a boot-time service there needs administrator
     rights and is not offered.
@@ -1021,11 +1030,56 @@ and service plug-ins running, and the next window re-attaches to the same core.
     because notification balloons need a visible icon in the process that
     shows them; it uses the ForkMesh icon, clicking it or its "Open ForkMesh"
     item brings the window forward. While a window for the project runs (the
-    pid in `state/forkmesh.lock`, the single-instance lock, is alive) the tray
-    process hides its icon, and shows it again within 2 s of the window
+    pid in `state/forkmesh.lock`, the single-instance lock, is alive and is
+    not the desktop without a window) the tray process hides its icon, and shows it again within 2 s of the window
     closing.
   - On macOS the tray sets the accessory activation policy so it has no Dock
     icon.
+- **Desktop without a window** (`internal/daemon/desktop.go`, `forkmesh
+  --headless`). After the 2026-10-15 reboots the boot-time core reached the
+  phone, but the phone showed no agent sessions: `agents.list` answers
+  natively only once a desktop has pushed its context and provider
+  credentials (Agent session model), and starting or prompting agents,
+  teammates, wallet, Discord and pings run only in the desktop. Porting all
+  of that would duplicate the launch path, so the core now runs the desktop
+  itself, with no window, whenever none is open.
+  - When: Linux, the core in background or computer-start mode, its state
+    folder the project's default, the desktop binary next to `forkmesh-core`,
+    `state/core/control-info.json` present (the desktop signed in once), no
+    desktop attached for 1 minute, and no live window holding
+    `state/forkmesh.lock`. Turned off with `headlessDesktop: false` in
+    `config/core/daemon.json` (`forkmesh-core headless off`, `core.daemon.set
+    {headlessDesktop}`, Settings → General → STARTUP "Run ForkMesh without a
+    window while none is open"); on by default.
+  - How: `forkmesh --headless --project <slug>` with `QT_QPA_PLATFORM=offscreen`
+    and `FORKMESH_NO_SPLASH=1`, the service variables removed, and under a unit
+    in `systemd-run --user --scope --unit=forkmesh-desktop-<project>` like the
+    tray. It is the full desktop: it attaches as the UI with `headless: true`
+    in its `core.hello`, configures the relay, pushes the agent model and
+    credentials, and executes delegated phone requests. It does not launch a
+    core, does not save the window geometry, and quits when its core
+    connection drops or no core answers within 90 s.
+  - Opening a window: a new `forkmesh` finds the single-instance lock held
+    and sends `activate` as before; the windowless instance answers
+    `yield\n` and shuts down the way SIGTERM does (with a 25 s `_Exit`
+    backstop), and the new instance waits up to 45 s for the lock behind the
+    splash ("Taking over from ForkMesh running without a window"). A
+    windowless instance that finds the lock held exits without activating
+    anything. It writes its pid to `state/forkmesh-background.pid`, so the
+    tray keeps its icon while only the windowless instance holds the lock.
+  - Restarts: an exit within 2 minutes of starting backs off 1 minute,
+    doubling to 30; a window attaching resets that. One that has not attached
+    after 5 minutes (a modal dialog with nobody to answer it) is stopped and
+    backed off the same way. When the desktop binary
+    is replaced (settled for 10 s) it is stopped and started again on the new
+    one. The core stops it with SIGTERM when the setting or background mode
+    goes off and when the core stops (waiting up to 20 s); a core restart
+    therefore restarts it too.
+  - The core treats a headless UI as no desktop for the in-place upgrade
+    check, busy checks and the idle memory trim; `core.daemon.get` reports
+    `headlessDesktop {enabled, supported, running, pid?, attached?}`.
+  - Log lines: `desktop without a window started (pid N)`, `... exited`,
+    `stopping the desktop without a window (pid N): <reason>`.
 - **Single instance.** `core.lock` is an exclusive lock on every platform
   (`flock`; `LockFileEx` on Windows, which previously only opened the file). A
   second `serve --background` exits 0 so a supervisor does not restart-loop
@@ -1046,15 +1100,16 @@ and service plug-ins running, and the next window re-attaches to the same core.
   (`debug.FreeOSMemory`). Module busy checks only run while no desktop is
   attached.
 - **Methods (desktop and CLI only).** `core.daemon.get`; `core.daemon.set
-  {background?, autostart?, binary?}` (answers the new state and broadcasts
+  {background?, headlessDesktop?, autostart?, binary?}` (answers the new state and broadcasts
   `core.daemon.changed`; errors `bad_binary`, `bad_project`,
   `autostart_failed`, `config_write_failed`); `core.daemon.restart`.
 - **CLI.** `forkmesh-core start` (detached background core, waits until it
   answers), `stop`, `status`, `background on|off|status`,
+  `headless on|off|status`,
   `autostart enable|disable|status [--binary <path>]`.
 - **Desktop.** Settings → General → STARTUP shows "Keep the background engine
   running after ForkMesh closes", "Start the background engine when the
-  computer starts", the core's version, pid and last stop, and one checkbox per service
+  computer starts", "Run ForkMesh without a window while none is open" (Linux), the core's version, pid and last stop, and one checkbox per service
   plug-in (enabling asks for consent and lists its permissions)
   (`CoreDaemonSettings`).
 

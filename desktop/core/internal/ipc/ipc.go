@@ -264,6 +264,7 @@ func (s *Server) serveConn(ctx context.Context, raw net.Conn, isTCP bool) {
 		Name     string `json:"name"`
 		PID      int    `json:"pid"`
 		Protocol int    `json:"protocol"`
+		Headless bool   `json:"headless"`
 	}
 	_ = json.Unmarshal(hello.Params, &auth)
 	if !isTCP && !sameUserPeer(raw) {
@@ -300,6 +301,7 @@ func (s *Server) serveConn(ctx context.Context, raw net.Conn, isTCP bool) {
 	}
 	conn := newConn(s, raw, role, auth.Name, auth.PID)
 	conn.protocol = auth.Protocol
+	conn.headless = role == rpc.UI && auth.Headless
 	s.mu.Lock()
 	s.conns[conn] = struct{}{}
 	previous := s.ui
@@ -424,6 +426,7 @@ type Conn struct {
 	cancels   map[int64]*inflightCall
 	inflight  sync.WaitGroup
 	protocol  int
+	headless  bool
 }
 
 func newConn(server *Server, raw net.Conn, transport rpc.Transport, name string, pid int) *Conn {
@@ -440,6 +443,7 @@ func (c *Conn) Done() <-chan struct{}    { return c.done }
 func (c *Conn) PID() int                 { return c.pid }
 func (c *Conn) PeerPID() (int, bool)     { return peerPID(c.raw) }
 func (c *Conn) Protocol() int            { return c.protocol }
+func (c *Conn) Headless() bool           { return c.headless }
 func (c *Conn) Send(event string, data any) bool {
 	return c.SendRaw(rpc.EventFrame(event, data))
 }

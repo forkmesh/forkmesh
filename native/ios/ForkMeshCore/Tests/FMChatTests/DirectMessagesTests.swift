@@ -475,6 +475,24 @@ final class DirectMessagesTests: XCTestCase {
         XCTAssertEqual(ws.connections.count, 3)
     }
 
+    @MainActor func testResumeReopensActiveDirectRoomsForHistoryReplay() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws)
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        XCTAssertEqual(ws.connections.count, 1)
+
+        service.appLifecycleChanged(.paused)
+        service.appLifecycleChanged(.resumed)
+
+        let reopened = await waitUntil { ws.connections.count == 2 && service.isConnected(conversation) }
+        XCTAssertTrue(reopened)
+        XCTAssertEqual(api.calls.filter { $0.1.hasSuffix("/room-access") }.count, 2)
+        await service.closeAll()
+    }
+
     @MainActor func testStartAndReadMarksUseTheServerContract() async throws {
         let api = FakeAccountApi()
         api.replies["POST /api/chat/direct-messages"] = [
