@@ -288,3 +288,10 @@ The app is `com.forkmesh.forkmesh` (`APP_BUNDLE_ID` in
   agent opens the composer with `MessageHandoff.agentPrompt`
   (`ForkMeshCore/Sources/FMApi/Navigation`). Chat and transcript bubbles keep
   their long-press menu (`Kit/FmMessageActions.swift`).
+- **Only the home shell shows the composer.** `Route.compose` has no screen
+  of its own: `RouteDestinationView(route: .compose(...))` in a sheet shows
+  the "New agent is not in this version of the app yet" placeholder. Hand a
+  prepared prompt to `FmMessageHandoff.compose(target)`, which closes any
+  open sheet and asks the shell's composer to open. The failed Actions run's
+  "Send to agent" used its own sheet and showed the placeholder until
+  2026-10-15.
