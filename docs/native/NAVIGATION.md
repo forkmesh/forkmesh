@@ -555,11 +555,21 @@ when a phrase or answer changes.
 
 ### 6.2 Widgets, Live Activities and controls
 
-- **Live Activities** per running agent (face, title, step, elapsed time,
-  tokens; Stop, and Approve with authentication), timers, and walks. The app
-  updates them locally; they go stale after 15 minutes. They are requested
-  without a push type: the served stack has no `liveactivity` sender or token
-  route.
+- **One summary Live Activity** (`ActivitySummaryAttributes`,
+  `ForkMeshWidgets/SummaryLiveActivity.swift`) instead of one per agent, so the
+  Dynamic Island holds a single item: agents needing you, running and queued;
+  the first three active agents with their elapsed time; running desktop
+  shortcuts with a progress bar timed from the last run's duration; the
+  planning timer; and the unread count on the Lock Screen. Approve (with
+  authentication) shows for the first pending request, Stop when exactly one
+  agent runs. Compact view: the lead icon and a count of agents plus
+  shortcuts, then a shortcut's progress ring, the timer, or the elapsed time.
+  `ActivitySummaryPlanner` starts it while the app is in front, updates it,
+  and ends it when nothing is left (kept while the agent list is failing to
+  load). Walks keep their own Live Activity, since a walk starts in the
+  background. The app updates them locally; they go stale after 15 minutes
+  (or a minute after the timer ends). They are requested without a push type:
+  the served stack has no `liveactivity` sender or token route.
 - **Widgets**: running agents, Inbox count and top items, a pinned
   repository's open PRs, the timer; Lock Screen accessories for running agents
   and unread items. Data is shared through the keychain group
