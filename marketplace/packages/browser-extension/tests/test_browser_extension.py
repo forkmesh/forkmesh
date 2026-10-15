@@ -439,14 +439,21 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
         'only "Send to Reddit desk" and the end of a walk send the desk anything')
     assert "redditSync(state)" in BACKGROUND.split("const redditSyncNow =", 1)[1]
     assert "redditSync(state)" in BACKGROUND.split("async function redditWalkRun(", 1)[1]
-    assert BACKGROUND.count("await redditFetchWatch(state)") == 8
+    assert BACKGROUND.count("await redditFetchWatch(state)") == 9
     assert "await redditFetchWatch(current)" in BACKGROUND.split("async function redditWalkStart(", 1)[1]
     for caller in ("const redditStatsNow =", "const redditRefresh =",
                    "async function redditSync(state)", "const redditMonitorAdd =",
                    "const redditMonitorRemove =", "async function redditCheck()",
-                   "async function redditProfileUpdate("):
+                   "async function redditProfileUpdate(", "async function redditAccountsUpdate("):
         assert "await redditFetchWatch(state)" in BACKGROUND.split(caller, 1)[1].split("\n}", 1)[0]
     assert '"fm-reddit-profile-update"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
+    accounts = BACKGROUND.split("async function redditAccountsUpdate(", 1)[1].split("\n}\n", 1)[0]
+    assert '"fm-reddit-accounts-update"' in BACKGROUND.split("const REDDIT_WALK_SENDERS = new Set(", 1)[1].split(");", 1)[0]
+    assert '!== await xOrganization()) throw new ApiError("reddit_organization_mismatch"' in accounts
+    assert "redditProfileTab(`https://www.reddit.com/user/${encodeURIComponent(account)}/${tab}/`)" in accounts
+    assert "redditMineRecord(state, await redditBase(), account, read.items, entry)" in accounts
+    profile_tab = BACKGROUND.split("async function redditProfileTab(", 1)[1].split("\n}\n", 1)[0]
+    assert "active: false" in profile_tab and "chrome.tabs.remove(tab.id)" in profile_tab
     assert 'request?.type === "fm-reddit-profile-read" && sender?.id === chrome.runtime.id && !sender.tab' in reader
     assert "if (profile) return watch.accounts.has(profile.account.toLowerCase()) ? profile : null;" in reader
     mine = BACKGROUND.split("async function redditSendMine(", 1)[1].split("\n}\n", 1)[0]
