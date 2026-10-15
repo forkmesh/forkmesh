@@ -129,10 +129,10 @@ void NodeEventSocket::reconnectNow()
     openConnection();
 }
 
-void NodeEventSocket::stop()
+void NodeEventSocket::stop(bool stopCoreRelay)
 {
     m_userStopped = true;
-    if (m_coreMode && m_core && m_core->isConnected())
+    if (stopCoreRelay && m_coreMode && m_core && m_core->isConnected())
         m_core->notify(QStringLiteral("core.relay.stop"));
     m_coreMode = false;
     m_coreBacklog = 0;

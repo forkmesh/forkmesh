@@ -78,7 +78,7 @@ writes both the vault and the plaintext.
 | Path | Responsibility |
 | --- | --- |
 | `cmd/forkmesh-core` | The binary: `serve`, `start`, `call <method> [json]`, `status`, `stop`, `background`, `autostart`, `plugins`, `version`; `modules.go` lists the modules |
-| `internal/daemon` | `Core`: layout, identity, registry, hub, settings cache, built-ins (`core.ping`, `core.status`, `core.routes`, `core.owners`, `core.shutdown`, `core.daemon.*`), single-instance lock, linger, background mode, crash record, in-place upgrade |
+| `internal/daemon` | `Core`: layout, identity, registry, hub, settings cache, built-ins (`core.ping`, `core.status`, `core.routes`, `core.owners`, `core.shutdown`, `core.daemon.*`), single-instance lock, linger, background mode, crash record, in-place upgrade, `Remember`/`Recall`/`Forget` for state the desktop last gave |
 | `internal/autostart` | Login start: systemd user unit or XDG autostart entry, LaunchAgent, Windows Run key |
 | `internal/ipc` | Local transport: newline-delimited JSON, protocol 2 (cancel, progress), requests both ways, `control.adopt` socket hand-off, peer credentials |
 | `internal/plugins` | Service plug-ins: discovery, signatures, consent, sandboxed processes, `core.plugins.*`, `plugin.<id>.*` ([service-plugins.md](service-plugins.md)) |
@@ -289,9 +289,12 @@ its control channel while the desktop restarts.
 - **Facade.** `NodeEventSocket` keeps its API and mirrors `core.relay.state`.
   It gives a connecting core 5 s before opening its own socket, and after a
   core connection drop opens its own after 15 s. `stop()` (sign-out, offline
-  mode) sends `core.relay.stop`; a desktop quit sends nothing, so the core keeps
-  the socket. If a newly attached desktop sends no configure within 2 minutes,
-  the core closes the socket.
+  mode) sends `core.relay.stop`; a desktop quit (`closeEvent` calls
+  `stop(false)`) sends nothing, so the core keeps the socket. Until 2026-10-15
+  the quit also sent `core.relay.stop`, which deleted the saved settings below
+  on every log-out and shutdown, so the core started at the next boot had
+  nothing to reconnect with. If a newly attached desktop sends no configure
+  within 2 minutes, the core closes the socket.
 - **Reconnect at start.** Every accepted configure writes
   `state/core/relay.json` (mode 0600: endpoint, owner, account, node and the
   node public key; no signature or token, each attempt signs afresh with the
@@ -301,6 +304,16 @@ its control channel while the desktop restarts.
   core served only its local socket until a window opened. `core.relay.stop`
   (sign-out, offline mode) deletes the file; a key that no longer matches the
   saved public key skips the reconnect; the 2-minute reclaim close keeps it.
+- **What else the boot-time core restores.** A relay alone is not enough for a
+  phone: the control module drops every relay frame until it knows the node
+  name, and owner-only families answer `not_owner` until it knows the owners.
+  So `control.info` is saved to `state/core/control-info.json` (name, user,
+  node; an all-empty info deletes it) and `core.owners` to
+  `state/core/owners.json`, and both are loaded at start. The LAN room is
+  restored the same way (Local mesh → Start without the desktop). All files go
+  through `Core.Remember/Recall/Forget` (`internal/daemon/remember.go`: one
+  file name inside `state/core/`, mode 0600, written to a temp file and
+  renamed).
 - **Traps.** The relay connection now comes from the `forkmesh-core`
   executable, so a path-keyed firewall needs its own rule for it. If only the
   IPC link drops, both processes may briefly hold a node socket.
@@ -411,6 +424,14 @@ messages survive a desktop restart.
   keys go to `data/local_mesh/seal-peers-<sha16>.json`.
 - **Phone control.** An `fm-control-hello` on an inbound link goes straight to
   the control module.
+- **Start without the desktop.** Every accepted `core.mesh.start` (and each
+  later `core.mesh.identity` or `core.mesh.control`) writes
+  `state/core/mesh.json` with the start parameters minus `sealKey`; the key
+  comes from the vault or `ForkMesh.conf` as usual. At start the core reopens
+  the room from that file, so phones on the LAN reach a core started at boot
+  before anyone logs in; the desktop's own `core.mesh.start` then finds the
+  room running and attaches. `core.mesh.stop` deletes the file. The desktop
+  never sends `core.mesh.stop` on quit, so the room keeps running.
 - **Methods (desktop only).** `core.mesh.start/stop/state/history/diagnostics/connect`;
   ordered notifications for sends, typing and Bluetooth link bytes; events for
   messages, peers, queue and link writes.
@@ -910,9 +931,14 @@ and service plug-ins running, and the next window re-attaches to the same core.
     when the computer starts" or "Starts when you log in" plus the
     `loginctl enable-linger` hint. Lingering also keeps the user's processes
     running after log-out and starts the user's other enabled units at boot.
-    The boot-time core reconnects to the relay from the settings the desktop
-    last gave (Relay socket → Reconnect at start); the desktop has to have been
-    signed in once with the core attached.
+    The boot-time core reconnects to the relay, reopens the LAN room and
+    restores the node name and owners from what the desktop last gave (Relay
+    socket → Reconnect at start and What else the boot-time core restores;
+    Local mesh → Start without the desktop), so the phone reaches it before
+    anyone logs in. The desktop has to have been signed in once with the core
+    attached. Phone requests the desktop executes (`agents.start` and the
+    other "Desktop" rows under Phone families) answer `desktop_unavailable`
+    until a window opens.
   - macOS and Windows start the engine when the user signs in (with automatic
     sign-in, that is at boot); a boot-time service there needs administrator
     rights and is not offered.

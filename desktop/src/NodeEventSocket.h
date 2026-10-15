@@ -44,7 +44,7 @@ public:
     bool coreOwned() const { return m_coreMode; }
 
     void start();
-    void stop();
+    void stop(bool stopCoreRelay = true);
     void reconnectNow();
     bool isConnected() const { return m_wsReady; }
     bool accepts(const QString &kind) const
