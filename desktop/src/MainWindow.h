@@ -10774,6 +10774,7 @@ private:
     QLabel *m_marketStatus = nullptr;
     QLineEdit *m_marketSearch = nullptr;
     QLabel *m_marketSearchEmpty = nullptr;
+    QString m_marketCategoryFilter;
     QComboBox *m_marketSort = nullptr;
     QVBoxLayout *m_marketPacksLayout = nullptr;
     QVBoxLayout *m_marketGuidesLayout = nullptr;
