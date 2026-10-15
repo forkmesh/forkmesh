@@ -63,7 +63,8 @@ bool desktopWindowRunning()
     qint64 pid = 0;
     QString host;
     QString application;
-    return QLockFile(singleInstanceLockPath()).getLockInfo(&pid, &host, &application) && pidAlive(pid);
+    return QLockFile(singleInstanceLockPath()).getLockInfo(&pid, &host, &application) && pidAlive(pid) &&
+           pid != backgroundInstancePid();
 }
 
 QString toolTip(const core::Endpoint &endpoint, const QString &project)

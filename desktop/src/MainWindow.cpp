@@ -24,6 +24,7 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
 #include "SettingsSectionsView.h"
+#include "SingleInstance.h"
 #include "StatsDashboard.h"
 #include "NetworkReplyError.h"
 #include "NodeEventSocket.h"
@@ -1485,8 +1486,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
         m_discordClient->stop();
     if (m_backend)
         m_backend->shutdown();
-    QSettings().setValue(kWindowGeometrySetting, saveGeometry());
-    savePromptOverlayPlacement();
+    if (!forkmesh::isBackgroundInstance()) {
+        QSettings().setValue(kWindowGeometrySetting, saveGeometry());
+        savePromptOverlayPlacement();
+    }
     if (m_connectedAtMs > 0)
         QSettings().setValue(kConnectionTotalSetting,
                              m_totalConnectionMs +

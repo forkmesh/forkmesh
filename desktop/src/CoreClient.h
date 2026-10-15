@@ -53,6 +53,7 @@ public:
     void setStateDirectory(const QString &dir) { m_stateDir = dir; }
     void setBinaryPath(const QString &path) { m_binary = path; }
     void setAutoLaunch(bool launch) { m_autoLaunch = launch; }
+    void setHeadless(bool headless) { m_headless = headless; }
     QString binaryPath() const { return m_binary; }
     QString stateDirectory() const { return m_stateDir; }
 
@@ -111,6 +112,7 @@ private:
     QString m_stateDir;
     QString m_binary;
     bool m_autoLaunch = true;
+    bool m_headless = false;
     bool m_running = false;
     bool m_connected = false;
     bool m_helloSent = false;

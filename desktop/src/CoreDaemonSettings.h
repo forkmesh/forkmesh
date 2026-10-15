@@ -25,6 +25,7 @@ private:
     QPointer<CoreClient> m_client;
     QCheckBox *m_background = nullptr;
     QCheckBox *m_autostart = nullptr;
+    QCheckBox *m_headless = nullptr;
     QLabel *m_status = nullptr;
     QLabel *m_servicesLabel = nullptr;
     QVBoxLayout *m_services = nullptr;
