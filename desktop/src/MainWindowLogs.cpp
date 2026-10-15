@@ -879,6 +879,20 @@ QWidget *MainWindow::buildLogSection()
     visualizerScroll->setWidgetResizable(true);
     m_queryInspector = new forkmesh::QueryInspector;
     m_desktopProcessView = new forkmesh::DesktopProcessView;
+    m_desktopProcessView->onProcessClicked = [this](const auto &process) {
+        showDesktopProcessDetails(process);
+    };
+    auto *desktopResourceScroll = new QScrollArea;
+    desktopResourceScroll->setObjectName(QStringLiteral("desktopResourceScroll"));
+    desktopResourceScroll->setFrameShape(QFrame::NoFrame);
+    desktopResourceScroll->setWidgetResizable(true);
+    desktopResourceScroll->setWidget(m_desktopProcessView);
+    m_logDesktopResourceTabIndex = m_logViewTabs->addTab(
+        desktopResourceScroll, QStringLiteral("Desktop"));
+    m_logViewTabs->setTabToolTip(
+        m_logDesktopResourceTabIndex,
+        QStringLiteral("Live CPU, memory, disk and process diagnostics for this "
+                       "desktop. Select a process to inspect or stop it."));
     auto *visualizerPage = new QWidget;
     visualizerPage->setObjectName(QStringLiteral("fleetVisualizerPage"));
     auto *visualizerLayout = new QVBoxLayout(visualizerPage);
@@ -886,7 +900,6 @@ QWidget *MainWindow::buildLogSection()
     visualizerLayout->setSpacing(0);
     visualizerLayout->addWidget(m_fleetVisualizer);
     visualizerLayout->addWidget(m_queryInspector);
-    visualizerLayout->addWidget(m_desktopProcessView);
     visualizerLayout->addStretch(1);
     visualizerScroll->setWidget(visualizerPage);
     m_logFleetVisualizerTabIndex = m_logViewTabs->addTab(
@@ -895,8 +908,7 @@ QWidget *MainWindow::buildLogSection()
         m_logFleetVisualizerTabIndex,
         QStringLiteral("rqlite statements flying from each node to its "
                        "tables, every query's caller, code and time, every "
-                       "node's memory, disk, files and CPU, and this "
-                       "desktop's running processes, live"));
+                       "node's memory, disk, files and CPU"));
     ensureDesktopPackageLogPages();
     connect(m_logViewTabs, &QTabWidget::currentChanged, this,
             [this](int index) {
