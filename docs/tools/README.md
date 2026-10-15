@@ -32,6 +32,7 @@ change something are dry runs unless given `--execute`.
 | `rqlite_migrate.py` | Applies `app/migrations/*.sql` to rqlite, keeping the `d1_migrations` ledger shape |
 | `source_publisher.py` | Publishes `forkmesh/forkmesh` from a checkout without the desktop ([source-publisher.md](source-publisher.md)) |
 | `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([prune-merged.md](prune-merged.md)) |
+| `free_disk_space.py` | Deletes agent scratch, build and test debris nothing uses; the **Free disk space** shortcut ([free-disk-space.md](free-disk-space.md)) |
 | `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
 | `cutover_*.py`, `rehost.py` | Hostname and cutover tooling ([CUTOVER.md](../CUTOVER.md)) |
 

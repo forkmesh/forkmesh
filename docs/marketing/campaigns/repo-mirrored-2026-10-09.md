@@ -45,6 +45,12 @@ links are untagged so they keep the post's first touch
    credential.
 3. A person presses Post.
 
+| Gate | Status on 2026-10-15 13:26 UTC |
+| --- | --- |
+| 1 | Passed. `/mirror`, bare and with the X tag, answers 200 with the template's title and **Remote clone URL**; its only "sync" is "a copy, not a live sync". The allowlist entry reached main in the same commit as the page; the served allowlist cannot be read from outside, so the first tagged visit in `/admin/acquisition` confirms it. |
+| 2 | Not run. No record of a test-account copy anywhere. |
+| 3 | Waits on gate 2. The X draft is unchanged and unposted. |
+
 ## X draft
 
 `www/tests/test_mirror_page.py` reads the block below and checks it fits 280

@@ -100,3 +100,10 @@ Launches, blog posts and events for the next eight weeks.
 ## Log
 
 One dated entry per run.
+
+- **2026-10-15.** Herald's ready X post is the core-retirement story from
+  the 2026-10-14 blog. "Is your repo mirrored?"
+  ([brief](campaigns/repo-mirrored-2026-10-09.md)): gate 1 passed (`/mirror`
+  answers 200 with the right page); gate 2, the test-account copy and
+  credential-free clone, has not been run, so the X draft stays unposted
+  and Herald does not make it the ready post yet.
