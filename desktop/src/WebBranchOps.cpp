@@ -472,6 +472,11 @@ Outcome cleanUpMergedBranch(const QString &checkoutPath,
         return kept(QStringLiteral("it moved to %1").arg(tip.left(12)));
     QString error;
     if (!runGit(checkoutPath,
+                {QStringLiteral("update-ref"),
+                 QStringLiteral("refs/forkmesh/trash/deleted/") + branch, tip},
+                nullptr, &error))
+        return kept(error.left(200));
+    if (!runGit(checkoutPath,
                 {QStringLiteral("update-ref"), QStringLiteral("-d"),
                  QStringLiteral("refs/heads/") + branch, tip},
                 nullptr, &error))
