@@ -1832,6 +1832,12 @@
   }
 
   document.addEventListener("click", async (event) => {
+    const discussionAnswerButton = event.target.closest("[data-repo-discussion-answer]");
+    if (discussionAnswerButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
     if (event.target.closest("[data-repositories-retry]")) {
       const startedAt = interfaceNow();
       const list = $("#repoList");
