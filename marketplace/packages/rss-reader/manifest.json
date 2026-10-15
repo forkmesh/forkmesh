@@ -15,7 +15,7 @@
   "summary": "An RSS, Atom and JSON Feed reader for iPhone, Android and the desktop that stays on your device: feeds are checked from the device itself, with smart feeds, folders, stars, OPML import and export and reader view. Inspired by NetNewsWire.",
   "screenshots": [
     {
-      "path": "preview/market.svg",
+      "path": "preview/market.webp",
       "alt": "RSS Reader with smart feeds and folders on the left, an article timeline with unread dots and stars in the middle, and the selected article with its toolbar on the right"
     }
   ],

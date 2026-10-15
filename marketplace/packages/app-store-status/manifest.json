@@ -15,7 +15,7 @@
   "summary": "See your iOS app in App Store Connect on the web, desktop, iPhone, or Android: App Review state, what needs action, downloads, TestFlight builds and groups, tester feedback, and customer reviews.",
   "screenshots": [
     {
-      "path": "preview/market.svg",
+      "path": "preview/market.webp",
       "alt": "App Store Status page with a needs-action banner, App Store versions with review state badges, download totals, TestFlight builds, groups, and the latest reviews"
     }
   ],
