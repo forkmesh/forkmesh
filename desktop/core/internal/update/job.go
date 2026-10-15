@@ -576,6 +576,15 @@ func (j *job) install() outcome {
 			j.out.restartLog("could not install the Go mirror-node companion beside " + appPath)
 		}
 	}
+	if core := builtCompanionPath(built, coreBinaryName(), j.env.Darwin); core != "" {
+		if installCompanionFile(core, filepath.Dir(appPath), coreBinaryName()) {
+			j.out.restartLog("installed the Go background engine (forkmesh-core) beside " + appPath + "; the desktop restarts the engine onto it once its running work finishes")
+		} else {
+			j.out.restartLog("could not install the Go background engine (forkmesh-core) beside " + appPath)
+		}
+	} else {
+		j.out.restartLog("no freshly built forkmesh-core beside " + built + "; the background engine keeps its current binary")
+	}
 	if canonical(built) != canonical(appPath) {
 		if count, err := installPackageModules(built, appPath); err != nil {
 			j.out.restartLog("could not install the package modules beside " + appPath + ": " + err.Error())

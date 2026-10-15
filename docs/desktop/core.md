@@ -585,6 +585,24 @@ does not take the lane. The 120 s limit starts once the lane is held.
   builds, installs and relaunches; a failed step stops before the build.
 - **Phone family.** `update.status/unwatch/prepare/run` are native once the
   desktop has sent `core.update.config` (300-line backlog, batched progress).
+- **Rebuild & restart shortcut** (2026-10-15). The rail, profile and Settings
+  rebuild buttons run `.forkmesh/shortcuts/rebuild-and-restart.sh` in the
+  core's shortcut runner (the desktop writes the file if it is missing), so the
+  run outlives the desktop's relaunch and its log stays in the shortcut run
+  history. The script (`tools/rebuild_restart_log.py`) calls
+  `core.update.rebuild` (desktop-only; it asks the desktop to start its usual
+  rebuild, so the debug area shows the same run, or runs it in the core), then
+  follows `core.update.state`: every output line with a timestamp, each phase
+  and its duration, the Ninja outputs compiled per module with the slowest
+  files, and which binaries (app, forkmesh-core, mirror-node) were rebuilt.
+  Without the core, the route or the source repo in the list, the button falls
+  back to the in-app rebuild.
+- **The Go engine is part of the rebuild.** CMake's `forkmesh-core-go` target
+  builds `forkmesh-core` beside the app, and the install step now copies it
+  beside an installed app too (it used to copy only the mirror-node
+  companion, so an installed desktop kept an old engine). The desktop restarts
+  the engine onto the newer binary once its running work finishes
+  (`CoreClient::binaryNewerThanCore`).
 
 ### Backups (`internal/backup`)
 

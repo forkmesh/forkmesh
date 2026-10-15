@@ -592,8 +592,7 @@ QWidget *MainWindow::buildBreadcrumb()
     connect(rebuildButton, &QPushButton::clicked, this, [this] {
         if (cancelRestartIfRunning())
             return;
-        startRestartSpin(m_navRebuildButton);
-        quickRebuildRestart();
+        runRebuildRestartShortcut(m_navRebuildButton);
     });
 
     m_navSignInButton = new QPushButton(QStringLiteral("Log in / Sign up"));

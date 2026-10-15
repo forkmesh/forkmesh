@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -266,17 +267,21 @@ func sourceChangedSince(clientDir string, since time.Time) string {
 }
 
 func builtMirrorNodeCompanionPath(built string, darwin bool) string {
+	return builtCompanionPath(built, "forkmesh-mirror-node", darwin)
+}
+
+func builtCompanionPath(built, name string, darwin bool) string {
 	dir := filepath.Dir(built)
 	executable := func(path string) bool {
 		info, err := os.Stat(path)
 		return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 	}
-	if candidate := filepath.Join(dir, "forkmesh-mirror-node"); executable(candidate) {
+	if candidate := filepath.Join(dir, name); executable(candidate) {
 		return candidate
 	}
 	if darwin {
 		up := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
-		if candidate := filepath.Join(up, "forkmesh-mirror-node"); executable(candidate) {
+		if candidate := filepath.Join(up, name); executable(candidate) {
 			return candidate
 		}
 	}
@@ -305,7 +310,11 @@ func copyFile(source, target string) error {
 }
 
 func installMirrorNodeCompanionFile(source, binDir string) bool {
-	target := filepath.Join(binDir, "forkmesh-mirror-node")
+	return installCompanionFile(source, binDir, "forkmesh-mirror-node")
+}
+
+func installCompanionFile(source, binDir, name string) bool {
+	target := filepath.Join(binDir, name)
 	if c := canonical(source); c != "" && c == canonical(target) {
 		return true
 	}
@@ -321,4 +330,11 @@ func installMirrorNodeCompanionFile(source, binDir string) bool {
 		return false
 	}
 	return true
+}
+
+func coreBinaryName() string {
+	if runtime.GOOS == "windows" {
+		return "forkmesh-core.exe"
+	}
+	return "forkmesh-core"
 }
