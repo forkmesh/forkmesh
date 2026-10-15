@@ -60,8 +60,9 @@ class FakeMac:
 
 
 class FakeProcess:
-    def __init__(self, code):
+    def __init__(self, code, output=b""):
         self.code = code
+        self.stdout = io.BytesIO(output)
 
     def wait(self):
         return self.code
@@ -97,6 +98,112 @@ def test_a_failed_step_is_not_retried():
     assert mac_adhoc_deploy.follow_build(FakeMac(), "r", "r", popen=popen,
                                          sleep=lambda _: None) == 1
     assert len(calls) == 1
+
+
+BUILD_OUTPUT = (
+    b"==> Archive (signing per FORKMESH_NATIVE_SIGNING) (19:33:30)\n"
+    b"<== Pick the ad hoc build number ok in 4 s\n"
+    b"/Users/build/ci/tree/native/ios/ForkMesh/Features/Packages/PackageUninstall.swift:20:90: "
+    b"error: call to main actor-isolated instance method 'dependents(of:)' in a synchronous "
+    b"nonisolated context\n"
+    b"ERROR: the archive failed. Every error:\n"
+    b"/Users/build/ci/tree/native/ios/ForkMesh/Features/Packages/PackageUninstall.swift:20:90: "
+    b"error: call to main actor-isolated instance method 'dependents(of:)' in a synchronous "
+    b"nonisolated context\n"
+    b"!! Archive (signing per FORKMESH_NATIVE_SIGNING) failed after 702 s\n"
+)
+
+
+def fresh_timeline(monkeypatch, ticks=None):
+    times = iter(ticks or range(0, 10000, 30))
+    timeline = mac_adhoc_deploy.Timeline(clock=lambda: next(times), out=io.StringIO())
+    monkeypatch.setattr(mac_adhoc_deploy, "TIMELINE", timeline)
+    return timeline
+
+
+def test_the_build_output_is_relayed_and_its_errors_and_step_times_kept(monkeypatch):
+    timeline = fresh_timeline(monkeypatch)
+    timeline.begin("Build on the office Mac")
+    out = io.StringIO()
+    code = mac_adhoc_deploy.follow_build(
+        FakeMac(), "r", "r", popen=lambda command, **kwargs: FakeProcess(1, BUILD_OUTPUT),
+        sleep=lambda _: None, out=out)
+    assert code == 1
+    assert out.getvalue() == BUILD_OUTPUT.decode()
+    steps = timeline.phases[-1]["steps"]
+    assert steps["Pick the ad hoc build number"] == {"seconds": 4, "ok": True}
+    assert steps["Archive (signing per FORKMESH_NATIVE_SIGNING)"] == {"seconds": 702, "ok": False}
+    assert timeline.cause() == [
+        "native/ios/ForkMesh/Features/Packages/PackageUninstall.swift:20:90: error: call to main "
+        "actor-isolated instance method 'dependents(of:)' in a synchronous nonisolated context"]
+
+
+def test_a_failed_fetch_names_the_git_error_and_a_fix(monkeypatch):
+    timeline = fresh_timeline(monkeypatch)
+    timeline.begin("Fetch the commit on the Mac")
+    timeline.end(ok=False)
+    error = ("the office Mac step failed (128): warning: redirecting to https://n3/x.git/\n"
+             "fatal: early EOF\nfatal: index-pack failed\n")
+    assert timeline.cause(error) == ["fatal: early EOF", "fatal: index-pack failed"]
+    assert "fetch the commit" in mac_adhoc_deploy.failure_hint(timeline.cause(error))
+
+
+def test_the_summary_times_every_phase_and_step(monkeypatch):
+    timeline = fresh_timeline(monkeypatch, [0, 0, 65, 65, 765, 800])
+    timeline.begin("Find the office Mac")
+    timeline.begin("Build on the office Mac")
+    timeline.note("<== Archive ok in 700 s")
+    timeline.summary()
+    text = timeline.out.getvalue()
+    assert "✓ Find the office Mac done in 1:05" in text
+    lines = text.splitlines()
+    assert any("✓ Archive" in line and line.endswith("11:40") for line in lines)
+    assert lines[-2].split() == ["Total", "13:20"]
+
+
+def test_a_failure_pings_the_operator_with_the_specific_error(monkeypatch):
+    timeline = fresh_timeline(monkeypatch)
+    timeline.facts["Commit"] = "602f6859fe6f Merge x into main"
+    timeline.facts["Mac run"] = "~/ci/602f6859fe6f-1"
+    timeline.begin("Build on the office Mac")
+    for line in BUILD_OUTPUT.decode().splitlines():
+        timeline.note(line)
+    timeline.end(ok=False)
+    sent = []
+
+    class Notifier:
+        def send(self, title, body, key, email=False):
+            sent.append((title, body, key))
+            return True
+
+    assert mac_adhoc_deploy.notify_failure("iOS ad hoc build", "the build failed (exit 1)", "u",
+                                           notifier=Notifier())
+    title, body, key = sent[0]
+    assert title == "iOS ad hoc build failed: Build on the office Mac"
+    assert key == mac_adhoc_deploy.PING_KEY
+    assert "PackageUninstall.swift:20:90: error: call to main actor-isolated" in body
+    assert "Fix: Swift does not compile" in body
+    assert "Commit: 602f6859fe6f Merge x into main" in body
+    assert "Mac run: ~/ci/602f6859fe6f-1" in body
+    assert len(body) <= 2000 and len(title) <= 120
+
+
+def test_deploy_pings_once_when_the_build_fails(monkeypatch, capsys):
+    pings = []
+
+    def failing(args, url, started):
+        mac_adhoc_deploy.TIMELINE.begin("Build on the office Mac")
+        raise ToolError("the build failed on the office Mac (exit 1)")
+
+    monkeypatch.setattr(mac_adhoc_deploy, "ship_adhoc", failing)
+    monkeypatch.setattr(mac_adhoc_deploy.signal, "signal", lambda *args: None)
+    args = mac_adhoc_deploy.argparse.Namespace(desktop=False, app_store=False, execute=True,
+                                               repo=ROOT, to=[])
+    code = mac_adhoc_deploy.deploy(args, notify=lambda *given: pings.append(given))
+    assert code == 1
+    assert [ping[0] for ping in pings] == ["iOS ad hoc build"]
+    out = capsys.readouterr().out
+    assert "FAILED in \"Build on the office Mac\"" in out and "── Timing" in out
 
 
 def test_steps_come_from_the_adhoc_workflow(tmp_path):

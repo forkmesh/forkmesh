@@ -10,6 +10,7 @@ struct PackageUninstallRequest: Identifiable {
 
     var id: String { "uninstall-" + packageId + "/" + organization }
 
+    @MainActor
     init(_ package: MarketPackage, _ uninstall: MarketUninstall, organization: String = "", account store: AccountPackagesStore?) {
         packageId = package.id
         name = package.name
