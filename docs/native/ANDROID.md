@@ -571,3 +571,39 @@ default in new projects except the chosen starter pack
   and resolves links; `DocsMarkdown` renders a safe Markdown subset;
   `A/feature/docs/` holds the screens. Guests may open it. Tests:
   `DocsLibraryTest`, `NavigationTest`, `PackageGateTest`.
+
+## 16. iOS look: glass and the floating tab bar
+
+The phone shell follows the iOS app (`docs/native/NAVIGATION.md`, iOS
+`Shell/ShellBottomBar.swift`, `Kit/FmSurfaces.swift`) instead of a Material
+bottom bar.
+
+- **Glass** (`A/ui/kit/FmGlass.kt`). `FmBackdropHost` records the page into a
+  `GraphicsLayer`; `Modifier.fmGlass(shape)` on a sibling draws that layer
+  shifted to its own position, blurred 24 dp and saturated 1.8x
+  (`RenderEffect`, API 31+), then the iOS `FmGlassSurface` tint (bgRaised at
+  66% light, 55% dark), a top specular gradient, a 0.5 dp edge and a 12 dp
+  shadow. Below API 31, or with high-contrast text on, glass is a near-opaque
+  fill (the iOS Reduce Transparency fallback). `Modifier.blur` is not used: it
+  blurs the element itself, not what is behind it. No dependency is added.
+- **Tab bar** (`GlassTabBar`, `A/shell/HomeShell.kt`). One glass capsule:
+  12 dp side margin, 60 dp tall, radius 30, 52 dp cells, 24 dp icons (an SF
+  Symbol at 20 pt draws about that size), 10 sp labels. The selected cell is an
+  accent wash at 14% with radius 26 at the bar ends and 10 inside; selected
+  icon and label are accent, unselected icons textPrimary and labels
+  textSecondary. Pressed cells scale to 0.94 at 70% opacity. The bar sits
+  `max(navigation bar inset, 34 dp) + 5 dp` above the bottom edge, the iOS home
+  indicator gap.
+- **Home tab.** Home comes first, as on iOS, and replaces the old More sheet.
+  It is the hub grid (`ShellMenuGrid` with `plain = true`: six columns, no tile
+  fills, uppercase section titles with a rule). Home is shell state, not an
+  `AppTab`, so routes and stored tabs are unchanged; back at any tab root
+  returns to Home, and the app opens on Home. The Home glyph is the filled
+  `home` because the icon subset has no outline house (adding one needs
+  `tools/subset_material_icons.py` and fonttools).
+- **Page clearance.** Pages are laid out full height under the bar. A screen
+  gets bottom padding equal to `ShellBar.clearance()` unless it sets
+  `Screen.extendsUnderTabBar`; then it reads `LocalShellClearance` and pads its
+  own list so rows scroll under the glass (Repos and Inbox do).
+- The kit gallery (`--ez fm_kit_gallery true --ei fm_kit_section 10`) shows a
+  glass capsule over colour stripes to check the blur.

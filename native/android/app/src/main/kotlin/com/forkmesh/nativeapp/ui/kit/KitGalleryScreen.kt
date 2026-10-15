@@ -175,6 +175,7 @@ private fun ColumnScope.Gallery(initialSection: Int, openOnStart: String?) {
                 }
             }
         }
+        section("10 · Glass") { GlassDemo() }
     }
 }
 
@@ -434,6 +435,26 @@ private fun ButtonsDemo() {
         FmDialogActions(onCancel = {}, onConfirm = {})
         FmDialogActions(onCancel = {}, onConfirm = {}, confirmLabel = "Delete", destructive = true)
         FmDialogActions(onCancel = {}, onConfirm = {}, busy = true)
+    }
+}
+
+@Composable
+private fun GlassDemo() {
+    val stripes = listOf(Fm.colors.accent, Fm.colors.success, Fm.colors.warning, Fm.colors.danger, Fm.colors.textPrimary)
+    FmBackdropHost(
+        modifier = Modifier.fillMaxWidth().height(180.dp).padding(horizontal = FmSpace.x4).clip(RoundedCornerShape(FmRadius.lg)),
+        overlay = {
+            FmGlassSurface(
+                RoundedCornerShape(30.dp),
+                Modifier.align(Alignment.Center).padding(horizontal = FmSpace.x4).fillMaxWidth().height(60.dp),
+            ) {
+                Text("Glass", Modifier.align(Alignment.Center), style = Fm.text.titleSmall)
+            }
+        },
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            stripes.forEach { color -> Box(Modifier.weight(1f).fillMaxWidth().background(color)) }
+        }
     }
 }
 

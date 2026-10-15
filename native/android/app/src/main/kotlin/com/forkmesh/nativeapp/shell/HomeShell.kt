@@ -79,6 +79,14 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.feature.navigation.ShellMenuGrid
+import com.forkmesh.nativeapp.ui.kit.fmGlass
+import com.forkmesh.nativeapp.ui.kit.FmBackdropHost
+import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFeature
@@ -152,10 +160,10 @@ class HomeShell : Screen() {
     private val navigators: Map<AppTab, Navigator> by lazy { roots.mapValues { Navigator(it.value) } }
     private val routeOf = WeakHashMap<Screen, Route>()
     private var selectedTab by mutableStateOf(homeTab(PackageGateFeature.surfaces.value))
+    private var homeSelected by mutableStateOf(true)
     private var promptOpen by mutableStateOf(false)
     private var hubOpen by mutableStateOf(false)
     private var paletteOpen by mutableStateOf(false)
-    private var menuOpen by mutableStateOf(false)
     private var pendingPrompt: ComposeTarget? = null
 
     val selected: AppTab get() = selectedTab
@@ -168,13 +176,21 @@ class HomeShell : Screen() {
 
     fun push(tab: AppTab, route: Route, screen: Screen) {
         routeOf[screen] = route
+        homeSelected = false
         navigator(tab).push(screen)
     }
 
+    fun selectHome() {
+        if (!homeSelected) FmSoundCues.play(SoundCue.NAVIGATE)
+        homeSelected = true
+    }
+
     fun select(tab: AppTab, reselect: Boolean = true) {
+        val wasHome = homeSelected
+        homeSelected = false
         if (reselect) {
             val nav = navigator(tab)
-            if (tab == selectedTab) {
+            if (tab == selectedTab && !wasHome) {
                 if (nav.depth > 1) FmSoundCues.play(SoundCue.CLOSE)
                 nav.popToRoot()
                 return
@@ -182,7 +198,7 @@ class HomeShell : Screen() {
             nav.popToRoot()
         }
         if (tab == AppTab.Chat) ChatFeature.markBadgeSeen()
-        if (tab != selectedTab) FmSoundCues.play(SoundCue.NAVIGATE)
+        if (tab != selectedTab || wasHome) FmSoundCues.play(SoundCue.NAVIGATE)
         selectedTab = tab
     }
 
@@ -229,23 +245,16 @@ class HomeShell : Screen() {
             paletteOpen = false
             return true
         }
-        if (menuOpen) {
-            menuOpen = false
-            return true
-        }
         if (hubOpen) {
             hubOpen = false
             return true
         }
+        if (homeSelected) return false
         val nav = navigator(selectedTab)
         if (nav.depth > 1) return nav.handleBack()
         if (nav.top.onBack()) return true
-        val home = homeTab(PackageGateFeature.surfaces.value)
-        if (selectedTab != home) {
-            selectedTab = home
-            return true
-        }
-        return false
+        homeSelected = true
+        return true
     }
 
     override fun onDisposed() {
@@ -258,6 +267,42 @@ class HomeShell : Screen() {
         if (!surfaces.showsTab(tab)) return false
         select(tab, false)
         return true
+    }
+
+    private fun barIcon(tab: AppTab, selected: Boolean): String = when (tab) {
+        AppTab.Agents -> "auto_awesome"
+        AppTab.Inbox -> if (selected) "inbox" else "inbox_outlined"
+        AppTab.Code -> "code"
+        AppTab.Chat -> if (selected) "forum" else "forum_outlined"
+    }
+
+    @Composable
+    private fun hubBadges(activeAgents: Int): Map<Route.Kind, ShellMenuBadge> {
+        val timers by PlanningFeature.timers.collectAsState()
+        val runnerAttention by RunnerAttentionFeature.items.collectAsState()
+        return mapOf(
+            Route.Kind.AllAgents to ShellMenuBadge(activeAgents, running = true),
+            Route.Kind.Timers to ShellMenuBadge(timers.count { it.isRunning }, running = true),
+            Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),
+        )
+    }
+
+    private fun homeEntries(surfaces: PackageSurfaces, agentsOn: Boolean): List<ShellMenuEntry> {
+        val tabs = AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
+            if (tab == AppTab.Code) {
+                listOfNotNull(
+                    ShellMenuEntry("repos", CodeButton.REPOS_LABEL, CodeButton.REPOS_ICON) { select(AppTab.Code) },
+                    if (surfaces.code) ShellMenuEntry("code", CodeButton.CODE_LABEL, "code") { openCurrentRepo() } else null,
+                )
+            } else {
+                listOf(ShellMenuEntry(tab.raw, tab.title, barIcon(tab, false)) { select(tab) })
+            }
+        }
+        return tabs + listOfNotNull(
+            ShellMenuEntry("search", "Search", "search") { NavigationFeature.open(Route.Search("", SearchScope.Everything)) },
+            ShellMenuEntry("palette", "Commands", "keyboard_command_key") { paletteOpen = true },
+            if (agentsOn) ShellMenuEntry("prompt", "Prompt", "auto_awesome") { openPrompt() } else null,
+        )
     }
 
     private fun promptLabel(): String = when (selectedTab) {
@@ -307,19 +352,21 @@ class HomeShell : Screen() {
         }
 
         val tabNav = navigator(selectedTab)
-        val atRoot = tabNav.depth <= 1
-        val shellChromeHidden = tabNav.stack.any { it.hidesShellChrome }
+        val atRoot = homeSelected || tabNav.depth <= 1
+        val shellChromeHidden = !homeSelected && tabNav.stack.any { it.hidesShellChrome }
         val codeItem = CodeButton.selected(selectedTab == AppTab.Code, navigator(AppTab.Code).depth)
-        val barItems = AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
+        val onHome = homeSelected
+        val homeItem = BarItem("Home", "home", 0, onHome, "new") { selectHome() }
+        val barItems = listOf(homeItem) + AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
             if (tab != AppTab.Code) {
-                listOf(BarItem(tab.title, tab.icon, badge(tab), tab == selectedTab, "new", agents = tab == AppTab.Agents) { select(tab) })
+                listOf(BarItem(tab.title, barIcon(tab, tab == selectedTab && !onHome), badge(tab), tab == selectedTab && !onHome, "new", agents = tab == AppTab.Agents) { select(tab) })
             } else {
                 listOfNotNull(
-                    BarItem(CodeButton.REPOS_LABEL, CodeButton.REPOS_ICON, 0, codeItem == CodeBarItem.Repos, "repositories") { select(AppTab.Code) },
+                    BarItem(CodeButton.REPOS_LABEL, CodeButton.REPOS_ICON, 0, !onHome && codeItem == CodeBarItem.Repos, "repositories") { select(AppTab.Code) },
                     if (!surfaces.code) {
                         null
                     } else {
-                        BarItem(CodeButton.CODE_LABEL, CodeButton.CODE_ICON, 0, codeItem == CodeBarItem.Code, "new") {
+                        BarItem(CodeButton.CODE_LABEL, "code", 0, !onHome && codeItem == CodeBarItem.Code, "new") {
                             if (openCurrentRepo()) shellStatus.clear() else shellStatus.show(CodeButton.NO_REPO_NOTICE)
                         }
                     },
@@ -355,7 +402,7 @@ class HomeShell : Screen() {
                     onDismiss = NavigationFeature::clearLinkProblem,
                 )
                 if (!shellChromeHidden && wide) FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
-                if (!shellChromeHidden && atRoot && selectedTab != AppTab.Agents && agentsOn) {
+                if (!shellChromeHidden && atRoot && (homeSelected || selectedTab != AppTab.Agents) && agentsOn) {
                     RunnerAttentionChip { items ->
                         if (items.size == 1) {
                             RunnerAttentionFeature.open(tabNav, items[0]) { url -> runCatching { uriHandler.openUri(url) } }
@@ -365,8 +412,12 @@ class HomeShell : Screen() {
                     }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
-                    ToolsFeature.BugReportOverlay(selectedTab.raw) {
-                        TabStack(tabNav, holder)
+                    ToolsFeature.BugReportOverlay(if (homeSelected) "home" else selectedTab.raw) {
+                        if (homeSelected) {
+                            HomePage(homeEntries(surfaces, agentsOn), hubBadges(agentsSurface.activeCount), shellScope)
+                        } else {
+                            TabStack(tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
+                        }
                     }
                     ShellPrompt(
                         tabNav,
@@ -438,19 +489,25 @@ class HomeShell : Screen() {
                     Box(Modifier.weight(1f)) { body() }
                 }
             } else {
-                Column(Modifier.fillMaxSize()) {
+                FmBackdropHost(
+                    modifier = Modifier.fillMaxSize(),
+                    overlay = {
+                        if (!keyboardUp && !shellChromeHidden) {
+                            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                                FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
+                                StatusPageFeature.Dots(onOpen = { NavigationFeature.openFromHub(Route.Status) })
+                                if (agentsOn) RunningAgentAccessory()
+                                GlassTabBar(barItems, agentsRunning = needsYou == 0)
+                            }
+                        }
+                    },
+                ) {
                     Box(
                         Modifier
-                            .weight(1f)
+                            .fillMaxSize()
                             .then(if (keyboardUp) Modifier else Modifier.consumeWindowInsets(WindowInsets.navigationBars)),
                     ) {
                         body()
-                    }
-                    if (!keyboardUp && !shellChromeHidden) {
-                        FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
-                        StatusPageFeature.Dots(onOpen = { NavigationFeature.openFromHub(Route.Status) })
-                        if (agentsOn) RunningAgentAccessory()
-                        BottomMenu(barItems, agentsRunning = needsYou == 0, moreOpen = menuOpen, onMore = { menuOpen = true })
                     }
                 }
             }
@@ -459,24 +516,6 @@ class HomeShell : Screen() {
         }
 
         if (hubOpen) YouHubSheet(onClose = { hubOpen = false }, scope = shellScope)
-        if (menuOpen) {
-            val entries = listOfNotNull(
-                if (agentsOn) ShellMenuEntry("prompt", "Prompt", "auto_awesome") { openPrompt() } else null,
-            ) + barItems.map { item ->
-                ShellMenuEntry(item.title, item.title, item.icon, item.badge, item.selected, item.agents && needsYou == 0, item.onClick)
-            } + listOf(
-                ShellMenuEntry("search", "Search", "search") { NavigationFeature.open(Route.Search("", SearchScope.Everything)) },
-                ShellMenuEntry("palette", "Commands", "keyboard_command_key") { paletteOpen = true },
-            )
-            val timers by PlanningFeature.timers.collectAsState()
-            val runnerAttention by RunnerAttentionFeature.items.collectAsState()
-            val hubBadges = mapOf(
-                Route.Kind.AllAgents to ShellMenuBadge(agentsSurface.activeCount, running = true),
-                Route.Kind.Timers to ShellMenuBadge(timers.count { it.isRunning }, running = true),
-                Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),
-            )
-            ShellMenuSheet(entries, hubBadges, onClose = { menuOpen = false }, scope = shellScope)
-        }
         if (paletteOpen) {
             CommandPaletteSheet(
                 tab = selectedTab,
@@ -490,7 +529,7 @@ class HomeShell : Screen() {
 }
 
 @Composable
-private fun TabStack(navigator: Navigator, holder: SaveableStateHolder) {
+private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearance: Dp) {
     DisposableEffect(navigator) {
         navigator.onRemoved = { holder.removeState(it.key) }
         onDispose { navigator.onRemoved = {} }
@@ -511,8 +550,10 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder) {
         label = "tab-stack",
     ) { screen ->
         holder.SaveableStateProvider(screen.key) {
-            CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen) {
-                screen.Content(navigator)
+            CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen, LocalShellClearance provides clearance) {
+                Box(Modifier.fillMaxSize().padding(bottom = if (screen.extendsUnderTabBar) 0.dp else clearance)) {
+                    screen.Content(navigator)
+                }
             }
         }
     }
@@ -674,82 +715,107 @@ private class BarItem(
     val onClick: () -> Unit,
 )
 
+object ShellBar {
+    val height = 60.dp
+    val cell = 52.dp
+    val margin = 12.dp
+    val gap = 5.dp
+    val homeIndicator = 34.dp
+    val cornerOuter = 26.dp
+    val cornerInner = 10.dp
+
+    @Composable
+    fun bottomInset(): Dp {
+        val nav = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        return maxOf(nav, homeIndicator) + gap
+    }
+
+    @Composable
+    fun clearance(): Dp = bottomInset() + height + FmSpace.x2
+}
+
 @Composable
-private fun BottomMenu(items: List<BarItem>, agentsRunning: Boolean, moreOpen: Boolean, onMore: () -> Unit) {
-    Surface(
-        color = Fm.colors.bgRaised,
-        shadowElevation = 8.dp,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+private fun HomePage(entries: List<ShellMenuEntry>, badges: Map<Route.Kind, ShellMenuBadge>, scope: kotlinx.coroutines.CoroutineScope) {
+    ShellMenuGrid(
+        entries,
+        badges,
+        onClose = {},
+        scope = scope,
+        modifier = Modifier.fillMaxSize().background(Fm.colors.bgBase),
+        contentPadding = PaddingValues(start = FmSpace.x1, end = FmSpace.x1, bottom = ShellBar.clearance()),
+        columns = 6,
+        plain = true,
+    )
+}
+
+@Composable
+private fun GlassTabBar(items: List<BarItem>, agentsRunning: Boolean) {
+    val c = Fm.colors
+    Row(
+        modifier = Modifier
+            .padding(start = ShellBar.margin, end = ShellBar.margin, top = FmSpace.x1, bottom = ShellBar.bottomInset())
+            .fillMaxWidth()
+            .height(ShellBar.height)
+            .fmGlass(RoundedCornerShape(ShellBar.height / 2))
+            .padding(FmSpace.x1),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(58.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            items.forEachIndexed { index, item ->
-                val isSelected = item.selected
-                val color = if (isSelected) Fm.colors.textPrimary else Fm.colors.textTertiary
-                val count = item.badge
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                        .clickable(onClick = item.onClick)
-                        .semantics(mergeDescendants = true) {
-                            role = Role.Tab
-                            this.selected = isSelected
-                            contentDescription = buildString {
-                                append("${item.title}, tab ${index + 1} of ${items.size}")
-                                if (count > 0) append(if (item.agents && agentsRunning) ", $count running" else ", $count ${item.badgeNoun}")
-                            }
-                        },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Box(Modifier.scale(if (isSelected) 1.04f else 1f)) {
-                        if (item.agents) {
-                            BadgeIcon(
-                                item.icon, count, color, 23,
-                                badgeColor = if (agentsRunning) Fm.colors.accent else Fm.colors.danger,
-                                pulse = LaunchFlight.landings,
-                                modifier = Modifier.launchTarget(),
-                            )
-                        } else {
-                            BadgeIcon(item.icon, count, color, 23)
-                        }
-                    }
-                    Spacer(Modifier.height(FmSpace.x1))
-                    Text(
-                        item.title,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (isSelected) FmType.emphasis else FmType.regular),
-                        color = color,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            val moreColor = if (moreOpen) Fm.colors.textPrimary else Fm.colors.textTertiary
+        items.forEachIndexed { index, item ->
+            val isSelected = item.selected
+            val count = item.badge
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            val start = if (index == 0) ShellBar.cornerOuter else ShellBar.cornerInner
+            val end = if (index == items.lastIndex) ShellBar.cornerOuter else ShellBar.cornerInner
+            val shape = RoundedCornerShape(topStart = start, bottomStart = start, topEnd = end, bottomEnd = end)
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxSize()
-                    .clickable(onClick = onMore)
+                    .height(ShellBar.cell)
+                    .graphicsLayer {
+                        val k = if (pressed) 0.94f else 1f
+                        scaleX = k
+                        scaleY = k
+                        alpha = if (pressed) 0.7f else 1f
+                    }
+                    .clip(shape)
+                    .background(if (isSelected) c.accent.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable(interactionSource = interaction, indication = null, onClick = item.onClick)
                     .semantics(mergeDescendants = true) {
-                        role = Role.Button
-                        contentDescription = "More, every page"
+                        role = Role.Tab
+                        this.selected = isSelected
+                        contentDescription = buildString {
+                            append("${item.title}, tab ${index + 1} of ${items.size}")
+                            if (count > 0) append(if (item.agents && agentsRunning) ", $count running" else ", $count ${item.badgeNoun}")
+                        }
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                FmIcon("more_horiz", size = 23.dp, tint = moreColor)
-                Spacer(Modifier.height(FmSpace.x1))
+                val iconColor = if (isSelected) c.accent else c.textPrimary
+                if (item.agents) {
+                    BadgeIcon(
+                        item.icon, count, iconColor, 24,
+                        badgeColor = c.accent,
+                        pulse = LaunchFlight.landings,
+                        modifier = Modifier.launchTarget(),
+                    )
+                } else {
+                    BadgeIcon(item.icon, count, iconColor, 24, badgeColor = c.accent)
+                }
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    "More",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (moreOpen) FmType.emphasis else FmType.regular),
-                    color = moreColor,
+                    item.title,
+                    style = Fm.text.labelSmall.copy(
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        letterSpacing = 0.sp,
+                        fontWeight = if (isSelected) FmType.emphasis else androidx.compose.ui.text.font.FontWeight.Medium,
+                        color = if (isSelected) c.accent else c.textSecondary,
+                    ),
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

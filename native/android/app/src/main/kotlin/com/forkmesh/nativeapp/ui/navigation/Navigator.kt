@@ -26,6 +26,8 @@ abstract class Screen {
 
     open val hidesShellChrome: Boolean get() = false
 
+    open val extendsUnderTabBar: Boolean get() = false
+
     var pluginPackage: String? = null
 
     @Composable

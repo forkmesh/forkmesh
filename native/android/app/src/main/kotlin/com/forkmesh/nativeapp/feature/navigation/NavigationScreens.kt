@@ -65,6 +65,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.code.CommitFields
@@ -815,7 +817,29 @@ fun ShellMenuSheet(
     onClose: () -> Unit,
     scope: CoroutineScope,
 ) {
-    val c = Fm.colors
+    FmSoundOnShow()
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        modifier = Modifier.fmTapSounds(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Fm.colors.bgRaised,
+        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+    ) {
+        ShellMenuGrid(main, hubBadges, onClose, scope, Modifier.fillMaxSize(), PaddingValues(start = FmSpace.x3, end = FmSpace.x3, bottom = FmSpace.x6))
+    }
+}
+
+@Composable
+fun ShellMenuGrid(
+    main: List<ShellMenuEntry>,
+    hubBadges: Map<Route.Kind, ShellMenuBadge>,
+    onClose: () -> Unit,
+    scope: CoroutineScope,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
+    columns: Int = 5,
+    plain: Boolean = false,
+) {
     val auth = Services.get<AuthService>()
     val guest = auth?.isGuest?.collectAsState()?.value == true
     val session = auth?.session?.collectAsState()?.value
@@ -823,39 +847,30 @@ fun ShellMenuSheet(
     val groups = HubCatalog.pages(HubCatalog.groups(guest, session?.isAdmin == true, surfaces.hubItems, NavigationFeature::isRegistered))
     val status = rememberFmStatus()
     val runHubItem = rememberHubItemRunner(scope, status)
-    FmSoundOnShow()
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        modifier = Modifier.fmTapSounds(),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.bgRaised,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = modifier.semantics { contentDescription = "All pages" },
+        contentPadding = contentPadding,
+        horizontalArrangement = Arrangement.spacedBy(if (plain) 0.dp else FmSpace.x1),
+        verticalArrangement = Arrangement.spacedBy(if (plain) 0.dp else FmSpace.x1),
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(5),
-            modifier = Modifier.fillMaxSize().semantics { contentDescription = "All pages" },
-            contentPadding = PaddingValues(start = FmSpace.x3, end = FmSpace.x3, bottom = FmSpace.x6),
-            horizontalArrangement = Arrangement.spacedBy(FmSpace.x1),
-            verticalArrangement = Arrangement.spacedBy(FmSpace.x1),
-        ) {
-            if (status.message != null) {
-                item(key = "menu-status", span = { GridItemSpan(maxLineSpan) }) { FmInlineStatus(status) }
-            }
-            menuSection("main", "Go to") {
-                gridItems(main, key = { "main:${it.id}" }) { entry ->
-                    ShellMenuTile(entry.icon, entry.title, entry.badge, entry.selected, entry.running) {
-                        onClose()
-                        entry.onClick()
-                    }
+        if (status.message != null) {
+            item(key = "menu-status", span = { GridItemSpan(maxLineSpan) }) { FmInlineStatus(status) }
+        }
+        menuSection("main", "Go to", plain) {
+            gridItems(main, key = { "main:${it.id}" }) { entry ->
+                ShellMenuTile(entry.icon, entry.title, entry.badge, entry.selected, entry.running, plain) {
+                    onClose()
+                    entry.onClick()
                 }
             }
-            groups.forEach { group ->
-                menuSection(group.id, group.title) {
-                    gridItems(group.items, key = { "${group.id}:${it.id}" }) { item ->
-                        val badge = item.route?.let { hubBadges[it.kind] }
-                        ShellMenuTile(item.icon, item.title, badge?.count ?: 0, false, badge?.running == true) {
-                            if (runHubItem(item)) onClose()
-                        }
+        }
+        groups.forEach { group ->
+            menuSection(group.id, group.title, plain) {
+                gridItems(group.items, key = { "${group.id}:${it.id}" }) { item ->
+                    val badge = item.route?.let { hubBadges[it.kind] }
+                    ShellMenuTile(item.icon, item.title, badge?.count ?: 0, false, badge?.running == true, plain) {
+                        if (runHubItem(item)) onClose()
                     }
                 }
             }
@@ -863,23 +878,34 @@ fun ShellMenuSheet(
     }
 }
 
-private fun LazyGridScope.menuSection(id: String, title: String, content: LazyGridScope.() -> Unit) {
+private fun LazyGridScope.menuSection(id: String, title: String, plain: Boolean, content: LazyGridScope.() -> Unit) {
     item(key = "section:$id", span = { GridItemSpan(maxLineSpan) }) {
-        FmSectionHeader(title, Modifier.padding(start = FmSpace.x1, top = FmSpace.x2, bottom = FmSpace.x1).semantics { heading() })
+        if (plain) {
+            Row(
+                Modifier.padding(start = FmSpace.x3, end = FmSpace.x3, top = FmSpace.x4, bottom = FmSpace.x2).semantics { heading() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title.uppercase(), style = Fm.text.labelSmall.copy(fontSize = 12.sp, letterSpacing = 1.2.sp), color = Fm.colors.textTertiary)
+                Spacer(Modifier.width(FmSpace.x3))
+                Box(Modifier.weight(1f).height(1.dp).background(Fm.colors.border))
+            }
+        } else {
+            FmSectionHeader(title, Modifier.padding(start = FmSpace.x1, top = FmSpace.x2, bottom = FmSpace.x1).semantics { heading() })
+        }
     }
     content()
 }
 
 @Composable
-private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boolean, running: Boolean, onClick: () -> Unit) {
+private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boolean, running: Boolean, plain: Boolean, onClick: () -> Unit) {
     val c = Fm.colors
     val tint = if (selected) c.accent else c.textPrimary
     Column(
         Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(if (plain) 48.dp else 52.dp)
             .clip(RoundedCornerShape(FmRadius.md))
-            .background(if (selected) c.accent.copy(alpha = 0.14f) else c.bgOverlay)
+            .background(if (selected) c.accent.copy(alpha = 0.14f) else if (plain) Color.Transparent else c.bgOverlay)
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
@@ -896,10 +922,10 @@ private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boo
         } else {
             FmIcon(icon, size = 18.dp, tint = tint)
         }
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(if (plain) 4.dp else 2.dp))
         Text(
             title,
-            style = Fm.text.labelSmall.copy(color = if (selected) c.accent else c.textSecondary),
+            style = if (plain) Fm.text.bodyMedium.copy(fontSize = 12.sp, color = if (selected) c.accent else c.textSecondary) else Fm.text.labelSmall.copy(color = if (selected) c.accent else c.textSecondary),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
