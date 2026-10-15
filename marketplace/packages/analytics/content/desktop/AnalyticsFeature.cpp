@@ -327,7 +327,7 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     auto *webButton = new QPushButton(QStringLiteral("Open in browser"));
     webButton->setToolTip(QStringLiteral(
-        "Funnels, retention, session replay, heatmaps, flags, experiments and surveys open on the web dashboard"));
+        "Funnels, retention, session recordings, heatmaps, flags, experiments and surveys open on the web dashboard"));
     for (QPushButton *button : {refreshButton, webButton}) {
         button->setObjectName(QStringLiteral("ghostButton"));
         heading->addWidget(button);

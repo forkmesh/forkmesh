@@ -41,6 +41,7 @@ MAX_LONG_TEXT = 6000
 LONG_TEXT_KEYS = frozenset({
     "$elements", "$exception_stack", "$heatmap_points", "$survey_response"})
 MAX_REPLAY_CHUNK = 640 * 1024
+MAX_RECORDING_PAGES = 50
 MAX_PROJECTS = 20
 MAX_OBJECTS_PER_KIND = 300
 MAX_QUERY_BATCHES = 1500
@@ -732,6 +733,17 @@ async def _touch_groups(runtime, project, events, now):
             sealed)
 
 
+def _recording_pages(meta, url):
+    pages = [_text(page, 500) for page in (meta.get("pages") or [])
+             if isinstance(page, str) and page][:MAX_RECORDING_PAGES]
+    if not pages and meta.get("startUrl"):
+        pages = [_text(meta.get("startUrl"), 500)]
+    url = _text(url, 500)
+    if url and (not pages or pages[-1] != url) and len(pages) < MAX_RECORDING_PAGES:
+        pages.append(url)
+    return pages
+
+
 async def _store_replay(runtime, project, replay, person_id, errors, now):
     settings = project["settings"]
     if not (settings.get("replay") or {}).get("enabled"):
@@ -759,6 +771,7 @@ async def _store_replay(runtime, project, replay, person_id, errors, now):
                 "viewport": _json_value(replay.get("viewport")),
                 "device": _json_value(replay.get("device")),
                 "distinctId": _text(replay.get("distinctId"), 200)}
+    meta["pages"] = _recording_pages(meta, replay.get("url"))
     sealed_meta = await _seal(runtime, meta)
     await _run_batch(runtime, [(
         "INSERT INTO analytics_recording_chunks(project_id,session_id,seq,org_bi,"
@@ -773,7 +786,8 @@ async def _store_replay(runtime, project, replay, person_id, errors, now):
         "person_id=excluded.person_id,last_at=MAX(last_at,excluded.last_at),"
         "active_ms=active_ms+excluded.active_ms,chunks=chunks+1,"
         "bytes=bytes+excluded.bytes,clicks=clicks+excluded.clicks,"
-        "keys=keys+excluded.keys,errors=errors+excluded.errors",
+        "keys=keys+excluded.keys,errors=errors+excluded.errors,"
+        "data=excluded.data",
         (project["id"], session, project["org_bi"], person_id, started, now,
          _bounded(replay.get("activeMs"), 0, 3600000, 0), size,
          _bounded(replay.get("clicks"), 0, 100000, 0),
@@ -3174,6 +3188,7 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
             meta = await _open(runtime, row.get("data"), {})
             recordings.append(dict(_recording_row(row),
                                    startUrl=meta.get("startUrl") or "",
+                                   pages=_recording_pages(meta, ""),
                                    distinctId=meta.get("distinctId") or "",
                                    device=meta.get("device") or {}))
         return _response(runtime, {
@@ -3221,6 +3236,7 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
     return _response(runtime, {
         "ok": True,
         "recording": dict(_recording_row(row), startUrl=meta.get("startUrl") or "",
+                          pages=_recording_pages(meta, ""),
                           distinctId=meta.get("distinctId") or "",
                           viewport=meta.get("viewport") or {},
                           device=meta.get("device") or {}),

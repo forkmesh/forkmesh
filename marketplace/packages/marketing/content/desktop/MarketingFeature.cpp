@@ -624,6 +624,30 @@ Headline headline(const QString &id, const QJsonObject &item, const QJsonObject 
     return {number(health, "postsLast30d"), QStringLiteral("Posts · 30D"), nullptr};
 }
 
+constexpr const char *kContextKeys[] = {"followers", "following", "reach", "engagements", "views", "visits",
+                                        "posts", "likes", "replies", "stars", "forks", "outbound",
+                                        "closedDeals", "indexedPages", "reviews"};
+constexpr const char *kContextLabels[] = {"Followers", "Following", "Reach", "Engagements", "Views", "Visits",
+                                          "Posts", "Likes", "Replies", "Stars", "Forks", "Emails sent",
+                                          "Closed deals", "Pages on Google", "Reviews"};
+
+QString contextKey(const QString &organization, const QString &channel)
+{
+    return QStringLiteral("marketing/aiContext/%1/%2").arg(organization, channel);
+}
+
+QVariantMap contextNumbers(const QJsonObject &item)
+{
+    QVariantMap values;
+    for (const char *key : kContextKeys) {
+        if (number(item, key) > 0)
+            values.insert(QLatin1String(key), number(item, key));
+    }
+    values.insert(QStringLiteral("postsLast30d"),
+                  number(item.value(QStringLiteral("health")).toObject(), "postsLast30d"));
+    return values;
+}
+
 QIcon dotIcon(const QColor &color)
 {
     QPixmap pixmap(20, 20);
@@ -874,12 +898,22 @@ MarketingFeature::MarketingFeature(
     m_detailViewsChart->setMaximumHeight(210);
     m_detailViewsChart->setMinimumWidth(240);
     m_detailViewsPanel->body()->addWidget(m_detailViewsChart);
+    m_detailDiscordChartPanel = new DashboardPanel(QStringLiteral("Posts over time"));
+    m_detailDiscordChartPanel->setObjectName(QStringLiteral("marketingDiscordPostsChartPanel"));
+    m_detailDiscordChartPanel->setCompact();
+    m_detailDiscordChart = new LineChart;
+    m_detailDiscordChart->setAccessibleName(QStringLiteral("Discord posts per day chart"));
+    m_detailDiscordChart->setMaximumHeight(210);
+    m_detailDiscordChart->setMinimumWidth(240);
+    m_detailDiscordChartPanel->body()->addWidget(m_detailDiscordChart);
+    m_detailDiscordChartPanel->hide();
     auto *detailCharts = clearWidget();
     auto *detailChartsLayout = new QHBoxLayout(detailCharts);
     detailChartsLayout->setContentsMargins(0, 0, 0, 0);
     detailChartsLayout->setSpacing(10);
     detailChartsLayout->addWidget(m_detailChartPanel, 1);
     detailChartsLayout->addWidget(m_detailViewsPanel, 1);
+    detailChartsLayout->addWidget(m_detailDiscordChartPanel, 1);
     detailGrid->addPanel(detailCharts, 2);
     auto *detailSide = clearWidget();
     auto *detailSideLayout = new QVBoxLayout(detailSide);
@@ -3870,6 +3904,10 @@ void MarketingFeature::renderChannelDetail()
     connect(editChannel, &QPushButton::clicked, this, [this, id] { showChannelRow(id, true, true); });
     auto *log = action(QStringLiteral("Log numbers"), QStringLiteral("Log %1's numbers by hand").arg(name));
     connect(log, &QPushButton::clicked, this, [this, id] { addMetric(id); });
+    auto *context = action(QStringLiteral("AI context"), QStringLiteral(
+        "Copy %1's numbers, posts and a prompt to paste into an AI chat. It suggests how to grow the channel "
+        "and checks its earlier advice against the numbers each time you copy again.").arg(name));
+    connect(context, &QPushButton::clicked, this, [this, id] { copyChannelContext(id); });
     if (m_canManageSettings) {
         auto *remove = action(QStringLiteral("Delete"), QStringLiteral("Delete %1 from the dashboard").arg(name));
         connect(remove, &QPushButton::clicked, this, [this, id] { deleteChannel(id); });
@@ -4256,6 +4294,7 @@ void MarketingFeature::renderChannelDetail()
 
     const bool discord = id == QLatin1String("discord");
     m_detailDiscordPanel->setVisible(discord);
+    m_detailDiscordChartPanel->setVisible(discord);
     if (discord) {
         renderDiscordPosts();
         loadDiscordPosts();
@@ -4878,6 +4917,47 @@ void MarketingFeature::renderDiscordPosts()
     m_detailDiscordPanel->hint()->setText(m_discordPostsLoading ? QStringLiteral("Reading…")
         : posts.isEmpty() ? QString()
         : QStringLiteral("%1 post%2").arg(posts.size()).arg(posts.size() == 1 ? QString() : QStringLiteral("s")));
+    renderDiscordChart();
+}
+
+void MarketingFeature::renderDiscordChart()
+{
+    if (!m_detailDiscordChart)
+        return;
+    const QJsonArray posts = m_discordPosts.value(QStringLiteral("posts")).toArray();
+    const int days = qMax(1, int(number(m_discordPosts, "days")));
+    const qint64 read = m_discordPostsAt > 0 ? m_discordPostsAt : QDateTime::currentMSecsSinceEpoch();
+    const qint64 since = qint64(number(m_discordPosts, "since"));
+    const qint64 start = since > 0 ? since : read - days * kDay;
+    const qint64 end = start + days * kDay;
+    QVector<double> counts(days, 0);
+    for (const QJsonValue &value : posts) {
+        const qint64 at = qint64(number(value.toObject(), "postedAt"));
+        if (at >= start && at <= end)
+            counts[qMin(days - 1, int((at - start) / kDay))] += 1;
+    }
+    LineChart::Series line;
+    line.name = QStringLiteral("Posts");
+    line.color = brandInk(QStringLiteral("discord"), DashboardColors::from(this));
+    for (int day = 0; day < days; ++day) {
+        const qint64 at = start + qint64(day) * kDay + kDay / 2;
+        line.points.append({at, counts.at(day), counts.at(day) > 0});
+        line.history.append({at, counts.at(day), true});
+    }
+    QList<LineChart::Series> lines;
+    if (!m_discordPosts.isEmpty())
+        lines.append(line);
+    m_detailDiscordChart->setSeries(lines, start, end,
+        m_discordPostsLoading ? QStringLiteral("Reading the Discord channels…")
+        : m_discordPostsError.isEmpty() ? QStringLiteral("No Discord posts read yet.")
+                                        : QStringLiteral("Could not read the Discord posts."));
+    m_detailDiscordChartPanel->hint()->setText(m_discordPosts.isEmpty() ? QString()
+        : QStringLiteral("%1 post%2 in %3 days · per day%4")
+              .arg(posts.size())
+              .arg(posts.size() == 1 ? QString() : QStringLiteral("s"))
+              .arg(days)
+              .arg(m_discordPosts.value(QStringLiteral("truncated")).toBool()
+                       ? QStringLiteral(" · latest 50 per channel") : QString()));
 }
 
 void MarketingFeature::loadReadyPost()
@@ -6747,6 +6827,299 @@ QString MarketingFeature::campaignBrief(const QJsonObject &item) const
     if (!text(item, "brief").isEmpty())
         lines << QString() << QStringLiteral("## Notes") << QString() << item.value(QStringLiteral("brief")).toString();
     return lines.join(QLatin1Char('\n'));
+}
+
+QString MarketingFeature::channelContext(const QString &id) const
+{
+    QJsonObject item;
+    for (const QJsonValue &value : m_summaryData.value(QStringLiteral("channels")).toArray()) {
+        if (text(value.toObject(), "channel") == id)
+            item = value.toObject();
+    }
+    QJsonObject settings;
+    for (const QJsonValue &value : m_settings.value(QStringLiteral("channels")).toArray()) {
+        if (text(value.toObject(), "id") == id)
+            settings = value.toObject();
+    }
+    const QJsonObject health = item.value(QStringLiteral("health")).toObject();
+    const QJsonObject feed = settings.value(QStringLiteral("feed")).toObject();
+    const QString name = channelName(id, m_settings, m_channelCatalog);
+    const QString category = channelCategory(id, m_channelCatalog);
+    const QString organization = m_organization->currentData().toString();
+    const QList<QJsonObject> history = seriesByChannel(m_metrics).value(id);
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 start = now - m_rangeDays * kDay;
+    const int cadence = qMax(1, int(number(health, "cadenceDays")));
+    const Headline main = headline(id, item, health);
+    const auto day = [](qint64 at) {
+        return at > 0 ? QDateTime::fromMSecsSinceEpoch(at).toString(QStringLiteral("yyyy-MM-dd"))
+                      : QStringLiteral("never");
+    };
+    const auto cell = [](QString value) {
+        value = value.isEmpty() ? kDash : value;
+        return value.replace(QLatin1Char('|'), QStringLiteral("\\|")).replace(QLatin1Char('\n'), QLatin1Char(' '));
+    };
+    const auto clip = [](const QString &value, int size) {
+        const QString flat = value.simplified();
+        return flat.size() > size ? flat.left(size - 1).trimmed() + QChar(0x2026) : flat;
+    };
+    const auto count = [](const QJsonValue &value) { return value.isDouble() ? fullCount(value.toDouble()) : kDash; };
+
+    QStringList lines{
+        QStringLiteral("# Grow %1 for %2").arg(name, organization), QString(),
+        QStringLiteral("You are the marketing analyst for the %1 channel of %2. Below is everything the ForkMesh "
+                       "Marketing dashboard knows about the channel on %3. Work from these numbers, and say when they "
+                       "are too thin to support a claim.").arg(name, organization, day(now)),
+        QString(), QStringLiteral("## What to do"), QString(),
+        QStringLiteral("1. In two sentences, say how the channel is doing against its goal and its aim of a post every %1.")
+            .arg(cadence == 1 ? QStringLiteral("day") : QStringLiteral("%1 days").arg(cadence)),
+        QStringLiteral("2. Find what worked: match the posts and content below to the changes in the numbers after them."),
+        QStringLiteral("3. Give the three changes most likely to raise %1 in the next 14 days. For each: what to do, "
+                       "the data behind it, the number to watch, and the result you expect by when.").arg(main.label),
+        QStringLiteral("4. Draft the next three posts for this channel, ready to publish."),
+        QStringLiteral("5. Learn from last time: if this chat already holds an earlier copy of this context, or "
+                       "\"Since the last copy\" below has numbers, check your earlier predictions against them, say "
+                       "which held and which did not, and change your advice to match."),
+        QStringLiteral("6. End with \"Notes for next time\": your predictions with the numbers to check, the data "
+                       "missing here that would change your advice, and a better version of this \"What to do\" list "
+                       "for the next copy."),
+        QString(), QStringLiteral("## Channel"), QString(), QStringLiteral("| Field | Value |"), QStringLiteral("|---|---|"),
+        QStringLiteral("| Channel | %1 |").arg(cell(name)),
+        QStringLiteral("| Category | %1 |").arg(cell(category)),
+        QStringLiteral("| Link | %1 |").arg(cell(channelOpenUrl(settings))),
+        QStringLiteral("| About | %1 |").arg(cell(clip(text(feed, "description"), 400))),
+        QStringLiteral("| Status | %1 |").arg(settings.value(QStringLiteral("enabled")).toBool(true)
+                                                   ? QStringLiteral("Active") : QStringLiteral("Paused")),
+        QStringLiteral("| Health | %1 |").arg(cell(healthLabel(text(health, "state")))),
+        QStringLiteral("| Posting aim | every %1 day%2 |").arg(cadence).arg(cadence == 1 ? QString() : QStringLiteral("s")),
+        QStringLiteral("| Posts in the last 30 days | %1 |").arg(fullCount(number(health, "postsLast30d"))),
+        QStringLiteral("| Last post | %1 |").arg(day(qint64(number(health, "lastPostAt")))),
+        QStringLiteral("| Engagement rate | %1 |").arg(cell(health.value(QStringLiteral("engagementRate")).isDouble()
+            ? QStringLiteral("%1% (%2)").arg(QString::number(number(health, "engagementRate"), 'f', 1),
+                                             engagementFormula(health))
+            : engagementFormula(health))),
+        QStringLiteral("| Numbers last read | %1 |").arg(cell(history.isEmpty() ? QStringLiteral("never")
+            : QStringLiteral("%1, %2").arg(day(qint64(number(history.constLast(), "observedAt"))),
+                                           sourceLabel(text(history.constLast(), "source")))))};
+    if (!text(feed, "lastError").isEmpty())
+        lines << QStringLiteral("| Last refresh failed | %1 |")
+                     .arg(cell(refreshErrorText(id, text(feed, "lastError"), text(feed, "lastError"))));
+
+    QList<int> shown;
+    for (int index = 0; index < int(std::size(kContextKeys)); ++index) {
+        const char *key = kContextKeys[index];
+        if (number(item, key) > 0 || std::any_of(history.cbegin(), history.cend(),
+                [key](const QJsonObject &snapshot) { return number(snapshot, key) > 0; }))
+            shown << index;
+    }
+    const QJsonObject before = snapshotAt(history, start);
+    lines << QString() << QStringLiteral("## Numbers") << QString();
+    if (shown.isEmpty()) {
+        lines << QStringLiteral("No numbers recorded yet.");
+    } else {
+        lines << QStringLiteral("| Metric | Now | %1 days ago |").arg(m_rangeDays) << QStringLiteral("|---|---|---|");
+        for (int index : std::as_const(shown)) {
+            const char *key = kContextKeys[index];
+            lines << QStringLiteral("| %1 | %2 | %3 |").arg(QLatin1String(kContextLabels[index]), count(item.value(QLatin1String(key))),
+                                                         before.isEmpty() ? kDash : count(before.value(QLatin1String(key))));
+        }
+    }
+
+    lines << QString() << QStringLiteral("## Since the last copy") << QString();
+    const QVariantMap last = QSettings().value(contextKey(organization, id)).toMap();
+    const qint64 lastAt = last.value(QStringLiteral("at")).toLongLong();
+    if (lastAt <= 0) {
+        lines << QStringLiteral("This is the first copy of this context, so there is nothing to compare yet.");
+    } else {
+        const QVariantMap then = last.value(QStringLiteral("values")).toMap();
+        const QVariantMap current = contextNumbers(item);
+        lines << QStringLiteral("Last copied on %1 (%2). Then → now:").arg(day(lastAt), relativeLabel(lastAt));
+        const auto change = [&lines, &then, &current](const QString &key, const QString &label) {
+            if (!then.contains(key) && !current.contains(key))
+                return;
+            const double was = then.value(key).toDouble();
+            const double is = current.value(key).toDouble();
+            lines << QStringLiteral("- %1: %2 → %3 (%4%5)").arg(label, fullCount(was), fullCount(is),
+                                                               is >= was ? QStringLiteral("+") : QStringLiteral("−"),
+                                                               fullCount(std::abs(is - was)));
+        };
+        for (int index = 0; index < int(std::size(kContextKeys)); ++index)
+            change(QLatin1String(kContextKeys[index]), QLatin1String(kContextLabels[index]));
+        change(QStringLiteral("postsLast30d"), QStringLiteral("Posts in the last 30 days"));
+    }
+
+    QList<QJsonObject> recent;
+    for (const QJsonObject &snapshot : history) {
+        if (number(snapshot, "observedAt") > start)
+            recent.prepend(snapshot);
+    }
+    if (!recent.isEmpty() && !shown.isEmpty()) {
+        lines << QString() << QStringLiteral("## History, newest first") << QString();
+        QStringList head{QStringLiteral("Date")};
+        QStringList rule{QStringLiteral("---")};
+        for (int index : std::as_const(shown)) {
+            head << QLatin1String(kContextLabels[index]);
+            rule << QStringLiteral("---");
+        }
+        head << QStringLiteral("Source") << QStringLiteral("Note");
+        rule << QStringLiteral("---") << QStringLiteral("---");
+        lines << QStringLiteral("| %1 |").arg(head.join(QStringLiteral(" | ")))
+              << QStringLiteral("|%1|").arg(rule.join(QLatin1Char('|')));
+        for (const QJsonObject &snapshot : recent.mid(0, 40)) {
+            QStringList row{day(qint64(number(snapshot, "observedAt")))};
+            for (int index : std::as_const(shown))
+                row << count(snapshot.value(QLatin1String(kContextKeys[index])));
+            row << cell(sourceLabel(text(snapshot, "source"))) << cell(clip(text(snapshot, "note"), 160));
+            lines << QStringLiteral("| %1 |").arg(row.join(QStringLiteral(" | ")));
+        }
+    }
+
+    const QJsonObject traffic = channelViews(id);
+    if (!traffic.isEmpty()) {
+        QStringList perDay;
+        for (double views : dailyViews(traffic.value(QStringLiteral("days")).toArray(), start, now, m_rangeDays))
+            perDay << fullCount(views);
+        lines << QString() << QStringLiteral("## Site views from Analytics") << QString()
+              << QStringLiteral("%1 views from %2 visitors on %3%4 in the last %5 days.")
+                     .arg(fullCount(number(traffic, "views")), fullCount(number(traffic, "visitors")), text(traffic, "host"),
+                          text(traffic, "path") == QLatin1String("/") ? QString() : text(traffic, "path"))
+                     .arg(m_rangeDays)
+              << QStringLiteral("Per day, oldest first: %1").arg(perDay.join(QStringLiteral(", ")));
+    }
+
+    QStringList posted;
+    for (const QJsonValue &value : std::as_const(m_posts)) {
+        const QJsonObject post = value.toObject();
+        if (text(post, "channel") != id || posted.size() >= 30)
+            continue;
+        posted << QStringLiteral("| %1 | %2 | %3 | %4 | %5 | %6 |")
+                      .arg(day(qint64(number(post, "postedAt"))),
+                           cell(clip(text(post, "title").isEmpty() ? text(post, "url") : text(post, "title"), 160)),
+                           count(post.value(QStringLiteral("views"))), count(post.value(QStringLiteral("likes"))),
+                           count(post.value(QStringLiteral("replies"))), count(post.value(QStringLiteral("reposts"))));
+    }
+    if (!posted.isEmpty())
+        lines << QString() << QStringLiteral("## Posted links and their stats") << QString()
+              << QStringLiteral("| Posted | Post | Views | Likes | Replies | Reposts |")
+              << QStringLiteral("|---|---|---|---|---|---|") << posted;
+
+    QList<QJsonObject> content;
+    for (const QJsonValue &value : std::as_const(m_content)) {
+        if (text(value.toObject(), "channel") == id && text(value.toObject(), "status") != QLatin1String("archived"))
+            content.append(value.toObject());
+    }
+    const auto when = [](const QJsonObject &entry) {
+        for (const char *key : {"publishedAt", "scheduledAt", "updatedAt"}) {
+            if (number(entry, key) > 0)
+                return qint64(number(entry, key));
+        }
+        return qint64(0);
+    };
+    std::stable_sort(content.begin(), content.end(), [&when](const QJsonObject &a, const QJsonObject &b) {
+        return when(a) > when(b);
+    });
+    if (!content.isEmpty()) {
+        lines << QString() << QStringLiteral("## Content for this channel, newest first") << QString()
+              << QStringLiteral("| Date | Status | Title | Text |") << QStringLiteral("|---|---|---|---|");
+        for (const QJsonObject &entry : content.mid(0, 25))
+            lines << QStringLiteral("| %1 | %2 | %3 | %4 |").arg(day(when(entry)), cell(text(entry, "status")),
+                                                                cell(clip(text(entry, "title"), 120)),
+                                                                cell(clip(text(entry, "body"), 280)));
+    }
+
+    if (id == QLatin1String("discord") && !m_discordPosts.isEmpty()) {
+        const QJsonArray posts = m_discordPosts.value(QStringLiteral("posts")).toArray();
+        QStringList channels;
+        for (const QJsonValue &value : m_discordPosts.value(QStringLiteral("channels")).toArray())
+            channels << QStringLiteral("#") + value.toString();
+        lines << QString()
+              << QStringLiteral("## Discord posts in the last %1 days").arg(int(number(m_discordPosts, "days")))
+              << QString()
+              << QStringLiteral("%1 post%2 in %3, read %4.").arg(posts.size())
+                     .arg(posts.size() == 1 ? QString() : QStringLiteral("s"), channels.join(QStringLiteral(", ")),
+                          relativeLabel(m_discordPostsAt));
+        if (m_discordPosts.value(QStringLiteral("truncated")).toBool())
+            lines << QStringLiteral("Only the latest 50 posts of each channel were read.");
+        if (m_discordPosts.value(QStringLiteral("contentMissing")).toBool())
+            lines << QStringLiteral("The bot cannot read message text, so the posts below have no text.");
+        lines << QString();
+        for (int index = 0; index < posts.size() && index < 60; ++index) {
+            const QJsonObject post = posts.at(index).toObject();
+            lines << QStringLiteral("- %1 · #%2 · %3%4: %5")
+                         .arg(timestamp(qint64(number(post, "postedAt"))), text(post, "channel"), text(post, "author"),
+                              post.value(QStringLiteral("bot")).toBool() ? QStringLiteral(" (bot)") : QString(),
+                              text(post, "content").isEmpty() ? QStringLiteral("(no text)")
+                                                              : clip(text(post, "content"), 300));
+        }
+    }
+
+    QStringList ads;
+    for (const QJsonValue &value : std::as_const(m_ads)) {
+        const QJsonObject ad = value.toObject();
+        if (text(ad, "channel") == id)
+            ads << QStringLiteral("- %1: %2, spent %3").arg(text(ad, "name"), adLabel(text(ad, "status")),
+                                                            money(ad.value(QStringLiteral("spendCents")), text(ad, "currency")));
+    }
+    if (!ads.isEmpty())
+        lines << QString() << QStringLiteral("## Ads") << QString() << ads;
+
+    QStringList campaigns;
+    for (const QJsonValue &value : std::as_const(m_campaigns)) {
+        const QJsonObject campaign = value.toObject();
+        if (!campaign.value(QStringLiteral("channels")).toArray().contains(id) ||
+            text(campaign, "status") == QLatin1String("archived"))
+            continue;
+        campaigns << QStringLiteral("- %1 (%2, %3 to %4): %5").arg(text(campaign, "name"), text(campaign, "status"),
+                                                                   day(qint64(number(campaign, "startsAt"))),
+                                                                   day(qint64(number(campaign, "endsAt"))),
+                                                                   clip(text(campaign, "message").isEmpty()
+                                                                            ? text(campaign, "objective")
+                                                                            : text(campaign, "message"), 240));
+    }
+    if (!campaigns.isEmpty())
+        lines << QString() << QStringLiteral("## Campaigns on this channel") << QString() << campaigns;
+
+    const QJsonArray checks = health.value(QStringLiteral("checks")).toArray();
+    if (!checks.isEmpty()) {
+        lines << QString() << QStringLiteral("## Health checks") << QString();
+        for (const QJsonValue &value : checks)
+            lines << QStringLiteral("- [%1] %2").arg(value.toObject().value(QStringLiteral("ok")).toBool()
+                                                         ? QStringLiteral("x") : QStringLiteral(" "),
+                                                     text(value.toObject(), "label"));
+    }
+
+    const QJsonObject playbook = m_playbooks.value(category).toObject();
+    if (!playbook.isEmpty()) {
+        QStringList kpis;
+        for (const QJsonValue &kpi : playbook.value(QStringLiteral("kpis")).toArray())
+            kpis << kpi.toString();
+        lines << QString() << QStringLiteral("## Playbook for %1 channels").arg(category) << QString()
+              << QStringLiteral("- Goal: %1").arg(text(playbook, "goal"));
+        if (!kpis.isEmpty())
+            lines << QStringLiteral("- Track: %1").arg(kpis.join(QStringLiteral(", ")));
+        for (const QJsonValue &tip : playbook.value(QStringLiteral("tips")).toArray())
+            lines << QStringLiteral("- Tip: %1").arg(tip.toString());
+    }
+    return lines.join(QLatin1Char('\n')) + QLatin1Char('\n');
+}
+
+void MarketingFeature::copyChannelContext(const QString &id)
+{
+    const QString organization = m_organization->currentData().toString();
+    if (organization.isEmpty())
+        return;
+    QGuiApplication::clipboard()->setText(channelContext(id));
+    QJsonObject item;
+    for (const QJsonValue &value : m_summaryData.value(QStringLiteral("channels")).toArray()) {
+        if (text(value.toObject(), "channel") == id)
+            item = value.toObject();
+    }
+    QSettings().setValue(contextKey(organization, id),
+                         QVariantMap{{QStringLiteral("at"), QDateTime::currentMSecsSinceEpoch()},
+                                     {QStringLiteral("values"), contextNumbers(item)}});
+    setStatus(QStringLiteral("Copied the AI context for %1. Paste it into Claude or another AI chat, and copy it "
+                             "again after you act on the advice so the AI can check what worked.")
+                  .arg(channelName(id, m_settings, m_channelCatalog)));
 }
 
 void MarketingFeature::editCampaign(const QJsonObject &campaign, const QJsonObject &preset)

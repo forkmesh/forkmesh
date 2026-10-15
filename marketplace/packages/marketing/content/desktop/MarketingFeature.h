@@ -120,6 +120,9 @@ private:
     void openEmailSuggestion(const QJsonObject &suggestion);
     void loadDiscordPosts(bool force = false);
     void renderDiscordPosts();
+    void renderDiscordChart();
+    QString channelContext(const QString &id) const;
+    void copyChannelContext(const QString &id);
     void loadReadyPost();
     void applyReadyPost(const QJsonObject &ready);
     void renderReadyPost();
@@ -350,6 +353,8 @@ private:
     LineChart *m_detailChart = nullptr;
     DashboardPanel *m_detailViewsPanel = nullptr;
     LineChart *m_detailViewsChart = nullptr;
+    DashboardPanel *m_detailDiscordChartPanel = nullptr;
+    LineChart *m_detailDiscordChart = nullptr;
     DashboardPanel *m_detailSnapshotsPanel = nullptr;
     QTableWidget *m_detailSnapshots = nullptr;
     DashboardPanel *m_detailContentPanel = nullptr;
