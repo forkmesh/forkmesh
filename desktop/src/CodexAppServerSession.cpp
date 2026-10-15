@@ -227,7 +227,6 @@ void CodexAppServerSession::start(const QString &cwd,
         meta.insert(QStringLiteral("model"), m_model);
         meta.insert(QStringLiteral("mode"), m_mode);
         meta.insert(QStringLiteral("effort"), m_effort);
-        meta.insert(QStringLiteral("externalCallGate"), m_externalCallGate);
         meta.insert(QStringLiteral("appVersion"), QCoreApplication::applicationVersion());
         processOptions.meta = meta;
         forkmesh::coreagentrun::pushCredentials();
@@ -438,7 +437,6 @@ bool CodexAppServerSession::attachProcess(const QString &key, const QJsonObject 
     m_model = meta.value(QStringLiteral("model")).toString();
     m_mode = meta.value(QStringLiteral("mode")).toString();
     m_effort = meta.value(QStringLiteral("effort")).toString();
-    m_externalCallGate = meta.value(QStringLiteral("externalCallGate")).toBool();
     m_parseRequested = true;
     AgentProcess::Options options;
     options.attachKey = key;

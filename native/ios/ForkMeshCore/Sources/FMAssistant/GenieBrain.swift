@@ -337,6 +337,20 @@ public enum GenieWords {
         "search for", "search up", "search", "look for", "look up", "find me", "find", "hunt for", "locate", "track down", "dig up",
     ]
 
+    public static let stopListening: Set<String> = [
+        "stop listening", "stop listening to me", "stop listening to everything", "quit listening", "stop always listening",
+        "turn off listening", "turn listening off", "turn off always listening", "turn always listening off", "don't listen",
+        "dont listen", "stop the listening", "no more listening", "go to sleep",
+    ]
+    public static let stopListeningFiller: Set<String> = [
+        "hey", "hi", "oh", "ok", "okay", "please", "now", "can", "could", "would", "will", "you", "forkmesh", "thanks", "thank",
+    ]
+
+    public static func stopsListening(_ text: String) -> Bool {
+        let said = words(text).filter { !GenieSpotter.wakeWords.contains($0) && !stopListeningFiller.contains($0) }
+        return stopListening.contains(said.joined(separator: " "))
+    }
+
     public static let sayVerbs: Set<String> = ["say", "repeat"]
     public static let backReferences: Set<String> = ["that", "it", "this", "again", "that again", "it again", "this again", "what you said"]
 

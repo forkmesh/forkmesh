@@ -44,6 +44,7 @@ type Module struct {
 	gate          *phonefamily.Gate
 	confirmations *phonefamily.Confirmations
 	feed          *feed
+	shortcuts     *shortcutRunner
 
 	SaveDelay time.Duration
 	PushDelay time.Duration
@@ -99,6 +100,7 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 	for method, handler := range local {
 		core.Registry.Handle(method, m.Name(), localOnly(handler))
 	}
+	m.registerShortcuts(core)
 	m.registerPhone(core)
 	m.feed = newFeed(m)
 	go m.feed.run(ctx)
@@ -272,6 +274,9 @@ func (m *Module) Stop() {
 		guardPath = m.guardrails.Path()
 	}
 	m.mu.Unlock()
+	if m.shortcuts != nil {
+		m.shortcuts.stopAll()
+	}
 	if toolData != nil {
 		if err := writeAtomic(toolPath, toolData); err != nil {
 			m.logf("insights: cannot write %s: %v", toolPath, err)
@@ -283,6 +288,10 @@ func (m *Module) Stop() {
 			m.logf("insights: cannot write %s: %v", guardPath, err)
 		}
 	}
+}
+
+func (m *Module) Busy() bool {
+	return m.shortcuts != nil && m.shortcuts.busy()
 }
 
 func fileExists(path string) bool {

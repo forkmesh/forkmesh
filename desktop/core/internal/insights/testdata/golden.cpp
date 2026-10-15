@@ -6,6 +6,7 @@
 #include "LocalControlInsights.h"
 
 #include <QCoreApplication>
+#include <QDataStream>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -810,6 +811,28 @@ QJsonArray directories()
 QJsonObject helpers()
 {
     QJsonObject out;
+    QJsonArray lastLines;
+    for (const QString &text : {QStringLiteral("a\nb\n\n"), QStringLiteral("progress 10%\rprogress 100%\n"),
+                                QStringLiteral("\x1b[32mgreen\x1b[0m\n  "), QString(), QStringLiteral("  \n \r\n"),
+                                QString(300, QLatin1Char('L'))})
+        lastLines.append(QJsonObject{{QStringLiteral("in"), text},
+                                     {QStringLiteral("out"), insightctl::lastOutputLine(text)}});
+    out.insert(QStringLiteral("lastLines"), lastLines);
+    QJsonArray appends;
+    const QList<std::tuple<QString, QString, int>> appendCases = {
+        {QStringLiteral("abc\n"), QStringLiteral("def\n"), 100},
+        {QStringLiteral("line1\nline2\n"), QStringLiteral("line3\n"), 10},
+        {QStringLiteral("xxxxxxxx"), QStringLiteral("yyyy"), 6},
+        {QStringLiteral("a\n"), QStringLiteral("bcdef"), 5},
+        {QStringLiteral("abc"), QStringLiteral("\n"), 2},
+        {QStringLiteral("abc"), QStringLiteral("def"), 0},
+    };
+    for (const auto &[output, chunk, max] : appendCases)
+        appends.append(QJsonObject{{QStringLiteral("output"), output},
+                                   {QStringLiteral("chunk"), chunk},
+                                   {QStringLiteral("max"), max},
+                                   {QStringLiteral("out"), insightctl::appendShortcutOutput(output, chunk, max)}});
+    out.insert(QStringLiteral("appends"), appends);
     QJsonArray subjects;
     const QList<QJsonObject> params = {
         {{QStringLiteral("action"), QStringLiteral("toggleFamily")}, {QStringLiteral("family"), QStringLiteral(" bash ")},
@@ -864,6 +887,42 @@ QJsonObject helpers()
     return out;
 }
 
+QString streamBase64(const QVariant &value)
+{
+    QByteArray bytes;
+    QDataStream stream(&bytes, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_4_0);
+    stream << value;
+    return QString::fromLatin1(bytes.toBase64());
+}
+
+QJsonObject variants()
+{
+    QVariantMap usage;
+    usage.insert(QStringLiteral("shortcut:alice/demo:run.sh"), 3);
+    usage.insert(QStringLiteral("app:triage.md"), 1);
+    QVariantMap rows;
+    rows.insert(QStringLiteral("shortcut:alice/demo:run.sh"),
+                QVariantMap{{QStringLiteral("lastRunAtMs"), qint64(1700000000123)},
+                            {QStringLiteral("finished"), 2},
+                            {QStringLiteral("succeeded"), 1},
+                            {QStringLiteral("timed"), 2},
+                            {QStringLiteral("totalMs"), qint64(4500)},
+                            {QStringLiteral("lastMs"), qint64(-1)},
+                            {QStringLiteral("lastOk"), true},
+                            {QStringLiteral("lastOutput"), QStringLiteral("done (exit 0)")}});
+    rows.insert(QStringLiteral("app:triage.md"),
+                QVariantMap{{QStringLiteral("lastRunAtMs"), qint64(5)},
+                            {QStringLiteral("finished"), 0},
+                            {QStringLiteral("succeeded"), 0},
+                            {QStringLiteral("timed"), 0},
+                            {QStringLiteral("totalMs"), qint64(0)},
+                            {QStringLiteral("lastMs"), qint64(-1)},
+                            {QStringLiteral("lastOk"), false},
+                            {QStringLiteral("lastOutput"), QString()}});
+    return {{QStringLiteral("usage"), streamBase64(usage)}, {QStringLiteral("runStats"), streamBase64(rows)}};
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -885,6 +944,7 @@ int main(int argc, char **argv)
     out.insert(QStringLiteral("policy"), policy());
     out.insert(QStringLiteral("directories"), directories());
     out.insert(QStringLiteral("helpers"), helpers());
+    out.insert(QStringLiteral("variants"), variants());
     QFile file(QString::fromLocal8Bit(argv[1]));
     if (!file.open(QIODevice::WriteOnly))
         return 1;

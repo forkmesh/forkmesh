@@ -1,4 +1,5 @@
 
+#include "CoreInsightsHook.h"
 #include "LocalControl.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
@@ -1475,7 +1476,10 @@ QProcess *MainWindow::shortcutProcess(const QString &filePath) const
 
 bool MainWindow::shortcutRunning(const QString &filePath) const
 {
-    return shortcutProcess(filePath) != nullptr;
+    if (shortcutProcess(filePath))
+        return true;
+    return forkmesh::coreinsights::hooks().shortcutRunning &&
+           forkmesh::coreinsights::hooks().shortcutPath == filePath;
 }
 
 forkmesh::localcontrol::insights::ShortcutRun *MainWindow::shortcutRunById(int id)
@@ -1505,6 +1509,15 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
         repoIndex = m_repoDetailIndex;
     if (repoIndex < 0 || repoIndex >= m_repositories.size())
         return false;
+    if (forkmesh::coreinsights::hooks().shortcutRunning &&
+        forkmesh::coreinsights::hooks().shortcutPath == filePath) {
+        m_shortcutRestarts.insert(filePath, repoIndex);
+        stopShortcutInCore();
+        return true;
+    }
+    if (environmentOverrides.isEmpty() && !forkmesh::coreinsights::hooks().shortcutRunning &&
+        startShortcutInCore(filePath, repoIndex))
+        return true;
     const RepositoryRecord &record = m_repositories.at(repoIndex);
     const QString workDir = record.localPath;
     const QString name = QFileInfo(filePath).fileName();
@@ -1771,8 +1784,11 @@ void MainWindow::stopShortcut()
 void MainWindow::stopShortcutRun(int runId)
 {
     QPointer<QProcess> process = m_shortcutProcesses.value(runId);
-    if (!process)
+    if (!process) {
+        if (runId == forkmesh::coreinsights::hooks().coreRunId)
+            stopShortcutInCore();
         return;
+    }
     m_shortcutRestarts.remove(process->property("shortcutPath").toString());
     appendShortcutOutput(runId, QStringLiteral("^C stopping…\n"));
     process->setProperty("shortcutStopRequested", true);

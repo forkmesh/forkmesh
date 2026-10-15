@@ -16,22 +16,24 @@ import (
 )
 
 const (
-	maxUsageRows       = 60
-	maxImprovementRows = 40
-	maxGuardrailRepos  = 60
-	maxPeersPerAgent   = 12
-	desktopCallTimeout = 5 * time.Second
-	repositoriesArray  = "repositories/items"
-	insightsChanged    = "insights.changed"
+	maxUsageRows        = 60
+	maxImprovementRows  = 40
+	maxGuardrailRepos   = 60
+	maxPeersPerAgent    = 12
+	desktopCallTimeout  = 5 * time.Second
+	repositoriesArray   = "repositories/items"
+	insightsChanged     = "insights.changed"
+	shortcutOutputEvent = "insights.shortcutOutput"
 )
 
 func (m *Module) registerPhone(core *daemon.Core) {
 	handlers := map[string]rpc.Handler{
-		"insights.tools":      m.handleTools,
-		"insights.guardrails": m.handleGuardrails,
-		"insights.network":    m.handleNetwork,
-		"insights.prepare":    m.handlePrepare,
-		"insights.run":        m.handleRun,
+		"insights.tools":       m.handleTools,
+		"insights.guardrails":  m.handleGuardrails,
+		"insights.network":     m.handleNetwork,
+		"insights.shortcutRun": m.handleShortcutRun,
+		"insights.prepare":     m.handlePrepare,
+		"insights.run":         m.handleRun,
 	}
 	for method, handler := range handlers {
 		core.Registry.Handle(method, m.Name(), m.gate.Wrap(handler))

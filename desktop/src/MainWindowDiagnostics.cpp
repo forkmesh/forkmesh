@@ -14,6 +14,8 @@
 #include "ControlNode.h"
 #include "BackgroundFileWriter.h"
 #include "DiagnosticsReport.h"
+#include "DesktopProcessView.h"
+#include "DesktopProcesses.h"
 #include "CurrentPageStack.h"
 #include "MirrorSyncVerdict.h"
 #include "D1QuerySource.h"
@@ -1293,6 +1295,130 @@ void MainWindow::showDiagnosticsDialog()
     row->addWidget(close);
     v->addLayout(row);
     dlg.exec();
+}
+
+void MainWindow::showDesktopResourceDiagnostics()
+{
+    showSection(4);
+    if (m_logViewTabs && m_logDesktopResourceTabIndex >= 0)
+        m_logViewTabs->setCurrentIndex(m_logDesktopResourceTabIndex);
+    if (m_desktopProcessView) {
+        m_desktopProcessView->sampleNow();
+        m_desktopProcessView->setFocus();
+    }
+}
+
+void MainWindow::showDesktopProcessDetails(
+    const forkmesh::desktopprocs::Process &process)
+{
+    auto *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("Process diagnostics"));
+    dialog->resize(680, 480);
+    auto *layout = new QVBoxLayout(dialog);
+
+    auto *title = new QLabel(
+        QStringLiteral("<b>%1</b> <span style='color:#8b949e'>(PID %2)</span>")
+            .arg(process.name.toHtmlEscaped())
+            .arg(process.pid));
+    title->setTextFormat(Qt::RichText);
+    layout->addWidget(title);
+
+    const QString state = forkmesh::desktopprocs::stateWord(process.state);
+    QStringList details;
+    details.append(QStringLiteral("State: %1").arg(state));
+    details.append(QStringLiteral("Owner: %1").arg(process.user));
+    details.append(QStringLiteral("Parent PID: %1").arg(process.parentPid));
+    details.append(QStringLiteral("CPU: %1%")
+                       .arg(process.cpuPercent < 0.0
+                                ? QStringLiteral("-")
+                                : QString::number(process.cpuPercent, 'f', 1)));
+    details.append(QStringLiteral("Resident memory: %1")
+                       .arg(forkmesh::corelogs::compactByteSize(process.rssBytes)));
+    details.append(QStringLiteral("Threads: %1").arg(process.threads));
+    if (process.ageSeconds >= 0)
+        details.append(QStringLiteral("Age: %1 s").arg(process.ageSeconds));
+    if (process.self)
+        details.append(QStringLiteral("This is ForkMesh itself."));
+    else if (process.forkmesh)
+        details.append(QStringLiteral("Started by this ForkMesh desktop."));
+    auto *summary = new QLabel(details.join(QStringLiteral("\n")));
+    summary->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    summary->setWordWrap(true);
+    layout->addWidget(summary);
+
+    auto *commandLabel = new QLabel(QStringLiteral("What it is doing"));
+    layout->addWidget(commandLabel);
+    auto *command = new QPlainTextEdit(dialog);
+    command->setReadOnly(true);
+    command->setLineWrapMode(QPlainTextEdit::NoWrap);
+    command->setPlainText(process.command.isEmpty()
+                              ? QStringLiteral("Command line is unavailable.")
+                              : process.command);
+    layout->addWidget(command, 1);
+
+    auto *status = new QLabel;
+    status->setWordWrap(true);
+    layout->addWidget(status);
+    auto *copy = new QPushButton(QStringLiteral("Copy details"), dialog);
+    auto *stop = new QPushButton(QStringLiteral("Request stop"), dialog);
+    const bool protectedProcess =
+        process.pid <= 1 || process.pid == QCoreApplication::applicationPid();
+    stop->setEnabled(!protectedProcess);
+    stop->setToolTip(protectedProcess
+                         ? QStringLiteral("ForkMesh and PID 1 cannot be stopped here.")
+                         : QStringLiteral("Request a normal termination of this process."));
+    auto *close = new QPushButton(QStringLiteral("Close"), dialog);
+    connect(copy, &QPushButton::clicked, dialog, [process] {
+        QString text = QStringLiteral("%1 (PID %2)\n").arg(process.name).arg(process.pid);
+        text += process.command;
+        QApplication::clipboard()->setText(text);
+    });
+    connect(stop, &QPushButton::clicked, dialog, [this, dialog, process, status, stop] {
+        if (QMessageBox::warning(
+                dialog, QStringLiteral("Request process stop"),
+                QStringLiteral("Request that “%1” (PID %2) terminate?\n\n"
+                               "Unsaved work in that process may be lost.")
+                    .arg(process.name)
+                    .arg(process.pid),
+                QMessageBox::Cancel | QMessageBox::Yes,
+                QMessageBox::Cancel) != QMessageBox::Yes)
+            return;
+        QString failure;
+        const SystemStats::Termination outcome =
+            SystemStats::requestTermination(process.pid, &failure);
+        if (outcome == SystemStats::Termination::Requested) {
+            status->setText(QStringLiteral("Termination requested for %1 (PID %2).")
+                                .arg(process.name)
+                                .arg(process.pid));
+            stop->setEnabled(false);
+            if (m_desktopProcessView)
+                QTimer::singleShot(750, m_desktopProcessView,
+                                   &forkmesh::DesktopProcessView::sampleNow);
+        } else if (outcome == SystemStats::Termination::AlreadyExited) {
+            status->setText(QStringLiteral("%1 (PID %2) had already exited.")
+                                .arg(process.name)
+                                .arg(process.pid));
+            stop->setEnabled(false);
+        } else {
+            status->setText(QStringLiteral("Could not stop %1 (PID %2): %3")
+                                .arg(process.name)
+                                .arg(process.pid)
+                                .arg(failure.isEmpty()
+                                         ? QStringLiteral("not supported on this platform")
+                                         : failure));
+        }
+    });
+    connect(close, &QPushButton::clicked, dialog, &QDialog::close);
+    auto *buttons = new QHBoxLayout;
+    buttons->addWidget(copy);
+    buttons->addStretch(1);
+    buttons->addWidget(stop);
+    buttons->addWidget(close);
+    layout->addLayout(buttons);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void MainWindow::showQtDiagnosticsDialog()

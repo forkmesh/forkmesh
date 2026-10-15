@@ -414,11 +414,14 @@ def find_mac(key_dir: Path = RELEASE.MAC_BUILD_KEY_DIR):
     if not key.is_file() or not known_hosts.is_file():
         raise ToolError(f"no office Mac key in {key_dir} (docs/native/MAC_BUILD.md)")
     hint = RELEASE.mac_setting("MAC_BUILD_HOST", RELEASE.MAC_BUILD_HOST)
-    mac = RELEASE.MacHost(hint, key, known_hosts)
-    if mac.reachable():
-        return mac
-    say(f"the office Mac is not at {hint}; scanning the LAN for its pinned host key")
-    for address in RELEASE.lan_ssh_hosts({hint}):
+    if hint:
+        mac = RELEASE.MacHost(hint, key, known_hosts)
+        if mac.reachable():
+            return mac
+        say(f"the office Mac is not at {hint}; scanning the LAN for its pinned host key")
+    else:
+        say("scanning the LAN for the office Mac's pinned host key")
+    for address in RELEASE.lan_ssh_hosts({hint} if hint else set()):
         mac = RELEASE.MacHost(address, key, known_hosts)
         if mac.reachable():
             return mac

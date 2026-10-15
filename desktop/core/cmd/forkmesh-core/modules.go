@@ -17,6 +17,7 @@ import (
 	"forkmesh.com/desktop-core/internal/mergequeue"
 	"forkmesh.com/desktop-core/internal/mesh"
 	"forkmesh.com/desktop-core/internal/netlog"
+	"forkmesh.com/desktop-core/internal/plugins"
 	"forkmesh.com/desktop-core/internal/pulls"
 	"forkmesh.com/desktop-core/internal/quality"
 	"forkmesh.com/desktop-core/internal/relay"
@@ -56,5 +57,6 @@ func modules() []daemon.Module {
 		actions.New(),
 		mergequeue.New(),
 		pulls.New(),
+		plugins.New(),
 	}
 }

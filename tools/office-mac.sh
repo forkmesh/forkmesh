@@ -12,7 +12,7 @@ Finds the office build Mac on the LAN and logs in as `build`.
   --find          print the Mac's address and exit
 
 The Mac is looked for at the address it was last found at, then at
-MAC_BUILD_HOST (default 192.168.1.201), then by scanning this machine's /24
+MAC_BUILD_HOST when set, then by scanning this machine's /24
 for ssh and checking each host against the Mac's pinned host key.
 See docs/native/MAC_BUILD.md.
 EOF
@@ -51,7 +51,7 @@ remember() {
 
 find_mac() {
   local tried=" " candidate route prefix own host
-  for candidate in "$(cat "$address_file" 2>/dev/null || true)" "${MAC_BUILD_HOST:-192.168.1.201}"; do
+  for candidate in "$(cat "$address_file" 2>/dev/null || true)" "${MAC_BUILD_HOST:-}"; do
     candidate="$(printf '%s' "$candidate" | tr -d '[:space:]')"
     [ -n "$candidate" ] || continue
     case "$tried" in *" $candidate "*) continue ;; esac

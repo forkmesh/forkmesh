@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"forkmesh.com/desktop-core/internal/autostart"
 	"forkmesh.com/desktop-core/internal/identity"
 	"forkmesh.com/desktop-core/internal/ipc"
 	"forkmesh.com/desktop-core/internal/paths"
@@ -35,13 +36,18 @@ type Stopper interface {
 }
 
 type Options struct {
-	Project   string
-	Version   string
-	Linger    time.Duration
-	Env       paths.Env
-	Home      string
-	StateDir  string
-	LogWriter io.Writer
+	Project       string
+	Version       string
+	Linger        time.Duration
+	Env           paths.Env
+	Home          string
+	StateDir      string
+	LogWriter     io.Writer
+	Background    bool
+	Executable    string
+	Autostart     autostart.Manager
+	VerifyBinary  func(binary string) bool
+	SuperviseTick time.Duration
 }
 
 type Core struct {
@@ -61,6 +67,7 @@ type Core struct {
 	lastUI   time.Time
 	uiOnline bool
 	values   map[string]any
+	life     lifecycle
 }
 
 func (c *Core) Set(key string, value any) {
@@ -165,7 +172,9 @@ func NewCore(layout paths.Layout, version string, logger *log.Logger) *Core {
 	core.IPC.Version = version
 	core.IPC.Project = layout.Project
 	core.IPC.Logger = logger
+	core.initLifecycle(Options{})
 	core.registerBuiltins()
+	core.registerLifecycle()
 	return core
 }
 
@@ -202,7 +211,7 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 
 	lock, err := acquireLock(filepath.Join(stateDir, "core.lock"))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrAlreadyRunning, err)
 	}
 	defer lock.Close()
 
@@ -211,6 +220,8 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 
 	core := NewCore(layout, options.Version, logger)
 	core.cancel = cancel
+	core.initLifecycle(options)
+	core.recordStart(stateDir)
 	if id, err := identity.Load(layout.IdentityKey()); err == nil {
 		core.Identity = id
 	} else {
@@ -240,9 +251,11 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 	}
 	logger.Printf("forkmesh-core %s serving project %s on %s %s", options.Version, layout.Project, endpoint.Unix, endpoint.TCP)
 
-	if options.Linger > 0 {
-		go core.lingerWatch(ctx, options.Linger)
+	tick := options.SuperviseTick
+	if tick <= 0 {
+		tick = time.Second
 	}
+	go core.supervise(ctx, options.Linger, tick)
 	core.IPC.Serve(ctx)
 	for i := len(modules) - 1; i >= 0; i-- {
 		if stopper, ok := modules[i].(Stopper); ok {
@@ -253,32 +266,13 @@ func Run(ctx context.Context, options Options, modules []Module) error {
 	if endpoint.Unix != "" {
 		_ = os.Remove(endpoint.Unix)
 	}
+	core.recordStop(stateDir)
+	if core.RestartRequested() {
+		logger.Printf("forkmesh-core stopped for a restart")
+		return ErrRestart
+	}
 	logger.Printf("forkmesh-core stopped")
 	return nil
-}
-
-func (c *Core) lingerWatch(ctx context.Context, linger time.Duration) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.mu.Lock()
-			online := c.IPC.UI() != nil
-			if online {
-				c.lastUI = time.Now()
-			}
-			idle := time.Since(c.lastUI)
-			c.mu.Unlock()
-			if !online && idle > linger && !c.busy() {
-				c.Logger.Printf("no desktop attached for %s and nothing in flight; exiting", idle.Round(time.Second))
-				c.Shutdown()
-				return
-			}
-		}
-	}
 }
 
 func (c *Core) registerBuiltins() {
@@ -370,6 +364,8 @@ func (c *Core) Status() map[string]any {
 		"identity":   key,
 		"data":       c.Layout.Data,
 		"ui":         c.IPC.UI() != nil,
+		"background": c.Background(),
+		"lastExit":   c.life.lastExit,
 	}
 }
 

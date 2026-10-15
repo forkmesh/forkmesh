@@ -225,7 +225,7 @@
       // the Worker refuses its writes regardless (issue #592).
       const destination = body.emailVerified === false && body.email
         ? "/verify-pending"
-        : nextPath() || referrerPath() || "/";
+        : nextPath() || referrerPath() || "/dashboard";
       setTimeout(() => (location.href = destination), 700);
       return;
     }

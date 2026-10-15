@@ -68,15 +68,7 @@ public final class MarketModel {
     public func refresh(organizations names: [String]) async {
         loading = true
         defer { loading = false }
-        do {
-            packages = try await client.packages()
-            errorText = ""
-        } catch {
-            errorText = PackagesError.describe(error)
-            return
-        }
-        account?.adoptCatalog(packages)
-        await account?.refresh()
+        guard await loadCatalog() else { return }
         var problems: [String] = []
         if let counts = try? await client.installCounts() { self.counts = counts } else { problems.append("install counts") }
         if let summary = try? await client.marketSummary() {
@@ -85,6 +77,33 @@ public final class MarketModel {
         } else {
             problems.append("ratings")
         }
+        let organizationsLoaded = await loadOrganizations(names)
+        if !organizationsLoaded { problems.append("your organizations' packages") }
+        partialError = problems.isEmpty ? "" : "Couldn't load " + problems.joined(separator: " and ") + "."
+    }
+
+    public func refreshInstalls(organizations names: [String]) async {
+        loading = true
+        defer { loading = false }
+        guard await loadCatalog() else { return }
+        let organizationsLoaded = await loadOrganizations(names)
+        partialError = organizationsLoaded ? "" : "Couldn't load your organizations' packages."
+    }
+
+    private func loadCatalog() async -> Bool {
+        do {
+            packages = try await client.packages()
+            errorText = ""
+        } catch {
+            errorText = PackagesError.describe(error)
+            return false
+        }
+        account?.adoptCatalog(packages)
+        await account?.refresh()
+        return true
+    }
+
+    private func loadOrganizations(_ names: [String]) async -> Bool {
         var states: [OrgPackageState] = []
         var failed = false
         for name in names.filter(PackagesText.isOrgName).prefix(20) {
@@ -98,8 +117,7 @@ public final class MarketModel {
             }
         }
         ledger.replace(states)
-        if failed { problems.append("your organizations' packages") }
-        partialError = problems.isEmpty ? "" : "Couldn't load " + problems.joined(separator: " and ") + "."
+        return !failed
     }
 
     public func installScope(_ package: MarketPackage) -> MarketInstallScope {

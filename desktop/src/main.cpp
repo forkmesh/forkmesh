@@ -1,4 +1,5 @@
 #include "CrashHandler.h"
+#include "PackageModules.h"
 #include "ProcessReaper.h"
 #include "AgentCliLocator.h"
 #include "AgentResourceGovernor.h"
@@ -712,6 +713,7 @@ int main(int argc, char *argv[])
     forkmesh::logStartupTrace(
         QStringLiteral("DONE  construct QApplication (%1ms)")
             .arg(applicationConstruction.elapsed()));
+    forkmesh::market::modules::install();
     {
         forkmesh::StartupTraceStep applicationSetup(
             QStringLiteral("configure QApplication metadata, icon and style"));

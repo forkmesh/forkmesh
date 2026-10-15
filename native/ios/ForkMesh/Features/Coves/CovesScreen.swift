@@ -204,6 +204,7 @@ private struct CovesList: View {
                 .disabled(model.busy)
                 Menu {
                     Button("Lock all", systemImage: "lock") { model.lockAll() }
+                    PluginMenuItems()
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }

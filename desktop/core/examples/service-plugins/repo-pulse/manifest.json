@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "repo-pulse",
+  "name": "Repository Pulse",
+  "creator": {
+    "id": "did:forkmesh:example",
+    "handle": "example",
+    "displayName": "ForkMesh example",
+    "verified": false
+  },
+  "type": "service.development",
+  "category": "Developer tools",
+  "version": "1.0.0",
+  "summary": "Watches local repositories in the background and reports when a branch moves, even while the window is closed.",
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Example package; MIT licensed."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "settings": "builtin:package"
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": true
+  },
+  "permissions": [],
+  "screenshots": [
+    {
+      "path": "preview/card.png",
+      "alt": "The Repository Pulse card listing watched repositories with their branch and commit"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "required"
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "service": {
+    "api": 1,
+    "exec": "content/service/repo_pulse.py",
+    "interpreter": "python3",
+    "start": "boot",
+    "methods": [
+      "card",
+      "status",
+      "poll",
+      "watch",
+      "unwatch"
+    ],
+    "events": [
+      "changed"
+    ],
+    "remoteMethods": [
+      "card",
+      "status",
+      "poll"
+    ],
+    "remoteEvents": [
+      "changed"
+    ],
+    "memoryMB": 128
+  }
+}

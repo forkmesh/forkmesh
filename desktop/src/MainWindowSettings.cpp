@@ -1,5 +1,6 @@
 
 #include "AwsSettingsPanel.h"
+#include "CoreDaemonSettings.h"
 #include "HiddenTerms.h"
 #include "OfficeChannelMirror.h"
 #include "ProcessReaper.h"
@@ -3847,6 +3848,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     startupGroup->addWidget(parts.autoUpdateCheck);
     startupGroup->addWidget(parts.autoRestartCheck);
     startupGroup->addWidget(parts.reopenAfterCloseCheck);
+    startupGroup->addWidget(new CoreDaemonSettings(m_coreClient));
 
     auto *agentBehaviourLabel = new QLabel("AGENT BEHAVIOUR");
     agentBehaviourLabel->setObjectName("sectionLabel");

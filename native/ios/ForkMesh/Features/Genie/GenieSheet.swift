@@ -105,6 +105,16 @@ struct GenieSheet: View {
     }
 
     private var caption: some View {
+        VStack(spacing: FmSpace.x2) {
+            if DictationMeter.shared.live {
+                GenieWaveform(height: 28)
+                    .frame(maxWidth: 220)
+            }
+            captionText
+        }
+    }
+
+    private var captionText: some View {
         let words: String = session.hearing.isEmpty ? session.phase.caption : "“\(session.hearing)”"
         let spot: GenieSpot? = session.hearing.isEmpty ? nil : session.brain.toolbox.spot(session.hearing)
         let shown: AttributedString = spot.map { (found: GenieSpot) -> AttributedString in

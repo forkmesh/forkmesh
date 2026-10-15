@@ -286,7 +286,7 @@ void DesktopProcessView::paintHeader(QPainter &p, const QRectF &area)
     p.setPen(ink());
     const QFontMetricsF titleMetrics(title);
     p.drawText(QPointF(area.left(), area.top() + titleMetrics.ascent()),
-               QStringLiteral("This desktop"));
+               QStringLiteral("Desktop resource diagnostics"));
     p.setFont(font());
     const QFontMetricsF metrics(font());
     p.setPen(ink(160));
@@ -559,6 +559,11 @@ void DesktopProcessView::paintTable(QPainter &p, const QRectF &area)
     p.drawText(QPointF(area.left(), area.top() + metrics.ascent()),
                m_forkmeshOnly ? QStringLiteral("ForkMesh processes")
                               : QStringLiteral("Running processes"));
+    p.setPen(ink(150));
+    p.drawText(QRectF(area.left() + 220, area.top(), area.width() - 220,
+                      metrics.height()),
+               Qt::AlignRight | Qt::AlignVCenter,
+               QStringLiteral("Select a process to inspect or stop it"));
     const QList<desktopprocs::Process> rows = shownProcesses();
     double cpuPeak = 1.0;
     qint64 memoryPeak = 1;
@@ -667,6 +672,10 @@ void DesktopProcessView::paintTable(QPainter &p, const QRectF &area)
                                        : QStringLiteral("Started by this ForkMesh "
                                                         "desktop"));
         m_hits.append({row, detail.join(QLatin1Char('\n'))});
+        m_clicks.append({row, [this, process] {
+                             if (onProcessClicked)
+                                 onProcessClicked(process);
+                         }});
         y += kTableRow;
     }
     if (rows.isEmpty()) {

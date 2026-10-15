@@ -20,6 +20,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QComboBox>
 #include <QFutureWatcher>
+#include <QItemSelectionModel>
 #include <QDateTime>
 #include <QDebug>
 #include <QFile>
@@ -4814,7 +4815,9 @@ QWidget *MainWindow::buildBranchesTab()
     refreshButton->setObjectName("ghostButton");
     refreshButton->setCursor(Qt::PointingHandCursor);
     setOcticon(refreshButton, "sync", 16);
-    connect(refreshButton, &QPushButton::clicked, this, &MainWindow::loadBranchesPanel);
+    refreshButton->setToolTip("Fetch and prune remote-tracking branches, then refresh");
+    connect(refreshButton, &QPushButton::clicked, this,
+            &MainWindow::refreshBranchesFromRemotes);
     addRefreshSpin(refreshButton);
     m_branchPullAllButton = new QPushButton("Fast-forward idle");
     m_branchPullAllButton->setObjectName("ghostButton");
@@ -4828,12 +4831,22 @@ QWidget *MainWindow::buildBranchesTab()
     setOcticon(m_branchDeleteMergedButton, "trash", 16);
     connect(m_branchDeleteMergedButton, &QPushButton::clicked, this,
             &MainWindow::deleteMergedBranches);
+    m_branchDeleteSelectedButton = new QPushButton("Delete selected");
+    m_branchDeleteSelectedButton->setObjectName("ghostButton");
+    m_branchDeleteSelectedButton->setCursor(Qt::PointingHandCursor);
+    m_branchDeleteSelectedButton->setEnabled(false);
+    setOcticon(m_branchDeleteSelectedButton, "trash", 16);
+    m_branchDeleteSelectedButton->setToolTip(
+        "Delete selected branches that are not checked out or attached to a worktree");
+    connect(m_branchDeleteSelectedButton, &QPushButton::clicked, this,
+            &MainWindow::deleteSelectedBranches);
     headerRow->addWidget(heading);
     headerRow->addWidget(m_branchesSummary);
     headerRow->addStretch();
     headerRow->addWidget(m_branchPullAllButton);
     headerRow->addWidget(refreshButton);
     headerRow->addWidget(m_branchDeleteMergedButton);
+    headerRow->addWidget(m_branchDeleteSelectedButton);
     headerRow->addWidget(newBranchButton);
     layout->addLayout(headerRow);
 
@@ -4855,7 +4868,7 @@ QWidget *MainWindow::buildBranchesTab()
     m_branchesTable->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
     m_branchesTable->verticalHeader()->setDefaultSectionSize(30);
     m_branchesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_branchesTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_branchesTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_branchesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_branchesTable->setShowGrid(false);
     m_branchesTable->setWordWrap(false);
@@ -4893,6 +4906,14 @@ QWidget *MainWindow::buildBranchesTab()
                     m_branchesTable->item(row, kBranchesNameColumn);
                 if (it && !it->text().isEmpty())
                     clearMergedBranchFlash();
+            });
+    connect(m_branchesTable->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, [this] {
+                if (!m_branchDeleteSelectedButton)
+                    return;
+                m_branchDeleteSelectedButton->setEnabled(
+                    repoHasWorkingTree() && m_branchesTable->selectionModel()
+                    && m_branchesTable->selectionModel()->hasSelection());
             });
     connect(m_branchesTable, &QTableWidget::cellClicked, this,
             [this](int row, int column) {
@@ -6205,6 +6226,11 @@ void MainWindow::renderBranchesPanel(const BranchesPanelData &data)
                             .arg(base)
                       : QStringLiteral("No branches are fully merged into %1")
                             .arg(base));
+    }
+    if (m_branchDeleteSelectedButton) {
+        const bool selected = m_branchesTable->selectionModel()
+                              && m_branchesTable->selectionModel()->hasSelection();
+        m_branchDeleteSelectedButton->setEnabled(writable && selected);
     }
 
     startBranchConflictProbes(dir, base, conflictProbes);
@@ -7529,6 +7555,46 @@ void MainWindow::clearMergedBranchFlash()
     m_branchMergedFlashHtml.clear();
 }
 
+void MainWindow::refreshBranchesFromRemotes()
+{
+    const QString dir = repoGitDir();
+    if (dir.isEmpty() || m_branchRefreshRunning)
+        return;
+    m_branchRefreshRunning = true;
+    setRepoDetailNotice(QStringLiteral("Refreshing branches and pruning remote refs…"));
+    runOffThread<QStringList>(
+        [dir] {
+            QByteArray remotes;
+            if (!runGitCapture(dir, {QStringLiteral("remote")}, &remotes, nullptr))
+                return QStringList{QStringLiteral("could not list remotes")};
+            QStringList failed;
+            for (const QString &remote :
+                 QString::fromUtf8(remotes).split('\n', Qt::SkipEmptyParts)) {
+                if (!runGitCapture(dir, {QStringLiteral("fetch"),
+                                         QStringLiteral("--prune"), remote},
+                                   nullptr, nullptr))
+                    failed << remote;
+            }
+            return failed;
+        },
+        [this, dir](QStringList failed) {
+            m_branchRefreshRunning = false;
+            const bool here = repoGitDir() == dir;
+            if (here) {
+                m_branchesCache.clear();
+                loadBranchesAndTags();
+                loadBranchesPanel();
+            }
+            noticeForRepo(
+                here,
+                failed.isEmpty()
+                    ? QStringLiteral("Refreshed branches and pruned remote refs.")
+                    : QStringLiteral("Refreshed branches; could not prune %1.")
+                          .arg(failed.join(QStringLiteral(", "))),
+                !failed.isEmpty());
+        });
+}
+
 void MainWindow::deleteMergedBranches()
 {
     const QString dir = repoGitDir();
@@ -7659,8 +7725,18 @@ void MainWindow::confirmDeleteMergedBranches(const RepositoryRecord &repo,
         [dir, merged, mergedRemote] {
             MergedCleanup result;
             for (const QString &branch : merged) {
+                QByteArray tip;
                 QString error;
-                if (runGitCapture(dir, {"branch", "-D", branch}, nullptr, &error))
+                const bool found = runGitCapture(
+                    dir, {QStringLiteral("rev-parse"), QStringLiteral("--verify"),
+                          QStringLiteral("refs/heads/") + branch},
+                    &tip, &error);
+                const bool marked = found && runGitCapture(
+                    dir, {QStringLiteral("update-ref"),
+                          forkmesh::upstream::deletedBranchTombstoneRef(branch),
+                          QString::fromUtf8(tip).trimmed()},
+                    nullptr, &error);
+                if (marked && runGitCapture(dir, {"branch", "-D", branch}, nullptr, &error))
                     result.deleted << branch;
                 else
                     result.failed << QStringLiteral("%1: %2").arg(
@@ -7752,6 +7828,145 @@ void MainWindow::confirmDeleteMergedBranches(const RepositoryRecord &repo,
             if (here) {
                 m_branchesCache.clear();
                 loadBranchesAndTags();
+            }
+        });
+}
+
+void MainWindow::deleteSelectedBranches()
+{
+    const QString dir = repoGitDir();
+    if (dir.isEmpty() || !repoHasWorkingTree() || !m_branchesTable
+        || m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
+        return;
+    const RepositoryRecord repo = m_repositories.at(m_repoDetailIndex);
+    const QString base = repoDefaultBranch(repoBranches());
+    const QString current = headBranchFromFile(dir);
+    QSet<QString> activeAgentBranches;
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        if (!session.merged && session.owner == repo.owner && session.name == repo.name
+            && !session.branchName.isEmpty())
+            activeAgentBranches.insert(session.branchName);
+    }
+    QStringList local;
+    QStringList remote;
+    QStringList skipped;
+    QSet<QString> seen;
+    for (const QModelIndex &index : m_branchesTable->selectionModel()->selectedRows()) {
+        QTableWidgetItem *name =
+            m_branchesTable->item(index.row(), kBranchesNameColumn);
+        QTableWidgetItem *status =
+            m_branchesTable->item(index.row(), kBranchesStatusColumn);
+        QTableWidgetItem *worktree =
+            m_branchesTable->item(index.row(), kBranchesWorktreeColumn);
+        if (!name || name->text().isEmpty() || seen.contains(name->text()))
+            continue;
+        const QString branch = name->text();
+        seen.insert(branch);
+        if (status && status->text() == QLatin1String("remote")) {
+            const QString ref = branch.section(QLatin1Char('/'), 1);
+            if (ref.isEmpty() || ref == base || ref == QLatin1String("forkmesh/pulls")
+                || ref.startsWith(QLatin1String("forkmesh/pull/")))
+                skipped << branch;
+            else
+                remote << branch;
+            continue;
+        }
+        if (branch == base || branch == current || activeAgentBranches.contains(branch)
+            || (worktree && !worktree->text().isEmpty()))
+            skipped << branch;
+        else
+            local << branch;
+    }
+    if (local.isEmpty() && remote.isEmpty()) {
+        setRepoDetailNotice("No selected branch can be deleted. Default, checked-out, "
+                            "active-agent and worktree branches are protected.", true);
+        return;
+    }
+    QStringList listed = local;
+    listed += remote;
+    constexpr int kListedMax = 40;
+    QString list = QStringList(listed.mid(0, kListedMax)).join(QStringLiteral("\n"));
+    if (listed.size() > kListedMax)
+        list += QString::fromUtf8("\n\xE2\x80\xA6 and %1 more")
+                    .arg(listed.size() - kListedMax);
+    QString prompt = QStringLiteral("Delete the %1 selected local branch(es) and %2 "
+                                    "remote branch(es)? This cannot be undone.\n\n%3")
+                         .arg(local.size())
+                         .arg(remote.size())
+                         .arg(list);
+    if (!skipped.isEmpty())
+        prompt += QStringLiteral("\n\nProtected and kept: %1")
+                      .arg(skipped.join(QStringLiteral(", ")));
+    if (QMessageBox::question(this, "Delete selected branches", prompt,
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    struct SelectedCleanup {
+        QStringList deleted;
+        QStringList remoteDeleted;
+        QStringList failed;
+        bool meshDropped = false;
+    };
+    runOffThread<SelectedCleanup>(
+        [dir, local, remote] {
+            SelectedCleanup result;
+            for (const QString &branch : local) {
+                QString error;
+                if (deleteBranchAndCopies(dir, branch, &error))
+                    result.deleted << branch;
+                else
+                    result.failed << QStringLiteral("%1: %2").arg(
+                        branch, forkmesh::gitrefusal::firstFailureLine(error).left(160));
+            }
+            QByteArray remotesOut;
+            runGitCapture(dir, {QStringLiteral("remote")}, &remotesOut, nullptr);
+            const QStringList configured =
+                QString::fromUtf8(remotesOut).split('\n', Qt::SkipEmptyParts);
+            for (const QString &tracking : remote) {
+                const QString remoteName = tracking.section(QLatin1Char('/'), 0, 0);
+                const QString ref = tracking.section(QLatin1Char('/'), 1);
+                if (!configured.contains(remoteName)) {
+                    result.meshDropped = true;
+                } else if (!pushDeletedRef(dir, remoteName, ref)) {
+                    result.failed << QStringLiteral("%1: not deleted on %2")
+                                         .arg(ref, remoteName);
+                    continue;
+                }
+                QString error;
+                if (runGitCapture(dir, {QStringLiteral("branch"), QStringLiteral("-dr"),
+                                        tracking}, nullptr, &error))
+                    result.remoteDeleted << tracking;
+                else
+                    result.failed << QStringLiteral("%1: %2").arg(
+                        tracking, forkmesh::gitrefusal::firstFailureLine(error).left(160));
+            }
+            return result;
+        },
+        [this, repo, dir](SelectedCleanup result) {
+            const bool here = repoGitDir() == dir;
+            const int removed = result.deleted.size() + result.remoteDeleted.size();
+            const int repoIndex = repoIndexFor(repo.owner, repo.name);
+            if (result.meshDropped && repoIndex >= 0 && isSourceOfTruthRepo(repo))
+                convergeSourceRepoFromMesh(repoIndex, /*force=*/true);
+            else if (!result.deleted.isEmpty() || !result.remoteDeleted.isEmpty())
+                propagateBranchDeletion(repo.owner, repo.name);
+            if (result.failed.isEmpty())
+                noticeForRepo(here, QStringLiteral("Deleted %1 selected branch(es).")
+                                        .arg(removed));
+            else
+                noticeForRepo(here,
+                              QStringLiteral("Deleted %1 selected branch(es); %2 could "
+                                             "not be deleted (%3).")
+                                  .arg(removed)
+                                  .arg(result.failed.size())
+                                  .arg(QStringList(result.failed.mid(0, 5))
+                                           .join(QStringLiteral("; "))),
+                              true);
+            if (here) {
+                m_branchesCache.clear();
+                loadBranchesAndTags();
+                loadBranchesPanel();
             }
         });
 }

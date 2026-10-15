@@ -2247,6 +2247,7 @@ QWidget *MainWindow::buildChatPage()
                 updateRepoActivityRail();
                 renderPageNotices();
                 noteGeniePage();
+                updatePackageActionsButton();
                 if (index == 4)
                     setLogOverlayExpanded(false);
                 else

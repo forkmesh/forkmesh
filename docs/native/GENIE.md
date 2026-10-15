@@ -301,11 +301,20 @@ ear button, VoiceOver or Siri. A teal ring and ear badge show while on.
 - Uses the composer's recognizer in an `ambient` mode: on-device only (refuses
   to start otherwise), mixed with other audio, restarted quietly every 55 s, a
   2 s pause ends an utterance.
-- Heard words appear beside the spider for 5 s with actionable words in teal.
-- It acts only on what is meant for it: a spotted action pops a floating icon;
-  it runs by itself when addressed ("genie", or a request opener such as "can
-  you", "open", "read"), otherwise the icon must be tapped within 7 s. Starting
-  an agent always asks.
+- Heard words appear beside the spider with actionable words in teal. While
+  sound is coming in, a live waveform shows beside the spider, under the heard
+  words, in the bubble's header and above the full-screen caption
+  (`DictationMeter`, fed from the dictation audio tap at 20 Hz; levels only,
+  no audio is kept).
+- It acts on every utterance once a 2 s pause ends it: the bubble opens
+  (`GenieSession.onTakeUp`) and folds away 6 s after the reply. A spotted
+  action runs at once; anything else goes to the brain without the wake word.
+  Starting an agent always asks; so does handing an overheard request to an
+  agent unless the Genie was called by name, and there silence counts as no,
+  so background talk never launches an agent by itself.
+- Saying "stop listening" (also "genie, stop listening", "turn off listening",
+  "go to sleep"; `GenieWords.stopsListening` matches the whole utterance)
+  turns always listening off and saves it off. In the bubble it does the same.
 - It pauses while the composer is open or dictating, in the background, while
   the Genie is busy, while a voice message records, while anything speaks, and
   for 10 s after Agent Watch sounds.

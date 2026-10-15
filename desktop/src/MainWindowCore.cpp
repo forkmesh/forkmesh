@@ -1,6 +1,7 @@
 #include "AppPaths.h"
 #include "CoreClient.h"
 #include "CoreGit.h"
+#include "CoreInsightsHook.h"
 #include "CoreSecrets.h"
 #include "CoreVault.h"
 #include "LocalControl.h"
@@ -112,6 +113,7 @@ void MainWindow::registerCoreControlHandlers()
         [this](const QJsonObject &params, const CoreClient::Responder &respond) {
             QSettings settings;
             int written = 0;
+            QStringList keys;
             for (const QJsonValue &entry : params.value(QStringLiteral("writes")).toArray()) {
                 const QJsonObject write = entry.toObject();
                 const QString key = write.value(QStringLiteral("key")).toString();
@@ -143,13 +145,22 @@ void MainWindow::registerCoreControlHandlers()
                                                : QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact));
                 else if (type == QLatin1String("string"))
                     settings.setValue(key, value.toString());
-                else {
+                else if (type == QLatin1String("variant")) {
+                    const QVariant decoded = forkmesh::coreinsights::decodeVariant(value.toString());
+                    if (!decoded.isValid()) {
+                        respond({}, QStringLiteral("bad_value"));
+                        return;
+                    }
+                    settings.setValue(key, decoded);
+                } else {
                     respond({}, QStringLiteral("bad_type"));
                     return;
                 }
                 ++written;
+                keys << key;
             }
             settings.sync();
+            noteCoreSettingsWritten(keys);
             respond({{QStringLiteral("written"), written}},
                     settings.status() == QSettings::NoError ? QString() : QStringLiteral("write_failed"));
         });
@@ -179,20 +190,13 @@ void MainWindow::registerCoreControlHandlers()
     m_coreClient->handle(
         QStringLiteral("ui.insights.shortcutState"),
         [this](const QJsonObject &, const CoreClient::Responder &respond) {
-            const forkmesh::localcontrol::insights::ShortcutRun *shown = nullptr;
-            for (const auto &run : std::as_const(m_shortcutRuns))
-                if (!shown || run.running || !shown->running)
-                    shown = &run;
-            if (!shown) {
-                respond({{QStringLiteral("active"), false}}, QString());
-                return;
-            }
+            const auto *run = shortcutRunById(m_shortcutShownRun);
             respond({{QStringLiteral("active"), !m_shortcutProcesses.isEmpty()},
-                     {QStringLiteral("running"), shown->running},
-                     {QStringLiteral("repo"), shown->repo},
-                     {QStringLiteral("file"), shown->file},
+                     {QStringLiteral("running"), run && run->running},
+                     {QStringLiteral("repo"), run ? run->repo : QString()},
+                     {QStringLiteral("file"), run ? run->file : QString()},
                      {QStringLiteral("lastOutput"),
-                      forkmesh::localcontrol::insights::lastOutputLine(shown->output)}},
+                      run ? forkmesh::localcontrol::insights::lastOutputLine(run->output) : QString()}},
                     QString());
         });
     registerCoreHostsHandlers();

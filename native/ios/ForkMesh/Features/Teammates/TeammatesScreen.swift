@@ -9,6 +9,9 @@ struct TeammatesDestination: View {
             TeammatesScreen(store: store, hub: hub)
         } else {
             TeamUnavailableView()
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) { PluginMoreMenu() }
+                }
         }
     }
 }
@@ -166,6 +169,7 @@ struct TeammatesScreen: View {
                 } label: {
                     Label("Add special agent", systemImage: "person.badge.plus")
                 }
+                PluginMenuItems()
             } label: {
                 Image(systemName: "ellipsis.circle")
             }

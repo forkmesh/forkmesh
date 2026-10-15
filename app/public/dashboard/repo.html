@@ -2558,6 +2558,29 @@
           </div>
         </div>
 
+        <div data-plugin-menu class="relative hidden shrink-0 items-center">
+          <button
+            data-plugin-menu-toggle
+            type="button"
+            aria-label="Plugin options"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            title="Plugin options"
+            class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <i data-lucide="ellipsis" class="h-4 w-4" aria-hidden="true"></i>
+          </button>
+          <div data-plugin-menu-dropdown class="fm-popover fm-menu hidden absolute right-0 top-full z-50 mt-2 w-64" role="menu">
+            <a data-plugin-menu-rate href="/market-reviews" class="fm-menu-item" role="menuitem">Rate this plugin</a>
+            <button data-plugin-menu-feedback type="button" class="fm-menu-item" role="menuitem">Send feedback or report a bug</button>
+            <div class="fm-menu-divider" role="separator"></div>
+            <button data-plugin-menu-uninstall type="button" class="fm-menu-item fm-menu-item-danger" role="menuitem">
+              <span data-plugin-menu-uninstall-label>Uninstall…</span>
+            </button>
+            <p data-plugin-menu-uninstall-hint class="px-2 pb-1 text-xs text-muted-foreground" hidden></p>
+          </div>
+        </div>
+
         <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground lg:flex">
           <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
           <input

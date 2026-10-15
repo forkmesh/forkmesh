@@ -16,7 +16,10 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
+#include <QPlainTextEdit>
 #include <QPointer>
+#include <QPushButton>
 #include <QTimer>
 
 #include <utility>
@@ -29,6 +32,7 @@ namespace {
 constexpr int kStateRetryMs = 500;
 constexpr int kStateRetries = 40;
 constexpr qint64 kMaxShortcutBytes = 64 * 1024;
+constexpr int kMaxShortcutOutputChars = 96 * 1024;
 
 struct CoreInsightsState {
     QPointer<CoreClient> client;
@@ -86,12 +90,21 @@ void MainWindow::registerCoreInsightsHandlers()
             [this](const QString &event, const QJsonObject &data) {
                 if (event == QLatin1String("core.insights.changed"))
                     applyCoreInsightsState(data);
+                else if (event.startsWith(QLatin1String("core.insights.shortcut.")))
+                    onCoreInsightsEvent(event, data);
             });
     connect(m_coreClient, &CoreClient::connectedChanged, this, [this](bool connected) {
         CoreInsightsState &current = insightsState();
         if (!connected) {
             const bool wasActive = current.active;
             current.active = false;
+            forkmesh::coreinsights::hooks().shortcutRunning = false;
+            forkmesh::coreinsights::hooks().shortcutPath.clear();
+            if (auto *run = shortcutRunById(std::exchange(forkmesh::coreinsights::hooks().coreRunId, 0))) {
+                run->running = false;
+                run->message = QStringLiteral("detached from forkmesh-core");
+                refreshShortcutRunPicker();
+            }
             if (!wasActive)
                 return;
             if (m_agentToolLedger) {
@@ -112,7 +125,19 @@ void MainWindow::registerCoreInsightsHandlers()
         }
         current.retries = 0;
         requestCoreInsightsState(true);
-    });
+        if (current.client && current.client->hasNativeRoute(QStringLiteral("core.insights.shortcut.state")))
+            current.client->request(
+                QStringLiteral("core.insights.shortcut.state"), {},
+                [this](bool ok, const QJsonValue &result, const QString &) {
+                    if (!ok || !result.toObject().value(QStringLiteral("active")).toBool())
+                        return;
+                    QJsonObject run = result.toObject().value(QStringLiteral("run")).toObject();
+                    const QString output = run.value(QStringLiteral("output")).toString();
+                    onCoreInsightsEvent(QStringLiteral("core.insights.shortcut.started"),
+                                        {{QStringLiteral("run"), run}});
+                    onCoreInsightsEvent(QStringLiteral("core.insights.shortcut.output"),
+                                        {{QStringLiteral("chunk"), output}});
+                });
     });
 
     m_coreClient->handle(
@@ -147,28 +172,12 @@ void MainWindow::registerCoreInsightsHandlers()
             respond({{QStringLiteral("ok"), true}}, QString());
         });
     m_coreClient->handle(
-        QStringLiteral("ui.insights.runShortcutScript"),
-        [this](const QJsonObject &params, const CoreClient::Responder &respond) {
-            const QString repo = params.value(QStringLiteral("repo")).toString();
-            const QString file = params.value(QStringLiteral("file")).toString();
-            int repoIndex = -1;
-            const QString dir = insightctl::validShortcutFile(file)
-                                    ? localControlShortcutDir(repo, QStringLiteral("shortcut"), &repoIndex)
-                                    : QString();
-            const QString path = dir.isEmpty() ? QString() : QDir(dir).filePath(file);
-            if (repoIndex < 0 || path.isEmpty() || !QFileInfo(path).isFile()) {
-                respond({}, QStringLiteral("unknown_shortcut"));
-                return;
-            }
-            const bool restart = shortcutRunning(path);
-            if (!runShortcut(path, repoIndex)) {
-                respond({}, QStringLiteral("shortcut_not_started"));
-                return;
-            }
-            respond({{QStringLiteral("run"), m_shortcutRunCounter + (restart ? 1 : 0)},
-                     {QStringLiteral("restart"), restart},
-                     {QStringLiteral("name"), insightctl::parseShortcutMeta(file, readShortcutFile(path)).name}},
-                    QString());
+        QStringLiteral("ui.insights.shortcutRun"),
+        [this](const QJsonObject &, const CoreClient::Responder &respond) {
+            QJsonObject answer;
+            if (const auto *run = shortcutRunById(m_shortcutShownRun))
+                answer.insert(QStringLiteral("run"), insightctl::shortcutRunRow(*run, true));
+            respond(answer, QString());
         });
     m_coreClient->handle(
         QStringLiteral("ui.insights.runShortcutAgent"),
@@ -293,4 +302,120 @@ void MainWindow::applyCoreInsightsState(const QJsonObject &state)
         m_agentToolLedger->changed();
     if (guardrailsChanged && m_agentGuardrailLedger->changed)
         m_agentGuardrailLedger->changed();
+}
+
+void MainWindow::noteCoreSettingsWritten(const QStringList &keys)
+{
+    for (const QString &key : keys) {
+        if (!key.startsWith(QLatin1String("shortcuts/")))
+            continue;
+        m_shortcutUsage.clear();
+        m_shortcutUsageLoaded = false;
+        m_shortcutRunStats.clear();
+        m_shortcutAgentRuns.clear();
+        m_shortcutRunStatsLoaded = false;
+        return;
+    }
+}
+
+bool MainWindow::startShortcutInCore(const QString &filePath, int repoIndex)
+{
+    CoreClient *client = insightsState().client;
+    if (!client || !client->isConnected() ||
+        !client->hasNativeRoute(QStringLiteral("core.insights.shortcut.start")))
+        return false;
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return false;
+    const RepositoryRecord &record = m_repositories.at(repoIndex);
+    const QString file = QFileInfo(filePath).fileName();
+    const insightctl::ShortcutMeta meta = insightctl::parseShortcutMeta(file, readShortcutFile(filePath));
+    const QJsonObject params{
+        {QStringLiteral("path"), filePath},
+        {QStringLiteral("repo"), record.owner + QLatin1Char('/') + record.name},
+        {QStringLiteral("workdir"), record.localPath},
+        {QStringLiteral("file"), file},
+        {QStringLiteral("name"), meta.name},
+        {QStringLiteral("usageKey"), shortcutUsageKey(filePath, QStringLiteral("shortcut"), repoIndex)}};
+    client->request(QStringLiteral("core.insights.shortcut.start"), params,
+                    [this](bool ok, const QJsonValue &, const QString &error) {
+                        if (!ok && error == QLatin1String("shortcut_running"))
+                            setRepoDetailNotice(
+                                "A shortcut is already running — stop it before starting another.", true);
+                        else if (!ok)
+                            setRepoDetailNotice(
+                                QStringLiteral("The shortcut did not start: %1").arg(error), true);
+                    });
+    return true;
+}
+
+bool MainWindow::stopShortcutInCore()
+{
+    CoreClient *client = insightsState().client;
+    if (!forkmesh::coreinsights::hooks().shortcutRunning || !client || !client->isConnected())
+        return false;
+    if (auto *run = shortcutRunById(forkmesh::coreinsights::hooks().coreRunId)) {
+        run->output = insightctl::appendShortcutOutput(run->output, QStringLiteral("^C stopping…\n"),
+                                                       kMaxShortcutOutputChars);
+        if (m_shortcutOutput && run->id == m_shortcutShownRun)
+            m_shortcutOutput->appendPlainText(QStringLiteral("^C stopping…"));
+    }
+    client->request(QStringLiteral("core.insights.shortcut.stop"), {},
+                    [](bool, const QJsonValue &, const QString &) {});
+    return true;
+}
+
+void MainWindow::onCoreInsightsEvent(const QString &event, const QJsonObject &data)
+{
+    forkmesh::coreinsights::Hooks &hooks = forkmesh::coreinsights::hooks();
+    if (event == QLatin1String("core.insights.shortcut.started")) {
+        const QJsonObject coreRun = data.value(QStringLiteral("run")).toObject();
+        hooks.shortcutRunning = true;
+        hooks.shortcutPath = data.value(QStringLiteral("path")).toString();
+        insightctl::ShortcutRun run;
+        run.id = ++m_shortcutRunCounter;
+        run.repo = coreRun.value(QStringLiteral("repo")).toString();
+        run.file = coreRun.value(QStringLiteral("file")).toString();
+        run.name = coreRun.value(QStringLiteral("name")).toString();
+        run.running = true;
+        run.startedAtMs = qint64(coreRun.value(QStringLiteral("startedAtMs")).toDouble());
+        hooks.coreRunId = run.id;
+        m_shortcutRuns.append(run);
+        showShortcutRun(run.id);
+        loadShortcutsPanel();
+        return;
+    }
+    if (event == QLatin1String("core.insights.shortcut.output")) {
+        const QString chunk = data.value(QStringLiteral("chunk")).toString();
+        if (auto *run = shortcutRunById(hooks.coreRunId)) {
+            run->output = insightctl::appendShortcutOutput(run->output, chunk, kMaxShortcutOutputChars);
+            if (m_shortcutOutput && run->id == m_shortcutShownRun)
+                m_shortcutOutput->appendPlainText(chunk.trimmed());
+        }
+        return;
+    }
+    if (event == QLatin1String("core.insights.shortcut.finished")) {
+        const QString path = std::exchange(hooks.shortcutPath, QString());
+        hooks.shortcutRunning = false;
+        const int runId = std::exchange(hooks.coreRunId, 0);
+        const QString message = data.value(QStringLiteral("message")).toString();
+        if (auto *run = shortcutRunById(runId)) {
+            run->running = false;
+            run->ok = data.value(QStringLiteral("ok")).toBool();
+            run->message = message;
+            run->output = insightctl::appendShortcutOutput(run->output, message + QLatin1Char('\n'),
+                                                           kMaxShortcutOutputChars);
+        }
+        if (runId == m_shortcutShownRun)
+            showShortcutRun(runId);
+        else
+            refreshShortcutRunPicker();
+        loadShortcutsPanel();
+        if (!path.isEmpty() && m_shortcutRestarts.contains(path)) {
+            const int againRepo = m_shortcutRestarts.take(path);
+            QTimer::singleShot(0, this, [this, path, againRepo] { runShortcut(path, againRepo); });
+        }
+        return;
+    }
+    if (event == QLatin1String("core.insights.shortcut.stats"))
+        loadShortcutsPanel();
 }

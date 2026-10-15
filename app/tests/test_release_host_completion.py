@@ -791,7 +791,7 @@ def test_codemagic_builds_the_macos_image_when_the_mac_drops_off(tmp_path, monke
     monkeypatch.setattr(tool, "find_build_mac", lambda *a, **k: "mac")
 
     def unreachable(*a):
-        raise tool.MacUnreachable("lost the office Mac at 192.168.1.201")
+        raise tool.MacUnreachable("lost the office Mac")
     monkeypatch.setattr(tool, "build_macos_on_mac", unreachable)
     monkeypatch.setattr(tool, "start_macos_build", lambda *a, **k: "build-1")
     monkeypatch.setattr(tool, "await_macos_dmg", lambda *a, **k: dmg)
@@ -842,7 +842,7 @@ def test_the_office_mac_found_by_a_lan_scan_is_tried_first_next_time(tmp_path, m
     key_dir, address_file, asked = _mac_lan(tmp_path, monkeypatch, "192.168.1.57",
                                             ["192.168.1.3", "192.168.1.57"])
     assert REAL_FIND_BUILD_MAC(key_dir).address == "192.168.1.57"
-    assert asked == [tool.MAC_BUILD_HOST, "192.168.1.3", "192.168.1.57"]
+    assert asked == ["192.168.1.3", "192.168.1.57"]
     assert address_file.read_text() == "192.168.1.57\n"
     asked.clear()
     assert REAL_FIND_BUILD_MAC(key_dir).address == "192.168.1.57"
@@ -850,12 +850,13 @@ def test_the_office_mac_found_by_a_lan_scan_is_tried_first_next_time(tmp_path, m
 
 
 def test_a_stale_remembered_mac_address_falls_back_to_the_hint(tmp_path, monkeypatch):
-    key_dir, address_file, asked = _mac_lan(tmp_path, monkeypatch, tool.MAC_BUILD_HOST, [])
+    monkeypatch.setattr(tool, "MAC_BUILD_HOST", "build.test")
+    key_dir, address_file, asked = _mac_lan(tmp_path, monkeypatch, "build.test", [])
     address_file.parent.mkdir(parents=True)
     address_file.write_text("192.168.1.57\n")
-    assert REAL_FIND_BUILD_MAC(key_dir).address == tool.MAC_BUILD_HOST
-    assert asked == ["192.168.1.57", tool.MAC_BUILD_HOST]
-    assert address_file.read_text() == tool.MAC_BUILD_HOST + "\n"
+    assert REAL_FIND_BUILD_MAC(key_dir).address == "build.test"
+    assert asked == ["192.168.1.57", "build.test"]
+    assert address_file.read_text() == "build.test\n"
 
 
 def test_the_mac_build_log_names_the_image_and_its_digest():

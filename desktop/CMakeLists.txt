@@ -847,6 +847,8 @@ set(FORKMESH_APP_SOURCES
     src/CoreCleanup.cpp
     src/CoreClient.h
     src/CoreClient.cpp
+    src/CoreDaemonSettings.h
+    src/CoreDaemonSettings.cpp
     src/CoreProcess.h
     src/CoreProcess.cpp
     src/CoreAgentPages.h
@@ -952,6 +954,10 @@ set(FORKMESH_APP_SOURCES
     src/ForkMeshPackageRegistry.cpp
     src/NativePackageExtension.h
     src/NativePackageExtension.cpp
+    src/PackageModules.h
+    src/PackageModules.cpp
+    src/PackageFeedback.h
+    src/PackageFeedback.cpp
     src/PackageRailTile.h
     src/PackageRailTile.cpp
     src/RepoStatsStore.h
@@ -1232,9 +1238,11 @@ set(FORKMESH_APP_SOURCES
     ${FORKMESH_MAIN_WINDOW_SOURCES}
 )
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForkMeshPackageModules.cmake")
+forkmesh_package_modules_partition()
 qt_add_executable(forkmesh
     src/main.cpp
-    ${FORKMESH_APP_SOURCES}
+    ${FORKMESH_APP_EXECUTABLE_SOURCES}
     src/forkmesh_autogen.cpp
 )
 add_dependencies(forkmesh forkmesh-version-header)
@@ -1308,7 +1316,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
 # core unity file. The descriptor is therefore the only place a native package
 # declares its Q_OBJECT headers.
 qt_wrap_cpp(FORKMESH_MARKETPLACE_MOC_SOURCES
-    ${FORKMESH_MARKETPLACE_MOC_HEADERS}
+    ${FORKMESH_APP_MARKETPLACE_MOC_HEADERS}
     TARGET forkmesh
 )
 # CodexAppServerSession is compiled as a regular moc unit rather than included
@@ -1489,6 +1497,7 @@ if(UNIX AND NOT APPLE)
     # allocator-backed unwinder that can corrupt an interrupted malloc/free.
     target_compile_options(forkmesh PRIVATE -fno-omit-frame-pointer)
 endif()
+forkmesh_add_package_modules()
 
 # The file/folder tree icons under icons/ are loaded at runtime through
 # MainWindow::iconsDir() (MainWindowRepoDetail.cpp), which falls back to a
@@ -3061,6 +3070,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_native_package_extension.cpp
         src/NativePackageExtension.h
         src/NativePackageExtension.cpp
+        src/PackageFeedback.h
+        src/PackageFeedback.cpp
         src/PackageRailTile.h
         src/PackageRailTile.cpp
     )
@@ -3539,6 +3550,7 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/AgentJail.h
         src/AgentStore.h
         src/AgentStore.cpp
+        src/CoreAgentStore.cpp
         src/AgentResumeIdentity.h
         src/AgentRuntimeSession.h
         src/AgentRuntimeSession.cpp
@@ -3546,6 +3558,9 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/ClaudeStreamSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/CoreAgentRun.cpp
+        src/AgentProcess.h
+        src/AgentProcess.cpp
         src/CodexTranscriptStyle.h
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
@@ -3778,6 +3793,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     #   cmake --build build --target check (builds the tests, then runs them)
     # The desktop smoke tests need an offscreen Qt platform.
     enable_testing()
+    forkmesh_add_package_module_tests()
     add_test(NAME forkmesh-cove-files-tests COMMAND forkmesh-cove-files-tests)
     add_test(NAME forkmesh-project-invite-tests
              COMMAND forkmesh-project-invite-tests)
@@ -3816,6 +3832,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-package-tests COMMAND forkmesh-package-tests)
     add_test(NAME forkmesh-native-package-tests
              COMMAND forkmesh-native-package-tests)
+    set_tests_properties(forkmesh-native-package-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)

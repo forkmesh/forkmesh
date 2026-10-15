@@ -16,6 +16,12 @@ QMap<QString, NativePackageContribution> &contributions()
     return registry;
 }
 
+std::function<bool(const QString &)> &loader()
+{
+    static std::function<bool(const QString &)> hook;
+    return hook;
+}
+
 QString contributionError(const NativePackageContribution &contribution)
 {
     static const QRegularExpression entrypointPattern(
@@ -87,7 +93,9 @@ NativePackageRegistration::NativePackageRegistration(
 const NativePackageContribution *nativePackageContribution(
     const QString &entrypoint, const QString &packageType)
 {
-    const auto found = contributions().constFind(entrypoint);
+    auto found = contributions().constFind(entrypoint);
+    if (found == contributions().cend() && loader() && loader()(entrypoint))
+        found = contributions().constFind(entrypoint);
     if (found == contributions().cend())
         return nullptr;
     if (!packageType.isEmpty() && !found->supportedTypes.isEmpty() &&
@@ -99,6 +107,16 @@ const NativePackageContribution *nativePackageContribution(
 QList<QString> nativePackageEntrypoints()
 {
     return contributions().keys();
+}
+
+void setNativePackageLoader(std::function<bool(const QString &entrypoint)> hook)
+{
+    loader() = std::move(hook);
+}
+
+void unregisterNativePackageEntrypoint(const QString &entrypoint)
+{
+    contributions().remove(entrypoint);
 }
 
 QString nativePackageLifecyclePath(const QString &organization,

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.teammates
 
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import android.graphics.BitmapFactory
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -286,7 +287,9 @@ internal class TeammatesScreen : Screen() {
                 }
             }
         }
-        DetailScaffold(title, navigator, actions = {
+        val plugin = rememberScreenPluginMenu()
+        DetailScaffold(title, navigator, pluginMenu = false, actions = {
+            plugin?.Host()
             FmIconButton("newspaper", "Briefing", onPressed = { navigator.push(TeamBriefingScreen()) }, color = c.textPrimary)
             FmIconButton("bar_chart", "Stats", onPressed = { navigator.push(TeamStatsScreen()) }, color = c.textPrimary)
             FmIconButton("forum_outlined", "#team", onPressed = { navigator.push(TeamRoomScreen()) }, color = c.textPrimary)
@@ -302,6 +305,7 @@ internal class TeammatesScreen : Screen() {
                         onClick = { menu = false; prepare(TeammateAction.DisableSchedules, destructive = true) },
                     )
                     FmDropdownMenuItem("Add special agent", icon = "person_add_alt", onClick = { menu = false; navigator.push(TeammateEditorScreen(null)) })
+                    plugin?.Items(close = { menu = false }, divided = true)
                 }
             }
         }) {

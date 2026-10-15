@@ -302,3 +302,32 @@ func TestMacBuildHost(t *testing.T) {
 		t.Fatal("configured host")
 	}
 }
+
+func TestSamplerIdlesWithoutWatchersOrDesktop(t *testing.T) {
+	core := coretest.New(t)
+	module := New()
+	module.Interval = 5 * time.Millisecond
+	module.IdleInterval = time.Hour
+	host := &fakeHost{}
+	module.readHost = host.read
+	module.Owners = func() []string { return []string{"alice"} }
+	coretest.Start(t, core, module)
+	reads := func() float64 {
+		host.mu.Lock()
+		defer host.mu.Unlock()
+		return host.ticks
+	}
+	before := reads()
+	time.Sleep(100 * time.Millisecond)
+	if idle := reads() - before; idle != 0 {
+		t.Fatalf("sampled %v times with nobody watching", idle)
+	}
+	coretest.MustCall(t, core, ownerPeer("p1"), "diag.watch", nil, nil)
+	deadline := time.Now().Add(2 * time.Second)
+	for reads()-before < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if reads()-before < 3 {
+		t.Fatal("a watcher did not wake the sampler")
+	}
+}

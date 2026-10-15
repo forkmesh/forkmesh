@@ -609,7 +609,73 @@ def load_manifest(path: Path | str) -> dict:
             raise MarketplaceError(f"package {package_id} migration up/down must differ")
         validate_migration_sql(up, package_id, migration_id, "up")
         validate_migration_sql(down, package_id, migration_id, "down")
+    validate_service(root.get("service"), package_root, package_id, permission_ids)
     return root
+
+
+SERVICE_NAME_RE = re.compile(r"[a-z][A-Za-z0-9_]{0,63}")
+SERVICE_INTERPRETERS = {"python3", "sh", "bash", "node"}
+SERVICE_FIELDS = {
+    "api", "exec", "interpreter", "start", "methods", "events",
+    "remoteMethods", "remoteEvents", "idleExitSeconds", "memoryMB",
+}
+
+
+def validate_service(
+    value: object, package_root: Path, package_id: str, permission_ids: set[str]
+) -> dict | None:
+    if value is None:
+        return None
+    service = _object(value, f"package {package_id} service")
+    unknown = set(service) - SERVICE_FIELDS
+    if unknown:
+        raise MarketplaceError(
+            f"package {package_id} service has unsupported fields: {sorted(unknown)}"
+        )
+    if service.get("api") != 1:
+        raise MarketplaceError(f"package {package_id} service api must be 1")
+    executable = str(service.get("exec") or "")
+    if not executable.startswith("content/") or "{" in executable:
+        raise MarketplaceError(
+            f"package {package_id} service exec must be a file under content/"
+        )
+    _manifest_reference(package_root, safe_relative_path(executable, "service exec"), "service exec")
+    interpreter = service.get("interpreter")
+    if interpreter is not None and interpreter not in SERVICE_INTERPRETERS:
+        raise MarketplaceError(f"package {package_id} service interpreter is not allowed")
+    if service.get("start", "lazy") not in {"lazy", "boot"}:
+        raise MarketplaceError(f"package {package_id} service start must be lazy or boot")
+    lists = {}
+    for key in ("methods", "events", "remoteMethods", "remoteEvents"):
+        items = service.get(key) or []
+        if (
+            not isinstance(items, list)
+            or len(items) > 64
+            or len(set(items)) != len(items)
+            or not all(isinstance(item, str) and SERVICE_NAME_RE.fullmatch(item) for item in items)
+        ):
+            raise MarketplaceError(f"package {package_id} service {key} are invalid")
+        lists[key] = set(items)
+    if not lists["methods"]:
+        raise MarketplaceError(f"package {package_id} service needs at least one method")
+    if not lists["remoteMethods"] <= lists["methods"] or not lists["remoteEvents"] <= lists["events"]:
+        raise MarketplaceError(
+            f"package {package_id} service remote methods and events must be declared ones"
+        )
+    for key, low, high in (("idleExitSeconds", 10, 86400), ("memoryMB", 64, 4096)):
+        number = service.get(key)
+        if number is not None and (
+            isinstance(number, bool) or not isinstance(number, int) or not low <= number <= high
+        ):
+            raise MarketplaceError(f"package {package_id} service {key} must be {low}..{high}")
+    unknown_permissions = {
+        permission for permission in permission_ids if permission.startswith("service.")
+    } - {"service.network"}
+    if unknown_permissions:
+        raise MarketplaceError(
+            f"package {package_id} requests unknown service permissions: {sorted(unknown_permissions)}"
+        )
+    return service
 
 
 def validate_settings(value: object, package_id: str) -> list[dict]:

@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"math"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"forkmesh.com/desktop-core/internal/qtjson"
+	"forkmesh.com/desktop-core/internal/qvariant"
 )
 
 type goldenFile struct {
@@ -24,6 +26,7 @@ type goldenFile struct {
 	Policy      json.RawMessage `json:"policy"`
 	Directories json.RawMessage `json:"directories"`
 	Helpers     json.RawMessage `json:"helpers"`
+	Variants    json.RawMessage `json:"variants"`
 }
 
 func loadGolden(t *testing.T) goldenFile {
@@ -502,6 +505,16 @@ func TestGoldenShapesAndCatalog(t *testing.T) {
 func TestGoldenHelpers(t *testing.T) {
 	golden := loadGolden(t)
 	var helpers struct {
+		LastLines []struct {
+			In  string `json:"in"`
+			Out string `json:"out"`
+		} `json:"lastLines"`
+		Appends []struct {
+			Output string `json:"output"`
+			Chunk  string `json:"chunk"`
+			Max    int    `json:"max"`
+			Out    string `json:"out"`
+		} `json:"appends"`
 		Subjects []struct {
 			Params       map[string]any `json:"params"`
 			Subject      string         `json:"subject"`
@@ -519,6 +532,16 @@ func TestGoldenHelpers(t *testing.T) {
 		Network []any `json:"network"`
 	}
 	decode(t, golden.Helpers, &helpers)
+	for _, c := range helpers.LastLines {
+		if got := LastOutputLine(c.In, 200); got != c.Out {
+			t.Errorf("LastOutputLine(%q) = %q want %q", c.In, got, c.Out)
+		}
+	}
+	for _, c := range helpers.Appends {
+		if got := AppendShortcutOutput(c.Output, c.Chunk, c.Max); got != c.Out {
+			t.Errorf("AppendShortcutOutput(%q,%q,%d) = %q want %q", c.Output, c.Chunk, c.Max, got, c.Out)
+		}
+	}
 	for _, c := range helpers.Subjects {
 		action, _ := c.Params["action"].(string)
 		subject, failure := subjectFor(action, c.Params)
@@ -539,4 +562,24 @@ func TestGoldenHelpers(t *testing.T) {
 	}
 	labels := map[int]string{7: "Fix the build", 3: strings.Repeat("L", 200)}
 	expectJSON(t, "network", networkRows(traffic, labels, 2), helpers.Network)
+}
+
+func TestGoldenVariants(t *testing.T) {
+	var golden struct {
+		Usage    string `json:"usage"`
+		RunStats string `json:"runStats"`
+	}
+	decode(t, loadGolden(t).Variants, &golden)
+	usage := map[string]any{"shortcut:alice/demo:run.sh": int32(3), "app:triage.md": int32(1)}
+	if got := base64.StdEncoding.EncodeToString(qvariant.Encode(usage)); got != golden.Usage {
+		t.Errorf("usage variant:\n got %s\nwant %s", got, golden.Usage)
+	}
+	rows := map[string]any{
+		"shortcut:alice/demo:run.sh": runStatsRow{lastRunAtMs: 1700000000123, finished: 2, succeeded: 1, timed: 2,
+			totalMs: 4500, lastMs: -1, lastOk: true, lastOutput: "done (exit 0)"}.variant(),
+		"app:triage.md": runStatsRow{lastRunAtMs: 5, lastMs: -1}.variant(),
+	}
+	if got := base64.StdEncoding.EncodeToString(qvariant.Encode(rows)); got != golden.RunStats {
+		t.Errorf("run stats variant:\n got %s\nwant %s", got, golden.RunStats)
+	}
 }

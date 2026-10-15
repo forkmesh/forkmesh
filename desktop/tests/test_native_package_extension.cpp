@@ -1,7 +1,14 @@
 #include "NativePackageExtension.h"
+#include "PackageFeedback.h"
 #include "PackageRailTile.h"
 
-#include <QCoreApplication>
+#include <QApplication>
+#include <QJsonDocument>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QUrlQuery>
 
 #include <cstdio>
 
@@ -29,7 +36,7 @@ forkmesh::market::NativePackageFactory emptyPageFactory()
 
 int main(int argc, char **argv)
 {
-    QCoreApplication app(argc, argv);
+    QApplication app(argc, argv);
     using namespace forkmesh::market;
 
     NativePackageRegistration openType({
@@ -287,6 +294,138 @@ int main(int argc, char **argv)
               packageRailStateKey(grown) != packageRailStateKey(stale) &&
               packageRailStateKey(attention) != packageRailStateKey(worse),
           "only a channel's count, state or failing checks count as a change");
+
+    PackageFeedbackReport report = packageFeedbackReport(
+        QStringLiteral("RSS-Reader"), QStringLiteral("RSS Reader"),
+        QStringLiteral("1.4.0"), QStringLiteral("0.9.2"));
+    report.message = QStringLiteral("  Feeds stop refreshing after sleep.  ");
+    report.contact = QStringLiteral("  reader@example.com ");
+    const QJsonObject payload = packageFeedbackPayload(report);
+    check(payload.value(QStringLiteral("message")).toString() ==
+                  QStringLiteral("Feeds stop refreshing after sleep.") &&
+              payload.value(QStringLiteral("contact")).toString() ==
+                  QStringLiteral("reader@example.com") &&
+              payload.value(QStringLiteral("package")).toString() ==
+                  QStringLiteral("rss-reader") &&
+              payload.value(QStringLiteral("source")).toString() ==
+                  QStringLiteral("desktop") &&
+              payload.value(QStringLiteral("severity")).toString() ==
+                  QStringLiteral("normal") &&
+              payload.value(QStringLiteral("screen")).toString() ==
+                  QStringLiteral("Plugin: RSS Reader 1.4.0") &&
+              payload.value(QStringLiteral("appVersion")).toString() ==
+                  QStringLiteral("0.9.2") &&
+              payload.value(QStringLiteral("platform")).toString() ==
+                  desktopFeedbackPlatform() &&
+              payload.contains(QStringLiteral("osVersion")) &&
+              payload.contains(QStringLiteral("device")),
+          "a plugin report carries the trimmed message, the contact, the "
+          "lower-case package id and source desktop");
+    PackageFeedbackReport anonymous = report;
+    anonymous.contact = QStringLiteral("   ");
+    anonymous.message = QString(kPackageFeedbackMaxMessage + 50, QLatin1Char('x'));
+    const QJsonObject anonymousPayload = packageFeedbackPayload(anonymous);
+    check(!anonymousPayload.contains(QStringLiteral("contact")) &&
+              anonymousPayload.value(QStringLiteral("message")).toString().size() ==
+                  kPackageFeedbackMaxMessage,
+          "a blank contact is left out and an over-long message is clipped to "
+          "what the server keeps");
+
+    const PackageFeedbackOutcome filed = packageFeedbackOutcome(
+        201, QByteArrayLiteral("{\"ok\":true,\"id\":\"r1\",\"issueNumber\":42}"),
+        {});
+    const PackageFeedbackOutcome unfiled = packageFeedbackOutcome(
+        201, QByteArrayLiteral("{\"ok\":true,\"id\":\"r2\",\"issueNumber\":0}"),
+        {});
+    const PackageFeedbackOutcome limited = packageFeedbackOutcome(
+        429, QByteArrayLiteral("{\"error\":\"rate_limited\"}"), {});
+    const PackageFeedbackOutcome empty = packageFeedbackOutcome(
+        400, QByteArrayLiteral("{\"error\":\"empty_report\"}"), {});
+    const PackageFeedbackOutcome offline =
+        packageFeedbackOutcome(0, {}, QStringLiteral("Host not found"));
+    const PackageFeedbackOutcome broken = packageFeedbackOutcome(
+        502, QByteArrayLiteral("<html>"), {});
+    check(filed.sent && filed.text.contains(QStringLiteral("#42")) &&
+              unfiled.sent && !unfiled.text.contains(QLatin1Char('#')) &&
+              !limited.sent && limited.text.contains(QStringLiteral("last hour")) &&
+              !empty.sent && empty.text.contains(QStringLiteral("more words")) &&
+              !offline.sent && offline.text.contains(QStringLiteral("Host not found")) &&
+              !broken.sent && broken.text.contains(QStringLiteral("HTTP 502")),
+          "each server answer to a report becomes a plain sentence");
+
+    const QUrl rating = packageRatingUrl(QStringLiteral("https://app.forkmesh.com"),
+                                         QString(), QStringLiteral("Crm"));
+    const QUrlQuery ratingQuery(rating);
+    check(rating.toString(QUrl::RemoveQuery) ==
+                  QStringLiteral("https://app.forkmesh.com/market-reviews") &&
+              ratingQuery.queryItemValue(QStringLiteral("market")) ==
+                  QStringLiteral("forkmesh") &&
+              ratingQuery.queryItemValue(QStringLiteral("package")) ==
+                  QStringLiteral("crm") &&
+              packageRatingUrl(QStringLiteral("https://app.forkmesh.com"),
+                               QStringLiteral("forkmesh-apps"),
+                               QStringLiteral("crm"))
+                      .query()
+                      .contains(QStringLiteral("market=forkmesh-apps")) &&
+              !packageRatingUrl(QString(), QString(), QStringLiteral("crm")).isValid() &&
+              !packageRatingUrl(QStringLiteral("file:///tmp"), QString(),
+                                QStringLiteral("crm"))
+                   .isValid(),
+          "Rate opens the package's reviews page on the active host");
+
+    QJsonObject sentPayload;
+    PackageFeedbackReplyHandler pendingReply;
+    int sends = 0;
+    PackageFeedbackDialog dialog(
+        packageFeedbackReport(QStringLiteral("crm"), QStringLiteral("CRM"),
+                              QStringLiteral("2.0.0"), QStringLiteral("0.9.2")),
+        [&](const QJsonObject &body, PackageFeedbackReplyHandler done) {
+            ++sends;
+            sentPayload = body;
+            pendingReply = std::move(done);
+        });
+    auto *message = dialog.findChild<QPlainTextEdit *>(
+        QStringLiteral("packageFeedbackMessage"));
+    auto *contact =
+        dialog.findChild<QLineEdit *>(QStringLiteral("packageFeedbackContact"));
+    auto *send = dialog.findChild<QPushButton *>(QStringLiteral("packageFeedbackSend"));
+    auto *cancel =
+        dialog.findChild<QPushButton *>(QStringLiteral("packageFeedbackCancel"));
+    auto *status = dialog.findChild<QLabel *>(QStringLiteral("packageFeedbackStatus"));
+    check(dialog.objectName() == QStringLiteral("packageFeedbackDialog") &&
+              dialog.windowTitle() == QStringLiteral("Feedback for CRM") && message &&
+              contact && send && cancel && status && !send->isEnabled(),
+          "the feedback dialog has a description, a contact field, Send and "
+          "Cancel, and Send waits for a description");
+    if (message && contact && send && cancel && status) {
+        message->setPlainText(QStringLiteral("ok"));
+        const bool shortBlocked = !send->isEnabled();
+        message->setPlainText(QStringLiteral("Deals vanish after a merge."));
+        contact->setText(QStringLiteral("jett"));
+        send->click();
+        check(shortBlocked && sends == 1 && !send->isEnabled() &&
+                  sentPayload == dialog.payload() &&
+                  sentPayload.value(QStringLiteral("package")).toString() ==
+                      QStringLiteral("crm") &&
+                  sentPayload.value(QStringLiteral("message")).toString() ==
+                      QStringLiteral("Deals vanish after a merge.") &&
+                  sentPayload.value(QStringLiteral("contact")).toString() ==
+                      QStringLiteral("jett"),
+              "Send posts the description and contact tagged with the package "
+              "and waits for the answer");
+        if (pendingReply)
+            pendingReply(429, QByteArrayLiteral("{\"error\":\"rate_limited\"}"), {});
+        check(!status->isHidden() &&
+                  status->text().contains(QStringLiteral("last hour")) &&
+                  send->isEnabled() && !message->isReadOnly(),
+              "a refused report says why and can be sent again");
+        send->click();
+        if (pendingReply)
+            pendingReply(201, QByteArrayLiteral("{\"ok\":true,\"issueNumber\":7}"), {});
+        check(sends == 2 && status->text().contains(QStringLiteral("#7")) &&
+                  !send->isEnabled() && cancel->text() == QStringLiteral("Close"),
+              "a sent report says so inline and Cancel becomes Close");
+    }
 
     return failures == 0 ? 0 : 1;
 }

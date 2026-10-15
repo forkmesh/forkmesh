@@ -226,6 +226,23 @@ if [[ -n "$CORE_TMP" ]]; then
 fi
 trap - EXIT
 
+MODULE_DIR="$HOME/.local/lib/forkmesh/packages"
+if compgen -G "$BUILD_DIR/packages/*.json" > /dev/null; then
+    echo "Installing desktop package modules…"
+    mkdir -p "$MODULE_DIR"
+    for module in "$BUILD_DIR"/packages/*.json "$BUILD_DIR"/packages/*.so; do
+        [[ -f "$module" ]] || continue
+        MODULE_TMP="$(mktemp "$MODULE_DIR/.module.XXXXXX")"
+        install -m 0644 "$module" "$MODULE_TMP"
+        mv -f "$MODULE_TMP" "$MODULE_DIR/$(basename "$module")"
+    done
+    for module in "$MODULE_DIR"/*.json "$MODULE_DIR"/*.so; do
+        [[ -f "$module" ]] || continue
+        [[ -e "$BUILD_DIR/packages/$(basename "$module")" ]] || rm -f "$module"
+    done
+    echo "  modules: $MODULE_DIR"
+fi
+
 # --- 2. Install the icon into the hicolor theme -----------------------------
 # The icon name "forkmesh" is what the .desktop Icon= key and the Wayland app-id
 # resolve against. Prefer ImageMagick to render exact-size buckets (sharp at

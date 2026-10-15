@@ -222,28 +222,101 @@ final class GenieSpotterTests: XCTestCase {
         }
     }
 
-    func testAlwaysListeningActsOnlyOnWhatIsMeant() async {
+    func testAlwaysListeningActsOnEverythingItHears() async {
         let actions = SpotActions()
         let voice = AmbientVoice()
         voice.overheard = [
-            .words("I had lunch with Bob"),
             .words("I think the last commit broke it"),
             .words("genie, read the last message from my inbox"),
         ]
         let brain = GenieBrain(toolbox: toolbox(actions), memory: GenieMemory(store: nil), model: nil)
         let session = GenieSession(brain: brain, voice: voice) { _ in "" }
         var spotted: [String] = []
+        var takenUp = 0
+        var settled = 0
         session.onSpot = { spot, runs in spotted.append("\(spot.tool):\(runs)") }
+        session.onTakeUp = { takenUp += 1 }
+        session.onSettle = { settled += 1 }
+        session.setAlwaysListening(true)
+        await wait { voice.said.count >= 2 }
+        await session.waitUntilIdle()
+        session.setAlwaysListening(false)
+        XCTAssertEqual(spotted, ["read_latest:true", "read_latest:true"])
+        XCTAssertEqual(takenUp, 2)
+        XCTAssertEqual(settled, 2)
+        XCTAssertEqual(voice.said.count, 2)
+        XCTAssertTrue(voice.said[0].contains("Make the genie smarter"), voice.said[0])
+        XCTAssertTrue(voice.said[1].hasPrefix("The newest in your inbox:"), voice.said[1])
+        XCTAssertEqual(session.lines.filter(\.fromUser).map(\.text), [
+            "I think the last commit broke it", "genie, read the last message from my inbox",
+        ])
+        XCTAssertFalse(session.alwaysListening)
+        XCTAssertNil(session.overheard)
+    }
+
+    func testOverheardChatterAsksBeforeAskingAnAgent() async {
+        let voice = AmbientVoice()
+        voice.overheard = [.words("I had lunch with Bob")]
+        var launched: [String] = []
+        let session = GenieSession(
+            brain: GenieBrain(toolbox: GenieToolbox(data: nil, actions: SpotActions()), memory: GenieMemory(store: nil), model: nil),
+            voice: voice
+        ) { handoff in
+            launched.append(handoff.request)
+            return "An agent is on it."
+        }
+        session.setAlwaysListening(true)
+        await wait { voice.said.contains(GenieSession.declined) }
+        await session.waitUntilIdle()
+        session.setAlwaysListening(false)
+        XCTAssertEqual(voice.said, [
+            "I don't know how to do that yet. Ask an agent to: I had lunch with Bob. Shall I go ahead?", GenieSession.declined,
+        ])
+        XCTAssertTrue(launched.isEmpty)
+
+        voice.overheard = [.words("I need the release notes drafted")]
+        voice.heard = [.words("yes please")]
+        voice.said = []
+        session.setAlwaysListening(true)
+        await wait { !launched.isEmpty }
+        await session.waitUntilIdle()
+        session.setAlwaysListening(false)
+        XCTAssertEqual(launched, ["I need the release notes drafted"])
+        XCTAssertEqual(voice.said.last, "An agent is on it.")
+    }
+
+    func testSayingStopListeningTurnsAlwaysListeningOff() async {
+        let voice = AmbientVoice()
+        voice.overheard = [.words("Genie, stop listening please"), .words("read the last message from my inbox")]
+        let session = GenieSession(
+            brain: GenieBrain(toolbox: toolbox(SpotActions()), memory: GenieMemory(store: nil), model: nil), voice: voice
+        ) { _ in "" }
+        var stopped = 0
+        session.onStopListening = { stopped += 1 }
         session.setAlwaysListening(true)
         await wait { !voice.said.isEmpty }
         await session.waitUntilIdle()
-        session.setAlwaysListening(false)
-        XCTAssertEqual(spotted, ["read_latest:false", "read_latest:true"])
-        XCTAssertEqual(voice.said.count, 1)
-        XCTAssertTrue(voice.said[0].hasPrefix("The newest in your inbox:"), voice.said[0])
-        XCTAssertEqual(session.lines.first?.text, "genie, read the last message from my inbox")
         XCTAssertFalse(session.alwaysListening)
-        XCTAssertNil(session.overheard)
+        XCTAssertEqual(stopped, 1)
+        XCTAssertEqual(voice.said, [GenieSession.stoppedListening])
+        XCTAssertEqual(voice.overheard.count, 1)
+
+        session.setAlwaysListening(true)
+        voice.overheard = []
+        session.submit("stop listening")
+        await session.waitUntilIdle()
+        XCTAssertFalse(session.alwaysListening)
+        XCTAssertEqual(stopped, 2)
+        XCTAssertEqual(voice.said, [GenieSession.stoppedListening, GenieSession.stoppedListening])
+    }
+
+    func testStopListeningPhrases() {
+        for said in ["stop listening", "Genie, stop listening please", "hey genie can you stop listening", "Turn off listening.", "stop listening now"] {
+            XCTAssertTrue(GenieWords.stopsListening(said), said)
+        }
+        for said in ["I wish he would stop listening to that podcast", "listening", "stop", "keep listening"] {
+            XCTAssertFalse(GenieWords.stopsListening(said), said)
+        }
     }
 
     func testCallingTheGenieByNameAsksTheBrain() async {

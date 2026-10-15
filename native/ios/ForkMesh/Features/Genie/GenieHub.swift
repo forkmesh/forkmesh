@@ -34,6 +34,7 @@ final class GenieHub {
     nonisolated static let flyerSeconds: Double = 7
     nonisolated static let runningFlyerSeconds: Double = 2.4
     nonisolated static let tickerSeconds: Double = 5
+    nonisolated static let heardSeconds: Double = 6
     nonisolated static let maxFlyers: Int = 3
 
     private(set) var session: GenieSession?
@@ -57,6 +58,7 @@ final class GenieHub {
     @ObservationIgnored private var tickerCount: Int = 0
     @ObservationIgnored private var tickerFade: Task<Void, Never>?
     @ObservationIgnored private var collapse: Task<Void, Never>?
+    @ObservationIgnored private var heardOpen: Bool = false
     @ObservationIgnored private var active: Bool = true
     @ObservationIgnored private var lineFade: Task<Void, Never>?
     @ObservationIgnored private var lastLine: Date = .distantPast
@@ -121,6 +123,9 @@ final class GenieHub {
         made.onFinish = { [weak self] in self?.finished() }
         made.canOverhear = { [weak self] in self?.mayOverhear ?? false }
         made.greeter = { [weak self] in self?.hints().first }
+        made.onTakeUp = { [weak self] in self?.tookUp() }
+        made.onSettle = { [weak self] in self?.settled() }
+        made.onStopListening = { [weak self] in self?.setAlwaysListening(false) }
         session = made
         return made
     }
@@ -164,6 +169,7 @@ final class GenieHub {
 
     func openSheet() {
         collapse?.cancel()
+        heardOpen = false
         GenieCrawler.shared.halt()
         menuOpen = false
         guard ensureSession() != nil else { return }
@@ -177,6 +183,7 @@ final class GenieHub {
 
     func openBubble() {
         collapse?.cancel()
+        heardOpen = false
         guard let session = ensureSession() else { return }
         GenieCrawler.shared.halt()
         withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
@@ -191,6 +198,7 @@ final class GenieHub {
 
     func closeBubble() {
         collapse?.cancel()
+        heardOpen = false
         session?.close()
         withAnimation(.easeOut(duration: 0.22)) {
             bubbleOpen = false
@@ -200,6 +208,7 @@ final class GenieHub {
 
     func openMenu() {
         collapse?.cancel()
+        heardOpen = false
         GenieCrawler.shared.halt()
         FmHaptics.impact(.medium)
         GenieSounds.shared.play(.spotted)
@@ -469,6 +478,31 @@ final class GenieHub {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             self?.drop(id)
+        }
+    }
+
+    private func tookUp() {
+        collapse?.cancel()
+        GenieCrawler.shared.halt()
+        guard !bubbleOpen, !sheetShown, !menuOpen else { return }
+        heardOpen = true
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
+            bubbleOpen = true
+            line = nil
+        }
+        GenieSounds.shared.play(.appear)
+    }
+
+    private func settled() {
+        guard heardOpen else { return }
+        heardOpen = false
+        collapse?.cancel()
+        collapse = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(GenieHub.heardSeconds))
+            guard !Task.isCancelled, let self = self, !self.busy, self.bubbleOpen else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.bubbleOpen = false
+            }
         }
     }
 

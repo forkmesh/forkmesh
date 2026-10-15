@@ -2,6 +2,7 @@ package insights
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"forkmesh.com/desktop-core/internal/coretest"
 	"forkmesh.com/desktop-core/internal/daemon"
+	"forkmesh.com/desktop-core/internal/qvariant"
 	"forkmesh.com/desktop-core/internal/rpc"
 )
 
@@ -429,42 +431,126 @@ func TestToggleFamilyGoesThroughTheDesktop(t *testing.T) {
 		"token": again["token"]}, "desktop_unavailable")
 }
 
-func TestShortcutScriptRunsOnTheDesktop(t *testing.T) {
+func TestShortcutScriptRunsInTheCore(t *testing.T) {
 	h := newHarness(t)
 	checkout := t.TempDir()
 	script := filepath.Join(checkout, ".forkmesh", "shortcuts", "check.sh")
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("# name: Check it\necho done-line\n"), 0o644); err != nil {
+	if err := os.WriteFile(script, []byte("# name: Check it\necho \"in $(basename \"$PWD\")\"\necho done-line\nexit 3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeSettings(t, h.core, []repoEntry{{owner: "alice", name: "demo", localPath: checkout}})
+	stored := map[string]string{"usageCounts": qvariant.EncodeSettingsRaw(map[string]any{
+		"shortcut:alice/demo:check.sh": int32(2), "app:x.md": int32(5)})}
+	repos := []repoEntry{{owner: "alice", name: "demo", localPath: checkout}}
+	render := func() {
+		lines := []string{"[shortcuts]"}
+		for key, value := range stored {
+			lines = append(lines, key+"="+value)
+		}
+		writeSettings(t, h.core, repos, lines...)
+	}
+	render()
+	h.desktop.persist = func(write daemon.SettingWrite) {
+		raw, _ := base64.StdEncoding.DecodeString(write.Value.(string))
+		value, err := qvariant.Decode(raw)
+		if err != nil {
+			t.Errorf("decode %s: %v", write.Key, err)
+			return
+		}
+		stored[strings.TrimPrefix(write.Key, "shortcuts/")] = qvariant.EncodeSettingsRaw(value)
+		render()
+	}
 	prepared := h.call(h.phone, "insights.prepare", map[string]any{"action": "runShortcut", "repo": "alice/demo",
 		"scope": "shortcut", "file": "check.sh"})
 	if !strings.HasPrefix(prepared["summary"].(string), "Run the \"check.sh\" script on the desktop in alice/demo.") {
 		t.Fatalf("summary %v", prepared["summary"])
 	}
-	h.desktop.replies["ui.insights.runShortcutScript"] = `{"run":4,"restart":false,"name":"Check it"}`
 	ran := h.call(h.phone, "insights.run", map[string]any{"action": "runShortcut", "repo": "alice/demo",
 		"scope": "shortcut", "file": "check.sh", "token": prepared["token"]})
-	if ran["message"] != "Running Check it on the desktop." || ran["run"] != float64(4) {
+	if ran["message"] != "Running Check it on the desktop." || ran["run"] != float64(1) {
 		t.Fatalf("run %v", ran)
 	}
-	if got := string(h.desktop.params["ui.insights.runShortcutScript"][0]); got != `{"file":"check.sh","repo":"alice/demo"}` {
-		t.Fatalf("desktop params %s", got)
+	var finished map[string]any
+	_ = json.Unmarshal(h.ui.Next(t, "core.insights.shortcut.finished", 5*time.Second), &finished)
+	if finished["message"] != "failed (exit 3)" || finished["ok"] != false {
+		t.Fatalf("finished %v", finished)
 	}
-	h.phone.Next(t, insightsChanged, time.Second)
-	again := h.call(h.phone, "insights.prepare", map[string]any{"action": "runShortcut", "repo": "alice/demo",
-		"scope": "shortcut", "file": "check.sh"})
-	h.desktop.replies["ui.insights.runShortcutScript"] = `{"run":5,"restart":true,"name":"Check it"}`
-	ran = h.call(h.phone, "insights.run", map[string]any{"action": "runShortcut", "repo": "alice/demo",
-		"scope": "shortcut", "file": "check.sh", "token": again["token"]})
-	if ran["message"] != "Stopping Check it to run it again on the desktop." {
-		t.Fatalf("restart %v", ran)
+	state := h.call(h.phone, "insights.shortcutRun", map[string]any{})
+	run := state["run"].(map[string]any)
+	output := run["output"].(string)
+	if !strings.HasPrefix(output, "$ bash "+script+"\n") || !strings.Contains(output, "in "+filepath.Base(checkout)+"\n") ||
+		!strings.HasSuffix(output, "done-line\nfailed (exit 3)\n") {
+		t.Fatalf("output %q", output)
 	}
-	if h.core.Registry.Native("insights.shortcutRun") {
-		t.Fatal("insights.shortcutRun should be answered by the desktop")
+	waitFor(t, "the stats writes", func() bool {
+		h.module.shortcuts.mu.Lock()
+		pending := len(h.module.shortcuts.ops)
+		h.module.shortcuts.mu.Unlock()
+		h.desktop.mu.Lock()
+		defer h.desktop.mu.Unlock()
+		return len(h.desktop.writes) >= 2 && pending == 0
+	})
+	h.desktop.mu.Lock()
+	writes := append([]daemon.SettingWrite(nil), h.desktop.writes...)
+	h.desktop.mu.Unlock()
+	values := map[string]any{}
+	for _, write := range writes {
+		if write.Type != "variant" {
+			t.Fatalf("write type %s", write.Type)
+		}
+		raw, _ := base64.StdEncoding.DecodeString(write.Value.(string))
+		decoded, err := qvariant.Decode(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values[write.Key] = decoded
+	}
+	usage := values[ShortcutUsageSetting].(map[string]any)
+	if usage["shortcut:alice/demo:check.sh"] != int64(3) || usage["app:x.md"] != int64(5) {
+		t.Fatalf("usage %v", usage)
+	}
+	row := values[ShortcutRunStatsSetting].(map[string]any)["shortcut:alice/demo:check.sh"].(map[string]any)
+	if row["finished"] != int64(1) || row["succeeded"] != int64(0) || row["lastOk"] != false ||
+		row["lastOutput"] != "done-line" || row["timed"] != int64(1) || row["lastRunAtMs"].(int64) <= 0 {
+		t.Fatalf("run stats %v", row)
+	}
+}
+
+func TestShortcutStatsWaitForTheDesktop(t *testing.T) {
+	h := newHarness(t)
+	h.desktop.mu.Lock()
+	h.desktop.attached = false
+	h.desktop.mu.Unlock()
+	checkout := t.TempDir()
+	script := filepath.Join(checkout, "go.sh")
+	if err := os.WriteFile(script, []byte("echo ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.call(h.ui, "core.insights.shortcut.start", map[string]any{"path": script, "repo": "alice/demo",
+		"workdir": checkout, "file": "go.sh", "name": "go.sh", "usageKey": "shortcut:alice/demo:go.sh"})
+	h.fails(h.ui, "core.insights.shortcut.start", map[string]any{"path": script}, "shortcut_running")
+	h.ui.Next(t, "core.insights.shortcut.finished", 5*time.Second)
+	if h.module.shortcuts.busy() {
+		t.Fatal("still busy")
+	}
+	h.module.shortcuts.mu.Lock()
+	pending := len(h.module.shortcuts.ops)
+	h.module.shortcuts.mu.Unlock()
+	if pending != 2 {
+		t.Fatalf("pending ops %d", pending)
+	}
+	h.desktop.mu.Lock()
+	h.desktop.attached = true
+	h.desktop.mu.Unlock()
+	if !h.module.shortcuts.flushSettings() {
+		t.Fatal("flush failed")
+	}
+	h.desktop.mu.Lock()
+	defer h.desktop.mu.Unlock()
+	if len(h.desktop.writes) != 2 {
+		t.Fatalf("writes %v", h.desktop.writes)
 	}
 }
 
