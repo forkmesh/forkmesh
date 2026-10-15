@@ -215,6 +215,8 @@ MAX_TEXT_BYTES = 4 * 1024 * 1024
 ROOM_MSG_WINDOW_MS = 10 * 1000
 ROOM_MSG_MAX_PER_WINDOW = 20
 ROOM_LIVE_MAX_PER_WINDOW = 150
+ROOM_RECEIPT_MAX_PER_WINDOW = 40
+ROOM_RECEIPT_MAX_BYTES = 8 * 1024
 ROOM_LIVE_MAX_BYTES = 16 * 1024
 ROOM_LIVE_ACCESS_RECHECK_MS = 5 * 1000
 # Chat room sockets send regular encrypted presence/hello frames. If a reinstall
@@ -51949,6 +51951,21 @@ def chat_live_envelope(message):
     return envelope
 
 
+def chat_direct_receipt_envelope(message):
+    if len(message) > ROOM_RECEIPT_MAX_BYTES or (
+            '"forkmesh-received"' not in message
+            and '"forkmesh-superseded"' not in message):
+        return None
+    try:
+        envelope = json.loads(message)
+    except Exception:
+        return None
+    if not isinstance(envelope, dict) or envelope.get("kind") not in (
+            "forkmesh-received", "forkmesh-superseded"):
+        return None
+    return envelope
+
+
 def chat_server_copies_frame(stored):
     return json.dumps({
         "kind": "forkmesh-server-copies",
@@ -53558,7 +53575,7 @@ class ForkMeshRoom(DurableObject):
             "account_bi": _ws_attr(ws, "account_bi", ""),
         }
         for name in ("last", "rl_start", "rl_count", "lv_start", "lv_count",
-                     "lv_checked"):
+                     "lv_checked", "rc_start", "rc_count"):
             value = _ws_attr(ws, name)
             if value is not None:
                 values[name] = value
@@ -53580,6 +53597,19 @@ class ForkMeshRoom(DurableObject):
         count += 1
         self._write_attachment(ws, last=now, lv_start=start, lv_count=count)
         return count <= ROOM_LIVE_MAX_PER_WINDOW
+
+    def _receipt_rate_ok(self, ws):
+        now = int(Date.now())
+        try:
+            start = int(_ws_attr(ws, "rc_start", 0) or 0)
+            count = int(_ws_attr(ws, "rc_count", 0) or 0)
+        except (TypeError, ValueError):
+            start, count = 0, 0
+        if now - start >= ROOM_MSG_WINDOW_MS:
+            start, count = now, 0
+        count += 1
+        self._write_attachment(ws, last=now, rc_start=start, rc_count=count)
+        return count <= ROOM_RECEIPT_MAX_PER_WINDOW
 
     async def _live_access_current(self, ws):
         now = int(Date.now())
@@ -53633,6 +53663,21 @@ class ForkMeshRoom(DurableObject):
         live = chat_live_envelope(message) if self._direct_account(ws) else None
         if live is not None:
             await self._relay_live(ws, live)
+            return
+        receipt = (
+            chat_direct_receipt_envelope(message)
+            if self._direct_account(ws) else None)
+        if receipt is not None:
+            if not self._receipt_rate_ok(ws):
+                return
+            if not await self._private_room_current(ws):
+                self._close_all_chat_sockets(1008, "room access revoked")
+                return
+            durable_object_traffic_note(
+                self, bytes_in=len(message.encode("utf-8")))
+            await self._direct_received(
+                ws, receipt,
+                superseded=receipt.get("kind") == "forkmesh-superseded")
             return
         # Drop frames from a socket that is flooding (don't relay or retain them).
         if not self._rate_ok(ws):

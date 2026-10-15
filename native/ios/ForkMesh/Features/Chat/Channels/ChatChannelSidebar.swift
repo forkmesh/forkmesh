@@ -52,7 +52,7 @@ struct ChatChannelSidebar: View {
                 if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
-                summary.padding(.bottom, FmSpace.x4)
+                recentSection.padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
                     sectionTitle("Starred", count: hub.workspace.starred.count)
                     card {
@@ -273,46 +273,44 @@ struct ChatChannelSidebar: View {
         .frame(minHeight: 44)
     }
 
-    private var unreadCount: Int {
-        let listed: [String] = hub.channels + hub.officeChannels + hub.directRows.map(\.conversation) + [meshConversation]
-        return Set(listed).filter { hub.isUnread($0) && !hub.workspace.isMuted($0) }.count
-    }
-
-    private var summary: some View {
-        HStack(spacing: FmSpace.x2) {
-            summaryStat(icon: "number", value: hub.channels.count + hub.officeChannels.count, label: "Channels", tint: fm.accent)
-            summaryStat(icon: "envelope.badge", value: unreadCount, label: "Unread", tint: unreadCount > 0 ? fm.danger : fm.textTertiary)
-            Button(action: { showingOnline = true }) {
-                summaryStat(
-                    icon: "person.2.fill", value: hub.memberGroups.filter(\.online).count, label: "Online", tint: fm.success)
+    @ViewBuilder private var recentSection: some View {
+        let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit)
+        sectionTitle("Recent", count: 0) { onlineButton }
+        if !recent.isEmpty {
+            card {
+                ForEach(recent, id: \.self) { (conversation: String) in
+                    if ChatHub.isPersonConversation(conversation) || conversation == meshConversation {
+                        conversationTile(conversation)
+                    } else {
+                        channelTile(conversation)
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows who is online")
         }
     }
 
-    private func summaryStat(icon: String, value: Int, label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: FmSpace.x1) {
-                Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 18, height: 18)
-                Text("\(value)")
-                    .fmText(.titleMedium, color: fm.textPrimary, tabular: true)
+    static let recentLimit: Int = 5
+
+    private var onlineButton: some View {
+        let online: Int = hub.memberGroups.filter(\.online).count
+        return Button(action: { showingOnline = true }) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(online > 0 ? fm.success : fm.textTertiary)
+                    .frame(width: 7, height: 7)
+                Text("\(online) online")
+                    .fmText(.labelSmall, color: fm.textSecondary, tabular: true)
                     .lineLimit(1)
             }
-            Text(label)
-                .fmText(.bodySmall, color: fm.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            .padding(.horizontal, FmSpace.x2)
+            .frame(minHeight: 26)
+            .background(Capsule().fill(fm.textPrimary.opacity(0.06)))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, FmSpace.x2)
-        .padding(.vertical, FmSpace.x2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(FmRoundedShape(radius: FmRadius.lg).fill(cardFill))
-        .overlay(FmRoundedShape(radius: FmRadius.lg).stroke(fm.border.opacity(fm.wallpaper ? 0.35 : 0.6), lineWidth: 0.5))
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(online) online")
+        .accessibilityHint("Shows who is online")
     }
 
     private var desktopChip: (label: String, tone: LocalDesktopTone)? {

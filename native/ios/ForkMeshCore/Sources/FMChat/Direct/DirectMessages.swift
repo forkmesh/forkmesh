@@ -50,6 +50,7 @@ public enum DirectMessageFrames {
     public static let maxReconnectDelay: TimeInterval = 30
     public static let ackTimeout: TimeInterval = 5
     public static let ackRetries = 3
+    public static let replyField = "replyTo"
 
     public static func frameRef(_ text: String) -> String {
         String(Sha256.hex(Array(text.utf8)).prefix(40))
@@ -175,7 +176,26 @@ public enum DirectMessageFrames {
         let ts = plain["ts"]?.doubleValue.map { Date(epochMillis: Int64($0)) } ?? Date(epochMillis: 0)
         return ChatMessage(
             id: id, conversation: record.conversation, senderId: senderId, senderName: sender, text: text,
-            timestamp: ts, isSelf: !selfId.isEmpty && senderId == selfId, fileName: fileName)
+            timestamp: ts, isSelf: !selfId.isEmpty && senderId == selfId, fileName: fileName,
+            replyTo: replyQuote(plain[replyField]))
+    }
+
+    public static func replyQuote(_ value: JSONValue?) -> ChatReplyQuote? {
+        guard let object = value?.objectValue else { return nil }
+        let id = object["id"]?.text ?? ""
+        guard !id.isEmpty, id.count <= 64 else { return nil }
+        return ChatReplyQuote(
+            id: id, senderId: String((object["senderId"]?.text ?? "").prefix(64)),
+            senderName: String((object["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars)),
+            text: String((object["text"]?.text ?? "").prefix(ChatReplyQuote.maxTextChars)))
+    }
+
+    public static func replyFields(_ quote: ChatReplyQuote) -> JSONValue {
+        .object([
+            "id": .string(quote.id), "senderId": .string(quote.senderId),
+            "sender": .string(String(quote.senderName.prefix(ChatLimits.maxDisplayNameChars))),
+            "text": .string(String(quote.text.prefix(ChatReplyQuote.maxTextChars))),
+        ])
     }
 
     public static func isCallFrame(_ plain: JSONObject) -> Bool {
@@ -311,6 +331,7 @@ public final class DirectMessageService {
     @ObservationIgnored public var meshSender: (@MainActor (JSONObject, [String]) async -> Int)?
     @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
     @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
+    @ObservationIgnored public var onChange: (@MainActor () -> Void)?
     @ObservationIgnored private var refBooks: [String: DirectRefBook] = [:]
     @ObservationIgnored private var receiptOrder: [String] = []
     @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
@@ -360,6 +381,19 @@ public final class DirectMessageService {
     }
 
     public func messages(_ conversation: String) -> [ChatMessage] { history[conversation] ?? [] }
+
+    public var historySnapshot: [String: [ChatMessage]] { history }
+
+    public var receiptSnapshot: [String: ChatReceipt] {
+        receipts.filter { $0.value == .delivered || $0.value == .read }
+    }
+
+    public func restore(_ messages: [ChatMessage], receipts saved: [String: ChatReceipt]) {
+        for message in messages where DirectMessageFrames.isDirect(message.conversation) && !isGone(message.id) {
+            append(message, conversationId: DirectMessageFrames.conversationId(message.conversation))
+        }
+        for (id, receipt) in saved where receipt == .delivered || receipt == .read { setReceipt(receipt, id) }
+    }
 
     public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
 
@@ -588,6 +622,7 @@ public final class DirectMessageService {
                 self?.dropped(id, connection)
             }
             advertise(socket, persist: seal.shouldPersistAdvertisement(now: clock.nowMillis))
+            if receivedRefs[id]?.isEmpty == false { Task { await self.flushReceived(id) } }
             return true
         } catch {
             lastError = "\(error)"
@@ -632,9 +667,14 @@ public final class DirectMessageService {
             return
         }
         if let refs = DirectMessageFrames.deliveredRefs(envelope) {
+            var delivered: Set<String> = []
             for ref in refs {
-                if let id = refBooks[conversationId]?.ids[ref] { setReceipt(.delivered, id) }
+                if let id = refBooks[conversationId]?.ids[ref] {
+                    setReceipt(.delivered, id)
+                    delivered.insert(id)
+                }
             }
+            if !delivered.isEmpty { outbox[conversationId]?.removeAll { delivered.contains($0.messageId) } }
             return
         }
         if DirectMessageFrames.isReadReceipt(envelope) {
@@ -662,7 +702,11 @@ public final class DirectMessageService {
 
     private func flushReceived(_ conversationId: String) async {
         let refs = receivedRefs.removeValue(forKey: conversationId) ?? []
-        guard let connection = sockets[conversationId]?.connection, !refs.isEmpty else { return }
+        guard !refs.isEmpty else { return }
+        guard let connection = sockets[conversationId]?.connection else {
+            receivedRefs[conversationId] = refs + (receivedRefs[conversationId] ?? []).filter { !refs.contains($0) }
+            return
+        }
         for start in stride(from: 0, to: refs.count, by: DirectMessageFrames.receivedRefsPerFrame) {
             let chunk = Array(refs[start..<min(start + DirectMessageFrames.receivedRefsPerFrame, refs.count)])
             try? await connection.send(text: JSON.encode(DirectMessageFrames.receivedFrame(chunk)))
@@ -769,6 +813,7 @@ public final class DirectMessageService {
         while receiptOrder.count > DirectMessageFrames.maxReceipts {
             receipts.removeValue(forKey: receiptOrder.removeFirst())
         }
+        if receipt == .delivered || receipt == .read { onChange?() }
     }
 
     private func forgetReceipt(_ id: String) {
@@ -777,10 +822,9 @@ public final class DirectMessageService {
     }
 
     private func markReadByPeer(_ conversationId: String) {
-        guard let book = refBooks[conversationId] else { return }
-        for id in book.refs.keys {
-            if let current = receipts[id], current == .sent || current == .delivered { receipts[id] = .read }
-        }
+        var ids: [String] = (history[DirectMessageFrames.prefix + conversationId] ?? []).filter(\.isSelf).map(\.id)
+        ids.append(contentsOf: refBooks[conversationId]?.refs.keys.map { $0 } ?? [])
+        for id in ids where receipts[id] != .sending { setReceipt(.read, id) }
     }
 
     @discardableResult
@@ -826,6 +870,7 @@ public final class DirectMessageService {
         if outbox[record.id] != nil { outbox[record.id]?.removeAll { $0.messageId == id } }
         forgetReceipt(id)
         onRemoved?(record.conversation, id)
+        onChange?()
     }
 
     private func remember(_ entry: DirectOutboxEntry, conversationId: String) {
@@ -846,7 +891,10 @@ public final class DirectMessageService {
     private func reseal(_ socket: DirectRoomSocket) {
         let id = socket.conversationId
         let now = clock.nowMillis
-        var entries = (outbox[id] ?? []).filter { now - $0.ts < DirectMessageFrames.outboxMaxAgeMs }
+        var entries = (outbox[id] ?? []).filter {
+            now - $0.ts < DirectMessageFrames.outboxMaxAgeMs && receipts[$0.messageId] != .delivered
+                && receipts[$0.messageId] != .read
+        }
         let peers = Set(socket.seal.peerKeyIds)
         var texts: [String] = []
         var superseded: [String] = []
@@ -898,6 +946,7 @@ public final class DirectMessageService {
             list.removeFirst(list.count - DirectMessageFrames.maxMessagesPerRoom)
         }
         history[message.conversation] = list
+        onChange?()
         return true
     }
 
@@ -911,6 +960,7 @@ public final class DirectMessageService {
             changed = true
             history[conversation] = kept.isEmpty ? nil : kept
         }
+        if changed { onChange?() }
         return changed
     }
 
@@ -979,10 +1029,12 @@ public final class DirectMessageService {
     }
 
     @discardableResult
-    public func send(_ conversation: String, text: String) async -> Bool {
+    public func send(_ conversation: String, text: String, replyTo: ChatReplyQuote? = nil) async -> Bool {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, let record = record(for: conversation) else { return false }
-        let plain = frame(record, type: "chat", extra: ["text": .string(String(body.prefix(ChatLimits.maxTextChars)))])
+        var extra: JSONObject = ["text": .string(String(body.prefix(ChatLimits.maxTextChars)))]
+        if let replyTo { extra[DirectMessageFrames.replyField] = DirectMessageFrames.replyFields(replyTo) }
+        let plain = frame(record, type: "chat", extra: extra)
         let reached = await sendOverMesh(record, plain)
         return await sendSealed(record, plain, reached: reached)
     }
@@ -1160,6 +1212,7 @@ public final class DirectMessageService {
         flagUnacked(conversationId)
         sockets.removeValue(forKey: conversationId)
         connected.remove(conversationId)
+        serverCopies.removeValue(forKey: conversationId)
         scheduleReconnect(conversationId)
     }
 
@@ -1167,6 +1220,7 @@ public final class DirectMessageService {
         socket.reader?.cancel()
         sockets.removeValue(forKey: socket.conversationId)
         connected.remove(socket.conversationId)
+        serverCopies.removeValue(forKey: socket.conversationId)
         await socket.connection.close(code: WebSocketStatus.normalClosure, reason: "")
     }
 

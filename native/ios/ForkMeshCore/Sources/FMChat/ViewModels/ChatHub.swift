@@ -94,6 +94,8 @@ public final class ChatHub: ShellChatBridge {
             direct?.isExpired = expiry
             direct?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
             direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
+            direct?.onChange = { [weak self] in self?.persistSoon() }
+            restoreDirectHistory()
             direct?.onFrame = { [weak self] frame, conversation in
                 guard let self, let direct = self.direct else { return }
                 if frame["type"]?.text == DirectMessageFrames.typingType {
@@ -138,6 +140,9 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
     @ObservationIgnored private var loadedScope = ""
     @ObservationIgnored private var historyToken: ListenerToken?
+    @ObservationIgnored private var directRestore: (messages: [ChatMessage], receipts: [String: ChatReceipt])?
+    public private(set) var replyingTo: ChatReplyQuote?
+    @ObservationIgnored private var replyConversation = ""
     /// The last transient notice ("Chat is offline. Reconnecting..."), shown inline above the composer.
     public private(set) var notice: ChatNotice?
     public var pendingIssue: String?
@@ -244,13 +249,24 @@ public final class ChatHub: ShellChatBridge {
         loadedScope = scope
         guard let snapshot = history.load(scope: scope) else { return }
         extras.restoreChannels(privateChannels: snapshot.privateChannels, hiddenChannels: snapshot.hiddenChannels)
-        relay.restoreHistory(snapshot.messages.filter { !snapshot.hiddenChannels.contains($0.conversation) })
+        relay.restoreHistory(
+            snapshot.messages.filter {
+                !snapshot.hiddenChannels.contains($0.conversation) && !DirectMessageFrames.isDirect($0.conversation)
+            })
+        directRestore = (snapshot.messages.filter { DirectMessageFrames.isDirect($0.conversation) }, snapshot.receipts)
+        restoreDirectHistory()
         extras.restore(
             replies: snapshot.replies, roots: snapshot.replyRoots, reactions: snapshot.reactions, order: snapshot.reactionOrder,
             edits: snapshot.edits)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
         extras.restoreRemovedMessages(snapshot.removedMessages)
         extras.restoreLooks(snapshot.looks, events: snapshot.lookEvents)
+    }
+
+    private func restoreDirectHistory() {
+        guard let direct, let saved = directRestore else { return }
+        directRestore = nil
+        direct.restore(saved.messages, receipts: saved.receipts)
     }
 
     private func persistSoon() {
@@ -265,7 +281,8 @@ public final class ChatHub: ShellChatBridge {
 
     public func historyParts() -> ChatHistoryParts {
         var parts = ChatHistoryParts()
-        parts.conversations = relay.historySnapshot
+        parts.conversations = relay.historySnapshot.merging(direct?.historySnapshot ?? [:]) { kept, _ in kept }
+        parts.receipts = direct?.receiptSnapshot ?? [:]
         parts.replies = extras.snapshotThreads()
         parts.replyRoots = extras.snapshotReplyRoots()
         parts.reactions = extras.snapshotReactions()
@@ -411,10 +428,12 @@ public final class ChatHub: ShellChatBridge {
         }
         if DirectMessageFrames.isDirect(conversation) {
             directTypingSent.removeValue(forKey: conversation)
-            guard let direct, await direct.send(conversation, text: text) else {
+            let quote = replyConversation == conversation ? replyingTo : nil
+            guard let direct, await direct.send(conversation, text: text, replyTo: quote) else {
                 notice = ChatNotice("The direct message could not be sent. Reconnecting...")
                 return false
             }
+            if quote != nil && replyingTo == quote { cancelReply() }
             return true
         }
         if conversation == meshConversation {
@@ -1076,8 +1095,36 @@ public final class ChatHub: ShellChatBridge {
         open(last)
     }
 
+    public func startReply(_ message: ChatMessage, text: String) {
+        replyingTo = ChatHub.replyQuote(message, text: text)
+        replyConversation = message.conversation
+    }
+
+    public func cancelReply() {
+        replyingTo = nil
+        replyConversation = ""
+    }
+
+    public func reply(in conversation: String) -> ChatReplyQuote? {
+        replyConversation == conversation ? replyingTo : nil
+    }
+
+    public func replyAuthor(_ quote: ChatReplyQuote, in conversation: String) -> String {
+        let me = roomSelfId(conversation)
+        return !me.isEmpty && quote.senderId == me ? "You" : quote.senderName
+    }
+
+    public nonisolated static func replyQuote(_ message: ChatMessage, text: String) -> ChatReplyQuote {
+        var body = ChatListPreviews.plain(text)
+        if body.isEmpty && !message.fileName.isEmpty { body = ChatListPreviews.filePrefix + message.fileName }
+        return ChatReplyQuote(
+            id: message.id, senderId: message.senderId, senderName: message.senderName,
+            text: String(body.prefix(ChatReplyQuote.maxTextChars)))
+    }
+
     public func select(_ conversation: String) {
         conversationChosen = true
+        if conversation != replyConversation { cancelReply() }
         if ChatHub.isPersonConversation(conversation) { workspace.restoreConversation(conversation) }
         if conversation != relay.currentConversation || unreadStart[conversation] == nil {
             let start = ChatHub.firstUnreadId(messages(in: conversation), unread: unreadCount(conversation))
