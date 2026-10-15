@@ -120,8 +120,9 @@ public struct ShortcutRun: Equatable, Sendable {
         message = json.str("message")
         output = Self.tail(json.str("output"))
         expectedMs = json.int64("expectedMs", -1)
+        let startedAt = json.int64("startedAtMs")
         let elapsed = json.int64("elapsedMs", -1)
-        startedAtMs = running && elapsed >= 0 ? nowMs - elapsed : 0
+        startedAtMs = running && startedAt > 0 ? startedAt : (running && elapsed >= 0 ? nowMs - elapsed : 0)
     }
 
     public func progress(nowMs: Int64 = ShortcutProgress.nowMs()) -> ShortcutProgress? {

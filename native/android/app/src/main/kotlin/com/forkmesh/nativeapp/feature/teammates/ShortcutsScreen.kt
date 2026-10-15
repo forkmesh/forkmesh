@@ -1,6 +1,5 @@
 package com.forkmesh.nativeapp.feature.teammates
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -251,8 +249,8 @@ private fun ShortcutRunCard(run: ShortcutRun) {
             SelectionContainer {
                 Text(
                     shown.joinToString("\n") + if (run.running) "\n\u2588" else "",
-                    style = Fm.text.bodySmall.copy(color = Color(0xFFE6E6E6), fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth().background(Color.Black).padding(FmSpace.x2),
+                    style = Fm.text.bodySmall.copy(color = c.textPrimary, fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.fillMaxWidth().padding(FmSpace.x2),
                 )
             }
             if (!expanded && lines.size > shown.size) {
