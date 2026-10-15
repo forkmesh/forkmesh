@@ -1030,7 +1030,7 @@ static void testLogs()
     check(Scene::outputLine(QStringLiteral("Mirror mirror35 ssh: Accepted publickey")),
           QStringLiteral("a mirror host's forwarded line is output"));
     check(!Scene::outputLine(QStringLiteral(
-              "Mirror: synced forkmesh/forkmesh into /home/f/mirrors/forkmesh.git.")),
+              "Mirror: synced forkmesh/forkmesh into /home/tester/mirrors/forkmesh.git.")),
           QStringLiteral("the desktop's own mirror sync is not"));
     check(!Scene::outputLine(QStringLiteral("Node connected: n3 is online")),
           QStringLiteral("nor its note that a node came online"));

@@ -61,7 +61,7 @@ int main(int argc, char **argv)
     check(scriptStub(QStringLiteral("/usr/bin/dash")),
           "a #!/bin/sh script named claude (a test fake) is not an agent");
     check(scriptStub(QStringLiteral("/bin/bash")), "bash scripts are stubs too");
-    check(!scriptStub(QStringLiteral("/home/f/.local/share/claude/versions/2.1.300")),
+    check(!scriptStub(QStringLiteral("/home/tester/.local/share/claude/versions/2.1.300")),
           "the native Claude Code binary is an agent");
     check(!scriptStub(QStringLiteral("/usr/bin/node")), "a node-run agent is not a stub");
     check(!scriptStub(QString()), "an unreadable exe is not treated as a stub");
@@ -76,8 +76,8 @@ int main(int argc, char **argv)
     check(argValue(args({"claude", "--resume", "--verbose"}), {"--resume"}).isEmpty(),
           "a bare flag followed by another flag has no value");
 
-    check(claudeProjectKey(QStringLiteral("/home/f/projects/forkmesh/src/.worktrees/312-way"))
-              == QLatin1String("-home-f-projects-forkmesh-src--worktrees-312-way"),
+    check(claudeProjectKey(QStringLiteral("/home/tester/projects/forkmesh/src/.worktrees/312-way"))
+              == QLatin1String("-home-tester-projects-forkmesh-src--worktrees-312-way"),
           "the transcript folder replaces every non-alphanumeric character");
 
     QTemporaryDir temp;

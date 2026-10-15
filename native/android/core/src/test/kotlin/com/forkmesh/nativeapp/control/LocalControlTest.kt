@@ -525,8 +525,8 @@ class LocalControlTest {
                 """{"sessions":[{"id":4,"repositoryOwner":"o","repositoryName":"r","status":"running"},{"id":7,"repositoryOwner":"o","repositoryName":"s","status":"running"},""" +
                     """{"id":9,"repositoryOwner":"acme","repositoryName":"tools","status":"completed","finishedAtMs":1700000000100},""" +
                     """{"id":10,"repositoryOwner":"acme","repositoryName":"tools","status":"failed","finishedAtMs":1700000000200}],""" +
-                    """"outside":[{"id":-1001,"kind":"codex","label":"Codex","provider":"codex","model":"gpt-5","title":"scratch","cwd":"/home/f/scratch"},""" +
-                    """{"id":-1002,"kind":"claude","label":"Claude Code","title":"Fix login","cwd":"/home/f/r","repositoryOwner":"o","repositoryName":"r"},{"kind":"aider"}]}""",
+                    """"outside":[{"id":-1001,"kind":"codex","label":"Codex","provider":"codex","model":"gpt-5","title":"scratch","cwd":"/home/tester/scratch"},""" +
+                    """{"id":-1002,"kind":"claude","label":"Claude Code","title":"Fix login","cwd":"/home/tester/r","repositoryOwner":"o","repositoryName":"r"},{"kind":"aider"}]}""",
             ).asJsonMap(),
         )
         assertEq(listOf(-1001, -1002), snapshot.outside.map { it.id })
@@ -551,7 +551,7 @@ class LocalControlTest {
         val center = AgentControlCenter(hub, null)
         desktop.transcriptError = "no_transcript"
         val delta = center.transcript(codex, 0)
-        expect(delta.text.startsWith("Codex was started outside ForkMesh on studio, in /home/f/scratch."))
+        expect(delta.text.startsWith("Codex was started outside ForkMesh on studio, in /home/tester/scratch."))
         expect(!delta.active && delta.reset)
         desktop.transcriptError = null
         val claude = rows.first { it.id == "outside:-1002" }
@@ -573,9 +573,9 @@ class LocalControlTest {
     fun testOutsideClaudeCodeIsSteeredThroughTheDesktop() {
         val snapshot = LocalAgentsSnapshot.fromJson(
             Json.parse(
-                """{"sessions":[],"outside":[{"id":-2001,"kind":"claude","label":"Claude Code","title":"Fix login","cwd":"/home/f/app","steer":true},""" +
-                    """{"id":-2002,"kind":"claude","label":"Claude Code","cwd":"/home/f/old"},""" +
-                    """{"id":-2003,"kind":"codex","label":"Codex","cwd":"/home/f/scratch","steer":true}]}""",
+                """{"sessions":[],"outside":[{"id":-2001,"kind":"claude","label":"Claude Code","title":"Fix login","cwd":"/home/tester/app","steer":true},""" +
+                    """{"id":-2002,"kind":"claude","label":"Claude Code","cwd":"/home/tester/old"},""" +
+                    """{"id":-2003,"kind":"codex","label":"Codex","cwd":"/home/tester/scratch","steer":true}]}""",
             ).asJsonMap(),
         )
         assertEq(listOf(true, false, true), snapshot.outside.map { it.steer })
@@ -622,10 +622,10 @@ class LocalControlTest {
     fun testOutsideTerminalsTakeTypedPromptsAndInterrupts() {
         val snapshot = LocalAgentsSnapshot.fromJson(
             Json.parse(
-                """{"sessions":[],"outside":[{"id":-3001,"kind":"codex","label":"Codex","cwd":"/home/f/tool","typeable":true,"stoppable":true},""" +
-                    """{"id":-3002,"kind":"claude","label":"Claude Code","cwd":"/home/f/app","steer":true,"typeable":true},""" +
-                    """{"id":-3003,"kind":"claude","label":"Claude Code","cwd":"/home/f/peer","steer":true},""" +
-                    """{"id":-3004,"kind":"aider","label":"Aider","cwd":"/home/f/other","stoppable":true}]}""",
+                """{"sessions":[],"outside":[{"id":-3001,"kind":"codex","label":"Codex","cwd":"/home/tester/tool","typeable":true,"stoppable":true},""" +
+                    """{"id":-3002,"kind":"claude","label":"Claude Code","cwd":"/home/tester/app","steer":true,"typeable":true},""" +
+                    """{"id":-3003,"kind":"claude","label":"Claude Code","cwd":"/home/tester/peer","steer":true},""" +
+                    """{"id":-3004,"kind":"aider","label":"Aider","cwd":"/home/tester/other","stoppable":true}]}""",
             ).asJsonMap(),
         )
         assertEq(listOf(true, true, false, false), snapshot.outside.map { it.typeable })
@@ -717,8 +717,8 @@ class LocalControlTest {
     fun testAnAgentStartedFromThePhoneInADesktopTerminalIsMarked() {
         val snapshot = LocalAgentsSnapshot.fromJson(
             Json.parse(
-                """{"sessions":[],"outside":[{"id":-4001,"kind":"claude","label":"Claude Code","cwd":"/home/f/app","typeable":true,"stoppable":true,""" +
-                    """"terminal":"0123456789abcdef0123456789abcdef"},{"id":-4002,"kind":"codex","label":"Codex","cwd":"/home/f/tool","typeable":true}]}""",
+                """{"sessions":[],"outside":[{"id":-4001,"kind":"claude","label":"Claude Code","cwd":"/home/tester/app","typeable":true,"stoppable":true,""" +
+                    """"terminal":"0123456789abcdef0123456789abcdef"},{"id":-4002,"kind":"codex","label":"Codex","cwd":"/home/tester/tool","typeable":true}]}""",
             ).asJsonMap(),
         )
         assertEq(listOf("0123456789abcdef0123456789abcdef", ""), snapshot.outside.map { it.terminal })
@@ -733,7 +733,7 @@ class LocalControlTest {
                 "what you send here is typed into it.",
             phone.outsideSummary,
         )
-        expect(phone.outsideNote.startsWith("Claude Code was started from your phone in a terminal on studio, in /home/f/app."), phone.outsideNote)
+        expect(phone.outsideNote.startsWith("Claude Code was started from your phone in a terminal on studio, in /home/tester/app."), phone.outsideNote)
         assertEq("Codex started outside ForkMesh on studio in tool. What you send here is typed into its terminal.", wrapped.outsideSummary)
         expect(!UnifiedAgentRow("desktop:1", AgentTransportBadge.DesktopLan, "t", "o", "r", "studio", "running", "Running", true, terminal = "x").isPhoneTerminal)
     }
