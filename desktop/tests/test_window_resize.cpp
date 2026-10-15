@@ -13796,6 +13796,7 @@ else:
                 QDir(path).removeRecursively();
         }
     } appDataCleanup;
+    qputenv("FORKMESH_CORE", "0");
     QStandardPaths::setTestModeEnabled(true);
 
     QApplication app(argc, argv);

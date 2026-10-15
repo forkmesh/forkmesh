@@ -57,6 +57,14 @@ has cleared that flag for the AUTOMOC test targets, so
 output (`VoiceAudioPipeline`'s vtable). `forkmesh_add_package_modules` clears
 the flag again right after wrapping.
 
+`forkmesh-window-tests` runs with `FORKMESH_CORE=0`. It turns on
+`QStandardPaths` test mode, which a separate `forkmesh-core` process cannot
+follow, so a core started from the build folder worked on other folders than
+the window it served: branch review comments, pull state and merge clean-up
+failed only because the two sides disagreed on the ledger's path. The perf
+tests point `XDG_*` at their temp folder through the environment, which the
+core inherits, so they keep the core and measure startup with it.
+
 ### Secrets: copy until finalized
 
 Older desktops and the release tools still read some secrets in
