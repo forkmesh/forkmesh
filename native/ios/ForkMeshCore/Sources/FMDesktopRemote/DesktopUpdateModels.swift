@@ -130,6 +130,16 @@ public final class DesktopUpdateStore {
 
     public func restartComputer(_ confirmation: RemoteConfirmation) async throws -> String {
         let started = try await family.run(confirmation)
+        lines = ["==> Restarting computer", "$ loginctl reboot"]
+        state = DesktopUpdateState()
+        state.running = true
+        state.kind = Self.computerRestartAction
+        state.status = "Restarting computer…"
+        state.relaunching = true
+        error = ""
+        beginTracking()
+        stage = .restarting
+        revision &+= 1
         return started.message
     }
 
@@ -194,7 +204,7 @@ public final class DesktopUpdateStore {
     private func settleStage() {
         if state.running {
             beginTracking()
-            stage = state.relaunching ? .restarting : .running
+            stage = state.relaunching || state.kind == Self.computerRestartAction ? .restarting : .running
         } else if !state.error.isEmpty {
             tracking = false
             stage = .failed

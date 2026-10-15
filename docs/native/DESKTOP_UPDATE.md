@@ -8,7 +8,14 @@ relaunch as the **Restart** button next to **Resize** in the desktop's rail
 and debug bar (`quickRebuildRestart`): it rebuilds the desktop's local source
 checkout and relaunches, without pulling from a mirror, and the build log
 streams onto the page while it runs. Restart computer asks the desktop to
-restart the whole operating system after an owner-only confirmation.
+restart the whole operating system after an owner-only confirmation. Its
+acknowledgement immediately opens the same compact terminal view with the
+restart command while the phone waits for the computer to return.
+
+The desktop retains the `loginctl reboot` process until it has accepted or
+rejected the request. It streams the command and status through `update.progress`;
+a launch, authorization, or exit failure reaches the phone as an error instead
+of a false success message.
 
 The protocol action is named `updateRestart`; on every desktop that has the
 `update.` family it runs the quick rebuild, never a pull. A failed pull must

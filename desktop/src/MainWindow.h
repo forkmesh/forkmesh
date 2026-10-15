@@ -4023,6 +4023,7 @@ private:
     forkmesh::localcontrol::update::ProgressFeed m_updateFeed;
     QHash<int, UpdateWatcher> m_updateWatchers;
     QTimer *m_updateWatchTimer = nullptr;
+    bool m_computerRestarting = false;
     forkmesh::localcontrol::hosts::ConfirmationStore m_updateControlConfirmations;
     QJsonArray localControlRepoRows() const;
     void answerLocalControlRepoActions(int connectionId, int requestId, int repoIndex);
