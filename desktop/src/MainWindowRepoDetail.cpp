@@ -8620,6 +8620,8 @@ QWidget *MainWindow::buildSearchResultsSection()
     m_searchResultsTree->setCursor(Qt::PointingHandCursor);
     connect(m_searchResultsTree, &QTreeWidget::itemClicked, this,
             &MainWindow::onSearchResultActivated);
+    connect(m_searchResultsTree, &QTreeWidget::itemActivated, this,
+            &MainWindow::onSearchResultActivated);
     // Log lines can be deleted one at a time, from the right-click menu or
     // with Delete on the selected row.
     m_searchResultsTree->setContextMenuPolicy(Qt::CustomContextMenu);
