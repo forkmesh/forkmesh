@@ -42,6 +42,15 @@ query of a desktop.
 | `DELETE /api/app-store-status/snapshot` | forgets the snapshot |
 | `GET /api/app-store-status/export` | `{ok, filename, export}` |
 
+The API exists only once a deploy carrying this package has reached the app
+nodes. Until then the app's catch-all answers `404 {"error":"not_found"}`
+(the package never answers `not_found` for `GET /api/app-store-status`). On
+2026-10-15 the iPhone showed "App Store Status is unavailable / not found"
+because production was still on the previous release: the iPhone mapped only
+`http_404` to "This server does not offer App Store Status yet.", not the
+`not_found` code the server actually sends. It now maps `not_found`,
+`http_404`, `method_not_allowed` and `http_405` to that sentence.
+
 ## Snapshot format (`forkmesh-app-store-status-v1`)
 
 The worker keeps only these fields, clamps strings and list lengths, and

@@ -234,6 +234,11 @@ final class AppStoreStatusTests: XCTestCase {
         XCTAssertEqual(
             AppStoreStatusText.message(for: OrgApiException("plugin_not_installed", "plugin not installed")),
             AppStoreStatusText.notInstalled)
+        XCTAssertEqual(
+            AppStoreStatusText.message(for: OrgApiException("not_found", "not found")), AppStoreStatusText.notOffered)
+        XCTAssertEqual(
+            AppStoreStatusText.message(for: OrgApiException("http_404", "The server answered 404.")),
+            AppStoreStatusText.notOffered)
         XCTAssertEqual(AppStoreStatusText.message(for: OrgApiException("unauthorized", "unauthorized")), "unauthorized")
         XCTAssertEqual(AppStoreStatusText.message(for: URLError(.timedOut)), AppStoreStatusText.genericError)
     }

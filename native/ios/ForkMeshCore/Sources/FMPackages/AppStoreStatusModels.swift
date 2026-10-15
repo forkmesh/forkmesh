@@ -393,6 +393,7 @@ public enum AppStoreStatusText {
     public static let notInstalled =
         "App Store Status is not installed for your account. Install it from the Market, then run the \(shortcutName) shortcut on your desktop."
     public static let genericError = "App Store Status is unavailable right now."
+    public static let notOffered = "This server does not offer App Store Status yet."
 
     public static func isStatusShortcut(file: String) -> Bool {
         let name = file.split(separator: "/").last.map(String.init) ?? file
@@ -486,7 +487,7 @@ public enum AppStoreStatusText {
         guard let failure = error as? OrgApiException else { return genericError }
         switch failure.code {
         case "plugin_not_installed", "package_not_installed", "not_installed": return notInstalled
-        case "http_404": return "This server does not offer App Store Status yet."
+        case "http_404", "not_found", "http_405", "method_not_allowed": return notOffered
         default: return failure.message.isEmpty ? genericError : failure.message
         }
     }
