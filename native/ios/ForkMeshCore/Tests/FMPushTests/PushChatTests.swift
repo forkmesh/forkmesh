@@ -98,6 +98,37 @@ final class PushChatTests: XCTestCase {
         XCTAssertNil(PushPreviewText.preview(nil, request: request, mode: .nameAndMessage))
     }
 
+    func testADirectMessageOpensFromThePushedFrameOnceTheRelayCopyIsGone() throws {
+        let me = X25519.generatePrivateKey()
+        let mine = try RoomSeal.fromPrivateKey(PushChatTests.room, me)
+        let peer = try RoomSeal.fromPrivateKey(PushChatTests.room, X25519.generatePrivateKey())
+        XCTAssertTrue(peer.acceptKeyFrame(mine.keyFrame()))
+        let plain: JSONObject = [
+            "type": "chat", "id": "pat-2", "sender": "Pat",
+            "channel": .string("direct:\(PushChatTests.directId)"), "text": "running late", "ts": 2,
+        ]
+        let key = RoomCrypto.derivedKey(PushChatTests.room, passphrase: PushChatTests.passphrase)
+        let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
+        let envelope = try crypto.encrypt(try peer.seal(plain))
+        let gone: JSONObject = [
+            "conversation": .string("direct:\(PushChatTests.directId)"), "room": .string(PushChatTests.room), "keyVersion": 2,
+            "passphrase": .string(PushChatTests.passphrase), "frame": "",
+        ]
+        let payload = directPayload(["frame": .object(envelope)])
+        let request = try XCTUnwrap(PushChatRequest.parse(payload))
+        let keys = PushRoomKeys(store: InMemorySharedItemStore())
+        XCTAssertNil(PushChatOpener.open(gone, request: request, privateKey: me, keys: keys))
+        let merged = PushChatOpener.withPushedFrame(gone, pushed: payload)
+        let opened = try XCTUnwrap(PushChatOpener.open(merged, request: request, privateKey: me, keys: keys))
+        XCTAssertEqual(opened.text, "running late")
+        XCTAssertEqual(
+            PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "Pat", body: "running late"))
+        var stored = gone
+        stored["frame"] = .string(JSON.encode(envelope))
+        XCTAssertEqual(PushChatOpener.withPushedFrame(stored, pushed: directPayload(["frame": ["kind": "other"]])), stored)
+        XCTAssertEqual(PushChatOpener.withPushedFrame(gone, pushed: directPayload()), gone)
+    }
+
     func testAPublicChannelFrameIsPlainInsideTheRoomCipher() throws {
         let key = RoomCrypto.derivedKey(PushChatTests.channelRoom, passphrase: PushChatTests.passphrase)
         let crypto = try XCTUnwrap(RoomCrypto.withKey(key))

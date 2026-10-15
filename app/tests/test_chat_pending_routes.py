@@ -117,7 +117,7 @@ def test_a_participant_reads_the_pending_direct_frame():
     asyncio.run(run())
 
 
-def test_direct_pending_is_participant_only_and_404s_a_gone_row():
+def test_direct_pending_is_participant_only_and_keys_a_gone_row():
     async def run():
         runtime, conversation_id, room = await _direct_setup()
         for actor, target in (("carol", conversation_id),
@@ -126,15 +126,22 @@ def test_direct_pending_is_participant_only_and_404s_a_gone_row():
             denied = await _direct_pending(runtime, actor, target)
             assert denied["status"] == 404
             assert denied["data"] == {"error": "not_found"}
+        assert runtime.passphrases == []
         gone = await _direct_pending(
             runtime, "bob", conversation_id, ref="c" * 40)
-        assert gone["status"] == 404
-        assert gone["data"] == {"error": "not_found"}
+        assert gone["status"] == 200
+        assert gone["data"] == {
+            "conversation": "direct:" + conversation_id,
+            "room": room,
+            "keyVersion": 1,
+            "passphrase": f"key:{conversation_id}:1",
+            "frame": "",
+        }
         runtime.db.execute("DELETE FROM chat_history WHERE room_key=?",
                            (room,))
         received = await _direct_pending(runtime, "bob", conversation_id)
-        assert received["status"] == 404
-        assert runtime.passphrases == []
+        assert received["status"] == 200
+        assert received["data"]["frame"] == ""
         for bad in ("", "xyz", REF + "0", REF[:-1] + "%"):
             invalid = await _direct_pending(
                 runtime, "bob", conversation_id, ref=bad)
@@ -157,7 +164,8 @@ def test_direct_pending_reads_only_the_current_key_version():
             "UPDATE chat_direct_conversations SET key_version=2")
         runtime.db.commit()
         missing = await _direct_pending(runtime, "bob", conversation_id)
-        assert missing["status"] == 404
+        assert missing["data"]["frame"] == ""
+        assert missing["data"]["keyVersion"] == 2
         _store(runtime, f"chat-direct:{conversation_id}:v2", REF + ":x")
         found = await _direct_pending(runtime, "bob", conversation_id)
         assert found["data"]["keyVersion"] == 2

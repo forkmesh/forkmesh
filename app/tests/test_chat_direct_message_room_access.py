@@ -34,7 +34,7 @@ def _apns_stub():
     return types.SimpleNamespace(
         direct_message_alert=(
             lambda sender="", started=False, conversation_id="", ref="",
-            key_version=0: {
+            key_version=0, frame="": {
                 "title": "Direct message from " + sender,
                 **({"ref": ref, "keyVersion": key_version} if ref else {})}))
 
