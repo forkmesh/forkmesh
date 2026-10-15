@@ -1142,7 +1142,7 @@ _URL_EXPORT_NAMES = (
     "RELEASE_BLOB_RE", "REPO_RELEASE_DOWNLOADS_RE", "GIT_INFO_RE",
     "GIT_PACK_RE", "GIT_RECEIVE_RE", "ACCOUNTS_RE",
     "ACCOUNT_CONTRIBUTIONS_RE", "ACCOUNT_FOLLOW_RE", "ACCOUNT_AVATAR_RE",
-    "MICROJOBS_RE",
+    "MICROJOBS_RE", "AFFILIATES_RE", "PLUGIN_RACE_RE",
     "HACKATHON_API_RE", "HACKATHON_INVITE_RE", "HACKATHON_SQUAD_RE",
     "CHALLENGES_API_RE",
     "WORKFLOWS_API_RE",
@@ -1352,6 +1352,8 @@ organization_succession_api = _LazyModule("organization_succession_api")
 # authorization: a payout still happens only when the owner's desktop vault
 # signs the plan locally.
 microjobs = _LazyModule("microjobs")
+affiliates = _LazyModule("affiliates")
+plugin_race = _LazyModule("plugin_race")
 # Immutable package submissions and the five-member + repository-owner
 # publication gate live in a provider-neutral sibling module. This adapter
 # exposes account/public-balance reads but no wallet custody or signing.
@@ -13322,7 +13324,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "4e9c64d2bf5a897f1aa75a4e0456bcb7f77f83d68b43af86165cfc9e6f65cc0c"
+    "ad25ed4761784ba8ed1739f3932706abf1fc5aebe29af5eef61cce77a5bf1572"
 )
 
 
@@ -26860,6 +26862,19 @@ _MicrojobsRuntime = _microjobs_runtime.export("_MicrojobsRuntime")
 
 async def microjobs_handler(env, request, path):
     return await microjobs.handle(_MicrojobsRuntime(env, request), path)
+
+
+_programs_runtime = _LazyModule("programs_runtime")
+_AffiliatesRuntime = _programs_runtime.export("_AffiliatesRuntime")
+_PluginRaceRuntime = _programs_runtime.export("_PluginRaceRuntime")
+
+
+async def affiliates_handler(env, request, path):
+    return await affiliates.handle(_AffiliatesRuntime(env, request), path)
+
+
+async def plugin_race_handler(env, request, path):
+    return await plugin_race.handle(_PluginRaceRuntime(env, request), path)
 
 
 async def queue_microjob_payouts(env):

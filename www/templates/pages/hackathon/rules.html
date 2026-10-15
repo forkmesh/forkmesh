@@ -1,21 +1,21 @@
 {% extends "base.html" %}
 {% block html_attrs %} class="light h-full scroll-smooth" data-theme-default="light"{% endblock %}
-{% block title %}ForkMesh Revenue Contest official rules{% endblock %}
+{% block title %}ForkMesh Plugin Race official rules{% endblock %}
 {% block chrome %}
 {% endblock %}
 {% block meta %}
-    <meta name="description" content="Official rules for the ForkMesh September Revenue Contest: dates, commission, leaderboard prizes, company claims, what counts as a referral, and fair play." />
+    <meta name="description" content="Official rules for the ForkMesh Plugin Race: dates, the 0.1 SOL prize, who can take part, what the plugin has to be, which ratings count, and fair play." />
     <link rel="canonical" href="https://forkmesh.com/hackathon/rules" />
     <meta name="robots" content="index, follow" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://forkmesh.com/hackathon/rules" />
     <meta property="og:site_name" content="ForkMesh" />
-    <meta property="og:title" content="ForkMesh Revenue Contest official rules" />
-    <meta property="og:description" content="Official rules for the ForkMesh September Revenue Contest: dates, commission, leaderboard prizes, company claims, what counts as a referral, and fair play." />
+    <meta property="og:title" content="ForkMesh Plugin Race official rules" />
+    <meta property="og:description" content="Official rules for the ForkMesh Plugin Race: dates, the 0.1 SOL prize, who can take part, what the plugin has to be, which ratings count, and fair play." />
     <meta property="og:image" content="https://forkmesh.com/assets/social-card.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="ForkMesh Revenue Contest official rules" />
-    <meta name="twitter:description" content="Official rules for the ForkMesh September Revenue Contest: dates, commission, leaderboard prizes, company claims, what counts as a referral, and fair play." />
+    <meta name="twitter:title" content="ForkMesh Plugin Race official rules" />
+    <meta name="twitter:description" content="Official rules for the ForkMesh Plugin Race: dates, the 0.1 SOL prize, who can take part, what the plugin has to be, which ratings count, and fair play." />
     <meta name="twitter:image" content="https://forkmesh.com/assets/social-card.jpg" />
 {% endblock %}
 {% block head %}
@@ -135,11 +135,11 @@
 {% block body %}
     <main class="landing-main">
       <div class="home-announce">
-        <a class="home-announce-link" href="/hackathon#prizes">
-          <span class="home-announce-text">15 Sep – 15 Oct 2026 (UTC). Earn 50% of each first month.</span>
+        <a class="home-announce-link" href="/hackathon">
+          <span class="home-announce-text">19 Oct – 18 Dec 2026 (UTC). The first 10 plugins to 10 ratings win 0.1 SOL each.</span>
           <span class="home-announce-sep" aria-hidden="true"></span>
           <span class="home-announce-cta"
-            >See the prizes
+            >See the race
             <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
               <path d="M4 2.5 7.5 6 4 9.5" />
             </svg>
@@ -163,10 +163,10 @@
             </a>
 
             <ul class="home-nav-links">
-              <li><a class="home-nav-link" href="/hackathon#commission">Commission</a></li>
-              <li><a class="home-nav-link" href="/hackathon#prizes">Prizes</a></li>
-              <li><a class="home-nav-link" href="/hackathon#how">How it works</a></li>
-              <li><a class="home-nav-link" href="/hackathon#rules">Rules</a></li>
+              <li><a class="home-nav-link" href="/hackathon#prize">Prize</a></li>
+              <li><a class="home-nav-link" href="/hackathon#who">Who can enter</a></li>
+              <li><a class="home-nav-link" href="/hackathon#board">Board</a></li>
+              <li><a class="home-nav-link" href="/hackathon#enter">Enter</a></li>
             </ul>
 
             <div class="home-nav-actions">
@@ -211,11 +211,12 @@
           </div>
 
           <div class="home-mobile-panel" id="home-mobile-panel">
-            <a href="/hackathon#commission">Commission</a>
-            <a href="/hackathon#prizes">Prizes</a>
-            <a href="/hackathon#how">How it works</a>
-            <a href="/hackathon#rules">Rules</a>
+            <a href="/hackathon#prize">Prize</a>
+            <a href="/hackathon#who">Who can enter</a>
+            <a href="/hackathon#board">Board</a>
+            <a href="/hackathon#enter">Enter</a>
             <a href="/hackathon/rules">Official rules</a>
+            <a href="/hackathon/archive">Past hackathons</a>
           </div>
         </nav>
       </header>
@@ -224,134 +225,184 @@
         <div class="hero-grid" aria-hidden="true"></div>
         <span class="hero-kicker">
           <span class="dot" aria-hidden="true"></span>
-          <b>ForkMesh September Revenue Contest</b>
+          <b>ForkMesh Plugin Race</b>
           <span>Official rules</span>
         </span>
         <h1>Official rules</h1>
         <p>
-          These rules govern the contest. Where anything on another ForkMesh
+          These rules govern the Plugin Race. Where anything on another ForkMesh
           page disagrees with this document, this document is what applies.
         </p>
       </section>
 
       <div class="doc">
-        <h2>1. Organiser and contact</h2>
+        <h2 id="organiser">1. Organiser and contact</h2>
         <p>
-          The ForkMesh September Revenue Contest is run by ForkMesh. Questions
-          about these rules go to
-          <a href="mailto:founders@forkmesh.com">founders@forkmesh.com</a>.
+          The ForkMesh Plugin Race is run by ForkMesh. Questions go to
+          <a href="mailto:hello@forkmesh.com">hello@forkmesh.com</a> or the
+          <a href="https://discord.gg/forkmesh">ForkMesh Discord</a>.
         </p>
 
-        <h2>2. Dates</h2>
+        <h2 id="dates">2. Dates</h2>
         <p>
-          The contest runs from <strong>15 September 2026, 00:00 UTC</strong>
-          to <strong>15 October 2026, 23:59 UTC</strong>. All times are UTC.
+          The race opens on 19 October 2026, 00:00 UTC, and closes on
+          18 December 2026, 23:59 UTC, or as soon as all ten prizes have been
+          won, whichever comes first.
         </p>
 
-        <h2>3. Who can enter</h2>
-        <p>
-          The contest is open to everyone. You bring new companies onto a paid
-          ForkMesh plan through Patreon, earn commission, and compete for cash
-          prizes.
-        </p>
-
-        <h2>4. Commission</h2>
-        <p>
-          You earn <strong>50% of each eligible customer’s first month</strong>.
-        </p>
+        <h2 id="prize">3. The prize</h2>
         <ul>
-          <li><strong>$5 plan:</strong> $2.50</li>
-          <li><strong>$10 plan:</strong> $5</li>
-          <li><strong>$50 plan:</strong> $25</li>
-          <li><strong>$100 plan:</strong> $50</li>
-        </ul>
-        <p>
-          Customers pay through Patreon. The Patreon link is on the
-          <a href="/#support-forkmesh">ForkMesh homepage</a>.
-        </p>
-
-        <h2>5. Leaderboard and prizes</h2>
-        <p>
-          Rankings are based on total eligible first-month revenue generated,
-          not number of signups.
-        </p>
-        <ul>
-          <li><strong>1st:</strong> $100, with a minimum of $200 in eligible first-month revenue</li>
-          <li><strong>2nd:</strong> $50, with a minimum of $100 in eligible first-month revenue</li>
-          <li><strong>3rd:</strong> $25, with a minimum of $50 in eligible first-month revenue</li>
-        </ul>
-        <p>
-          To win any prize you also need <strong>at least 3 different eligible
-          customers</strong>. A prize is never more than half of the revenue
-          that earns it.
-        </p>
-        <ul>
-          <li>Places are awarded in leaderboard order. If you rank for a place but are below its minimum, you take the highest lower place whose minimum you meet.</li>
-          <li>A place that no entrant qualifies for is not awarded and does not pass to anyone below its minimum.</li>
-          <li>Prize minimums do not affect commissions. Every eligible referral still earns 50% of its first month.</li>
-        </ul>
-        <p>Prizes are paid in addition to commissions.</p>
-
-        <h2>6. Claiming companies</h2>
-        <ul>
-          <li>You may claim a maximum of 10 companies at a time.</li>
-          <li>Claims must be posted publicly before outreach to prevent overlap. The first valid public claim gets the company.</li>
-          <li>Claims expire after 7 days without meaningful outreach or activity.</li>
+          <li>The first 10 plugins to reach 10 counted ratings each win 0.1 SOL.</li>
+          <li>That is ten prizes of 0.1 SOL, and one prize per plugin.</li>
+          <li>Each builder may enter up to 3 plugins, and each one can win.</li>
+          <li>
+            We send the prize to the Solana address saved in your ForkMesh
+            account settings, within 14 days of confirming the win. The
+            transaction signature goes up on the race board.
+          </li>
+          <li>
+            If you have not saved an address within 30 days of winning, the
+            prize lapses and the slot passes to the next plugin in line.
+          </li>
         </ul>
 
-        <h2>7. What counts as a referral</h2>
+        <h2 id="who">4. Who can take part</h2>
+        <p>
+          Everyone in the race, whether you build a plugin, rate one, or both,
+          has to pass all four checks before anything they do counts:
+        </p>
+        <ol>
+          <li>
+            <strong>A ForkMesh account</strong> with a verified email address,
+            in good standing.
+          </li>
+          <li>
+            <strong>Our member check.</strong> The account is at least 7 days
+            old, and the ForkMesh desktop app on your computer has proved its
+            signing key on two separate days at least a day apart and has been
+            online in the last 48 hours. This is the same check we use before
+            a referral counts. A new email address alone does not pass it.
+          </li>
+          <li>
+            <strong>Three public posts about the race</strong>: one on X, one on
+            Reddit and one on Mastodon. Each must be public and include
+            <strong>#ForkMeshPluginRace</strong>. One post can only be used by
+            one person.
+          </li>
+          <li>
+            <strong>A Discord account.</strong> Give us your Discord username
+            and join the <a href="https://discord.gg/forkmesh">ForkMesh
+            Discord</a>. If your Discord is already linked to your ForkMesh
+            account it counts at once. If not, we check it by hand.
+          </li>
+        </ol>
+        <p>
+          You enter on the <a href="/hackathon#enter">race page</a> while
+          signed in. The page shows which checks you have passed. We check the
+          posts automatically where the network lets us, and by hand where it
+          does not.
+        </p>
+        <p>
+          ForkMesh staff and contractors may build and rate but cannot win a
+          prize.
+        </p>
+
+        <h2 id="plugin">5. What the plugin has to be</h2>
         <ul>
-          <li>Referrals must be new ForkMesh paid customers and cannot already be in an active ForkMesh sales conversation.</li>
-          <li>One customer counts as one referral. Related accounts or entities may be treated as one customer when appropriate.</li>
-          <li>A referral counts after successful payment through Patreon. Refunds, chargebacks, fraudulent payments, or reversals do not count.</li>
-          <li>The customer must pay with their own payment method. A payment made or funded by the entrant, or by anyone acting for the entrant, does not count.</li>
-          <li>Each customer counts once, at the price of the plan they first pay for.</li>
-          <li>Subscriptions must remain paid and in good standing for 30 days before commissions and contest revenue are final.</li>
+          <li>Published by you in the ForkMesh community marketplace.</li>
+          <li>
+            Useful: it does a real job for someone using ForkMesh. Themes with
+            no function, copies of an existing package, and placeholder
+            packages are not accepted.
+          </li>
+          <li>
+            Working on all three places ForkMesh runs: the desktop app, the
+            iOS app, and the web dashboard. When you enter, you tell us how to
+            try it on each one.
+          </li>
+          <li>
+            Built for the race. A package that was already published before
+            19 October 2026 can enter only with a new release made during the
+            race.
+          </li>
+          <li>
+            Safe: no tracking, no hidden network calls, nothing that breaks the
+            marketplace rules.
+          </li>
+        </ul>
+        <p>
+          We review every entry and either accept it or tell you why not.
+          Only accepted plugins appear on the board and can win. Ratings left
+          before acceptance still count once the plugin is accepted.
+        </p>
+
+        <h2 id="ratings">6. Which ratings count</h2>
+        <ul>
+          <li>The rating is left in the ForkMesh marketplace during the race.</li>
+          <li>The person rating has passed all four checks in section 4.</li>
+          <li>The rating is 3 stars or more.</li>
+          <li>Each person counts once per plugin. You cannot rate your own plugin.</li>
+          <li>
+            Ratings we hide for abuse, and ratings from anyone we disqualify,
+            stop counting.
+          </li>
+          <li>
+            A rating counts from the later of two moments: when it was left, and
+            when the person rating passed the checks. The tenth counted rating
+            sets the time a plugin crossed the line.
+          </li>
+        </ul>
+        <p>
+          The first ten accepted plugins to cross the line win, in that order.
+          If two cross at exactly the same moment, the one whose package name
+          comes first alphabetically goes first.
+        </p>
+
+        <h2 id="fair-play">7. Fair play</h2>
+        <ul>
+          <li>
+            Swapping ratings, buying or selling ratings, rating rings, second
+            accounts, and offering anything in return for a rating are not
+            allowed. Everyone involved is disqualified.
+          </li>
+          <li>Rate what you actually used. An honest 3-star rating counts as much as a 5.</li>
+          <li>
+            Your posts have to be your own and stay up until the race ends.
+            Deleting one takes you out of the race.
+          </li>
+          <li>
+            We may disqualify an entrant, remove a plugin from the board, or
+            withhold a prize when we find abuse, including after the fact.
+          </li>
         </ul>
 
-        <h2>8. Fair play</h2>
+        <h2 id="decisions">8. Checks and decisions</h2>
         <p>
-          No self-referrals, fake accounts, duplicate customers, artificial
-          upgrades, or coordinated purchases intended to manipulate the
-          contest.
+          ForkMesh checks every entrant, post, plugin and rating, and settles
+          disputes. Our decisions on eligibility and winners are final. Prizes
+          are sent in SOL; you are responsible for any tax on them where you
+          live. The race is void where the law does not allow it.
         </p>
 
-        <h2>9. Verification and disputes</h2>
+        <h2 id="changes">9. Changes</h2>
         <p>
-          ForkMesh may verify referrals and resolve disputes, duplicate claims,
-          or suspected abuse.
+          ForkMesh may clarify or change these rules. Any change is posted on
+          this page and announced on our Discord, with the date it was made.
+          A change never takes away a prize that has already been won.
         </p>
 
-        <h2>10. Changes</h2>
-        <p>
-          ForkMesh may modify or clarify rules as needed. Changes will be
-          communicated publicly.
-        </p>
-        <p>
-          On 1 October 2026 we added the prize minimums in section 5 and the
-          payment rules in section 7, so that a single small payment cannot
-          win a prize. Commissions are unchanged, and no prize had been
-          awarded before this change.
-        </p>
-        <p>
-          On 6 October 2026, the commission table was corrected to replace a
-          $25 example that did not match a Patreon tier with the $10 tier, and
-          to add the $50 tier it had left out. The 50% commission rate did not
-          change.
-        </p>
-
-        <p class="meta">Last updated 6 October 2026.</p>
+        <p class="meta">Last updated 15 October 2026.</p>
       </div>
 
       <section id="final-cta" aria-labelledby="final-cta-title">
         <div class="final-cta-frame">
           <div class="final-cta-grid" aria-hidden="true"></div>
           <div class="final-cta-content">
-            <h2 id="final-cta-title">Read it? Go sell.</h2>
-            <p>Pick your 10 companies, post your list, start selling, and climb the leaderboard.</p>
+            <h2 id="final-cta-title">Ten prizes. First come, first paid.</h2>
+            <p>Build something people need, get ten honest ratings, and the SOL is yours.</p>
             <div class="final-cta-actions">
-              <a class="button-primary" href="/#support-forkmesh">Get the Patreon link</a>
-              <a class="button-outline" href="/hackathon">Back to the contest</a>
+              <a class="button-primary" href="/hackathon#enter">Enter the race</a>
+              <a class="button-outline" href="/hackathon">Back to the race</a>
             </div>
           </div>
         </div>

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en" class="light h-full scroll-smooth" data-theme-default="light">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Past ForkMesh hackathons</title>
+    <meta name="description" content="Every ForkMesh hackathon that has finished, with its page and official rules as they stood when it closed." />
+    <link rel="canonical" href="https://forkmesh.com/hackathon/archive" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://forkmesh.com/hackathon/archive" />
+    <meta property="og:site_name" content="ForkMesh" />
+    <meta property="og:title" content="Past ForkMesh hackathons" />
+    <meta property="og:description" content="Every ForkMesh hackathon that has finished, with its page and official rules as they stood when it closed." />
+    <meta property="og:image" content="https://forkmesh.com/assets/social-card.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Past ForkMesh hackathons" />
+    <meta name="twitter:description" content="Every ForkMesh hackathon that has finished, with its page and official rules as they stood when it closed." />
+    <meta name="twitter:image" content="https://forkmesh.com/assets/social-card.jpg" />
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <script>
+      (() => {
+        let theme = "";
+        try {
+          theme = localStorage.getItem("forkmesh.dashboard.theme") ||
+            localStorage.getItem("forkmesh.theme") || "";
+        } catch (_) {}
+        if (theme !== "light" && theme !== "dark") theme = "light";
+        document.documentElement.classList.toggle("light", theme === "light");
+        document.documentElement.classList.toggle("dark", theme !== "light");
+        document.documentElement.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]')?.setAttribute(
+          "content", theme === "light" ? "#ffffff" : "#090909",
+        );
+      })();
+    </script>
+    <link rel="stylesheet" href="/hackathon.css" />
+    <style>
+      /* A rules document is read top to bottom, so it drops the card grid for
+         one measured column with real heading hierarchy. Placeholders that the
+         organiser must still fill in are marked rather than invented, so a
+         published page can never state a prize amount nobody agreed to. */
+      .doc-hero {
+        padding: calc(var(--home-nav-h) + clamp(2.5rem, 6vw, 4rem)) 1.5rem 0;
+        margin-top: calc(var(--home-nav-h) * -1);
+        text-align: center;
+      }
+
+      .doc-hero h1 {
+        max-width: 18ch;
+        margin: 1rem auto 0;
+        color: var(--home-ink);
+        font-family: var(--landing-heading-font);
+        font-size: clamp(2rem, 5vw, 3.25rem);
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        line-height: 1.06;
+        text-wrap: balance;
+      }
+
+      .doc-hero p {
+        max-width: 56ch;
+        margin: 1.1rem auto 0;
+        color: var(--home-muted);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .doc {
+        width: min(100%, 46rem);
+        margin: clamp(2.5rem, 6vw, 4rem) auto 0;
+        padding: 0 1.5rem;
+      }
+
+      .doc h2 {
+        max-width: none;
+        margin: clamp(2.25rem, 4vw, 3rem) 0 0.75rem;
+        color: var(--home-ink);
+        font-family: var(--landing-heading-font);
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .doc h2:first-child { margin-top: 0; }
+
+      .doc p, .doc li {
+        color: var(--home-muted);
+        font-size: 0.975rem;
+        line-height: 1.65;
+      }
+
+      .doc p { margin: 0 0 0.9rem; }
+      .doc ul, .doc ol { margin: 0 0 1rem; padding-left: 1.35rem; }
+      .doc li { margin: 0.3rem 0; }
+      .doc li::marker { color: var(--home-line); }
+      .doc strong { color: var(--home-ink); font-weight: 600; }
+      .doc a { color: var(--home-ink); text-decoration: underline; text-underline-offset: 0.2rem; }
+
+      .doc .tbd {
+        display: inline-block;
+        padding: 0.05rem 0.4rem;
+        border: 1px dashed var(--home-line);
+        border-radius: 0.35rem;
+        background: var(--home-surface-2);
+        color: var(--home-ink);
+        font-family: var(--landing-mono-font);
+        font-size: 0.8125rem;
+      }
+
+      .doc .callout {
+        margin: 1.25rem 0 1.5rem;
+        padding: 1rem 1.2rem;
+        border: 1px solid var(--home-line);
+        border-radius: 0.9rem;
+        background: var(--home-surface-2);
+      }
+
+      .doc .callout p:last-child { margin-bottom: 0; }
+
+      .doc .meta {
+        margin-top: clamp(2.5rem, 5vw, 3.5rem);
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--home-line);
+        color: var(--home-muted);
+        font-size: 0.85rem;
+      }
+    </style>
+    <link rel="stylesheet" href="/site-footer.css" />
+    <script src="/site-footer.js?v=${version}" defer></script>
+    <script src="/home-header-auth.js?v=${version}" defer></script>
+    <script src="/home-theme.js?v=${version}" defer></script>
+    <script src="/hackathon.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <main class="landing-main">
+      <div class="home-announce">
+        <a class="home-announce-link" href="/hackathon">
+          <span class="home-announce-text">19 Oct – 18 Dec 2026 (UTC). The first 10 plugins to 10 ratings win 0.1 SOL each.</span>
+          <span class="home-announce-sep" aria-hidden="true"></span>
+          <span class="home-announce-cta"
+            >See the race
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+              <path d="M4 2.5 7.5 6 4 9.5" />
+            </svg>
+          </span>
+        </a>
+      </div>
+
+      <header class="home-nav-wrap">
+        <nav id="site-nav" class="home-nav" data-open="false" aria-label="Primary">
+          <div class="home-nav-shell">
+            <a href="/" class="home-brand brand" aria-label="ForkMesh home">
+              <img
+                src="/assets/logo.svg"
+                alt=""
+                aria-hidden="true"
+                class="home-brand-mark brand-mark"
+                width="192"
+                height="220"
+              />
+              <span class="home-brand-word">forkmesh</span>
+            </a>
+
+            <ul class="home-nav-links">
+              <li><a class="home-nav-link" href="/hackathon#prize">Prize</a></li>
+              <li><a class="home-nav-link" href="/hackathon#who">Who can enter</a></li>
+              <li><a class="home-nav-link" href="/hackathon#board">Board</a></li>
+              <li><a class="home-nav-link" href="/hackathon#enter">Enter</a></li>
+            </ul>
+
+            <div class="home-nav-actions">
+              <button
+                type="button"
+                data-home-theme
+                class="home-theme-toggle"
+                aria-label="Switch to dark mode"
+                title="Switch to dark mode"
+              >
+                <svg class="home-theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M6 18l-1.4 1.4M19.4 4.6L18 6"></path>
+                </svg>
+                <svg class="home-theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+                  <path d="M20.5 13.4A8.5 8.5 0 1 1 10.6 3.5a6.6 6.6 0 0 0 9.9 9.9Z"></path>
+                </svg>
+                <span class="sr-only">Switch color theme</span>
+              </button>
+              <a data-home-auth-secondary class="home-nav-signin" href="/login">Sign in</a>
+              <span class="home-nav-divider" aria-hidden="true"></span>
+              <a data-home-auth-primary class="home-nav-signup" href="/signup">Sign up</a>
+              <button
+                id="mobile-menu-toggle"
+                type="button"
+                class="home-nav-burger"
+                aria-label="Open menu"
+                aria-expanded="false"
+                aria-controls="home-mobile-panel"
+              >
+                <svg class="menu-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="4" y1="7" x2="20" y2="7"></line>
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <line x1="4" y1="17" x2="20" y2="17"></line>
+                </svg>
+                <svg class="menu-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="home-mobile-panel" id="home-mobile-panel">
+            <a href="/hackathon#prize">Prize</a>
+            <a href="/hackathon#who">Who can enter</a>
+            <a href="/hackathon#board">Board</a>
+            <a href="/hackathon#enter">Enter</a>
+            <a href="/hackathon/rules">Official rules</a>
+            <a href="/hackathon/archive">Past hackathons</a>
+          </div>
+        </nav>
+      </header>
+
+      <section class="doc-hero">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <span class="hero-kicker">
+          <span class="dot" aria-hidden="true"></span>
+          <b>ForkMesh hackathons</b>
+          <span>Archive</span>
+        </span>
+        <h1>Past hackathons</h1>
+        <p>
+          Every ForkMesh hackathon that has finished, with the page and the
+          rules exactly as they stood when it closed.
+        </p>
+      </section>
+
+      <div class="doc">
+        <h2 id="revenue-contest-2026">September Revenue Contest</h2>
+        <p><strong>15 September to 15 October 2026 (UTC).</strong> Ended.</p>
+        <p>
+          Our first contest. Entrants brought new companies onto a paid
+          ForkMesh plan through Patreon, earned 50% of each customer’s first
+          month, and competed on total first-month revenue for prizes of $100,
+          $50 and $25.
+        </p>
+        <ul>
+          <li><a href="/hackathon/archive/revenue-contest-2026">The contest page</a></li>
+          <li><a href="/hackathon/archive/revenue-contest-2026-rules">The official rules</a></li>
+        </ul>
+        <p>
+          The commission carries on as the
+          <a href="/affiliates">ForkMesh affiliate program</a>, which is open
+          all year.
+        </p>
+      </div>
+
+      <section id="final-cta" aria-labelledby="final-cta-title">
+        <div class="final-cta-frame">
+          <div class="final-cta-grid" aria-hidden="true"></div>
+          <div class="final-cta-content">
+            <h2 id="final-cta-title">The next one is already running.</h2>
+            <p>Build a plugin for ForkMesh. The first 10 to reach 10 ratings win 0.1 SOL each.</p>
+            <div class="final-cta-actions">
+              <a class="button-primary" href="/hackathon">See the Plugin Race</a>
+              <a class="button-outline" href="/affiliates">Become an affiliate</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div data-forkmesh-footer="landing" data-forkmesh-footer-word="hidden"></div>
+    </main>
+  </body>
+</html>

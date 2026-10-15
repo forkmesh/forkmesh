@@ -154,7 +154,10 @@ through `app/src/plugin_data.py`; the module provides `DATA_SCHEMA_UP`,
 `account` (each account installs for itself; account deletion calls
 `purge_account_data`) or `none`. `localData: true` keeps data on the device
 and offers a JSON bundle on removal. Packages may export
-`deliver_reminders(runtime)` for the App's maintenance phase.
+`deliver_reminders(runtime)` for the App's maintenance phase, and
+organization-data packages may export `record_lead(runtime, org, lead)` to
+receive leads from `plugin_data.deliver_lead` (the CRM does, for the
+affiliate program).
 
 ## Packs, guides and Market lists
 

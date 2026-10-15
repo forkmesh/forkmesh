@@ -10,8 +10,25 @@ and sharing earns nothing.
 | Routes, storage, admin page | `app/src/hackathon_runtime.py` |
 | Share cards | `app/src/og_card.py` (`render_hackathon_card`) |
 | Participant HQ | `app/public/dashboard/partials/views/hackathon.html` |
-| Public pages | `www/public/hackathon.html`, `www/public/hackathon/` |
+| Public pages | `www/public/hackathon/leaderboard.html`, `www/public/hackathon/projects.html` |
 | Schema | `app/migrations/0182_hackathon.sql` |
+
+## What /hackathon shows
+
+`/hackathon` and `/hackathon/rules` are the current campaign's pages; they are
+static templates in `www/templates/pages/`. When a campaign ends, its pages
+move under `/hackathon/archive/<slug>` with an "Archived" banner, and
+`/hackathon/archive` lists every finished one.
+
+| Campaign | Dates (UTC) | Pages |
+| --- | --- | --- |
+| Plugin Race | 19 Oct – 18 Dec 2026 | `/hackathon`, `/hackathon/rules`; engine in [docs/app/plugin-race.md](../../docs/app/plugin-race.md) |
+| September Revenue Contest | 15 Sep – 15 Oct 2026 | `/hackathon/archive/revenue-contest-2026`, `/hackathon/archive/revenue-contest-2026-rules`; continued as the [affiliate program](../../docs/app/affiliates.md) |
+
+The archive pages are routed to the website by `WWW_HACKATHON_ARCHIVE_PAGES` in
+`app/src/static_routes.py`; add a new archive slug there. The Plugin Race
+does not use the points engine below, because its finish line is marketplace
+ratings.
 
 ## Lifecycle
 
