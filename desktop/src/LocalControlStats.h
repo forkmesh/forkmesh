@@ -2,12 +2,14 @@
 
 #include "LocalControlHosts.h"
 
+#include <QByteArray>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 
 namespace forkmesh::localcontrol::stats {
 
@@ -90,5 +92,12 @@ QString codemagicTokenVariable();
 qint64 nextUtcMonthStartMs(qint64 nowMs);
 QJsonObject codemagicUsage(const QJsonObject &userReply, qint64 nowMs);
 QString codemagicError(int httpStatus);
+
+constexpr qint64 kAppStoreStatusCacheMs = 60 * 1000;
+constexpr int kAppStoreStatusTimeoutMs = 110 * 1000;
+QString appStoreReportScript();
+QStringList appStoreReportVariables();
+QJsonObject appStoreStatusReply(const QByteArray &output, qint64 nowMs, QString *error);
+QString appStoreReportError(const QByteArray &errorOutput);
 
 } // namespace forkmesh::localcontrol::stats

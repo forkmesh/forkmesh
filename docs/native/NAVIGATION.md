@@ -85,7 +85,7 @@ folder is one slot); Home is always one of them (`ShellBarPrefs.keep`).
   writes no key.
 - **Badge look** (`ShellBarStyle.marks`). `home` (default) draws bar badges
   and activity exactly as `ShellHomeIcon` does, so the bar matches the grid
-  above it: solid blue `ShellHomeCountMark` pills anchored inside the icon's
+  above it: solid accent `ShellHomeCountMark` pills anchored inside the icon's
   top-right corner, the heartbeat count mirrored on the top-left, and
   `ShellHomeActivityRing` tracing the tile (a halo for untiled icons). `plain`
   keeps the older bare blue numbers beside the glyph. Capsule and panel bars
@@ -106,9 +106,19 @@ destination, in sections, with counts and activity:
   `ShellHomeSettingsSheet` and Settings > General > Home screen.
 - Counts come from data already loaded or fetched when Home opens
   (`ShellNavigatorCounts`, at most once a minute; `ShellCounts`); `nil` means
-  unknown and shows no pill; zero shows no pill. Count pills use `fm.count`
-  (blue). Items with live work (`ShellBarItem.active`) show an activity halo
-  drawn from a `TimelineView` (30 fps cap, still with Reduce Motion).
+  unknown and shows no pill; zero shows no pill. Unread pills and the
+  running-agents heartbeat count are solid `fm.accent` (the user's highlight
+  colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
+  (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
+  with live work (`ShellBarItem.active`) show an activity halo drawn from a
+  `TimelineView` (30 fps cap, still with Reduce Motion).
+- The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
+  once per turn of the activity ring (`ShellActivityHalo.turn`), when the
+  ring's bright head passes the top-left corner where the count sits
+  (`ShellHeartbeatCount.crossing`, 225°), so pulse and ring move together.
+  Both read the same wall clock, so they stay in step across separate
+  `TimelineView`s. The operator asked for the accent pills and the synced
+  pulse on 2026-10-15.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With

@@ -19,6 +19,9 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QTimer>
 #include <QSet>
 #include <QUrl>
 
@@ -44,6 +47,9 @@ public:
     QString codemagicToken;
     qint64 codemagicAtMs = 0;
     QList<QPair<int, int>> codemagicWaiting;
+    QJsonObject appStore;
+    qint64 appStoreAtMs = 0;
+    QList<QPair<int, int>> appStoreWaiting;
 };
 
 StatsControlState *statsControlState(QObject *window)
@@ -100,6 +106,102 @@ void fetchCodemagicUsage(QNetworkAccessManager *network, StatsControlState *stat
                 guard->respond(connection, request, usage);
         }
     });
+}
+
+void answerAppStoreWaiting(StatsControlState *state, LocalControlServer *server,
+                           const QJsonObject &reply, const QString &error,
+                           const QString &message)
+{
+    const QList<QPair<int, int>> waiting = std::exchange(state->appStoreWaiting, {});
+    if (!server)
+        return;
+    for (const auto &[connection, request] : waiting) {
+        if (reply.isEmpty())
+            server->respondError(connection, request, error, message);
+        else
+            server->respond(connection, request, reply);
+    }
+}
+
+void fetchAppStoreStatus(StatsControlState *state, LocalControlServer *server,
+                         const QString &root, int connectionId, int requestId)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!state->appStore.isEmpty() && now - state->appStoreAtMs < statsctl::kAppStoreStatusCacheMs) {
+        server->respond(connectionId, requestId, state->appStore);
+        return;
+    }
+    state->appStoreWaiting.append({connectionId, requestId});
+    if (state->appStoreWaiting.size() > 1)
+        return;
+    auto *process = new QProcess(state);
+    process->setWorkingDirectory(root);
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    const QMap<QString, QString> variables = ActionStore::variables();
+    for (const QString &name : statsctl::appStoreReportVariables()) {
+        const QString value = variables.value(name).trimmed();
+        if (!value.isEmpty())
+            environment.insert(name, value);
+    }
+    process->setProcessEnvironment(environment);
+    auto *timer = new QTimer(process);
+    timer->setSingleShot(true);
+    QObject::connect(timer, &QTimer::timeout, process, [process] { process->kill(); });
+    QPointer<StatsControlState> stateGuard(state);
+    QPointer<LocalControlServer> guard(server);
+    QObject::connect(
+        process, &QProcess::finished, state,
+        [process, stateGuard, guard](int exitCode, QProcess::ExitStatus status) {
+            process->deleteLater();
+            if (!stateGuard)
+                return;
+            const QByteArray output = process->readAllStandardOutput();
+            const QByteArray errors = process->readAllStandardError();
+            if (status != QProcess::NormalExit || exitCode != 0) {
+                answerAppStoreWaiting(stateGuard, guard, {},
+                                      QStringLiteral("app_store_report_failed"),
+                                      statsctl::appStoreReportError(errors));
+                return;
+            }
+            QString error;
+            const QJsonObject reply = statsctl::appStoreStatusReply(
+                output, QDateTime::currentMSecsSinceEpoch(), &error);
+            if (!reply.isEmpty()) {
+                stateGuard->appStore = reply;
+                stateGuard->appStoreAtMs = QDateTime::currentMSecsSinceEpoch();
+            }
+            answerAppStoreWaiting(stateGuard, guard, reply, error,
+                                  statsctl::appStoreReportError(errors));
+        });
+    QObject::connect(process, &QProcess::errorOccurred, state,
+                     [process, stateGuard, guard](QProcess::ProcessError error) {
+                         if (error != QProcess::FailedToStart)
+                             return;
+                         process->deleteLater();
+                         if (stateGuard)
+                             answerAppStoreWaiting(stateGuard, guard, {},
+                                                   QStringLiteral("app_store_report_failed"),
+                                                   QStringLiteral("python3 could not start."));
+                     });
+    timer->start(statsctl::kAppStoreStatusTimeoutMs);
+    process->start(QStringLiteral("python3"),
+                   {QStringLiteral("-u"), statsctl::appStoreReportScript(), QStringLiteral("--json")});
+}
+
+QString appStoreReportRoot(const QList<RepositoryRecord> &repositories)
+{
+    QString fallback;
+    for (const RepositoryRecord &repo : repositories) {
+        const QString root = repo.localPath.trimmed();
+        if (root.isEmpty() ||
+            !QFileInfo(QDir(root).filePath(statsctl::appStoreReportScript())).isFile())
+            continue;
+        if (repo.owner == QLatin1String("forkmesh") && repo.name == QLatin1String("forkmesh"))
+            return root;
+        if (fallback.isEmpty())
+            fallback = root;
+    }
+    return fallback;
 }
 
 struct RepoFactsResult {
@@ -391,6 +493,18 @@ void MainWindow::handleLocalControlStatsRequest(int connectionId, int requestId,
             return;
         }
         fetchCodemagicUsage(m_networkAccess, state, server, token, connectionId, requestId);
+        return;
+    }
+    if (method == QLatin1String("stats.appStoreStatus")) {
+        const QString root = appStoreReportRoot(m_repositories);
+        if (root.isEmpty()) {
+            server->respondError(connectionId, requestId,
+                                 QStringLiteral("app_store_report_missing"),
+                                 QStringLiteral("This desktop has no ForkMesh checkout with the "
+                                                "App Store report."));
+            return;
+        }
+        fetchAppStoreStatus(state, server, root, connectionId, requestId);
         return;
     }
     server->respondError(connectionId, requestId, QStringLiteral("unsupported"));
