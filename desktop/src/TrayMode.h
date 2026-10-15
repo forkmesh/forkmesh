@@ -6,6 +6,8 @@
 namespace forkmesh::tray {
 
 QStringList arguments(const QString &project);
+QStringList serviceVariables();
+QStringList scopeArguments(const QString &program, const QString &project);
 bool launch();
 int run(int argc, char *argv[]);
 

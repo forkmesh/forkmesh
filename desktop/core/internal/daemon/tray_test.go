@@ -55,3 +55,22 @@ func TestTrayCommandStartsDesktopBesideEngine(t *testing.T) {
 		t.Fatal("tray for a bad project")
 	}
 }
+
+func TestTrayRunsInItsOwnScopeWithoutTheServiceVariables(t *testing.T) {
+	program, args := scopedTray("linux", "/usr/bin/systemd-run", "/opt/forkmesh", []string{"--tray", "--project", "work"}, "work")
+	want := []string{"--user", "--scope", "--quiet", "--collect", "--unit=forkmesh-tray-work", "--", "/opt/forkmesh",
+		"--tray", "--project", "work"}
+	if program != "/usr/bin/systemd-run" || !reflect.DeepEqual(args, want) {
+		t.Fatalf("%s %v", program, args)
+	}
+	if program, args := scopedTray("linux", "", "/opt/forkmesh", []string{"--tray"}, "work"); program != "/opt/forkmesh" || !reflect.DeepEqual(args, []string{"--tray"}) {
+		t.Fatalf("without systemd-run %s %v", program, args)
+	}
+	if program, _ := scopedTray("darwin", "/usr/bin/systemd-run", "/opt/forkmesh", nil, "work"); program != "/opt/forkmesh" {
+		t.Fatalf("darwin %s", program)
+	}
+	env := withoutServiceVariables([]string{"DISPLAY=:0", "INVOCATION_ID=abc", "JOURNAL_STREAM=8:9", "HOME=/h", "MANAGERPID=1"})
+	if !reflect.DeepEqual(env, []string{"DISPLAY=:0", "HOME=/h"}) {
+		t.Fatalf("env %v", env)
+	}
+}

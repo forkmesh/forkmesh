@@ -114,7 +114,7 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 		m.now = func() int64 { return time.Now().UnixMilli() }
 	}
 	if m.StorePath == "" {
-		m.StorePath = filepath.Join(core.Layout.Data, "local_control", "paired-devices.json")
+		m.StorePath = DevicesPath(core.Layout.Data)
 	}
 	if m.ReceiveDir == "" {
 		m.ReceiveDir = ReceivedFilesDirectory(core.Layout)

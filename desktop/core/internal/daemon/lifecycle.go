@@ -134,6 +134,20 @@ func (c *Core) Restart() {
 	c.Shutdown()
 }
 
+func (c *Core) PreviousStop() (time.Time, bool) {
+	c.life.mu.Lock()
+	defer c.life.mu.Unlock()
+	if c.life.lastExit["kind"] != "clean" {
+		return time.Time{}, false
+	}
+	stopped, _ := c.life.lastExit["stoppedMs"].(float64)
+	restart, _ := c.life.lastExit["restart"].(bool)
+	if stopped <= 0 {
+		return time.Time{}, restart
+	}
+	return time.UnixMilli(int64(stopped)), restart
+}
+
 func markerPath(stateDir string) string { return filepath.Join(stateDir, "running.json") }
 
 func (c *Core) recordStart(stateDir string) {

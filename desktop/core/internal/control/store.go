@@ -6,7 +6,32 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
+
+const phoneRecent = 30 * 24 * time.Hour
+
+func DevicesPath(data string) string {
+	return filepath.Join(data, "local_control", "paired-devices.json")
+}
+
+func PhoneLinked(devices map[string]Device, account string, now time.Time) bool {
+	owner := strings.ToLower(strings.TrimSpace(account))
+	for _, device := range devices {
+		if device.Platform == "web" {
+			continue
+		}
+		user := strings.ToLower(strings.TrimSpace(device.User))
+		if user != "" && owner != "" && user != owner {
+			continue
+		}
+		if device.LastSeenMs > 0 && now.Sub(time.UnixMilli(device.LastSeenMs)) <= phoneRecent {
+			return true
+		}
+	}
+	return false
+}
 
 type Device struct {
 	Key              string

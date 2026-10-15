@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
@@ -91,7 +92,15 @@ void hideFromDock()
 
 void startDetached(const QString &program, const QStringList &arguments)
 {
-    QProcess::startDetached(program, arguments, QDir::homePath());
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    for (const QString &name : serviceVariables())
+        environment.remove(name);
+    QProcess process;
+    process.setProcessEnvironment(environment);
+    process.setWorkingDirectory(QDir::homePath());
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.startDetached();
 }
 
 } // namespace
@@ -101,13 +110,50 @@ QStringList arguments(const QString &project)
     return {QStringLiteral("--tray"), QStringLiteral("--project"), project};
 }
 
+QStringList serviceVariables()
+{
+    return {QStringLiteral("INVOCATION_ID"),  QStringLiteral("JOURNAL_STREAM"),
+            QStringLiteral("SYSTEMD_EXEC_PID"), QStringLiteral("MANAGERPID"),
+            QStringLiteral("NOTIFY_SOCKET"),  QStringLiteral("LISTEN_PID"),
+            QStringLiteral("LISTEN_FDS"),     QStringLiteral("LISTEN_FDNAMES"),
+            QStringLiteral("WATCHDOG_PID"),   QStringLiteral("WATCHDOG_USEC")};
+}
+
+QStringList scopeArguments(const QString &program, const QString &project)
+{
+    return QStringList{QStringLiteral("--user"), QStringLiteral("--scope"), QStringLiteral("--quiet"),
+                       QStringLiteral("--collect"), QStringLiteral("--unit=forkmesh-tray-") + project,
+                       QStringLiteral("--"), program} +
+           arguments(project);
+}
+
 bool launch()
 {
     const QString platform = QGuiApplication::platformName();
     if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal"))
         return false;
-    return QProcess::startDetached(QCoreApplication::applicationFilePath(),
-                                   arguments(paths::projectSlug()), QDir::homePath());
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    const bool underService = !environment.value(QStringLiteral("INVOCATION_ID")).isEmpty();
+    for (const QString &name : serviceVariables())
+        environment.remove(name);
+    const QString project = paths::projectSlug();
+    const QString program = QCoreApplication::applicationFilePath();
+    QProcess process;
+    process.setProcessEnvironment(environment);
+    process.setWorkingDirectory(QDir::homePath());
+    process.setProgram(program);
+    process.setArguments(arguments(project));
+#if defined(Q_OS_LINUX)
+    const QString systemdRun =
+        underService ? QStandardPaths::findExecutable(QStringLiteral("systemd-run")) : QString();
+    if (!systemdRun.isEmpty()) {
+        process.setProgram(systemdRun);
+        process.setArguments(scopeArguments(program, project));
+    }
+#else
+    Q_UNUSED(underService);
+#endif
+    return process.startDetached();
 }
 
 int run(int argc, char *argv[])

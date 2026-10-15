@@ -168,6 +168,24 @@ func (m Manager) writeTrayEntry(engine, project string) error {
 	return writeFile(m.trayEntry(project), TrayDesktopEntry(desktop, project))
 }
 
+func (m Manager) EnsureTrayEntry(project string) (bool, error) {
+	status := m.Status(project)
+	if !status.Enabled || status.Mechanism != MechanismSystemd || status.Binary == "" {
+		return false, nil
+	}
+	if _, err := os.Stat(m.trayEntry(project)); err == nil {
+		return false, nil
+	}
+	desktop := DesktopBinary(m.GOOS, status.Binary)
+	if info, err := os.Stat(desktop); err != nil || info.IsDir() {
+		return false, nil
+	}
+	if err := writeFile(m.trayEntry(project), TrayDesktopEntry(desktop, project)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func validate(binary, project string) error {
 	if !paths.IsValidSlug(project) {
 		return ErrBadProject
