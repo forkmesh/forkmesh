@@ -10,9 +10,9 @@ final class LocalAgentTranscriptTests: XCTestCase {
 
     func testTheDesktopListBecomesRefsReadOverLocalControl() throws {
         let json = try XCTUnwrap(JSON.parse(Data("""
-        {"id":4,"transcript":"Attached image: /home/f/agent-images/paste.png\\nWorking...",
+        {"id":4,"transcript":"Attached image: /home/tester/agent-images/paste.png\\nWorking...",
          "attachments":[{"id":"\(id)","name":"paste.png","mediaType":"image/png","size":2048},
-                        {"id":"/home/f/secret.png","name":"x","mediaType":"image/png"}]}
+                        {"id":"/home/tester/secret.png","name":"x","mediaType":"image/png"}]}
         """.utf8)).objectValue)
         let detail = LocalAgentTranscript.fromJSON(json, sessionId: 4)
         XCTAssertTrue(detail.text.hasPrefix("Attached image:"))
@@ -25,7 +25,7 @@ final class LocalAgentTranscriptTests: XCTestCase {
 
     func testAnOlderDesktopStillShowsWhatTheTranscriptNames() throws {
         let json = try XCTUnwrap(JSON.parse(Data("""
-        {"id":4,"transcript":"Attached image: /home/f/agent-images/paste.png\\nWorking..."}
+        {"id":4,"transcript":"Attached image: /home/tester/agent-images/paste.png\\nWorking..."}
         """.utf8)).objectValue)
         let detail = LocalAgentTranscript.fromJSON(json, sessionId: 4)
         XCTAssertEqual(detail.attachments.map(\.name), ["paste.png"])

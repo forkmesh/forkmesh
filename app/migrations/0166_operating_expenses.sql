@@ -1,6 +1,3 @@
--- Canonical external operating costs. A row owns both the historical expense
--- and the reimbursement liability, so settling the member never erases or
--- duplicates the cost.
 CREATE TABLE IF NOT EXISTS operating_expenses (
     expense_id TEXT PRIMARY KEY,
     vendor TEXT NOT NULL,
@@ -29,31 +26,6 @@ CREATE INDEX IF NOT EXISTS idx_operating_expenses_incurred
     ON operating_expenses(incurred_at DESC, expense_id DESC);
 CREATE INDEX IF NOT EXISTS idx_operating_expenses_reimbursement
     ON operating_expenses(reimbursement_status, incurred_at DESC);
-
--- Cursor invoice paid personally by Kaif. USD is the invoiced amount shown;
--- INR preserves the exact card charge without deriving an exchange rate.
-INSERT OR IGNORE INTO operating_expenses (
-    expense_id,vendor,description,paid_by_name,amount_minor,currency,
-    original_amount_minor,original_currency,external_reference,
-    payment_method_summary,incurred_at,recorded_at,reimbursement_status,
-    reimbursed_at,reimbursement_reference
-) VALUES (
-    'cursor-e45e60f2-0007',
-    'Cursor',
-    'Cursor development subscription',
-    'mdkaifansari04',
-    2360,
-    'USD',
-    234359,
-    'INR',
-    'E45E60F2-0007',
-    '',
-    1785427200000,
-    1788125816000,
-    'outstanding',
-    0,
-    ''
-);
 
 INSERT INTO schema_meta (k, v)
 VALUES (

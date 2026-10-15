@@ -152,7 +152,7 @@ final class ReposTabsTests: XCTestCase {
 
     func testAgentSessionDetailShowsTheDesktopsPictures() async {
         let client = FakeRepoClient()
-        client.transcriptResult = { AgentTranscript(status: "done", transcript: "Attached image: /home/f/shot.png\n") }
+        client.transcriptResult = { AgentTranscript(status: "done", transcript: "Attached image: /home/tester/shot.png\n") }
         let session = AgentSession(id: 5, status: "done")
         let named = RepoAgentSessionModel(client: client, repo: repo, session: session, ownerAccount: "alice")
         await named.start()

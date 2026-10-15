@@ -93,7 +93,7 @@ can log in as `build` on the Mac.
 ## Finding the Mac
 
 The address comes from DHCP. The workflow's first step tries the hint address
-(`MAC_BUILD_HOST`, default `192.168.1.201`), then scans the desktop's /24 for
+(`MAC_BUILD_HOST`, when configured), then scans the desktop's /24 for
 port 22 and tries ssh on each open host. ssh checks the host key by the
 `forkmesh-mac` alias (`HostKeyAlias`, `StrictHostKeyChecking=yes`), so a
 machine with a different key is refused before the key is offered. mDNS is not
@@ -314,7 +314,7 @@ Under Settings -> Secrets & Coves on the operator desktop:
 | `FORKMESH_ACTIONS_ALLOW_NETWORK` | `1` (the Mac is on the LAN) |
 | `MAC_BUILD_SSH_KEY_B64` | `base64 -w0 ~/projects/forkmesh/ssh/mac-build/id_ed25519` |
 | `MAC_BUILD_KNOWN_HOSTS` | the `forkmesh-mac ssh-ed25519 …` line from `~/projects/forkmesh/ssh/mac-build/known_hosts` |
-| `MAC_BUILD_HOST` | optional, the address to try first (default `192.168.1.201`) |
+| `MAC_BUILD_HOST` | optional, the address to try first |
 | `MAC_BUILD_GIT_URL` | optional, where the Mac fetches (default `https://app.forkmesh.com/forkmesh/forkmesh`) |
 
 ## Publisher

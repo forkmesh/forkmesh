@@ -678,7 +678,7 @@ def test_unstick_stops_the_units_before_cleaning_the_mac(monkeypatch, capsys):
     calls = []
 
     class Mac:
-        address = "192.168.1.201"
+        address = "build.test"
 
         def run(self, script, *args, timeout):
             calls.append(("mac", script, args))
@@ -693,7 +693,7 @@ def test_unstick_stops_the_units_before_cleaning_the_mac(monkeypatch, capsys):
 
 
 class IdsMac:
-    address = "192.168.1.201"
+    address = "build.test"
 
     def __init__(self, answer="NAU34ZR27B\nissuer-uuid\n"):
         self.answer = answer

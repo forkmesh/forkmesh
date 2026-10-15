@@ -33,13 +33,13 @@ def test_rules_allow_forkmesh_programs_for_one_user(tmp_path):
         assert json.loads(item["operator"]["data"]) == ops
     regexps = path_regexps(rules)
     programs = regexps["000-forkmesh-programs"]
-    for path in ("/home/f/.cache/fm745/build/forkmesh-chat-transport-tests",
-                 "/home/f/.cache/fm692/debug/ForkMeshCorePackageTests.xctest",
+    for path in ("/home/tester/.cache/build/forkmesh-chat-transport-tests",
+                 "/home/tester/.cache/debug/ForkMeshCorePackageTests.xctest",
                  "/tmp/.mount_ForkMeX1/usr/bin/forkmesh",
-                 "/home/f/.local/bin/forkmesh",
-                 "/home/f/projects/forkmesh/src/desktop/build/ForkMesh"):
+                 "/home/tester/.local/bin/forkmesh",
+                 "/home/tester/projects/forkmesh/src/desktop/build/ForkMesh"):
         assert programs.search(path), path
-    for path in ("/usr/bin/curl", "/usr/bin/ssh", "/home/f/forkmesh/evil/python3"):
+    for path in ("/usr/bin/curl", "/usr/bin/ssh", "/home/tester/forkmesh/evil/python3"):
         assert not programs.search(path), path
     trees = regexps["000-forkmesh-dev-trees"]
     assert trees.search(f"{tmp_path}/projects/forkmesh/src/.worktrees/x/build/chat_transport_copy")

@@ -110,10 +110,10 @@ jobs:
                     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$m/known_hosts"
                     -o HostKeyAlias=forkmesh-mac)
           is_mac() { ssh -n "${ssh_opts[@]}" "build@$1" true >/dev/null 2>&1; }
-          hint="${hint:-192.168.1.201}"
+          hint="${hint:-}"
           address=""
-          echo "Trying $hint"
-          if is_mac "$hint"; then
+          [ -z "$hint" ] || echo "Trying $hint"
+          if [ -n "$hint" ] && is_mac "$hint"; then
             address="$hint"
           else
             own="$(ip -4 -o route get 1.1.1.1 | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
