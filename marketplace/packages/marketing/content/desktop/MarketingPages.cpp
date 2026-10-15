@@ -985,7 +985,9 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
 
     m_redditIdeasPanel = redditPanel(QStringLiteral("Where to post next"));
     m_redditIdeasPanel->setToolTip(QStringLiteral(
-        "Ranked by what the log already knows: open threads waiting for an answer, replies that landed, and whether the subreddit's rules are on file."));
+        "Ranked by what the log already knows: open threads waiting for an answer, replies and posts that landed, and whether the subreddit's rules are on file. "
+        "Draft with ChatGPT opens a prompt with ForkMesh, links tagged for the subreddit, its rules, the posts logged there and how our earlier Reddit posts did; "
+        "log what you post so the next draft learns from it."));
     m_redditPlaces = linkList();
     m_redditIdeasPanel->body()->addWidget(m_redditPlaces);
     m_redditIdeasPanel->body()->addStretch(1);
@@ -2338,6 +2340,7 @@ void MarketingFeature::renderReddit()
         : QStringLiteral("%1 ready · %2 need rules")
               .arg(fullCount(ideas.value(QStringLiteral("ready")).toArray().size()),
                    fullCount(ideas.value(QStringLiteral("rulesMissing")).toArray().size())));
+    const QString draftUrl = text(ideas, "draftUrl");
     QStringList placeLines;
     for (const QJsonValue &value : places) {
         const QJsonObject item = value.toObject();
@@ -2350,12 +2353,17 @@ void MarketingFeature::renderReddit()
         const QJsonObject result = results.value(text(item, "name").toLower());
         if (number(result, "sessions") > 0)
             counts += QStringLiteral(" · %1 visits").arg(fullCount(number(result, "sessions")));
-        placeLines << QStringLiteral("%1 %2<br><span style=\"color:%3; font-size:11px\">%4%5%6</span>")
+        const QString prompt = text(item, "draftPrompt");
+        const QString draft = prompt.isEmpty() || draftUrl.isEmpty() ? QString()
+            : QStringLiteral(" &nbsp;") + link.arg(colors.primary.name(),
+                  escaped(draftUrl + QString::fromLatin1(QUrl::toPercentEncoding(prompt))),
+                  QStringLiteral("Draft with ChatGPT ↗"));
+        placeLines << QStringLiteral("%1 %2%7<br><span style=\"color:%3; font-size:11px\">%4%5%6</span>")
                           .arg(link.arg(colors.primary.name(), escaped(text(item, "url")),
                                         QStringLiteral("<b>r/%1</b>").arg(escaped(text(item, "name")))),
                                muted.arg(colors.muted.name(), escaped(text(item, "reason"))),
                                blockers.isEmpty() ? colors.good.name() : colors.warn.name(), counts, dot,
-                               blockers.isEmpty() ? QStringLiteral("clear to reply") : blockers.join(dot));
+                               blockers.isEmpty() ? QStringLiteral("clear to reply") : blockers.join(dot), draft);
     }
     m_redditPlaces->setText(placeLines.isEmpty()
         ? QStringLiteral("Add subreddits to the watch list to get suggestions.")

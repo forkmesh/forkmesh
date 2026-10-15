@@ -3371,6 +3371,73 @@ def test_the_reddit_desk_says_where_to_post_and_what_to_talk_about():
     assert "- r/selfhosted: 2 open threads waiting for an answer" in report
 
 
+def test_where_to_post_next_drafts_a_chatgpt_prompt_that_learns_from_results():
+    runtime = Runtime()
+    call(runtime.use("PUT", body={"reddit": {"subreddits": ["selfhosted", "git", "homelab"]}}),
+         "/api/marketing/acme/settings")
+    call(runtime.use("POST", body={"subreddit": "selfhosted", "rules": [
+        {"title": "No spam", "description": "Self-promotion in the megathread only."}]}),
+        "/api/marketing/acme/reddit-rules")
+    assert call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/selfhosted/comments/aaa111/best_self_hosted_git/",
+        "title": "Best self-hosted git server for a small team?", "score": 41,
+        "comments": 17}), "/api/marketing/acme/reddit")["status"] == 201
+    for url, title, views, likes in (
+            ("https://www.reddit.com/r/homelab/comments/ccc333/mirror_every_repo/",
+             "I mirror every repo I depend on", 5400, 120),
+            ("https://www.reddit.com/r/git/comments/ddd444/signed_issues/",
+             "Issues stored in the repo", 90, 0)):
+        assert call(runtime.use("POST", body={
+            "url": url, "title": title, "views": views, "likes": likes}),
+            "/api/marketing/acme/posts")["status"] == 201
+
+    ideas = call(runtime.use("GET"), "/api/marketing/acme")["data"]["redditDesk"]["ideas"]
+    assert ideas["draftUrl"] == "https://chatgpt.com/?hints=search&q="
+    places = {item["name"]: item for item in ideas["subreddits"]}
+    assert places["homelab"]["landed"] == 1 and places["git"]["landed"] == 0
+    assert places["homelab"]["score"] > places["git"]["score"], (
+        "a subreddit where a post of ours drew views ranks above one where nothing landed")
+    prompt = places["selfhosted"]["draftPrompt"]
+    assert len(prompt) <= marketing.REDDIT_DRAFT_PROMPT_LIMIT
+    for expected in (
+            "Reddit post for r/selfhosted", "I work on ForkMesh",
+            "https://old.reddit.com/r/selfhosted/about/rules",
+            "1. No spam: Self-promotion in the megathread only.",
+            "utm_source=reddit", "utm_content=selfhosted", "/desktop?",
+            "https://forkmesh.com/forkmesh/forkmesh",
+            "Recent posts there that we logged:",
+            "\"Best self-hosted git server for a small team?\" (41 points, 17 comments)",
+            "Our best results on Reddit so far",
+            "r/homelab", "\"I mirror every repo I depend on\" (5,400 views, 120 points)",
+            "never ask for upvotes"):
+        assert expected in prompt, expected
+    best, weakest = prompt.split("Our weakest results")
+    assert "Issues stored in the repo" not in best.split("Our best results")[1]
+    assert "\"Issues stored in the repo\" (90 views, 0 points)" in weakest, (
+        "a post that drew little lands under the weakest results, not the best")
+    git = places["git"]["draftPrompt"]
+    assert "rules are not on file yet" in git
+    assert "What we already posted in r/git (do not repeat these):" in git
+    assert "utm_content=git" in git
+
+    desk = call(runtime.use("GET"), "/api/marketing/acme/reddit")["data"]["redditDesk"]
+    after = {item["name"]: item for item in desk["ideas"]["subreddits"]}
+    assert "I mirror every repo I depend on" in after["selfhosted"]["draftPrompt"], (
+        "the Reddit desk on its own still knows the team's Reddit posts")
+
+    fresh = Runtime()
+    call(fresh.use("PUT", body={"reddit": {"subreddits": ["linux"]}}),
+         "/api/marketing/acme/settings")
+    alone = call(fresh.use("GET"), "/api/marketing/acme")["data"]["redditDesk"]["ideas"]
+    assert "this draft sets the baseline" in alone["subreddits"][0]["draftPrompt"]
+
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    native = (PACKAGE / "content" / "desktop" / "MarketingPages.cpp").read_text()
+    assert "ideas.draftUrl + encodeURIComponent(item.draftPrompt)" in web
+    assert "QUrl::toPercentEncoding(prompt)" in native
+    assert "Draft with ChatGPT" in web and "Draft with ChatGPT" in native
+
+
 def test_the_clues_the_walk_and_the_engagement_formula_reach_every_surface():
     view = (PACKAGE / "content" / "web" / "view.html").read_text()
     web = (PACKAGE / "content" / "web" / "page.js").read_text()

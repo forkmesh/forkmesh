@@ -124,6 +124,10 @@ destination, in sections, with counts and activity:
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
 - Home is built to fit one screen when possible (`fittedTile`).
+- Without section headers the grid starts 16 pt below the top chrome
+  (`gridTop`, counted in the fit), so the count pills that sit above the
+  first row's icons are not clipped by the bar. The operator asked for this
+  on 2026-10-15; at 8 pt the pills were cut off.
 
 **Top chrome** (`ShellTopBar`). The project icon (`ShellProjectSlot`, 40 pt,
 opens the project drawer), the telemetry strip centred (tiny health-coloured
@@ -573,7 +577,15 @@ when a phrase or answer changes.
 
   Apple requires the app's name in every phrase and allows ten App Shortcuts
   per app; other intents (Stop all agents, Start a timer, Open agent run, Open
-  inbox, Open approvals) are Shortcuts actions without a built-in phrase. Merge
+  inbox, Open approvals, Start a new iOS build) are Shortcuts actions without a
+  built-in phrase. **Start a new iOS build** (`StartIOSBuildIntent`,
+  `Intents/BuildIntents.swift`) runs the office MacBook's
+  `deploy-native-ios-ad-hoc-mac.sh` through `ShortcutsStore`, the same
+  prepare/run pair as the Desktops page's iOS button (`BuildMacShortcut`): a
+  shortcut keeps the intent's title as its name, so "Hey Siri, start a new iOS
+  build" works without saying ForkMesh. It speaks its own confirmation (the
+  desktop's summary is written for the screen) and declines while that
+  shortcut is already running, since a second run would restart it. Merge
   and delete spend the desktop's confirmation token; the spoken confirmation
   and `.requiresAuthentication` stand in for the in-app Face ID prompt. A cold
   launch from Siri's compose request is picked up in `HomeShell.start()`.

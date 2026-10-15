@@ -55,7 +55,22 @@ The iPhone must be nearby and signed in.
 
 Apple allows ten built-in commands per app, so **Stop all agents**, **Start a
 timer**, **Open agent run**, **Open inbox**, **Open agent approvals**, **Open
-issue** and **Open note** are available in the Shortcuts app only.
+issue**, **Open note** and **Start a new iOS build** are available in the Shortcuts
+app only.
+
+## Start a new iOS build
+
+"Hey Siri, start a new iOS build" builds `main` ad hoc on the Office MacBook
+and emails the install link to the iOS testers, like the iOS button on the
+office MacBook row of the Desktops page. Set it up once:
+
+1. In the Shortcuts app, tap **+**, then **Add Action**, and pick ForkMesh's
+   **Start a new iOS build**.
+2. Keep the shortcut's name, **Start a new iOS build**, and tap **Done**.
+
+Siri asks you to confirm before the build starts, and needs the iPhone
+unlocked and paired with the desktop. If a build is already running, Siri says
+so and leaves it running.
 
 ## Your own phrases
 
