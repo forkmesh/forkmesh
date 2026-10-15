@@ -131,13 +131,13 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         || ("marketingRedditOnly" in node.dataset && page !== "reddit")
         || ("marketingAppStoreOnly" in node.dataset && page !== "app-store")
         || ("marketingChannelsOnly" in node.dataset && page !== "channels")
-        || ("marketingPerformanceOnly" in node.dataset && page !== "performance");
+        || ("marketingWebsiteOnly" in node.dataset && page !== "website");
     });
     const picker = $(`[data-marketing-performance-project]`);
-    if (picker) picker.hidden = !state.marketing.installed || page !== "performance"
+    if (picker) picker.hidden = !state.marketing.installed || page !== "website"
       || (state.marketing.performance?.projects || []).length < 2;
     $$(`[data-marketing-page]`).forEach((button) =>
-      button.setAttribute("aria-pressed", String(button.dataset.marketingPage === (["reddit", "app-store"].includes(page) ? "channels" : page))));
+      button.setAttribute("aria-pressed", String(button.dataset.marketingPage === (["website", "reddit", "app-store"].includes(page) ? "channels" : page))));
   }
 
   function downloadJson(payload, filename) {
@@ -455,7 +455,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-reddit-page]`)?.classList.toggle("hidden", name !== "reddit");
     $(`[data-marketing-app-store-page]`)?.classList.toggle("hidden", name !== "app-store");
     $(`[data-marketing-channels-page]`)?.classList.toggle("hidden", name !== "channels");
-    $(`[data-marketing-performance-page]`)?.classList.toggle("hidden", name !== "performance");
+    $(`[data-marketing-website-page]`)?.classList.toggle("hidden", name !== "website");
     syncHeader();
     if (name === "catalog") renderCatalog();
     if (name === "ads") renderAds();
@@ -463,7 +463,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (name === "reddit") renderReddit();
     if (name === "app-store") { renderAppStore(); void loadAppStore(); }
     if (name === "channels") renderChannelHealth();
-    if (name === "performance") { renderPerformance(); void loadPerformance(); }
+    if (name === "website") { renderPerformance(); void loadPerformance(); }
   }
 
   // ---- Ads manager ----------------------------------------------------------
@@ -902,6 +902,31 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       state.marketing.performance = payload.performance || null; renderPerformance(); }
     catch (error) { message("error", `Could not read campaign results: ${error.message}`); }
   }
+  function renderWebsiteVisits(days, from, to) {
+    const host = $(`[data-marketing-website-visits-chart]`); if (!host) return;
+    const values = new Map((days || []).map(([day, count]) => [Number(day), Number(count)]));
+    const start = startOfDay(from), end = Math.max(start + DAY, startOfDay(to));
+    const points = Array.from({ length: Math.max(2, Math.ceil((end - start) / DAY) + 1) }, (_, index) => {
+      const day = start + index * DAY; return [day, values.get(day) || 0];
+    });
+    if (!values.size) { host.innerHTML = blankslate("chart", "No visits yet", "Visits appear here when Analytics records website traffic."); return; }
+    const W = 720, H = 230, L = 42, R = 12, T = 10, B = 26;
+    const maximum = Math.max(...points.map(([, value]) => value));
+    const step = niceStep(maximum);
+    const top = Math.max(step, Math.ceil(maximum / step) * step);
+    const x = (day) => L + (day - start) / (end - start) * (W - L - R);
+    const y = (value) => T + (1 - value / top) * (H - T - B);
+    let svg = "";
+    for (let value = 0; value <= top; value += step) {
+      svg += `<line x1="${L}" x2="${W - R}" y1="${y(value)}" y2="${y(value)}" style="stroke:var(--mk-line-soft)"/><text x="${L - 7}" y="${y(value) + 3}" text-anchor="end">${fmtCompact(value)}</text>`;
+    }
+    for (let index = 0; index < 4; index += 1) {
+      const day = start + (end - start) * index / 3;
+      svg += `<text x="${x(day)}" y="${H - 7}" text-anchor="${index === 0 ? "start" : index === 3 ? "end" : "middle"}">${escapeHtml(shortDate(day))}</text>`;
+    }
+    svg += `<path d="${points.map(([day, value], index) => `${index ? "L" : "M"}${x(day).toFixed(1)},${y(value).toFixed(1)}`).join("")}" fill="none" style="stroke:var(--mk-s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Visits over time">${svg}</svg>`;
+  }
   function renderPerformance() {
     $$(`[data-marketing-performance-range]`).forEach((button) => button.setAttribute("aria-pressed", String(Number(button.dataset.marketingPerformanceRange) === state.view.performanceDays)));
     const perf = state.marketing.performance; if (!perf) return;
@@ -910,7 +935,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-performance-body]`).hidden = !ready;
     const projects = perf.projects || [], picker = $(`[data-marketing-performance-project]`);
     picker.innerHTML = projects.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}${item.siteDefault ? " · site" : ""}</option>`).join("");
-    picker.hidden = state.view.page !== "performance" || projects.length < 2;
+    picker.hidden = state.view.page !== "website" || projects.length < 2;
     if (perf.project) picker.value = perf.project.id;
     if (!ready) { $(`[data-marketing-performance-setup-list]`).innerHTML = insightItems(perf.insights); return; }
     const totals = perf.totals || {}, previous = perf.previous || {}, goals = (perf.goals || []).length;
@@ -922,6 +947,10 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     stat("bounceRate", fmtShare(totals.bounceRate)); perfDelta("bounceRate", totals.bounceRate, previous.bounceRate, true);
     stat("taggedShare", fmtShare(totals.taggedShare));
     $(`[data-marketing-performance-note="taggedShare"]`).textContent = `${fmtFull(totals.taggedSessions)} carry a campaign`;
+    renderWebsiteVisits(perf.visitsDays, perf.from, perf.to);
+    const terms = perf.keywords || [];
+    $(`[data-marketing-website-search-terms]`).innerHTML = terms.map((row) => `<tr><td title="${escapeHtml((row.topSources || []).map((item) => item.value).join(", "))}">${escapeHtml(row.term)}</td><td class="r mk-num">${fmtFull(row.sessions)}</td><td class="r mk-num">${fmtShare(row.bounceRate)}</td></tr>`).join("");
+    $(`[data-marketing-website-search-terms-empty]`).hidden = terms.length > 0;
     const campaigns = perf.campaigns || [];
     $(`[data-marketing-performance-campaigns-count]`).textContent = campaigns.length ? `${campaigns.length} sources` : "";
     $(`[data-marketing-performance-campaigns]`).innerHTML = campaigns.map((row) => {
@@ -1756,6 +1785,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       factCell("Campaigns", fmtFull(live.length), waiting ? ` <small class="down">${waiting} waiting</small>` : "", live.map((campaign) => campaign.name).join(", "))];
     if (ads.length) facts.push(factCell("Ads live", `${fmtFull(ads.filter((ad) => ad.status === "active").length)}/${fmtFull(ads.length)}`));
     if (channel === "app-store") return appStoreDesk(item);
+    if (channel === "blog") return `<dl class="mk-facts mk-desk" aria-label="Website desk">${facts.join("")}</dl>
+      <p class="mk-hint"><button data-marketing-page="website" type="button" class="mk-link">Open the Website channel</button></p>`;
     if (channel !== "reddit") return `<dl class="mk-facts mk-desk" aria-label="Desk">${facts.join("")}</dl>`;
     const desk = state.marketing.redditDesk || {}, summary = desk.summary || {};
     facts.push(factCell("Threads · 7D", fmtFull(summary.loggedThisWeek || 0), ` <small>${fmtFull(summary.repliedThisWeek || 0)} replied</small>`),
@@ -2183,7 +2214,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     const totals = perf.totals || {}, previous = perf.previous || {}, goals = (perf.goals || []).length;
     kpi("visits", fmtCompact(totals.sessions), changeDelta(totals.sessions, previous.sessions), `${fmtCompact(totals.visitors)} visitors`);
     kpi("conversions", goals ? fmtFull(totals.conversions) : "—", goals ? changeDelta(totals.conversions, previous.conversions) : ["", "—"],
-      goals ? `${fmtShare(totals.conversionRate)} of visits` : "Set a goal on Performance");
+      goals ? `${fmtShare(totals.conversionRate)} of visits` : "Set a goal on Website");
   }
 
   function renderTraffic() {
@@ -3006,7 +3037,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     try { const payload = await request(orgPath());
       applyOverview(payload);
       message("error", ""); render(); void loadTraffic();
-      if (state.view.page === "performance") void loadPerformance();
+      if (state.view.page === "website") void loadPerformance();
       const blog = (state.marketing.settings.channels || []).find((channel) => channel.id === "blog");
       if (blog?.enabled && String(blog.profileUrl || "").trim() &&
           !blog.feed?.lastReadAt && !blog.feed?.lastError) await refreshFeeds(); }
@@ -3080,7 +3111,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const params = new URLSearchParams(location.search);
       const wanted = state.marketing.organizations.find((org) => org.name === params.get("org"));
       state.marketing.organization = (wanted || state.marketing.organizations[0]).name; select.value = state.marketing.organization; await load();
-      if (["performance", "ads", "growth", "reddit", "channels", "app-store"].includes(params.get("page"))) showPage(params.get("page"));
+      const page = params.get("page") === "performance" ? "website" : params.get("page");
+      if (["website", "ads", "growth", "reddit", "channels", "app-store"].includes(page)) showPage(page);
       const wantedCapture = params.get("capture");
       const wantedXSetup = params.get("xsetup") === "1";
       if (wantedCapture || wantedXSetup || params.has("page")) {
@@ -3103,7 +3135,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         state.view.experimentStatus = ""; state.view.redditStatus = "";
         state.view.performanceProject = ""; state.marketing.performance = null;
         capture.jobs.clear(); capture.queue = [];
-        showPage(["performance", "ads", "growth", "reddit", "channels"].includes(state.view.page) ? state.view.page : "dashboard"); void load(); });
+        showPage(["website", "ads", "growth", "reddit", "channels"].includes(state.view.page) ? state.view.page : "dashboard"); void load(); });
     } catch (error) { return message("error", `Marketing is unavailable: ${error.message}`); }
     const view = $(`[data-view="marketing"]`);
     $(`[data-marketing-install]`)?.addEventListener("click", () => void installPlugin());

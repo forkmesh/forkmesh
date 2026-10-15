@@ -596,7 +596,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     nav->setContentsMargins(0, 0, 0, 0);
     nav->setSpacing(6);
     m_pageGroup = new QButtonGroup(this);
-    nav->addWidget(segmented({QStringLiteral("Dashboard"), QStringLiteral("Performance"), QStringLiteral("Channels"),
+    nav->addWidget(segmented({QStringLiteral("Dashboard"), QStringLiteral("Website"), QStringLiteral("Channels"),
                               QStringLiteral("Ads manager"), QStringLiteral("Growth")},
                              m_pageGroup, 0, QStringLiteral("Marketing section")));
     nav->addStretch(1);

@@ -39,7 +39,7 @@ CHANNEL_CATALOG = (
     ("snapchat", "Snapchat", "Social networks"),
     ("threads", "Threads", "Social networks"),
     ("google-business-profile", "Google Business Profile", "Business listings"),
-    ("blog", "Website / Blog", "Owned media"),
+    ("blog", "Website", "Owned media"),
     ("email", "Email", "Direct marketing"),
     ("sms", "SMS", "Direct marketing"),
     ("google-search", "Google", "Search"),
@@ -2451,6 +2451,7 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "reddit": _reddit_performance(results["content"]["rows"], threads, has_goals),
         "channels": _traffic_channels(
             (results.get("source") or results["campaign"])["rows"], has_goals),
+        "visitsDays": _daily_visits(results["source"]["rows"]),
         "keywords": _keyword_rows((results.get("term") or {}).get("rows") or [])})
     perf.update(_channel_page_views(settings, results.get("pages") or {}))
     google = _google_referrer_traffic(results["source"]["rows"])
@@ -2459,6 +2460,14 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
                                                   **google}
     perf["insights"] = _performance_insights(perf)
     return perf
+
+
+def _daily_visits(rows):
+    visits = {}
+    for row in rows:
+        for day, count in row.get("days") or []:
+            visits[day] = visits.get(day, 0) + count
+    return [[day, visits[day]] for day in sorted(visits)]
 
 
 def _channel_page_sections(settings):
