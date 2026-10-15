@@ -18,14 +18,16 @@ import (
 )
 
 const (
-	owner          = "update"
-	actionName     = "updateRestart"
-	subjectName    = "desktop"
-	flushEvery     = 500 * time.Millisecond
-	outputEvery    = 100 * time.Millisecond
-	instanceVar    = "FORKMESH_DESKTOP_INSTANCE"
-	quitWaitTime   = 30 * time.Second
-	relaunchWindow = 20 * time.Minute
+	owner                      = "update"
+	actionName                 = "updateRestart"
+	subjectName                = "desktop"
+	computerRestartActionName  = "computerRestart"
+	computerRestartSubjectName = "computer"
+	flushEvery                 = 500 * time.Millisecond
+	outputEvery                = 100 * time.Millisecond
+	instanceVar                = "FORKMESH_DESKTOP_INSTANCE"
+	quitWaitTime               = 30 * time.Second
+	relaunchWindow             = 20 * time.Minute
 )
 
 type Config struct {
@@ -524,13 +526,35 @@ func actionSummary(agentsRunning int, version string) string {
 	return text
 }
 
+func computerRestartSummary(agentsRunning int) string {
+	text := "Restart this entire computer. ForkMesh and every other running program will stop."
+	if agentsRunning == 1 {
+		text += " 1 agent is running; it is queued again after the restart."
+	} else if agentsRunning > 1 {
+		text += fmt.Sprintf(" %d agents are running; they are queued again after the restart.", agentsRunning)
+	}
+	return text
+}
+
+func restartAction(action string) bool {
+	return action == actionName || action == computerRestartActionName
+}
+
+func restartSubject(action string) string {
+	if action == computerRestartActionName {
+		return computerRestartSubjectName
+	}
+	return subjectName
+}
+
 func paramString(req *rpc.Request, key string) string {
 	value, _ := req.Object()[key].(string)
 	return value
 }
 
 func (m *Module) handlePrepare(ctx context.Context, req *rpc.Request) (any, error) {
-	if paramString(req, "action") != actionName {
+	action := paramString(req, "action")
+	if !restartAction(action) {
 		return nil, rpc.Fail("unknown_action")
 	}
 	if m.running() {
@@ -540,23 +564,27 @@ func (m *Module) handlePrepare(ctx context.Context, req *rpc.Request) (any, erro
 	m.mu.Lock()
 	version, _ := m.versionAndStart()
 	m.mu.Unlock()
-	token := m.confirms.issue(ownergate.DeviceKey(req.Peer), actionName, subjectName, m.now().UnixMilli())
+	summary := actionSummary(agents, version)
+	if action == computerRestartActionName {
+		summary = computerRestartSummary(agents)
+	}
+	token := m.confirms.issue(ownergate.DeviceKey(req.Peer), action, restartSubject(action), m.now().UnixMilli())
 	return map[string]any{
 		"token":       token,
-		"action":      actionName,
-		"subject":     subjectName,
-		"summary":     actionSummary(agents, version),
+		"action":      action,
+		"subject":     restartSubject(action),
+		"summary":     summary,
 		"expiresInMs": confirmationLifetimeMs,
 	}, nil
 }
 
 func (m *Module) handleRun(ctx context.Context, req *rpc.Request) (any, error) {
 	action := paramString(req, "action")
-	verdict := m.confirms.consume(paramString(req, "token"), ownergate.DeviceKey(req.Peer), action, subjectName, m.now().UnixMilli())
+	verdict := m.confirms.consume(paramString(req, "token"), ownergate.DeviceKey(req.Peer), action, restartSubject(action), m.now().UnixMilli())
 	label := ownergate.DeviceLabel(req.Peer)
-	if action != actionName || verdict != confirmOK {
+	if !restartAction(action) || verdict != confirmOK {
 		why := confirmationError(verdict)
-		if action != actionName {
+		if !restartAction(action) {
 			why = "unknown_action"
 		}
 		m.core.LogUI("Refused a rebuild and restart from %s: %s.", label, why)
@@ -564,6 +592,24 @@ func (m *Module) handleRun(ctx context.Context, req *rpc.Request) (any, error) {
 	}
 	if m.running() {
 		return nil, rpc.Fail("already_running")
+	}
+	if action == computerRestartActionName {
+		if !m.hasUI() {
+			return nil, rpc.Fail("desktop_unavailable")
+		}
+		call, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if _, err := m.callUI(call, "ui.update.reboot", map[string]any{"requestedBy": label}); err != nil {
+			m.logf("could not request computer restart from desktop: %v", err)
+			return nil, rpc.Fail("desktop_unavailable")
+		}
+		m.core.LogUI("Computer restart requested from %s.", label)
+		return map[string]any{
+			"started": true,
+			"action":  action,
+			"subject": computerRestartSubjectName,
+			"message": "The computer is restarting.",
+		}, nil
 	}
 	m.core.LogUI("Rebuild and restart requested from %s.", label)
 	m.watch(req.Peer)

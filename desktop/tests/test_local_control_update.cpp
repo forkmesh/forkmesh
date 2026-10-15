@@ -27,6 +27,11 @@ static void testNames()
     check(!none.contains(QLatin1String("agent")), "no agents, no agent note");
     check(actionSummary(1, QString()).contains(QLatin1String("1 agent is running")), "one agent");
     check(actionSummary(3, QString()).contains(QLatin1String("3 agents are running")), "agents");
+    check(computerRestartActionName() == QLatin1String("computerRestart"), "computer action");
+    check(computerRestartSubjectName() == QLatin1String("computer"), "computer subject");
+    check(computerRestartSummary(1).contains(QLatin1String("entire computer")), "computer summary");
+    check(computerRestartSummary(3).contains(QLatin1String("3 agents are running")),
+          "computer summary agents");
 }
 
 static void testLinesSplitAndCarry()

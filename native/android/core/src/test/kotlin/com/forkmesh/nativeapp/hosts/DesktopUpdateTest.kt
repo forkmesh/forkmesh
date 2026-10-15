@@ -63,6 +63,21 @@ class DesktopUpdateTest {
         assertEq(4, store.lines.size, "other families' events are ignored")
     }
 
+    fun testRestartComputerUsesItsOwnConfirmedAction() {
+        val channel = FakeRemoteChannel()
+        channel.replies["update.prepare"] = mapOf(
+            "token" to "reboot", "action" to "computerRestart", "subject" to "computer",
+            "summary" to "Restart this entire computer.",
+        )
+        channel.replies["update.run"] = mapOf("started" to true, "message" to "The computer is restarting.")
+        val store = DesktopUpdateStore(channel, HostsExecutor.Inline)
+        val confirmation = store.prepareComputerRestart()
+        assertEq("computerRestart", channel.last("update.prepare").str("action"))
+        assertEq("The computer is restarting.", store.restartComputer(confirmation))
+        assertEq("computerRestart", channel.last("update.run").str("action"))
+        assertEq(DesktopUpdateStage.Idle, store.stage)
+    }
+
     fun testFailureStopsTracking() {
         val channel = FakeRemoteChannel()
         channel.replies["update.status"] = idleStatus

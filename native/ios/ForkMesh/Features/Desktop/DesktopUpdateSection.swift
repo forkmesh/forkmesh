@@ -5,7 +5,9 @@ import SwiftUI
 struct DesktopUpdateSection: View {
     @Bindable var store: DesktopUpdateStore
     @Binding var pending: PendingConfirmation?
+    @Binding var pendingComputerRestart: PendingConfirmation?
     @State private var preparing = false
+    @State private var preparingComputerRestart = false
     @State private var prepareError = ""
 
     var body: some View {
@@ -32,6 +34,16 @@ struct DesktopUpdateSection: View {
                     }
                 }
                 .disabled(store.busy || preparing || !store.loaded)
+                Button {
+                    Task { await prepareComputerRestart() }
+                } label: {
+                    HStack {
+                        Label("Restart computer", systemImage: "power")
+                        Spacer()
+                        if preparingComputerRestart { ProgressView() }
+                    }
+                }
+                .disabled(store.busy || preparingComputerRestart || !store.loaded)
             }
             DesktopUpdateProgress(store: store)
             if !prepareError.isEmpty {
@@ -43,7 +55,7 @@ struct DesktopUpdateSection: View {
         } header: {
             Text("ForkMesh on this desktop")
         } footer: {
-            Text("Rebuilds ForkMesh from the desktop's source checkout and restarts it, like the desktop's Restart button. The build log streams here while it runs.")
+            Text("Rebuild and restart rebuilds ForkMesh from the desktop's source checkout. Restart computer restarts this entire computer and closes every running program.")
         }
     }
 
@@ -53,6 +65,18 @@ struct DesktopUpdateSection: View {
         do {
             pending = PendingConfirmation(
                 title: "Rebuild and restart", confirmation: try await store.prepare(), destructive: false)
+            prepareError = ""
+        } catch {
+            prepareError = RemoteErrorText.describe(error)
+        }
+    }
+
+    private func prepareComputerRestart() async {
+        preparingComputerRestart = true
+        defer { preparingComputerRestart = false }
+        do {
+            pendingComputerRestart = PendingConfirmation(
+                title: "Restart computer", confirmation: try await store.prepareComputerRestart(), destructive: true)
             prepareError = ""
         } catch {
             prepareError = RemoteErrorText.describe(error)

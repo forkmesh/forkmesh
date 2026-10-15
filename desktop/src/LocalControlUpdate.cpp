@@ -36,6 +36,28 @@ QString actionSummary(int agentsRunning, const QString &version)
     return text;
 }
 
+QString computerRestartActionName()
+{
+    return QStringLiteral("computerRestart");
+}
+
+QString computerRestartSubjectName()
+{
+    return QStringLiteral("computer");
+}
+
+QString computerRestartSummary(int agentsRunning)
+{
+    QString text = QStringLiteral(
+        "Restart this entire computer. ForkMesh and every other running program will stop.");
+    if (agentsRunning == 1)
+        text += QStringLiteral(" 1 agent is running; it is queued again after the restart.");
+    else if (agentsRunning > 1)
+        text += QStringLiteral(" %1 agents are running; they are queued again after the restart.")
+                    .arg(agentsRunning);
+    return text;
+}
+
 QString cleanLine(const QString &line)
 {
     static const QRegularExpression ansi(QStringLiteral("\x1B\\[[0-9;?]*[ -/]*[@-~]"));
