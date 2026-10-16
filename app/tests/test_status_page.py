@@ -3528,12 +3528,19 @@ def test_online_sample_is_weighted_ten_minutes_and_chunks_fifty_nodes():
     async def d1_run(_env, sql, *args):
         calls.append((sql, args))
 
+    credited = []
+
+    async def credit(_env, keys, _now):
+        credited.extend(keys)
+
     runtime = _load(
         "record_online_sample",
         extra_globals={"Date": Clock, "ensure_schema": noop,
-                       "_live_online_nodes": live_nodes, "d1_run": d1_run},
+                       "_live_online_nodes": live_nodes, "d1_run": d1_run,
+                       "_credit_node_uptime": credit},
     )
     assert asyncio.run(runtime["record_online_sample"](object())) is True
+    assert len(credited) == 50
     node_calls = [
         call for call in calls
         if call[0].startswith("INSERT INTO online_hourly_nodes")]
@@ -3550,7 +3557,8 @@ def test_online_sample_is_weighted_ten_minutes_and_chunks_fifty_nodes():
     runtime = _load(
         "record_online_sample",
         extra_globals={"Date": OffClock, "ensure_schema": noop,
-                       "_live_online_nodes": live_nodes, "d1_run": d1_run},
+                       "_live_online_nodes": live_nodes, "d1_run": d1_run,
+                       "_credit_node_uptime": credit},
     )
     before = len(calls)
     assert asyncio.run(runtime["record_online_sample"](object())) is False

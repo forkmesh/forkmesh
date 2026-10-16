@@ -1,0 +1,96 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "video-mix-dj-studio",
+  "name": "Video Mix DJ Studio",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Audio",
+  "version": "1.0.0",
+  "summary": "Mix two YouTube decks with turntables, crossfader, cues, loops, captured sections, tempo and local sampler pads on iOS, desktop and web.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Video Mix DJ Studio showing two video decks, a central crossfader and a saved set panel"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:video-mix-dj-studio",
+    "ios": "builtin:video-mix-dj-studio",
+    "dashboard-view": "content/web/view.html",
+    "dashboard-script": "content/web/page.js",
+    "settings": "builtin:package"
+  },
+  "contributions": [
+    {
+      "socket": "dashboard.page",
+      "entrypoint": "dashboard-view",
+      "config": {
+        "route": "/dashboard/video-mix-dj-studio",
+        "title": "Video Mix DJ Studio",
+        "description": "Mix two YouTube videos with touch turntables, captured sections, cue points, loops, tempo controls, a crossfader and local drum sampler pads.",
+        "script": "dashboard-script",
+        "navigation": {
+          "label": "Video Mix DJ",
+          "icon": "disc-3",
+          "order": 50
+        }
+      }
+    }
+  ],
+  "permissions": [
+    {
+      "id": "network.embed.youtube",
+      "label": "Embed the two YouTube videos you choose so they can be mixed in this browser",
+      "risk": "sensitive"
+    },
+    {
+      "id": "network.search.youtube",
+      "label": "Search public YouTube video indexes from the studio and load a selected result into a deck",
+      "risk": "sensitive"
+    },
+    {
+      "id": "storage.local.write",
+      "label": "Keep your deck choices, cue points, captured sections, sampler level and saved set in this browser only",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Video Mix DJ button to the desktop rail that opens this studio in your browser",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "places": ["mobile", "desktop", "web"]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none"
+  }
+}

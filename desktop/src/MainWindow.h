@@ -3597,6 +3597,11 @@ public:
     {
         return renameAgentAccount(provider, accountId, label);
     }
+    bool testDeleteAgentAccount(const QString &provider,
+                                const QString &accountId)
+    {
+        return deleteAgentAccount(provider, accountId);
+    }
 #endif
 
     ChatBackend *currentBackend() const { return m_backend; }
@@ -6244,7 +6249,9 @@ private:
                              const QString &accent = QString(),
                              const QString &copyLink = QString(),
                              const QString &authorId = QString(),
-                             const std::function<void()> &onDelete = {});
+                             const std::function<void()> &onDelete = {},
+                             const QList<QPair<QString, std::function<void()>>>
+                                 &extraActions = {});
     QWidget *buildRepoSecurityTab();
     QWidget *buildRepoQualityTab();
     QWidget *buildInsightsTab();
@@ -6286,6 +6293,7 @@ private:
     void createDiscussionDialog();
     void postDiscussionComment();
     void deleteDiscussionComment(int number, const QString &eventId);
+    void markDiscussionAnswer(int number, const QString &commentId);
     void setDiscussionStatus(const QString &status);
     void deleteCurrentDiscussion();
     void startDiscussionFromComposer();
@@ -6989,6 +6997,10 @@ private:
     void editAgentAccount(const QString &provider, const QString &accountId);
     bool renameAgentAccount(const QString &provider, const QString &accountId,
                             const QString &label);
+    bool deleteAgentAccount(const QString &provider, const QString &accountId);
+    void confirmDeleteAgentAccount(const QString &provider,
+                                   const QString &accountId);
+    QAction *addAgentUsagePageAction(QMenu *menu);
     void refreshAgentAccountUsageMenu(const QString &provider);
     // The open account menu per provider, so a usage response does not have to
     // findChild() its way through the whole window to find one that is usually
@@ -9688,6 +9700,7 @@ private:
     void showIssueListContextMenu(const QPoint &viewportPos);
     QMenu *buildIssueListContextMenu(int number, QWidget *parent);
     void deleteCurrentIssue();
+    void moveCurrentIssueToTask();
     void deleteCurrentIssueWithHistory(int number);
     void editIssueLabels();
     void editIssueMilestone();
@@ -11210,6 +11223,7 @@ private:
     void showGenieMenu(const QPoint &globalPos);
     void showNextGenieTip();
     void danceGenie();
+    void cheerGenieFor(const QJsonObject &alert);
     GenieDesktopStage *genieStage();
     void releaseGenieToDesktop(const QPoint &grab);
     void moveGenieToDesktop(bool thrown, const QPointF &foot, const QPointF &velocity);
@@ -15134,6 +15148,7 @@ private:
     forkmesh::ui::DiffFileNavigator *m_issueDiffNav = nullptr;  // sticky header + scroll<->select
     QLabel *m_issueFilesChangedSummary = nullptr; // "N files changed" line
     QPushButton *m_issueDeleteButton = nullptr;
+    QPushButton *m_issueMoveToTaskButton = nullptr;
     QLabel *m_issueAgentValue = nullptr;
     QCheckBox *m_issueAgentCreatePrCheck = nullptr;
     QComboBox *m_issueAgentProvider = nullptr;   // Codex | OpenAI API | Claude API | Claude Code
@@ -15148,6 +15163,7 @@ private:
     QString m_currentIssueTitle;
     bool m_issueDeleteConfirmPending = false;
     bool m_issueHistoryDeleteInProgress = false;
+    bool m_issueTaskMoveInFlight = false;
     bool m_keepCurrentOnReload = false;
     int m_selectIssueOnReload = -1;
     // Content signature (.forkmesh/issues/ subtree oid + repo path) of the data the issue

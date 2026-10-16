@@ -13,6 +13,7 @@ public let discussionCategoryLabels: [(key: String, label: String)] = [
     ("ideas", "Ideas"),
     ("help", "Help"),
     ("show-and-tell", "Show & tell"),
+    ("q&a", "Q&A"),
 ]
 
 public enum DiscussionCard {
@@ -43,6 +44,31 @@ public enum DiscussionDetail {
 
     public static func body(_ discussion: RepoDiscussion) -> String {
         discussion.body.isEmpty ? noDescription : discussion.body
+    }
+
+    public static let answerTitle = "Answer"
+    public static let markAnswer = "Mark as answer"
+    public static let clearAnswer = "Clear answer"
+    public static let answerSent = "Answer marked. It shows for everyone once the repository records it."
+    public static let answerCleared = "Answer cleared."
+    public static let answerGuestAction = "mark answers"
+
+    public static func answerable(_ discussion: RepoDiscussion) -> Bool {
+        ["q&a", "qa", "q and a", "q-and-a"].contains(discussion.category.dartTrimmed.lowercased())
+    }
+
+    public static func isAnswer(_ event: DiscussionEvent, in discussion: RepoDiscussion) -> Bool {
+        guard answerable(discussion), let target = discussion.answer?.target, !target.isEmpty else { return false }
+        return event.type == "comment" && event.id == target
+    }
+
+    public static func canMarkAnswer(
+        _ discussion: RepoDiscussion, account: CollabAccount, identityPublicKey: String?, repoOwner: String
+    ) -> Bool {
+        guard answerable(discussion), let identityPublicKey, !identityPublicKey.isEmpty else { return false }
+        if identityPublicKey == discussion.authorKey { return true }
+        let node = account.nodeName?.dartTrimmed.lowercased() ?? ""
+        return !node.isEmpty && node == repoOwner.dartTrimmed.lowercased()
     }
 }
 

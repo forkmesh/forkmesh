@@ -105,7 +105,7 @@ func (m *Module) registerOps(core *daemon.Core) {
 	for method, handler := range ops {
 		core.Registry.Handle(method, m.Name(), m.gate.Wrap(m.armed(handler)))
 	}
-	for _, method := range []string{"agentops.accounts.select", "agentops.accounts.rename", "agentops.accounts.add"} {
+	for _, method := range []string{"agentops.accounts.select", "agentops.accounts.rename", "agentops.accounts.add", "agentops.accounts.delete"} {
 		core.Registry.Handle(method, m.Name(), m.gate.Wrap(m.armed(func(ctx context.Context, req *rpc.Request) (any, error) {
 			return nil, m.delegate(req, false)
 		})))

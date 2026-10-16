@@ -48,6 +48,7 @@
     { "id": "browser-extension", "version": "2.20.0", "manifest": "packages/browser-extension/manifest.json" },
     { "id": "voice-changer", "version": "1.1.0", "manifest": "packages/voice-changer/manifest.json" },
     { "id": "face-changer", "version": "1.2.0", "manifest": "packages/face-changer/manifest.json" },
+    { "id": "video-mix-dj-studio", "version": "1.0.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },
     { "id": "agent-watch", "version": "1.0.0", "manifest": "packages/agent-watch/manifest.json" },
     { "id": "tour", "version": "1.1.0", "manifest": "packages/tour/manifest.json" },
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
@@ -118,10 +119,13 @@
     { "id": "coves", "version": "1.0.0", "manifest": "packages/coves/manifest.json" },
     { "id": "on-device-ai", "version": "1.0.0", "manifest": "packages/on-device-ai/manifest.json" },
     { "id": "activity", "version": "1.0.0", "manifest": "packages/activity/manifest.json" },
+    { "id": "usage", "version": "1.0.0", "manifest": "packages/usage/manifest.json" },
     { "id": "stats", "version": "1.0.0", "manifest": "packages/stats/manifest.json" },
     { "id": "organizations", "version": "1.0.0", "manifest": "packages/organizations/manifest.json" },
     { "id": "world", "version": "1.0.0", "manifest": "packages/world/manifest.json" },
     { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
+    { "id": "feed", "version": "1.0.0", "manifest": "packages/feed/manifest.json" },
+    { "id": "mastodon", "version": "1.0.0", "manifest": "packages/mastodon/manifest.json" },
     { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" }
   ]
 }

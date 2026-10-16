@@ -33,6 +33,11 @@ can merge while the source desktop is offline. Code: `server/merge.go`,
    alone does not make it one. The phones apply the same test when they build a
    merge plan (iOS `pullMergePlan`, Android `PullMergeClient.plan`) and pin the
    ledger commit as the head of a patch-backed pull.
+   The merged record gains `mergedAt` (milliseconds) and, when the merged
+   commits or mbox carry `Co-authored-by` trailers, `coAuthors` (sorted,
+   lowercased emails, at most 16). The executor is never told who asked for
+   the merge, so it writes no `mergedBy`; the relay records the merger for the
+   badge sweep instead ([badges.md](../app/badges.md#record-badges)).
 6. One `update-ref --stdin` transaction moves the base branch, the
    `forkmesh/pulls` compatibility index, the hidden `refs/pr/<n>/metadata` ref
    (now carrying the merged record), and hidden

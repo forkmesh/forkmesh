@@ -34,6 +34,7 @@ import com.forkmesh.nativeapp.collab.IssueEdit
 import com.forkmesh.nativeapp.collab.IssueFields
 import com.forkmesh.nativeapp.collab.IssueLinks
 import com.forkmesh.nativeapp.collab.IssueModelMentions
+import com.forkmesh.nativeapp.collab.IssueTaskMove
 import com.forkmesh.nativeapp.collab.IssueThreadText
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.code.DetailScaffold
@@ -42,8 +43,11 @@ import com.forkmesh.nativeapp.feature.code.ErrorCard
 import com.forkmesh.nativeapp.feature.code.InfoCard
 import com.forkmesh.nativeapp.feature.code.LoadingCard
 import com.forkmesh.nativeapp.feature.code.rememberCopyText
+import com.forkmesh.nativeapp.feature.tools.TaskDetailScreen
+import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.model.Issue
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.tasks.TasksApi
 import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmCheckbox
@@ -73,6 +77,9 @@ internal fun IssueToolsCard(repo: Repository, issue: Issue, navigator: Navigator
     val copy = rememberCopyText(status)
     val writer = remember(repo.fullName) { CodeServices.writer(repo) }
     val checklist = remember(issue.body) { IssueChecklist.items(issue.body) }
+    var canManage by remember(repo.fullName) { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
+    LaunchedEffect(repo.fullName) { canManage = io { CodeServices.canManageIssues(repo) } }
     suspend fun apply(edits: List<IssueEdit>, ok: String): Boolean {
         if (edits.isEmpty()) return false
         val failure = io { runCatching { writer.applyIssue(issue.number, edits) }.exceptionOrNull() }
@@ -134,6 +141,32 @@ internal fun IssueToolsCard(repo: Repository, issue: Issue, navigator: Navigator
             FmToneButton("Agent answer", onPressed = {
                 navigator.push(AgentsFeature.startSheetScreen(IssueModelMentions.agentPrompt(issue.number, issue.title, "")))
             })
+            if (canManage && writer.signer != null) {
+                FmToneButton(if (moving) "Moving…" else "Move to task", onPressed = {
+                    if (moving) return@FmToneButton
+                    scope.launch {
+                        if (!messenger.showConfirmDialog(
+                                "Move issue #${issue.number} to a task?",
+                                body = "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash.",
+                                confirmLabel = "Move to task",
+                                destructive = true,
+                            )
+                        ) return@launch
+                        moving = true
+                        val result = io {
+                            runCatching {
+                                val tasks = TasksApi(CodeServices.api)
+                                IssueTaskMove.move(issue, writer, CodeServices.account) { method, suffix, body -> tasks.call(method, suffix, body) }
+                            }
+                        }
+                        moving = false
+                        result.onSuccess { task ->
+                            navigator.pop()
+                            navigator.push(TaskDetailScreen(task.str("id"), CodeServices.account, canManage))
+                        }.onFailure { status.error(it.message ?: "The issue could not be moved.") }
+                    }
+                }, icon = "checklist")
+            }
             if (IssueFields.canDeleteOwn(issue, CodeServices.identity?.publicKeyB64url.orEmpty())) {
                 FmToneButton("Delete", onPressed = {
                     scope.launch {

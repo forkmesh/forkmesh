@@ -257,6 +257,16 @@ extension ApiService {
         }
     }
 
+    public func canManageIssues(_ owner: String, _ repo: String, account: String, isAdmin: Bool) async -> Bool {
+        if !hasSession { return false }
+        if isAdmin || (!account.isEmpty && account.lowercased() == owner.lowercased()) { return true }
+        do {
+            return try await orgProfile(readOwner(owner, repo)).canManage
+        } catch {
+            return false
+        }
+    }
+
     /// Resolve the object ids a merge of `pull` must pin, or nil when it cannot be merged from
     /// here (not open, refs unknown, a merge trial unavailable or against another base).
     public func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan? {
@@ -286,7 +296,7 @@ extension ApiService {
     /// Merge the pull request described by `plan`. The relay answers 202 while a node works, so
     /// the same request id is re-sent (idempotent) up to 8 times, 750 ms apart; after that the
     /// outcome is `pending`. A refusal throws `AgentLaunchException`.
-    public func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool = false) async throws -> PullMergeOutcome {
+    public func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool = false, deleteHead: Bool = false) async throws -> PullMergeOutcome {
         if !plan.isConsistent {
             throw AgentLaunchException(
                 "This pull request could not be pinned to exact commits, so it was not merged. Refresh and try again.")
@@ -304,6 +314,7 @@ extension ApiService {
             "expectedPullsOid": .string(plan.expectedPullsOid),
         ]
         if overrideReview { body["overrideReview"] = true }
+        if deleteHead { body["deleteHead"] = true }
         body["deployApproval"] = deployApproval(
             kind: "pull", owner: pathOwner, repo: repo, target: String(plan.number), base: plan.expectedBaseOid,
             head: plan.expectedHeadOid, requestId: requestId)

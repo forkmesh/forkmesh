@@ -98,15 +98,15 @@ class RepoCollaborationTest {
 
     fun testOnlyTheDesktopRequestsThatFitThePullsStateAreOffered() {
         assertEq(
-            listOf("pull.merge", "pull.merge_delete", "pull.fix_agent", "pull.close", "pull.delete"),
+            listOf("pull.fix_agent", "pull.close", "pull.delete"),
             PullShipCommands.offered(pull).map { it.command },
         )
         assertEq(
-            listOf("Merge on desktop", "Merge + delete branch", "Fix with agent", "Close", "Delete"),
+            listOf("Fix with agent", "Close", "Delete"),
             PullShipCommands.offered(pull).map { it.chipLabel },
         )
         assertEq(
-            listOf("pull.merge", "pull.fix_agent", "pull.close", "pull.delete"),
+            listOf("pull.fix_agent", "pull.close", "pull.delete"),
             PullShipCommands.offered(pull.copy(head = "")).map { it.command },
         )
         assertEq(listOf("pull.reopen", "pull.delete"), PullShipCommands.offered(pull.copy(status = "closed")).map { it.command })
@@ -203,6 +203,29 @@ class RepoCollaborationTest {
         assertEq(listOf("discussion", "ideas", "alice", "owner/repo"), DiscussionDetail.chips(discussion, "owner/repo").map { it.label })
         assertEq("#3 · ideas · alice", DiscussionCard.subtitle(discussion))
         assertEq("No description provided.", DiscussionDetail.body(discussion.copy(body = "")))
+    }
+
+    fun testOnlyQAndADiscussionsTakeAnAnswerFromTheOpenerOrOwner() {
+        val reply = DiscussionEvent(type = "comment", body = "Use the desktop", id = "reply-1")
+        val question = RepoDiscussion(
+            number = 4,
+            title = "How do I mirror?",
+            category = "Q&A",
+            authorKey = "opener-key",
+            events = listOf(reply),
+            answer = DiscussionEvent(type = "answer", target = "reply-1"),
+        )
+        expect(DiscussionDetail.answerable(question))
+        expect(DiscussionDetail.isAnswer(reply, question))
+        expect(!DiscussionDetail.isAnswer(reply.copy(id = "reply-2"), question))
+        expect(DiscussionDetail.canMarkAnswer(question, "someone", "opener-key", "owner"))
+        expect(DiscussionDetail.canMarkAnswer(question, " Owner ", "other-key", "owner"))
+        expect(!DiscussionDetail.canMarkAnswer(question, "someone", "other-key", "owner"))
+        expect(!DiscussionDetail.canMarkAnswer(question, "owner", null, "owner"))
+        val idea = question.copy(category = "ideas")
+        expect(!DiscussionDetail.answerable(idea))
+        expect(!DiscussionDetail.isAnswer(reply, idea))
+        expect(!DiscussionDetail.canMarkAnswer(idea, "owner", "opener-key", "owner"))
     }
 
     fun testReviewComposersTitleAndValidate() {

@@ -64,11 +64,9 @@ QString ClaudeLoginIdentity::key() const
 
 QString ClaudeLoginIdentity::label() const
 {
-    if (!email.isEmpty())
-        return email;
     if (!displayName.isEmpty())
         return displayName;
-    return accountUuid;
+    return QStringLiteral("Claude account");
 }
 
 QString claudeStateFile(const QString &configDir, bool homeStateFile)
@@ -108,16 +106,15 @@ LoginRoute routeClaudeLogin(const QString &identityKey,
 {
     if (identityKey.isEmpty())
         return {};
-    for (const AccountBinding &account : accounts)
-        if (account.id == requestedId && account.boundKey == identityKey)
-            return {LoginRouteKind::Existing, account.id};
+    if (!requestedId.isEmpty())
+        for (const AccountBinding &account : accounts)
+            if (account.id == requestedId)
+                return {account.boundKey == identityKey ? LoginRouteKind::Existing
+                                                        : LoginRouteKind::Adopt,
+                        account.id};
     for (const AccountBinding &account : accounts)
         if (account.boundKey == identityKey)
             return {LoginRouteKind::Existing, account.id};
-    for (const AccountBinding &account : accounts)
-        if (!requestedId.isEmpty() && account.id == requestedId &&
-            account.boundKey.isEmpty() && !account.signedIn)
-            return {LoginRouteKind::Adopt, account.id};
     return {};
 }
 

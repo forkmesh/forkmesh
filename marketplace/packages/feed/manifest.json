@@ -1,0 +1,22 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "feed",
+  "name": "Feed",
+  "creator": { "id": "did:forkmesh:forkmesh", "handle": "forkmesh", "displayName": "ForkMesh", "verified": true },
+  "type": "extension.native",
+  "category": "Community",
+  "version": "1.0.0",
+  "summary": "A public ActivityPub feed of people’s ForkMesh updates plus verified social replies and mentions from across the network.",
+  "screenshots": [{ "path": "preview/market.svg", "alt": "A feed of verified public federation activity" }],
+  "license": { "model": "free-open-source", "spdx": "MIT", "creatorRetainsOwnership": true, "terms": "Included under the ForkMesh repository licence." },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": { "desktop": "builtin:feed", "dashboard-view": "content/web/view.html", "dashboard-script": "content/web/page.js", "settings": "builtin:package" },
+  "contributions": [{ "socket": "dashboard.page", "entrypoint": "dashboard-view", "config": { "route": "/dashboard/feed", "title": "Network feed", "description": "Public ForkMesh ActivityPub updates plus verified social replies and mentions from the network.", "script": "dashboard-script", "navigation": { "label": "Feed", "icon": "rss", "order": 48 } } }],
+  "permissions": [{ "id": "network.activitypub.feed.read", "label": "Read verified public ActivityPub replies and mentions published to the ForkMesh network", "risk": "low" }, { "id": "external.link.open", "label": "Open a public post or ForkMesh work item after you select it", "risk": "low" }],
+  "dependencies": [{ "id": "world", "version": "1.0.0" }],
+  "trust": { "sourceAvailable": true, "reproducibleBuild": true, "signature": "verified-bundle" },
+  "install": { "bundled": true, "default": false, "sync": "account", "places": ["mobile", "desktop", "web"] },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "none", "localData": false }
+}

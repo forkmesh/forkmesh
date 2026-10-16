@@ -23,7 +23,7 @@ public protocol CollabAPI: AnyObject {
     func compare(_ owner: String, _ name: String, base: String, head: String) async throws -> RepoComparison
     func canMergePulls(_ owner: String, _ repo: String) async -> Bool
     func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan?
-    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool) async throws
+    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool, deleteHead: Bool) async throws
         -> PullMergeOutcome
 }
 
@@ -53,6 +53,9 @@ public protocol CollabInbox: AnyObject {
     func reviewPull(_ owner: String, _ name: String, _ number: Int, _ state: String, _ body: String) async throws
     func submitNewDiscussion(_ owner: String, _ name: String, title: String, body: String, category: String) async throws
     func commentOnDiscussion(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws
+    func markDiscussionAnswer(
+        _ owner: String, _ name: String, _ number: Int, target: String, sessionToken: String
+    ) async throws
     func setThreadSubscription(
         _ owner: String, _ name: String, node: String, source: String, number: Int, subscribed: Bool
     ) async throws

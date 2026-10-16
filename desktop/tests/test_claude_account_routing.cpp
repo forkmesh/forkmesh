@@ -77,8 +77,12 @@ int main(int argc, char **argv)
 
     const ClaudeLoginIdentity jett = readClaudeLoginIdentity(jettState);
     check(jett.isValid() && jett.key() == QStringLiteral("u-jett/o-1") &&
-              jett.label() == QStringLiteral("jett@example.com"),
-          "identity is read from oauthAccount");
+              jett.label() == QStringLiteral("Someone"),
+          "identity is read from oauthAccount and labelled by name, never email");
+    check(ClaudeLoginIdentity{QStringLiteral("u"), QStringLiteral("o"),
+                              QStringLiteral("x@example.com"), QString()}
+                  .label() == QStringLiteral("Claude account"),
+          "an identity without a name is not labelled by its email");
     check(!readClaudeLoginIdentity(root.filePath(QStringLiteral("none.json")))
                .isValid(),
           "a missing state file has no identity");
@@ -91,21 +95,21 @@ int main(int argc, char **argv)
           "the same person in another organization is another account");
 
     const QList<AccountBinding> accounts{
-        {QStringLiteral("default"), QStringLiteral("u-jett/o-1"), true},
-        {QStringLiteral("don"), QStringLiteral("u-don/o-9"), true},
-        {QStringLiteral("empty"), QString(), false},
-        {QStringLiteral("jett2"), QStringLiteral("u-jett/o-1"), true}};
+        {QStringLiteral("default"), QStringLiteral("u-jett/o-1")},
+        {QStringLiteral("don"), QStringLiteral("u-don/o-9")},
+        {QStringLiteral("empty"), QString()},
+        {QStringLiteral("jett2"), QStringLiteral("u-jett/o-1")}};
 
     LoginRoute route = routeClaudeLogin(QStringLiteral("u-don/o-9"),
                                         QStringLiteral("default"), accounts);
-    check(route.kind == LoginRouteKind::Existing &&
-              route.accountId == QStringLiteral("don"),
-          "logging in as an account another profile owns goes to that profile");
+    check(route.kind == LoginRouteKind::Adopt &&
+              route.accountId == QStringLiteral("default"),
+          "logging in on an account keeps the login on that account");
     route = routeClaudeLogin(QStringLiteral("u-jett/o-1"),
                              QStringLiteral("jett2"), accounts);
     check(route.kind == LoginRouteKind::Existing &&
               route.accountId == QStringLiteral("jett2"),
-          "the requested profile wins when it owns the identity");
+          "logging in again as the same identity reuses the account");
     route = routeClaudeLogin(QStringLiteral("u-jett/o-1"), QString(), accounts);
     check(route.kind == LoginRouteKind::Existing &&
               route.accountId == QStringLiteral("default"),
@@ -117,8 +121,15 @@ int main(int argc, char **argv)
           "an unused profile adopts a new identity");
     route = routeClaudeLogin(QStringLiteral("u-new/o-3"),
                              QStringLiteral("default"), accounts);
-    check(route.kind == LoginRouteKind::New && route.accountId.isEmpty(),
-          "a new identity never lands in a profile that holds another one");
+    check(route.kind == LoginRouteKind::Adopt &&
+              route.accountId == QStringLiteral("default"),
+          "a new identity logged in on an account replaces that account's "
+          "login instead of adding an account");
+    route = routeClaudeLogin(QStringLiteral("u-don/o-9"),
+                             QStringLiteral("gone"), accounts);
+    check(route.kind == LoginRouteKind::Existing &&
+              route.accountId == QStringLiteral("don"),
+          "a request for a removed account falls back to the owner");
     route = routeClaudeLogin(QStringLiteral("u-new/o-3"), QString(), accounts);
     check(route.kind == LoginRouteKind::New, "no request means a new profile");
 

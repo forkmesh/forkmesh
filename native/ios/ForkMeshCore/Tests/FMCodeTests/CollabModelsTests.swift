@@ -95,14 +95,16 @@ final class FakeCollabAPI: CollabAPI {
         number: 7, expectedBaseOid: "aaaa", expectedHeadOid: "bbbb", expectedPullsOid: "cccc")
     var mergeResults: [Result<PullMergeOutcome, Error>] = []
     var mergeRequests: [Bool] = []
+    var mergeDeletes: [Bool] = []
 
     func canMergePulls(_ owner: String, _ repo: String) async -> Bool { mergeOwner }
 
     func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan? { mergePlan }
 
-    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool) async throws
+    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool, deleteHead: Bool) async throws
         -> PullMergeOutcome {
         mergeRequests.append(overrideReview)
+        mergeDeletes.append(deleteHead)
         if mergeResults.isEmpty { return PullMergeOutcome(merged: true) }
         return try mergeResults.removeFirst().get()
     }
@@ -174,6 +176,12 @@ final class RecordingInbox: CollabInbox {
     func commentOnDiscussion(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws {
         discussionComment = (number, body)
         try record("discussion comment #\(number)")
+    }
+
+    func markDiscussionAnswer(
+        _ owner: String, _ name: String, _ number: Int, target: String, sessionToken: String
+    ) async throws {
+        try record("answer #\(number) \(target) \(sessionToken.isEmpty ? "unsigned-in" : "session")")
     }
 
     func setThreadSubscription(
@@ -610,6 +618,17 @@ final class CollabModelsTests: XCTestCase {
         XCTAssertEqual(merged, "Merged pull request #7.")
         XCTAssertTrue(model.merged)
         XCTAssertEqual(api.mergeRequests, [false, true])
+    }
+
+    @MainActor func testMergeAndDeleteFromThePhoneUsesThePinnedMerge() async {
+        let api = FakeCollabAPI()
+        let model = PullMergeModel(repo: collabRepo, pull: collabFixturePull, api: api)
+        await model.load()
+
+        let merged = await model.merge(deleteHead: true)
+
+        XCTAssertEqual(merged, "Merged pull request #7 and deleted its branch.")
+        XCTAssertEqual(api.mergeDeletes, [true])
     }
 
     @MainActor func testMergeIsOfferedOnlyToOwnersOfOpenPulls() async {

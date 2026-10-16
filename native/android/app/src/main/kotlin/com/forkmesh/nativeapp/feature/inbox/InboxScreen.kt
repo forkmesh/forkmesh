@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.inbox
 
+import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -75,6 +76,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
+    override val extendsUnderTabBar: Boolean get() = true
+
     override val title: String get() = "Inbox"
     private var loading by mutableStateOf(false)
     private var unreadOnly by mutableStateOf(false)
@@ -225,7 +228,7 @@ class InboxScreen(private val pinnedFilter: InboxFilter?) : Screen() {
                 if (visible.isEmpty() && model.loaded) {
                     FmEmptyState("inbox", filter.emptyMessage)
                 } else {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FmSpace.x6)) {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FmSpace.x6 + LocalShellClearance.current)) {
                         items(visible, key = { it.id }) { item ->
                             SwipeRow(
                                 item = item,

@@ -181,6 +181,7 @@ val PING_KIND_FALLBACK_CATALOG: List<PingKindGroup> = listOf(
             PingKind("tip_sent", "Tips", true),
             PingKind("hackathon_squad", "Hackathon squad progress", false),
             PingKind("hackathon_reward", "Hackathon rewards", false),
+            PingKind("badge", "Badges earned", false),
         ),
     ),
     PingKindGroup(

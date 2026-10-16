@@ -163,12 +163,14 @@ struct AgentsScreen: View {
 
     private var eagleWatch: String {
         guard listView == .eagle, let center = HostsFeature.agents else { return "" }
-        return "eagle:" + center.rows.filter(\.isActive).map(\.id).joined(separator: ",")
+        return "eagle:" + center.rows.map { $0.isActive ? "+" + $0.id : $0.id }.joined(separator: ",")
     }
 
     private func followDialogs() {
         if listView == .eagle, let center = HostsFeature.agents {
-            eagle.follow(center.rows) { ControlWatchFeeds(center) }
+            eagle.follow(center.rows, feeds: { ControlWatchFeeds(center) }) { row in
+                (try? await center.transcript(row, since: 0).text) ?? ""
+            }
         } else {
             eagle.stop()
         }

@@ -1048,6 +1048,7 @@
       desktop_ping: "monitor",
       hackathon_squad: "users",
       hackathon_reward: "gift",
+      badge: "award",
       package_review: "star",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
@@ -1832,6 +1833,12 @@
   }
 
   document.addEventListener("click", async (event) => {
+    const discussionAnswerButton = event.target.closest("[data-repo-discussion-answer]");
+    if (discussionAnswerButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
     if (event.target.closest("[data-repositories-retry]")) {
       const startedAt = interfaceNow();
       const list = $("#repoList");
@@ -3154,6 +3161,11 @@
         void handleWebIssueAction(
           issueSubscriptionButton.dataset.repoIssueSubscription || "subscribe",
         );
+        return;
+      }
+
+      if (event.target.closest("[data-repo-issue-move-to-task]")) {
+        void moveWebIssueToTask(event.target.closest("[data-repo-issue-move-to-task]"));
         return;
       }
 

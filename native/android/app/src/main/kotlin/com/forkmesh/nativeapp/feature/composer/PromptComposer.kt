@@ -2,6 +2,7 @@
 
 package com.forkmesh.nativeapp.feature.composer
 
+import com.forkmesh.nativeapp.ui.kit.fmGlass
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.content.MediaType
@@ -509,9 +510,7 @@ fun PromptComposer(
                 Modifier
                     .padding(bottom = FmSpace.x2)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(FmRadius.lg + 4.dp))
-                    .background(colors.surface)
-                    .border(1.dp, colors.border, RoundedCornerShape(FmRadius.lg + 4.dp))
+                    .fmGlass(RoundedCornerShape(FmRadius.lg + 4.dp), tint = colors.surface)
                     .padding(vertical = FmSpace.x1),
             ) {
                 for (name in matches) {
@@ -544,9 +543,7 @@ fun PromptComposer(
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(ComposerRadius))
-                .background(colors.surface)
-                .border(1.dp, colors.border, RoundedCornerShape(ComposerRadius))
+                .fmGlass(RoundedCornerShape(ComposerRadius), tint = colors.surface)
                 .padding(FmSpace.x3),
         ) {
             header?.invoke()

@@ -120,6 +120,10 @@ void appendEventFields(QStringList &lines, const DiscussionEvent &ev)
         lines << "title: " + ev.title;
         lines << "category: " + ev.category;
     }
+    if (ev.type == "answer") {
+        lines << "target: " + ev.target;
+        lines << "targetAuthor: " + ev.targetAuthor;
+    }
     lines << "sig: " + ev.sig;
 }
 
@@ -133,6 +137,8 @@ DiscussionEvent eventFromFrontMatter(const FrontMatter &fm)
     ev.ts = fm.num("ts");
     ev.title = fm.get("title");
     ev.category = fm.get("category");
+    ev.target = fm.get("target");
+    ev.targetAuthor = fm.get("targetAuthor");
     ev.sig = fm.get("sig");
     ev.body = fm.body;
     return ev;
@@ -150,6 +156,8 @@ QJsonObject DiscussionEvent::toJson() const
         obj.insert("title", title);
         obj.insert("category", category);
     }
+    if (type == "answer")
+        obj.insert("target", target);
     return obj;
 }
 
@@ -163,6 +171,7 @@ DiscussionEvent DiscussionEvent::fromJson(const QJsonObject &obj)
     ev.ts = qint64(obj.value("ts").toDouble());
     ev.title = obj.value("title").toString();
     ev.category = obj.value("category").toString();
+    ev.target = obj.value("target").toString();
     ev.body = obj.value("body").toString();
     ev.sig = obj.value("sig").toString();
     return ev;
@@ -183,6 +192,22 @@ int Discussion::commentCount() const
         if (ev.type == "comment")
             ++count;
     return count;
+}
+
+bool Discussion::answerable() const
+{
+    return DiscussionStore::normalizedCategory(category) ==
+           DiscussionStore::answerCategory();
+}
+
+QString Discussion::answerId() const
+{
+    if (!answerable() || answer.target.isEmpty())
+        return QString();
+    for (const DiscussionEvent &ev : events)
+        if (ev.type == QLatin1String("comment") && ev.id == answer.target)
+            return ev.id;
+    return QString();
 }
 
 DiscussionStore::DiscussionStore(QString workTreePath, QString mirrorPath,
@@ -215,6 +240,11 @@ QStringList DiscussionStore::categories()
     return {"Announcements", "Ideas", "Q&A", "Show and tell", "Maintainer notes"};
 }
 
+QString DiscussionStore::answerCategory()
+{
+    return QStringLiteral("Q&A");
+}
+
 QString DiscussionStore::normalizedCategory(const QString &category)
 {
     const QString trimmed = category.simplified();
@@ -244,6 +274,8 @@ QString DiscussionStore::contentForSigning(const DiscussionEvent &ev)
         return ev.title + nul + ev.body + nul + ev.category;
     if (ev.type == "comment")
         return ev.body;
+    if (ev.type == "answer")
+        return ev.target;
     return QString();
 }
 
@@ -345,7 +377,77 @@ bool DiscussionStore::readDiscussionFile(int number, Discussion &out) const
         if (ef.open(QIODevice::ReadOnly))
             out.events.append(eventFromFrontMatter(parseFrontMatter(ef.readAll())));
     }
+    QFile answerFile(discussionDir(number) + "/answer.md");
+    if (answerFile.open(QIODevice::ReadOnly))
+        out.answer = eventFromFrontMatter(parseFrontMatter(answerFile.readAll()));
     return true;
+}
+
+bool DiscussionStore::writeAnswerFile(int number, const DiscussionEvent &answer,
+                                      QString *error) const
+{
+    QStringList lines;
+    lines << "---";
+    appendEventFields(lines, answer);
+    lines << "---";
+    lines << "";
+    return writeTextFile(discussionDir(number) + "/answer.md",
+                         lines.join('\n') + "\n", error);
+}
+
+bool DiscussionStore::mayMarkAnswer(const Discussion &discussion) const
+{
+    if (!discussion.answerable() || !m_identity || !m_identity->isValid())
+        return false;
+    return canWrite() || discussion.author == m_identity->publicKey();
+}
+
+bool DiscussionStore::applyAnswer(const Discussion &discussion,
+                                  DiscussionEvent answer, QString *error) const
+{
+    if (!discussion.answerable()) {
+        if (error)
+            *error = QStringLiteral("Only Q&A discussions have answers.");
+        return false;
+    }
+    answer.targetAuthor.clear();
+    if (!answer.target.isEmpty()) {
+        for (const DiscussionEvent &ev : discussion.events)
+            if (ev.type == QLatin1String("comment") && ev.id == answer.target)
+                answer.targetAuthor = ev.author;
+        if (answer.targetAuthor.isEmpty()) {
+            if (error)
+                *error = QStringLiteral("That comment is not in this discussion.");
+            return false;
+        }
+    }
+    if (!writeAnswerFile(discussion.number, answer, error))
+        return false;
+    return commit(answer.target.isEmpty()
+                      ? QStringLiteral("discussion #%1: clear answer")
+                            .arg(discussion.number)
+                      : QStringLiteral("discussion #%1: answer").arg(discussion.number),
+                  error);
+}
+
+bool DiscussionStore::markAnswer(int number, const QString &commentId,
+                                 QString *error)
+{
+    if (!canWrite()) {
+        if (error)
+            *error = QStringLiteral("This repository is read-only on this node.");
+        return false;
+    }
+    Discussion discussion;
+    if (!readDiscussionFile(number, discussion)) {
+        if (error)
+            *error = QStringLiteral("Discussion #%1 not found.").arg(number);
+        return false;
+    }
+    DiscussionEvent ev;
+    ev.type = "answer";
+    ev.target = commentId;
+    return applyAnswer(discussion, makeSignedEvent(number, ev), error);
 }
 
 bool DiscussionStore::writeDiscussionFile(const Discussion &discussion,
@@ -604,7 +706,8 @@ bool DiscussionStore::deleteDiscussion(int number, QString *error)
 }
 
 bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
-                                       const QString &titleIfNew, QString *error)
+                                       const QString &titleIfNew, QString *error,
+                                       bool ownerApproved)
 {
     if (!canWrite()) {
         if (error)
@@ -647,6 +750,27 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
                           .arg(ev.authorName.isEmpty() ? ev.author.left(8)
                                                        : ev.authorName),
                       error);
+    }
+
+    if (ev.type == "answer") {
+        Discussion discussion;
+        if (!readDiscussionFile(number, discussion)) {
+            if (error)
+                *error = QStringLiteral("Discussion #%1 not found.").arg(number);
+            return false;
+        }
+        if (ev.author.isEmpty() ||
+            (!ownerApproved && ev.author != discussion.author)) {
+            if (error)
+                *error = QStringLiteral("Only the discussion's author can mark its answer.");
+            return false;
+        }
+        if (!discussion.answer.sig.isEmpty() && discussion.answer.sig == ev.sig)
+            return true;
+        const auto ms = [](qint64 ts) { return ts > 0 && ts < 10000000000LL ? ts * 1000 : ts; };
+        if (ms(discussion.answer.ts) > ms(ev.ts))
+            return true;
+        return applyAnswer(discussion, ev, error);
     }
 
     if (ev.type != "comment") {
@@ -738,6 +862,7 @@ QList<Discussion> DiscussionStore::loadFromMirror(QString *error) const
 
     struct MirrorFiles {
         QString discussionOid;
+        QString answerOid;
         QMap<QString, QString> commentOids; // file name -> blob oid, name-sorted
     };
     QMap<QString, MirrorFiles> filesByDir; // numeric directory name -> files
@@ -769,6 +894,8 @@ QList<Discussion> DiscussionStore::loadFromMirror(QString *error) const
         const QString oid = meta.at(2);
         if (fname == QLatin1String("discussion.md"))
             filesByDir[base].discussionOid = oid;
+        else if (fname == QLatin1String("answer.md"))
+            filesByDir[base].answerOid = oid;
         else if (commentFileRe().match(fname).hasMatch())
             filesByDir[base].commentOids.insert(fname, oid);
         else
@@ -825,6 +952,9 @@ QList<Discussion> DiscussionStore::loadFromMirror(QString *error) const
                 discussion.events.append(
                     eventFromFrontMatter(parseFrontMatter(contentByOid.value(oid))));
         }
+        if (!files.answerOid.isEmpty() && contentByOid.contains(files.answerOid))
+            discussion.answer = eventFromFrontMatter(
+                parseFrontMatter(contentByOid.value(files.answerOid)));
         discussions.append(discussion);
     }
     std::sort(discussions.begin(), discussions.end(),

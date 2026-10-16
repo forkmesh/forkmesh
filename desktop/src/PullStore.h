@@ -85,6 +85,9 @@ struct PullRequest {
     QString creationHeadOid;
     QString mergeBase;
     QString mergeHead;
+    qint64 mergedAt = 0;
+    QString mergedBy;
+    QString coAuthors;
     // Which tool opened this pull, and that tool's own signature over the
     // pull's identity. Written only by the ForkMesh MCP agent tool
     // (tools/forkmesh_mcp_server.py) and never interpreted here — the desktop

@@ -2445,6 +2445,65 @@ async def world_profile_social_handler(env, request):
     }, status=201, cache_control="no-store")
 
 
+async def world_profile_activity_feed_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control="no-store", extra_headers={"allow": "GET"})
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "SELECT o.object_uuid,o.data,o.published,a.data AS actor_data "
+        "FROM ap_objects o JOIN ap_actors a ON a.actor_bi=o.actor_bi "
+        "WHERE a.kind=? ORDER BY o.published DESC LIMIT 80",
+        AP_ACTOR_USER,
+    )
+    items = []
+    for row in rows or []:
+        actor = await decrypt_row(env, row.get("actor_data"))
+        name = clean_string(
+            (actor or {}).get("handle", ""), MAX_NODE_NAME).lower()
+        if not valid_node_name(name):
+            continue
+        _account_bi, account = await _account_row(env, name)
+        if (
+            not account or account.get("status") != "active"
+            or bool(account.get("profile_private"))
+        ):
+            continue
+        record = await decrypt_row(env, row.get("data"))
+        note = (record or {}).get("note")
+        if not isinstance(note, dict):
+            continue
+        content = clean_string(
+            re.sub(r"<[^>]*>", " ", str(note.get("content") or "")), 500)
+        if not content:
+            continue
+        object_uuid = clean_string(row.get("object_uuid"), 80)
+        if not object_uuid:
+            continue
+        items.append({
+            "id": object_uuid,
+            "kind": "update",
+            "author": name,
+            "authorName": name,
+            "authorUrl": "/@" + quote(name),
+            "excerpt": content,
+            "published": max(0, int(row.get("published") or 0)),
+            "remoteUrl": _public_https_url(note.get("url")),
+        })
+        if len(items) >= 50:
+            break
+    return json_response(
+        {"ok": True, "items": items},
+        cache_control="public, max-age=30, stale-while-revalidate=60",
+        extra_headers={
+            "access-control-allow-origin": "*",
+            "x-content-type-options": "nosniff",
+        },
+    )
+
+
 async def world_admin_errors_handler(env, request):
     """Return the admin HUD cursor and, on demand, a bounded error table."""
     method = method_name(request)

@@ -902,6 +902,40 @@
     return data;
   }
 
+  async function submitWebDiscussionAnswer(repo, number, target) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Math.floor(Date.now() / 1000);
+    const cleanTarget = String(target || "");
+    const contentHash = await sha256HexLower(cleanTarget);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}answer\n${number}\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    const event = {
+      type: "answer",
+      id: "answer-web-" + ts,
+      target: cleanTarget,
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number,
+      event,
+      sessionToken: state.session?.sessionToken || "",
+    };
+    return fetchRepoMutation(repo, "discussions", payload);
+  }
+
+  function webIssueKeyPublic() {
+    try {
+      return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");
+    } catch (_) {
+      return "";
+    }
+  }
+
   // Mirrors PullStore::contentForSigning's per-type field order (comment,
   // review, line-comment, thread-comment, thread-reply, thread-state,
   // suggestion-state) and the desktop's pull inbox POST
@@ -1454,6 +1488,82 @@
     }
   }
 
+  function webIssueTaskError(error) {
+    return ({
+      org_member_required: "Only members of this site's organization can create tasks.",
+      invalid_session: "Your sign-in has expired. Sign in again to move this issue.",
+      office_organization_unavailable: "Organization tasks are unavailable right now. Try again later.",
+      payload_too_large: "This issue is too large to move into a task.",
+    })[String(error?.code || "")] || "The task could not be created, so the issue was kept.";
+  }
+
+  function webIssueTaskBody(repo, number, values, body) {
+    const owner = repoPublicOwner(repo) || String(repo.owner || "");
+    const name = String(repo.name || "");
+    const segment = /^[A-Za-z0-9._-]{1,100}$/;
+    const repository = segment.test(owner) && segment.test(name) ? `${owner}/${name}` : "";
+    const source = `Moved from issue ${repository || name}#${number} by ${state.session?.nodeName || "a repository manager"}.`;
+    const text = String(body || "").trim();
+    const room = 4000 - source.length - 2;
+    return {
+      title: String(values.title || `Issue #${number}`).trim().slice(0, 160),
+      details: text ? `${text.length > room ? `${text.slice(0, room - 1)}…` : text}\n\n${source}` : source,
+      repository,
+      department: "general",
+      destination: "department",
+      assigneeKind: "unassigned",
+    };
+  }
+
+  async function moveWebIssueToTask(button = null) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "issues" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const values = detail.parsed?.values || {};
+    const title = String(values.title || `issue #${number}`);
+    if (!await confirmAccountAction({
+      title: `Move issue #${number} “${title}” to a task?`,
+      body: "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash so nothing is left twice.",
+      confirmLabel: "Move to task",
+    })) return;
+    if (button) button.disabled = true;
+    let task = null;
+    try {
+      const created = await orgApiRequest(
+        "POST", "/api/tasks", webIssueTaskBody(repo, number, values, detail.parsed?.body));
+      task = created.task;
+    } catch (error) {
+      if (button) button.disabled = false;
+      showErrorNotice(webIssueTaskError(error));
+      return;
+    }
+    try {
+      const result = await submitWebIssueEvent(repo, number, "delete", { target: "self" });
+      optimisticWebIssueEvent(result.event);
+    } catch (error) {
+      const undone = await orgApiRequest(
+        "DELETE", `/api/tasks/${encodeURIComponent(task.id)}`,
+        { reason: `Issue #${number} could not be deleted.` },
+      ).then(() => true, () => false);
+      if (button) button.disabled = false;
+      showErrorNotice(`${webIssueActionError(error, "delete-issue")} ${undone
+        ? "The new task was moved to trash, so the issue is unchanged."
+        : "The new task could not be removed; delete it from Tasks."}`);
+      return;
+    }
+    state.issuesView.items = (state.issuesView.items || []).filter(
+      (issue) => Number(issue.number) !== number,
+    );
+    state.repoRecordDetail = null;
+    location.assign(`/dashboard/tasks?task=${encodeURIComponent(task.id)}`);
+  }
+
   async function handleWebIssueTitleSubmit(form) {
     const detail = state.repoRecordDetail;
     const title = String(
@@ -1910,6 +2020,49 @@
         hint.className = "text-[10px] text-destructive";
         hint.textContent = webIssueActionError(error);
       }
+    }
+  }
+
+  async function handleDiscussionAnswerClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionAnswerNumber || 0);
+    const target = String(button.dataset.repoDiscussionAnswer || "");
+    const section = button.closest("[data-repo-record-conversation]");
+    const hint = section?.querySelector("[data-repo-discussion-reply-hint]");
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!number) return;
+    button.disabled = true;
+    setHint("Signing and sending…");
+    try {
+      await submitWebDiscussionAnswer(repo, number, target);
+      const detail = state.repoRecordDetail;
+      const parsed = detail?.parsed;
+      if (parsed && Number(detail.number) === number) {
+        parsed.discussionAnswer = target ? { target } : null;
+        const list = section?.querySelector("[data-repo-discussion-conversation]");
+        if (list) {
+          list.innerHTML = renderRepoDiscussionConversation(parsed.discussionConversation || [], {
+            answer: parsed.discussionAnswer,
+            canMark: parsed.discussionAnswerAuthorized,
+            number,
+          });
+          window.lucide?.createIcons();
+        }
+      }
+      setHint(target ? "Answer marked. It shows for everyone once the repository records it." : "Answer cleared.");
+    } catch (error) {
+      button.disabled = false;
+      const code = String(error?.message || "");
+      setHint(
+        code === "bad_signature" ? "Could not verify the answer's signature."
+          : code === "inbox_full" ? "Delivery is temporarily full. Try again later."
+          : "Could not mark the answer. Please try again.",
+        true,
+      );
     }
   }
 

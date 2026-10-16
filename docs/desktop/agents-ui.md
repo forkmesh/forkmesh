@@ -221,9 +221,24 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 ### Provider accounts and usage
 
 - The bottom bar shows the usage meter of the composer's provider. Its menu
-  (`showAgentAccountMenu`) has per-account **Edit**, **Log in**, **Log out**
-  and a terminal button that opens the CLI as that account
+  (`showAgentAccountMenu`) has per-account **Edit**, **Log in**, **Log out**,
+  **Delete** and a terminal button that opens the CLI as that account
   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+- **Delete** (`confirmDeleteAgentAccount`, `deleteAgentAccount`) asks first,
+  switches new agents to the default account if the deleted one was selected,
+  drops the profile, identity, label and cached usage settings, and removes the
+  login file (`.credentials.json` / `auth.json`). The account folder stays: it
+  holds the account's agent history, and running agents and peer messaging
+  (`ClaudePeerMessaging.cpp`) still read it. A login still parked under
+  `claude-login/` is moved to `agent-accounts/<provider>/<id>` so the next
+  sign-in does not re-file it as a new account. The default account is the
+  CLI's own home folder (`~/.claude`, `~/.codex`) and cannot be deleted; sign
+  it out with **Log out**. On macOS a Claude login kept in the Keychain is not
+  touched.
+- Both account popups start with **Open the Usage page**
+  (`addAgentUsagePageAction`), which opens the Usage package's
+  `/dashboard/usage` page (`marketplace/packages/usage`) for every account
+  across the user's desktops. The entry is hidden when no ForkMesh host is set.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the
   window, mark even pace and add a pace note (`usagePaceNote`).
 - **Usage** (`agentUsageButton`, `showAgentUsageMenu`) shows the default
@@ -233,9 +248,18 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 - **Claude account routing.** Each account is tied to one Claude login
   (`accountUuid`/`organizationUuid`, saved under
   `agents/accountIdentity/claude/<account id>`). Logins run in a fresh folder
-  under `<data>/agent-accounts/claude-login/` and are filed by identity;
-  `reconcileClaudeAccountLogins` moves logins made outside ForkMesh. Files
-  move by copy then remove, never by deleting folders.
+  under `<data>/agent-accounts/claude-login/`. **Log in** on an account always
+  files the login on that account, even as a different Claude identity: it
+  replaces that account's login and rebinds it, and never adds an account.
+  **Add account** reuses the account that already holds the identity and only
+  adds one for an identity no account has. A login made outside ForkMesh in an
+  account's folder (`/login` in its terminal) stays there:
+  `reconcileClaudeAccountLogins` rebinds the account to it. Before 2026-10-16
+  a login as another identity was moved into a new account labelled with the
+  email. Files move by copy then remove, never by deleting folders.
+- Accounts are shown by the Claude display name (`oauthAccount.displayName`
+  in the account's `.claude.json`), never the email; a new account with no
+  typed label is named after it.
 
 ### Usage-limit auto-continue
 

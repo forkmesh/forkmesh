@@ -206,6 +206,7 @@ def test_only_verified_public_notes_enter_feed_and_redelivery_deduplicates():
 
     feed = run(api.handle(
         runtime.use("GET"), "/api/world/fediverse-mentions"))
+    assert feed["headers"]["access-control-allow-origin"] == "*"
     item = feed["data"]["items"][0]
     assert item["verifiedPublicActivity"] is True
     assert item["automaticIssueCreation"] is False

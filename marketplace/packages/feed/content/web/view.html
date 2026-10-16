@@ -1,0 +1,15 @@
+<section data-view="feed" class="view active h-full overflow-y-auto">
+  <div class="mx-auto w-full max-w-3xl p-3 sm:p-6">
+    <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-semibold text-foreground">Network feed</h1>
+        <p class="mt-1 text-sm text-muted-foreground">Public ActivityPub updates from people using ForkMesh, plus verified federation replies and mentions.</p>
+      </div>
+      <button data-feed-refresh type="button" class="fm-btn fm-btn-sm"><i data-lucide="refresh-cw"></i>Refresh</button>
+    </header>
+    <p data-feed-notice class="mb-4 text-sm text-muted-foreground" role="status"></p>
+    <div data-feed-list class="overflow-hidden rounded-md border border-border bg-card">
+      <div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the network feed…</div>
+    </div>
+  </div>
+</section>

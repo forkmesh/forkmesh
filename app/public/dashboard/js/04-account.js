@@ -4042,6 +4042,7 @@
       { kind: "tip_sent", label: "Tips", email: true },
       { kind: "hackathon_squad", label: "Hackathon squad progress", email: false },
       { kind: "hackathon_reward", label: "Hackathon rewards", email: false },
+      { kind: "badge", label: "Badges earned", email: false },
     ] },
     { key: "devices", label: "Devices & apps", kinds: [
       { kind: "host_online", label: "Host came online", email: true },
@@ -4949,17 +4950,41 @@
   const profileBadgesLoading = new Set();
 
   const PROFILE_BADGE_SLUG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+  const PROFILE_BADGE_TIERS = ["bronze", "silver", "gold"];
 
-  function profileBadgeMedalSources(slug) {
-    const path = "/assets/badges/" + slug + ".svg";
+  function profileBadgeTier(badge) {
+    const tier = String(badge?.tier || "").trim().toLowerCase();
+    return PROFILE_BADGE_TIERS.includes(tier) ? tier : "";
+  }
+
+  function profileBadgeMedalSources(slug, tier) {
+    const files = tier ? [slug + "-" + tier, slug] : [slug];
     const sources = [];
-    try {
-      const routed = window.ForkMeshAPI?.url?.(path);
-      if (routed) sources.push(routed);
-    } catch (_) {}
-    const local = new URL(path, location.href).href;
-    if (!sources.includes(local)) sources.push(local);
+    files.forEach((file) => {
+      const path = "/assets/badges/" + file + ".svg";
+      try {
+        const routed = window.ForkMeshAPI?.url?.(path);
+        if (routed && !sources.includes(routed)) sources.push(routed);
+      } catch (_) {}
+      const local = new URL(path, location.href).href;
+      if (!sources.includes(local)) sources.push(local);
+    });
     return sources;
+  }
+
+  function profileBadgeTierText(badge) {
+    const tier = String(badge?.tier || "");
+    if (!tier || !Array.isArray(badge?.tiers)) return "";
+    const unit = String(badge.unit || "");
+    const progress = Number(badge.progress) || 0;
+    const parts = [];
+    if (progress > 0) parts.push(progress.toLocaleString() + (unit ? " " + unit : ""));
+    if (badge.nextTier && Number(badge.nextThreshold) > 0) {
+      parts.push(badge.nextTier.charAt(0).toUpperCase() + badge.nextTier.slice(1) + " at " + Number(badge.nextThreshold).toLocaleString());
+    } else {
+      parts.push("Highest level");
+    }
+    return parts.join(" \u00b7 ");
   }
 
   function profileBadgeMedalFallback(badge) {
@@ -4974,7 +4999,7 @@
   function profileBadgeMedal(badge) {
     const slug = String(badge.slug || "").trim().toLowerCase();
     if (!PROFILE_BADGE_SLUG_RE.test(slug)) return profileBadgeMedalFallback(badge);
-    const sources = profileBadgeMedalSources(slug);
+    const sources = profileBadgeMedalSources(slug, profileBadgeTier(badge));
     const medal = document.createElement("img");
     medal.className = "h-12 w-12 shrink-0 select-none";
     medal.width = 48;
@@ -5016,12 +5041,31 @@
         const text = document.createElement("div");
         text.className = "min-w-0";
         const title = document.createElement("p");
-        title.className = "font-semibold leading-5 text-foreground";
-        title.textContent = String(badge.name || badge.slug || "");
+        title.className = "flex items-center gap-2 font-semibold leading-5 text-foreground";
+        const titleText = document.createElement("span");
+        titleText.className = "truncate";
+        titleText.textContent = String(badge.name || badge.slug || "");
+        title.append(titleText);
+        const tier = profileBadgeTier(badge);
+        if (tier) {
+          const chip = document.createElement("span");
+          chip.className = "shrink-0 rounded-full border border-border px-1.5 text-xs font-medium leading-4 text-muted-foreground";
+          chip.dataset.profileBadgeTier = tier;
+          chip.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+          title.append(chip);
+        }
         const detail = document.createElement("p");
         detail.className = "text-xs leading-5 text-muted-foreground";
         detail.textContent = String(badge.description || "");
         text.append(title, detail);
+        const tierText = profileBadgeTierText(badge);
+        if (tierText) {
+          const level = document.createElement("p");
+          level.className = "text-xs leading-5 text-muted-foreground";
+          level.dataset.profileBadgeProgress = "";
+          level.textContent = tierText;
+          text.append(level);
+        }
         if (Number(badge.awardedAt) > 0) {
           const when = document.createElement("p");
           when.className = "text-xs leading-5 text-muted-foreground";

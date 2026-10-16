@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -77,7 +78,8 @@ func newMergeFixtureWith(t *testing.T, extraPullFields ...string) *mergeFixture 
 	run(t, source, "git", "checkout", "-q", "-b", "feature")
 	writeFile(t, filepath.Join(source, "feature.txt"), "feature\n")
 	run(t, source, "git", "add", "feature.txt")
-	run(t, source, "git", "commit", "-q", "-m", "add feature")
+	run(t, source, "git", "commit", "-q", "-m", "add feature", "-m",
+		"Co-authored-by: Pat <Pat@Example.TEST>\nCo-authored-by: Sam Lee <sam@example.test>")
 	run(t, source, "git", "checkout", "-q", "main")
 	run(t, source, "git", "push", "-q", bare, "feature:refs/heads/feature")
 	mainOid := run(t, source, "git", "rev-parse", "main")
@@ -241,7 +243,12 @@ func TestMergeExecutorMergesBranchBackedPullAtomicallyAndIdempotently(t *testing
 	beforeRaw, _ := before.Output()
 	afterRaw, _ := after.Output()
 	expected := strings.Replace(string(beforeRaw), "status: open\n", "status: merged\n", 1)
-	expected = strings.Replace(expected, "\n---\n\nReviewed", "\nmergeBase: "+f.mainOid+"\nmergeHead: "+f.featureOid+"\n---\n\nReviewed", 1)
+	mergedAt := regexp.MustCompile(`\nmergedAt: ([0-9]{13})\n`).FindStringSubmatch(string(afterRaw))
+	if mergedAt == nil {
+		t.Fatalf("merged record has no mergedAt:\n%s", afterRaw)
+	}
+	expected = strings.Replace(expected, "\n---\n\nReviewed", "\nmergeBase: "+f.mainOid+"\nmergeHead: "+f.featureOid+
+		"\nmergedAt: "+mergedAt[1]+"\ncoAuthors: pat@example.test,sam@example.test\n---\n\nReviewed", 1)
 	if string(afterRaw) != expected {
 		t.Fatalf("merged record rewrote more than the lifecycle fields:\n%q\nwant\n%q", afterRaw, expected)
 	}
@@ -367,7 +374,8 @@ func TestMergeExecutorAppliesPatchBackedPullFromTheLedger(t *testing.T) {
 	}
 	pullsAfter := result["pullsAfter"].(string)
 	record := f.show(t, pullsAfter, ".forkmesh/pulls/7/pull.md")
-	if !strings.Contains(record, "status: merged") || strings.Contains(record, "mergeHead:") {
+	if !strings.Contains(record, "status: merged") || strings.Contains(record, "mergeHead:") ||
+		!regexp.MustCompile(`\nmergedAt: [0-9]{13}\n`).MatchString(record) {
 		t.Fatalf("patch-backed record:\n%s", record)
 	}
 	listing := run(t, ".", "git", "--git-dir="+f.bare, "ls-tree", "--name-only", pullsAfter, ".forkmesh/pulls/7/")

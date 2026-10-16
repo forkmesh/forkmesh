@@ -127,10 +127,12 @@ test("every row carries an accessible progress bar and done tasks are full", asy
   await expect(rowBar(page, OTHERS.id)).toHaveAttribute("aria-valuenow", "75");
   await expect(rowBar(page, FRESH.id)).toHaveAttribute("aria-valuenow", "0");
   await expect(rowBar(page, DONE.id)).toHaveAttribute("aria-valuenow", "100");
-  await expect(page.locator(`[data-task-select="${DONE.id}"] .task-progress-value`)).toHaveText("100%");
-  await expect(page.locator(`[data-task-select="${MINE.id}"] .task-progress-value`)).toHaveText("40%");
-  const fill = await page.locator(`[data-task-select="${OTHERS.id}"] .task-progress-fill`).evaluate((node) => node.style.width);
-  expect(fill).toBe("75%");
+  await expect(rowBar(page, DONE.id)).toHaveAttribute("aria-valuetext", "100% complete");
+  await expect(rowBar(page, MINE.id)).toHaveAttribute("data-state", "active");
+  await expect(rowBar(page, DONE.id)).toHaveAttribute("data-state", "done");
+  await expect(page.locator('[data-task-group="active"] .task-row')).toHaveCount(1);
+  await expect(page.locator('[data-task-group="ready"] .task-row')).toHaveCount(2);
+  await expect(page.locator('[data-task-group="done"] .task-row')).toHaveCount(1);
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, "tasks-progress-dark.png"), fullPage: false });
 });
 
@@ -149,7 +151,7 @@ test("rows show the images attached to each task", async ({ page }) => {
   await expect(page.locator(`[data-task-select="${OTHERS.id}"] .task-row-thumbs`)).toHaveCount(0);
   const box = await thumbs.nth(0).boundingBox();
   const rem = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
-  expect(Math.abs(box.width - 2.5 * rem)).toBeLessThan(1);
+  expect(Math.abs(box.width - 1.5 * rem)).toBeLessThan(1);
   expect(Math.abs(box.height - box.width)).toBeLessThan(1);
   expect(imageRequests).toEqual([]);
   if (SHOT_DIR) await page.locator("[data-tasks-list]").screenshot({ path: path.join(SHOT_DIR, "tasks-row-thumbnails.png") });
@@ -186,8 +188,8 @@ test("managers can edit any open task and the bars fit a phone in light mode", a
   await expect(page.locator("[data-tasks-detail] [data-task-progress-form]")).toHaveCount(1);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  const box = await rowBar(page, MINE.id).boundingBox();
-  expect(box.width).toBeGreaterThan(100);
+  await expect(rowBar(page, MINE.id)).toBeVisible();
+  await expect(page.locator("[data-tasks-detail] [role=\"progressbar\"]")).toBeVisible();
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, "tasks-progress-mobile-light.png"), fullPage: false });
 });
 

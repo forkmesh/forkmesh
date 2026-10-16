@@ -172,8 +172,9 @@ fun FmBottomActionBar(
     Box(
         modifier
             .fillMaxWidth()
-            .background(Fm.colors.bgRaised)
             .windowInsetsPadding(fmSafeAreaInsets(top = false))
+            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x1)
+            .fmGlass(RoundedCornerShape(FmRadius.lg * 2))
             .padding(padding ?: PaddingValues(FmSpace.x4)),
     ) {
         content()

@@ -115,7 +115,7 @@ struct AgentLineRow: View {
                     if let eagleFeed {
                         AgentEagleLine(feed: eagleFeed, line: line)
                     } else {
-                        AgentEagleStrip(dialog: dialog)
+                        AgentEagleStrip(dialog: dialog, moving: line.isActive)
                     }
                 }
                 .frame(height: 12)
@@ -272,7 +272,8 @@ struct AgentEagleLine: View {
     let line: AgentLine
 
     var body: some View {
-        AgentEagleStrip(dialog: feed.dialog(line))
+        AgentEagleStrip(dialog: feed.dialog(line), moving: line.isActive)
+            .task(id: line.isActive) { feed.recall(line) }
     }
 }
 
@@ -281,6 +282,7 @@ struct AgentEagleStrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.shellTabHidden) private var tabHidden
     let dialog: String
+    var moving = true
     @State private var train: [String] = []
     @State private var widths: [String: CGFloat] = [:]
     @State private var showing = false
@@ -306,13 +308,16 @@ struct AgentEagleStrip: View {
         .onChange(of: dialog, initial: true) { (_: String, next: String) in
             offer(next)
         }
+        .onChange(of: moving) { (_: Bool, now: Bool) in
+            restart(now)
+        }
     }
 
     private func width(_ text: String) -> CGFloat { widths[text] ?? 0 }
 
     private var headWidth: CGFloat { train.first.map { width($0) } ?? 0 }
 
-    private var scrolls: Bool { !reduceMotion && headWidth > 0 }
+    private var scrolls: Bool { moving && !reduceMotion && headWidth > 0 }
 
     private var distance: CGFloat { headWidth + Self.gap }
 
@@ -433,6 +438,16 @@ struct AgentEagleStrip: View {
             train = rest
             prune()
             cycleStart = now.addingTimeInterval(-over.truncatingRemainder(dividingBy: max(lap, 0.1)))
+        }
+    }
+
+    private func restart(_ now: Bool) {
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            if !now, let latest = train.last { train = [latest] }
+            prune()
+            cycleStart = Date().addingTimeInterval(Self.hold)
         }
     }
 

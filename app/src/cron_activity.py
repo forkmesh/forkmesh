@@ -131,7 +131,8 @@ CRON_PHASE_CATALOG = (
      "Flag bounce sessions, purge 24h attribution IP digests and expired "
      "attribution rows."),
     ("badge-sweep", 60, (57,), "rewards",
-     "Award the Distinguished Contributor badge to accounts that reached it."),
+     "Read pull and issue records of changed repositories and award "
+     "achievement badges."),
     ("workflow-schedules", 5, (3,), "platform",
      "Run up to three workflows whose schedule trigger is due."),
     ("world-satellites", 180, (11,), "platform",

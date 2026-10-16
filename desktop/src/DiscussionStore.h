@@ -15,6 +15,8 @@ struct DiscussionEvent {
     qint64 ts = 0;
     QString title;
     QString category;
+    QString target;
+    QString targetAuthor;
     QString body;
     QString sig;
 
@@ -31,9 +33,12 @@ struct Discussion {
     QString author;
     QString authorName;
     QList<DiscussionEvent> events;
+    DiscussionEvent answer;
 
     qint64 updatedAt() const;
     int commentCount() const;
+    bool answerable() const;
+    QString answerId() const;
 };
 
 class DiscussionStore
@@ -51,10 +56,13 @@ public:
     bool addComment(int number, const QString &body, QString *error = nullptr);
     bool deleteComment(int number, const QString &eventId, QString *error = nullptr);
     bool setStatus(int number, const QString &status, QString *error = nullptr);
+    bool markAnswer(int number, const QString &commentId, QString *error = nullptr);
+    bool mayMarkAnswer(const Discussion &discussion) const;
     bool deleteDiscussion(int number, QString *error = nullptr);
     bool applyRemoteEvent(int number, const DiscussionEvent &ev,
                           const QString &titleIfNew,
-                          QString *error = nullptr);
+                          QString *error = nullptr,
+                          bool ownerApproved = false);
 
     DiscussionEvent makeSignedEvent(int number, DiscussionEvent ev) const;
     static QByteArray canonicalString(int number, const DiscussionEvent &ev,
@@ -63,6 +71,7 @@ public:
     static QString contentForSigning(const DiscussionEvent &ev);
     static QStringList categories();
     static QString normalizedCategory(const QString &category);
+    static QString answerCategory();
 
 private:
     QString discussionsDir() const;
@@ -70,6 +79,10 @@ private:
     int nextNumber() const;
     bool readDiscussionFile(int number, Discussion &out) const;
     bool writeDiscussionFile(const Discussion &discussion, QString *error) const;
+    bool writeAnswerFile(int number, const DiscussionEvent &answer,
+                         QString *error) const;
+    bool applyAnswer(const Discussion &discussion, DiscussionEvent answer,
+                     QString *error) const;
     bool commit(const QString &message, QString *error) const;
     QByteArray showFromMirror(const QString &repoRelPath, bool *ok) const;
     QString mirrorRef() const;
