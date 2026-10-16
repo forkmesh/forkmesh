@@ -19,6 +19,7 @@ TIER_NAMES = ("default", "bronze", "silver", "gold")
 # meaningful sequence rather than dict-insertion happenstance.
 BADGE_DEFINITIONS = {
     "first_100_users": {
+        "hidden_until_earned": True,
         "name": "Founding Member",
         "description": "One of the first 100 people to create a ForkMesh account.",
         "icon": "\U0001F947",
@@ -74,28 +75,33 @@ BADGE_DEFINITIONS = {
     # ledger actually credited. None of them can be bought, and like every
     # other badge an award is permanent once earned.
     "hackathon_builder": {
+        "hidden_until_earned": True,
         "name": "Hackathon Builder",
         "description": "Submitted a valid project to a ForkMesh hackathon.",
         "icon": "\U0001F528",
     },
     "hackathon_connector": {
+        "hidden_until_earned": True,
         "name": "Hackathon Connector",
         "description": "Brought ten independently active members into a "
                        "ForkMesh hackathon.",
         "icon": "\U0001F578",
     },
     "hackathon_finalist": {
+        "hidden_until_earned": True,
         "name": "Hackathon Finalist",
         "description": "Placed second in a ForkMesh hackathon track.",
         "icon": "\U0001F948",
     },
     "hackathon_ambassador": {
+        "hidden_until_earned": True,
         "name": "Hackathon Ambassador",
         "description": "Approved to represent a ForkMesh hackathon as part of "
                        "its street team.",
         "icon": "\U0001F4E3",
     },
     "hackathon_winner": {
+        "hidden_until_earned": True,
         "name": "Hackathon Winner",
         "description": "Won a ForkMesh hackathon track.",
         "icon": "\U0001F3C6",
@@ -244,6 +250,8 @@ def public_catalog():
     for slug, info in BADGE_DEFINITIONS.items():
         entry = {"slug": slug, "name": info["name"],
                  "description": info["description"], "icon": info["icon"]}
+        if info.get("hidden_until_earned"):
+            entry["hiddenUntilEarned"] = True
         if info.get("tiers"):
             entry["unit"] = info.get("unit", "")
             entry["tiers"] = [{"tier": tier_name(i), "threshold": t}

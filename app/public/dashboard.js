@@ -38708,6 +38708,11 @@
       renderRepoDetail(repo);
     });
   }
+  // initAchievementsPage lives in 09-achievements.js (a per-page chunk).
+  function initAchievementsPage(...args) {
+    return loadDashboardChunk("achievements").then((chunk) => chunk.initAchievementsPage(...args));
+  }
+
   // ---------------------------------------------------------------------------
   // ForkMesh Ads: the first-party, human-reviewed, text-only contextual ad
   // network (Worker side: app/src/ad_network.py). Two surfaces live here:
@@ -42733,6 +42738,7 @@
   // LAZY_CHUNKS). A chunk's factory receives the names it uses from
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
+    "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agents": "/dashboard-page-agents.js?v=228adef39c05",
     "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
@@ -42766,6 +42772,8 @@
     mergeGroupsByPublicAddress,
     orgAgentRequest,
     parseFlexibleDate,
+    profileBadgeMedal,
+    profileBadgeTier,
     publicProfileUrl,
     publicSiteOrigin,
     relativeTimeLabel,
@@ -42857,6 +42865,7 @@
     "workflows": initWorkflowsPage,
     "bounties": initBountiesPage,
     "links": initLinksPage,
+    "achievements": initAchievementsPage,
     "settings": initSettingsPage,
     "profile": initProfileOverviewPage,
     "profile-repositories": initProfileOverviewPage,
