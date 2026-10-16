@@ -1,6 +1,6 @@
 # Report a bug
 
-The Bug button: report a bug in ForkMesh with a screenshot and the app's recent log, from Home or the menu.
+The Bug button: report a bug in ForkMesh with screenshots, videos or other files, from Home or the menu. Reports and attachments stay in ForkMesh's encrypted admin-only support inbox; they are never filed as repository issues.
 
 Surfaces: desktop, iPhone, Android.
 

@@ -25,13 +25,13 @@ public struct BugSeverity: Equatable, Sendable {
 /// What `submitBugReport` is handed (ApiService's signature, as a closure for tests).
 public typealias BugReportSubmit = @MainActor (_ message: String, _ contact: String, _ screen: String, _ severity: String,
                                                _ platform: String, _ appVersion: String, _ osVersion: String,
-                                               _ package: String) async -> BugReportResult
+                                               _ package: String, _ attachments: [BugReportAttachment]) async -> BugReportResult
 
 @MainActor
 @Observable
 public final class ReportBugModel {
     public static let title = "Report a bug"
-    public static let subtitle = "Opens a public issue. Your contact stays private."
+    public static let subtitle = "Sent privately to ForkMesh administrators."
     public static let messageHint = "What happened, and what did you expect instead?"
     public static let severityLabel = "How bad is it?"
     public static let feedbackHint = "What works, what is missing, or what went wrong?"
@@ -47,6 +47,7 @@ public final class ReportBugModel {
     public var message = "" { didSet { if !problem.isEmpty && !message.dartTrimmed.isEmpty { problem = "" } } }
     public var contact = ""
     public var severity = "normal"
+    public var attachments: [BugReportAttachment] = []
     public private(set) var problem = ""
     public private(set) var busy = false
 
@@ -67,9 +68,10 @@ public final class ReportBugModel {
         screen: String = "", package: String = "", packageName: String = "", build: AppBuild, signedIn: Bool, api: ApiService?
     ) {
         let submit: BugReportSubmit? = api.map { api in
-            { message, contact, screen, severity, platform, appVersion, osVersion, package in
+            { message, contact, screen, severity, platform, appVersion, osVersion, package, attachments in
                 await api.submitBugReport(message: message, contact: contact, screen: screen, severity: severity,
-                                          platform: platform, appVersion: appVersion, osVersion: osVersion, package: package)
+                                          platform: platform, appVersion: appVersion, osVersion: osVersion, package: package,
+                                          attachments: attachments)
             }
         }
         self.init(screen: screen, package: package, packageName: packageName, build: build, signedIn: signedIn, submit: submit)
@@ -114,7 +116,7 @@ public final class ReportBugModel {
             problem = "Reporting is unavailable in this build."
             return false
         }
-        let result = await submitter(text, contact, screen, severity, build.platform, build.version, build.osVersion, package)
+        let result = await submitter(text, contact, screen, severity, build.platform, build.version, build.osVersion, package, attachments)
         if !result.ok {
             busy = false
             problem = result.message

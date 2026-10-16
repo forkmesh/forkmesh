@@ -15,6 +15,8 @@ Reads stay bounded. Lists page 50 rows at a time over indexed columns and
 decrypt only the rows on the page, plus the one report that is open.
 """
 
+import base64
+import re
 from urllib.parse import quote
 
 import agent_notes
@@ -112,6 +114,8 @@ async def support_handler(env, request, params, csrf_field="",
         return None
     if method_name(request) == "POST":
         return await _handle_post(env, request, params, admin_query, account)
+    if view == "bugs" and _first(params, "attachment"):
+        return await _bug_attachment_response(env, params)
     shell = _admin_shell
     notice = _first(params, "notice")
     banner = ""
@@ -208,6 +212,42 @@ async def _decrypt(env, value):
     except Exception:
         return {}
     return record if isinstance(record, dict) else {}
+
+
+async def _bug_attachment_response(env, params):
+    report_id = _clean_report_id(_first(params, "report"))
+    attachment_id = _clean_report_id(_first(params, "attachment"))
+    if not report_id or not attachment_id:
+        return _html("Attachment not found.", 404)
+    rows = await _rows(
+        env, "SELECT chunk_index, name, content_type, size, data FROM "
+        "bug_report_attachments WHERE report_id=? AND attachment_id=? "
+        "ORDER BY chunk_index", report_id, attachment_id)
+    if not rows:
+        return _html("Attachment not found.", 404)
+    pieces = []
+    for index, row in enumerate(rows):
+        if int(row.get("chunk_index") if row.get("chunk_index") is not None else -1) != index:
+            return _html("Attachment is incomplete.", 410)
+        record = await _decrypt(env, row.get("data"))
+        try:
+            pieces.append(base64.b64decode(str(record.get("data") or ""),
+                                           validate=True))
+        except Exception:
+            return _html("Attachment is unavailable.", 410)
+    data = b"".join(pieces)
+    if len(data) != int(rows[0].get("size") or 0):
+        return _html("Attachment is incomplete.", 410)
+    content_type = str(rows[0].get("content_type") or "")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}", content_type):
+        content_type = "application/octet-stream"
+    name = re.sub(r"[\r\n\"\\\\]", "_", str(rows[0].get("name") or "attachment"))[:160]
+    return Response(data, headers={
+        "content-type": content_type,
+        "content-disposition": 'attachment; filename="%s"' % name,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+    })
 
 
 async def render_bug_reports(env, params, csrf_field="", admin_query="",
@@ -387,20 +427,6 @@ async def render_bug_reports(env, params, csrf_field="", admin_query="",
     )
 
 
-def _bug_issue_html(record):
-    """Link to the issue bug_reports.py filed the report as, when it did."""
-    repo = str(record.get("issueRepo") or "")
-    try:
-        number = int(record.get("issueNumber") or 0)
-    except (TypeError, ValueError):
-        number = 0
-    if number <= 0 or repo.count("/") != 1:
-        return '<span class="muted">not filed</span>'
-    href = "/%s/issues/%d" % (repo, number)
-    return '<a href="%s">%s#%d</a>' % (
-        _html_escape(href), _html_escape(repo), number)
-
-
 async def _bug_detail(env, row, csrf_field, admin_query, filters, now):
     shell = _admin_shell
     if not row:
@@ -410,6 +436,14 @@ async def _bug_detail(env, row, csrf_field, admin_query, filters, now):
     status = str(row.get("status") or "new")
     account = str(row.get("account") or record.get("account") or "")
     contact = str(record.get("contact") or "")
+    attachments = record.get("attachments") or []
+    attachment_text = ", ".join(
+        '<a href="%s">%s (%s bytes)</a>' % (
+            _href(admin_query, view="bugs", report=report_id,
+                  attachment=item.get("id") or ""),
+            _html_escape(item.get("name") or "attachment"),
+            _html_escape(str(item.get("size") or 0)))
+        for item in attachments if isinstance(item, dict))
     buttons = "".join(
         '<button type="submit" name="bug_status" value="%s" '
         'aria-pressed="%s">%s</button>' % (
@@ -431,7 +465,7 @@ async def _bug_detail(env, row, csrf_field, admin_query, filters, now):
         ("Contact", _html_escape(contact) if contact else
          '<span class="muted">none left</span>'),
         ("Source", _html_escape(row.get("source") or "—")),
-        ("Issue", _bug_issue_html(record)),
+        ("Attachments", attachment_text or '<span class="muted">none</span>'),
         ("Received", "%s · %s" % (
             shell.time_html(row.get("created_at"), now),
             _html_escape(shell.utc_label(row.get("created_at"))))),

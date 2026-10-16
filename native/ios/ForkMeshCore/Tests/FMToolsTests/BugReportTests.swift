@@ -11,15 +11,17 @@ import XCTest
 final class RecordingReports {
     struct Sent {
         let message, contact, screen, severity, platform, appVersion, osVersion, package: String
+        let attachments: [BugReportAttachment]
     }
 
     var answer = BugReportResult(ok: true, id: String(repeating: "a", count: 32), message: "")
     private(set) var sent: [Sent] = []
 
     var submit: BugReportSubmit {
-        { [self] message, contact, screen, severity, platform, appVersion, osVersion, package in
+        { [self] message, contact, screen, severity, platform, appVersion, osVersion, package, attachments in
             self.sent.append(Sent(message: message, contact: contact, screen: screen, severity: severity,
-                                  platform: platform, appVersion: appVersion, osVersion: osVersion, package: package))
+                                  platform: platform, appVersion: appVersion, osVersion: osVersion, package: package,
+                                  attachments: attachments))
             return self.answer
         }
     }

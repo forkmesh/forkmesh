@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.tools
 
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.BugReportResult
+import com.forkmesh.nativeapp.api.BugReportAttachment
 import kotlin.math.max
 
 data class BugButtonPoint(val x: Float, val y: Float)
@@ -119,7 +120,7 @@ data class ReportBugDraft(
     fun refused(message: String): ReportBugDraft = copy(busy = false, problem = message)
 }
 
-fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build: AppBuild, packageId: String? = null): BugReportResult =
+fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build: AppBuild, packageId: String? = null, attachments: List<BugReportAttachment> = emptyList()): BugReportResult =
     api.submitBugReport(
         message = draft.message.trim(),
         contact = draft.contact,
@@ -129,4 +130,5 @@ fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build:
         appVersion = build.version,
         osVersion = build.osVersion,
         packageId = packageId,
+        attachments = attachments,
     )

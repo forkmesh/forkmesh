@@ -56,6 +56,7 @@ import com.forkmesh.nativeapp.model.userStatusErrorMessage
 import com.forkmesh.nativeapp.net.HttpClient
 import com.forkmesh.nativeapp.security.OwnerKeys
 import java.net.SocketTimeoutException
+import java.util.Base64
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -547,6 +548,7 @@ open class ApiService(
         osVersion: String = "",
         device: String = "",
         packageId: String? = null,
+        attachments: List<BugReportAttachment> = emptyList(),
     ): BugReportResult {
         val trimmed = message.trim()
         if (trimmed.isEmpty()) return BugReportResult.failure("Describe the problem first.")
@@ -561,6 +563,12 @@ open class ApiService(
         if (osVersion.isNotEmpty()) payload["osVersion"] = osVersion
         if (device.isNotEmpty()) payload["device"] = device
         packageId?.trim()?.takeIf { it.isNotEmpty() }?.let { payload["package"] = it }
+        if (attachments.isNotEmpty()) {
+            payload["attachments"] = attachments.map { attachment ->
+                linkedMapOf("name" to attachment.name, "contentType" to attachment.contentType,
+                    "data" to Base64.getEncoder().encodeToString(attachment.data))
+            }
+        }
         val response = try {
             exchange(
                 "POST",
