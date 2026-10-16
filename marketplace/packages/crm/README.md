@@ -279,6 +279,16 @@ trial, and a `suggestedStage` (`customer` or `trial`). It never moves a stage
 by itself; a button moves it after confirmation and appends a dated note.
 Evidence is not a column, so exports and shared sheets omit it.
 
+## Teammates on cc
+
+`GET /api/crm/<org>` returns `memberEmails`: the verified addresses of the
+organization's other members, for the viewer only (the host capability
+`organization_member_emails` needs the `organization.members.email` permission,
+the CRM installed for the organization, and the viewer to be a member; at most
+50, active web accounts only). The phone's spider puts them on cc when it opens
+a suggested email (`docs/native/GENIE.md`), so the rest of the team sees each
+outreach. Without the capability the list is empty.
+
 ## Team leaderboard and activity history
 
 - **Team leaderboard**: members ranked over 7 or 30 days by emails sent or

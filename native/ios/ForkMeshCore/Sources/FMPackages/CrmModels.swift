@@ -397,6 +397,7 @@ public struct CrmOrganizationData: Equatable, Sendable {
     public var activity: [CrmActivity]
     public var flows: [CrmFlow]
     public var members: [String]
+    public var memberEmails: [String]
     public var counts: CrmSummaryCounts
     public var revision: String
     public var mail: [CrmMailMessage]
@@ -419,6 +420,7 @@ public struct CrmOrganizationData: Equatable, Sendable {
             if let object = value.objectValue { return object.str("name") }
             return value.text
         }.filter { !$0.isEmpty }
+        memberEmails = json.strings("memberEmails").filter { $0.contains("@") }
         let summary = json.obj("summary")
         counts = CrmSummaryCounts(
             contacts: summary.int("contacts", contacts.count), customers: summary.int("customers"),

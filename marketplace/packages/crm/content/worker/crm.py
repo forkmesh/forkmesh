@@ -1907,6 +1907,7 @@ async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
         "views": await _views(runtime, org_bi, account_bi, actor, role),
         "sharedViews": await _shared_views(runtime, account_bi, actor),
         "members": members,
+        "memberEmails": await _member_emails(runtime, org_bi, account_bi),
         "activity": await _activity(runtime, org_bi, members),
         "decks": await _deck_links(runtime, org_bi),
         "summary": {
@@ -2794,6 +2795,18 @@ async def _org_member_names(runtime, org_bi):
         if name and name not in names:
             names.append(name)
     return names
+
+
+async def _member_emails(runtime, org_bi, account_bi):
+    reader = getattr(runtime, "organization_member_emails", None)
+    if reader is None:
+        return []
+    emails = []
+    for value in await reader(org_bi, account_bi) or []:
+        address = _email(value)
+        if address and address not in emails:
+            emails.append(address)
+    return emails
 
 
 async def _share_bi(runtime, name):
