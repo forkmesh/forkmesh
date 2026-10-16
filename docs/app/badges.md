@@ -19,8 +19,10 @@ platform administrator. An award is permanent. Some badges have levels
 | Medallion generator | `app/tools/build_badge_medallions.py` (`--check` fails when a file is stale) |
 | Hourly sweep | cron phase `badge-sweep` runs `run_badge_sweep` |
 | Activity badges | `BADGE_METRIC_SQL` (one query per badge), `award_metric_badges`, `award_daily_spinner_badges`, `badges.longest_streak` |
+| Record badges | `sweep_badge_records` and its `_sweep_repo_pull_records` / `_sweep_repo_issue_records`, `BADGE_FACT_SQL`, `award_fact_badges`, `_record_web_merge_badge_fact` (called by the web merge in `app/src/route_handlers.py`); readers `pull_record_fact`, `issue_record_fact`, `co_author_emails`, `has_review_file` in `badges.py` |
+| Merge fields in `pull.md` | desktop `PullStore::mergePull` and the landed-pull sweep in `desktop/src/PullStore.cpp`; web merges in `executeMerge`, `server/merge.go` |
 | Node uptime totals | `_credit_node_uptime`, called by `record_online_sample`; table `node_uptime_totals` (migration `0265_node_uptime_totals`) |
-| Tables | `badge_awards` (`tier` 0-3, `tier_at`), `badge_progress` (best value seen per badge and account); migration `0264_badge_tiers` |
+| Tables | `badge_awards` (`tier` 0-3, `tier_at`), `badge_progress` (best value seen per badge and account); migration `0264_badge_tiers`. `badge_pull_facts`, `badge_coauthor_facts`, `badge_repo_sweeps`; migration `0266_badge_pull_facts` |
 | Tests | `app/tests/test_badges.py`, `app/tests/test_cron_runner.py` |
 
 ## Rules
@@ -125,20 +127,110 @@ Rules and limits worth knowing:
 - The first sweeps after deploy backfill existing activity 25 accounts per
   badge per hour, and each award or level-up sends the badge email.
 
-## Badges planned next
+## Record badges
 
-Medallions are already drawn; none of these is in the catalog yet.
-"Sweep" needs the sweep over each repository's `.forkmesh/` records;
-"Feature" needs a product feature first.
+Five badges come from each repository's own `.forkmesh/` records, which the
+server does not otherwise keep: who merged a pull request, when, whether
+anyone reviewed it, and who co-authored it.
+
+| Slug | Name | Earned by | Levels |
+|---|---|---|---|
+| `web_weaver` | Web Weaver | pull requests merged into repositories the author does not own (GitHub: Pull Shark) | 2 / 16 / 128 / 1024 |
+| `many_webs` | Many Webs | distinct repositories, not the author's own, with a merged pull request (Open Sourcerer) | 2 / 8 / 32 / 128 |
+| `quick_silk` | Quick Silk | closed an issue, or merged a pull request, within 5 minutes of it being opened (Quickdraw) | one |
+| `carpet_ride` | Carpet Ride | merged a pull request that had no review, or merged it with the owner's review waiver (YOLO) | one |
+| `eight_hands` | Eight Hands | merged pull requests whose commits name you in a `Co-authored-by` trailer (Pair Extraordinaire) | 1 / 10 / 24 / 48 |
+
+### What the merge writes
+
+A merge adds fields to the pull's `pull.md` header, outside the author's
+signature like `status` and `mergeBase`:
+
+- `mergedAt`: milliseconds since the epoch.
+- `mergedBy`: the merging node's key. Only the desktop writes it; a web merge
+  runs on a mirror that is never told who asked, so the relay stores the
+  merging account itself (below). A pull the desktop finds landed outside
+  ForkMesh gets `mergedAt` (the time the ledger noticed) but no merger.
+- `coAuthors`: the sorted, lowercased emails from `Co-authored-by` trailers
+  in the merged commits (or the mbox of a patch-backed pull), at most 16.
+
+The desktop deletes a pull it closes, so a closed, unmerged pull leaves no
+record and the pull side of Quick Silk is merges only. Issues already carry
+signed `open` and `status` events with times and signers, so they need no
+format change.
+
+### The sweep
+
+The hourly `badge-sweep` phase first runs `sweep_badge_records`:
+
+1. **Which repositories**: public repositories whose newest
+   `repo_state_history` pin is newer than the state they were last fully swept
+   at (`badge_repo_sweeps.state_ts`), least recently swept first, at most
+   `BADGE_RECORD_REPOS_PER_RUN` (4) per run. A web merge resets the
+   repository's `state_ts` so the next sweep reads it.
+2. **Pulls**: the `.forkmesh/pulls` tree on the `forkmesh/pulls` ledger
+   branch, then one `blobs` read for at most `BADGE_RECORD_BATCH` (50) records
+   that are not settled yet, least recently checked first. Per-pull branches
+   that the index has not caught up with are left for a later sweep. A merged
+   pull with a known merger and no review waiver costs one more `tree` read of
+   its folder to look for `NNNN-review.md` event files, at most
+   `BADGE_RECORD_REVIEW_CHECKS` (10) per repository per run.
+3. **Issues**: the `.forkmesh/issues/closed` tree and one `blobs` read for at
+   most 50 closed issues not yet stored. The pre-split layout (numbered
+   folders directly under `.forkmesh/issues`) is not read.
+4. **Settled**: an issue row, or a pull row that is merged, is never read
+   again; an open pull is re-read on later sweeps of that repository. A
+   repository's `state_ts` only advances when every pending record fit in the
+   batch, every read answered and every review check ran, so a large or
+   unreachable repository comes back on the next run. A failed read of the
+   pull tree alone counts as "no pull ledger", because the gateway answers a
+   missing `forkmesh/pulls` branch the same way it answers an outage.
+
+Each record is one `badge_pull_facts` row keyed by `(repo_bi, kind, number)`
+(the table name predates issues sharing it), so reading a record twice never
+counts it twice. Keys are stored as written; the queries map them to
+accounts through `nodes.pubkey` and `COALESCE(NULLIF(user_bi, ''),
+node_bi)`, so a node linked to its account later still earns, and an
+unowned node earns nothing. Rows from private repositories never count.
+
+### How each badge counts
+
+- **Web Weaver / Many Webs** (`BADGE_FOREIGN_MERGES_SQL`): merged pulls whose
+  author account differs from the repository owner (a node-owned repository
+  counts as its account's). Organisation repositories count for every author,
+  members included. Web Weaver counts distinct `(repository, number)`, Many
+  Webs distinct repositories.
+- **Quick Silk**: a stored record whose close or merge time is 0 to 300,000 ms
+  after it was opened. The earner is the closer: the signer of the issue's
+  first closing `status` event, the desktop's `mergedBy`, or the account the
+  relay recorded for a web merge. Open and close times come from different
+  machines' clocks, so skew can move a borderline case either way.
+- **Carpet Ride**: a merged pull with no review event of any kind, or one the
+  owner merged on the web with `overrideReview`. The earner is the merger; a
+  pull with no known merger earns nothing. Desktop merges made before
+  `mergedBy` existed are never attributed.
+- **Eight Hands**: each `coAuthors` email of a newly stored merged pull is
+  matched to a user whose blind-indexed email equals it, whose stored email
+  is verified and equal, and who is active. The pull's author is left out.
+  One `badge_coauthor_facts` row per pull and account, so the value is the
+  number of merged pull requests co-authored, as on GitHub.
+
+Web Weaver, Many Webs and Eight Hands are `BADGE_METRIC_SQL` queries and go
+through `_record_badge_progress` like the activity badges. Quick Silk and
+Carpet Ride are one-level `BADGE_FACT_SQL` queries that `award_fact_badges`
+passes to `_award_badge`, at most `BADGE_SWEEP_LIMIT` (25) accounts each per
+run. Both kinds run after the record sweep in the same phase, so a record
+read this hour can award this hour.
+
+Not covered yet: pull records written by the phones or the MCP tool carry no
+`mergedAt`, `mergedBy` or `coAuthors` until those writers add them, and the
+new Go desktop (`desktop_go_new`) does not write them either.
+
+## Badges planned next
 
 | Slug | Name | Earned by | Levels | Data | Medallion |
 |---|---|---|---|---|---|
-| `web_weaver` | Web Weaver | pull requests merged into repositories the author does not own (GitHub: Pull Shark) | 2 / 16 / 128 / 1024 | Sweep | the Genie in the middle of a glowing web |
-| `many_webs` | Many Webs | distinct repositories, not the author's own, with a merged pull request (Open Sourcerer) | 2 / 8 / 32 / 128 | Sweep | a globe wrapped in web lines, the Genie dangling on top |
-| `quick_silk` | Quick Silk | closed an issue or pull request within 5 minutes of opening it (Quickdraw) | one | Sweep, plus `closedAt` in `pull.md` | the Genie dropping on a thread, stopwatch beside it |
-| `carpet_ride` | Carpet Ride | merged a pull request without a review (YOLO) | one | Sweep, or the web merge `overrideReview` flag | the Genie in pink sunglasses on the magic carpet |
-| `eight_hands` | Eight Hands | co-authored commits on merged pull requests (Pair Extraordinaire) | 1 / 10 / 24 / 48 | Sweep, plus `Co-authored-by` parsing | two spider claws meeting in a high five |
-| `oracle` | Oracle | accepted answers in discussions (Galaxy Brain) | 2 / 8 / 16 / 32 | Feature: mark an answer | a crystal ball holding a galaxy, on a gold stand |
+| `oracle` | Oracle | accepted answers in discussions (Galaxy Brain) | 2 / 8 / 16 / 32 | Feature: mark an answer, across the protocol, desktop and web | a crystal ball holding a galaxy, on a gold stand |
 
 The first pull request, issue and discussion stay the existing Coder, QA and
 Poster badges.
