@@ -395,6 +395,14 @@ def test_a_zoho_subject_is_never_the_folder_name_and_stays_editable():
     assert 'else _clean(data.get("contactName") or contact_data.get("name"), 120)),' in WORKER
 
 
+def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_list_row():
+    assert "descendant-or-self::*[@*[contains(., '@') or contains(., '%40')]]" in CONTENT
+    assert "if (!header.length) header.push(...attributePeople(pane, inBody));" in CONTENT
+    assert "const listed = sentHint || !header.length ? rowPeople(zohoRow(messageId, pane)) : [];" in CONTENT
+    assert "if (!sentHint && !header.length) header.push(...listed.filter((person) => person.email !== mailbox));" in CONTENT
+    assert 'xpathNodes(`//*[@*[contains(., "${messageId}")]]`, document)' in CONTENT
+
+
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
     script = MANIFEST["content_scripts"][-1]

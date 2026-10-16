@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ForkMesh: CRM and Password Vault",
-  "version": "2.23.0",
+  "version": "2.23.1",
   "description": "Fill ForkMesh Password Vault logins, link mail and Mastodon threads to CRM contacts, and update Marketing channels in a click",
   "minimum_chrome_version": "137",
   "permissions": [
