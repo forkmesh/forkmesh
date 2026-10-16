@@ -18,6 +18,7 @@ bool singleInstanceHeld();
 bool askBackgroundInstanceToQuit();
 
 bool isBackgroundInstance();
+bool tookOverFromBackgroundInstance();
 
 void onSingleInstanceYield(std::function<void()> handler);
 

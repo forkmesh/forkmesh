@@ -315,6 +315,20 @@ const char *moveOutcomeText(forkmesh::paths::MoveResult::Outcome outcome)
     return "";
 }
 
+void handOverWithoutDisplay(int argc, char *argv[])
+{
+    if (forkmesh::isBackgroundInstance())
+        return;
+    QCoreApplication app(argc, argv);
+    configureApplicationIdentity(app, launchArguments(argc, argv));
+    if (!forkmesh::background::supported() || !forkmesh::background::keepRunning())
+        return;
+    const bool started = forkmesh::background::startHeadless();
+    forkmesh::logStartupTrace(
+        started ? QStringLiteral("no display: ForkMesh keeps running without a window")
+                : QStringLiteral("no display: could not start ForkMesh without a window"));
+}
+
 int runStopBackground(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -716,6 +730,7 @@ int main(int argc, char *argv[])
         std::fwrite(diagnostic.constData(), 1,
                     static_cast<std::size_t>(diagnostic.size()), stderr);
         std::fflush(stderr);
+        handOverWithoutDisplay(argc, argv);
         return 3;
     }
     forkmesh::logStartupTrace(
