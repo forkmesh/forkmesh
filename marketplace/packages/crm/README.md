@@ -165,9 +165,11 @@ people connected to its lists. Notes are separate from the free-text
 The top of the CRM shows two cards (desktop and web) or two sections (phones):
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
-  ended stage, ordered by next step, deal value, a `rank`/`*_rank` column
-  (lowest first), a `score`/`*_score` column (highest first), having an email,
-  and age on the CRM.
+  ended stage, ordered by their newest public Mastodon post (newest first;
+  contacts without a handle or a post follow), then next step, deal value, a
+  `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
+  first), having an email, and age on the CRM. The card shows that post's
+  date, excerpt and link, and lists the next five in line with theirs.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -182,6 +184,31 @@ open list; the web ranks the whole organization. Code:
 `CrmNextContact.pick` (iOS and Android). Tests:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
+
+### Newest Mastodon post on Reach out
+
+Rendering the cards queues the Mastodon handles of the first 40 reach-out
+candidates (in the order above) for the same read the **Mastodon last update**
+column uses: `GET /api/v1/accounts/lookup?acct=<user>` on the contact's own
+instance, then `GET /api/v1/accounts/<id>/statuses?limit=1&exclude_replies=true&exclude_reblogs=true`.
+The reads are public and unauthenticated, made by the browser or desktop app
+(not the worker), and kept in memory for the session:
+
+- a read is fresh for 15 minutes, a handle shared by several contacts is read
+  once, and the account id is remembered so a refresh asks only for statuses;
+- at most four reads run at once, and at most two against one instance;
+- a `429` holds that instance back for `Retry-After` or five minutes, whichever
+  is longer, and every handle on it shows why until then;
+- a missing account (`404`/`406`/`410`), a timeout or an unreachable instance
+  shows as "Mastodon post unavailable" and the contact keeps its place among
+  those without a post; a failed re-read keeps the post already shown.
+
+Finished reads re-rank the cards (at most every 400 ms), so the order settles
+as posts arrive. The iOS and Android pick does not read Mastodon. Code:
+`crmQueueReachMastodon`, `crmPumpMastodonLatest`, `crmNextPostHtml` (web);
+`CrmFeature::queueReachMastodon`, `refreshMastodonUpdates`, `nextPostLabel`
+(desktop). Tests: `tests/contact_detail_checks.js` (mocked instances),
+`tests/test_qt_plugin_contracts.py`.
 
 ### Write with AI
 

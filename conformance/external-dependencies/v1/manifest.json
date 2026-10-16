@@ -451,7 +451,7 @@
       "hosts": ["avatars.githubusercontent.com", "public.api.bsky.app", "gravatar.com"],
       "configuredHosts": ["cdn.bsky.app"],
       "credentials": [],
-      "observes": "The reading device's IP address and which account was asked about. A CRM page reads a picture for each contact whose record names a GitHub, Bluesky or Mastodon account, and a contact's detail card reads that account's newest public posts. The desktop CRM also asks Gravatar for a picture by the SHA-256 hash of each contact's email address when the contact has no ForkMesh or account picture. The Mastodon instance is whichever one the contact's handle names, so it is not a fixed host.",
+      "observes": "The reading device's IP address and which account was asked about. A CRM page reads a picture for each contact whose record names a GitHub, Bluesky or Mastodon account, a contact's detail card reads that account's newest public posts, and the Reach out card reads the newest Mastodon post of up to 40 never-contacted contacts to order them. The desktop CRM also asks Gravatar for a picture by the SHA-256 hash of each contact's email address when the contact has no ForkMesh or account picture. The Mastodon instance is whichever one the contact's handle names, so it is not a fixed host.",
       "retention": "Set by each service. The pictures and posts live in the page's memory for the session and are never written to disk.",
       "jurisdiction": "GitHub, Inc. (United States); Bluesky Social, PBC (United States); Automattic Inc. for Gravatar (United States); the operator of whichever Mastodon instance a contact's handle names.",
       "canonicalData": "None. The record's own handle is canonical; nothing read here is stored.",

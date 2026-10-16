@@ -198,6 +198,8 @@ struct NextContact
     QString reason;
     int row = -1;
     int due = 0;
+    QStringList upcoming;
+    QStringList ranked;
 };
 
 struct NoteDraft
@@ -307,6 +309,9 @@ private:
     NextContact nextContact(NextMode mode) const;
     void renderNextContact();
     QWidget *nextContactCard(NextMode mode);
+    QLabel *nextPostLabel(const QJsonObject &contact, bool compact) const;
+    void queueReachMastodon(const QStringList &ranked);
+    void scheduleNextRender();
     void selectFirstStage();
     QStringList stripStages(QHash<QString, int> *counts) const;
     void focusContactRow();
@@ -722,10 +727,10 @@ private:
     bool m_sortDescending = false;
     QHash<QString, MastodonLatest> m_mastodonLatest;
     QSet<QString> m_mastodonPending;
-    // The accounts the header's refresh button asked for and has not read
-    // yet. Nothing else fills it: rendering a row never reaches an instance
-    // on its own.
     QStringList m_mastodonQueue;
+    QHash<QString, QString> m_mastodonIds;
+    QHash<QString, qint64> m_mastodonBackoff;
+    bool m_nextRenderQueued = false;
     MastodonFollowersJob m_followers;
     GithubContributorsJob m_contributors;
     // Pictures by source, and the sources queued or in flight, or that
