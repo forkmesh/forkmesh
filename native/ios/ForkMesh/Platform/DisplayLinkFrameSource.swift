@@ -77,16 +77,9 @@ final class DisplayLinkFrameSource: NSObject, FrameTimingSource {
         guard lastTimestamp > 0 else { return }
         let interval: CFTimeInterval = now - lastTimestamp
         let expected: CFTimeInterval = max(displayLink.targetTimestamp - displayLink.timestamp, 1.0 / 60.0)
-        // Only a callback that came at least two periods late is worth a
-        // report; the monitor applies its own stall threshold on top.
-        guard interval > expected * 2 else { return }
-        let late: CFTimeInterval = interval - expected
-        let timing: FrameTiming = FrameTiming(
-            buildDuration: Self.duration(late),
-            rasterDuration: Duration.zero,
-            vsyncOverhead: Duration.zero,
-            totalSpan: Self.duration(interval)
-        )
+        guard let timing = FrameTiming.lateCallback(interval: Self.duration(interval), period: Self.duration(expected)) else {
+            return
+        }
         handler?([timing])
     }
 

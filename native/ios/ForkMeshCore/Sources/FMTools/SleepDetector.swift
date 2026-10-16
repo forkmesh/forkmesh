@@ -285,6 +285,24 @@ public enum SleepDetector {
             awakeMinutes: gapMinutes + settle, interruptions: best.interruptions, confidence: confidence)
     }
 
+    public static func detect(
+        nights: [String], rest: [SleepRestSample], usage: [SleepInterval], schedule: SleepSchedule,
+        timeZone: TimeZone, now: Date
+    ) -> (bodies: [JSONObject], detected: [SleepNight]) {
+        let sorted = rest.sorted { $0.start < $1.start }
+        var bodies: [JSONObject] = []
+        var detected: [SleepNight] = []
+        for key in nights {
+            if let night = detect(night: key, rest: sorted, usage: usage, schedule: schedule, timeZone: timeZone, now: now) {
+                detected.append(night)
+                bodies.append(night.body)
+            } else {
+                bodies.append(SleepNight.cleared(key))
+            }
+        }
+        return (bodies, detected)
+    }
+
     public static func union(_ intervals: [SleepInterval]) -> [SleepInterval] {
         var merged: [SleepInterval] = []
         for interval in intervals.sorted(by: { $0.start < $1.start }) where interval.end > interval.start {

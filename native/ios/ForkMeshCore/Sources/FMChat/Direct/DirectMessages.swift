@@ -309,7 +309,7 @@ public final class DirectMessageService {
     @ObservationIgnored let clock: Clock
     @ObservationIgnored private var sockets: [String: DirectRoomSocket] = [:]
     @ObservationIgnored private var cryptos: [String: RoomCrypto] = [:]
-    @ObservationIgnored private var seals: [String: RoomSeal] = [:]
+    @ObservationIgnored private let seals: RoomSealCache
     @ObservationIgnored private var roomNames: [String: String] = [:]
     @ObservationIgnored private var seen: [String: Set<String>] = [:]
     @ObservationIgnored private var sequence = 0
@@ -363,6 +363,7 @@ public final class DirectMessageService {
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
+        seals = RoomSealCache(secureStore: secureStore)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
@@ -509,12 +510,8 @@ public final class DirectMessageService {
         return crypto
     }
 
-    private func seal(for room: String) throws -> RoomSeal {
-        if let existing = seals[room] { return existing }
-        let scope = origin()?.host ?? ""
-        let loaded = try RoomSeal.loadOrCreate(room, storageScope: "direct|\(scope)", secureStore: secureStore)
-        seals[room] = loaded
-        return loaded
+    private func seal(for room: String) async throws -> RoomSeal {
+        try await seals.seal(room, storageScope: "direct|\(origin()?.host ?? "")")
     }
 
     @discardableResult
@@ -603,7 +600,7 @@ public final class DirectMessageService {
                 return false
             }
             let crypto = await derive(roomName, passphrase)
-            let seal = try seal(for: roomName)
+            let seal = try await seal(for: roomName)
             roomNames[id] = roomName
             let connection = try await connector.connect(
                 url: url,

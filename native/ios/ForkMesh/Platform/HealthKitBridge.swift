@@ -20,6 +20,13 @@ final class HealthKitBridge: HealthBridge {
     private let walkPedometer: CMPedometer = CMPedometer()
     private let pacePedometer: CMPedometer = CMPedometer()
     private let motion: CMMotionActivityManager = CMMotionActivityManager()
+    nonisolated private static let motionQueue: OperationQueue = {
+        let queue: OperationQueue = OperationQueue()
+        queue.name = "ForkMesh.motionHistory"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
     private let accelerometer: CMMotionManager = CMMotionManager()
     private var watchingMotion: Bool = false
     private var stepObserver: HKObserverQuery?
@@ -219,9 +226,16 @@ final class HealthKitBridge: HealthBridge {
     func walkHistory(from start: Date, to end: Date) async -> [WalkMotionSample] {
         guard CMMotionActivityManager.isActivityAvailable(), end > start else { return [] }
         return await withCheckedContinuation { (continuation: CheckedContinuation<[WalkMotionSample], Never>) in
-            motion.queryActivityStarting(from: start, to: end, to: .main) { (activities: [CMMotionActivity]?, _: Error?) in
-                continuation.resume(returning: (activities ?? []).map(Self.walkSample))
-            }
+            Self.queryWalks(motion, from: start, to: end, continuation)
+        }
+    }
+
+    nonisolated private static func queryWalks(
+        _ motion: CMMotionActivityManager, from start: Date, to end: Date,
+        _ continuation: CheckedContinuation<[WalkMotionSample], Never>
+    ) {
+        motion.queryActivityStarting(from: start, to: end, to: motionQueue) { (activities: [CMMotionActivity]?, _: Error?) in
+            continuation.resume(returning: (activities ?? []).map(walkSample))
         }
     }
 
@@ -381,13 +395,20 @@ extension HealthKitBridge: SleepBridge {
         let status: CMAuthorizationStatus = CMMotionActivityManager.authorizationStatus()
         guard status != .denied && status != .restricted else { return nil }
         return await withCheckedContinuation { (continuation: CheckedContinuation<[SleepRestSample]?, Never>) in
-            motion.queryActivityStarting(from: start, to: end, to: .main) { (activities: [CMMotionActivity]?, error: Error?) in
-                guard error == nil, let activities else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                continuation.resume(returning: activities.map(Self.restSample))
+            Self.queryRest(motion, from: start, to: end, continuation)
+        }
+    }
+
+    nonisolated private static func queryRest(
+        _ motion: CMMotionActivityManager, from start: Date, to end: Date,
+        _ continuation: CheckedContinuation<[SleepRestSample]?, Never>
+    ) {
+        motion.queryActivityStarting(from: start, to: end, to: motionQueue) { (activities: [CMMotionActivity]?, error: Error?) in
+            guard error == nil, let activities else {
+                continuation.resume(returning: nil)
+                return
             }
+            continuation.resume(returning: activities.map(restSample))
         }
     }
 

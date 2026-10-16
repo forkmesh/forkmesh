@@ -118,6 +118,18 @@ value of type ... @MainActor"). Make main-actor test methods `async`.
   protocol (`startReporting(handler)`, `stopReporting()`) delivering `[FrameTiming]`.
   Frame timings are dropped while the heartbeat is stopped and when their span reaches back
   before the heartbeat last started, so time in the background is never a late frame.
+- `FrameTiming.lateCallback(interval:period:)` turns two display-link timestamps into a frame
+  timing: nothing unless the gap is over two periods, otherwise `buildDuration` = gap minus one
+  period and `vsyncOverhead` = the period (logged as `vsyncMs`). The app's `DisplayLinkFrameSource`
+  ticks at 10 Hz, so it used to report the whole gap: one skipped tick after a 100-120 ms hold of
+  the main thread read as a "200 ms" stall and fed the "dropped-frame hitches" alert (the
+  1.4.1 (255) report from an iPhone 15 Pro Max was all `frame 200-221ms buildMs=100-121`). Only
+  the time past the expected tick counts now, so a stall means the main thread really missed
+  `stallThreshold`.
+- `track` keeps only the caller's return addresses (`Thread.callStackReturnAddresses`) while the
+  operation runs and symbolicates them (`dladdr`, Darwin) only when it turns out slow. It used to
+  call `Thread.callStackSymbols` on the main actor for every API request, fast or not, and a
+  resume fires a dozen or more at once.
 - `StallLogFile.forDevice(build:)` (existing) is the on-disk log. `tail(maxBytes:) async` returns the
   end of `stalls.log.1` followed by `stalls.log`, starting on a whole line, read on the log's own
   queue; it reads earlier launches too and never creates the file.
