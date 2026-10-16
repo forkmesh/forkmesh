@@ -133,7 +133,10 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
                                 }
                                 item(key = article.id) {
                                     SwipeRow(article) {
-                                        ArticleRow(article, feeds[article.feedId], settings, now) {
+                                        ArticleRow(
+                                            article, feeds[article.feedId], settings, now,
+                                            showFeedName = !grouped && scope !is RssScope.Feed,
+                                        ) {
                                             navigator.push(RssArticleScreen(scope, article.id, ::currentIds))
                                         }
                                     }
@@ -198,10 +201,17 @@ private fun SwipeRow(article: RssArticle, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ArticleRow(article: RssArticle, feed: RssFeed?, settings: RssSettings, now: Long, onTap: () -> Unit) {
+private fun ArticleRow(
+    article: RssArticle,
+    feed: RssFeed?,
+    settings: RssSettings,
+    now: Long,
+    showFeedName: Boolean,
+    onTap: () -> Unit,
+) {
     val c = Fm.colors
     Column(Modifier.fillMaxWidth().background(c.bgRaised).clickable(onClick = onTap)) {
-        Row(Modifier.fillMaxWidth().padding(start = FmSpace.x2, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
+        Row(Modifier.fillMaxWidth().padding(start = FmSpace.x1, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
             Column(Modifier.width(18.dp).padding(top = 5.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 UnreadDot(!article.read)
                 if (article.starred) FmIcon("star", size = 12.dp, tint = RssColors.star)
@@ -227,13 +237,19 @@ private fun ArticleRow(article: RssArticle, feed: RssFeed?, settings: RssSetting
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val byline = listOfNotNull(feed?.displayTitle, article.author.takeIf { it.isNotEmpty() }).joinToString(" · ")
+                    val byline = if (article.author.isEmpty() || article.author == feed?.displayTitle) {
+                        feed?.displayTitle.orEmpty()
+                    } else if (showFeedName) {
+                        listOfNotNull(feed?.displayTitle, article.author).joinToString(" · ")
+                    } else {
+                        article.author
+                    }
                     Text(byline, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = c.textTertiary))
                     Spacer(Modifier.width(FmSpace.x2))
                     Text(RssFormat.short(article.published, now), style = Fm.text.bodySmall.copy(color = c.textTertiary))
                 }
             }
         }
-        HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 64.dp else 28.dp), thickness = 1.dp, color = c.border)
+        HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 60.dp else 22.dp), thickness = 1.dp, color = c.border)
     }
 }

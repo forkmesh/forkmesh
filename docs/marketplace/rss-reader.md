@@ -78,8 +78,9 @@ unread count.
 - **Import Subscriptions** (OPML from a file) and **Export Subscriptions**,
   plus **Add the ForkMesh Blog Feed** (`https://forkmesh.com/blog/rss.xml`).
 - Timeline: newest or oldest first, group by feed, 0 to 4 summary lines,
-  feed icons, search, mark all as read (with optional confirmation), Refresh
-  to Clear Read Articles.
+  search, mark all as read (with optional confirmation), Refresh to Clear Read
+  Articles. Phone lists lead with the unread marker, headline, author and date;
+  feed icons remain available as an opt-in layout setting.
 - Article: feed and author above the title, feed icon, date in small capitals,
   sanitized content with JavaScript off, enclosures, comments link.
 - Toolbar: read/unread, star, next unread (moves on to the next feed with
