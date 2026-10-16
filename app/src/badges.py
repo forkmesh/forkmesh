@@ -188,7 +188,44 @@ BADGE_DEFINITIONS = {
         "tiers": (1, 5, 25, 100),
         "unit": "paid jobs",
     },
+    "web_weaver": {
+        "name": "Web Weaver",
+        "description": "Had pull requests merged into repositories you do not own.",
+        "icon": "\U0001F578",
+        "tiers": (2, 16, 128, 1024),
+        "unit": "merged pull requests",
+    },
+    "many_webs": {
+        "name": "Many Webs",
+        "description": "Had pull requests merged into many repositories you do not own.",
+        "icon": "\U0001F310",
+        "tiers": (2, 8, 32, 128),
+        "unit": "repositories",
+    },
+    "quick_silk": {
+        "name": "Quick Silk",
+        "description": "Closed an issue or merged a pull request within five "
+                       "minutes of it being opened.",
+        "icon": "\u23F1",
+    },
+    "carpet_ride": {
+        "name": "Carpet Ride",
+        "description": "Merged a pull request without a review.",
+        "icon": "\U0001F576",
+    },
+    "eight_hands": {
+        "name": "Eight Hands",
+        "description": "Co-authored commits in merged pull requests.",
+        "icon": "\U0001F91D",
+        "tiers": (1, 10, 24, 48),
+        "unit": "pull requests",
+    },
 }
+
+QUICK_SILK_MS = 5 * 60 * 1000
+CO_AUTHORS_MAX = 16
+_REVIEW_FILE_RE = re.compile(r"^[0-9]{4,}-review\.md$")
+_EMAIL_RE = re.compile(r"^[^@\s,<>]{1,64}@[^@\s,<>]{1,189}$")
 
 
 def normalize_badge_slug(value):
@@ -290,3 +327,83 @@ def contribution_count(row):
 
 def distinguished_contributor_earned(row):
     return contribution_count(row) >= DISTINGUISHED_CONTRIBUTOR_MIN
+
+
+def _record_int(value):
+    try:
+        number = int(str(value if value is not None else "0").strip() or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
+
+
+def _record_ms(value):
+    stamp = _record_int(value)
+    return stamp * 1000 if 0 < stamp < 10_000_000_000 else stamp
+
+
+def _record_key(value):
+    return str(value or "").strip()[:120]
+
+
+def co_author_emails(value):
+    emails = []
+    for part in str(value or "").split(","):
+        email = part.strip().lower()
+        if _EMAIL_RE.match(email) and email not in emails:
+            emails.append(email)
+        if len(emails) >= CO_AUTHORS_MAX:
+            break
+    return emails
+
+
+def pull_record_fact(fields, number):
+    fields = fields or {}
+    status = str(fields.get("status") or "").strip().lower()
+    if _record_int(fields.get("number")) != number:
+        return None
+    merged = status in ("merged", "closed-merged")
+    return {
+        "author_key": _record_key(fields.get("author")),
+        "closer_key": _record_key(fields.get("mergedBy")) if merged else "",
+        "opened_at": _record_ms(fields.get("ts")),
+        "closed_at": _record_ms(fields.get("mergedAt")) if merged else 0,
+        "merged": merged,
+        "co_authors": co_author_emails(fields.get("coAuthors")) if merged else [],
+    }
+
+
+def issue_record_fact(record):
+    events = record.get("events") if isinstance(record, dict) else None
+    if not isinstance(events, list):
+        return None
+    opened = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("type") or "")
+        if kind == "open" and opened is None:
+            opened = event
+            continue
+        status = str(event.get("status") or "").strip().lower()
+        if opened is not None and kind == "status" and status and status != "open":
+            return {
+                "author_key": _record_key(opened.get("author")),
+                "closer_key": _record_key(event.get("author")),
+                "opened_at": _record_ms(opened.get("ts")),
+                "closed_at": _record_ms(event.get("ts")),
+            }
+    return None
+
+
+def quick_close(opened_at, closed_at):
+    opened_at, closed_at = _record_int(opened_at), _record_int(closed_at)
+    return 0 < opened_at <= closed_at and closed_at - opened_at <= QUICK_SILK_MS
+
+
+def has_review_file(entries):
+    for entry in entries or ():
+        if isinstance(entry, dict) and _REVIEW_FILE_RE.match(
+                str(entry.get("name") or "")):
+            return True
+    return False

@@ -113,6 +113,7 @@ def test_catalog_is_a_fixed_known_set():
         "distinguished_contributor", "stargazer", "genies_gift",
         "six_eyes", "brood", "fan_club", "night_watch", "daily_spinner",
         "bug_catcher", "lift_off", "shopkeeper", "critic", "bounty_hunter",
+        "web_weaver", "many_webs", "quick_silk", "carpet_ride", "eight_hands",
     }
     for entry in badges.public_catalog():
         assert entry["name"] and entry["description"] and entry["icon"]
@@ -1197,6 +1198,62 @@ def test_node_uptime_migration_creates_the_totals_table():
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in up
     assert "DROP TABLE IF EXISTS node_uptime_totals" in down
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in SCHEMA_TEXT
+
+
+# --- Pull, issue and co-author records ----------------------------------------
+
+def test_pull_record_facts_read_the_merge_fields():
+    fact = badges.pull_record_fact({
+        "number": "7", "status": "merged", "author": "key_a",
+        "ts": "1700000000000", "mergedAt": "1700000200000",
+        "mergedBy": "key_m",
+        "coAuthors": "Pat@Example.TEST, pat@example.test,nope,<x>@y,b@c.io",
+    }, 7)
+    assert fact == {
+        "author_key": "key_a", "closer_key": "key_m",
+        "opened_at": 1700000000000, "closed_at": 1700000200000,
+        "merged": True, "co_authors": ["pat@example.test", "b@c.io"]}
+    opened = badges.pull_record_fact(
+        {"number": "7", "status": "open", "author": "key_a", "ts": "5",
+         "mergedBy": "key_m", "coAuthors": "a@b.io"}, 7)
+    assert opened["merged"] is False and opened["closer_key"] == ""
+    assert opened["co_authors"] == [] and opened["opened_at"] == 5000
+    assert badges.pull_record_fact({"number": "8"}, 7) is None
+    assert badges.pull_record_fact({}, 7) is None
+
+
+def test_issue_record_fact_takes_the_first_close_after_opening():
+    record = {"events": [
+        {"type": "status", "status": "closed", "author": "early", "ts": 1},
+        {"type": "open", "author": "key_a", "ts": 1700000000000},
+        {"type": "comment", "author": "x", "ts": 1700000001000},
+        {"type": "status", "status": "open", "author": "x",
+         "ts": 1700000002000},
+        {"type": "status", "status": "closed", "author": "key_c",
+         "ts": 1700000100000},
+        {"type": "status", "status": "closed", "author": "late",
+         "ts": 1700000900000},
+    ]}
+    assert badges.issue_record_fact(record) == {
+        "author_key": "key_a", "closer_key": "key_c",
+        "opened_at": 1700000000000, "closed_at": 1700000100000}
+    assert badges.issue_record_fact({"events": [{"type": "open"}]}) is None
+    assert badges.issue_record_fact(None) is None
+
+
+def test_quick_close_is_five_minutes_and_needs_both_times():
+    assert badges.QUICK_SILK_MS == 300000
+    assert badges.quick_close(1000, 1000 + badges.QUICK_SILK_MS)
+    assert not badges.quick_close(1000, 1001 + badges.QUICK_SILK_MS)
+    assert not badges.quick_close(1000, 999)
+    assert not badges.quick_close(0, 10)
+
+
+def test_review_files_are_the_numbered_review_events():
+    assert badges.has_review_file([{"name": "0003-review.md"}])
+    assert not badges.has_review_file(
+        [{"name": "pull.md"}, {"name": "0002-comment.md"},
+         {"name": "review.md"}])
 
 
 def test_record_fact_migration_creates_the_tables():
