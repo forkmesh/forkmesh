@@ -23,7 +23,7 @@ constexpr qreal kGap = 10.0;
 constexpr qreal kHeaderHeight = 44.0;
 constexpr qreal kGaugesHeight = 84.0;
 constexpr qreal kSharesHeight = 76.0;
-constexpr qreal kTableRow = 20.0;
+constexpr qreal kTableRow = 36.0;
 constexpr int kHistory = 60;
 constexpr int kShareGroups = 7;
 
@@ -610,11 +610,17 @@ void DesktopProcessView::paintTable(QPainter &p, const QRectF &area)
             p.drawEllipse(QPointF(x + 5, y + kTableRow / 2), 3.5, 3.5);
         }
         p.setPen(ink(process.state == QLatin1Char('Z') ? 120 : 230));
-        p.drawText(QRectF(x + 14, y, nameWidth - 20, kTableRow),
+        p.drawText(QRectF(x + 14, y + 2, nameWidth - 20, kTableRow / 2),
                    Qt::AlignLeft | Qt::AlignVCenter,
                    smallMetrics.elidedText(process.self
                                                ? process.name + QStringLiteral(" (this app)")
                                                : process.name,
+                                           Qt::ElideRight, nameWidth - 20));
+        p.setPen(ink(140));
+        p.drawText(QRectF(x + 14, y + kTableRow / 2 - 2, nameWidth - 20,
+                          kTableRow / 2),
+                   Qt::AlignLeft | Qt::AlignVCenter,
+                   smallMetrics.elidedText(desktopprocs::descriptionFor(process),
                                            Qt::ElideRight, nameWidth - 20));
         x += nameWidth;
         p.setPen(ink(170));

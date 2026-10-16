@@ -3,6 +3,7 @@ schema: forkmesh-discussion-v1
 number: 2
 title: what do you all think about removing the "about" right rail from the code section
 category: Q&A
+status: open
 createdAt: 1783873770032
 author: w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4
 authorName: forkmesh

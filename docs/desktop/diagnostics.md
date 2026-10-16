@@ -90,11 +90,14 @@ The desktop has no toasts or floating cards; information is shown inline.
 
 The CPU quadrant in the debug bar opens **Logs → Desktop**. The page samples
 the machine every two seconds, groups CPU and resident memory by process name,
-and lists the busiest processes with their command, parent, owner, state,
-threads, age and ForkMesh ownership. Selecting a row opens the full command
-line and an explicit normal-termination control. PID 1 and the ForkMesh
-desktop process are protected; stopping another process always asks first and
-uses the platform's normal termination request.
+and lists the busiest processes with a short role description plus their
+command, parent, owner, state, threads, age and ForkMesh ownership. Selecting
+a row opens the full command line, executable, working directory, control
+group, descriptors, I/O and direct children. PID 1 and the ForkMesh desktop
+process are protected; stopping another process always asks first and uses the
+platform's normal termination request. If the kernel denies that request, the
+detail dialog requests administrator permission through PolicyKit or a masked
+sudo password prompt and passes it to the privileged termination command.
 
 ### Diagnostic report
 

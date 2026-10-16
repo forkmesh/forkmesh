@@ -44,6 +44,11 @@ follows a run through every layer. The desktop UI for agents is described in
   (`AgentScratch.h`). Runs launch with `FORKMESH_AGENT_SCRATCH` naming it and
   `TMPDIR`/`TMP`/`TEMP` pointing at its `tmp/`; the agent is told to keep
   build trees, logs and throwaway files there.
+- **Resuming.** A resumed ad-hoc run reuses its saved branch and worktree. If
+  an older workspace naming update left those saved names out of sync, the
+  desktop recovers the one unambiguous worktree whose folder and checked-out
+  branch start with that session id; it never removes an existing worktree to
+  make a replacement.
 - **Deleting an agent deletes its area.** Every worktree removal also removes
   its scratch folder; deleting a session removes leftovers under the session
   id in `builds/` and `/tmp`. All deletes go through

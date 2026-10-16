@@ -151,12 +151,13 @@ func (m *Module) handleProcesses(ctx context.Context, req *rpc.Request) (any, er
 	out := make([]any, 0, len(rows))
 	for _, row := range rows {
 		item := map[string]any{
-			"pid":      row.Pid,
-			"name":     row.Name,
-			"user":     row.User,
-			"rssBytes": float64(row.RssKb) * 1024.0,
-			"percent":  row.Percent,
-			"command":  commandSummary(row.Command, commandSummaryMaxChar),
+			"pid":         row.Pid,
+			"name":        row.Name,
+			"description": processDescription(row.Name),
+			"user":        row.User,
+			"rssBytes":    float64(row.RssKb) * 1024.0,
+			"percent":     row.Percent,
+			"command":     commandSummary(row.Command, commandSummaryMaxChar),
 		}
 		pid := row.Pid
 		for hops := 0; pid > 1 && hops < 64; hops++ {

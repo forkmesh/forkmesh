@@ -214,6 +214,11 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 ### iOS performance rules
 
+The shell's account avatar shares the phone-motion feed with the Genie view so
+it reflects the phone's direction while the shell is visible. Agent Watch feel
+defaults on unless the user explicitly turns it off; Reduce Motion stops the
+avatar movement but does not silently change that saved feedback preference.
+
 - Parse API replies of 16 KB or more off the main actor
   (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`).
 - Write `@Observable` properties only when the value changes; every write

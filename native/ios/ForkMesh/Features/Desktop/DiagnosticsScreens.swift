@@ -1,3 +1,4 @@
+import FMBase
 import FMDesktopRemote
 import SwiftUI
 
@@ -268,6 +269,7 @@ struct StallDetailScreen: View {
 struct ProcessesScreen: View {
     @Bindable var store: DiagnosticsStore
     @State private var pending: PendingConfirmation?
+    @State private var selected: DesktopProcess?
     @State private var error = ""
 
     var body: some View {
@@ -302,6 +304,9 @@ struct ProcessesScreen: View {
         .navigationTitle("Memory")
         .fmRefreshable { await store.refreshProcesses() }
         .task { await store.refreshProcesses() }
+        .sheet(item: $selected) { process in
+            NavigationStack { ProcessDetailScreen(store: store, process: process) }
+        }
         .sheet(item: $pending) { item in
             NavigationStack {
                 RemoteConfirmSheet(
@@ -321,6 +326,11 @@ struct ProcessesScreen: View {
                 Text(RemoteFormat.bytes(process.rssBytes)).font(.subheadline.monospacedDigit())
             }
             ShareBar(share: list.share(of: process), tint: list.share(of: process) > 0.2 ? .orange : .accentColor)
+            if !process.description.isEmpty {
+                Text(process.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let agent = process.agent {
                 HStack {
                     Label(agent.label, systemImage: "cpu").font(.caption).lineLimit(1)
@@ -340,6 +350,8 @@ struct ProcessesScreen: View {
                 .lineLimit(2)
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { selected = process }
     }
 
     private func prepareStop(_ session: Int) async {
@@ -350,5 +362,74 @@ struct ProcessesScreen: View {
         } catch {
             self.error = RemoteErrorText.describe(error)
         }
+    }
+}
+
+struct ProcessDetailScreen: View {
+    @Bindable var store: DiagnosticsStore
+    let process: DesktopProcess
+
+    @State private var details = ""
+    @State private var identity = ""
+    @State private var token = ""
+    @State private var stoppable = false
+    @State private var password = ""
+    @State private var passwordRequired = false
+    @State private var message = ""
+    @State private var error = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(process.description).font(.subheadline).foregroundStyle(.secondary)
+                if !message.isEmpty { Label(message, systemImage: "checkmark.circle").foregroundStyle(.green) }
+                if !error.isEmpty { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+                if details.isEmpty && error.isEmpty { ProgressView() }
+                Text(details).font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .navigationTitle(process.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if stoppable {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Stop", role: .destructive) { Task { await stop() } }
+                }
+            }
+        }
+        .task { await load() }
+        .alert("Administrator password", isPresented: $passwordRequired) {
+            SecureField("Password", text: $password)
+            Button("Cancel", role: .cancel) { password = "" }
+            Button("Stop", role: .destructive) { Task { await stop() } }
+        } message: {
+            Text("Enter this computer's password to stop \(process.name).")
+        }
+    }
+
+    private func load() async {
+        do {
+            let reply = try await store.family.call("process", ["pid": .int(Int64(process.pid))], timeout: 20)
+            details = reply.str("details")
+            identity = reply.str("identity")
+            token = reply.str("token")
+            stoppable = reply.bool("stoppable")
+        } catch { self.error = RemoteErrorText.describe(error) }
+    }
+
+    private func stop() async {
+        do {
+            var params: JSONObject = ["pid": .int(Int64(process.pid)), "identity": .string(identity), "token": .string(token)]
+            if !password.isEmpty { params["password"] = .string(password) }
+            password = ""
+            let reply = try await store.family.call("processStop", params, timeout: 20)
+            token = reply.str("token")
+            if reply.bool("passwordRequired") { passwordRequired = true; return }
+            message = reply.str("message", "Termination requested.")
+            stoppable = false
+            await store.refreshProcesses()
+        } catch { self.error = RemoteErrorText.describe(error) }
     }
 }

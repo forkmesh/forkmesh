@@ -221,6 +221,7 @@ public struct DesktopProcess: Equatable, Sendable, Identifiable {
     public var rssBytes: Double
     public var percent: Double
     public var command: String
+    public var description: String
     public var agent: ProcessAgent?
 
     public var id: Int { pid }
@@ -232,6 +233,7 @@ public struct DesktopProcess: Equatable, Sendable, Identifiable {
         rssBytes = json.double("rssBytes")
         percent = json.double("percent")
         command = json.str("command")
+        description = json.str("description")
         let agent = json.obj("agent")
         self.agent = agent.int("session") > 0
             ? ProcessAgent(session: agent.int("session"), label: agent.str("label"), stoppable: agent.bool("stoppable"))

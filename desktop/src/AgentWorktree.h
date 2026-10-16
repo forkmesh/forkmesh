@@ -307,18 +307,55 @@ inline QString shellQuote(const QString &path)
     return QLatin1Char('\'') + escaped + QLatin1Char('\'');
 }
 
+struct ExistingWorkspace {
+    QString path;
+    QString branch;
+};
+
+inline ExistingWorkspace existingWorkspace(const QString &worktreeRoot, int sessionId)
+{
+    ExistingWorkspace found;
+    if (sessionId <= 0)
+        return found;
+    const QString prefix = QString::number(sessionId) + QLatin1Char('-');
+    const QDir directory(worktreeRoot);
+    for (const QString &entry : directory.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (entry != QString::number(sessionId) && !entry.startsWith(prefix))
+            continue;
+        const QString path = directory.filePath(entry);
+        QFile dotGit(path + QStringLiteral("/.git"));
+        if (!dotGit.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString pointer = QString::fromUtf8(dotGit.readLine()).trimmed();
+        if (!pointer.startsWith(QLatin1String("gitdir: ")))
+            continue;
+        const QString gitDir = QDir(path).absoluteFilePath(pointer.mid(8));
+        QFile head(gitDir + QStringLiteral("/HEAD"));
+        if (!head.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString ref = QString::fromUtf8(head.readLine()).trimmed();
+        const QString marker = QStringLiteral("ref: refs/heads/");
+        if (!ref.startsWith(marker))
+            continue;
+        const QString branch = ref.mid(marker.size());
+        if (branch != QString::number(sessionId) && !branch.startsWith(prefix))
+            continue;
+        if (!found.path.isEmpty())
+            return {};
+        found = {path, branch};
+    }
+    return found;
+}
+
 inline QString addScript(const QString &path, const QString &branch,
                          const QString &baseRef, bool resume)
 {
     const QString quotedPath = shellQuote(path);
-    const QString addStep =
+    return
         resume ? QStringLiteral("git worktree add %1 %2")
                      .arg(quotedPath, shellQuote(branch))
-               : QStringLiteral("git worktree add -B %1 %2 %3")
+               : QStringLiteral("git worktree add -b %1 %2 %3")
                      .arg(shellQuote(branch), quotedPath, shellQuote(baseRef));
-    return QStringLiteral(
-               "git worktree prune; git worktree remove --force %1 2>/dev/null; %2")
-        .arg(quotedPath, addStep);
 }
 
 } // namespace forkmesh::agentwt

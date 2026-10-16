@@ -12,6 +12,7 @@ import (
 	"forkmesh.com/desktop-core/internal/agentproc"
 	"forkmesh.com/desktop-core/internal/agents"
 	"forkmesh.com/desktop-core/internal/daemon"
+	"forkmesh.com/desktop-core/internal/phonefamily"
 	"forkmesh.com/desktop-core/internal/rpc"
 	"forkmesh.com/desktop-core/internal/vault"
 )
@@ -25,14 +26,17 @@ type watcher struct {
 }
 
 type Module struct {
-	Owners         func() []string
-	Interval       time.Duration
-	IdleInterval   time.Duration
-	UIState        func(ctx context.Context, roots bool) (desktopState, error)
-	DesktopPID     func() int
-	Sessions       func() []agents.Session
-	AgentProcesses func() []agentproc.Process
-	RunPS          func(ctx context.Context) ([]byte, error)
+	Owners          func() []string
+	Interval        time.Duration
+	IdleInterval    time.Duration
+	UIState         func(ctx context.Context, roots bool) (desktopState, error)
+	DesktopPID      func() int
+	Sessions        func() []agents.Session
+	AgentProcesses  func() []agentproc.Process
+	RunPS           func(ctx context.Context) ([]byte, error)
+	processDetail   func(int) (processDetail, error)
+	stopProcess     func(context.Context, int, string) error
+	processConfirms phonefamily.Confirmations
 
 	core     *daemon.Core
 	ctx      context.Context
@@ -85,6 +89,8 @@ func (m *Module) Start(ctx context.Context, core *daemon.Core) error {
 	core.Registry.Handle("diag.stalls", owner, m.gate(m.handleStalls))
 	core.Registry.Handle("diag.stall", owner, m.gate(m.handleStall))
 	core.Registry.Handle("diag.processes", owner, m.gate(m.handleProcesses))
+	core.Registry.Handle("diag.process", owner, m.gate(m.handleProcess))
+	core.Registry.Handle("diag.processStop", owner, m.gate(m.handleProcessStop))
 	core.Registry.Handle("core.vitals", owner, m.handleCoreVitals)
 	core.Registry.Handle("core.diag.stall", owner, m.handleStallPush)
 	core.Registry.Handle("core.diag.stalls", owner, m.handleStallSync)

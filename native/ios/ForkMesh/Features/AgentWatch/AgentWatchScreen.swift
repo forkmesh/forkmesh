@@ -272,9 +272,7 @@ struct AgentWatchScreen: View {
             return Set(AgentMotion.allCases.filter { labels.contains($0.label) })
         }
         controller.sound = prefs?.bool(forKey: Self.soundKey) ?? true
-        // Reduced motion also covers vibration, as FmHaptics has it: feel is
-        // off until asked for.
-        controller.feel = prefs?.bool(forKey: Self.feelKey) ?? !reduceMotion
+        controller.feel = prefs?.bool(forKey: Self.feelKey) ?? true
         controller.workingOnly = prefs?.bool(forKey: Self.workingOnlyKey) ?? false
         for motion in byLabel(Self.mutedKey) {
             controller.setMuted(motion, true)

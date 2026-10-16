@@ -394,7 +394,7 @@ struct ShortcutTerminal: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(output.isEmpty ? " " : output)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.9))
+                        .foregroundStyle(.primary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if running {
@@ -407,7 +407,6 @@ struct ShortcutTerminal: View {
                 .padding(10)
             }
             .defaultScrollAnchor(.bottom)
-            .background(Color.black)
             .onAppear { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: output) { _, _ in
                 Task { @MainActor in proxy.scrollTo("end", anchor: .bottom) }

@@ -46,6 +46,8 @@ struct Snapshot {
 
 Process parseStatLine(const QByteArray &line, qint64 pageBytes);
 QString stateWord(QChar state);
+QString descriptionFor(const Process &process);
+QString detailTextFor(const Process &process);
 void markTree(QList<Process> &processes, qint64 rootPid);
 
 class Sampler

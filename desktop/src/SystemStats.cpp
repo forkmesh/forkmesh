@@ -492,6 +492,8 @@ SystemStats::Termination SystemStats::requestTermination(qint64 pid,
     const int failure = errno;
     if (failure == ESRCH)
         return Termination::AlreadyExited;
+    if (failure == EPERM)
+        return Termination::PermissionDenied;
     if (error)
         *error = QString::fromLocal8Bit(std::strerror(failure));
     return Termination::Failed;

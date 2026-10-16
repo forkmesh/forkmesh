@@ -35,13 +35,16 @@
 #include "WorldSpeechBridge.h"
 
 #include <QDialog>
+#include <QInputDialog>
 #include <QJsonDocument>
+#include <QLineEdit>
 #include <QSysInfo>
 #include <QGuiApplication>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QScreen>
 #include <QRegularExpression>
+#include <QStandardPaths>
 
 #if defined(Q_OS_UNIX)
 #include <cerrno>
@@ -1357,6 +1360,15 @@ void MainWindow::showDesktopProcessDetails(
                               : process.command);
     layout->addWidget(command, 1);
 
+    auto *fullDetailLabel = new QLabel(QStringLiteral("Full process details"));
+    layout->addWidget(fullDetailLabel);
+    auto *fullDetail = new QPlainTextEdit(dialog);
+    fullDetail->setReadOnly(true);
+    fullDetail->setLineWrapMode(QPlainTextEdit::NoWrap);
+    fullDetail->setPlainText(forkmesh::desktopprocs::detailTextFor(process));
+    fullDetail->setMaximumHeight(150);
+    layout->addWidget(fullDetail);
+
     auto *status = new QLabel;
     status->setWordWrap(true);
     layout->addWidget(status);
@@ -1400,6 +1412,75 @@ void MainWindow::showDesktopProcessDetails(
                                 .arg(process.name)
                                 .arg(process.pid));
             stop->setEnabled(false);
+        } else if (outcome == SystemStats::Termination::PermissionDenied) {
+            const QString pkexec = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
+            const QString kill = QStandardPaths::findExecutable(QStringLiteral("kill"));
+            QString program;
+            QStringList arguments;
+            QByteArray password;
+            if (!pkexec.isEmpty()) {
+                program = pkexec;
+                arguments = {kill.isEmpty() ? QStringLiteral("/bin/kill") : kill,
+                             QStringLiteral("-TERM"), QString::number(process.pid)};
+            } else {
+                bool accepted = false;
+                QString entered = QInputDialog::getText(
+                    dialog, QStringLiteral("Administrator password"),
+                    QStringLiteral("%1 (PID %2) needs administrator permission to stop. "
+                                   "Enter the sudo password:")
+                        .arg(process.name)
+                        .arg(process.pid),
+                    QLineEdit::Password, QString(), &accepted);
+                if (!accepted)
+                    return;
+                program = QStringLiteral("sudo");
+                arguments = {QStringLiteral("-S"), QStringLiteral("-p"), QString(),
+                             QStringLiteral("--"),
+                             kill.isEmpty() ? QStringLiteral("/bin/kill") : kill,
+                             QStringLiteral("-TERM"), QString::number(process.pid)};
+                password = entered.toUtf8();
+                password.append('\n');
+                entered.fill(QChar::Null);
+            }
+            stop->setEnabled(false);
+            status->setText(QStringLiteral("Requesting administrator permission to stop %1 …")
+                                .arg(process.name));
+            auto *elevated = new QProcess(dialog);
+            auto finished = QSharedPointer<bool>::create(false);
+            auto complete = [this, elevated, finished, process, status](bool requested) {
+                if (*finished)
+                    return;
+                *finished = true;
+                elevated->deleteLater();
+                if (requested) {
+                    status->setText(QStringLiteral("Termination requested for %1 (PID %2).")
+                                        .arg(process.name)
+                                        .arg(process.pid));
+                    if (m_desktopProcessView)
+                        QTimer::singleShot(750, m_desktopProcessView,
+                                           &forkmesh::DesktopProcessView::sampleNow);
+                } else {
+                    status->setText(QStringLiteral("Administrator permission was declined or "
+                                                   "could not stop %1 (PID %2).")
+                                        .arg(process.name)
+                                        .arg(process.pid));
+                }
+            };
+            connect(elevated, &QProcess::finished, dialog,
+                    [complete](int exitCode, QProcess::ExitStatus exitStatus) {
+                        complete(exitStatus == QProcess::NormalExit && exitCode == 0);
+                    });
+            connect(elevated, &QProcess::errorOccurred, dialog,
+                    [complete](QProcess::ProcessError error) {
+                        if (error == QProcess::FailedToStart)
+                            complete(false);
+                    });
+            elevated->start(program, arguments);
+            if (!password.isEmpty()) {
+                elevated->write(password);
+                password.fill('\0');
+            }
+            elevated->closeWriteChannel();
         } else {
             status->setText(QStringLiteral("Could not stop %1 (PID %2): %3")
                                 .arg(process.name)
@@ -2109,6 +2190,16 @@ void MainWindow::killHighMemoryProcess(qint64 pid, const QString &name)
                 .arg(failure));
         return;
     }
+    if (outcome == SystemStats::Termination::PermissionDenied) {
+        QMessageBox::warning(
+            m_highMemoryDialog ? static_cast<QWidget *>(m_highMemoryDialog.data()) : this,
+            QStringLiteral("Administrator permission required"),
+            QStringLiteral("Open the process details from Logs → Desktop to authenticate and "
+                           "stop %1 (PID %2).")
+                .arg(name)
+                .arg(pid));
+        return;
+    }
     if (m_highMemoryProcessStatus)
         m_highMemoryProcessStatus->setText(
             (outcome == SystemStats::Termination::AlreadyExited
@@ -2295,6 +2386,9 @@ void MainWindow::killAllHighMemoryProcesses(const QString &name,
             break;
         case SystemStats::Termination::Failed:
             failures.append(QStringLiteral("PID %1: %2").arg(pid).arg(failure));
+            break;
+        case SystemStats::Termination::PermissionDenied:
+            failures.append(QStringLiteral("PID %1: administrator permission required").arg(pid));
             break;
         case SystemStats::Termination::AlreadyExited:
         case SystemStats::Termination::Unsupported:

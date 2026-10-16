@@ -83,6 +83,22 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
     if (!m_agentStore)
         return;
     const int sid = session.id;
+    if (!session.directCheckout && session.issueNumber == 0) {
+        const QString worktreeRoot = forkmesh::vm::active()
+                                         ? forkmesh::vm::worktreeRoot()
+                                         : forkmesh::agentwt::root(repoPath);
+        const auto existing = forkmesh::agentwt::existingWorkspace(worktreeRoot, sid);
+        if (!existing.path.isEmpty() &&
+            (session.branchName != existing.branch ||
+             session.worktreeName != QFileInfo(existing.path).fileName())) {
+            session.branchName = existing.branch;
+            session.worktreeName = QFileInfo(existing.path).fileName();
+            m_agentStore->saveSession(session);
+            m_agentStore->appendLog(
+                session, QStringLiteral("==> Recovered existing workspace %1.\n")
+                             .arg(session.worktreeName));
+        }
+    }
     // The queue routes here on the provider, so the provider names the CLI.
     // Sessions switched to another agent before the runtime followed the
     // provider still carry the old runtime and would relaunch that agent.

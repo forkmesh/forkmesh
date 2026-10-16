@@ -306,6 +306,16 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertFalse(client.calls.contains { $0.method == "DELETE" })
     }
 
+    @MainActor func testReportedLocalPingUpdatesInbox() async {
+        let store = InMemoryKeyValueStore()
+        let local = LocalPingLog(store: store)
+        let model = InboxModel(client: FakeInboxClient(), node: { "alice" }, store: store, localPings: local)
+        await model.load()
+        let ping = local.record(surface: "genie", title: "The spider said", message: "Opened in Zoho Mail.")
+        XCTAssertEqual(model.items.map(\.id), ["local:\(ping!.id)"])
+        XCTAssertEqual(model.unreadCounts[.pings], 1)
+    }
+
     @MainActor func testPromptForPingAndTask() {
         let model = InboxModel(client: FakeInboxClient(), node: { "alice" }, store: InMemoryKeyValueStore())
         let item = InboxItem(id: "task:t", source: .task, category: .assigned, kind: "organization_task", title: "Ship", body: "Now",

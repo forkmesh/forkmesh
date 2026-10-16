@@ -408,3 +408,7 @@ compile. Keep to these:
   widgets wrap a tappable row in `WidgetRouteLink(route) { … }`, which links
   only when the route has a URL (the 2026-10-15 ad hoc build failed on
   `SummaryLiveActivity`'s agent, shortcut and timer rows).
+- A bare `catch` binds an immutable `error` that shadows a view's
+  `@State var error`; assign the property as `self.error = …` inside the
+  `catch` (the 2026-10-15 ad hoc build failed on `ProcessDetailScreen` in
+  `DiagnosticsScreens.swift`).
