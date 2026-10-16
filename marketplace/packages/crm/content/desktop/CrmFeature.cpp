@@ -220,6 +220,7 @@ constexpr FlowIconKind kFlowIconKinds[] = {
     {"support", "Support", 0xffdb6158},
     {"projects", "Projects", 0xff57606a},
     {"events", "Events", 0xffe16f24},
+    {"grants", "Grants", 0xffbf8700},
 };
 
 const FlowIconKind &flowIconKind(const QString &id)
@@ -295,6 +296,12 @@ QIcon flowTypeIcon(const QString &id)
             painter.drawRoundedRect(QRectF(1.75, 1.75, 12.5, 12.5), 2.5, 2.5);
             painter.drawPolyline(QPolygonF{QPointF(4.75, 8.25), QPointF(7.0, 10.5),
                                            QPointF(11.25, 5.5)});
+        } else if (which == QLatin1String("grants")) {
+            // A rosette: a seal with two ribbons.
+            painter.drawEllipse(QRectF(3.75, 1.5, 8.5, 8.5));
+            painter.drawPolyline(QPolygonF{QPointF(5.5, 9.25), QPointF(4.75, 14.5),
+                                           QPointF(8.0, 12.75), QPointF(11.25, 14.5),
+                                           QPointF(10.5, 9.25)});
         } else if (which == QLatin1String("events")) {
             // A calendar page.
             painter.drawRoundedRect(QRectF(1.75, 3.0, 12.5, 11.25), 2.0, 2.0);
@@ -647,7 +654,7 @@ constexpr int kNextPhotoSize = 64;
 const QSet<QString> kWonStages{
     QStringLiteral("won"), QStringLiteral("closed-won"), QStringLiteral("customer"),
     QStringLiteral("renewal"), QStringLiteral("committed"), QStringLiteral("signed"),
-    QStringLiteral("paid"), QStringLiteral("active")};
+    QStringLiteral("paid"), QStringLiteral("active"), QStringLiteral("awarded")};
 const QSet<QString> kEndedStages{
     QStringLiteral("passed"), QStringLiteral("rejected"), QStringLiteral("closed"),
     QStringLiteral("inactive"), QStringLiteral("hired"), QStringLiteral("lost"),
@@ -735,6 +742,11 @@ QString aiAngle(const QString &group, const QString &flow)
         }
         return false;
     };
+    if (mentions({"grant"}))
+        return QStringLiteral("They are on our \"%1\" list as a grant funder, so write to their "
+                              "published priorities and evaluation criteria: problem, approach, "
+                              "impact, team, budget and milestones. Never invent traction, "
+                              "numbers, partners or names.").arg(name);
     if (mentions({"journalist", "press", "media", "reporter", "writer", "editor", "podcast",
                   "newsletter", "blog"}))
         return QStringLiteral("They are on our \"%1\" list as a journalist, so pitch a story: why "
@@ -9609,7 +9621,12 @@ QString CrmFeature::aiPrompt(const AiDraft &draft) const
     }
 
     QString ask;
-    if (draft.format == QLatin1String("toot")) {
+    if (draft.format == QLatin1String("application")) {
+        ask = QStringLiteral("a complete draft of our grant application to %1. Follow their form: "
+                             "answer every question they ask, in their order and under their "
+                             "headings, within their word or character limits, with a budget in "
+                             "their currency that fits the amount they award.").arg(name);
+    } else if (draft.format == QLatin1String("toot")) {
         ask = QStringLiteral("a Mastodon post (toot) to %1%2, at most 500 characters including the "
                              "mention and any link, with no more than two hashtags.%3")
                   .arg(name,
@@ -9624,7 +9641,11 @@ QString CrmFeature::aiPrompt(const AiDraft &draft) const
         ask = QStringLiteral("an email to %1. Start with a \"Subject:\" line, then the body, signed "
                              "by %2. Keep the body under 150 words.").arg(name, sender);
     }
-    const QString goal = draft.mode == QLatin1String("reach")
+    const QString goal = draft.format == QLatin1String("application")
+        ? QStringLiteral("We are applying to %1 for funding: make the case that funding %2 "
+                         "advances their mission, and propose one concrete, fundable piece of %2 "
+                         "work with milestones and deliverables.").arg(name, organization)
+        : draft.mode == QLatin1String("reach")
         ? QStringLiteral("This is our first contact with %1: introduce %2 in a sentence and give "
                          "them one concrete reason it matters to them in particular.")
               .arg(name, organization)
@@ -9699,24 +9720,43 @@ QString CrmFeature::aiPrompt(const AiDraft &draft) const
     };
     if (!angle.isEmpty())
         prompt << angle;
+    prompt << QString() << QStringLiteral("How to write it:");
+    if (draft.format == QLatin1String("application")) {
+        prompt << QStringLiteral("- If you can browse, open their program page and application "
+                                 "form (links below) first, and use their current questions, "
+                                 "limits, deadline and criteria; say so if anything on our record "
+                                 "is out of date.")
+               << QStringLiteral("- Answer each question under its own heading, with its word or "
+                                 "character count after it.")
+               << QStringLiteral("- Fit the request to their range and to what they fund; break "
+                                 "the budget into milestones with dates and deliverables.")
+               << QStringLiteral("- Plain, specific words, no hype, no emoji. Use only facts given "
+                                 "here or found on the linked pages; leave out anything you cannot "
+                                 "back up.")
+               << QStringLiteral("- Where the form needs something only we can supply (legal "
+                                 "entity, registration numbers, bank details, CVs, letters of "
+                                 "support), never invent it: list it at the end instead.")
+               << QStringLiteral("- Reply with the finished application, ready to paste, then a "
+                                 "checklist of every document and fact we still have to supply, "
+                                 "then three ways to make it stronger.");
+    } else {
+        prompt << QStringLiteral("- Make it personal. Open with something specific to them, taken "
+                                 "from their recent posts, work or links below, never a compliment "
+                                 "that would fit anyone.")
+               << QStringLiteral("- Say plainly who we are, why we are writing to them in "
+                                 "particular, and why now.")
+               << QStringLiteral("- End with one clear, low-effort ask (a reply, a short call, or "
+                                 "trying one thing).")
+               << QStringLiteral("- Plain, warm words, short paragraphs, no hype, no emoji, no "
+                                 "[placeholders]. Use only facts given here or found on the linked "
+                                 "pages; leave out anything you cannot back up.")
+               << QStringLiteral("- If you can browse, open their profiles and posts and our site, "
+                                 "blog and changelog below first, and use anything newer than what "
+                                 "is written here.")
+               << QStringLiteral("- Reply with the finished message, ready to paste, then two "
+                                 "alternative opening lines.");
+    }
     prompt << QString()
-           << QStringLiteral("How to write it:")
-           << QStringLiteral("- Make it personal. Open with something specific to them, taken from "
-                             "their recent posts, work or links below, never a compliment that "
-                             "would fit anyone.")
-           << QStringLiteral("- Say plainly who we are, why we are writing to them in particular, "
-                             "and why now.")
-           << QStringLiteral("- End with one clear, low-effort ask (a reply, a short call, or "
-                             "trying one thing).")
-           << QStringLiteral("- Plain, warm words, short paragraphs, no hype, no emoji, no "
-                             "[placeholders]. Use only facts given here or found on the linked "
-                             "pages; leave out anything you cannot back up.")
-           << QStringLiteral("- If you can browse, open their profiles and posts and our site, blog "
-                             "and changelog below first, and use anything newer than what is "
-                             "written here.")
-           << QStringLiteral("- Reply with the finished message, ready to paste, then two "
-                             "alternative opening lines.")
-           << QString()
            << QStringLiteral("## About us: %1").arg(organization)
            << (draft.brief.trimmed().isEmpty()
                    ? QStringLiteral("(No description saved yet. Look %1 up before writing.)")
@@ -9826,7 +9866,9 @@ void CrmFeature::showAiWriter(const QString &contactId, const QString &mode,
     draft->mode = mode.isEmpty() ? (talked ? QStringLiteral("follow") : QStringLiteral("reach"))
                                  : mode;
     const QString email = text(contact, "email");
-    draft->format = email.contains(QLatin1Char('@')) ? QStringLiteral("email")
+    draft->format = flowIconId(text(contact, "flow")) == QLatin1String("grants")
+        ? QStringLiteral("application")
+        : email.contains(QLatin1Char('@')) ? QStringLiteral("email")
         : !mastodonHandleKey(text(contact, "mastodon")).isEmpty() ? QStringLiteral("toot")
                                                                   : QStringLiteral("message");
     const QStringList sources = avatarSources(contact);
@@ -9850,6 +9892,7 @@ void CrmFeature::showAiWriter(const QString &contactId, const QString &mode,
     format->addItem(QStringLiteral("Email"), QStringLiteral("email"));
     format->addItem(QStringLiteral("Direct message"), QStringLiteral("message"));
     format->addItem(QStringLiteral("Toot"), QStringLiteral("toot"));
+    format->addItem(QStringLiteral("Grant application"), QStringLiteral("application"));
     format->setCurrentIndex(format->findData(draft->format));
     formatRow->addWidget(new QLabel(QStringLiteral("Write")));
     formatRow->addWidget(format);

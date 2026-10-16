@@ -999,7 +999,7 @@ def test_pipelines_carry_a_type_icon_lists_are_assigned_and_stages_are_edited():
     assert '_flows(data.get("flows"), result.get("flows"))' in CRM_WORKER
     # The desktop draws the same kinds and shows them on tabs and pickers.
     for kind in ("pipeline", "investors", "hiring", "partners", "customers",
-                 "sales", "support", "projects", "events"):
+                 "sales", "support", "projects", "events", "grants"):
         assert f'{{"{kind}", ' in FEATURE
         assert f'"{kind}"' in CRM_WORKER.split("FLOW_ICONS = (", 1)[1].split(")", 1)[0]
     tabs = FEATURE.split("void CrmFeature::renderSheetTabs(", 1)[1].split("\nvoid CrmFeature::", 1)[0]
