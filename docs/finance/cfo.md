@@ -50,6 +50,30 @@ from totals, and feed a reminder and an **Expected** tab on `/ledger`. A row
 disappears once a matching receipt is recorded. Each review lists the receipts
 the reminder names.
 
+## Recording expenses
+
+A cost a member paid personally is recorded with the ForkMesh MCP tool
+`record_expense`, not a migration. It posts to `POST /api/ledger/expenses`
+(`operating_expense_record_handler` in `app/src/ledger.py`), signed with the
+desktop's identity key under `forkmesh-ledger-expense-request-v1` over the
+exact body:
+
+- the signer must be an administrator with two-factor sign-in (`_is_admin`);
+  browser sessions are not accepted, so the route has no cookie surface;
+- `paidBy` must be an active account; `amount` has at most two decimals;
+  `incurredOn` is a UTC date, not in the future; an original card currency
+  needs both `originalAmount` and `originalCurrency`;
+- the row is `operating_expenses`, reimbursement `outstanding`, so `/ledger`
+  shows the expense and the debt owed to the payer;
+- the invoice number is the key: sending the same invoice again changes
+  nothing, and the same number with another amount, payer, vendor or date is
+  refused with `expense_reference_conflict`;
+- each recording, and each refused non-administrator, is in the audit log as
+  `ledger.expense.record`.
+
+A credit note is not a charge: record the invoice it credits only if the
+member was actually charged.
+
 ## Contest prize minimums
 
 Contest prizes require a minimum of eligible revenue per place (twice the

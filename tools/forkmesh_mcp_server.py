@@ -139,7 +139,7 @@ WRITE_TOOLS = {
     "crm_merge_contacts", "crm_check_accounts", "marketing_save_ready_post",
     "create_task", "update_task", "complete_task", "reopen_task",
     "attach_work_item", "detach_work_item", "delete_task", "restore_task",
-    "create_agent", "create_release", "publish_release",
+    "create_agent", "create_release", "publish_release", "record_expense",
 }
 DESTRUCTIVE_TOOLS = {"delete_task", "crm_merge_contacts"}
 WINDOW_TOOLS = {"show_window", "read_window", "close_window",
@@ -3303,6 +3303,10 @@ def tool_create_cloud_note(args):
         args.get("title"), args.get("content", "")), indent=2)
 
 
+def tool_record_expense(args):
+    return json.dumps(record_expense(args), indent=2)
+
+
 def tool_get_note(args):
     note, _path, _repo = locate_note(args["note_id"])
     return json.dumps(public_note(note, include_content=True), indent=2)
@@ -3483,6 +3487,13 @@ TASK_ERROR_HINTS = {
     "task_not_deleted": "the task is not in the trash",
     "task_not_found": "no such task on the board",
     "task_delete_batch_refused": "nothing was deleted",
+    "admin_required": "the account signed in on this desktop is not a "
+                      "ForkMesh administrator with two-factor sign-in",
+    "unauthorized": "this device's identity key is not an owner-signing key "
+                    "of the signed-in account",
+    "payer_not_found": "paid_by names no active ForkMesh account",
+    "expense_reference_conflict": "that invoice is already recorded with "
+                                  "other details; nothing was changed",
 }
 TASK_BLOCKER_COPY = {
     "agent_running": "an agent job is running on it",
@@ -3496,6 +3507,8 @@ def task_error_message(code, error, payload, service="Tasks"):
     hint = TASK_ERROR_HINTS.get(error)
     if hint:
         parts.append(hint)
+    if payload.get("fields"):
+        parts.append("invalid " + ", ".join(map(str, payload["fields"])))
     blocked = [TASK_BLOCKER_COPY.get(str(item), str(item))
                for item in payload.get("blockedBy") or []]
     if blocked:
@@ -3613,6 +3626,34 @@ def create_cloud_note(title, markdown):
     return {"id": note.get("id", ""), "title": note.get("title", title),
             "version": note.get("version", 1),
             "updatedAt": note.get("updatedAt", 0)}
+
+
+EXPENSE_REQUEST_PROOF = "forkmesh-ledger-expense-request-v1"
+LEDGER_EXPENSES_PATH = "/api/ledger/expenses"
+EXPENSE_FIELDS = (
+    ("vendor", "vendor"), ("description", "description"),
+    ("paid_by", "paidBy"), ("amount", "amount"), ("currency", "currency"),
+    ("external_reference", "externalReference"),
+    ("incurred_on", "incurredOn"), ("original_amount", "originalAmount"),
+    ("original_currency", "originalCurrency"))
+
+
+def record_expense(args):
+    body = {key: str(args[name]).strip() for name, key in EXPENSE_FIELDS
+            if args.get(name) not in (None, "")}
+    missing = [name for name, key in EXPENSE_FIELDS[:4] + EXPENSE_FIELDS[5:7]
+               if key not in body]
+    if missing:
+        raise ValueError("missing " + ", ".join(missing))
+    body_bytes = json.dumps(
+        body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    digest = hashlib.sha256(body_bytes).hexdigest()
+    payload = signed_relay_request(
+        "POST", LEDGER_EXPENSES_PATH,
+        [EXPENSE_REQUEST_PROOF, "POST", LEDGER_EXPENSES_PATH, digest],
+        body_bytes, service="Ledger")
+    return {"created": bool(payload.get("created")),
+            "expense": payload.get("expense") or {}}
 
 
 def list_tasks(status="open", query="", department="", team="",
@@ -4023,6 +4064,27 @@ TOOLS = [
             "required": ["title", "content"],
         },
         "handler": tool_create_cloud_note,
+    },
+    {
+        "name": "record_expense",
+        "description": "Record an operating expense a member paid personally on the public ledger at /ledger, with ForkMesh owing them the same amount until it is reimbursed. Needs a ForkMesh administrator account signed in on this desktop. Recording the same invoice again changes nothing; a different amount, payer or date under the same invoice number is refused.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "vendor": {"type": "string", "description": "who was paid, e.g. Anthropic"},
+                "description": {"type": "string", "description": "what it was for, e.g. Anthropic subscription invoice"},
+                "paid_by": {"type": "string", "description": "ForkMesh account name of the member who paid and is owed it, e.g. jett"},
+                "amount": {"type": "string", "description": "amount charged, e.g. 217.75"},
+                "currency": {"type": "string", "description": "three-letter currency of amount; default USD"},
+                "external_reference": {"type": "string", "description": "invoice or receipt number, e.g. 8RYATVG1-0013"},
+                "incurred_on": {"type": "string", "description": "date charged, YYYY-MM-DD (UTC)"},
+                "original_amount": {"type": "string", "description": "card charge in another currency, when it differs"},
+                "original_currency": {"type": "string", "description": "currency of original_amount, e.g. INR"},
+            },
+            "required": ["vendor", "description", "paid_by", "amount",
+                         "external_reference", "incurred_on"],
+        },
+        "handler": tool_record_expense,
     },
     {
         "name": "get_note",

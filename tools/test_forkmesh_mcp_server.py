@@ -532,7 +532,8 @@ def main():
         "attach_work_item", "detach_work_item", "delete_task",
         "restore_task", "create_agent", "show_window", "read_window",
         "close_window", "open_browser_window", "read_browser_page",
-        "list_releases", "create_release", "publish_release"})
+        "list_releases", "create_release", "publish_release",
+        "record_expense"})
     check("work item attach merges on repository, branch and node",
           work_item_merge_cases())
     check("persistent reminder rides its own signed task PATCH",
@@ -1468,6 +1469,10 @@ def main():
         task_requests.append({
             "method": request.get_method(), "path": url.path,
             "params": params, "raw": request.data, "body": body})
+        if url.path == "/api/ledger/expenses":
+            return FakeTaskResponse(json.dumps({"ok": True, "created": True,
+                "expense": {"id": "anthropic-8ryatvg1-0013",
+                            "amountMinor": 21775}}).encode())
         if url.path == "/api/notes":
             return FakeTaskResponse(json.dumps({"ok": True, "note": {
                 "id": "d" * 32, "title": body["title"], "version": 1,
@@ -1528,6 +1533,33 @@ def main():
               sent["params"]["node"] == "seller" and
               json.loads(text)["id"] == "d" * 32 and
               _verify(pub_b64, sent["params"]["sig"], canonical.encode()))
+
+        text, err = call("record_expense", {
+            "vendor": "Anthropic", "description": "Anthropic subscription invoice",
+            "paid_by": "jett", "amount": 217.75,
+            "external_reference": "8RYATVG1-0013", "incurred_on": "2026-10-16"})
+        sent = task_requests[-1]
+        canonical = "\n".join((
+            "forkmesh-ledger-expense-request-v1", "seller", "POST",
+            "/api/ledger/expenses", hashlib.sha256(sent["raw"]).hexdigest(),
+            sent["params"]["ts"]))
+        check("record_expense posts the expense signed over its exact body",
+              not err and sent["method"] == "POST" and
+              sent["path"] == "/api/ledger/expenses" and
+              sent["body"] == {"vendor": "Anthropic",
+                               "description": "Anthropic subscription invoice",
+                               "paidBy": "jett", "amount": "217.75",
+                               "externalReference": "8RYATVG1-0013",
+                               "incurredOn": "2026-10-16"} and
+              json.loads(text) == {"created": True, "expense": {
+                  "id": "anthropic-8ryatvg1-0013", "amountMinor": 21775}} and
+              _verify(pub_b64, sent["params"]["sig"], canonical.encode()))
+
+        before = len(task_requests)
+        text, err = call("record_expense", {"vendor": "Anthropic"})
+        check("record_expense names missing fields before any request",
+              err and "description, paid_by, amount" in text and
+              len(task_requests) == before)
     finally:
         srv.urllib.request.urlopen = real_task_urlopen
 
@@ -1562,6 +1594,10 @@ def main():
     check("note write refused without the token", err)
     _, err = call("create_cloud_note", {"title": "Blocked", "content": "no token"})
     check("cloud note write refused without the token", err)
+    _, err = call("record_expense", {
+        "vendor": "Anthropic", "description": "x", "paid_by": "jett",
+        "amount": "1", "external_reference": "R-1", "incurred_on": "2026-10-16"})
+    check("expense write refused without the token", err)
     _, err = call("update_note", {"note_id": personal_id, "content": "no token"})
     check("note update refused without the token", err)
     _, err = call("post_chat_message", {

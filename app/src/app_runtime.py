@@ -2559,6 +2559,9 @@ class Default:
         if url.path in ("/api/ledger", "/api/ledger/"):
             return await ledger_handler(self.env, request)
 
+        if url.path == "/api/ledger/expenses":
+            return await operating_expense_record_handler(self.env, request)
+
         # Paid microjobs: the public job catalog, the caller's own claims, and
         # the verified claim submission. Payouts leave here only as the same
         # public unsigned plan the owner's desktop already signs locally.
