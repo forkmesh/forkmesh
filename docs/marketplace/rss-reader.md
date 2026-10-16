@@ -90,7 +90,9 @@ unread count.
   when reader view finds no text. On phones the ForkMesh shell header and
   navigation stay hidden from feeds through the timeline and article detail;
   a horizontal swipe moves the full article page to the previous or next
-  article.
+  article. On iOS a swipe that starts sideways locks the page's vertical
+  scroll until the finger lifts, so the page slides one way only (a pan on
+  the web view that the scroll view's pan waits on).
 - Settings: the timeline switches above, article theme (Default, Sepia, Paper,
   High contrast), font and size, load remote images, appearance, Error Log,
   Activity Log, Stats, About.

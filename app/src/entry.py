@@ -1010,6 +1010,7 @@ NOTIFICATION_IMMEDIATE_KINDS = frozenset({
     "issue_opened", "pull_submitted", "issue_assigned"})
 NOTIFICATION_IMMEDIATE_SOURCES = frozenset({"issue", "pull", "discussion"})
 NOTIFICATION_IMMEDIATE_CONTEXTS = frozenset({"reminder"})
+NOTIFICATION_EMAIL_SKIP_SOURCES = frozenset({"ios_build"})
 NOTIFICATION_IMMEDIATE_SCAN = 20
 NOTIFICATION_IMMEDIATE_FRESH_MS = 60 * 60 * 1000
 NOTIFICATION_PULL_STATE_KINDS = frozenset({"pull_submitted", "pending_inbox"})
@@ -37414,6 +37415,8 @@ async def _notification_email_items(env, rows, email_rec, last):
         payload = dict(payload, id=row.get("dedupe_bi") or "")
         kind = clean_string(payload.get("kind", ""), 40)
         if not prefs.get(kind, False):
+            continue
+        if clean_string(payload.get("source", ""), 80) in NOTIFICATION_EMAIL_SKIP_SOURCES:
             continue
         items.append(payload)
     return items, newest
