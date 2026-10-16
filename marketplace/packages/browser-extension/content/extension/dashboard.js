@@ -44,7 +44,7 @@
     }
     if (REDDIT_WALK[event.data.type]) {
       const request = String(event.data.request || "").slice(0, 64);
-      chrome.runtime.sendMessage({ type: REDDIT_WALK[event.data.type] })
+      chrome.runtime.sendMessage({ type: REDDIT_WALK[event.data.type], ...(event.data.rulesOnly === true ? { rulesOnly: true } : {}) })
         .then((response) => reply({ type: event.data.type, request, response: response || { ok: false } }))
         .catch((error) => reply({ type: event.data.type, request, response: { ok: false, error: "extension_unavailable", message: String(error?.message || "") } }));
       return;

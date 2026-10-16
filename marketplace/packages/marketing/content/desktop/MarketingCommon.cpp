@@ -187,6 +187,8 @@ void clearLayout(QLayout *layout)
 void dashboardTable(QTableWidget *table)
 {
     table->verticalHeader()->hide();
+    table->verticalHeader()->setMinimumSectionSize(20);
+    table->verticalHeader()->setDefaultSectionSize(24);
     table->setShowGrid(false);
     table->setFrameShape(QFrame::NoFrame);
     table->setWordWrap(false);
