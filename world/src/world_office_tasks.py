@@ -2860,6 +2860,7 @@ async def _apply_agent_status(
     # report anything. The gates above are unchanged: this is still only
     # reachable for agent work, by its creator or a manager.
     agent = dict(current.get("agent") or {})
+    previous_status = str(agent.get("status") or "").lower()
     if isinstance(agent_run, dict):
         agent.update({
             field: value
@@ -2874,13 +2875,14 @@ async def _apply_agent_status(
         "WHERE org_bi=? AND task_id=?",
         await runtime.seal(current), now, org_bi, task_id,
     )
-    await runtime.audit(
-        actor,
-        "organization.task_agent_status",
-        "organization_task",
-        task_id,
-        details={"status": status},
-    )
+    if previous_status != status:
+        await runtime.audit(
+            actor,
+            "organization.task_agent_status",
+            "organization_task",
+            task_id,
+            details={"status": status},
+        )
     return ""
 
 

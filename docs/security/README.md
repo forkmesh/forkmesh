@@ -116,6 +116,16 @@ python3 tools/secret_gate.py --help
 - Ongoing review: [sentinel.md](sentinel.md); fixed findings and open items:
   [findings.md](findings.md).
 
+## Security audit log
+
+`sensitive_audit_log` keeps 365 days (`SECURITY_AUDIT_RETAIN_MS`, pruned by
+the `sensitive-cleanup` cron). An agent run's status report
+(`organization.task_agent_status`, `world/src/world_office_tasks.py`) writes an
+audit row only when the run's status changes from the stored one; a repeated
+report of the same status still updates the task but adds no row. Why: the
+2026-10-16 table audit found the log at 19 MiB and 74.8k rows on 1 GB nodes,
+mostly one identical row per desktop status heartbeat.
+
 ## Traps
 
 - User-data wipes (`install.sh --uninstall/--reinstall/--purge`,

@@ -1614,6 +1614,7 @@ async def _release_platform_probe(env, system_id, manifest_memo=None):
             release_sha=digest,
             bypass_cache=True,
             monitoring=True,
+            method="HEAD",
         )
         status = int(getattr(response, "status", 0) or 0)
         await _discard_response_body(response)

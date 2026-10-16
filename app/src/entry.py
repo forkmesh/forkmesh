@@ -566,6 +566,9 @@ MAX_PACKAGE_INSTALL_EVENTS = 64
 # Private vulnerability reports: bounded so the open endpoint can't grow D1.
 MAX_SECURITY_REPORTS = 1000
 SECURITY_AUDIT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
+SECURITY_INCIDENT_INFO_RETAIN_MS = 90 * 24 * 60 * 60 * 1000
+SECURITY_INCIDENT_RETAIN_MS = 365 * 24 * 60 * 60 * 1000
+SECURITY_INCIDENT_PRUNE_BATCH = 2000
 # Anonymous website and World-kiosk feedback. Bounded like telemetry and install
 # diagnostics so the unauthenticated endpoint cannot grow D1 forever.
 MAX_FEEDBACK = 5000
@@ -5149,8 +5152,10 @@ def _deployment_status_grace_active(env, now):
 
 async def _routed_repository_read(
         env, url, operation, release_sha="", bypass_cache=False,
-        monitoring=False, context_cache=None, retry_failed_proofs=False):
-    request = JsRequest.new(url)
+        monitoring=False, context_cache=None, retry_failed_proofs=False,
+        method="GET"):
+    request = (JsRequest.new(url) if method == "GET"
+               else JsRequest.new(url, to_js({"method": method})))
     route_url = urlparse(request.url)
     aliased = await org_alias_rewrite(env, request, route_url)
     if aliased is not None:
@@ -13392,7 +13397,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "e450f00ab774ba52e4bf6bceeb6edf3fbeb957859962f869b7457477752aded3"
+    "31e698fa0f738ce3ed690feccaaabf062f96e1b82f8d56b3f98886a813b7d7c0"
 )
 
 
@@ -29839,7 +29844,31 @@ async def cleanup_sensitive_audit_records(env):
     await d1_run(
         env, "DELETE FROM password_reset_rate WHERE window_start_ts<?",
         now - PASSWORD_RESET_ACCOUNT_WINDOW_MS)
+    try:
+        await prune_security_incidents(env, now)
+    except Exception as error:
+        if _cron_budget_exhausted():
+            raise
+        await log_error(env, 500, "CRON", "security/incidents/prune",
+                        "Security incident retention failed: "
+                        + _safe_error_text(error)[:300])
     return await purge_trashed_organization_tasks(env, now)
+
+
+async def prune_security_incidents(env, now):
+    return await d1_run(
+        env,
+        "DELETE FROM security_incidents WHERE id IN ("
+        "SELECT i.id FROM security_incidents i "
+        "WHERE i.created_ms<? "
+        "AND (i.severity='info' OR i.created_ms<?) "
+        "AND COALESCE(i.severity,'')<>'lockdown' "
+        "AND NOT EXISTS (SELECT 1 FROM cluster_quarantine q "
+        "WHERE instr(q.body, '\"incident\":\"' || i.id || '\"')>0) "
+        "ORDER BY i.created_ms LIMIT ?)",
+        now - SECURITY_INCIDENT_INFO_RETAIN_MS,
+        now - SECURITY_INCIDENT_RETAIN_MS,
+        SECURITY_INCIDENT_PRUNE_BATCH)
 
 
 async def deliver_task_persistent_reminders(env, now=None):

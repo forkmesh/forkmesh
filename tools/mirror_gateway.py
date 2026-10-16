@@ -131,7 +131,7 @@ STREAM_INITIAL_RESPONSE_TIMEOUT_SECONDS = 60
 STREAM_INACTIVITY_TIMEOUT_SECONDS = 30 * 60
 MERGE_EXECUTOR_TIMEOUT_SECONDS = 10 * 60
 MAX_MERGE_REQUEST_BODY = 8 * 1024
-MAX_MERGE_JOB_CACHE = 10_000
+MAX_MERGE_JOB_CACHE = 1_000
 # A published mutation result carries the executor's node-signed attestation
 # of the refs this mirror serves right after the change. The relay checks the
 # attestation's freshness before admitting that state, so a cached result
@@ -464,7 +464,7 @@ DYNAMIC_REPOSITORIES_TYPE = "forkmesh.dynamic-repositories"
 MAX_DYNAMIC_REPOSITORY_ENTRIES = 1000
 MAX_DASHBOARD_ASSET_BYTES = 8 * 1024 * 1024
 DASHBOARD_ASSET_CACHE_ENTRIES = 24
-DASHBOARD_ASSET_CACHE_BYTES = 48 * 1024 * 1024
+DASHBOARD_ASSET_CACHE_BYTES = 12 * 1024 * 1024
 DASHBOARD_CATALOG_CACHE_ENTRIES = 8
 DASHBOARD_CATALOG_CACHE_BYTES = 8 * 1024 * 1024
 # Long-lived process memory is the primary serving tier for immutable Git
@@ -472,10 +472,13 @@ DASHBOARD_CATALOG_CACHE_BYTES = 8 * 1024 * 1024
 # explicitly advances the generation; these limits make an adversarial mix of
 # valid public queries incapable of consuming unbounded RAM.
 MEMORY_RESPONSE_CACHE_ENTRIES = 512
-MEMORY_RESPONSE_CACHE_BYTES = 64 * 1024 * 1024
+MEMORY_RESPONSE_CACHE_BYTES = 24 * 1024 * 1024
 MEMORY_RESPONSE_CACHE_OBJECT_BYTES = 8 * 1024 * 1024
 MEMORY_SESSION_CACHE_ENTRIES = 512
 MEMORY_SESSION_CACHE_BYTES = 2 * 1024 * 1024
+MEMORY_CACHE_ENTRY_OVERHEAD = 1024
+RELEASE_DIGEST_MEMO_ENTRIES = 512
+RELEASE_DIGEST_RECHECK_SECONDS = 3600
 _REPOSITORY_CACHE_GENERATIONS = itertools.count(1)
 DASHBOARD_CSP = (
     "default-src 'self'; base-uri 'self'; object-src 'none'; "
@@ -2534,6 +2537,31 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_RELEASE_DIGEST_MEMO: "OrderedDict[tuple, float]" = OrderedDict()
+_RELEASE_DIGEST_LOCK = threading.Lock()
+
+
+def _release_digest_matches(path: Path, digest: str) -> bool:
+    info = path.stat()
+    key = (str(path), digest, info.st_size, info.st_mtime_ns, info.st_ino)
+    now = time.monotonic()
+    with _RELEASE_DIGEST_LOCK:
+        checked = _RELEASE_DIGEST_MEMO.get(key)
+        if checked is not None and now - checked < RELEASE_DIGEST_RECHECK_SECONDS:
+            _RELEASE_DIGEST_MEMO.move_to_end(key)
+            return True
+    if not hmac.compare_digest(_sha256_file(path), digest):
+        with _RELEASE_DIGEST_LOCK:
+            _RELEASE_DIGEST_MEMO.pop(key, None)
+        return False
+    with _RELEASE_DIGEST_LOCK:
+        _RELEASE_DIGEST_MEMO[key] = now
+        _RELEASE_DIGEST_MEMO.move_to_end(key)
+        while len(_RELEASE_DIGEST_MEMO) > RELEASE_DIGEST_MEMO_ENTRIES:
+            _RELEASE_DIGEST_MEMO.popitem(last=False)
+    return True
 
 
 class ArchiveMaterializer:
@@ -5220,7 +5248,7 @@ class GitRepository:
         size = path.stat().st_size
         if size > max_release_bytes:
             raise GatewayError("release blob exceeds configured size limit")
-        if not hmac.compare_digest(_sha256_file(path), digest):
+        if not _release_digest_matches(path, digest):
             raise GatewayError("release blob integrity check failed")
         return StreamSpec(
             kind="file",
@@ -5478,10 +5506,12 @@ class BoundedMemoryCache:
     mirrors to fall back to disk even when no authoritative state changed.
     """
 
-    def __init__(self, name: str, *, max_entries: int, max_bytes: int) -> None:
+    def __init__(self, name: str, *, max_entries: int, max_bytes: int,
+                 entry_overhead: int = 0) -> None:
         self.name = name
         self.max_entries = max_entries
         self.max_bytes = max_bytes
+        self.entry_overhead = max(0, int(entry_overhead))
         self._lock = threading.Lock()
         self._entries: OrderedDict[Any, _MemoryCacheEntry] = OrderedDict()
         self._bytes = 0
@@ -5507,7 +5537,7 @@ class BoundedMemoryCache:
             self._backend_reads += 1
 
     def put(self, key: Any, value: Any, *, size: int) -> bool:
-        size = max(0, int(size))
+        size = max(0, int(size)) + self.entry_overhead
         if size > self.max_bytes:
             return False
         with self._lock:
@@ -6674,6 +6704,7 @@ class DashboardService:
             "dashboardAssets",
             max_entries=DASHBOARD_ASSET_CACHE_ENTRIES,
             max_bytes=DASHBOARD_ASSET_CACHE_BYTES,
+            entry_overhead=MEMORY_CACHE_ENTRY_OVERHEAD,
         )
         self._catalog_cache = BoundedMemoryCache(
             "repositoryCatalog",
@@ -7910,6 +7941,7 @@ class GatewayApplication:
             "repositoryResponses",
             max_entries=MEMORY_RESPONSE_CACHE_ENTRIES,
             max_bytes=MEMORY_RESPONSE_CACHE_BYTES,
+            entry_overhead=MEMORY_CACHE_ENTRY_OVERHEAD,
         )
         # Cache keys being computed right now (see _single_flight).
         self._inflight_lock = threading.Lock()
