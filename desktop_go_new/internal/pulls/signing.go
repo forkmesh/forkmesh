@@ -46,8 +46,10 @@ func ContentForSigning(ev *Event) string {
 	switch ev.Type {
 	case "comment":
 		return ev.Body
-	case "review":
+	case "review", "status":
 		return ev.State + nul + ev.Body
+	case "delete":
+		return ev.Body
 	}
 	anchor := ""
 	if ev.HasAnchor() {

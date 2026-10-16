@@ -6695,6 +6695,7 @@ void MainWindow::updatePullActionState()
         }
     }
     const bool manageable = writable && have && !archived;
+    const bool authorRequest = !writable && currentPullAuthoredHere();
     const bool mergeable = manageable && open;
     const bool requirePeerApproval =
         m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()
@@ -7002,10 +7003,10 @@ void MainWindow::updatePullActionState()
         m_pullDeleteFileButton->setEnabled(manageable && open && m_pullFiles &&
                                            m_pullFiles->currentItem());
     if (m_pullCloseButton)
-        m_pullCloseButton->setEnabled(manageable && open);
+        m_pullCloseButton->setEnabled((manageable || authorRequest) && open);
     if (m_pullConversationCloseButton) {
         m_pullConversationCloseButton->setVisible(have && open && !archived);
-        m_pullConversationCloseButton->setEnabled(manageable && open);
+        m_pullConversationCloseButton->setEnabled((manageable || authorRequest) && open);
         m_pullConversationCloseButton->setToolTip(
             QStringLiteral("Close this pull request without merging it"));
     }
@@ -7026,10 +7027,10 @@ void MainWindow::updatePullActionState()
     if (m_pullLinkIssueButton)
         m_pullLinkIssueButton->setEnabled(have && !archived);
     if (m_pullDeleteButton)
-        m_pullDeleteButton->setEnabled(manageable);
+        m_pullDeleteButton->setEnabled(manageable || authorRequest);
     if (m_pullConversationDeleteButton) {
         m_pullConversationDeleteButton->setVisible(have);
-        m_pullConversationDeleteButton->setEnabled(manageable &&
+        m_pullConversationDeleteButton->setEnabled((manageable || authorRequest) &&
                                                    !m_pullDeleteInProgress);
         m_pullConversationDeleteButton->setToolTip(
             QStringLiteral("Permanently delete this pull request"));
@@ -10688,11 +10689,55 @@ void MainWindow::pollBountyPayout(const RepositoryRecord &repo, int number,
 }
 
 
+bool MainWindow::currentPullAuthoredHere() const
+{
+    const QString key = m_profileIdentity.publicKey();
+    if (m_currentPullNumber < 0 || key.isEmpty())
+        return false;
+    for (const PullRequest &pr : m_currentPulls)
+        if (pr.number == m_currentPullNumber)
+            return !pr.archivedOnCodeBranch && pr.author == key &&
+                   (pr.status == QLatin1String("open") ||
+                    pr.status == QLatin1String("closed"));
+    return false;
+}
+
+void MainWindow::requestCurrentPullLifecycle(const QString &type)
+{
+    if (!currentPullAuthoredHere())
+        return;
+    const int number = m_currentPullNumber;
+    const bool deleting = type == QLatin1String("delete");
+    const QString title = deleting ? QStringLiteral("Delete pull request")
+                                   : QStringLiteral("Close pull request");
+    const QString prompt =
+        deleting ? QStringLiteral("Delete your pull request #%1? The repository "
+                                  "owner's node removes it when it next syncs.")
+                       .arg(number)
+                 : QStringLiteral("Close your pull request #%1 without merging it?")
+                       .arg(number);
+    if (QMessageBox::question(this, title, prompt,
+                              QMessageBox::Yes | QMessageBox::No,
+                              QMessageBox::No) != QMessageBox::Yes)
+        return;
+    PullEvent ev;
+    ev.type = deleting ? QStringLiteral("delete") : QStringLiteral("status");
+    if (!deleting)
+        ev.state = QStringLiteral("closed");
+    PullStore store = pullStoreForCurrentRepo();
+    ev = store.makeSignedEvent(number, ev);
+    submitPullEventToInbox(number, ev);
+}
+
 void MainWindow::closeCurrentPull()
 {
     if (m_currentPullNumber < 0)
         return;
     PullStore store = pullStoreForCurrentRepo();
+    if (!store.canWrite()) {
+        requestCurrentPullLifecycle(QStringLiteral("status"));
+        return;
+    }
     QString error;
     if (!store.setStatus(m_currentPullNumber, "closed", &error))
         QMessageBox::warning(this, "Close pull request", error);
@@ -10815,6 +10860,10 @@ void MainWindow::deleteCurrentPull()
 {
     if (m_currentPullNumber < 0)
         return;
+    if (!pullStoreForCurrentRepo().canWrite()) {
+        requestCurrentPullLifecycle(QStringLiteral("delete"));
+        return;
+    }
     if (m_pullDeleteInProgress) {
         setRepoDetailNotice(
             QStringLiteral("A pull request deletion is already running."));
@@ -12592,7 +12641,10 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
             const int number = obj.value("number").toInt();
             const PullEvent ev =
                 PullEvent::fromJson(obj.value("event").toObject());
-            if (store.applyRemoteEvent(number, ev)) {
+            const bool applied = PullStore::isLifecycleEvent(ev)
+                                     ? store.applyRemoteLifecycleEvent(number, ev)
+                                     : store.applyRemoteEvent(number, ev);
+            if (applied) {
                 if (!inboxId.isEmpty())
                     drainedIds << inboxId;
                 ++merged;

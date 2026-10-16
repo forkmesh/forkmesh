@@ -450,6 +450,10 @@ def pull_comment_content(ev):
             ev.get("threadId", ""), ev.get("state", ""),
             ev.get("appliedCommit", ""), ev.get("body", ""),
         ])
+    if t == "status":
+        return "\x00".join([ev.get("state", ""), ev.get("body", "")])
+    if t == "delete":
+        return ev.get("body", "")
     return ""
 
 
@@ -461,9 +465,11 @@ async def verify_pull_comment_event(number, ev, repo_keys=(), allow_v1=None):
     event_type = ev.get("type", "")
     allowed_types = (
         "comment", "review", "line-comment", "thread-comment", "thread-reply",
-        "thread-state", "suggestion-state",
+        "thread-state", "suggestion-state", "status", "delete",
     )
     if not author or not signature or event_type not in allowed_types:
+        return False
+    if event_type == "status" and ev.get("state") != "closed":
         return False
     try:
         ts = int(ev.get("ts", 0))

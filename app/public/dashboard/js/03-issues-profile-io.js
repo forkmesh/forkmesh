@@ -946,6 +946,10 @@
       content = [fields.threadId || "", fields.state || "", cleanBody].join(NUL);
     } else if (type === "suggestion-state") {
       content = [fields.threadId || "", fields.state || "", fields.appliedCommit || "", cleanBody].join(NUL);
+    } else if (type === "status") {
+      content = [fields.state || "", cleanBody].join(NUL);
+    } else if (type === "delete") {
+      content = cleanBody;
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -975,6 +979,14 @@
 
   async function submitWebPullReview(repo, number, reviewState, body) {
     return submitWebPullEvent(repo, number, "review", { state: reviewState, body });
+  }
+
+  async function submitWebPullClose(repo, number) {
+    return submitWebPullEvent(repo, number, "status", { state: "closed" });
+  }
+
+  async function submitWebPullDelete(repo, number) {
+    return submitWebPullEvent(repo, number, "delete", {});
   }
 
   function pullRequestTargetRepo(repo) {

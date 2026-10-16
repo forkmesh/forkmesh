@@ -39082,6 +39082,60 @@ async def _fill_signer_author_name(env, record):
         record["authorName"] = name
 
 
+PULL_LIFECYCLE_RECORD_REFS = (
+    "forkmesh/pull/{}", "refs/pr/{}/metadata", "forkmesh/pulls")
+PULL_LIFECYCLE_FINAL_STATUSES = frozenset({"merged", "closed-merged", "deleted"})
+
+
+async def _pull_lifecycle_record(env, owner, repo, number):
+    for ref in PULL_LIFECYCLE_RECORD_REFS:
+        try:
+            data = await _forkbot_repo_gateway_json(
+                env, owner, repo, "blob?path=%s&ref=%s" % (
+                    quote(".forkmesh/pulls/%d/pull.md" % int(number), safe=""),
+                    quote(ref.format(int(number)), safe="")))
+            fields = microjobs.parse_pull_frontmatter(
+                _forkbot_blob_text(data) if data else "")
+        except Exception:
+            fields = {}
+        if str(fields.get("number") or "").strip() == str(int(number)):
+            return fields
+    return {}
+
+
+async def _authorize_pull_lifecycle(env, owner, repo, number, data, request,
+                                    event):
+    record = await _pull_lifecycle_record(env, owner, repo, number)
+    if not record:
+        return False, json_response(
+            {"error": "pull_unavailable"}, status=503), ""
+    status = str(record.get("status") or "open").strip().lower()
+    if status in PULL_LIFECYCLE_FINAL_STATUSES:
+        return False, json_response({"error": "pull_final"}, status=409), ""
+    _, rec = await _account_session_record(env, request, data)
+    actor = clean_string(
+        rec.get("name", "") if rec else "", MAX_NODE_NAME
+    ).strip().lower()
+    manager, _ = await _authorize_issue_manager(env, owner, data, request)
+    if manager:
+        return True, None, actor
+    pull_key = str(record.get("author") or "").strip()
+    if pull_key and str(event.get("author") or "").strip() == pull_key:
+        return True, None, actor
+    if actor:
+        pull_name = clean_string(
+            record.get("authorName") or "", MAX_NODE_NAME).strip().lower()
+        if pull_name and pull_name == actor:
+            return True, None, actor
+        if pull_key and valid_node_pubkey(pull_key):
+            owner_name = clean_string(
+                await _git_push_account_for_pubkey(env, pull_key) or "",
+                MAX_NODE_NAME).strip().lower()
+            if owner_name and owner_name == actor:
+                return True, None, actor
+    return False, json_response({"error": "not_authorized"}, status=403), ""
+
+
 async def pulls_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -39145,6 +39199,14 @@ async def pulls_handler(env, request, owner, repo):
                     number, event,
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
+            if event.get("type") in ("status", "delete"):
+                allowed, refusal, lifecycle_actor = (
+                    await _authorize_pull_lifecycle(
+                        env, owner, repo, number, data, request, event))
+                if not allowed:
+                    return refusal
+                if lifecycle_actor:
+                    event["authorName"] = lifecycle_actor
             await _fill_signer_author_name(env, event)
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi

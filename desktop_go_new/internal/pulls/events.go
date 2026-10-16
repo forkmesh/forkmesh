@@ -47,7 +47,7 @@ func writeEventFileIn(dir string, index int, ev *Event) error {
 		"authorName: " + ev.AuthorName,
 		"ts: " + strconv.FormatInt(ev.Ts, 10),
 	}
-	if ev.Type == "review" {
+	if ev.Type == "review" || (ev.Type == "status" && ev.State != "") {
 		lines = append(lines, "state: "+ev.State)
 	}
 	if ev.Type == "line-comment" {
@@ -156,9 +156,41 @@ func (s *Store) AddEvent(number int, in EventInput) (Event, error) {
 	return ev, s.appendEvent(number, &ev, message)
 }
 
+func IsLifecycleEvent(ev Event) bool {
+	return ev.Type == "status" || ev.Type == "delete"
+}
+
+func (s *Store) applyRemoteLifecycleEvent(number int, ev Event) error {
+	pr, ok := s.ReadPull(number, true)
+	if !ok {
+		return nil
+	}
+	status := strings.ToLower(strings.TrimSpace(pr.Status))
+	if status == "merged" || status == "closed-merged" {
+		return nil
+	}
+	if ev.Type == "delete" {
+		return s.DeletePull(number, false)
+	}
+	if ev.State != "closed" || status == "closed" {
+		return nil
+	}
+	unlock := s.lockLedger()
+	pr.Status = "closed"
+	err := s.writePull(pr)
+	unlock()
+	if err != nil {
+		return err
+	}
+	return s.appendEvent(number, &ev, "pull #"+strconv.Itoa(number)+": closed (from "+shortAuthor(ev.AuthorName, ev.Author)+")")
+}
+
 func (s *Store) ApplyRemoteEvent(number int, ev Event) error {
 	if !s.CanWrite() {
 		return errNoMessage
+	}
+	if IsLifecycleEvent(ev) {
+		return s.applyRemoteLifecycleEvent(number, ev)
 	}
 	kind := "comment"
 	if ev.Type == "review" {
