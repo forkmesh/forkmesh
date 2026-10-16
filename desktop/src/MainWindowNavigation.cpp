@@ -659,6 +659,10 @@ QWidget *MainWindow::buildBreadcrumb()
     resourceChart->setClickHandler(ResourceQuadrantSparkline::Memory,
                                    [this] { showHighMemoryProcessPanel(); });
     resourceChart->setClickHandler(ResourceQuadrantSparkline::Disk, [this] {
+        if (!packageSurfaceShown(QStringLiteral("size-map"))) {
+            showDesktopResourceDiagnostics();
+            return;
+        }
         showSection(0);
         if (m_repoDetailTabs && m_sizeMapTabIndex >= 0) {
             if (QAbstractButton *sizeMapTab =

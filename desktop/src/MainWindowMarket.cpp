@@ -2908,6 +2908,10 @@ void MainWindow::syncPackageSurfaces()
         m_repoDetailTabs && m_shortcutsTabIndex >= 0
             ? m_repoDetailTabs->button(m_shortcutsTabIndex)
             : nullptr;
+    QWidget *sizeMapTab =
+        m_repoDetailTabs && m_sizeMapTabIndex >= 0
+            ? m_repoDetailTabs->button(m_sizeMapTabIndex)
+            : nullptr;
     const QList<std::pair<QWidget *, bool>> gated = {
         {m_agentsNavButton, on(QStringLiteral("agents"))},
         {m_railCodeButton, on(QStringLiteral("code"))},
@@ -2928,6 +2932,8 @@ void MainWindow::syncPackageSurfaces()
         {m_repoReleasesTab, on(QStringLiteral("releases"))},
         {m_branchesButton, on(QStringLiteral("branches"))},
         {shortcutsTab, on(QStringLiteral("shortcuts"))},
+        {sizeMapTab, on(QStringLiteral("size-map"))},
+        {m_codeMapButton, on(QStringLiteral("code-map"))},
     };
     bool changed = false;
     for (const auto &[widget, visible] : gated) {
@@ -3005,6 +3011,7 @@ void MainWindow::syncPackageSurfaces()
                 {m_branchesTabIndex, QStringLiteral("branches")},
                 {m_releasesTabIndex, QStringLiteral("releases")},
                 {m_shortcutsTabIndex, QStringLiteral("shortcuts")},
+                {m_sizeMapTabIndex, QStringLiteral("size-map")},
             };
             if (newlyHidden.contains(tabPackages.value(tab)) &&
                 m_repoDetailTabs->button(0))
@@ -3191,6 +3198,15 @@ void MainWindow::syncNativePackagePages()
             member.accountKind = QStringLiteral("user");
             showChatUserProfile(member, {});
         };
+        if (permissionIds.contains(QStringLiteral("repository.read"))) {
+            host.repositories = [this] { return nativePackageRepositories(); };
+            host.currentRepository = [this] { return currentNativePackageRepository(); };
+            host.openRepositoryFile =
+                [this](const forkmesh::market::NativePackageRepository &repository,
+                       const QString &path, int line) {
+                    openNativePackageRepositoryFile(repository, path, line);
+                };
+        }
         forkmesh::market::NativePackageWidget *widget =
             contribution->factory(host, m_sectionStack);
         if (!widget)
@@ -3281,6 +3297,79 @@ void MainWindow::syncNativePackageBadge(const QString &id)
         if (auto *rail = dynamic_cast<ActivityRailButton *>(page.navigation.data()))
             rail->setBadgeCount(qMax(0, page.widget->navigationBadge()));
     }
+}
+
+forkmesh::market::NativePackageRepository
+MainWindow::nativePackageRepository(int index) const
+{
+    if (index < 0 || index >= m_repositories.size())
+        return {};
+    const RepositoryRecord &record = m_repositories.at(index);
+    QString path;
+    if (!record.localPath.isEmpty() && QDir(record.localPath).exists())
+        path = record.localPath;
+    else if (!record.mirrorPath.isEmpty() && QDir(record.mirrorPath).exists())
+        path = record.mirrorPath;
+    if (path.isEmpty())
+        return {};
+    const QString title = record.owner.isEmpty()
+                              ? record.name
+                              : record.owner + QLatin1Char('/') + record.name;
+    return {title.toLower(), title, path,
+            index == m_repoDetailIndex ? currentRef() : QString()};
+}
+
+QList<forkmesh::market::NativePackageRepository>
+MainWindow::nativePackageRepositories() const
+{
+    QList<forkmesh::market::NativePackageRepository> repositories;
+    const forkmesh::market::NativePackageRepository open =
+        currentNativePackageRepository();
+    if (!open.path.isEmpty())
+        repositories.append(open);
+    for (int i = 0; i < m_repositories.size(); ++i) {
+        if (i == m_repoDetailIndex || m_repositories.at(i).previewOnly)
+            continue;
+        const forkmesh::market::NativePackageRepository repository =
+            nativePackageRepository(i);
+        if (!repository.path.isEmpty())
+            repositories.append(repository);
+    }
+    return repositories;
+}
+
+forkmesh::market::NativePackageRepository
+MainWindow::currentNativePackageRepository() const
+{
+    return nativePackageRepository(m_repoDetailIndex);
+}
+
+void MainWindow::openNativePackageRepositoryFile(
+    const forkmesh::market::NativePackageRepository &repository,
+    const QString &path, int line)
+{
+    if (path.isEmpty() || repository.path.isEmpty())
+        return;
+    const forkmesh::market::NativePackageRepository open =
+        currentNativePackageRepository();
+    if (QDir::cleanPath(open.path) == QDir::cleanPath(repository.path)) {
+        showSection(0);
+        openRepoFileAtLine(path, line);
+        return;
+    }
+    const QString absolute = QDir(repository.path).filePath(path);
+    if (QFileInfo(absolute).isFile()) {
+        openRepoFile(absolute);
+        return;
+    }
+    flashMessage(QStringLiteral("Open %1 to see %2.").arg(repository.title, path), true);
+}
+
+void MainWindow::notifyNativePackagesRepositoryChanged()
+{
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        if (page.widget)
+            page.widget->repositoryChanged();
 }
 
 QString MainWindow::nativePackageAgentName() const

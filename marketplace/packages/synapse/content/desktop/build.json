@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "SynapseLayout.h",
+    "SynapseLayout.cpp",
+    "SynapseView.h",
+    "SynapseView.cpp",
+    "SynapseFeature.h",
+    "SynapseFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_synapse.cpp",
+    "SynapseLayout.h",
+    "SynapseLayout.cpp",
+    "SynapseView.h",
+    "SynapseView.cpp",
+    "SynapseFeature.h",
+    "SynapseFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets",
+    "Qt6::Concurrent"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp",
+    "RepoInsight.h",
+    "RepoInsight.cpp",
+    "RepoInsightBar.h",
+    "RepoInsightBar.cpp"
+  ]
+}

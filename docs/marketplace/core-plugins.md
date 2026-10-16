@@ -30,7 +30,10 @@ state on the ForkMesh account and follow every device.
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only).
-- **Per device:** `sign-in` (installed before 2026-10-11).
+- **Per device:** `sign-in` (installed before 2026-10-11); `code-map` and
+  `size-map`, the repository screen's Code map button and Size map tab
+  (installed before 2026-10-17, desktop only,
+  [codebase-analysis.md](codebase-analysis.md)).
 
 Each package gates its feature's surfaces in every app (tabs, tiles, rail
 buttons, repository tabs). `crm` stays organization-installed; `market`,
