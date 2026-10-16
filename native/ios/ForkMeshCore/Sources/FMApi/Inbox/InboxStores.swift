@@ -205,6 +205,7 @@ public final class LocalPingLog {
             let moved = pings.remove(at: index)
             pings.insert(moved, at: 0)
             save()
+            listeners.notify()
             return moved
         }
         let recent = pings.filter { now - $0.tsMs < 3_600_000 }.count
@@ -213,6 +214,7 @@ public final class LocalPingLog {
         pings.insert(ping, at: 0)
         if pings.count > LocalPingLog.maxEntries { pings.removeLast(pings.count - LocalPingLog.maxEntries) }
         save()
+        listeners.notify()
         return ping
     }
 

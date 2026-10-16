@@ -254,7 +254,8 @@ contacted, with a tap to draft an email or a Mastodon post.
   (`GenieOutreach.unsupported`) are rejected.
 - **Opening.** Email opens in Zoho Mail on the organization's region
   (`CrmSettings.zohoComposeURL`), else the share sheet. Mastodon text is copied
-  and the share sheet opens.
+  and the share sheet opens. A successful Zoho handoff also files the Spider's
+  confirmation in the device-local Pings inbox as "The spider said".
 - Nothing is sent and the CRM is unchanged (except the deck link); the contact
   is remembered as drafted (`genie/outreach_drafted`). Menu: "Someone to reach
   out to", "Stop suggesting people" (`genie/outreach_off`).
