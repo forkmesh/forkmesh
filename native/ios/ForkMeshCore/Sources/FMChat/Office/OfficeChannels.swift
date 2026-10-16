@@ -215,7 +215,7 @@ public final class OfficeChannelService {
     @ObservationIgnored let clock: Clock
     @ObservationIgnored private var sockets: [String: OfficeRoomSocket] = [:]
     @ObservationIgnored private var cryptos: [String: RoomCrypto] = [:]
-    @ObservationIgnored private var seals: [String: RoomSeal] = [:]
+    @ObservationIgnored private let seals: RoomSealCache
     @ObservationIgnored private var lastTs: [String: Int64] = [:]
     @ObservationIgnored private var seen: [String: Set<String>] = [:]
     @ObservationIgnored private var pendingRefs: [String: String] = [:]
@@ -247,6 +247,7 @@ public final class OfficeChannelService {
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
+        seals = RoomSealCache(secureStore: secureStore)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
@@ -316,12 +317,8 @@ public final class OfficeChannelService {
         return crypto
     }
 
-    private func seal(for room: String) throws -> RoomSeal {
-        if let existing = seals[room] { return existing }
-        let scope = origin()?.host ?? ""
-        let loaded = try RoomSeal.loadOrCreate(room, storageScope: "office|\(scope)", secureStore: secureStore)
-        seals[room] = loaded
-        return loaded
+    private func seal(for room: String) async throws -> RoomSeal {
+        try await seals.seal(room, storageScope: "office|\(origin()?.host ?? "")")
     }
 
     public func loadHistory(_ conversation: String) async {
@@ -333,7 +330,7 @@ public final class OfficeChannelService {
             let passphrase = payload["passphrase"]?.text ?? ""
             if roomName.isEmpty || passphrase.isEmpty { return }
             let crypto = await derive(roomName, passphrase)
-            let seal = try seal(for: roomName)
+            let seal = try await seal(for: roomName)
             for entry in payload["messages"]?.objects ?? [] {
                 let ts = entry["ts"]?.int64Value ?? 0
                 lastTs[room.id] = max(lastTs[room.id] ?? 0, ts)
@@ -476,7 +473,7 @@ public final class OfficeChannelService {
                 return false
             }
             let crypto = await derive(roomName, passphrase)
-            let seal = try seal(for: roomName)
+            let seal = try await seal(for: roomName)
             let connection = try await connector.connect(
                 url: url, options: WebSocketOptions(connectTimeout: RelayService.connectTimeout, pingInterval: RelayService.pingInterval))
             let socket = OfficeRoomSocket(roomId: room.id, crypto: crypto, seal: seal, connection: connection)

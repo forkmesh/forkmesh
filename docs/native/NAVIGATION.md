@@ -149,7 +149,14 @@ pages, Watch) use `bareShellTop()`; `ShellChrome` counts registrations per tab
 and hides the top bar while any is on top. `ShellRootBarHider` hides the
 system navigation bar on tab roots and corrects stale top safe-area insets; on
 a pop back to the root it fades the top bar in during the transition
-(`ShellChrome.returnToRoot(on:)`).
+(`ShellChrome.returnToRoot(on:)`). The hider sets the bar hidden through
+UIKit, so a page pushed straight from a notification tap into a freshly shown
+tab could inherit the hidden bar and lose its Back button. Ping detail pages
+(`InboxItemScreen`, `PingDetailScreen`, every ping kind and every entry point:
+inbox row, notification tap, Notifications list) use
+`shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), which shows the
+bar again whenever the page is on top. Android's ping pages draw their own
+back button (`RoutePage`, `FmPanelHeader`) and need nothing extra.
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance`
 (bar height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad)
