@@ -81,6 +81,17 @@ final class SleepTests: XCTestCase {
         XCTAssertEqual(found?.body["asleepMinutes"], .int(445))
     }
 
+    func testDetectingSeveralNightsMatchesDetectingEachInTurn() {
+        let now = at("2026-09-16", "09:00")
+        let keys = ["2026-09-15", "2026-09-16"]
+        let found = SleepDetector.detect(
+            nights: keys, rest: Array(night.reversed()), usage: [], schedule: SleepSchedule(), timeZone: utc, now: now)
+        let one = SleepDetector.detect(
+            night: "2026-09-16", rest: night, usage: [], schedule: SleepSchedule(), timeZone: utc, now: now)
+        XCTAssertEqual(found.detected, [one].compactMap { $0 })
+        XCTAssertEqual(found.bodies, [SleepNight.cleared("2026-09-15"), one?.body].compactMap { $0 })
+    }
+
     func testUsingThePhoneAtNightIsAwakeTimeNotANewNight() {
         let usage = [SleepInterval(start: at("2026-09-16", "03:00"), end: at("2026-09-16", "03:30"))]
         let found = SleepDetector.detect(

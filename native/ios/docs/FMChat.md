@@ -49,6 +49,14 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
   `offline`, `error`), `removeRelay`, phase and status text, with suspend/resume hooks.
 - `CrossRelayCatalog`: repositories per configured relay.
 
+### Room keys off the main thread (`Relay/RoomSealCache.swift`)
+
+`RoomSeal.loadOrCreate` reads (and on first use writes) the Keychain. `RelayService` already ran it
+in `Task.detached`; `DirectMessageService` and `OfficeChannelService` ran it on the main actor once
+per room, and a resume reopens up to 16 DM sockets, each needing one. Both now go through a
+`RoomSealCache`: one detached load per room, concurrent first loads for the same room share the
+task (so a new room never generates two keys), and the result is kept for the session.
+
 ## Local mesh (`Mesh/`)
 
 BSD sockets in the core (`MeshSockets.swift`), not Network.framework, so Linux runs the real

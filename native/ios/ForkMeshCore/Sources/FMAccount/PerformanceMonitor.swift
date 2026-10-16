@@ -3,6 +3,9 @@
 
 import FMBase
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 import Observation
 
 public enum PerformanceEventKind: String, Sendable {
@@ -45,6 +48,11 @@ public struct FrameTiming: Sendable {
         self.rasterDuration = rasterDuration
         self.vsyncOverhead = vsyncOverhead
         self.totalSpan = totalSpan
+    }
+
+    public static func lateCallback(interval: Duration, period: Duration) -> FrameTiming? {
+        guard period > .zero, interval > period * 2 else { return nil }
+        return FrameTiming(buildDuration: interval - period, rasterDuration: .zero, vsyncOverhead: period)
     }
 }
 
@@ -178,7 +186,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         _ action: () async throws -> T
     ) async rethrows -> T {
         guard enabled else { return try await action() }
-        let callStack = PerformanceMonitorService.captureStack()
+        let callStack = PerformanceMonitorService.captureReturnAddresses()
         let startUs = elapsedMicros()
         let id: Int = locked {
             let id = nextOperationId
@@ -196,7 +204,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         }
     }
 
-    private func finishOperation(id: Int, name: String, startUs: Int64, details: JSONObject, error: Error?, stack: String) {
+    private func finishOperation(id: Int, name: String, startUs: Int64, details: JSONObject, error: Error?, stack: [UInt]) {
         let endUs = elapsedMicros()
         locked {
             inFlight.removeAll { $0.0 == id }
@@ -207,7 +215,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         guard elapsed >= threshold else { return }
         var merged = details
         if let error { merged["error"] = .string(String(describing: error)) }
-        recordSlowEvent(kind: .operation, name: name, duration: elapsed, details: merged, stackTrace: stack)
+        recordSlowEvent(kind: .operation, name: name, duration: elapsed, details: merged, stackTrace: PerformanceMonitorService.symbolicate(stack))
     }
 
     /// Run synchronous `action` and record a named stall when it blocks for `stallThreshold` or
@@ -327,7 +335,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         let nowUs = elapsedMicros()
         guard let visibleSinceUs: Int64 = locked({ heartbeatRunning ? heartbeatStartedUs : nil }) else { return }
         for timing in timings {
-            let span = timing.totalSpan ?? timing.buildDuration + timing.rasterDuration
+            let span = timing.totalSpan ?? timing.buildDuration + timing.rasterDuration + timing.vsyncOverhead
             if nowUs - PerformanceMonitorService.micros(span) < visibleSinceUs { continue }
             recordFrameDelay(
                 buildDuration: timing.buildDuration,
@@ -426,6 +434,27 @@ public final class PerformanceMonitorService: @unchecked Sendable {
 
     private static func captureStack() -> String {
         Thread.callStackSymbols.dropFirst(2).prefix(8).joined(separator: "\n")
+    }
+
+    static func captureReturnAddresses() -> [UInt] {
+        Thread.callStackReturnAddresses.dropFirst(2).prefix(8).map(\.uintValue)
+    }
+
+    static func symbolicate(_ addresses: [UInt]) -> String {
+        addresses.enumerated().map { (index: Int, address: UInt) -> String in
+            let hex = "0x" + String(address, radix: 16)
+            #if canImport(Darwin)
+            var info = Dl_info()
+            guard let pointer = UnsafeRawPointer(bitPattern: address), dladdr(pointer, &info) != 0 else {
+                return "\(index) ??? \(hex)"
+            }
+            let image = info.dli_fname.map { URL(fileURLWithPath: String(cString: $0)).lastPathComponent } ?? "???"
+            guard let name = info.dli_sname, let start = info.dli_saddr else { return "\(index) \(image) \(hex)" }
+            return "\(index) \(image) \(hex) \(String(cString: name)) + \(address &- UInt(bitPattern: start))"
+            #else
+            return "\(index) ??? \(hex)"
+            #endif
+        }.joined(separator: "\n")
     }
 
     private func elapsedMicros() -> Int64 {
