@@ -1828,6 +1828,51 @@ async def test_agent_status_batch_reports_a_whole_fleet_in_one_write():
 
 
 @run_async_test
+async def test_agent_status_audits_only_a_status_change():
+    runtime = FakeRuntime()
+    opened = await tasks_api.handle(
+        runtime.use("POST", "wendy", {
+            "title": "Repeating run",
+            "department": "engineering",
+            "repository": "forkmesh/forkmesh",
+            "assigneeKind": "agent",
+            "agent": {"provider": "claude-code", "sessionId": "1",
+                      "status": "queued"},
+        }),
+        tasks_api.UNIVERSAL_PREFIX,
+    )
+    assert opened["status"] == 201
+    task_id = opened["data"]["task"]["id"]
+
+    def status_audits():
+        return [
+            item["details"]["status"] for item in runtime.audits
+            if item["action"] == "organization.task_agent_status"
+        ]
+
+    for status in ("running", "running", "running", "waiting", "waiting",
+                   "running"):
+        reported = await tasks_api.handle(
+            runtime.use("POST", "wendy", {"status": status}),
+            f"{tasks_api.UNIVERSAL_PREFIX}/{task_id}/agent-status",
+        )
+        assert reported["status"] == 200
+        assert reported["data"]["task"]["agent"]["status"] == status
+    assert status_audits() == ["running", "waiting", "running"]
+
+    for status in ("running", "success"):
+        batch = await tasks_api.handle(
+            runtime.use("POST", "wendy", {"statuses": [
+                {"task": task_id, "status": status},
+            ]}),
+            f"{tasks_api.UNIVERSAL_PREFIX}/agent-status",
+        )
+        assert batch["status"] == 200
+        assert batch["data"]["results"][0]["ok"] is True
+    assert status_audits() == ["running", "waiting", "running", "success"]
+
+
+@run_async_test
 async def test_hand_opened_task_accepts_the_run_a_desktop_starts_on_it():
     """The Tasks page's "Start agent with prompt settings" button binds a local
     run to a task that already exists, so that task has no run provenance when

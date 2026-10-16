@@ -497,6 +497,50 @@ def test_kill_switch_and_dry_run_take_no_action():
     assert fake.calls == [] and run(auto.store.nodes()) == []
 
 
+def test_dry_run_audits_only_a_changed_decision(monkeypatch):
+    fake, rqlite = FakeVultr(), SqliteRqlite()
+    auto, api, clock, _ = build(fake, rqlite)
+    settings = enabled(min=1)
+    settings["app"]["dryRun"] = True
+    save_settings(api, settings)
+
+    def dry_runs():
+        return [row[0] for row in rqlite.db.execute(
+            "SELECT detail FROM autoscale_audit WHERE event='decision_dry_run' "
+            "ORDER BY rowid").fetchall()]
+
+    for minute in range(4):
+        assert run(auto.tick(T0 + minute * MINUTE))["app"]["action"] == "up"
+    assert len(dry_runs()) == 1 and dry_runs()[0].startswith("up:")
+
+    planned = {"action": "down", "node": "a1", "reason": "calm", "atMs": T0}
+    monkeypatch.setattr(scaler.policy, "decide_app",
+                        lambda *args: dict(planned))
+    for minute in range(4, 7):
+        run(auto.tick(T0 + minute * MINUTE))
+    planned["node"] = "a2"
+    run(auto.tick(T0 + 7 * MINUTE))
+    run(auto.tick(T0 + 8 * MINUTE))
+    assert [detail.split(":")[0] for detail in dry_runs()] == ["up", "down", "down"]
+    assert fake.calls == [] and run(auto.store.nodes()) == []
+
+
+def test_autoscale_audit_keeps_thirty_days():
+    rqlite = SqliteRqlite()
+    store = scaler.Store(rqlite)
+    now = scaler.now_ms()
+    for name, age in (("old", 31), ("recent", 29)):
+        rqlite.db.execute(
+            "INSERT INTO autoscale_audit (id, ts, pool, event, node, ok, detail) "
+            "VALUES (?,?,?,?,?,?,?)", (name, now - age * 86_400_000, "app",
+                                       "command", None, 1, name))
+    run(store.audit("app", "command", "fresh"))
+    kept = {row[0] for row in rqlite.db.execute(
+        "SELECT detail FROM autoscale_audit").fetchall()}
+    assert kept == {"recent", "fresh"}
+    assert scaler.AUDIT_RETAIN_MS == 30 * 86_400_000
+
+
 def test_unsigned_or_replayed_settings_are_refused():
     fake, rqlite = FakeVultr(), SqliteRqlite()
     auto, api, clock, _ = build(fake, rqlite)

@@ -77,6 +77,9 @@ type Config struct {
 	// docs/HOSTED_REPOS.md); off by default.
 	Hosted *HostedConfig `json:"hosted,omitempty"`
 
+	ReleasePruneInterval *Duration `json:"releasePruneInterval,omitempty"`
+	ReleasePruneMinAge   *Duration `json:"releasePruneMinAge,omitempty"`
+
 	// roleOverrides names switches the role forced off, for one startup log.
 	roleOverrides []string
 }
@@ -281,6 +284,9 @@ func (c *Config) validate() error {
 		c.Version = "dev"
 	}
 	if err := c.validateHosted(); err != nil {
+		return err
+	}
+	if err := c.validateReleasePrune(); err != nil {
 		return err
 	}
 	if err := c.validateRunner(); err != nil {
