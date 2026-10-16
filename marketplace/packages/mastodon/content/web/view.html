@@ -1,0 +1,19 @@
+<section data-view="mastodon" class="view active h-full overflow-y-auto">
+  <div class="mx-auto w-full max-w-5xl p-3 sm:p-6">
+    <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div><h1 class="text-lg font-semibold text-foreground">Mastodon</h1><p class="mt-1 text-sm text-muted-foreground">Your chosen instance handles login directly. This page keeps its access token only for this browser session.</p></div>
+      <button data-mastodon-logout type="button" class="fm-btn fm-btn-sm" hidden>Log out</button>
+    </header>
+    <p data-mastodon-notice class="mb-4 text-sm text-muted-foreground" role="status"></p>
+    <section data-mastodon-login class="rounded-md border border-border bg-card p-4 sm:p-5">
+      <h2 class="text-sm font-semibold text-foreground">Connect an account</h2>
+      <p class="mt-1 text-sm text-muted-foreground">Enter your home instance, such as <span class="font-mono">https://mastodon.social</span>.</p>
+      <form data-mastodon-login-form class="mt-4 flex flex-wrap items-end gap-2"><label class="grid min-w-[16rem] flex-1 gap-1 text-xs font-medium text-muted-foreground">Instance URL<input data-mastodon-instance required type="url" placeholder="https://mastodon.example" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground"></label><button type="submit" class="fm-btn fm-btn-sm">Sign in with Mastodon</button></form>
+    </section>
+    <section data-mastodon-app hidden>
+      <nav class="mb-4 flex flex-wrap gap-1 border-b border-border pb-3" aria-label="Mastodon sections"><button data-mastodon-tab="home" class="fm-btn fm-btn-sm" type="button">Home</button><button data-mastodon-tab="notifications" class="fm-btn fm-btn-sm" type="button">Notifications</button><button data-mastodon-tab="profile" class="fm-btn fm-btn-sm" type="button">Profile</button><button data-mastodon-tab="relationships" class="fm-btn fm-btn-sm" type="button">Relationships</button><button data-mastodon-tab="lists" class="fm-btn fm-btn-sm" type="button">Lists</button><button data-mastodon-tab="preferences" class="fm-btn fm-btn-sm" type="button">Preferences</button></nav>
+      <form data-mastodon-composer class="mb-4 rounded-md border border-border bg-card p-4"><label class="grid gap-1 text-xs font-medium text-muted-foreground">Write a post<textarea data-mastodon-status maxlength="500" rows="3" class="rounded-md border border-border bg-background p-2 text-sm text-foreground" placeholder="What’s on your mind?"></textarea></label><div class="mt-3 flex flex-wrap items-center gap-2"><select data-mastodon-visibility class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Followers only</option><option value="direct">Mentioned people only</option></select><label class="text-xs text-muted-foreground">Content warning <input data-mastodon-spoiler maxlength="500" class="ml-1 h-control rounded-md border border-border bg-background px-2 text-control text-foreground"></label><label class="text-xs text-muted-foreground">Media <input data-mastodon-media type="file" accept="image/*,video/*,audio/*" multiple></label><button type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Post</button></div></form>
+      <div data-mastodon-content class="overflow-hidden rounded-md border border-border bg-card"></div>
+    </section>
+  </div>
+</section>

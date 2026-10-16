@@ -119,10 +119,13 @@
     { "id": "coves", "version": "1.0.0", "manifest": "packages/coves/manifest.json" },
     { "id": "on-device-ai", "version": "1.0.0", "manifest": "packages/on-device-ai/manifest.json" },
     { "id": "activity", "version": "1.0.0", "manifest": "packages/activity/manifest.json" },
+    { "id": "usage", "version": "1.0.0", "manifest": "packages/usage/manifest.json" },
     { "id": "stats", "version": "1.0.0", "manifest": "packages/stats/manifest.json" },
     { "id": "organizations", "version": "1.0.0", "manifest": "packages/organizations/manifest.json" },
     { "id": "world", "version": "1.0.0", "manifest": "packages/world/manifest.json" },
     { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
+    { "id": "feed", "version": "1.0.0", "manifest": "packages/feed/manifest.json" },
+    { "id": "mastodon", "version": "1.0.0", "manifest": "packages/mastodon/manifest.json" },
     { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" }
   ]
 }
