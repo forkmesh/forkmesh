@@ -27471,6 +27471,35 @@ else:
                              "fails with a reason instead of requeuing forever"));
         window.testRemoveAgentSession(pastRun.id);
     }
+    {
+        AgentSession interrupted;
+        interrupted.id = 133897;
+        interrupted.owner = QStringLiteral("me");
+        interrupted.name = QStringLiteral("r");
+        interrupted.provider = QStringLiteral("claude-code");
+        interrupted.prompt = QStringLiteral("Interrupted by shutdown fixture");
+        interrupted.status = AgentStatus::Running;
+        window.testAddAgentSession(interrupted);
+        window.testSeedResumeConversationId(
+            interrupted.id, QStringLiteral("33333333-4444-5555-6666-777777777777"),
+            /*codex=*/false);
+        window.testSetClosingDown(true);
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 143);
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 1);
+        window.testSetClosingDown(false);
+        check(window.testAgentSessionStatus(interrupted.id) == AgentStatus::Running &&
+                  window.testAgentSessionLastError(interrupted.id).isEmpty() &&
+                  !window.testAgentQueued(interrupted.id),
+              QStringLiteral("an agent the shutdown kills stays running on disk, "
+                             "so the next start (window or headless) resumes it"));
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 143);
+        check(window.testAgentSessionStatus(interrupted.id) == AgentStatus::Running &&
+                  !window.testAgentQueued(interrupted.id),
+              QStringLiteral("an agent stopped by SIGTERM waits before it is "
+                             "judged, so a shutdown signal arriving just after "
+                             "it does not fail the session"));
+        window.testRemoveAgentSession(interrupted.id);
+    }
     // Everything the composer parks for a session that has no process must still
     // be there when one finally starts (adhoc #1618). Two things used to lose it.
     // The park itself was a plain overwrite, so typing a second instruction while

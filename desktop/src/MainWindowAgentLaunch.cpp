@@ -2668,7 +2668,7 @@ void MainWindow::failQueuedAgentSession(AgentSession &session,
 
 void MainWindow::processAgentQueue()
 {
-    if (!m_agentStore)
+    if (!m_agentStore || desktopStopping())
         return;
     // A park is tearing a transport down to hand its slot back. Starting the
     // queue into that half-freed slot would undo the limit that asked for it.

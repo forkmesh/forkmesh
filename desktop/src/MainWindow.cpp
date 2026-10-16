@@ -1011,6 +1011,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             QStringLiteral("node status repaint timer (every 60s)"));
         updateNodeOnlineControls();
         refreshNodeDotMatrix();
+        if (m_offlineMode && m_offlineModeAuto)
+            probeRelayLatency();
     });
     m_relayLatencyTimer->start(60 * 1000);
     logStartup(QStringLiteral("  timer armed: node status repaint every 60000ms"));
@@ -1135,8 +1137,11 @@ void MainWindow::showEvent(QShowEvent *event)
     // the event loop a five-second interactive runway so authentication and
     // session restoration cannot collide with the user's first navigation.
     // runDeferredStartup contains the no-paint fallback for headless platforms.
-    QTimer::singleShot(forkmesh::isBackgroundInstance() ? 0 : 5000, this,
-                       &MainWindow::runDeferredStartup);
+    QTimer::singleShot(forkmesh::isBackgroundInstance() ||
+                               forkmesh::tookOverFromBackgroundInstance()
+                           ? 0
+                           : 5000,
+                       this, &MainWindow::runDeferredStartup);
 #endif
 }
 

@@ -168,9 +168,51 @@ to let go of `state/forkmesh.lock`.
 A new `forkmesh` finds the lock held and sends `activate`. The windowless
 instance answers `yield` and shuts down the way SIGTERM does (with a 25 s
 `_Exit` backstop), and the new launch waits up to 45 s for the lock behind the
-splash ("Taking over from ForkMesh running without a window"). A windowless
+splash ("Taking over from ForkMesh running without a window"). A window that
+took over (`tookOverFromBackgroundInstance()`) runs its deferred startup at
+once, like a windowless instance, instead of after the 5 s first-paint delay:
+the phones it serves were connected a moment ago, and the delay used to leave
+them with no LAN listener and no relay for about 8 s. A windowless
 instance that finds the lock held by a window exits without activating it. It
 writes its pid to `state/forkmesh-background.pid`.
+
+### Agents across a stop
+
+No agent process outlives the desktop that started it; the next instance,
+window or windowless, resumes every session left `running` (its deferred
+startup turns them into `queued` and pumps the queue with
+`--resume <session>`). What decides whether that works is the record the
+stopping instance leaves behind:
+
+- A window closing, a yield to a window and a stop signal all go through
+  `closeEvent` (`m_closingDown`), and the destructor disconnects agent
+  processes before it stops them, so their exits are never recorded.
+- At a reboot or log-out, systemd stops the agents' own
+  `forkmesh-agent-*.scope` units at the same time as the desktop, so an
+  agent's exit can reach `finishCliTranscriptRun` before the window closes.
+  It used to count as a crash: the session was relaunched into the dying
+  system, the relaunches failed, and after three attempts it was marked
+  failed, so the next start (often the headless unit at boot) had nothing to
+  resume (2026-10-16, sessions killed at 16:07 were failed by 16:08 and had
+  to be continued by hand). Now, while `desktopStopping()` (closing down or a
+  stop signal received), an exit leaves a running or waiting session as it
+  is (`keepCliRunForNextStart`), a turn that was only waiting for its
+  background tasks included, and `processAgentQueue` starts nothing.
+- An exit with 143 or 129 (SIGTERM, SIGHUP from outside; a user stop marks
+  the session stopped first) is judged 3 s later, so a stop signal that
+  reaches the desktop just after its agents is still seen. A runtime that was
+  replaced in between is not judged again.
+- `AgentRunner` (API runners) does the same through `interruptForShutdown`,
+  as Actions do.
+
+### No display
+
+A window launch that waits 30 s for a display and gives up (exit 3, e.g.
+`forkmesh-source.service` restarting before the desktop session is up, or
+after a log-out) starts the windowless instance when **Keep ForkMesh running
+without a window** is on (`handOverWithoutDisplay` in `main.cpp`), so phones
+and agents are served until a window can open; that window then takes over as
+usual. Starting it when it already runs does nothing.
 
 ### Start at boot
 

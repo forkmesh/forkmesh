@@ -73,6 +73,7 @@ private:
     void onProcessFinished(int exitCode);
     void runAgentProcess();
     void complete(bool ok, const QString &status, const QString &message);
+    void interruptForShutdown(int exitCode);
     void cleanupWorktree();
     // Stamp a `ForkMesh-Agent: <tool>/<model>` trailer onto the commits this run
     // produced so machine authorship is attributable and signed in review

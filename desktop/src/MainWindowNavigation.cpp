@@ -3851,7 +3851,8 @@ void MainWindow::probeRelayLatency()
         (m_offlineMode && !m_offlineModeAuto)) {
         return;
     }
-    if (QDateTime::currentMSecsSinceEpoch() - m_lastWsLatencySampleMs < 90 * 1000)
+    if (!(m_offlineMode && m_offlineModeAuto) &&
+        QDateTime::currentMSecsSinceEpoch() - m_lastWsLatencySampleMs < 90 * 1000)
         return;
 
     QUrl url = catalogApiUrl(); // same relay host, http(s) scheme
@@ -3916,7 +3917,10 @@ void MainWindow::probeRelayLatency()
                 setRelayLinkSpeed(host, -1);
                 const int backoffSteps = qMax(0, m_relayProbeFailures - 2);
                 const qint64 delayMs =
-                    qMin<qint64>(3000LL << qMin(backoffSteps, 10), 5 * 60 * 1000);
+                    qMin<qint64>(3000LL << qMin(backoffSteps, 10),
+                                 m_offlineMode && m_offlineModeAuto
+                                     ? kAutoOfflineProbeMaxDelayMs
+                                     : 5 * 60 * 1000);
                 QTimer::singleShot(delayMs, this, &MainWindow::probeRelayLatency);
             } else {
                 QTimer::singleShot(2500, this, &MainWindow::probeRelayLatency);

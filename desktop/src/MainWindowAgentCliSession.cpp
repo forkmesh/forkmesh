@@ -24,6 +24,7 @@
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
+#include "CrashHandler.h"
 #include "NodeEventSocket.h"
 #include "UsageLimitCalendar.h"
 
@@ -44,6 +45,7 @@
 #include <QDropEvent>
 #include <QButtonGroup>
 #include <QFrame>
+#include <QPointer>
 #include <QShowEvent>
 #include <QSignalBlocker>
 
@@ -60,6 +62,10 @@
 using namespace forkmesh::ui;
 
 namespace {
+
+constexpr int kAgentExternalStopSettleMs = 3000;
+constexpr int kExitAfterSigterm = 128 + 15;
+constexpr int kExitAfterSighup = 128 + 1;
 
 const QString kExternalClaudeFolderName = QStringLiteral("External Claude Code");
 const QString kExternalClaudeMemberPrefix = QStringLiteral("claude:");
@@ -759,8 +765,76 @@ void MainWindow::handleCliRuntimeEvent(
     applyTranscriptEvent(sid, ev);
 }
 
+bool MainWindow::desktopStopping() const
+{
+    return m_closingDown || forkmesh::terminationSignalReceived();
+}
+
+bool MainWindow::keepCliRunForNextStart(int sid, bool codex, int exitCode)
+{
+    AgentSession *as = findAgentSession(sid);
+    if (!as || m_agentCompletionChecks.contains(sid) ||
+        (as->status != AgentStatus::Running &&
+         as->status != AgentStatus::Waiting))
+        return false;
+    if (m_agentPermissionController)
+        m_agentPermissionController->clearSession(QString::number(sid));
+    m_agentBackgroundWork.remove(sid);
+    m_agentCliTasks.remove(sid);
+    m_agentResultAwaitingCliTasks.remove(sid);
+    m_agentRelaunchAttempts.remove(sid);
+    as->lastError.clear();
+    as->finishedAtMs = 0;
+    if (m_agentStore)
+        m_agentStore->saveSession(*as);
+    noteAgentSessionNotice(
+        sid,
+        QStringLiteral("ForkMesh is stopping, so %1 stopped (exit %2). This "
+                       "session continues when ForkMesh starts again, with or "
+                       "without a window.")
+            .arg(codex ? QStringLiteral("Codex app-server")
+                       : QStringLiteral("Claude Code"))
+            .arg(exitCode),
+        /*error=*/false);
+    if (codex) {
+        if (CodexAppServerSession *done = m_codexStreams.take(sid))
+            done->deleteLater();
+    } else if (ClaudeStreamSession *done = m_streamSessions.take(sid)) {
+        done->deleteLater();
+    }
+    return true;
+}
+
 void MainWindow::finishCliTranscriptRun(int sid, bool codex, int exitCode)
 {
+    if (desktopStopping() && keepCliRunForNextStart(sid, codex, exitCode)) {
+        m_agentExitsSettling.remove(sid);
+        return;
+    }
+    const AgentSession *exiting = findAgentSession(sid);
+    if ((exitCode == kExitAfterSigterm || exitCode == kExitAfterSighup) && exiting &&
+        (exiting->status == AgentStatus::Running ||
+         exiting->status == AgentStatus::Waiting) &&
+        !m_agentExitsSettling.contains(sid)) {
+        m_agentExitsSettling.insert(sid);
+        QObject *const exited =
+            codex ? static_cast<QObject *>(m_codexStreams.value(sid))
+                  : static_cast<QObject *>(m_streamSessions.value(sid));
+        const QPointer<QObject> runtime = exited;
+        QTimer::singleShot(kAgentExternalStopSettleMs, this,
+                           [this, sid, codex, exitCode, exited, runtime] {
+            const QObject *current =
+                codex ? static_cast<QObject *>(m_codexStreams.value(sid))
+                      : static_cast<QObject *>(m_streamSessions.value(sid));
+            if ((exited && !runtime) || current != exited) {
+                m_agentExitsSettling.remove(sid);
+                return;
+            }
+            finishCliTranscriptRun(sid, codex, exitCode);
+        });
+        return;
+    }
+    m_agentExitsSettling.remove(sid);
     if (m_agentPermissionController)
         m_agentPermissionController->clearSession(QString::number(sid));
     // Whatever the run left going stops being ours to watch the moment the

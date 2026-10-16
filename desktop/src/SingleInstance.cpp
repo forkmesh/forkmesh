@@ -39,6 +39,7 @@ QLocalServer *g_server = nullptr;
 std::function<void(const QString &)> g_activationHandler;
 std::function<void()> g_yieldHandler;
 bool g_background = false;
+bool g_tookOverFromBackground = false;
 int g_backgroundLockWaitMs = 0;
 std::atomic_bool g_quitRequested{false};
 
@@ -119,6 +120,11 @@ bool isBackgroundInstance()
     return g_background;
 }
 
+bool tookOverFromBackgroundInstance()
+{
+    return g_tookOverFromBackground;
+}
+
 void onSingleInstanceYield(std::function<void()> handler)
 {
     g_yieldHandler = std::move(handler);
@@ -166,6 +172,7 @@ bool acquireSingleInstance(const QString &activationTarget,
             g_lockFile = nullptr;
             return false;
         }
+        g_tookOverFromBackground = true;
     }
     if (g_background)
         writeBackgroundMarker();
