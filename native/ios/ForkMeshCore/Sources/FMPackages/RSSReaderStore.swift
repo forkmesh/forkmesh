@@ -76,6 +76,7 @@ public struct RSSPreparedArticle: Sendable {
     public var published: Int64
     public var contentKey: String
     public var body: RSSArticleBody
+    public var language: String = ""
 }
 
 public enum RSSFetchOutcome: Sendable {
@@ -111,6 +112,9 @@ public final class RSSReaderStore {
     private var dirtyHeads: Set<String> = []
     private var dirtyBodies: Set<String> = []
     private var removed: Set<String> = []
+    private var texts: [String: [String: String]] = [:]
+    private var matchCache: [String: [String: Bool]] = [:]
+    private var linkIndex: [String: Set<String>]?
     private let disk: RSSReaderDisk
     private let clock: () -> Int64
     private let newId: () -> String
@@ -178,6 +182,74 @@ public final class RSSReaderStore {
 
     private func touchLibrary() { dirtyLibrary = true }
 
+    private func storedBodies(_ feedId: String) -> [String: RSSArticleBody] {
+        if let cached = bodies[feedId] { return cached }
+        if let data = disk.read(Self.bodiesFile(feedId)),
+           let decoded = try? JSONDecoder().decode([String: RSSArticleBody].self, from: data) {
+            return decoded
+        }
+        return [:]
+    }
+
+    public static func filterText(_ contentHtml: String, summary: String) -> String {
+        let text = RSSHTML.plainText(contentHtml, limit: RSSReaderLimits.filterTextChars)
+        return text.isEmpty ? summary : text
+    }
+
+    public func text(for article: RSSArticle) -> String {
+        if let map = texts[article.feedId] { return map[article.id] ?? article.summary }
+        let source = storedBodies(article.feedId)
+        var map: [String: String] = [:]
+        for item in articles[article.feedId] ?? [] {
+            map[item.id] = Self.filterText(source[item.id]?.contentHtml ?? "", summary: item.summary)
+        }
+        texts[article.feedId] = map
+        return map[article.id] ?? article.summary
+    }
+
+    private func cached(_ key: String, _ article: RSSArticle, _ evaluate: () -> Bool) -> Bool {
+        if let hit = matchCache[article.id]?[key] { return hit }
+        let value = evaluate()
+        matchCache[article.id, default: [:]][key] = value
+        return value
+    }
+
+    public func matches(_ filter: RSSFilter, _ article: RSSArticle) -> Bool {
+        guard filter.applies(to: article.feedId), !filter.pattern.isEmpty else { return false }
+        let key = "f\u{1}\(filter.field.rawValue)\u{1}\(filter.regex)\u{1}\(filter.pattern)"
+        return cached(key, article) {
+            RSSMatcher.matches(filter, title: article.title, author: article.author, text: { self.text(for: article) })
+        }
+    }
+
+    public func wordsMatch(_ words: String, regex: Bool, _ article: RSSArticle) -> Bool {
+        if words.isEmpty { return true }
+        let key = "w\u{1}\(regex)\u{1}\(words)"
+        return cached(key, article) {
+            RSSMatcher.matches(article.title, pattern: words, regex: regex)
+                || RSSMatcher.matches(text(for: article), pattern: words, regex: regex)
+        }
+    }
+
+    private var hideFilters: [RSSFilter] { library.filters.filter { $0.action == .hide && !$0.pattern.isEmpty } }
+
+    public func isHidden(_ article: RSSArticle) -> Bool {
+        if article.starred { return false }
+        return hideFilters.contains { matches($0, article) }
+    }
+
+    private func isHidden(_ article: RSSArticle, filters: [RSSFilter]) -> Bool {
+        if article.starred || filters.isEmpty { return false }
+        return filters.contains { matches($0, article) }
+    }
+
+    private func forget(_ ids: [String], feedId: String) {
+        for id in ids {
+            matchCache[id] = nil
+            texts[feedId]?[id] = nil
+        }
+    }
+
     private func loadBodies(_ feedId: String) -> [String: RSSArticleBody] {
         bodyUse.removeAll { $0 == feedId }
         bodyUse.append(feedId)
@@ -207,6 +279,93 @@ public final class RSSReaderStore {
         guard copy != library.settings else { return }
         library.settings = copy
         touchLibrary()
+    }
+
+    public var filters: [RSSFilter] { library.filters }
+
+    public var smartFeeds: [RSSSmartFeed] { library.smartFeeds.sorted { Self.byName($0.name, $1.name) } }
+
+    public func smartFeed(_ id: String) -> RSSSmartFeed? { library.smartFeeds.first { $0.id == id } }
+
+    @discardableResult
+    public func saveFilter(_ input: RSSFilter) throws -> RSSFilter {
+        var filter = input
+        filter.pattern = RSSText.strip(RSSText.prefix(filter.pattern, 500))
+        guard !filter.pattern.isEmpty else { throw RSSReaderError.emptyPattern }
+        if feed(filter.feedId) == nil { filter.feedId = "" }
+        if let index = library.filters.firstIndex(where: { $0.id == filter.id }) {
+            library.filters[index] = filter
+        } else {
+            guard library.filters.count < RSSReaderLimits.maxFilters else { throw RSSReaderError.tooManyFilters }
+            if filter.id.isEmpty { filter.id = newId() }
+            library.filters.append(filter)
+        }
+        matchCache.removeAll()
+        touchLibrary()
+        return filter
+    }
+
+    public func deleteFilter(_ id: String) {
+        library.filters.removeAll { $0.id == id }
+        matchCache.removeAll()
+        touchLibrary()
+    }
+
+    @discardableResult
+    public func saveSmartFeed(_ input: RSSSmartFeed) throws -> RSSSmartFeed {
+        var smart = input
+        smart.name = RSSText.clean(smart.name, 120)
+        guard !smart.name.isEmpty else { throw RSSReaderError.emptyName }
+        smart.words = RSSText.strip(RSSText.prefix(smart.words, 500))
+        if smart.regex && !smart.words.isEmpty && !RSSMatcher.isValidRegex(smart.words) { throw RSSReaderError.invalidRegex }
+        smart.maxAgeDays = max(0, min(smart.maxAgeDays, 3650))
+        if let index = library.smartFeeds.firstIndex(where: { $0.id == smart.id }) {
+            library.smartFeeds[index] = smart
+        } else {
+            guard library.smartFeeds.count < RSSReaderLimits.maxSmartFeeds else { throw RSSReaderError.tooManySmartFeeds }
+            if smart.id.isEmpty { smart.id = newId() }
+            library.smartFeeds.append(smart)
+        }
+        touchLibrary()
+        return smart
+    }
+
+    public func deleteSmartFeed(_ id: String) {
+        library.smartFeeds.removeAll { $0.id == id }
+        library.collapsed.removeAll { $0 == "smart:\(id)" }
+        touchLibrary()
+    }
+
+    public func setFeedFlag(_ id: String, _ path: WritableKeyPath<RSSFeed, Bool>, _ value: Bool) {
+        guard let current = feed(id), current[keyPath: path] != value else { return }
+        updateFeed(id) { $0[keyPath: path] = value }
+    }
+
+    @discardableResult
+    public func changeAddress(_ id: String, to input: String) throws -> Bool {
+        guard let current = feed(id) else { return false }
+        let url = RSSURL.normalizeFeedInput(input)
+        guard !url.isEmpty, !url.contains(where: { $0.isWhitespace }), URL(string: url) != nil else { throw RSSReaderError.invalidAddress }
+        let identity = RSSURL.identity(url)
+        if let other = library.feeds.first(where: { $0.id != id && $0.identities.contains(identity) }) {
+            throw RSSReaderError.duplicate(other.id)
+        }
+        if url == current.url { return false }
+        let stamp = now
+        updateFeed(id) { feed in
+            if !feed.previousUrls.contains(feed.url) { feed.previousUrls.append(feed.url) }
+            feed.previousUrls.removeAll { $0 == url }
+            if feed.previousUrls.count > 10 { feed.previousUrls.removeFirst(feed.previousUrls.count - 10) }
+            feed.url = url
+            feed.etag = ""
+            feed.lastModified = ""
+            feed.error = ""
+            feed.errorAt = 0
+            feed.errorCount = 0
+            feed.nextFetchAt = stamp
+        }
+        log("edit", "Changed the address of \(current.displayTitle) to \(url)")
+        return true
     }
 
     public func isCollapsed(_ key: String) -> Bool { library.collapsed.contains(key) }
@@ -310,8 +469,11 @@ public final class RSSReaderStore {
     public func unsubscribe(_ id: String) {
         guard let feed = feed(id) else { return }
         library.feeds.removeAll { $0.id == id }
+        library.filters.removeAll { $0.feedId == id }
         articles[id] = nil
         bodies[id] = nil
+        texts[id] = nil
+        linkIndex = nil
         bodyUse.removeAll { $0 == id }
         dirtyHeads.remove(id)
         dirtyBodies.remove(id)
@@ -332,12 +494,14 @@ public final class RSSReaderStore {
             if published <= 0 || published > now + RSSReaderLimits.futureSlackMs { published = now }
             var title = RSSText.clean(item.title, 1000)
             if title.isEmpty { title = RSSHTML.plainText(summarySource, limit: 120) }
-            let image = RSSHTML.firstImage(content)
+            let image = item.images.first ?? RSSHTML.firstImage(content)
+            let media = item.images.isEmpty ? "" : "\n" + item.images.joined(separator: "\n")
             prepared.append(RSSPreparedArticle(
                 guid: guid, title: title, url: item.url, externalUrl: item.externalUrl,
                 author: RSSText.clean(item.author, 200), summary: RSSHTML.plainText(summarySource, limit: RSSHTML.maxSummaryChars),
-                image: image, published: published, contentKey: RSSText.fnv(title + "\n" + item.url + "\n" + content),
-                body: RSSArticleBody(contentHtml: content, commentsUrl: item.commentsUrl, enclosures: item.enclosures)))
+                image: image, published: published, contentKey: RSSText.fnv(title + "\n" + item.url + "\n" + content + media),
+                body: RSSArticleBody(contentHtml: content, commentsUrl: item.commentsUrl, enclosures: item.enclosures, images: item.images),
+                language: item.language == parsed.language ? "" : item.language))
         }
         return prepared
     }
@@ -386,6 +550,7 @@ public final class RSSReaderStore {
                 if !parsed.siteUrl.isEmpty { feed.siteUrl = parsed.siteUrl }
                 if !parsed.description.isEmpty { feed.summary = parsed.description }
                 if !parsed.iconUrl.isEmpty { feed.iconUrl = parsed.iconUrl }
+                feed.language = parsed.language
                 feed.etag = RSSText.prefix(etag, 200)
                 feed.lastModified = RSSText.prefix(lastModified, 200)
                 feed.error = ""
@@ -398,6 +563,18 @@ public final class RSSReaderStore {
         }
     }
 
+    private func linkOwners() -> [String: Set<String>] {
+        if let linkIndex { return linkIndex }
+        var built: [String: Set<String>] = [:]
+        for (feedId, list) in articles {
+            for article in list where !RSSURL.http(article.link).isEmpty {
+                built[RSSURL.identity(article.link), default: []].insert(feedId)
+            }
+        }
+        linkIndex = built
+        return built
+    }
+
     @discardableResult
     public func store(_ items: [RSSPreparedArticle], feedId: String, now stamp: Int64) -> RSSApplied {
         var list = articles[feedId] ?? []
@@ -405,6 +582,11 @@ public final class RSSReaderStore {
         var index: [String: Int] = [:]
         for (position, article) in list.enumerated() { index[article.guid] = position }
         var applied = RSSApplied()
+        let arrivalFilters = library.filters.filter { $0.action == .markRead && !$0.pattern.isEmpty && $0.applies(to: feedId) }
+        let folding = library.settings.foldDuplicates
+        var owners = folding ? linkOwners() : [:]
+        var changedIds: [String] = []
+        var newTexts: [String: String] = [:]
         for item in items {
             if let position = index[item.guid] {
                 if list[position].contentKey != item.contentKey {
@@ -414,10 +596,13 @@ public final class RSSReaderStore {
                     list[position].author = item.author
                     list[position].summary = item.summary
                     list[position].image = item.image
+                    list[position].language = item.language
                     list[position].contentKey = item.contentKey
                     var body = item.body
                     body.readerHtml = bodyMap[list[position].id]?.readerHtml ?? ""
                     bodyMap[list[position].id] = body
+                    changedIds.append(list[position].id)
+                    newTexts[list[position].id] = Self.filterText(item.body.contentHtml, summary: item.summary)
                     applied.updated += 1
                 }
                 continue
@@ -429,12 +614,24 @@ public final class RSSReaderStore {
             article.author = item.author
             article.summary = item.summary
             article.image = item.image
+            article.language = item.language
             article.published = item.published
             article.arrivedAt = stamp
             article.contentKey = item.contentKey
+            let text = Self.filterText(item.body.contentHtml, summary: item.summary)
+            if arrivalFilters.contains(where: { RSSMatcher.matches($0, title: article.title, author: article.author, text: { text }) }) {
+                article.read = true
+            }
+            if folding && !RSSURL.http(article.link).isEmpty {
+                let identity = RSSURL.identity(article.link)
+                if owners[identity, default: []].contains(where: { $0 != feedId }) { article.read = true }
+                owners[identity, default: []].insert(feedId)
+            }
             index[item.guid] = list.count
             list.append(article)
             bodyMap[article.id] = item.body
+            changedIds.append(article.id)
+            newTexts[article.id] = text
             applied.added += 1
         }
         let ordered = list.enumerated().sorted { lhs, rhs in
@@ -443,7 +640,7 @@ public final class RSSReaderStore {
         var kept: [RSSArticle] = []
         var unstarred = 0
         for article in ordered {
-            if article.starred {
+            if article.starred || article.readLater {
                 kept.append(article)
             } else if unstarred < RSSReaderLimits.maxArticlesPerFeed {
                 kept.append(article)
@@ -452,6 +649,16 @@ public final class RSSReaderStore {
         }
         let keptIds = Set(kept.map(\.id))
         for key in bodyMap.keys where !keptIds.contains(key) { bodyMap[key] = nil }
+        let dropped = list.map(\.id).filter { !keptIds.contains($0) }
+        forget(changedIds + dropped, feedId: feedId)
+        if texts[feedId] != nil {
+            for (id, text) in newTexts where keptIds.contains(id) { texts[feedId]?[id] = text }
+        }
+        if folding && dropped.isEmpty {
+            linkIndex = owners
+        } else {
+            linkIndex = nil
+        }
         articles[feedId] = kept
         bodies[feedId] = bodyMap
         if applied.added > 0 || applied.updated > 0 || kept.count != list.count {
@@ -518,6 +725,15 @@ public final class RSSReaderStore {
         }
     }
 
+    @discardableResult
+    public func setReadLater(_ ids: [String], _ readLater: Bool) -> Int {
+        update(Set(ids)) { article in
+            guard article.readLater != readLater else { return false }
+            article.readLater = readLater
+            return true
+        }
+    }
+
     public func feedIds(in scope: RSSScope) -> Set<String>? {
         switch scope {
         case .feed(let id): return [id]
@@ -526,44 +742,121 @@ public final class RSSReaderStore {
         }
     }
 
+    public func smartMatches(_ smart: RSSSmartFeed, _ article: RSSArticle, feed: RSSFeed?, now stamp: Int64) -> Bool {
+        if smart.starredOnly && !article.starred { return false }
+        if smart.maxAgeDays > 0 && article.date < stamp - Int64(smart.maxAgeDays) * RSSReaderLimits.dayMs { return false }
+        if smart.scope.hasPrefix("feed:") {
+            if article.feedId != String(smart.scope.dropFirst(5)) { return false }
+        } else if smart.scope.hasPrefix("folder:") {
+            if feed?.folderId != String(smart.scope.dropFirst(7)) { return false }
+        }
+        return wordsMatch(smart.words, regex: smart.regex, article)
+    }
+
+    public func inScope(_ article: RSSArticle, _ scope: RSSScope, feed: RSSFeed?, now stamp: Int64) -> Bool {
+        switch scope {
+        case .today:
+            if feed?.excludeFromToday ?? false || feed?.excludeFromUnread ?? false { return false }
+            return article.published >= stamp - RSSReaderLimits.todayMs
+        case .unread: return !(feed?.excludeFromUnread ?? false)
+        case .starred: return article.starred
+        case .readLater: return article.readLater
+        case .smart(let id):
+            guard let smart = smartFeed(id) else { return false }
+            return smartMatches(smart, article, feed: feed, now: stamp)
+        case .feed(let id): return article.feedId == id
+        case .folder(let id): return feed?.folderId == id
+        }
+    }
+
     public func matches(_ article: RSSArticle, _ scope: RSSScope, now stamp: Int64) -> Bool {
         switch scope {
-        case .today: return !article.read && article.published >= stamp - RSSReaderLimits.todayMs
-        case .unread: return !article.read
-        case .starred: return article.starred
-        case .feed(let id): return article.feedId == id
-        case .folder(let id): return feed(article.feedId)?.folderId == id
+        case .today, .unread: return !article.read && inScope(article, scope, feed: feed(article.feedId), now: stamp)
+        default: return inScope(article, scope, feed: feed(article.feedId), now: stamp)
         }
+    }
+
+    private var feedsById: [String: RSSFeed] {
+        Dictionary(library.feeds.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     @discardableResult
     public func markAllRead(_ scope: RSSScope, asOf: Int64? = nil) -> Int {
         let stamp = now
         let limit = asOf ?? stamp
+        let keepStarred = library.settings.markAllKeepsStarred
+        let filters = hideFilters
+        let byId = feedsById
         var ids: [String] = []
         let feedFilter = feedIds(in: scope)
         for (feedId, list) in articles where feedFilter?.contains(feedId) ?? true {
-            for article in list where !article.read && article.arrivedAt <= limit && matches(article, scope, now: stamp) {
+            let feed = byId[feedId]
+            for article in list where !article.read && article.arrivedAt <= limit {
+                if keepStarred && article.starred { continue }
+                guard inScope(article, scope, feed: feed, now: stamp), !isHidden(article, filters: filters) else { continue }
                 ids.append(article.id)
             }
         }
         return setRead(ids, true)
     }
 
+    public func olderUnread(_ scope: RSSScope?, _ choice: RSSCatchUp) -> [String] {
+        let stamp = now
+        let cutoff = stamp - Int64(choice.days) * RSSReaderLimits.dayMs
+        let keepStarred = library.settings.markAllKeepsStarred
+        let filters = hideFilters
+        let byId = feedsById
+        let feedFilter = scope.flatMap { feedIds(in: $0) }
+        var ids: [String] = []
+        for (feedId, list) in articles where feedFilter?.contains(feedId) ?? true {
+            let feed = byId[feedId]
+            for article in list where !article.read && article.date < cutoff {
+                if keepStarred && article.starred { continue }
+                if let scope, !inScope(article, scope, feed: feed, now: stamp) { continue }
+                if isHidden(article, filters: filters) { continue }
+                ids.append(article.id)
+            }
+        }
+        return ids
+    }
+
+    @discardableResult
+    public func markOlderRead(_ scope: RSSScope?, _ choice: RSSCatchUp) -> Int {
+        setRead(olderUnread(scope, choice), true)
+    }
+
     public func counts(now stamp: Int64? = nil) -> RSSCounts {
         let moment = stamp ?? now
         var counts = RSSCounts()
+        let filters = hideFilters
+        let smarts = library.smartFeeds
+        for smart in smarts { counts.bySmartFeed[smart.id] = 0 }
         for feed in library.feeds {
             var unread = 0
-            for article in articles[feed.id] ?? [] where !article.read {
+            for article in articles[feed.id] ?? [] {
+                if article.read {
+                    if article.readLater && !isHidden(article, filters: filters) { counts.readLaterTotal += 1 }
+                    continue
+                }
+                if isHidden(article, filters: filters) { continue }
+                if article.readLater { counts.readLaterTotal += 1 }
                 unread += 1
-                if article.published >= moment - RSSReaderLimits.todayMs { counts.today += 1 }
+                if feed.excludeFromUnread { continue }
+                if !feed.excludeFromToday && article.published >= moment - RSSReaderLimits.todayMs { counts.today += 1 }
                 if article.starred { counts.starred += 1 }
+                if article.readLater { counts.readLater += 1 }
+                for smart in smarts where smartMatches(smart, article, feed: feed, now: moment) {
+                    counts.bySmartFeed[smart.id, default: 0] += 1
+                }
             }
             counts.byFeed[feed.id] = unread
-            counts.unread += unread
+            if !feed.excludeFromUnread { counts.unread += unread }
         }
         return counts
+    }
+
+    public func folderUnread(_ id: String, counts: RSSCounts) -> Int {
+        library.feeds.filter { $0.folderId == id && !$0.excludeFromUnread }.reduce(0) { $0 + (counts.byFeed[$1.id] ?? 0) }
     }
 
     public func unread(_ scope: RSSScope, counts: RSSCounts) -> Int {
@@ -571,8 +864,10 @@ public final class RSSReaderStore {
         case .today: return counts.today
         case .unread: return counts.unread
         case .starred: return counts.starred
+        case .readLater: return counts.readLater
+        case .smart(let id): return counts.bySmartFeed[id] ?? 0
         case .feed(let id): return counts.byFeed[id] ?? 0
-        case .folder(let id): return library.feeds.filter { $0.folderId == id }.reduce(0) { $0 + (counts.byFeed[$1.id] ?? 0) }
+        case .folder(let id): return folderUnread(id, counts: counts)
         }
     }
 
@@ -581,6 +876,8 @@ public final class RSSReaderStore {
         case .today: return "Today"
         case .unread: return "All Unread"
         case .starred: return "Starred"
+        case .readLater: return "Read Later"
+        case .smart(let id): return smartFeed(id)?.name ?? "Smart Feed"
         case .feed(let id): return feed(id)?.displayTitle ?? "Feed"
         case .folder(let id): return folder(id)?.name ?? "Folder"
         }
@@ -588,7 +885,8 @@ public final class RSSReaderStore {
 
     public func exists(_ scope: RSSScope) -> Bool {
         switch scope {
-        case .today, .unread, .starred: return true
+        case .today, .unread, .starred, .readLater: return true
+        case .smart(let id): return smartFeed(id) != nil
         case .feed(let id): return feed(id) != nil
         case .folder(let id): return folder(id) != nil
         }
@@ -599,35 +897,55 @@ public final class RSSReaderStore {
         return order == .orderedSame ? lhs < rhs : order == .orderedAscending
     }
 
-    public func sidebar(unreadOnly: Bool, selected: RSSScope? = nil, counts: RSSCounts) -> [RSSSidebarEntry] {
+    public static func feedMatches(_ feed: RSSFeed, query: String) -> Bool {
+        let needle = RSSText.clean(query, 200).lowercased()
+        if needle.isEmpty { return true }
+        return feed.displayTitle.lowercased().contains(needle) || RSSURL.host(feed.url).contains(needle)
+            || feed.url.lowercased().contains(needle)
+    }
+
+    public func sidebar(unreadOnly: Bool, selected: RSSScope? = nil, counts: RSSCounts, search: String = "") -> [RSSSidebarEntry] {
         let folderIds = Set(library.folders.map(\.id))
+        let searching = !RSSText.clean(search, 200).isEmpty
+        let byUnread = library.settings.sortFeedsByUnread
         let shows: (RSSFeed) -> Bool = { feed in
-            !unreadOnly || (counts.byFeed[feed.id] ?? 0) > 0 || selected == .feed(feed.id)
+            if searching { return Self.feedMatches(feed, query: search) }
+            return !unreadOnly || (counts.byFeed[feed.id] ?? 0) > 0 || selected == .feed(feed.id)
+        }
+        let order: (String, Int, String, Int) -> Bool = { leftName, leftCount, rightName, rightCount in
+            if byUnread && leftCount != rightCount { return leftCount > rightCount }
+            return Self.byName(leftName, rightName)
         }
         enum Node {
-            case feed(RSSFeed)
-            case folder(RSSFolder)
+            case feed(RSSFeed, Int)
+            case folder(RSSFolder, Int)
             var name: String {
                 switch self {
-                case .feed(let feed): return feed.displayTitle
-                case .folder(let folder): return folder.name
+                case .feed(let feed, _): return feed.displayTitle
+                case .folder(let folder, _): return folder.name
+                }
+            }
+            var count: Int {
+                switch self {
+                case .feed(_, let count), .folder(_, let count): return count
                 }
             }
         }
-        var nodes: [Node] = library.folders.map { Node.folder($0) }
-        nodes += library.feeds.filter { $0.folderId.isEmpty || !folderIds.contains($0.folderId) }.filter(shows).map { Node.feed($0) }
-        nodes.sort { Self.byName($0.name, $1.name) }
+        var nodes: [Node] = library.folders.map { Node.folder($0, folderUnread($0.id, counts: counts)) }
+        nodes += library.feeds.filter { $0.folderId.isEmpty || !folderIds.contains($0.folderId) }.filter(shows)
+            .map { Node.feed($0, counts.byFeed[$0.id] ?? 0) }
+        nodes.sort { order($0.name, $0.count, $1.name, $1.count) }
         var entries: [RSSSidebarEntry] = []
         for node in nodes {
             switch node {
-            case .feed(let feed):
-                entries.append(.feed(feed, unread: counts.byFeed[feed.id] ?? 0, indented: false))
-            case .folder(let folder):
+            case .feed(let feed, let unread):
+                entries.append(.feed(feed, unread: unread, indented: false))
+            case .folder(let folder, let unread):
                 let children = library.feeds.filter { $0.folderId == folder.id && shows($0) }
-                    .sorted { Self.byName($0.displayTitle, $1.displayTitle) }
-                if unreadOnly && children.isEmpty && selected != .folder(folder.id) { continue }
-                let collapsed = isCollapsed("folder:\(folder.id)")
-                let unread = children.reduce(0) { $0 + (counts.byFeed[$1.id] ?? 0) }
+                    .sorted { order($0.displayTitle, counts.byFeed[$0.id] ?? 0, $1.displayTitle, counts.byFeed[$1.id] ?? 0) }
+                if searching && children.isEmpty { continue }
+                if !searching && unreadOnly && children.isEmpty && selected != .folder(folder.id) { continue }
+                let collapsed = !searching && isCollapsed("folder:\(folder.id)")
                 entries.append(.folder(folder, unread: unread, collapsed: collapsed))
                 if !collapsed {
                     for feed in children { entries.append(.feed(feed, unread: counts.byFeed[feed.id] ?? 0, indented: true)) }
@@ -653,23 +971,18 @@ public final class RSSReaderStore {
         let moment = stamp ?? now
         let needle = RSSText.clean(query, 200).lowercased()
         let feedFilter = feedIds(in: scope)
+        let filters = hideFilters
+        let byId = feedsById
         var titles: [String: String] = [:]
         for feed in library.feeds { titles[feed.id] = feed.displayTitle }
+        var needsUnread = unreadOnly || scope.unreadOnly
+        if case .smart(let id) = scope, smartFeed(id)?.unreadOnly ?? false { needsUnread = true }
         var list: [RSSArticle] = []
         for (feedId, items) in articles where feedFilter?.contains(feedId) ?? true {
+            let feed = byId[feedId]
             for article in items {
-                let kept = keep.contains(article.id)
-                switch scope {
-                case .today:
-                    guard article.published >= moment - RSSReaderLimits.todayMs, !article.read || kept else { continue }
-                case .unread:
-                    guard !article.read || kept else { continue }
-                case .starred:
-                    guard article.starred else { continue }
-                default:
-                    break
-                }
-                if unreadOnly && article.read && !kept { continue }
+                if needsUnread && article.read && !keep.contains(article.id) { continue }
+                guard inScope(article, scope, feed: feed, now: moment), !isHidden(article, filters: filters) else { continue }
                 if !needle.isEmpty {
                     let haystack = [article.title, article.summary, article.author, titles[feedId] ?? ""].joined(separator: "\n").lowercased()
                     if !haystack.contains(needle) { continue }
@@ -722,6 +1035,7 @@ public final class RSSReaderStore {
     public func dueFeeds(now stamp: Int64? = nil, force: Bool = false) -> [RSSFeed] {
         let moment = stamp ?? now
         return library.feeds.filter { feed in
+            if feed.paused { return false }
             if force { return feed.fetchedAt <= moment - RSSReaderLimits.minForceGapMs }
             return feed.nextFetchAt <= moment
         }.sorted { $0.nextFetchAt < $1.nextFetchAt }

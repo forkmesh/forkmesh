@@ -24,6 +24,7 @@
 #include <QIcon>
 #include <QInputDialog>
 #include <QJsonDocument>
+#include <QListWidget>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -50,6 +51,7 @@
 #include <QTextBrowser>
 #include <QTextDocument>
 #include <QTextLayout>
+#include <QTextOption>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -69,6 +71,7 @@ enum ItemKind { SectionItem = 1, SmartItem, FolderItem, FeedItem };
 constexpr qint64 kMaxImageBytes = qint64(5) * 1024 * 1024;
 constexpr qint64 kMaxIconBytes = qint64(1) * 1024 * 1024;
 constexpr int kMaxCachedImages = 300;
+constexpr int kThumbnailSide = 56;
 const QColor kStarColor(0xd4, 0xa7, 0x2c);
 const QColor kWarningColor(0xd2, 0x99, 0x22);
 
@@ -223,6 +226,56 @@ QString sizeLabel(qint64 bytes)
     return english().formattedDataSize(bytes, 1, QLocale::DataSizeSIFormat);
 }
 
+Source smartSource(const QString &id)
+{
+    if (id == QLatin1String("today"))
+        return {SourceKind::Today, QString()};
+    if (id == QLatin1String("starred"))
+        return {SourceKind::Starred, QString()};
+    if (id == QLatin1String("readlater"))
+        return {SourceKind::ReadLater, QString()};
+    if (id.startsWith(QStringLiteral("smart:")))
+        return {SourceKind::Smart, id.mid(6)};
+    return {SourceKind::AllUnread, QString()};
+}
+
+QString smartItemId(const Source &source)
+{
+    switch (source.kind) {
+    case SourceKind::Today:
+        return QStringLiteral("today");
+    case SourceKind::AllUnread:
+        return QStringLiteral("unread");
+    case SourceKind::Starred:
+        return QStringLiteral("starred");
+    case SourceKind::ReadLater:
+        return QStringLiteral("readlater");
+    case SourceKind::Smart:
+        return QStringLiteral("smart:") + source.id;
+    default:
+        return QString();
+    }
+}
+
+QString filterFieldLabel(const QString &field)
+{
+    if (field == QLatin1String("titleOrText"))
+        return QStringLiteral("Title or Text");
+    if (field == QLatin1String("author"))
+        return QStringLiteral("Author");
+    return QStringLiteral("Title");
+}
+
+QString filterActionLabel(const QString &action)
+{
+    return action == QLatin1String("markRead") ? QStringLiteral("Mark as Read") : QStringLiteral("Hide");
+}
+
+QString timeText(qint64 ms)
+{
+    return english().toString(QDateTime::fromMSecsSinceEpoch(ms).time(), QStringLiteral("h:mm AP"));
+}
+
 }
 
 class ArticleBrowser final : public QTextBrowser
@@ -337,6 +390,7 @@ public:
     std::function<QPixmap(const QModelIndex &, int)> icon;
     std::function<QString(const QModelIndex &)> warning;
     std::function<bool(const QModelIndex &)> expanded;
+    std::function<bool(const QModelIndex &)> paused;
     std::function<QPixmap(int)> warningIcon;
 
     QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
@@ -407,9 +461,21 @@ public:
             painter->drawPixmap(QPointF(right - 14, rect.center().y() - 6), alert);
             right -= 20;
         }
+        const bool isPaused = paused && paused(index);
+        if (isPaused) {
+            painter->save();
+            painter->setRenderHint(QPainter::Antialiasing);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(muted);
+            const qreal top = rect.center().y() - 5;
+            painter->drawRoundedRect(QRectF(right - 9, top, 3, 10), 1, 1);
+            painter->drawRoundedRect(QRectF(right - 4, top, 3, 10), 1, 1);
+            painter->restore();
+            right -= 16;
+        }
         const QFont nameFont = pixelFont(option.font, 13);
         painter->setFont(nameFont);
-        painter->setPen(text);
+        painter->setPen(isPaused ? muted : text);
         const QString name = QFontMetrics(nameFont).elidedText(index.data().toString(),
                                                                 Qt::ElideRight, qMax(0, right - x));
         painter->drawText(QRect(x, rect.top(), qMax(0, right - x), rect.height()),
@@ -425,6 +491,7 @@ public:
     const Store *store = nullptr;
     TimelineModel *model = nullptr;
     std::function<QPixmap(const QString &, int)> icon;
+    std::function<QPixmap(const QString &)> thumbnail;
 
     int articleHeight(const QFont &base) const
     {
@@ -521,7 +588,25 @@ public:
             painter->drawPixmap(QPointF(x, top), pixmap);
             x += 28;
         }
-        const int width = qMax(0, rect.right() - 12 - x);
+        int trailing = rect.right() - 12;
+        const Settings &settings = store->settings();
+        if (settings.showThumbnails && settings.loadRemoteImages && !item->image.isEmpty() && thumbnail) {
+            const QPixmap pixmap = thumbnail(item->image);
+            if (!pixmap.isNull()) {
+                const int side = qMax(16, qMin(kThumbnailSide, rect.height() - 16));
+                const QRectF target(rect.right() - 10 - side, rect.top() + (rect.height() - side) / 2.0, side, side);
+                QPainterPath clip;
+                clip.addRoundedRect(target, 6, 6);
+                painter->save();
+                painter->setRenderHint(QPainter::Antialiasing);
+                painter->setRenderHint(QPainter::SmoothPixmapTransform);
+                painter->setClipPath(clip);
+                painter->drawPixmap(target, pixmap, QRectF(QPointF(0, 0), QSizeF(pixmap.size())));
+                painter->restore();
+                trailing = int(target.left()) - 10;
+            }
+        }
+        const int width = qMax(0, trailing - x);
         QString title = item->title;
         if (title.isEmpty())
             title = item->summary.isEmpty() ? QStringLiteral("Untitled") : item->summary.left(140);
@@ -559,7 +644,7 @@ public:
         painter->setPen(muted);
         const int metaTop = rect.bottom() - 9 - metaMetrics.height();
         const int dateWidth = metaMetrics.horizontalAdvance(date);
-        painter->drawText(QRect(rect.right() - 12 - dateWidth, metaTop, dateWidth, metaMetrics.height()),
+        painter->drawText(QRect(trailing - dateWidth, metaTop, dateWidth, metaMetrics.height()),
                           Qt::AlignRight | Qt::AlignVCenter, date);
         const int metaWidth = qMax(0, width - dateWidth - 10);
         painter->drawText(QRect(x, metaTop, metaWidth, metaMetrics.height()),
@@ -666,9 +751,21 @@ QWidget *RssReaderFeature::buildSourcesPane()
     m_unreadFeedsButton = toolButton(QStringLiteral("filter"), QStringLiteral("Show only feeds with unread articles"), true);
     m_settingsButton = toolButton(QStringLiteral("gear"), QStringLiteral("Settings"));
     m_addButton = toolButton(QStringLiteral("plus"), QStringLiteral("Add a feed"));
-    for (QToolButton *button : {m_refreshButton, m_unreadFeedsButton, m_settingsButton, m_addButton})
+    m_sourcesMenuButton = toolButton(QStringLiteral("kebab-horizontal"), QStringLiteral("More"));
+    for (QToolButton *button : {m_refreshButton, m_unreadFeedsButton, m_settingsButton, m_addButton, m_sourcesMenuButton})
         header->addWidget(button, 0, Qt::AlignTop);
     layout->addLayout(header);
+
+    m_feedSearchField = new QLineEdit;
+    m_feedSearchField->setObjectName(QStringLiteral("rssFeedSearch"));
+    m_feedSearchField->setPlaceholderText(QStringLiteral("Find a Feed"));
+    m_feedSearchField->setAccessibleName(QStringLiteral("Find a Feed"));
+    m_feedSearchField->setClearButtonEnabled(true);
+    m_feedSearchField->setFixedHeight(28);
+    auto *feedSearchRow = new QHBoxLayout;
+    feedSearchRow->setContentsMargins(4, 0, 6, 0);
+    feedSearchRow->addWidget(m_feedSearchField);
+    layout->addLayout(feedSearchRow);
 
     m_sources = new QTreeWidget;
     m_sources->setObjectName(QStringLiteral("rssSources"));
@@ -707,9 +804,11 @@ QWidget *RssReaderFeature::buildSourcesPane()
             return feedIcon(id, side);
         if (kind == FolderItem)
             return tintedPixmap(QStringLiteral("file-directory"), muted, side, devicePixelRatioF());
-        const QString name = id == QLatin1String("today") ? QStringLiteral("sun")
-                             : id == QLatin1String("starred") ? QStringLiteral("star")
-                                                               : QStringLiteral("issue-opened");
+        const QString name = id == QLatin1String("today")             ? QStringLiteral("sun")
+                             : id == QLatin1String("starred")         ? QStringLiteral("star")
+                             : id == QLatin1String("readlater")       ? QStringLiteral("clock")
+                             : id.startsWith(QStringLiteral("smart:")) ? QStringLiteral("filter")
+                                                                       : QStringLiteral("issue-opened");
         return tintedPixmap(name, muted, side, devicePixelRatioF());
     };
     m_sourceDelegate->warning = [this](const QModelIndex &index) {
@@ -722,6 +821,12 @@ QWidget *RssReaderFeature::buildSourcesPane()
         return tintedPixmap(QStringLiteral("alert"), kWarningColor, side, devicePixelRatioF());
     };
     m_sourceDelegate->expanded = [this](const QModelIndex &index) { return m_sources->isExpanded(index); };
+    m_sourceDelegate->paused = [this](const QModelIndex &index) {
+        if (index.data(KindRole).toInt() != FeedItem)
+            return false;
+        const Feed *owner = m_store.feed(index.data(IdRole).toString());
+        return owner && owner->paused;
+    };
     m_sources->setItemDelegate(m_sourceDelegate);
     m_sources->viewport()->installEventFilter(this);
     m_sources->installEventFilter(this);
@@ -738,16 +843,15 @@ QWidget *RssReaderFeature::buildSourcesPane()
     });
     connect(m_settingsButton, &QToolButton::clicked, this, [this] { showSettings(); });
     connect(m_addButton, &QToolButton::clicked, this, [this] { showAddFeed(); });
+    connect(m_sourcesMenuButton, &QToolButton::clicked, this, [this] { showSourcesMenu(); });
+    connect(m_feedSearchField, &QLineEdit::textChanged, this, [this](const QString &text) { setFeedSearch(text); });
     connect(m_sources, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
         if (m_rebuilding || !item)
             return;
         const int kind = item->data(0, KindRole).toInt();
         const QString id = item->data(0, IdRole).toString();
         if (kind == SmartItem) {
-            selectSource({id == QLatin1String("today")     ? SourceKind::Today
-                          : id == QLatin1String("starred") ? SourceKind::Starred
-                                                           : SourceKind::AllUnread,
-                          QString()});
+            selectSource(smartSource(id));
         } else if (kind == FolderItem) {
             selectSource({SourceKind::Folder, id});
         } else if (kind == FeedItem) {
@@ -809,8 +913,10 @@ QWidget *RssReaderFeature::buildTimelinePane()
     titles->addWidget(m_timelineCount);
     header->addLayout(titles, 1);
     m_markAllButton = toolButton(QStringLiteral("check-circle"), QStringLiteral("Mark All as Read (Shift+A)"));
-    m_unreadTimelineButton = toolButton(QStringLiteral("eye"), QStringLiteral("Show only unread articles"), true);
+    m_unreadTimelineButton = toolButton(QStringLiteral("eye"), QStringLiteral("Hide Read Articles"), true);
+    m_catchUpButton = toolButton(QStringLiteral("history"), QStringLiteral("Mark Older as Read"));
     header->addWidget(m_markAllButton, 0, Qt::AlignTop);
+    header->addWidget(m_catchUpButton, 0, Qt::AlignTop);
     header->addWidget(m_unreadTimelineButton, 0, Qt::AlignTop);
     layout->addLayout(header);
 
@@ -833,6 +939,7 @@ QWidget *RssReaderFeature::buildTimelinePane()
     m_timelineDelegate->store = &m_store;
     m_timelineDelegate->model = m_timelineModel;
     m_timelineDelegate->icon = [this](const QString &feedId, int side) { return feedIcon(feedId, side); };
+    m_timelineDelegate->thumbnail = [this](const QString &url) { return thumbnail(url); };
     m_timeline->setItemDelegate(m_timelineDelegate);
     m_timeline->setSelectionMode(QAbstractItemView::SingleSelection);
     m_timeline->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -867,11 +974,12 @@ QWidget *RssReaderFeature::buildTimelinePane()
                                           "the ForkMesh blog feed from Settings."));
         else if (!m_search.trimmed().isEmpty())
             empty->setText(QStringLiteral("No articles match “%1”.").arg(m_search.trimmed()));
-        else if (m_store.settings().unreadOnlyTimeline || m_source.kind == SourceKind::AllUnread ||
-                 m_source.kind == SourceKind::Today)
-            empty->setText(QStringLiteral("No unread articles."));
         else if (m_source.kind == SourceKind::Starred)
             empty->setText(QStringLiteral("No starred articles. Press S on an article to star it."));
+        else if (m_source.kind == SourceKind::ReadLater)
+            empty->setText(QStringLiteral("No articles to read later."));
+        else if (readHidden(m_source))
+            empty->setText(QStringLiteral("No unread articles."));
         else
             empty->setText(QStringLiteral("No articles."));
         stack->setCurrentWidget(empty);
@@ -903,6 +1011,11 @@ QWidget *RssReaderFeature::buildTimelinePane()
         m_searchTimer->start();
     });
     connect(m_markAllButton, &QToolButton::clicked, this, [this] { markAllRead(true); });
+    connect(m_catchUpButton, &QToolButton::clicked, this, [this] {
+        QMenu menu(this);
+        addCatchUpMenu(&menu, false);
+        menu.exec(m_catchUpButton->mapToGlobal(QPoint(0, m_catchUpButton->height())));
+    });
     connect(m_unreadTimelineButton, &QToolButton::toggled, this, [this](bool on) {
         if (m_store.settings().unreadOnlyTimeline == on)
             return;
@@ -929,12 +1042,14 @@ QWidget *RssReaderFeature::buildArticlePane()
     toolbar->setSpacing(2);
     m_readButton = toolButton(QStringLiteral("check-circle"), QStringLiteral("Mark as Read (R)"));
     m_starButton = toolButton(QStringLiteral("star"), QStringLiteral("Star (S)"));
+    m_readLaterButton = toolButton(QStringLiteral("clock"), QStringLiteral("Read Later"));
     m_nextUnreadButton = toolButton(QStringLiteral("chevron-down"), QStringLiteral("Next Unread (N)"));
     m_readerButton = toolButton(QStringLiteral("book"), QStringLiteral("Reader View (V)"), true);
     m_openButton = toolButton(QStringLiteral("link-external"), QStringLiteral("Open in Browser (O)"));
     m_copyButton = toolButton(QStringLiteral("copy"), QStringLiteral("Copy Link"));
     toolbar->addWidget(m_readButton);
     toolbar->addWidget(m_starButton);
+    toolbar->addWidget(m_readLaterButton);
     toolbar->addWidget(m_nextUnreadButton);
     toolbar->addStretch();
     toolbar->addWidget(m_readerButton);
@@ -969,6 +1084,7 @@ QWidget *RssReaderFeature::buildArticlePane()
     });
     connect(m_readButton, &QToolButton::clicked, this, [this] { toggleRead(); });
     connect(m_starButton, &QToolButton::clicked, this, [this] { toggleStar(); });
+    connect(m_readLaterButton, &QToolButton::clicked, this, [this] { toggleReadLater(); });
     connect(m_nextUnreadButton, &QToolButton::clicked, this, [this] { nextUnread(); });
     connect(m_readerButton, &QToolButton::clicked, this, [this] { showReaderView(); });
     connect(m_openButton, &QToolButton::clicked, this, [this] { openInBrowser(); });
@@ -995,6 +1111,11 @@ void RssReaderFeature::refreshIcons()
         if (button == m_readButton) {
             const Article *item = m_store.article(m_article);
             if (item && !item->read)
+                color = accent;
+        }
+        if (button == m_readLaterButton) {
+            const Article *item = m_store.article(m_article);
+            if (item && item->readLater)
                 color = accent;
         }
         const QString key = name + QLatin1Char('|') + color.name();
@@ -1044,7 +1165,7 @@ void RssReaderFeature::loadStore()
         if (!saved.isEmpty())
             m_store.settings() = Settings::fromJson(saved);
         if (!opml.isEmpty()) {
-            const OpmlImportResult imported = m_store.importOpml(parseOpml(opml.toUtf8()), at);
+            const OpmlImportResult imported = m_store.importOpml(parseOpml(opml.toUtf8()), at, true);
             if (imported.added > 0)
                 m_store.logActivity(at, QStringLiteral("Restored %1 feeds from the saved copy").arg(imported.added));
         }
@@ -1191,25 +1312,36 @@ void RssReaderFeature::checkFeeds(bool force)
     updateStatus();
 }
 
-void RssReaderFeature::fetchFeed(const QString &feedId)
+void RssReaderFeature::fetchFeed(const QString &feedId, bool unconditional,
+                                 std::function<void(const QString &)> done)
 {
     const Feed *owner = m_store.feed(feedId);
     if (!owner) {
         m_inFlight.remove(feedId);
+        if (done)
+            done(QStringLiteral("This feed is no longer followed."));
         return;
     }
     FetchRequest request;
     request.url = QUrl(owner->url);
-    request.etag = owner->etag;
-    request.lastModified = owner->lastModified;
-    m_feedQueue->get(request, [this, feedId](const FetchResult &result) { feedFetched(feedId, result); });
+    request.allowFile = true;
+    if (!unconditional) {
+        request.etag = owner->etag;
+        request.lastModified = owner->lastModified;
+    }
+    m_feedQueue->get(request, [this, feedId, done](const FetchResult &result) {
+        const QString line = feedFetched(feedId, result);
+        if (done)
+            done(line);
+    });
 }
 
-void RssReaderFeature::feedFetched(const QString &feedId, const FetchResult &result)
+QString RssReaderFeature::feedFetched(const QString &feedId, const FetchResult &result)
 {
     m_inFlight.remove(feedId);
     const Feed *owner = m_store.feed(feedId);
     const qint64 at = now();
+    QString line = result.error;
     if (owner) {
         const QUrl moved = result.permanentRedirect ? result.finalUrl : QUrl();
         if (!result.ok()) {
@@ -1219,14 +1351,20 @@ void RssReaderFeature::feedFetched(const QString &feedId, const FetchResult &res
             const QString etag = result.etag.isEmpty() ? owner->etag : result.etag;
             const QString modified = result.lastModified.isEmpty() ? owner->lastModified : result.lastModified;
             m_store.recordSuccess(feedId, at, etag, modified, moved);
+            line = QStringLiteral("Not modified · checked %1").arg(timeText(at));
         } else {
             const ParsedFeed parsed = parseFeed(result.body, result.finalUrl);
             if (!parsed.ok) {
                 m_store.recordFailure(feedId, parsed.error, at);
                 ++m_refreshFailed;
+                line = parsed.error;
             } else {
                 m_refreshNew += m_store.merge(feedId, parsed, at);
                 m_store.recordSuccess(feedId, at, result.etag, result.lastModified, moved);
+                const int count = int(parsed.items.size());
+                line = QStringLiteral("%1 · %2 %3 · checked %4")
+                           .arg(parsed.format, QLocale().toString(count),
+                                count == 1 ? QStringLiteral("item") : QStringLiteral("items"), timeText(at));
             }
         }
         if (!m_countsTimer->isActive())
@@ -1239,6 +1377,47 @@ void RssReaderFeature::feedFetched(const QString &feedId, const FetchResult &res
         finishRefresh();
     else
         updateStatus();
+    return line;
+}
+
+void RssReaderFeature::checkNow(const QString &feedId, std::function<void(const QString &)> done)
+{
+    loadStore();
+    if (!m_store.feed(feedId)) {
+        if (done)
+            done(QStringLiteral("This feed is no longer followed."));
+        return;
+    }
+    if (m_inFlight.contains(feedId)) {
+        if (done)
+            done(QStringLiteral("This feed is being checked."));
+        return;
+    }
+    m_inFlight.insert(feedId);
+    ++m_refreshTotal;
+    updateStatus();
+    fetchFeed(feedId, true, std::move(done));
+}
+
+QString RssReaderFeature::changeFeedAddress(const QString &feedId, const QString &address)
+{
+    loadStore();
+    const Feed *owner = m_store.feed(feedId);
+    if (!owner)
+        return QStringLiteral("This feed is no longer followed.");
+    const QString before = owner->url;
+    QString error;
+    if (!m_store.changeFeedAddress(feedId, address, now(), &error))
+        return error;
+    if (m_store.feed(feedId)->url == before)
+        return QString();
+    m_icons.remove(feedId);
+    m_iconAttempts.remove(feedId);
+    rebuildSources();
+    updateCounts();
+    scheduleSave();
+    checkNow(feedId, {});
+    return QString();
 }
 
 void RssReaderFeature::finishRefresh()
@@ -1310,12 +1489,24 @@ void RssReaderFeature::updateCounts()
     m_counts.insert(QStringLiteral("today"), m_store.unreadCount({SourceKind::Today, QString()}, at));
     m_counts.insert(QStringLiteral("unread"), m_store.totalUnread());
     m_counts.insert(QStringLiteral("starred"), m_store.unreadCount({SourceKind::Starred, QString()}, at));
+    m_counts.insert(QStringLiteral("readlater"), m_store.unreadCount({SourceKind::ReadLater, QString()}, at));
+    for (const SmartFeed &smart : m_store.settings().smartFeeds)
+        m_counts.insert(QStringLiteral("smart:") + smart.id, m_store.unreadCount({SourceKind::Smart, smart.id}, at));
     for (const Feed &owner : m_store.feeds()) {
         const int unread = m_store.feedUnread(owner.id);
         m_counts.insert(QStringLiteral("f:") + owner.id, unread);
-        if (!owner.folder.isEmpty())
+        if (!owner.folder.isEmpty() && !owner.excludeFromUnread)
             m_counts[QStringLiteral("d:") + owner.folder] += unread;
     }
+    bool readLaterShown = false;
+    for (int i = 0; i < m_sources->topLevelItemCount() && !readLaterShown; ++i) {
+        QTreeWidgetItem *section = m_sources->topLevelItem(i);
+        for (int j = 0; j < section->childCount(); ++j)
+            readLaterShown = readLaterShown || section->child(j)->data(0, IdRole).toString() == QLatin1String("readlater");
+    }
+    if (readLaterShown != (m_store.readLaterCount() > 0 || m_source.kind == SourceKind::ReadLater) &&
+        m_feedSearch.trimmed().isEmpty())
+        rebuildSources();
     if (m_store.settings().unreadOnlyFeeds) {
         for (int i = 0; i < m_sources->topLevelItemCount(); ++i) {
             QTreeWidgetItem *section = m_sources->topLevelItem(i);
@@ -1358,6 +1549,12 @@ QString RssReaderFeature::sourceTitle(const Source &source) const
         return QStringLiteral("All Unread");
     case SourceKind::Starred:
         return QStringLiteral("Starred");
+    case SourceKind::ReadLater:
+        return QStringLiteral("Read Later");
+    case SourceKind::Smart: {
+        const SmartFeed *smart = m_store.smartFeed(source.id);
+        return smart ? smart->name : QString();
+    }
     case SourceKind::Folder:
         return source.id;
     case SourceKind::Feed: {
@@ -1374,6 +1571,10 @@ void RssReaderFeature::rebuildSources()
 {
     m_rebuilding = true;
     m_sources->clear();
+    const qint64 at = now();
+    const QString needle = m_feedSearch.trimmed();
+    const bool searching = !needle.isEmpty();
+    const bool byUnread = m_store.settings().sortFeedsByUnread;
     auto section = [this](const QString &title, const QString &id) {
         auto *item = new QTreeWidgetItem(m_sources, {title});
         item->setData(0, KindRole, SectionItem);
@@ -1390,38 +1591,61 @@ void RssReaderFeature::rebuildSources()
         item->setToolTip(0, title);
         return item;
     };
+    auto describeFeed = [this](QTreeWidgetItem *item, const QString &feedId) {
+        const Feed *owner = m_store.feed(feedId);
+        if (!owner)
+            return;
+        QStringList notes;
+        if (owner->failures > 0)
+            notes << QStringLiteral("Last check failed: %1").arg(owner->lastError);
+        if (owner->paused)
+            notes << QStringLiteral("Updates paused");
+        if (!notes.isEmpty()) {
+            item->setToolTip(0, notes.join(QLatin1Char('\n')));
+            item->setData(0, Qt::AccessibleDescriptionRole, notes.join(QStringLiteral(". ")));
+        }
+    };
     QTreeWidgetItem *current = nullptr;
-    QTreeWidgetItem *smart = section(QStringLiteral("Smart Feeds"), QStringLiteral("smart"));
-    const std::pair<QString, SourceKind> smartFeeds[] = {
-        {QStringLiteral("today"), SourceKind::Today},
-        {QStringLiteral("unread"), SourceKind::AllUnread},
-        {QStringLiteral("starred"), SourceKind::Starred}};
-    for (const auto &entry : smartFeeds) {
-        QTreeWidgetItem *item = add(smart, sourceTitle({entry.second, QString()}), SmartItem, entry.first, 0);
-        if (m_source.kind == entry.second)
-            current = item;
+    const QString currentSmart = smartItemId(m_source);
+    QTreeWidgetItem *smart = nullptr;
+    if (!searching) {
+        smart = section(QStringLiteral("Smart Feeds"), QStringLiteral("smart"));
+        QList<std::pair<QString, QString>> smartFeeds{{QStringLiteral("today"), QStringLiteral("Today")},
+                                                      {QStringLiteral("unread"), QStringLiteral("All Unread")},
+                                                      {QStringLiteral("starred"), QStringLiteral("Starred")}};
+        if (m_store.readLaterCount() > 0 || m_source.kind == SourceKind::ReadLater)
+            smartFeeds.append({QStringLiteral("readlater"), QStringLiteral("Read Later")});
+        QList<SmartFeed> custom = m_store.settings().smartFeeds;
+        std::stable_sort(custom.begin(), custom.end(), [](const SmartFeed &a, const SmartFeed &b) {
+            return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+        });
+        for (const SmartFeed &entry : std::as_const(custom))
+            smartFeeds.append({QStringLiteral("smart:") + entry.id, entry.name});
+        for (const auto &entry : std::as_const(smartFeeds)) {
+            QTreeWidgetItem *item = add(smart, entry.second, SmartItem, entry.first, 0);
+            if (!currentSmart.isEmpty() && currentSmart == entry.first)
+                current = item;
+        }
     }
     QTreeWidgetItem *local = section(QStringLiteral("On This Computer"), QStringLiteral("local"));
-    struct Entry {
-        QString name;
-        bool folder;
-        QString id;
-    };
-    QList<Entry> entries;
-    for (const Folder &folder : m_store.folders())
-        entries.append({folder.name, true, folder.name});
-    for (const Feed &owner : m_store.feeds()) {
-        if (owner.folder.isEmpty() || !m_store.folder(owner.folder))
-            entries.append({owner.displayName(), false, owner.id});
+    QList<SourceEntry> entries;
+    for (const Folder &folder : m_store.folders()) {
+        bool any = !searching;
+        for (const Feed &owner : m_store.feeds())
+            any = any || (owner.folder == folder.name && feedMatchesSearch(owner, needle));
+        if (any)
+            entries.append({folder.name, folder.name, true, m_store.unreadCount({SourceKind::Folder, folder.name}, at)});
     }
-    auto byName = [](const Entry &a, const Entry &b) {
-        return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
-    };
-    std::sort(entries.begin(), entries.end(), byName);
+    for (const Feed &owner : m_store.feeds()) {
+        if ((owner.folder.isEmpty() || !m_store.folder(owner.folder)) && feedMatchesSearch(owner, needle))
+            entries.append({owner.displayName(), owner.id, false, m_store.feedUnread(owner.id)});
+    }
+    sortSourceEntries(entries, byUnread);
     QList<QTreeWidgetItem *> folderItems;
-    for (const Entry &entry : std::as_const(entries)) {
+    for (const SourceEntry &entry : std::as_const(entries)) {
         if (!entry.folder) {
             QTreeWidgetItem *item = add(local, entry.name, FeedItem, entry.id, 0);
+            describeFeed(item, entry.id);
             if (m_source.kind == SourceKind::Feed && m_source.id == entry.id)
                 current = item;
             continue;
@@ -1429,28 +1653,56 @@ void RssReaderFeature::rebuildSources()
         QTreeWidgetItem *folderItem = add(local, entry.name, FolderItem, entry.id, 0);
         if (m_source.kind == SourceKind::Folder && m_source.id == entry.id)
             current = folderItem;
-        QList<Entry> children;
+        QList<SourceEntry> children;
         for (const Feed &owner : m_store.feeds()) {
-            if (owner.folder == entry.id)
-                children.append({owner.displayName(), false, owner.id});
+            if (owner.folder == entry.id && feedMatchesSearch(owner, needle))
+                children.append({owner.displayName(), owner.id, false, m_store.feedUnread(owner.id)});
         }
-        std::sort(children.begin(), children.end(), byName);
-        for (const Entry &child : std::as_const(children)) {
+        sortSourceEntries(children, byUnread);
+        for (const SourceEntry &child : std::as_const(children)) {
             QTreeWidgetItem *item = add(folderItem, child.name, FeedItem, child.id, 1);
+            describeFeed(item, child.id);
             if (m_source.kind == SourceKind::Feed && m_source.id == child.id)
                 current = item;
         }
         folderItems.append(folderItem);
     }
-    smart->setExpanded(!m_collapsedSections.contains(QStringLiteral("smart")));
-    local->setExpanded(!m_collapsedSections.contains(QStringLiteral("local")));
+    if (smart)
+        smart->setExpanded(!m_collapsedSections.contains(QStringLiteral("smart")));
+    local->setExpanded(searching || !m_collapsedSections.contains(QStringLiteral("local")));
     for (QTreeWidgetItem *folderItem : std::as_const(folderItems)) {
         const Folder *folder = m_store.folder(folderItem->data(0, IdRole).toString());
-        folderItem->setExpanded(!folder || !folder->collapsed);
+        folderItem->setExpanded(searching || !folder || !folder->collapsed);
     }
     if (current)
         m_sources->setCurrentItem(current);
     m_rebuilding = false;
+}
+
+QStringList RssReaderFeature::visibleSourceIds() const
+{
+    QStringList ids;
+    QTreeWidgetItemIterator it(m_sources);
+    while (*it) {
+        if (!(*it)->isHidden())
+            ids.append((*it)->data(0, IdRole).toString());
+        ++it;
+    }
+    return ids;
+}
+
+void RssReaderFeature::setFeedSearch(const QString &text)
+{
+    loadStore();
+    if (m_feedSearchField && m_feedSearchField->text() != text) {
+        const QSignalBlocker blocker(m_feedSearchField);
+        m_feedSearchField->setText(text);
+    }
+    if (m_feedSearch == text)
+        return;
+    m_feedSearch = text;
+    rebuildSources();
+    updateCounts();
 }
 
 QStringList RssReaderFeature::feedOrder() const
@@ -1473,23 +1725,33 @@ QStringList RssReaderFeature::feedOrder() const
 
 QString RssReaderFeature::keptKey(const ArticleRef &ref) const
 {
-    return ref.feedId + QLatin1Char('\n') + ref.guid;
+    return articleKey(ref);
+}
+
+bool RssReaderFeature::readHidden(const Source &source) const
+{
+    if (source.kind == SourceKind::Today || source.kind == SourceKind::AllUnread)
+        return true;
+    if (source.kind == SourceKind::Smart) {
+        const SmartFeed *smart = m_store.smartFeed(source.id);
+        if (smart && smart->unreadOnly)
+            return true;
+    }
+    return m_store.settings().unreadOnlyTimeline && hideReadApplies(source);
 }
 
 void RssReaderFeature::rebuildTimeline()
 {
-    const bool unreadOnly = m_store.settings().unreadOnlyTimeline;
-    const QList<ArticleRef> refs = m_store.query(m_source, m_search, false, now());
+    const bool unreadOnly = m_store.settings().unreadOnlyTimeline && hideReadApplies(m_source);
+    QSet<QString> kept = m_keptRead;
+    if (!m_article.isNull())
+        kept.insert(keptKey(m_article));
+    const QList<ArticleRef> refs = m_store.query(m_source, m_search, unreadOnly, now(), kept);
     QList<TimelineRow> rows;
     rows.reserve(refs.size());
     QString lastFeed;
     const bool group = m_store.settings().groupByFeed;
     for (const ArticleRef &ref : refs) {
-        if (unreadOnly) {
-            const Article *item = m_store.article(ref);
-            if (item && item->read && !(ref == m_article) && !m_keptRead.contains(keptKey(ref)))
-                continue;
-        }
         if (group && ref.feedId != lastFeed) {
             rows.append(TimelineRow{true, ref.feedId, {}});
             lastFeed = ref.feedId;
@@ -1529,6 +1791,7 @@ void RssReaderFeature::selectSource(const Source &source)
 {
     loadStore();
     const bool changed = source != m_source;
+    const bool leftReadLater = changed && m_source.kind == SourceKind::ReadLater;
     m_source = source;
     if (changed) {
         m_keptRead.clear();
@@ -1539,15 +1802,14 @@ void RssReaderFeature::selectSource(const Source &source)
     if (!m_rebuilding) {
         m_rebuilding = true;
         QTreeWidgetItemIterator it(m_sources);
+        const QString smartId = smartItemId(source);
         while (*it) {
             const int kind = (*it)->data(0, KindRole).toInt();
             const QString id = (*it)->data(0, IdRole).toString();
             const bool match =
                 (kind == FeedItem && source.kind == SourceKind::Feed && id == source.id) ||
                 (kind == FolderItem && source.kind == SourceKind::Folder && id == source.id) ||
-                (kind == SmartItem && ((id == QLatin1String("today") && source.kind == SourceKind::Today) ||
-                                       (id == QLatin1String("unread") && source.kind == SourceKind::AllUnread) ||
-                                       (id == QLatin1String("starred") && source.kind == SourceKind::Starred)));
+                (kind == SmartItem && !smartId.isEmpty() && id == smartId);
             if (match) {
                 if ((*it)->isHidden())
                     (*it)->setHidden(false);
@@ -1562,6 +1824,8 @@ void RssReaderFeature::selectSource(const Source &source)
         m_rebuilding = false;
     }
     rebuildTimeline();
+    if (leftReadLater)
+        updateCounts();
 }
 
 void RssReaderFeature::markSelectedRead(const ArticleRef &ref)
@@ -1581,23 +1845,11 @@ void RssReaderFeature::selectArticle(const ArticleRef &ref)
     loadStore();
     if (!m_store.article(ref))
         return;
-    const ArticleRef previous = m_article;
-    const bool changed = !(previous == ref);
+    const bool changed = !(m_article == ref);
     m_article = ref;
     if (changed) {
         m_readerMode = false;
         m_readerError.clear();
-        if (!previous.isNull() && m_store.settings().unreadOnlyTimeline &&
-            !m_store.settings().refreshClearsRead) {
-            m_keptRead.remove(keptKey(previous));
-            const Article *old = m_store.article(previous);
-            const int row = m_timelineModel->indexOf(previous);
-            if (old && old->read && row >= 0) {
-                m_rebuilding = true;
-                m_timelineModel->removeAt(row);
-                m_rebuilding = false;
-            }
-        }
     }
     markSelectedRead(ref);
     const int row = m_timelineModel->indexOf(ref);
@@ -1653,8 +1905,10 @@ void RssReaderFeature::applyArticleStyle()
                        ".muted { color: %3; }"
                        ".notice { color: %3; font-size: %5px; }"
                        ".enclosure { font-size: %5px; }"
+                       ".caption { color: %3; font-size: %5px; }"
                        "blockquote { color: %3; margin-left: 18px; }"
                        "pre, code { font-family: monospace; }"
+                       "pre { white-space: pre; }"
                        "h1 { font-size: %8px; } h2 { font-size: %9px; } h3 { font-size: %4px; }"
                        "body { color: %2; }")
             .arg(colors.link, colors.text, colors.muted)
@@ -1682,6 +1936,9 @@ QString RssReaderFeature::prepareBody(const QString &html) const
         const QString alt = attributeIn(tag, QStringLiteral("alt"));
         if (remote && !source.isEmpty())
             out += QStringLiteral("<img src=\"%1\" alt=\"%2\">").arg(source, alt);
+        else if (!source.isEmpty())
+            out += QStringLiteral("<a class=\"muted\" href=\"%1\">[%2]</a>")
+                       .arg(source, alt.trimmed().isEmpty() ? QStringLiteral("Image") : alt);
         else if (!alt.trimmed().isEmpty())
             out += QStringLiteral("<span class=\"muted\">[%1]</span>").arg(alt);
     }
@@ -1707,6 +1964,11 @@ QString RssReaderFeature::composeArticleHtml(const Article &item) const
     html += QStringLiteral("</td><td width=\"56\" align=\"right\" valign=\"middle\">"
                            "<img src=\"rssicon:%1\" width=\"40\" height=\"40\"></td></tr></table><hr>")
                 .arg(escapeHtml(item.feedId));
+    const QString language = !item.language.isEmpty() ? item.language : owner ? owner->language : QString();
+    if (language.isEmpty())
+        html += QStringLiteral("<div dir=\"%1\">").arg(textDirection(language));
+    else
+        html += QStringLiteral("<div lang=\"%1\" dir=\"%2\">").arg(escapeHtml(language), textDirection(language));
     const QString title = item.title.isEmpty() ? QStringLiteral("Untitled") : item.title;
     const QUrl link(item.link);
     if (link.isValid() && !link.host().isEmpty())
@@ -1714,22 +1976,37 @@ QString RssReaderFeature::composeArticleHtml(const Article &item) const
                     .arg(escapeHtml(item.link), escapeHtml(title));
     else
         html += QStringLiteral("<p class=\"title\">%1</p>").arg(escapeHtml(title));
-    html += QStringLiteral("<p class=\"date\">%1</p>").arg(escapeHtml(articleDateText(item.publishedMs)));
     QString body = item.html;
+    bool readerBody = false;
+    QString notice;
     if (m_readerMode) {
         if (!m_readerError.isEmpty())
-            html += QStringLiteral("<p class=\"notice\">Reader view is not available: %1</p>").arg(escapeHtml(m_readerError));
+            notice = QStringLiteral("<p class=\"notice\">Reader view is not available: %1</p>").arg(escapeHtml(m_readerError));
         else if (item.readerHtml.isEmpty())
-            html += QStringLiteral("<p class=\"notice\">Loading reader view…</p>");
+            notice = QStringLiteral("<p class=\"notice\">Loading reader view…</p>");
         else
             body = item.readerHtml;
+        readerBody = !item.readerHtml.isEmpty() && m_readerError.isEmpty();
     }
+    const int minutes = readingMinutes(plainText(body, 1000000));
+    QString date = escapeHtml(articleDateText(item.publishedMs));
+    if (minutes > 0)
+        date += QStringLiteral(" · %1 min read").arg(minutes);
+    html += QStringLiteral("<p class=\"date\">%1</p>").arg(date);
+    html += notice;
+    if (!readerBody)
+        body = leadImagesHtml(item.images, body) + body;
     if (body.trimmed().isEmpty())
         body = item.summary.isEmpty()
                    ? QStringLiteral("<p class=\"muted\">This article has no text. Open it in your browser to read it.</p>")
                    : QStringLiteral("<p>%1</p>").arg(escapeHtml(item.summary));
-    html += QStringLiteral("<div>") + prepareBody(body) + QStringLiteral("</div>");
+    if (m_store.settings().loadRemoteImages)
+        body = addAltCaptions(body);
+    html += QStringLiteral("<div>") + prepareBody(body) + QStringLiteral("</div></div>");
     for (const Enclosure &enclosure : item.enclosures) {
+        if (enclosure.type.trimmed().toLower().startsWith(QStringLiteral("image/")) ||
+            item.images.contains(enclosure.url))
+            continue;
         QString name = QUrl(enclosure.url).fileName();
         if (name.isEmpty())
             name = enclosure.url;
@@ -1762,6 +2039,12 @@ void RssReaderFeature::showArticle()
     }
     const QString key = keptKey(m_article);
     const int scroll = key == m_shownKey ? m_browser->verticalScrollBar()->value() : 0;
+    const Feed *owner = m_store.feed(item->feedId);
+    const QString language = !item->language.isEmpty() ? item->language : owner ? owner->language : QString();
+    QTextOption option = m_browser->document()->defaultTextOption();
+    option.setTextDirection(textDirection(language) == QLatin1String("rtl") ? Qt::RightToLeft
+                                                                            : Qt::LayoutDirectionAuto);
+    m_browser->document()->setDefaultTextOption(option);
     m_renderedHtml = composeArticleHtml(*item);
     m_browser->setHtml(m_renderedHtml);
     m_browser->verticalScrollBar()->setValue(scroll);
@@ -1774,11 +2057,14 @@ void RssReaderFeature::updateArticleToolbar()
 {
     const Article *item = m_store.article(m_article);
     const bool has = item != nullptr;
-    for (QToolButton *button : {m_readButton, m_starButton, m_readerButton, m_openButton, m_copyButton})
+    for (QToolButton *button : {m_readButton, m_starButton, m_readLaterButton, m_readerButton, m_openButton, m_copyButton})
         button->setEnabled(has);
     if (item) {
         m_readButton->setToolTip(item->read ? QStringLiteral("Mark as Unread (R)") : QStringLiteral("Mark as Read (R)"));
         m_starButton->setToolTip(item->starred ? QStringLiteral("Unstar (S)") : QStringLiteral("Star (S)"));
+        const QString readLater = item->readLater ? QStringLiteral("Remove from Read Later") : QStringLiteral("Read Later");
+        m_readLaterButton->setToolTip(readLater);
+        m_readLaterButton->setAccessibleName(readLater);
         const bool hasLink = QUrl(item->link).isValid() && !QUrl(item->link).host().isEmpty();
         m_openButton->setEnabled(hasLink);
         m_copyButton->setEnabled(hasLink);
@@ -1807,6 +2093,53 @@ QVariant RssReaderFeature::articleResource(int type, const QUrl &url)
         return found.value();
     fetchImage(key);
     return {};
+}
+
+QPixmap RssReaderFeature::thumbnail(const QString &url)
+{
+    const auto found = m_thumbs.constFind(url);
+    if (found != m_thumbs.constEnd())
+        return found.value();
+    if (!m_thumbFailed.contains(url))
+        fetchThumbnail(url);
+    return QPixmap();
+}
+
+void RssReaderFeature::fetchThumbnail(const QString &url)
+{
+    const QString scheme = QUrl(url).scheme().toLower();
+    if (scheme != QLatin1String("http") && scheme != QLatin1String("https")) {
+        m_thumbFailed.insert(url);
+        return;
+    }
+    if (m_thumbPending.contains(url) || m_thumbs.contains(url))
+        return;
+    m_thumbPending.insert(url);
+    FetchRequest request;
+    request.url = QUrl(url);
+    request.maxBytes = kMaxImageBytes;
+    request.accept = QByteArrayLiteral("image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8");
+    m_assetQueue->get(request, [this, url](const FetchResult &result) {
+        m_thumbPending.remove(url);
+        QImage image;
+        if (result.ok() && !result.notModified)
+            image.loadFromData(result.body);
+        if (image.isNull() || image.width() < 2 || image.height() < 2) {
+            m_thumbFailed.insert(url);
+            return;
+        }
+        const int side = qMin(image.width(), image.height());
+        image = image.copy((image.width() - side) / 2, (image.height() - side) / 2, side, side);
+        const qreal ratio = devicePixelRatioF();
+        const int pixels = qMax(1, int(kThumbnailSide * ratio));
+        QPixmap pixmap = QPixmap::fromImage(image.scaled(pixels, pixels, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+        pixmap.setDevicePixelRatio(ratio);
+        if (m_thumbs.size() >= kMaxCachedImages)
+            m_thumbs.clear();
+        m_thumbs.insert(url, pixmap);
+        if (m_timeline)
+            m_timeline->viewport()->update();
+    });
 }
 
 void RssReaderFeature::fetchImage(const QString &url)
@@ -1862,14 +2195,27 @@ void RssReaderFeature::toggleStar()
     scheduleSave();
 }
 
+void RssReaderFeature::toggleReadLater()
+{
+    const Article *item = m_store.article(m_article);
+    if (!item)
+        return;
+    m_store.setReadLater(m_article, !item->readLater);
+    m_timelineModel->touch(m_timelineModel->indexOf(m_article));
+    updateCounts();
+    updateArticleToolbar();
+    scheduleSave();
+}
+
 void RssReaderFeature::markAllRead(bool ask)
 {
+    const bool keepStarred = m_store.settings().markAllKeepsStarred;
     QList<ArticleRef> refs;
     for (const TimelineRow &row : m_timelineModel->rows()) {
         if (row.header)
             continue;
         const Article *item = m_store.article(row.ref);
-        if (item && !item->read)
+        if (item && !item->read && !(keepStarred && item->starred))
             refs.append(row.ref);
     }
     if (refs.isEmpty())
@@ -1886,9 +2232,15 @@ void RssReaderFeature::markAllRead(bool ask)
             return;
     }
     m_store.markRead(refs);
-    if (m_store.settings().refreshClearsRead) {
-        for (const ArticleRef &ref : std::as_const(refs))
-            m_keptRead.insert(keptKey(ref));
+    if (readHidden(m_source)) {
+        for (const ArticleRef &ref : std::as_const(refs)) {
+            m_keptRead.remove(keptKey(ref));
+            if (ref == m_article) {
+                m_article = {};
+                m_readerMode = false;
+                showArticle();
+            }
+        }
     }
     m_store.logActivity(now(), QStringLiteral("Marked %1 articles in %2 as read").arg(refs.size()).arg(sourceTitle(m_source)));
     rebuildTimeline();
@@ -1897,6 +2249,105 @@ void RssReaderFeature::markAllRead(bool ask)
     scheduleSave();
     if (m_host.searchIndexChanged)
         m_host.searchIndexChanged();
+}
+
+void RssReaderFeature::catchUp(int days, bool everywhere, bool ask)
+{
+    loadStore();
+    const qint64 at = now();
+    const qint64 cutoff = at - qint64(days) * kDayMs;
+    const bool keepStarred = m_store.settings().markAllKeepsStarred;
+    const QList<ArticleRef> refs = everywhere ? m_store.olderUnreadEverywhere(cutoff, keepStarred)
+                                              : m_store.olderUnread(m_source, cutoff, keepStarred, at);
+    const QString scope = everywhere ? QStringLiteral("every feed") : QStringLiteral("“%1”").arg(sourceTitle(m_source));
+    const QString age = catchUpLabel(days).toLower();
+    if (refs.isEmpty()) {
+        if (ask)
+            QMessageBox::information(this, QStringLiteral("Mark Older as Read"),
+                                     QStringLiteral("No unread articles %1 in %2.").arg(age, scope));
+        return;
+    }
+    if (ask && m_store.settings().confirmMarkAllRead) {
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("Mark Older as Read"),
+            QStringLiteral("Mark %1 %2 %3 in %4 as read?")
+                .arg(QLocale().toString(int(refs.size())),
+                     refs.size() == 1 ? QStringLiteral("article") : QStringLiteral("articles"), age, scope),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    m_store.markRead(refs);
+    for (const ArticleRef &ref : refs) {
+        m_keptRead.remove(keptKey(ref));
+        if (ref == m_article && readHidden(m_source)) {
+            m_article = {};
+            m_readerMode = false;
+            showArticle();
+        }
+    }
+    m_store.logActivity(at, QStringLiteral("Marked %1 articles %2 in %3 as read").arg(refs.size()).arg(age, scope));
+    rebuildTimeline();
+    updateCounts();
+    updateArticleToolbar();
+    scheduleSave();
+    if (m_host.searchIndexChanged)
+        m_host.searchIndexChanged();
+}
+
+void RssReaderFeature::addCatchUpMenu(QMenu *menu, bool everywhere)
+{
+    QMenu *older = menu->addMenu(QStringLiteral("Mark Older as Read"));
+    for (const int days : catchUpDays())
+        older->addAction(catchUpLabel(days), this, [this, days, everywhere] { catchUp(days, everywhere, true); });
+}
+
+void RssReaderFeature::showSourcesMenu()
+{
+    loadStore();
+    QMenu menu(this);
+    menu.addAction(QStringLiteral("Add Feed…"), this, [this] { showAddFeed(); });
+    menu.addAction(QStringLiteral("New Folder…"), this, [this] { newFolder(this); });
+    menu.addAction(QStringLiteral("New Smart Feed…"), this, [this] { showSmartFeedEditor(QString()); });
+    menu.addSeparator();
+    addCatchUpMenu(&menu, true);
+    menu.addSeparator();
+    QAction *sort = menu.addAction(QStringLiteral("Sort by Unread Count"));
+    sort->setCheckable(true);
+    sort->setChecked(m_store.settings().sortFeedsByUnread);
+    connect(sort, &QAction::toggled, this, [this](bool on) {
+        updateSettings([on](Settings &settings) { settings.sortFeedsByUnread = on; }, false, false);
+    });
+    menu.exec(m_sourcesMenuButton->mapToGlobal(QPoint(0, m_sourcesMenuButton->height())));
+}
+
+void RssReaderFeature::updateSettings(const std::function<void(Settings &)> &change, bool timeline, bool article)
+{
+    loadStore();
+    const Settings before = m_store.settings();
+    change(m_store.settings());
+    const Settings &after = m_store.settings();
+    if (after.unreadOnlyTimeline != before.unreadOnlyTimeline && m_unreadTimelineButton->isChecked() != after.unreadOnlyTimeline) {
+        const QSignalBlocker blocker(m_unreadTimelineButton);
+        m_unreadTimelineButton->setChecked(after.unreadOnlyTimeline);
+        m_keptRead.clear();
+        refreshIcons();
+    }
+    if (after.unreadOnlyFeeds != before.unreadOnlyFeeds && m_unreadFeedsButton->isChecked() != after.unreadOnlyFeeds) {
+        const QSignalBlocker blocker(m_unreadFeedsButton);
+        m_unreadFeedsButton->setChecked(after.unreadOnlyFeeds);
+        refreshIcons();
+    }
+    if (after.filters != before.filters)
+        m_store.filtersChanged();
+    settingsChanged(timeline, article);
+    if (after.sortFeedsByUnread != before.sortFeedsByUnread || after.smartFeeds != before.smartFeeds ||
+        after.filters != before.filters || after.unreadOnlyFeeds != before.unreadOnlyFeeds) {
+        rebuildSources();
+        updateCounts();
+        if (!timeline)
+            rebuildTimeline();
+    }
 }
 
 void RssReaderFeature::moveSelection(int delta)
@@ -2122,29 +2573,44 @@ void RssReaderFeature::sourceContextMenu(const QPoint &position)
     const int kind = item->data(0, KindRole).toInt();
     const QString id = item->data(0, IdRole).toString();
     if (kind == SectionItem) {
-        if (id != QLatin1String("local"))
-            return;
         QMenu menu(this);
-        menu.addAction(QStringLiteral("Add Feed…"), this, [this] { showAddFeed(); });
-        menu.addAction(QStringLiteral("New Folder…"), this, [this] { newFolder(this); });
+        if (id == QLatin1String("smart")) {
+            menu.addAction(QStringLiteral("New Smart Feed…"), this, [this] { showSmartFeedEditor(QString()); });
+        } else if (id == QLatin1String("local")) {
+            menu.addAction(QStringLiteral("Add Feed…"), this, [this] { showAddFeed(); });
+            menu.addAction(QStringLiteral("New Folder…"), this, [this] { newFolder(this); });
+            menu.addAction(QStringLiteral("New Smart Feed…"), this, [this] { showSmartFeedEditor(QString()); });
+            menu.addSeparator();
+            addCatchUpMenu(&menu, true);
+        } else {
+            return;
+        }
         menu.exec(m_sources->viewport()->mapToGlobal(position));
         return;
     }
     QMenu menu(this);
-    auto markAll = [this, kind, id] {
-        if (kind == FeedItem)
-            selectSource({SourceKind::Feed, id});
-        else if (kind == FolderItem)
-            selectSource({SourceKind::Folder, id});
-        else
-            selectSource({id == QLatin1String("today")     ? SourceKind::Today
-                          : id == QLatin1String("starred") ? SourceKind::Starred
-                                                           : SourceKind::AllUnread,
-                          QString()});
+    const Source target = kind == FeedItem     ? Source{SourceKind::Feed, id}
+                          : kind == FolderItem ? Source{SourceKind::Folder, id}
+                                               : smartSource(id);
+    auto markAll = [this, target] {
+        selectSource(target);
         markAllRead(true);
     };
     QAction *markAction = menu.addAction(QStringLiteral("Mark All as Read"), this, markAll);
     markAction->setEnabled(m_sourceDelegate->count(m_sources->indexFromItem(item)) > 0);
+    QMenu *older = menu.addMenu(QStringLiteral("Mark Older as Read"));
+    for (const int days : catchUpDays()) {
+        older->addAction(catchUpLabel(days), this, [this, target, days] {
+            selectSource(target);
+            catchUp(days, false, true);
+        });
+    }
+    if (kind == SmartItem && target.kind == SourceKind::Smart) {
+        const QString smartId = target.id;
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("Edit Smart Feed…"), this, [this, smartId] { showSmartFeedEditor(smartId); });
+        menu.addAction(QStringLiteral("Delete Smart Feed…"), this, [this, smartId] { deleteSmartFeed(smartId); });
+    }
     if (kind == FeedItem) {
         const Feed *owner = m_store.feed(id);
         if (!owner)
@@ -2160,14 +2626,7 @@ void RssReaderFeature::sourceContextMenu(const QPoint &position)
         menu.addAction(QStringLiteral("Copy Feed Address"), this, [address] {
             QGuiApplication::clipboard()->setText(address);
         });
-        menu.addAction(QStringLiteral("Check Now"), this, [this, id] {
-            if (m_inFlight.contains(id))
-                return;
-            m_inFlight.insert(id);
-            ++m_refreshTotal;
-            updateStatus();
-            fetchFeed(id);
-        });
+        menu.addAction(QStringLiteral("Check Now"), this, [this, id] { checkNow(id, {}); });
         menu.addSeparator();
         menu.addAction(QStringLiteral("Unsubscribe…"), this, [this, id] { unsubscribe(id); });
     } else if (kind == FolderItem) {
@@ -2210,6 +2669,16 @@ void RssReaderFeature::timelineContextMenu(const QPoint &position)
         updateArticleToolbar();
         scheduleSave();
     });
+    menu.addAction(item->readLater ? QStringLiteral("Remove from Read Later") : QStringLiteral("Read Later"), this, [this, ref] {
+        const Article *target = m_store.article(ref);
+        if (!target)
+            return;
+        m_store.setReadLater(ref, !target->readLater);
+        m_timelineModel->touch(m_timelineModel->indexOf(ref));
+        updateCounts();
+        updateArticleToolbar();
+        scheduleSave();
+    });
     const QString link = item->link;
     const bool hasLink = QUrl(link).isValid() && !QUrl(link).host().isEmpty();
     menu.addSeparator();
@@ -2228,7 +2697,7 @@ void RssReaderFeature::subscribe(const QString &address, const QString &title, c
         if (done)
             done(ok, message);
     };
-    const QUrl url = normalizeAddress(address);
+    const QUrl url = normalizeAddress(address, true);
     if (!url.isValid()) {
         finish(false, QStringLiteral("Enter a feed address or a site address."));
         return;
@@ -2241,7 +2710,7 @@ void RssReaderFeature::subscribe(const QString &address, const QString &title, c
         finish(false, QStringLiteral("You already follow %1.").arg(existing->displayName()));
         return;
     }
-    if (!m_feedQueue->available()) {
+    if (!m_feedQueue->available() && !url.isLocalFile()) {
         finish(false, QStringLiteral("The desktop network is not available."));
         return;
     }
@@ -2347,7 +2816,7 @@ void RssReaderFeature::showFeedInfo(const QString &feedId)
     QDialog dialog(this);
     dialog.setObjectName(QStringLiteral("rssFeedInfoDialog"));
     dialog.setWindowTitle(QStringLiteral("Feed Info"));
-    dialog.setMinimumWidth(460);
+    dialog.setMinimumWidth(480);
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(18, 16, 18, 14);
     auto *form = new QFormLayout;
@@ -2377,28 +2846,326 @@ void RssReaderFeature::showFeedInfo(const QString &feedId)
     home->setText(owner->homePage.isEmpty()
                       ? QStringLiteral("None")
                       : QStringLiteral("<a href=\"%1\">%2</a>").arg(escapeHtml(owner->homePage), escapeHtml(owner->homePage)));
+    auto *address = new QLineEdit(owner->url);
+    address->setObjectName(QStringLiteral("rssFeedAddress"));
+    auto *addressError = new QLabel;
+    addressError->setObjectName(QStringLiteral("fieldError"));
+    addressError->setWordWrap(true);
+    addressError->setStyleSheet(QStringLiteral("color: %1;").arg(kWarningColor.name()));
+    addressError->hide();
+    auto *addressBox = new QVBoxLayout;
+    addressBox->setSpacing(4);
+    addressBox->addWidget(address);
+    addressBox->addWidget(addressError);
     form->addRow(QStringLiteral("Name"), name);
     form->addRow(QStringLiteral("Folder"), folder);
     form->addRow(QStringLiteral("Home page"), home);
-    form->addRow(QStringLiteral("Feed address"), selectable(owner->url));
+    form->addRow(QStringLiteral("Feed address"), addressBox);
+    if (!owner->previousUrls.isEmpty())
+        form->addRow(QStringLiteral("Previous addresses"), selectable(owner->previousUrls.join(QLatin1Char('\n'))));
     form->addRow(QStringLiteral("Last check"), selectable(whenText(owner->lastCheckedMs)));
     form->addRow(QStringLiteral("Last error"), selectable(owner->lastError.isEmpty() ? QStringLiteral("None") : owner->lastError));
     if (owner->failures > 0)
         form->addRow(QStringLiteral("Next check"), selectable(whenText(owner->nextDueMs)));
     layout->addLayout(form);
+    auto *paused = new QCheckBox(QStringLiteral("Pause Updates"));
+    paused->setChecked(owner->paused);
+    auto *hideToday = new QCheckBox(QStringLiteral("Hide from Today"));
+    hideToday->setChecked(owner->excludeFromToday);
+    auto *hideUnread = new QCheckBox(QStringLiteral("Hide from Unread Counts"));
+    hideUnread->setChecked(owner->excludeFromUnread);
+    for (QCheckBox *box : {paused, hideToday, hideUnread})
+        layout->addWidget(box);
+    auto *checkRow = new QHBoxLayout;
+    auto *checkButton = new QPushButton(QStringLiteral("Check Now"));
+    checkButton->setObjectName(QStringLiteral("rssCheckNow"));
+    auto *checkResult = new QLabel;
+    checkResult->setObjectName(QStringLiteral("rssCheckResult"));
+    checkResult->setWordWrap(true);
+    checkResult->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    checkRow->addWidget(checkButton);
+    checkRow->addWidget(checkResult, 1);
+    layout->addLayout(checkRow);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QPointer<QDialog> guard(&dialog);
+    connect(checkButton, &QPushButton::clicked, &dialog, [this, feedId, guard, checkButton, checkResult] {
+        checkButton->setEnabled(false);
+        checkResult->setText(QStringLiteral("Checking…"));
+        checkNow(feedId, [guard, checkButton, checkResult](const QString &line) {
+            if (!guard)
+                return;
+            checkButton->setEnabled(true);
+            checkResult->setText(line);
+        });
+    });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [this, feedId, guard, address, addressError] {
+        const Feed *current = m_store.feed(feedId);
+        if (!current) {
+            guard->reject();
+            return;
+        }
+        if (address->text().trimmed() != current->url) {
+            const QString error = changeFeedAddress(feedId, address->text());
+            if (!error.isEmpty()) {
+                addressError->setText(error);
+                addressError->show();
+                address->setFocus();
+                return;
+            }
+        }
+        guard->accept();
+    });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     if (dialog.exec() != QDialog::Accepted || !m_store.feed(feedId))
         return;
     m_store.renameFeed(feedId, name->text());
     m_store.moveFeed(feedId, folder->currentData().toString());
+    setFeedFlags(feedId, paused->isChecked(), hideToday->isChecked(), hideUnread->isChecked());
+}
+
+void RssReaderFeature::setFeedFlags(const QString &feedId, bool paused, bool excludeFromToday, bool excludeFromUnread)
+{
+    loadStore();
+    m_store.setFeedFlags(feedId, paused, excludeFromToday, excludeFromUnread);
     rebuildSources();
     updateCounts();
+    rebuildTimeline();
     updateTimelineHeader();
     m_timeline->viewport()->update();
     scheduleSave();
+    announceChanges();
+}
+
+void RssReaderFeature::showSmartFeedEditor(const QString &id)
+{
+    loadStore();
+    const SmartFeed *existing = id.isEmpty() ? nullptr : m_store.smartFeed(id);
+    if (!id.isEmpty() && !existing)
+        return;
+    if (!existing && m_store.settings().smartFeeds.size() >= kMaxSmartFeeds) {
+        QMessageBox::information(this, QStringLiteral("New Smart Feed"),
+                                 QStringLiteral("RSS Reader keeps at most %1 smart feeds.").arg(kMaxSmartFeeds));
+        return;
+    }
+    const SmartFeed original = existing ? *existing : SmartFeed();
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("rssSmartFeedDialog"));
+    dialog.setWindowTitle(existing ? QStringLiteral("Edit Smart Feed") : QStringLiteral("New Smart Feed"));
+    dialog.setMinimumWidth(460);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(18, 16, 18, 14);
+    auto *form = new QFormLayout;
+    form->setSpacing(8);
+    auto *name = new QLineEdit(original.name);
+    auto *words = new QLineEdit(original.words);
+    words->setPlaceholderText(QStringLiteral("Any article"));
+    auto *regex = new QCheckBox(QStringLiteral("Regular Expression"));
+    regex->setChecked(original.regex);
+    auto *scope = new QComboBox;
+    scope->addItem(QStringLiteral("All Feeds"), QString());
+    QStringList folderNames;
+    for (const Folder &entry : m_store.folders())
+        folderNames.append(entry.name);
+    folderNames.sort(Qt::CaseInsensitive);
+    for (const QString &entry : std::as_const(folderNames))
+        scope->addItem(QStringLiteral("Folder: %1").arg(entry), QStringLiteral("folder:") + entry);
+    QList<const Feed *> feeds;
+    for (const Feed &owner : m_store.feeds())
+        feeds.append(&owner);
+    std::sort(feeds.begin(), feeds.end(), [](const Feed *a, const Feed *b) {
+        return a->displayName().compare(b->displayName(), Qt::CaseInsensitive) < 0;
+    });
+    for (const Feed *owner : std::as_const(feeds))
+        scope->addItem(QStringLiteral("Feed: %1").arg(owner->displayName()), QStringLiteral("feed:") + owner->id);
+    scope->setCurrentIndex(qMax(0, scope->findData(original.scope)));
+    auto *unreadOnly = new QCheckBox(QStringLiteral("Unread Only"));
+    unreadOnly->setChecked(original.unreadOnly);
+    auto *starredOnly = new QCheckBox(QStringLiteral("Starred Only"));
+    starredOnly->setChecked(original.starredOnly);
+    auto *age = new QSpinBox;
+    age->setRange(0, 3650);
+    age->setSpecialValueText(QStringLiteral("Any Age"));
+    age->setSuffix(QStringLiteral(" days"));
+    age->setValue(original.maxAgeDays);
+    form->addRow(QStringLiteral("Name"), name);
+    form->addRow(QStringLiteral("Words"), words);
+    form->addRow(QString(), regex);
+    form->addRow(QStringLiteral("Feeds"), scope);
+    form->addRow(QString(), unreadOnly);
+    form->addRow(QString(), starredOnly);
+    form->addRow(QStringLiteral("Newer than"), age);
+    layout->addLayout(form);
+    auto *error = new QLabel;
+    error->setObjectName(QStringLiteral("fieldError"));
+    error->setStyleSheet(QStringLiteral("color: %1;").arg(kWarningColor.name()));
+    error->setWordWrap(true);
+    error->hide();
+    layout->addWidget(error);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    auto validate = [words, regex, error] {
+        const bool bad = regex->isChecked() && !words->text().trimmed().isEmpty() &&
+                         !TextMatcher(words->text().trimmed(), true).isValid();
+        error->setText(bad ? QStringLiteral("Invalid regular expression") : QString());
+        error->setVisible(bad);
+    };
+    connect(words, &QLineEdit::textChanged, &dialog, validate);
+    connect(regex, &QCheckBox::toggled, &dialog, validate);
+    QString savedId = original.id;
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        SmartFeed edited = original;
+        edited.name = name->text();
+        edited.words = words->text();
+        edited.regex = regex->isChecked();
+        edited.scope = scope->currentData().toString();
+        edited.unreadOnly = unreadOnly->isChecked();
+        edited.starredOnly = starredOnly->isChecked();
+        edited.maxAgeDays = age->value();
+        QString problem;
+        if (!m_store.saveSmartFeed(edited, &problem)) {
+            error->setText(problem);
+            error->show();
+            return;
+        }
+        if (savedId.isEmpty()) {
+            const QList<SmartFeed> &all = m_store.settings().smartFeeds;
+            savedId = all.isEmpty() ? QString() : all.last().id;
+        }
+        dialog.accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    scheduleSave();
+    rebuildSources();
+    updateCounts();
+    if (!savedId.isEmpty())
+        selectSource({SourceKind::Smart, savedId});
+    else
+        rebuildTimeline();
+}
+
+void RssReaderFeature::deleteSmartFeed(const QString &id)
+{
+    const SmartFeed *smart = m_store.smartFeed(id);
+    if (!smart)
+        return;
+    QMessageBox box(QMessageBox::Question, QStringLiteral("Delete Smart Feed"),
+                    QStringLiteral("Delete the smart feed “%1”?").arg(smart->name), QMessageBox::Cancel, this);
+    box.setInformativeText(QStringLiteral("Its articles stay in their feeds."));
+    QPushButton *remove = box.addButton(QStringLiteral("Delete"), QMessageBox::DestructiveRole);
+    box.exec();
+    if (box.clickedButton() != remove)
+        return;
+    m_store.removeSmartFeed(id);
+    if (m_source.kind == SourceKind::Smart && m_source.id == id)
+        m_source = {SourceKind::AllUnread, QString()};
+    rebuildSources();
+    updateCounts();
+    rebuildTimeline();
+    scheduleSave();
+}
+
+bool RssReaderFeature::showFilterEditor(QWidget *parent, const QString &id)
+{
+    const ContentFilter *existing = nullptr;
+    for (const ContentFilter &candidate : m_store.settings().filters) {
+        if (candidate.id == id)
+            existing = &candidate;
+    }
+    if (!existing && m_store.settings().filters.size() >= kMaxFilters) {
+        QMessageBox::information(parent, QStringLiteral("Filters"),
+                                 QStringLiteral("RSS Reader keeps at most %1 filters.").arg(kMaxFilters));
+        return false;
+    }
+    const ContentFilter original = existing ? *existing : ContentFilter();
+    QDialog dialog(parent);
+    dialog.setObjectName(QStringLiteral("rssFilterDialog"));
+    dialog.setWindowTitle(existing ? QStringLiteral("Edit Filter") : QStringLiteral("New Filter"));
+    dialog.setMinimumWidth(440);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(18, 16, 18, 14);
+    auto *form = new QFormLayout;
+    form->setSpacing(8);
+    auto *pattern = new QLineEdit(original.pattern);
+    auto *regex = new QCheckBox(QStringLiteral("Regular Expression"));
+    regex->setChecked(original.regex);
+    auto *field = new QComboBox;
+    for (const char *value : {"title", "titleOrText", "author"})
+        field->addItem(filterFieldLabel(QString::fromLatin1(value)), QString::fromLatin1(value));
+    field->setCurrentIndex(qMax(0, field->findData(original.field)));
+    auto *action = new QComboBox;
+    for (const char *value : {"hide", "markRead"})
+        action->addItem(filterActionLabel(QString::fromLatin1(value)), QString::fromLatin1(value));
+    action->setCurrentIndex(qMax(0, action->findData(original.action)));
+    auto *feed = new QComboBox;
+    feed->addItem(QStringLiteral("All Feeds"), QString());
+    QList<const Feed *> feeds;
+    for (const Feed &owner : m_store.feeds())
+        feeds.append(&owner);
+    std::sort(feeds.begin(), feeds.end(), [](const Feed *a, const Feed *b) {
+        return a->displayName().compare(b->displayName(), Qt::CaseInsensitive) < 0;
+    });
+    for (const Feed *owner : std::as_const(feeds))
+        feed->addItem(owner->displayName(), owner->id);
+    feed->setCurrentIndex(qMax(0, feed->findData(original.feedId)));
+    form->addRow(QStringLiteral("Pattern"), pattern);
+    form->addRow(QString(), regex);
+    form->addRow(QStringLiteral("Match"), field);
+    form->addRow(QStringLiteral("Action"), action);
+    form->addRow(QStringLiteral("Feed"), feed);
+    layout->addLayout(form);
+    auto *hint = new QLabel(QStringLiteral("Matching ignores case. Mark as Read applies to new articles; Hide applies to "
+                                           "every article until the filter is removed. Starred articles are never filtered."));
+    hint->setObjectName(QStringLiteral("fieldHint"));
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto *error = new QLabel;
+    error->setObjectName(QStringLiteral("fieldError"));
+    error->setStyleSheet(QStringLiteral("color: %1;").arg(kWarningColor.name()));
+    error->setWordWrap(true);
+    error->hide();
+    layout->addWidget(error);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    auto validate = [pattern, regex, error] {
+        const bool bad = regex->isChecked() && !pattern->text().trimmed().isEmpty() &&
+                         !TextMatcher(pattern->text().trimmed(), true).isValid();
+        error->setText(bad ? QStringLiteral("Invalid regular expression") : QString());
+        error->setVisible(bad);
+    };
+    connect(pattern, &QLineEdit::textChanged, &dialog, validate);
+    connect(regex, &QCheckBox::toggled, &dialog, validate);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        ContentFilter edited = original;
+        edited.pattern = pattern->text();
+        edited.regex = regex->isChecked();
+        edited.field = field->currentData().toString();
+        edited.action = action->currentData().toString();
+        edited.feedId = feed->currentData().toString();
+        QString problem;
+        if (!m_store.saveFilter(edited, &problem)) {
+            error->setText(problem);
+            error->show();
+            return;
+        }
+        dialog.accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+    filtersEdited();
+    return true;
+}
+
+void RssReaderFeature::filtersEdited()
+{
+    scheduleSave();
+    rebuildSources();
+    updateCounts();
+    rebuildTimeline();
+    announceChanges();
 }
 
 void RssReaderFeature::unsubscribe(const QString &feedId)
@@ -2522,11 +3289,17 @@ void RssReaderFeature::importOpml(QWidget *parent)
         QMessageBox::warning(parent, QStringLiteral("Import Subscriptions"), document.error);
         return;
     }
-    const OpmlImportResult result = m_store.importOpml(document, now());
+    const OpmlImportResult result = m_store.importOpml(document, now(), true);
     m_store.logActivity(now(), QStringLiteral("Imported %1 feeds from %2").arg(result.added).arg(QFileInfo(path).fileName()));
     rebuildSources();
     updateCounts();
     scheduleSave();
+    QMessageBox::information(parent, QStringLiteral("Import Subscriptions"), importSummary(result));
+    checkFeeds(false);
+}
+
+QString RssReaderFeature::importSummary(const OpmlImportResult &result) const
+{
     QString message = QStringLiteral("Imported %1 %2").arg(result.added).arg(result.added == 1 ? QStringLiteral("feed") : QStringLiteral("feeds"));
     if (result.folders > 0)
         message += QStringLiteral(" and %1 %2").arg(result.folders).arg(result.folders == 1 ? QStringLiteral("folder") : QStringLiteral("folders"));
@@ -2535,8 +3308,63 @@ void RssReaderFeature::importOpml(QWidget *parent)
         message += QStringLiteral(" %1 skipped: already followed, not a web address, or over the %2-feed limit.")
                        .arg(result.skipped)
                        .arg(kMaxFeeds);
-    QMessageBox::information(parent, QStringLiteral("Import Subscriptions"), message);
-    checkFeeds(false);
+    return message;
+}
+
+void RssReaderFeature::importOpmlFromUrl(const QString &address, std::function<void(bool, const QString &)> done)
+{
+    loadStore();
+    auto finish = [done](bool ok, const QString &message) {
+        if (done)
+            done(ok, message);
+    };
+    const QUrl url = normalizeAddress(address);
+    if (!url.isValid()) {
+        finish(false, QStringLiteral("Enter the web address of an OPML file."));
+        return;
+    }
+    if (!m_feedQueue->available()) {
+        finish(false, QStringLiteral("The desktop network is not available."));
+        return;
+    }
+    FetchRequest request;
+    request.url = url;
+    request.accept = QByteArrayLiteral("text/x-opml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5");
+    m_feedQueue->get(request, [this, url, finish](const FetchResult &result) {
+        if (!result.ok() || result.notModified) {
+            finish(false, result.error.isEmpty() ? QStringLiteral("The OPML file could not be loaded.") : result.error);
+            return;
+        }
+        const OpmlDocument document = parseOpml(result.body);
+        if (!document.ok) {
+            finish(false, document.error);
+            return;
+        }
+        const qint64 at = now();
+        const OpmlImportResult imported = m_store.importOpml(document, at, false);
+        m_store.logActivity(at, QStringLiteral("Imported %1 feeds from %2").arg(imported.added).arg(url.toString()));
+        rebuildSources();
+        updateCounts();
+        scheduleSave();
+        checkFeeds(false);
+        finish(true, importSummary(imported));
+    });
+}
+
+void RssReaderFeature::importOpmlFromUrlDialog(QWidget *parent)
+{
+    loadStore();
+    bool ok = false;
+    const QString address = QInputDialog::getText(parent, QStringLiteral("Import from URL"),
+                                                  QStringLiteral("Address of an OPML file"), QLineEdit::Normal,
+                                                  QString(), &ok);
+    if (!ok || address.trimmed().isEmpty())
+        return;
+    QPointer<QWidget> guard(parent);
+    importOpmlFromUrl(address, [guard](bool, const QString &message) {
+        if (guard)
+            QMessageBox::information(guard, QStringLiteral("Import from URL"), message);
+    });
 }
 
 void RssReaderFeature::exportOpml(QWidget *parent)
@@ -2636,10 +3464,20 @@ void RssReaderFeature::showSettings()
         return button;
     };
     QPushButton *import = addButton(feedsLayout, QStringLiteral("Import Subscriptions…"), QStringLiteral("Add the feeds in an OPML file."));
+    QPushButton *importUrl = addButton(feedsLayout, QStringLiteral("Import from URL…"), QStringLiteral("Add the feeds in an OPML file on the web."));
     QPushButton *exportButton = addButton(feedsLayout, QStringLiteral("Export Subscriptions…"), QStringLiteral("Save your feeds and folders as OPML."));
     QPushButton *folder = addButton(feedsLayout, QStringLiteral("New Folder…"), QString());
+    QPushButton *smartButton = addButton(feedsLayout, QStringLiteral("New Smart Feed…"), QStringLiteral("Collect articles by words, feed, age, unread or starred."));
     QPushButton *blog = addButton(feedsLayout, QStringLiteral("Add the ForkMesh Blog Feed"), forkMeshBlogFeed());
+    auto *sortUnread = new QCheckBox(QStringLiteral("Sort by Unread Count"));
+    sortUnread->setChecked(settings.sortFeedsByUnread);
+    feedsLayout->addWidget(sortUnread);
     feedsLayout->addStretch();
+    connect(sortUnread, &QCheckBox::toggled, this, [this](bool on) {
+        updateSettings([on](Settings &value) { value.sortFeedsByUnread = on; }, false, false);
+    });
+    connect(importUrl, &QPushButton::clicked, dialog, [this, dialog] { importOpmlFromUrlDialog(dialog); });
+    connect(smartButton, &QPushButton::clicked, dialog, [this] { showSmartFeedEditor(QString()); });
     connect(import, &QPushButton::clicked, dialog, [this, dialog] { importOpml(dialog); });
     connect(exportButton, &QPushButton::clicked, dialog, [this, dialog] { exportOpml(dialog); });
     connect(folder, &QPushButton::clicked, dialog, [this, dialog] { newFolder(dialog); });
@@ -2665,7 +3503,20 @@ void RssReaderFeature::showSettings()
     check(timelineLayout, QStringLiteral("Group by Feed"), &Settings::groupByFeed, true, false);
     check(timelineLayout, QStringLiteral("Refresh to Clear Read Articles"), &Settings::refreshClearsRead, false, false);
     check(timelineLayout, QStringLiteral("Confirm Mark All as Read"), &Settings::confirmMarkAllRead, false, false);
+    check(timelineLayout, QStringLiteral("Mark All as Read Skips Starred"), &Settings::markAllKeepsStarred, false, false);
+    auto *hideRead = new QCheckBox(QStringLiteral("Hide Read Articles"));
+    hideRead->setChecked(settings.unreadOnlyTimeline);
+    timelineLayout->addWidget(hideRead);
+    connect(hideRead, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_unreadTimelineButton->isChecked() != on)
+            m_unreadTimelineButton->setChecked(on);
+    });
+    connect(m_unreadTimelineButton, &QToolButton::toggled, hideRead, [hideRead](bool on) {
+        if (hideRead->isChecked() != on)
+            hideRead->setChecked(on);
+    });
     check(timelineLayout, QStringLiteral("Show Feed Icons"), &Settings::showFeedIcons, true, false);
+    check(timelineLayout, QStringLiteral("Show Thumbnails"), &Settings::showThumbnails, true, false);
     auto *linesRow = new QHBoxLayout;
     linesRow->addWidget(new QLabel(QStringLiteral("Summary lines")));
     auto *lines = new QSpinBox;
@@ -2730,6 +3581,81 @@ void RssReaderFeature::showSettings()
         settingsChanged(false, true);
     });
     tabs->addTab(articles, QStringLiteral("Articles"));
+
+    auto *filters = new QWidget;
+    auto *filtersLayout = new QVBoxLayout(filters);
+    filtersLayout->setContentsMargins(12, 14, 12, 12);
+    filtersLayout->setSpacing(8);
+    auto *fold = new QCheckBox(QStringLiteral("Mark Duplicate Links as Read"));
+    fold->setChecked(settings.foldDuplicates);
+    filtersLayout->addWidget(fold);
+    auto *filterList = new QListWidget;
+    filterList->setObjectName(QStringLiteral("rssFilterList"));
+    filtersLayout->addWidget(filterList, 1);
+    auto *filterButtons = new QHBoxLayout;
+    auto *addFilter = new QPushButton(QStringLiteral("Add…"));
+    auto *editFilter = new QPushButton(QStringLiteral("Edit…"));
+    auto *deleteFilter = new QPushButton(QStringLiteral("Delete"));
+    filterButtons->addWidget(addFilter);
+    filterButtons->addWidget(editFilter);
+    filterButtons->addWidget(deleteFilter);
+    filterButtons->addStretch();
+    filtersLayout->addLayout(filterButtons);
+    auto fillFilters = [this, filterList, editFilter, deleteFilter, addFilter] {
+        const QString selected = filterList->currentItem() ? filterList->currentItem()->data(Qt::UserRole).toString() : QString();
+        filterList->clear();
+        for (const ContentFilter &filter : m_store.settings().filters) {
+            const Feed *owner = filter.feedId.isEmpty() ? nullptr : m_store.feed(filter.feedId);
+            const QString feedName = filter.feedId.isEmpty() ? QStringLiteral("All Feeds")
+                                     : owner                 ? owner->displayName()
+                                                             : QStringLiteral("Removed feed");
+            QString pattern = QStringLiteral("“%1”").arg(filter.pattern);
+            if (filter.regex)
+                pattern += QStringLiteral(" (regular expression)");
+            if (filter.regex && !TextMatcher(filter.pattern, true).isValid())
+                pattern += QStringLiteral(" · Invalid regular expression");
+            auto *row = new QListWidgetItem(QStringLiteral("%1 · %2 · %3 · %4")
+                                                .arg(pattern, filterFieldLabel(filter.field),
+                                                     filterActionLabel(filter.action), feedName));
+            row->setData(Qt::UserRole, filter.id);
+            filterList->addItem(row);
+            if (filter.id == selected)
+                filterList->setCurrentItem(row);
+        }
+        const bool has = filterList->currentItem() != nullptr;
+        editFilter->setEnabled(has);
+        deleteFilter->setEnabled(has);
+        addFilter->setEnabled(m_store.settings().filters.size() < kMaxFilters);
+    };
+    fillFilters();
+    connect(filterList, &QListWidget::currentItemChanged, dialog, [editFilter, deleteFilter](QListWidgetItem *item) {
+        editFilter->setEnabled(item != nullptr);
+        deleteFilter->setEnabled(item != nullptr);
+    });
+    connect(addFilter, &QPushButton::clicked, dialog, [this, dialog, fillFilters] {
+        if (showFilterEditor(dialog, QString()))
+            fillFilters();
+    });
+    auto edit = [this, dialog, filterList, fillFilters] {
+        if (!filterList->currentItem())
+            return;
+        if (showFilterEditor(dialog, filterList->currentItem()->data(Qt::UserRole).toString()))
+            fillFilters();
+    };
+    connect(editFilter, &QPushButton::clicked, dialog, edit);
+    connect(filterList, &QListWidget::itemDoubleClicked, dialog, edit);
+    connect(deleteFilter, &QPushButton::clicked, dialog, [this, filterList, fillFilters] {
+        if (!filterList->currentItem())
+            return;
+        m_store.removeFilter(filterList->currentItem()->data(Qt::UserRole).toString());
+        filtersEdited();
+        fillFilters();
+    });
+    connect(fold, &QCheckBox::toggled, this, [this](bool on) {
+        m_store.settings().foldDuplicates = on;
+        settingsChanged(false, false);
+    });
+    tabs->addTab(filters, QStringLiteral("Filters"));
 
     auto *trouble = new QWidget;
     auto *troubleLayout = new QVBoxLayout(trouble);
@@ -2932,7 +3858,7 @@ QList<forkmesh::market::NativePackageSearchHit> RssReaderFeature::searchHits(con
         for (const Article &item : m_store.articles(owner.id)) {
             if (hits.size() >= limit)
                 return hits;
-            if (!item.title.contains(needle, Qt::CaseInsensitive))
+            if (!item.title.contains(needle, Qt::CaseInsensitive) || m_store.isHidden(item))
                 continue;
             hits.append({QStringLiteral("a") + separator + owner.id + separator + item.guid, item.title,
                          QStringLiteral("%1 · %2").arg(owner.displayName(), timelineDateText(item.publishedMs, at))});

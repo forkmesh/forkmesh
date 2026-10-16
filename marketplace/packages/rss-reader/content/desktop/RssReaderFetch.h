@@ -23,6 +23,7 @@ struct FetchRequest {
     QString lastModified;
     qint64 maxBytes = kMaxFetchBytes;
     QByteArray accept;
+    bool allowFile = false;
 };
 
 struct FetchResult {
@@ -64,6 +65,7 @@ private:
     };
     void pump();
     void start(const std::shared_ptr<Job> &job);
+    void readFile(const std::shared_ptr<Job> &job);
     void finish(const std::shared_ptr<Job> &job, const FetchResult &result);
 
     QPointer<QNetworkAccessManager> m_network;

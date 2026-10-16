@@ -37,6 +37,25 @@ object RssText {
 
     fun trimPipes(value: String): String = value.trim('|')
 
+    private val PARAGRAPH_BREAK = Regex("\\n[ \\t]*\\n")
+    private val BARE_URL = Regex("https?://[^\\s<>\"]+")
+    private const val URL_TRAILERS = ".,;:!?)]}'"
+
+    fun linkify(escaped: String): String = BARE_URL.replace(escaped) { match ->
+        val raw = match.value
+        val url = raw.trimEnd { it in URL_TRAILERS }
+        val tail = raw.substring(url.length)
+        if (url.length <= 8) raw else "<a href=\"$url\">$url</a>$tail"
+    }
+
+    fun plainToHtml(value: String): String {
+        val text = value.replace("\r\n", "\n").replace('\r', '\n').trim()
+        if (text.isEmpty()) return ""
+        return text.split(PARAGRAPH_BREAK).map { it.trim() }.filter { it.isNotEmpty() }.joinToString("") { paragraph ->
+            "<p>" + paragraph.split('\n').joinToString("<br>") { linkify(escape(it.trim(), false)) } + "</p>"
+        }
+    }
+
     fun escape(value: String, quote: Boolean = true): String {
         val out = StringBuilder(value.length + 16)
         for (ch in value) {

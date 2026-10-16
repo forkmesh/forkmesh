@@ -55,10 +55,12 @@ platform:
 7. **Few, compact controls.** A new setting has to be worth what it adds to
    Settings.
 
-## Take next
+## Take next (built)
 
 These are ordered so that each one unblocks the next. Every item is small or
-medium and fits the rules above.
+medium and fits the rules above. All ten were built on 2026-10-16 on the
+iPhone, Android and the desktop; [rss-reader.md](rss-reader.md) describes how
+they behave.
 
 1. **Media RSS images and descriptions.** Today we read `media:content` only
    for audio and video. Also read images from `media:content`,

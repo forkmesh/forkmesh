@@ -62,11 +62,24 @@ object RssArticlePage {
         RssFont.MONO -> "'Roboto Mono', 'Noto Sans Mono', monospace"
     }
 
-    fun body(article: RssArticle, reader: Boolean, loadRemoteImages: Boolean): String {
-        val html = if (reader && article.readerHtml.isNotEmpty()) article.readerHtml else article.contentHtml.ifEmpty {
+    fun source(article: RssArticle, reader: Boolean): String =
+        if (reader && article.readerHtml.isNotEmpty()) article.readerHtml else article.contentHtml.ifEmpty {
             if (article.summary.isNotEmpty()) "<p>${RssText.escape(article.summary)}</p>" else ""
         }
-        return if (loadRemoteImages) html else RssSanitizer.withoutRemoteMedia(html)
+
+    fun extraImages(article: RssArticle, html: String): List<String> =
+        article.images.filter { it.isNotEmpty() && it !in html && RssText.escape(it) !in html }.distinct()
+
+    fun body(article: RssArticle, reader: Boolean, loadRemoteImages: Boolean): String {
+        val content = source(article, reader)
+        val extra = extraImages(article, content)
+        val html = if (extra.isEmpty()) content else RssSanitizer.sanitize(extra.joinToString("") { "<p><img src=\"${RssText.escape(it)}\" alt=\"\"></p>" }) + content
+        return if (loadRemoteImages) RssSanitizer.withAltCaptions(html) else RssSanitizer.withoutRemoteMedia(html)
+    }
+
+    fun readingTime(article: RssArticle, reader: Boolean): String {
+        val minutes = RssRules.readingMinutes(RssSanitizer.plainText(source(article, reader), Int.MAX_VALUE))
+        return if (minutes > 0) "$minutes min read" else ""
     }
 
     fun html(
@@ -75,6 +88,7 @@ object RssArticlePage {
         style: RssPageStyle,
         iconDataUri: String = "",
         reader: Boolean = false,
+        feedLanguage: String = "",
     ): String {
         val (background, text, muted) = colors(style)
         val accent = style.accent
@@ -82,7 +96,7 @@ object RssArticlePage {
         val letter = feedTitle.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
         val icon = if (iconDataUri.startsWith("data:image/")) "<img class=\"icon\" src=\"${e(iconDataUri)}\" alt=\"\">" else "<div class=\"icon letter\">${e(letter)}</div>"
         val title = if (article.link.isNotEmpty()) "<a href=\"${e(article.link)}\">${e(article.title.ifEmpty { "Untitled" })}</a>" else e(article.title.ifEmpty { "Untitled" })
-        val media = article.enclosures.joinToString("") { enclosure ->
+        val media = article.enclosures.filter { !it.type.startsWith("image/") }.joinToString("") { enclosure ->
             val src = e(enclosure.url)
             when {
                 style.loadRemoteImages && enclosure.type.startsWith("audio") -> "<p><audio controls preload=\"none\" src=\"$src\"></audio></p>"
@@ -110,7 +124,10 @@ object RssArticlePage {
             img, video { max-width: 100%; height: auto; }
             audio { width: 100%; }
             pre, code { font-family: ${family(RssFont.MONO)}; font-size: 0.88em; }
-            pre { overflow-x: auto; padding: 10px; background: ${muted}22; border-radius: 6px; }
+            code { white-space: pre-wrap; }
+            pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; word-wrap: normal; padding: 10px; background: ${muted}22; border-radius: 6px; }
+            pre code { white-space: pre; font-size: 1em; }
+            .alt-caption { display: block; color: $muted; font-size: 0.8em; line-height: 1.35; margin: 4px 0 10px; }
             blockquote { margin: 0 0 0 4px; padding-left: 12px; border-left: 3px solid ${muted}66; color: $muted; }
             table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
             td, th { border: 1px solid ${muted}44; padding: 4px 6px; }
@@ -118,7 +135,10 @@ object RssArticlePage {
             figcaption { color: $muted; font-size: 0.85em; }
         """.trimIndent()
         return buildString {
-            append("<!DOCTYPE html><html><head><meta charset=\"utf-8\">")
+            val language = article.language.ifEmpty { feedLanguage }
+            append("<!DOCTYPE html><html")
+            if (language.isNotEmpty()) append(" lang=\"").append(e(language)).append('"')
+            append(" dir=\"").append(RssRules.direction(language)).append("\"><head><meta charset=\"utf-8\">")
             append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
             val remote = if (style.loadRemoteImages) "https: http: data:" else "data:"
             val mediaSrc = if (style.loadRemoteImages) "https: http:" else "'none'"
@@ -127,7 +147,8 @@ object RssArticlePage {
             append("<div class=\"head\"><div class=\"who\"><div class=\"feed\">").append(e(feedTitle)).append("</div>").append(author).append("</div>").append(icon).append("</div>")
             append("<hr class=\"rule\">")
             append("<h1 class=\"title\">").append(title).append("</h1>")
-            append("<div class=\"date\">").append(e(RssFormat.articleDate(article.published))).append("</div>")
+            val dateLine = listOf(RssFormat.articleDate(article.published), readingTime(article, reader)).filter { it.isNotEmpty() }.joinToString(" · ")
+            append("<div class=\"date\">").append(e(dateLine)).append("</div>")
             append("<div class=\"content\">").append(body(article, reader, style.loadRemoteImages)).append("</div>")
             append(media).append(comments)
             append("</body></html>")

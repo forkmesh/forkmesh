@@ -225,6 +225,7 @@ public struct RSSEnclosure: Codable, Equatable, Hashable, Sendable {
 
     public var isAudio: Bool { type.hasPrefix("audio") }
     public var isVideo: Bool { type.hasPrefix("video") }
+    public var isImage: Bool { type.hasPrefix("image/") }
 }
 
 public struct RSSParsedItem: Equatable, Sendable {
@@ -239,6 +240,8 @@ public struct RSSParsedItem: Equatable, Sendable {
     public var summaryHtml: String = ""
     public var commentsUrl: String = ""
     public var enclosures: [RSSEnclosure] = []
+    public var images: [String] = []
+    public var language: String = ""
 
     public init() {}
 
@@ -250,6 +253,8 @@ public struct RSSParsedFeed: Equatable, Sendable {
     public var siteUrl: String = ""
     public var iconUrl: String = ""
     public var description: String = ""
+    public var language: String = ""
+    public var format: String = ""
     public var items: [RSSParsedItem] = []
 
     public init() {}
@@ -323,6 +328,42 @@ public enum RSSFeedParser {
         return Array(result.prefix(4))
     }
 
+    struct Media {
+        var images: [String] = []
+        var title = ""
+        var descriptionHtml = ""
+    }
+
+    static func isImage(_ element: RSSXMLElement) -> Bool {
+        if (element.get("medium") ?? "").lowercased() == "image" { return true }
+        return (element.get("type") ?? "").lowercased().hasPrefix("image/")
+    }
+
+    static func media(_ element: RSSXMLElement, base: String, imageEnclosures: [String] = []) -> Media {
+        var holders = [element]
+        holders += element.all("media:group")
+        var thumbnails: [String] = []
+        var contents: [String] = []
+        var media = Media()
+        for holder in holders {
+            thumbnails += holder.all("media:thumbnail").map { RSSURL.http($0.get("url") ?? "", base: base) }
+            contents += holder.all("media:content").filter(isImage).map { RSSURL.http($0.get("url") ?? "", base: base) }
+            if media.title.isEmpty { media.title = RSSText.clean(text(holder.child("media:title")), 1000) }
+            if media.descriptionHtml.isEmpty, let node = holder.child("media:description") {
+                let value = text(node)
+                if !value.isEmpty {
+                    media.descriptionHtml = (node.get("type") ?? "").lowercased() == "html" ? value : RSSHTML.plainToHTML(value)
+                }
+            }
+        }
+        for url in thumbnails + contents + imageEnclosures where !url.isEmpty && !media.images.contains(url) {
+            media.images.append(url)
+        }
+        return media
+    }
+
+    static func language(_ value: String) -> String { RSSText.clean(value, 35) }
+
     static func author(_ raw: String) -> String {
         let trimmed = raw
         if let open = trimmed.firstIndex(of: "("), trimmed.hasSuffix(")") {
@@ -349,21 +390,29 @@ public enum RSSFeedParser {
             let description = element.child("description")
             let summary = description.map { $0.children.isEmpty ? $0.plain : $0.inner } ?? ""
             let about = element.get("about") ?? ""
-            var attachments: [(String?, String?, String?)] = element.all("enclosure").map { ($0.get("url"), $0.get("type"), $0.get("length")) }
+            let rssEnclosures = element.all("enclosure")
+            let imageEnclosures = rssEnclosures.filter { ($0.get("type") ?? "").lowercased().hasPrefix("image/") }
+                .map { RSSURL.http($0.get("url") ?? "", base: base) }
+            let extra = media(element, base: base, imageEnclosures: imageEnclosures)
+            var attachments: [(String?, String?, String?)] = rssEnclosures.map { ($0.get("url"), $0.get("type"), $0.get("length")) }
             attachments += element.all("media:content").filter {
                 let kind = $0.get("medium") ?? $0.get("type") ?? ""
                 return kind.hasPrefix("audio") || kind.hasPrefix("video")
             }.map { ($0.get("url"), $0.get("type"), $0.get("filesize")) }
             item.guid = guid.isEmpty ? (link.isEmpty ? about : link) : guid
             item.title = rssTitle(element.child("title"))
+            if item.title.isEmpty { item.title = extra.title }
             item.url = link.isEmpty ? RSSURL.http(about, base: base) : link
             item.author = author(text(element.child("dc:creator", "author", "itunes:author")))
             item.published = RSSDate.parse(text(element.child("pubdate", "dc:date", "date")))
             item.updated = RSSDate.parse(text(element.child("updated", "dc:modified")))
             item.contentHtml = content.isEmpty ? summary : content
             item.summaryHtml = content.isEmpty ? "" : summary
+            if RSSText.strip(item.contentHtml).isEmpty { item.contentHtml = extra.descriptionHtml }
             item.commentsUrl = RSSURL.http(text(element.child("comments")), base: base)
             item.enclosures = enclosures(attachments)
+            item.images = extra.images
+            item.language = language(text(element.child("dc:language")))
             items.append(item)
         }
         return items
@@ -390,9 +439,12 @@ public enum RSSFeedParser {
         feed.siteUrl = site.isEmpty ? base : site
         feed.iconUrl = RSSURL.http(text(root.child("icon", "logo")), base: base)
         feed.description = atomText(root.child("subtitle"))
+        feed.language = language(root.get("lang") ?? "")
+        feed.format = "Atom " + ((root.get("version") ?? "").isEmpty ? "1.0" : RSSText.clean(root.get("version") ?? "", 10))
         let feedAuthor = text(root.child("author")?.child("name"))
         for entry in root.all("entry").prefix(maxItems) {
             var item = RSSParsedItem()
+            let extra = media(entry, base: base)
             let url = atomLink(entry, base: base)
             let content = atomText(entry.child("content"), html: true)
             let summary = atomText(entry.child("summary"), html: true)
@@ -403,14 +455,18 @@ public enum RSSFeedParser {
             let id = text(entry.child("id"))
             item.guid = id.isEmpty ? url : id
             item.title = atomText(entry.child("title"))
+            if item.title.isEmpty { item.title = extra.title }
             item.url = url
             item.author = RSSText.clean(author.isEmpty ? feedAuthor : author, 200)
             item.published = RSSDate.parse(text(entry.child("published", "issued", "created")))
             item.updated = RSSDate.parse(text(entry.child("updated", "modified")))
             item.contentHtml = content.isEmpty ? summary : content
             item.summaryHtml = content.isEmpty ? "" : summary
+            if RSSText.strip(item.contentHtml).isEmpty { item.contentHtml = extra.descriptionHtml }
             item.commentsUrl = atomLink(entry, base: base, rel: "replies")
             item.enclosures = enclosures(attachments)
+            item.images = extra.images
+            item.language = language(entry.get("lang") ?? "")
             feed.items.append(item)
         }
         return feed
@@ -435,6 +491,13 @@ public enum RSSFeedParser {
         feed.siteUrl = site
         feed.iconUrl = icon
         feed.description = RSSHTML.plainText(text(channel.child("description")), limit: 500)
+        feed.language = language(text(channel.child("language", "dc:language")))
+        if root.tag == "rdf" {
+            feed.format = "RSS 1.0"
+        } else {
+            let version = RSSText.clean(root.get("version") ?? "", 10)
+            feed.format = "RSS " + (version.isEmpty ? "2.0" : version)
+        }
         feed.items = rssItems(container, base: site)
         return feed
     }
@@ -493,6 +556,11 @@ public enum RSSFeedParser {
             item.contentHtml = content.isEmpty ? RSSText.escape(summary, quote: true) : content
             item.summaryHtml = !content.isEmpty && !summary.isEmpty ? RSSText.escape(summary, quote: true) : ""
             item.enclosures = enclosures(attachments)
+            for key in ["image", "banner_image"] {
+                let image = RSSURL.http(jsonString(entry[key]), base: site)
+                if !image.isEmpty && !item.images.contains(image) { item.images.append(image) }
+            }
+            item.language = language(jsonString(entry["language"]))
             feed.items.append(item)
         }
         feed.title = RSSText.clean(jsonString(data["title"]), 1000)
@@ -500,6 +568,8 @@ public enum RSSFeedParser {
         let icon = jsonString(data["icon"])
         feed.iconUrl = RSSURL.http(icon.isEmpty ? jsonString(data["favicon"]) : icon, base: base)
         feed.description = RSSText.clean(jsonString(data["description"]), 500)
+        feed.language = language(jsonString(data["language"]))
+        feed.format = jsonString(data["version"]).hasSuffix("/1") ? "JSON Feed 1.0" : "JSON Feed 1.1"
         return feed
     }
 
@@ -578,7 +648,8 @@ public enum RSSOPML {
     public static func build(folders: [RSSFolder], feeds: [RSSFeed], now: Int64, title: String = "RSS Reader subscriptions") -> String {
         func attr(_ value: String) -> String { RSSText.escape(value, quote: true) }
         func outline(_ feed: RSSFeed, _ indent: String) -> String {
-            "\(indent)<outline text=\"\(attr(feed.displayTitle))\" title=\"\(attr(feed.displayTitle))\" type=\"rss\" version=\"RSS\" xmlUrl=\"\(attr(feed.url))\" htmlUrl=\"\(attr(feed.siteUrl))\"/>"
+            let home = feed.siteUrl.isEmpty ? "" : " htmlUrl=\"\(attr(feed.siteUrl))\""
+            return "\(indent)<outline text=\"\(attr(feed.displayTitle))\" title=\"\(attr(feed.displayTitle))\" type=\"rss\" version=\"RSS\" xmlUrl=\"\(attr(feed.url))\"\(home)/>"
         }
         let byName: (RSSFeed, RSSFeed) -> Bool = { $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending }
         var lines = [

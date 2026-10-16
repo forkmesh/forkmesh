@@ -5,15 +5,19 @@ struct RSSReaderTimelineScreen: View {
     let model: RSSReaderModel
     let scope: RSSScope
     @State private var query = ""
-    @State private var unreadOnly: Bool
+    @State private var starredUnreadOnly = false
     @State private var shown: Set<String> = []
     @State private var started = false
     @State private var confirmMarkAll = false
+    @State private var olderChoice: RSSCatchUp?
 
     init(model: RSSReaderModel, scope: RSSScope) {
         self.model = model
         self.scope = scope
-        _unreadOnly = State(initialValue: scope.unreadOnly)
+    }
+
+    private var unreadOnly: Bool {
+        scope == .starred ? starredUnreadOnly : model.settings.hidesRead(scope)
     }
 
     private var articles: [RSSArticle] {
@@ -35,12 +39,12 @@ struct RSSReaderTimelineScreen: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if !scope.unreadOnly {
                         Button {
-                            unreadOnly.toggle()
-                            snapshot(reset: true)
+                            toggleHideRead()
                         } label: {
                             Image(systemName: unreadOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                         }
-                        .accessibilityLabel(unreadOnly ? "Show read articles" : "Show only unread articles")
+                        .accessibilityLabel(unreadOnly ? "Show Read Articles" : "Hide Read Articles")
+                        .accessibilityIdentifier("rss-hide-read")
                     }
                     Button {
                         askMarkAll()
@@ -50,6 +54,22 @@ struct RSSReaderTimelineScreen: View {
                     .disabled(articles.allSatisfy(\.read))
                     .accessibilityLabel("Mark All as Read")
                     .accessibilityIdentifier("rss-mark-all")
+                    Menu {
+                        Menu {
+                            ForEach(RSSCatchUp.allCases) { (choice: RSSCatchUp) in
+                                Button(choice.title) { askOlder(choice) }
+                            }
+                        } label: {
+                            Label("Mark Older as Read\u{2026}", systemImage: "clock.arrow.circlepath")
+                        }
+                        if !scope.unreadOnly {
+                            Toggle("Hide Read Articles", isOn: Binding(get: { unreadOnly }, set: { (_: Bool) in toggleHideRead() }))
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More")
+                    .accessibilityIdentifier("rss-timeline-more")
                 }
             }
             .refreshable {
@@ -68,6 +88,16 @@ struct RSSReaderTimelineScreen: View {
             } message: {
                 Text(RSSReaderText.markAllPrompt(articles.filter { !$0.read }.count, scope: model.title(scope)))
             }
+            .alert("Mark Older as Read?", isPresented: olderShown) {
+                Button("Cancel", role: .cancel) {}
+                Button("Mark as Read") {
+                    if let choice = olderChoice { markOlder(choice) }
+                }
+            } message: {
+                Text(olderChoice.map { (choice: RSSCatchUp) in
+                    RSSReaderText.markOlderPrompt(model.olderUnreadCount(scope, choice), choice, scope: model.title(scope))
+                } ?? "")
+            }
             .rssPalette(model.settings.palette)
     }
 
@@ -78,6 +108,33 @@ struct RSSReaderTimelineScreen: View {
         } else {
             shown.formUnion(current)
         }
+    }
+
+    private var olderShown: Binding<Bool> {
+        Binding(get: { olderChoice != nil }, set: { if !$0 { olderChoice = nil } })
+    }
+
+    private func toggleHideRead() {
+        if scope == .starred {
+            starredUnreadOnly.toggle()
+        } else {
+            model.updateSettings { $0.hideReadArticles.toggle() }
+        }
+        snapshot(reset: true)
+    }
+
+    private func askOlder(_ choice: RSSCatchUp) {
+        guard model.olderUnreadCount(scope, choice) > 0 else { return }
+        if model.settings.confirmMarkAllRead {
+            olderChoice = choice
+        } else {
+            markOlder(choice)
+        }
+    }
+
+    private func markOlder(_ choice: RSSCatchUp) {
+        model.markOlderRead(scope, choice)
+        if unreadOnly { snapshot(reset: true) }
     }
 
     private func askMarkAll() {
@@ -94,6 +151,7 @@ struct RSSReaderTimelineScreen: View {
         } else {
             model.markRead(articles)
         }
+        if unreadOnly { snapshot(reset: true) }
     }
 
     @ViewBuilder private var content: some View {
@@ -175,6 +233,12 @@ struct RSSReaderTimelineScreen: View {
                 Label(article.starred ? "Unstar" : "Star", systemImage: article.starred ? "star.slash" : "star.fill")
             }
             .tint(.yellow)
+            Button {
+                model.toggleReadLater(article.id)
+            } label: {
+                Label(article.readLater ? "Remove from Read Later" : "Read Later", systemImage: article.readLater ? "bookmark.slash" : "bookmark")
+            }
+            .tint(.purple)
         }
         .contextMenu {
             Button {
@@ -186,6 +250,11 @@ struct RSSReaderTimelineScreen: View {
                 model.toggleStar(article.id)
             } label: {
                 Label(article.starred ? "Mark as Unstarred" : "Mark as Starred", systemImage: article.starred ? "star.slash" : "star")
+            }
+            Button {
+                model.toggleReadLater(article.id)
+            } label: {
+                Label(article.readLater ? "Remove from Read Later" : "Read Later", systemImage: article.readLater ? "bookmark.slash" : "bookmark")
             }
             if let url = URL(string: RSSURL.http(article.link)), !article.link.isEmpty {
                 ShareLink(item: url) {
@@ -216,6 +285,12 @@ struct RSSTimelineRow: View {
     var showFeedName = true
 
     private var feedName: String { feed?.displayTitle ?? "Feed" }
+
+    private var thumbnail: URL? {
+        guard settings.showThumbnails && settings.loadRemoteImages && !article.image.isEmpty else { return nil }
+        let text: String = RSSURL.upgraded(RSSURL.http(article.image))
+        return text.isEmpty ? nil : URL(string: text)
+    }
 
     private var byline: String {
         if article.author.isEmpty || article.author == feedName { return feedName }
@@ -261,6 +336,18 @@ struct RSSTimelineRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                }
+                if let thumbnail {
+                    AsyncImage(url: thumbnail) { (phase: AsyncImagePhase) in
+                        if let image = phase.image {
+                            image.resizable()
+                                .scaledToFill()
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                    }
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
                 }
             }
             .padding(.leading, 18)

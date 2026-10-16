@@ -14,6 +14,10 @@ public enum RSSReaderLimits {
     public static let concurrency = 6
     public static let maxActivity = 200
     public static let maxRedirects = 5
+    public static let maxFilters = 100
+    public static let maxSmartFeeds = 50
+    public static let filterTextChars = 20_000
+    public static let dayMs: Int64 = 24 * 60 * 60 * 1000
     public static let forkMeshBlogFeed = "https://forkmesh.com/blog/rss.xml"
 
     public static func backoff(errors: Int) -> Int64 {
@@ -50,6 +54,10 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var errorCount: Int = 0
     public var error: String = ""
     public var errorAt: Int64 = 0
+    public var paused = false
+    public var excludeFromToday = false
+    public var excludeFromUnread = false
+    public var language: String = ""
 
     public init(id: String, url: String, title: String = "", folderId: String = "", siteUrl: String = "", addedAt: Int64 = 0) {
         self.id = id
@@ -63,6 +71,7 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, url, title, customTitle, folderId, siteUrl, iconUrl, summary, etag, lastModified, previousUrls
         case addedAt, fetchedAt, nextFetchAt, errorCount, error, errorAt
+        case paused, excludeFromToday, excludeFromUnread, language
     }
 
     public init(from decoder: Decoder) throws {
@@ -84,6 +93,10 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
         errorCount = try c.decodeIfPresent(Int.self, forKey: .errorCount) ?? 0
         error = try c.decodeIfPresent(String.self, forKey: .error) ?? ""
         errorAt = try c.decodeIfPresent(Int64.self, forKey: .errorAt) ?? 0
+        paused = (try? c.decodeIfPresent(Bool.self, forKey: .paused)) ?? false
+        excludeFromToday = (try? c.decodeIfPresent(Bool.self, forKey: .excludeFromToday)) ?? false
+        excludeFromUnread = (try? c.decodeIfPresent(Bool.self, forKey: .excludeFromUnread)) ?? false
+        language = (try? c.decodeIfPresent(String.self, forKey: .language)) ?? ""
     }
 
     public var displayTitle: String {
@@ -114,6 +127,8 @@ public struct RSSArticle: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var arrivedAt: Int64 = 0
     public var read: Bool = false
     public var starred: Bool = false
+    public var readLater: Bool = false
+    public var language: String = ""
     public var contentKey: String = ""
 
     public init(feedId: String, guid: String) {
@@ -126,6 +141,7 @@ public struct RSSArticle: Codable, Equatable, Hashable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, feedId, guid, title, url, externalUrl, author, summary, image, published, arrivedAt, read, starred, contentKey
+        case readLater, language
     }
 
     public init(from decoder: Decoder) throws {
@@ -144,9 +160,13 @@ public struct RSSArticle: Codable, Equatable, Hashable, Sendable, Identifiable {
         read = try c.decodeIfPresent(Bool.self, forKey: .read) ?? false
         starred = try c.decodeIfPresent(Bool.self, forKey: .starred) ?? false
         contentKey = try c.decodeIfPresent(String.self, forKey: .contentKey) ?? ""
+        readLater = (try? c.decodeIfPresent(Bool.self, forKey: .readLater)) ?? false
+        language = (try? c.decodeIfPresent(String.self, forKey: .language)) ?? ""
     }
 
     public var link: String { externalUrl.isEmpty ? url : externalUrl }
+
+    public var date: Int64 { published > 0 ? published : arrivedAt }
 }
 
 public struct RSSArticleBody: Codable, Equatable, Sendable {
@@ -154,15 +174,19 @@ public struct RSSArticleBody: Codable, Equatable, Sendable {
     public var commentsUrl: String = ""
     public var enclosures: [RSSEnclosure] = []
     public var readerHtml: String = ""
+    public var images: [String] = []
 
-    public init(contentHtml: String = "", commentsUrl: String = "", enclosures: [RSSEnclosure] = [], readerHtml: String = "") {
+    public init(
+        contentHtml: String = "", commentsUrl: String = "", enclosures: [RSSEnclosure] = [], readerHtml: String = "", images: [String] = []
+    ) {
         self.contentHtml = contentHtml
         self.commentsUrl = commentsUrl
         self.enclosures = enclosures
         self.readerHtml = readerHtml
+        self.images = images
     }
 
-    enum CodingKeys: String, CodingKey { case contentHtml, commentsUrl, enclosures, readerHtml }
+    enum CodingKeys: String, CodingKey { case contentHtml, commentsUrl, enclosures, readerHtml, images }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -170,6 +194,7 @@ public struct RSSArticleBody: Codable, Equatable, Sendable {
         commentsUrl = try c.decodeIfPresent(String.self, forKey: .commentsUrl) ?? ""
         enclosures = try c.decodeIfPresent([RSSEnclosure].self, forKey: .enclosures) ?? []
         readerHtml = try c.decodeIfPresent(String.self, forKey: .readerHtml) ?? ""
+        images = (try? c.decodeIfPresent([String].self, forKey: .images)) ?? []
     }
 }
 
@@ -241,12 +266,23 @@ public struct RSSReaderSettings: Codable, Equatable, Sendable {
     public var openLinksInApp = true
     public var loadRemoteImages = true
     public var palette: RSSColorPalette = .automatic
+    public var showThumbnails = false
+    public var hideReadArticles = false
+    public var foldDuplicates = false
+    public var markAllKeepsStarred = false
+    public var sortFeedsByUnread = false
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case sortOldestFirst, groupByFeed, refreshClearsRead, confirmMarkAllRead, timelineLines, showFeedIcons
         case feedsUnreadOnly, articleTheme, articleFont, articleSize, openLinksInApp, loadRemoteImages, palette
+        case showThumbnails, hideReadArticles, foldDuplicates, markAllKeepsStarred, sortFeedsByUnread
+    }
+
+    public func hidesRead(_ scope: RSSScope) -> Bool {
+        if scope.unreadOnly { return true }
+        return hideReadArticles && scope != .starred
     }
 
     public init(from decoder: Decoder) throws {
@@ -266,6 +302,11 @@ public struct RSSReaderSettings: Codable, Equatable, Sendable {
         openLinksInApp = (try? c.decodeIfPresent(Bool.self, forKey: .openLinksInApp)) ?? base.openLinksInApp
         loadRemoteImages = (try? c.decodeIfPresent(Bool.self, forKey: .loadRemoteImages)) ?? base.loadRemoteImages
         palette = (try? c.decodeIfPresent(RSSColorPalette.self, forKey: .palette)) ?? base.palette
+        showThumbnails = (try? c.decodeIfPresent(Bool.self, forKey: .showThumbnails)) ?? base.showThumbnails
+        hideReadArticles = (try? c.decodeIfPresent(Bool.self, forKey: .hideReadArticles)) ?? base.hideReadArticles
+        foldDuplicates = (try? c.decodeIfPresent(Bool.self, forKey: .foldDuplicates)) ?? base.foldDuplicates
+        markAllKeepsStarred = (try? c.decodeIfPresent(Bool.self, forKey: .markAllKeepsStarred)) ?? base.markAllKeepsStarred
+        sortFeedsByUnread = (try? c.decodeIfPresent(Bool.self, forKey: .sortFeedsByUnread)) ?? base.sortFeedsByUnread
     }
 }
 
@@ -291,10 +332,12 @@ public struct RSSReaderLibrary: Codable, Equatable, Sendable {
     public var activity: [RSSActivity] = []
     public var collapsed: [String] = []
     public var lastRefreshAt: Int64 = 0
+    public var filters: [RSSFilter] = []
+    public var smartFeeds: [RSSSmartFeed] = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case version, folders, feeds, settings, activity, collapsed, lastRefreshAt }
+    enum CodingKeys: String, CodingKey { case version, folders, feeds, settings, activity, collapsed, lastRefreshAt, filters, smartFeeds }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -305,6 +348,189 @@ public struct RSSReaderLibrary: Codable, Equatable, Sendable {
         activity = (try? c.decodeIfPresent([RSSActivity].self, forKey: .activity)) ?? []
         collapsed = (try? c.decodeIfPresent([String].self, forKey: .collapsed)) ?? []
         lastRefreshAt = (try? c.decodeIfPresent(Int64.self, forKey: .lastRefreshAt)) ?? 0
+        filters = (try? c.decodeIfPresent([RSSFilter].self, forKey: .filters)) ?? []
+        smartFeeds = (try? c.decodeIfPresent([RSSSmartFeed].self, forKey: .smartFeeds)) ?? []
+    }
+}
+
+public enum RSSFilterField: String, Codable, CaseIterable, Sendable {
+    case title
+    case titleOrText
+    case author
+
+    public var title: String {
+        switch self {
+        case .title: return "Title"
+        case .titleOrText: return "Title or Text"
+        case .author: return "Author"
+        }
+    }
+}
+
+public enum RSSFilterAction: String, Codable, CaseIterable, Sendable {
+    case hide
+    case markRead
+
+    public var title: String {
+        switch self {
+        case .hide: return "Hide"
+        case .markRead: return "Mark as Read"
+        }
+    }
+}
+
+public struct RSSFilter: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var feedId: String = ""
+    public var field: RSSFilterField = .title
+    public var pattern: String = ""
+    public var regex = false
+    public var action: RSSFilterAction = .hide
+
+    public init(
+        id: String, feedId: String = "", field: RSSFilterField = .title, pattern: String = "", regex: Bool = false,
+        action: RSSFilterAction = .hide
+    ) {
+        self.id = id
+        self.feedId = feedId
+        self.field = field
+        self.pattern = pattern
+        self.regex = regex
+        self.action = action
+    }
+
+    enum CodingKeys: String, CodingKey { case id, feedId, field, pattern, regex, action }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        feedId = (try? c.decodeIfPresent(String.self, forKey: .feedId)) ?? ""
+        field = (try? c.decodeIfPresent(RSSFilterField.self, forKey: .field)) ?? .title
+        pattern = (try? c.decodeIfPresent(String.self, forKey: .pattern)) ?? ""
+        regex = (try? c.decodeIfPresent(Bool.self, forKey: .regex)) ?? false
+        action = (try? c.decodeIfPresent(RSSFilterAction.self, forKey: .action)) ?? .hide
+    }
+
+    public func applies(to feedId: String) -> Bool { self.feedId.isEmpty || self.feedId == feedId }
+}
+
+public struct RSSSmartFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String = ""
+    public var words: String = ""
+    public var regex = false
+    public var scope: String = ""
+    public var unreadOnly = false
+    public var starredOnly = false
+    public var maxAgeDays = 0
+
+    public init(
+        id: String, name: String = "", words: String = "", regex: Bool = false, scope: String = "", unreadOnly: Bool = false,
+        starredOnly: Bool = false, maxAgeDays: Int = 0
+    ) {
+        self.id = id
+        self.name = name
+        self.words = words
+        self.regex = regex
+        self.scope = scope
+        self.unreadOnly = unreadOnly
+        self.starredOnly = starredOnly
+        self.maxAgeDays = maxAgeDays
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, words, regex, scope, unreadOnly, starredOnly, maxAgeDays }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        words = (try? c.decodeIfPresent(String.self, forKey: .words)) ?? ""
+        regex = (try? c.decodeIfPresent(Bool.self, forKey: .regex)) ?? false
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? ""
+        unreadOnly = (try? c.decodeIfPresent(Bool.self, forKey: .unreadOnly)) ?? false
+        starredOnly = (try? c.decodeIfPresent(Bool.self, forKey: .starredOnly)) ?? false
+        maxAgeDays = max(0, (try? c.decodeIfPresent(Int.self, forKey: .maxAgeDays)) ?? 0)
+    }
+}
+
+public enum RSSMatcher {
+    private static let cache = RSSRegexCache()
+
+    public static func expression(_ pattern: String) -> NSRegularExpression? {
+        cache.expression(pattern)
+    }
+
+    public static func isValidRegex(_ pattern: String) -> Bool { expression(pattern) != nil }
+
+    public static func matches(_ value: String, pattern: String, regex: Bool) -> Bool {
+        guard !pattern.isEmpty, !value.isEmpty else { return false }
+        if regex {
+            guard let expression = expression(pattern) else { return false }
+            return expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
+        }
+        return value.range(of: pattern, options: [.caseInsensitive]) != nil
+    }
+
+    public static func matches(_ filter: RSSFilter, title: String, author: String, text: () -> String) -> Bool {
+        switch filter.field {
+        case .title: return matches(title, pattern: filter.pattern, regex: filter.regex)
+        case .author: return matches(author, pattern: filter.pattern, regex: filter.regex)
+        case .titleOrText:
+            return matches(title, pattern: filter.pattern, regex: filter.regex) || matches(text(), pattern: filter.pattern, regex: filter.regex)
+        }
+    }
+}
+
+final class RSSRegexCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var compiled: [String: NSRegularExpression] = [:]
+    private var invalid: Set<String> = []
+
+    func expression(_ pattern: String) -> NSRegularExpression? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let found = compiled[pattern] { return found }
+        if invalid.contains(pattern) { return nil }
+        guard let made = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            if invalid.count > 500 { invalid.removeAll() }
+            invalid.insert(pattern)
+            return nil
+        }
+        if compiled.count > 500 { compiled.removeAll() }
+        compiled[pattern] = made
+        return made
+    }
+}
+
+public enum RSSCatchUp: Int, CaseIterable, Sendable, Identifiable {
+    case day = 1
+    case threeDays = 3
+    case week = 7
+    case twoWeeks = 14
+    case month = 30
+
+    public var id: Int { rawValue }
+
+    public var days: Int { rawValue }
+
+    public var title: String {
+        switch self {
+        case .day: return "Older Than 1 Day"
+        case .threeDays: return "Older Than 3 Days"
+        case .week: return "Older Than 1 Week"
+        case .twoWeeks: return "Older Than 2 Weeks"
+        case .month: return "Older Than 1 Month"
+        }
+    }
+
+    public var phrase: String {
+        switch self {
+        case .day: return "older than 1 day"
+        case .threeDays: return "older than 3 days"
+        case .week: return "older than 1 week"
+        case .twoWeeks: return "older than 2 weeks"
+        case .month: return "older than 1 month"
+        }
     }
 }
 
@@ -312,6 +538,8 @@ public enum RSSScope: Hashable, Sendable, Codable {
     case today
     case unread
     case starred
+    case readLater
+    case smart(String)
     case feed(String)
     case folder(String)
 
@@ -320,6 +548,8 @@ public enum RSSScope: Hashable, Sendable, Codable {
         case .today: return "today"
         case .unread: return "unread"
         case .starred: return "starred"
+        case .readLater: return "readLater"
+        case .smart(let id): return "smart:\(id)"
         case .feed(let id): return "feed:\(id)"
         case .folder(let id): return "folder:\(id)"
         }
@@ -327,7 +557,7 @@ public enum RSSScope: Hashable, Sendable, Codable {
 
     public var isSmart: Bool {
         switch self {
-        case .today, .unread, .starred: return true
+        case .today, .unread, .starred, .readLater, .smart: return true
         default: return false
         }
     }
@@ -339,7 +569,10 @@ public struct RSSCounts: Equatable, Sendable {
     public var today = 0
     public var unread = 0
     public var starred = 0
+    public var readLater = 0
+    public var readLaterTotal = 0
     public var byFeed: [String: Int] = [:]
+    public var bySmartFeed: [String: Int] = [:]
 
     public init() {}
 }
@@ -382,6 +615,10 @@ public enum RSSReaderError: Error, Equatable, Sendable {
     case noFeedFound
     case emptyName
     case unreadableOPML
+    case tooManyFilters
+    case tooManySmartFeeds
+    case invalidRegex
+    case emptyPattern
 
     public var message: String {
         switch self {
@@ -392,6 +629,10 @@ public enum RSSReaderError: Error, Equatable, Sendable {
         case .noFeedFound: return "No feed was found at that address."
         case .emptyName: return "Enter a name."
         case .unreadableOPML: return "That file is not an OPML subscription list."
+        case .tooManyFilters: return "You can have up to \(RSSReaderLimits.maxFilters) filters."
+        case .tooManySmartFeeds: return "You can have up to \(RSSReaderLimits.maxSmartFeeds) smart feeds."
+        case .invalidRegex: return "Invalid regular expression"
+        case .emptyPattern: return "Enter the text to match."
         }
     }
 }

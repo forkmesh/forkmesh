@@ -15,12 +15,14 @@
 #include <QSaveFile>
 #include <QTime>
 #include <QTimeZone>
+#include <QUrlQuery>
 #include <QUuid>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <utility>
 
 namespace forkmesh::rssreader {
@@ -196,8 +198,66 @@ void parseEnclosure(QXmlStreamReader &xml, QList<Enclosure> &list, const QUrl &b
         list.append(enclosure);
 }
 
+struct MediaText {
+    QString description;
+    bool descriptionHtml = false;
+    QString title;
+};
+
+void appendUnique(QStringList &list, const QString &value)
+{
+    if (!value.isEmpty() && !list.contains(value))
+        list.append(value);
+}
+
+void parseMedia(QXmlStreamReader &xml, ParsedItem &item, MediaText &media, const QUrl &base)
+{
+    const QStringView local = localOf(xml.qualifiedName());
+    if (local == u"group" || local == u"content") {
+        if (local == u"content") {
+            const QString medium = attributeValue(xml.attributes(), u"medium").trimmed().toLower();
+            const QString type = attributeValue(xml.attributes(), u"type").trimmed().toLower();
+            if (medium == QLatin1String("image") || type.startsWith(QStringLiteral("image/")))
+                appendUnique(item.mediaImages, resolveUrl(base, attributeValue(xml.attributes(), u"url")));
+        }
+        while (xml.readNextStartElement()) {
+            if (prefixOf(xml.qualifiedName()) == u"media")
+                parseMedia(xml, item, media, base);
+            else
+                xml.skipCurrentElement();
+        }
+        return;
+    }
+    if (local == u"thumbnail") {
+        appendUnique(item.thumbnails, resolveUrl(base, attributeValue(xml.attributes(), u"url")));
+        xml.skipCurrentElement();
+    } else if (local == u"description") {
+        const bool html = attributeValue(xml.attributes(), u"type").trimmed().toLower() == QLatin1String("html");
+        const QString text = html ? readInner(xml, false) : xml.readElementText(QXmlStreamReader::IncludeChildElements);
+        if (media.description.trimmed().isEmpty()) {
+            media.description = text;
+            media.descriptionHtml = html;
+        }
+    } else if (local == u"title") {
+        const QString title = plainText(readInner(xml, false), 2000);
+        if (media.title.isEmpty())
+            media.title = title;
+    } else {
+        xml.skipCurrentElement();
+    }
+}
+
+void applyMedia(ParsedItem &item, const MediaText &media)
+{
+    if (item.html.trimmed().isEmpty() && !media.description.trimmed().isEmpty())
+        item.html = media.descriptionHtml ? media.description : plainTextToHtml(media.description);
+    if (item.title.isEmpty())
+        item.title = media.title;
+}
+
 void parseRssItem(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base, bool rdf)
 {
+    MediaText media;
     QString description;
     QString encoded;
     QString guid;
@@ -232,12 +292,18 @@ void parseRssItem(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base, boo
                 item.comments = resolveUrl(base, readText(xml));
             } else if (local == u"enclosure") {
                 parseEnclosure(xml, item.enclosures, base, QStringLiteral("url"));
+                if (attributeValue(xml.attributes(), u"type").trimmed().toLower().startsWith(QStringLiteral("image/")))
+                    appendUnique(item.enclosureImages, resolveUrl(base, attributeValue(xml.attributes(), u"url")));
                 xml.skipCurrentElement();
             } else {
                 xml.skipCurrentElement();
             }
+        } else if (prefix == u"media") {
+            parseMedia(xml, item, media, base);
         } else if (local == u"encoded") {
             encoded = readInner(xml, false);
+        } else if (local == u"language") {
+            item.language = readText(xml).left(35);
         } else if (local == u"creator") {
             item.author = plainText(readInner(xml, false), 200);
         } else if (local == u"date") {
@@ -247,6 +313,7 @@ void parseRssItem(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base, boo
         }
     }
     item.html = encoded.trimmed().isEmpty() ? description : encoded;
+    applyMedia(item, media);
     if (!rdf || item.id.isEmpty())
         item.id = guid;
     if (item.link.isEmpty() && guidIsPermalink &&
@@ -280,6 +347,8 @@ void parseRssChannel(QXmlStreamReader &xml, ParsedFeed &feed, const QUrl &base, 
             feed.homePage = resolveUrl(base, readText(xml));
         } else if (plain && local == u"image") {
             parseRssImage(xml, feed, base);
+        } else if (local == u"language" && (plain || prefixOf(qualified) == u"dc")) {
+            feed.language = readText(xml).left(35);
         } else if (plain && local == u"item") {
             if (feed.items.size() < kMaxItemsPerFetch) {
                 ParsedItem item;
@@ -321,6 +390,8 @@ QString atomContent(QXmlStreamReader &xml)
 
 void parseAtomEntry(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base)
 {
+    MediaText media;
+    item.language = attributeValue(xml.attributes(), u"lang").trimmed().left(35);
     QString content;
     QString summary;
     QString published;
@@ -328,7 +399,9 @@ void parseAtomEntry(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base)
     bool htmlLink = false;
     while (xml.readNextStartElement()) {
         const QStringView local = localOf(xml.qualifiedName());
-        if (local == u"id") {
+        if (prefixOf(xml.qualifiedName()) == u"media") {
+            parseMedia(xml, item, media, base);
+        } else if (local == u"id") {
             item.id = readText(xml);
         } else if (local == u"title") {
             item.title = plainText(atomContent(xml), 2000);
@@ -368,6 +441,7 @@ void parseAtomEntry(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base)
         }
     }
     item.html = content.trimmed().isEmpty() ? summary : content;
+    applyMedia(item, media);
     item.publishedMs = parseDate(published);
     if (item.publishedMs < 0)
         item.publishedMs = parseDate(updated);
@@ -376,6 +450,7 @@ void parseAtomEntry(QXmlStreamReader &xml, ParsedItem &item, const QUrl &base)
 void parseAtomFeed(QXmlStreamReader &xml, ParsedFeed &feed, const QUrl &fetched)
 {
     QUrl base = fetched;
+    feed.language = attributeValue(xml.attributes(), u"lang").trimmed().left(35);
     const QString xmlBase = attributeValue(xml.attributes(), u"base");
     if (!xmlBase.isEmpty())
         base = QUrl(resolveUrl(fetched, xmlBase));
@@ -438,8 +513,12 @@ ParsedFeed parseJsonFeed(const QByteArray &data, const QUrl &base)
         feed.error = QStringLiteral("This is not a JSON Feed.");
         return feed;
     }
-    feed.format = QStringLiteral("JSON Feed");
+    static const QRegularExpression jsonVersion(QStringLiteral("version/(\\d+(?:\\.\\d+)?)"));
+    const QRegularExpressionMatch versionMatch = jsonVersion.match(jsonString(root, "version"));
+    feed.format = versionMatch.hasMatch() ? QStringLiteral("JSON Feed %1").arg(versionMatch.captured(1))
+                                          : QStringLiteral("JSON Feed 1.x");
     feed.title = plainText(jsonString(root, "title"), 300);
+    feed.language = jsonString(root, "language").left(35);
     feed.homePage = resolveUrl(base, jsonString(root, "home_page_url"));
     feed.iconUrl = resolveUrl(base, jsonString(root, "favicon"));
     if (feed.iconUrl.isEmpty())
@@ -460,6 +539,9 @@ ParsedFeed parseJsonFeed(const QByteArray &data, const QUrl &base)
         if (item.link.isEmpty())
             item.link = resolveUrl(base, jsonString(object, "external_url"));
         item.title = plainText(jsonString(object, "title"), 2000);
+        item.language = jsonString(object, "language").left(35);
+        item.jsonImage = resolveUrl(base, jsonString(object, "image"));
+        item.bannerImage = resolveUrl(base, jsonString(object, "banner_image"));
         const QString html = object.value(QStringLiteral("content_html")).toString();
         const QString text = object.value(QStringLiteral("content_text")).toString();
         const QString summary = object.value(QStringLiteral("summary")).toString();
@@ -680,6 +762,16 @@ const QSet<QString> &droppedWithContent()
         return set;
     }();
     return tags;
+}
+
+bool hasClass(const Attributes &attributes, const QString &name)
+{
+    for (const auto &attribute : attributes) {
+        if (attribute.first == QLatin1String("class") &&
+            attribute.second.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts).contains(name))
+            return true;
+    }
+    return false;
 }
 
 QString safeUrl(const QUrl &base, const QString &value, bool allowMailto)
@@ -1057,6 +1149,14 @@ QJsonObject articleJson(const Article &article)
         object.insert(QStringLiteral("r"), article.readerHtml);
     if (!article.enclosures.isEmpty())
         object.insert(QStringLiteral("e"), enclosuresJson(article.enclosures));
+    if (article.readLater)
+        object.insert(QStringLiteral("readLater"), true);
+    if (!article.image.isEmpty())
+        object.insert(QStringLiteral("image"), article.image);
+    if (!article.images.isEmpty())
+        object.insert(QStringLiteral("images"), QJsonArray::fromStringList(article.images));
+    if (!article.language.isEmpty())
+        object.insert(QStringLiteral("language"), article.language);
     return object;
 }
 
@@ -1079,6 +1179,13 @@ Article articleFrom(const QString &feedId, const QJsonObject &object)
     article.datedByFeed = object.value(QStringLiteral("d")).toBool();
     article.read = object.value(QStringLiteral("rd")).toBool();
     article.starred = object.value(QStringLiteral("st")).toBool();
+    article.readLater = object.value(QStringLiteral("readLater")).toBool();
+    article.image = object.value(QStringLiteral("image")).toString();
+    for (const QJsonValue &value : object.value(QStringLiteral("images")).toArray()) {
+        if (value.isString() && !value.toString().isEmpty())
+            article.images.append(value.toString());
+    }
+    article.language = object.value(QStringLiteral("language")).toString();
     return article;
 }
 
@@ -1140,8 +1247,108 @@ QString Feed::displayName() const
     return parsed.host().isEmpty() ? url : parsed.host();
 }
 
+QJsonObject ContentFilter::toJson() const
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("feedId"), feedId},
+        {QStringLiteral("field"), field},
+        {QStringLiteral("pattern"), pattern},
+        {QStringLiteral("regex"), regex},
+        {QStringLiteral("action"), action},
+    };
+}
+
+ContentFilter ContentFilter::fromJson(const QJsonObject &object)
+{
+    ContentFilter filter;
+    filter.id = object.value(QStringLiteral("id")).toString().left(64);
+    if (filter.id.isEmpty())
+        filter.id = newId();
+    filter.feedId = object.value(QStringLiteral("feedId")).toString().left(64);
+    const QString field = object.value(QStringLiteral("field")).toString();
+    if (field == QLatin1String("titleOrText") || field == QLatin1String("author"))
+        filter.field = field;
+    filter.pattern = object.value(QStringLiteral("pattern")).toString().left(500);
+    filter.regex = object.value(QStringLiteral("regex")).toBool();
+    if (object.value(QStringLiteral("action")).toString() == QLatin1String("markRead"))
+        filter.action = QStringLiteral("markRead");
+    return filter;
+}
+
+bool ContentFilter::operator==(const ContentFilter &other) const
+{
+    return id == other.id && feedId == other.feedId && field == other.field && pattern == other.pattern &&
+           regex == other.regex && action == other.action;
+}
+
+QJsonObject SmartFeed::toJson() const
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("words"), words},
+        {QStringLiteral("regex"), regex},
+        {QStringLiteral("scope"), scope},
+        {QStringLiteral("unreadOnly"), unreadOnly},
+        {QStringLiteral("starredOnly"), starredOnly},
+        {QStringLiteral("maxAgeDays"), maxAgeDays},
+    };
+}
+
+SmartFeed SmartFeed::fromJson(const QJsonObject &object)
+{
+    SmartFeed smart;
+    smart.id = object.value(QStringLiteral("id")).toString().left(64);
+    if (smart.id.isEmpty())
+        smart.id = newId();
+    smart.name = collapseWhitespace(object.value(QStringLiteral("name")).toString()).left(100);
+    smart.words = object.value(QStringLiteral("words")).toString().left(500);
+    smart.regex = object.value(QStringLiteral("regex")).toBool();
+    smart.scope = object.value(QStringLiteral("scope")).toString().left(200);
+    smart.unreadOnly = object.value(QStringLiteral("unreadOnly")).toBool();
+    smart.starredOnly = object.value(QStringLiteral("starredOnly")).toBool();
+    smart.maxAgeDays = qBound(0, object.value(QStringLiteral("maxAgeDays")).toInt(), 3650);
+    return smart;
+}
+
+bool SmartFeed::operator==(const SmartFeed &other) const
+{
+    return id == other.id && name == other.name && words == other.words && regex == other.regex &&
+           scope == other.scope && unreadOnly == other.unreadOnly && starredOnly == other.starredOnly &&
+           maxAgeDays == other.maxAgeDays;
+}
+
+TextMatcher::TextMatcher(const QString &pattern, bool regex) : m_pattern(pattern), m_regex(regex)
+{
+    if (m_pattern.isEmpty())
+        return;
+    if (m_regex) {
+        m_expression = QRegularExpression(m_pattern, QRegularExpression::CaseInsensitiveOption |
+                                                         QRegularExpression::UseUnicodePropertiesOption);
+        m_valid = m_expression.isValid();
+    } else {
+        m_valid = true;
+    }
+}
+
+bool TextMatcher::matches(const QString &text) const
+{
+    if (!m_valid || text.isEmpty())
+        return false;
+    if (m_regex)
+        return m_expression.match(text).hasMatch();
+    return text.contains(m_pattern, Qt::CaseInsensitive);
+}
+
 QJsonObject Settings::toJson() const
 {
+    QJsonArray filterArray;
+    for (const ContentFilter &filter : filters)
+        filterArray.append(filter.toJson());
+    QJsonArray smartArray;
+    for (const SmartFeed &smart : smartFeeds)
+        smartArray.append(smart.toJson());
     return QJsonObject{
         {QStringLiteral("oldestFirst"), oldestFirst},
         {QStringLiteral("groupByFeed"), groupByFeed},
@@ -1155,6 +1362,12 @@ QJsonObject Settings::toJson() const
         {QStringLiteral("loadRemoteImages"), loadRemoteImages},
         {QStringLiteral("unreadOnlyFeeds"), unreadOnlyFeeds},
         {QStringLiteral("unreadOnlyTimeline"), unreadOnlyTimeline},
+        {QStringLiteral("showThumbnails"), showThumbnails},
+        {QStringLiteral("foldDuplicates"), foldDuplicates},
+        {QStringLiteral("markAllKeepsStarred"), markAllKeepsStarred},
+        {QStringLiteral("sortFeedsByUnread"), sortFeedsByUnread},
+        {QStringLiteral("filters"), filterArray},
+        {QStringLiteral("smartFeeds"), smartArray},
     };
 }
 
@@ -1172,7 +1385,32 @@ Settings Settings::fromJson(const QJsonObject &object)
     settings.showFeedIcons = flag("showFeedIcons", settings.showFeedIcons);
     settings.loadRemoteImages = flag("loadRemoteImages", settings.loadRemoteImages);
     settings.unreadOnlyFeeds = flag("unreadOnlyFeeds", settings.unreadOnlyFeeds);
-    settings.unreadOnlyTimeline = flag("unreadOnlyTimeline", settings.unreadOnlyTimeline);
+    settings.unreadOnlyTimeline =
+        flag("unreadOnlyTimeline", flag("hideReadArticles", settings.unreadOnlyTimeline));
+    settings.showThumbnails = flag("showThumbnails", settings.showThumbnails);
+    settings.foldDuplicates = flag("foldDuplicates", settings.foldDuplicates);
+    settings.markAllKeepsStarred = flag("markAllKeepsStarred", settings.markAllKeepsStarred);
+    settings.sortFeedsByUnread = flag("sortFeedsByUnread", settings.sortFeedsByUnread);
+    QSet<QString> filterIds;
+    for (const QJsonValue &value : object.value(QStringLiteral("filters")).toArray()) {
+        if (settings.filters.size() >= kMaxFilters)
+            break;
+        const ContentFilter filter = ContentFilter::fromJson(value.toObject());
+        if (filter.pattern.isEmpty() || filterIds.contains(filter.id))
+            continue;
+        filterIds.insert(filter.id);
+        settings.filters.append(filter);
+    }
+    QSet<QString> smartIds;
+    for (const QJsonValue &value : object.value(QStringLiteral("smartFeeds")).toArray()) {
+        if (settings.smartFeeds.size() >= kMaxSmartFeeds)
+            break;
+        const SmartFeed smart = SmartFeed::fromJson(value.toObject());
+        if (smart.name.isEmpty() || smartIds.contains(smart.id))
+            continue;
+        smartIds.insert(smart.id);
+        settings.smartFeeds.append(smart);
+    }
     settings.summaryLines =
         qBound(0, object.value(QStringLiteral("summaryLines")).toInt(settings.summaryLines), 4);
     settings.textSize =
@@ -1435,7 +1673,8 @@ ParsedFeed parseFeed(const QByteArray &data, const QUrl &base)
     }
     const QStringView root = localOf(xml.qualifiedName());
     if (root == u"rss") {
-        feed.format = QStringLiteral("RSS");
+        const QString version = attributeValue(xml.attributes(), u"version").trimmed().left(10);
+        feed.format = QStringLiteral("RSS %1").arg(version.isEmpty() ? QStringLiteral("2.0") : version);
         while (xml.readNextStartElement()) {
             if (localOf(xml.qualifiedName()) == u"channel")
                 parseRssChannel(xml, feed, base, false);
@@ -1451,6 +1690,8 @@ ParsedFeed parseFeed(const QByteArray &data, const QUrl &base)
                     const QStringView child = localOf(xml.qualifiedName());
                     if (child == u"title")
                         feed.title = plainText(readInner(xml, false), 300);
+                    else if (child == u"language")
+                        feed.language = readText(xml).left(35);
                     else if (child == u"link")
                         feed.homePage = resolveUrl(base, readText(xml));
                     else
@@ -1471,7 +1712,7 @@ ParsedFeed parseFeed(const QByteArray &data, const QUrl &base)
             }
         }
     } else if (root == u"feed") {
-        feed.format = QStringLiteral("Atom");
+        feed.format = QStringLiteral("Atom 1.0");
         parseAtomFeed(xml, feed, base);
     } else {
         feed.error = QStringLiteral("The address did not return a feed.");
@@ -1562,7 +1803,7 @@ QList<QUrl> fallbackFeedUrls(const QUrl &address)
     origin.setHost(address.host());
     origin.setPort(address.port());
     QList<QUrl> list;
-    for (const char *path : {"/feed", "/rss", "/feed.xml", "/atom.xml"}) {
+    for (const char *path : {"/feed", "/rss", "/feed.xml", "/atom.xml", "/rss/"}) {
         QUrl candidate = origin;
         candidate.setPath(QString::fromLatin1(path));
         list.append(candidate);
@@ -1570,12 +1811,22 @@ QList<QUrl> fallbackFeedUrls(const QUrl &address)
     return list;
 }
 
-QUrl normalizeAddress(const QString &input)
+QUrl normalizeAddress(const QString &input, bool allowFile)
 {
     QString text = input.trimmed();
     if (text.isEmpty())
         return {};
     const QString lower = text.toLower();
+    if (lower.startsWith(QStringLiteral("file:"))) {
+        if (!allowFile)
+            return {};
+        const QUrl url(text, QUrl::TolerantMode);
+        const QString local = url.isLocalFile() ? url.toLocalFile() : QString();
+        if (!url.host().isEmpty() || local.isEmpty() || !QDir::isAbsolutePath(local) ||
+            local.endsWith(QLatin1Char('/')))
+            return {};
+        return QUrl::fromLocalFile(QDir::cleanPath(local));
+    }
     if (lower.startsWith(QStringLiteral("feed://"))) {
         text = QStringLiteral("https://") + text.mid(7);
     } else if (lower.startsWith(QStringLiteral("feed:"))) {
@@ -1612,6 +1863,342 @@ QString feedKey(const QUrl &url)
            QLatin1Char('?') + url.query(QUrl::FullyEncoded);
 }
 
+QString linkKey(const QString &link)
+{
+    const QUrl url(link.trimmed());
+    if (!url.isValid() || url.host().isEmpty())
+        return {};
+    return feedKey(url);
+}
+
+QString articleKey(const ArticleRef &ref)
+{
+    return ref.feedId + QLatin1Char('\n') + ref.guid;
+}
+
+bool isYouTubeHost(const QString &host)
+{
+    const QString lower = host.toLower();
+    return lower == QLatin1String("youtube.com") || lower == QLatin1String("www.youtube.com") ||
+           lower == QLatin1String("m.youtube.com") || lower == QLatin1String("youtu.be");
+}
+
+QUrl youtubeChannelFeed(const QString &channelId)
+{
+    return QUrl(QStringLiteral("https://www.youtube.com/feeds/videos.xml?channel_id=%1").arg(channelId));
+}
+
+DiscoveryRewrite discoveryRewrite(const QUrl &address)
+{
+    DiscoveryRewrite rewrite;
+    const QString scheme = address.scheme().toLower();
+    if (!address.isValid() || address.host().isEmpty() ||
+        (scheme != QLatin1String("http") && scheme != QLatin1String("https")))
+        return rewrite;
+    const QString host = address.host().toLower();
+    const QString path = address.path();
+    const QUrlQuery query(address);
+    if (isYouTubeHost(host)) {
+        if (host == QLatin1String("youtu.be")) {
+            rewrite.channelLookup = path.size() > 1;
+            return rewrite;
+        }
+        static const QRegularExpression channel(QStringLiteral("^/channel/(UC[A-Za-z0-9_-]+)/?"));
+        static const QRegularExpression user(QStringLiteral("^/user/([^/]+)/?"));
+        static const QRegularExpression lookup(QStringLiteral("^/(@[^/]+|c/[^/]+|shorts/[^/]+)"));
+        const QRegularExpressionMatch channelMatch = channel.match(path);
+        const QRegularExpressionMatch userMatch = user.match(path);
+        if (channelMatch.hasMatch()) {
+            rewrite.feed = youtubeChannelFeed(channelMatch.captured(1));
+        } else if ((path == QLatin1String("/playlist") || path == QLatin1String("/playlist/")) &&
+                   !query.queryItemValue(QStringLiteral("list")).isEmpty()) {
+            QUrl feed(QStringLiteral("https://www.youtube.com/feeds/videos.xml"));
+            QUrlQuery feedQuery;
+            feedQuery.addQueryItem(QStringLiteral("playlist_id"), query.queryItemValue(QStringLiteral("list")));
+            feed.setQuery(feedQuery);
+            rewrite.feed = feed;
+        } else if (userMatch.hasMatch()) {
+            QUrl feed(QStringLiteral("https://www.youtube.com/feeds/videos.xml"));
+            QUrlQuery feedQuery;
+            feedQuery.addQueryItem(QStringLiteral("user"), userMatch.captured(1));
+            feed.setQuery(feedQuery);
+            rewrite.feed = feed;
+        } else if (lookup.match(path).hasMatch() ||
+                   ((path == QLatin1String("/watch") || path == QLatin1String("/watch/")) &&
+                    !query.queryItemValue(QStringLiteral("v")).isEmpty())) {
+            rewrite.channelLookup = true;
+        }
+        return rewrite;
+    }
+    static const QRegularExpression profile(QStringLiteral("^/(@[^/]+?)/?$"));
+    const QRegularExpressionMatch profileMatch = profile.match(path);
+    if (profileMatch.hasMatch() && !profileMatch.captured(1).endsWith(QStringLiteral(".rss"), Qt::CaseInsensitive)) {
+        QUrl feed;
+        feed.setScheme(scheme);
+        feed.setHost(host);
+        feed.setPort(address.port());
+        feed.setPath(QStringLiteral("/%1.rss").arg(profileMatch.captured(1)));
+        rewrite.feed = feed;
+        return rewrite;
+    }
+    static const QRegularExpression bluesky(QStringLiteral("^/profile/([^/]+)/?$"));
+    const QRegularExpressionMatch blueskyMatch = bluesky.match(path);
+    if (host == QLatin1String("bsky.app") && blueskyMatch.hasMatch())
+        rewrite.feed = QUrl(QStringLiteral("https://bsky.app/profile/%1/rss").arg(blueskyMatch.captured(1)));
+    return rewrite;
+}
+
+QString youtubeChannelId(const QString &html)
+{
+    static const QList<QRegularExpression> patterns{
+        QRegularExpression(QStringLiteral("\"channelId\"\\s*:\\s*\"(UC[\\w-]{22})\"")),
+        QRegularExpression(QStringLiteral("<meta[^>]*itemprop=[\"']channelId[\"'][^>]*content=[\"'](UC[\\w-]{22})[\"']"),
+                           QRegularExpression::CaseInsensitiveOption),
+        QRegularExpression(QStringLiteral("<meta[^>]*content=[\"'](UC[\\w-]{22})[\"'][^>]*itemprop=[\"']channelId[\"']"),
+                           QRegularExpression::CaseInsensitiveOption),
+        QRegularExpression(QStringLiteral("<link[^>]*rel=[\"']canonical[\"'][^>]*href=[\"'][^\"']*/channel/(UC[\\w-]{22})"),
+                           QRegularExpression::CaseInsensitiveOption),
+        QRegularExpression(QStringLiteral("<link[^>]*href=[\"'][^\"']*/channel/(UC[\\w-]{22})[^\"']*[\"'][^>]*rel=[\"']canonical[\"']"),
+                           QRegularExpression::CaseInsensitiveOption)};
+    for (const QRegularExpression &pattern : patterns) {
+        const QRegularExpressionMatch match = pattern.match(html);
+        if (match.hasMatch())
+            return match.captured(1);
+    }
+    return {};
+}
+
+QString plainTextToHtml(const QString &text)
+{
+    QString normalized = text;
+    normalized.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    normalized.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    static const QRegularExpression blank(QStringLiteral("\n[ \t]*\n"));
+    static const QRegularExpression url(QStringLiteral("https?://[^\\s<>\"']+"));
+    static const QRegularExpression trailing(QStringLiteral("[.,;:!?)\\]]+$"));
+    QString out;
+    for (const QString &paragraph : normalized.split(blank, Qt::SkipEmptyParts)) {
+        const QString trimmed = paragraph.trimmed();
+        if (trimmed.isEmpty())
+            continue;
+        QStringList lines;
+        for (const QString &line : trimmed.split(QLatin1Char('\n'))) {
+            QString linked;
+            qsizetype last = 0;
+            auto it = url.globalMatch(line);
+            while (it.hasNext()) {
+                const QRegularExpressionMatch match = it.next();
+                QString address = match.captured(0);
+                address.remove(trailing);
+                linked += escapeHtml(line.mid(last, match.capturedStart() - last));
+                linked += QStringLiteral("<a href=\"%1\">%1</a>").arg(escapeHtml(address));
+                last = match.capturedStart() + address.size();
+            }
+            linked += escapeHtml(line.mid(last));
+            lines.append(linked);
+        }
+        out += QStringLiteral("<p>") + lines.join(QStringLiteral("<br>")) + QStringLiteral("</p>");
+    }
+    return out;
+}
+
+QStringList itemImages(const ParsedItem &item)
+{
+    QStringList images;
+    QStringList candidates{item.jsonImage, item.bannerImage};
+    candidates += item.thumbnails;
+    candidates += item.mediaImages;
+    candidates += item.enclosureImages;
+    for (const QString &candidate : std::as_const(candidates)) {
+        const QString url = safeUrl(QUrl(), candidate, false);
+        if (!url.isEmpty() && !images.contains(url))
+            images.append(url);
+    }
+    return images;
+}
+
+QString firstImageSource(const QString &html)
+{
+    if (!html.contains(QStringLiteral("<img"), Qt::CaseInsensitive))
+        return {};
+    for (const HtmlToken &token : tokenizeHtml(html)) {
+        if (token.kind != HtmlToken::Start || token.name != QLatin1String("img"))
+            continue;
+        for (const auto &attribute : token.attributes) {
+            if (attribute.first == QLatin1String("src") && !attribute.second.isEmpty())
+                return attribute.second;
+        }
+    }
+    return {};
+}
+
+QString articleImage(const ParsedItem &item, const QString &sanitizedHtml)
+{
+    const QStringList images = itemImages(item);
+    return images.isEmpty() ? firstImageSource(sanitizedHtml) : images.first();
+}
+
+QString leadImagesHtml(const QStringList &images, const QString &html)
+{
+    QString out;
+    for (const QString &image : images) {
+        if (image.isEmpty() || html.contains(image) || html.contains(escapeHtml(image)))
+            continue;
+        out += QStringLiteral("<p><img src=\"%1\"></p>").arg(escapeHtml(image));
+    }
+    return out;
+}
+
+QString addAltCaptions(const QString &html)
+{
+    if (!html.contains(QStringLiteral("<img"), Qt::CaseInsensitive))
+        return html;
+    const QList<HtmlToken> tokens = tokenizeHtml(html);
+    struct OpenFigure {
+        bool captioned = false;
+        QList<int> images;
+    };
+    QList<OpenFigure> figures;
+    QSet<int> exempt;
+    auto close = [&figures, &exempt] {
+        const OpenFigure figure = figures.takeLast();
+        if (figure.captioned) {
+            for (const int index : figure.images)
+                exempt.insert(index);
+        } else if (!figures.isEmpty()) {
+            figures.last().images += figure.images;
+        }
+    };
+    for (int i = 0; i < tokens.size(); ++i) {
+        const HtmlToken &token = tokens.at(i);
+        if (token.kind == HtmlToken::Start && token.name == QLatin1String("figure") && !token.selfClosing)
+            figures.append(OpenFigure());
+        else if (token.kind == HtmlToken::End && token.name == QLatin1String("figure") && !figures.isEmpty())
+            close();
+        else if (token.kind == HtmlToken::Start && token.name == QLatin1String("figcaption") && !figures.isEmpty())
+            figures.last().captioned = true;
+        else if (token.kind == HtmlToken::Start && token.name == QLatin1String("img") && !figures.isEmpty())
+            figures.last().images.append(i);
+    }
+    while (!figures.isEmpty())
+        close();
+    QString out;
+    out.reserve(html.size() + 64);
+    for (int i = 0; i < tokens.size(); ++i) {
+        const HtmlToken &token = tokens.at(i);
+        if (token.kind == HtmlToken::Text) {
+            out += token.raw ? token.text : escapeHtml(token.text);
+            continue;
+        }
+        if (token.kind == HtmlToken::End) {
+            out += QStringLiteral("</") + token.name + QLatin1Char('>');
+            continue;
+        }
+        out += QLatin1Char('<') + token.name;
+        QString alt;
+        for (const auto &attribute : token.attributes) {
+            out += QLatin1Char(' ') + attribute.first + QStringLiteral("=\"") + escapeHtml(attribute.second) +
+                   QLatin1Char('"');
+            if (attribute.first == QLatin1String("alt"))
+                alt = attribute.second;
+        }
+        out += QLatin1Char('>');
+        if (token.selfClosing && !voidTags().contains(token.name))
+            out += QStringLiteral("</") + token.name + QLatin1Char('>');
+        if (token.name == QLatin1String("img") && !alt.trimmed().isEmpty() && !exempt.contains(i))
+            out += QStringLiteral("<br><span class=\"caption\">%1</span>").arg(escapeHtml(collapseWhitespace(alt)));
+    }
+    return out;
+}
+
+int readingMinutes(const QString &text)
+{
+    if (text.trimmed().isEmpty())
+        return 0;
+    qint64 words = 0;
+    qint64 cjk = 0;
+    bool inWord = false;
+    for (const char32_t code : text.toUcs4()) {
+        const QChar::Script script = QChar::script(code);
+        if (script == QChar::Script_Han || script == QChar::Script_Hiragana ||
+            script == QChar::Script_Katakana || script == QChar::Script_Hangul) {
+            ++cjk;
+        } else if (QChar::isSpace(code)) {
+            inWord = false;
+        } else if (!inWord) {
+            ++words;
+            inWord = true;
+        }
+    }
+    const double minutes = double(words) / kWordsPerMinute + double(cjk) / kCjkPerMinute;
+    return qMax(1, int(std::ceil(minutes)));
+}
+
+QString textDirection(const QString &language)
+{
+    static const QSet<QString> rtl{QStringLiteral("ar"), QStringLiteral("he"), QStringLiteral("iw"),
+                                   QStringLiteral("fa"), QStringLiteral("ur"), QStringLiteral("yi"),
+                                   QStringLiteral("ps"), QStringLiteral("sd"), QStringLiteral("ug"),
+                                   QStringLiteral("dv"), QStringLiteral("ckb"), QStringLiteral("syr")};
+    static const QRegularExpression separator(QStringLiteral("[-_]"));
+    const QString primary = language.trimmed().toLower().section(separator, 0, 0);
+    return rtl.contains(primary) ? QStringLiteral("rtl") : QStringLiteral("auto");
+}
+
+QString filterPatternError(const QString &pattern, bool regex)
+{
+    if (pattern.trimmed().isEmpty())
+        return QStringLiteral("Enter a pattern.");
+    if (regex && !TextMatcher(pattern, true).isValid())
+        return QStringLiteral("Invalid regular expression");
+    return {};
+}
+
+bool hideReadApplies(const Source &source)
+{
+    return source.kind != SourceKind::Starred && source.kind != SourceKind::None;
+}
+
+QList<int> catchUpDays()
+{
+    return {1, 3, 7, 14, 30};
+}
+
+QString catchUpLabel(int days)
+{
+    switch (days) {
+    case 1:
+        return QStringLiteral("Older Than 1 Day");
+    case 7:
+        return QStringLiteral("Older Than 1 Week");
+    case 14:
+        return QStringLiteral("Older Than 2 Weeks");
+    case 30:
+        return QStringLiteral("Older Than 1 Month");
+    default:
+        return QStringLiteral("Older Than %1 Days").arg(days);
+    }
+}
+
+bool feedMatchesSearch(const Feed &feed, const QString &needle)
+{
+    const QString text = needle.trimmed();
+    if (text.isEmpty())
+        return true;
+    return feed.displayName().contains(text, Qt::CaseInsensitive) ||
+           QUrl(feed.url).host().contains(text, Qt::CaseInsensitive) ||
+           feed.url.contains(text, Qt::CaseInsensitive);
+}
+
+void sortSourceEntries(QList<SourceEntry> &entries, bool byUnread)
+{
+    std::stable_sort(entries.begin(), entries.end(), [byUnread](const SourceEntry &a, const SourceEntry &b) {
+        if (byUnread && a.unread != b.unread)
+            return a.unread > b.unread;
+        return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+    });
+}
+
 QString sanitizeHtml(const QString &html, const QUrl &base)
 {
     const QList<HtmlToken> tokens = tokenizeHtml(html);
@@ -1634,6 +2221,13 @@ QString sanitizeHtml(const QString &html, const QUrl &base)
             continue;
         }
         if (token.kind == HtmlToken::Start) {
+            if (hasClass(token.attributes, QStringLiteral("instapaper_ignore"))) {
+                if (!token.selfClosing && !voidTags().contains(token.name)) {
+                    dropTag = token.name;
+                    dropDepth = 1;
+                }
+                continue;
+            }
             if (droppedWithContent().contains(token.name)) {
                 if (token.name == QLatin1String("iframe")) {
                     for (const auto &attribute : token.attributes) {
@@ -1943,7 +2537,12 @@ const Folder *Store::folder(const QString &name) const
 QStringList Store::feedIdsIn(const Source &source) const
 {
     QStringList ids;
+    const SmartFeed *smart = source.kind == SourceKind::Smart ? smartFeed(source.id) : nullptr;
+    if (source.kind == SourceKind::Smart && !smart)
+        return ids;
     for (const Feed &candidate : m_feeds) {
+        if (smart && !inScope(*smart, candidate.id))
+            continue;
         if (source.kind == SourceKind::Feed && candidate.id != source.id)
             continue;
         if (source.kind == SourceKind::Folder && candidate.folder != source.id)
@@ -1964,8 +2563,9 @@ QString Store::addFeed(const QUrl &url, const QString &title, const QString &fol
         return QString();
     };
     const QString scheme = url.scheme().toLower();
-    if (!url.isValid() || url.host().isEmpty() ||
-        (scheme != QLatin1String("http") && scheme != QLatin1String("https")))
+    const bool localFile = url.isValid() && url.isLocalFile() && !url.toLocalFile().isEmpty();
+    if (!localFile && (!url.isValid() || url.host().isEmpty() ||
+                       (scheme != QLatin1String("http") && scheme != QLatin1String("https"))))
         return fail(QStringLiteral("That is not a web address."));
     if (m_feeds.size() >= kMaxFeeds)
         return fail(QStringLiteral("RSS Reader follows at most %1 feeds.").arg(kMaxFeeds));
@@ -2000,6 +2600,7 @@ bool Store::removeFeed(const QString &id)
         m_articles.remove(id);
         m_unread.remove(id);
         m_dirtyArticles.remove(id);
+        m_linkIndexReady = false;
         markExportDirty();
         return true;
     }
@@ -2080,6 +2681,10 @@ bool Store::renameFolder(const QString &from, const QString &to, QString *error)
         if (candidate.folder == from)
             candidate.folder = cleaned;
     }
+    for (SmartFeed &smart : m_settings.smartFeeds) {
+        if (smart.scope == QStringLiteral("folder:") + from)
+            smart.scope = QStringLiteral("folder:") + cleaned;
+    }
     markExportDirty();
     return true;
 }
@@ -2108,6 +2713,57 @@ void Store::setFolderCollapsed(const QString &name, bool collapsed)
             m_stateDirty = true;
         }
     }
+}
+
+bool Store::setFeedFlags(const QString &id, bool paused, bool excludeFromToday, bool excludeFromUnread)
+{
+    Feed *target = mutableFeed(id);
+    if (!target)
+        return false;
+    if (target->paused == paused && target->excludeFromToday == excludeFromToday &&
+        target->excludeFromUnread == excludeFromUnread)
+        return true;
+    target->paused = paused;
+    target->excludeFromToday = excludeFromToday;
+    target->excludeFromUnread = excludeFromUnread;
+    m_stateDirty = true;
+    return true;
+}
+
+bool Store::changeFeedAddress(const QString &id, const QString &input, qint64 nowMs, QString *error)
+{
+    auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    Feed *target = mutableFeed(id);
+    if (!target)
+        return fail(QStringLiteral("This feed is no longer followed."));
+    const QUrl url = normalizeAddress(input, true);
+    if (!url.isValid())
+        return fail(QStringLiteral("Enter a valid feed address."));
+    const Feed *clash = feedByUrl(url);
+    if (clash && clash->id != id)
+        return fail(QStringLiteral("You already follow %1.").arg(clash->displayName()));
+    const QString address = url.toString();
+    if (address == target->url)
+        return true;
+    const QString previous = target->url;
+    target->previousUrls.removeAll(address);
+    if (!target->previousUrls.contains(previous))
+        target->previousUrls.append(previous);
+    while (target->previousUrls.size() > 20)
+        target->previousUrls.removeFirst();
+    target->url = address;
+    target->etag.clear();
+    target->lastModified.clear();
+    target->lastError.clear();
+    target->failures = 0;
+    target->nextDueMs = 0;
+    appendLog(m_activityLog, nowMs, QStringLiteral("%1 moved to %2").arg(target->displayName(), address));
+    markExportDirty();
+    return true;
 }
 
 const QList<Article> &Store::articles(const QString &feedId) const
@@ -2145,7 +2801,7 @@ void Store::recount(const QString &feedId)
 {
     int unread = 0;
     for (const Article &candidate : articles(feedId))
-        unread += candidate.read ? 0 : 1;
+        unread += candidate.read || isHidden(candidate) ? 0 : 1;
     if (m_unread.value(feedId, -1) != unread)
         m_stateDirty = true;
     m_unread.insert(feedId, unread);
@@ -2161,7 +2817,7 @@ void Store::prune(QList<Article> &list)
     QList<Article> kept;
     kept.reserve(kMaxArticlesPerFeed);
     for (int i = 0; i < list.size(); ++i) {
-        if (i < kMaxArticlesPerFeed || list.at(i).starred)
+        if (i < kMaxArticlesPerFeed || list.at(i).starred || list.at(i).readLater)
             kept.append(list.at(i));
     }
     list = kept;
@@ -2185,6 +2841,18 @@ int Store::merge(const QString &feedId, const ParsedFeed &parsed, qint64 nowMs)
         target->iconUrl = parsed.iconUrl;
         m_stateDirty = true;
     }
+    if (parsed.language != target->language) {
+        target->language = parsed.language;
+        m_stateDirty = true;
+    }
+    const bool foldDuplicates = m_settings.foldDuplicates;
+    if (foldDuplicates)
+        ensureLinkIndex();
+    QList<const CompiledFilter *> arrivalFilters;
+    for (const CompiledFilter &compiled : compiledFilters()) {
+        if (compiled.filter.action == QLatin1String("markRead"))
+            arrivalFilters.append(&compiled);
+    }
     QList<Article> &list = m_articles[feedId];
     QHash<QString, int> index;
     for (int i = 0; i < list.size(); ++i)
@@ -2201,6 +2869,10 @@ int Store::merge(const QString &feedId, const ParsedFeed &parsed, qint64 nowMs)
         const QUrl link(item.link);
         const QUrl base = link.isValid() && !link.host().isEmpty() ? link : feedUrl;
         const QString html = sanitizeHtml(item.html, base);
+        const QStringList images = itemImages(item);
+        const QString image = images.isEmpty() ? firstImageSource(html) : images.first();
+        const QString language =
+            item.language.compare(parsed.language, Qt::CaseInsensitive) == 0 ? QString() : item.language;
         const auto existing = index.constFind(guid);
         if (existing != index.constEnd()) {
             Article &article = list[existing.value()];
@@ -2213,6 +2885,12 @@ int Store::merge(const QString &feedId, const ParsedFeed &parsed, qint64 nowMs)
             article.summary = plainText(html, 600);
             article.comments = item.comments;
             article.enclosures = item.enclosures;
+            article.image = image;
+            article.images = images;
+            article.language = language;
+            article.filterGeneration = 0;
+            article.textCached = false;
+            article.textCache.clear();
             if (dated) {
                 article.publishedMs = item.publishedMs;
                 article.datedByFeed = true;
@@ -2234,6 +2912,26 @@ int Store::merge(const QString &feedId, const ParsedFeed &parsed, qint64 nowMs)
         article.updatedMs = nowMs;
         article.publishedMs = dated ? item.publishedMs : nowMs;
         article.datedByFeed = dated;
+        article.image = image;
+        article.images = images;
+        article.language = language;
+        for (const CompiledFilter *compiled : std::as_const(arrivalFilters)) {
+            if (filterMatches(*compiled, article)) {
+                article.read = true;
+                break;
+            }
+        }
+        const QString duplicateKey = linkKey(item.link);
+        if (foldDuplicates && !article.read && !duplicateKey.isEmpty()) {
+            for (const QString &other : m_linkIndex.value(duplicateKey)) {
+                if (other != feedId) {
+                    article.read = true;
+                    break;
+                }
+            }
+        }
+        if (m_linkIndexReady && !duplicateKey.isEmpty())
+            m_linkIndex[duplicateKey].insert(feedId);
         list.append(article);
         index.insert(guid, int(list.size() - 1));
         ++added;
@@ -2265,7 +2963,28 @@ bool Store::setStarred(const ArticleRef &ref, bool starred)
     target->starred = starred;
     m_dirtyArticles.insert(ref.feedId);
     m_exportDirty = true;
+    recount(ref.feedId);
     return true;
+}
+
+bool Store::setReadLater(const ArticleRef &ref, bool readLater)
+{
+    Article *target = mutableArticle(ref);
+    if (!target || target->readLater == readLater)
+        return false;
+    target->readLater = readLater;
+    m_dirtyArticles.insert(ref.feedId);
+    return true;
+}
+
+int Store::readLaterCount() const
+{
+    int total = 0;
+    for (auto it = m_articles.constBegin(); it != m_articles.constEnd(); ++it) {
+        for (const Article &candidate : it.value())
+            total += candidate.readLater ? 1 : 0;
+    }
+    return total;
 }
 
 int Store::markRead(const QList<ArticleRef> &refs)
@@ -2309,24 +3028,38 @@ bool Store::matches(const Article &candidate, const QString &needle, const QStri
 }
 
 QList<ArticleRef> Store::query(const Source &source, const QString &search, bool unreadOnly,
-                               qint64 nowMs) const
+                               qint64 nowMs, const QSet<QString> &kept) const
 {
     const QString needle = search.trimmed();
+    const SmartFeed *smart = source.kind == SourceKind::Smart ? smartFeed(source.id) : nullptr;
+    const TextMatcher words = smart ? TextMatcher(smart->words, smart->regex) : TextMatcher();
     QList<const Article *> found;
     QHash<QString, QString> names;
     for (const QString &feedId : feedIdsIn(source)) {
         const Feed *owner = feed(feedId);
+        if (owner && source.kind == SourceKind::Today && (owner->excludeFromToday || owner->excludeFromUnread))
+            continue;
+        if (owner && source.kind == SourceKind::AllUnread && owner->excludeFromUnread)
+            continue;
         const QString name = owner ? owner->displayName() : QString();
         names.insert(feedId, name.toLower());
         for (const Article &candidate : articles(feedId)) {
-            if (source.kind == SourceKind::Today &&
-                (candidate.read || candidate.publishedMs < nowMs - kTodayWindowMs))
+            if (isHidden(candidate))
                 continue;
-            if (source.kind == SourceKind::AllUnread && candidate.read)
+            const bool unread = !candidate.read ||
+                                (!kept.isEmpty() && kept.contains(articleKey({feedId, candidate.guid})));
+            if (source.kind == SourceKind::Today &&
+                (!unread || candidate.publishedMs < nowMs - kTodayWindowMs))
+                continue;
+            if (source.kind == SourceKind::AllUnread && !unread)
                 continue;
             if (source.kind == SourceKind::Starred && !candidate.starred)
                 continue;
-            if (unreadOnly && candidate.read)
+            if (source.kind == SourceKind::ReadLater && !candidate.readLater)
+                continue;
+            if (smart && ((smart->unreadOnly && !unread) || !smartMatches(*smart, words, candidate, nowMs)))
+                continue;
+            if (unreadOnly && !unread)
                 continue;
             if (!matches(candidate, needle, name))
                 continue;
@@ -2353,6 +3086,32 @@ QList<ArticleRef> Store::query(const Source &source, const QString &search, bool
     return refs;
 }
 
+QList<ArticleRef> Store::olderUnread(const Source &source, qint64 cutoffMs, bool keepStarred,
+                                     qint64 nowMs) const
+{
+    QList<ArticleRef> refs;
+    for (const ArticleRef &ref : query(source, QString(), true, nowMs)) {
+        const Article *candidate = article(ref);
+        if (candidate && !candidate->read && candidate->publishedMs < cutoffMs &&
+            !(keepStarred && candidate->starred))
+            refs.append(ref);
+    }
+    return refs;
+}
+
+QList<ArticleRef> Store::olderUnreadEverywhere(qint64 cutoffMs, bool keepStarred) const
+{
+    QList<ArticleRef> refs;
+    for (const Feed &owner : m_feeds) {
+        for (const Article &candidate : articles(owner.id)) {
+            if (!candidate.read && candidate.publishedMs < cutoffMs && !(keepStarred && candidate.starred) &&
+                !isHidden(candidate))
+                refs.append(ArticleRef{owner.id, candidate.guid});
+        }
+    }
+    return refs;
+}
+
 int Store::unreadCount(const Source &source, qint64 nowMs) const
 {
     switch (source.kind) {
@@ -2360,22 +3119,38 @@ int Store::unreadCount(const Source &source, qint64 nowMs) const
         return feedUnread(source.id);
     case SourceKind::Folder: {
         int total = 0;
-        for (const QString &feedId : feedIdsIn(source))
-            total += feedUnread(feedId);
+        for (const QString &feedId : feedIdsIn(source)) {
+            if (countsTowardUnread(feedId))
+                total += feedUnread(feedId);
+        }
         return total;
     }
     case SourceKind::AllUnread:
         return totalUnread();
     case SourceKind::Starred:
+    case SourceKind::ReadLater:
+    case SourceKind::Smart:
     case SourceKind::Today: {
+        const SmartFeed *smart = source.kind == SourceKind::Smart ? smartFeed(source.id) : nullptr;
+        const TextMatcher words = smart ? TextMatcher(smart->words, smart->regex) : TextMatcher();
         int total = 0;
-        for (auto it = m_articles.constBegin(); it != m_articles.constEnd(); ++it) {
-            for (const Article &candidate : it.value()) {
-                if (candidate.read)
+        for (const QString &feedId : feedIdsIn(source)) {
+            const Feed *owner = feed(feedId);
+            if (!owner || owner->excludeFromUnread ||
+                (source.kind == SourceKind::Today && owner->excludeFromToday))
+                continue;
+            for (const Article &candidate : articles(feedId)) {
+                if (candidate.read || isHidden(candidate))
                     continue;
-                if (source.kind == SourceKind::Starred ? candidate.starred
-                                                       : candidate.publishedMs >= nowMs - kTodayWindowMs)
-                    ++total;
+                if (source.kind == SourceKind::Today && candidate.publishedMs < nowMs - kTodayWindowMs)
+                    continue;
+                if (source.kind == SourceKind::Starred && !candidate.starred)
+                    continue;
+                if (source.kind == SourceKind::ReadLater && !candidate.readLater)
+                    continue;
+                if (source.kind == SourceKind::Smart && (!smart || !smartMatches(*smart, words, candidate, nowMs)))
+                    continue;
+                ++total;
             }
         }
         return total;
@@ -2389,16 +3164,241 @@ int Store::unreadCount(const Source &source, qint64 nowMs) const
 int Store::totalUnread() const
 {
     int total = 0;
-    for (auto it = m_unread.constBegin(); it != m_unread.constEnd(); ++it)
-        total += it.value();
+    for (const Feed &owner : m_feeds) {
+        if (!owner.excludeFromUnread)
+            total += m_unread.value(owner.id);
+    }
     return total;
+}
+
+bool Store::countsTowardUnread(const QString &feedId) const
+{
+    const Feed *owner = feed(feedId);
+    return owner && !owner->excludeFromUnread;
+}
+
+const QList<Store::CompiledFilter> &Store::compiledFilters() const
+{
+    if (m_compiledSource != m_settings.filters) {
+        m_compiledSource = m_settings.filters;
+        m_compiled.clear();
+        for (const ContentFilter &filter : std::as_const(m_compiledSource))
+            m_compiled.append(CompiledFilter{filter, TextMatcher(filter.pattern, filter.regex)});
+        ++m_filterGeneration;
+    }
+    return m_compiled;
+}
+
+const QString &Store::filterText(const Article &candidate) const
+{
+    if (!candidate.textCached) {
+        candidate.textCache = plainText(candidate.html, kMaxFilterText);
+        if (candidate.textCache.isEmpty())
+            candidate.textCache = candidate.summary;
+        candidate.textCached = true;
+    }
+    return candidate.textCache;
+}
+
+bool Store::textMatches(const TextMatcher &matcher, const Article &candidate) const
+{
+    return matcher.matches(candidate.title) || matcher.matches(filterText(candidate));
+}
+
+bool Store::filterMatches(const CompiledFilter &compiled, const Article &candidate) const
+{
+    const ContentFilter &filter = compiled.filter;
+    if (!filter.feedId.isEmpty() && filter.feedId != candidate.feedId)
+        return false;
+    if (filter.field == QLatin1String("author"))
+        return compiled.matcher.matches(candidate.author);
+    if (filter.field == QLatin1String("titleOrText"))
+        return textMatches(compiled.matcher, candidate);
+    return compiled.matcher.matches(candidate.title);
+}
+
+bool Store::isHidden(const Article &candidate) const
+{
+    if (candidate.starred)
+        return false;
+    const QList<CompiledFilter> &compiled = compiledFilters();
+    if (compiled.isEmpty())
+        return false;
+    if (candidate.filterGeneration != m_filterGeneration) {
+        bool hidden = false;
+        for (const CompiledFilter &filter : compiled) {
+            if (filter.filter.action == QLatin1String("hide") && filterMatches(filter, candidate)) {
+                hidden = true;
+                break;
+            }
+        }
+        candidate.filterHidden = hidden;
+        candidate.filterGeneration = m_filterGeneration;
+    }
+    return candidate.filterHidden;
+}
+
+bool Store::inScope(const SmartFeed &smart, const QString &feedId) const
+{
+    if (smart.scope.isEmpty())
+        return true;
+    if (smart.scope.startsWith(QStringLiteral("feed:")))
+        return smart.scope.mid(5) == feedId;
+    if (smart.scope.startsWith(QStringLiteral("folder:"))) {
+        const Feed *owner = feed(feedId);
+        return owner && !owner->folder.isEmpty() && owner->folder == smart.scope.mid(7);
+    }
+    return false;
+}
+
+bool Store::smartMatches(const SmartFeed &smart, const TextMatcher &words, const Article &candidate,
+                         qint64 nowMs) const
+{
+    if (!inScope(smart, candidate.feedId))
+        return false;
+    if (smart.starredOnly && !candidate.starred)
+        return false;
+    if (smart.maxAgeDays > 0 && candidate.publishedMs < nowMs - qint64(smart.maxAgeDays) * kDayMs)
+        return false;
+    if (!smart.words.isEmpty() && !textMatches(words, candidate))
+        return false;
+    return true;
+}
+
+bool Store::smartMatches(const SmartFeed &smart, const Article &candidate, qint64 nowMs) const
+{
+    if (isHidden(candidate) || (smart.unreadOnly && candidate.read))
+        return false;
+    return smartMatches(smart, TextMatcher(smart.words, smart.regex), candidate, nowMs);
+}
+
+const SmartFeed *Store::smartFeed(const QString &id) const
+{
+    for (const SmartFeed &candidate : m_settings.smartFeeds) {
+        if (candidate.id == id)
+            return &candidate;
+    }
+    return nullptr;
+}
+
+bool Store::saveSmartFeed(const SmartFeed &smart, QString *error)
+{
+    auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    SmartFeed cleaned = smart;
+    cleaned.name = collapseWhitespace(smart.name).left(100);
+    cleaned.words = smart.words.trimmed().left(500);
+    cleaned.maxAgeDays = qBound(0, smart.maxAgeDays, 3650);
+    if (cleaned.name.isEmpty())
+        return fail(QStringLiteral("Enter a name."));
+    if (!cleaned.words.isEmpty() && cleaned.regex && !TextMatcher(cleaned.words, true).isValid())
+        return fail(QStringLiteral("Invalid regular expression"));
+    for (SmartFeed &existing : m_settings.smartFeeds) {
+        if (!cleaned.id.isEmpty() && existing.id == cleaned.id) {
+            existing = cleaned;
+            markExportDirty();
+            return true;
+        }
+    }
+    if (m_settings.smartFeeds.size() >= kMaxSmartFeeds)
+        return fail(QStringLiteral("RSS Reader keeps at most %1 smart feeds.").arg(kMaxSmartFeeds));
+    if (cleaned.id.isEmpty())
+        cleaned.id = newId();
+    m_settings.smartFeeds.append(cleaned);
+    markExportDirty();
+    return true;
+}
+
+bool Store::removeSmartFeed(const QString &id)
+{
+    for (int i = 0; i < m_settings.smartFeeds.size(); ++i) {
+        if (m_settings.smartFeeds.at(i).id == id) {
+            m_settings.smartFeeds.removeAt(i);
+            markExportDirty();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Store::saveFilter(const ContentFilter &filter, QString *error)
+{
+    ContentFilter cleaned = filter;
+    cleaned.pattern = filter.pattern.trimmed().left(500);
+    if (cleaned.field != QLatin1String("titleOrText") && cleaned.field != QLatin1String("author"))
+        cleaned.field = QStringLiteral("title");
+    if (cleaned.action != QLatin1String("markRead"))
+        cleaned.action = QStringLiteral("hide");
+    const QString problem = filterPatternError(cleaned.pattern, cleaned.regex);
+    if (!problem.isEmpty()) {
+        if (error)
+            *error = problem;
+        return false;
+    }
+    bool replaced = false;
+    for (ContentFilter &existing : m_settings.filters) {
+        if (!cleaned.id.isEmpty() && existing.id == cleaned.id) {
+            existing = cleaned;
+            replaced = true;
+        }
+    }
+    if (!replaced) {
+        if (m_settings.filters.size() >= kMaxFilters) {
+            if (error)
+                *error = QStringLiteral("RSS Reader keeps at most %1 filters.").arg(kMaxFilters);
+            return false;
+        }
+        if (cleaned.id.isEmpty())
+            cleaned.id = newId();
+        m_settings.filters.append(cleaned);
+    }
+    filtersChanged();
+    return true;
+}
+
+bool Store::removeFilter(const QString &id)
+{
+    for (int i = 0; i < m_settings.filters.size(); ++i) {
+        if (m_settings.filters.at(i).id == id) {
+            m_settings.filters.removeAt(i);
+            filtersChanged();
+            return true;
+        }
+    }
+    return false;
+}
+
+void Store::filtersChanged()
+{
+    compiledFilters();
+    for (const Feed &owner : m_feeds)
+        recount(owner.id);
+    markExportDirty();
+}
+
+void Store::ensureLinkIndex()
+{
+    if (m_linkIndexReady)
+        return;
+    m_linkIndex.clear();
+    for (auto it = m_articles.constBegin(); it != m_articles.constEnd(); ++it) {
+        for (const Article &candidate : it.value()) {
+            const QString key = linkKey(candidate.link);
+            if (!key.isEmpty())
+                m_linkIndex[key].insert(it.key());
+        }
+    }
+    m_linkIndexReady = true;
 }
 
 QStringList Store::dueFeeds(qint64 nowMs, bool force) const
 {
     QStringList ids;
     for (const Feed &candidate : m_feeds) {
-        if (force || candidate.nextDueMs <= nowMs)
+        if (!candidate.paused && (force || candidate.nextDueMs <= nowMs))
             ids.append(candidate.id);
     }
     return ids;
@@ -2484,6 +3484,11 @@ QJsonObject Store::stateJson() const
             {QStringLiteral("nextDue"), double(candidate.nextDueMs)},
             {QStringLiteral("failures"), candidate.failures},
             {QStringLiteral("unread"), m_unread.value(candidate.id)},
+            {QStringLiteral("paused"), candidate.paused},
+            {QStringLiteral("excludeFromToday"), candidate.excludeFromToday},
+            {QStringLiteral("excludeFromUnread"), candidate.excludeFromUnread},
+            {QStringLiteral("language"), candidate.language},
+            {QStringLiteral("previousUrls"), QJsonArray::fromStringList(candidate.previousUrls)},
         });
     }
     QJsonArray folders;
@@ -2536,6 +3541,14 @@ bool Store::loadState(const QJsonObject &state)
         loaded.lastSuccessMs = qint64(object.value(QStringLiteral("lastSuccess")).toDouble());
         loaded.nextDueMs = qint64(object.value(QStringLiteral("nextDue")).toDouble());
         loaded.failures = object.value(QStringLiteral("failures")).toInt();
+        loaded.paused = object.value(QStringLiteral("paused")).toBool();
+        loaded.excludeFromToday = object.value(QStringLiteral("excludeFromToday")).toBool();
+        loaded.excludeFromUnread = object.value(QStringLiteral("excludeFromUnread")).toBool();
+        loaded.language = object.value(QStringLiteral("language")).toString();
+        for (const QJsonValue &previous : object.value(QStringLiteral("previousUrls")).toArray()) {
+            if (previous.isString() && !previous.toString().isEmpty())
+                loaded.previousUrls.append(previous.toString());
+        }
         m_feeds.append(loaded);
         m_articles.insert(loaded.id, {});
         m_unread.insert(loaded.id, 0);
@@ -2569,6 +3582,7 @@ void Store::loadArticles(const QString &feedId, const QJsonArray &array)
     }
     prune(list);
     m_articles.insert(feedId, list);
+    m_linkIndexReady = false;
     recount(feedId);
 }
 
@@ -2658,6 +3672,7 @@ int Store::restoreStarred(const QJsonArray &array, qint64 nowMs)
         article.read = object.value(QStringLiteral("read")).toBool(true);
         article.starred = true;
         m_articles[owner->id].append(article);
+        m_linkIndexReady = false;
         prune(m_articles[owner->id]);
         recount(owner->id);
         m_dirtyArticles.insert(owner->id);
@@ -2666,7 +3681,7 @@ int Store::restoreStarred(const QJsonArray &array, qint64 nowMs)
     return restored;
 }
 
-OpmlImportResult Store::importOpml(const OpmlDocument &document, qint64 nowMs)
+OpmlImportResult Store::importOpml(const OpmlDocument &document, qint64 nowMs, bool allowFile)
 {
     OpmlImportResult result;
     for (const QString &name : document.folders) {
@@ -2674,7 +3689,7 @@ OpmlImportResult Store::importOpml(const OpmlDocument &document, qint64 nowMs)
             ++result.folders;
     }
     for (const OpmlEntry &entry : document.feeds) {
-        const QUrl url = normalizeAddress(entry.xmlUrl);
+        const QUrl url = normalizeAddress(entry.xmlUrl, allowFile);
         QString error;
         const QString id = addFeed(url, entry.title, entry.folder, nowMs, &error);
         if (id.isEmpty()) {
@@ -2732,6 +3747,8 @@ void Store::clear()
     m_errorLog.clear();
     m_activityLog.clear();
     m_dirtyArticles.clear();
+    m_linkIndex.clear();
+    m_linkIndexReady = false;
     m_settings = Settings();
 }
 
@@ -2791,8 +3808,11 @@ int DiskStore::storedUnread(const QString &expectedStoreId) const
     if (state.value(QStringLiteral("storeId")).toString() != expectedStoreId)
         return -1;
     int total = 0;
-    for (const QJsonValue &value : state.value(QStringLiteral("feeds")).toArray())
-        total += qMax(0, value.toObject().value(QStringLiteral("unread")).toInt());
+    for (const QJsonValue &value : state.value(QStringLiteral("feeds")).toArray()) {
+        const QJsonObject object = value.toObject();
+        if (!object.value(QStringLiteral("excludeFromUnread")).toBool())
+            total += qMax(0, object.value(QStringLiteral("unread")).toInt());
+    }
     return total;
 }
 

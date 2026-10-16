@@ -9,6 +9,9 @@ struct RSSReaderSettingsSheet: View {
     @State private var exportFile: URL?
     @State private var message = ""
     @State private var addingBlog = false
+    @State private var importURLPrompt = false
+    @State private var importAddress = ""
+    @State private var importingURL = false
 
     private func setting<Value>(_ path: WritableKeyPath<RSSReaderSettings, Value>) -> Binding<Value> {
         Binding(get: { model.settings[keyPath: path] }, set: { (value: Value) in model.updateSettings { $0[keyPath: path] = value } })
@@ -68,6 +71,16 @@ struct RSSReaderSettingsSheet: View {
                 exportFile = writeExport()
                 Task { await model.refresh() }
             }
+            .alert("Import from URL", isPresented: $importURLPrompt) {
+                TextField("OPML address", text: $importAddress)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) {}
+                Button("Import") { importFromURL() }
+            } message: {
+                Text("The address of an OPML subscription list.")
+            }
             .alert("RSS Reader", isPresented: Binding(get: { !message.isEmpty }, set: { if !$0 { message = "" } })) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -84,6 +97,19 @@ struct RSSReaderSettingsSheet: View {
             } label: {
                 Label("Import Subscriptions", systemImage: "square.and.arrow.down")
             }
+            Button {
+                importAddress = ""
+                importURLPrompt = true
+            } label: {
+                HStack {
+                    Label("Import from URL\u{2026}", systemImage: "link")
+                    if importingURL {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(importingURL)
             if let exportFile {
                 ShareLink(item: exportFile) {
                     Label("Export Subscriptions", systemImage: "square.and.arrow.up")
@@ -102,6 +128,7 @@ struct RSSReaderSettingsSheet: View {
                 }
             }
             .disabled(addingBlog || model.store.feed(matching: RSSReaderLimits.forkMeshBlogFeed) != nil)
+            Toggle("Sort by Unread Count", isOn: setting(\.sortFeedsByUnread))
         }
     }
 
@@ -109,9 +136,12 @@ struct RSSReaderSettingsSheet: View {
         Section("Timeline") {
             Toggle("Sort Oldest to Newest", isOn: setting(\.sortOldestFirst))
             Toggle("Group by Feed", isOn: setting(\.groupByFeed))
+            Toggle("Hide Read Articles", isOn: setting(\.hideReadArticles))
             Toggle("Refresh to Clear Read Articles", isOn: setting(\.refreshClearsRead))
             Toggle("Confirm Mark All as Read", isOn: setting(\.confirmMarkAllRead))
+            Toggle("Mark All as Read Skips Starred", isOn: setting(\.markAllKeepsStarred))
             NavigationLink("Timeline Layout") { RSSTimelineLayoutScreen(model: model) }
+            NavigationLink("Filters") { RSSFiltersScreen(model: model) }
         }
     }
 
@@ -135,6 +165,19 @@ struct RSSReaderSettingsSheet: View {
                 Text("Safari").tag(false)
             }
             Toggle("Load Remote Images", isOn: setting(\.loadRemoteImages))
+        }
+    }
+
+    private func importFromURL() {
+        let address: String = importAddress
+        guard !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        importingURL = true
+        Task {
+            let result: String = await model.importOPML(fromURL: address)
+            importingURL = false
+            message = result
+            exportFile = writeExport()
+            await model.refresh()
         }
     }
 
@@ -201,6 +244,11 @@ struct RSSTimelineLayoutScreen: View {
                     isOn: Binding(
                         get: { model.settings.showFeedIcons },
                         set: { (value: Bool) in model.updateSettings { $0.showFeedIcons = value } }))
+                Toggle(
+                    "Show Thumbnails",
+                    isOn: Binding(
+                        get: { model.settings.showThumbnails },
+                        set: { (value: Bool) in model.updateSettings { $0.showThumbnails = value } }))
             }
         }
         .navigationTitle("Timeline Layout")

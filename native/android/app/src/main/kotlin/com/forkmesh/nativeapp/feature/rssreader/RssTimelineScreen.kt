@@ -1,7 +1,8 @@
 package com.forkmesh.nativeapp.feature.rssreader
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,8 @@ import com.forkmesh.nativeapp.rssreader.RssScope
 import com.forkmesh.nativeapp.rssreader.RssSettings
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -59,6 +62,8 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
     private var hidden by mutableStateOf<Set<String>>(emptySet())
     private var confirm by mutableStateOf(false)
     private var pulled by mutableStateOf(false)
+    private var menu by mutableStateOf(false)
+    private val catchUp = RssCatchUpState()
     private var ids: List<String> = emptyList()
 
     fun currentIds(): List<String> = ids
@@ -73,7 +78,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
         val library = service.library
         val now = remember(version) { System.currentTimeMillis() }
         LaunchedEffect(library) {
-            if (library != null && keep == null && scope == RssScope.Unread) keep = library.articles(scope, System.currentTimeMillis()).map { it.id }.toSet()
+            if (library != null && keep == null) keep = library.timeline(scope, System.currentTimeMillis()).map { it.id }.toSet()
         }
         val articles = remember(version, query, keep, hidden) {
             library?.timeline(scope, now, query, keep.orEmpty())?.filter { it.id !in hidden }.orEmpty()
@@ -82,6 +87,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
         val settings = library?.settings() ?: RssSettings()
         val feeds = remember(version) { library?.feeds().orEmpty().associateBy { it.id } }
         val unread = articles.count { !it.read }
+        val title = library?.let { scopeTitle(it, scope) } ?: "Articles"
         RssScaffold(
             library?.let { scopeTitle(it, scope) } ?: "Articles",
             navigator,
@@ -89,6 +95,18 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
             actions = {
                 FmIconButton("search", "Search", onPressed = { searching = !searching; if (!searching) query = "" }, color = if (searching) Fm.colors.accent else Fm.colors.textSecondary)
                 FmIconButton("done_all", "Mark All as Read", onPressed = if (unread > 0) ({ if (settings.confirmMarkAllRead) confirm = true else markAll(articles) }) else null)
+                Box {
+                    FmIconButton("more_vert", "More", onPressed = { menu = true })
+                    FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        if (scope != RssScope.Starred) {
+                            FmDropdownMenuItem("Hide Read Articles", onClick = {
+                                menu = false
+                                toggleHideRead(articles)
+                            }, icon = if (settings.hideReadArticles) "check" else null)
+                        }
+                        FmDropdownMenuItem("Mark Older as Read…", onClick = { menu = false; catchUp.choosing = true }, icon = "done_all")
+                    }
+                }
             },
         ) {
             Column(Modifier.fillMaxSize()) {
@@ -103,7 +121,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
                         pulled = true
                         if (settings.refreshClearsRead) {
                             hidden = articles.filter { it.read }.map { it.id }.toSet()
-                            if (scope == RssScope.Unread) keep = library?.articles(scope, System.currentTimeMillis())?.map { it.id }?.toSet()
+                            keep = library?.timeline(scope, System.currentTimeMillis())?.map { it.id }?.toSet()
                         }
                         service.refresh(force = true)
                     },
@@ -149,7 +167,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
             if (confirm) {
                 FmConfirmDialog(
                     title = "Mark All as Read?",
-                    body = "Mark ${RssFormat.plural(unread, "article")} in “${library?.let { scopeTitle(it, scope) }.orEmpty()}” as read?",
+                    body = "Mark ${RssFormat.plural(unread, "article")} in “$title” as read?",
                     confirmLabel = "Mark All as Read",
                     onDismissRequest = { confirm = false },
                     onConfirm = {
@@ -158,11 +176,20 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
                     },
                 )
             }
+            RssCatchUpDialogs(catchUp, scope, title) { marked -> keep = keep?.minus(marked.toSet()) }
         }
     }
 
     private fun markAll(articles: List<RssArticle>) {
-        RssReaderFeature.service.mutate { it.setRead(articles.filter { article -> !article.read }.map { article -> article.id }, true) }
+        RssReaderFeature.service.mutate { it.markAllRead(articles) }
+        keep = emptySet()
+    }
+
+    private fun toggleHideRead(articles: List<RssArticle>) {
+        val service = RssReaderFeature.service
+        val turningOn = service.library?.settings()?.hideReadArticles != true
+        if (turningOn) keep = articles.filter { !it.read }.map { it.id }.toSet()
+        service.mutate { it.updateSettings { s -> s.copy(hideReadArticles = turningOn) } }
     }
 }
 
@@ -200,6 +227,7 @@ private fun SwipeRow(article: RssArticle, content: @Composable () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ArticleRow(
     article: RssArticle,
@@ -210,46 +238,69 @@ private fun ArticleRow(
     onTap: () -> Unit,
 ) {
     val c = Fm.colors
-    Column(Modifier.fillMaxWidth().background(c.bgRaised).clickable(onClick = onTap)) {
-        Row(Modifier.fillMaxWidth().padding(start = FmSpace.x1, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
-            Column(Modifier.width(18.dp).padding(top = 5.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                UnreadDot(!article.read)
-                if (article.starred) FmIcon("star", size = 12.dp, tint = RssColors.star)
-            }
-            Spacer(Modifier.width(FmSpace.x1))
-            if (settings.showFeedIcons) {
-                Box(Modifier.padding(top = 2.dp)) { FeedIcon(feed, 26.dp, 6.dp) }
-                Spacer(Modifier.width(FmSpace.x3))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    article.title.ifEmpty { "Untitled" },
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.titleSmall.copy(fontWeight = FontWeight.SemiBold, color = if (article.read) c.textTertiary else c.textPrimary),
-                )
-                if (settings.timelineLines > 0 && article.summary.isNotEmpty()) {
+    var menu by remember { mutableStateOf(false) }
+    val service = RssReaderFeature.service
+    Box {
+        Column(Modifier.fillMaxWidth().background(c.bgRaised).combinedClickable(onClick = onTap, onLongClick = { menu = true })) {
+            Row(Modifier.fillMaxWidth().padding(start = FmSpace.x1, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x3)) {
+                Column(Modifier.width(18.dp).padding(top = 5.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    UnreadDot(!article.read)
+                    if (article.starred) FmIcon("star", size = 12.dp, tint = RssColors.star)
+                }
+                Spacer(Modifier.width(FmSpace.x1))
+                if (settings.showFeedIcons) {
+                    Box(Modifier.padding(top = 2.dp)) { FeedIcon(feed, 26.dp, 6.dp) }
+                    Spacer(Modifier.width(FmSpace.x3))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        article.summary,
-                        maxLines = settings.timelineLines,
+                        article.title.ifEmpty { "Untitled" },
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
-                        style = Fm.text.bodyMedium.copy(color = if (article.read) c.textTertiary else c.textSecondary),
+                        style = Fm.text.titleSmall.copy(fontWeight = FontWeight.SemiBold, color = if (article.read) c.textTertiary else c.textPrimary),
                     )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val byline = if (article.author.isEmpty() || article.author == feed?.displayTitle) {
-                        feed?.displayTitle.orEmpty()
-                    } else if (showFeedName) {
-                        listOfNotNull(feed?.displayTitle, article.author).joinToString(" · ")
-                    } else {
-                        article.author
+                    if (settings.timelineLines > 0 && article.summary.isNotEmpty()) {
+                        Text(
+                            article.summary,
+                            maxLines = settings.timelineLines,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodyMedium.copy(color = if (article.read) c.textTertiary else c.textSecondary),
+                        )
                     }
-                    Text(byline, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = c.textTertiary))
-                    Spacer(Modifier.width(FmSpace.x2))
-                    Text(RssFormat.short(article.published, now), style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val byline = if (article.author.isEmpty() || article.author == feed?.displayTitle) {
+                            feed?.displayTitle.orEmpty()
+                        } else if (showFeedName) {
+                            listOfNotNull(feed?.displayTitle, article.author).joinToString(" · ")
+                        } else {
+                            article.author
+                        }
+                        Text(byline, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                        Spacer(Modifier.width(FmSpace.x2))
+                        Text(RssFormat.short(article.published, now), style = Fm.text.bodySmall.copy(color = c.textTertiary))
+                    }
                 }
+                if (settings.showThumbnails && settings.loadRemoteImages && article.image.isNotEmpty()) RssThumbnail(article.image)
             }
+            HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 60.dp else 22.dp), thickness = 1.dp, color = c.border)
         }
-        HorizontalDivider(Modifier.padding(start = if (settings.showFeedIcons) 60.dp else 22.dp), thickness = 1.dp, color = c.border)
+        FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            FmDropdownMenuItem(
+                if (article.readLater) "Remove from Read Later" else "Read Later",
+                onClick = {
+                    menu = false
+                    service.mutate { it.setReadLater(listOf(article.id), !article.readLater) }
+                },
+                icon = if (article.readLater) "bookmark" else "bookmark_border",
+            )
+            FmDropdownMenuItem(if (article.read) "Mark as Unread" else "Mark as Read", onClick = {
+                menu = false
+                service.mutate { it.setRead(listOf(article.id), !article.read) }
+            }, icon = if (article.read) "circle" else "radio_button_unchecked")
+            FmDropdownMenuItem(if (article.starred) "Unstar" else "Star", onClick = {
+                menu = false
+                service.mutate { it.setStarred(listOf(article.id), !article.starred) }
+            }, icon = if (article.starred) "star_border" else "star")
+        }
     }
 }

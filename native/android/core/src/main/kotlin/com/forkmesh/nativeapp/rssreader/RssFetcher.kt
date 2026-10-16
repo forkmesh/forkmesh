@@ -123,7 +123,8 @@ class RssFetcher(
         const val MAX_ICON_BYTES = 256 * 1024
         const val FEED_ACCEPT = "application/rss+xml, application/atom+xml, application/feed+json, " +
             "application/json;q=0.9, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8, */*;q=0.5"
-        val GUESS_PATHS = listOf("/feed", "/rss", "/feed.xml", "/atom.xml")
+        val GUESS_PATHS = listOf("/feed", "/rss", "/feed.xml", "/atom.xml", "/rss/")
+        const val OPML_ACCEPT = "text/x-opml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5"
     }
 
     data class Response(val response: RssHttpResponse, val viaHttps: Boolean)
@@ -178,9 +179,32 @@ class RssFetcher(
         RssFetchOutcome.Failed(errorCode(error))
     }
 
+    fun fetchNow(feed: RssFeed): RssFetchOutcome = fetch(feed.copy(etag = "", lastModified = ""))
+
+    fun opml(input: String): String {
+        val url = RssUrls.normalizeFeedInput(input)
+        if (url.isEmpty()) throw RssFetchException("invalid_url")
+        val result = request(url, mapOf("Accept" to OPML_ACCEPT), MAX_FEED_BYTES)
+        val status = result.response.status
+        if (status < 200 || status >= 300) throw RssFetchException("http_${if (status == 0) 502 else status}")
+        return result.response.text()
+    }
+
+    private fun feedAt(candidate: String): RssFound? {
+        val found = runCatching { checked(candidate) }.getOrNull() ?: return null
+        if (found.response.status == 304) return null
+        val parsed = runCatching { RssFeedParser.parse(found.response.text(), found.response.url) }.getOrNull() ?: return null
+        return RssFound(RssFetchOutcome.Fetched(stored(candidate, found), false, parsed, found.response.etag, found.response.lastModified, found.viaHttps))
+    }
+
     fun discover(input: String): RssFound {
         val url = RssUrls.normalizeFeedInput(input)
         if (url.isEmpty()) throw RssFetchException("invalid_url")
+        for (candidate in RssFeedFinder.candidates(url)) feedAt(candidate)?.let { return it }
+        if (RssFeedFinder.youTubeNeedsPage(url)) {
+            val id = runCatching { RssFeedFinder.youTubeChannelId(page(url).text()) }.getOrDefault("")
+            if (id.isNotEmpty()) feedAt(RssFeedFinder.channelFeed(id))?.let { return it }
+        }
         val first = checked(url)
         val response = first.response
         val final = response.url
@@ -290,6 +314,12 @@ object RssErrors {
         code == "http_only" -> "This feed is only available over unencrypted HTTP, which this app doesn't allow, and its HTTPS address didn't answer."
         code == "network_error" -> "The site couldn't be reached."
         code == "no_link" -> "This article has no web page."
+        code == "invalid_regex" -> RssMatcher.INVALID_REGEX
+        code == "pattern_required" -> "Enter the text to match."
+        code == "too_many_filters" -> "You can have up to ${RssLibrary.MAX_FILTERS} filters."
+        code == "too_many_smart_feeds" -> "You can have up to ${RssLibrary.MAX_SMART_FEEDS} smart feeds."
+        code == "smart_feed_name_required" -> "Give the smart feed a name."
+        code == "feed_not_found" -> "This feed is no longer subscribed."
         code.startsWith("http_") -> "The site answered with HTTP ${code.removePrefix("http_")}."
         else -> "Something went wrong ($code)."
     }

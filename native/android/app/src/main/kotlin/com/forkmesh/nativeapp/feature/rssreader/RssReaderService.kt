@@ -4,10 +4,14 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.security.NetworkSecurityPolicy
 import android.util.Base64
+import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.forkmesh.nativeapp.rssreader.RssErrors
 import com.forkmesh.nativeapp.rssreader.RssFeed
 import com.forkmesh.nativeapp.rssreader.RssFetchException
+import com.forkmesh.nativeapp.rssreader.RssFetchOutcome
+import com.forkmesh.nativeapp.rssreader.RssFormat
 import com.forkmesh.nativeapp.rssreader.RssFetcher
 import com.forkmesh.nativeapp.rssreader.RssImportResult
 import com.forkmesh.nativeapp.rssreader.RssLibrary
@@ -26,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,6 +47,14 @@ class RssReaderService(context: Context) {
     private var refreshJob: Job? = null
     private val iconAttempts = ConcurrentHashMap.newKeySet<String>()
     private val iconBytes = ConcurrentHashMap<String, ByteArray>()
+    private val thumbnails = LruCache<String, ImageBitmap>(MAX_THUMBNAILS)
+    private val thumbnailFailures = ConcurrentHashMap.newKeySet<String>()
+    private val thumbnailGate = Semaphore(4)
+
+    companion object {
+        const val MAX_THUMBNAILS = 300
+        const val MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024
+    }
 
     private val versionState = MutableStateFlow(-1L)
     val version: StateFlow<Long> = versionState.asStateFlow()
@@ -142,6 +156,64 @@ class RssReaderService(context: Context) {
             decoded[feed.id] = bitmap
         }
         iconState.value = decoded
+    }
+
+    fun cachedThumbnail(url: String): ImageBitmap? = thumbnails.get(url)
+
+    suspend fun thumbnail(url: String, sizePx: Int): ImageBitmap? {
+        thumbnails.get(url)?.let { return it }
+        if (url in thumbnailFailures) return null
+        return thumbnailGate.withPermit {
+            withContext(Dispatchers.IO) {
+                thumbnails.get(url) ?: runCatching {
+                    val response = fetcher.request(url, mapOf("Accept" to "image/*"), MAX_THUMBNAIL_BYTES).response
+                    val bytes = response.body.takeIf { response.status in 200..299 && it.isNotEmpty() } ?: return@runCatching null
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                    var sample = 1
+                    while (minOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= sizePx) sample *= 2
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+                }.getOrNull().also { image ->
+                    if (image != null) thumbnails.put(url, image) else thumbnailFailures.add(url)
+                }
+            }
+        }
+    }
+
+    suspend fun checkNow(feedId: String): String = withContext(Dispatchers.IO) {
+        val current = load()
+        val feed = current.feed(feedId) ?: throw RssLibraryException("feed_not_found")
+        val outcome = fetcher.fetchNow(feed)
+        val now = System.currentTimeMillis()
+        current.applyFetch(feedId, outcome, now)
+        changed()
+        scope.launch { fetchIcons(current) }
+        when (outcome) {
+            is RssFetchOutcome.Fetched -> "${outcome.feed.format} · ${RssFormat.plural(outcome.feed.items.size, "item")} · checked ${RssFormat.time(now)}"
+            is RssFetchOutcome.NotModified -> "Not modified · checked ${RssFormat.time(now)}"
+            is RssFetchOutcome.Failed -> RssErrors.describe(outcome.error)
+        }
+    }
+
+    suspend fun changeFeedUrl(feedId: String, input: String): String {
+        val current = load()
+        val before = current.feed(feedId)?.url
+        val feed = current.changeFeedUrl(feedId, input)
+        if (feed.url == before) return ""
+        changed()
+        return checkNow(feedId)
+    }
+
+    suspend fun importOpmlUrl(url: String): RssImportResult {
+        val text = withContext(Dispatchers.IO) {
+            try {
+                fetcher.opml(url)
+            } catch (error: Exception) {
+                throw RssFetchException(fetcher.errorCode(error))
+            }
+        }
+        return importOpml(text)
     }
 
     fun iconDataUri(feedId: String): String {
