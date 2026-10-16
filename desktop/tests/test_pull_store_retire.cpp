@@ -70,7 +70,9 @@ int main(int argc, char **argv)
     feature.write("feature\n");
     feature.close();
     git(repo, {"add", "feature.txt"});
-    git(repo, {"commit", "-q", "-m", "feature"});
+    git(repo, {"commit", "-q", "-m", "feature", "-m",
+               "Co-authored-by: Pat <Pat@Example.TEST>\n"
+               "Co-authored-by: Sam Lee <sam@example.test>"});
     git(repo, {"checkout", "-q", "main"});
 
     ForkMeshIdentity identity;
@@ -95,6 +97,13 @@ int main(int argc, char **argv)
     check(contained, "metadata ref contains the removed branch tip");
     check(git(repo, {"show", kept + ":.forkmesh/pulls/1/pull.md"}).contains("status: merged"),
           "metadata ref records the merge");
+    const QString mergedRecord = git(repo, {"show", kept + ":.forkmesh/pulls/1/pull.md"});
+    check(mergedRecord.contains("\nmergedAt: 1") || mergedRecord.contains("\nmergedAt: 2"),
+          "merged record carries mergedAt");
+    check(mergedRecord.contains("\nmergedBy: " + identity.publicKey() + "\n"),
+          "merged record names the merging node");
+    check(mergedRecord.contains("\ncoAuthors: pat@example.test,sam@example.test\n"),
+          "merged record lists the co-author emails");
 
     PullRequest listed;
     for (const PullRequest &pull : store.loadAll())

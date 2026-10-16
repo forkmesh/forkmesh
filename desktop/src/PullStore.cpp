@@ -2095,6 +2095,34 @@ PullEvent PullStore::makeSignedEvent(int number, PullEvent ev) const
 
 namespace {
 
+QString coAuthorEmails(const QString &messages)
+{
+    static const QRegularExpression trailer(
+        QStringLiteral("^[ \\t]*Co-authored-by:[^<\\n]*<([^<>\\s@,]+@[^<>\\s@,]+)>[ \\t]*$"),
+        QRegularExpression::CaseInsensitiveOption |
+            QRegularExpression::MultilineOption);
+    QStringList emails;
+    QRegularExpressionMatchIterator it = trailer.globalMatch(messages);
+    while (it.hasNext() && emails.size() < 16) {
+        const QString email = it.next().captured(1).toLower();
+        if (email.size() <= 254 && !emails.contains(email))
+            emails << email;
+    }
+    emails.sort();
+    return emails.join(QLatin1Char(','));
+}
+
+QString commitMessages(const QString &workTree, const QString &from,
+                       const QString &to)
+{
+    if (from.isEmpty() || to.isEmpty())
+        return QString();
+    QByteArray log;
+    if (!runGit(workTree, {"log", "--format=%B", from + ".." + to}, &log))
+        return QString();
+    return QString::fromUtf8(log);
+}
+
 QList<PullEvent> readEventFilesIn(const QString &dir)
 {
     QList<PullEvent> events;
@@ -2668,6 +2696,12 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "mergeBase: " + pr.mergeBase;
     if (!pr.mergeHead.isEmpty())
         lines << "mergeHead: " + pr.mergeHead;
+    if (pr.mergedAt > 0)
+        lines << "mergedAt: " + QString::number(pr.mergedAt);
+    if (!pr.mergedBy.isEmpty())
+        lines << "mergedBy: " + pr.mergedBy;
+    if (!pr.coAuthors.isEmpty())
+        lines << "coAuthors: " + pr.coAuthors;
     lines << "ts: " + QString::number(pr.ts);
     lines << "author: " + pr.author;
     lines << "authorName: " + pr.authorName;
@@ -2730,6 +2764,9 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.creationHeadOid = fm.get("creationHeadOid");
     out.mergeBase = fm.get("mergeBase");
     out.mergeHead = fm.get("mergeHead");
+    out.mergedAt = fm.num("mergedAt");
+    out.mergedBy = fm.get("mergedBy");
+    out.coAuthors = fm.get("coAuthors");
     out.client = fm.get("client");
     out.clientSig = fm.get("clientSig");
     out.rewardEstimateLamports = fm.num("rewardEstimateLamports");
@@ -3896,6 +3933,10 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
         headSha = reachableHeadCommit(m_workTree, m_mirror, pr.head);
     }
     const bool refMerge = !headSha.isEmpty();
+    QString mergedMessages = pr.commits;
+    if (refMerge)
+        mergedMessages += QLatin1Char('\n') +
+                          commitMessages(m_workTree, QStringLiteral("HEAD"), headSha);
     QString preBase, preHead;
     if (pr.branchBacked) {
         QByteArray bsha;
@@ -3970,6 +4011,9 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
             return false;
     }
     pr.status = "merged";
+    pr.mergedAt = QDateTime::currentMSecsSinceEpoch();
+    pr.mergedBy = m_identity ? m_identity->publicKey() : QString();
+    pr.coAuthors = coAuthorEmails(mergedMessages);
     PullReward::advanceForMerge(pr);
     if (pr.branchBacked && !preBase.isEmpty() && !preHead.isEmpty()) {
         pr.mergeBase = preBase;
@@ -4299,6 +4343,10 @@ QList<int> PullStore::reconcileMergedPulls(QString *error,
             pr.status != QLatin1String("open"))
             continue;
         pr.status = "merged";
+        pr.mergedAt = QDateTime::currentMSecsSinceEpoch();
+        pr.coAuthors = coAuthorEmails(
+            pr.commits + QLatin1Char('\n') +
+            commitMessages(m_workTree, pr.creationBaseOid, headSha));
         const bool rewardAdvanced = PullReward::advanceForMerge(pr);
         pr.mergeBase = landedTip;
         pr.mergeHead = headSha;
