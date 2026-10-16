@@ -6,7 +6,7 @@ const forkmesh::market::NativePackageRegistration mastodonRegistration({
     QStringLiteral("builtin:mastodon"),
     {QStringLiteral("extension.native")},
     QStringLiteral("Mastodon"),
-    QStringLiteral("at-sign"),
+    QStringLiteral("mastodon"),
     QString(),
     QString(),
     {},

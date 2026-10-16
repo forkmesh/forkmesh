@@ -247,3 +247,25 @@ python3 tools/next_deploy.py all --execute
 - Cores fetch `main` from each other after each sync; a clean code-only
   divergence becomes a deterministic merge commit so cores converge
   (`server/gateway.go`, `convergePeerMains`).
+- Memory on a 1 GB core (2026-10-16 survey: 650-740 MiB used, 220-320 MiB
+  available). rqlite runs with `MemoryHigh=260M`, `MemoryMax=320M`,
+  `GOMEMLIMIT=150MiB` and no swap. At the old `MemoryMax=220M` every core's
+  rqlite sat at its limit (thousands of `memory.events` max hits; the page cache
+  of the 99 MB database counts against the unit), and on 2026-10-16 the leader
+  on n3 was OOM-killed under a burst of analytics reads. `MemoryHigh` makes the
+  kernel reclaim first instead of killing.
+- `forkmesh-mirror-node` (`MemoryHigh=96M`, `MemoryMax=128M`) also holds its
+  `mirror_gateway.py` child. The gateway's in-memory caches were allowed 122 MiB
+  (responses 64, dashboard assets 48, catalog 8, sessions 2), more than the
+  whole unit, so after two days each core carried about 185 MiB of the gateway
+  in swap. The caps are now responses 24 MiB, assets 12 MiB; entries in those
+  two caches are counted with 1 KiB of overhead (`entry_overhead`) because
+  the wrapper and headers are not in the body length; finished merge-job
+  records are capped at 1,000.
+- The gateway hashes a release blob before serving it. A verified
+  (path, size, mtime, inode) is remembered for an hour (512 entries), so the
+  `/status` download checks and repeat downloads do not re-read 60 MB files.
+  The checks themselves send `HEAD` (`status_monitoring.py`): they need only
+  the status, and a `GET` whose body was cancelled made the serving core
+  stream part of each blob every minute (Caddy's "aborting with incomplete
+  response").

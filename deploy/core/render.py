@@ -1847,7 +1847,7 @@ def base_values(fleet, node_name, paths):
         "HTTP_PORT": int(rq.get("http_port", 4001)),
         "RAFT_PORT": int(rq.get("raft_port", 4002)),
         "RQLITE_USER": rq.get("user", "fmnext"),
-        "GOMEMLIMIT": rq.get("gomemlimit", "110MiB"),
+        "GOMEMLIMIT": rq.get("gomemlimit", "150MiB"),
         "APP_PORT": int(app.get("port", 8080)),
         "MESH_PORT": int(app.get("mesh_port", 8792)),
         "APP_HOST": fleet["app_host"],

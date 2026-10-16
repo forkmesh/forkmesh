@@ -87,8 +87,8 @@ def test_per_node_values(tmp_path):
         assert "-join 10.77.0.1:4002,10.77.0.2:4002,10.77.0.3:4002" in rqlite
         assert "-join-as fmnext" in rqlite
         assert "-raft-snap-wal-size 33554432" in rqlite and "-raft-snap " not in rqlite
-        assert "Environment=TZ=UTC" in rqlite and "GOMEMLIMIT=110MiB" in rqlite
-        assert "MemoryMax=220M" in rqlite and "OOMScoreAdjust=-800" in rqlite
+        assert "Environment=TZ=UTC" in rqlite and "GOMEMLIMIT=150MiB" in rqlite
+        assert "MemoryHigh=260M" in rqlite and "MemoryMax=320M" in rqlite and "OOMScoreAdjust=-800" in rqlite
         assert "/var/lib/forkmesh-next/rqlite" in rqlite
         assert "auto-backup" not in rqlite  # no object storage
         app_env = files["/etc/forkmesh-next/app.env"]

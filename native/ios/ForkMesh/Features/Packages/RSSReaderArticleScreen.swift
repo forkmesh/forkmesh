@@ -38,6 +38,7 @@ struct RSSReaderArticleScreen: View {
             .bareShellTop()
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .modifier(RSSUnreadCountToolbar(count: model.unread(scope)))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 0) {
@@ -266,6 +267,36 @@ struct RSSReaderArticleScreen: View {
             browser = RSSBrowserLink(url: url)
         } else if scheme == "http" || scheme == "https" || scheme == "mailto" {
             openURL(url)
+        }
+    }
+}
+
+private struct RSSUnreadCountToolbar: ViewModifier {
+    let count: Int
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.toolbar {
+                countItem.sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                countItem
+            }
+        }
+        #else
+        content.toolbar {
+            countItem
+        }
+        #endif
+    }
+
+    private var countItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            RSSCountLabel(count: count)
+                .accessibilityLabel("\(count.formatted()) unread")
+                .accessibilityIdentifier("rss-article-unread-count")
         }
     }
 }

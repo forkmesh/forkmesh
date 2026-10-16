@@ -19,7 +19,11 @@ The rail icon is `shield`, a plain octicon-style shield outline in
 `desktop/resources/icons.qrc`). The package always asked for `shield`, but no
 such icon was bundled, so the rail button rendered blank.
 `marketplace/tests/test_package_rail_icons.py` now fails any native package
-whose rail icon is missing from `icons.qrc`.
+whose rail icon is missing from `icons.qrc`. When it landed it also caught the
+Feed, Usage and Mastodon packages asking for `rss`, `gauge` and `at-sign` (web
+dashboard icon names) in their desktop registrations; those now use the bundled
+`broadcast`, `pulse` and `mastodon` octicons. Their web navigation icons are
+unchanged.
 
 ## What it checks
 

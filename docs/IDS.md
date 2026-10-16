@@ -131,6 +131,26 @@ Optional, from the IDS process itself: direct mail with its own token
 signed webhook (`[ids] webhook_url`, header
 `x-fmnext-ids-signature: v1:<ms>:<hex>`).
 
+## Retention
+
+The app's `sensitive-cleanup` cron (`prune_security_incidents` in
+`app/src/entry.py`) deletes from `security_incidents`:
+
+- `info` incidents older than 90 days;
+- every other severity older than 365 days;
+- never a `lockdown` incident, and never an incident whose id a
+  `cluster_quarantine` row names (the `incident` field of a signed `self`
+  body), so the evidence behind a quarantine or lockdown stays.
+
+Each run deletes at most 2000 rows, oldest first, so one cron tick stays
+cheap; a backlog clears over several ticks. A failure is logged and does not
+stop the rest of the cleanup.
+
+Why: the 2026-10-16 table audit found `security_incidents` at 6.5 MiB and 21k
+rows with no retention at all on 1 GB nodes. Ids are random, so `INSERT OR
+IGNORE` never dedupes, and the IDS dedupe (`DEDUPE_SECONDS`) is per process
+only.
+
 ## Admin console
 
 Security, Intrusion detection (`?view=ids`, `app/src/ids_console.py`): KPIs,
