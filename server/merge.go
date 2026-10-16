@@ -61,6 +61,7 @@ var (
 	pullBranchPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
 	frontMatterKey     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
 	reviewFilePattern  = regexp.MustCompile(`^[0-9]{4,}-review\.md$`)
+	coAuthorTrailer    = regexp.MustCompile("(?im)^[ \t]*Co-authored-by:[^<\n]*<([^<>\\s@,]+@[^<>\\s@,]+)>[ \t]*$")
 )
 
 // Gateway operations every managed public repository advertises.
@@ -526,6 +527,24 @@ func validPullBranch(value string) string {
 		return ""
 	}
 	return branch
+}
+
+func coAuthorEmails(messages string) string {
+	seen := map[string]bool{}
+	var emails []string
+	for _, match := range coAuthorTrailer.FindAllStringSubmatch(messages, -1) {
+		email := strings.ToLower(match[1])
+		if len(email) > 254 || seen[email] {
+			continue
+		}
+		seen[email] = true
+		emails = append(emails, email)
+		if len(emails) == 16 {
+			break
+		}
+	}
+	sort.Strings(emails)
+	return strings.Join(emails, ",")
 }
 
 // frontMatter is the ordered key/value header of one committed pull record.
@@ -1114,6 +1133,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 	}
 	order := []string{}
 	var transaction []string
+	var messages string
 	if meta.derived {
 		head := validPullBranch(meta.head)
 		if head == "" || head == meta.base {
@@ -1135,6 +1155,8 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
 		}
 		baseAfter = merged
+		messages, _, _ = e.git(ctx, gitDir, "log", "--format=%B",
+			request.ExpectedBaseOid+".."+request.ExpectedHeadOid)
 		replacements["mergeBase"] = request.ExpectedBaseOid
 		replacements["mergeHead"] = request.ExpectedHeadOid
 		order = append(order, "mergeBase", "mergeHead")
@@ -1157,6 +1179,15 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
 		}
 		baseAfter = applied
+		if isMbox {
+			messages = string(payload)
+		}
+	}
+	replacements["mergedAt"] = strconv.FormatInt(e.now().UnixMilli(), 10)
+	order = append(order, "mergedAt")
+	if emails := coAuthorEmails(messages); emails != "" {
+		replacements["coAuthors"] = emails
+		order = append(order, "coAuthors")
 	}
 	updated := meta.matter.encode(replacements, order)
 	// The waiver is recorded where the merge itself is recorded: the ledger
