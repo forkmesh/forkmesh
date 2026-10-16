@@ -30060,6 +30060,16 @@ BADGE_CONTRIBUTION_DAYS_SQL = (
     "ON d.source_repo_bi=s.source_repo_bi "
     "AND d.generation_bi=s.active_generation_bi WHERE s.rk=1")
 
+BADGE_FOREIGN_MERGES_SQL = (
+    "FROM badge_pull_facts f "
+    "JOIN nodes an ON an.pubkey=f.author_key "
+    "JOIN repositories r ON r.key_bi=f.repo_bi "
+    "LEFT JOIN nodes rn ON rn.node_bi=r.owner_bi "
+    "WHERE f.kind='pull' AND f.merged=1 AND f.author_key<>'' "
+    "AND r.is_private=0 "
+    "AND COALESCE(NULLIF(an.user_bi, ''), an.node_bi)<>"
+    "COALESCE(NULLIF(rn.user_bi, ''), r.owner_bi) GROUP BY 1")
+
 BADGE_METRIC_SQL = {
     "six_eyes": (
         BADGE_CONTRIBUTION_SOURCES_SQL + ", "
@@ -30123,6 +30133,19 @@ BADGE_METRIC_SQL = {
         "UNION ALL SELECT recipient_bi, COUNT(*) "
         "FROM contributor_reward_estimates WHERE status='paid' "
         "GROUP BY recipient_bi) GROUP BY account_bi)"),
+    "web_weaver": (
+        "m AS (SELECT COALESCE(NULLIF(an.user_bi, ''), an.node_bi) "
+        "AS account_bi, COUNT(DISTINCT f.repo_bi || '#' || f.number) "
+        "AS value " + BADGE_FOREIGN_MERGES_SQL + ")"),
+    "many_webs": (
+        "m AS (SELECT COALESCE(NULLIF(an.user_bi, ''), an.node_bi) "
+        "AS account_bi, COUNT(DISTINCT f.repo_bi) AS value " +
+        BADGE_FOREIGN_MERGES_SQL + ")"),
+    "eight_hands": (
+        "m AS (SELECT c.account_bi, COUNT(*) AS value "
+        "FROM badge_coauthor_facts c "
+        "JOIN repositories r ON r.key_bi=c.repo_bi "
+        "WHERE r.is_private=0 GROUP BY c.account_bi)"),
 }
 
 BADGE_PROGRESS_SELECT_SQL = (
@@ -30183,9 +30206,306 @@ async def award_daily_spinner_badges(env):
         env, "daily_spinner", rows, key="streak")}
 
 
+BADGE_RECORD_REPOS_PER_RUN = 4
+BADGE_RECORD_BATCH = 50
+BADGE_RECORD_REVIEW_CHECKS = 10
+
+BADGE_FACT_CLOSER_SQL = (
+    "COALESCE(NULLIF(f.closer_bi, ''), NULLIF(cn.user_bi, ''), cn.node_bi) "
+    "AS account_bi FROM badge_pull_facts f "
+    "JOIN repositories r ON r.key_bi=f.repo_bi "
+    "LEFT JOIN nodes cn ON cn.pubkey=f.closer_key AND f.closer_key<>'' "
+    "WHERE r.is_private=0 AND f.opened_at>0 ")
+
+BADGE_FACT_SQL = {
+    "quick_silk": (
+        "a AS (SELECT " + BADGE_FACT_CLOSER_SQL +
+        "AND f.closed_at>=f.opened_at "
+        "AND f.closed_at-f.opened_at<=300000)"),
+    "carpet_ride": (
+        "a AS (SELECT " + BADGE_FACT_CLOSER_SQL +
+        "AND f.kind='pull' AND f.merged=1 "
+        "AND (f.review_waived=1 OR f.reviewed=0))"),
+}
+
+BADGE_FACT_SELECT_SQL = (
+    "SELECT DISTINCT a.account_bi, u.username FROM a "
+    "JOIN users u ON u.user_bi=a.account_bi "
+    "LEFT JOIN badge_awards b ON b.badge_slug=? "
+    "AND b.account_bi=a.account_bi WHERE b.account_bi IS NULL ")
+
+BADGE_RECORD_REPOS_SQL = (
+    "SELECT h.key_bi, MAX(h.ts) AS state_ts, r.data FROM repo_state_history h "
+    "JOIN repositories r ON r.key_bi=h.key_bi "
+    "LEFT JOIN badge_repo_sweeps s ON s.repo_bi=h.key_bi "
+    "WHERE r.is_private=0 GROUP BY h.key_bi "
+    "HAVING MAX(h.ts)>COALESCE(MAX(s.state_ts), 0) "
+    "ORDER BY COALESCE(MAX(s.swept_at), 0), MAX(h.ts) LIMIT ?")
+
+BADGE_RECORD_UPSERT_SQL = (
+    "INSERT INTO badge_pull_facts (repo_bi, kind, number, author_key, "
+    "closer_key, opened_at, closed_at, merged, reviewed, updated_at) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?) "
+    "ON CONFLICT(repo_bi, kind, number) DO UPDATE SET "
+    "author_key=excluded.author_key, "
+    "closer_key=CASE WHEN excluded.closer_key<>'' THEN excluded.closer_key "
+    "ELSE badge_pull_facts.closer_key END, "
+    "opened_at=excluded.opened_at, "
+    "closed_at=CASE WHEN excluded.closed_at>0 THEN excluded.closed_at "
+    "ELSE badge_pull_facts.closed_at END, "
+    "merged=MAX(badge_pull_facts.merged, excluded.merged), "
+    "reviewed=MAX(badge_pull_facts.reviewed, excluded.reviewed), "
+    "updated_at=excluded.updated_at")
+
+
+async def award_fact_badges(env, slug):
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "WITH " + BADGE_FACT_SQL[slug] + " " + BADGE_FACT_SELECT_SQL +
+        "LIMIT ?",
+        slug, BADGE_SWEEP_LIMIT)
+    awarded = []
+    for row in rows or []:
+        name, name_bi, _ = await _active_user_account(
+            env, row.get("username") or "")
+        if not name or name_bi != row.get("account_bi"):
+            continue
+        if await _award_badge(env, name, name_bi, slug):
+            awarded.append(name)
+    return {"awarded": awarded}
+
+
+async def _record_web_merge_badge_fact(env, repo_bi, number, actor_bi,
+                                       override_review):
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        number = 0
+    if not repo_bi or not actor_bi or number < 1:
+        return False
+    await ensure_schema(env)
+    now = int(Date.now())
+    await d1_run(
+        env,
+        "INSERT INTO badge_pull_facts (repo_bi, kind, number, closer_bi, "
+        "closed_at, merged, review_waived, updated_at) "
+        "VALUES (?,'pull',?,?,?,1,?,?) "
+        "ON CONFLICT(repo_bi, kind, number) DO UPDATE SET "
+        "closer_bi=excluded.closer_bi, "
+        "closed_at=CASE WHEN badge_pull_facts.closed_at>0 "
+        "THEN badge_pull_facts.closed_at ELSE excluded.closed_at END, "
+        "merged=1, review_waived=MAX(badge_pull_facts.review_waived, "
+        "excluded.review_waived), updated_at=excluded.updated_at",
+        repo_bi, number, actor_bi, now, 1 if override_review else 0, now)
+    await d1_run(
+        env, "UPDATE badge_repo_sweeps SET state_ts=0 WHERE repo_bi=?",
+        repo_bi)
+    return True
+
+
+def _badge_record_numbers(tree):
+    entries = tree.get("entries") if isinstance(tree, dict) else None
+    numbers = set()
+    for entry in entries if isinstance(entries, list) else []:
+        name = str((entry or {}).get("name") or "") if isinstance(
+            entry, dict) else ""
+        if entry.get("type") == "tree" and name.isdigit() and 0 < int(
+                name) <= 1_000_000_000:
+            numbers.add(int(name))
+    return numbers
+
+
+async def _badge_record_blobs(env, owner, repo, paths, ref=""):
+    if not paths:
+        return {}
+    query = "&".join("path=" + quote(path, safe="") for path in paths)
+    if ref:
+        query += "&ref=" + quote(ref, safe="")
+    data = await _forkbot_repo_gateway_json(env, owner, repo, "blobs?" + query)
+    blobs = data.get("blobs") if isinstance(data, dict) else None
+    return blobs if isinstance(blobs, dict) else None
+
+
+async def _verified_email_account(env, email):
+    email = clean_string(email or "", 254).strip().lower()
+    if "@" not in email:
+        return ""
+    row = await d1_first(
+        env, "SELECT user_bi, data FROM users WHERE email_bi=?",
+        await blind_index(env, email))
+    if not row:
+        return ""
+    rec = await decrypt_row(env, row.get("data"))
+    if (
+        not isinstance(rec, dict)
+        or rec.get("email_verified") is not True
+        or clean_string(rec.get("email", ""), 254).strip().lower() != email
+        or _account_kind(rec) != "user"
+        or rec.get("status") != "active"
+    ):
+        return ""
+    return str(row.get("user_bi") or "")
+
+
+async def _record_coauthor_facts(env, repo_bi, number, author_key, emails):
+    if not emails:
+        return 0
+    authors = set()
+    if author_key:
+        for row in await d1_all(
+                env,
+                "SELECT COALESCE(NULLIF(user_bi, ''), node_bi) AS account_bi "
+                "FROM nodes WHERE pubkey=? AND pubkey<>''", author_key) or []:
+            authors.add(str(row.get("account_bi") or ""))
+    recorded = 0
+    for email in emails:
+        account_bi = await _verified_email_account(env, email)
+        if not account_bi or account_bi in authors:
+            continue
+        await d1_run(
+            env,
+            "INSERT OR IGNORE INTO badge_coauthor_facts "
+            "(repo_bi, number, account_bi, created_at) VALUES (?,?,?,?)",
+            repo_bi, number, account_bi, int(Date.now()))
+        recorded += 1
+    return recorded
+
+
+async def _sweep_repo_pull_records(env, repo_bi, owner, repo, known):
+    tree = await _forkbot_repo_gateway_json(
+        env, owner, repo,
+        "tree?path=" + quote(".forkmesh/pulls", safe="") +
+        "&ref=" + quote("forkmesh/pulls", safe=""))
+    if tree is None:
+        return True
+    pending = []
+    for number in _badge_record_numbers(tree):
+        row = known.get(("pull", number))
+        if row and int(row.get("opened_at") or 0) > 0 and (
+                int(row.get("merged") or 0) or int(row.get("closed_at") or 0)):
+            continue
+        pending.append((int((row or {}).get("updated_at") or 0), number))
+    pending.sort()
+    complete = len(pending) <= BADGE_RECORD_BATCH
+    numbers = [number for _, number in pending[:BADGE_RECORD_BATCH]]
+    paths = {number: ".forkmesh/pulls/%d/pull.md" % number
+             for number in numbers}
+    blobs = await _badge_record_blobs(
+        env, owner, repo, list(paths.values()), "forkmesh/pulls")
+    if blobs is None:
+        return False
+    review_checks = 0
+    now = int(Date.now())
+    for number in numbers:
+        fields = microjobs.parse_pull_frontmatter(
+            _forkbot_blob_text(blobs.get(paths[number])))
+        fact = badge_catalog.pull_record_fact(fields, number)
+        if fact is None:
+            fact = {"author_key": "", "closer_key": "", "opened_at": 0,
+                    "closed_at": 0, "merged": False, "co_authors": []}
+        row = known.get(("pull", number)) or {}
+        reviewed = 0
+        if fact["merged"] and (fact["closer_key"] or row.get("closer_bi")) \
+                and not int(row.get("review_waived") or 0):
+            if review_checks >= BADGE_RECORD_REVIEW_CHECKS:
+                complete = False
+                continue
+            review_checks += 1
+            listing = await _forkbot_repo_gateway_json(
+                env, owner, repo,
+                "tree?path=" + quote(".forkmesh/pulls/%d" % number, safe="") +
+                "&ref=" + quote("forkmesh/pulls", safe=""))
+            if listing is None:
+                complete = False
+                continue
+            reviewed = 1 if badge_catalog.has_review_file(
+                listing.get("entries")) else 0
+        await d1_run(
+            env, BADGE_RECORD_UPSERT_SQL, repo_bi, "pull", number,
+            fact["author_key"], fact["closer_key"], fact["opened_at"],
+            fact["closed_at"], 1 if fact["merged"] else 0, reviewed, now)
+        if fact["merged"] and fact["opened_at"]:
+            await _record_coauthor_facts(
+                env, repo_bi, number, fact["author_key"], fact["co_authors"])
+    return complete
+
+
+async def _sweep_repo_issue_records(env, repo_bi, owner, repo, known):
+    tree = await _forkbot_repo_gateway_json(
+        env, owner, repo,
+        "tree?path=" + quote(".forkmesh/issues/closed", safe=""))
+    if tree is None:
+        return False
+    pending = sorted(number for number in _badge_record_numbers(tree)
+                     if ("issue", number) not in known)
+    complete = len(pending) <= BADGE_RECORD_BATCH
+    numbers = pending[:BADGE_RECORD_BATCH]
+    paths = {number: ".forkmesh/issues/closed/%d/issue-%d.json" % (
+        number, number) for number in numbers}
+    blobs = await _badge_record_blobs(env, owner, repo, list(paths.values()))
+    if blobs is None:
+        return False
+    now = int(Date.now())
+    for number in numbers:
+        try:
+            record = json.loads(
+                _forkbot_blob_text(blobs.get(paths[number])) or "null")
+        except Exception:
+            record = None
+        fact = badge_catalog.issue_record_fact(record) or {
+            "author_key": "", "closer_key": "", "opened_at": 0,
+            "closed_at": 0}
+        await d1_run(
+            env, BADGE_RECORD_UPSERT_SQL, repo_bi, "issue", number,
+            fact["author_key"], fact["closer_key"], fact["opened_at"],
+            fact["closed_at"], 0, 0, now)
+    return complete
+
+
+async def sweep_badge_records(env):
+    await ensure_schema(env)
+    repos = await d1_all(
+        env, BADGE_RECORD_REPOS_SQL, BADGE_RECORD_REPOS_PER_RUN)
+    swept = []
+    for row in repos or []:
+        repo_bi = str(row.get("key_bi") or "")
+        record = await decrypt_row(env, row.get("data"))
+        owner = str((record or {}).get("owner") or "") if isinstance(
+            record, dict) else ""
+        repo = str((record or {}).get("repo") or "") if isinstance(
+            record, dict) else ""
+        complete = False
+        if owner and repo:
+            known = {}
+            for fact in await d1_all(
+                    env,
+                    "SELECT kind, number, opened_at, closed_at, merged, "
+                    "closer_bi, review_waived, updated_at "
+                    "FROM badge_pull_facts WHERE repo_bi=?", repo_bi) or []:
+                known[(fact.get("kind"), int(fact.get("number") or 0))] = fact
+            pulls = await _sweep_repo_pull_records(
+                env, repo_bi, owner, repo, known)
+            issues = await _sweep_repo_issue_records(
+                env, repo_bi, owner, repo, known)
+            complete = pulls and issues
+        state_ts = int(row.get("state_ts") or 0) if complete else 0
+        await d1_run(
+            env,
+            "INSERT INTO badge_repo_sweeps (repo_bi, state_ts, swept_at) "
+            "VALUES (?,?,?) ON CONFLICT(repo_bi) DO UPDATE SET "
+            "state_ts=CASE WHEN excluded.state_ts>0 THEN excluded.state_ts "
+            "ELSE badge_repo_sweeps.state_ts END, swept_at=excluded.swept_at",
+            repo_bi, state_ts, int(Date.now()))
+        if complete:
+            swept.append(owner + "/" + repo)
+    return {"awarded": swept}
+
+
 async def run_badge_sweep(env):
     out = {}
     sweeps = [
+        ("records", sweep_badge_records),
         ("distinguished_contributor", award_distinguished_contributor_badges),
         ("stargazer", award_stargazer_badges),
         ("genies_gift", award_genies_gift_badges),
@@ -30194,6 +30514,9 @@ async def run_badge_sweep(env):
     for slug in BADGE_METRIC_SQL:
         sweeps.append(
             (slug, lambda env, slug=slug: award_metric_badges(env, slug)))
+    for slug in BADGE_FACT_SQL:
+        sweeps.append(
+            (slug, lambda env, slug=slug: award_fact_badges(env, slug)))
     for key, sweep in sweeps:
         try:
             out[key] = (await sweep(env)).get("awarded", [])
