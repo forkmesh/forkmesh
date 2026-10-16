@@ -116,6 +116,10 @@ Everything is in `desktop/`.
 - **Notices.** There are no floating toasts. A message is shown inline on the
   page it was raised on, or in the open dialog's status line; unsolicited
   events are filed on the Pings page ([diagnostics.md](diagnostics.md)).
+  A fresh celebrating ping plays `CelebrationOverlay` (confetti with a
+  headline card); the card word-wraps its title and body onto as many lines
+  as they need instead of eliding them, so "Email tracked in the CRM" and the
+  email subject are read in full.
 - **Git work off the GUI thread.** Git runs through helpers in
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.

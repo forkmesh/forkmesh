@@ -7181,13 +7181,18 @@ private:
         const int room = qMax(200, qMin(width() - 48, 720));
         const QFontMetrics bigMetrics(big);
         const QFontMetrics smallMetrics(small);
-        const QString headline = bigMetrics.elidedText(m_headline, Qt::ElideRight, room - 48);
-        const QString detail = smallMetrics.elidedText(m_detail, Qt::ElideRight, room - 48);
-        const int textWide = qMax(bigMetrics.horizontalAdvance(headline),
-                                  detail.isEmpty() ? 0 : smallMetrics.horizontalAdvance(detail));
+        const int wrapFlags = Qt::AlignHCenter | Qt::TextWordWrap;
+        const QRect wrapBox(0, 0, room - 48, 100000);
+        const QRect headBox =
+            bigMetrics.boundingRect(wrapBox, wrapFlags, m_headline);
+        const QRect detailBox =
+            m_detail.isEmpty()
+                ? QRect()
+                : smallMetrics.boundingRect(wrapBox, wrapFlags, m_detail);
+        const int textWide = qMax(headBox.width(), detailBox.width());
         const int cardWide = textWide + 56;
-        const int cardHigh = bigMetrics.height() + 36 +
-                             (detail.isEmpty() ? 0 : smallMetrics.height() + 8);
+        const int cardHigh = headBox.height() + 36 +
+                             (m_detail.isEmpty() ? 0 : detailBox.height() + 8);
         p.save();
         p.setOpacity(qBound(0.0, fade * qMin(1.0, pop * 1.4), 1.0));
         p.translate(width() / 2.0, height() * 0.38);
@@ -7198,17 +7203,17 @@ private:
         p.drawRoundedRect(card, 22, 22);
         p.setPen(Qt::white);
         p.setFont(big);
-        const QRectF headRect(card.left(), card.top() + 18, card.width(),
-                              bigMetrics.height());
-        p.drawText(headRect, Qt::AlignCenter, headline);
-        if (!detail.isEmpty()) {
+        const QRectF headRect(-wrapBox.width() / 2.0, card.top() + 18,
+                              wrapBox.width(), headBox.height());
+        p.drawText(headRect, wrapFlags, m_headline);
+        if (!m_detail.isEmpty()) {
             QColor soft(Qt::white);
             soft.setAlphaF(0.85);
             p.setPen(soft);
             p.setFont(small);
-            p.drawText(QRectF(card.left(), headRect.bottom() + 8, card.width(),
-                              smallMetrics.height()),
-                       Qt::AlignCenter, detail);
+            p.drawText(QRectF(headRect.left(), headRect.bottom() + 8,
+                              headRect.width(), detailBox.height()),
+                       wrapFlags, m_detail);
         }
         p.restore();
     }
