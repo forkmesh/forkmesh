@@ -76,7 +76,7 @@ def test_extension_is_manifest_v3_with_the_narrowest_permissions():
                  "dashboard.js", "popup.js", "popup.html", "popup-vault.js",
                  "vault.js", "vault-crypto.js", "vault-client.js", "x.js", "reddit.js",
                  "marketing-capture.js", "capture.html", "capture.js", "x-developer.js",
-                 "zoho-sort.js"):
+                 "zoho-tidy.js", "zoho-sort.js"):
         assert (EXTENSION / name).is_file()
     for size in ("16", "32", "48", "128"):
         assert (EXTENSION / MANIFEST["icons"][size]).is_file()
@@ -406,7 +406,7 @@ def test_a_zoho_header_with_names_only_finds_the_address_in_attributes_or_the_li
 def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
     script = MANIFEST["content_scripts"][-1]
-    assert script["js"] == ["zoho-sort.js"]
+    assert script["js"] == ["zoho-tidy.js", "zoho-sort.js"]
     assert script["matches"] == [match for match in MANIFEST["content_scripts"][0]["matches"]
                                  if "zoho" in match]
     assert 'const COLUMNS = [["sender", "Sender"], ["subject", "Subject"], ["date", "Date"]];' in sorter
@@ -418,6 +418,37 @@ def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
     assert "#forkmesh-zoho-sort" in css
     assert '[data-fm-sort="root"] { display: flex !important; flex-direction: column !important; }' in css
     assert '[data-fm-sort="flat"] { display: contents !important; }' in css
+
+
+def test_zoho_inbox_zero_tools_act_through_zoho_mail_and_confirm_a_delete():
+    sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
+    tidy = (EXTENSION / "zoho-tidy.js").read_text(encoding="utf-8")
+    for gone in ("chrome.", "fetch(", "XMLHttpRequest", "localStorage", "appendChild(", "insertBefore(",
+                 "window.confirm", "Delete forever"):
+        assert gone not in sorter, gone
+        assert gone not in tidy, gone
+    assert "const tidy = globalThis.ForkMeshZohoTidy;" in sorter
+    assert 'aria-label="Search loaded messages by subject or sender"' in sorter
+    assert 'data-act="group"' in sorter and 'role="listbox" aria-label="Senders"' in sorter
+    assert 'else if (kind === "delete") askDelete(targets().length);' in sorter
+    assert 'else if (kind === "confirm") { if (state.pending) act("delete", state.pending.count); }' in sorter
+    assert "if (expected !== null && expected !== rows.length) {" in sorter
+    assert "if (picked !== rows.length || extra) {" in sorter
+    assert sorter.index("const { picked, extra } = await tick(rows);") < sorter.index("const button = findAction(kind);")
+    assert "if (current.list.root.contains(node) || !onScreen(node)) continue;" in sorter
+    assert "event.stopPropagation();" in sorter
+    css = (EXTENSION / "content.css").read_text(encoding="utf-8")
+    assert '[data-fm-filter="out"] { display: none !important; }' in css
+    assert "height: 28px" not in css
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_zoho_inbox_zero_search_grouping_and_actions_logic():
+    result = subprocess.run(
+        [shutil.which("node"), "--no-warnings", str(PACKAGE / "tests" / "zoho_tidy_harness.js")],
+        capture_output=True, text=True, timeout=60, env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
 
 
 def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit():
@@ -650,7 +681,7 @@ def test_the_refresh_panel_follows_the_tab_without_touching_any_channel_site():
         assert (EXTENSION / name).is_file()
     assert [script["js"] for script in MANIFEST["content_scripts"]] == [
         ["panel.js", "content.js"], ["dashboard.js"], ["x.js"], ["reddit.js"], ["x-developer.js"],
-        ["zoho-sort.js"]]
+        ["zoho-tidy.js", "zoho-sort.js"]]
     for gone in ("fm-bar-", "BAR_", "refresh-bar", "barMark", "fm-refresh-bar"):
         assert gone not in BACKGROUND, gone
     assert BACKGROUND.count("chrome.scripting.registerContentScripts(") == 1
