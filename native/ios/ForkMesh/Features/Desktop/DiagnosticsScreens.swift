@@ -416,7 +416,7 @@ struct ProcessDetailScreen: View {
             identity = reply.str("identity")
             token = reply.str("token")
             stoppable = reply.bool("stoppable")
-        } catch { error = RemoteErrorText.describe(error) }
+        } catch { self.error = RemoteErrorText.describe(error) }
     }
 
     private func stop() async {
@@ -430,6 +430,6 @@ struct ProcessDetailScreen: View {
             message = reply.str("message", "Termination requested.")
             stoppable = false
             await store.refreshProcesses()
-        } catch { error = RemoteErrorText.describe(error) }
+        } catch { self.error = RemoteErrorText.describe(error) }
     }
 }
