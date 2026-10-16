@@ -3857,11 +3857,13 @@ void ClaudeTranscriptView::handleEvent(const QJsonObject &ev, bool countStats)
         markAskAnswered(ev.value(QStringLiteral("tool_use_id")).toString(),
                         ev.value(QStringLiteral("text")).toString());
     } else if (type == QLatin1String("_local_notice")) {
-        addNotice(ev.value(QStringLiteral("text")).toString());
+        addNotice(ev.value(QStringLiteral("text")).toString(),
+                  ev.value(QStringLiteral("level")).toString() ==
+                      QLatin1String("error"));
     }
 }
 
-void ClaudeTranscriptView::addNotice(const QString &text)
+void ClaudeTranscriptView::addNotice(const QString &text, bool error)
 {
     if (text.trimmed().isEmpty())
         return;
@@ -3871,8 +3873,8 @@ void ClaudeTranscriptView::addNotice(const QString &text)
     enableReferenceLinks(l);
     l->setFont(monoFont());
     l->setStyleSheet(
-        QStringLiteral("color:%1;background:transparent;").arg(m_p.muted));
-    addRow(l, QString(), GlyphNone);
+        QStringLiteral("color:%1;background:transparent;").arg(error ? m_p.del : m_p.muted));
+    addRow(l, error ? m_p.del : QString(), GlyphNone);
 }
 
 void ClaudeTranscriptView::handleClaudeStreamEvent(const QJsonObject &e)

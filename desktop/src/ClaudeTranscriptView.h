@@ -259,7 +259,7 @@ private:
     void completeAgentText(const QString &id, const QString &text);
     void addResult(const QJsonObject &ev);
     void applyBackgroundWorkNote();
-    void addNotice(const QString &text);
+    void addNotice(const QString &text, bool error = false);
     void handleClaudeStreamEvent(const QJsonObject &event);
     bool completeStreamedText(const QString &messageId, const QString &text);
     void dropLiveAgentText(const QString &key);

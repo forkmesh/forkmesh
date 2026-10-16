@@ -3032,6 +3032,10 @@ public:
         const AgentSession *session = findAgentSession(sessionId);
         return session ? session->lastError : QString();
     }
+    void testFailCliTranscriptLaunch(int sessionId, const QString &why)
+    {
+        failCliTranscriptLaunch(sessionId, why);
+    }
     void testMarkAgentSessionRunning(int sessionId)
     {
         markAgentSessionRunning(sessionId);

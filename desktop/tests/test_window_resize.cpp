@@ -10127,6 +10127,62 @@ void checkAgentCodeView(MainWindow &window)
           QStringLiteral("Code toggles on and back off"));
 }
 
+void checkCliLaunchFailureTranscript(MainWindow &window)
+{
+    AgentSession session;
+    session.id = 9203;
+    session.owner = QStringLiteral("forkmesh");
+    session.name = QStringLiteral("desktop-output-probe");
+    session.provider = QStringLiteral("claude-code");
+    session.status = AgentStatus::Running;
+    session.createdAtMs = QDateTime::currentMSecsSinceEpoch();
+    window.testAddAgentSession(session);
+    window.testSetAgentTranscriptEvents(
+        session.id,
+        {QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                     {QStringLiteral("text"), QStringLiteral("Start the run.")}}});
+    window.testOpenAgentsOverview();
+    window.testShowAgentSession(session.id);
+    QApplication::processEvents();
+
+    const QString diagnostic = QStringLiteral(
+        "Could not create the agent's worktree at /worktrees/9203-probe:\n"
+        "preparation output\n"
+        "fatal: invalid reference: 9203-probe");
+    window.testFailCliTranscriptLaunch(session.id, diagnostic);
+    window.testShowAgentSession(session.id);
+    QApplication::processEvents();
+
+    auto *transcript = window.findChild<ClaudeTranscriptView *>();
+    if (transcript) {
+        transcript->handleEvent(
+            QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_notice")},
+                        {QStringLiteral("level"), QStringLiteral("error")},
+                        {QStringLiteral("text"), diagnostic}});
+    }
+    int outputMatches = 0;
+    int errorMatches = 0;
+    QElapsedTimer rendered;
+    rendered.start();
+    do {
+        outputMatches =
+            transcript ? transcript->search(QStringLiteral("preparation output")) : 0;
+        errorMatches = transcript
+                           ? transcript->search(QStringLiteral("fatal: invalid reference"))
+                           : 0;
+        if (outputMatches > 0 && errorMatches > 0)
+            break;
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    } while (rendered.elapsed() < 1000);
+    const bool shown = outputMatches > 0 && errorMatches > 0;
+    check(shown && window.testAgentSessionLastError(session.id) == diagnostic,
+          QStringLiteral("a CLI worktree failure keeps its complete output in the "
+                         "desktop transcript (stdout=%1, stderr=%2)")
+              .arg(outputMatches)
+              .arg(errorMatches));
+    window.testRemoveAgentSession(session.id);
+}
+
 void checkAgentCommandApprovalRender(MainWindow &window)
 {
     QTemporaryDir repository;
@@ -14705,6 +14761,7 @@ else:
 
     if (agentCodeOnly) {
         checkAgentCodeView(window);
+        checkCliLaunchFailureTranscript(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

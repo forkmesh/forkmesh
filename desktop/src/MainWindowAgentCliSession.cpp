@@ -470,15 +470,18 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
     session.startedAtMs = runStartMs;
     session.mergeCandidateHead.clear();
     m_agentStore->saveSession(session);
-    m_agentStore->appendLog(
-        session,
+    const QString startupNotice =
         session.directCheckout
-            ? QStringLiteral("\n==> Working directly in %1 (no branch or "
-                             "worktree).\n")
+            ? QStringLiteral("==> Working directly in %1 (no branch or worktree).")
                   .arg(repoPath)
-            : QString::fromUtf8("\n==> Preparing an isolated worktree for "
-                                "branch %1\xE2\x80\xA6\n")
-                  .arg(branchName));
+            : QString::fromUtf8(
+                  "==> Preparing an isolated worktree for branch %1\xE2\x80\xA6")
+                  .arg(branchName);
+    m_agentStore->appendLog(
+        session, QLatin1Char('\n') + startupNotice + QLatin1Char('\n'));
+    applyTranscriptEvent(
+        sid, QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_notice")},
+                         {QStringLiteral("text"), startupNotice}});
 
     const bool startupQuiet =
         m_startupQuietAgentSessions.remove(sid) || m_agentQuietResume;
@@ -1066,10 +1069,24 @@ void MainWindow::failCliTranscriptLaunch(int sid, const QString &why)
         m_agentStore->saveSession(*as);
         scheduleAgentSessionsPush();
     }
+    const QJsonObject failureNotice{
+        {QStringLiteral("type"), QStringLiteral("_local_notice")},
+        {QStringLiteral("level"), QStringLiteral("error")},
+        {QStringLiteral("text"), why}};
+    applyTranscriptEvent(sid, failureNotice);
+    const bool failureNoticeRendered =
+        m_renderedTranscriptSession == sid &&
+        m_renderedTranscriptCount == m_streamEvents.value(sid).size();
     completeOrgTaskForSession(sid);
     reloadAgents();
-    if (sid == m_selectedAgentSessionId)
+    if (sid == m_selectedAgentSessionId) {
         showAgentSession(sid);
+        renderTranscriptForSession(sid);
+        if (!failureNoticeRendered && m_agentTranscript) {
+            m_agentTranscript->handleEvent(failureNotice);
+            m_agentTranscript->jumpToBottom();
+        }
+    }
     looperOnSessionFinished(sid);
     processAgentQueue();
     maybeStartQueuedRebuild();
@@ -1114,9 +1131,17 @@ void MainWindow::startCliTranscriptWorktree(
         connect(add, &QProcess::finished, this,
                 [this, sid, add, wtPath, script, launch, failLaunch, runAdd,
                  attemptsLeft](int, QProcess::ExitStatus) {
+                    const QString out = QString::fromUtf8(
+                                            add->readAllStandardOutput())
+                                            .trimmed();
                     const QString err = QString::fromUtf8(
                                             add->readAllStandardError())
                                             .trimmed();
+                    QStringList diagnostic;
+                    if (!out.isEmpty())
+                        diagnostic << out;
+                    if (!err.isEmpty())
+                        diagnostic << err;
                     add->deleteLater();
                     if (QDir(wtPath).exists()) {
                         m_streamWorktree[sid] = wtPath;
@@ -1137,10 +1162,10 @@ void MainWindow::startCliTranscriptWorktree(
                     failLaunch(
                         QStringLiteral("Could not create the agent's worktree "
                                        "at %1%2")
-                            .arg(wtPath, err.isEmpty()
+                            .arg(wtPath, diagnostic.isEmpty()
                                              ? QStringLiteral(".")
                                              : QStringLiteral(": %1").arg(
-                                                   err.right(400))));
+                                                   diagnostic.join(QLatin1Char('\n')))));
                 });
         add->start(QStringLiteral("bash"), {QStringLiteral("-lc"), script});
     };
