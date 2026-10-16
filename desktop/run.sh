@@ -5,7 +5,17 @@
 #   ./run.sh clean    clear the build cache (removes build/)
 #   ./run.sh rebuild  clear the cache, then build and launch
 #   ./run.sh test     build and run the sub-minute critical contracts
+#   ./run.sh --quiet  any of the above without the step and timing log
 set -euo pipefail
+FM_RUN_QUIET="${FORKMESH_RUN_QUIET:-0}"
+fm_run_args=()
+for fm_arg in "$@"; do
+    case "$fm_arg" in
+        -q|--quiet) FM_RUN_QUIET=1 ;;
+        *) fm_run_args+=("$fm_arg") ;;
+    esac
+done
+set -- "${fm_run_args[@]+"${fm_run_args[@]}"}"
 # Preserve the caller's directory before this build helper changes into
 # desktop. The KVM workspace setting uses this exact directory as its only
 # writable project mount, and self-relaunches inherit it unchanged.
@@ -113,19 +123,137 @@ check_stale_cache() {
     fi
 }
 
+fm_now_ms() {
+    local now
+    if [ -n "${EPOCHREALTIME:-}" ]; then
+        now="${EPOCHREALTIME/[.,]/}"
+        printf '%s\n' "$((10#$now / 1000))"
+        return
+    fi
+    now="$(date +%s%N 2>/dev/null || true)"
+    case "$now" in
+        ''|*[!0-9]*) printf '%s\n' "$(($(date +%s) * 1000))" ;;
+        *) printf '%s\n' "$((now / 1000000))" ;;
+    esac
+}
+
+FM_RESTART_CLOCK="$(fm_now_ms)"
+FM_STEP_TIMES=()
+FM_STEP_LOG=""
+
+fm_log_restart() {
+    [ "$FM_RUN_QUIET" = 1 ] && return 0
+    printf '[restart +%5dms] %s\n' "$(($(fm_now_ms) - FM_RESTART_CLOCK))" "$1" >&2
+}
+
+fm_status() {
+    if [ "${2:-}" = error ]; then
+        fm_log_restart "ERROR: $1"
+        printf '!! %s\n' "$1" >&2
+        return 0
+    fi
+    fm_log_restart "$1"
+    [ "$FM_RUN_QUIET" = 1 ] || printf '==> %s\n' "$1"
+}
+
+fm_failure_summary() {
+    local log="$1" line
+    if grep -q 'No space left on device' "$log"; then
+        printf '%s\n' "the disk filled up during the build. Free space on the volume holding the build directory, then build again."
+        return 0
+    fi
+    line="$(grep -m1 -E 'error:|^[[:space:]]*fatal:' "$log" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | cut -c1-300 || true)"
+    if [ -n "$line" ]; then
+        printf '%s\n' "$line"
+        return 0
+    fi
+    tail -c 300 "$log" |
+        awk 'NR == 1 { first = $0; next } { rest = rest $0 "\n" } END { printf "%s", (rest == "" ? first "\n" : rest) }' |
+        sed '/^[[:space:]]*$/d'
+}
+
+fm_duration_text() {
+    local ms="$1"
+    if [ "$ms" -lt 1000 ]; then
+        printf '%sms\n' "$ms"
+    elif [ "$ms" -lt 60000 ]; then
+        printf '%s.%ss\n' "$((ms / 1000))" "$((ms % 1000 / 100))"
+    else
+        printf '%sm %ss\n' "$((ms / 60000))" "$((ms % 60000 / 1000))"
+    fi
+}
+
+fm_summary() {
+    [ "$FM_RUN_QUIET" = 1 ] && return 0
+    local total parts="" entry
+    total="$(($(fm_now_ms) - FM_RESTART_CLOCK))"
+    for entry in "${FM_STEP_TIMES[@]+"${FM_STEP_TIMES[@]}"}"; do
+        parts="${parts:+$parts, }${entry% *} $(fm_duration_text "${entry##* }")"
+    done
+    fm_log_restart "summary: ${parts:-no steps}; total ${total}ms"
+    printf '==> %s in %s (%s)\n' "$1" "$(fm_duration_text "$total")" "${parts:-no steps}"
+}
+
+fm_step() {
+    local label="$1"
+    shift
+    if [ "$FM_RUN_QUIET" = 1 ]; then
+        "$@"
+        return
+    fi
+    local command_line="$*" started took status
+    [ -n "$FM_STEP_LOG" ] || FM_STEP_LOG="$PWD/build/run-sh-last-step.log"
+    mkdir -p "$(dirname "$FM_STEP_LOG")"
+    fm_log_restart "run: $command_line"
+    printf '\n$ %s\n  (in %s)\n' "$command_line" "$PWD"
+    started="$(fm_now_ms)"
+    set +e
+    "$@" 2>&1 | tee "$FM_STEP_LOG"
+    status="${PIPESTATUS[0]}"
+    set -e
+    took="$(($(fm_now_ms) - started))"
+    FM_STEP_TIMES+=("$label $took")
+    fm_log_restart "done in ${took}ms (exit $status): $command_line"
+    printf '\xE2\x80\x94 finished in %sms (exit %s)\n' "$took" "$status"
+    if [ "$status" -ne 0 ]; then
+        fm_status "Build failed: $(fm_failure_summary "$FM_STEP_LOG")" error
+        fm_summary "Failed"
+        exit "$status"
+    fi
+}
+
+fm_build_pass() {
+    local head
+    head="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+    fm_log_restart "build pass 1: $1 parallel jobs, HEAD $head"
+}
+
+fm_launch() {
+    local bin
+    bin="$(forkmesh_bin)"
+    fm_summary "Built"
+    fm_status "Launching..."
+    fm_log_restart "launching $bin"
+    exec "$bin"
+}
+
 build() {
     check_stale_cache
-    local args=()
+    local args=() jobs
     while IFS= read -r -d '' arg; do
         args+=("$arg")
     done < <(cmake_args)
-    cmake -B build "${args[@]}"
+    fm_status "Configuring..."
+    fm_step configure cmake -B build "${args[@]}"
+    jobs="$(build_jobs)"
+    fm_status "Rebuilding..."
+    fm_build_pass "$jobs"
     # An optional target ($1) builds just that (e.g. the tests) independently of
     # the app; with no argument the default target (the app) is built.
     if [ -n "${1:-}" ]; then
-        cmake --build build --parallel "$(build_jobs)" --target "$1"
+        fm_step build cmake --build build --parallel "$jobs" --target "$1"
     else
-        cmake --build build --parallel "$(build_jobs)"
+        fm_step build cmake --build build --parallel "$jobs"
     fi
 }
 
@@ -143,11 +271,13 @@ case "${1:-run}" in
         echo "Build cache cleared."
         ;;
     rebuild)
+        fm_log_restart "run.sh rebuild: clean rebuild & launch started"
         fm_safe_rm_tree "$PWD" build
         build
-        exec "$(forkmesh_bin)"
+        fm_launch
         ;;
     test)
+        fm_log_restart "run.sh test: build & run critical tests started"
         # Build and run only the critical trust, encrypted-mirror, and agent
         # transport contracts. Force the test option on so a cached
         # FORKMESH_BUILD_TESTS=OFF can't hide the targets.
@@ -157,18 +287,25 @@ case "${1:-run}" in
             args+=("$arg")
         done < <(cmake_args)
         # Later -D wins, so this overrides the OFF in cmake_args.
-        cmake -B build "${args[@]}" -DFORKMESH_BUILD_TESTS=ON
+        fm_status "Configuring..."
+        fm_step configure cmake -B build "${args[@]}" -DFORKMESH_BUILD_TESTS=ON
         # critical-tests tracks the "critical" CTest label in CMakeLists.txt;
         # naming the suites here let this list fall behind the label instead.
-        cmake --build build --parallel "$(build_jobs)" --target critical-tests
+        jobs="$(build_jobs)"
+        fm_status "Rebuilding..."
+        fm_build_pass "$jobs"
+        fm_step build cmake --build build --parallel "$jobs" --target critical-tests
+        fm_summary "Built"
+        fm_status "Running the critical tests..."
         exec python3 ../tools/run_critical_tests.py qt --build-dir build
         ;;
     run)
+        fm_log_restart "run.sh run: build & launch started"
         build
-        exec "$(forkmesh_bin)"
+        fm_launch
         ;;
     *)
-        echo "Usage: $0 [run|clean|rebuild|test]" >&2
+        echo "Usage: $0 [--quiet] [run|clean|rebuild|test]" >&2
         exit 2
         ;;
 esac
