@@ -122,7 +122,7 @@ func publishPullMetadataRefs(ctx context.Context, gitDir string, number int,
 	if !gitObjectIDPattern.MatchString(newTip) {
 		return fmt.Errorf("invalid pull metadata commit")
 	}
-	if pullRecordMerged(pullRecordAt(ctx, gitDir, newTip, number)) {
+	if pullRecordRetired(pullRecordAt(ctx, gitDir, newTip, number)) {
 		return retirePullMetadataBranch(ctx, gitDir, number, newTip, oldTip)
 	}
 	branchRef := pullMetadataRef(number)
@@ -176,19 +176,19 @@ func pullRecordAt(ctx context.Context, gitDir, rev string, number int) *frontMat
 	return matter
 }
 
-func pullRecordMerged(record *frontMatter) bool {
+func pullRecordRetired(record *frontMatter) bool {
 	if record == nil {
 		return false
 	}
 	status := strings.ToLower(strings.TrimSpace(record.values["status"]))
-	return status == "merged" || status == "closed-merged"
+	return status == "merged" || status == "closed-merged" || status == "deleted"
 }
 
 func pullBranchRetirable(branch, ledger *frontMatter) bool {
-	if branch == nil || !pullRecordMerged(ledger) {
+	if branch == nil || !pullRecordRetired(ledger) {
 		return false
 	}
-	if pullRecordMerged(branch) {
+	if pullRecordRetired(branch) {
 		return true
 	}
 	ts := strings.TrimSpace(branch.values["ts"])
@@ -330,7 +330,7 @@ func retireMergedPullBranches(ctx context.Context, gitDir, identityName string) 
 			continue
 		}
 		keep := item.tip
-		if !pullRecordMerged(branchRecord) {
+		if !pullRecordRetired(branchRecord) {
 			snapshot, branchTip, err := materializePullMetadataCommit(ctx, gitDir, item.number,
 				ledgerTip, identityName, identityName+"@users.noreply.forkmesh.com")
 			if err != nil {
@@ -400,7 +400,7 @@ func retiredPullBranchArrivals(ctx context.Context, gitDir string, arrivals map[
 			continue
 		}
 		skip[ref] = true
-		if !pullRecordMerged(branchRecord) {
+		if !pullRecordRetired(branchRecord) {
 			continue
 		}
 		number := pullMetadataBranchNumber(ref)
