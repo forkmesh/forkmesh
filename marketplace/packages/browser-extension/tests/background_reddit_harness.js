@@ -301,10 +301,11 @@ function message(request, sender) {
   check("an already logged thread is switched to monitored", existing.ok && existing.monitored.length === 2
     && patches().pop().body.monitored === true);
   const monitoredWatch = await message({ type: "fm-reddit-watch" }, TAB);
-  check("the reader learns the monitored threads and comments", JSON.stringify(monitoredWatch.monitored)
+  const monitoredFirst = JSON.stringify(monitoredWatch.monitored.slice(0, 2));
+  check("the reader learns every logged thread, monitored ones and their comments first", (monitoredFirst
     === JSON.stringify([{ postId: "ccc333", commentId: "" }, { postId: "1wy1g5i", commentId: "pec00w1" }])
-    || JSON.stringify(monitoredWatch.monitored)
-    === JSON.stringify([{ postId: "1wy1g5i", commentId: "pec00w1" }, { postId: "ccc333", commentId: "" }]),
+    || monitoredFirst === JSON.stringify([{ postId: "1wy1g5i", commentId: "pec00w1" }, { postId: "ccc333", commentId: "" }]))
+    && JSON.stringify(monitoredWatch.monitored.slice(2).map((item) => item.postId).sort()) === JSON.stringify(["aaa111", "ddd444"]),
     JSON.stringify(monitoredWatch.monitored));
 
   const viewsLeaf = node({}, {}, "45 views");
@@ -332,14 +333,13 @@ function message(request, sender) {
   const fetchedBeforeReading = fetched.length;
   await message(seenMonitor, TAB);
   await settled();
-  const waitingReading = await message({ type: "fm-reddit-stats" }, POPUP);
-  check("a monitored reading waits locally", !deskWritesSince(fetchedBeforeReading).length
-    && waitingReading.readingsWaiting === 1 && waitingReading.monitored.find((item) => item.views === 1200)?.waiting);
-  const sentReading = await message({ type: "fm-reddit-sync" }, POPUP);
+  const sentByItself = await message({ type: "fm-reddit-stats" }, POPUP);
   const readingPatch = patches().pop();
-  check("Send records the reading on the desk", sentReading.lastSync.readings === 1 && sentReading.readingsWaiting === 0
-    && readingPatch.body.views === 1200 && readingPatch.body.commentScore === 3 && readingPatch.body.checkedAt > 0
-    && readingPatch.body.title === "Weekly Self Promotion Thread", JSON.stringify(readingPatch));
+  check("a reading on a logged thread is sent to the desk by itself", deskWritesSince(fetchedBeforeReading).length === 1
+    && sentByItself.readingsWaiting === 0 && readingPatch.body.views === 1200 && readingPatch.body.commentScore === 3
+    && readingPatch.body.checkedAt > 0 && readingPatch.body.title === "Weekly Self Promotion Thread", JSON.stringify(readingPatch));
+  const sentReading = await message({ type: "fm-reddit-sync" }, POPUP);
+  check("Send finds no reading left to send", sentReading.lastSync.readings === 0 && sentReading.readingsWaiting === 0);
   const devops = () => rpc({ control: "threads" }).then((reply) => reply.data.rows.find((item) => item.postId === "1wy1g5i"));
   const stored = await devops();
   check("the desk keeps the views and a history point", stored.views === 1200 && stored.commentViews === 45
@@ -566,6 +566,26 @@ function message(request, sender) {
   check("the new links land in Marketing posts with their views", release && release.views === 60
     && allPosts.some((item) => item.url.endsWith("/kkk777") && item.views === 12), JSON.stringify(allPosts.map((item) => [item.url, item.views])));
   check("every profile tab is closed again", profileTabs.every((url, index) => tabsRemoved.includes(41 + accountTabsBefore + index)));
+
+  check("a Reddit page cannot ask to update the logged threads", (await message({ type: "fm-reddit-threads-update" }, TAB)).error === "forbidden_sender");
+  check("the dashboard of another organization cannot update threads", (await message({ type: "fm-reddit-threads-update", organization: "other" }, DASHBOARD)).error
+    === "reddit_organization_mismatch");
+  const logged = (await alice("GET", "/api/marketing/acme/reddit")).data.redditThreads;
+  const linux = logged.find((item) => item.postId === "ddd444");
+  const threadTabsBefore = tabsCreated.length;
+  const one = await message({ type: "fm-reddit-threads-update", organization: "acme", threadIds: [linux.id] }, DASHBOARD);
+  const threadTabs = tabsCreated.slice(threadTabsBefore);
+  check("Update next to a thread reads only that thread in a background tab and closes it", one.ok && one.done && one.total === 1
+    && one.read === 1 && one.sent === 1 && JSON.stringify(threadTabs) === JSON.stringify(["https://www.reddit.com/r/linux/comments/ddd444/"])
+    && tabsRemoved.includes(41 + threadTabsBefore), JSON.stringify([one, threadTabs]));
+  const updatedLinux = (await rpc({ control: "threads" })).data.rows.find((item) => item.postId === "ddd444");
+  check("an unmonitored logged thread gets its numbers and read time", updatedLinux.views === 60 && updatedLinux.score === 2
+    && updatedLinux.comments === 0 && updatedLinux.checkedAt > 0 && updatedLinux.monitored === false, JSON.stringify(updatedLinux));
+  const every = await message({ type: "fm-reddit-threads-update", organization: "acme" }, DASHBOARD);
+  check("Update all reads every logged thread, least recently read first", every.ok && every.total === logged.length
+    && every.read === logged.length && every.threadIds[every.threadIds.length - 1] === linux.id, JSON.stringify(every));
+  check("an unknown thread id is refused", (await message({ type: "fm-reddit-threads-update", organization: "acme", threadIds: ["nope"] }, DASHBOARD)).error
+    === "reddit_threads_empty");
 
   await message({ type: "fm-reddit-error", message: "boom", page: "/r/git/" }, TAB);
   check("errors land in the widget", (await message({ type: "fm-reddit-stats" }, POPUP)).errors[0].message === "/r/git/ boom");

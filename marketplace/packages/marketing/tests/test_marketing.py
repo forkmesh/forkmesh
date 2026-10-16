@@ -2134,6 +2134,27 @@ def test_the_reddit_desk_lives_on_the_reddit_channel_and_every_channel_has_a_des
     assert 'data-marketing-page="channels" type="button" class="mk-link">‹ All channels' in view
 
 
+def test_every_logged_reddit_thread_has_an_update_button_on_desktop_and_web():
+    desktop = PACKAGE / "content" / "desktop"
+    pages = (desktop / "MarketingPages.cpp").read_text()
+    view = (PACKAGE / "content" / "web" / "view.html").read_text()
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    render = pages.split("void MarketingFeature::renderReddit()", 1)[1].split("\nvoid MarketingFeature::", 1)[0]
+    assert 'QStringLiteral("Activity")' in pages and 'QStringLiteral("Update all")' in pages
+    assert "m_redditTable->setCellWidget(row, 6, update);" in render
+    assert "updateRedditThreads(threadId);" in render
+    assert 'QStringLiteral("not read yet")' in render and 'QStringLiteral("read ") + relativeLabel(readAt)' in render
+    update = pages.split("void MarketingFeature::updateRedditThreads(", 1)[1].split("\nvoid MarketingFeature::", 1)[0]
+    assert 'openWebDashboard(QStringLiteral("page=reddit&update=")' in update
+    assert 'QStringLiteral("all")' in update and "m_changedReload->start();" in update
+    assert "data-marketing-reddit-update-all" in view and "data-marketing-reddit-update-status" in view
+    assert 'data-marketing-reddit-update="${escapeHtml(item.id)}"' in web
+    assert 'params.get("update")' in web and 'params.delete("update")' in web
+    assert 'type: "marketing-reddit-threads-update", request, organization: state.marketing.organization, threadIds' in web
+    assert 'data.type === "marketing-reddit-threads-progress"' in web
+    assert "if (data.redditThreads) redditThreadsJob.available = true;" in web
+
+
 def test_desktop_dashboard_leads_with_what_needs_attention():
     desktop = PACKAGE / "content" / "desktop"
     native = (desktop / "MarketingFeature.cpp").read_text()

@@ -345,8 +345,20 @@ page.
   (`to_review`, `drafting`, `replied`, `skipped`), landing page, and the
   person's own **Rules read** and **Disclosed** checks; `replied` requires
   both and the reply's comment link. Optional browser-read `author`,
-  `comments`, `score`, `postedAt` and `source`. Monitored threads keep view
-  and score readings (at most 180 history points).
+  `comments`, `score`, `postedAt` and `source`. Every thread keeps the
+  extension's view, score and comment readings (`checkedAt`, at most 180
+  history points); monitored ones are read first.
+- **Update** and **Update all** (1.42.0, extension 2.23.0): the desktop's
+  thread log has an **Activity** column (comments, points, views, when last
+  read) and an **Update** button on every row; the web log has the same
+  button and **Update all** in its header. Each opens
+  `/dashboard/marketing?org=<org>&page=reddit&update=<thread id|all>` (the
+  web buttons ask directly), and the page asks the browser extension to open
+  each thread in a background tab, read it and `PATCH` its numbers; the page
+  shows progress and the desktop reloads as each reading arrives (the
+  account's change notice, and a 15-second check for four minutes). Before
+  1.42.0 only monitored threads were ever read again, and only after **Send**
+  in the extension's popup, so the log looked frozen.
 - **Your posts**: the `reddit` posted links (see Posted links), newest first,
   with views, points and comments and when they were read. **Add post** logs
   one by hand (address, title, posting day, numbers, note; numbers that

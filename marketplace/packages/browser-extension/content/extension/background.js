@@ -875,6 +875,9 @@ const REDDIT_SUBREDDIT = /^[a-z0-9_]{2,21}$/i;
 const REDDIT_POST_ID = /^[a-z0-9]{1,12}$/;
 const REDDIT_AUTHOR = /^[A-Za-z0-9_-]{1,20}$/;
 const REDDIT_MONITOR_LIMIT = 50;
+const REDDIT_LOGGED_LIMIT = 200;
+const REDDIT_UPDATE_LIMIT = 50;
+const REDDIT_SEND_DELAY_MS = 2500;
 const REDDIT_CHECK_LIMIT = 20;
 const REDDIT_CHECK_TRIES = 6;
 const REDDIT_CHECK_RETRY_MS = 1500;
@@ -904,6 +907,7 @@ async function redditState() {
       fetchedAt: Number(watch.fetchedAt || 0),
       organization: String(watch.organization || ""),
       monitored: Array.isArray(watch.monitored) ? watch.monitored : [],
+      logged: Array.isArray(watch.logged) ? watch.logged : [],
       accounts: Array.isArray(watch.accounts) ? watch.accounts : [],
     },
     posts: stored.posts || {}, rules: stored.rules || {},
@@ -953,11 +957,13 @@ function redditCandidates(state) {
 
 const redditUnsent = (state) => redditCandidates(state).filter((post) => !state.sent[post.id]);
 
-const redditMonitoredPost = (state, postId) =>
-  state.watch.monitored.find((entry) => entry.postId === String(postId || "").toLowerCase()) || null;
+const redditTracked = (state) => (state.watch.logged.length ? state.watch.logged : state.watch.monitored);
+
+const redditTrackedPost = (state, postId) =>
+  redditTracked(state).find((entry) => entry.postId === String(postId || "").toLowerCase()) || null;
 
 function redditReadingsUnsent(state) {
-  return state.watch.monitored.filter((entry) => {
+  return redditTracked(state).filter((entry) => {
     const reading = state.readings[entry.postId];
     return reading && reading.at > Number(state.readingsSent[entry.postId] || 0) && reading.at > entry.checkedAt;
   });
@@ -1028,16 +1034,18 @@ async function redditFetchWatch(state) {
     state.readingsSent = {};
     state.mineSent = {};
   }
-  const monitored = (payload.redditThreads || []).filter((item) => item?.monitored)
-    .map(redditMonitorEntry).filter(Boolean).slice(0, REDDIT_MONITOR_LIMIT);
-  const kept = new Set(monitored.map((entry) => entry.postId));
+  const entries = (payload.redditThreads || []).map(redditMonitorEntry).filter(Boolean);
+  const monitored = entries.filter((entry) => entry.monitored).slice(0, REDDIT_MONITOR_LIMIT);
+  const first = new Set(monitored.map((entry) => entry.postId));
+  const logged = [...monitored, ...entries.filter((entry) => !first.has(entry.postId))].slice(0, REDDIT_LOGGED_LIMIT);
+  const kept = new Set(logged.map((entry) => entry.postId));
   state.readings = Object.fromEntries(Object.entries(state.readings).filter(([id]) => kept.has(id)));
   state.readingsSent = Object.fromEntries(Object.entries(state.readingsSent).filter(([id]) => kept.has(id)));
-  state.watch = { subreddits, queries, rulesOnFile, fetchedAt: Date.now(), organization, monitored, accounts };
+  state.watch = { subreddits, queries, rulesOnFile, fetchedAt: Date.now(), organization, monitored, logged, accounts };
 }
 
 function redditMonitorEntry(item) {
-  const thread = redditLink(item.url);
+  const thread = redditLink(item?.url);
   if (!thread || !/^[A-Za-z0-9_-]{1,64}$/.test(String(item.id || ""))) return null;
   const comment = redditLink(item.monitorCommentUrl);
   const counts = Object.fromEntries(REDDIT_MONITOR_COUNTS.map(([key]) => [key, redditCount(item[key])]));
@@ -1045,7 +1053,7 @@ function redditMonitorEntry(item) {
     deskId: String(item.id), postId: thread.postId, subreddit: thread.subreddit, url: thread.url,
     commentId: comment?.postId === thread.postId ? comment.commentId : "",
     commentUrl: comment?.postId === thread.postId ? comment.url : "",
-    title: String(item.title || "").slice(0, 300),
+    title: String(item.title || "").slice(0, 300), monitored: item.monitored === true,
     checkedAt: Number.isInteger(item.checkedAt) && item.checkedAt > 0 ? item.checkedAt : 0,
     ...counts,
   };
@@ -1078,7 +1086,7 @@ const redditWatch = async () => {
     ok: true,
     subreddits: state.watch.subreddits.map((name) => name.toLowerCase()),
     queries: state.watch.queries,
-    monitored: state.watch.monitored.map((entry) => ({ postId: entry.postId, commentId: entry.commentId })),
+    monitored: redditTracked(state).map((entry) => ({ postId: entry.postId, commentId: entry.commentId })),
     accounts: state.watch.accounts.map((name) => name.toLowerCase()),
   };
 };
@@ -1159,13 +1167,13 @@ function redditReading(raw, entry) {
   return found ? reading : null;
 }
 
-function redditKeepReading(state, raw) {
-  const entry = redditMonitoredPost(state, raw?.postId);
+function redditKeepReading(state, raw, force = false) {
+  const entry = redditTrackedPost(state, raw?.postId);
   const reading = entry && redditReading(raw, entry);
   if (!reading) return false;
   const previous = state.readings[entry.postId];
   const same = previous && REDDIT_MONITOR_COUNTS.every(([key]) => previous[key] === reading[key]);
-  if (same && reading.at - previous.at < 10 * 60 * 1000) return false;
+  if (!force && same && reading.at - previous.at < 10 * 60 * 1000) return false;
   state.readings[entry.postId] = reading;
   return true;
 }
@@ -1237,7 +1245,8 @@ async function redditObserve({ observation, fresh }, sender) {
     const kind = String(seen.page || seen.kind || "");
     const subreddit = String(seen.subreddit || "");
     let changed = false;
-    if (kind === "thread" && seen.monitor && redditKeepReading(state, seen.monitor)) changed = true;
+    const read = kind === "thread" && seen.monitor && redditKeepReading(state, seen.monitor);
+    if (read) changed = true;
     if (kind === "rules" && Array.isArray(seen.rules) && redditWatchedSubreddit(state, subreddit)) {
       const name = state.watch.subreddits.find((item) => item.toLowerCase() === subreddit.toLowerCase());
       const rules = redditRules(seen.rules);
@@ -1264,7 +1273,7 @@ async function redditObserve({ observation, fresh }, sender) {
       listing && `reddit:sub:${subreddit.toLowerCase()}`,
       searched && `reddit:search:${searched}`,
       kind === "rules" && redditWatchedSubreddit(state, subreddit) && `reddit:rules:${subreddit.toLowerCase()}`,
-      (thread || (kind === "thread" && redditMonitoredPost(state, postId))) && REDDIT_POST_ID.test(postId) && `reddit:thread:${postId}`,
+      (thread || (kind === "thread" && redditTrackedPost(state, postId))) && REDDIT_POST_ID.test(postId) && `reddit:thread:${postId}`,
     ].filter(Boolean);
     await refreshMark(marked, sender?.tab?.id, fresh === true);
     if (searched || listing || thread) {
@@ -1294,6 +1303,7 @@ async function redditObserve({ observation, fresh }, sender) {
       redditMineTrim(state);
       await redditSave(state);
     }
+    if (read) redditSendSoon();
     if (fresh === true && marked.length) void activityReport(redditActivity(state, seen, sender?.tab?.url), marked[0]);
     return { ok: true };
   });
@@ -1350,6 +1360,26 @@ async function redditSendReadings(state, base, result) {
     }
     state.readingsSent[entry.postId] = reading.at;
   }
+}
+
+let redditSendPending = false;
+
+function redditSendSoon() {
+  if (redditSendPending) return;
+  redditSendPending = true;
+  setTimeout(() => void redditSerial(async () => {
+    redditSendPending = false;
+    if (!(await settings()).sessionToken) return;
+    const state = await redditState();
+    if (!state.watch.organization || !redditReadingsUnsent(state).length) return;
+    const result = { readings: 0, failed: 0 };
+    try {
+      await redditSendReadings(state, `/api/marketing/${encodeURIComponent(state.watch.organization)}`, result);
+    } catch (error) {
+      redditRemember(state, `Reddit thread update: ${error?.message || "request failed"}`);
+    }
+    await redditSave(state);
+  }).catch(() => null), REDDIT_SEND_DELAY_MS);
 }
 
 async function redditSync(state) {
@@ -1512,6 +1542,67 @@ async function redditCheck() {
   } finally {
     redditChecking = false;
     void redditMineCheck().catch(() => null);
+  }
+}
+
+let redditUpdating = false;
+
+async function redditThreadsBroadcast(update) {
+  for (const tab of await chrome.tabs.query({ url: FORKMESH_ORIGINS.map((origin) => `${origin}/dashboard/marketing*`) }).catch(() => [])) {
+    if (Number.isInteger(tab.id)) await chrome.tabs.sendMessage(tab.id, { type: "fm-reddit-threads-progress", update }).catch(() => null);
+  }
+}
+
+function redditThreadsText(update) {
+  const total = activityCount(update.total, "thread", "threads");
+  if (!update.done) return `Reading ${total} on Reddit in background tabs: ${update.read + update.missed} done…`;
+  const lines = [`Read ${activityCount(update.read, "thread", "threads")} of ${update.total} and updated the thread log.`];
+  if (update.missed) lines.push(`${activityCount(update.missed, "thread", "threads")} did not load or showed no numbers; open ${update.missed === 1 ? "it" : "them"} once in a tab, then try again.`);
+  if (update.error) lines.push(`Marketing refused the update (${refreshError(update.error)}).`);
+  return lines.join(" ");
+}
+
+async function redditThreadsUpdate({ organization, threadIds }) {
+  if (!(await settings()).sessionToken) throw new ApiError("not_signed_in", 401);
+  if (redditUpdating) throw new ApiError("reddit_update_running", 409);
+  redditUpdating = true;
+  try {
+    if (organization && String(organization) !== await xOrganization()) throw new ApiError("reddit_organization_mismatch", 409);
+    const wanted = new Set((Array.isArray(threadIds) ? threadIds : []).map(String).slice(0, REDDIT_LOGGED_LIMIT));
+    const entries = await redditSerial(async () => {
+      const state = await redditState();
+      await redditFetchWatch(state);
+      await redditSave(state);
+      return state.watch.logged.filter((entry) => !wanted.size || wanted.has(entry.deskId))
+        .sort((one, two) => one.checkedAt - two.checkedAt).slice(0, REDDIT_UPDATE_LIMIT);
+    });
+    if (!entries.length) throw new ApiError("reddit_threads_empty", 409);
+    const update = { at: Date.now(), total: entries.length, read: 0, missed: 0, sent: 0, error: "", done: false, threadIds: entries.map((entry) => entry.deskId) };
+    await redditThreadsBroadcast({ ...update, text: redditThreadsText(update) });
+    for (const entry of entries) {
+      const monitor = await redditReadTab(entry).catch(() => null);
+      await redditSerial(async () => {
+        const state = await redditState();
+        if (monitor && redditKeepReading(state, monitor, true)) update.read += 1;
+        else update.missed += 1;
+        const result = { readings: 0, failed: 0 };
+        try {
+          await redditSendReadings(state, await redditBase(), result);
+        } catch (error) {
+          update.error = error?.code || "request_failed";
+          redditRemember(state, `Reddit thread update: ${error?.message || "request failed"}`);
+        }
+        update.sent += result.readings;
+        await redditSave(state);
+      });
+      await redditThreadsBroadcast({ ...update, text: redditThreadsText(update) });
+    }
+    update.done = true;
+    const text = redditThreadsText(update);
+    await redditThreadsBroadcast({ ...update, text });
+    return { ok: true, ...update, text };
+  } finally {
+    redditUpdating = false;
   }
 }
 
@@ -2782,7 +2873,7 @@ async function xSetupBack() {
 
 const X_SETUP_PORTAL_ONLY = new Set(["fm-x-setup-keys", "fm-x-setup-mark", "fm-x-setup-forget", "fm-x-setup-back"]);
 
-const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop", "fm-reddit-accounts-update"]);
+const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop", "fm-reddit-accounts-update", "fm-reddit-threads-update"]);
 
 const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-sync",
   "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
@@ -2861,6 +2952,7 @@ const HANDLERS = {
   "fm-reddit-check": redditCheck,
   "fm-reddit-profile-update": redditProfileUpdate,
   "fm-reddit-accounts-update": redditAccountsUpdate,
+  "fm-reddit-threads-update": redditThreadsUpdate,
   "fm-reddit-auto-check": redditAutoCheck,
   "fm-reddit-walk": redditWalkStart,
   "fm-reddit-walk-state": redditWalkStatus,

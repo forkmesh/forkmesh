@@ -200,8 +200,8 @@ open on `www.reddit.com` and `old.reddit.com`, and only these:
 - listings of a watched subreddit (subreddit, id, title, link, author, comment
   count, score, time per post);
 - a search whose text is a watched search;
-- a thread in a watched subreddit, or any monitored thread (views, points,
-  comments, and a followed comment's points and views);
+- a thread in a watched subreddit, or any thread already in the thread log
+  (views, points, comments, and a followed comment's points and views);
 - a watched subreddit's rules page (rule titles and descriptions);
 - the profile of an account on the desk's accounts list.
 
@@ -213,10 +213,25 @@ rules). The extension never ticks **Rules read** or **Disclosed** and never
 records a reply. The watch list copy is refreshed from the popup, at most when
 older than six hours.
 
+Numbers read on a thread that is already in the log (the newest 200, monitored
+ones first) are the exception: since 2.23.0 they are sent by themselves a few
+seconds after the page is read, as the same `PATCH` that **Check now** sends,
+so the log stays current without pressing anything.
+
 - **Monitored threads**: **Monitor** a thread or comment link; **Check now**
   (or an opt-in six-hour Chrome alarm) opens each monitored thread (up to 20)
   in a background tab, reads its numbers (`fm-reddit-read`, answered only to
   the extension) and sends a `PATCH`.
+- **Update logged threads** (2.23.0, `fm-reddit-threads-update`, from the
+  dashboard or the popup only, the extension's organization must be the
+  page's): Marketing's **Update** next to a thread, or **Update all**, sends
+  the thread ids (none means every logged thread). The extension refreshes
+  the log from Marketing, then opens each thread (up to 50, least recently
+  read first) in one background tab at a time, reads it like **Check now**,
+  sends a `PATCH` with `checkedAt` even when nothing changed, and closes the
+  tab. Progress goes back to open Marketing pages as
+  `fm-reddit-threads-progress`; `reddit_update_running` when one is already
+  running, `reddit_threads_empty` when none of the ids is logged.
 - **Your accounts' posts and views**: on a Reddit profile, **Update u/<name>
   posts and views** records the account's own posts and comments in
   Marketing's posted links (`channel: reddit`), then opens each one not read
