@@ -20,6 +20,15 @@
             "title": "[app-store-status] Have the ability to see the images attached",
             "ts": 1792119529730,
             "type": "open"
+        },
+        {
+            "author": "93rzBNjYswzt2sE9AFDkCCjZfSprogNboEhKgYqGYkw",
+            "authorName": "mdkaifansari04",
+            "id": "status-web-1792172012968-1qtyo71",
+            "sig": "Mcce3h1cfd_Vfc5g-hQZRrQEIkotcrfihkvBbpRUpcGoVPHSjk5P-egoSpcCDh13oSZJC5KSoLesFcuGNeWLDw",
+            "status": "closed",
+            "ts": 1792172012968,
+            "type": "status"
         }
     ],
     "labels": [
@@ -39,8 +48,8 @@
     "rewardTxSignature": "",
     "schema": "forkmesh-issue-v1",
     "startDate": 0,
-    "status": "open",
+    "status": "closed",
     "title": "[app-store-status] Have the ability to see the images attached",
-    "updatedAt": 1792119529730,
+    "updatedAt": 1792172012968,
     "votes": 0
 }
