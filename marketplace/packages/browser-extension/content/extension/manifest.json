@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ForkMesh: CRM and Password Vault",
-  "version": "2.21.0",
+  "version": "2.22.0",
   "description": "Fill ForkMesh Password Vault logins, link mail and Mastodon threads to CRM contacts, and update Marketing channels in a click",
   "minimum_chrome_version": "137",
   "permissions": [
@@ -107,6 +107,20 @@
       ],
       "js": [
         "x-developer.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://mail.zoho.com/*",
+        "https://mail.zoho.eu/*",
+        "https://mail.zoho.in/*",
+        "https://mail.zoho.com.au/*",
+        "https://mail.zoho.jp/*",
+        "https://mail.zohocloud.ca/*"
+      ],
+      "js": [
+        "zoho-sort.js"
       ],
       "run_at": "document_idle"
     }
