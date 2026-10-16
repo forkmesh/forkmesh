@@ -2710,8 +2710,22 @@ def test_zoho_sync_keeps_room_for_the_sent_folder_and_reports_outbound_and_won_d
         for index in range(3)]
     imported = call(runtime.use("POST", body={"limit": 6}), "/api/crm/acme/mail/import")
     assert imported["data"]["created"] == 6
+    assert imported["data"]["outboundRecorded"] == 3
     ids = {item["providerMessageId"] for item in imported["data"]["mail"]}
     assert {"out-0", "out-1", "out-2"} <= ids
+    emails = call(runtime.use("GET"), "/api/crm/acme")["data"]["emails"]
+    assert {(item["externalId"], item["provider"], item["direction"])
+            for item in emails} == {
+                ("out-0", "zoho", "outbound"),
+                ("out-1", "zoho", "outbound"),
+                ("out-2", "zoho", "outbound"),
+            }
+    activity = call(runtime.use("GET"), "/api/crm/acme")["data"]["activity"]
+    assert sum(next(item for item in activity["members"]
+                    if item["name"] == "alice")["emails"]) == 3
+    repeated = call(runtime.use("POST", body={"limit": 6}), "/api/crm/acme/mail/import")
+    assert repeated["data"]["outboundRecorded"] == 0
+    assert len(call(runtime.use("GET"), "/api/crm/acme")["data"]["emails"]) == 3
     call(runtime.use("POST", body={"name": "Won", "email": "won@example.com",
                                    "stage": "customer", "value": "$4,000"}),
          "/api/crm/acme/contacts")
@@ -2719,7 +2733,8 @@ def test_zoho_sync_keeps_room_for_the_sent_folder_and_reports_outbound_and_won_d
                                    "stage": "qualified", "value": 900}),
          "/api/crm/acme/contacts")
     report = asyncio.run(crm.email_channel_report(runtime, "org:acme", 0))
-    assert (report["status"], report["outboundZoho"], report["outbound"]) == ("ok", 3, 3)
+    assert (report["status"], report["outboundCrm"], report["outboundZoho"],
+            report["outbound"]) == ("ok", 3, 0, 3)
     assert (report["closedDeals"], report["closedValue"]) == (1, 4000)
     assert report["zoho"]["connected"] is True
     assert report["zoho"]["mailServer"] == "https://mail.zoho.com"
