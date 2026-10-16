@@ -43,7 +43,8 @@ final class AppStoreStatusTests: XCTestCase {
       ],
       "feedback": [
         {"kind": "screenshot", "createdAt": "2026-09-01T03:06:00Z", "from": "t@example.com",
-         "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm"}
+         "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm",
+         "screenshots": [{"id": "3f1c2a9b8d7e6f5a4b3c2d1e", "width": 1179, "height": 2556}]}
       ],
       "reviews": [
         {"createdAt": "2026-10-01T10:00:00Z", "rating": 5, "title": "Great", "territory": "USA",
@@ -98,6 +99,7 @@ final class AppStoreStatusTests: XCTestCase {
 
         XCTAssertEqual(snap.feedback[0].comment, "Show time as 5:45pm")
         XCTAssertEqual(snap.feedback[0].device, "iPhone16_2 27.0")
+        XCTAssertEqual(snap.feedback[0].screenshots, [AppStoreScreenshot(id: "3f1c2a9b8d7e6f5a4b3c2d1e", width: 1179, height: 2556)])
         XCTAssertEqual(snap.reviews[0].rating, 5)
         XCTAssertEqual(snap.reviews[0].stars, "\u{2605}\u{2605}\u{2605}\u{2605}\u{2605}")
         XCTAssertEqual(snap.unavailable(.feedback), "ERROR: App Store Connect GET answered 404")
@@ -341,5 +343,93 @@ final class AppStoreStatusTests: XCTestCase {
         XCTAssertEqual(
             unpublished.refreshError,
             "Your desktop could not fetch it either: missing App Store Connect credential ASC_KEY_ID.")
+    }
+
+    static let shotId = "3f1c2a9b8d7e6f5a4b3c2d1e"
+    static let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13])
+    static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0, 16])
+
+    static func picture(_ data: Data, mime: String) -> JSONObject {
+        ["ok": .bool(true), "id": .string(shotId), "mime": .string(mime), "data": .string(data.base64EncodedString())]
+    }
+
+    func testFeedbackScreenshotsKeepValidIdsOnly() throws {
+        let snap = try snapshot("""
+        {"feedback": [{"kind": "screenshot", "screenshots": [
+          {"id": "3f1c2a9b8d7e6f5a4b3c2d1e", "width": "1179", "height": -2},
+          {"id": "../../etc/passwd"},
+          {"id": "AAAAAAAAAAAAAAAAAAAAAAAA"},
+          {"id": "aaaaaaaaaaaaaaaaaaaaaaaa", "url": "https://tf.example.apple.com/1.png"},
+          {"id": "bbbbbbbbbbbbbbbbbbbbbbbb", "url": "http://insecure.example/2.png"},
+          {"id": "cccccccccccccccccccccccc"},
+          {"id": "dddddddddddddddddddddddd"}
+        ]}, {"kind": "crash"}]}
+        """)
+        let shots = snap.feedback[0].screenshots
+        XCTAssertEqual(shots.map(\.id), [
+            "3f1c2a9b8d7e6f5a4b3c2d1e", "aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccc",
+        ])
+        XCTAssertEqual(shots[0].width, 1179)
+        XCTAssertEqual(shots[0].height, 0)
+        XCTAssertNil(shots[0].aspectRatio)
+        XCTAssertEqual(shots[1].directURL?.absoluteString, "https://tf.example.apple.com/1.png")
+        XCTAssertNil(shots[2].directURL)
+        XCTAssertTrue(snap.feedback[1].screenshots.isEmpty)
+        XCTAssertEqual(AppStoreScreenshot(id: Self.shotId, width: 1179, height: 2556).aspectRatio ?? 0, 1179.0 / 2556.0, accuracy: 0.0001)
+    }
+
+    func testScreenshotTextAndPayloads() {
+        XCTAssertEqual(AppStoreStatusText.screenshotPath(Self.shotId), "/api/app-store-status/screenshots/3f1c2a9b8d7e6f5a4b3c2d1e")
+        XCTAssertEqual(AppStoreStatusText.screenshotTitle(index: 0, count: 1), "Screenshot")
+        XCTAssertEqual(AppStoreStatusText.screenshotTitle(index: 1, count: 3), "Screenshot 2 of 3")
+        XCTAssertEqual(AppStoreStatusText.screenshotData(Self.picture(Self.png, mime: "image/png")), Self.png)
+        XCTAssertEqual(AppStoreStatusText.screenshotData(Self.picture(Self.jpeg, mime: "image/jpeg")), Self.jpeg)
+        XCTAssertNil(AppStoreStatusText.screenshotData(Self.picture(Self.png, mime: "image/jpeg")))
+        XCTAssertNil(AppStoreStatusText.screenshotData(Self.picture(Data("<svg/>".utf8), mime: "image/svg+xml")))
+        XCTAssertNil(AppStoreStatusText.screenshotData(["mime": .string("image/png"), "data": .string("%%%")]))
+    }
+
+    @MainActor func testScreenshotLoaderReadsTheServerOnceAndExplainsMissingOnes() async throws {
+        var asked: [String] = []
+        let loader = AppStoreScreenshotLoader(server: { id in
+            asked.append(id)
+            if id == Self.shotId { return Self.picture(Self.png, mime: "image/png") }
+            throw OrgApiException("screenshot_not_found", "screenshot not found")
+        })
+        let shot = AppStoreScreenshot(id: Self.shotId)
+        let first = try await loader.load(shot)
+        XCTAssertEqual(first, Self.png)
+        _ = try await loader.load(shot)
+        XCTAssertEqual(asked, [Self.shotId])
+        XCTAssertEqual(loader.cached(shot), Self.png)
+        do {
+            _ = try await loader.load(AppStoreScreenshot(id: "aaaaaaaaaaaaaaaaaaaaaaaa"))
+            XCTFail("a missing screenshot should throw")
+        } catch let error as AppStoreScreenshotError {
+            XCTAssertEqual(error.message, AppStoreStatusText.screenshotMissing)
+        }
+    }
+
+    @MainActor func testScreenshotLoaderPrefersTheDesktopLinkAndFallsBackToTheServer() async throws {
+        var server = 0
+        let loader = AppStoreScreenshotLoader(
+            server: { _ in server += 1; return Self.picture(Self.jpeg, mime: "image/jpeg") },
+            direct: { url in
+                if url.lastPathComponent == "good.png" { return AppStoreStatusTests.png }
+                throw URLError(.badServerResponse)
+            })
+        let linked = try await loader.load(AppStoreScreenshot(id: "aaaaaaaaaaaaaaaaaaaaaaaa", url: "https://tf.example.apple.com/good.png"))
+        XCTAssertEqual(linked, Self.png)
+        XCTAssertEqual(server, 0)
+        let expired = try await loader.load(AppStoreScreenshot(id: "bbbbbbbbbbbbbbbbbbbbbbbb", url: "https://tf.example.apple.com/expired.png"))
+        XCTAssertEqual(expired, Self.jpeg)
+        XCTAssertEqual(server, 1)
+        let offline = AppStoreScreenshotLoader(server: nil)
+        do {
+            _ = try await offline.load(AppStoreScreenshot(id: Self.shotId))
+            XCTFail("no source should throw")
+        } catch let error as AppStoreScreenshotError {
+            XCTAssertEqual(error.message, AppStoreStatusText.screenshotMissing)
+        }
     }
 }

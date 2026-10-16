@@ -6549,6 +6549,8 @@ private:
     void postPullLinkComment(int pullNumber, const QString &body);
     void linkAgentPullToIssue(const AgentSession &session, int prNumber);
     void closeCurrentPull();
+    bool currentPullAuthoredHere() const;
+    void requestCurrentPullLifecycle(const QString &type);
     void reopenCurrentPull();
     void restoreCurrentArchivedPull();
     void sendCurrentPullToSource();

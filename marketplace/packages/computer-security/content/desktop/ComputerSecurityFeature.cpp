@@ -76,7 +76,7 @@ ComputerSecurityFeature::ComputerSecurityFeature(const forkmesh::market::NativeP
     outer->setSpacing(10);
 
     auto *headingRow = new QHBoxLayout;
-    auto *title = new QLabel(QStringLiteral("Computer Security Checkup"));
+    auto *title = new QLabel(QStringLiteral("Security"));
     title->setObjectName(QStringLiteral("pageTitle"));
     headingRow->addWidget(title);
     headingRow->addStretch();
@@ -488,7 +488,7 @@ namespace {
 const forkmesh::market::NativePackageRegistration computerSecurityRegistration({
     QStringLiteral("builtin:computer-security"),
     {QStringLiteral("extension.native")},
-    QStringLiteral("Computer Security Checkup"),
+    QStringLiteral("Security"),
     QStringLiteral("shield"),
     QString(),
     QString(),

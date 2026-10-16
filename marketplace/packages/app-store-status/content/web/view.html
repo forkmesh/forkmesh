@@ -56,5 +56,15 @@
                   </section>
                 </div>
               </div>
+              <dialog data-asc-shot-dialog aria-labelledby="ascShotTitle" class="w-full max-w-4xl bg-transparent p-0 text-foreground backdrop:bg-background/80">
+                <div class="fm-dialog">
+                  <div class="fm-dialog-header"><div class="fm-dialog-title"><h2 id="ascShotTitle" data-asc-shot-title class="text-sm font-semibold">Screenshot</h2><p data-asc-shot-detail class="text-xs font-normal text-muted-foreground"></p></div><button data-asc-shot-close type="button" aria-label="Close" class="fm-btn fm-btn-invisible fm-btn-icon fm-btn-sm"><i data-lucide="x"></i></button></div>
+                  <div class="fm-dialog-body grid place-items-center">
+                    <p data-asc-shot-status class="py-8 text-sm text-muted-foreground">Loading…</p>
+                    <img data-asc-shot-image alt="" class="hidden max-h-[75vh] w-auto max-w-full rounded-md object-contain" />
+                  </div>
+                  <div class="fm-dialog-footer"><button data-asc-shot-prev type="button" class="fm-btn fm-btn-sm"><i data-lucide="chevron-left"></i>Previous</button><button data-asc-shot-next type="button" class="fm-btn fm-btn-sm">Next<i data-lucide="chevron-right"></i></button><a data-asc-shot-save class="fm-btn fm-btn-sm hidden" download><i data-lucide="download"></i>Save</a></div>
+                </div>
+              </dialog>
             </div>
           </section>

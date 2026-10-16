@@ -107,6 +107,12 @@ for the scout**); it never receives a member session. No mention is suggested
 in a subreddit whose rules are not on the desk, and rules older than 30 days
 are flagged.
 
+Logged threads stay current: whenever the operator opens a logged thread in
+their browser, the extension sends its comments, points and views to the desk
+by itself, and every row has an **Update** button (with **Update all** for
+the whole log) that has the extension read the thread in a background tab.
+The extension still only reads; it never logs a new thread without **Send**.
+
 Every thread row can copy a ChatGPT reply-draft prompt with the thread and
 ForkMesh links. It asks for help-first, disclosed, rules-aware copy and the
 operator must still review and rewrite the result before posting.

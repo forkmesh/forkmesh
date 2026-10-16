@@ -8,11 +8,12 @@ desktop plugin surfaces.
 import base64
 import csv
 import hashlib
+import hmac
 import io
 import json
 import re
 from datetime import datetime, timezone
-from html import unescape
+from html import escape, unescape
 from urllib.parse import quote, urlencode
 
 
@@ -34,6 +35,10 @@ LIST_ACTIVITY_LIMIT = 200
 LIST_ACTIVITY_KEEP_MS = 90 * DAY_MS
 LIST_VIEW_GAP_MS = 30 * 60 * 1000
 LIST_ACTIVITY_NAMES = 5
+CONTACT_NOTE_LIMIT = 4000
+CONTACT_NOTE_KEEP = 100
+NOTE_PING_RECIPIENTS = 50
+NOTE_PING_EXCERPT = 140
 ACTIVITY_QUERIES = (
     ("emails",
      "SELECT sender_name AS name,(created_at+?)/? AS day,COUNT(*) AS n "
@@ -99,6 +104,7 @@ DEFAULT_FLOWS = (
     {"id": "grants", "name": "Grants", "icon": "grants", "stages": (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
+CONTACTED_STAGE = "contacted"
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -259,6 +265,85 @@ DECK_TOKEN_CHARS = 12
 DECK_SESSION_LIST_LIMIT = 50
 DECK_LINK_MARK = "/pitch-deck/"
 INVESTOR_FLOW_IDS = frozenset({"investors", "investment"})
+AUTO_EMAIL_TEMPLATE = "auto"
+AUTO_EMAIL_MODES = ("reach", "follow")
+AUTO_EMAIL_GAP_MS = 3 * 24 * 60 * 60 * 1000
+AUTO_EMAIL_MAX_SUBJECT = 140
+AUTO_EMAIL_MAX_BODY = 2400
+AUTO_EMAIL_MIN_BODY = 60
+AUTO_EMAIL_ATTEMPTS = 2
+AUTO_EMAIL_MAX_TOKENS = 900
+AUTO_EMAIL_HISTORY = 120
+AUTO_EMAIL_EXAMPLES = 3
+AUTO_EMAIL_EXAMPLE_CHARS = 420
+AUTO_EMAIL_SETTLE_MS = 2 * 24 * 60 * 60 * 1000
+AUTO_EMAIL_MESSAGES = 6
+AUTO_EMAIL_MESSAGE_CHARS = 700
+AUTO_EMAIL_NOTES_CHARS = 1500
+AUTO_EMAIL_FIELDS = 30
+AUTO_EMAIL_UNSENT = frozenset({"draft", "sending", "failed", "reject"})
+AUTO_EMAIL_PLACEHOLDER_RE = re.compile(
+    r"\[[^\]\n]{1,60}\]|\{\{|\}\}|<(?:name|first name|company|link|url)>|lorem ipsum",
+    re.IGNORECASE)
+AUTO_EMAIL_URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]]+", re.IGNORECASE)
+AUTO_EMAIL_SCHEMA = {
+    "name": "crm_email",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["subject", "body"],
+        "properties": {
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+        },
+    },
+}
+AUTO_EMAIL_RULES = (
+    "You write one short, personal outreach email for a small team. "
+    "The body is plain text: no markdown, no HTML, no emoji, no [placeholders]. "
+    "Use only facts given in the request; leave out anything you cannot back up. "
+    "Put the tracked link exactly as given on its own line, once, and add no "
+    "other link unless it appears in the request. Sign off with the sender's name.")
+AUTO_EMAIL_SYSTEM = AUTO_EMAIL_RULES + (
+    " Reply with JSON only: {\"subject\": \"...\", \"body\": \"...\"}.")
+AUTO_EMAIL_AGENT_REPLY = (
+    "Reply with only the email: a \"Subject:\" line, then the body. "
+    "Do not send anything yourself.")
+AUTO_EMAIL_ANGLES = (
+    (("grant",), "They are on our \"%s\" list as a grant funder: write to their "
+                 "published priorities, never invent traction, numbers or names."),
+    (("journalist", "press", "media", "reporter", "writer", "editor", "podcast",
+      "newsletter", "blog"),
+     "They are on our \"%s\" list as a journalist: pitch a story, why it matters "
+     "now and what is new, and offer an interview or a demo. No sales talk."),
+    (("investor", "angel", "vc", "fund", "capital"),
+     "They are on our \"%s\" list as an investor: lead with the opportunity and "
+     "ask for a short call; never invent traction, numbers or names."),
+    (("partner", "integration", "alliance"),
+     "They are on our \"%s\" list as a potential partner: show how we fit what "
+     "they build and suggest exploring working together."),
+    (("customer", "lead", "user", "developer", "maintainer", "community",
+      "open source"),
+     "They are on our \"%s\" list as a potential user: give one concrete way we "
+     "help their projects and invite them to try it."),
+)
+AUTO_EMAIL_FORKMESH_BRIEF = (
+    "ForkMesh (https://forkmesh.com) lets developers collaborate on, mirror and "
+    "preserve Git repositories across independent hosts, without relying on any "
+    "single hosting provider. It is open source. Git stays the source of truth; "
+    "issues, pull requests and reviews are signed records stored in the "
+    "repository; stock Git clones work with no account. The desktop app is a "
+    "full node that hosts and mirrors repositories and runs Codex or Claude Code "
+    "agents whose work becomes pull requests. The protocol, self-hosting and "
+    "public clone are free; only bounded hosted services are paid.")
+REFERRAL_ORIGIN = "https://forkmesh.com/r/"
+TRACK_ORIGIN = "https://app.forkmesh.com"
+TRACK_LOGO = "https://app.forkmesh.com/assets/logo-96.png"
+TRACK_HOME = "https://forkmesh.com"
+TRACK_QUIET_MS = 30 * 1000
+TRACK_PATH_RE = re.compile(
+    r"/api/crm/-/t/(o|c)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.png)?")
 DECK_PAGE_TITLES = (
     "Cover", "Problem", "Why now", "Product", "Proof", "Roadmap",
     "Customer & go-to-market", "Market", "Business model", "Competition",
@@ -424,6 +509,16 @@ DATA_SCHEMA_UP = [
         BEFORE INSERT ON crm_email_sends
         WHEN (SELECT COUNT(*) FROM crm_email_sends WHERE org_bi=NEW.org_bi)>=20000
         BEGIN SELECT RAISE(ABORT,'crm_email_catalog_full'); END""",
+    """CREATE TABLE IF NOT EXISTS crm_email_tracking (
+        send_id TEXT PRIMARY KEY REFERENCES crm_email_sends(send_id) ON DELETE CASCADE,
+        org_bi TEXT NOT NULL,
+        opens INTEGER NOT NULL DEFAULT 0 CHECK (opens >= 0),
+        clicks INTEGER NOT NULL DEFAULT 0 CHECK (clicks >= 0),
+        opened_at INTEGER NOT NULL DEFAULT 0 CHECK (opened_at >= 0),
+        clicked_at INTEGER NOT NULL DEFAULT 0 CHECK (clicked_at >= 0),
+        last_at INTEGER NOT NULL DEFAULT 0 CHECK (last_at >= 0))""",
+    "CREATE INDEX IF NOT EXISTS idx_crm_email_tracking_org "
+    "ON crm_email_tracking(org_bi,last_at DESC)",
     """CREATE TABLE IF NOT EXISTS crm_settings (
         org_bi TEXT PRIMARY KEY,
         updated_by_bi TEXT NOT NULL,
@@ -570,6 +665,7 @@ DATA_SCHEMA_DOWN = [
     "DROP TABLE IF EXISTS crm_view_shares",
     "DROP TABLE IF EXISTS crm_mail_messages",
     "DROP TABLE IF EXISTS crm_views",
+    "DROP TABLE IF EXISTS crm_email_tracking",
     "DROP TABLE IF EXISTS crm_email_sends",
     "DROP TABLE IF EXISTS crm_contacts",
     "DROP TABLE IF EXISTS crm_settings",
@@ -716,6 +812,16 @@ def _flow_placement(contact, flows):
     stage = contact.get("stage")
     return dict(contact, flow=flow["id"],
                 stage=stage if stage in flow["stages"] else flow["stages"][0])
+
+
+def _contacted_stage(contact, flows):
+    flow = next((item for item in flows if item["id"] == contact.get("flow")), None)
+    stages = list(flow["stages"]) if flow else []
+    if CONTACTED_STAGE not in stages:
+        return ""
+    stage = contact.get("stage")
+    position = stages.index(stage) if stage in stages else 0
+    return CONTACTED_STAGE if position < stages.index(CONTACTED_STAGE) else ""
 
 
 def _pipeline_moved(data):
@@ -917,15 +1023,18 @@ def _route(path):
         return "shared-contacts", "", edits.group(1), edits.group(2) or ""
     if clean == ZOHO_CALLBACK_PATH:
         return "zoho-callback", "", "zoho", "callback"
+    tracked = TRACK_PATH_RE.fullmatch(clean)
+    if tracked:
+        return "track", "", tracked.group(1), tracked.group(2) + "." + tracked.group(3)
     opened = re.fullmatch(r"/api/crm/-/open/([0-9a-f]{32})", clean)
     if opened:
         return "open", "", "open", opened.group(1)
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
-        r"(?:/([0-9a-f]{32}|import|export|send|lookup|link|copy|order|team|bulk|merge"
+        r"(?:/([0-9a-f]{32}|import|export|send|auto|lookup|link|copy|order|team|bulk|merge"
         r"|toots|toot"
-        r"|duplicates|evidence|activity"
+        r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
         r"|delete-column"
         r"|[a-z0-9]{10,40}))?)?",
@@ -1103,6 +1212,7 @@ def _contact_fields(row, data):
         "owner": str(data.get("owner") or ""),
         "source": str(data.get("source") or ""),
         "notes": str(data.get("notes") or ""),
+        "noteLog": _note_log(data.get("noteLog")),
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
@@ -1124,11 +1234,17 @@ async def _contacts(runtime, org_bi):
     return [await _contact_project(runtime, row) for row in rows or []]
 
 
+EMAIL_SELECT = (
+    "s.send_id,s.org_bi,s.org_name,s.contact_id,s.sender_name,s.transport,s.status,"
+    "s.external_id,s.created_at,s.sent_at,s.status_at,s.data,"
+    "COALESCE(t.opens,0) AS opens,COALESCE(t.clicks,0) AS clicks,"
+    "COALESCE(t.opened_at,0) AS opened_at,COALESCE(t.clicked_at,0) AS clicked_at "
+    "FROM crm_email_sends s LEFT JOIN crm_email_tracking t ON t.send_id=s.send_id")
+
+
 async def _email_row(runtime, org_bi, send_id):
     return await runtime.d1_first(
-        "SELECT send_id,org_bi,org_name,contact_id,sender_name,transport,status,"
-        "external_id,created_at,sent_at,status_at,data FROM crm_email_sends "
-        "WHERE org_bi=? AND send_id=?",
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.send_id=?",
         org_bi, send_id,
     )
 
@@ -1159,6 +1275,12 @@ async def _email_project(runtime, row, include_content=True):
         "createdAt": _integer(row.get("created_at")),
         "sentAt": _integer(row.get("sent_at")),
         "statusAt": _integer(row.get("status_at")),
+        "opens": _integer(row.get("opens")),
+        "clicks": _integer(row.get("clicks")),
+        "openedAt": _integer(row.get("opened_at")),
+        "clickedAt": _integer(row.get("clicked_at")),
+        "automated": bool(data.get("auto")),
+        "linkKind": _clean(data.get("linkKind"), 20),
     }
     if include_content:
         result.update({
@@ -1170,9 +1292,8 @@ async def _email_project(runtime, row, include_content=True):
 
 async def _emails(runtime, org_bi):
     rows = await runtime.d1_all(
-        "SELECT send_id,org_bi,org_name,contact_id,sender_name,transport,status,"
-        "external_id,created_at,sent_at,status_at,data FROM crm_email_sends "
-        "WHERE org_bi=? ORDER BY created_at DESC,send_id LIMIT ?",
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? "
+        "ORDER BY s.created_at DESC,s.send_id LIMIT ?",
         org_bi, MAX_EMAILS,
     )
     return [await _email_project(runtime, row, include_content=False)
@@ -1358,6 +1479,59 @@ async def _zoho_mail_import(runtime, connection, limit):
     return {"ok": True, "messages": messages}
 
 
+async def _contacts_by_address(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? "
+        "ORDER BY updated_at DESC,contact_id LIMIT ?", org_bi, MAX_CONTACTS)
+    primary, other = {}, {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        contact_id = str(row.get("contact_id") or "")
+        email = _email(data.get("email"))
+        if email:
+            primary.setdefault(email, contact_id)
+        for address in _box_emails(data):
+            other.setdefault(address, contact_id)
+    return {**other, **primary}
+
+
+def _sent_mail_contacts(recipients, mailbox, addresses):
+    matched, seen = [], set()
+    for match in BOX_EMAIL_ANY_RE.finditer(unescape(_text(recipients, 4000))):
+        address = _email(match.group(0))
+        contact_id = addresses.get(address)
+        if address and address != mailbox and contact_id and contact_id not in seen:
+            seen.add(contact_id)
+            matched.append((address, contact_id))
+    return matched
+
+
+async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
+                          sent_at):
+    row = await _contact_row(runtime, org_bi, contact_id)
+    before = await runtime.open(row.get("data")) if row else None
+    if not isinstance(before, dict):
+        return 0
+    contact = dict(before)
+    if sent_at > _integer(contact.get("lastContactedAt")):
+        contact["lastContactedAt"] = sent_at
+    advanced = _contacted_stage(contact, flows)
+    if advanced:
+        contact["stage"] = advanced
+    if contact == before:
+        return 0
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+        "data=? WHERE org_bi=? AND contact_id=?",
+        account_bi, actor, runtime.now(), await runtime.seal(contact), org_bi,
+        contact_id)
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact)])
+    return 1 if advanced else 0
+
+
 async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _opened_settings(runtime, org_bi)
     zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
@@ -1378,6 +1552,9 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     created = 0
     updated = 0
     outbound_recorded = 0
+    contacts_advanced = 0
+    addresses = None
+    flows = await _org_flows(runtime, org_bi)
     now = runtime.now()
     for source in list((result or {}).get("messages") or [])[:limit]:
         source = source if isinstance(source, dict) else {}
@@ -1419,30 +1596,64 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         )
         updated += 1 if existing else 0
         created += 0 if existing else 1
-        if source.get("sent"):
-            linked, _ = await _linked_email_row(runtime, org_bi, "zoho", provider_id)
-            if not linked:
-                sent_at = received_at or now
-                await runtime.d1_run(
-                    "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
-                    "sender_bi,sender_name,transport,status,external_id,created_at,"
-                    "sent_at,status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    runtime.new_id(), org_bi, org_name, None, account_bi, actor,
-                    "external", "external", provider_id, sent_at, sent_at, now,
-                    await runtime.seal({
-                        "to": _clean(source.get("to"), 1000),
-                        "fromEmail": _email(source.get("from")),
-                        "fromName": _clean(source.get("sender"), 160),
-                        "subject": _clean(source.get("subject"), 300),
-                        "text": "", "html": "",
-                        "providerUrl": _https(source.get("providerUrl")),
-                        "provider": "zoho", "direction": "outbound",
-                        "threadId": _clean(source.get("threadId"), 200),
-                        "mailbox": _email(source.get("from")),
-                        "handle": "", "account": "", "error": "",
-                    }),
-                )
-                outbound_recorded += 1
+        if not source.get("sent"):
+            continue
+        sent_at = received_at or now
+        mailbox = _email(source.get("from"))
+        if addresses is None:
+            addresses = await _contacts_by_address(runtime, org_bi)
+        matched = _sent_mail_contacts(source.get("to"), mailbox, addresses)
+        linked, _ = await _linked_email_row(runtime, org_bi, "zoho", provider_id)
+        if not matched and not linked:
+            await runtime.d1_run(
+                "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+                "sender_bi,sender_name,transport,status,external_id,created_at,"
+                "sent_at,status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                runtime.new_id(), org_bi, org_name, None, account_bi, actor,
+                "external", "external", provider_id, sent_at, sent_at, now,
+                await runtime.seal({
+                    "to": _clean(source.get("to"), 1000),
+                    "fromEmail": mailbox,
+                    "fromName": _clean(source.get("sender"), 160),
+                    "subject": _clean(source.get("subject"), 300),
+                    "text": "", "html": "",
+                    "providerUrl": _https(source.get("providerUrl")),
+                    "provider": "zoho", "direction": "outbound",
+                    "threadId": _clean(source.get("threadId"), 200),
+                    "mailbox": mailbox,
+                    "handle": "", "account": "", "error": "",
+                }),
+            )
+            outbound_recorded += 1
+        for index, (address, contact_id) in enumerate(matched):
+            link_id = provider_id if index == 0 else provider_id + "/" + address
+            row = linked if index == 0 else (
+                await _linked_email_row(runtime, org_bi, "zoho", link_id))[0]
+            if str((row or {}).get("contact_id") or ""):
+                contacts_advanced += await _mark_contacted(
+                    runtime, org_bi, account_bi, actor, flows,
+                    str(row.get("contact_id")), sent_at)
+                continue
+            payload, code = await _link_message(
+                runtime, org_bi, org_name, account_bi, actor, {
+                    "provider": "zoho", "direction": "outbound",
+                    "messageId": link_id, "contactId": contact_id,
+                    "contactEmail": address, "mailbox": mailbox,
+                    "fromName": source.get("sender"),
+                    "subject": source.get("subject"),
+                    "threadId": source.get("threadId"),
+                    "providerUrl": _https(source.get("providerUrl")),
+                    "sentAt": sent_at, "createContact": False,
+                }, quiet=True)
+            if code not in (200, 201):
+                continue
+            outbound_recorded += 1 if code == 201 else 0
+            contacts_advanced += 1 if payload.get("stageAdvanced") else 0
+            contact_row = await _contact_row(runtime, org_bi, contact_id)
+            await _record_contact_event(
+                runtime, org_bi, account_bi, actor,
+                await runtime.open(contact_row.get("data")) if contact_row else {},
+                "contact.emailed", {"subject": _clean(source.get("subject"), 200)})
     zoho["lastSyncAt"] = now
     settings["zoho"] = zoho
     await runtime.d1_run(
@@ -1453,7 +1664,8 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     await runtime.audit(
         actor, "crm.zoho.import", "organization", org_name,
         details={"created": created, "updated": updated,
-                 "outboundRecorded": outbound_recorded},
+                 "outboundRecorded": outbound_recorded,
+                 "contactsAdvanced": contacts_advanced},
     )
     if created:
         await _activity_notify(
@@ -1462,6 +1674,7 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
         "outboundRecorded": outbound_recorded,
+        "contactsAdvanced": contacts_advanced,
         "mail": await _mail_messages(runtime, org_bi),
         "settings": await _settings(runtime, org_bi),
     })
@@ -2206,6 +2419,8 @@ def _merged_contact_data(kept, duplicate):
     result["notes"] = _text("\n\n".join(
         note for index, note in enumerate(notes)
         if note and note not in notes[:index]), 20000)
+    result["noteLog"] = _note_log(
+        _note_log(kept.get("noteLog")) + _note_log(duplicate.get("noteLog")))
     result["tags"] = _tags(_tags(kept.get("tags")) + _tags(duplicate.get("tags")))
     if not isinstance(kept.get("account"), dict) and isinstance(duplicate.get("account"), dict):
         result["account"] = duplicate["account"]
@@ -2223,6 +2438,128 @@ def _merged_contact_data(kept, duplicate):
         fields["other_emails"] = f"{known}, {other}" if known else other
     result["fields"] = _custom_fields(fields)
     return result
+
+
+def _note_log(value):
+    entries = {}
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        note_id = str(item.get("id") or "")
+        text = _text(item.get("text"), CONTACT_NOTE_LIMIT).strip()
+        if not text or not CONTACT_ID_RE.fullmatch(note_id):
+            continue
+        entries[note_id] = {"id": note_id, "at": max(0, _integer(item.get("at"))),
+                            "by": _clean(item.get("by"), 64).lower(), "text": text}
+    ordered = sorted(entries.values(), key=lambda entry: (entry["at"], entry["id"]))
+    return ordered[-CONTACT_NOTE_KEEP:]
+
+
+def _note_excerpt(text):
+    clean = _clean(text, NOTE_PING_EXCERPT + 1)
+    if len(clean) <= NOTE_PING_EXCERPT:
+        return clean
+    return clean[:NOTE_PING_EXCERPT - 1].rstrip() + "\u2026"
+
+
+async def _note_recipients(runtime, org_bi, actor, lists):
+    rows = await runtime.d1_all(
+        "SELECT name,role FROM org_members WHERE org_bi=? "
+        "ORDER BY created_at,name LIMIT 500", org_bi)
+    members = {}
+    for row in rows or []:
+        name = _clean(row.get("name"), 64).lower()
+        if name and name not in members:
+            members[name] = str(row.get("role") or "")
+    recipients = {}
+
+    def add(name, view, member):
+        if name and name != actor and name not in recipients:
+            recipients[name] = (view, member)
+
+    if not lists:
+        for name in members:
+            add(name, None, True)
+    for view in lists:
+        owner = _clean(view.get("owner"), 64).lower()
+        for name, role in members.items():
+            if (view.get("visibility") == "organization" or name == owner
+                    or role in MANAGER_ROLES or name in view.get("sharedWith", [])):
+                add(name, view, True)
+        for name in view.get("sharedWith", []):
+            add(name, view, name in members)
+    return list(recipients.items())[:NOTE_PING_RECIPIENTS]
+
+
+def _note_shows_text(view, member):
+    if member or view is None:
+        return True
+    return any(column.get("field") == "notes" and not column.get("hidden")
+               for column in view.get("columns") or [])
+
+
+async def _note_ping(runtime, org_bi, org_name, actor, contact_id, contact, note,
+                     lists):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not actor:
+        return 0
+    try:
+        recipients = await _note_recipients(runtime, org_bi, actor, lists)
+    except Exception:
+        return 0
+    title = "Note on " + _contact_label(contact)
+    excerpt = _note_excerpt(note["text"])
+    sent = 0
+    for recipient, (view, member) in recipients:
+        where = org_name + (" \u00b7 " + view["name"] if view else "")
+        body = "By %s in %s" % (actor, where)
+        if _note_shows_text(view, member):
+            body += ": " + excerpt
+        href = (ACTIVITY_HREF + "?contact=" + contact_id if member
+                else ACTIVITY_HREF + "?list=" + view["id"])
+        try:
+            await notify(recipient, "plugin_activity", title, body=body, href=href,
+                         dedupe="crm-note:" + note["id"])
+            sent += 1
+        except Exception:
+            pass
+    return sent
+
+
+async def _add_contact_note(runtime, org_bi, org_name, account_bi, actor, data):
+    contact_id = _clean(data.get("contact"), 32).lower()
+    row = (await _contact_row(runtime, org_bi, contact_id)
+           if CONTACT_ID_RE.fullmatch(contact_id) else None)
+    if not row:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    text = _text(data.get("text"), CONTACT_NOTE_LIMIT + 1).strip()
+    if not text:
+        return _response(runtime, {"error": "note_required"}, 400)
+    if len(text) > CONTACT_NOTE_LIMIT:
+        return _response(runtime, {"error": "note_too_long"}, 413)
+    existing = await runtime.open(row.get("data"))
+    existing = existing if isinstance(existing, dict) else {}
+    note = {"id": runtime.new_id(), "at": runtime.now(), "by": actor, "text": text}
+    contact = dict(existing, noteLog=_note_log(
+        _note_log(existing.get("noteLog")) + [note]))
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET data=? WHERE org_bi=? AND contact_id=?",
+        await runtime.seal(contact), org_bi, contact_id)
+    await runtime.audit(actor, "crm.contact.note", "crm_contact", contact_id)
+    views = await _org_list_views(runtime, org_bi)
+    list_ids = _contact_lists(contact, views, _pipeline_lists(views))
+    await _record_list_activity(
+        runtime, org_bi, list_ids, account_bi, actor, "contact.noted",
+        {"count": 1, "contacts": [_contact_label(contact)],
+         "note": _note_excerpt(text)})
+    lists = [view for view in views if view["id"] in list_ids]
+    pinged = await _note_ping(runtime, org_bi, org_name, actor, contact_id,
+                              contact, note, lists)
+    return _response(runtime, {
+        "ok": True, "note": note, "pinged": pinged,
+        "contact": await _contact_project(
+            runtime, await _contact_row(runtime, org_bi, contact_id)),
+    }, 201)
 
 
 async def _merge_contacts(runtime, org_bi, account_bi, actor, data):
@@ -2734,6 +3071,10 @@ def _list_activity_text(action, details):
     if action == "contact.merged":
         return "merged %s into %s" % (_clean(details.get("merged"), 160) or "a contact",
                                       _names_phrase(details))
+    if action == "contact.noted":
+        note = _clean(details.get("note"), NOTE_PING_EXCERPT)
+        return "added a note on " + _names_phrase(details) + (
+            ": \u201c" + note + "\u201d" if note else "")
     if action == "contact.emailed":
         subject = _clean(details.get("subject"), 200)
         return "emailed " + _names_phrase(details) + (
@@ -3954,9 +4295,8 @@ def _email_link_fields(data, existing=None):
 
 async def _contact_emails(runtime, org_bi, contact_id):
     rows = await runtime.d1_all(
-        "SELECT send_id,org_bi,org_name,contact_id,sender_name,transport,status,"
-        "external_id,created_at,sent_at,status_at,data FROM crm_email_sends "
-        "WHERE org_bi=? AND contact_id=? ORDER BY created_at DESC,send_id LIMIT 50",
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.contact_id=? "
+        "ORDER BY s.created_at DESC,s.send_id LIMIT 50",
         org_bi, contact_id,
     )
     return [await _email_project(runtime, row, include_content=False)
@@ -4238,8 +4578,8 @@ async def _lookup_contact(runtime, org_bi, data):
 async def _linked_email_row(runtime, org_bi, provider, message_id):
     """The send row already holding this provider message, if any."""
     rows = await runtime.d1_all(
-        "SELECT send_id,data FROM crm_email_sends WHERE org_bi=? AND external_id=? "
-        "ORDER BY created_at DESC,send_id LIMIT 20", org_bi, message_id)
+        "SELECT send_id,contact_id,data FROM crm_email_sends WHERE org_bi=? AND "
+        "external_id=? ORDER BY created_at DESC,send_id LIMIT 20", org_bi, message_id)
     for row in rows or []:
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
@@ -4361,6 +4701,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     contact_id = str(row.get("contact_id") or "")
     contact_data = await runtime.open(row.get("data"))
     contact_data = contact_data if isinstance(contact_data, dict) else {}
+    before = dict(contact_data)
     # An address the box does not carry yet joins it, so the next message
     # from it matches straight away: as its email when it has none, else
     # beside the others. One another box already holds stays there.
@@ -4430,6 +4771,10 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     if flow_id and (contact_data.get("flow"), contact_data.get("stage")) != (flow_id, stage):
         contact_data["flow"], contact_data["stage"] = flow_id, stage
         changed = True
+    advanced = "" if flow_id or link["direction"] != "outbound" else _contacted_stage(
+        contact_data, flows)
+    if advanced:
+        contact_data["stage"], changed = advanced, True
     if changed:
         await runtime.d1_run(
             "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,"
@@ -4441,10 +4786,14 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         await runtime.d1_run(
             "UPDATE crm_contacts SET email_bi=? WHERE org_bi=? AND contact_id=?",
             await _unique_email_bi(runtime, org_bi, counterpart), org_bi, contact_id)
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
     await runtime.audit(
         actor, "crm.email.link", "crm_email_send", send_id,
         details={"provider": provider, "contactCreated": contact_created,
-                 "relinked": bool(existing), "pipeline": bool(flow_id)},
+                 "relinked": bool(existing), "pipeline": bool(flow_id),
+                 "stageAdvanced": bool(advanced)},
     )
     if not existing and not quiet:
         await _celebrate_tracked_email(runtime, actor, send_id,
@@ -4455,6 +4804,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         "contactCreated": contact_created,
         "matchedBy": "" if contact_created else matched_by,
         "relinked": bool(existing),
+        "stageAdvanced": bool(advanced),
         "flows": flows,
         "email": await _email_project(
             runtime, await _email_row(runtime, org_bi, send_id)),
@@ -5115,6 +5465,527 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
     })
 
 
+def _url_end(value):
+    return str(value or "").rstrip(".,;:!?")
+
+
+def _urls(text):
+    found = []
+    for match in AUTO_EMAIL_URL_RE.finditer(str(text or "")):
+        url = _url_end(match.group(0))
+        if url and url not in found:
+            found.append(url)
+    return found
+
+
+def _day(ms):
+    ms = _integer(ms)
+    if ms <= 0:
+        return "an unknown date"
+    return datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+
+
+def _auto_email_angle(names):
+    names = [name for name in names if name]
+    for name in names:
+        lowered = name.lower()
+        for words, text in AUTO_EMAIL_ANGLES:
+            if any(word in lowered for word in words):
+                return text % name
+    if names:
+        return ("They are on our \"%s\" list, so pitch it the way that suits "
+                "that group." % names[0])
+    return ""
+
+
+def _auto_email_facts(contact, flow_name):
+    facts = []
+    skipped = {"name", "email", "phone", "notes", "flow", "stage", "value",
+               "lastContactedAt"}
+    stage = _clean(contact.get("stage"), 60)
+    pipeline = ", stage ".join(part for part in (flow_name, stage) if part)
+    if pipeline:
+        facts.append(("Pipeline", pipeline))
+    for field, label, _ in CONTACT_COLUMNS:
+        if field in skipped:
+            continue
+        value = contact.get(field)
+        if isinstance(value, list):
+            value = ", ".join(_clean(item, 60) for item in value if item)
+        facts.append((label, _clean(value, 300)))
+    custom = contact.get("fields") if isinstance(contact.get("fields"), dict) else {}
+    for key, value in list(custom.items())[:AUTO_EMAIL_FIELDS]:
+        facts.append((_clean(key, 64).replace("_", " ").capitalize(), _clean(value, 200)))
+    return ["- %s: %s" % (label, value) for label, value in facts if value]
+
+
+def _auto_email_quote(text):
+    lines = []
+    for line in str(text or "").replace("\r\n", "\n").split("\n"):
+        stripped = line.strip()
+        if re.match(r"^On .{4,200}wrote:$", stripped) or re.match(
+                r"^-{2,}\s*Original Message\s*-{2,}$", stripped, re.IGNORECASE):
+            break
+        if not stripped.startswith(">"):
+            lines.append(line.rstrip())
+    flat = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    if len(flat) > AUTO_EMAIL_MESSAGE_CHARS:
+        flat = flat[:AUTO_EMAIL_MESSAGE_CHARS - 1] + "…"
+    return flat
+
+
+async def _auto_email_conversation(runtime, org_bi, contact_id):
+    rows = await runtime.d1_all(
+        "SELECT status,created_at,sent_at,data FROM crm_email_sends "
+        "WHERE org_bi=? AND contact_id=? ORDER BY created_at DESC LIMIT ?",
+        org_bi, contact_id, AUTO_EMAIL_MESSAGES)
+    lines = []
+    for row in reversed(rows or []):
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        inbound = _email_direction(data.get("direction")) == "inbound"
+        if not inbound and str(row.get("status") or "") in AUTO_EMAIL_UNSENT:
+            continue
+        subject = _clean(data.get("subject"), 200)
+        lines.append("- %s · %s%s" % (
+            _day(row.get("sent_at") or row.get("created_at")),
+            "They wrote" if inbound else "We wrote",
+            " · Subject: " + subject if subject else ""))
+        body = _auto_email_quote(data.get("text"))
+        lines.extend("  > " + line for line in body.split("\n") if body)
+    return lines
+
+
+async def _auto_email_history(runtime, org_bi, now):
+    rows = await runtime.d1_all(
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.transport='mailtrap' "
+        "AND s.sent_at>0 ORDER BY s.sent_at DESC LIMIT ?",
+        org_bi, AUTO_EMAIL_HISTORY)
+    sends = []
+    for row in rows or []:
+        status = str(row.get("status") or "")
+        if status in AUTO_EMAIL_UNSENT or status in ("bounce", "soft bounce", "suspension"):
+            continue
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        clicked = _integer(row.get("clicks")) > 0 or status == "click"
+        sends.append({
+            "subject": _clean(data.get("subject"), 200),
+            "text": _text(data.get("text"), 4000),
+            "mode": _clean(data.get("mode"), 10),
+            "linkKind": _clean(data.get("linkKind"), 20),
+            "clicked": clicked,
+            "opened": clicked or _integer(row.get("opens")) > 0 or status == "open",
+            "settled": now - _integer(row.get("sent_at")) >= AUTO_EMAIL_SETTLE_MS,
+        })
+    return sends
+
+
+def _rate(part, whole):
+    return round(100 * part / whole) if whole else 0
+
+
+def _auto_email_stats(sends):
+    total = len(sends)
+    opened = sum(1 for item in sends if item["opened"])
+    clicked = sum(1 for item in sends if item["clicked"])
+    return {"sent": total, "opened": opened, "clicked": clicked,
+            "openRate": _rate(opened, total), "clickRate": _rate(clicked, total)}
+
+
+def _auto_email_example(item):
+    excerpt = " / ".join(line.strip() for line in item["text"].split("\n") if line.strip())
+    if len(excerpt) > AUTO_EMAIL_EXAMPLE_CHARS:
+        excerpt = excerpt[:AUTO_EMAIL_EXAMPLE_CHARS - 1] + "…"
+    return "- Subject: \"%s\"%s" % (item["subject"], ("\n  " + excerpt) if excerpt else "")
+
+
+def _auto_email_lessons(sends):
+    if not sends:
+        return ["No tracked emails yet: this is the first, so keep it short and specific."]
+    stats = _auto_email_stats(sends)
+    lines = ["Of our last %d tracked emails, %d%% were opened and %d%% had a link clicked." % (
+        stats["sent"], stats["openRate"], stats["clickRate"])]
+    groups = (("mode", "reach", "First contacts"), ("mode", "follow", "Follow-ups"),
+              ("linkKind", "deck", "With the investor deck link"),
+              ("linkKind", "referral", "With the referral link"))
+    for key, value, label in groups:
+        group = [item for item in sends if item[key] == value]
+        if len(group) >= 3:
+            part = _auto_email_stats(group)
+            lines.append("- %s: %d sent, %d%% opened, %d%% clicked." % (
+                label, part["sent"], part["openRate"], part["clickRate"]))
+    sections = (
+        ("Emails that got a click (write more like these):",
+         [item for item in sends if item["clicked"]]),
+        ("Opened but no click (the subject worked, the ask did not):",
+         [item for item in sends if item["opened"] and not item["clicked"]][:2]),
+        ("Nobody opened these after two days (avoid subjects like these):",
+         [item for item in sends if item["settled"] and not item["opened"]]),
+    )
+    for title, items in sections:
+        if items:
+            lines += ["", title] + [_auto_email_example(item)
+                                    for item in items[:AUTO_EMAIL_EXAMPLES]]
+    lines += ["", "Follow the subject style, length and opening of the emails that got "
+                  "clicks and avoid what the unopened ones share. Change one small thing "
+                  "(the subject or the ask) so we keep learning."]
+    return lines
+
+
+def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
+                       angle, flow_name, conversation, lessons, reason):
+    name = _contact_label(contact)
+    investor = link_kind == "deck"
+    goal = ("This is our first contact with %s: introduce %s in a sentence and give "
+            "them one concrete reason it matters to them in particular." % (name, org_name)
+            if mode == "reach" else
+            "We are already in touch with %s: pick up where the conversation below "
+            "left off, answer anything they asked, and do not repeat the first pitch." % name)
+    link_note = ("This is %s's own link to our investor deck; we see when they open it. "
+                 "Ask them to look at it." % name if investor else
+                 "This is our referral link; it counts every visit. Invite them to try "
+                 "%s through it." % org_name)
+    notes = _text(contact.get("notes"), 20000).strip()
+    if len(notes) > AUTO_EMAIL_NOTES_CHARS:
+        notes = "…" + notes[-AUTO_EMAIL_NOTES_CHARS:]
+    facts = _auto_email_facts(contact, flow_name)
+    lines = [
+        "Write %s email from %s at %s to %s." % (
+            "a first-contact" if mode == "reach" else "a follow-up", sender, org_name, name),
+        "", goal,
+    ]
+    if angle:
+        lines.append(angle)
+    lines += [
+        "Open with something specific to them from the facts below, never a compliment "
+        "that would fit anyone. Plain, warm words, short paragraphs, no hype.",
+        "Keep the body under %d words with one clear, low-effort ask, signed by %s." % (
+            180 if investor else 140, sender),
+        "", "## The tracked link (include it exactly once, on its own line)", link, link_note,
+        "", "## About us: " + org_name,
+        brief or "(No description saved: describe us only in general terms.)",
+        "", "## About " + name,
+    ]
+    lines += facts or ["- Nothing beyond the name is on record."]
+    if notes:
+        lines += ["", "Our notes on them:", notes]
+    lines += ["", "## Our conversation so far (oldest first)"]
+    lines += conversation or ["Nothing on record yet: this is the first message."]
+    lines += ["", "## What our past emails taught us"] + lessons
+    if reason:
+        lines += ["", "## Why now", reason]
+    return "\n".join(lines)
+
+
+def _auto_email_draft(subject, body, link, prompt):
+    subject = _clean(subject, AUTO_EMAIL_MAX_SUBJECT * 2)
+    if subject.lower().startswith("subject:"):
+        subject = subject[8:].strip()
+    subject = subject.strip("\"'“”").strip()[:AUTO_EMAIL_MAX_SUBJECT]
+    body = _text(body, AUTO_EMAIL_MAX_BODY * 2).replace("\r\n", "\n").strip()
+    body = re.sub(r"[ \t]+\n", "\n", re.sub(r"\n{3,}", "\n\n", body))
+    if (not subject or len(body) < AUTO_EMAIL_MIN_BODY or len(body) > AUTO_EMAIL_MAX_BODY
+            or AUTO_EMAIL_PLACEHOLDER_RE.search(subject + "\n" + body)):
+        return None
+    if any(url != link and url not in prompt for url in _urls(body)):
+        return None
+    if link not in _urls(body):
+        body += "\n\n" + link
+    return subject, body
+
+
+def _linked_html(block, tracked):
+    out, last = [], 0
+    for match in AUTO_EMAIL_URL_RE.finditer(block):
+        url = _url_end(match.group(0))
+        out.append(escape(block[last:match.start()]))
+        out.append('<a href="%s" style="color:#2563eb">%s</a>' % (
+            escape(tracked.get(url, url), quote=True), escape(url)))
+        last = match.start() + len(url)
+    out.append(escape(block[last:]))
+    return "".join(out)
+
+
+def _track_origin(runtime):
+    secret = getattr(runtime, "package_secret", None)
+    configured = str(secret("TRACK_ORIGIN") if secret else "").rstrip("/").lower()
+    if configured.startswith("https://") and CALLBACK_ORIGIN_RE.fullmatch(configured):
+        return configured
+    origin = str(getattr(runtime, "request_origin", lambda: "")() or "").rstrip("/").lower()
+    if origin.startswith("https://") and CALLBACK_ORIGIN_RE.fullmatch(origin):
+        return origin
+    return TRACK_ORIGIN
+
+
+async def _track_token(runtime, send_id):
+    return "%s.%s" % (send_id, (await runtime.blind("crm-track:" + send_id))[:24])
+
+
+async def _click_signature(runtime, send_id, url):
+    return (await runtime.blind("crm-click:%s:%s" % (send_id, url)))[:24]
+
+
+async def _tracked_email_html(runtime, send_id, text, origin):
+    token = await _track_token(runtime, send_id)
+    tracked = {}
+    for url in _urls(text) + [TRACK_HOME]:
+        tracked[url] = "%s/api/crm/-/t/c/%s?%s" % (origin, token, urlencode({
+            "u": url, "s": await _click_signature(runtime, send_id, url)}))
+    paragraphs = "".join(
+        '<p style="margin:0 0 14px">%s</p>' % _linked_html(block.strip(), tracked)
+        .replace("\n", "<br>")
+        for block in re.split(r"\n\s*\n", text.strip()) if block.strip())
+    logo = ('<a href="%s"><img src="%s/api/crm/-/t/o/%s.png" width="20" height="20" '
+            'alt="ForkMesh" style="display:block;width:20px;height:20px;border:0;'
+            'border-radius:4px"></a>') % (
+                escape(tracked[TRACK_HOME], quote=True), origin, token)
+    return ('<div style="font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,'
+            'sans-serif;color:#18181b">%s<div style="margin-top:18px">%s</div></div>'
+            % (paragraphs, logo))
+
+
+async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
+                           contact_id, contact):
+    if _investor_flow(flows, _slug(contact.get("flow"), "customers")):
+        token = await _active_deck_token(runtime, org_bi, contact_id)
+        if not token:
+            token, _ = await _mint_deck_token(
+                runtime, org_bi, org_name, account_bi, actor, contact_id, contact)
+        return "deck", _deck_url(token)
+    return "referral", REFERRAL_ORIGIN + quote(actor)
+
+
+async def _auto_email_write(runtime, account_bi, prompt, link):
+    ai_json = getattr(runtime, "ai_json", None)
+    if ai_json is None:
+        return None, "", {"error": "missing_binding"}
+    failure = {"error": "unusable_response"}
+    for _ in range(AUTO_EMAIL_ATTEMPTS):
+        result = await ai_json(account_bi, AUTO_EMAIL_SYSTEM, prompt, AUTO_EMAIL_SCHEMA,
+                               max_tokens=AUTO_EMAIL_MAX_TOKENS)
+        result = result if isinstance(result, dict) else {"error": "unusable_response"}
+        if not result.get("ok"):
+            return None, "", result
+        parsed = result.get("data") if isinstance(result.get("data"), dict) else {}
+        draft = _auto_email_draft(parsed.get("subject"), parsed.get("body"), link, prompt)
+        if draft:
+            return draft, _clean(result.get("model"), 120), None
+    return None, "", failure
+
+
+async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
+    contact_id = _clean(data.get("contactId"), 64).lower()
+    if not CONTACT_ID_RE.fullmatch(contact_id):
+        return _response(runtime, {"error": "contact_required"}, 400)
+    row = await _contact_row(runtime, org_bi, contact_id)
+    if not row:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    contact = await runtime.open(row.get("data"))
+    contact = contact if isinstance(contact, dict) else {}
+    recipient = _email(contact.get("email"))
+    if not recipient:
+        return _response(runtime, {"error": "contact_has_no_email"}, 409)
+    if _stage(contact.get("stage")) in ENDED_STAGES:
+        return _response(runtime, {"error": "contact_closed",
+                                   "stage": _stage(contact.get("stage"))}, 409)
+    now = runtime.now()
+    recent = await runtime.d1_first(
+        "SELECT created_at FROM crm_email_sends WHERE org_bi=? AND contact_id=? "
+        "AND transport='mailtrap' AND created_at>=? "
+        "AND status NOT IN ('draft','failed','reject') ORDER BY created_at DESC LIMIT 1",
+        org_bi, contact_id, now - AUTO_EMAIL_GAP_MS)
+    if recent:
+        return _response(runtime, {"error": "recently_emailed",
+                                   "lastAt": _integer(recent.get("created_at"))}, 409)
+    preview = bool(data.get("preview"))
+    sent_today = await _outreach_sent_today(runtime, org_bi, account_bi)
+    if not preview and sent_today >= OUTREACH_DAILY_LIMIT:
+        return _response(runtime, {"error": "daily_limit_reached",
+                                   "dailyLimit": OUTREACH_DAILY_LIMIT}, 429)
+    mode = _clean(data.get("mode"), 10).lower()
+    if mode not in AUTO_EMAIL_MODES:
+        mode = "follow" if _integer(contact.get("lastContactedAt")) else "reach"
+    settings = await _settings(runtime, org_bi)
+    flows = settings["flows"]
+    from_email, from_name = _outreach_sender(settings)
+    link_kind, link = await _auto_email_link(
+        runtime, flows, org_bi, org_name, account_bi, actor, contact_id, contact)
+    flow_id = _slug(contact.get("flow"), "customers")
+    flow_name = next((_clean(flow.get("name"), 80) for flow in flows
+                      if flow.get("id") == flow_id), "")
+    brief = _text(settings.get("messageBrief"), MESSAGE_BRIEF_LIMIT).strip() or (
+        AUTO_EMAIL_FORKMESH_BRIEF if org_name == "forkmesh" else "")
+    sends = await _auto_email_history(runtime, org_bi, now)
+    prompt = _auto_email_prompt(
+        org_name, from_name, brief, contact, mode, link_kind, link,
+        _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
+        await _auto_email_conversation(runtime, org_bi, contact_id),
+        _auto_email_lessons(sends), _clean(data.get("reason"), 400))
+    learning = _auto_email_stats(sends)
+    fallback = {"prompt": "\n\n".join((AUTO_EMAIL_RULES, prompt, AUTO_EMAIL_AGENT_REPLY)),
+                "link": link,
+                "linkKind": link_kind, "mode": mode, "learning": learning}
+    model = ""
+    if data.get("subject") or data.get("text"):
+        draft = _auto_email_draft(data.get("subject"), data.get("text"), link, prompt)
+        model = _clean(data.get("model"), 120) or "client"
+        if not draft:
+            return _response(runtime, dict(fallback, error="draft_unusable"), 422)
+    else:
+        draft, model, failure = await _auto_email_write(runtime, account_bi, prompt, link)
+        if not draft:
+            reason = _clean((failure or {}).get("error"), 60) or "provider_error"
+            if reason == "rate_limited":
+                return _response(runtime, dict(
+                    fallback, error="rate_limited",
+                    retryAfterMs=_integer(failure.get("retryAfterMs"))), 429)
+            if reason == "unusable_response":
+                return _response(runtime, dict(fallback, error="draft_unusable"), 422)
+            return _response(runtime, dict(fallback, error="ai_unavailable",
+                                           reason=reason), 503)
+    subject, text = draft
+    if preview:
+        return _response(runtime, dict(
+            fallback, ok=True, preview=True, subject=subject, text=text, to=recipient,
+            fromEmail=from_email, fromName=from_name, model=model))
+    send_id = runtime.new_id()
+    html = await _tracked_email_html(runtime, send_id, text, _track_origin(runtime))
+    envelope = {
+        "to": recipient, "fromEmail": from_email, "fromName": from_name,
+        "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
+        "direction": "outbound", "auto": True, "mode": mode, "linkKind": link_kind,
+        "link": link, "model": model,
+    }
+    await runtime.d1_run(
+        "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+        "sender_bi,sender_name,transport,status,external_id,created_at,sent_at,"
+        "status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        send_id, org_bi, org_name, contact_id, account_bi, actor, "mailtrap",
+        "sending", "", now, 0, now, await runtime.seal(envelope),
+    )
+    result = await runtime.send_mailtrap("", {
+        "from": {"email": from_email, "name": from_name},
+        "to": [{"email": recipient}],
+        "subject": subject,
+        "text": text,
+        "html": html,
+        "tracked": True,
+        "category": "CRM automated outreach",
+        "custom_variables": {
+            "forkmesh_crm_send_id": send_id,
+            "forkmesh_crm_org_bi": org_bi,
+            "forkmesh_crm_outreach_template": AUTO_EMAIL_TEMPLATE,
+            "forkmesh_sender": actor,
+        },
+    })
+    accepted = bool((result or {}).get("accepted"))
+    envelope["error"] = _clean((result or {}).get("error"), 500)
+    sent_at = runtime.now()
+    await runtime.d1_run(
+        "UPDATE crm_email_sends SET status=?,external_id=?,sent_at=?,status_at=?,"
+        "data=? WHERE org_bi=? AND send_id=?",
+        "accepted" if accepted else "failed",
+        _clean((result or {}).get("messageId"), 200), sent_at if accepted else 0,
+        sent_at, await runtime.seal(envelope), org_bi, send_id,
+    )
+    await runtime.d1_run(
+        "INSERT INTO crm_outreach_log(org_bi,ts,sender_bi,sender_name,ok,data) "
+        "VALUES(?,?,?,?,?,?)",
+        org_bi, sent_at, account_bi, actor, 1 if accepted else 0,
+        await runtime.seal({"to": recipient, "subject": subject,
+                            "template": AUTO_EMAIL_TEMPLATE, "error": envelope["error"]}),
+    )
+    await runtime.audit(
+        actor, "crm.outreach.auto", "crm_email_send", send_id,
+        outcome="success" if accepted else "failed",
+        details={"transport": "mailtrap", "accepted": accepted, "linkKind": link_kind,
+                 "mode": mode},
+    )
+    if not accepted:
+        return _response(runtime, dict(
+            fallback, error="send_failed",
+            detail="The email provider rejected the send"
+                   + (" (" + envelope["error"] + ")" if envelope["error"] else "") + "."),
+            502)
+    contact["lastContactedAt"] = sent_at
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+        "data=? WHERE org_bi=? AND contact_id=?",
+        account_bi, actor, sent_at, await runtime.seal(contact), org_bi, contact_id,
+    )
+    await _record_contact_event(runtime, org_bi, account_bi, actor, contact,
+                                "contact.emailed", {"subject": subject})
+    await _celebrate_tracked_email(runtime, actor, send_id, subject, contact)
+    return _response(runtime, {
+        "ok": True, "subject": subject, "text": text, "link": link,
+        "linkKind": link_kind, "mode": mode, "model": model, "learning": learning,
+        "sentToday": sent_today + 1, "dailyLimit": OUTREACH_DAILY_LIMIT,
+        "email": await _email_project(runtime, await _email_row(runtime, org_bi, send_id)),
+    }, 201)
+
+
+def _track_miss(runtime, action):
+    if action == "o":
+        return _redirect(runtime, TRACK_LOGO)
+    return _response(runtime, {"error": "link_not_found"}, 404)
+
+
+async def _track(runtime, action, token):
+    send_id = token.partition(".")[0]
+    if not hmac.compare_digest((await _track_token(runtime, send_id)), token):
+        return _track_miss(runtime, action)
+    target = ""
+    if action == "c":
+        query = runtime.query_params()
+        target = _url_end(query.get("u"))
+        if not AUTO_EMAIL_URL_RE.fullmatch(target) or not hmac.compare_digest(
+                await _click_signature(runtime, send_id, target), str(query.get("s") or "")):
+            return _track_miss(runtime, action)
+    row = await runtime.d1_first(
+        "SELECT org_bi,contact_id,sender_name,sent_at,data FROM crm_email_sends "
+        "WHERE send_id=?", send_id)
+    now = runtime.now()
+    if row and now - _integer(row.get("sent_at")) >= TRACK_QUIET_MS:
+        await _record_track(runtime, row, send_id, "open" if action == "o" else "click", now)
+    return _redirect(runtime, TRACK_LOGO if action == "o" else target)
+
+
+async def _record_track(runtime, row, send_id, event, now):
+    org_bi = str(row.get("org_bi") or "")
+    count, stamp = ("opens", "opened_at") if event == "open" else ("clicks", "clicked_at")
+    before = await runtime.d1_first(
+        "SELECT " + count + " AS n FROM crm_email_tracking WHERE send_id=?", send_id)
+    await runtime.d1_run(
+        "INSERT INTO crm_email_tracking(send_id,org_bi,{c},{s},last_at) VALUES(?,?,1,?,?) "
+        "ON CONFLICT(send_id) DO UPDATE SET {c}={c}+1,"
+        "{s}=CASE WHEN {s}=0 THEN excluded.{s} ELSE {s} END,"
+        "last_at=excluded.last_at".format(c=count, s=stamp),
+        send_id, org_bi, now, now)
+    await _advance_send_status(runtime, org_bi, send_id, event, now)
+    if _integer((before or {}).get("n")):
+        return
+    notify = getattr(runtime, "notify", None)
+    sender = _clean(row.get("sender_name"), 64).lower()
+    if notify is None or not sender:
+        return
+    data = await runtime.open(row.get("data"))
+    data = data if isinstance(data, dict) else {}
+    contact = {"email": data.get("to")}
+    contact_id = str(row.get("contact_id") or "")
+    found = await _contact_row(runtime, org_bi, contact_id) if contact_id else None
+    if found:
+        opened = await runtime.open(found.get("data"))
+        contact = opened if isinstance(opened, dict) else contact
+    label = _contact_label(contact)
+    subject = _clean(data.get("subject"), 140)
+    await notify(sender, "plugin_activity",
+                 ("📬 %s opened your email" if event == "open"
+                  else "🔗 %s clicked the link in your email") % label,
+                 body="“%s”" % subject if subject else "", href=CRM_PAGE_PATH,
+                 dedupe="crm-email-%s:%s" % (event, send_id))
+
+
 # --- investor deck links -------------------------------------------------------
 
 def _deck_token(runtime):
@@ -5206,30 +6077,17 @@ async def _deck_link_row(runtime, org_bi, token):
     )
 
 
-async def _create_deck_link(runtime, org_bi, org_name, account_bi, actor, data):
-    """Mint the contact's link, or hand back the active one it already has."""
-    contact_id = _clean(data.get("contactId"), 32).lower()
-    if not CONTACT_ID_RE.fullmatch(contact_id):
-        return _response(runtime, {"error": "contact_required"}, 400)
-    row = await _contact_row(runtime, org_bi, contact_id)
-    if not row:
-        return _response(runtime, {"error": "contact_not_found"}, 404)
-    existing = await runtime.d1_first(
+async def _active_deck_token(runtime, org_bi, contact_id):
+    row = await runtime.d1_first(
         "SELECT token FROM crm_deck_links WHERE org_bi=? AND contact_id=? "
         "AND revoked_at=0 ORDER BY created_at DESC LIMIT 1",
         org_bi, contact_id,
     )
-    if existing:
-        links = await _deck_links(runtime, org_bi)
-        link = next((item for item in links
-                     if item["token"] == str(existing.get("token") or "")), None)
-        return _response(runtime, {"ok": True, "link": link, "created": False})
-    contact = await runtime.open(row.get("data")) or {}
-    refusal = await _deck_refusal(runtime, org_bi, contact)
-    if refusal:
-        await runtime.audit(actor, "crm.deck.link", "crm_contact", contact_id,
-                            outcome="denied", details={"reason": "not_investor_pipeline"})
-        return refusal
+    return str((row or {}).get("token") or "")
+
+
+async def _mint_deck_token(runtime, org_bi, org_name, account_bi, actor, contact_id,
+                           contact):
     token = _deck_token(runtime)
     now = runtime.now()
     await runtime.d1_run(
@@ -5243,6 +6101,30 @@ async def _create_deck_link(runtime, org_bi, org_name, account_bi, actor, data):
         }),
     )
     await runtime.audit(actor, "crm.deck.link", "crm_contact", contact_id)
+    return token, now
+
+
+async def _create_deck_link(runtime, org_bi, org_name, account_bi, actor, data):
+    """Mint the contact's link, or hand back the active one it already has."""
+    contact_id = _clean(data.get("contactId"), 32).lower()
+    if not CONTACT_ID_RE.fullmatch(contact_id):
+        return _response(runtime, {"error": "contact_required"}, 400)
+    row = await _contact_row(runtime, org_bi, contact_id)
+    if not row:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    existing = await _active_deck_token(runtime, org_bi, contact_id)
+    if existing:
+        links = await _deck_links(runtime, org_bi)
+        link = next((item for item in links if item["token"] == existing), None)
+        return _response(runtime, {"ok": True, "link": link, "created": False})
+    contact = await runtime.open(row.get("data")) or {}
+    refusal = await _deck_refusal(runtime, org_bi, contact)
+    if refusal:
+        await runtime.audit(actor, "crm.deck.link", "crm_contact", contact_id,
+                            outcome="denied", details={"reason": "not_investor_pipeline"})
+        return refusal
+    token, now = await _mint_deck_token(
+        runtime, org_bi, org_name, account_bi, actor, contact_id, contact)
     return _response(runtime, {
         "ok": True, "created": True,
         "link": _deck_link_project({
@@ -5526,6 +6408,7 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_outreach_log WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_outreach_team WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_mail_messages WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_email_tracking WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_email_sends WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_list_activity WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_view_shares WHERE org_bi=?", org_bi)
@@ -5542,14 +6425,18 @@ async def mailtrap_webhook_event(runtime, event, status, now):
     org_bi = _clean(variables.get("forkmesh_crm_org_bi"), 128)
     if not send_id or not org_bi or status not in SEND_STATUSES:
         return
+    await _advance_send_status(runtime, org_bi, send_id, status, now,
+                               _clean(event.get("message_id"), 200))
+
+
+async def _advance_send_status(runtime, org_bi, send_id, status, now, external_id=""):
     await runtime.d1_run(
         "UPDATE crm_email_sends SET status=?,status_at=?,"
         "external_id=CASE WHEN external_id='' THEN ? ELSE external_id END "
         "WHERE send_id=? AND org_bi=? AND NOT (status IN ('open','click') "
         "AND ? IN ('accepted','delivery','delivered','soft bounce')) "
         "AND NOT (status='click' AND ?='open')",
-        status, now, _clean(event.get("message_id"), 200), send_id, org_bi,
-        status, status,
+        status, now, external_id, send_id, org_bi, status, status,
     )
 
 
@@ -5559,7 +6446,9 @@ ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "lookup", "bulk", "merge", "delete-column", "evidence", "send", "link",
-    "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange"})
+    "note",
+    "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
+    "auto"})
 ACTIVITY_PINGS = {
     ("contacts", "", "POST"): ("New CRM contact", "team", False),
     ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
@@ -5579,6 +6468,7 @@ ACTIVITY_PINGS = {
     ("mail", "id", "DELETE"): ("CRM email deleted", "team", False),
     ("outreach", "send", "POST"): ("Outreach email sent", "team", False),
     ("outreach", "team", "POST"): ("Outreach team changed", "team", True),
+    ("outreach", "auto", "POST"): ("Automated outreach email sent", "team", False),
     ("decks", "", "POST"): ("Pitch deck link created", "team", False),
     ("decks", "id", "DELETE"): ("Pitch deck link revoked", "team", False),
     ("views", "", "POST"): ("CRM sheet created", "team", False),
@@ -5703,12 +6593,12 @@ async def handle(runtime, path):
         ("shared", "shared"): ("GET",),
         ("zoho-callback", "zoho"): ("GET",),
     }.get((route[0], resource), ())
-    if route[0] == "open":
+    if route[0] in ("open", "track"):
         allowed = ("GET",)
     elif route[0] == "shared-contacts":
         allowed = ("PATCH",) if item else ("POST",)
     elif resource == "contacts" and item in ("import", "lookup", "bulk", "merge",
-                                             "delete-column", "evidence"):
+                                             "delete-column", "evidence", "note"):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
@@ -5723,7 +6613,7 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "views" and item == "activity":
         allowed = ("GET", "POST")
-    elif resource == "outreach" and item in ("send", "team"):
+    elif resource == "outreach" and item in ("send", "team", "auto"):
         allowed = ("POST",)
     elif resource == "decks" and item:
         allowed = ("GET", "DELETE") if DECK_TOKEN_RE.fullmatch(item) else ()
@@ -5749,6 +6639,13 @@ async def handle(runtime, path):
     await runtime.ensure_schema()
     if route[0] == "zoho-callback":
         return await _zoho_callback(runtime)
+    if route[0] == "track":
+        if not await runtime.d1_first(
+                "SELECT plugin FROM org_plugin_installs WHERE plugin=? LIMIT 1",
+                PLUGIN_ID):
+            return _track_miss(runtime, resource)
+        await _ensure_data_schema(runtime, "")
+        return await _track(runtime, resource, item)
     account_bi, actor = await _actor(runtime, data)
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)
@@ -5873,6 +6770,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, account_bi, actor, role, data)
         if not await _outreach_allowed(runtime, org_bi, account_bi, role):
             return _response(runtime, {"error": "outreach_forbidden"}, 403)
+        if item == AUTO_EMAIL_TEMPLATE:
+            return await _auto_email(
+                runtime, org_bi, org_name, account_bi, actor, data)
         return await _outreach_send(
             runtime, org_bi, org_name, account_bi, actor, data)
     if resource == "decks":
@@ -5924,6 +6824,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "lookup":
             return await _lookup_contact(runtime, org_bi, data)
+        if item == "note":
+            return await _add_contact_note(
+                runtime, org_bi, org_name, account_bi, actor, data)
         if item == "bulk":
             return await _bulk_update_contacts(
                 runtime, org_bi, org_name, account_bi, actor, data)
@@ -5992,6 +6895,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
     if method == "GET":
         return _response(runtime, {"ok": True, "email": await _email_project(runtime, row)})
     if method == "DELETE":
+        await runtime.d1_run(
+            "DELETE FROM crm_email_tracking WHERE org_bi=? AND send_id=?", org_bi, item)
         await runtime.d1_run(
             "DELETE FROM crm_email_sends WHERE org_bi=? AND send_id=?", org_bi, item)
         await runtime.audit(actor, "crm.email.delete", "crm_email_send", item)

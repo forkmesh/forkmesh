@@ -815,7 +815,8 @@ def _load_digest_sender(sent, saved):
         "NOTIFICATION_QUEUE_COALESCE_MS", "NOTIFICATION_QUEUE_MEMO_MAX",
         "_NOTIFICATION_QUEUE_MEMO", "MAX_NODE_NAME", "PING_PAUSE_MAX_MS",
         "NOTIFICATION_IMMEDIATE_KINDS", "NOTIFICATION_IMMEDIATE_SOURCES",
-        "NOTIFICATION_IMMEDIATE_CONTEXTS", "NOTIFICATION_IMMEDIATE_SCAN", "NOTIFICATION_IMMEDIATE_FRESH_MS",
+        "NOTIFICATION_IMMEDIATE_CONTEXTS", "NOTIFICATION_EMAIL_SKIP_SOURCES",
+        "NOTIFICATION_IMMEDIATE_SCAN", "NOTIFICATION_IMMEDIATE_FRESH_MS",
         "NOTIFICATION_PULL_STATE_KINDS", "NOTIFICATION_PULL_STATE_MAX_READS",
         "NOTIFICATION_EMAIL_SEND_RETAIN_MS",
     }
@@ -1055,6 +1056,24 @@ def test_digest_delivery_still_rolls_up_and_honours_the_quarantine():
     assert [item["subject"] for item in sent] == [
         "ForkMesh: 2 new notifications"]
     assert saved[-1][1]["last_digest_ts"] == old + 1000
+
+
+def test_ios_build_ping_is_not_emailed_again_after_the_build_email():
+    sent, saved = [], []
+    ns = _load_digest_sender(sent, saved)
+    ns["accounts"]["ada-bi"] = _verified_account("ada", delivery="instant")
+    _add_rows(
+        ns,
+        _row("ada-bi", NOW - 20 * 1000, "iPhone build 1.4.0 (21) is ready",
+             kind="release_published", source="ios_build"),
+        _row("ada-bi", NOW - 10 * 1000, "Release v1.4.0",
+             kind="release_published", source="release"),
+    )
+
+    asyncio.run(ns["send_notification_digests"](object(),
+                                                include_general_chat=False))
+
+    assert [item["subject"] for item in sent] == ["ForkMesh: Release v1.4.0"]
 
 
 def test_delivery_mode_defaults_to_digest_and_rejects_unknown_values():

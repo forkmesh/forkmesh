@@ -60,9 +60,16 @@ ANSWERS = {
     "/v1/betaGroups/g1/betaTesters": {"data": [{}], "meta": {"paging": {"total": 3}}},
     "/v1/betaGroups/g2/betaTesters": {"data": [{}], "meta": {"paging": {"total": 1}}},
     "/v1/apps/app/betaFeedbackScreenshotSubmissions": {"data": [
-        {"attributes": {"createdDate": "2026-09-01T03:06:00Z", "email": "t@example.com",
+        {"id": "fb1",
+         "attributes": {"createdDate": "2026-09-01T03:06:00Z", "email": "t@example.com",
                         "deviceModel": "iPhone16_2", "osVersion": "27.0",
-                        "comment": "Show time\nas 5:45pm"}}]},
+                        "comment": "Show time\nas 5:45pm",
+                        "screenshots": [
+                            {"url": "https://tf.example.apple.com/shot-1.png", "width": 1179,
+                             "height": 2556, "expirationDate": "2026-09-02T03:06:00Z"},
+                            {"url": "http://insecure.example/shot.png", "width": 1, "height": 1},
+                            {"url": "https://tf.example.apple.com/shot-2.png", "width": 2556,
+                             "height": 1179}]}}]},
     "/v1/apps/app/betaFeedbackCrashSubmissions": None,
     "/v1/apps/app/customerReviews": {"data": []},
 }
@@ -151,7 +158,8 @@ def test_the_report_flags_review_trouble_and_lists_groups_and_feedback(monkeypat
     assert groups.index("forkmesh-team (internal): 3 testers; every build") < groups.index(
         "outside (external): 1 tester; chosen builds; public link ON "
         "https://testflight.apple.com/join/x; feedback on")
-    assert "screenshot from t@example.com (iPhone16_2 27.0): Show time as 5:45pm" in out
+    assert ("screenshot from t@example.com (iPhone16_2 27.0): Show time as 5:45pm "
+            "[2 screenshots]") in out
     assert "(unavailable: ERROR: App Store Connect GET answered 404)" in out
     assert out.rstrip().endswith("== App Store customer reviews ==\n  none")
 
@@ -183,8 +191,16 @@ def test_the_snapshot_carries_labels_tones_and_attention(monkeypatch):
     assert snapshot["unavailable"] == {
         "feedback": "ERROR: App Store Connect GET answered 404"}
     assert snapshot["downloads"]["available"] is False
+    shots = snapshot["feedback"][0]["screenshots"]
+    assert [(shot["width"], shot["height"]) for shot in shots] == [(1179, 2556), (2556, 1179)]
+    assert shots[0]["url"] == "https://tf.example.apple.com/shot-1.png"
+    assert shots[0]["id"] == asc_store_report.screenshot_id({"id": "fb1"}, 0)
+    assert len({shot["id"] for shot in shots}) == 2
     assert json.loads(json.dumps(snapshot)) == snapshot
-    assert app_store_status.clean_snapshot(snapshot) == snapshot
+    published = asc_store_report.public(snapshot)
+    assert "url" not in json.dumps(published["feedback"])
+    assert "url" in snapshot["feedback"][0]["screenshots"][0]
+    assert app_store_status.clean_snapshot(published) == published
 
 
 def test_publish_puts_the_snapshot_and_never_fails_the_report(monkeypatch, capsys):
@@ -193,7 +209,7 @@ def test_publish_puts_the_snapshot_and_never_fails_the_report(monkeypatch, capsy
     assert asc_store_report.publish(snapshot, lambda *args: sent.append(args))
     assert sent == [("App Store Status", "/api/app-store-status",
                      "forkmesh-app-store-status-request-v1", "PUT",
-                     "/api/app-store-status/snapshot", snapshot)]
+                     "/api/app-store-status/snapshot", asc_store_report.public(snapshot))]
 
     def refuse(*args):
         raise ValueError("App Store Status API 401: invalid_session")
@@ -296,3 +312,84 @@ def test_store_report_reads_credentials_from_desktop_actions_variables(tmp_path,
     monkeypatch.setenv("FORKMESH_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     assert credentials() == ("K", "I")
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+
+def test_publish_uploads_only_the_screenshots_the_server_is_missing(monkeypatch, capsys):
+    monkeypatch.setattr(asc_store_report, "shrink",
+                        lambda raw: (raw, asc_store_report.image_mime(raw)))
+    snapshot = collected(monkeypatch)
+    first, second = (shot["id"] for shot in snapshot["feedback"][0]["screenshots"])
+    sent, fetched = [], []
+
+    def request(*args):
+        sent.append(args)
+        return {"ok": True, "missingScreenshots": [second]} if args[4].endswith("/snapshot") else {}
+
+    def fetch(url):
+        fetched.append(url)
+        return PNG
+
+    assert asc_store_report.publish(snapshot, request, fetch)
+    assert fetched == ["https://tf.example.apple.com/shot-2.png"]
+    assert [args[4] for args in sent] == ["/api/app-store-status/snapshot",
+                                          f"/api/app-store-status/screenshots/{second}"]
+    body = sent[1][5]
+    assert body["mime"] == "image/png" and (body["width"], body["height"]) == (2556, 1179)
+    assert asc_store_report.base64.b64decode(body["data"]) == PNG
+    assert first not in json.dumps(sent[1])
+    assert "uploaded 1 of 1 new tester feedback screenshot" in capsys.readouterr().out
+
+
+def test_screenshot_problems_are_printed_and_never_fail_the_report(monkeypatch, capsys):
+    snapshot = collected(monkeypatch)
+    ids = [shot["id"] for shot in snapshot["feedback"][0]["screenshots"]]
+
+    def request(*args):
+        if args[4].endswith("/snapshot"):
+            return {"ok": True, "missingScreenshots": ids}
+        raise ValueError("App Store Status API 413: image_too_large")
+
+    def fetch(url):
+        if url.endswith("shot-1.png"):
+            raise OSError("expired")
+        return PNG
+
+    monkeypatch.setattr(asc_store_report, "shrink",
+                        lambda raw: (raw, asc_store_report.image_mime(raw)))
+    assert asc_store_report.publish(snapshot, request, fetch)
+    out = capsys.readouterr().out
+    assert "uploaded 0 of 2 new tester feedback screenshots" in out
+    assert f"screenshot {ids[0][:8]} could not be downloaded: expired" in out
+    assert f"screenshot {ids[1][:8]} was not uploaded: App Store Status API 413" in out
+    monkeypatch.setattr(asc_store_report, "shrink", lambda raw: (b"", ""))
+    assert asc_store_report.upload_screenshots(snapshot, ids[1:], request, fetch)[1] == [
+        f"screenshot {ids[1][:8]} is not a picture that fits in 3 MB"]
+
+
+def test_shrink_keeps_a_small_picture_without_pillow(monkeypatch):
+    import builtins
+    real = builtins.__import__
+
+    def no_pillow(name, *args, **kwargs):
+        if name == "PIL":
+            raise ImportError(name)
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_pillow)
+    assert asc_store_report.shrink(PNG) == (PNG, "image/png")
+    assert asc_store_report.shrink(b"GIF89a") == (b"", "")
+
+
+def test_shrink_turns_a_large_screenshot_into_a_jpeg_under_the_cap():
+    image_module = pytest.importorskip("PIL.Image")
+    import io
+    out = io.BytesIO()
+    image_module.new("RGB", (2400, 1200), (40, 90, 200)).save(out, "PNG")
+    small, mime = asc_store_report.shrink(out.getvalue())
+    assert mime == "image/jpeg" and small.startswith(b"\xff\xd8\xff")
+    assert len(small) <= asc_store_report.SCREENSHOT_MAX_BYTES
+    assert max(image_module.open(io.BytesIO(small)).size) == 2048
+    assert asc_store_report.shrink(b"not a picture") == (b"", "")

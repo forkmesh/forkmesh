@@ -25,17 +25,29 @@ const DASHBOARD_CSS_PATH = path.resolve(
   "tailwind.css",
 );
 
-test("repo file view saves edits through the file edit endpoint", async ({ page }) => {
-  let editRequest = null;
+const PROPOSAL_PATCH = [
+  "diff --git a/README.md b/README.md",
+  "index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644",
+  "--- a/README.md",
+  "+++ b/README.md",
+  "@@ -1,3 +1,3 @@",
+  " # Project",
+  " ",
+  "-Initial text.",
+  "+Suggested text.",
+  "",
+].join("\n");
+
+async function openRepoFile(page, { account, onFileEdit, onPulls }) {
   await page.setViewportSize({ width: 1440, height: 950 });
-  await page.addInitScript(() => {
+  await page.addInitScript((name) => {
     localStorage.setItem("forkmesh.dashboard.theme", "light");
     localStorage.setItem("forkmesh.session", JSON.stringify({
-      nodeName: "alice",
-      account: "alice",
+      nodeName: name,
+      account: name,
       sessionToken: "test-session",
     }));
-  });
+  }, account);
   await page.route("https://cdn.tailwindcss.com/**", (route) =>
     route.fulfill({
       contentType: "text/javascript",
@@ -123,17 +135,13 @@ test("repo file view saves edits through the file edit endpoint", async ({ page 
     } else if (url.pathname === "/api/repo/alice/project/blobs") {
       body = { ok: true, blobs: {} };
     } else if (url.pathname === "/api/repo/alice/project/file-edit") {
-      editRequest = {
+      body = onFileEdit({
         authorization: request.headers().authorization || "",
         body: request.postDataJSON(),
-      };
-      body = {
-        ok: true,
-        path: "README.md",
-        branch: "web/readme",
-        commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
-        oid: "2222222222222222222222222222222222222222",
-      };
+      });
+    } else if (url.pathname === "/api/repo/alice/project/pulls"
+        && request.method() === "POST" && onPulls) {
+      body = onPulls(request.postDataJSON());
     }
     await route.fulfill({
       status: 200,
@@ -147,6 +155,29 @@ test("repo file view saves edits through the file edit endpoint", async ({ page 
   await page.locator('[data-repo-file-action="edit"]').click();
   const editor = page.locator("[data-repo-file-editor]");
   await expect(editor).toBeVisible();
+  return editor;
+}
+
+test("repo file view saves edits through the file edit endpoint", async ({ page }) => {
+  const requests = [];
+  const editor = await openRepoFile(page, {
+    account: "alice",
+    onFileEdit(request) {
+      requests.push(request);
+      if (request.body.mode === "probe") {
+        return { ok: true, access: "write", account: "alice" };
+      }
+      return {
+        ok: true,
+        path: "README.md",
+        branch: "web/readme",
+        commit: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        oid: "2222222222222222222222222222222222222222",
+      };
+    },
+  });
+  await expect(editor.locator("[data-repo-file-editor-propose-wrap]")).toBeVisible();
+  await expect(editor.locator("[data-repo-file-editor-notice]")).toBeHidden();
   await editor.locator("[data-repo-file-editor-content]").fill(
     "# Project\n\nEdited in the browser.\n",
   );
@@ -157,8 +188,10 @@ test("repo file view saves edits through the file edit endpoint", async ({ page 
   await expect(page.locator("[data-repo-file-status]")).toContainText(
     "Saved to web/readme at abcdefabcd.",
   );
-  expect(editRequest.authorization).toBe("Bearer test-session");
-  expect(editRequest.body).toMatchObject({
+  const save = requests.find((request) => request.body.mode === "commit");
+  expect(save.authorization).toBe("Bearer test-session");
+  expect(save.body).toMatchObject({
+    mode: "commit",
     path: "README.md",
     branch: "web/readme",
     baseRef: "main",
@@ -167,4 +200,64 @@ test("repo file view saves edits through the file edit endpoint", async ({ page 
     message: "Edit README from web",
     sessionToken: "test-session",
   });
+});
+
+test("a reader without write access proposes the edit as a pull request", async ({ page }) => {
+  const requests = [];
+  let submitted = null;
+  const editor = await openRepoFile(page, {
+    account: "jett",
+    onFileEdit(request) {
+      requests.push(request);
+      if (request.body.mode === "probe") {
+        return { ok: true, access: "propose", account: "jett" };
+      }
+      return {
+        ok: true,
+        proposal: true,
+        path: "README.md",
+        base: "main",
+        baseOid: "0123456789abcdef0123456789abcdef01234567",
+        head: "jett/edit-readme-md-abcdefa",
+        headOid: "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        oid: "2222222222222222222222222222222222222222",
+        author: "jett",
+        subject: "Suggest README wording",
+        patch: PROPOSAL_PATCH,
+        commits: "From abcdef Mon Sep 17 00:00:00 2001\nSubject: [PATCH] Suggest README wording\n\n---\n\n" + PROPOSAL_PATCH,
+      };
+    },
+    onPulls(payload) {
+      submitted = payload;
+      return { ok: true, number: 7 };
+    },
+  });
+  const notice = editor.locator("[data-repo-file-editor-notice]");
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("You don't have write access");
+  await expect(editor.locator("[data-repo-file-editor-propose-wrap]")).toBeHidden();
+  await expect(editor.locator("[data-repo-file-editor-save]")).toContainText("Propose changes");
+  await editor.locator("[data-repo-file-editor-content]").fill(
+    "# Project\n\nSuggested text.\n",
+  );
+  await editor.locator("[data-repo-file-editor-message]").fill("Suggest README wording");
+  await editor.locator("[data-repo-file-editor-save]").click();
+
+  await page.waitForURL("**/alice/project/pulls/7");
+  const propose = requests.find((request) => request.body.mode === "propose");
+  expect(propose.body).toMatchObject({
+    mode: "propose",
+    path: "README.md",
+    branch: "main",
+    content: "# Project\n\nSuggested text.\n",
+    message: "Suggest README wording",
+  });
+  expect(requests.some((request) => request.body.mode === "commit")).toBe(false);
+  expect(submitted.pull).toMatchObject({
+    title: "Suggest README wording",
+    base: "main",
+    head: "jett/edit-readme-md-abcdefa",
+    patch: PROPOSAL_PATCH,
+  });
+  expect(submitted.pull.sig).toBeTruthy();
 });

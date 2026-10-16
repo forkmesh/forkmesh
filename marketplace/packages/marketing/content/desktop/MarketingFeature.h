@@ -249,6 +249,7 @@ private:
     void postImagesArrived();
     void editRedditWatch();
     void monitorRedditThread();
+    void updateRedditThreads(const QString &threadId = QString());
     void copyRedditRules();
     void addRedditPlace();
     void addRedditWatch(const QString &kind, const QString &value);
@@ -442,6 +443,8 @@ private:
     QTimer *m_xGuideTimer = nullptr;
     QTimer *m_railRetry = nullptr;
     QTimer *m_changedReload = nullptr;
+    QTimer *m_redditFollow = nullptr;
+    int m_redditFollowPolls = 0;
     int m_railRetryMs = 0;
     QString m_xGuidePath;
     qint64 m_xGuideSince = 0;

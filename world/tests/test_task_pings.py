@@ -92,7 +92,9 @@ class Relay:
         }
         tree = ast.parse(ROUTES.read_text(encoding="utf-8"))
         wanted = {"_TaskPingStore", "_organization_task_participants",
-                  "_task_ping_recipients", "notify_organization_task_update"}
+                  "_task_ping_recipients", "notify_organization_task_update",
+                  "_task_deletion_plan",
+                  "notify_organization_task_deletions"}
         body = [node for node in tree.body
                 if getattr(node, "name", "") in wanted]
         assert {node.name for node in body} == wanted
@@ -297,6 +299,46 @@ class _TaskEmail:
                            "names": names, "title": meta["taskTitle"],
                            "details": details})
         return len(names)
+
+    async def send_deleted(self, _env, org_bi, org, actor, plan, reason):
+        self.calls.append({"org": org, "actor": actor, "action": "deleted",
+                           "plan": [(name, [task["id"] for task in tasks])
+                                    for name, tasks in plan],
+                           "reason": reason})
+        return len(plan)
+
+
+def test_a_deleted_task_pings_but_leaves_email_to_the_deletion_notice():
+    relay = Relay(roster=ROSTER)
+    mail = relay.ns["task_email"] = _TaskEmail()
+    filed = run(relay.update("jett", _task(), "deleted", participants=[]))
+    assert filed == 2
+    assert mail.calls == []
+
+
+def test_deletion_notices_reach_creator_and_assignee_once_each():
+    relay = Relay(roster=ROSTER)
+    mail = relay.ns["task_email"] = _TaskEmail()
+    first = _task("a" * 32, created_by="alice", assignee="bob")
+    second = _task("b" * 32, created_by="carol", assignee="bob")
+    third = _task("c" * 32, created_by="jett", assignee="outsider")
+    bot = dict(_task("d" * 32, created_by="jett", assignee="dana"),
+               assigneeKind="agent")
+    sent = run(relay.ns["notify_organization_task_deletions"](
+        None, "org-bi", "jett", [first, second, third, bot], "cleanup"))
+    assert sent == 3
+    call, = mail.calls
+    assert call["org"] == "forkmesh"
+    assert call["reason"] == "cleanup"
+    assert call["plan"] == [
+        ("alice", ["a" * 32]),
+        ("bob", ["a" * 32, "b" * 32]),
+        ("carol", ["b" * 32]),
+    ]
+    mail.calls.clear()
+    assert run(relay.ns["notify_organization_task_deletions"](
+        None, "org-bi", "alice", [_task(assignee="alice")], "")) == 0
+    assert mail.calls == []
 
 
 def test_every_task_activity_is_emailed_alongside_its_ping():

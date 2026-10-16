@@ -2323,7 +2323,7 @@ void MainWindow::startSession()
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
     const auto *networkInfo = QNetworkInformation::instance();
-    if (m_offlineMode ||
+    if (m_offlineMode || projectInstancePending() ||
         (networkInfo && networkInfo->reachability() ==
                             QNetworkInformation::Reachability::Disconnected)) {
         server->setNetworkAvailable(false);

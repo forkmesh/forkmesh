@@ -70,6 +70,8 @@ query of a desktop.
 | `PUT /api/app-store-status/snapshot` | stores the body (at most 256 KB) after `clean_snapshot`; `{ok, publishedAt}` |
 | `DELETE /api/app-store-status/snapshot` | forgets the snapshot |
 | `GET /api/app-store-status/export` | `{ok, filename, export}` |
+| `GET /api/app-store-status/screenshots/<id>` | `{ok, id, mime, width, height, data}` (`data` is base64); `404 screenshot_not_found` until uploaded |
+| `PUT /api/app-store-status/screenshots/<id>` | stores one tester screenshot (body as the GET answer, at most 3 MB of picture); `409 screenshot_not_in_snapshot` unless the current snapshot lists that id |
 
 The API exists only once a deploy carrying this package has reached the app
 nodes. Until then the app's catch-all answers `404 {"error":"not_found"}`
@@ -123,7 +125,8 @@ drops anything else. Dates are App Store Connect ISO 8601 strings
   ],
   "feedback": [
     {"kind": "screenshot", "createdAt": "2026-09-01T03:06:00Z", "from": "t@example.com",
-     "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm"}
+     "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm",
+     "screenshots": [{"id": "3f1c2a9b8d7e6f5a4b3c2d1e", "width": 1179, "height": 2556}]}
   ],
   "reviews": [
     {"createdAt": "2026-10-01T10:00:00Z", "rating": 5, "title": "Great", "territory": "USA",
@@ -142,12 +145,61 @@ drops anything else. Dates are App Store Connect ISO 8601 strings
 | `good` | live or usable (ready for distribution, valid, in beta testing, approved) | success |
 | `neutral` | anything else (prepare for submission, not submitted, expired) | muted |
 
+A feedback row's `screenshots` lists at most 4 pictures the tester attached,
+each `{id, width, height}`: `id` is 24 lowercase hex characters, `width` and
+`height` are Apple's pixel size. The picture itself is not in the snapshot; see
+"Tester screenshots" below.
+
 `label` is the human text a client shows; `state` is the raw App Store
 Connect value for tooltips and logs. `unavailable` maps a section key
 (`versions`, `submissions`, `downloads`, `builds`, `groups`, `feedback`,
 `reviews`) to the error that kept it empty; a client shows it inside that
 section. `downloads.available` is false with a `note` when the vendor number
 is not set or the app has no App Store version yet.
+
+## Tester screenshots
+
+TestFlight screenshot feedback carries the pictures the tester attached
+(`attributes.screenshots` on `betaFeedbackScreenshotSubmissions`: a signed
+`url`, `width`, `height` and `expirationDate`). The iOS in-app bug report on
+this page asked to see them (task fca77d15, 2026-10-16), so version 1.1.0
+shows each one as a thumbnail under its feedback row on every client, and a
+tap or click opens it full size.
+
+Apple's URLs are signed and expire, and the relay never calls Apple, so the
+desktop copies the pictures to the server:
+
+1. `collect()` gives every picture an id, the first 24 hex characters of
+   SHA-256 over the feedback id and the picture's position, so the same
+   picture keeps its id across runs. The row keeps Apple's `url` next to it.
+2. `publish()` PUTs the snapshot without the URLs (`public()`). The answer's
+   `missingScreenshots` lists the ids the snapshot names that the server does
+   not hold yet; the worker also deletes stored pictures the new snapshot no
+   longer names.
+3. For each missing id the report downloads Apple's URL, shrinks it to a JPEG
+   of at most 3 MB and 2048 px with Pillow (without Pillow a JPEG or PNG under
+   3 MB is sent as it is), and PUTs it to `/screenshots/<id>`. A failed
+   download or upload is printed ("uploaded 1 of 2 new tester feedback
+   screenshots") and never fails the report.
+
+The worker keeps each picture sealed in `app_store_status_screenshots`
+(account, id), checks the bytes really are a JPEG or PNG, and refuses ids the
+current snapshot does not list, so a client cannot store anything else there.
+Forgetting the snapshot, uninstalling and account deletion remove the
+pictures too. The export does not include them.
+
+`--json` keeps Apple's `url` on each picture, so the iPhone's desktop fallback
+loads them straight from Apple while the links are fresh; every other read
+comes from `GET /screenshots/<id>`. A picture that is not uploaded yet shows a
+broken-picture tile and "This screenshot has not been uploaded yet. Run the
+iOS App Store status shortcut on your desktop again."
+
+Viewers: the web page opens a dialog with Previous/Next (and arrow keys) and a
+Save link; the desktop opens a dialog with Previous, Next and Save…; the
+iPhone opens a full-screen pager with pinch and double-tap zoom and Share; the
+Android app opens a full-screen dialog with pinch and double-tap zoom and
+previous/next buttons. Every client fetches a picture once and keeps it for
+the session.
 
 ## Page layout (every client)
 
@@ -161,7 +213,8 @@ is not set or the app has no App Store version yet.
 5. TestFlight builds (processing, internal, external, beta review, groups).
 6. TestFlight groups (internal first; testers; every/chosen builds; public
    link; feedback on/off).
-7. Tester feedback, then customer reviews (stars from `rating`).
+7. Tester feedback with its screenshot thumbnails, then customer reviews
+   (stars from `rating`).
 
 ## Files
 
@@ -186,4 +239,8 @@ is not set or the app has no App Store version yet.
   page for `ios-app-store-status.sh` has an "Open App Store Status" button
   when the package is installed.
 - Android: `core/.../market/AppStoreStatus.kt` and
-  `app/.../feature/appstorestatus/`, route `Route.AppStoreStatus`.
+  `app/.../feature/appstorestatus/` (`AppStoreScreenshots.kt` holds the
+  thumbnails and the viewer), route `Route.AppStoreStatus`.
+- Screenshots on iPhone: `AppStoreScreenshotLoader` in
+  `AppStoreStatusModels.swift`; the thumbnails and viewer are at the end of
+  `AppStoreStatusScreen.swift` and reuse `AgentZoomableImage`.

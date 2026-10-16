@@ -136,7 +136,10 @@ def test_mastodon_and_linked_message_columns_are_optional_and_read_like_the_desk
         assert f'[] = "{column_id}";' in FEATURE, column_id
     assert '"mastodon-latest"' not in WEB_SCRIPT.split("const CRM_DEFAULT_VIEW_FIELDS = [", 1)[1].split("];", 1)[0]
     read = WEB_SCRIPT.split("async function readCrmMastodonLatest(", 1)[1].split("\n  }\n", 1)[0]
-    assert "crmMastodonUpdates({ key }, 1)" in read
+    assert "crmMastodonUpdates({ key, reuseId: true }, 1)" in read
+    assert "error.status === 429" in read and "crmScheduleNextRender();" in read
+    assert "const CRM_MASTODON_PER_HOST = 2;" in WEB_SCRIPT
+    assert "const CRM_REACH_MASTODON_READS = 40;" in WEB_SCRIPT
     assert "const CRM_MASTODON_FRESH_MS = 15 * 60 * 1000;" in WEB_SCRIPT
     assert "const CRM_MASTODON_IN_FLIGHT = 4;" in WEB_SCRIPT
     assert "data-crm-mastodon-refresh" in _function("crmMastodonLatestCell")

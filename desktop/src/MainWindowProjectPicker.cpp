@@ -17,6 +17,8 @@
 #include "ProjectRegistry.h"
 #include "SingleInstance.h"
 
+#include <QNetworkInformation>
+
 using namespace forkmesh::ui;
 
 namespace {
@@ -806,7 +808,7 @@ void MainWindow::promptChooseProjectInstance()
     auto *intro = new QLabel(QStringLiteral(
         "%1 is not connected to any instance yet. Pick the one it should use: its "
         "account, repositories and chat live there. Until you choose, the project "
-        "stays offline.")
+        "can go online but joins no instance.")
                                  .arg(QSettings()
                                           .value(QStringLiteral("project/name"),
                                                  forkmesh::paths::projectSlug())
@@ -885,8 +887,8 @@ void MainWindow::promptChooseProjectInstance()
             });
 
     if (dialog.exec() != QDialog::Accepted || chosenUrl.isEmpty()) {
-        flashMessage(QStringLiteral("This project stays offline until you choose an "
-                                    "instance from the instance picker."));
+        flashMessage(QStringLiteral("This project joins no instance until you choose "
+                                    "one from the instance picker."));
         return;
     }
     connectProjectInstance(chosenUrl, chosenName);
@@ -932,6 +934,15 @@ void MainWindow::connectProjectInstance(const QString &url, const QString &name)
     }
     saveServers();
     updateBreadcrumb();
+    if (!m_offlineMode) {
+        const auto *networkInfo = QNetworkInformation::instance();
+        if (m_backend)
+            m_backend->setNetworkAvailable(
+                !networkInfo || networkInfo->reachability() !=
+                                    QNetworkInformation::Reachability::Disconnected);
+        startNodePresence();
+        probeRelayLatency();
+    }
     setOfflineMode(false);
     fetchFavicon(m_activeServer);
     updateRelaySwitcher();

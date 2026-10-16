@@ -216,14 +216,55 @@ public struct AppStoreGroup: Decodable, Equatable, Sendable {
     }
 }
 
+public struct AppStoreScreenshot: Decodable, Equatable, Hashable, Sendable, Identifiable {
+    public static let maxPerFeedback = 4
+
+    public var id: String
+    public var width: Int
+    public var height: Int
+    public var url: String
+
+    public init(id: String, width: Int = 0, height: Int = 0, url: String = "") {
+        self.id = id
+        self.width = width
+        self.height = height
+        self.url = url
+    }
+
+    enum CodingKeys: String, CodingKey { case id, width, height, url }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.lenientString(.id)
+        width = min(max(c.lenientInt(.width), 0), 20000)
+        height = min(max(c.lenientInt(.height), 0), 20000)
+        url = c.lenientString(.url)
+    }
+
+    public static func isValidId(_ id: String) -> Bool {
+        id.count == 24 && id.allSatisfy { "0123456789abcdef".contains($0) }
+    }
+
+    public var directURL: URL? {
+        guard let url = URL(string: url), url.scheme?.lowercased() == "https", url.host != nil else { return nil }
+        return url
+    }
+
+    public var aspectRatio: Double? {
+        guard width > 0, height > 0 else { return nil }
+        return Double(width) / Double(height)
+    }
+}
+
 public struct AppStoreFeedback: Decodable, Equatable, Sendable {
     public var kind: String
     public var createdAt: String
     public var from: String
     public var device: String
     public var comment: String
+    public var screenshots: [AppStoreScreenshot]
 
-    enum CodingKeys: String, CodingKey { case kind, createdAt, from, device, comment }
+    enum CodingKeys: String, CodingKey { case kind, createdAt, from, device, comment, screenshots }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -232,6 +273,8 @@ public struct AppStoreFeedback: Decodable, Equatable, Sendable {
         from = c.lenientString(.from)
         device = c.lenientString(.device)
         comment = c.lenientString(.comment)
+        let shots: [AppStoreScreenshot] = c.lenientList(.screenshots)
+        screenshots = Array(shots.filter { AppStoreScreenshot.isValidId($0.id) }.prefix(AppStoreScreenshot.maxPerFeedback))
     }
 }
 
@@ -437,6 +480,34 @@ public enum AppStoreStatusText {
             : "Your desktop could not fetch it either: \(reason)"
     }
 
+    public static func screenshotPath(_ id: String) -> String { "\(apiPath)/screenshots/\(id)" }
+
+    public static let screenshotMissing =
+        "This screenshot has not been uploaded yet. Run the \(shortcutName) shortcut on your desktop again."
+
+    static let screenshotMissingCodes: Set<String> = ["screenshot_not_found", "http_404", "screenshot_not_in_snapshot"]
+
+    public static func screenshotTitle(index: Int, count: Int) -> String {
+        count > 1 ? "Screenshot \(index + 1) of \(count)" : "Screenshot"
+    }
+
+    public static func screenshotData(_ object: JSONObject) -> Data? {
+        guard let mime = object["mime"]?.stringValue, let text = object["data"]?.stringValue,
+              let data = Data(base64Encoded: text), isPicture(data, mime: mime) else { return nil }
+        return data
+    }
+
+    public static func isPicture(_ data: Data, mime: String? = nil) -> Bool {
+        let jpeg = data.starts(with: [0xFF, 0xD8, 0xFF])
+        let png = data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        switch mime {
+        case "image/jpeg": return jpeg
+        case "image/png": return png
+        case nil: return jpeg || png
+        default: return false
+        }
+    }
+
     public static func stars(_ rating: Int) -> String {
         let filled = min(max(rating, 0), 5)
         return String(repeating: "\u{2605}", count: filled) + String(repeating: "\u{2606}", count: 5 - filled)
@@ -528,16 +599,83 @@ public enum AppStoreStatusText {
 public struct AppStoreStatusAPI {
     public var fetch: () async throws -> JSONObject
     public var desktop: (() async throws -> JSONObject)?
+    public var screenshot: ((String) async throws -> JSONObject)?
+    public var direct: (@Sendable (URL) async throws -> Data)?
 
-    public init(fetch: @escaping () async throws -> JSONObject, desktop: (() async throws -> JSONObject)? = nil) {
+    public init(
+        fetch: @escaping () async throws -> JSONObject, desktop: (() async throws -> JSONObject)? = nil,
+        screenshot: ((String) async throws -> JSONObject)? = nil, direct: (@Sendable (URL) async throws -> Data)? = nil
+    ) {
         self.fetch = fetch
         self.desktop = desktop
+        self.screenshot = screenshot
+        self.direct = direct
     }
 
     @MainActor
-    public init(api: ApiService, desktop: (() async throws -> JSONObject)? = nil) {
+    public init(
+        api: ApiService, desktop: (() async throws -> JSONObject)? = nil,
+        direct: (@Sendable (URL) async throws -> Data)? = nil
+    ) {
         fetch = { try await api.accountApiCall("GET", AppStoreStatusText.apiPath) }
         self.desktop = desktop
+        screenshot = { id in try await api.accountApiCall("GET", AppStoreStatusText.screenshotPath(id)) }
+        self.direct = direct
+    }
+}
+
+public struct AppStoreScreenshotError: Error, Equatable {
+    public var message: String
+
+    public init(_ message: String) { self.message = message }
+}
+
+@MainActor
+public final class AppStoreScreenshotLoader {
+    public typealias Direct = @Sendable (URL) async throws -> Data
+
+    private let server: ((String) async throws -> JSONObject)?
+    private let direct: Direct?
+    private var cache: [String: Data] = [:]
+
+    public init(server: ((String) async throws -> JSONObject)?, direct: Direct? = nil) {
+        self.server = server
+        self.direct = direct
+    }
+
+    public func cached(_ shot: AppStoreScreenshot) -> Data? { cache[shot.id] }
+
+    public func load(_ shot: AppStoreScreenshot) async throws -> Data {
+        if let data = cache[shot.id] { return data }
+        let data = try await fetch(shot)
+        cache[shot.id] = data
+        return data
+    }
+
+    private func fetch(_ shot: AppStoreScreenshot) async throws -> Data {
+        var failure: Error?
+        if let direct, let url = shot.directURL {
+            do {
+                let data = try await direct(url)
+                if AppStoreStatusText.isPicture(data) { return data }
+            } catch {
+                failure = error
+            }
+        }
+        guard let server else {
+            throw AppStoreScreenshotError(
+                failure == nil ? AppStoreStatusText.screenshotMissing : "This screenshot could not be loaded.")
+        }
+        do {
+            let object = try await server(shot.id)
+            if let data = AppStoreStatusText.screenshotData(object) { return data }
+            throw AppStoreScreenshotError("This screenshot is not a picture.")
+        } catch let error as OrgApiException {
+            if AppStoreStatusText.screenshotMissingCodes.contains(error.code) {
+                throw AppStoreScreenshotError(AppStoreStatusText.screenshotMissing)
+            }
+            throw AppStoreScreenshotError(error.message.isEmpty ? "This screenshot could not be loaded." : error.message)
+        }
     }
 }
 
@@ -545,6 +683,7 @@ public struct AppStoreStatusAPI {
 @Observable
 public final class AppStoreStatusModel {
     @ObservationIgnored public let api: AppStoreStatusAPI
+    @ObservationIgnored public let screenshots: AppStoreScreenshotLoader
 
     public private(set) var response: AppStoreStatusResponse?
     public private(set) var loading = false
@@ -552,6 +691,7 @@ public final class AppStoreStatusModel {
 
     public init(api: AppStoreStatusAPI) {
         self.api = api
+        screenshots = AppStoreScreenshotLoader(server: api.screenshot, direct: api.direct)
     }
 
     public var snapshot: AppStoreSnapshot? { response?.snapshot }

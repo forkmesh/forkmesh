@@ -128,14 +128,48 @@ services see the reading device's IP address and the account asked about; see
 desktop pictures are cached on disk for a week, including negative results.
 Nothing is stored server-side.
 
+### Notes
+
+**Add a note** on the card saves a dated note to the contact and pings the
+people connected to its lists. Notes are separate from the free-text
+**Notes** field and never overwrite it.
+
+- **API**: `POST /api/crm/<org>/contacts/note` with `{"contact": "<id>",
+  "text": "..."}` (any organization member; up to 4000 characters, else
+  `413 note_too_long`; blank is `400 note_required`; an unknown contact is
+  `404 contact_not_found`). It answers `201` with the note, the saved contact
+  and `pinged`, the number of people pinged.
+- **Stored**: in the sealed contact as `noteLog`, `[{"id", "at", "by",
+  "text"}]`, oldest first, the newest 100 kept (`CONTACT_NOTE_KEEP`). Other
+  edits keep it; merging two contacts keeps both logs. Shared sheets never
+  carry it. Saving a note does not change the record's "last edited".
+- **Logged**: the card's **Activity** lists each note ("Note · <author>"); the
+  history of every list the contact is on gets a `contact.noted` entry ("added
+  a note on Grace: “...”", the first 140 characters, sealed); the audit log
+  gets `crm.contact.note`.
+- **Pinged** (`plugin_activity`, title "Note on <contact>", body "By <author>
+  in <org> · <list>: <first 140 characters>", one ping per note via
+  `dedupe = crm-note:<note id>`), never the author, at most 50 people:
+  - a list visible to the organization: every member;
+  - a private list: its owner, the organization's owners and admins, and the
+    members it is shared with;
+  - everyone a list is shared with outside the organization (for example a
+    partner sheet shared for editing). Their ping opens the list
+    (`/dashboard/crm?list=<id>`) and carries the note text only when the list
+    shows its Notes column;
+  - a contact on no list: every member.
+  Members' pings open the card (`/dashboard/crm?contact=<id>`).
+
 ## Reach out and follow up
 
 The top of the CRM shows two cards (desktop and web) or two sections (phones):
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
-  ended stage, ordered by next step, deal value, a `rank`/`*_rank` column
-  (lowest first), a `score`/`*_score` column (highest first), having an email,
-  and age on the CRM.
+  ended stage, ordered by their newest public Mastodon post (newest first;
+  contacts without a handle or a post follow), then next step, deal value, a
+  `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
+  first), having an email, and age on the CRM. The card shows that post's
+  date, excerpt and link, and lists the next five in line with theirs.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -150,6 +184,31 @@ open list; the web ranks the whole organization. Code:
 `CrmNextContact.pick` (iOS and Android). Tests:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
+
+### Newest Mastodon post on Reach out
+
+Rendering the cards queues the Mastodon handles of the first 40 reach-out
+candidates (in the order above) for the same read the **Mastodon last update**
+column uses: `GET /api/v1/accounts/lookup?acct=<user>` on the contact's own
+instance, then `GET /api/v1/accounts/<id>/statuses?limit=1&exclude_replies=true&exclude_reblogs=true`.
+The reads are public and unauthenticated, made by the browser or desktop app
+(not the worker), and kept in memory for the session:
+
+- a read is fresh for 15 minutes, a handle shared by several contacts is read
+  once, and the account id is remembered so a refresh asks only for statuses;
+- at most four reads run at once, and at most two against one instance;
+- a `429` holds that instance back for `Retry-After` or five minutes, whichever
+  is longer, and every handle on it shows why until then;
+- a missing account (`404`/`406`/`410`), a timeout or an unreachable instance
+  shows as "Mastodon post unavailable" and the contact keeps its place among
+  those without a post; a failed re-read keeps the post already shown.
+
+Finished reads re-rank the cards (at most every 400 ms), so the order settles
+as posts arrive. The iOS and Android pick does not read Mastodon. Code:
+`crmQueueReachMastodon`, `crmPumpMastodonLatest`, `crmNextPostHtml` (web);
+`CrmFeature::queueReachMastodon`, `refreshMastodonUpdates`, `nextPostLabel`
+(desktop). Tests: `tests/contact_detail_checks.js` (mocked instances),
+`tests/test_qt_plugin_contracts.py`.
 
 ### Write with AI
 
@@ -196,10 +255,41 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 - The in-app **Zoho setup guide** covers both paths.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
-for it, and records each sent-folder message as an outbound CRM email unless
-that provider message is already linked. Email cells open a compose window in
-the organization's Zoho data center (`https://<data center>/zm/comp.do?ct=mailto:<address>`)
-or Gmail.
+for it, and records each sent-folder message as an outbound CRM email. Email
+cells open a compose window in the organization's Zoho data center
+(`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
+
+**Sent mail marks its recipients contacted** (1.33.0). Before 1.33.0 a sync
+stored sent mail with no contact, so a lead you had just written to through
+Zoho stayed on the **Reach out** card at its first stage until someone pressed
+**Mark contacted**. Now each address on a sent message's `To` (HTML entities
+decoded, the sender's own mailbox skipped) is matched against every address a
+contact carries (`_contacts_by_address`: the email first, then custom-column
+addresses), and each matched contact gets the message linked through
+`_link_message` (the first contact keeps the Zoho message id, the others get
+`<id>/<address>`), so it shows in the contact's email history and files a
+`contact.emailed` list activity entry. Linking stamps **Last contacted** with
+the send time (forward only) and moves the contact to the `contacted` stage
+when its pipeline has one and the contact sits before it (`sourced`,
+`prospect`, or a stage the pipeline does not know). Contacts at or past
+`contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
+pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
+the date. A recipient who is not a contact is stored unlinked, as before, and
+no contact is created.
+
+The sync is idempotent: a message already linked to a contact is not
+re-linked, it only re-applies the same date and stage rule (a no-op once
+applied), and a message stored unlinked by an earlier sync is linked the first
+time a sync finds a contact for it. So mail imported before 1.33.0, or before
+the contact was added, is backfilled by the next **Sync Zoho Mail**, as far
+back as the sync reads (the newest messages of the Sent folder, half of the
+200-message limit). The response and the `crm.zoho.import` audit carry
+`outboundRecorded` (new send rows) and `contactsAdvanced` (stage moves).
+
+The same stage rule runs for every outbound `POST /emails/link` that does not
+name a flow or stage (the browser extension, and `send_email` logging in
+`tools/forkmesh_mcp_server.py`); its response carries `stageAdvanced`. Inbound
+links never move a stage. Tests: `tests/test_zoho_marks_contacted.py`.
 
 ### Sending and tracking
 
@@ -274,14 +364,92 @@ on the outreach team (`POST /api/crm/<org>/outreach/team`, audited).
 recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
 
+## Automated outreach email
+
+**Send AI email** (the Reach out and Follow up cards and the contact detail
+card, on the web and the desktop) writes and sends one email with no editing
+step, the way the spider suggests outreach but sent for you. A confirmation
+dialog names the recipient and the link first.
+`POST /api/crm/<org>/outreach/auto {contactId, mode?, list?, reason?}`:
+
+- **Who may send.** Owners, admins and the outreach team, from the outreach
+  sender (`_outreach_sender`). Each send counts toward the per-sender
+  `OUTREACH_DAILY_LIMIT` and lands in `crm_outreach_log` (template `auto`).
+- **Refused** when the contact has no email (`contact_has_no_email`), sits at
+  an ended stage (`contact_closed`), or got a CRM email in the last three days
+  (`recently_emailed`, `AUTO_EMAIL_GAP_MS`), so a double click or two
+  teammates never send twice.
+- **The link.** Every email carries one trackable link: a contact in an
+  investor pipeline gets their own deck link (the active one, else a new one,
+  as `POST /decks` makes it); everyone else gets the sender's referral link
+  `https://forkmesh.com/r/<account>`, which counts visits and signups.
+- **The model.** `runtime.ai_json` (the host model, `docs/app/package-ai-failures.md`)
+  gets the organization's brief (`messageBrief`, else a short ForkMesh brief
+  for the `forkmesh` organization), the contact's fields and notes, the angle
+  for the list or pipeline (journalists, investors, grants, partners, users),
+  the last six messages with them, the link, and the lessons below. It answers
+  `{subject, body}`. Drafts with `[placeholders]`, under 60 or over 2400
+  characters, or with any link not in the prompt are refused and asked for
+  again once (`AUTO_EMAIL_ATTEMPTS`); a missing tracked link is appended.
+- **Learning from opens and clicks.** The prompt's "What our past emails
+  taught us" reads the organization's last 120 sent Mailtrap emails (manual,
+  automated and outreach) with their open and click results: overall rates,
+  rates for first contacts, follow-ups, deck links and referral links (three
+  or more each), up to three emails that got a click, two opened without a
+  click, and three nobody opened after two days, with their subjects and
+  openings. The model is told to follow what got clicks, avoid what the
+  unopened ones share, and change one small thing each time so the team keeps
+  learning. The response returns the same totals as `learning`.
+- **Without a host model** the worker answers `503 ai_unavailable` (or `422
+  draft_unusable`) with the full `prompt`. The desktop then asks the default
+  agent (Claude Code or Codex) for a `Subject:` line and body and posts them
+  back as `{subject, text, model}`; the same checks apply. The web says the
+  host has no model. `preview: true` returns the draft without sending.
+- **Sent** through `runtime.send_mailtrap` with category `CRM automated
+  outreach` and `forkmesh_crm_send_id`, so Mailtrap's own delivery, open and
+  click events also reach the row. The contact's last-contacted date moves,
+  `contact.emailed` is recorded, and the usual tracked-email celebration and
+  "Automated outreach email sent" team ping go out.
+
+### Open and click tracking
+
+The worker builds the HTML itself (`_tracked_email_html`): each link in the
+body points at `<origin>/api/crm/-/t/c/<send id>.<signature>?u=<url>&s=<url
+signature>`, and a 20 px ForkMesh logo at the end loads
+`<origin>/api/crm/-/t/o/<send id>.<signature>.png` and links to forkmesh.com
+through the same click redirect. Signatures are the host's keyed blind index
+of `crm-track:<send id>` and `crm-click:<send id>:<url>`, so a link cannot be
+pointed anywhere else (`404 link_not_found`) and an open cannot be forged
+for another send. `<origin>` is the `PACKAGE_CRM_TRACK_ORIGIN` package
+secret, else the caller's https origin, else `https://app.forkmesh.com`.
+
+- The routes need no session. An open answers `302` to the logo
+  (`TRACK_LOGO`), a click `302` to the target, with `no-store`.
+- Each hit adds to `crm_email_tracking` (`opens`, `clicks`, first
+  `opened_at`/`clicked_at`, `last_at`) and moves the send's status to `open`
+  or `click` (never backwards, `_advance_send_status`). Hits in the first 30 s
+  after sending (`TRACK_QUIET_MS`) are ignored: mail gateways scan links and
+  images as the message arrives.
+- The first open and the first click ping the sender: "📬 <name> opened your
+  email" and "🔗 <name> clicked the link in your email".
+- Email rows (`GET /emails`, the contact's emails) carry `opens`, `clicks`,
+  `openedAt`, `clickedAt`, `automated` and `linkKind`; the web detail card
+  shows "Sent by AI · 2 opens · 1 click".
+- Opens are a hint, not proof: Apple Mail Privacy Protection loads images for
+  the reader, and clients that block images never report one. Clicks are the
+  stronger signal, and the lessons weigh them first.
+
+Tests: `tests/test_auto_email.py`.
+
 ## Investor deck
 
 Deck links (`POST /decks`) are minted only for contacts in an investor pipeline
 (icon `investors` or flow id `investors`/`investment`); otherwise
 `409 deck_needs_investor_pipeline` (audited). `POST /emails/send` and
 `/outreach/send` refuse a body carrying a `/pitch-deck/` link or the
-`investor` template for a contact outside an investor pipeline. Nothing sends
-the deck automatically. Opens are recorded per visit and page
+`investor` template for a contact outside an investor pipeline. Only **Send AI
+email** sends the deck without a compose step, and only to a contact in an
+investor pipeline. Opens are recorded per visit and page
 (`crm_deck_sessions`, `crm_deck_page_views`), and the first beacon of a visit
 pings whoever minted the link (not the HTML fetch, so link-scanning mail
 gateways do not trigger it). On the desktop, **Write email with Claude Code**
@@ -315,7 +483,8 @@ outreach. Without the capability the list is empty.
   `GET /api/crm/<org>`, days cut in the caller's `?tz=` offset).
 - **List activity history** (`crm_list_activity`): opens (at most one per
   person per list every 30 minutes), list changes, contact changes (field
-  names only, never values) and imports. Actor and action are stored in the
+  names only, never values), notes (their first 140 characters) and
+  imports. Actor and action are stored in the
   clear; names, field names and subjects are sealed. Rows older than 90 days
   are dropped. `GET /views/activity?view=<id>` returns up to 200 entries, only
   for lists the caller can open.
@@ -342,6 +511,8 @@ changes, settings and a Zoho connection.
 - **Bursts fold**: contact, email and list edits, bulk updates, settings and
   mailbox refreshes share one ping per member, action and item for 10
   minutes. The first rings the phone; later ones update it silently.
+- **Notes** ping everyone connected to the contact's lists instead (see
+  [Notes](#notes)), each note once.
 
 ## Leads from the platform
 
