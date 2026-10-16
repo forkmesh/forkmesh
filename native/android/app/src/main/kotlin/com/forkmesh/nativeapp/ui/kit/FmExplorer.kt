@@ -218,29 +218,27 @@ fun FmSegmentTabBar(
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val colors = Fm.colors
     Row(
         modifier
             .fillMaxWidth()
-            .height(48.dp)
-            .background(colors.bgRaised)
-            .drawBehind {
-                val rule = 1.dp.toPx()
-                drawRect(colors.border, size = Size(size.width, rule))
-                drawRect(colors.border, topLeft = Offset(0f, size.height - rule), size = Size(size.width, rule))
-            }
-            .padding(vertical = 1.dp),
+            .height(46.dp)
+            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x1),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
     ) {
-        Spacer(Modifier.width(FmSpace.x2))
-        tabs.forEachIndexed { i, tab ->
-            SegmentTabItem(tab = tab, selected = i == index, onTap = { onChanged(i) })
+        Row(
+            Modifier
+                .fillMaxHeight()
+                .fmGlass(RoundedCornerShape(FmRadius.lg), shadow = false)
+                .padding(horizontal = FmSpace.x1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { i, tab ->
+                SegmentTabItem(tab = tab, selected = i == index, onTap = { onChanged(i) })
+            }
         }
         Spacer(Modifier.weight(1f))
-        if (trailing != null) {
-            trailing()
-            Spacer(Modifier.width(FmSpace.x2))
-        }
+        if (trailing != null) trailing()
     }
 }
 

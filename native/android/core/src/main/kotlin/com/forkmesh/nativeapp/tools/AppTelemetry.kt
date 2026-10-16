@@ -34,7 +34,31 @@ enum class TelemetryMetric(
         if (value != dartRound(value).toDouble()) return dartFixed(value, 1)
         return dartRound(value).toString()
     }
+
+    val lowerIsWorse: Boolean get() = this == Fps
+
+    val limits: Pair<Double, Double>
+        get() = when (this) {
+            Fps -> 45.0 to 24.0
+            Frame -> 50.0 to 100.0
+            Loop -> 50.0 to 200.0
+            Mem -> 500.0 to 1000.0
+            Net -> 10.0 to 30.0
+            Relay -> 50.0 to 200.0
+            Log -> 20.0 to 100.0
+            Stall -> 1.0 to 1.0
+        }
+
+    fun health(values: DoubleArray): TelemetryHealth? {
+        val sampled = values.filter { !it.isNaN() }
+        val worst = (if (lowerIsWorse) sampled.minOrNull() else sampled.maxOrNull()) ?: return null
+        val (warning, bad) = limits
+        if (lowerIsWorse) return if (worst < bad) TelemetryHealth.Bad else if (worst < warning) TelemetryHealth.Warning else TelemetryHealth.Good
+        return if (worst >= bad) TelemetryHealth.Bad else if (worst >= warning) TelemetryHealth.Warning else TelemetryHealth.Good
+    }
 }
+
+enum class TelemetryHealth { Good, Warning, Bad }
 
 enum class TelemetryRange(val label: String, val seconds: Long) {
     M1("1m", 60),

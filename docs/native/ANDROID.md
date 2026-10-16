@@ -571,3 +571,75 @@ default in new projects except the chosen starter pack
   and resolves links; `DocsMarkdown` renders a safe Markdown subset;
   `A/feature/docs/` holds the screens. Guests may open it. Tests:
   `DocsLibraryTest`, `NavigationTest`, `PackageGateTest`.
+
+## 16. iOS look: glass and the floating tab bar
+
+The phone shell follows the iOS app (`docs/native/NAVIGATION.md`, iOS
+`Shell/ShellBottomBar.swift`, `Kit/FmSurfaces.swift`) instead of a Material
+bottom bar.
+
+- **Glass** (`A/ui/kit/FmGlass.kt`). `FmBackdropHost` records the page into a
+  `GraphicsLayer`; `Modifier.fmGlass(shape)` on a sibling draws that layer
+  shifted to its own position, blurred 24 dp and saturated 1.8x
+  (`RenderEffect`, API 31+), then the iOS `FmGlassSurface` tint (bgRaised at
+  66% light, 55% dark), a top specular gradient, a 0.5 dp edge and a 12 dp
+  shadow. Below API 31, or with high-contrast text on, glass is a near-opaque
+  fill (the iOS Reduce Transparency fallback). `Modifier.blur` is not used: it
+  blurs the element itself, not what is behind it. No dependency is added.
+- **Tab bar** (`GlassTabBar`, `A/shell/HomeShell.kt`). One glass capsule:
+  12 dp side margin, 60 dp tall, radius 30, 52 dp cells, 24 dp icons (an SF
+  Symbol at 20 pt draws about that size), 10 sp labels. The selected cell is an
+  accent wash at 14% with radius 26 at the bar ends and 10 inside; selected
+  icon and label are accent, unselected icons textPrimary and labels
+  textSecondary. Pressed cells scale to 0.94 at 70% opacity. The bar sits
+  `max(navigation bar inset, 34 dp) + 5 dp` above the bottom edge, the iOS home
+  indicator gap.
+- **Home tab.** Home comes first, as on iOS, and replaces the old More sheet.
+  It is the hub grid (`ShellMenuGrid` with `plain = true`: six columns, no tile
+  fills, uppercase section titles with a rule). Home is shell state, not an
+  `AppTab`, so routes and stored tabs are unchanged; back at any tab root
+  returns to Home, and the app opens on Home. The Home glyph is the filled
+  `home` because the icon subset has no outline house (adding one needs
+  `tools/subset_material_icons.py` and fonttools).
+- **Page clearance.** Pages are laid out full height under the bar. A screen
+  gets bottom padding equal to `ShellBar.clearance()` unless it sets
+  `Screen.extendsUnderTabBar`; then it reads `LocalShellClearance` and pads its
+  own list so rows scroll under the glass (Repos and Inbox do).
+- The kit gallery (`--ez fm_kit_gallery true --ei fm_kit_section 10`) shows a
+  glass capsule over colour stripes to check the blur.
+- **Top bar** (`TopBar`, `A/shell/HomeShell.kt`), as iOS `Shell/ShellTopBar.swift`
+  on a phone: no fill, 16 dp side and 4 dp vertical padding; the 40 dp project
+  icon (`AccountFeature.ProjectSlot`, opens the project drawer), the Glasses
+  chip, then the new-agent button and the avatar (36 dp, 12 dp corners). A
+  guest sees a person icon and a "Sign in" chip instead, and no guest banner.
+  Search is not in the phone bar (iOS shows it only on iPad); it is on Home.
+  The telemetry strip is the iOS one: 12 x 10 dp sparklines centred in the
+  row, coloured by `TelemetryMetric.health` (the iOS warning and bad limits).
+- **New-agent button** (`PromptButton`): a 44 dp accent gradient circle with a
+  white plus and an accent glow that grows with running agents; each running
+  agent adds a small four-point star (static; iOS animates them with the
+  accelerometer).
+- **Pushed-page header** (`FmNavBar`, `A/ui/kit/FmGlass.kt`), the iOS 26 inline
+  navigation bar: page-coloured, 52 dp, title centred in `titleMedium`, a 44 dp
+  glass circle with `chevron_left` for Back, actions on the right.
+  `ToolsAppBar`, `CodeAppBar` and `RoutePage` all draw it.
+- Glass inside a recorded page does not sample its own page (that would draw a
+  layer into itself): `FmBackdropHost` clears `LocalFmBackdrop` for its
+  content, so such glass uses the solid fill. Only the host's overlay (the tab
+  bar) blurs.
+- **Segment bars and action bars.** `FmSegmentTabBar` is a 46 dp strip whose
+  tabs sit in a 12 dp glass panel (no fill, no hairlines), and
+  `FmBottomActionBar` is a glass panel with 24 dp corners, 8 dp side and 4 dp
+  vertical margin, as iOS `Kit/FmExplorer.swift` and `Kit/FmSurfaces.swift`.
+- **Composer.** The prompt composer card and its slash menu use `fmGlass` with
+  the composer's own translucent tint (iOS `Kit/PromptComposer.swift`, 28 dp).
+- **Chat header**, as iOS `Features/Chat/ChatScreen.swift`: on the Chat tab the
+  shell bar is hidden and the room draws one row of glass: a 48 dp channels
+  circle, the room pill (icon, bold name, "n online • public"), a compose
+  circle, the new-agent button and an avatar capsule. Android has no separate
+  new-message picker, so compose opens the channels panel. The disappearing
+  messages timer and the encryption note moved from the header into the room
+  pill's menu, keeping the row to the iOS five controls.
+- **Sheets** keep the iOS pre-26 look (sheetSurface, 12 dp corners, 35% and 55%
+  scrim); a blurred sheet would need `Window.setBackgroundBlurRadius` on the
+  sheet's own window.
