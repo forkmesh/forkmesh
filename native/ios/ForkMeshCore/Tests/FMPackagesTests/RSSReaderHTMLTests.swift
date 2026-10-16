@@ -161,6 +161,8 @@ final class RSSReaderHTMLTests: XCTestCase {
         XCTAssertTrue(RSSReaderText.credit.contains("not affiliated with or endorsed by it"))
         XCTAssertEqual(RSSReaderText.netNewsWireURL, "https://netnewswire.com/")
         XCTAssertEqual(RSSReaderText.netNewsWireSourceURL, "https://github.com/Ranchero-Software/NetNewsWire")
+        XCTAssertTrue(RSSReaderText.featureCredit.contains("feature requests NetNewsWire's users have filed"))
+        XCTAssertEqual(RSSReaderText.netNewsWireRequestsURL, "https://github.com/Ranchero-Software/NetNewsWire/issues")
         XCTAssertTrue(RSSReaderText.feedError("insecure_http").contains("plain HTTP"))
         XCTAssertEqual(RSSReaderText.feedError("http_404"), "The feed was not found (404).")
     }

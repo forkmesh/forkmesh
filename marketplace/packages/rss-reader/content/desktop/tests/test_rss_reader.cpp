@@ -3,10 +3,13 @@
 #include "RssReaderModel.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QDialog>
@@ -284,7 +287,7 @@ void testDates()
 void testParsing()
 {
     const ParsedFeed rss = parseFeed(kRss, QUrl(QStringLiteral("https://engineering.example.com/feed.xml")));
-    check(rss.ok && rss.format == QLatin1String("RSS"), "RSS 2.0 parses despite DOCTYPE and undefined entities", rss.error);
+    check(rss.ok && rss.format == QLatin1String("RSS 2.0"), "RSS 2.0 parses despite DOCTYPE and undefined entities", rss.error);
     check(rss.title == QLatin1String("Example Engineering"), "RSS channel title");
     check(rss.homePage == QLatin1String("https://engineering.example.com/"), "RSS home page ignores atom:link");
     check(rss.iconUrl == QLatin1String("https://engineering.example.com/icon.png"), "RSS image url");
@@ -324,7 +327,7 @@ void testParsing()
     check(rdf.title == QLatin1String("Example News"), "RDF channel title");
 
     const ParsedFeed atom = parseFeed(kAtom, QUrl(QStringLiteral("https://blog.example.net/atom.xml")));
-    check(atom.ok && atom.format == QLatin1String("Atom") && atom.items.size() == 2, "Atom parses", atom.error);
+    check(atom.ok && atom.format == QLatin1String("Atom 1.0") && atom.items.size() == 2, "Atom parses", atom.error);
     check(atom.homePage == QLatin1String("https://blog.example.net/"), "Atom alternate link resolved against xml:base");
     check(atom.iconUrl == QLatin1String("https://blog.example.net/favicon.png"), "Atom icon");
     if (atom.items.size() == 2) {
@@ -342,7 +345,7 @@ void testParsing()
     }
 
     const ParsedFeed json = parseFeed(kJson, QUrl(QStringLiteral("https://pod.example.com/feed.json")));
-    check(json.ok && json.format == QLatin1String("JSON Feed") && json.items.size() == 2, "JSON Feed parses", json.error);
+    check(json.ok && json.format == QLatin1String("JSON Feed 1.1") && json.items.size() == 2, "JSON Feed parses", json.error);
     if (json.items.size() == 2) {
         check(json.items.at(0).id == QLatin1String("42"), "JSON Feed numeric id");
         check(json.items.at(0).publishedMs == utc(2026, 10, 9, 14, 0), "JSON Feed date");
@@ -415,9 +418,10 @@ void testDiscovery()
               "RSS before Atom before JSON Feed");
     }
     const QList<QUrl> fallbacks = fallbackFeedUrls(QUrl(QStringLiteral("https://site.example.com:8443/some/page")));
-    check(fallbacks.size() == 4 && fallbacks.first().toString() == QLatin1String("https://site.example.com:8443/feed") &&
-              fallbacks.last().toString() == QLatin1String("https://site.example.com:8443/atom.xml"),
-          "fallback paths on the same origin");
+    check(fallbacks.size() == 5 && fallbacks.first().toString() == QLatin1String("https://site.example.com:8443/feed") &&
+              fallbacks.at(3).toString() == QLatin1String("https://site.example.com:8443/atom.xml") &&
+              fallbacks.last().toString() == QLatin1String("https://site.example.com:8443/rss/"),
+          "fallback paths on the same origin, Ghost's /rss/ last");
     check(normalizeAddress(QStringLiteral("feed://example.com/rss")).toString() == QLatin1String("https://example.com/rss"), "feed:// becomes https");
     check(normalizeAddress(QStringLiteral("feed:https://example.com/a")).toString() == QLatin1String("https://example.com/a"), "feed:https becomes https");
     check(normalizeAddress(QStringLiteral("  Example.com ")).toString() == QLatin1String("https://example.com/"), "bare host gets https");
@@ -680,6 +684,539 @@ void testFetch()
           QString::number(network.peak));
 }
 
+const QByteArray kYouTube = R"XML(<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"/>
+ <id>yt:channel:uAXFkgsw1L7xaCfnd5JJOw</id>
+ <yt:channelId>uAXFkgsw1L7xaCfnd5JJOw</yt:channelId>
+ <title>Rick Astley</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw"/>
+ <author>
+  <name>Rick Astley</name>
+  <uri>https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw</uri>
+ </author>
+ <published>2015-02-01T15:57:40+00:00</published>
+ <entry>
+  <id>yt:video:dQw4w9WgXcQ</id>
+  <yt:videoId>dQw4w9WgXcQ</yt:videoId>
+  <yt:channelId>UCuAXFkgsw1L7xaCfnd5JJOw</yt:channelId>
+  <title>Rick Astley - Never Gonna Give You Up (Official Video)</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"/>
+  <author>
+   <name>Rick Astley</name>
+   <uri>https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw</uri>
+  </author>
+  <published>2009-10-25T06:57:33+00:00</published>
+  <updated>2026-10-12T18:01:40+00:00</updated>
+  <media:group>
+   <media:title>Rick Astley - Never Gonna Give You Up (Official Video)</media:title>
+   <media:content url="https://www.youtube.com/v/dQw4w9WgXcQ?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" width="480" height="360"/>
+   <media:description>The official video for “Never Gonna Give You Up” by Rick Astley.
+
+Listen to Rick Astley: https://RickAstley.lnk.to/_listenYD
+Subscribe &amp; enjoy</media:description>
+   <media:community>
+    <media:starRating count="18740339" average="5.00" min="1" max="5"/>
+    <media:statistics views="1650000000"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>)XML";
+
+const QByteArray kMastodon = R"XML(<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:webfeeds="http://webfeeds.org/rss/1.0" xmlns:media="http://search.yahoo.com/mrss/">
+ <channel>
+  <title>Example User</title>
+  <description>Public posts from @user@mastodon.example</description>
+  <link>https://mastodon.example/@user</link>
+  <image><url>https://files.mastodon.example/accounts/avatars/original/avatar.png</url><title>Example User</title><link>https://mastodon.example/@user</link></image>
+  <lastBuildDate>Wed, 15 Oct 2026 10:00:00 +0000</lastBuildDate>
+  <webfeeds:icon>https://files.mastodon.example/accounts/avatars/original/avatar.png</webfeeds:icon>
+  <generator>Mastodon v4.3.0</generator>
+  <item>
+   <guid isPermaLink="true">https://mastodon.example/@user/113300000000000001</guid>
+   <link>https://mastodon.example/@user/113300000000000001</link>
+   <pubDate>Wed, 15 Oct 2026 10:00:00 +0000</pubDate>
+   <description>&lt;p&gt;Sunset over the harbour&lt;/p&gt;</description>
+   <media:content url="https://files.mastodon.example/media_attachments/files/113/original/sunset.jpg" type="image/jpeg" fileSize="183456" medium="image">
+    <media:rating scheme="urn:simple">nonadult</media:rating>
+    <media:description type="plain">A red sun sets behind the cranes</media:description>
+   </media:content>
+   <category>photography</category>
+  </item>
+ </channel>
+</rss>)XML";
+
+QByteArray rssItems(const QString &channel, const QList<QStringList> &items, const QString &extra = QString())
+{
+    QString xml = QStringLiteral("<rss version=\"2.0\" xmlns:media=\"http://search.yahoo.com/mrss/\"><channel><title>%1</title>%2").arg(channel, extra);
+    for (const QStringList &item : items)
+        xml += QStringLiteral("<item><title>%1</title><link>%2</link><guid>%3</guid><description>%4</description>%5</item>")
+                   .arg(item.value(0), item.value(1), item.value(2), item.value(3).toHtmlEscaped(), item.value(4));
+    xml += QStringLiteral("</channel></rss>");
+    return xml.toUtf8();
+}
+
+QByteArray pngBytes()
+{
+    QImage image(8, 6, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return bytes;
+}
+
+void testMediaRss()
+{
+    const ParsedFeed youtube = parseFeed(kYouTube, QUrl(QStringLiteral("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw")));
+    check(youtube.ok && youtube.items.size() == 1 && youtube.format == QLatin1String("Atom 1.0"), "YouTube channel feed parses", youtube.error);
+    if (youtube.items.size() == 1) {
+        const ParsedItem &video = youtube.items.first();
+        check(video.title == QLatin1String("Rick Astley - Never Gonna Give You Up (Official Video)"), "YouTube entry title", video.title);
+        check(video.thumbnails == QStringList{QStringLiteral("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg")},
+              "media:thumbnail inside media:group is an image", video.thumbnails.join(QLatin1Char(',')));
+        check(video.mediaImages.isEmpty(), "a Flash media:content is not an image");
+        check(video.html.startsWith(QStringLiteral("<p>The official video for")) &&
+                  video.html.contains(QStringLiteral("</p><p>Listen to Rick Astley: <a href=\"https://RickAstley.lnk.to/_listenYD\">"
+                                                     "https://RickAstley.lnk.to/_listenYD</a><br>Subscribe &amp; enjoy</p>")),
+              "plain media:description becomes paragraphs, line breaks and links", video.html);
+        Store store;
+        QString error;
+        const QString id = store.addFeed(QUrl(QStringLiteral("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw")),
+                                         QString(), QString(), utc(2026, 10, 15), &error);
+        store.merge(id, youtube, utc(2026, 10, 15));
+        const Article *stored = store.article({id, QStringLiteral("yt:video:dQw4w9WgXcQ")});
+        check(stored && stored->image == QLatin1String("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg") &&
+                  stored->images.size() == 1 && stored->html.contains(QStringLiteral("<a href=\"https://rickastley.lnk.to/_listenYD\">")),
+              "YouTube article keeps the thumbnail as its image and the description as its text");
+        if (stored) {
+            const QString lead = leadImagesHtml(stored->images, stored->html);
+            check(lead == QLatin1String("<p><img src=\"https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg\"></p>"),
+                  "the thumbnail is drawn above the description", lead);
+        }
+    }
+    const QByteArray titled = R"XML(<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><entry><id>e1</id>
+<media:group><media:title>Media Title</media:title><media:description type="html">&lt;p&gt;Rich &lt;b&gt;text&lt;/b&gt;&lt;/p&gt;</media:description></media:group></entry></feed>)XML";
+    const ParsedFeed media = parseFeed(titled, QUrl(QStringLiteral("https://media.example.com/atom")));
+    check(media.items.size() == 1 && media.items.first().title == QLatin1String("Media Title") &&
+              media.items.first().html == QLatin1String("<p>Rich <b>text</b></p>"),
+          "media:title fills a missing title and an html media:description is HTML",
+          media.items.value(0).title + QLatin1Char('|') + media.items.value(0).html);
+
+    const ParsedFeed mastodon = parseFeed(kMastodon, QUrl(QStringLiteral("https://mastodon.example/@user.rss")));
+    check(mastodon.ok && mastodon.items.size() == 1, "Mastodon RSS parses", mastodon.error);
+    if (mastodon.items.size() == 1) {
+        const ParsedItem &post = mastodon.items.first();
+        check(post.mediaImages == QStringList{QStringLiteral("https://files.mastodon.example/media_attachments/files/113/original/sunset.jpg")},
+              "Mastodon image media:content is an image");
+        check(post.html.contains(QStringLiteral("Sunset over the harbour")) && !post.html.contains(QStringLiteral("cranes")),
+              "description wins over media:description", post.html);
+        check(articleImage(post, sanitizeHtml(post.html, QUrl())) == post.mediaImages.first(), "Mastodon article image");
+        const QString lead = leadImagesHtml(itemImages(post), sanitizeHtml(post.html, QUrl()));
+        check(lead.contains(QStringLiteral("sunset.jpg")), "Mastodon image drawn at the top of the post", lead);
+    }
+
+    const QByteArray mixed = rssItems(QStringLiteral("Mixed"), {
+        {QStringLiteral("Pictures"), QStringLiteral("https://pics.example.com/1"), QStringLiteral("p1"),
+         QStringLiteral("<p>Inline <img src=\"https://pics.example.com/inline.png\" alt=\"Inline\"></p>"),
+         QStringLiteral("<enclosure url=\"https://pics.example.com/enclosure.png\" type=\"image/png\" length=\"10\"/>"
+                        "<enclosure url=\"https://pics.example.com/talk.mp3\" type=\"audio/mpeg\" length=\"20\"/>"
+                        "<media:thumbnail url=\"https://pics.example.com/thumb.jpg\"/>"
+                        "<media:content url=\"https://pics.example.com/content.webp\" type=\"image/webp\"/>")},
+        {QStringLiteral("Inline only"), QStringLiteral("https://pics.example.com/2"), QStringLiteral("p2"),
+         QStringLiteral("<p><img src=\"/relative.png\"></p>"), QString()}});
+    const ParsedFeed pictures = parseFeed(mixed, QUrl(QStringLiteral("https://pics.example.com/feed")));
+    if (pictures.items.size() == 2) {
+        const ParsedItem &first = pictures.items.first();
+        check(itemImages(first) == QStringList({QStringLiteral("https://pics.example.com/thumb.jpg"),
+                                                QStringLiteral("https://pics.example.com/content.webp"),
+                                                QStringLiteral("https://pics.example.com/enclosure.png")}),
+              "images in order: thumbnail, image media:content, image enclosure", itemImages(first).join(QLatin1Char(',')));
+        check(first.enclosures.size() == 2, "audio enclosures stay enclosures");
+        const ParsedItem &second = pictures.items.at(1);
+        check(articleImage(second, sanitizeHtml(second.html, QUrl(QStringLiteral("https://pics.example.com/2")))) ==
+                  QLatin1String("https://pics.example.com/relative.png"),
+              "the first content image is the fallback article image");
+    } else {
+        check(false, "mixed image feed parses", QString::number(pictures.items.size()));
+    }
+    const QByteArray jsonImages = R"({"version":"https://jsonfeed.org/version/1","items":[{"id":"1","content_html":"<img src=\"https://j.example.com/in.png\">",
+        "image":"https://j.example.com/image.png","banner_image":"https://j.example.com/banner.png"},
+        {"id":"2","content_text":"x","banner_image":"https://j.example.com/banner2.png"}]})";
+    const ParsedFeed json = parseFeed(jsonImages, QUrl(QStringLiteral("https://j.example.com/feed.json")));
+    check(json.format == QLatin1String("JSON Feed 1") && json.items.size() == 2 &&
+              articleImage(json.items.at(0), QString()) == QLatin1String("https://j.example.com/image.png") &&
+              articleImage(json.items.at(1), QString()) == QLatin1String("https://j.example.com/banner2.png"),
+          "JSON Feed image, then banner_image", json.format);
+    check(leadImagesHtml({QStringLiteral("https://x.example.com/a.png?x=1&y=2")},
+                         QStringLiteral("<img src=\"https://x.example.com/a.png?x=1&amp;y=2\">")).isEmpty(),
+          "an image already in the content is not repeated");
+    check(plainTextToHtml(QStringLiteral("See https://a.example.com/x.")) ==
+              QLatin1String("<p>See <a href=\"https://a.example.com/x\">https://a.example.com/x</a>.</p>"),
+          "trailing punctuation is not part of a link", plainTextToHtml(QStringLiteral("See https://a.example.com/x.")));
+}
+
+void testArticleWins()
+{
+    const QUrl base(QStringLiteral("https://example.com/post"));
+    const QString ignored = sanitizeHtml(QStringLiteral(
+        "<p>Keep</p><div class=\"share instapaper_ignore\"><p>Share this</p><div>nested</div></div><p>After</p>"
+        "<span class=\"instapaper_ignored\">kept</span><img class=\"instapaper_ignore\" src=\"https://example.com/a.png\">"), base);
+    check(ignored == QLatin1String("<p>Keep</p><p>After</p><span>kept</span>"), "instapaper_ignore drops the element and its content", ignored);
+
+    const QString captioned = addAltCaptions(QStringLiteral("<p><img src=\"https://i.example.com/a.png\" alt=\"A cat &amp; a dog\"></p>"));
+    check(captioned == QLatin1String("<p><img src=\"https://i.example.com/a.png\" alt=\"A cat &amp; a dog\"><br>"
+                                     "<span class=\"caption\">A cat &amp; a dog</span></p>"),
+          "alt text becomes a caption", captioned);
+    const QString figure = QStringLiteral("<figure><img src=\"https://i.example.com/b.png\" alt=\"Dog\"><figcaption>A dog</figcaption></figure>");
+    check(!addAltCaptions(figure).contains(QStringLiteral("caption\">")), "no caption inside a figure with a figcaption", addAltCaptions(figure));
+    check(addAltCaptions(QStringLiteral("<figure><img src=\"https://i.example.com/c.png\" alt=\"Bird\"></figure>")).contains(QStringLiteral("<span class=\"caption\">Bird</span>")),
+          "caption inside a figure without a figcaption");
+    check(!addAltCaptions(QStringLiteral("<img src=\"https://i.example.com/d.png\" alt=\" \">")).contains(QStringLiteral("caption")),
+          "no caption for an empty alt");
+
+    check(textDirection(QStringLiteral("ar")) == QLatin1String("rtl") && textDirection(QStringLiteral("he-IL")) == QLatin1String("rtl") &&
+              textDirection(QStringLiteral("iw")) == QLatin1String("rtl") && textDirection(QStringLiteral("fa_IR")) == QLatin1String("rtl") &&
+              textDirection(QStringLiteral("ckb")) == QLatin1String("rtl") && textDirection(QStringLiteral("SYR")) == QLatin1String("rtl") &&
+              textDirection(QStringLiteral("ur")) == QLatin1String("rtl") && textDirection(QStringLiteral("dv")) == QLatin1String("rtl"),
+          "right-to-left languages");
+    check(textDirection(QStringLiteral("en-US")) == QLatin1String("auto") && textDirection(QString()) == QLatin1String("auto") &&
+              textDirection(QStringLiteral("arn")) == QLatin1String("auto"),
+          "other languages are auto");
+    const ParsedFeed rss = parseFeed(rssItems(QStringLiteral("Arabic"), {{QStringLiteral("خبر"), QStringLiteral("https://ar.example.com/1"), QStringLiteral("a1"), QStringLiteral("نص")}},
+                                              QStringLiteral("<language>ar-EG</language>")), QUrl());
+    check(rss.language == QLatin1String("ar-EG"), "RSS language", rss.language);
+    const QByteArray atom = R"XML(<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="he"><title>Hebrew</title>
+<entry xml:lang="en"><id>1</id><title>English entry</title></entry><entry><id>2</id><title>כותרת</title></entry></feed>)XML";
+    const ParsedFeed hebrew = parseFeed(atom, QUrl(QStringLiteral("https://he.example.com/atom")));
+    check(hebrew.language == QLatin1String("he") && hebrew.items.size() == 2 && hebrew.items.at(0).language == QLatin1String("en") &&
+              hebrew.items.at(1).language.isEmpty(),
+          "Atom xml:lang on the feed and the entry");
+    const ParsedFeed rdf = parseFeed(R"XML(<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel rdf:about="https://x.example/"><title>X</title><dc:language>fa</dc:language></channel></rdf:RDF>)XML", QUrl());
+    check(rdf.language == QLatin1String("fa"), "RSS 1.0 dc:language", rdf.language);
+    const ParsedFeed json = parseFeed(R"({"version":"https://jsonfeed.org/version/1.1","language":"ur","items":[{"id":"1","content_text":"x","language":"en"}]})", QUrl());
+    check(json.language == QLatin1String("ur") && json.items.value(0).language == QLatin1String("en"), "JSON Feed language");
+    Store store;
+    QString error;
+    const QString id = store.addFeed(QUrl(QStringLiteral("https://he.example.com/atom")), QString(), QString(), 1000, &error);
+    store.merge(id, hebrew, 1000);
+    check(store.feed(id)->language == QLatin1String("he") && store.article({id, QStringLiteral("1")})->language == QLatin1String("en") &&
+              store.article({id, QStringLiteral("2")})->language.isEmpty(),
+          "feed language stored, article language only when it differs");
+
+    check(readingMinutes(QString()) == 0 && readingMinutes(QStringLiteral("  \n ")) == 0, "no reading time for empty text");
+    const auto words = [](int count) {
+        QStringList list;
+        for (int i = 0; i < count; ++i)
+            list << QStringLiteral("word");
+        return list.join(QLatin1Char(' '));
+    };
+    check(readingMinutes(QStringLiteral("one")) == 1 && readingMinutes(words(230)) == 1 && readingMinutes(words(231)) == 2 &&
+              readingMinutes(words(460)) == 2,
+          "230 words a minute, rounded up, at least one");
+    check(readingMinutes(QString(500, QChar(0x6F22))) == 1 && readingMinutes(QString(501, QChar(0x3042))) == 2 &&
+              readingMinutes(words(230) + QLatin1Char(' ') + QString(500, QChar(0xD55C))) == 2,
+          "CJK characters counted separately at 500 a minute");
+    check(readingMinutes(QStringLiteral("abc東京def")) == 1 && readingMinutes(words(228) + QStringLiteral(" abc東京def")) == 1,
+          "CJK characters do not split a word");
+}
+
+void testFiltersAndDuplicates()
+{
+    const qint64 at = utc(2026, 10, 15, 12, 0);
+    Store store;
+    QString error;
+    const QString a = store.addFeed(QUrl(QStringLiteral("https://engineering.example.com/feed.xml")), QString(), QString(), at, &error);
+    const QString b = store.addFeed(QUrl(QStringLiteral("https://bulk.example.com/feed")), QString(), QString(), at, &error);
+    store.merge(a, parseFeed(kRss, QUrl(QStringLiteral("https://engineering.example.com/feed.xml"))), at);
+    store.merge(b, parseFeed(rssWithItems(3, 0, QStringLiteral("Bulk")), QUrl()), at);
+    const Source feedA{SourceKind::Feed, a};
+    check(store.feedUnread(a) == 3 && store.totalUnread() == 6, "six unread before filters");
+
+    ContentFilter hide;
+    hide.pattern = QStringLiteral("SHIPPING");
+    check(store.saveFilter(hide, &error) && store.settings().filters.size() == 1 && !store.settings().filters.first().id.isEmpty(),
+          "filter saved with an id", error);
+    check(store.query(feedA, QString(), false, at).size() == 2 && store.feedUnread(a) == 2 && store.totalUnread() == 5 &&
+              store.unreadCount({SourceKind::Today, QString()}, at) == 1,
+          "a plain filter hides case-insensitively from timelines and counts",
+          QString::number(store.unreadCount({SourceKind::Today, QString()}, at)));
+    check(store.article({a, QStringLiteral("post-1")}) != nullptr, "hidden articles stay stored");
+    store.setStarred({a, QStringLiteral("post-1")}, true);
+    check(store.query(feedA, QString(), false, at).size() == 3 && store.feedUnread(a) == 3, "starred articles are never hidden");
+    store.setStarred({a, QStringLiteral("post-1")}, false);
+    check(store.feedUnread(a) == 2, "unstarring hides it again");
+
+    ContentFilter bad;
+    bad.pattern = QStringLiteral("([");
+    bad.regex = true;
+    check(!store.saveFilter(bad, &error) && error == QLatin1String("Invalid regular expression"), "invalid regex refused", error);
+    check(filterPatternError(QStringLiteral("(["), true) == QLatin1String("Invalid regular expression") &&
+              filterPatternError(QStringLiteral("(["), false).isEmpty() && !filterPatternError(QStringLiteral(" "), false).isEmpty(),
+          "editor validation messages");
+    check(!TextMatcher(QStringLiteral("(["), true).matches(QStringLiteral("([")), "an invalid regex never matches");
+    store.settings().filters.append(ContentFilter::fromJson(QJsonObject{{QStringLiteral("pattern"), QStringLiteral("([")},
+                                                                       {QStringLiteral("regex"), true}}));
+    store.filtersChanged();
+    check(store.query(feedA, QString(), false, at).size() == 2, "a stored invalid regex hides nothing");
+
+    ContentFilter regex;
+    regex.pattern = QStringLiteral("^bulk\\s+[12]$");
+    regex.regex = true;
+    regex.feedId = b;
+    check(store.saveFilter(regex, &error), "regex filter saved", error);
+    check(store.query({SourceKind::Feed, b}, QString(), false, at).size() == 1 && store.feedUnread(b) == 1,
+          "regex filter, case-insensitive, scoped to one feed");
+    ContentFilter body;
+    body.pattern = QStringLiteral("nothing else");
+    body.field = QStringLiteral("titleOrText");
+    store.saveFilter(body, &error);
+    ContentFilter author;
+    author.pattern = QStringLiteral("sam example");
+    author.field = QStringLiteral("author");
+    store.saveFilter(author, &error);
+    check(store.query(feedA, QString(), false, at).isEmpty() && store.feedUnread(a) == 0, "title-or-text and author filters");
+    store.removeFilter(author.id.isEmpty() ? store.settings().filters.last().id : author.id);
+    check(store.query(feedA, QString(), false, at).size() == 1, "removing a filter brings its articles back");
+
+    const QString c = store.addFeed(QUrl(QStringLiteral("https://arrive.example.com/feed")), QString(), QString(), at, &error);
+    ContentFilter arrive;
+    arrive.pattern = QStringLiteral("Arrive 1");
+    arrive.action = QStringLiteral("markRead");
+    store.saveFilter(arrive, &error);
+    store.merge(c, parseFeed(rssWithItems(3, 0, QStringLiteral("Arrive")), QUrl()), at);
+    check(store.article({c, QStringLiteral("Arrive-1")})->read && !store.article({c, QStringLiteral("Arrive-0")})->read &&
+              store.query({SourceKind::Feed, c}, QString(), false, at).size() == 3,
+          "mark-as-read filters apply to arriving articles and do not hide them");
+    ContentFilter later;
+    later.pattern = QStringLiteral("Arrive 2");
+    later.action = QStringLiteral("markRead");
+    store.saveFilter(later, &error);
+    store.merge(c, parseFeed(rssWithItems(3, 0, QStringLiteral("Arrive")), QUrl()), at);
+    check(!store.article({c, QStringLiteral("Arrive-2")})->read, "mark-as-read filters leave stored articles alone");
+    while (store.settings().filters.size() < kMaxFilters) {
+        ContentFilter filler;
+        filler.pattern = QStringLiteral("filler %1").arg(store.settings().filters.size());
+        store.saveFilter(filler, &error);
+    }
+    ContentFilter extra;
+    extra.pattern = QStringLiteral("one too many");
+    check(!store.saveFilter(extra, &error) && store.settings().filters.size() == kMaxFilters, "at most 100 filters", error);
+
+    check(linkKey(QStringLiteral("http://Dup.Example.com/post?id=1#top")) == linkKey(QStringLiteral("https://dup.example.com/post?id=1")) &&
+              linkKey(QStringLiteral("https://dup.example.com/post?id=2")) != linkKey(QStringLiteral("https://dup.example.com/post?id=1")) &&
+              linkKey(QStringLiteral("not a link")).isEmpty(),
+          "link identity ignores scheme, case and fragment");
+    for (const bool fold : {true, false}) {
+        Store dupes;
+        dupes.settings().foldDuplicates = fold;
+        const QString one = dupes.addFeed(QUrl(QStringLiteral("https://one.example.com/feed")), QString(), QString(), at, &error);
+        const QString two = dupes.addFeed(QUrl(QStringLiteral("https://two.example.com/feed")), QString(), QString(), at, &error);
+        dupes.merge(one, parseFeed(rssItems(QStringLiteral("One"), {{QStringLiteral("Story"), QStringLiteral("https://news.example.com/story?id=7#top"), QStringLiteral("s1"), QStringLiteral("x")}}), QUrl()), at);
+        dupes.merge(two, parseFeed(rssItems(QStringLiteral("Two"), {{QStringLiteral("Same story"), QStringLiteral("http://NEWS.example.com/story?id=7"), QStringLiteral("t1"), QStringLiteral("x")},
+                                                                    {QStringLiteral("Other"), QStringLiteral("https://news.example.com/story?id=8"), QStringLiteral("t2"), QStringLiteral("x")}}), QUrl()), at);
+        check(dupes.article({two, QStringLiteral("t1")})->read == fold && !dupes.article({two, QStringLiteral("t2")})->read &&
+                  !dupes.article({one, QStringLiteral("s1")})->read,
+              fold ? "a duplicate link from another feed arrives read" : "duplicates stay unread when the setting is off");
+    }
+}
+
+void testSmartFeedsAndReadLater()
+{
+    const qint64 at = utc(2026, 10, 15, 12, 0);
+    Store store;
+    QString error;
+    store.addFolder(QStringLiteral("Tech"), &error);
+    const QString a = store.addFeed(QUrl(QStringLiteral("https://engineering.example.com/feed.xml")), QString(), QStringLiteral("Tech"), at, &error);
+    const QString b = store.addFeed(QUrl(QStringLiteral("https://bulk.example.com/feed")), QString(), QString(), at, &error);
+    store.merge(a, parseFeed(kRss, QUrl(QStringLiteral("https://engineering.example.com/feed.xml"))), at);
+    store.merge(b, parseFeed(rssWithItems(5, 0, QStringLiteral("Bulk")), QUrl()), at);
+
+    SmartFeed unnamed;
+    check(!store.saveSmartFeed(unnamed, &error) && error == QLatin1String("Enter a name."), "a smart feed needs a name");
+    SmartFeed invalid;
+    invalid.name = QStringLiteral("Broken");
+    invalid.words = QStringLiteral("([");
+    invalid.regex = true;
+    check(!store.saveSmartFeed(invalid, &error) && error == QLatin1String("Invalid regular expression"), "invalid smart feed regex refused");
+    SmartFeed builds;
+    builds.name = QStringLiteral("  Builds ");
+    builds.words = QStringLiteral("BUILD");
+    check(store.saveSmartFeed(builds, &error) && store.settings().smartFeeds.size() == 1 &&
+              store.settings().smartFeeds.first().name == QLatin1String("Builds"),
+          "smart feed saved", error);
+    const QString buildsId = store.settings().smartFeeds.first().id;
+    const Source smart{SourceKind::Smart, buildsId};
+    check(store.query(smart, QString(), false, at).size() == 1 && store.unreadCount(smart, at) == 1,
+          "words match the title, case-insensitively", QString::number(store.query(smart, QString(), false, at).size()));
+    SmartFeed text;
+    text.name = QStringLiteral("Text");
+    text.words = QStringLiteral("full TEXT here");
+    store.saveSmartFeed(text, &error);
+    check(store.query({SourceKind::Smart, store.settings().smartFeeds.last().id}, QString(), false, at).size() == 1,
+          "words match the article text");
+    store.removeSmartFeed(store.settings().smartFeeds.last().id);
+    SmartFeed edited = *store.smartFeed(buildsId);
+    edited.words.clear();
+    edited.scope = QStringLiteral("folder:Tech");
+    store.saveSmartFeed(edited, &error);
+    check(store.settings().smartFeeds.size() == 1 && store.query(smart, QString(), false, at).size() == 3, "folder scope, any words");
+    store.renameFolder(QStringLiteral("Tech"), QStringLiteral("Technology"), &error);
+    check(store.smartFeed(buildsId)->scope == QLatin1String("folder:Technology") && store.query(smart, QString(), false, at).size() == 3,
+          "renaming a folder keeps the smart feed scope");
+    edited = *store.smartFeed(buildsId);
+    edited.scope = QStringLiteral("feed:") + b;
+    edited.maxAgeDays = 3;
+    store.saveSmartFeed(edited, &error);
+    check(store.query(smart, QString(), false, at).isEmpty(), "max age excludes old articles");
+    edited.scope.clear();
+    store.saveSmartFeed(edited, &error);
+    check(store.query(smart, QString(), false, at).size() == 3, "max age keeps recent ones in every feed");
+    edited.unreadOnly = true;
+    store.saveSmartFeed(edited, &error);
+    store.setRead({a, QStringLiteral("post-1")}, true);
+    check(store.query(smart, QString(), false, at).size() == 2 &&
+              store.query(smart, QString(), false, at, {articleKey({a, QStringLiteral("post-1")})}).size() == 3,
+          "unread only, with articles kept while the timeline is open");
+    edited.unreadOnly = false;
+    edited.starredOnly = true;
+    store.saveSmartFeed(edited, &error);
+    store.setStarred({a, QStringLiteral("post-1")}, true);
+    check(store.query(smart, QString(), false, at).size() == 1 && store.unreadCount(smart, at) == 0, "starred only; the count is unread");
+    edited.starredOnly = false;
+    store.saveSmartFeed(edited, &error);
+    store.setFeedFlags(a, false, false, true);
+    check(store.unreadCount(smart, at) == 0 && store.query(smart, QString(), false, at).size() == 3,
+          "Hide from Unread Counts leaves smart feed counts but not the timeline");
+    store.setFeedFlags(a, false, false, false);
+    ContentFilter hide;
+    hide.pattern = QStringLiteral("no guid");
+    store.saveFilter(hide, &error);
+    check(store.query(smart, QString(), false, at).size() == 2, "filter-hidden articles are left out of smart feeds");
+    while (store.settings().smartFeeds.size() < kMaxSmartFeeds) {
+        SmartFeed filler;
+        filler.name = QStringLiteral("Smart %1").arg(store.settings().smartFeeds.size());
+        store.saveSmartFeed(filler, &error);
+    }
+    SmartFeed extra;
+    extra.name = QStringLiteral("Too many");
+    check(!store.saveSmartFeed(extra, &error) && store.settings().smartFeeds.size() == kMaxSmartFeeds, "at most 50 smart feeds");
+    check(store.removeSmartFeed(buildsId) && !store.smartFeed(buildsId) && store.query(smart, QString(), false, at).isEmpty(),
+          "smart feed deleted");
+
+    const ArticleRef keep{b, QStringLiteral("Bulk-0")};
+    check(store.readLaterCount() == 0 && store.setReadLater(keep, true) && store.readLaterCount() == 1, "Read Later toggled");
+    const Source readLater{SourceKind::ReadLater, QString()};
+    check(store.query(readLater, QString(), false, at).size() == 1 && store.unreadCount(readLater, at) == 1, "Read Later lists its articles");
+    store.setRead(keep, true);
+    check(store.article(keep)->readLater && store.unreadCount(readLater, at) == 0 && store.query(readLater, QString(), false, at).size() == 1,
+          "reading does not remove an article from Read Later");
+    store.merge(b, parseFeed(rssWithItems(200, 10, QStringLiteral("B")), QUrl()), at);
+    store.merge(b, parseFeed(rssWithItems(200, 20, QStringLiteral("C")), QUrl()), at);
+    check(store.article(keep) && !store.article({b, QStringLiteral("Bulk-1")}), "Read Later articles are kept by pruning");
+    check(hideReadApplies({SourceKind::Feed, b}) && hideReadApplies(readLater) && hideReadApplies({SourceKind::Today, QString()}) &&
+              !hideReadApplies({SourceKind::Starred, QString()}),
+          "Hide Read Articles applies everywhere but Starred");
+}
+
+void testFeedSwitches()
+{
+    const qint64 at = utc(2026, 10, 15, 12, 0);
+    Store store;
+    QString error;
+    store.addFolder(QStringLiteral("Tech"), &error);
+    const QString a = store.addFeed(QUrl(QStringLiteral("https://engineering.example.com/feed.xml")), QString(), QStringLiteral("Tech"), at, &error);
+    const QString b = store.addFeed(QUrl(QStringLiteral("https://bulk.example.com/feed")), QString(), QString(), at, &error);
+    store.merge(a, parseFeed(kRss, QUrl(QStringLiteral("https://engineering.example.com/feed.xml"))), at);
+    store.merge(b, parseFeed(rssWithItems(5, 0, QStringLiteral("Bulk")), QUrl()), at);
+    const Source today{SourceKind::Today, QString()};
+    check(store.unreadCount(today, at) == 2, "Today before switches");
+    store.setFeedFlags(a, true, false, false);
+    check(!store.dueFeeds(at, true).contains(a) && store.dueFeeds(at, true).contains(b) && store.articles(a).size() == 3,
+          "a paused feed is skipped even by a full refresh and keeps its articles");
+    store.setFeedFlags(a, false, true, false);
+    check(store.unreadCount(today, at) == 0 && store.query(today, QString(), false, at).isEmpty() && store.totalUnread() == 8,
+          "Hide from Today");
+    store.setFeedFlags(a, false, false, true);
+    check(store.totalUnread() == 5 && store.unreadCount({SourceKind::AllUnread, QString()}, at) == 5 &&
+              store.query({SourceKind::AllUnread, QString()}, QString(), false, at).size() == 5 &&
+              store.unreadCount(today, at) == 0 && store.unreadCount({SourceKind::Folder, QStringLiteral("Tech")}, at) == 0 &&
+              store.feedUnread(a) == 3 && store.query({SourceKind::Folder, QStringLiteral("Tech")}, QString(), false, at).size() == 3,
+          "Hide from Unread Counts: left out of All Unread, Today, folder totals and the badge; its own count stays");
+    store.setStarred({a, QStringLiteral("post-1")}, true);
+    check(store.unreadCount({SourceKind::Starred, QString()}, at) == 0, "and out of the Starred count");
+
+    check(!store.changeFeedAddress(a, QStringLiteral("ftp://engineering.example.com/feed.xml"), at, &error) && error == QLatin1String("Enter a valid feed address."),
+          "invalid address refused", error);
+    check(!store.changeFeedAddress(a, QStringLiteral("http://BULK.example.com/feed"), at, &error) && error.contains(QStringLiteral("already follow")),
+          "an address another feed uses is refused", error);
+    store.recordFailure(a, QStringLiteral("HTTP 500"), at);
+    store.recordSuccess(a, at, QStringLiteral("\"tag\""), QStringLiteral("Tue"), QUrl());
+    store.recordFailure(a, QStringLiteral("HTTP 500"), at);
+    check(store.changeFeedAddress(a, QStringLiteral("feed://engineering.example.com/new.xml"), at, &error), "address changed", error);
+    const Feed *moved = store.feed(a);
+    check(moved->url == QLatin1String("https://engineering.example.com/new.xml") &&
+              moved->previousUrls == QStringList{QStringLiteral("https://engineering.example.com/feed.xml")} &&
+              moved->etag.isEmpty() && moved->lastModified.isEmpty() && moved->lastError.isEmpty() && moved->failures == 0 &&
+              store.dueFeeds(at, false).contains(a) && store.articles(a).size() == 3,
+          "the old address moves to previousUrls and the feed is due now with fresh validators");
+    check(store.changeFeedAddress(a, QStringLiteral("file:///srv/feeds/local.xml"), at, &error) &&
+              store.feed(a)->url == QLatin1String("file:///srv/feeds/local.xml") && store.feed(a)->previousUrls.size() == 2,
+          "a file address is accepted on the desktop", error);
+
+    QTemporaryDir directory;
+    DiskStore disk(directory.filePath(QStringLiteral("rss-reader")));
+    store.setStoreId(QStringLiteral("switches"));
+    store.setReadLater({b, QStringLiteral("Bulk-2")}, true);
+    disk.saveState(store);
+    for (const Feed &owner : store.feeds())
+        disk.saveArticles(store, owner.id);
+    Store loaded;
+    check(disk.load(loaded, QStringLiteral("switches")), "store with switches reloads");
+    const Feed *reloaded = loaded.feed(a);
+    check(reloaded && reloaded->excludeFromUnread && !reloaded->paused && reloaded->previousUrls.size() == 2 &&
+              loaded.article({b, QStringLiteral("Bulk-2")}) && loaded.article({b, QStringLiteral("Bulk-2")})->readLater &&
+              loaded.totalUnread() == store.totalUnread(),
+          "feed switches, previous addresses and Read Later survive a reload");
+    check(disk.storedUnread(QStringLiteral("switches")) == store.totalUnread(), "the startup badge leaves out hidden feeds",
+          QString::number(disk.storedUnread(QStringLiteral("switches"))));
+
+    const qint64 cutoff = at - 7 * kDayMs;
+    check(store.olderUnreadEverywhere(cutoff, false).size() == 5, "catch up finds old unread articles everywhere",
+          QString::number(store.olderUnreadEverywhere(cutoff, false).size()));
+    store.setStarred({b, QStringLiteral("Bulk-0")}, true);
+    check(store.olderUnreadEverywhere(cutoff, true).size() == 4, "catch up can skip starred articles");
+    check(store.olderUnread({SourceKind::Feed, a}, at - kDayMs, false, at).size() == 1 &&
+              store.olderUnread({SourceKind::Feed, b}, at - kDayMs, false, at).size() == 5,
+          "catch up in one timeline");
+    check(catchUpDays() == QList<int>({1, 3, 7, 14, 30}) && catchUpLabel(1) == QLatin1String("Older Than 1 Day") &&
+              catchUpLabel(3) == QLatin1String("Older Than 3 Days") && catchUpLabel(7) == QLatin1String("Older Than 1 Week") &&
+              catchUpLabel(14) == QLatin1String("Older Than 2 Weeks") && catchUpLabel(30) == QLatin1String("Older Than 1 Month"),
+          "catch-up choices");
+
+    QList<SourceEntry> entries{{QStringLiteral("beta"), QStringLiteral("b"), false, 1},
+                               {QStringLiteral("Alpha"), QStringLiteral("a"), false, 1},
+                               {QStringLiteral("gamma"), QStringLiteral("g"), true, 5},
+                               {QStringLiteral("delta"), QStringLiteral("d"), false, 0}};
+    sortSourceEntries(entries, true);
+    check(entries.at(0).id == QLatin1String("g") && entries.at(1).id == QLatin1String("a") && entries.at(2).id == QLatin1String("b") &&
+              entries.at(3).id == QLatin1String("d"),
+          "sort by unread count, then by name");
+    sortSourceEntries(entries, false);
+    check(entries.at(0).id == QLatin1String("a") && entries.at(3).id == QLatin1String("g"), "name order by default");
+    Feed feed;
+    feed.url = QStringLiteral("https://engineering.example.com/feed.xml");
+    feed.customTitle = QStringLiteral("My Engineering");
+    check(feedMatchesSearch(feed, QStringLiteral("my eng")) && feedMatchesSearch(feed, QStringLiteral("EXAMPLE.com")) &&
+              feedMatchesSearch(feed, QStringLiteral("feed.xml")) && feedMatchesSearch(feed, QString()) &&
+              !feedMatchesSearch(feed, QStringLiteral("zzz")),
+          "find a feed by title, host or address");
+}
+
 QByteArray liveFeed()
 {
     const QDateTime current = QDateTime::currentDateTimeUtc();
@@ -836,7 +1373,9 @@ void testPage(const QString &home)
                            "developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with "
                            "NetNewsWire and is not affiliated with or endorsed by it.")) &&
                   about->text().contains(QStringLiteral("https://netnewswire.com/")) &&
-                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire")),
+                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire")) &&
+                  about->text().contains(QStringLiteral("feature requests NetNewsWire&#39;s users have filed")) &&
+                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire/issues")),
               "About credits NetNewsWire");
         if (auto *dialog = page.findChild<QDialog *>(QStringLiteral("rssSettingsDialog")))
             dialog->close();
@@ -889,6 +1428,428 @@ void testPage(const QString &home)
     }
 }
 
+DiscoveryResult discoverNow(FetchQueue &queue, const QUrl &address)
+{
+    DiscoveryResult discovered;
+    bool done = false;
+    discoverFeed(&queue, address, [&](const DiscoveryResult &value) {
+        discovered = value;
+        done = true;
+    });
+    waitFor([&] { return done; });
+    return discovered;
+}
+
+void testDiscoveryRewrites(const QString &home)
+{
+    const auto feedOf = [](const QString &address) { return discoveryRewrite(QUrl(address)).feed.toString(); };
+    const auto lookup = [](const QString &address) { return discoveryRewrite(QUrl(address)).channelLookup; };
+    check(feedOf(QStringLiteral("https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw")) ==
+              QLatin1String("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "YouTube channel address becomes the channel feed");
+    check(feedOf(QStringLiteral("https://m.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw/videos")) ==
+              QLatin1String("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "mobile YouTube channel tab");
+    check(feedOf(QStringLiteral("https://youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI")) ==
+              QLatin1String("https://www.youtube.com/feeds/videos.xml?playlist_id=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"),
+          "YouTube playlist becomes the playlist feed");
+    check(feedOf(QStringLiteral("https://www.youtube.com/user/RickAstleyVEVO")) ==
+              QLatin1String("https://www.youtube.com/feeds/videos.xml?user=RickAstleyVEVO"),
+          "YouTube user becomes the user feed");
+    check(lookup(QStringLiteral("https://www.youtube.com/@RickAstleyYT")) && lookup(QStringLiteral("https://www.youtube.com/c/RickAstley")) &&
+              lookup(QStringLiteral("https://www.youtube.com/watch?v=dQw4w9WgXcQ")) && lookup(QStringLiteral("https://youtu.be/dQw4w9WgXcQ")) &&
+              lookup(QStringLiteral("https://www.youtube.com/shorts/abc123")) &&
+              !discoveryRewrite(QUrl(QStringLiteral("https://www.youtube.com/@RickAstleyYT"))).feed.isValid(),
+          "handles, custom names, videos and shorts need the page");
+    check(!lookup(QStringLiteral("https://www.youtube.com/")) && feedOf(QStringLiteral("https://www.youtube.com/")).isEmpty() &&
+              !lookup(QStringLiteral("https://www.youtube.com/watch")),
+          "other YouTube pages are left to normal discovery");
+    check(feedOf(QStringLiteral("https://mastodon.social/@Gargron")) == QLatin1String("https://mastodon.social/@Gargron.rss") &&
+              feedOf(QStringLiteral("https://mastodon.social/@Gargron/")) == QLatin1String("https://mastodon.social/@Gargron.rss") &&
+              feedOf(QStringLiteral("https://mastodon.social/@Gargron/113300000000000001")).isEmpty() &&
+              feedOf(QStringLiteral("https://mastodon.social/@Gargron.rss")).isEmpty(),
+          "Mastodon-style profiles try @user.rss");
+    check(feedOf(QStringLiteral("https://bsky.app/profile/jay.bsky.team")) == QLatin1String("https://bsky.app/profile/jay.bsky.team/rss") &&
+              feedOf(QStringLiteral("https://bsky.app/profile/jay.bsky.team/post/3k")).isEmpty(),
+          "Bluesky profiles become their RSS feed");
+    check(feedOf(QStringLiteral("https://example.com/blog/")).isEmpty() && !lookup(QStringLiteral("https://example.com/blog/")),
+          "ordinary sites are not rewritten");
+    check(youtubeChannelId(QStringLiteral("<script>var x = {\"channelId\":\"UCuAXFkgsw1L7xaCfnd5JJOw\",\"title\":\"x\"}</script>")) ==
+              QLatin1String("UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "channel id from the page data");
+    check(youtubeChannelId(QStringLiteral("<meta itemprop=\"channelId\" content=\"UCuAXFkgsw1L7xaCfnd5JJOw\">")) ==
+              QLatin1String("UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "channel id from the meta tag");
+    check(youtubeChannelId(QStringLiteral("<link rel=\"canonical\" href=\"https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw\">")) ==
+              QLatin1String("UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "channel id from the canonical link");
+    check(youtubeChannelId(QStringLiteral("<p>\"channelId\":\"UCshort\"</p>")).isEmpty(), "no channel id on the page");
+    check(youtubeChannelFeed(QStringLiteral("UCuAXFkgsw1L7xaCfnd5JJOw")).toString() ==
+              QLatin1String("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "channel feed address");
+
+    FakeNetwork network;
+    FetchQueue queue(&network);
+    network.route(QStringLiteral("https://www.youtube.com/@RickAstleyYT"), 200,
+                  "<html><head><link rel=\"canonical\" href=\"https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw\"></head>"
+                  "<body><script>{\"channelId\":\"UCuAXFkgsw1L7xaCfnd5JJOw\"}</script></body></html>", "text/html");
+    network.route(QStringLiteral("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"), 200, kYouTube, "application/atom+xml");
+    DiscoveryResult found = discoverNow(queue, QUrl(QStringLiteral("https://www.youtube.com/@RickAstleyYT")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "a YouTube handle is found through the channel page", found.error);
+    network.route(QStringLiteral("https://www.youtube.com/@nobody"), 200, "<html><head><link rel=\"alternate\" type=\"application/rss+xml\" href=\"/alt.xml\"></head></html>", "text/html");
+    network.route(QStringLiteral("https://www.youtube.com/alt.xml"), 200, kRdf);
+    found = discoverNow(queue, QUrl(QStringLiteral("https://www.youtube.com/@nobody")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://www.youtube.com/alt.xml"),
+          "without a channel id the normal discovery runs", found.error);
+    network.route(QStringLiteral("https://mastodon.example/@user.rss"), 200, kMastodon);
+    found = discoverNow(queue, QUrl(QStringLiteral("https://mastodon.example/@user")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://mastodon.example/@user.rss"), "Mastodon profile", found.error);
+    network.route(QStringLiteral("https://blog.example.org/@writer"), 200, "<html><head><link rel=\"alternate\" type=\"application/atom+xml\" href=\"/writer.atom\"></head></html>", "text/html");
+    network.route(QStringLiteral("https://blog.example.org/writer.atom"), 200, kAtom, "application/atom+xml");
+    found = discoverNow(queue, QUrl(QStringLiteral("https://blog.example.org/@writer")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://blog.example.org/writer.atom"),
+          "a missing @user.rss falls back to normal discovery", found.error);
+    network.route(QStringLiteral("https://bsky.app/profile/jay.bsky.team/rss"), 200, kRss);
+    found = discoverNow(queue, QUrl(QStringLiteral("https://bsky.app/profile/jay.bsky.team")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://bsky.app/profile/jay.bsky.team/rss"), "Bluesky profile", found.error);
+    network.route(QStringLiteral("https://ghost.example.com/"), 200, "<html><body>No links</body></html>", "text/html");
+    network.route(QStringLiteral("https://ghost.example.com/rss/"), 200, kRss);
+    found = discoverNow(queue, QUrl(QStringLiteral("https://ghost.example.com/")));
+    check(found.ok && found.feedUrl.toString() == QLatin1String("https://ghost.example.com/rss/"), "Ghost's /rss/ fallback", found.error);
+
+    const QString path = QDir(home).filePath(QStringLiteral("feeds/local.xml"));
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    file.open(QIODevice::WriteOnly);
+    file.write(kRdf);
+    file.close();
+    const QUrl local = QUrl::fromLocalFile(path);
+    check(normalizeAddress(local.toString(), true) == local && !normalizeAddress(local.toString()).isValid() &&
+              !normalizeAddress(QStringLiteral("file://server/share/feed.xml"), true).isValid() &&
+              !normalizeAddress(QStringLiteral("file:relative.xml"), true).isValid(),
+          "file addresses: absolute paths only, and only where allowed");
+    FetchRequest request;
+    request.url = local;
+    FetchResult result = fetchNow(queue, request);
+    check(!result.ok(), "file addresses are refused unless the request allows them", result.error);
+    request.allowFile = true;
+    const int before = int(network.requested.size());
+    result = fetchNow(queue, request);
+    check(result.ok() && result.body == kRdf && network.requested.size() == before, "a file feed is read from disk, not the network", result.error);
+    request.url = QUrl::fromLocalFile(QDir(home).filePath(QStringLiteral("feeds/missing.xml")));
+    check(!fetchNow(queue, request).ok(), "a missing file is an error");
+    const QString big = QDir(home).filePath(QStringLiteral("feeds/big.xml"));
+    QFile bigFile(big);
+    bigFile.open(QIODevice::WriteOnly);
+    bigFile.write(QByteArray(int(kMaxFetchBytes) + 1, 'x'));
+    bigFile.close();
+    request.url = QUrl::fromLocalFile(big);
+    result = fetchNow(queue, request);
+    check(!result.ok() && result.error.contains(QStringLiteral("larger than")), "file feeds have the same size cap", result.error);
+    found = discoverNow(queue, local);
+    check(found.ok && found.feedUrl == local && found.feed.title == QLatin1String("Example News"), "discovery reads a file feed", found.error);
+    Store store;
+    QString error;
+    check(!store.addFeed(local, QString(), QString(), 1000, &error).isEmpty(), "a file feed can be followed", error);
+    const QByteArray opml = QStringLiteral("<opml version=\"2.0\"><body><outline text=\"Local\" xmlUrl=\"%1\"/></body></opml>").arg(local.toString()).toUtf8();
+    Store fresh;
+    check(fresh.importOpml(parseOpml(opml), 1000).skipped == 1 && fresh.importOpml(parseOpml(opml), 1000, true).added == 1,
+          "OPML from the web cannot add file feeds; a local import can");
+    check(parseOpml(writeOpml(store.feeds(), store.folders(), 1000)).feeds.value(0).xmlUrl == local.toString(), "file feeds export");
+    Store html;
+    const OpmlImportResult imported = html.importOpml(parseOpml(R"(<opml version="2.0"><body><outline text="Site" xmlUrl="https://site.example.com/feed" htmlUrl="https://site.example.com/"/></body></opml>)"), 1000);
+    check(imported.added == 1 && html.feeds().value(0).homePage == QLatin1String("https://site.example.com/") &&
+              writeOpml(html.feeds(), html.folders(), 1000).contains("htmlUrl=\"https://site.example.com/\""),
+          "OPML keeps and writes htmlUrl");
+}
+
+void testSettingsJson()
+{
+    const Settings old = Settings::fromJson(QJsonObject{{QStringLiteral("oldestFirst"), true},
+                                                        {QStringLiteral("summaryLines"), 3},
+                                                        {QStringLiteral("theme"), QStringLiteral("sepia")},
+                                                        {QStringLiteral("unreadOnlyTimeline"), true},
+                                                        {QStringLiteral("loadRemoteImages"), true}});
+    check(old.oldestFirst && old.summaryLines == 3 && old.theme == QLatin1String("sepia") && old.unreadOnlyTimeline &&
+              old.loadRemoteImages && !old.showThumbnails && !old.foldDuplicates && !old.markAllKeepsStarred &&
+              !old.sortFeedsByUnread && old.filters.isEmpty() && old.smartFeeds.isEmpty(),
+          "settings saved before these features still load, new ones off");
+    check(Settings::fromJson(QJsonObject{{QStringLiteral("hideReadArticles"), true}}).unreadOnlyTimeline &&
+              !Settings::fromJson(QJsonObject{{QStringLiteral("hideReadArticles"), true}, {QStringLiteral("unreadOnlyTimeline"), false}}).unreadOnlyTimeline,
+          "hideReadArticles is read as unreadOnlyTimeline");
+    Settings settings;
+    settings.showThumbnails = true;
+    settings.foldDuplicates = true;
+    settings.markAllKeepsStarred = true;
+    settings.sortFeedsByUnread = true;
+    ContentFilter filter;
+    filter.id = QStringLiteral("f1");
+    filter.feedId = QStringLiteral("feed-1");
+    filter.field = QStringLiteral("titleOrText");
+    filter.pattern = QStringLiteral("^ad:");
+    filter.regex = true;
+    filter.action = QStringLiteral("markRead");
+    settings.filters.append(filter);
+    SmartFeed smart;
+    smart.id = QStringLiteral("s1");
+    smart.name = QStringLiteral("Rust");
+    smart.words = QStringLiteral("rust");
+    smart.scope = QStringLiteral("folder:Tech");
+    smart.unreadOnly = true;
+    smart.starredOnly = true;
+    smart.maxAgeDays = 7;
+    settings.smartFeeds.append(smart);
+    const QJsonObject json = settings.toJson();
+    for (const char *key : {"showThumbnails", "foldDuplicates", "markAllKeepsStarred", "sortFeedsByUnread", "filters", "smartFeeds", "unreadOnlyTimeline"})
+        check(json.contains(QLatin1String(key)), "settings JSON key", QString::fromLatin1(key));
+    check(json.value(QStringLiteral("filters")).toArray().first().toObject() ==
+              QJsonObject({{QStringLiteral("id"), QStringLiteral("f1")}, {QStringLiteral("feedId"), QStringLiteral("feed-1")},
+                           {QStringLiteral("field"), QStringLiteral("titleOrText")}, {QStringLiteral("pattern"), QStringLiteral("^ad:")},
+                           {QStringLiteral("regex"), true}, {QStringLiteral("action"), QStringLiteral("markRead")}}),
+          "filter JSON shape");
+    check(json.value(QStringLiteral("smartFeeds")).toArray().first().toObject().value(QStringLiteral("maxAgeDays")).toInt() == 7,
+          "smart feed JSON shape");
+    const Settings again = Settings::fromJson(QJsonDocument::fromJson(QJsonDocument(json).toJson()).object());
+    check(again.toJson() == json && again.filters == settings.filters && again.smartFeeds == settings.smartFeeds,
+          "settings JSON round-trips");
+    QJsonArray many;
+    for (int i = 0; i < kMaxFilters + 5; ++i)
+        many.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("x%1").arg(i)}, {QStringLiteral("pattern"), QStringLiteral("p%1").arg(i)},
+                                {QStringLiteral("field"), QStringLiteral("bogus")}, {QStringLiteral("action"), QStringLiteral("explode")}});
+    const Settings capped = Settings::fromJson(QJsonObject{{QStringLiteral("filters"), many}});
+    check(capped.filters.size() == kMaxFilters && capped.filters.first().field == QLatin1String("title") &&
+              capped.filters.first().action == QLatin1String("hide"),
+          "loaded filters are capped and cleaned");
+}
+
+void testPageFeatures(const QString &home)
+{
+    FakeNetwork network;
+    network.route(QStringLiteral("https://engineering.example.com/feed.xml"), 200, liveFeed(), "application/rss+xml", {{"ETag", "\"e1\""}});
+    network.route(QStringLiteral("https://engineering.example.com/moved.xml"), 200, liveFeed(), "application/rss+xml");
+    network.route(QStringLiteral("https://www.youtube.com/@RickAstleyYT"), 200,
+                  "<html><body><script>{\"channelId\":\"UCuAXFkgsw1L7xaCfnd5JJOw\"}</script></body></html>", "text/html");
+    QByteArray youtube = kYouTube;
+    youtube.replace("2009-10-25T06:57:33+00:00", QDateTime::currentDateTimeUtc().addSecs(-600).toString(Qt::ISODate).toUtf8());
+    network.route(QStringLiteral("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"), 200, youtube, "application/atom+xml");
+    network.route(QStringLiteral("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"), 200, pngBytes(), "image/png");
+    const QString now = QDateTime::currentDateTimeUtc().addSecs(-300).toString(Qt::RFC2822Date);
+    network.route(QStringLiteral("https://arabic.example.com/feed.xml"), 200,
+                  rssItems(QStringLiteral("عربي"), {{QStringLiteral("عنوان"), QStringLiteral("https://arabic.example.com/1"), QStringLiteral("ar-1"),
+                                                     QStringLiteral("<p>نص المقال</p><pre>code line that must not wrap</pre>"),
+                                                     QStringLiteral("<pubDate>%1</pubDate><enclosure url=\"https://arabic.example.com/photo.jpg\" type=\"image/jpeg\" length=\"5\"/>"
+                                                                    "<enclosure url=\"https://arabic.example.com/talk.mp3\" type=\"audio/mpeg\" length=\"9\"/>").arg(now)}},
+                           QStringLiteral("<language>ar</language>")));
+    const QString localPath = QDir(home).filePath(QStringLiteral("feeds/page-local.xml"));
+    QDir().mkpath(QFileInfo(localPath).absolutePath());
+    auto writeLocal = [&localPath](const QByteArray &bytes) {
+        QFile file(localPath);
+        file.open(QIODevice::WriteOnly | QIODevice::Truncate);
+        file.write(bytes);
+    };
+    writeLocal(rssWithItems(4, 0, QStringLiteral("Old")));
+    const QString sneakyPath = QDir(home).filePath(QStringLiteral("feeds/sneaky.xml"));
+    QFile sneaky(sneakyPath);
+    sneaky.open(QIODevice::WriteOnly);
+    sneaky.write(kRdf);
+    sneaky.close();
+    network.route(QStringLiteral("https://lists.example.com/subscriptions.opml"), 200,
+                  QStringLiteral("<opml version=\"2.0\"><body><outline text=\"Remote\" xmlUrl=\"https://remote.example.com/feed\" htmlUrl=\"https://remote.example.com/\"/>"
+                                 "<outline text=\"Sneaky\" xmlUrl=\"%1\"/></body></opml>").arg(QUrl::fromLocalFile(sneakyPath).toString()).toUtf8(),
+                  "text/x-opml");
+    network.route(QStringLiteral("https://remote.example.com/feed"), 200, kRdf);
+
+    forkmesh::market::NativePackageHost host;
+    host.packageId = QStringLiteral("rss-reader-features");
+    host.packageName = QStringLiteral("RSS Reader");
+    host.network = &network;
+    RssReaderFeature page(host);
+    page.resize(1280, 800);
+    page.refresh();
+    auto subscribe = [&page](const QString &address) {
+        bool done = false;
+        bool ok = false;
+        QString message;
+        page.subscribe(address, QString(), QString(), [&](bool success, const QString &text) {
+            ok = success;
+            message = text;
+            done = true;
+        });
+        waitFor([&] { return done; });
+        check(ok, "subscribed", address + QStringLiteral(" ") + message);
+        return ok ? page.currentSource().id : QString();
+    };
+    const QString engineering = subscribe(QStringLiteral("https://engineering.example.com/feed.xml"));
+    const qint64 at = QDateTime::currentMSecsSinceEpoch();
+    const Source feedSource{SourceKind::Feed, engineering};
+    const QList<ArticleRef> refs = page.store().query(feedSource, QString(), false, at);
+    check(refs.size() == 3 && page.timelineRows() == 3, "three articles in the feed timeline");
+
+    page.updateSettings([](Settings &settings) { settings.unreadOnlyTimeline = true; }, true, false);
+    page.selectSource(feedSource);
+    page.selectArticle(refs.value(0));
+    page.selectArticle(refs.value(1));
+    check(page.timelineRows() == 3, "articles read while the timeline is open stay until it is left");
+    page.selectSource({SourceKind::AllUnread, QString()});
+    check(page.timelineRows() == 1, "All Unread shows what is still unread", QString::number(page.timelineRows()));
+    page.selectSource(feedSource);
+    check(page.timelineRows() == 1, "Hide Read Articles applies to a feed timeline after leaving it");
+    page.selectArticle(refs.value(0));
+    page.toggleStar();
+    page.selectSource({SourceKind::Starred, QString()});
+    check(page.timelineRows() == 1, "Starred still shows read starred articles");
+    page.selectSource(feedSource);
+    check(page.timelineRows() == 1, "one unread article left in the feed");
+    page.markAllRead(false);
+    check(page.timelineRows() == 0 && page.currentArticle().isNull() && page.store().article(refs.value(2))->read,
+          "Mark All as Read empties the timeline at once");
+    page.updateSettings([](Settings &settings) { settings.unreadOnlyTimeline = false; }, true, false);
+    check(page.timelineRows() == 3, "turning Hide Read Articles off shows them again");
+
+    page.selectArticle(refs.value(0));
+    page.toggleRead();
+    page.selectArticle(refs.value(1));
+    page.toggleRead();
+    page.updateSettings([](Settings &settings) { settings.markAllKeepsStarred = true; }, false, false);
+    page.markAllRead(false);
+    check(!page.store().article(refs.value(0))->read && page.store().article(refs.value(1))->read,
+          "Mark All as Read Skips Starred");
+    page.updateSettings([](Settings &settings) { settings.markAllKeepsStarred = false; }, false, false);
+
+    page.selectArticle(refs.value(2));
+    page.toggleReadLater();
+    check(page.store().article(refs.value(2))->readLater && page.visibleSourceIds().contains(QStringLiteral("readlater")),
+          "Read Later appears once it holds an article");
+    page.selectSource({SourceKind::ReadLater, QString()});
+    check(page.timelineRows() == 1, "Read Later timeline");
+    page.selectArticle(refs.value(2));
+    page.toggleReadLater();
+    page.selectSource(feedSource);
+    check(!page.visibleSourceIds().contains(QStringLiteral("readlater")), "Read Later hides when empty");
+
+    page.setFeedFlags(engineering, true, false, false);
+    const QString feedUrl = QStringLiteral("https://engineering.example.com/feed.xml");
+    const qsizetype fetchesBefore = network.requested.count(feedUrl);
+    page.checkFeeds(true);
+    waitFor([&] { return !page.refreshing(); }, 1000);
+    check(network.requested.count(feedUrl) == fetchesBefore, "a paused feed is not refreshed");
+    QString line;
+    page.checkNow(engineering, [&line](const QString &text) { line = text; });
+    waitFor([&] { return !line.isEmpty(); });
+    check(line.startsWith(QStringLiteral("RSS 2.0 · 3 items · checked ")) && network.requested.count(feedUrl) == fetchesBefore + 1,
+          "Check Now works on a paused feed and reports the format, items and time", line);
+    page.setFeedFlags(engineering, false, false, false);
+
+    const QString youtubeId = subscribe(QStringLiteral("https://www.youtube.com/@RickAstleyYT"));
+    const Feed *youtubeFeed = page.store().feed(youtubeId);
+    check(youtubeFeed && youtubeFeed->url == QLatin1String("https://www.youtube.com/feeds/videos.xml?channel_id=UCuAXFkgsw1L7xaCfnd5JJOw"),
+          "a YouTube handle subscribes to the channel feed");
+    const ArticleRef video{youtubeId, QStringLiteral("yt:video:dQw4w9WgXcQ")};
+    page.selectArticle(video);
+    QString html = page.renderedArticleHtml();
+    check(html.contains(QStringLiteral("href=\"https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg\">[Image]</a>")) &&
+              html.contains(QStringLiteral("https://RickAstley.lnk.to/_listenYD")) && html.contains(QStringLiteral(" min read")),
+          "the video thumbnail is a link while remote images are off; description and reading time shown", html);
+    page.selectSource({SourceKind::Feed, youtubeId});
+    page.updateSettings([](Settings &settings) {
+        settings.loadRemoteImages = true;
+        settings.showThumbnails = true;
+    }, true, true);
+    page.show();
+    page.grab();
+    QApplication::processEvents();
+    waitFor([&] { return network.requested.contains(QStringLiteral("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg")); });
+    check(network.requested.contains(QStringLiteral("https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg")),
+          "the timeline thumbnail loads through the host network");
+    QApplication::processEvents();
+    page.grab();
+    page.selectArticle(video);
+    html = page.renderedArticleHtml();
+    check(html.contains(QStringLiteral("<img src=\"https://i2.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg\"")), "the thumbnail is drawn above the description", html);
+    page.updateSettings([](Settings &settings) {
+        settings.loadRemoteImages = false;
+        settings.showThumbnails = false;
+    }, true, true);
+
+    const QString arabic = subscribe(QStringLiteral("https://arabic.example.com/feed.xml"));
+    page.selectArticle({arabic, QStringLiteral("ar-1")});
+    html = page.renderedArticleHtml();
+    check(html.contains(QStringLiteral("lang=\"ar\" dir=\"rtl\"")) && html.contains(QStringLiteral("talk.mp3")) &&
+              !html.contains(QStringLiteral("Attachment: <a href=\"https://arabic.example.com/photo.jpg\"")) &&
+              html.contains(QStringLiteral("href=\"https://arabic.example.com/photo.jpg\">[Image]</a>")),
+          "right-to-left article, image enclosure shown as an image and not listed as an attachment", html);
+
+    page.setFeedSearch(QStringLiteral("youtube"));
+    QStringList visible = page.visibleSourceIds();
+    check(visible.contains(youtubeId) && !visible.contains(engineering) && !visible.contains(QStringLiteral("today")),
+          "find a feed filters the list and hides smart feeds", visible.join(QLatin1Char(',')));
+    page.setFeedSearch(QString());
+    check(page.visibleSourceIds().contains(QStringLiteral("today")) && page.visibleSourceIds().contains(engineering), "clearing the search");
+    page.updateSettings([](Settings &settings) { settings.sortFeedsByUnread = true; }, false, false);
+    visible = page.visibleSourceIds();
+    const int unreadEngineering = page.store().feedUnread(engineering);
+    const int unreadYoutube = page.store().feedUnread(youtubeId);
+    check(unreadEngineering != unreadYoutube &&
+              (visible.indexOf(engineering) < visible.indexOf(youtubeId)) == (unreadEngineering > unreadYoutube),
+          "Sort by Unread Count puts the feed with more unread first", visible.join(QLatin1Char(',')));
+    page.updateSettings([](Settings &settings) { settings.sortFeedsByUnread = false; }, false, false);
+
+    const QString localId = subscribe(QUrl::fromLocalFile(localPath).toString());
+    check(page.store().articles(localId).size() == 4 && page.store().feedUnread(localId) == 4, "a file feed is followed from disk");
+    writeLocal(rssWithItems(5, 0, QStringLiteral("Old")));
+    page.checkFeeds(true);
+    waitFor([&] { return !page.refreshing(); });
+    check(page.store().articles(localId).size() == 5, "a file feed is read again on refresh");
+    page.catchUp(7, true, false);
+    check(page.store().feedUnread(localId) == 0 && !page.store().article(refs.value(0))->read, "Mark Older as Read across every feed, recent ones untouched");
+
+    check(!page.changeFeedAddress(engineering, page.store().feed(youtubeId)->url).isEmpty(), "editing to another feed's address is refused");
+    check(page.changeFeedAddress(engineering, QStringLiteral("https://engineering.example.com/moved.xml")).isEmpty(), "feed address edited");
+    waitFor([&] { return !page.refreshing(); });
+    const Feed *moved = page.store().feed(engineering);
+    check(moved && moved->url == QLatin1String("https://engineering.example.com/moved.xml") &&
+              moved->previousUrls.contains(QStringLiteral("https://engineering.example.com/feed.xml")) && moved->failures == 0 &&
+              network.requested.contains(QStringLiteral("https://engineering.example.com/moved.xml")),
+          "the new address is checked at once");
+
+    page.selectArticle(video);
+    page.toggleRead();
+    const int badgeBefore = page.navigationBadge();
+    ContentFilter filter;
+    filter.pattern = QStringLiteral("Rick Astley");
+    page.updateSettings([&filter](Settings &settings) { settings.filters.append(filter); }, true, false);
+    check(page.navigationBadge() == badgeBefore - 1 && page.store().query({SourceKind::Feed, youtubeId}, QString(), false, at).isEmpty(),
+          "a hide filter removes the article from the timeline and the badge");
+    page.updateSettings([](Settings &settings) { settings.filters.clear(); }, true, false);
+    check(page.navigationBadge() == badgeBefore, "removing the filter brings it back");
+
+    SmartFeed smart;
+    smart.id = QStringLiteral("smart-1");
+    smart.name = QStringLiteral("Videos");
+    smart.scope = QStringLiteral("feed:") + youtubeId;
+    page.updateSettings([&smart](Settings &settings) { settings.smartFeeds.append(smart); }, false, false);
+    check(page.visibleSourceIds().contains(QStringLiteral("smart:smart-1")), "custom smart feed listed under Smart Feeds");
+    page.selectSource({SourceKind::Smart, QStringLiteral("smart-1")});
+    check(page.timelineRows() == 1, "custom smart feed timeline");
+
+    bool imported = false;
+    QString importMessage;
+    QString importedHome;
+    page.importOpmlFromUrl(QStringLiteral("https://lists.example.com/subscriptions.opml"), [&](bool ok, const QString &message) {
+        imported = ok;
+        importMessage = message;
+        const Feed *remote = page.store().feedByUrl(QUrl(QStringLiteral("https://remote.example.com/feed")));
+        importedHome = remote ? remote->homePage : QString();
+    });
+    waitFor([&] { return !importMessage.isEmpty(); });
+    check(imported && importedHome == QLatin1String("https://remote.example.com/") && importMessage.contains(QStringLiteral("1 skipped")) &&
+              page.store().feedByUrl(QUrl::fromLocalFile(sneakyPath)) == nullptr,
+          "Import from URL adds the feeds and refuses file addresses", importMessage + QLatin1Char('|') + importedHome);
+    waitFor([&] { return !page.refreshing(); });
+    page.saveNow();
+}
+
 }
 
 int main(int argc, char **argv)
@@ -919,7 +1880,15 @@ int main(int argc, char **argv)
     testOpml();
     testReader();
     testFetch();
+    testMediaRss();
+    testArticleWins();
+    testFiltersAndDuplicates();
+    testSmartFeedsAndReadLater();
+    testFeedSwitches();
+    testDiscoveryRewrites(home);
+    testSettingsJson();
     testPage(home);
+    testPageFeatures(home);
 
     if (failures > 0) {
         std::printf("%d check(s) failed\n", failures);

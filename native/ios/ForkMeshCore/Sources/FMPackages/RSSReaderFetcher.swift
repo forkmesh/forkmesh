@@ -124,10 +124,10 @@ public struct RSSReaderFetcher: Sendable {
         return .failure(.tooManyRedirects)
     }
 
-    public func fetch(_ feed: RSSFeed, now: Int64) async -> RSSFetchResult {
+    public func fetch(_ feed: RSSFeed, now: Int64, conditional: Bool = true) async -> RSSFetchResult {
         var headers: [String: String] = [:]
-        if !feed.etag.isEmpty { headers["If-None-Match"] = feed.etag }
-        if !feed.lastModified.isEmpty { headers["If-Modified-Since"] = feed.lastModified }
+        if conditional && !feed.etag.isEmpty { headers["If-None-Match"] = feed.etag }
+        if conditional && !feed.lastModified.isEmpty { headers["If-Modified-Since"] = feed.lastModified }
         let outcome: RSSFetchOutcome
         switch await get(feed.url, headers: headers) {
         case .failure(let error):
@@ -152,9 +152,21 @@ public struct RSSReaderFetcher: Sendable {
         return RSSFetchResult(feedId: feed.id, requestedUrl: feed.url, outcome: outcome)
     }
 
+    func candidate(_ address: String, site: String, icon: String = "") async -> RSSDiscovered? {
+        guard case .success(let found) = await get(address), found.status != 304 else { return nil }
+        let target = found.finalUrl
+        guard var feed = try? RSSFeedParser.parse(found.text, base: target) else { return nil }
+        if feed.siteUrl.isEmpty || feed.siteUrl == target { feed.siteUrl = site }
+        if feed.iconUrl.isEmpty && !icon.isEmpty { feed.iconUrl = icon }
+        return RSSDiscovered(url: target, feed: feed, answer: found)
+    }
+
     public func discover(_ input: String) async -> Result<RSSDiscovered, RSSFetchError> {
         let address = RSSURL.normalizeFeedInput(input)
         guard !address.isEmpty else { return .failure(.invalidAddress) }
+        for rewrite in RSSDiscoveryRules.rewrites(address) {
+            if let found = await candidate(rewrite, site: address) { return .success(found) }
+        }
         let first: RSSHTTPAnswer
         switch await get(address) {
         case .failure(let error): return .failure(error)
@@ -165,21 +177,30 @@ public struct RSSReaderFetcher: Sendable {
         if let feed = try? RSSFeedParser.parse(document, base: final) {
             return .success(RSSDiscovered(url: final, feed: feed, answer: first))
         }
+        if RSSDiscoveryRules.youTube(address) == .page || RSSDiscoveryRules.youTube(final) == .page,
+           let channel = RSSDiscoveryRules.youTubeChannelId(document),
+           let found = await candidate(RSSDiscoveryRules.channelFeed(channel), site: final) {
+            return .success(found)
+        }
         let links = RSSFeedTypes.discover(document, base: final)
         var candidates = Array(links.feeds.map(\.url).prefix(3))
         if candidates.isEmpty {
             let origin = RSSURL.origin(final)
             candidates = RSSFeedTypes.guessPaths.map { origin + $0 }
         }
-        for candidate in candidates {
-            guard case .success(let found) = await get(candidate), found.status != 304 else { continue }
-            let target = found.finalUrl
-            guard var feed = try? RSSFeedParser.parse(found.text, base: target) else { continue }
-            if feed.siteUrl.isEmpty || feed.siteUrl == target { feed.siteUrl = final }
-            if feed.iconUrl.isEmpty && !links.icon.isEmpty { feed.iconUrl = links.icon }
-            return .success(RSSDiscovered(url: target, feed: feed, answer: found))
+        for address in candidates {
+            if let found = await candidate(address, site: final, icon: links.icon) { return .success(found) }
         }
         return .failure(.noFeedFound)
+    }
+
+    public func opml(_ address: String) async -> Result<Data, RSSFetchError> {
+        let url = RSSURL.normalizeFeedInput(address)
+        guard !url.isEmpty else { return .failure(.invalidAddress) }
+        switch await get(url, accept: "text/x-opml, application/xml;q=0.9, text/xml;q=0.9, */*;q=0.5") {
+        case .failure(let error): return .failure(error)
+        case .success(let answer): return .success(answer.body)
+        }
     }
 
     public func readable(_ address: String) async -> Result<RSSReadable.Result, RSSFetchError> {

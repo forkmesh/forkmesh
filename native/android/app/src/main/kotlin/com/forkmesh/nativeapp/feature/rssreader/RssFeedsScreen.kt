@@ -39,8 +39,10 @@ import com.forkmesh.nativeapp.rssreader.RssFeed
 import com.forkmesh.nativeapp.rssreader.RssFolder
 import com.forkmesh.nativeapp.rssreader.RssFormat
 import com.forkmesh.nativeapp.rssreader.RssLibrary
+import com.forkmesh.nativeapp.rssreader.RssErrors
 import com.forkmesh.nativeapp.rssreader.RssScope
 import com.forkmesh.nativeapp.rssreader.RssSidebarEntry
+import com.forkmesh.nativeapp.rssreader.RssSmartFeed
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
@@ -52,6 +54,7 @@ import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
 import com.forkmesh.nativeapp.ui.kit.FmTextField
+import com.forkmesh.nativeapp.ui.kit.FmTooltip
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -67,12 +70,15 @@ internal sealed class RssDialog {
     data class DeleteFolder(val folder: RssFolder) : RssDialog()
     data class Unsubscribe(val feed: RssFeed) : RssDialog()
     data class MarkAll(val scope: RssScope, val title: String, val count: Int) : RssDialog()
+    data class DeleteSmartFeed(val smart: RssSmartFeed) : RssDialog()
 }
 
 internal fun scopeTitle(library: RssLibrary, scope: RssScope): String = when (scope) {
     RssScope.Today -> "Today"
     RssScope.Unread -> "All Unread"
     RssScope.Starred -> "Starred"
+    RssScope.ReadLater -> "Read Later"
+    is RssScope.Smart -> library.smartFeed(scope.id)?.name ?: "Smart Feed"
     is RssScope.Feed -> library.feed(scope.id)?.displayTitle ?: "Feed"
     is RssScope.Folder -> library.folder(scope.id)?.name ?: "Folder"
 }
@@ -82,6 +88,9 @@ internal class RssFeedsScreen : Screen() {
     override val hidesShellChrome: Boolean get() = true
     private var dialog by mutableStateOf<RssDialog?>(null)
     private var pulled by mutableStateOf(false)
+    private var searching by mutableStateOf(false)
+    private var search by mutableStateOf("")
+    private val catchUp = RssCatchUpState()
     private val status = FmStatus()
 
     @Composable
@@ -96,8 +105,11 @@ internal class RssFeedsScreen : Screen() {
         val now = remember(version) { System.currentTimeMillis() }
         val counts = remember(version) { library?.counts(now) }
         val unreadOnly = settings?.feedsUnreadOnly == true
-        val entries = remember(version, unreadOnly) { if (library != null && counts != null) library.sidebar(unreadOnly, counts) else emptyList() }
+        val query = if (searching) search.trim() else ""
+        val entries = remember(version, unreadOnly, query) { if (library != null && counts != null) library.sidebar(unreadOnly, counts, search = query) else emptyList() }
+        val smartFeeds = remember(version) { library?.smartFeeds().orEmpty() }
         var addMenu by remember { mutableStateOf(false) }
+        var moreMenu by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         RssScaffold(
             "Feeds",
@@ -105,11 +117,23 @@ internal class RssFeedsScreen : Screen() {
             subtitle = RssFormat.status(refreshing, library?.lastRefresh() ?: 0),
             actions = {
                 FmIconButton(
+                    "search",
+                    "Find a Feed",
+                    onPressed = { searching = !searching; if (!searching) search = "" },
+                    color = if (searching) Fm.colors.accent else Fm.colors.textSecondary,
+                )
+                FmIconButton(
                     if (unreadOnly) "filter_alt" else "filter_list",
                     if (unreadOnly) "Show all feeds" else "Show only feeds with unread articles",
                     onPressed = { service.mutate { it.updateSettings { s -> s.copy(feedsUnreadOnly = !s.feedsUnreadOnly) } } },
                     color = if (unreadOnly) Fm.colors.accent else Fm.colors.textSecondary,
                 )
+                Box {
+                    FmIconButton("more_vert", "More", onPressed = { moreMenu = true })
+                    FmDropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                        FmDropdownMenuItem("Mark Older as Read…", onClick = { moreMenu = false; catchUp.choosing = true }, icon = "done_all")
+                    }
+                }
             },
             bottomBar = {
                 FmIconButton("settings", "Settings", onPressed = { navigator.push(RssSettingsScreen()) }, color = Fm.colors.accent)
@@ -119,6 +143,7 @@ internal class RssFeedsScreen : Screen() {
                     FmDropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
                         FmDropdownMenuItem("Add Feed", onClick = { addMenu = false; dialog = RssDialog.AddFeed }, icon = "feed")
                         FmDropdownMenuItem("Add Folder", onClick = { addMenu = false; dialog = RssDialog.AddFolder }, icon = "folder_outlined")
+                        FmDropdownMenuItem("New Smart Feed…", onClick = { addMenu = false; navigator.push(RssSmartFeedEditScreen(null)) }, icon = "auto_awesome")
                     }
                 }
             },
@@ -136,30 +161,50 @@ internal class RssFeedsScreen : Screen() {
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
                         item(key = "status") { FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4)) }
+                        if (searching) {
+                            item(key = "search") {
+                                Box(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
+                                    FmTextField(value = search, onValueChange = { search = it }, hint = "Find a Feed", autofocus = true, leading = { FmIcon("search", size = 18.dp) })
+                                }
+                            }
+                        }
                         val smartOpen = "section:smart" !in settings.collapsed
-                        item(key = "smart") { SectionHeader("Smart Feeds", smartOpen) { toggle("section:smart") } }
-                        if (smartOpen) {
+                        if (query.isEmpty()) {
+                            item(key = "smart") { SectionHeader("Smart Feeds", smartOpen) { toggle("section:smart") } }
+                        }
+                        if (smartOpen && query.isEmpty()) {
                             item(key = "today") { SmartRow("wb_sunny_outlined", RssColors.today, "Today", counts.today) { navigator.push(RssTimelineScreen(RssScope.Today)) } }
                             item(key = "unread") { SmartRow("circle", RssColors.unread, "All Unread", counts.unread) { navigator.push(RssTimelineScreen(RssScope.Unread)) } }
                             item(key = "starred") { SmartRow("star", RssColors.star, "Starred", counts.starred) { navigator.push(RssTimelineScreen(RssScope.Starred)) } }
+                            if (counts.readLaterTotal > 0) {
+                                item(key = "readLater") { SmartRow("bookmark", RssColors.unread, "Read Later", counts.readLater) { navigator.push(RssTimelineScreen(RssScope.ReadLater)) } }
+                            }
+                            for (smart in smartFeeds) {
+                                item(key = "smart:${smart.id}") { CustomSmartRow(smart, counts.bySmartFeed[smart.id] ?: 0, navigator) }
+                            }
                         }
-                        val localOpen = "section:local" !in settings.collapsed
+                        val localOpen = query.isNotEmpty() || "section:local" !in settings.collapsed
                         item(key = "local") { SectionHeader("On This Phone", localOpen) { toggle("section:local") } }
                         if (localOpen) {
                             if (library.feeds().isEmpty()) {
                                 item(key = "empty") { EmptyFeeds(onAdd = { dialog = RssDialog.AddFeed }, onBlog = { addBlog(scope) }) }
                             } else if (entries.isEmpty()) {
                                 item(key = "caught-up") {
-                                    Text("No feeds with unread articles.", Modifier.padding(FmSpace.x4), style = Fm.text.bodyMedium.copy(color = Fm.colors.textTertiary))
+                                    Text(
+                                        if (query.isNotEmpty()) "No matching feeds." else "No feeds with unread articles.",
+                                        Modifier.padding(FmSpace.x4),
+                                        style = Fm.text.bodyMedium.copy(color = Fm.colors.textTertiary),
+                                    )
                                 }
                             }
-                            entryItems(entries, settings.collapsed, counts.byFeed, counts.byFolder, navigator)
+                            entryItems(entries, if (query.isNotEmpty()) emptySet() else settings.collapsed, counts.byFeed, counts.byFolder, navigator)
                         }
                         item(key = "end") { Spacer(Modifier.padding(FmSpace.x5)) }
                     }
                 }
             }
             Dialogs(navigator)
+            RssCatchUpDialogs(catchUp, null, "All Feeds")
         }
     }
 
@@ -220,6 +265,24 @@ internal class RssFeedsScreen : Screen() {
         SourceRow(title, count, indent = false, onTap = onTap, onLongPress = null) { FmIcon(icon, size = 22.dp, tint = tint) }
     }
 
+    @Composable
+    private fun CustomSmartRow(smart: RssSmartFeed, count: Int, navigator: Navigator) {
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            SourceRow(
+                smart.name,
+                count,
+                indent = false,
+                onTap = { navigator.push(RssTimelineScreen(RssScope.Smart(smart.id))) },
+                onLongPress = { menu = true },
+            ) { FmIcon("auto_awesome", size = 22.dp, tint = RssColors.unread) }
+            FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                FmDropdownMenuItem("Edit Smart Feed", onClick = { menu = false; navigator.push(RssSmartFeedEditScreen(smart.id)) }, icon = "edit")
+                FmDropdownMenuItem("Delete Smart Feed", onClick = { menu = false; dialog = RssDialog.DeleteSmartFeed(smart) }, icon = "delete", textColor = Fm.colors.danger)
+            }
+        }
+    }
+
     @OptIn(ExperimentalFoundationApi::class)
     @Composable
     private fun SourceRow(
@@ -229,6 +292,8 @@ internal class RssFeedsScreen : Screen() {
         onTap: () -> Unit,
         onLongPress: (() -> Unit)?,
         trailing: (@Composable () -> Unit)? = null,
+        muted: Boolean = false,
+        mark: (@Composable () -> Unit)? = null,
         leading: @Composable () -> Unit,
     ) {
         val c = Fm.colors
@@ -243,7 +308,12 @@ internal class RssFeedsScreen : Screen() {
             ) {
                 Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { leading() }
                 Spacer(Modifier.width(FmSpace.x3))
-                Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyLarge)
+                Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyLarge.copy(color = if (muted) c.textTertiary else c.textPrimary))
+                if (mark != null) {
+                    Spacer(Modifier.width(FmSpace.x1))
+                    mark()
+                    if (count > 0) Spacer(Modifier.width(FmSpace.x1))
+                }
                 if (count > 0) Text("$count", style = Fm.text.bodyMedium.copy(color = c.textTertiary))
                 if (trailing != null) {
                     Spacer(Modifier.width(FmSpace.x1))
@@ -265,7 +335,8 @@ internal class RssFeedsScreen : Screen() {
                 indent,
                 onTap = { navigator.push(RssTimelineScreen(RssScope.Feed(feed.id))) },
                 onLongPress = { menu = true },
-                trailing = if (feed.errorCount > 0) ({ FmIcon("error_outline", size = 16.dp, tint = Fm.colors.warning) }) else null,
+                muted = feed.paused,
+                mark = if (feed.paused || feed.errorCount > 0) ({ FeedMarks(feed) }) else null,
             ) { FeedIcon(feed) }
             FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 FmDropdownMenuItem("Mark All as Read", onClick = {
@@ -277,6 +348,17 @@ internal class RssFeedsScreen : Screen() {
             }
         }
         service.version.collectAsState().value
+    }
+
+    @Composable
+    private fun FeedMarks(feed: RssFeed) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
+            if (feed.paused) FmIcon("pause_circle_outline", size = 16.dp, tint = Fm.colors.textTertiary, contentDescription = "Updates Paused")
+            if (feed.errorCount > 0) {
+                val label = "Last check failed: ${RssErrors.describe(feed.error)}"
+                FmTooltip(label) { FmIcon("error_outline", size = 16.dp, tint = Fm.colors.warning, contentDescription = label) }
+            }
+        }
     }
 
     @Composable
@@ -381,6 +463,17 @@ internal class RssFeedsScreen : Screen() {
                     service.mutate { it.unsubscribe(current.feed.id, System.currentTimeMillis()) }
                 },
             )
+            is RssDialog.DeleteSmartFeed -> FmConfirmDialog(
+                title = "Delete “${current.smart.name}”?",
+                body = "The smart feed is removed. Its articles stay in their feeds.",
+                confirmLabel = "Delete",
+                destructive = true,
+                onDismissRequest = { dialog = null },
+                onConfirm = {
+                    dialog = null
+                    service.mutate { it.deleteSmartFeed(current.smart.id) }
+                },
+            )
             is RssDialog.MarkAll -> FmConfirmDialog(
                 title = "Mark All as Read?",
                 body = "Mark ${RssFormat.plural(current.count, "article")} in “${current.title}” as read?",
@@ -397,9 +490,7 @@ internal class RssFeedsScreen : Screen() {
 
 internal fun markScopeRead(scope: RssScope) {
     val service = RssReaderFeature.service
-    service.mutate { library ->
-        library.setRead(library.articles(scope, System.currentTimeMillis()).filter { !it.read }.map { it.id }, true)
-    }
+    service.mutate { library -> library.markAllRead(library.articles(scope, System.currentTimeMillis())) }
 }
 
 @Composable

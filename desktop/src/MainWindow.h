@@ -3597,6 +3597,11 @@ public:
     {
         return renameAgentAccount(provider, accountId, label);
     }
+    bool testDeleteAgentAccount(const QString &provider,
+                                const QString &accountId)
+    {
+        return deleteAgentAccount(provider, accountId);
+    }
 #endif
 
     ChatBackend *currentBackend() const { return m_backend; }
@@ -6992,6 +6997,10 @@ private:
     void editAgentAccount(const QString &provider, const QString &accountId);
     bool renameAgentAccount(const QString &provider, const QString &accountId,
                             const QString &label);
+    bool deleteAgentAccount(const QString &provider, const QString &accountId);
+    void confirmDeleteAgentAccount(const QString &provider,
+                                   const QString &accountId);
+    QAction *addAgentUsagePageAction(QMenu *menu);
     void refreshAgentAccountUsageMenu(const QString &provider);
     // The open account menu per provider, so a usage response does not have to
     // findChild() its way through the whole window to find one that is usually

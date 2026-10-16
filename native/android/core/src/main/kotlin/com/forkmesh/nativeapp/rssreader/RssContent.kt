@@ -43,6 +43,11 @@ object RssSanitizer {
     private val FLAG_ATTRS = setOf("controls", "reversed", "open")
     private val LAZY_SRC = listOf("data-src", "data-lazy-src", "data-original", "data-orig-file")
     private val SELF_VOID = setOf("embed", "frame")
+    const val IGNORE_CLASS = "instapaper_ignore"
+    private val CLASS_SPLIT = Regex("\\s+")
+
+    fun ignored(attrs: List<Pair<String, String>>): Boolean =
+        attrs.any { it.first == "class" && IGNORE_CLASS in it.second.split(CLASS_SPLIT) }
 
     private class Sanitizer(val base: String) : RssHtmlHandler {
         val out = StringBuilder()
@@ -95,6 +100,10 @@ object RssSanitizer {
         override fun start(tag: String, attrs: List<Pair<String, String>>, selfClosing: Boolean) {
             if (drop.isNotEmpty()) {
                 if (tag == drop.last() && tag !in VOID_TAGS && !selfClosing) drop.add(tag)
+                return
+            }
+            if (ignored(attrs)) {
+                if (!selfClosing && tag !in VOID_TAGS && tag !in RssXml.VOID) drop.add(tag)
                 return
             }
             if (tag in DROPPED_TAGS) {
@@ -255,6 +264,62 @@ object RssSanitizer {
         override fun text(text: String) {
             if (media == null) out.append(RssText.escape(text, false))
         }
+    }
+
+    private class Writer : RssHtmlHandler {
+        val out = StringBuilder()
+        var figures = 0
+        val open = ArrayList<Int>()
+        val captioned = HashSet<Int>()
+        var collecting = true
+
+        override fun start(tag: String, attrs: List<Pair<String, String>>, selfClosing: Boolean) {
+            if (tag == "figure") {
+                val index = figures++
+                if (!selfClosing) open.add(index)
+            }
+            if (tag == "figcaption" && open.isNotEmpty()) captioned.add(open.last())
+            if (collecting) return
+            out.append('<').append(tag)
+            for ((name, value) in attrs) {
+                out.append(' ').append(name)
+                if (value.isNotEmpty() || name == "alt") out.append("=\"").append(RssText.escape(value)).append('"')
+            }
+            out.append('>')
+            if (tag == "img") {
+                val alt = RssText.collapse(attrs.firstOrNull { it.first == "alt" }?.second)
+                if (alt.isNotEmpty() && open.none { it in captioned }) {
+                    out.append("<span class=\"alt-caption\">").append(RssText.escape(alt, false)).append("</span>")
+                }
+            }
+        }
+
+        override fun end(tag: String) {
+            if (tag == "figure" && open.isNotEmpty()) open.removeAt(open.lastIndex)
+            if (collecting || tag in VOID_TAGS) return
+            out.append("</").append(tag).append('>')
+        }
+
+        override fun text(text: String) {
+            if (!collecting) out.append(RssText.escape(text, false))
+        }
+
+        fun reset() {
+            figures = 0
+            open.clear()
+            collecting = false
+        }
+    }
+
+    fun withAltCaptions(sanitized: String): String {
+        if ("alt=" !in sanitized) return sanitized
+        return runCatching {
+            val writer = Writer()
+            RssHtml.tokenize(sanitized, writer)
+            writer.reset()
+            RssHtml.tokenize(sanitized, writer)
+            writer.out.toString()
+        }.getOrDefault(sanitized)
     }
 
     fun withoutRemoteMedia(sanitized: String): String {

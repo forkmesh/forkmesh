@@ -28,6 +28,13 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
     private var settings = data.settings
     private val activity = data.activity.toMutableList()
     private var lastRefresh = data.lastRefresh
+    private val filters = data.filters.toMutableList()
+    private val smartFeeds = data.smartFeeds.toMutableList()
+    private val matchers = HashMap<String, RssMatcher>()
+    private var hiddenCache: Set<String>? = null
+    private val textCache = object : LinkedHashMap<String, String>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 4000
+    }
     private val articles = HashMap<String, MutableList<RssArticle>>().apply {
         for (feed in data.feeds) put(feed.id, articles[feed.id].orEmpty().toMutableList())
     }
@@ -45,6 +52,8 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         const val MAX_FOLDERS = 100
         const val MAX_ARTICLES_PER_FEED = 400
         const val MAX_ACTIVITY = 200
+        const val MAX_FILTERS = 100
+        const val MAX_SMART_FEEDS = 50
         const val FETCH_INTERVAL_MS = 30 * 60 * 1000L
         const val MAX_BACKOFF_MS = 24 * 60 * 60 * 1000L
         const val TODAY_MS = 24 * 60 * 60 * 1000L
@@ -73,7 +82,8 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
     }
 
     @Synchronized
-    fun snapshotData(): RssLibraryData = RssLibraryData(folders.toList(), feeds.toList(), settings, activity.toList(), lastRefresh)
+    fun snapshotData(): RssLibraryData =
+        RssLibraryData(folders.toList(), feeds.toList(), settings, activity.toList(), lastRefresh, filters.toList(), smartFeeds.toList())
 
     @Synchronized
     fun takeChanges(): Triple<RssLibraryData?, Map<String, List<RssArticle>>, Set<String>> {
@@ -220,13 +230,49 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         feeds.removeAll { it.id == id }
         articles.remove(id)
         removedFeeds.add(id)
+        filters.removeAll { it.feedId == id }
+        hiddenCache = null
         settings = settings.copy(collapsed = settings.collapsed - "feed:$id")
         log("unsubscribe", "Unsubscribed from ${feed.displayTitle}", now)
         touch()
     }
 
     @Synchronized
-    fun due(now: Long, force: Boolean = false): List<RssFeed> = feeds.filter { force || it.nextCheck <= now }
+    fun due(now: Long, force: Boolean = false): List<RssFeed> = feeds.filter { !it.paused && (force || it.nextCheck <= now) }
+
+    @Synchronized
+    fun setFeedSwitches(id: String, paused: Boolean, excludeFromToday: Boolean, excludeFromUnread: Boolean) {
+        val feed = feed(id) ?: throw RssLibraryException("feed_not_found")
+        val next = feed.copy(paused = paused, excludeFromToday = excludeFromToday, excludeFromUnread = excludeFromUnread)
+        if (next == feed) return
+        replaceFeed(next)
+        touch()
+    }
+
+    @Synchronized
+    fun changeFeedUrl(id: String, input: String): RssFeed {
+        val feed = feed(id) ?: throw RssLibraryException("feed_not_found")
+        val clean = RssUrls.normalizeFeedInput(input)
+        if (clean.isEmpty() || clean.any { it.isWhitespace() } || RssUrls.host(clean).isEmpty()) throw RssLibraryException("invalid_url")
+        if (clean == feed.url) return feed
+        val key = RssUrls.identity(clean)
+        val clash = feeds.any { other -> other.id != id && (RssUrls.identity(other.url) == key || other.previousUrls.any { RssUrls.identity(it) == key }) }
+        if (clash) throw RssLibraryException("feed_exists")
+        val next = feed.copy(
+            url = clean,
+            previousUrls = (feed.previousUrls + feed.url).filter { it != clean }.distinct().takeLast(10),
+            etag = "",
+            lastModified = "",
+            error = "",
+            errorCount = 0,
+            errorAt = 0,
+            nextCheck = 0,
+            viaHttps = false,
+        )
+        replaceFeed(next)
+        touch()
+        return next
+    }
 
     @Synchronized
     fun checkSoon(id: String) {
@@ -285,20 +331,44 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
                         error = "",
                         errorAt = 0,
                         viaHttps = outcome.viaHttps,
+                        language = parsed.language.ifEmpty { feed.language },
                     ),
                 )
-                val added = storeItems(feedId, url, parsed.items, now)
+                val added = storeItems(feedId, url, parsed.items, now, parsed.language.ifEmpty { feed.language })
+                hiddenCache = null
                 touch(feedId = feedId)
                 return added
             }
         }
     }
 
-    private fun storeItems(feedId: String, feedUrl: String, items: List<RssParsedItem>, now: Long): Int {
+    private fun itemLanguage(item: RssParsedItem, feedLanguage: String): String =
+        item.language.takeIf { it.isNotEmpty() && !it.equals(feedLanguage, ignoreCase = true) }.orEmpty()
+
+    private fun itemImage(item: RssParsedItem, content: String): String =
+        item.image.ifEmpty { item.images.firstOrNull().orEmpty() }.ifEmpty { RssSanitizer.firstImage(content) }
+
+    private fun arrivalRead(article: RssArticle, links: Set<String>?): Boolean {
+        if (article.starred) return false
+        val rules = filters.filter { it.action == RssFilterAction.MARK_READ && it.pattern.isNotEmpty() }
+        if (rules.any { RssRules.filterMatches(it, matcher(it.pattern, it.regex), article) }) return true
+        if (links != null) {
+            val identity = RssRules.linkIdentity(article.link)
+            if (identity.isNotEmpty() && identity in links) return true
+        }
+        return false
+    }
+
+    private fun storeItems(feedId: String, feedUrl: String, items: List<RssParsedItem>, now: Long, feedLanguage: String = ""): Int {
         val list = articles.getOrPut(feedId) { ArrayList() }
         val index = HashMap<String, Int>()
         list.forEachIndexed { i, article -> index[article.guid] = i }
         var added = 0
+        var links: Set<String>? = null
+        val linksLoaded = { ->
+            links ?: articles.filterKeys { it != feedId }.values.asSequence().flatten()
+                .map { RssRules.linkIdentity(it.link) }.filter { it.isNotEmpty() }.toHashSet().also { links = it }
+        }
         for (item in items) {
             val guid = RssGuid.of(item)
             if (guid.isEmpty()) continue
@@ -315,19 +385,22 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
                     list[existing] = old.copy(
                         title = title, url = item.url, externalUrl = item.externalUrl, author = RssText.clean(item.author, 200),
                         summary = RssSanitizer.plainText(summarySource, RssSanitizer.MAX_SUMMARY_CHARS), contentHtml = content,
-                        commentsUrl = item.commentsUrl, enclosures = item.enclosures, image = RssSanitizer.firstImage(content),
-                        updated = item.updated, contentKey = key, readerHtml = "",
+                        commentsUrl = item.commentsUrl, enclosures = item.enclosures, image = itemImage(item, content),
+                        updated = item.updated, contentKey = key, readerHtml = "", images = item.images,
+                        language = itemLanguage(item, feedLanguage),
                     )
                 }
                 continue
             }
-            val article = RssArticle(
+            var article = RssArticle(
                 id = articleId(feedId, guid), feedId = feedId, guid = guid, title = title, url = item.url,
                 externalUrl = item.externalUrl, author = RssText.clean(item.author, 200),
                 summary = RssSanitizer.plainText(summarySource, RssSanitizer.MAX_SUMMARY_CHARS), contentHtml = content,
-                commentsUrl = item.commentsUrl, enclosures = item.enclosures, image = RssSanitizer.firstImage(content),
-                published = published, updated = item.updated, arrived = now, contentKey = key,
+                commentsUrl = item.commentsUrl, enclosures = item.enclosures, image = itemImage(item, content),
+                published = published, updated = item.updated, arrived = now, contentKey = key, images = item.images,
+                language = itemLanguage(item, feedLanguage),
             )
+            if (arrivalRead(article, if (settings.foldDuplicates) linksLoaded() else null)) article = article.copy(read = true)
             index[guid] = list.size
             list.add(article)
             added++
@@ -339,7 +412,7 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
     private fun prune(list: MutableList<RssArticle>) {
         if (list.size <= MAX_ARTICLES_PER_FEED) return
         val keep = list.sortedWith(compareByDescending<RssArticle> { it.published }.thenByDescending { it.id }).take(MAX_ARTICLES_PER_FEED).map { it.id }.toHashSet()
-        list.removeAll { it.id !in keep && !it.starred }
+        list.removeAll { it.id !in keep && !it.starred && !it.readLater }
     }
 
     @Synchronized
@@ -347,6 +420,9 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
 
     @Synchronized
     fun setStarred(ids: Collection<String>, starred: Boolean): Int = update(ids) { if (it.starred == starred) null else it.copy(starred = starred) }
+
+    @Synchronized
+    fun setReadLater(ids: Collection<String>, readLater: Boolean): Int = update(ids) { if (it.readLater == readLater) null else it.copy(readLater = readLater) }
 
     @Synchronized
     fun setReaderHtml(id: String, html: String) {
@@ -370,32 +446,77 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         return count
     }
 
+    private fun matcher(pattern: String, regex: Boolean): RssMatcher =
+        matchers.getOrPut((if (regex) "r:" else "p:") + pattern) { RssMatcher(pattern, regex) }
+
+    private fun cachedText(article: RssArticle): String {
+        val key = article.id + "|" + article.contentKey
+        return textCache[key] ?: RssRules.text(article).also { textCache[key] = it }
+    }
+
+    private fun hiddenIds(): Set<String> {
+        hiddenCache?.let { return it }
+        val rules = filters.filter { it.action == RssFilterAction.HIDE && it.pattern.isNotEmpty() }
+        val result = HashSet<String>()
+        if (rules.isNotEmpty()) {
+            for (list in articles.values) for (article in list) {
+                if (rules.any { RssRules.filterMatches(it, matcher(it.pattern, it.regex), article) { cachedText(article) } }) result.add(article.id)
+            }
+        }
+        hiddenCache = result
+        return result
+    }
+
+    private fun isHidden(article: RssArticle, hidden: Set<String>): Boolean = !article.starred && article.id in hidden
+
+    @Synchronized
+    fun hiddenByFilter(id: String): Boolean = article(id)?.let { isHidden(it, hiddenIds()) } == true
+
+    private fun smartMatch(smart: RssSmartFeed, article: RssArticle, folders: Map<String, String>, now: Long): Boolean =
+        RssRules.smartMatches(smart, matcher(smart.words, smart.regex), article, folders[article.feedId].orEmpty(), now) { cachedText(article) }
+
     @Synchronized
     fun feedIds(scope: RssScope): Set<String>? = when (scope) {
         is RssScope.Feed -> setOf(scope.id)
         is RssScope.Folder -> feeds.filter { it.folderId == scope.id }.map { it.id }.toSet()
+        RssScope.Today -> feeds.filter { !it.excludeFromToday && !it.excludeFromUnread }.map { it.id }.toSet()
+        RssScope.Unread -> feeds.filter { !it.excludeFromUnread }.map { it.id }.toSet()
         else -> null
     }
 
-    @Synchronized
-    fun articles(scope: RssScope, now: Long): List<RssArticle> {
+    private fun pool(scope: RssScope, now: Long): List<RssArticle> {
         val ids = feedIds(scope)
-        val source = if (ids == null) articles.values.asSequence().flatten() else ids.asSequence().flatMap { articles[it].orEmpty() }
+        val hidden = hiddenIds()
+        val source = (if (ids == null) articles.values.asSequence().flatten() else ids.asSequence().flatMap { articles[it].orEmpty() })
+            .filter { !isHidden(it, hidden) }
         return when (scope) {
             RssScope.Today -> source.filter { it.published >= now - TODAY_MS }
-            RssScope.Unread -> source.filter { !it.read }
             RssScope.Starred -> source.filter { it.starred }
+            RssScope.ReadLater -> source.filter { it.readLater }
+            is RssScope.Smart -> {
+                val smart = smartFeeds.firstOrNull { it.id == scope.id }
+                if (smart == null) emptySequence() else {
+                    val folderOf = feeds.associate { it.id to it.folderId }
+                    source.filter { smartMatch(smart, it, folderOf, now) }
+                }
+            }
             else -> source
         }.toList()
     }
 
     @Synchronized
+    fun articles(scope: RssScope, now: Long): List<RssArticle> {
+        val list = pool(scope, now)
+        return if (scope == RssScope.Unread) list.filter { !it.read } else list
+    }
+
+    @Synchronized
+    fun hidesRead(scope: RssScope): Boolean = scope != RssScope.Starred && (scope == RssScope.Unread || settings.hideReadArticles)
+
+    @Synchronized
     fun timeline(scope: RssScope, now: Long, query: String = "", keep: Set<String> = emptySet()): List<RssArticle> {
-        var list = articles(scope, now)
-        if (keep.isNotEmpty() && scope == RssScope.Unread) {
-            val present = list.map { it.id }.toHashSet()
-            list = list + articles.values.flatten().filter { it.id in keep && it.id !in present }
-        }
+        var list = pool(scope, now)
+        if (hidesRead(scope)) list = list.filter { !it.read || it.id in keep }
         val needle = query.trim().lowercase()
         if (needle.isNotEmpty()) {
             list = list.filter { article ->
@@ -414,41 +535,101 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         return list.sortedWith(compareBy<RssArticle> { titles[it.feedId].orEmpty() }.thenBy { it.feedId }.then(byDate))
     }
 
+    private fun markable(article: RssArticle): Boolean = !article.read && !(settings.markAllKeepsStarred && article.starred)
+
+    @Synchronized
+    fun markAllRead(list: List<RssArticle>): Int = setRead(list.mapNotNull { listed -> article(listed.id)?.takeIf(::markable)?.id }, true)
+
+    @Synchronized
+    fun catchUpIds(scope: RssScope?, cutoff: Long, now: Long): List<String> {
+        val source = if (scope == null) {
+            val hidden = hiddenIds()
+            articles.values.flatten().filter { !isHidden(it, hidden) }
+        } else {
+            articles(scope, now)
+        }
+        return source.filter { markable(it) && RssRules.articleDate(it) < cutoff }.map { it.id }
+    }
+
+    @Synchronized
+    fun catchUp(scope: RssScope?, cutoff: Long, now: Long): Int = setRead(catchUpIds(scope, cutoff, now), true)
+
     @Synchronized
     fun counts(now: Long): RssCounts {
         var today = 0
         var unread = 0
         var starred = 0
+        var readLater = 0
+        var readLaterTotal = 0
+        val hidden = hiddenIds()
         val byFeed = HashMap<String, Int>()
-        for ((feedId, list) in articles) {
+        val counted = HashSet<String>()
+        for (feed in feeds) {
             var feedUnread = 0
-            for (article in list) {
+            for (article in articles[feed.id].orEmpty()) {
+                if (isHidden(article, hidden)) continue
                 if (article.starred) starred++
+                if (article.readLater) {
+                    readLaterTotal++
+                    if (!article.read && !feed.excludeFromUnread) readLater++
+                }
                 if (!article.read) {
-                    unread++
                     feedUnread++
-                    if (article.published >= now - TODAY_MS) today++
+                    if (!feed.excludeFromUnread) {
+                        unread++
+                        counted.add(article.id)
+                        if (!feed.excludeFromToday && article.published >= now - TODAY_MS) today++
+                    }
                 }
             }
-            byFeed[feedId] = feedUnread
+            byFeed[feed.id] = feedUnread
         }
         val byFolder = HashMap<String, Int>()
-        for (feed in feeds) if (feed.folderId.isNotEmpty()) byFolder[feed.folderId] = (byFolder[feed.folderId] ?: 0) + (byFeed[feed.id] ?: 0)
-        return RssCounts(today, unread, starred, byFeed, byFolder)
+        for (feed in feeds) {
+            if (feed.folderId.isNotEmpty() && !feed.excludeFromUnread) byFolder[feed.folderId] = (byFolder[feed.folderId] ?: 0) + (byFeed[feed.id] ?: 0)
+        }
+        val bySmart = HashMap<String, Int>()
+        if (smartFeeds.isNotEmpty()) {
+            val folderOf = feeds.associate { it.id to it.folderId }
+            val candidates = feeds.flatMap { articles[it.id].orEmpty() }.filter { it.id in counted }
+            for (smart in smartFeeds) bySmart[smart.id] = candidates.count { smartMatch(smart, it, folderOf, now) }
+        }
+        return RssCounts(today, unread, starred, byFeed, byFolder, readLater, readLaterTotal, bySmart)
     }
 
+    private fun feedMatches(feed: RssFeed, needle: String): Boolean =
+        needle.isEmpty() || feed.displayTitle.lowercase().contains(needle) || RssUrls.host(feed.url).contains(needle) || feed.url.lowercase().contains(needle)
+
     @Synchronized
-    fun sidebar(unreadOnly: Boolean, counts: RssCounts, current: String = ""): List<RssSidebarEntry> {
-        val shows = { feed: RssFeed -> !unreadOnly || (counts.byFeed[feed.id] ?: 0) > 0 || current == "feed:${feed.id}" }
+    fun sidebar(unreadOnly: Boolean, counts: RssCounts, current: String = "", search: String = ""): List<RssSidebarEntry> {
+        val needle = search.trim().lowercase()
+        val searching = needle.isNotEmpty()
+        val shows = { feed: RssFeed ->
+            if (searching) feedMatches(feed, needle) else !unreadOnly || (counts.byFeed[feed.id] ?: 0) > 0 || current == "feed:${feed.id}"
+        }
+        val byName = compareBy<RssSidebarEntry, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+        val feedOrder: Comparator<RssFeed> = if (settings.sortFeedsByUnread) {
+            compareByDescending<RssFeed> { counts.byFeed[it.id] ?: 0 }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.displayTitle }
+        } else {
+            compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayTitle }
+        }
         val known = folders.map { it.id }.toSet()
         val entries = ArrayList<RssSidebarEntry>()
         for (folder in folders) {
-            val children = feeds.filter { it.folderId == folder.id && shows(it) }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayTitle })
-            if (unreadOnly && children.isEmpty() && current != "folder:${folder.id}") continue
+            val children = feeds.filter { it.folderId == folder.id && shows(it) }.sortedWith(feedOrder)
+            if (searching && children.isEmpty()) continue
+            if (!searching && unreadOnly && children.isEmpty() && current != "folder:${folder.id}") continue
             entries.add(RssSidebarEntry.FolderEntry(folder, children))
         }
         for (feed in feeds) if ((feed.folderId.isEmpty() || feed.folderId !in known) && shows(feed)) entries.add(RssSidebarEntry.FeedEntry(feed))
-        return entries.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        if (!settings.sortFeedsByUnread) return entries.sortedWith(byName)
+        val unreadOf = { entry: RssSidebarEntry ->
+            when (entry) {
+                is RssSidebarEntry.FeedEntry -> counts.byFeed[entry.feed.id] ?: 0
+                is RssSidebarEntry.FolderEntry -> counts.byFolder[entry.folder.id] ?: 0
+            }
+        }
+        return entries.sortedWith(compareByDescending(unreadOf).then(byName))
     }
 
     @Synchronized
@@ -497,6 +678,69 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         val created = folders.size - before
         log("import", "Imported $imported subscription${if (imported == 1) "" else "s"}" + if (skipped > 0) ", skipped $skipped" else "", now)
         return RssImportResult(imported, skipped, created)
+    }
+
+    @Synchronized
+    fun filters(): List<RssFilter> = filters.toList()
+
+    @Synchronized
+    fun saveFilter(filter: RssFilter): RssFilter {
+        val pattern = filter.pattern.trim().take(500)
+        if (pattern.isEmpty()) throw RssLibraryException("pattern_required")
+        if (!RssMatcher.valid(pattern, filter.regex)) throw RssLibraryException("invalid_regex")
+        val feedId = filter.feedId.takeIf { id -> feeds.any { it.id == id } }.orEmpty()
+        val index = filters.indexOfFirst { it.id == filter.id }
+        val saved = filter.copy(id = filter.id.ifEmpty { newId() }, pattern = pattern, feedId = feedId)
+        if (index >= 0) {
+            filters[index] = saved
+        } else {
+            if (filters.size >= MAX_FILTERS) throw RssLibraryException("too_many_filters")
+            filters.add(saved)
+        }
+        hiddenCache = null
+        touch()
+        return saved
+    }
+
+    @Synchronized
+    fun deleteFilter(id: String) {
+        if (!filters.removeAll { it.id == id }) return
+        hiddenCache = null
+        touch()
+    }
+
+    @Synchronized
+    fun smartFeeds(): List<RssSmartFeed> = smartFeeds.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+
+    @Synchronized
+    fun smartFeed(id: String): RssSmartFeed? = smartFeeds.firstOrNull { it.id == id }
+
+    @Synchronized
+    fun saveSmartFeed(smart: RssSmartFeed): RssSmartFeed {
+        val name = RssText.clean(smart.name, 120)
+        if (name.isEmpty()) throw RssLibraryException("smart_feed_name_required")
+        val words = smart.words.trim().take(500)
+        if (!RssMatcher.valid(words, smart.regex)) throw RssLibraryException("invalid_regex")
+        val scope = when {
+            smart.scope.startsWith("feed:") && feeds.any { "feed:${it.id}" == smart.scope } -> smart.scope
+            smart.scope.startsWith("folder:") && folders.any { "folder:${it.id}" == smart.scope } -> smart.scope
+            else -> ""
+        }
+        val saved = smart.copy(id = smart.id.ifEmpty { newId() }, name = name, words = words, scope = scope, maxAgeDays = maxOf(0, smart.maxAgeDays))
+        val index = smartFeeds.indexOfFirst { it.id == smart.id }
+        if (index >= 0) {
+            smartFeeds[index] = saved
+        } else {
+            if (smartFeeds.size >= MAX_SMART_FEEDS) throw RssLibraryException("too_many_smart_feeds")
+            smartFeeds.add(saved)
+        }
+        touch()
+        return saved
+    }
+
+    @Synchronized
+    fun deleteSmartFeed(id: String) {
+        if (smartFeeds.removeAll { it.id == id }) touch()
     }
 
     @Synchronized
