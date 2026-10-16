@@ -50,10 +50,11 @@ public struct GenieOutreachPick: Equatable, Sendable {
     public var sender: String
     public var investor: Bool
     public var zohoRegion: String
+    public var cc: [String]
 
     public init(
         organization: String, contact: CrmContact, flowName: String, channel: GenieOutreachChannel, sender: String,
-        investor: Bool = false, zohoRegion: String = "com"
+        investor: Bool = false, zohoRegion: String = "com", cc: [String] = []
     ) {
         self.organization = organization
         self.contact = contact
@@ -62,6 +63,7 @@ public struct GenieOutreachPick: Equatable, Sendable {
         self.sender = sender
         self.investor = investor
         self.zohoRegion = zohoRegion
+        self.cc = cc
     }
 
     public var needsDeck: Bool { investor && channel == .email }
@@ -90,10 +92,11 @@ public struct GenieOutreachDraft: Equatable, Sendable {
     public var writer: String
     public var deck: String
     public var zohoRegion: String
+    public var cc: [String]
 
     public init(
         channel: GenieOutreachChannel, to: String, subject: String = "", body: String, byModel: Bool, writer: String = "",
-        deck: String = "", zohoRegion: String = "com"
+        deck: String = "", zohoRegion: String = "com", cc: [String] = []
     ) {
         self.channel = channel
         self.to = to
@@ -103,16 +106,17 @@ public struct GenieOutreachDraft: Equatable, Sendable {
         self.writer = writer
         self.deck = deck
         self.zohoRegion = zohoRegion
+        self.cc = cc
     }
 
     public var mailtoURL: URL? {
         guard channel == .email else { return nil }
-        return CrmSettings.mailtoURL(to: to, subject: subject, body: body)
+        return CrmSettings.mailtoURL(to: to, subject: subject, body: body, cc: cc)
     }
 
     public var zohoURL: URL? {
         guard channel == .email else { return nil }
-        return CrmSettings.zohoComposeURL(region: zohoRegion, to: to, subject: subject, body: body)
+        return CrmSettings.zohoComposeURL(region: zohoRegion, to: to, subject: subject, body: body, cc: cc)
     }
 }
 
@@ -254,7 +258,8 @@ public enum GenieOutreach {
         return GenieOutreachPick(
             organization: data.organization, contact: contact, flowName: data.flow(contact.flow).name, channel: channel,
             sender: from.isEmpty ? sender : from, investor: investor(contact, flows: data.flows),
-            zohoRegion: data.settings.zoho.region)
+            zohoRegion: data.settings.zoho.region,
+            cc: channel == .email ? data.memberEmails.filter { $0.caseInsensitiveCompare(contact.email) != .orderedSame } : [])
     }
 
     public static func images(_ contact: CrmContact) -> [URL] {
@@ -358,7 +363,7 @@ public enum GenieOutreach {
             guard !subject.isEmpty, rest.count >= 40 else { return nil }
             return GenieOutreachDraft(
                 channel: .email, to: to, subject: subject, body: withDeck(rest, deck: deck), byModel: true, writer: writer, deck: deck,
-                zohoRegion: pick.zohoRegion)
+                zohoRegion: pick.zohoRegion, cc: pick.cc)
         case .mastodon:
             guard let handle = pick.handle else { return nil }
             var post = body.trimmingCharacters(in: CharacterSet(charactersIn: "\"\u{201C}\u{201D}").union(.whitespacesAndNewlines))
@@ -421,7 +426,7 @@ public enum GenieOutreach {
                 """
             return GenieOutreachDraft(
                 channel: .email, to: to, subject: "ForkMesh deck for \(contact.company.isEmpty ? contact.displayName : contact.company)",
-                body: body, byModel: false, deck: deck, zohoRegion: pick.zohoRegion)
+                body: body, byModel: false, deck: deck, zohoRegion: pick.zohoRegion, cc: pick.cc)
         case .email:
             let body = """
                 \(hello),
@@ -435,7 +440,7 @@ public enum GenieOutreach {
                 """
             return GenieOutreachDraft(
                 channel: .email, to: to, subject: "ForkMesh for \(contact.company.isEmpty ? contact.displayName : contact.company)",
-                body: withDeck(body, deck: deck), byModel: false, deck: deck, zohoRegion: pick.zohoRegion)
+                body: withDeck(body, deck: deck), byModel: false, deck: deck, zohoRegion: pick.zohoRegion, cc: pick.cc)
         case .mastodon:
             let mention = pick.handle?.mention ?? contact.mastodon
             let post = "\(mention) \(hello)! I think ForkMesh could fit \(about): repositories mirrored and preserved across independent hosts, with issues, pull requests and chat in one app. Have a look at https://forkmesh.com #git #opensource"

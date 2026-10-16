@@ -184,6 +184,7 @@ final class GenieOutreachCoach {
     nonisolated static func openedLine(_ draft: GenieOutreachDraft) -> String {
         var line: String = draft.byModel ? "Opened in Zoho Mail, written by \(draft.writer)." : "Opened in Zoho Mail from a template."
         if !draft.deck.isEmpty { line += " The deck link is theirs alone, so the CRM shows when they open it and what they read." }
+        if !draft.cc.isEmpty { line += draft.cc.count == 1 ? " Your teammate is on cc." : " Your \(draft.cc.count) teammates are on cc." }
         return line + " Check it before you send."
     }
 
@@ -192,7 +193,8 @@ final class GenieOutreachCoach {
         let scene: UIWindowScene? = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         guard var top: UIViewController = scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return }
         while let next: UIViewController = top.presentedViewController { top = next }
-        let text: String = draft.channel == .email ? "Subject: \(draft.subject)\n\n\(draft.body)" : draft.body
+        let copies: String = draft.cc.isEmpty ? "" : "Cc: \(draft.cc.joined(separator: ", "))\n"
+        let text: String = draft.channel == .email ? "\(copies)Subject: \(draft.subject)\n\n\(draft.body)" : draft.body
         let controller: UIActivityViewController = UIActivityViewController(activityItems: [text], applicationActivities: nil)
         if let popover: UIPopoverPresentationController = controller.popoverPresentationController {
             let place: CGPoint = GenieCrawler.shared.point(at: Date())
