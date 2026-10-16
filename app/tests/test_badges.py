@@ -111,6 +111,8 @@ def test_catalog_is_a_fixed_known_set():
         "hackathon_builder", "hackathon_connector", "hackathon_finalist",
         "hackathon_winner", "hackathon_ambassador",
         "distinguished_contributor", "stargazer", "genies_gift",
+        "six_eyes", "brood", "fan_club", "night_watch", "daily_spinner",
+        "bug_catcher", "lift_off", "shopkeeper", "critic", "bounty_hunter",
     }
     for entry in badges.public_catalog():
         assert entry["name"] and entry["description"] and entry["icon"]
@@ -943,3 +945,255 @@ def test_badge_tiers_migration_adds_columns_and_progress_table():
     assert "CREATE TABLE IF NOT EXISTS badge_progress" in up
     assert "DROP TABLE IF EXISTS badge_progress" in down
     assert "CREATE TABLE IF NOT EXISTS badge_progress" in SCHEMA_TEXT
+
+
+# --- Activity badges swept from stored data -----------------------------------
+
+ACTIVITY_BADGES = {
+    "six_eyes": (1, 16, 64, 256),
+    "brood": (2, 16, 64, 256),
+    "fan_club": (10, 50, 250, 1000),
+    "night_watch": (24, 168, 720, 8760),
+    "daily_spinner": (7, 30, 100, 365),
+    "bug_catcher": (1, 10, 50, 200),
+    "lift_off": (10, 100, 1000, 10000),
+    "shopkeeper": (10, 100, 1000, 10000),
+    "critic": (1, 10, 50, 200),
+    "bounty_hunter": (1, 5, 25, 100),
+}
+
+
+def test_activity_badges_have_levels_and_a_unit():
+    for slug, tiers in ACTIVITY_BADGES.items():
+        assert badges.badge_tiers(slug) == tiers
+        assert badges.BADGE_DEFINITIONS[slug]["unit"]
+
+
+def test_longest_streak_counts_consecutive_days_only():
+    days = ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-05",
+            "2026-03-06", "2026-03-02", "bad", None]
+    assert badges.longest_streak(days) == 3
+    assert badges.longest_streak(["2025-12-31", "2026-01-01"]) == 2
+    assert badges.longest_streak([]) == 0
+
+
+def _entry_literal(name):
+    for node in ast.parse(ENTRY.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return node
+    raise AssertionError("missing " + name)
+
+
+def _badge_sql():
+    names = ("BADGE_CONTRIBUTION_SOURCES_SQL", "BADGE_CONTRIBUTION_DAYS_SQL",
+             "BADGE_METRIC_SQL", "BADGE_PROGRESS_SELECT_SQL")
+    module = ast.Module(body=[_entry_literal(n) for n in names],
+                        type_ignores=[])
+    namespace = {}
+    exec(compile(ast.fix_missing_locations(module), str(ENTRY), "exec"),
+         namespace)
+    return namespace
+
+
+def test_every_activity_badge_has_a_sweep():
+    sql = _badge_sql()
+    swept = set(sql["BADGE_METRIC_SQL"]) | {"daily_spinner"}
+    assert swept == set(ACTIVITY_BADGES)
+    sweep = _function_source("run_badge_sweep")
+    assert "award_daily_spinner_badges" in sweep
+    assert "for slug in BADGE_METRIC_SQL:" in sweep
+    metric = _function_source("award_metric_badges")
+    assert "ORDER BY m.value DESC LIMIT ?" in metric
+
+
+def test_the_online_sampler_credits_every_live_node_before_the_cap():
+    source = _function_source("record_online_sample")
+    credit = source.index("await _credit_node_uptime(env, list(nodes), now)")
+    assert credit < source.index("ONLINE_HISTORY_MAX_NODES")
+    uptime = _function_source("_credit_node_uptime")
+    assert "minutes=minutes+excluded.minutes" in uptime
+    assert "NODE_UPTIME_MAX_KEYS" in uptime
+
+
+def _sqlite_badge_db():
+    import sqlite3
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+
+    def literal(path, name):
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == name
+                    for t in node.targets):
+                return ast.literal_eval(node.value)
+        raise AssertionError("missing " + name)
+
+    statements = (
+        list(literal(ROOT / "src" / "schema.py", "SCHEMA_STATEMENTS"))
+        + list(literal(ENTRY, "SCHEMA_ALTER_STATEMENTS"))
+        + list(literal(ROOT / "src" / "marketplace_reviews.py", "SCHEMA")))
+    for statement in statements:
+        try:
+            db.execute(statement)
+        except sqlite3.Error:
+            pass
+    db.executescript(
+        (ROOT / "migrations" / "0203_apps.sql").read_text(encoding="utf-8"))
+    counter = [0]
+
+    def insert(table, **values):
+        for column in db.execute("PRAGMA table_info(%s)" % table):
+            name = column["name"]
+            if name in values or column["dflt_value"] is not None:
+                continue
+            if column["pk"] and column["type"].upper() == "INTEGER":
+                continue
+            if column["notnull"] or column["pk"]:
+                counter[0] += 1
+                values[name] = (
+                    0 if "INT" in column["type"].upper()
+                    else "%s-%d" % (name, counter[0]))
+        db.execute("INSERT INTO %s (%s) VALUES (%s)" % (
+            table, ",".join(values), ",".join("?" * len(values))),
+            list(values.values()))
+
+    for name in ("ada", "bob", "cy", "eve"):
+        insert("users", user_bi="u_" + name, username=name, data="{}")
+    insert("nodes", node_bi="n_ada", user_bi="u_ada", data="{}")
+    insert("nodes", node_bi="n_free", user_bi="", data="{}")
+    for key, owner in (("r1", "u_ada"), ("r2", "u_bob"), ("kA", "u_ada")):
+        insert("repositories", key_bi=key, owner_bi=owner, data="{}",
+               is_private=0)
+    for source, generation, captured in (("r1", "g1", 2), ("r2", "g2", 1)):
+        insert("profile_contribution_projects", source_repo_bi=source,
+               source_account_bi="u_ada", owner_user_bi="u_ada",
+               project_bi="p1", first_public_day="2026-01-01", is_public=1,
+               active_generation_bi=generation, captured_at=captured,
+               data="{}")
+    for day in ("01", "02", "03", "04", "05", "06", "07", "09"):
+        insert("profile_contribution_days", generation_bi="g1",
+               subject_user_bi="u_ada", source_repo_bi="r1", project_bi="p1",
+               day="2026-03-" + day, commits=1, reviews=1)
+    insert("profile_contribution_days", generation_bi="g2",
+           subject_user_bi="u_ada", source_repo_bi="r2", project_bi="p1",
+           day="2026-04-01", reviews=100)
+    for fork, owner in (("f1", "u_bob"), ("f2", "u_cy"), ("f3", "n_ada")):
+        insert("repo_forks", parent_bi="kA", fork_bi=fork, account_bi=owner,
+               fork_owner="o", fork_name="a", created_at=1)
+    for k in range(10):
+        insert("profile_follows", follower_bi="fan%d" % k, target_bi="u_ada",
+               follower_name="f", target_name="ada", created_at=1)
+    insert("node_uptime_totals", node_key="n_ada", minutes=1500,
+           updated_at=1)
+    insert("node_uptime_totals", node_key="n_free", minutes=9000,
+           updated_at=1)
+    insert("microjob_claims", claim_id="c1", account_bi="u_bob",
+           job="issue_report", subject_bi="s1", status="paid",
+           amount_lamports=1000000)
+    insert("microjob_claims", claim_id="c2", account_bi="u_bob",
+           job="merged_pull", subject_bi="s2", status="pending_review",
+           amount_lamports=1000000)
+    insert("contributor_reward_estimates", reward_id="w1",
+           recipient_bi="u_bob", recipient_name="bob", repo_owner="o",
+           repo_name="r", source_kind="issue", subject_number=4,
+           amount_lamports=2000000, condition="accepted_report",
+           status="paid")
+    for k in range(12):
+        insert("release_downloads", repo_bi="kA", sha256="h", ts=1000,
+               ua="agent%d" % k)
+    insert("release_downloads", repo_bi="kA", sha256="h", ts=2000,
+           ua="agent0")
+    insert("apps", slug="tool", owner_bi="u_cy", listing="listed")
+    for k in range(10):
+        insert("marketplace_package_uses", market="forkmesh-apps",
+               package_id="tool", account_bi="user%d" % k)
+    insert("marketplace_package_uses", market="forkmesh-apps",
+           package_id="tool", account_bi="u_cy")
+    for review, hidden in (("rv1", 0), ("rv2", 0), ("rv3", 1)):
+        insert("marketplace_reviews", review_id=review, market="m",
+               package_id=review, reviewer_bi="u_eve", reviewer_name="eve",
+               stars=5, hidden=hidden)
+    insert("marketplace_review_votes", review_id="rv1", voter_bi="u_bob",
+           created_at=1)
+    insert("marketplace_review_votes", review_id="rv3", voter_bi="u_bob",
+           created_at=1)
+    return db
+
+
+def test_activity_badge_queries_run_on_the_real_schema():
+    sql = _badge_sql()
+    db = _sqlite_badge_db()
+    found = {}
+    for slug, metric in sql["BADGE_METRIC_SQL"].items():
+        rows = db.execute(
+            "WITH " + metric + " " + sql["BADGE_PROGRESS_SELECT_SQL"] +
+            "ORDER BY m.value DESC LIMIT ?",
+            (slug, ACTIVITY_BADGES[slug][0], 25)).fetchall()
+        found[slug] = [(row["username"], row["value"]) for row in rows]
+    assert found == {
+        "six_eyes": [("ada", 8)],
+        "brood": [("ada", 2)],
+        "fan_club": [("ada", 10)],
+        "night_watch": [("ada", 25)],
+        "bug_catcher": [("bob", 2)],
+        "lift_off": [("ada", 12)],
+        "shopkeeper": [("cy", 10)],
+        "critic": [("eve", 1)],
+        "bounty_hunter": [("bob", 2)],
+    }
+    db.execute("INSERT INTO badge_progress VALUES ('fan_club','u_ada',10,5)")
+    assert not db.execute(
+        "WITH " + sql["BADGE_METRIC_SQL"]["fan_club"] + " " +
+        sql["BADGE_PROGRESS_SELECT_SQL"] + "LIMIT 25",
+        ("fan_club", 10)).fetchall()
+    days = [row["day"] for row in db.execute(
+        "WITH " + sql["BADGE_CONTRIBUTION_SOURCES_SQL"] + " SELECT DISTINCT "
+        "d.day " + sql["BADGE_CONTRIBUTION_DAYS_SQL"] + " AND "
+        "d.subject_user_bi=? AND d.commits+d.issues+d.pulls+d.reviews>0",
+        ("u_ada",))]
+    assert len(days) == 8
+    assert badges.longest_streak(days) == 7
+
+
+def test_a_metric_sweep_records_progress_for_active_matching_users():
+    recorded = []
+
+    async def ensure_schema(env):
+        return None
+
+    async def d1_all(env, sql, *params):
+        assert params == ("fan_club", 10, 25)
+        return [{"account_bi": "ada-bi", "username": "Ada", "value": 60},
+                {"account_bi": "stale-bi", "username": "renamed", "value": 90}]
+
+    async def active(env, name):
+        name = name.lower()
+        return name, name + "-bi", {}
+
+    async def record(env, name, name_bi, slug, value):
+        recorded.append((name, name_bi, slug, value))
+        return True
+
+    ns = _load("award_metric_badges", "_record_swept_progress", extra_globals={
+        "ensure_schema": ensure_schema,
+        "d1_all": d1_all,
+        "badge_catalog": badges,
+        "BADGE_SWEEP_LIMIT": 25,
+        "BADGE_METRIC_SQL": {"fan_club": "m AS (SELECT 1)"},
+        "BADGE_PROGRESS_SELECT_SQL": "SELECT ",
+        "_active_user_account": active,
+        "_record_badge_progress": record,
+    })
+    assert _run(ns["award_metric_badges"](None, "fan_club")) == {
+        "awarded": ["ada"]}
+    assert recorded == [("ada", "ada-bi", "fan_club", 60)]
+
+
+def test_node_uptime_migration_creates_the_totals_table():
+    up = (ROOT / "migrations" / "0265_node_uptime_totals.sql").read_text()
+    down = (ROOT / "migrations" / "down" /
+            "0265_node_uptime_totals.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in up
+    assert "DROP TABLE IF EXISTS node_uptime_totals" in down
+    assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in SCHEMA_TEXT
