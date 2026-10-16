@@ -23,16 +23,18 @@ def test_manifest_catalog_and_places_describe_the_cross_platform_studio():
     assert row == {"id": MANIFEST["id"], "version": MANIFEST["version"], "manifest": "packages/video-mix-dj-studio/manifest.json"}
 
 
-def test_dashboard_page_has_two_touch_friendly_decks_mixer_and_sampler_controls():
-    for marker in ("data-vmdj-deck=\"a\"", "data-vmdj-deck=\"b\"", "data-vmdj=\"crossfader\"", "data-vmdj=\"sync\"", "data-vmdj=\"loop-a\"", "data-vmdj=\"capture-a\"", "data-vmdj=\"platter-a\"", "data-vmdj=\"section-0\"", "data-vmdj=\"save\"", "data-vmdj-pad=\"kick\"", "data-vmdj-pad=\"riser\""):
+def test_dashboard_page_has_a_fixed_mobile_two_deck_surface_and_overlay_controls():
+    for marker in ("data-vmdj-deck=\"a\"", "data-vmdj-deck=\"b\"", "data-vmdj=\"crossfader\"", "data-vmdj=\"sync\"", "data-vmdj=\"loop-a\"", "data-vmdj=\"capture-a\"", "data-vmdj=\"platter-a\"", "data-vmdj=\"art-a\"", "data-vmdj=\"section-0\"", "data-vmdj=\"save\"", "data-vmdj=\"modal\"", "data-vmdj=\"open-search\"", "data-vmdj-pad=\"kick\"", "data-vmdj-pad=\"riser\""):
         assert marker in VIEW
-    assert "@media (pointer: coarse)" in VIEW
+    assert "overflow:hidden" in VIEW
+    assert "orientation:landscape" in VIEW
+    assert "vmdj-platter.is-spinning" in VIEW
     assert "playsinline=1" in PAGE
     assert "vmdj-fullscreen" in VIEW
     assert "registerPage(\"video-mix-dj-studio\"" in PAGE
 
 
-def test_mix_uses_youtube_embed_messages_and_never_sends_the_set_to_a_server():
+def test_mix_uses_youtube_embed_messages_local_storage_and_public_search_only():
     assert "www.youtube-nocookie.com/embed" in PAGE
     assert '"setVolume"' in PAGE
     assert '"setPlaybackRate"' in PAGE
@@ -41,7 +43,10 @@ def test_mix_uses_youtube_embed_messages_and_never_sends_the_set_to_a_server():
     assert "captureSection" in PAGE
     assert "scratchStart" in PAGE
     assert "localStorage.setItem" in PAGE
-    assert "fetch(" not in PAGE
+    assert "https://api.invidious.io/instances.json" in PAGE
+    assert "/api/v1/search" in PAGE
+    assert "canonicalUrl" in PAGE
+    assert "attribution_link" in PAGE
     assert "XMLHttpRequest" not in PAGE
 
 
