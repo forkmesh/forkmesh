@@ -53,7 +53,7 @@ public enum RepoOwnerSigning {
             throw RepoException(
                 "Actions are owner-key gated. This device is signed in as \(account), not \(repo.owner).")
         }
-        if session.pubkey.dartTrimmed != identity.publicKeyB64url {
+        if !session.canOwnerSign {
             throw RepoException(
                 "Actions are owner-key gated. Pair this mobile device with the owner key before viewing workflow logs.")
         }
@@ -84,7 +84,7 @@ public enum RepoOwnerSigning {
         guard let session, let identity, !account.isEmpty else {
             throw RepoException("Sign in with the repo owner account to request desktop control.")
         }
-        if session.pubkey.dartTrimmed != identity.publicKeyB64url {
+        if !session.canOwnerSign {
             throw RepoException("Pair this mobile device with the owner key before requesting desktop control.")
         }
         let ts = String(nowMillis)

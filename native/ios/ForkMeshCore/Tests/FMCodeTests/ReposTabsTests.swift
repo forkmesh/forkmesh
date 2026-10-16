@@ -48,8 +48,11 @@ final class ReposTabsTests: XCTestCase {
         XCTAssertEqual(
             message(repoTestSession(nodeName: "bob", pubkey: identity.publicKeyB64url), identity),
             "Exception: Actions are owner-key gated. This device is signed in as bob, not Alice.")
+        XCTAssertEqual(message(repoTestSession(nodeName: "alice", pubkey: "desktop-key"), identity), "signed")
+        var unpaired = repoTestSession(nodeName: "alice", pubkey: identity.publicKeyB64url)
+        unpaired.capabilities = ["browse"]
         XCTAssertEqual(
-            message(repoTestSession(nodeName: "alice", pubkey: "other"), identity),
+            message(unpaired, identity),
             "Exception: Actions are owner-key gated. Pair this mobile device with the owner key before viewing workflow logs.")
         XCTAssertEqual(message(repoTestSession(nodeName: " alice ", pubkey: identity.publicKeyB64url + " "), identity), "signed")
     }
@@ -64,13 +67,17 @@ final class ReposTabsTests: XCTestCase {
         }
         let signedOut = await send(nil)
         XCTAssertEqual(signedOut, "Exception: Sign in with the repo owner account to request desktop control.")
-        let unpaired = await send(repoTestSession(nodeName: "alice", pubkey: "x"))
-        XCTAssertEqual(unpaired, "Exception: Pair this mobile device with the owner key before requesting desktop control.")
-        XCTAssertTrue(client.desktopCommands.isEmpty)
+        let mobileKey = await send(repoTestSession(nodeName: "alice", pubkey: "desktop-key"))
+        XCTAssertEqual(mobileKey, "ok")
+        var unpaired = repoTestSession(nodeName: "alice", pubkey: identity.publicKeyB64url)
+        unpaired.capabilities = ["browse"]
+        let unpairedResult = await send(unpaired)
+        XCTAssertEqual(unpairedResult, "Exception: Pair this mobile device with the owner key before requesting desktop control.")
+        XCTAssertEqual(client.desktopCommands.count, 1)
         let other = await send(repoTestSession(nodeName: "bob", pubkey: identity.publicKeyB64url))
         XCTAssertEqual(other, "ok")
-        XCTAssertEqual(client.desktopCommands.map(\.owner), ["Alice"])
-        XCTAssertEqual(client.desktopCommands.map(\.ownerAccount), ["bob"])
+        XCTAssertEqual(client.desktopCommands.map(\.owner), ["Alice", "Alice"])
+        XCTAssertEqual(client.desktopCommands.map(\.ownerAccount), ["alice", "bob"])
         client.desktopResult = { throw ApiException("HTTP 403 for /api/repo/Alice/repo/desktop-commands") }
         let failed = await send(repoTestSession(nodeName: "alice", pubkey: identity.publicKeyB64url))
         XCTAssertEqual(failed, "Exception: HTTP 403 for /api/repo/Alice/repo/desktop-commands")

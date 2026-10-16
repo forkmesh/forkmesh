@@ -75,13 +75,15 @@ public func collabBadgeTone(_ text: String) -> CollabTone {
 public struct CollabAccount: Equatable, Sendable {
     public let nodeName: String?
     public let pubkey: String?
+    public let canOwnerSign: Bool
 
-    public init(nodeName: String?, pubkey: String?) {
+    public init(nodeName: String?, pubkey: String?, canOwnerSign: Bool = false) {
         self.nodeName = nodeName
         self.pubkey = pubkey
+        self.canOwnerSign = canOwnerSign
     }
 
-    public static let signedOut = CollabAccount(nodeName: nil, pubkey: nil)
+    public static let signedOut = CollabAccount(nodeName: nil, pubkey: nil, canOwnerSign: false)
 
     /// `session.nodeName.trim()`, "" without a session: the account the
     /// Issues tab's "Assigned to me" matches.
