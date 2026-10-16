@@ -79,6 +79,7 @@ internal fun scopeTitle(library: RssLibrary, scope: RssScope): String = when (sc
 
 internal class RssFeedsScreen : Screen() {
     override val title: String get() = "Feeds"
+    override val hidesShellChrome: Boolean get() = true
     private var dialog by mutableStateOf<RssDialog?>(null)
     private var pulled by mutableStateOf(false)
     private val status = FmStatus()

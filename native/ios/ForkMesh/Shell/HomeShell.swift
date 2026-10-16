@@ -395,7 +395,7 @@ struct HomeShell: View {
     }
 
     private var showsBar: Bool {
-        !pageKeyboardUp && !usesSplit
+        !pageKeyboardUp && !usesSplit && !ShellChrome.shared.isBare(router.selectedTab)
     }
 
     private var genieFloor: CGFloat? {

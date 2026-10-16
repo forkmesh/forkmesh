@@ -107,6 +107,10 @@ for the scout**); it never receives a member session. No mention is suggested
 in a subreddit whose rules are not on the desk, and rules older than 30 days
 are flagged.
 
+Every thread row can copy a ChatGPT reply-draft prompt with the thread and
+ForkMesh links. It asks for help-first, disclosed, rules-aware copy and the
+operator must still review and rewrite the result before posting.
+
 ## The u/forkmesh profile
 
 `tools/reddit_profile.json` holds the display name (`title`, up to 30

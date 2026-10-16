@@ -812,13 +812,21 @@ struct MarketingRedditSection: View {
             if !threads.isEmpty {
                 Section(MarketingText.title(status)) {
                     ForEach(threads) { thread in
-                        Button {
-                            present(.form(MarketingDraft(kind: .redditThread, id: thread.id, overview: overview, json: thread.json,
-                                                         zone: model.timeZone)))
-                        } label: {
-                            MarketingRecordRow(record: thread, overview: overview, working: model.isWorking(thread.id))
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button {
+                                present(.form(MarketingDraft(kind: .redditThread, id: thread.id, overview: overview, json: thread.json,
+                                                             zone: model.timeZone)))
+                            } label: {
+                                MarketingRecordRow(record: thread, overview: overview, working: model.isWorking(thread.id))
+                            }
+                            .buttonStyle(.plain)
+                            Button("Copy ChatGPT reply prompt", systemImage: "doc.on.doc") {
+                                UIPasteboard.general.string = thread.redditReplyPrompt
+                                model.notice = "ChatGPT reply prompt copied."
+                            }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
                         }
-                        .buttonStyle(.plain)
                         .contextMenu {
                             MarketingStatusMenu(model: model, kind: .redditThread, id: thread.id, current: thread.status)
                             if let url = URL(string: thread.json.str("url")) {

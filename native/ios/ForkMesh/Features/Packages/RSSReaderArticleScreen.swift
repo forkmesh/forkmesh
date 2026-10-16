@@ -34,6 +34,11 @@ struct RSSReaderArticleScreen: View {
 
     var body: some View {
         content
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 30).onEnded { value in
+                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                    move(value.translation.width < 0 ? 1 : -1)
+                })
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
