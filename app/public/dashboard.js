@@ -3371,6 +3371,21 @@
     if (!patch.trim()) {
       throw new Error("no_changes");
     }
+    return signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits);
+  }
+
+  async function submitWebFileProposal(repo, proposal, title, body = "") {
+    const patch = String(proposal?.patch || "");
+    const commits = String(proposal?.commits || "");
+    const base = String(proposal?.base || "");
+    const head = String(proposal?.head || "");
+    if (!patch.trim() || !base || !head) throw new Error("no_changes");
+    const pull = await signWebPullContent(repo, title, body, base, head, patch, commits);
+    const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull });
+    return { ...data, pull, targetRepo: repo };
+  }
+
+  async function signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits) {
     if (ISSUE_TEXT_ENCODER.encode(patch).byteLength
         + ISSUE_TEXT_ENCODER.encode(commits).byteLength > 4 * 1024 * 1024) {
       throw new Error("pull_too_large");
@@ -14192,6 +14207,7 @@
       const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
       error.status = response.status;
       error.code = data?.error || "";
+      error.data = data;
       throw error;
     }
     return data;
@@ -14202,8 +14218,86 @@
       return "The file changed while you were editing. Reload and try again.";
     }
     if (error?.status === 401) return "Sign in to edit repository files.";
-    if (error?.status === 403) return "You need repository write permission to edit this file.";
+    if (error?.status === 403) return "You don't have write access to this repository. Save again to propose your change as a pull request.";
     return error?.message || "Could not save the file.";
+  }
+
+  function repoFileSignInUrl() {
+    return "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+  }
+
+  const REPO_FILE_PROPOSE_NOTICE = "You don't have write access to this repository. Saving proposes your change as a pull request.";
+
+  function setRepoFileEditorProposing(editor, proposing, { access = "" } = {}) {
+    if (!editor) return;
+    editor.dataset.repoFileEditorMode = proposing ? "propose" : "commit";
+    if (access) editor.dataset.repoFileEditorAccess = access;
+    const readOnly = editor.dataset.repoFileEditorAccess === "propose";
+    const notice = editor.querySelector("[data-repo-file-editor-notice]");
+    if (notice) notice.hidden = !readOnly;
+    const proposeToggle = editor.querySelector("[data-repo-file-editor-propose-wrap]");
+    if (proposeToggle) proposeToggle.hidden = editor.dataset.repoFileEditorAccess !== "write";
+    const checkbox = editor.querySelector("[data-repo-file-editor-propose]");
+    if (checkbox) checkbox.checked = proposing;
+    const branchLabel = editor.querySelector("[data-repo-file-editor-branch-label]");
+    if (branchLabel) branchLabel.textContent = proposing ? "Base branch" : "Branch";
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    if (branchInput) branchInput.readOnly = proposing;
+    const saveLabel = editor.querySelector("[data-repo-file-editor-save-label]");
+    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : "Save";
+  }
+
+  async function probeRepoFileEditAccess(viewer, editor, repo, signal) {
+    try {
+      const data = await repoFileEditRequest(repo, { mode: "probe" });
+      if (signal.aborted || !editor.isConnected) return;
+      if (data?.access === "propose") {
+        setRepoFileEditorProposing(editor, true, { access: "propose" });
+        const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+        if (branchInput) branchInput.value = editor.dataset.repoFileEditorBase || branchInput.value;
+      } else if (data?.access === "write") {
+        setRepoFileEditorProposing(editor, editor.dataset.repoFileEditorMode === "propose", { access: "write" });
+      }
+    } catch (error) {
+      if (signal.aborted || !editor.isConnected) return;
+      if (error?.status === 401) {
+        updateRepoFileStatus(viewer, "Sign in to edit repository files.", "bad");
+        location.href = repoFileSignInUrl();
+      }
+    }
+  }
+
+  async function proposeRepoFileEdit(viewer, repo, proposal) {
+    const title = String(proposal.subject || "").trim();
+    updateRepoFileStatus(viewer, "Signing and sending the pull request...", "good");
+    const result = await submitWebFileProposal(repo, proposal, title);
+    const number = Number(result?.number || 0);
+    if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
+    rememberOptimisticRepoRecord(repo, "pulls", number, {
+      values: {
+        number,
+        title,
+        status: "open",
+        base: result.pull.base,
+        head: result.pull.head,
+        author: result.pull.author,
+        authorName: result.pull.authorName || "you",
+        ts: result.pull.ts,
+      },
+      body: "",
+      pullPatch: {
+        patch: result.pull.patch,
+        files: parsePatchStats(result.pull.patch),
+        unavailable: false,
+      },
+      pullConversation: [],
+      pullCommits: [],
+      pullAgents: [],
+      pullTimeline: [],
+    });
+    updateRepoFileStatus(viewer, `Opened pull request #${number}.`, "good");
+    window.location.assign(repoRecordUrl(repo, "pulls", number, "conversation"));
+    return number;
   }
 
   function repoFileEditorBranchOptions(repo, current) {
@@ -14246,10 +14340,11 @@
     editor.dataset.repoFileEditor = "true";
     editor.className = "grid gap-3 border-t border-border bg-background p-3";
     editor.innerHTML = `
+      <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
       <textarea data-repo-file-editor-content spellcheck="false" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70">${escapeHtml(content)}</textarea>
       <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
         <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <span>Branch</span>
+          <span data-repo-file-editor-branch-label>Branch</span>
           <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
           <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
         </label>
@@ -14259,9 +14354,13 @@
         </label>
         <div class="flex items-end gap-2">
           <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
-          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save</button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>Save</span></button>
         </div>
-      </div>`;
+      </div>
+      <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+        <span>Propose as a pull request instead of committing</span>
+      </label>`;
     fileContent.classList.add("hidden");
     viewer.querySelector("[data-repo-file-modes]")?.classList.add("hidden");
     shell.appendChild(editor);
@@ -14283,15 +14382,51 @@
         editor.requestSubmit();
       }
     }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
     editor.addEventListener("submit", async (event) => {
       event.preventDefault();
       const nextContent = textarea?.value || "";
-      const branch = String(branchInput?.value || "").trim();
       const message = String(messageInput?.value || "").trim();
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
       saveButton.disabled = true;
+      if (proposing) {
+        updateRepoFileStatus(viewer, "Preparing your proposed change...", "good");
+        let proposal = null;
+        try {
+          proposal = await repoFileEditRequest(repo, {
+            mode: "propose",
+            path,
+            branch,
+            oid: String(meta?.oid || ""),
+            content: nextContent,
+            message,
+          });
+          if (proposal.unchanged) {
+            saveButton.disabled = false;
+            updateRepoFileStatus(viewer, "No changes to propose.", "good");
+            return;
+          }
+          await proposeRepoFileEdit(viewer, repo, proposal);
+        } catch (error) {
+          saveButton.disabled = false;
+          if (!proposal && error?.status === 401) {
+            location.href = repoFileSignInUrl();
+            return;
+          }
+          updateRepoFileStatus(viewer, proposal
+            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayKey(repo))
+            : repoFileEditError(error), "bad");
+        }
+        return;
+      }
       updateRepoFileStatus(viewer, "Saving file...", "good");
       try {
         const payload = await repoFileEditRequest(repo, {
+          mode: "commit",
           path,
           branch,
           baseRef: currentBranch,
@@ -14320,9 +14455,20 @@
         }
       } catch (error) {
         saveButton.disabled = false;
+        if (error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
         updateRepoFileStatus(viewer, repoFileEditError(error), "bad");
       }
     }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
     textarea?.focus();
     updateRepoFileStatus(viewer, "Editing file.", "good");
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
@@ -14379,6 +14525,11 @@
       if (action === "raw") {
         setRepoFileMode(viewer, "raw", lines, path, meta);
       } else if (action === "edit") {
+        if (!state.session?.nodeName) {
+          updateRepoFileStatus(viewer, "Sign in to edit this file.", "bad");
+          location.href = repoFileSignInUrl();
+          return;
+        }
         openRepoFileEditor(viewer, repo, path, content, lines, meta);
       } else if (action === "copy") {
         const copied = await copyTextToClipboard(content);
