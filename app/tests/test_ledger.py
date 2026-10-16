@@ -1948,7 +1948,7 @@ _EXPENSE_NOW_MS = 1_792_172_288_341
 
 
 def _expense_runtime(monkeypatch, *, actor="owner-user", admin=True,
-                     payers=("jett",)):
+                     payers=("member",)):
     database = sqlite3.connect(":memory:")
     database.row_factory = sqlite3.Row
     database.execute(
@@ -2004,13 +2004,13 @@ def _expense_runtime(monkeypatch, *, actor="owner-user", admin=True,
     return seen
 
 
-_ANTHROPIC_0013 = {
-    "vendor": "Anthropic",
-    "description": "Anthropic subscription invoice",
-    "paidBy": "@Jett",
-    "amount": "217.75",
+_EXPENSE = {
+    "vendor": "Example Vendor",
+    "description": "Monthly subscription",
+    "paidBy": "@Member",
+    "amount": "120.50",
     "currency": "usd",
-    "externalReference": "8RYATVG1-0013",
+    "externalReference": "INV-0001",
     "incurredOn": "2026-10-16",
 }
 
@@ -2040,30 +2040,30 @@ def test_an_admin_records_a_member_paid_expense_as_an_outstanding_debt(
     import json
 
     seen = _expense_runtime(monkeypatch)
-    result = _post_expense(_ANTHROPIC_0013)
+    result = _post_expense(_EXPENSE)
 
     assert result["status"] == 201
     assert result["body"]["created"] is True
-    assert result["body"]["expense"]["id"] == "anthropic-8ryatvg1-0013"
+    assert result["body"]["expense"]["id"] == "example-vendor-inv-0001"
     assert seen["signed"] == [(
-        hashlib.sha256(json.dumps(_ANTHROPIC_0013).encode()).hexdigest(),
+        hashlib.sha256(json.dumps(_EXPENSE).encode()).hexdigest(),
         "forkmesh-ledger-expense-request-v1", "/api/ledger/expenses")]
     assert _expense_rows(seen) == [{
-        "expense_id": "anthropic-8ryatvg1-0013", "vendor": "Anthropic",
-        "paid_by_name": "jett", "amount_minor": 21775, "currency": "USD",
-        "external_reference": "8RYATVG1-0013",
+        "expense_id": "example-vendor-inv-0001", "vendor": "Example Vendor",
+        "paid_by_name": "member", "amount_minor": 12050, "currency": "USD",
+        "external_reference": "INV-0001",
         "incurred_at": 1_792_108_800_000, "recorded_at": _EXPENSE_NOW_MS,
         "reimbursement_status": "outstanding"}]
     assert seen["audits"] == [(
-        "owner-user", "ledger.expense.record", "anthropic-8ryatvg1-0013",
-        "success", {"paidBy": "jett", "amountMinor": 21775,
+        "owner-user", "ledger.expense.record", "example-vendor-inv-0001",
+        "success", {"paidBy": "member", "amountMinor": 12050,
                     "currency": "USD"})]
 
 
 def test_recording_the_same_invoice_again_is_idempotent(monkeypatch):
     seen = _expense_runtime(monkeypatch)
-    assert _post_expense(_ANTHROPIC_0013)["status"] == 201
-    again = _post_expense(_ANTHROPIC_0013)
+    assert _post_expense(_EXPENSE)["status"] == 201
+    again = _post_expense(_EXPENSE)
 
     assert again["status"] == 200
     assert again["body"]["created"] is False
@@ -2073,25 +2073,25 @@ def test_recording_the_same_invoice_again_is_idempotent(monkeypatch):
 
 def test_a_reused_invoice_reference_with_other_details_is_refused(monkeypatch):
     seen = _expense_runtime(monkeypatch)
-    _post_expense(_ANTHROPIC_0013)
-    result = _post_expense({**_ANTHROPIC_0013, "amount": "200"})
+    _post_expense(_EXPENSE)
+    result = _post_expense({**_EXPENSE, "amount": "100"})
 
     assert result["status"] == 409
     assert result["body"]["error"] == "expense_reference_conflict"
-    assert result["body"]["expense"]["amountMinor"] == 21775
-    assert [row["amount_minor"] for row in _expense_rows(seen)] == [21775]
+    assert result["body"]["expense"]["amountMinor"] == 12050
+    assert [row["amount_minor"] for row in _expense_rows(seen)] == [12050]
 
 
 def test_only_a_signed_administrator_may_record_an_expense(monkeypatch):
     seen = _expense_runtime(monkeypatch, admin=False)
-    denied = _post_expense(_ANTHROPIC_0013)
+    denied = _post_expense(_EXPENSE)
     assert denied["status"] == 403
     assert denied["body"] == {"error": "admin_required"}
     assert seen["audits"][0][3] == "denied"
     assert _expense_rows(seen) == []
 
     seen = _expense_runtime(monkeypatch, actor="")
-    unsigned = _post_expense(_ANTHROPIC_0013)
+    unsigned = _post_expense(_EXPENSE)
     assert unsigned["status"] == 401
     assert _expense_rows(seen) == []
 
@@ -2099,31 +2099,31 @@ def test_only_a_signed_administrator_may_record_an_expense(monkeypatch):
 def test_expense_fields_are_validated_before_anything_is_written(monkeypatch):
     seen = _expense_runtime(monkeypatch)
     bad = _post_expense({
-        **_ANTHROPIC_0013, "amount": "217.755", "incurredOn": "2026-10-17",
+        **_EXPENSE, "amount": "120.505", "incurredOn": "2026-10-17",
         "externalReference": "", "originalAmount": "100"})
     assert bad["status"] == 400
     assert bad["body"]["fields"] == [
         "amount", "externalReference", "incurredOn", "originalCurrency"]
 
-    unknown = _post_expense({**_ANTHROPIC_0013, "paidBy": "nobody"})
+    unknown = _post_expense({**_EXPENSE, "paidBy": "nobody"})
     assert unknown["status"] == 404
     assert unknown["body"] == {"error": "payer_not_found"}
 
     assert _post_expense("not json")["status"] == 400
-    assert _post_expense(_ANTHROPIC_0013, method="GET")["status"] == 405
+    assert _post_expense(_EXPENSE, method="GET")["status"] == 405
     assert _expense_rows(seen) == []
 
 
 def test_an_expense_keeps_its_original_card_currency(monkeypatch):
-    seen = _expense_runtime(monkeypatch, payers=("mdkaifansari04",))
+    seen = _expense_runtime(monkeypatch, payers=("member",))
     result = _post_expense({
-        "vendor": "Cursor", "description": "Cursor subscription",
-        "paidBy": "mdkaifansari04", "amount": 23.6,
-        "externalReference": "E45E60F2-0008", "incurredOn": "2026-10-01",
-        "originalAmount": "2343.59", "originalCurrency": "inr"})
+        "vendor": "Other Vendor", "description": "Annual licence",
+        "paidBy": "member", "amount": 25.5,
+        "externalReference": "INV-0002", "incurredOn": "2026-10-01",
+        "originalAmount": "23.40", "originalCurrency": "eur"})
 
     assert result["status"] == 201
-    assert result["body"]["expense"]["amountMinor"] == 2360
-    assert result["body"]["expense"]["originalAmountMinor"] == 234359
-    assert result["body"]["expense"]["originalCurrency"] == "INR"
+    assert result["body"]["expense"]["amountMinor"] == 2550
+    assert result["body"]["expense"]["originalAmountMinor"] == 2340
+    assert result["body"]["expense"]["originalCurrency"] == "EUR"
     assert len(_expense_rows(seen)) == 1

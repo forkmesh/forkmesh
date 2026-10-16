@@ -1471,8 +1471,8 @@ def main():
             "params": params, "raw": request.data, "body": body})
         if url.path == "/api/ledger/expenses":
             return FakeTaskResponse(json.dumps({"ok": True, "created": True,
-                "expense": {"id": "anthropic-8ryatvg1-0013",
-                            "amountMinor": 21775}}).encode())
+                "expense": {"id": "example-vendor-inv-0001",
+                            "amountMinor": 12050}}).encode())
         if url.path == "/api/notes":
             return FakeTaskResponse(json.dumps({"ok": True, "note": {
                 "id": "d" * 32, "title": body["title"], "version": 1,
@@ -1535,9 +1535,9 @@ def main():
               _verify(pub_b64, sent["params"]["sig"], canonical.encode()))
 
         text, err = call("record_expense", {
-            "vendor": "Anthropic", "description": "Anthropic subscription invoice",
-            "paid_by": "jett", "amount": 217.75,
-            "external_reference": "8RYATVG1-0013", "incurred_on": "2026-10-16"})
+            "vendor": "Example Vendor", "description": "Monthly subscription",
+            "paid_by": "member", "amount": 120.5,
+            "external_reference": "INV-0001", "incurred_on": "2026-10-16"})
         sent = task_requests[-1]
         canonical = "\n".join((
             "forkmesh-ledger-expense-request-v1", "seller", "POST",
@@ -1546,17 +1546,17 @@ def main():
         check("record_expense posts the expense signed over its exact body",
               not err and sent["method"] == "POST" and
               sent["path"] == "/api/ledger/expenses" and
-              sent["body"] == {"vendor": "Anthropic",
-                               "description": "Anthropic subscription invoice",
-                               "paidBy": "jett", "amount": "217.75",
-                               "externalReference": "8RYATVG1-0013",
+              sent["body"] == {"vendor": "Example Vendor",
+                               "description": "Monthly subscription",
+                               "paidBy": "member", "amount": "120.5",
+                               "externalReference": "INV-0001",
                                "incurredOn": "2026-10-16"} and
               json.loads(text) == {"created": True, "expense": {
-                  "id": "anthropic-8ryatvg1-0013", "amountMinor": 21775}} and
+                  "id": "example-vendor-inv-0001", "amountMinor": 12050}} and
               _verify(pub_b64, sent["params"]["sig"], canonical.encode()))
 
         before = len(task_requests)
-        text, err = call("record_expense", {"vendor": "Anthropic"})
+        text, err = call("record_expense", {"vendor": "Example Vendor"})
         check("record_expense names missing fields before any request",
               err and "description, paid_by, amount" in text and
               len(task_requests) == before)
@@ -1595,7 +1595,7 @@ def main():
     _, err = call("create_cloud_note", {"title": "Blocked", "content": "no token"})
     check("cloud note write refused without the token", err)
     _, err = call("record_expense", {
-        "vendor": "Anthropic", "description": "x", "paid_by": "jett",
+        "vendor": "Example Vendor", "description": "x", "paid_by": "member",
         "amount": "1", "external_reference": "R-1", "incurred_on": "2026-10-16"})
     check("expense write refused without the token", err)
     _, err = call("update_note", {"note_id": personal_id, "content": "no token"})
