@@ -21,7 +21,7 @@ final class ShellNavigatorCounts {
 
     private(set) var fetched: [Route.Kind: Int] = [:]
     @ObservationIgnored private var loadedAt: Date?
-    @ObservationIgnored private var loading = false
+    private(set) var loading = false
 
     func reset() {
         fetched = [:]

@@ -141,7 +141,7 @@ struct RepoImagePreview: View {
                         rawURL: rawURL,
                         source: blob.source)
                 default:
-                    FmCircularProgressIndicator()
+                    FmCircularProgressIndicator(size: 20, strokeWidth: 2)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

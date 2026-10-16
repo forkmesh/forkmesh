@@ -53,9 +53,7 @@ struct DocsScreen: View {
             FmEmptyState(icon: "book_outlined", title: "Docs unavailable", message: "This build does not include the documentation library.")
                 .accessibilityIdentifier("docs-unavailable")
         } else {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel("Loading the documentation library")
+            FmSkeletonList(label: "Loading the documentation library")
         }
     }
 
@@ -177,7 +175,7 @@ struct DocsScreen: View {
 
     @ViewBuilder private func results(_ library: DocsLibrary) -> some View {
         if searched.isEmpty {
-            FmCircularProgressIndicator()
+            FmCircularProgressIndicator(size: 20, strokeWidth: 2)
                 .frame(maxWidth: .infinity)
                 .padding(.top, FmSpace.x6)
         } else if hits.isEmpty && matches.isEmpty {

@@ -336,6 +336,7 @@ private struct ChatTranscript<Drawer: View>: View {
                 UnreadBanner(count: hub.totalUnread, onTap: { hub.markAllRead() })
             }
             messages
+                .fmLoading(!hub.inMesh && hub.relayState == .connecting)
             TimelineView(.periodic(from: Date(), by: 1)) { (_: TimelineViewDefaultContext) in
                 let line: String = hub.typingLine
                 if !line.isEmpty {

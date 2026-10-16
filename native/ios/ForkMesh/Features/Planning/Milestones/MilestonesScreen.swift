@@ -44,6 +44,7 @@ struct MilestonesScreen: View {
             }
         }
         .listStyle(.insetGrouped)
+        .fmLoading(model.loading)
         .navigationTitle("Milestones")
         .navigationBarTitleDisplayMode(.inline)
         .task {

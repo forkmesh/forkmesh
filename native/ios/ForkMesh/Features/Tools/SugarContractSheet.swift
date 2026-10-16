@@ -74,7 +74,7 @@ struct SugarContractSheet: View {
                 .accessibilityLabel("\(SugarContract.title), \(contract.dateLine), \(contract.signers) signature lines")
                 .accessibilityIdentifier("sugar-contract-preview")
         } else {
-            FmCircularProgressIndicator()
+            FmCircularProgressIndicator(size: 20, strokeWidth: 2)
                 .frame(maxWidth: .infinity, minHeight: 240)
         }
     }
