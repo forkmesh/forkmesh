@@ -33,6 +33,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return configuration
     }
 
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        FmOrientationLock.mask
+    }
+
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         pushBridge.didFailToRegister(error: error)
     }
