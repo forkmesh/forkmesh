@@ -2145,6 +2145,7 @@ def _commit(repo, pathspec, message):
 CRM_DEFAULT_ORIGIN = "https://app.forkmesh.com"
 CRM_PREFIX = "/api/crm"
 CRM_REQUEST_PROOF = "forkmesh-crm-request-v1"
+SENT_EMAIL_CRM_LIST = "Initiatives"
 CRM_ORG_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 CRM_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 CRM_SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
@@ -2628,6 +2629,76 @@ def crm_update_contact(organization, contact_id, changes, append_note=None):
         patch["notes"] = notes
     contact = crm_request("PATCH", path, patch).get("contact") or {}
     return crm_contact_view(contact, details=True)
+
+
+def crm_sent_email_organization(organization=""):
+    if str(organization or "").strip():
+        return crm_organization(organization)
+    names = [str(item.get("name") or "") for item in
+             crm_request("GET", CRM_PREFIX).get("organizations") or []]
+    names = [name for name in names if name]
+    if len(names) != 1:
+        raise ValueError(
+            "no CRM organization to record the email in" if not names else
+            "this account is in several CRM organizations (" + ", ".join(names) +
+            "): set one with `tools/zoho_mail.py setup --crm-organization`")
+    return crm_organization(names[0])
+
+
+def crm_list_id(organization, list_name):
+    name = str(list_name or "").strip()[:60] or SENT_EMAIL_CRM_LIST
+    views = crm_request("GET", f"{CRM_PREFIX}/{organization}/views").get("views") or []
+    for view in views:
+        if str(view.get("name") or "").strip().lower() == name.lower():
+            return str(view["id"]), str(view.get("name") or name), False
+    view = crm_request("POST", f"{CRM_PREFIX}/{organization}/views",
+                       {"name": name, "visibility": "organization"}).get("view") or {}
+    if not view.get("id"):
+        raise ValueError(f"the CRM did not create the {name} list")
+    return str(view["id"]), str(view.get("name") or name), True
+
+
+def crm_record_sent_email(result, text, organization="", list_name=""):
+    own_domain = str(result.get("from") or "").rsplit("@", 1)[-1].lower()
+    people = [person for person in result.get("recipients") or []
+              if person["email"].rsplit("@", 1)[-1].lower() != own_domain]
+    if not people:
+        return {"recorded": [], "skipped": "every recipient is in " + own_domain}
+    organization = crm_sent_email_organization(organization)
+    view_id, view_name, list_created = crm_list_id(organization, list_name)
+    recorded = []
+    for person in people:
+        link = crm_request("POST", f"{CRM_PREFIX}/{organization}/emails/link", {
+            "provider": "zoho", "direction": "outbound",
+            "messageId": f"{result['messageId']} {person['email']}"[:200],
+            "contactEmail": person["email"], "contactName": person["name"],
+            "mailbox": result["from"], "fromName": result.get("fromName") or "",
+            "subject": result.get("subject") or "", "text": str(text or "")[:20000],
+            "sentAt": result.get("at") or now_ms(),
+        })
+        contact = link.get("contact") or {}
+        if view_id not in (contact.get("views") or []):
+            contact = crm_request(
+                "PATCH", f"{CRM_PREFIX}/{organization}/contacts/{crm_contact_id(contact.get('id'))}",
+                {"views": [view_id]}).get("contact") or contact
+        recorded.append({"email": person["email"],
+                         "name": contact.get("name") or person["name"],
+                         "contactId": contact.get("id") or "",
+                         "contactCreated": bool(link.get("contactCreated"))})
+    return {"organization": organization, "list": view_name, "listId": view_id,
+            "listCreated": list_created, "recorded": recorded}
+
+
+def crm_sent_email_summary(record):
+    if record.get("error"):
+        return "CRM not updated: " + record["error"]
+    if not record.get("recorded"):
+        return "CRM: nothing to record (" + record.get("skipped", "") + ")"
+    people = ", ".join(
+        (item["name"] or item["email"]) + (" (new contact)" if item["contactCreated"] else "")
+        for item in record["recorded"])
+    return (f"CRM: logged for {people} in the {record['list']} list "
+            f"({record['organization']})")
 
 
 def crm_find_duplicates(organization):
@@ -3309,6 +3380,17 @@ def tool_record_expense(args):
     return json.dumps(record_expense(args), indent=2)
 
 
+def record_sent_email(result, body, html=False, organization="", list_name=""):
+    settings = zoho_mail.crm_settings()
+    try:
+        return crm_record_sent_email(
+            result, zoho_mail.plain_from_html(body) if html else body,
+            organization or settings["organization"],
+            list_name or settings["list"])
+    except Exception as exc:  # noqa: BLE001 — the email already went out
+        return {"error": str(exc)}
+
+
 def tool_send_email(args):
     try:
         result = zoho_mail.send(
@@ -3317,7 +3399,13 @@ def tool_send_email(args):
             reply_to=args.get("reply_to") or "", html=bool(args.get("html")))
     except zoho_mail.ZohoMailError as exc:
         raise ValueError(str(exc)) from exc
-    return zoho_mail.summary(result) + "\n" + json.dumps(result, indent=2)
+    lines = [zoho_mail.summary(result)]
+    if args.get("crm", True) is not False:
+        result["crm"] = record_sent_email(
+            result, args.get("body"), bool(args.get("html")),
+            args.get("crm_organization") or "", args.get("crm_list") or "")
+        lines.append(crm_sent_email_summary(result["crm"]))
+    return "\n".join(lines) + "\n" + json.dumps(result, indent=2)
 
 
 def tool_get_note(args):
@@ -4101,7 +4189,7 @@ TOOLS = [
     },
     {
         "name": "send_email",
-        "description": "Send one email through the Zoho Mail account set up on this machine with `python3 tools/zoho_mail.py setup`, with no confirmation step, and return that it was sent with its Message-ID. Plain text unless html is true. Fails, sending nothing, when Zoho is not set up or rejects the login.",
+        "description": "Send one email through the Zoho Mail account set up on this machine with `python3 tools/zoho_mail.py setup`, with no confirmation step, and return that it was sent with its Message-ID. Plain text unless html is true. Fails, sending nothing, when Zoho is not set up or rejects the login. Afterwards the email is logged in the CRM: each recipient outside the sender's own domain is matched to a contact (created when new), the email is linked to them, and they join the Initiatives list; a CRM failure is reported but does not unsend the email.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -4113,6 +4201,9 @@ TOOLS = [
                 "bcc": {"type": ["string", "array"], "items": {"type": "string"}},
                 "reply_to": {"type": "string", "description": "one address replies should go to"},
                 "html": {"type": "boolean", "description": "body is HTML; a plain-text copy is added"},
+                "crm": {"type": "boolean", "description": "log the email in the CRM (default true): recipients outside the sender's own domain become or update contacts, joined to the CRM list"},
+                "crm_organization": {"type": "string", "description": "CRM organization; default the one set in setup, else the account's only organization"},
+                "crm_list": {"type": "string", "description": "CRM list the recipients join; default Initiatives, created when missing"},
             },
             "required": ["to", "subject", "body"],
         },
@@ -5073,7 +5164,8 @@ def handle_request(msg):
             "and mirror rollout with no dialog), publish_release. "
             "Email: send_email sends one message through the Zoho Mail "
             "account set up with tools/zoho_mail.py, with no confirmation "
-            "step, and returns its Message-ID. "
+            "step, returns its Message-ID, and logs it in the CRM, putting "
+            "outside recipients in the Initiatives list. "
             "Desktop windows (same condition): show_window opens a small "
             "window to show the user a result or ask a question with buttons "
             "or a text field, open_browser_window opens a web page (such as a "

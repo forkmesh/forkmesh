@@ -5,6 +5,9 @@ so an agent given a request like "email the weekly summary to
 ops@example.com" can send it and simply report that it went out. Agents call it
 through the ForkMesh MCP tool `send_email`, or run the CLI from a shell.
 
+Every email it sends is also logged in the CRM (see
+[Logged in the CRM](#logged-in-the-crm)).
+
 It is unrelated to platform mail (Mailtrap and the cores' Postfix,
 [../MAIL_LOG.md](../MAIL_LOG.md)) and to the CRM's Zoho connection, which
 only reads mail (`ZohoMail.messages.READ`). It sends as one person's mailbox
@@ -16,6 +19,7 @@ from their own machine.
 | --- | --- |
 | SMTP sender, setup, check, CLI | `tools/zoho_mail.py` |
 | MCP tool `send_email` | `tool_send_email` in `tools/forkmesh_mcp_server.py` |
+| CRM logging after a send | `record_sent_email`, `crm_record_sent_email` in `tools/forkmesh_mcp_server.py` |
 | Tests (fake SMTP, sandboxed paths) | `tools/test_zoho_mail.py` |
 
 ## Set up once
@@ -72,6 +76,32 @@ was sent.
   `Name <a@example.org>` is accepted. Bcc never appears in the headers.
 - `html: true` (`--html`) sends the body as HTML with a plain-text copy.
 - `reply_to` sets one Reply-To address.
+
+## Logged in the CRM
+
+After Zoho accepts a message, both the CLI and `send_email` record it in the
+CRM, so outreach sent this way shows up next to the rest of the contact's
+history:
+
+- Recipients on the sender's own domain (colleagues on cc) are left out.
+  Everyone else (to, cc and bcc) is linked through the CRM's
+  `POST /api/crm/<org>/emails/link` as an outbound Zoho email: the contact is
+  matched by address, or created with source `zoho email` when the CRM does
+  not know them, and its last-contacted date moves forward.
+- Each of them joins the **Initiatives** list. The list is created the first
+  time it is needed and matched by name (any case) after that.
+- The organization is the one saved with `setup --crm-organization`, else the
+  account's only CRM organization; with several and none saved, nothing is
+  logged and the reply says so. `setup --crm-list` changes the default list.
+  `ZOHO_MAIL_CRM_ORGANIZATION` and `ZOHO_MAIL_CRM_LIST` override both.
+- Per email: `crm: false`, `crm_organization`, `crm_list` on the MCP tool;
+  `--no-crm`, `--crm-organization`, `--crm-list` on the CLI.
+- Requests are signed as the desktop's signed-in account, like the other CRM
+  tools. A CRM failure never turns a sent email into an error: the reply adds
+  `CRM not updated: <reason>` under the `Sent to ...` line.
+- The CRM row's external id is the Message-ID followed by the recipient's
+  address, one row per person, so sending again logs a new email rather than
+  overwriting the last one.
 
 ## Rules and limits
 
