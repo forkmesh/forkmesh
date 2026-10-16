@@ -200,7 +200,6 @@ object ChatDepth {
                 direct = directService,
                 selfId = { room.selfId },
                 accountName = { auth?.session?.value?.nodeName.orEmpty() },
-                prefs = prefs,
             )
             val readMarks = ChatReadMarks(calling)
             chat.readMarks = readMarks

@@ -52,6 +52,7 @@ struct PingDetailScreen: View {
         .background(fm.canvas.ignoresSafeArea())
         .navigationTitle(PingDetailCopy.title)
         .navigationBarTitleDisplayMode(.inline)
+        .shellKeepsNavigationBar()
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 ShareLink(item: pingAgentPrompt(notification), subject: Text(notification.title)) {

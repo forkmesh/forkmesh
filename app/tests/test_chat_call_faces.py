@@ -486,7 +486,7 @@ def test_desktop_direct_message_header_offers_calls():
 
 
 NATIVE = ROOT.parent / "native"
-IOS_PAGE = NATIVE / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "direct-call.html"
+IOS_PAGE = NATIVE / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "direct-call.html"
 ANDROID_PAGE = NATIVE / "android" / "app" / "src" / "main" / "assets" / "direct-call.html"
 
 
@@ -546,7 +546,8 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     app = NATIVE / "ios" / "ForkMesh"
     install = (app / "App" / "AppServices+Chat.swift").read_text(encoding="utf-8")
     assert "installCalls(hub: hub, direct: direct, relay: relay, auth: auth)" in install
-    assert "calls.peerFactory = WebCallPeerFactory()" in install
+    assert "calls.peerFactory = studio.factory" in install
+    assert "look: studio.look)" in install
     assert "direct.onCallFrame = {" in install
     assert "hub.calls = calls" in install
     header = (app / "Features" / "Chat" / "Messages" / "MessagesConversationView.swift").read_text(encoding="utf-8")
@@ -554,9 +555,11 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     screen = (app / "Features" / "Chat" / "ChatScreen.swift").read_text(encoding="utf-8")
     assert ".directCalls(hub)" in screen
     views = (app / "Features" / "Chat" / "Calls" / "DirectCallViews.swift").read_text(encoding="utf-8")
-    assert "engine.setFace($0)" in views
+    assert "FaceChangerFaceMenu(look: engine.look, peer: factory?.current, notice: $notice)" in views
     assert "WebCallPeerFactory.requestAccess(for:" in views
-    peer = (app / "Features" / "Chat" / "Calls" / "WebCallPeer.swift").read_text(encoding="utf-8")
+    controls = (app / "Features" / "FaceChanger" / "FaceChangerControls.swift").read_text(encoding="utf-8")
+    assert "look.setFace($0)" in controls
+    peer = (app / "Features" / "FaceChanger" / "WebCallPeer.swift").read_text(encoding="utf-8")
     assert 'configuration.userContentController.add(proxy, name: "fmCall")' in peer
     assert 'run("face", [.string(id)])' in peer
     assert 'case "landmarks":' in peer
@@ -564,7 +567,7 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert 'run("background", [.string(id), .string(image)])' in peer
     assert "if let previewed = current, previewed.previewing, media == .video {" in peer
     assert "window.fmCallLandmarks && window.fmCallLandmarks(" in peer
-    vision = (app / "Features" / "Chat" / "Calls" / "CallFaceLandmarks.swift").read_text(encoding="utf-8")
+    vision = (app / "Features" / "FaceChanger" / "CallFaceLandmarks.swift").read_text(encoding="utf-8")
     assert "VNDetectFaceLandmarksRequest()" in vision
     assert "faceRequest.constellation = .constellation76Points" in vision
     assert "region.pointsInImage(imageSize: size)" in vision
@@ -579,7 +582,7 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert "window.fmCallCamera && window.fmCallCamera(" in peer
     assert "window.fmCallCameraFailed && window.fmCallCameraFailed(" in peer
     assert "depthCamera?.stop()" in peer
-    depth = (app / "Features" / "Chat" / "Calls" / "CallDepthCamera.swift").read_text(encoding="utf-8")
+    depth = (app / "Features" / "FaceChanger" / "CallDepthCamera.swift").read_text(encoding="utf-8")
     assert "AVCaptureDevice.default(.builtInTrueDepthCamera, for: .video, position: .front)" in depth
     assert "AVCaptureDataOutputSynchronizer(dataOutputs: [video, depth])" in depth
     assert "depth.isFilteringEnabled = true" in depth
@@ -592,11 +595,12 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     assert "session.automaticallyConfiguresApplicationAudioSession = false" in depth
     core = NATIVE / "ios" / "ForkMeshCore" / "Sources" / "FMChat" / "Direct" / "CallFaceDepth.swift"
     assert "(faceDepth - depth) * focal / faceDepth" in core.read_text(encoding="utf-8")
-    preview = (app / "Features" / "Chat" / "Calls" / "DirectCallPreview.swift").read_text(encoding="utf-8")
-    assert "face: engine.face, background: engine.background, image: image, faceImage: faceImage)" in preview
-    assert "PhotosPicker(selection: $photo, matching: .images)" in preview
-    assert "DirectCallPreviewButton(hub: hub, engine: engine, dark: dark)" in views
-    assert "calls.onBackgroundChanged = {" in install
+    screen = (app / "Features" / "FaceChanger" / "FaceChangerScreen.swift").read_text(encoding="utf-8")
+    assert "face: look.face, background: look.background, image: look.customBackgroundImage," in screen
+    assert "PhotosPicker(selection: $photo, matching: .images)" in controls
+    assert "look.onBackgroundChanged = {" in controls
+    assert "DirectCallPreviewButton" not in views
+    assert '"eye"' not in views
 
 
 def test_android_wires_the_call_engine_screen_and_buttons():
@@ -604,11 +608,14 @@ def test_android_wires_the_call_engine_screen_and_buttons():
     assert "DirectCallButtons(conversation)" in (chat / "chat" / "ChatScreen.kt").read_text(encoding="utf-8")
     assert "DirectCallOverlay()" in (chat / "Features.kt").read_text(encoding="utf-8")
     assert "chat.calls = DirectCallFeature.install(" in (chat / "chat" / "ChatDepth.kt").read_text(encoding="utf-8")
-    peer = (chat / "chat" / "WebCallPeer.kt").read_text(encoding="utf-8")
+    peer = (chat / "facechanger" / "WebCallPeer.kt").read_text(encoding="utf-8")
     assert 'const val BASE_URL = "https://$ORIGIN_HOST/"' in peer
     assert "settings.allowFileAccess = false" in peer
     assert "request.origin?.host == ORIGIN_HOST" in peer
-    core = NATIVE / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "chat" / "DirectCalls.kt"
+    buttons = (chat / "chat" / "DirectCallViews.kt").read_text(encoding="utf-8")
+    assert '"visibility"' not in buttons
+    assert "FaceChangerButtons(" in buttons
+    core = NATIVE / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "facechanger" / "FaceChangerLook.kt"
     faces = core.read_text(encoding="utf-8")
     for face_id in ("maya", "theo", "kofi", "ingrid", "ren"):
-        assert f'DirectCallFace("{face_id}"' in faces
+        assert f'FaceChangerOption("{face_id}"' in faces

@@ -346,15 +346,17 @@ def test_chat_page_has_preview_and_background_picker():
 
 
 def test_android_wires_backgrounds_and_the_preview():
-    feature = ROOT.parent / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "feature" / "chat"
-    views = (feature / "DirectCallViews.kt").read_text(encoding="utf-8")
+    feature = ROOT.parent / "native" / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "feature" / "facechanger"
+    controls = (feature / "FaceChangerControls.kt").read_text(encoding="utf-8")
+    screen = (feature / "FaceChangerScreen.kt").read_text(encoding="utf-8")
     peer = (feature / "WebCallPeer.kt").read_text(encoding="utf-8")
-    installer = (feature / "DirectCallFeature.kt").read_text(encoding="utf-8")
-    assert "previewing != null -> DirectCallPreviewScreen(previewing, state)" in views
-    assert "ActivityResultContracts.PickVisualMedia()" in views
+    installer = (feature / "FaceChangerFeature.kt").read_text(encoding="utf-8")
+    assert "peers.preview(look.face, look.background, look.customBackgroundImage, look.customFaceImage)" in screen
+    assert "ActivityResultContracts.PickVisualMedia()" in controls
     assert 'request("background", listOf(id, image))' in peer
     assert "if (previewed != null && video) {" in peer
-    assert 'const val BACKGROUND_PREF = "chat.callBackground"' in installer
-    core = (ROOT.parent / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "chat" / "DirectCalls.kt").read_text(encoding="utf-8")
+    assert "FaceChangerLook.BACKGROUND_PREF" in installer
+    core = (ROOT.parent / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "facechanger" / "FaceChangerLook.kt").read_text(encoding="utf-8")
+    assert 'const val BACKGROUND_PREF = "chat.callBackground"' in core
     for background_id in ("blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"):
-        assert f'DirectCallFace("{background_id}"' in core or (background_id == "custom" and "DirectCallFace(CUSTOM_BACKGROUND" in core)
+        assert f'FaceChangerOption("{background_id}"' in core or (background_id == "custom" and "FaceChangerOption(CUSTOM_BACKGROUND" in core)

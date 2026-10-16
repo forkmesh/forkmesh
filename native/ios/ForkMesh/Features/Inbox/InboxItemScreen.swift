@@ -57,6 +57,7 @@ struct InboxItemScreen: View {
         .background(fm.canvas)
         .navigationTitle(item.kindLabel)
         .navigationBarTitleDisplayMode(.inline)
+        .shellKeepsNavigationBar()
         .task {
             await model.markRead(item)
             await loadQuickFixes()

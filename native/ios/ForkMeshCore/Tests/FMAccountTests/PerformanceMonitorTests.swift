@@ -33,6 +33,17 @@ final class PerformanceMonitorTests: XCTestCase {
         XCTAssertTrue(printed.all[0].contains("repos.load"))
         XCTAssertTrue(printed.all[0].contains("650ms"))
         XCTAssertEqual(printed.all[0], "[perf] operation repos.load 650ms screen=Code")
+        XCTAssertFalse(event.stackTrace.isEmpty, "a slow operation keeps the stack it was started from")
+    }
+
+    func testReturnAddressesAreSymbolicatedOnlyWhenAsked() {
+        let addresses = PerformanceMonitorService.captureReturnAddresses()
+        XCTAssertFalse(addresses.isEmpty)
+        XCTAssertLessThanOrEqual(addresses.count, 8)
+        XCTAssertEqual(PerformanceMonitorService.symbolicate([1]), "0 ??? 0x1")
+        let lines = PerformanceMonitorService.symbolicate(addresses).split(separator: "\n")
+        XCTAssertEqual(lines.count, addresses.count)
+        XCTAssertTrue(lines.first?.hasPrefix("0 ") ?? false)
     }
 
     func testTrackIgnoresFastOperationsAndDisabledMonitors() async {
@@ -222,6 +233,40 @@ extension PerformanceMonitorTests {
         source.handler?([FrameTiming(buildDuration: suspended, rasterDuration: .zero, totalSpan: suspended)])
         XCTAssertTrue(monitor.events.isEmpty)
         XCTAssertEqual(monitor.stallCount, 0)
+        monitor.uninstallStallMonitors()
+    }
+
+    func testALateCallbackCountsOnlyTheTimePastItsPeriod() throws {
+        XCTAssertNil(FrameTiming.lateCallback(interval: .milliseconds(100), period: .milliseconds(100)))
+        XCTAssertNil(FrameTiming.lateCallback(interval: .milliseconds(200), period: .milliseconds(100)))
+        XCTAssertNil(FrameTiming.lateCallback(interval: .milliseconds(200), period: .zero))
+        let late = try XCTUnwrap(FrameTiming.lateCallback(interval: .milliseconds(221), period: .milliseconds(100)))
+        XCTAssertEqual(late.buildDuration, .milliseconds(121))
+        XCTAssertEqual(late.rasterDuration, .zero)
+        XCTAssertEqual(late.vsyncOverhead, .milliseconds(100))
+        XCTAssertNil(late.totalSpan)
+    }
+
+    func testOneSkippedTickOfTheTenHertzProbeIsNotAStall() {
+        final class Source: FrameTimingSource {
+            var handler: (([FrameTiming]) -> Void)?
+            func startReporting(_ handler: @escaping ([FrameTiming]) -> Void) { self.handler = handler }
+            func stopReporting() {}
+        }
+        let source = Source()
+        let monitor = PerformanceMonitorService(heartbeatInterval: .seconds(10), logSink: { _ in })
+        monitor.installStallMonitors(frameSource: source, lifecycleState: .resumed)
+        Thread.sleep(forTimeInterval: 0.4)
+        let period = Duration.milliseconds(100)
+        let reported = [201, 215, 221].compactMap { FrameTiming.lateCallback(interval: .milliseconds($0), period: period) }
+        source.handler?(reported)
+        XCTAssertTrue(monitor.events.isEmpty, "a 100-121 ms hold of the main thread is under the 200 ms stall budget")
+        let twoTicks = FrameTiming.lateCallback(interval: .milliseconds(320), period: period)
+        source.handler?(twoTicks.map { [$0] } ?? [])
+        XCTAssertEqual(monitor.events.count, 1)
+        XCTAssertEqual(monitor.events.first?.durationMs, 220)
+        XCTAssertEqual(monitor.events.first?.details["buildMs"], 220)
+        XCTAssertEqual(monitor.events.first?.details["vsyncMs"], 100)
         monitor.uninstallStallMonitors()
     }
 }

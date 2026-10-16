@@ -149,7 +149,14 @@ pages, Watch) use `bareShellTop()`; `ShellChrome` counts registrations per tab
 and hides the top bar while any is on top. `ShellRootBarHider` hides the
 system navigation bar on tab roots and corrects stale top safe-area insets; on
 a pop back to the root it fades the top bar in during the transition
-(`ShellChrome.returnToRoot(on:)`).
+(`ShellChrome.returnToRoot(on:)`). The hider sets the bar hidden through
+UIKit, so a page pushed straight from a notification tap into a freshly shown
+tab could inherit the hidden bar and lose its Back button. Ping detail pages
+(`InboxItemScreen`, `PingDetailScreen`, every ping kind and every entry point:
+inbox row, notification tap, Notifications list) use
+`shellKeepsNavigationBar()` (`Shell/ShellPageBarKeeper.swift`), which shows the
+bar again whenever the page is on top. Android's ping pages draw their own
+back button (`RoutePage`, `FmPanelHeader`) and need nothing extra.
 
 **Bottom clearance.** The bar floats over pages. `HomeShell.barClearance`
 (bar height plus `barMargin`, 32 pt; zero with the keyboard up or on iPad)
@@ -310,14 +317,13 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   repository is the repository picker and gets the shared button).
   Calendar's Today moved from the system overflow (which draws its own ⋯) to
   a plain button for the same reason.
-- **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): the Market
-  package's web page in a web view on the server's own https origin, with the
-  camera and microphone granted only to that origin. A recorded clip (or a
-  snapshot) goes to the share sheet: the page hands the file to the app in
-  384 KiB base64 chunks through the `fmShare` script handler (Android:
-  `FmShareBridge`), `ShareTransferWriter` checks the type (video, image,
-  audio), size (512 MiB at most) and name, and writes it to one temporary
-  folder that each new share empties.
+- **Face Changer** (`.faceChanger`, `/dashboard/face-changer`): a native
+  screen (`Features/FaceChanger/FaceChangerScreen.swift`), not the package's
+  web page. It previews the camera through the bundled call page with the
+  Face, Background, Voice and Hear myself controls that calls also use, and
+  records a clip of up to five minutes to save or share. The choices live in
+  `FaceChangerStudio.shared.look` and are the ones the next call uses
+  (`docs/app/chat-direct-calls.md`, Face Changer on the phones).
 - **App Store Status** (`.appStoreStatus`, `/dashboard/app-store-status`,
   Insights group): the App Store Connect snapshot the desktop last published,
   read from `GET /api/app-store-status` and drawn natively

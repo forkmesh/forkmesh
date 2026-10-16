@@ -479,13 +479,20 @@ default in new projects except the chosen starter pack
   never depends on the Bug reports package being installed. After a
   successful uninstall the plugin screen pops; an organization removal waits
   for its export to be saved first, and a failure shows a dialog.
-- **Face Changer.** `A/feature/facechanger/` hosts `/dashboard/face-changer`
-  in a WebView limited to the server's host (`C/market/FaceChangerPage.kt`),
-  grants the camera and microphone only there after the runtime prompt, and
-  receives shared clips over `FmShareBridge`. `C/market/ShareTransfer.kt`
-  validates each begin, chunk and end message (media type, 512 MiB cap, safe
-  name); the file goes to the `face-changer-share` cache path and out through
-  an `ACTION_SEND` chooser.
+- **Face Changer.** A native feature, not the web page. `C/facechanger/`
+  holds `FaceChangerLook` (face, background and voice choices, catalogs,
+  preference keys, change listeners). `A/feature/facechanger/` holds the rest:
+  `FaceChangerFeature` (the one look, restored from and saved to the
+  preferences and photo files, the shared `face-changer` worker thread and the
+  `WebCallPeers` factory hosting `direct-call.html`), `FaceChangerControls`
+  (the Face, Background and Voice buttons and pickers), and
+  `FaceChangerScreen`, which previews the camera after the runtime prompt and
+  records a clip into the `face-changer-share` cache path for an
+  `ACTION_SEND` chooser. Direct calls (`A/feature/chat/DirectCallFeature.kt`)
+  build their engine on that look, factory and worker and show the same
+  controls; the conversation header no longer has a preview (eye) button.
+  `docs/app/chat-direct-calls.md` (Face Changer on the phones) has the
+  details.
 - **App Store Status.** `A/feature/appstorestatus/` draws
   `/dashboard/app-store-status` natively (Insights group, route
   `appStoreStatus`). It reads `GET /api/app-store-status` through

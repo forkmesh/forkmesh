@@ -55,6 +55,10 @@ secure context for `getUserMedia`); the native side drives it through
 `webkit.messageHandlers.fmCall` or `FmCallBridge.post`. There is no CallKit,
 VoIP push or foreground service, so a call can drop in the background.
 
+The page, its host (`WebCallPeer` and its factory) and the face, background
+and voice choices belong to the Face Changer plug-in, not to chat; calls use
+them from there (see [Face Changer on the phones](#face-changer-on-the-phones)).
+
 `app/tools/sync_native_call_faces.py` and
 `app/tools/sync_native_call_voice.py` inline the face modules, assets, models
 and the voice code into both copies of `direct-call.html`;
@@ -66,7 +70,7 @@ must stay byte-identical, so a glue change goes into both.
 
 On an iPhone with a front TrueDepth camera the page does not open video with
 `getUserMedia`: WebKit would own the camera and native code could not read the
-infrared depth. Instead `CallDepthCamera` (`Features/Chat/Calls/`) runs an
+infrared depth. Instead `CallDepthCamera` (`Features/FaceChanger/`) runs an
 `AVCaptureSession` at 640x480, 24-30 fps, with video and filtered
 `DepthFloat32` depth paired by `AVCaptureDataOutputSynchronizer`, and pushes
 each frame into the page. Android exposes no front depth sensor to apps, so it
@@ -426,9 +430,11 @@ without a matching voice id gets the caller's own voice.
 
 ### Preview and reuse outside a call
 
-`/chat` and the apps have a Preview screen that opens the camera through the
-same stage with Face, Background and Voice pickers and "Hear myself"; Start
-video call keeps the stage and offers its track, with no camera restart.
+`/chat` has a Preview screen that opens the camera through the same stage
+with Face, Background and Voice pickers and "Hear myself"; Start video call
+keeps the stage and offers its track, with no camera restart. In the phone
+apps that preview is the Face Changer plug-in's screen, not a button in the
+conversation ([below](#face-changer-on-the-phones)).
 
 ```js
 const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage, outfitId });
@@ -468,10 +474,43 @@ Clips can go to a share sheet: `shareStudioBlob` sends the file to the
 ForkMesh phone app when it hosts the page (`fmShare` on iOS, `FmShareBridge`
 on Android, as begin, 384 KiB base64 chunks and end messages) and otherwise
 calls `navigator.share` with the file where the browser can share files
-(`canShareStudioFiles`), so phone browsers get their own share sheet. Inside
-the phone app the face page hides Download and Pop out, which a web view
-cannot do, and Snapshot shares the PNG instead of downloading it
-([NAVIGATION.md](../native/NAVIGATION.md#203-other-pages)).
+(`canShareStudioFiles`), so phone browsers get their own share sheet. The
+phone apps no longer load this page (next section), so the `fmShare` and
+`FmShareBridge` paths only matter to an older app build.
+
+#### Face Changer on the phones
+
+On iOS and Android the Face Changer is a native feature, not the web page in a
+web view. It owns everything a face change needs, and calls reuse it:
+
+- **The look.** `FaceChangerLook` (Android `core/.../facechanger/`, iOS
+  `FMChat/FaceChanger/`) holds the face, face photo, background, background
+  photo and voice choice, the catalogs and labels, validation, and the
+  `chat.callFace`, `chat.callBackground` and `chat.callVoice` keys. Each change
+  tells its listeners which part changed. One look per app: the plug-in
+  (`FaceChangerFeature` on Android, `FaceChangerStudio` on iOS) restores it from
+  the preferences and photo files and saves every change.
+- **The engine.** The plug-in owns the `direct-call.html` host
+  (`WebCallPeer`/`WebCallPeers`, Android `feature/facechanger/`, iOS
+  `Features/FaceChanger/` with the Vision and TrueDepth code) and one factory,
+  so the plug-in screen and calls share a single page and camera. The factory
+  refuses a preview while a call holds the page (`busy`), so opening the
+  plug-in during a call cannot take the camera away from it.
+- **The plug-in screen** (route `face-changer`) previews the camera through the
+  bundled page with Face, Background, Voice and Hear myself, and records a clip
+  with the page's `record`/`recordStop`/`recordChunk` operations (the ones
+  view-once video uses), capped at five minutes like the web studio. Android
+  hands the clip to the share sheet; iOS shows it with Save and Share.
+- **Calls.** `DirectCallEngine` takes the plug-in's look instead of keeping its
+  own copy and listens to it: a change made in the plug-in, or from the call
+  screen's Face, Background and Voice controls (the plug-in's own controls),
+  reaches the live video peer at once, and a new call starts with the current
+  look. The plug-in pushes changes to its preview peer the same way, so neither
+  screen sends anything to the page by hand.
+- **No eye button.** The conversation header has only Voice call and Video
+  call; the camera preview it used to open is the plug-in screen. The view-once
+  video message recorded from that preview on iOS went with it; the
+  conversation's own view-once camera still sends one.
 
 The face page also has the Outfit picker (thumbnails drawn by
 `callOutfitThumbnail`, one per tick after the page loads so it never blocks),

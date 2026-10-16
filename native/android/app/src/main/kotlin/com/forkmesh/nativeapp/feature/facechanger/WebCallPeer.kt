@@ -1,4 +1,4 @@
-package com.forkmesh.nativeapp.feature.chat
+package com.forkmesh.nativeapp.feature.facechanger
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -11,6 +11,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
@@ -22,6 +23,7 @@ import com.forkmesh.nativeapp.chat.DirectCallPeerFactory
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.asJsonMap
 import com.forkmesh.nativeapp.json.jsonText
+import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -46,15 +48,31 @@ class WebCallPeers(
     @Volatile
     private var previewPeer: WebCallPeer? = null
 
+    @Volatile
+    private var livePeer: WebCallPeer? = null
+
     val view: StateFlow<WebView?> = viewState.asStateFlow()
     val facesSupported: StateFlow<Boolean> = facesState.asStateFlow()
     val backgrounds: StateFlow<Map<String, String>?> = backgroundsState.asStateFlow()
     val previewing: StateFlow<Boolean> = previewState.asStateFlow()
 
+    val busy: Boolean get() = livePeer != null
+
     fun previewed(): WebCallPeer? = previewPeer
 
+    private fun open(): WebCallPeer {
+        var made: WebCallPeer? = null
+        val peer = WebCallPeer(context, callbacks) { gone ->
+            viewState.compareAndSet(gone, null)
+            if (livePeer === made) livePeer = null
+        }
+        made = peer
+        return peer
+    }
+
     fun preview(face: String, background: String, image: String, faceImage: String = ""): WebCallPeer {
-        val peer = previewPeer ?: WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }.also { made ->
+        check(livePeer == null) { "A call is using the camera." }
+        val peer = previewPeer ?: open().also { made ->
             try {
                 viewState.value = made.load()
             } catch (error: Exception) {
@@ -93,26 +111,32 @@ class WebCallPeers(
             previewPeer = null
             previewState.value = false
             try {
+                previewed.dropRecording()
                 previewed.request("setup", listOf(media.wire, iceServers, "", voice()))
             } catch (error: Exception) {
                 previewed.close()
                 throw error
             }
+            livePeer = previewed
             return previewed
         }
         endPreview()
-        val peer = WebCallPeer(context, callbacks) { gone -> viewState.compareAndSet(gone, null) }
+        val peer = open()
+        livePeer = peer
         try {
             viewState.value = peer.load()
             peer.request("setup", listOf(media.wire, iceServers, if (video) face() else "", voice()))
             learn(peer, video)
         } catch (error: Exception) {
+            if (livePeer === peer) livePeer = null
             peer.close()
             throw error
         }
         return peer
     }
 }
+
+data class WebCallRecording(val mime: String, val durationMs: Long)
 
 class WebCallPeer internal constructor(
     private val context: Context,
@@ -327,6 +351,39 @@ class WebCallPeer internal constructor(
     }
 
     fun setMonitor(on: Boolean): Boolean = request("monitor", listOf(on)) == true
+
+    fun startRecording(face: String, background: String, voice: String) {
+        request("record", listOf(face, background, voice))
+    }
+
+    fun finishRecording(target: File): WebCallRecording {
+        try {
+            val summary = request("recordStop", emptyList()).asJsonMap()
+            val size = (summary["size"] as? Number)?.toLong() ?: 0L
+            check(size > 0) { "empty_recording" }
+            var written = 0L
+            target.outputStream().buffered().use { out ->
+                while (written < size) {
+                    val chunk = Base64.decode(jsonText(request("recordChunk", listOf(written))), Base64.DEFAULT)
+                    check(chunk.isNotEmpty()) { "recording_read" }
+                    out.write(chunk)
+                    written += chunk.size
+                }
+            }
+            check(written == size) { "recording_read" }
+            val mime = jsonText(summary["mime"]).substringBefore(';').trim().lowercase()
+            return WebCallRecording(
+                mime = if (mime.startsWith("video/")) mime else "video/mp4",
+                durationMs = (summary["durationMs"] as? Number)?.toLong() ?: 0L,
+            )
+        } finally {
+            dropRecording()
+        }
+    }
+
+    fun dropRecording() {
+        if (!closed) runCatching { request("recordDrop", emptyList()) }
+    }
 
     override fun close() {
         if (closed) return

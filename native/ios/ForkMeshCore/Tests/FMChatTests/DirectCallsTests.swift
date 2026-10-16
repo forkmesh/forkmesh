@@ -143,12 +143,59 @@ final class DirectCallsTests: XCTestCase {
 
     @MainActor func signalTypes() -> [String] { signals.map(\.1) }
 
+    @MainActor func testAChoiceMadeInTheFaceChangerReachesALiveVideoCall() async throws {
+        let look = FaceChangerLook()
+        signals = []
+        gate = SleepGate()
+        let gate = gate
+        let engine = DirectCallEngine(
+            selfId: { "me-node" }, accountName: { "me" }, partnerFor: { _ in "pat" },
+            sendSignal: { [weak self] conversation, type, extra in
+                self?.signals.append((conversation, type, extra))
+                return true
+            },
+            sleep: { try await gate.sleep($0) }, look: look)
+        let factory = FakeCallPeerFactory()
+        engine.peerFactory = factory
+        await engine.start(DirectCallsTests.conversation, media: .video)
+        await engine.handleFrame(
+            frame("call-accept", call: engine.callId, extra: ["to": "me-node"]),
+            conversation: DirectCallsTests.conversation)
+        let peer = try XCTUnwrap(factory.peers.first)
+        look.setFace("ingrid")
+        look.setBackground("office")
+        XCTAssertEqual(peer.faces, ["ingrid"])
+        XCTAssertEqual(peer.voices.last, "ingrid")
+        XCTAssertEqual(peer.backgrounds, ["office"])
+        XCTAssertEqual(engine.face, "ingrid")
+        engine.detach()
+        look.setFace("maya")
+        XCTAssertEqual(peer.faces, ["ingrid"])
+        await engine.hangUp()
+    }
+
+    @MainActor func testTheLookTellsItsListenersWhatChanged() {
+        let look = FaceChangerLook()
+        var parts: [FaceChangerPart] = []
+        let token = look.addListener { parts.append($0) }
+        look.setFace("theo")
+        look.setBackground("blur")
+        look.setVoiceChoice("robot")
+        look.setBackground("blur")
+        look.setFace("nobody")
+        XCTAssertEqual(parts, [.face, .background, .voice])
+        XCTAssertEqual(look.effectiveVoice, "robot")
+        look.removeListener(token)
+        look.setFace("kofi")
+        XCTAssertEqual(parts.count, 3)
+    }
+
     @MainActor func testFaceIsAppliedToAVideoPeerBeforeItOffers() async throws {
         let engine = makeEngine()
         let factory = FakeCallPeerFactory()
         engine.peerFactory = factory
         var saved: [String] = []
-        engine.onFaceChanged = { saved.append($0) }
+        engine.look.onFaceChanged = { saved.append($0) }
         engine.setFace("nobody")
         XCTAssertEqual(engine.face, "")
         engine.setFace("kofi")
@@ -174,11 +221,11 @@ final class DirectCallsTests: XCTestCase {
         engine.peerFactory = factory
         var saved: [String] = []
         var pictures: [String] = []
-        engine.onFaceChanged = { saved.append($0) }
-        engine.onFaceImageChanged = { pictures.append($0) }
-        engine.setFace(DirectCallEngine.customFace)
+        engine.look.onFaceChanged = { saved.append($0) }
+        engine.look.onFaceImageChanged = { pictures.append($0) }
+        engine.setFace(FaceChangerLook.customFace)
         XCTAssertEqual(engine.face, "")
-        engine.setFace(DirectCallEngine.customFace, image: "data:image/jpeg;base64,AA")
+        engine.setFace(FaceChangerLook.customFace, image: "data:image/jpeg;base64,AA")
         XCTAssertEqual(engine.face, "custom")
         XCTAssertEqual(engine.effectiveVoice, "")
         await engine.start(DirectCallsTests.conversation, media: .video)
@@ -187,13 +234,13 @@ final class DirectCallsTests: XCTestCase {
             conversation: DirectCallsTests.conversation)
         let peer = try XCTUnwrap(factory.peers.first)
         XCTAssertEqual(peer.faces, ["custom:data:image/jpeg;base64,AA"])
-        engine.setFace(DirectCallEngine.customFace, image: "data:image/jpeg;base64,BB")
+        engine.setFace(FaceChangerLook.customFace, image: "data:image/jpeg;base64,BB")
         engine.setFace("maya")
-        engine.setFace(DirectCallEngine.customFace)
+        engine.setFace(FaceChangerLook.customFace)
         XCTAssertEqual(peer.faces, ["custom:data:image/jpeg;base64,AA", "custom:data:image/jpeg;base64,BB", "maya", "custom:data:image/jpeg;base64,BB"])
         XCTAssertEqual(saved, ["custom", "maya", "custom"])
         XCTAssertEqual(pictures, ["data:image/jpeg;base64,AA", "data:image/jpeg;base64,BB"])
-        XCTAssertEqual(DirectCallEngine.faceChoices.map(\.id), ["maya", "theo", "kofi", "ingrid", "ren", "custom"])
+        XCTAssertEqual(FaceChangerLook.faceChoices.map(\.id), ["maya", "theo", "kofi", "ingrid", "ren", "custom"])
         await engine.hangUp()
     }
 
@@ -202,9 +249,9 @@ final class DirectCallsTests: XCTestCase {
         let factory = FakeCallPeerFactory()
         engine.peerFactory = factory
         var saved: [String] = []
-        engine.onBackgroundChanged = { saved.append($1.isEmpty ? $0 : "\($0):\($1)") }
+        engine.look.onBackgroundChanged = { saved.append($1.isEmpty ? $0 : "\($0):\($1)") }
         engine.setBackground("nowhere")
-        engine.setBackground(DirectCallEngine.customBackground)
+        engine.setBackground(FaceChangerLook.customBackground)
         XCTAssertEqual(engine.background, "")
         engine.setBackground("world")
         await engine.start(DirectCallsTests.conversation, media: .video)
@@ -213,12 +260,12 @@ final class DirectCallsTests: XCTestCase {
             conversation: DirectCallsTests.conversation)
         let peer = try XCTUnwrap(factory.peers.first)
         XCTAssertEqual(peer.backgrounds, ["world"])
-        engine.setBackground(DirectCallEngine.customBackground, image: "data:image/jpeg;base64,AA")
+        engine.setBackground(FaceChangerLook.customBackground, image: "data:image/jpeg;base64,AA")
         engine.setBackground("blur")
-        engine.setBackground(DirectCallEngine.customBackground)
+        engine.setBackground(FaceChangerLook.customBackground)
         XCTAssertEqual(peer.backgrounds, ["world", "custom:data:image/jpeg;base64,AA", "blur", "custom:data:image/jpeg;base64,AA"])
         XCTAssertEqual(saved, ["world", "custom:data:image/jpeg;base64,AA", "blur:data:image/jpeg;base64,AA", "custom:data:image/jpeg;base64,AA"])
-        XCTAssertEqual(DirectCallEngine.backgrounds.map(\.id), ["", "blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"])
+        XCTAssertEqual(FaceChangerLook.backgrounds.map(\.id), ["", "blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"])
         await engine.hangUp()
     }
 
@@ -234,7 +281,7 @@ final class DirectCallsTests: XCTestCase {
         let peer = try XCTUnwrap(factory.peers.first)
         XCTAssertEqual(peer.faces, [])
         XCTAssertEqual(engine.face, "maya")
-        XCTAssertEqual(DirectCallEngine.faces.map(\.id), ["maya", "theo", "kofi", "ingrid", "ren"])
+        XCTAssertEqual(FaceChangerLook.faces.map(\.id), ["maya", "theo", "kofi", "ingrid", "ren"])
         await engine.hangUp()
     }
 
@@ -243,7 +290,7 @@ final class DirectCallsTests: XCTestCase {
         let factory = FakeCallPeerFactory()
         engine.peerFactory = factory
         var saved: [String] = []
-        engine.onVoiceChanged = { saved.append($0) }
+        engine.look.onVoiceChanged = { saved.append($0) }
         XCTAssertEqual(engine.voiceChoice, "face")
         engine.setVoiceChoice("nobody")
         XCTAssertEqual(engine.voiceChoice, "face")
@@ -267,10 +314,10 @@ final class DirectCallsTests: XCTestCase {
         peer.voiceObserver?("")
         XCTAssertEqual(engine.voice, "")
         XCTAssertEqual(saved, ["off", "ren"])
-        XCTAssertEqual(DirectCallEngine.voiceLabel("ren"), "Ren")
-        XCTAssertEqual(DirectCallEngine.voiceLabel(""), "Your own")
-        XCTAssertEqual(DirectCallEngine.voiceLabel("older-woman"), "Older woman")
-        XCTAssertEqual(DirectCallEngine.voices.map(\.id), [
+        XCTAssertEqual(FaceChangerLook.voiceLabel("ren"), "Ren")
+        XCTAssertEqual(FaceChangerLook.voiceLabel(""), "Your own")
+        XCTAssertEqual(FaceChangerLook.voiceLabel("older-woman"), "Older woman")
+        XCTAssertEqual(FaceChangerLook.voices.map(\.id), [
             "maya", "theo", "kofi", "ingrid", "ren",
             "deep", "older-man", "young-man", "warm", "low", "older-woman", "teen", "neutral", "robot",
         ])
