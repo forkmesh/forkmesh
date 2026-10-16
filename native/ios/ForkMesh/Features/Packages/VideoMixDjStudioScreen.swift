@@ -33,7 +33,7 @@ struct VideoMixDjStudioScreen: View {
     }
 
     private func present() {
-        let studio = model ?? DjStudioModel()
+        let studio = model ?? DjStudioHub.shared.studio()
         let shown = $presented
         studio.onLeave = { shown.wrappedValue = false }
         model = studio
@@ -87,6 +87,8 @@ struct DjLandscape: View {
         let d = max(100, min(middle - 10 * u, (size.width - 2 * strip - centre - 40 * u) / 2))
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8 * u) {
+                DjBackButton(model: model, size: 34 * u)
+                    .padding(.top, 2 * u)
                 DjLibraryHandle(model: model, side: .a, u: u)
                 VStack(spacing: 4 * u) {
                     HStack(spacing: 8 * u) {
@@ -136,16 +138,16 @@ struct DjLandscape: View {
             .padding(.horizontal, 8 * u)
             .frame(height: middle)
             HStack(spacing: 0) {
-                DjPlayButton(model: model, deck: model.a, size: 52 * u)
-                Spacer(minLength: 8 * u)
-                DjCueButtons(model: model, deck: model.a, u: u)
-                Spacer(minLength: 8 * u)
+                DjTransport(model: model, deck: model.a, u: u * 0.9)
+                Spacer(minLength: 6 * u)
+                DjCueButtons(model: model, deck: model.a, u: u, segment: 50)
+                Spacer(minLength: 6 * u)
                 DjCrossfader(model: model, u: u)
-                    .frame(width: min(320 * u, size.width * 0.32), height: bottom - 8 * u)
-                Spacer(minLength: 8 * u)
-                DjCueButtons(model: model, deck: model.b, u: u)
-                Spacer(minLength: 8 * u)
-                DjPlayButton(model: model, deck: model.b, size: 52 * u)
+                    .frame(width: max(120 * u, min(300 * u, size.width - 560 * u)), height: bottom - 8 * u)
+                Spacer(minLength: 6 * u)
+                DjCueButtons(model: model, deck: model.b, u: u, segment: 50)
+                Spacer(minLength: 6 * u)
+                DjTransport(model: model, deck: model.b, u: u * 0.9)
             }
             .padding(.horizontal, 10 * u)
             .frame(height: bottom)
@@ -203,6 +205,9 @@ struct DjPortrait: View {
     private func deck(_ deck: DjDeck, deckBody: CGFloat, d: CGFloat, header: CGFloat, wave: CGFloat, u: CGFloat) -> some View {
         VStack(spacing: 4 * u) {
             HStack(spacing: 8 * u) {
+                if deck.side == .a {
+                    DjBackButton(model: model, size: 32 * u)
+                }
                 DjDeckInfo(model: model, deck: deck, mirrored: false, u: u * 0.82)
                 Spacer(minLength: 0)
                 DjLibraryHandle(model: model, side: deck.side, u: u * 0.8)
@@ -211,8 +216,8 @@ struct DjPortrait: View {
             DjWaveform(model: model, deck: deck)
                 .frame(height: wave)
             HStack(spacing: 6 * u) {
-                VStack(spacing: 10 * u) {
-                    DjPlayButton(model: model, deck: deck, size: 54 * u)
+                VStack(spacing: 8 * u) {
+                    DjTransport(model: model, deck: deck, u: u, vertical: true)
                     DjCueButtons(model: model, deck: deck, u: u, vertical: true)
                 }
                 .frame(width: 64 * u)

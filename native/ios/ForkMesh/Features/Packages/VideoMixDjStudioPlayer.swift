@@ -11,16 +11,42 @@ enum DjPlayerEvent {
     case failed(Int)
 }
 
+struct DjVolume: Equatable {
+    var level: Int
+    var muted: Bool
+    var gain: Double
+}
+
 @MainActor
-final class DjYouTubePlayer: NSObject, WKNavigationDelegate {
+final class DjDeckPlayer {
+    let side: DjDeckSide
+    private let host: DjPlayerHost
+
+    init(side: DjDeckSide, host: DjPlayerHost) {
+        self.side = side
+        self.host = host
+    }
+
+    func load(_ id: String, start: Double, rate: Double, volume: DjVolume) { host.load(side, id: id, start: start, rate: rate, volume: volume) }
+    func play() { host.call(side, "playVideo") }
+    func pause() { host.call(side, "pauseVideo") }
+    func stop() { host.stop(side) }
+    func seek(_ seconds: Double) { host.call(side, "seekTo", DjPlayerHost.number(seconds), "true") }
+    func setRate(_ rate: Double) { host.setRate(side, rate) }
+    func setVolume(_ volume: DjVolume) { host.setVolume(side, volume) }
+    func scratch(_ speed: Double?, at seconds: Double) { host.scratch(side, speed, at: seconds) }
+}
+
+@MainActor
+final class DjPlayerHost: NSObject, WKNavigationDelegate {
     let webView: WKWebView
-    var onEvent: ((DjPlayerEvent) -> Void)?
+    var onEvent: ((DjDeckSide, DjPlayerEvent) -> Void)?
 
     private let origin: URL
     private var apiReady = false
-    private var pending: String?
-    private var lastLoad: String?
-    private var lastVolume: (Int, Bool)?
+    private var pending: [DjDeckSide: String] = [:]
+    private var lastLoad: [DjDeckSide: String] = [:]
+    private var lastVolume: [DjDeckSide: DjVolume] = [:]
 
     init(origin: URL) {
         self.origin = origin
@@ -28,70 +54,84 @@ final class DjYouTubePlayer: NSObject, WKNavigationDelegate {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.allowsPictureInPictureMediaPlayback = false
-        configuration.suppressesIncrementalRendering = false
         let controller = WKUserContentController()
+        controller.addUserScript(WKUserScript(source: Self.frameScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         configuration.userContentController = controller
-        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 180), configuration: configuration)
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 240), configuration: configuration)
         super.init()
         controller.add(DjScriptProxy(self), name: "deck")
         webView.navigationDelegate = self
-        webView.isOpaque = false
+        webView.isOpaque = true
         webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.isUserInteractionEnabled = false
         webView.allowsLinkPreview = false
+        webView.accessibilityElementsHidden = true
         webView.loadHTMLString(Self.html, baseURL: origin)
     }
 
-    func load(_ id: String, start: Double, rate: Double, volume: Int, muted: Bool) {
+    func dock() {
+        guard webView.window == nil else { return }
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return }
+        webView.frame = CGRect(x: 0, y: 0, width: 420, height: 240)
+        window.insertSubview(webView, at: 0)
+    }
+
+    func load(_ side: DjDeckSide, id: String, start: Double, rate: Double, volume: DjVolume) {
         guard DjStudio.isVideoId(id) else { return }
-        lastVolume = (volume, muted)
-        let script = "fmLoad('\(id)',\(Self.number(start)),\(Self.number(rate)),\(volume),\(muted))"
-        lastLoad = script
-        if apiReady { run(script) } else { pending = script }
+        lastVolume[side] = volume
+        let script = "fmLoad('\(side.rawValue)','\(id)',\(Self.number(start)),\(Self.number(rate)),\(volume.level),\(volume.muted),\(Self.number(volume.gain)))"
+        lastLoad[side] = script
+        if apiReady { run(script) } else { pending[side] = script }
     }
 
-    func play() { run("fmCall('playVideo')") }
-    func pause() { run("fmCall('pauseVideo')") }
-    func stop() {
-        lastLoad = nil
-        pending = nil
-        run("fmCall('stopVideo')")
+    func call(_ side: DjDeckSide, _ name: String, _ arguments: String...) {
+        run((["fmCall('\(side.rawValue)'", "'\(name)'"] + arguments).joined(separator: ",") + ")")
     }
 
-    func seek(_ seconds: Double) { run("fmCall('seekTo',\(Self.number(seconds)),true)") }
-    func setRate(_ rate: Double) { run("fmRate(\(Self.number(rate)))") }
+    func stop(_ side: DjDeckSide) {
+        lastLoad[side] = nil
+        pending[side] = nil
+        run("fmStop('\(side.rawValue)')")
+    }
 
-    func setVolume(_ volume: Int, muted: Bool) {
-        guard apiReady else { return }
-        if let lastVolume, lastVolume == (volume, muted) { return }
-        lastVolume = (volume, muted)
-        run("fmVolume(\(volume),\(muted))")
+    func setRate(_ side: DjDeckSide, _ rate: Double) { run("fmRate('\(side.rawValue)',\(Self.number(rate)))") }
+
+    func scratch(_ side: DjDeckSide, _ speed: Double?, at seconds: Double) {
+        run("fmScratch('\(side.rawValue)',\(speed.map(Self.number) ?? "null"),\(Self.number(seconds)))")
+    }
+
+    func setVolume(_ side: DjDeckSide, _ volume: DjVolume) {
+        guard apiReady, lastVolume[side] != volume else { return }
+        lastVolume[side] = volume
+        run("fmVolume('\(side.rawValue)',\(volume.level),\(volume.muted),\(Self.number(volume.gain)))")
     }
 
     fileprivate func receive(_ body: Any) {
         guard let message = body as? [String: Any], let type = message["type"] as? String else { return }
         let number = { (key: String) -> Double in (message[key] as? NSNumber)?.doubleValue ?? 0 }
-        switch type {
-        case "api":
+        if type == "api" {
             apiReady = true
-            if let pending {
-                self.pending = nil
-                run(pending)
-            }
+            let scripts = pending
+            pending = [:]
+            for script in scripts.values { run(script) }
+            return
+        }
+        guard let side = (message["deck"] as? String).flatMap(DjDeckSide.init(rawValue:)) else { return }
+        switch type {
         case "ready":
-            lastVolume = nil
-            onEvent?(.ready)
+            lastVolume[side] = nil
+            onEvent?(side, .ready)
         case "tick":
-            onEvent?(.tick(time: number("time"), duration: number("duration"), state: Int(number("state"))))
+            onEvent?(side, .tick(time: number("time"), duration: number("duration"), state: Int(number("state"))))
         case "state":
-            onEvent?(.state(Int(number("state"))))
+            onEvent?(side, .state(Int(number("state"))))
         case "meta":
-            onEvent?(.meta(title: message["title"] as? String ?? "", author: message["author"] as? String ?? ""))
+            onEvent?(side, .meta(title: message["title"] as? String ?? "", author: message["author"] as? String ?? ""))
         case "error":
-            onEvent?(.failed(Int(number("code"))))
+            onEvent?(side, .failed(Int(number("code"))))
         default:
             break
         }
@@ -102,7 +142,7 @@ final class DjYouTubePlayer: NSObject, WKNavigationDelegate {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
-    private static func number(_ value: Double) -> String {
+    nonisolated static func number(_ value: Double) -> String {
         value.isFinite ? String(format: "%.3f", value) : "0"
     }
 
@@ -117,71 +157,84 @@ final class DjYouTubePlayer: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        onEvent?(.failed(-1))
+        for side in DjDeckSide.allCases where lastLoad[side] != nil { onEvent?(side, .failed(-1)) }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         apiReady = false
         pending = lastLoad
+        lastVolume = [:]
         webView.loadHTMLString(Self.html, baseURL: origin)
     }
 
     private static let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-        <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}#p,iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
-        </head><body><div id="p"></div><script>
-        var p=null,ready=false,meta="",want={rate:1,volume:100,muted:false},n=0;
+        <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}.s{position:absolute;top:0;bottom:0;width:50%}#sa{left:0}#sb{right:0}.s>*{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+        </head><body><div class="s" id="sa"><div id="a"></div></div><div class="s" id="sb"><div id="b"></div></div><script>
+        var K=["a","b"],D={},n=0;
+        K.forEach(function(k){D[k]={p:null,ready:false,meta:"",routed:false,w:{rate:1,volume:100,muted:false,gain:1,scratch:null,at:0}}});
         function post(m){try{webkit.messageHandlers.deck.postMessage(m)}catch(e){}}
         function onYouTubeIframeAPIReady(){post({type:"api"})}
-        function fmCall(name){if(!p||!ready||typeof p[name]!=="function")return;p[name].apply(p,[].slice.call(arguments,1));setTimeout(tick,60)}
-        function fmRate(r){want.rate=r;if(p&&ready)p.setPlaybackRate(r)}
-        function fmVolume(v,m){want.volume=v;want.muted=m;if(!p||!ready)return;p.setVolume(v);if(m)p.mute();else p.unMute()}
-        function tick(){if(!p||!ready||!p.getCurrentTime)return;var d=p.getVideoData?p.getVideoData():null;if(d&&d.title&&d.title!==meta){meta=d.title;post({type:"meta",title:d.title,author:d.author||""})}post({type:"tick",time:p.getCurrentTime()||0,duration:p.getDuration()||0,state:p.getPlayerState()})}
-        function fmLoad(id,start,rate,volume,muted){want={rate:rate,volume:volume,muted:muted};meta="";
-        if(p&&ready){p.cueVideoById({videoId:id,startSeconds:start});fmVolume(volume,muted);p.setPlaybackRate(rate);setTimeout(tick,300);return}
-        if(p){try{p.destroy()}catch(e){}document.body.insertAdjacentHTML("afterbegin",'<div id="p"></div>');ready=false}
-        p=new YT.Player("p",{host:"https://www.youtube-nocookie.com",width:"100%",height:"100%",videoId:id,
+        function frame(k){try{var f=D[k].p&&D[k].p.getIframe&&D[k].p.getIframe();return f&&f.contentWindow}catch(e){return null}}
+        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at},"*")}
+        function fmCall(k,name){var d=D[k];if(!d.p||!d.ready||typeof d.p[name]!=="function")return;d.p[name].apply(d.p,[].slice.call(arguments,2));setTimeout(function(){tick(k)},60)}
+        function fmStop(k){D[k].w.scratch=null;fmCall(k,"stopVideo")}
+        function fmRate(k,r){D[k].w.rate=r;push(k)}
+        function fmScratch(k,s,at){var x=D[k].w;x.scratch=s;x.at=at;push(k)}
+        function fmVolume(k,v,m,g){var d=D[k];d.w.volume=v;d.w.muted=m;d.w.gain=g;push(k);if(!d.p||!d.ready)return;d.p.setVolume(d.routed?100:v);if(m)d.p.mute();else d.p.unMute()}
+        function tick(k){var d=D[k],p=d.p;if(!p||!d.ready||!p.getCurrentTime)return;var v=p.getVideoData?p.getVideoData():null;if(v&&v.title&&v.title!==d.meta){d.meta=v.title;post({type:"meta",deck:k,title:v.title,author:v.author||""})}post({type:"tick",deck:k,time:p.getCurrentTime()||0,duration:p.getDuration()||0,state:p.getPlayerState()})}
+        function fmLoad(k,id,start,rate,v,m,g){var d=D[k];d.w.rate=rate;d.w.scratch=null;d.meta="";
+        if(d.p&&d.ready){d.p.cueVideoById({videoId:id,startSeconds:start});fmVolume(k,v,m,g);setTimeout(function(){tick(k)},300);return}
+        d.w.volume=v;d.w.muted=m;d.w.gain=g;
+        if(d.p){try{d.p.destroy()}catch(e){}document.getElementById("s"+k).innerHTML='<div id="'+k+'"></div>';d.ready=false;d.routed=false}
+        d.p=new YT.Player(k,{host:"https://www.youtube-nocookie.com",width:"100%",height:"100%",videoId:id,
         playerVars:{playsinline:1,controls:0,disablekb:1,fs:0,rel:0,iv_load_policy:3,cc_load_policy:0,enablejsapi:1,start:Math.floor(start),origin:location.origin},
-        events:{onReady:function(){ready=true;fmVolume(want.volume,want.muted);p.setPlaybackRate(want.rate);post({type:"ready"});tick()},
-        onStateChange:function(e){if((e.data===1||e.data===5)&&p.getPlaybackRate()!==want.rate)p.setPlaybackRate(want.rate);post({type:"state",state:e.data});tick()},
-        onError:function(e){post({type:"error",code:e.data})}}})}
-        setInterval(function(){if(!p||!ready)return;var s=p.getPlayerState();if(s===1||s===3||++n%4===0)tick()},250);
+        events:{onReady:function(){d.ready=true;fmVolume(k,d.w.volume,d.w.muted,d.w.gain);post({type:"ready",deck:k});tick(k)},
+        onStateChange:function(e){if(e.data===1)push(k);post({type:"state",deck:k,state:e.data});tick(k)},
+        onError:function(e){post({type:"error",deck:k,code:e.data})}}})}
+        addEventListener("message",function(e){var m=e.data;if(!m||typeof m!=="object"||!m.fmdjFrame)return;K.forEach(function(k){if(!e.source||frame(k)!==e.source)return;var d=D[k];if(m.fmdjFrame==="routed"){if(!d.routed){d.routed=true;fmVolume(k,d.w.volume,d.w.muted,d.w.gain)}}else push(k)})});
+        setInterval(function(){n++;K.forEach(function(k){var d=D[k];if(!d.p||!d.ready)return;var s=d.p.getPlayerState();if(s===1||s===3||n%4===0)tick(k)})},250);
         </script><script src="https://www.youtube.com/iframe_api"></script></body></html>
+        """
+
+    private static let frameScript = """
+        (function(){
+        if(window.top===window||!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname))return;
+        var w={rate:1,gain:1,scratch:null,at:0},ctx=null,amp=null,routed=null,tries=0;
+        function video(){return document.querySelector("video")}
+        function speed(v,r){if(Math.abs(v.playbackRate-r)>0.001)v.playbackRate=r}
+        function route(v){
+        if(routed===v)return true;
+        if(routed||tries>4||String(v.currentSrc||"").indexOf("blob:")!==0)return false;
+        var A=window.AudioContext||window.webkitAudioContext;if(!A)return false;
+        try{ctx=ctx||new A()}catch(e){tries=9;return false}
+        if(ctx.state!=="running"){tries++;ctx.resume().then(apply,function(){});return false}
+        try{var s=ctx.createMediaElementSource(v);amp=ctx.createGain();s.connect(amp);amp.connect(ctx.destination);routed=v;
+        ctx.onstatechange=function(){if(ctx.state!=="running"&&ctx.state!=="closed")ctx.resume().catch(function(){})};
+        parent.postMessage({fmdjFrame:"routed"},"*");return true}catch(e){tries=9;return false}}
+        function apply(){
+        var v=video();if(!v)return;
+        if(v.preservesPitch!==false)try{v.preservesPitch=false}catch(e){}
+        if(v.webkitPreservesPitch)try{v.webkitPreservesPitch=false}catch(e){}
+        if((w.gain<0.999||routed)&&route(v))amp.gain.setTargetAtTime(Math.max(0,Math.min(1,w.gain)),ctx.currentTime,0.012);
+        if(typeof w.scratch==="number"){var s=w.scratch;
+        if(s>0.08){if(Math.abs(v.currentTime-w.at)>0.35)v.currentTime=w.at;speed(v,Math.min(4,Math.max(0.25,s)));if(v.paused){var q=v.play();if(q&&q.catch)q.catch(function(){})}}
+        else{if(!v.paused)v.pause();if(Math.abs(v.currentTime-w.at)>0.04)v.currentTime=w.at}}
+        else speed(v,w.rate)}
+        addEventListener("message",function(e){var m=e.data;if(e.source!==parent||!m||typeof m!=="object"||m.fmdj!==1)return;w=m;apply()});
+        ["ratechange","playing","loadedmetadata"].forEach(function(t){document.addEventListener(t,function(e){if(e.target&&e.target.tagName==="VIDEO")apply()},true)});
+        parent.postMessage({fmdjFrame:"hello"},"*");
+        })();
         """
 }
 
 @MainActor
 private final class DjScriptProxy: NSObject, WKScriptMessageHandler {
-    weak var target: DjYouTubePlayer?
+    weak var target: DjPlayerHost?
 
-    init(_ target: DjYouTubePlayer) { self.target = target }
+    init(_ target: DjPlayerHost) { self.target = target }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         target?.receive(message.body)
-    }
-}
-
-struct DjVideoSurface: UIViewRepresentable {
-    let player: DjYouTubePlayer
-
-    func makeUIView(context: Context) -> UIView {
-        let host = UIView()
-        host.backgroundColor = .black
-        host.isUserInteractionEnabled = false
-        host.clipsToBounds = true
-        adopt(host)
-        return host
-    }
-
-    func updateUIView(_ host: UIView, context: Context) {
-        if player.webView.superview !== host { adopt(host) }
-    }
-
-    private func adopt(_ host: UIView) {
-        let view = player.webView
-        view.removeFromSuperview()
-        view.frame = host.bounds
-        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        host.addSubview(view)
     }
 }

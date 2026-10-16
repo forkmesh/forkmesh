@@ -144,6 +144,35 @@ public enum DjStudio {
         change / (2 * Double.pi) * secondsPerTurn
     }
 
+    public static func scratchSpeed(previous: Double, seconds: Double, elapsed: Double) -> Double {
+        guard seconds.isFinite, elapsed.isFinite, elapsed > 0 else { return previous }
+        let instant = min(8, max(-8, seconds / max(0.008, elapsed)))
+        return previous * 0.4 + instant * 0.6
+    }
+
+    public static func scratchLevel(_ speed: Double) -> Double {
+        guard speed.isFinite else { return 0 }
+        return min(1, abs(speed) / 2.5) * (speed < 0 ? 1 : 0.5)
+    }
+
+    public static func trackedPosition(predicted: Double, reported: Double, continuous: Bool) -> Double {
+        guard reported.isFinite else { return predicted }
+        guard continuous, predicted.isFinite else { return reported }
+        let error = reported - predicted
+        return abs(error) > 0.3 ? reported : predicted + error * 0.35
+    }
+
+    public static func miniBars(_ bars: [DjWaveBar], time: Double, duration: Double, count: Int = 7, spacing: Double = 0.18) -> [DjWaveBar] {
+        guard count > 0, !bars.isEmpty, duration > 0, time.isFinite else {
+            return Array(repeating: DjWaveBar(level: 0.08, hue: 0), count: max(0, count))
+        }
+        return (0..<count).map { index in
+            let moment = time + (Double(index) - Double(count - 1) / 2) * spacing
+            guard moment >= 0, moment <= duration else { return DjWaveBar(level: 0.08, hue: 0) }
+            return bars[min(bars.count - 1, max(0, Int(moment / duration * Double(bars.count))))]
+        }
+    }
+
     public static func turnDegrees(_ seconds: Double) -> Double {
         (seconds / secondsPerTurn * 360).truncatingRemainder(dividingBy: 360)
     }
