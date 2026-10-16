@@ -75,7 +75,8 @@ def test_extension_is_manifest_v3_with_the_narrowest_permissions():
     for name in ("background.js", "content.js", "mastodon.js", "panel.js",
                  "dashboard.js", "popup.js", "popup.html", "popup-vault.js",
                  "vault.js", "vault-crypto.js", "vault-client.js", "x.js", "reddit.js",
-                 "marketing-capture.js", "capture.html", "capture.js", "x-developer.js"):
+                 "marketing-capture.js", "capture.html", "capture.js", "x-developer.js",
+                 "zoho-sort.js"):
         assert (EXTENSION / name).is_file()
     for size in ("16", "32", "48", "128"):
         assert (EXTENSION / MANIFEST["icons"][size]).is_file()
@@ -394,6 +395,23 @@ def test_a_zoho_subject_is_never_the_folder_name_and_stays_editable():
     assert 'else _clean(data.get("contactName") or contact_data.get("name"), 120)),' in WORKER
 
 
+def test_zoho_mail_lists_sort_by_sender_subject_or_date_in_the_page_only():
+    sorter = (EXTENSION / "zoho-sort.js").read_text(encoding="utf-8")
+    script = MANIFEST["content_scripts"][-1]
+    assert script["js"] == ["zoho-sort.js"]
+    assert script["matches"] == [match for match in MANIFEST["content_scripts"][0]["matches"]
+                                 if "zoho" in match]
+    assert 'const COLUMNS = [["sender", "Sender"], ["subject", "Subject"], ["date", "Date"]];' in sorter
+    assert "attachShadow" in sorter
+    for gone in ("chrome.", "fetch(", "localStorage", "appendChild(", "insertBefore("):
+        assert gone not in sorter, gone
+    assert 'item.row.style.setProperty("order", String(position));' in sorter
+    css = (EXTENSION / "content.css").read_text(encoding="utf-8")
+    assert "#forkmesh-zoho-sort" in css
+    assert '[data-fm-sort="root"] { display: flex !important; flex-direction: column !important; }' in css
+    assert '[data-fm-sort="flat"] { display: contents !important; }' in css
+
+
 def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit():
     reader = (EXTENSION / "reddit.js").read_text(encoding="utf-8")
     script = MANIFEST["content_scripts"][3]
@@ -612,7 +630,8 @@ def test_the_refresh_panel_follows_the_tab_without_touching_any_channel_site():
     for name in ("refresh-panel.html", "refresh-panel.js", "refresh-view.js"):
         assert (EXTENSION / name).is_file()
     assert [script["js"] for script in MANIFEST["content_scripts"]] == [
-        ["panel.js", "content.js"], ["dashboard.js"], ["x.js"], ["reddit.js"], ["x-developer.js"]]
+        ["panel.js", "content.js"], ["dashboard.js"], ["x.js"], ["reddit.js"], ["x-developer.js"],
+        ["zoho-sort.js"]]
     for gone in ("fm-bar-", "BAR_", "refresh-bar", "barMark", "fm-refresh-bar"):
         assert gone not in BACKGROUND, gone
     assert BACKGROUND.count("chrome.scripting.registerContentScripts(") == 1

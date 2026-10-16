@@ -28,6 +28,12 @@ generic package sockets and generated registries.
   the web page (`crmContactInView`) and the desktop (`contactInSheet`) apply
   the same rule. Renaming a pipeline never moves contacts; removing one leaves
   its contacts without a pipeline.
+- **Pipeline types** (`FLOW_ICONS`, drawn by `CRM_FLOW_ICONS` on the web and
+  `kFlowIconKinds` on the desktop): Pipeline, Investors, Hiring, Partnerships,
+  Customers, Sales, Support, Projects, Events and Grants. New organizations
+  start with Investment, Applicant tracking, Partnerships, Customers and
+  **Grants** (`researching`, `eligible`, `drafting`, `submitted`, `awarded`,
+  `declined`). `awarded` counts as won and `declined` as ended.
 - **Stage placement**: every write that places a contact checks the stage
   against the saved flows (`_flow_placement`); an unknown flow becomes the
   first flow and an unknown stage the flow's first stage.
@@ -64,6 +70,13 @@ generic package sockets and generated registries.
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
   re-importing updates them; columns the CRM has no field for become custom
   columns.
+- A file whose every row names the same pipeline in its **Flow** or
+  **Pipeline** column opens its new list bound to that pipeline. When an owner
+  or admin imports such a file for a starter pipeline the organization does
+  not have yet (for example `grants` in an organization created before Grants
+  existed), the import adds that starter pipeline first and audits
+  `crm.flows.add`; a member's import never changes pipelines. Files that mix
+  pipelines open a plain list, as before.
 - **GitHub contributors** (desktop): clones the repository with
   `git clone --bare --filter=tree:0 --no-tags` (commits only, no credentials,
   no prompts, 10 minute limit, temporary folder removed), reads `git log
@@ -146,7 +159,13 @@ follow-up, angled by list or pipeline), the organization's brief (setting
 `messageBrief`, up to 8000 characters; owners and admins can save it), every
 filled field and recent notes, the contact's recent public posts, the six
 newest linked messages (quoted tails cut, 900 characters each) and the card's
-reason. **Open in ChatGPT** / **Open in Claude** open the provider's site with
+reason. A fourth format, **Grant application**, is the default for a contact
+on a Grants-type pipeline: the prompt asks for the full application in the
+funder's own questions, order and limits, a milestone budget in their range,
+and a closing checklist of the documents and facts only we can supply (the
+rules live in `CRM_AI_APPLICATION_RULES` and the desktop's `aiPrompt`). Lists
+named for grants get the grant-funder angle.
+**Open in ChatGPT** / **Open in Claude** open the provider's site with
 the prompt in the URL (or on the clipboard past 14,000 characters). Nothing is
 sent from the CRM and nothing is stored except a saved brief. Tests:
 `tests/test_ai_writer.py`.
@@ -278,6 +297,16 @@ matching account and signup time, the best paid membership, any promotion or
 trial, and a `suggestedStage` (`customer` or `trial`). It never moves a stage
 by itself; a button moves it after confirmation and appends a dated note.
 Evidence is not a column, so exports and shared sheets omit it.
+
+## Teammates on cc
+
+`GET /api/crm/<org>` returns `memberEmails`: the verified addresses of the
+organization's other members, for the viewer only (the host capability
+`organization_member_emails` needs the `organization.members.email` permission,
+the CRM installed for the organization, and the viewer to be a member; at most
+50, active web accounts only). The phone's spider puts them on cc when it opens
+a suggested email (`docs/native/GENIE.md`), so the rest of the team sees each
+outreach. Without the capability the list is empty.
 
 ## Team leaderboard and activity history
 

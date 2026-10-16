@@ -96,11 +96,13 @@ DEFAULT_FLOWS = (
         "prospect", "contacted", "discovery", "negotiation", "active", "closed")},
     {"id": "customers", "name": "Customers", "icon": "customers", "stages": (
         "lead", "qualified", "trial", "customer", "renewal", "inactive")},
+    {"id": "grants", "name": "Grants", "icon": "grants", "stages": (
+        "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
-              "sales", "support", "projects", "events")
+              "sales", "support", "projects", "events", "grants")
 DEFAULT_MAIL_BOXES = ("Inbox", "Follow-up", "Important", "Archive")
 # The contact columns every surface shows, in their canonical order, with the
 # CSV header spellings that land on each one. A header outside this table is
@@ -832,7 +834,7 @@ ZOHO_STATE_TTL_MS = 10 * 60 * 1000
 ZOHO_SENT_FOLDERS = frozenset({"sent", "sent items", "sent mail", "sent messages"})
 CLOSED_DEAL_STAGES = frozenset({
     "won", "closed-won", "customer", "renewal", "committed", "signed", "paid",
-    "active"})
+    "active", "awarded"})
 UNSENT_STATUSES = ("draft", "sending", "failed", "reject")
 ENDED_STAGES = frozenset({
     "passed", "rejected", "closed", "inactive", "hired", "lost", "closed-lost",
@@ -1907,6 +1909,7 @@ async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
         "views": await _views(runtime, org_bi, account_bi, actor, role),
         "sharedViews": await _shared_views(runtime, account_bi, actor),
         "members": members,
+        "memberEmails": await _member_emails(runtime, org_bi, account_bi),
         "activity": await _activity(runtime, org_bi, members),
         "decks": await _deck_links(runtime, org_bi),
         "summary": {
@@ -2796,6 +2799,18 @@ async def _org_member_names(runtime, org_bi):
     return names
 
 
+async def _member_emails(runtime, org_bi, account_bi):
+    reader = getattr(runtime, "organization_member_emails", None)
+    if reader is None:
+        return []
+    emails = []
+    for value in await reader(org_bi, account_bi) or []:
+        address = _email(value)
+        if address and address not in emails:
+            emails.append(address)
+    return emails
+
+
 async def _share_bi(runtime, name):
     """Blind key for "sheets shared with this ForkMesh user", global rather
     than organization-scoped because that is exactly the question it answers."""
@@ -3194,7 +3209,7 @@ def _sheet_name(file_name):
 
 
 async def _import_sheet(runtime, org_bi, org_name, account_bi, actor, data,
-                        fieldnames, mapping, import_id=""):
+                        fieldnames, mapping, import_id="", flow=""):
     """The tab a CSV import lands in: the sheet named by the caller when they
     re-import into an existing tab, otherwise a new one - named what the member
     typed on the import step, or after the file - ordered exactly like the
@@ -3225,6 +3240,7 @@ async def _import_sheet(runtime, org_bi, org_name, account_bi, actor, data,
             "source": "csv",
             "fileName": file_name,
             "position": MAX_VIEWS,
+            "flow": flow,
         })
         if import_id:
             view["importId"] = import_id
@@ -3233,6 +3249,35 @@ async def _import_sheet(runtime, org_bi, org_name, account_bi, actor, data,
                                 view, view_id)
     return view_id, await _view_project(
         runtime, await _view_row(runtime, org_bi, view_id), account_bi), fresh
+
+
+def _import_named_flow(rows):
+    named = {_slug(row.get("flow"), "") for row in rows}
+    return named.pop() if len(named) == 1 else ""
+
+
+async def _import_starter_flow(runtime, org_bi, org_name, account_bi, actor,
+                               flows, flow_id):
+    if any(flow["id"] == flow_id for flow in flows):
+        return flows
+    added = [flow for flow in _default_flows() if flow["id"] == flow_id]
+    if not added:
+        return flows
+    current = await runtime.d1_first(
+        "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+    opened = await runtime.open(current.get("data")) if current else {}
+    opened = opened if isinstance(opened, dict) else {}
+    settings = _settings_data({"flows": flows + added}, opened)
+    await runtime.d1_run(
+        "INSERT INTO crm_settings(org_bi,updated_by_bi,updated_by_name,updated_at,data) "
+        "VALUES(?,?,?,?,?) ON CONFLICT(org_bi) DO UPDATE SET "
+        "updated_by_bi=excluded.updated_by_bi,updated_by_name=excluded.updated_by_name,"
+        "updated_at=excluded.updated_at,data=excluded.data",
+        org_bi, account_bi, actor, runtime.now(), await runtime.seal(settings),
+    )
+    await runtime.audit(actor, "crm.flows.add", "organization", org_name,
+                        details={"flow": flow_id, "source": "csv"})
+    return settings["flows"]
 
 
 def _import_batch(data):
@@ -3392,7 +3437,8 @@ def _import_preview(runtime, raw):
                                "columns": columns})
 
 
-async def _import_contacts(runtime, org_bi, org_name, account_bi, actor, data):
+async def _import_contacts(runtime, org_bi, org_name, account_bi, actor, data,
+                           can_add_flows=False):
     batch = _import_batch(data)
     raw = _text(data.get("csv"), MAX_BODY_BYTES).lstrip("\ufeff")
     if data.get("preview"):
@@ -3422,9 +3468,17 @@ async def _import_contacts(runtime, org_bi, org_name, account_bi, actor, data):
             CSV_IMPORT_FAILURES[failure],
             413 if failure == "too_many_csv_rows" else 400, failure)
     mapping = _csv_mapping(fieldnames, data)
+    incoming_rows = [_normalized_csv_row(source, fieldnames, mapping)
+                     for source in rows]
+    flows = await _org_flows(runtime, org_bi)
+    named = _import_named_flow(incoming_rows)
+    if can_add_flows and named:
+        flows = await _import_starter_flow(
+            runtime, org_bi, org_name, account_bi, actor, flows, named)
     view_id, view, fresh = await _import_sheet(
         runtime, org_bi, org_name, account_bi, actor, data, fieldnames,
-        mapping, batch["id"])
+        mapping, batch["id"],
+        named if any(flow["id"] == named for flow in flows) else "")
     file_name = _clean(data.get("fileName"), 160) or "contacts.csv"
     ping_key = "crm-import:%s:%s" % (org_name, batch["id"] or runtime.now())
     if batch["part"] == 0:
@@ -3439,9 +3493,7 @@ async def _import_contacts(runtime, org_bi, org_name, account_bi, actor, data):
     errors = []
     now = runtime.now()
     handles = {}
-    flows = (await _settings(runtime, org_bi))["flows"]
-    for index, source in enumerate(rows, start=2 + batch["offset"]):
-        incoming = _normalized_csv_row(source, fieldnames, mapping)
+    for index, incoming in enumerate(incoming_rows, start=2 + batch["offset"]):
         # A CSV that leaves a column out must not erase what the CRM already
         # knows about the contact, so only values the row actually carries are
         # applied; the rest of the record survives the import untouched.
@@ -5860,7 +5912,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 return _response(runtime, {"ok": True, "contacts": await _contacts(runtime, org_bi)})
             return await _create_contact(runtime, org_bi, org_name, account_bi, actor, data)
         if item == "import":
-            return await _import_contacts(runtime, org_bi, org_name, account_bi, actor, data)
+            return await _import_contacts(runtime, org_bi, org_name, account_bi, actor, data,
+                                          role in MANAGER_ROLES)
         if item == "export":
             return await _export_contacts(runtime, org_bi, org_name)
         if item == "duplicates":

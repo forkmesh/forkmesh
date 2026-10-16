@@ -55,6 +55,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 
 ## Features and topics
 
+- [finance/grants/README.md](finance/grants/README.md): the ranked grant list, its CRM import and one-click ChatGPT drafts.
 - [APPS.md](APPS.md): third-party apps through OAuth.
 - [marketplace-usage-feed-mastodon.md](marketplace-usage-feed-mastodon.md): privacy and federation boundaries for the Usage, Feed, and Mastodon packages.
 - [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.

@@ -601,8 +601,10 @@ public struct CrmSettings: Equatable, Sendable {
         "com.au": "https://mail.zoho.com.au", "jp": "https://mail.zoho.jp", "ca": "https://mail.zohocloud.ca",
     ]
 
-    public static func zohoComposeURL(region: String, to email: String, subject: String = "", body: String = "") -> URL? {
-        guard let mailto = mailtoURL(to: email, subject: subject, body: body) else { return nil }
+    public static func zohoComposeURL(
+        region: String, to email: String, subject: String = "", body: String = "", cc: [String] = []
+    ) -> URL? {
+        guard let mailto = mailtoURL(to: email, subject: subject, body: body, cc: cc) else { return nil }
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         let ct = mailto.absoluteString.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
@@ -610,13 +612,16 @@ public struct CrmSettings: Equatable, Sendable {
         return URL(string: "\(host)/zm/comp.do?ct=\(ct)")
     }
 
-    public static func mailtoURL(to email: String, subject: String = "", body: String = "") -> URL? {
+    public static func mailtoURL(to email: String, subject: String = "", body: String = "", cc: [String] = []) -> URL? {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&=+?")
         let su = subject.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         let bo = body.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         let to = email.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
-        return URL(string: "mailto:\(to)?subject=\(su)&body=\(bo)")
+        let copies = cc.filter { $0.caseInsensitiveCompare(email) != .orderedSame }
+            .compactMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) }
+        let carbon = copies.isEmpty ? "" : "cc=\(copies.joined(separator: ","))&"
+        return URL(string: "mailto:\(to)?\(carbon)subject=\(su)&body=\(bo)")
     }
 }
 
