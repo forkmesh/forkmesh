@@ -60,6 +60,11 @@
       "risk": "sensitive"
     },
     {
+      "id": "network.search.youtube",
+      "label": "Search public YouTube video indexes from the studio and load a selected result into a deck",
+      "risk": "sensitive"
+    },
+    {
       "id": "storage.local.write",
       "label": "Keep your deck choices, cue points, captured sections, sampler level and saved set in this browser only",
       "risk": "low"

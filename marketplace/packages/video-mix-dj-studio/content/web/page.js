@@ -8,7 +8,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
     b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
   };
-  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null } };
+  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "" };
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -54,17 +54,26 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   }
 
   function videoId(value) {
-    const raw = String(value || "").trim();
+    const raw = String(value || "").trim().replace(/^<|>$/g, "");
     if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
     try {
-      const url = new URL(raw);
-      if (/(^|\.)youtu\.be$/i.test(url.hostname)) {
-        const id = url.pathname.split("/").filter(Boolean)[0] || "";
+      const url = new URL(/^(?:www\.|m\.|music\.)?(?:youtube(?:-nocookie)?\.com|youtu\.be)\//i.test(raw) ? `https://${raw}` : raw);
+      const host = url.hostname.replace(/^(?:www\.|m\.|music\.)/i, "").toLowerCase();
+      if (host === "youtu.be") {
+        const id = url.pathname.split("/").filter(Boolean)[0] || url.searchParams.get("v") || "";
         return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : "";
       }
-      if (/(^|\.)youtube(?:-nocookie)?\.com$/i.test(url.hostname)) return url.searchParams.get("v") || url.pathname.match(/\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})/)?.[1] || "";
+      if (host === "youtube.com" || host === "youtube-nocookie.com") {
+        const attributed = url.pathname === "/attribution_link" ? new URL(url.searchParams.get("u") || "", "https://www.youtube.com").searchParams.get("v") : "";
+        const id = url.searchParams.get("v") || url.searchParams.get("vi") || url.searchParams.get("video_id") || attributed || url.pathname.match(/\/(?:embed|shorts|live|v|e|watch)\/([A-Za-z0-9_-]{11})/)?.[1] || url.hash.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1] || "";
+        return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : "";
+      }
     } catch (_) {}
-    return "";
+    return raw.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|(?:embed|shorts|live|v|e)\/))([A-Za-z0-9_-]{11})/i)?.[1] || "";
+  }
+
+  function canonicalUrl(id) {
+    return `https://www.youtube.com/watch?v=${id}`;
   }
 
   function command(deck, func, args = []) {
@@ -92,7 +101,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       return;
     }
     deck.id = id;
-    deck.url = String(value).trim();
+    deck.url = canonicalUrl(id);
     deck.ready = false;
     deck.playing = false;
     deck.duration = 0;
@@ -109,6 +118,76 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     status(`Deck ${name.toUpperCase()} is loading.`, "");
     persist();
     render();
+  }
+
+  function openModal(name, deck = "") {
+    state.modal = name;
+    if (deck) state.searchTarget = deck;
+    const modal = el("modal");
+    for (const panel of modal.querySelectorAll("[data-vmdj-panel]")) panel.hidden = panel.dataset.vmdjPanel !== name;
+    modal.hidden = false;
+    document.body.classList.add("vmdj-modal-open");
+    const focus = modal.querySelector(`[data-vmdj-panel="${name}"] input, [data-vmdj-panel="${name}"] button`);
+    setTimeout(() => focus?.focus(), 0);
+    render();
+  }
+
+  function closeModal() {
+    el("modal").hidden = true;
+    document.body.classList.remove("vmdj-modal-open");
+    state.modal = "";
+  }
+
+  function searchCards() {
+    const target = el("search-results");
+    target.replaceChildren();
+    if (state.searchBusy) target.textContent = "Searching YouTube…";
+    else if (state.searchResults.length) {
+      for (const result of state.searchResults) {
+        const button = document.createElement("button");
+        const image = document.createElement("img");
+        const copy = document.createElement("span");
+        const title = document.createElement("strong");
+        const author = document.createElement("small");
+        const action = document.createElement("b");
+        button.type = "button";
+        button.className = "vmdj-search-result";
+        image.alt = "";
+        image.src = result.thumbnail;
+        title.textContent = result.title;
+        author.textContent = result.author || "YouTube";
+        action.textContent = "Load";
+        copy.append(title, author);
+        button.append(image, copy, action);
+        button.addEventListener("click", () => { loadDeck(state.searchTarget, canonicalUrl(result.id)); closeModal(); });
+        target.append(button);
+      }
+    } else target.textContent = "Search by song, artist, remix, set, or video title.";
+  }
+
+  async function searchVideos(query) {
+    const text = String(query || "").trim();
+    if (text.length < 2) { status("Enter at least two characters to search YouTube.", "error"); return; }
+    state.searchBusy = true;
+    state.searchResults = [];
+    searchCards();
+    try {
+      if (!state.searchEndpoint) {
+        const instances = await fetch("https://api.invidious.io/instances.json?sort_by=health").then((response) => response.ok ? response.json() : Promise.reject());
+        const instance = instances.find(([, details]) => details.api && details.cors && /^https:\/\//.test(details.uri || ""));
+        if (!instance) throw new Error("No searchable YouTube index is available.");
+        state.searchEndpoint = instance[1].uri.replace(/\/$/, "");
+      }
+      const results = await fetch(`${state.searchEndpoint}/api/v1/search?q=${encodeURIComponent(text)}&type=video`).then((response) => response.ok ? response.json() : Promise.reject());
+      state.searchResults = results.map((result) => ({ id: videoId(result.videoId || result.url), title: String(result.title || "Untitled video"), author: String(result.author || ""), thumbnail: String(result.videoThumbnails?.find((image) => image.quality === "medium")?.url || result.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${videoId(result.videoId || result.url)}/mqdefault.jpg`) })).filter((result) => result.id).slice(0, 12);
+      if (!state.searchResults.length) status("No YouTube videos matched that search.", "error");
+    } catch (_) {
+      state.searchEndpoint = "";
+      status("YouTube search is temporarily unavailable. Paste any YouTube link to load it directly.", "error");
+    } finally {
+      state.searchBusy = false;
+      searchCards();
+    }
   }
 
   function destroyDeck(name) {
@@ -345,6 +424,9 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       el(`level-value-${name}`).textContent = `${Math.round(deck.level)}%`;
       el(`rate-${name}`).value = String(deck.rate);
       el(`rate-value-${name}`).textContent = `${deck.rate.toFixed(2)}×`;
+      const artwork = el(`art-${name}`);
+      artwork.src = deck.id ? `https://i.ytimg.com/vi/${encodeURIComponent(deck.id)}/hqdefault.jpg` : "";
+      artwork.hidden = !deck.id;
       if (deck.player) deck.player.style.opacity = String(gain[name]);
       const platter = el(`platter-${name}`);
       platter.classList.toggle("is-spinning", deck.playing && !state.scratch[name]);
@@ -352,6 +434,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     }
     el("crossfader").value = String(state.crossfader);
     el("cross-value").textContent = state.crossfader === 0 ? "Center" : state.crossfader < 0 ? `${Math.abs(state.crossfader)}% A` : `${state.crossfader}% B`;
+    el("search-target-a").classList.toggle("is-active", state.searchTarget === "a");
+    el("search-target-b").classList.toggle("is-active", state.searchTarget === "b");
     el("sampler-level").value = String(state.sampler.level);
     for (const [index, sample] of state.samples.entries()) {
       const button = el(`section-${index}`);
@@ -411,6 +495,18 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     platter.addEventListener("pointerup", (event) => scratchEnd(name, event));
     platter.addEventListener("pointercancel", (event) => scratchEnd(name, event));
   }
+  el("open-load-a").addEventListener("click", () => openModal("load-a", "a"));
+  el("open-load-b").addEventListener("click", () => openModal("load-b", "b"));
+  el("open-search").addEventListener("click", () => openModal("search"));
+  el("open-deck-a").addEventListener("click", () => openModal("deck-a", "a"));
+  el("open-deck-b").addEventListener("click", () => openModal("deck-b", "b"));
+  el("open-mixer").addEventListener("click", () => openModal("mixer"));
+  el("open-sampler").addEventListener("click", () => openModal("sampler"));
+  el("open-set").addEventListener("click", () => openModal("set"));
+  el("close-modal").addEventListener("click", closeModal);
+  el("modal").addEventListener("click", (event) => { if (event.target === el("modal")) closeModal(); });
+  el("search-form").addEventListener("submit", (event) => { event.preventDefault(); searchVideos(el("search-query").value); });
+  for (const name of ["a", "b"]) el(`search-target-${name}`).addEventListener("click", () => { state.searchTarget = name; render(); });
   el("crossfader").addEventListener("input", (event) => changeCrossfader(event.target.value));
   el("cut-a").addEventListener("click", () => changeCrossfader(-100));
   el("cut-center").addEventListener("click", () => changeCrossfader(0));
@@ -422,9 +518,10 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   for (const pad of root.querySelectorAll("[data-vmdj-pad]")) pad.addEventListener("click", () => triggerPad(pad.dataset.vmdjPad));
   for (const index of [0, 1, 2, 3]) el(`section-${index}`).addEventListener("click", () => playSection(index));
   el("save").addEventListener("click", () => { persist(); status("Set saved on this device."); });
-  el("reset").addEventListener("click", () => { destroyDeck("a"); destroyDeck("b"); state.crossfader = 0; try { localStorage.removeItem(key); } catch (_) {} status("Studio cleared."); render(); });
+  el("reset").addEventListener("click", () => { destroyDeck("a"); destroyDeck("b"); state.crossfader = 0; try { localStorage.removeItem(key); } catch (_) {} status("Studio cleared."); closeModal(); render(); });
   window.addEventListener("message", handleMessage);
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.modal) { closeModal(); return; }
     if (event.defaultPrevented || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "")) return;
     const keyName = event.key.toLowerCase();
     if (keyName === "1") play("a");
