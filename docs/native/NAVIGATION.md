@@ -179,6 +179,17 @@ hidden (`HomeShell.mountedTabs`) and pause frame-rate animations
 **Launch.** `AppRootView` fades the app in over the launch colour, and the shell
 starts on Home unless a restored route, sheet or push wins.
 
+**Forced update.** When the App Store has a newer version than the running
+build (`ClientVersionGate.availableUpdate`, the iTunes lookup for the app id) or
+the server's `/api/version` names a higher `minimumClientVersions.ios` (or
+answers 426), `AppHomeView` shows `UpdateRequiredView` in place of the sign-in
+flow, starter pack and shell: no way past it, only **Open the App Store** (the
+lookup's `trackViewUrl`). The store is read at launch and on each activation,
+at most every 15 minutes (`ClientVersionGate.storeRecheckInterval`); once found,
+the block stays until the updated app relaunches. Builds whose version cannot be
+parsed (`dev`) and builds newer than the store (TestFlight, App Review) are never
+blocked.
+
 **Diagnostics footer.** The version (with an **Update** pill when the App Store
 has a newer version, `ClientVersionGate.availableUpdate`), the desktop light
 (load from `diag.health`'s `level` via `DesktopLoadLightModel`; green through
