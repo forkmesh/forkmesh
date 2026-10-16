@@ -322,12 +322,15 @@ Missed calls post the same "Missed audio/video call" line as the web.
   of the async form; the older spelling `requestMediaCapturePermissionFor:initiatedByFrame:`
   without a `decisionHandler` matches nothing (the compiler only warns "nearly matches"), so
   WebKit fell back to asking "Allow call.forkmesh.invalid to use your microphone?" on every
-  call. `FaceChangerPage` uses the same method. `app/tools/sync_native_call_faces.py` generates
+  call. `app/tools/sync_native_call_faces.py` generates
   the page for both apps;
   `app/tests/test_chat_call_faces.py` fails when they drift.
-- **Faces, voices and backgrounds** are engine state saved under `chat.callFace`,
-  `chat.callVoice` and `chat.callBackground` (custom images in Application Support with complete
-  file protection). Face landmarks and person masks come from Apple Vision
+- **Faces, voices and backgrounds** live in `FaceChangerLook` (`FaceChanger/FaceChangerLook.swift`),
+  which the Face Changer plug-in owns and saves under `chat.callFace`, `chat.callVoice` and
+  `chat.callBackground` (custom images in Application Support with complete file protection).
+  The engine takes that look in its initializer, reads it, and listens to it, so a change made in
+  the plug-in reaches a live video peer; `detach()` stops listening when the engine is replaced.
+  The page host, Vision and TrueDepth code are in the app's `Features/FaceChanger/`. Face landmarks and person masks come from Apple Vision
   (`CallFaceLandmarks`: `VNDetectFaceLandmarksRequest`, `VNGeneratePersonSegmentationRequest`),
   returned to the page; the page falls back to its own tracker after three failures. Details:
   `docs/app/chat-direct-calls.md`.

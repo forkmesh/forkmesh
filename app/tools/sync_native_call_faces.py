@@ -33,7 +33,7 @@ MODEL_NAMES = {
     "hair": "hair-192.fmnn",
 }
 PAGES = (
-    REPOSITORY / "native" / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "direct-call.html",
+    REPOSITORY / "native" / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "direct-call.html",
     REPOSITORY / "native" / "android" / "app" / "src" / "main" / "assets" / "direct-call.html",
 )
 FACES_OPEN = '<script id="fm-call-faces">'

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
@@ -47,8 +48,8 @@ class DirectCallFacePhotoTest {
             scheduler = CallScheduler { _, _ -> {} },
         ).also { engine ->
             engine.peerFactory = DirectCallPeerFactory { _, _ -> FakePeer(log) }
-            engine.onFaceChanged = { faces.add(it) }
-            engine.onFaceImageChanged = { pictures.add(it) }
+            engine.look.onFaceChanged = { faces.add(it) }
+            engine.look.onFaceImageChanged = { pictures.add(it) }
         }
 
         fun peerAccepts() {
@@ -60,22 +61,22 @@ class DirectCallFacePhotoTest {
     }
 
     fun testYourPhotoIsTheLastFaceChoice() {
-        assertEq(listOf("maya", "theo", "kofi", "ingrid", "ren", "custom"), DirectCallEngine.FACE_CHOICES.map { it.id })
-        assertEq("Your photo", DirectCallEngine.faceLabel(DirectCallEngine.CUSTOM_FACE))
-        assertEq("Your own face", DirectCallEngine.faceLabel(""))
+        assertEq(listOf("maya", "theo", "kofi", "ingrid", "ren", "custom"), FaceChangerLook.FACE_CHOICES.map { it.id })
+        assertEq("Your photo", FaceChangerLook.faceLabel(FaceChangerLook.CUSTOM_FACE))
+        assertEq("Your own face", FaceChangerLook.faceLabel(""))
     }
 
     fun testYourPhotoNeedsAPictureAndReachesThePeerWithIt() {
         val rig = Rig()
-        expect(!rig.engine.setFace(DirectCallEngine.CUSTOM_FACE))
+        expect(!rig.engine.setFace(FaceChangerLook.CUSTOM_FACE))
         assertEq("", rig.engine.face)
-        expect(rig.engine.setFace(DirectCallEngine.CUSTOM_FACE, "data:image/jpeg;base64,AA"))
+        expect(rig.engine.setFace(FaceChangerLook.CUSTOM_FACE, "data:image/jpeg;base64,AA"))
         assertEq("", rig.engine.effectiveVoice)
         expect(rig.engine.start("direct:abc", DirectCallKind.VIDEO))
         rig.peerAccepts()
         assertEq(listOf("face:custom:data:image/jpeg;base64,AA", "offer"), rig.log)
         expect(rig.engine.setFace("maya"))
-        expect(rig.engine.setFace(DirectCallEngine.CUSTOM_FACE))
+        expect(rig.engine.setFace(FaceChangerLook.CUSTOM_FACE))
         assertEq(
             listOf("face:custom:data:image/jpeg;base64,AA", "offer", "face:maya", "face:custom:data:image/jpeg;base64,AA"),
             rig.log,

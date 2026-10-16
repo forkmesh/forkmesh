@@ -2,8 +2,12 @@
 
 Wear a stand-in face and a new outfit, swap your background and change your
 voice, live in the browser, from the ForkMesh dashboard, or in the ForkMesh
-iPhone and Android apps (Face Changer, which opens this page). Free, from the
-ForkMesh Market.
+iPhone and Android apps. Free, from the ForkMesh Market.
+
+The phone apps do not open this page: their Face Changer is native, built on
+the same face, background and voice engine bundled in the app, and it is where
+calls get their face, background and voice
+(`docs/app/chat-direct-calls.md`, Face Changer on the phones).
 
 - `content/web/view.html` and `content/web/page.js`: the dashboard page at
   `/dashboard/face-changer`. Start camera opens the camera and microphone;
@@ -21,10 +25,8 @@ ForkMesh Market.
   controls, `mountVoicePreviewControls`).
 - Record makes a clip from the stage's video track and the voice track
   (`MediaRecorder`, up to five minutes) to play back, share, download or
-  discard. Share opens the phone's share sheet: inside the ForkMesh phone apps
-  through their share bridge, in a phone browser through `navigator.share`
-  (`shareStudioBlob` in `/call-studio.js`). Inside the apps Download and Pop
-  out are hidden and Snapshot shares the PNG.
+  discard. Share opens the phone's share sheet in a phone browser through
+  `navigator.share` (`shareStudioBlob` in `/call-studio.js`).
   Snapshot downloads a PNG of the stage. Pop out opens the live picture in a
   small window you can share into any call or meeting app.
 - Choices are kept in `localStorage` under the same keys the calls use, so a

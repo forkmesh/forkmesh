@@ -13,16 +13,6 @@ public enum DirectCallPhase: Equatable, Sendable {
     case live
 }
 
-public struct DirectCallFace: Equatable, Sendable, Identifiable {
-    public let id: String
-    public let label: String
-
-    public init(id: String, label: String) {
-        self.id = id
-        self.label = label
-    }
-}
-
 public struct DirectCallInvite: Equatable, Sendable {
     public let conversation: String
     public let callId: String
@@ -78,48 +68,6 @@ public final class DirectCallEngine {
     public static let ringTimeout: TimeInterval = 45
     public static let inviteResend: TimeInterval = 3
     public static let inviteStale: TimeInterval = 9
-    public static let faceKey = "chat.callFace"
-    public static let faces: [DirectCallFace] = [
-        DirectCallFace(id: "maya", label: "Maya"),
-        DirectCallFace(id: "theo", label: "Theo"),
-        DirectCallFace(id: "kofi", label: "Kofi"),
-        DirectCallFace(id: "ingrid", label: "Ingrid"),
-        DirectCallFace(id: "ren", label: "Ren"),
-    ]
-    public static let customFace = "custom"
-    public static let faceChoices: [DirectCallFace] = faces + [DirectCallFace(id: customFace, label: "Your photo")]
-    public static let backgroundKey = "chat.callBackground"
-    public static let customBackground = "custom"
-    public static let backgrounds: [DirectCallFace] = [
-        DirectCallFace(id: "", label: "No background"),
-        DirectCallFace(id: "blur", label: "Blur"),
-        DirectCallFace(id: "blur-strong", label: "Strong blur"),
-        DirectCallFace(id: "world", label: "ForkMesh World"),
-        DirectCallFace(id: "office", label: "ForkMesh office"),
-        DirectCallFace(id: "meeting", label: "Meeting room"),
-        DirectCallFace(id: "library", label: "Home library"),
-        DirectCallFace(id: "skyline", label: "City window"),
-        DirectCallFace(id: "custom", label: "Your photo"),
-    ]
-    public static let voiceKey = "chat.callVoice"
-    public static let voiceMatchFace = "face"
-    public static let voiceOff = "off"
-    public static let voices: [DirectCallFace] = [
-        DirectCallFace(id: "maya", label: "Maya"),
-        DirectCallFace(id: "theo", label: "Theo"),
-        DirectCallFace(id: "kofi", label: "Kofi"),
-        DirectCallFace(id: "ingrid", label: "Ingrid"),
-        DirectCallFace(id: "ren", label: "Ren"),
-        DirectCallFace(id: "deep", label: "Deep man"),
-        DirectCallFace(id: "older-man", label: "Older man"),
-        DirectCallFace(id: "young-man", label: "Young man"),
-        DirectCallFace(id: "warm", label: "Warm woman"),
-        DirectCallFace(id: "low", label: "Low woman"),
-        DirectCallFace(id: "older-woman", label: "Older woman"),
-        DirectCallFace(id: "teen", label: "Teen"),
-        DirectCallFace(id: "neutral", label: "Neutral"),
-        DirectCallFace(id: "robot", label: "Robot"),
-    ]
     public static let frameTypes: Set<String> = [
         "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
     ]
@@ -131,10 +79,8 @@ public final class DirectCallEngine {
     @ObservationIgnored let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored public var peerFactory: DirectCallPeerMaking?
     @ObservationIgnored public var onMissed: (@MainActor (String, DirectCallKind) -> Void)?
-    @ObservationIgnored public var onFaceChanged: (@MainActor (String) -> Void)?
-    @ObservationIgnored public var onFaceImageChanged: (@MainActor (String) -> Void)?
-    @ObservationIgnored public var onBackgroundChanged: (@MainActor (String, String) -> Void)?
-    @ObservationIgnored public var onVoiceChanged: (@MainActor (String) -> Void)?
+    @ObservationIgnored public let look: FaceChangerLook
+    @ObservationIgnored private var lookToken: UUID?
 
     public private(set) var conversation = ""
     public private(set) var callId = ""
@@ -144,11 +90,6 @@ public final class DirectCallEngine {
     public private(set) var invite: DirectCallInvite?
     public private(set) var muted = false
     public private(set) var cameraOff = false
-    public private(set) var face = ""
-    public private(set) var faceImage = ""
-    public private(set) var background = ""
-    public private(set) var backgroundImage = ""
-    public private(set) var voiceChoice = DirectCallEngine.voiceMatchFace
     public private(set) var voice = ""
 
     @ObservationIgnored private var caller = false
@@ -167,14 +108,35 @@ public final class DirectCallEngine {
         sendSignal: @escaping @MainActor (String, String, JSONObject) async -> Bool,
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        }
+        },
+        look: FaceChangerLook? = nil
     ) {
         self.selfId = selfId
         self.accountName = accountName
         self.partnerFor = partnerFor
         self.sendSignal = sendSignal
         self.sleep = sleep
+        let look = look ?? FaceChangerLook()
+        self.look = look
+        lookToken = look.addListener { [weak self] part in self?.lookChanged(part) }
     }
+
+    public func detach() {
+        if let lookToken { look.removeListener(lookToken) }
+        lookToken = nil
+    }
+
+    public var face: String { look.face }
+
+    public var faceImage: String { look.faceImage }
+
+    public var background: String { look.background }
+
+    public var backgroundImage: String { look.backgroundImage }
+
+    public var voiceChoice: String { look.voiceChoice }
+
+    public var effectiveVoice: String { look.effectiveVoice }
 
     public var available: Bool { peerFactory != nil }
 
@@ -266,62 +228,31 @@ public final class DirectCallEngine {
     }
 
     public func setFace(_ id: String, image: String = "") {
-        let custom = id == DirectCallEngine.customFace
-        let picture = custom && !image.isEmpty ? image : faceImage
-        let known = id.isEmpty || DirectCallEngine.faces.contains { $0.id == id } || (custom && !picture.isEmpty)
-        guard known, id != face || picture != faceImage else { return }
-        let changedFace = id != face
-        face = id
-        if picture != faceImage {
-            faceImage = picture
-            onFaceImageChanged?(picture)
-        }
-        if changedFace { onFaceChanged?(id) }
-        if media == .video {
-            if custom { peer?.setFace(id, image: picture) } else { peer?.setFace(id) }
-        }
-        if voiceChoice == DirectCallEngine.voiceMatchFace { pushVoice() }
-    }
-
-    public static func faceLabel(_ id: String) -> String {
-        faceChoices.first { $0.id == id }?.label ?? "Your own face"
+        look.setFace(id, image: image)
     }
 
     public func setBackground(_ id: String, image: String = "") {
-        guard DirectCallEngine.backgrounds.contains(where: { $0.id == id }) else { return }
-        let custom = id == DirectCallEngine.customBackground
-        let picture = custom && !image.isEmpty ? image : backgroundImage
-        if custom && picture.isEmpty { return }
-        guard id != background || picture != backgroundImage else { return }
-        background = id
-        backgroundImage = picture
-        onBackgroundChanged?(id, picture)
-        if media == .video { peer?.setBackground(id, image: custom ? picture : "") }
-    }
-
-    public static func backgroundLabel(_ id: String) -> String {
-        backgrounds.first { $0.id == id }?.label ?? "No background"
-    }
-
-    public var effectiveVoice: String {
-        switch voiceChoice {
-        case DirectCallEngine.voiceOff: return ""
-        case DirectCallEngine.voiceMatchFace: return face == DirectCallEngine.customFace ? "" : face
-        default: return voiceChoice
-        }
-    }
-
-    public static func voiceLabel(_ id: String) -> String {
-        voices.first { $0.id == id }?.label ?? "Your own"
+        look.setBackground(id, image: image)
     }
 
     public func setVoiceChoice(_ choice: String) {
-        let valid = choice == DirectCallEngine.voiceOff || choice == DirectCallEngine.voiceMatchFace
-            || DirectCallEngine.voices.contains { $0.id == choice }
-        guard valid, choice != voiceChoice else { return }
-        voiceChoice = choice
-        onVoiceChanged?(choice)
-        pushVoice()
+        look.setVoiceChoice(choice)
+    }
+
+    private func lookChanged(_ part: FaceChangerPart) {
+        switch part {
+        case .face:
+            if media == .video, let peer { applyFace(to: peer) }
+            if voiceChoice == FaceChangerLook.voiceMatchFace { pushVoice() }
+        case .background:
+            if media == .video { peer?.setBackground(background, image: look.customBackgroundImage) }
+        case .voice:
+            pushVoice()
+        }
+    }
+
+    private func applyFace(to made: DirectCallPeer) {
+        if face == FaceChangerLook.customFace { made.setFace(face, image: faceImage) } else { made.setFace(face) }
     }
 
     private func pushVoice() {
@@ -445,13 +376,9 @@ public final class DirectCallEngine {
 
     private func attach(_ made: DirectCallPeer) {
         peer = made
-        if media == .video && face == DirectCallEngine.customFace {
-            made.setFace(face, image: faceImage)
-        } else if media == .video && !face.isEmpty {
-            made.setFace(face)
-        }
+        if media == .video && !face.isEmpty { applyFace(to: made) }
         if media == .video && !background.isEmpty {
-            made.setBackground(background, image: background == DirectCallEngine.customBackground ? backgroundImage : "")
+            made.setBackground(background, image: look.customBackgroundImage)
         }
         let id = callId
         voice = effectiveVoice

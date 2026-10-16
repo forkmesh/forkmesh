@@ -12,7 +12,7 @@ PUBLIC = REPOSITORY / "app" / "public"
 VOICE = PUBLIC / "chat-call-voice.js"
 WORKLET = PUBLIC / "chat-call-voice-worklet.js"
 PAGES = (
-    REPOSITORY / "native" / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "direct-call.html",
+    REPOSITORY / "native" / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "direct-call.html",
     REPOSITORY / "native" / "android" / "app" / "src" / "main" / "assets" / "direct-call.html",
 )
 VOICE_OPEN = '<script id="fm-call-voice">'

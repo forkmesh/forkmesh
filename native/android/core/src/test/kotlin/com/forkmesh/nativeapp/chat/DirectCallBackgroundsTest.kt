@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
@@ -42,7 +43,7 @@ class DirectCallBackgroundsTest {
             scheduler = CallScheduler { _, _ -> {} },
         ).also { engine ->
             engine.peerFactory = DirectCallPeerFactory { _, _ -> FakePeer(log) }
-            engine.onBackgroundChanged = { id, image -> saved.add(if (image.isEmpty()) id else "$id:$image") }
+            engine.look.onBackgroundChanged = { id, image -> saved.add(if (image.isEmpty()) id else "$id:$image") }
         }
 
         fun peerAccepts() {
@@ -56,15 +57,15 @@ class DirectCallBackgroundsTest {
     fun testTheBackgroundsAreListedInOrder() {
         assertEq(
             listOf("", "blur", "blur-strong", "world", "office", "meeting", "library", "skyline", "custom"),
-            DirectCallEngine.BACKGROUNDS.map { it.id },
+            FaceChangerLook.BACKGROUNDS.map { it.id },
         )
-        assertEq("ForkMesh World", DirectCallEngine.backgroundLabel("world"))
+        assertEq("ForkMesh World", FaceChangerLook.backgroundLabel("world"))
     }
 
     fun testUnknownBackgroundsAndAnEmptyCustomPhotoAreRejected() {
         val rig = Rig()
         expect(!rig.engine.setBackground("nowhere"))
-        expect(!rig.engine.setBackground(DirectCallEngine.CUSTOM_BACKGROUND))
+        expect(!rig.engine.setBackground(FaceChangerLook.CUSTOM_BACKGROUND))
         assertEq("", rig.engine.background)
         assertEq(emptyList<String>(), rig.saved)
     }
@@ -75,9 +76,9 @@ class DirectCallBackgroundsTest {
         expect(rig.engine.start("direct:abc", DirectCallKind.VIDEO))
         rig.peerAccepts()
         assertEq(listOf("background:world", "offer"), rig.log)
-        expect(rig.engine.setBackground(DirectCallEngine.CUSTOM_BACKGROUND, "data:image/jpeg;base64,AA"))
+        expect(rig.engine.setBackground(FaceChangerLook.CUSTOM_BACKGROUND, "data:image/jpeg;base64,AA"))
         expect(rig.engine.setBackground("blur"))
-        expect(rig.engine.setBackground(DirectCallEngine.CUSTOM_BACKGROUND))
+        expect(rig.engine.setBackground(FaceChangerLook.CUSTOM_BACKGROUND))
         assertEq(
             listOf(
                 "background:world", "offer", "background:custom:data:image/jpeg;base64,AA", "background:blur",
