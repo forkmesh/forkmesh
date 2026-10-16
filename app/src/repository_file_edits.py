@@ -1,6 +1,8 @@
+import difflib
 import hashlib
 import re
 import time
+from email.header import Header
 from urllib.parse import quote
 
 from docs_book import (OID_RE, clean_message, commit_payload, object_id, pack,
@@ -13,6 +15,11 @@ MAX_REQUEST_BYTES = 5 * 1024 * 1024
 FILE_MODES = frozenset({"100644", "100755"})
 ZERO_OID = "0" * 40
 BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$")
+LINE_RE = re.compile(r"[^\n]*\n|[^\n]+\Z")
+QUOTE_RE = re.compile(r'[\x00-\x1f"\\\x7f]')
+QUOTE_ESCAPES = {"\t": "\\t", "\n": "\\n", '"': '\\"', "\\": "\\\\"}
+MODES = frozenset({"", "commit", "probe", "propose"})
+CONTEXT_LINES = 3
 
 
 def _bind_runtime(runtime):
@@ -30,10 +37,10 @@ class FileEditError(Exception):
         self.status = status
 
 
-def _error(code, message, status):
-    return json_response(
-        {"ok": False, "error": code, "message": message}, status=status,
-        cache_control="no-store")
+def _error(code, message, status, **extra):
+    body = {"ok": False, "error": code, "message": message}
+    body.update(extra)
+    return json_response(body, status=status, cache_control="no-store")
 
 
 def valid_path(path):
@@ -190,6 +197,102 @@ def build_commit(listings, parent, path, content, name, email, seconds,
     return commit_oid, blob_oid, pack(objects)
 
 
+def _lines(text):
+    return LINE_RE.findall(text)
+
+
+def _range(start, stop):
+    length = stop - start
+    beginning = start + 1
+    if length == 1:
+        return str(beginning)
+    if length == 0:
+        beginning -= 1
+    return "%d,%d" % (beginning, length)
+
+
+def _patch_line(prefix, line):
+    if line.endswith("\n"):
+        return prefix + line
+    return prefix + line + "\n\\ No newline at end of file\n"
+
+
+def _quote_char(char):
+    if char in QUOTE_ESCAPES:
+        return QUOTE_ESCAPES[char]
+    if ord(char) < 32 or ord(char) == 127:
+        return "\\%03o" % ord(char)
+    return char
+
+
+def _side(prefix, path):
+    name = prefix + path
+    if not QUOTE_RE.search(name):
+        return name
+    return '"%s"' % "".join(_quote_char(char) for char in name)
+
+
+def file_patch(path, old_text, new_text, old_oid, new_oid, mode,
+               created=False):
+    old_lines = _lines(old_text)
+    new_lines = _lines(new_text)
+    out = ["diff --git %s %s\n" % (_side("a/", path), _side("b/", path))]
+    if created:
+        out.append("new file mode %s\n" % mode)
+        out.append("index %s..%s\n" % (ZERO_OID, new_oid))
+        out.append("--- /dev/null\n")
+    else:
+        out.append("index %s..%s %s\n" % (old_oid, new_oid, mode))
+        out.append("--- %s\n" % _side("a/", path))
+    out.append("+++ %s\n" % _side("b/", path))
+    matcher = difflib.SequenceMatcher(
+        None, old_lines, new_lines, autojunk=False)
+    for group in matcher.get_grouped_opcodes(CONTEXT_LINES):
+        first, last = group[0], group[-1]
+        out.append("@@ -%s +%s @@\n" % (
+            _range(first[1], last[2]), _range(first[3], last[4])))
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                out.extend(_patch_line(" ", line) for line in old_lines[i1:i2])
+                continue
+            if tag in ("replace", "delete"):
+                out.extend(_patch_line("-", line) for line in old_lines[i1:i2])
+            if tag in ("replace", "insert"):
+                out.extend(_patch_line("+", line) for line in new_lines[j1:j2])
+    return "".join(out)
+
+
+def patch_mbox(commit_oid, name, email, seconds, subject, patch):
+    header = "[PATCH] " + subject
+    if not header.isascii():
+        header = Header(header, "utf-8").encode()
+    date = time.strftime(
+        "%a, %d %b %Y %H:%M:%S +0000", time.gmtime(int(seconds)))
+    return (
+        "From %s Mon Sep 17 00:00:00 2001\n"
+        "From: %s <%s>\n"
+        "Date: %s\n"
+        "Subject: %s\n"
+        "MIME-Version: 1.0\n"
+        "Content-Type: text/plain; charset=UTF-8\n"
+        "Content-Transfer-Encoding: 8bit\n"
+        "\n"
+        "---\n"
+        "\n"
+        "%s"
+        "-- \n"
+        "ForkMesh\n"
+        "\n"
+    ) % (commit_oid, name, email, date, header, patch)
+
+
+def proposal_branch(actor, path, commit_oid):
+    name = path.rpartition("/")[2].lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")[:40].strip("-")
+    branch = "%s/edit-%s-%s" % (actor, slug or "file", commit_oid[:7])
+    return branch if valid_branch(branch) else "web-edit/" + commit_oid[:12]
+
+
 async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
     core_held = owner.lower() in _core_push_nodes(env)
     upstream, _endpoint = await _https_mirror_push_send(
@@ -220,6 +323,38 @@ async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
             409 if stale else 502)
 
 
+async def _permission(env, request, owner, repo, actor):
+    access = await _repository_access_context(
+        env, request, owner, repo, viewer=actor)
+    if not access:
+        if await _org_write_allowed(env, owner, repo, actor):
+            return "write"
+        return "hidden"
+    if await _account_owns_node(env, actor, owner):
+        return "write"
+    if await _org_write_allowed(env, owner, repo, actor):
+        return "write"
+    return "read"
+
+
+async def _old_text(env, owner, repo, path, parent, current, new_file):
+    if new_file:
+        return ""
+    data = await _blob(env, owner, repo, path, parent)
+    if (not data or data.get("truncated")
+            or str(data.get("encoding") or "utf8") != "utf8"
+            or not isinstance(data.get("content"), str)):
+        raise FileEditError(
+            "base_unavailable",
+            "The current file could not be read to build the proposal.", 503)
+    text = data["content"]
+    if object_id("blob", text.encode("utf-8")) != current:
+        raise FileEditError(
+            "base_unavailable",
+            "The current file could not be read to build the proposal.", 503)
+    return text
+
+
 async def _save(env, request, owner, repo):
     try:
         data = await bounded_json_request(request, max_bytes=MAX_REQUEST_BYTES)
@@ -227,31 +362,33 @@ async def _save(env, request, owner, repo):
         return _error("invalid_json", "The request body is not JSON.", 400)
     if not isinstance(data, dict):
         data = {}
+    mode = str(data.get("mode") or "").strip().lower()
+    if mode not in MODES:
+        return _error("invalid_mode", "Unknown file edit mode.", 400)
     actor = await _authed_account_name(env, request, data)
     if not actor:
         return _error("unauthorized", "Sign in to edit repository files.", 401)
-    access = await _repository_access_context(
-        env, request, owner, repo, viewer=actor)
-    owner_writer = False
-    org_writer = False
-    if not access:
-        org_writer = await _org_write_allowed(env, owner, repo, actor)
-        if not org_writer:
-            return _error("not_found", "That repository is not available.", 404)
-    if not org_writer:
-        owner_writer = await _account_owns_node(env, actor, owner)
-        if not owner_writer:
-            org_writer = await _org_write_allowed(env, owner, repo, actor)
-    if not owner_writer and not org_writer:
+    permission = await _permission(env, request, owner, repo, actor)
+    if permission == "hidden":
+        return _error("not_found", "That repository is not available.", 404)
+    writer = permission == "write"
+    if mode == "probe":
+        return json_response({
+            "ok": True, "access": "write" if writer else "propose",
+            "account": actor,
+        }, cache_control="no-store")
+    propose = mode == "propose"
+    if not writer and not propose:
         return _error(
             "forbidden",
-            "You need repository write permission to edit files.", 403)
+            "You need repository write permission to edit files.", 403,
+            canPropose=True)
     path = str(data.get("path") or "")
     content = data.get("content")
     new_file = data.get("create") is True
     base_oid = str(data.get("oid") or "").lower()
     branch = str(data.get("branch") or "").strip()
-    base_ref = str(data.get("baseRef") or "").strip()
+    base_ref = "" if propose else str(data.get("baseRef") or "").strip()
     if not valid_path(path):
         return _error("invalid_path", "That file path cannot be edited.", 400)
     if not valid_branch(branch):
@@ -276,7 +413,8 @@ async def _save(env, request, owner, repo):
         if entry is None or entry.get("type") != "blob":
             raise FileEditError(
                 "not_found", "The file is no longer in the repository.", 404)
-        if str(entry.get("mode") or "") not in FILE_MODES:
+        file_mode = str(entry.get("mode") or "")
+        if file_mode not in FILE_MODES:
             raise FileEditError(
                 "invalid_path", "That path is not a regular file.", 400)
         current = str(entry.get("oid") or "").lower()
@@ -297,16 +435,51 @@ async def _save(env, request, owner, repo):
             }, cache_control="no-store")
         message = clean_message(
             data.get("message"), path, "Edit %s on the web")
+        email = noreply_email(actor, _public_base_url(env))
+        seconds = int(time.time())
         commit_oid, blob_oid, pack_bytes = build_commit(
-            listings, parent, path, content, actor,
-            noreply_email(actor, _public_base_url(env)),
-            int(time.time()), message, create=new_file)
-        old = ZERO_OID if create else parent
-        body = receive_pack_body(
-            old, commit_oid, "refs/heads/" + branch, pack_bytes)
-        await _push(env, request, owner, repo, actor, branch, body, "")
+            listings, parent, path, content, actor, email, seconds, message,
+            create=new_file)
+        if propose:
+            old_text = await _old_text(
+                env, owner, repo, path, parent, current, new_file)
+            patch = file_patch(
+                path, old_text, content, current, blob_oid, file_mode,
+                created=new_file)
+            commits = patch_mbox(
+                commit_oid, actor, email, seconds, message, patch)
+            head = proposal_branch(actor, path, commit_oid)
+        else:
+            old = ZERO_OID if create else parent
+            body = receive_pack_body(
+                old, commit_oid, "refs/heads/" + branch, pack_bytes)
+            await _push(env, request, owner, repo, actor, branch, body, "")
     except FileEditError as exc:
         return _error(exc.code, exc.message, exc.status)
+    if propose:
+        try:
+            await _audit_sensitive_action(
+                env, actor, "repository.file_edit_proposal", "repository",
+                owner + "/" + repo, "success", {
+                    "path": path, "base": branch, "head": head,
+                    "commit": commit_oid, "parent": parent,
+                })
+        except Exception:
+            pass
+        return json_response({
+            "ok": True,
+            "proposal": True,
+            "path": path,
+            "base": branch,
+            "baseOid": parent,
+            "head": head,
+            "headOid": commit_oid,
+            "oid": blob_oid,
+            "author": actor,
+            "subject": message,
+            "patch": patch,
+            "commits": commits,
+        }, cache_control="no-store")
     try:
         await _audit_sensitive_action(
             env, actor, "repository.file_edit", "repository",
