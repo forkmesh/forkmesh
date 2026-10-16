@@ -1,0 +1,104 @@
+          <section data-view="video-mix-dj-studio" class="view active h-full overflow-y-auto vmdj-page">
+            <style>
+              .vmdj-page { --vmdj-border: rgb(var(--dashboard-border-rgb)); --vmdj-card: rgb(var(--dashboard-card-rgb)); --vmdj-ink: rgb(var(--dashboard-foreground-rgb)); --vmdj-muted: rgb(var(--dashboard-muted-foreground-rgb)); --vmdj-soft: rgb(var(--dashboard-secondary-rgb)); --vmdj-accent: rgb(var(--dashboard-primary-rgb)); --vmdj-accent-ink: rgb(var(--dashboard-primary-foreground-rgb)); --vmdj-danger: #e5484d; }
+              :root.vmdj-fullscreen [data-app-header], :root.vmdj-fullscreen [data-dashboard-sidebar], :root.vmdj-fullscreen [data-mobile-sidebar-backdrop] { display: none !important; }
+              :root.vmdj-fullscreen [data-dashboard-root] { height: 100dvh !important; }
+              :root.vmdj-fullscreen .vmdj-page > div { padding-top: max(.75rem, env(safe-area-inset-top)) !important; padding-bottom: max(.75rem, env(safe-area-inset-bottom)) !important; }
+              .vmdj-layout { display: grid; gap: 1rem; max-width: 96rem; margin: 0 auto; }
+              .vmdj-decks { display: grid; gap: 1rem; }
+              @media (min-width: 900px), (orientation: landscape) and (min-width: 620px) { .vmdj-decks { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vmdj-mixer { grid-template-columns: minmax(0, 1fr) 21rem; align-items: start; } .vmdj-set { position: sticky; top: 1rem; } }
+              .vmdj-card { border: 1px solid var(--vmdj-border); border-radius: .75rem; background: var(--vmdj-card); }
+              .vmdj-deck-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid var(--vmdj-border); }
+              .vmdj-deck-name { display: inline-flex; align-items: center; gap: .5rem; font-size: .9rem; font-weight: 700; }
+              .vmdj-deck-dot { width: .65rem; height: .65rem; border-radius: 999px; background: var(--vmdj-accent); }
+              .vmdj-deck-meta { overflow: hidden; color: var(--vmdj-muted); font-size: .75rem; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+              .vmdj-stage { position: relative; overflow: hidden; aspect-ratio: 16 / 9; background: #080b12; }
+              .vmdj-player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #080b12; transition: opacity 100ms linear; }
+              .vmdj-player[hidden] { display: none; }
+              .vmdj-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.5rem; color: #c5ccda; font-size: .85rem; text-align: center; }
+              .vmdj-turntable-row { display: flex; align-items: center; justify-content: center; min-height: 8rem; padding: .75rem; border-bottom: 1px solid var(--vmdj-border); background: linear-gradient(135deg, rgb(var(--dashboard-secondary-rgb)), rgb(var(--dashboard-card-rgb))); }
+              .vmdj-platter { position: relative; width: 6.4rem; aspect-ratio: 1; border: .45rem solid #151923; border-radius: 999px; background: repeating-radial-gradient(circle, #39445a 0 .1rem, #171c27 .13rem .3rem); box-shadow: 0 .45rem 1rem rgb(0 0 0 / .25), inset 0 0 0 .3rem #080b12; touch-action: none; user-select: none; cursor: grab; }
+              .vmdj-platter:active { cursor: grabbing; }
+              .vmdj-platter::before { content: ""; position: absolute; inset: 35%; border-radius: 999px; background: var(--vmdj-accent); box-shadow: 0 0 0 .25rem rgb(var(--dashboard-card-rgb)); }
+              .vmdj-platter::after { content: ""; position: absolute; top: .4rem; left: calc(50% - .12rem); width: .24rem; height: 1.25rem; border-radius: 999px; background: #e9edf5; }
+              .vmdj-platter.is-spinning { animation: vmdj-spin 1.8s linear infinite; }
+              .vmdj-platter.is-scratching { animation-play-state: paused; box-shadow: 0 0 0 .2rem var(--vmdj-accent), 0 .45rem 1rem rgb(0 0 0 / .25); }
+              @keyframes vmdj-spin { to { transform: rotate(360deg); } }
+              .vmdj-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding: .75rem; border-bottom: 1px solid var(--vmdj-border); }
+              .vmdj-input, .vmdj-select { min-width: 0; height: 2.35rem; padding: 0 .7rem; border: 1px solid var(--vmdj-border); border-radius: .5rem; background: var(--vmdj-card); color: var(--vmdj-ink); font-size: .84rem; }
+              .vmdj-btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-height: 2.35rem; padding: 0 .75rem; border: 1px solid var(--vmdj-border); border-radius: .5rem; background: var(--vmdj-soft); color: var(--vmdj-ink); font-size: .8rem; font-weight: 650; cursor: pointer; }
+              .vmdj-btn:disabled { opacity: .5; cursor: not-allowed; }
+              .vmdj-btn-primary { border-color: var(--vmdj-accent); background: var(--vmdj-accent); color: var(--vmdj-accent-ink); }
+              .vmdj-btn[aria-pressed="true"] { border-color: var(--vmdj-accent); box-shadow: inset 0 0 0 1px var(--vmdj-accent); }
+              .vmdj-controls { display: grid; gap: .65rem; padding: .75rem; }
+              .vmdj-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
+              .vmdj-readout { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .55rem; color: var(--vmdj-muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+              .vmdj-readout time:last-child { text-align: right; }
+              .vmdj-range { width: 100%; accent-color: var(--vmdj-accent); cursor: pointer; }
+              .vmdj-knobs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+              .vmdj-field { display: grid; gap: .35rem; color: var(--vmdj-muted); font-size: .72rem; font-weight: 650; letter-spacing: .02em; text-transform: uppercase; }
+              .vmdj-field output { color: var(--vmdj-ink); font-size: .82rem; font-weight: 600; letter-spacing: normal; text-transform: none; }
+              .vmdj-mixer { display: grid; gap: 1rem; }
+              .vmdj-mix-card { padding: 1rem; }
+              .vmdj-cross-label { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .7rem; color: var(--vmdj-muted); font-size: .76rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+              .vmdj-cross-label span:last-child { text-align: right; }
+              .vmdj-cross-value { color: var(--vmdj-ink); font-variant-numeric: tabular-nums; }
+              .vmdj-cut-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: .8rem; }
+              .vmdj-set { padding: 1rem; }
+              .vmdj-set h2 { margin: 0; font-size: .9rem; }
+              .vmdj-set p { margin: .35rem 0 .8rem; color: var(--vmdj-muted); font-size: .76rem; }
+              .vmdj-set-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+              .vmdj-sampler { padding: 1rem; }
+              .vmdj-sampler-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .8rem; }
+              .vmdj-sampler-head h2 { margin: 0; font-size: .9rem; }
+              .vmdj-sampler-head p { margin: .2rem 0 0; color: var(--vmdj-muted); font-size: .75rem; }
+              .vmdj-sampler-level { display: grid; grid-template-columns: auto 8rem; align-items: center; gap: .5rem; color: var(--vmdj-muted); font-size: .75rem; font-weight: 650; }
+              .vmdj-pads { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; }
+              .vmdj-pad { min-height: 4.25rem; padding: .6rem; border: 1px solid var(--vmdj-border); border-radius: .65rem; background: var(--vmdj-soft); color: var(--vmdj-ink); cursor: pointer; text-align: left; }
+              .vmdj-pad:active, .vmdj-pad.is-playing { border-color: var(--vmdj-accent); background: var(--vmdj-accent); color: var(--vmdj-accent-ink); transform: translateY(1px); }
+              .vmdj-pad-name { display: block; font-size: .82rem; font-weight: 700; }
+              .vmdj-pad-key { display: block; margin-top: .3rem; font-size: .68rem; opacity: .75; }
+              .vmdj-section-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; margin-top: .8rem; }
+              .vmdj-status { min-height: 1.25rem; margin: 0; color: var(--vmdj-muted); font-size: .8rem; }
+              .vmdj-status[data-tone="error"] { color: var(--vmdj-danger); }
+              .vmdj-help { margin: 0; color: var(--vmdj-muted); font-size: .75rem; line-height: 1.45; }
+              @media (pointer: coarse) { .vmdj-btn, .vmdj-input, .vmdj-select { min-height: 44px; height: 44px; } .vmdj-range { min-height: 32px; } }
+            </style>
+            <div class="w-full p-3 sm:p-6">
+              <div class="mb-4">
+                <h1 class="text-lg font-semibold text-foreground">Video Mix DJ Studio</h1>
+                <p class="mt-1 text-sm text-muted-foreground">Mix two YouTube videos live with independent transport, cue, loop and tempo controls. The crossfader blends both the sound and picture. Your set stays on this device.</p>
+              </div>
+              <div class="vmdj-layout">
+                <div class="vmdj-decks">
+                  <article class="vmdj-card" data-vmdj-deck="a">
+                    <header class="vmdj-deck-head"><span class="vmdj-deck-name"><span class="vmdj-deck-dot"></span>Deck A</span><span class="vmdj-deck-meta" data-vmdj="title-a">Ready for a video</span></header>
+                    <div class="vmdj-stage"><iframe data-vmdj="player-a" class="vmdj-player" title="Deck A video" allow="autoplay; encrypted-media; picture-in-picture" hidden></iframe><p data-vmdj="placeholder-a" class="vmdj-placeholder">Paste a YouTube link below to load Deck A.</p></div><div class="vmdj-turntable-row"><div data-vmdj="platter-a" class="vmdj-platter" role="slider" aria-label="Deck A touch turntable. Drag around the platter to scratch." aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div></div>
+                    <form data-vmdj="form-a" class="vmdj-form"><input data-vmdj="url-a" class="vmdj-input" type="url" inputmode="url" autocomplete="off" placeholder="Paste a YouTube link or video ID" aria-label="Deck A YouTube link"><button class="vmdj-btn vmdj-btn-primary" type="submit">Load</button></form>
+                    <div class="vmdj-controls">
+                      <div class="vmdj-actions"><button data-vmdj="play-a" class="vmdj-btn" type="button" disabled>Play</button><button data-vmdj="cue-a" class="vmdj-btn" type="button" disabled>Cue</button><button data-vmdj="set-cue-a" class="vmdj-btn" type="button" disabled>Set cue</button><button data-vmdj="loop-a" class="vmdj-btn" type="button" aria-pressed="false" disabled>Loop 8s</button><button data-vmdj="capture-a" class="vmdj-btn" type="button" disabled>Capture 8s</button></div>
+                      <div class="vmdj-readout"><time data-vmdj="time-a">0:00</time><input data-vmdj="seek-a" class="vmdj-range" type="range" min="0" max="1000" value="0" aria-label="Deck A position" disabled><time data-vmdj="duration-a">0:00</time></div>
+                      <div class="vmdj-knobs"><label class="vmdj-field">Deck level <output data-vmdj="level-value-a">100%</output><input data-vmdj="level-a" class="vmdj-range" type="range" min="0" max="100" value="100" aria-label="Deck A level"></label><label class="vmdj-field">Tempo <output data-vmdj="rate-value-a">1.00×</output><select data-vmdj="rate-a" class="vmdj-select" aria-label="Deck A tempo"><option value="0.5">0.50×</option><option value="0.75">0.75×</option><option value="1" selected>1.00×</option><option value="1.25">1.25×</option><option value="1.5">1.50×</option><option value="2">2.00×</option></select></label></div>
+                    </div>
+                  </article>
+                  <article class="vmdj-card" data-vmdj-deck="b">
+                    <header class="vmdj-deck-head"><span class="vmdj-deck-name"><span class="vmdj-deck-dot"></span>Deck B</span><span class="vmdj-deck-meta" data-vmdj="title-b">Ready for a video</span></header>
+                    <div class="vmdj-stage"><iframe data-vmdj="player-b" class="vmdj-player" title="Deck B video" allow="autoplay; encrypted-media; picture-in-picture" hidden></iframe><p data-vmdj="placeholder-b" class="vmdj-placeholder">Paste a YouTube link below to load Deck B.</p></div><div class="vmdj-turntable-row"><div data-vmdj="platter-b" class="vmdj-platter" role="slider" aria-label="Deck B touch turntable. Drag around the platter to scratch." aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div></div>
+                    <form data-vmdj="form-b" class="vmdj-form"><input data-vmdj="url-b" class="vmdj-input" type="url" inputmode="url" autocomplete="off" placeholder="Paste a YouTube link or video ID" aria-label="Deck B YouTube link"><button class="vmdj-btn vmdj-btn-primary" type="submit">Load</button></form>
+                    <div class="vmdj-controls">
+                      <div class="vmdj-actions"><button data-vmdj="play-b" class="vmdj-btn" type="button" disabled>Play</button><button data-vmdj="cue-b" class="vmdj-btn" type="button" disabled>Cue</button><button data-vmdj="set-cue-b" class="vmdj-btn" type="button" disabled>Set cue</button><button data-vmdj="loop-b" class="vmdj-btn" type="button" aria-pressed="false" disabled>Loop 8s</button><button data-vmdj="capture-b" class="vmdj-btn" type="button" disabled>Capture 8s</button></div>
+                      <div class="vmdj-readout"><time data-vmdj="time-b">0:00</time><input data-vmdj="seek-b" class="vmdj-range" type="range" min="0" max="1000" value="0" aria-label="Deck B position" disabled><time data-vmdj="duration-b">0:00</time></div>
+                      <div class="vmdj-knobs"><label class="vmdj-field">Deck level <output data-vmdj="level-value-b">100%</output><input data-vmdj="level-b" class="vmdj-range" type="range" min="0" max="100" value="100" aria-label="Deck B level"></label><label class="vmdj-field">Tempo <output data-vmdj="rate-value-b">1.00×</output><select data-vmdj="rate-b" class="vmdj-select" aria-label="Deck B tempo"><option value="0.5">0.50×</option><option value="0.75">0.75×</option><option value="1" selected>1.00×</option><option value="1.25">1.25×</option><option value="1.5">1.50×</option><option value="2">2.00×</option></select></label></div>
+                    </div>
+                  </article>
+                </div>
+                <div class="vmdj-mixer">
+                  <section class="vmdj-card vmdj-mix-card"><div class="vmdj-cross-label"><span>Deck A</span><output data-vmdj="cross-value" class="vmdj-cross-value">Center</output><span>Deck B</span></div><input data-vmdj="crossfader" class="vmdj-range mt-2" type="range" min="-100" max="100" value="0" aria-label="Crossfader, Deck A to Deck B"><div class="vmdj-cut-row"><button data-vmdj="cut-a" class="vmdj-btn" type="button">Cut A</button><button data-vmdj="cut-center" class="vmdj-btn" type="button">Center</button><button data-vmdj="cut-b" class="vmdj-btn" type="button">Cut B</button></div><div class="vmdj-actions mt-3"><button data-vmdj="sync" class="vmdj-btn" type="button">Sync B to A</button><button data-vmdj="play-both" class="vmdj-btn" type="button">Play both</button><button data-vmdj="pause-both" class="vmdj-btn" type="button">Pause both</button></div></section>
+                  <aside class="vmdj-card vmdj-set"><h2>Your set</h2><p>Save the current videos, levels, cue points and crossfader locally.</p><div class="vmdj-set-actions"><button data-vmdj="save" class="vmdj-btn" type="button">Save set</button><button data-vmdj="reset" class="vmdj-btn" type="button">Clear studio</button></div></aside>
+                </div>
+                <section class="vmdj-card vmdj-sampler" aria-labelledby="vmdj-sampler-title"><div class="vmdj-sampler-head"><div><h2 id="vmdj-sampler-title">Sampler</h2><p>Capture an eight-second section from either deck, then replay it from a pad. Drum pads are synthesized locally.</p></div><label class="vmdj-sampler-level">Sampler level <input data-vmdj="sampler-level" class="vmdj-range" type="range" min="0" max="100" value="80" aria-label="Sampler level"></label></div><div class="vmdj-section-samples" role="group" aria-label="Captured song sections"><button data-vmdj="section-0" class="vmdj-pad" type="button" disabled><span class="vmdj-pad-name">Section 1</span><span class="vmdj-pad-key">Empty</span></button><button data-vmdj="section-1" class="vmdj-pad" type="button" disabled><span class="vmdj-pad-name">Section 2</span><span class="vmdj-pad-key">Empty</span></button><button data-vmdj="section-2" class="vmdj-pad" type="button" disabled><span class="vmdj-pad-name">Section 3</span><span class="vmdj-pad-key">Empty</span></button><button data-vmdj="section-3" class="vmdj-pad" type="button" disabled><span class="vmdj-pad-name">Section 4</span><span class="vmdj-pad-key">Empty</span></button></div><div class="vmdj-pads mt-2" role="group" aria-label="Drum sampler pads"><button data-vmdj-pad="kick" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Kick</span><span class="vmdj-pad-key">E</span></button><button data-vmdj-pad="snare" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Snare</span><span class="vmdj-pad-key">R</span></button><button data-vmdj-pad="hat" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Hi-hat</span><span class="vmdj-pad-key">T</span></button><button data-vmdj-pad="clap" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Clap</span><span class="vmdj-pad-key">Y</span></button><button data-vmdj-pad="tom" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Tom</span><span class="vmdj-pad-key">U</span></button><button data-vmdj-pad="perc" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Perc</span><span class="vmdj-pad-key">I</span></button><button data-vmdj-pad="stab" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Stab</span><span class="vmdj-pad-key">O</span></button><button data-vmdj-pad="riser" class="vmdj-pad" type="button"><span class="vmdj-pad-name">Riser</span><span class="vmdj-pad-key">P</span></button></div></section>
+                <p data-vmdj="status" class="vmdj-status" role="status" aria-live="polite"></p>
+                <p class="vmdj-help">Keyboard: <kbd>1</kbd> and <kbd>2</kbd> play or pause each deck; <kbd>Q</kbd> and <kbd>W</kbd> return to cue; <kbd>3</kbd>–<kbd>6</kbd> replay captured sections; <kbd>←</kbd> and <kbd>→</kbd> move the crossfader; <kbd>E</kbd>, <kbd>R</kbd>, <kbd>T</kbd>, <kbd>Y</kbd>, <kbd>U</kbd>, <kbd>I</kbd>, <kbd>O</kbd> and <kbd>P</kbd> play drum pads. YouTube availability, ads and playback restrictions are controlled by YouTube and the video owner.</p>
+              </div>
+            </div>
+          </section>

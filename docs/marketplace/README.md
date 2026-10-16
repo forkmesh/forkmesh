@@ -212,6 +212,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `voice-changer` (desktop virtual microphone plus a web page). Both web pages
   run the call engine from `app/public` and share `app/public/call-studio.js`
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
+- **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
+  loop, tempo and crossfader controls on responsive web, mobile and desktop
+  surfaces; [details](video-mix-dj-studio.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 

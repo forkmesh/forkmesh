@@ -9,6 +9,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .crmOrg(id: "acme")), "crm")
         XCTAssertEqual(PluginMenu.packageId(for: .rssReader), "rss-reader")
         XCTAssertEqual(PluginMenu.packageId(for: .faceChanger), "face-changer")
+        XCTAssertEqual(PluginMenu.packageId(for: .videoMixDjStudio), "video-mix-dj-studio")
         XCTAssertEqual(PluginMenu.packageId(for: .appStoreStatus), "app-store-status")
         XCTAssertEqual(PluginMenu.packageId(for: .marketing(section: "email")), "marketing")
         XCTAssertEqual(PluginMenu.packageId(for: .ledger(section: nil)), "ledger")
