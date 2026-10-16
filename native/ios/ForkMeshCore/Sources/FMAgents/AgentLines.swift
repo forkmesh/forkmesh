@@ -390,9 +390,10 @@ public enum AgentLines {
     }
 
     public static func dialog(_ session: AgentLaunchSession) -> String {
-        guard session.isActive else { return "" }
-        let live = dialog(session.liveText + "\n")
-        if !live.isEmpty { return live }
+        if session.isActive {
+            let live = dialog(session.liveText + "\n")
+            if !live.isEmpty { return live }
+        }
         return dialog((session.history.last { !$0.isUser }?.text ?? "") + "\n")
     }
 

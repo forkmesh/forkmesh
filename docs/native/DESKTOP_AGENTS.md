@@ -291,14 +291,21 @@ and a dialog ticker in the rest of the line.
   waiting line is kept. Position is computed from the frame clock
   (`TimelineView(.animation)`, `wrap(at:)`), so rows that leave and re-enter
   a `LazyVStack` resume correctly. Reduce Motion shows the line still.
+- Every row shows the agent's last line, running or not (asked for on
+  2026-10-16: stopped rows had an empty bottom line). Only running rows scroll
+  (`moving`); a stopped row holds its latest line still, faded at the right
+  edge, and a row that stops mid-scroll settles on its newest line.
 - `AgentLines.dialog(_:)` reads the last 6000 characters of a transcript, drops
   the line being written, and keeps the agent's last block of prose (no tool
   runs, tasks, errors, prompts, code, JSON or tables), stripped to one line of
-  120 characters. `AgentEagleFeed` keeps each running agent's last non-empty
-  line.
-- Desktop rows stream through `ControlWatchFeeds` (at most six, only while the
-  Agents screen shows Eagle); cloud runs use `liveText` or the last
-  non-user message. Only running rows get a ticker.
+  120 characters. `AgentEagleFeed` keeps each agent's last non-empty line,
+  including after it stops.
+- Running desktop rows stream through `ControlWatchFeeds` (at most six, only
+  while the Agents screen shows Eagle); cloud runs use `liveText` while running
+  and the last non-user message after. A stopped row with no line yet asks
+  `recall(_:)` when it appears, which reads its transcript once through
+  `AgentControlCenter.transcript` (at most three at a time, each row once until
+  the screen leaves Eagle).
 - A missing or unknown `agents/listView` reads as Eagle; a phone that stored
   another view is switched once (`agents/listViewEagleDefault`).
 

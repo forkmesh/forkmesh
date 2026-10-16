@@ -20,6 +20,24 @@
             "title": "[app-store-status] Have the ability to see the images attached",
             "ts": 1792119529730,
             "type": "open"
+        },
+        {
+            "author": "93rzBNjYswzt2sE9AFDkCCjZfSprogNboEhKgYqGYkw",
+            "authorName": "mdkaifansari04",
+            "id": "status-web-1792172012968-1qtyo71",
+            "sig": "Mcce3h1cfd_Vfc5g-hQZRrQEIkotcrfihkvBbpRUpcGoVPHSjk5P-egoSpcCDh13oSZJC5KSoLesFcuGNeWLDw",
+            "status": "closed",
+            "ts": 1792172012968,
+            "type": "status"
+        },
+        {
+            "author": "93rzBNjYswzt2sE9AFDkCCjZfSprogNboEhKgYqGYkw",
+            "authorName": "mdkaifansari04",
+            "id": "status-web-1792172295796-1kg8x3t",
+            "sig": "DtZjcnxqx0iulAWbrbyNdI1g4TeLDso1cmzyrJYs5MbkPfjKJINqIE8RlFruEmWbMWIV16UEmrsG_obFYRCxAA",
+            "status": "open",
+            "ts": 1792172295796,
+            "type": "status"
         }
     ],
     "labels": [
@@ -41,6 +59,6 @@
     "startDate": 0,
     "status": "open",
     "title": "[app-store-status] Have the ability to see the images attached",
-    "updatedAt": 1792119529730,
+    "updatedAt": 1792172295796,
     "votes": 0
 }
