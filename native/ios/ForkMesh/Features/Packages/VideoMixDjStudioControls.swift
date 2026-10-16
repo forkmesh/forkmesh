@@ -393,26 +393,24 @@ struct DjTransport: View {
     let deck: DjDeck
     let u: CGFloat
     var vertical = false
+    var cell = CGSize(width: 58, height: 32)
 
     var body: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        let atStart = deck.position() < 0.05
         layout {
-            Button {
-                DjTheme.tick()
-                model.start(deck.side)
-            } label: {
-                face("START", symbol: "play.fill", tint: DjTheme.play, lit: deck.playing)
-            }
-            .accessibilityLabel("Start Deck \(deck.side.label)")
-            .accessibilityValue(deck.playing ? "Playing" : "Stopped")
-            Rectangle().fill(Color.black.opacity(0.55)).frame(width: vertical ? 58 * u : 1, height: vertical ? 1 : 40 * u)
-            Button {
-                DjTheme.tick()
-                model.stop(deck.side)
-            } label: {
-                face("STOP", symbol: "stop.fill", tint: DjTheme.record, lit: deck.loaded && !deck.playing)
-            }
-            .accessibilityLabel("Stop Deck \(deck.side.label)")
+            button("START", symbol: "play.fill", tint: DjTheme.play, lit: deck.playing) { model.start(deck.side) }
+                .accessibilityLabel("Start Deck \(deck.side.label)")
+                .accessibilityValue(deck.playing ? "Playing" : "Stopped")
+            divider
+            button("PAUSE", symbol: "pause.fill", tint: DjTheme.ink, lit: deck.loaded && !deck.playing && !atStart) { model.pauseDeck(deck.side) }
+                .accessibilityLabel("Pause Deck \(deck.side.label)")
+            divider
+            button("STOP", symbol: "stop.fill", tint: DjTheme.record, lit: deck.loaded && !deck.playing && atStart) { model.stop(deck.side) }
+                .accessibilityLabel("Stop Deck \(deck.side.label) and go back to the beginning")
+            divider
+            button("RESTART", symbol: "backward.end.fill", tint: DjTheme.active, lit: false) { model.restart(deck.side) }
+                .accessibilityLabel("Start Deck \(deck.side.label) over from the beginning")
         }
         .buttonStyle(DjPressStyle())
         .background(DjTheme.control, in: RoundedRectangle(cornerRadius: 4 * u, style: .continuous))
@@ -421,19 +419,31 @@ struct DjTransport: View {
         .animation(.easeOut(duration: 0.15), value: deck.playing)
     }
 
-    private func face(_ title: String, symbol: String, tint: Color, lit: Bool) -> some View {
-        VStack(spacing: 2 * u) {
-            Image(systemName: symbol)
-                .font(.system(size: 15 * u, weight: .bold))
-                .foregroundStyle(tint.opacity(deck.loaded ? 1 : 0.45))
-                .shadow(color: tint.opacity(lit ? 0.9 : 0), radius: 5 * u)
-            Text(title)
-                .font(.system(size: 9 * u, weight: .bold))
-                .foregroundStyle(DjTheme.ink.opacity(deck.loaded ? 0.9 : 0.5))
+    private var divider: some View {
+        Rectangle().fill(Color.black.opacity(0.55)).frame(width: vertical ? cell.width * u : 1, height: vertical ? 1 : cell.height * u)
+    }
+
+    private func button(_ title: String, symbol: String, tint: Color, lit: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            DjTheme.tick()
+            action()
+        } label: {
+            VStack(spacing: 2 * u) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12 * u, weight: .bold))
+                    .foregroundStyle(tint.opacity(deck.loaded ? 1 : 0.45))
+                    .shadow(color: tint.opacity(lit ? 0.9 : 0), radius: 5 * u)
+                Text(title)
+                    .font(.system(size: 8 * u, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(DjTheme.ink.opacity(deck.loaded ? 0.9 : 0.5))
+            }
+            .padding(.horizontal, 2 * u)
+            .frame(width: cell.width * u, height: cell.height * u)
+            .background(tint.opacity(lit ? 0.16 : 0))
+            .contentShape(Rectangle())
         }
-        .frame(width: 58 * u, height: 40 * u)
-        .background(tint.opacity(lit ? 0.16 : 0))
-        .contentShape(Rectangle())
     }
 }
 

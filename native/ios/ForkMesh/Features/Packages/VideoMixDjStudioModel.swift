@@ -387,9 +387,35 @@ final class DjStudioModel {
         if !deck.playing { play(deck) }
     }
 
-    func stop(_ side: DjDeckSide) {
+    func pauseDeck(_ side: DjDeckSide) {
         let deck = deck(side)
         if deck.playing { pause(deck) }
+    }
+
+    func stop(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else { return }
+        sectionTasks[side]?.cancel()
+        if deck.playing { pause(deck) }
+        rewind(deck)
+    }
+
+    func restart(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else {
+            openLoad(side)
+            return
+        }
+        sectionTasks[side]?.cancel()
+        rewind(deck)
+        if !deck.playing { play(deck) }
+    }
+
+    private func rewind(_ deck: DjDeck) {
+        deck.player.seek(0)
+        deck.time = 0
+        deck.tickDate = CACurrentMediaTime()
+        deck.settle()
     }
 
     private func play(_ deck: DjDeck) {

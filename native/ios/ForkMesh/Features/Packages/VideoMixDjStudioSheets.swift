@@ -324,7 +324,7 @@ struct DjInfoSheet: View {
                 Label("Search and press return: the top result loads straight onto the deck.", systemImage: "magnifyingglass")
                 Label("Songs you play are kept under Recently Played in the loader for one-tap reloading.", systemImage: "clock.arrow.circlepath")
                 Label("Drag a record to scratch it.", systemImage: "hand.draw")
-                Label("START and STOP play and pause a deck; SAMPLE saves 8 seconds to a pad.", systemImage: "playpause")
+                Label("START plays, PAUSE holds, STOP goes back to the beginning, RESTART starts over; SAMPLE saves 8 seconds to a pad.", systemImage: "playpause")
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
                 Label("AUTOMIX fades to the other deck over 8 seconds.", systemImage: "arrow.left.arrow.right")

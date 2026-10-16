@@ -138,16 +138,16 @@ struct DjLandscape: View {
             .padding(.horizontal, 8 * u)
             .frame(height: middle)
             HStack(spacing: 0) {
-                DjTransport(model: model, deck: model.a, u: u * 0.9)
+                DjTransport(model: model, deck: model.a, u: u, cell: CGSize(width: 40, height: 40))
                 Spacer(minLength: 6 * u)
-                DjCueButtons(model: model, deck: model.a, u: u, segment: 50)
+                DjCueButtons(model: model, deck: model.a, u: u, segment: 42)
                 Spacer(minLength: 6 * u)
                 DjCrossfader(model: model, u: u)
-                    .frame(width: max(120 * u, min(300 * u, size.width - 560 * u)), height: bottom - 8 * u)
+                    .frame(width: max(120 * u, min(300 * u, size.width - 636 * u)), height: bottom - 8 * u)
                 Spacer(minLength: 6 * u)
-                DjCueButtons(model: model, deck: model.b, u: u, segment: 50)
+                DjCueButtons(model: model, deck: model.b, u: u, segment: 42)
                 Spacer(minLength: 6 * u)
-                DjTransport(model: model, deck: model.b, u: u * 0.9)
+                DjTransport(model: model, deck: model.b, u: u, cell: CGSize(width: 40, height: 40))
             }
             .padding(.horizontal, 10 * u)
             .frame(height: bottom)
@@ -216,7 +216,7 @@ struct DjPortrait: View {
             DjWaveform(model: model, deck: deck)
                 .frame(height: wave)
             HStack(spacing: 6 * u) {
-                VStack(spacing: 8 * u) {
+                VStack(spacing: 6 * u) {
                     DjTransport(model: model, deck: deck, u: u, vertical: true)
                     DjCueButtons(model: model, deck: deck, u: u, vertical: true)
                 }
