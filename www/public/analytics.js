@@ -24,20 +24,29 @@
   let clientErrorWindowStartedAt = 0;
   let clientErrorWindowCount = 0;
   const recentClientErrors = new Map();
-  const PRODUCT_ACTIONS = new Set([
-    "commercial-proof-opened",
-    "home-capabilities-world-opened",
-    "home-install-final",
-    "home-install-hero",
-    "home-install-nav",
-    "home-pro-membership",
-    "home-proof-opened",
-    "onboarding-proof-opened",
-    "pricing-contract-opened",
-    "pricing-managed-interest",
-    "proof-clone-copied",
-    "repository-clone-copied",
-    "repository-proof-opened",
+  const PRODUCT_ACTIONS = new Map([
+    ["commercial-proof-opened", "interest"],
+    ["desktop-download", "install"],
+    ["desktop-install-copied", "install"],
+    ["home-capabilities-world-opened", "interest"],
+    ["home-download", "install"],
+    ["home-install-final", "install"],
+    ["home-install-hero", "install"],
+    ["home-install-nav", "install"],
+    ["home-pro-membership", "signup"],
+    ["home-proof-opened", "interest"],
+    ["home-signup-final", "signup"],
+    ["home-signup-free", "signup"],
+    ["home-signup-nav", "signup"],
+    ["home-signup-supporter", "signup"],
+    ["home-start-instance", "signup"],
+    ["onboarding-proof-opened", "interest"],
+    ["pricing-contract-opened", "interest"],
+    ["pricing-managed-interest", "interest"],
+    ["proof-clone-copied", "interest"],
+    ["repository-clone-copied", "activation"],
+    ["repository-proof-opened", "interest"],
+    ["signup-completed", "account"],
   ]);
 
   function privacySignalEnabled() {
@@ -385,6 +394,7 @@
         captureErrors: false,
         sanitizeProperties,
       });
+      sdk.onFeatureFlags(applyExperiments);
     });
     return true;
   }
@@ -396,6 +406,29 @@
       sdk = null;
     }
     started = false;
+    showExperimentVariants(() => "control");
+  }
+
+  function showVariant(host, variant) {
+    const options = [...host.querySelectorAll("[data-fm-variant]")];
+    const chosen = options.some((node) => node.dataset.fmVariant === variant)
+      ? variant
+      : "control";
+    for (const node of options) node.hidden = node.dataset.fmVariant !== chosen;
+  }
+
+  function showExperimentVariants(variantFor) {
+    for (const host of document.querySelectorAll?.("[data-fm-experiment]") || []) {
+      showVariant(host, variantFor(host.dataset.fmExperiment || ""));
+    }
+  }
+
+  function applyExperiments() {
+    if (!sdk) return;
+    showExperimentVariants((flag) => {
+      const value = flag ? sdk.getFeatureFlag(flag) : false;
+      return typeof value === "string" ? value : "control";
+    });
   }
 
   function setConsent(granted) {
@@ -428,7 +461,10 @@
 
   function recordProductAction(action) {
     if (!started || !sdk || !PRODUCT_ACTIONS.has(action)) return false;
-    sdk.capture("forkmesh_product_action", { action });
+    sdk.capture("forkmesh_product_action", {
+      action,
+      stage: PRODUCT_ACTIONS.get(action),
+    });
     return true;
   }
 

@@ -315,7 +315,6 @@ public final class AgentsListModel {
     @ObservationIgnored private var signalToken: ListenerToken?
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
-    @ObservationIgnored private var ringLoading = false
     @ObservationIgnored private var rangDuringLoad = false
     @ObservationIgnored private let refusals: AgentReadRefusals
     @ObservationIgnored private let now: @MainActor () -> Date
@@ -341,6 +340,7 @@ public final class AgentsListModel {
             } else {
                 generation += 1
                 isLoading = false
+                rangDuringLoad = false
             }
         }
     }
@@ -388,28 +388,26 @@ public final class AgentsListModel {
     /// A desktop pushes a new snapshot at each step of a running session, and
     /// every reload re-reads each repository, so a burst of bells is one load.
     private func onSignal() {
-        if ringLoading {
-            rangDuringLoad = true
-            return
-        }
+        if deferredToLoad() { return }
         debounceTask?.cancel()
         let delay = debounce
         debounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard let self, !Task.isCancelled, self.enabled else { return }
-            await self.ringRefresh()
+            guard let self, !Task.isCancelled, self.enabled, !self.deferredToLoad() else { return }
+            await self.load(ring: true)
         }
     }
 
-    private func ringRefresh() async {
-        ringLoading = true
+    private func deferredToLoad() -> Bool {
+        guard isLoading else { return false }
+        rangDuringLoad = true
+        return true
+    }
+
+    private func ringAfterLoad() {
+        guard rangDuringLoad else { return }
         rangDuringLoad = false
-        await load(ring: true)
-        ringLoading = false
-        if rangDuringLoad, signalToken != nil, !Task.isCancelled {
-            rangDuringLoad = false
-            onSignal()
-        }
+        if signalToken != nil, enabled { onSignal() }
     }
 
     /// Start a load without waiting for it.
@@ -438,6 +436,7 @@ public final class AgentsListModel {
         }
         if !hasLoaded { hasLoaded = true }
         isLoading = false
+        ringAfterLoad()
     }
 
     /// Wait for the load `start()` or `reload()` began (tests).
@@ -450,6 +449,7 @@ public final class AgentsListModel {
         if mine != generation || !enabled { return [] }
         var loaded: [AgentRepoGroup?] = Array(repeating: nil, count: repos.count)
         let shown = Dictionary(groups.map { ($0.repo.fullName, $0) }, uniquingKeysWith: { first, _ in first })
+        rangDuringLoad = false
         await withTaskGroup(of: (Int, AgentRepoGroup).self) { group in
             for (index, repo) in repos.enumerated() {
                 let previous = shown[repo.fullName]

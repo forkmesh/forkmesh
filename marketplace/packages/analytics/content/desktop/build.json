@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
-  "sources": ["AnalyticsFeature.h", "AnalyticsFeature.cpp"],
+  "sources": ["AnalyticsFeature.h", "AnalyticsFeature.cpp", "AnalyticsManage.cpp"],
   "mocHeaders": []
 }

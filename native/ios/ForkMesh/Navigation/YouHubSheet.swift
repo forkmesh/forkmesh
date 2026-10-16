@@ -122,6 +122,7 @@ struct YouHubSheet: View {
                 try? await Task.sleep(for: .seconds(PerformanceDiagnostics.refreshSeconds))
             }
         }
+        .fmLoading(HubPackageState.shared.refreshing)
         .fmFeedback(.destructiveConfirmation, trigger: confirmSignOut)
         .accessibilityIdentifier("you-hub")
     }

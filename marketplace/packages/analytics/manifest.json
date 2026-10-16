@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.6.0",
-  "summary": "First-party product analytics: events, funnels, cohorts, session recordings, heatmaps, flags, experiments, and surveys.",
+  "version": "1.7.0",
+  "summary": "First-party product analytics: events, funnels, conversions, cohorts, session recordings, heatmaps, flags, experiments, and surveys.",
   "screenshots": [
     { "path": "preview/market.svg", "alt": "Analytics overview with visitor, pageview, and session totals, a traffic trend chart, and top pages and referrers" }
   ],

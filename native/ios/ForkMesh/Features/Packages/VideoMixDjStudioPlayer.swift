@@ -47,6 +47,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
     private var pending: [DjDeckSide: String] = [:]
     private var lastLoad: [DjDeckSide: String] = [:]
     private var lastVolume: [DjDeckSide: DjVolume] = [:]
+    private var handOff: UIBackgroundTaskIdentifier = .invalid
 
     init(origin: URL) {
         self.origin = origin
@@ -69,6 +70,34 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         webView.allowsLinkPreview = false
         webView.accessibilityElementsHidden = true
         webView.loadHTMLString(Self.html, baseURL: origin)
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.background(true) }
+        }
+        center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.background(false) }
+        }
+    }
+
+    private func background(_ entering: Bool) {
+        endHandOff()
+        guard apiReady else { return }
+        if entering {
+            handOff = UIApplication.shared.beginBackgroundTask(withName: "DjDeckHandOff") { [weak self] in
+                MainActor.assumeIsolated { self?.endHandOff() }
+            }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(12))
+                self?.endHandOff()
+            }
+        }
+        run("fmBackground(\(entering ? 1 : 0))")
+    }
+
+    private func endHandOff() {
+        guard handOff != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(handOff)
+        handOff = .invalid
     }
 
     func dock() {
@@ -171,27 +200,29 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
         <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}.s{position:absolute;top:0;bottom:0;width:50%}#sa{left:0}#sb{right:0}.s>*{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
         </head><body><div class="s" id="sa"><div id="a"></div></div><div class="s" id="sb"><div id="b"></div></div><script>
-        var K=["a","b"],D={},n=0;
+        var K=["a","b"],D={},n=0,B=0;
         K.forEach(function(k){D[k]={p:null,ready:false,meta:"",routed:false,w:{rate:1,volume:100,muted:false,gain:1,scratch:null,at:0}}});
         function post(m){try{webkit.messageHandlers.deck.postMessage(m)}catch(e){}}
         function onYouTubeIframeAPIReady(){post({type:"api"})}
         function frame(k){try{var f=D[k].p&&D[k].p.getIframe&&D[k].p.getIframe();return f&&f.contentWindow}catch(e){return null}}
-        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at},"*")}
+        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at,bg:B},"*")}
         function fmCall(k,name){var d=D[k];if(!d.p||!d.ready||typeof d.p[name]!=="function")return;d.p[name].apply(d.p,[].slice.call(arguments,2));setTimeout(function(){tick(k)},60)}
         function fmStop(k){D[k].w.scratch=null;fmCall(k,"stopVideo")}
         function fmRate(k,r){D[k].w.rate=r;push(k)}
         function fmScratch(k,s,at){var x=D[k].w;x.scratch=s;x.at=at;push(k)}
         function fmVolume(k,v,m,g){var d=D[k];d.w.volume=v;d.w.muted=m;d.w.gain=g;push(k);if(!d.p||!d.ready)return;d.p.setVolume(d.routed?100:v);if(m)d.p.mute();else d.p.unMute()}
         function tick(k){var d=D[k],p=d.p;if(!p||!d.ready||!p.getCurrentTime)return;var v=p.getVideoData?p.getVideoData():null;if(v&&v.title&&v.title!==d.meta){d.meta=v.title;post({type:"meta",deck:k,title:v.title,author:v.author||""})}post({type:"tick",deck:k,time:p.getCurrentTime()||0,duration:p.getDuration()||0,state:p.getPlayerState()})}
-        function fmLoad(k,id,start,rate,v,m,g){var d=D[k];d.w.rate=rate;d.w.scratch=null;d.meta="";
+        function fmLoad(k,id,start,rate,v,m,g){var d=D[k];d.w.rate=rate;d.w.scratch=null;d.meta="";d.resume=false;
         if(d.p&&d.ready){d.p.cueVideoById({videoId:id,startSeconds:start});fmVolume(k,v,m,g);setTimeout(function(){tick(k)},300);return}
-        d.w.volume=v;d.w.muted=m;d.w.gain=g;
+        d.w.volume=v;d.w.muted=m;d.w.gain=g;make(k,id,start)}
+        function make(k,id,start){var d=D[k];
         if(d.p){try{d.p.destroy()}catch(e){}document.getElementById("s"+k).innerHTML='<div id="'+k+'"></div>';d.ready=false;d.routed=false}
         d.p=new YT.Player(k,{host:"https://www.youtube-nocookie.com",width:"100%",height:"100%",videoId:id,
         playerVars:{playsinline:1,controls:0,disablekb:1,fs:0,rel:0,iv_load_policy:3,cc_load_policy:0,enablejsapi:1,start:Math.floor(start),origin:location.origin},
-        events:{onReady:function(){d.ready=true;fmVolume(k,d.w.volume,d.w.muted,d.w.gain);post({type:"ready",deck:k});tick(k)},
+        events:{onReady:function(){d.ready=true;if(d.resume){d.resume=false;d.p.loadVideoById({videoId:id,startSeconds:start})}fmVolume(k,d.w.volume,d.w.muted,d.w.gain);post({type:"ready",deck:k});tick(k)},
         onStateChange:function(e){if(e.data===1)push(k);post({type:"state",deck:k,state:e.data});tick(k)},
         onError:function(e){post({type:"error",deck:k,code:e.data})}}})}
+        function fmBackground(on){B=on?1:0;K.forEach(function(k){var d=D[k],p=d.p;if(B&&d.routed&&p&&d.ready&&!d.w.muted&&d.w.gain>=0.02){var s=p.getPlayerState(),v=p.getVideoData?p.getVideoData():null;if((s===1||s===3)&&v&&v.video_id){d.resume=true;make(k,v.video_id,p.getCurrentTime()||0);return}}push(k)})}
         addEventListener("message",function(e){var m=e.data;if(!m||typeof m!=="object"||!m.fmdjFrame)return;K.forEach(function(k){if(!e.source||frame(k)!==e.source)return;var d=D[k];if(m.fmdjFrame==="routed"){if(!d.routed){d.routed=true;fmVolume(k,d.w.volume,d.w.muted,d.w.gain)}}else push(k)})});
         setInterval(function(){n++;K.forEach(function(k){var d=D[k];if(!d.p||!d.ready)return;var s=d.p.getPlayerState();if(s===1||s===3||n%4===0)tick(k)})},250);
         </script><script src="https://www.youtube.com/iframe_api"></script></body></html>
@@ -200,7 +231,29 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
     private static let frameScript = """
         (function(){
         if(window.top===window||!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname))return;
-        var w={rate:1,gain:1,scratch:null,at:0},ctx=null,amp=null,routed=null,tries=0;
+        var w={rate:1,gain:1,scratch:null,at:0,bg:0},ctx=null,amp=null,routed=null,tries=0;
+        var P=HTMLMediaElement.prototype,md=Object.getOwnPropertyDescriptor(P,"muted"),H=new WeakMap(),T=new WeakMap(),decoys=[];
+        function held(v){return H.get(v)||{want:md.get.call(v),hold:false}}
+        function hold(v,on){var h=held(v);h.hold=on;H.set(v,h);md.set.call(v,on||h.want)}
+        Object.defineProperty(P,"muted",{configurable:true,enumerable:md.enumerable,get:function(){var h=H.get(this);return h?h.want:md.get.call(this)},set:function(x){var h=held(this);h.want=!!x;H.set(this,h);md.set.call(this,h.want||h.hold)}});
+        var play=P.play;P.play=function(){if(this.tagName==="VIDEO"&&this.readyState<1&&decoys.indexOf(this)<0)hold(this,true);return play.apply(this,arguments)};
+        function desc(o,n){for(;o;o=Object.getPrototypeOf(o)){var d=Object.getOwnPropertyDescriptor(o,n);if(d)return d}return null}
+        function busy(t){for(var i=0;i<t.sourceBuffers.length;i++)if(t.sourceBuffers[i].updating)return true;return false}
+        var S=window.MediaSource;
+        if(S&&S.prototype&&S.prototype.addSourceBuffer){
+        var add=S.prototype.addSourceBuffer,rem=S.prototype.removeSourceBuffer,eos=S.prototype.endOfStream,dd=desc(S.prototype,"duration");
+        S.prototype.addSourceBuffer=function(type){var t=T.get(this);if(t&&t.readyState==="open"&&/^video\\//i.test(String(type))){try{var b=add.call(t,type);T.set(b,t);return b}catch(e){}}return add.call(this,type)};
+        S.prototype.removeSourceBuffer=function(b){var t=T.get(b);return rem.call(t||this,b)};
+        S.prototype.endOfStream=function(){var t=T.get(this);if(t)try{if(t.readyState==="open"&&!busy(t))eos.call(t)}catch(e){}return eos.apply(this,arguments)};
+        if(dd&&dd.set)Object.defineProperty(S.prototype,"duration",{configurable:true,enumerable:dd.enumerable,get:dd.get,set:function(x){dd.set.call(this,x);var t=T.get(this);if(t)try{if(t.readyState==="open"&&!busy(t))dd.set.call(t,x)}catch(e){}}});
+        function twin(ms,M){try{var t=new M(),e=document.createElement("video");e.muted=true;e.disableRemotePlayback=true;e.preload="auto";e.src=URL.createObjectURL(t);T.set(ms,t);decoys.push(e);
+        ms.addEventListener("sourceclose",function(){T.delete(ms);var i=decoys.indexOf(e);if(i>=0)decoys.splice(i,1);try{URL.revokeObjectURL(e.src);e.removeAttribute("src");e.load()}catch(x){}})}catch(x){}}
+        ["MediaSource","ManagedMediaSource"].forEach(function(n){var M=window[n];if(typeof M!=="function")return;
+        var W=class extends M{constructor(){super();twin(this,M)}};try{Object.defineProperty(W,"name",{value:n})}catch(e){}window[n]=W});
+        }
+        document.addEventListener("loadedmetadata",function(e){var v=e.target,h=v&&H.get(v);if(h&&h.hold)hold(v,false)},true);
+        try{var DP=Document.prototype;Object.defineProperty(DP,"hidden",{configurable:true,get:function(){return false}});Object.defineProperty(DP,"visibilityState",{configurable:true,get:function(){return "visible"}});Object.defineProperty(DP,"webkitHidden",{configurable:true,get:function(){return false}});Object.defineProperty(DP,"webkitVisibilityState",{configurable:true,get:function(){return "visible"}})}catch(e){}
+        ["visibilitychange","webkitvisibilitychange"].forEach(function(t){addEventListener(t,function(e){e.stopImmediatePropagation()},true)});
         function video(){return document.querySelector("video")}
         function speed(v,r){if(Math.abs(v.playbackRate-r)>0.001)v.playbackRate=r}
         function route(v){
@@ -216,7 +269,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         var v=video();if(!v)return;
         if(v.preservesPitch!==false)try{v.preservesPitch=false}catch(e){}
         if(v.webkitPreservesPitch)try{v.webkitPreservesPitch=false}catch(e){}
-        if((w.gain<0.999||routed)&&route(v))amp.gain.setTargetAtTime(Math.max(0,Math.min(1,w.gain)),ctx.currentTime,0.012);
+        if((w.gain<0.999||routed)&&(routed===v||!w.bg)&&route(v))amp.gain.setTargetAtTime(Math.max(0,Math.min(1,w.gain)),ctx.currentTime,0.012);
         if(typeof w.scratch==="number"){var s=w.scratch;
         if(s>0.08){if(Math.abs(v.currentTime-w.at)>0.35)v.currentTime=w.at;speed(v,Math.min(4,Math.max(0.25,s)));if(v.paused){var q=v.play();if(q&&q.catch)q.catch(function(){})}}
         else{if(!v.paused)v.pause();if(Math.abs(v.currentTime-w.at)>0.04)v.currentTime=w.at}}

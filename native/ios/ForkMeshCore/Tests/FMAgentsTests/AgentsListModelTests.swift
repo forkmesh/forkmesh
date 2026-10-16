@@ -31,6 +31,15 @@ final class FakeAgentsApi: AgentsApi {
     var queueResult = AgentQueueResult(queueState: "ready_for_claim", targetOnline: true, message: "Queued on desk-1.")
     var repositoriesGate: CheckedContinuation<Void, Never>?
     var holdRepositories = false
+    var sessionGates: [CheckedContinuation<Void, Never>] = []
+    var holdSessions = false
+
+    func releaseSessions() {
+        holdSessions = false
+        let gates = sessionGates
+        sessionGates = []
+        for gate in gates { gate.resume() }
+    }
 
     func repositories() async throws -> [Repository] {
         repositoriesCalls += 1
@@ -44,8 +53,12 @@ final class FakeAgentsApi: AgentsApi {
     func agentSessionPage(_ owner: String, _ name: String, ownerAccount: String) async throws -> AgentSessionPage {
         let key = "\(owner)/\(name)"
         sessionCalls[key, default: 0] += 1
+        let call = sessionCalls[key] ?? 1
+        if holdSessions {
+            await withCheckedContinuation { sessionGates.append($0) }
+        }
         if let pageError { throw pageError }
-        return pages[key]?(sessionCalls[key] ?? 1) ?? AgentSessionPage()
+        return pages[key]?(call) ?? AgentSessionPage()
     }
 
     func agentTranscript(_ owner: String, _ name: String, _ id: Int, ownerAccount: String) async throws -> AgentTranscript {
@@ -179,7 +192,7 @@ final class AgentsListModelTests: XCTestCase {
         let model = AgentsListModel(api: api, signal: signal, debounce: 0.05)
         model.start()
         await model.waitForLoad()
-        api.holdRepositories = true
+        api.holdSessions = true
         signal.ring()
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(api.repositoriesCalls, 2)
@@ -189,11 +202,82 @@ final class AgentsListModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(api.repositoriesCalls, 2)
 
-        api.holdRepositories = false
-        api.repositoriesGate?.resume()
+        api.releaseSessions()
         try await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(api.repositoriesCalls, 3)
         XCTAssertEqual(api.sessionCalls["alice/mobile"], 3)
+        XCTAssertNil(model.loadError)
+        model.stop()
+    }
+
+    func testARingDuringTheFirstLoadShowsItAndReadsOnceMore() async throws {
+        let api = globalApi()
+        api.holdSessions = true
+        let signal = AgentListSignal()
+        let model = AgentsListModel(api: api, signal: signal, debounce: 0.05)
+        model.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(api.sessionCalls["alice/mobile"], 1)
+
+        // The account socket rings as it connects at launch, while the first
+        // load is still waiting on the relay; that load must not be thrown away.
+        signal.ring()
+        signal.ring()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 1)
+        XCTAssertEqual(api.sessionCalls["alice/mobile"], 1)
+
+        api.releaseSessions()
+        await model.waitForLoad()
+        XCTAssertEqual(model.groups.first { $0.repo.name == "mobile" }?.sessions.first?.statusLabel, "Running")
+
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 2)
+        XCTAssertEqual(api.sessionCalls["alice/mobile"], 2)
+        XCTAssertEqual(model.groups.first { $0.repo.name == "mobile" }?.sessions.first?.statusLabel, "Done")
+        model.stop()
+    }
+
+    func testARingBeforeTheRepositoriesAnswerIsCoveredByThatLoad() async throws {
+        let api = globalApi()
+        api.holdRepositories = true
+        let signal = AgentListSignal()
+        let model = AgentsListModel(api: api, signal: signal, debounce: 0.05)
+        model.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        signal.ring()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 1)
+
+        api.holdRepositories = false
+        api.repositoriesGate?.resume()
+        await model.waitForLoad()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 1)
+        XCTAssertEqual(api.sessionCalls["alice/mobile"], 1)
+        model.stop()
+    }
+
+    func testARingDuringALoadThatFailsBeforeItsReadsIsAnsweredAfterIt() async throws {
+        let api = globalApi()
+        api.holdRepositories = true
+        api.repositoriesError = ApiException("offline")
+        let signal = AgentListSignal()
+        let model = AgentsListModel(api: api, signal: signal, debounce: 0.05)
+        model.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        signal.ring()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 1)
+
+        api.holdRepositories = false
+        api.repositoriesGate?.resume()
+        await model.waitForLoad()
+        XCTAssertNotNil(model.loadError)
+        api.repositoriesError = nil
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(api.repositoriesCalls, 2)
+        XCTAssertEqual(api.sessionCalls["alice/mobile"], 1)
         XCTAssertNil(model.loadError)
         model.stop()
     }

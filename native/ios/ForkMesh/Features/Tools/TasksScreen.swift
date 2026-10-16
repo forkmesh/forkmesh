@@ -105,8 +105,7 @@ private struct TasksList: View {
 
     var body: some View {
         if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "task_alt", title: TasksListModel.unavailableTitle, message: model.error)
         } else {
@@ -345,8 +344,7 @@ struct TaskDetailScreen: View {
 
     @ViewBuilder private var content: some View {
         if model.loading && model.task == nil {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList(rows: 6, hasLeading: false)
         } else if model.task == nil {
             FmEmptyState(icon: "task_alt", title: "Task unavailable", message: model.error)
         } else {

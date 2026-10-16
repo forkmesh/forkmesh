@@ -256,7 +256,10 @@ contacted, with a tap to draft an email or a Mastodon post.
   40 characters, or with any number or link not in the prompt
   (`GenieOutreach.unsupported`) are rejected.
 - **Opening.** Email opens in Zoho Mail on the organization's region
-  (`CrmSettings.zohoComposeURL`), else the share sheet. Mastodon text is copied
+  (`CrmSettings.zohoComposeURL`), else the share sheet. The organization's
+  other members are on cc (`memberEmails` from the CRM summary, minus the
+  contact), so the team sees each outreach; the share sheet text starts with a
+  `Cc:` line instead. Mastodon text is copied
   and the share sheet opens. A successful Zoho handoff also files the Spider's
   confirmation in the device-local Pings inbox as "The spider said".
 - Nothing is sent and the CRM is unchanged (except the deck link); the contact

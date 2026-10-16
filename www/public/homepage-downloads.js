@@ -309,6 +309,7 @@
       `${asset.blob_sha256}` +
       `?filename=${encodeURIComponent(asset.name)}`;
     link.download = asset.name;
+    link.dataset.forkmeshProductAction = "home-download";
     link.title = `${label[0]} ${tag}`;
     link.setAttribute(
       "aria-label",

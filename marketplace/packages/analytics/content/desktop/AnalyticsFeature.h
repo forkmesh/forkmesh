@@ -9,11 +9,13 @@
 #include <functional>
 
 class QButtonGroup;
+class QCheckBox;
 class QComboBox;
 class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QStackedWidget;
 class QTableWidget;
 
 namespace forkmesh::analytics {
@@ -43,6 +45,11 @@ public:
                                      const QString &host);
     static QString snippetText(const QString &origin, const QString &writeKey);
     static QString projectName(const QJsonObject &project);
+    static QJsonObject goalSeries(const QJsonObject &goal);
+    static QJsonObject conversionsQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes, const QJsonArray &goals);
+    static QJsonObject funnelQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes, const QJsonObject &stored);
+    static QString rateText(double rate);
+    static QString variantSplit(const QJsonObject &flag);
 
 private:
     void request(const QByteArray &method, const QString &path,
@@ -64,6 +71,30 @@ private:
     void renderOverview();
     void fillTable(QTableWidget *table, const QJsonArray &rows, bool visitors);
     void setStatus(const QString &text, bool error = false);
+    QWidget *buildConversionsPage();
+    QWidget *buildExperimentsPage();
+    void showSection(int index);
+    void reloadSection();
+    void clearManaged();
+    QString projectPath(const QString &suffix) const;
+    bool canManage() const;
+    void loadObjects(const QString &kind, std::function<void(const QJsonArray &)> done);
+    void loadConversions();
+    void renderGoals();
+    void renderGoalBreakdown();
+    void renderFunnels();
+    void loadFunnel();
+    void editGoal(const QJsonObject &goal);
+    void deleteGoal();
+    void applyPlaybook();
+    void loadExperiments();
+    void renderExperiments();
+    void loadExperimentResult();
+    void newExperiment();
+    void setExperimentRunning(bool running);
+    QJsonObject selectedGoal() const;
+    QJsonObject selectedExperiment() const;
+    QJsonObject flagFor(const QString &key) const;
 
     Request m_request;
     std::function<void()> m_searchIndexChanged;
@@ -95,6 +126,33 @@ private:
     QTableWidget *m_terms = nullptr;
     QLabel *m_writeKey = nullptr;
     QLabel *m_truncated = nullptr;
+    QButtonGroup *m_sectionGroup = nullptr;
+    QStackedWidget *m_sections = nullptr;
+    int m_section = 0;
+    QLabel *m_conversionsNote = nullptr;
+    QPushButton *m_newGoal = nullptr;
+    QPushButton *m_playbook = nullptr;
+    QPushButton *m_editGoal = nullptr;
+    QPushButton *m_deleteGoal = nullptr;
+    QTableWidget *m_goals = nullptr;
+    QLabel *m_breakdownTitle = nullptr;
+    QTableWidget *m_goalChannels = nullptr;
+    QTableWidget *m_goalLanding = nullptr;
+    QComboBox *m_funnel = nullptr;
+    QTableWidget *m_funnelSteps = nullptr;
+    QLabel *m_experimentsNote = nullptr;
+    QPushButton *m_newExperiment = nullptr;
+    QPushButton *m_toggleExperiment = nullptr;
+    QTableWidget *m_experimentTable = nullptr;
+    QLabel *m_experimentDetail = nullptr;
+    QTableWidget *m_variants = nullptr;
+    QJsonArray m_goalList;
+    QJsonArray m_insights;
+    QJsonArray m_flags;
+    QJsonArray m_experiments;
+    QJsonObject m_conversions;
+    int m_conversionSerial = 0;
+    int m_experimentSerial = 0;
     QJsonArray m_organizations;
     QJsonObject m_projects;
     QJsonObject m_overview;

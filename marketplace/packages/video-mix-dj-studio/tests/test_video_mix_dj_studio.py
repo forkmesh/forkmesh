@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -97,6 +98,34 @@ def test_ios_studio_is_native_full_screen_and_rotates():
     assert "supportedInterfaceOrientationsFor window: UIWindow?" in delegate
     assert 'case "videoMixDjStudio": return .videoMixDjStudio' in routes
     assert 'case "video-mix-dj-studio": return [.videoMixDjStudio]' in parser
+
+
+def swift_literal(source, name):
+    body = re.search(r"static let " + name + r' = """\n(.*?)\n\s*"""', source, re.S).group(1)
+    return "\n".join(line[8:] for line in body.split("\n")).replace("\\\\", "\\")
+
+
+def test_ios_decks_play_together_and_keep_playing_in_the_background(tmp_path):
+    player = (IOS / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
+    plist = (IOS / "Config" / "ForkMesh-Info.plist").read_text(encoding="utf-8")
+    modes = re.search(r"<key>UIBackgroundModes</key>\s*<array>(.*?)</array>", plist, re.S).group(1)
+    assert "<string>audio</string>" in modes
+    frame = swift_literal(player, "frameScript")
+    host = swift_literal(player, "html")
+    assert "S.prototype.addSourceBuffer=function(type)" in frame
+    assert '["MediaSource","ManagedMediaSource"]' in frame
+    assert "hold(this,true)" in frame
+    assert "visibilitychange" in frame
+    assert "function fmBackground(on)" in host
+    assert "didEnterBackgroundNotification" in player
+    assert "willEnterForegroundNotification" in player
+    node = shutil.which("node")
+    if node:
+        script = re.search(r"<script>(.*?)</script>", host, re.S).group(1)
+        for name, text in (("frame.js", frame), ("host.js", script)):
+            path = tmp_path / name
+            path.write_text(text, encoding="utf-8")
+            subprocess.run([node, "--check", str(path)], check=True)
 
 
 def test_page_is_valid_javascript_when_node_is_available():

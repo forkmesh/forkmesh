@@ -1,4 +1,4 @@
-// Loading and motion: FmSkeleton, FmSkeletonRow, FmSkeletonList,
+// Loading and motion: FmSkeleton, FmSkeletonRow, FmSkeletonList, FmLoadingBar, fmLoading,
 // FmEdgeFadeScroll, FmSwap and FmSliverFadeIn.
 
 import SwiftUI
@@ -303,5 +303,77 @@ struct FmSliverFadeIn<Key: Equatable, Content: View>: View {
             .onChange(of: stateKey) { (_: Key, _: Key) in
                 fadeIn()
             }
+    }
+}
+
+struct FmLoadingBar: View {
+    @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sweeping = false
+
+    private let height: CGFloat
+    private let period: Double
+
+    init(height: CGFloat = 2, period: Double = 1.2) {
+        self.height = height
+        self.period = period
+    }
+
+    var body: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            let width: CGFloat = proxy.size.width
+            let segment: CGFloat = max(width * 0.3, 1)
+            Capsule()
+                .fill(fm.accent.opacity(0.75))
+                .frame(width: reduceMotion ? width : segment, height: height)
+                .opacity(reduceMotion ? 0.4 : 1)
+                .offset(x: reduceMotion ? 0 : (sweeping ? width : -segment), y: 0)
+        }
+        .frame(height: height)
+        .clipped()
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(Animation.easeInOut(duration: period).repeatForever(autoreverses: false)) {
+                sweeping = true
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel(Text(verbatim: "Loading"))
+    }
+}
+
+private struct FmLoadingOverlay: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    let active: Bool
+    let delay: Duration
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if shown {
+                    FmLoadingBar()
+                        .transition(AnyTransition.opacity)
+                }
+            }
+            .animation(FmMotion.easeOutCubic(FmMotion.normal, reduceMotion: reduceMotion), value: shown)
+            .task(id: active) {
+                guard active else {
+                    shown = false
+                    return
+                }
+                try? await Task.sleep(for: delay)
+                if !Task.isCancelled {
+                    shown = true
+                }
+            }
+    }
+}
+
+extension View {
+    func fmLoading(_ active: Bool, delay: Duration = .milliseconds(250)) -> some View {
+        modifier(FmLoadingOverlay(active: active, delay: delay))
     }
 }

@@ -833,6 +833,7 @@ The parser is pure, in `NIC/FMApi/Navigation`, covered by Linux XCTests.
 | State | Pattern |
 |---|---|
 | First load | Placeholder rows or a thin progress bar after a short delay; never a full-screen spinner when anything can show |
+| Any load (iOS) | `.fmLoading(isLoading)`: a 2 pt accent bar across the top of the surface, shown only once the load has run 250 ms and faded out when it ends. Core Animation moves the bar, so it costs no `body` redraws. Screens with nothing to show yet use `FmSkeletonList`; the 36 pt `FmCircularProgressIndicator` is not used as a page loader |
 | Refresh | Pull to refresh on every list; account event bells refresh silently |
 | Empty | `ContentUnavailableView`: symbol, one line why, the next action as a button |
 | Whole-screen error | The reason in plain words and Retry; details behind a disclosure |

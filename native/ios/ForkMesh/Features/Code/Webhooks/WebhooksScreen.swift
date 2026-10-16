@@ -116,6 +116,7 @@ struct WebhooksList: View {
             }
         }
         .listStyle(.insetGrouped)
+        .fmLoading(model.loading)
         .confirmationDialog(
             "Delete this webhook?",
             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),

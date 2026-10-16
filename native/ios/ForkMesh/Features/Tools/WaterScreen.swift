@@ -68,8 +68,7 @@ private struct WaterContent: View {
 
     @ViewBuilder private var main: some View {
         if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "water_drop_outlined", title: WaterModel.unavailableTitle, message: model.error)
         } else if model.showsInstall {

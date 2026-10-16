@@ -530,8 +530,7 @@ private struct LocalAgentBody: View {
 
     @ViewBuilder private var transcript: some View {
         if model.loading {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList(rows: 6, hasLeading: false)
         } else {
             ScrollViewReader { (proxy: ScrollViewProxy) in
                 ScrollView {
