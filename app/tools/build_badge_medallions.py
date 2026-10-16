@@ -161,6 +161,62 @@ def sparkle_path(cx, cy, r, waist=0.22):
         f(cx - w), f(cy - w), f(cx), f(cy - r)))
 
 
+def leg_svg(svg, shoulder, knee, foot, back=False, outward=None):
+    out = []
+    g = 1.0
+    shade = 0.85 if back else 1
+    sx, sy = shoulder
+    kx, ky = knee
+    fx, fy = foot
+    out.append(circle(sx, sy, 3, 'fill="%s"' % svg.radial(
+        sx - 0.8, sy - 0.9, 3.4, [(0, SHELL_LIGHT, shade), (1, PITCH, shade)])))
+    d = "M%s %sL%s %s" % (f(sx), f(sy), f(kx), f(ky))
+    out.append(path(d, line(PITCH, 6.2, shade)))
+    out.append(path(d, line(SHELL, 4.6, shade)))
+    out.append(path("M%s %sL%s %s" % (f(sx), f(sy - 1.1), f(kx), f(ky - 1.1)),
+                    line(SHELL_LIGHT, 1.1, 0.75 * shade)))
+    dx, dy = fx - kx, fy - ky
+    length = max(math.hypot(dx, dy), 0.01)
+    nx, ny = -dy / length, dx / length
+    if outward is None:
+        outward = -1 if fx < 50 else 1
+    if nx * outward < 0 or (abs(nx) < 0.05 and ny > 0):
+        nx, ny = -nx, -ny
+    mx, my = kx + dx * 0.42, ky + dy * 0.42
+    bulge = min(length * 0.24, 5.5)
+    a = (kx + nx * 3.7, ky + ny * 3.7)
+    c1 = (mx + nx * (bulge + 3), my + ny * (bulge + 3))
+    c2 = (mx + nx * (bulge * 0.5 - 0.6), my + ny * (bulge * 0.5 - 0.6))
+    b = (kx - nx * 3.1, ky - ny * 3.1)
+    claw = "M%s %sQ%s %s %s %sQ%s %s %s %sZ" % (
+        f(a[0]), f(a[1]), f(c1[0]), f(c1[1]), f(fx), f(fy),
+        f(c2[0]), f(c2[1]), f(b[0]), f(b[1]))
+    out.append(path(claw, 'fill="%s"' % svg.linear(kx, ky, fx, fy, [
+        (0, SHELL_LIGHT, shade), (0.35, SHELL, shade), (0.72, PITCH, shade),
+        (1, GLOW, g * shade)])))
+    r0 = (kx + nx * 2.4, ky + ny * 2.4)
+    r1 = (mx + nx * (bulge + 1.7), my + ny * (bulge + 1.7))
+    r2 = (kx + dx * 0.82, ky + dy * 0.82)
+    out.append(path("M%s %sQ%s %s %s %s" % (
+        f(r0[0]), f(r0[1]), f(r1[0]), f(r1[1]), f(r2[0]), f(r2[1])),
+        line(SILVER, 0.7, 0.28 * shade)))
+    v0 = (kx + dx * 0.12, ky + dy * 0.12)
+    v1 = (mx + nx * bulge * 0.8, my + ny * bulge * 0.8)
+    v2 = (kx + dx * 0.62, ky + dy * 0.62)
+    out.append(path("M%s %sQ%s %s %s %s" % (
+        f(v0[0]), f(v0[1]), f(v1[0]), f(v1[1]), f(v2[0]), f(v2[1])),
+        line(GLOW, 0.75, 0.7 * g * shade)))
+    out.append(glow(svg, fx, fy, 3.6, GLOW, 0.6 * g * shade))
+    out.append(glow(svg, kx, ky, 6, GLOW, 0.42 * g * shade))
+    out.append(circle(kx, ky, 3.9, 'fill="%s"' % svg.radial(
+        kx - 1, ky - 1.2, 4.4, [(0, SHELL_LIGHT, shade), (1, PITCH, shade)])))
+    out.append(circle(kx, ky, 2.2, 'fill="%s"' % svg.radial(
+        kx - 0.5, ky - 0.5, 2.4, [(0, WHITE, 0.9 * shade), (0.5, GLOW, g * shade),
+                                  (1, GLOW_DEEP, shade)])))
+    out.append(circle(kx, ky, 3.9, line(SILVER_DARK, 0.35, 0.5 * shade)))
+    return "".join(out)
+
+
 def spider(svg, pose):
     gaze = pose.get("gaze", (0, 0))
     raised = pose.get("raised", 0)
@@ -183,55 +239,7 @@ def spider(svg, pose):
         return shoulder, knee, foot
 
     def draw_leg(shoulder, knee, foot, back):
-        shade = 0.85 if back else 1
-        sx, sy = shoulder
-        kx, ky = knee
-        fx, fy = foot
-        out.append(circle(sx, sy, 3, 'fill="%s"' % svg.radial(
-            sx - 0.8, sy - 0.9, 3.4, [(0, SHELL_LIGHT, shade), (1, PITCH, shade)])))
-        d = "M%s %sL%s %s" % (f(sx), f(sy), f(kx), f(ky))
-        out.append(path(d, line(PITCH, 6.2, shade)))
-        out.append(path(d, line(SHELL, 4.6, shade)))
-        out.append(path("M%s %sL%s %s" % (f(sx), f(sy - 1.1), f(kx), f(ky - 1.1)),
-                        line(SHELL_LIGHT, 1.1, 0.75 * shade)))
-        dx, dy = fx - kx, fy - ky
-        length = max(math.hypot(dx, dy), 0.01)
-        nx, ny = -dy / length, dx / length
-        outward = -1 if fx < 50 else 1
-        if nx * outward < 0 or (abs(nx) < 0.05 and ny > 0):
-            nx, ny = -nx, -ny
-        mx, my = kx + dx * 0.42, ky + dy * 0.42
-        bulge = min(length * 0.24, 5.5)
-        a = (kx + nx * 3.7, ky + ny * 3.7)
-        c1 = (mx + nx * (bulge + 3), my + ny * (bulge + 3))
-        c2 = (mx + nx * (bulge * 0.5 - 0.6), my + ny * (bulge * 0.5 - 0.6))
-        b = (kx - nx * 3.1, ky - ny * 3.1)
-        claw = "M%s %sQ%s %s %s %sQ%s %s %s %sZ" % (
-            f(a[0]), f(a[1]), f(c1[0]), f(c1[1]), f(fx), f(fy),
-            f(c2[0]), f(c2[1]), f(b[0]), f(b[1]))
-        out.append(path(claw, 'fill="%s"' % svg.linear(kx, ky, fx, fy, [
-            (0, SHELL_LIGHT, shade), (0.35, SHELL, shade), (0.72, PITCH, shade),
-            (1, GLOW, g * shade)])))
-        r0 = (kx + nx * 2.4, ky + ny * 2.4)
-        r1 = (mx + nx * (bulge + 1.7), my + ny * (bulge + 1.7))
-        r2 = (kx + dx * 0.82, ky + dy * 0.82)
-        out.append(path("M%s %sQ%s %s %s %s" % (
-            f(r0[0]), f(r0[1]), f(r1[0]), f(r1[1]), f(r2[0]), f(r2[1])),
-            line(SILVER, 0.7, 0.28 * shade)))
-        v0 = (kx + dx * 0.12, ky + dy * 0.12)
-        v1 = (mx + nx * bulge * 0.8, my + ny * bulge * 0.8)
-        v2 = (kx + dx * 0.62, ky + dy * 0.62)
-        out.append(path("M%s %sQ%s %s %s %s" % (
-            f(v0[0]), f(v0[1]), f(v1[0]), f(v1[1]), f(v2[0]), f(v2[1])),
-            line(GLOW, 0.75, 0.7 * g * shade)))
-        out.append(glow(svg, fx, fy, 3.6, GLOW, 0.6 * g * shade))
-        out.append(glow(svg, kx, ky, 6, GLOW, 0.42 * g * shade))
-        out.append(circle(kx, ky, 3.9, 'fill="%s"' % svg.radial(
-            kx - 1, ky - 1.2, 4.4, [(0, SHELL_LIGHT, shade), (1, PITCH, shade)])))
-        out.append(circle(kx, ky, 2.2, 'fill="%s"' % svg.radial(
-            kx - 0.5, ky - 0.5, 2.4, [(0, WHITE, 0.9 * shade), (0.5, GLOW, g * shade),
-                                      (1, GLOW_DEEP, shade)])))
-        out.append(circle(kx, ky, 3.9, line(SILVER_DARK, 0.35, 0.5 * shade)))
+        out.append(leg_svg(svg, shoulder, knee, foot, back))
 
     def legs(front):
         if bust:
@@ -344,6 +352,15 @@ def spider(svg, pose):
     ly = max(-1, min(1, gaze[1])) * 1.3
     for cx, cy, r in ((43.6, 66.8, 6), (56.4, 66.8, 6), (33.4, 60.4, 4.4),
                       (66.6, 60.4, 4.4), (44.2, 55.6, 3.1), (55.8, 55.6, 3.1)):
+        if eye_style == "heart":
+            out.append(glow(svg, cx, cy, r * 1.9, (255, 120, 170), 0.55))
+            out.append(path(heart_path(cx, cy + r * 0.1, r * 2.5),
+                            'fill="%s" stroke="%s" stroke-width="%s" stroke-linejoin="round"' % (
+                                svg.linear(cx - r, cy - r, cx + r, cy + r,
+                                           [(0, (255, 190, 210)), (0.5, (255, 92, 150)), (1, (190, 30, 90))]),
+                                rgb((120, 20, 60)), f(max(r * 0.12, 0.35)))))
+            out.append(ellipse(cx - r * 0.45, cy - r * 0.3, r * 0.24, r * 0.17, paint(WHITE, 0.9)))
+            continue
         if eye_style == "star":
             out.append(glow(svg, cx, cy, r * 1.9, GOLD, 0.55))
             out.append(path(star_path(cx, cy, r * 1.45, r * 0.66),
@@ -379,6 +396,7 @@ def spider(svg, pose):
     else:
         out.append(path("M47.4 76.4Q50 %s 52.6 76.4" % f(76.4 + grin), line(GLOW, 0.6, 0.95)))
     legs(True)
+    out.append(pose.get("extra", ""))
     return "".join(out)
 
 
@@ -532,9 +550,478 @@ def genies_gift(svg, tier):
     return out
 
 
+def medal(svg, tier, accent, sky, scene):
+    out = [frame(svg, tier, accent), face(svg, sky)]
+    clip = svg.clip(circle(64, 64, 49, ""))
+    out.append('<g clip-path="%s">%s</g>' % (clip, "".join(scene)))
+    out.append(circle(64, 64, 49, line(PITCH, 1.2, 0.6)))
+    return out
+
+
+def accent_of(light, mid, deep, etch):
+    return {"rim_light": light, "rim": mid, "rim_deep": deep, "etch": etch}
+
+
+def metal_fill(svg, x1, y1, x2, y2, colors, edge, width=1):
+    return 'fill="%s" stroke="%s" stroke-width="%s" stroke-linejoin="round"' % (
+        svg.linear(x1, y1, x2, y2, colors), rgb(edge), f(width))
+
+
+GOLD_FILL = [(0, GOLD_LIGHT), (0.5, GOLD), (1, GOLD_DEEP)]
+SILVER_FILL = [(0, WHITE), (0.5, SILVER), (1, SILVER_DARK)]
+
+
+def full_web(cx, cy, radius, spokes, rings, color, opacity, width, turn=-90):
+    parts = []
+    for k in range(spokes):
+        a = math.radians(turn + k * 360 / spokes)
+        parts.append("M%s %sL%s %s" % (f(cx), f(cy), f(cx + math.cos(a) * radius),
+                                       f(cy + math.sin(a) * radius)))
+    for i in range(1, rings + 1):
+        r = radius * i / (rings + 0.4)
+        sag = r * 0.14
+        ring = []
+        for k in range(spokes + 1):
+            a = math.radians(turn + k * 360 / spokes)
+            x, y = cx + math.cos(a) * r, cy + math.sin(a) * r
+            if k == 0:
+                ring.append("M%s %s" % (f(x), f(y)))
+                continue
+            am = math.radians(turn + (k - 0.5) * 360 / spokes)
+            ring.append("Q%s %s %s %s" % (f(cx + math.cos(am) * (r - sag)),
+                                          f(cy + math.sin(am) * (r - sag)), f(x), f(y)))
+        parts.append("".join(ring))
+    return path("".join(parts), line(color, width, opacity))
+
+
+def sunglasses():
+    out = []
+    for cx in (41.6, 58.4):
+        out.append(path("M%s 61.2L%s 61.2Q%s 72.4 %s 72.6Q%s 72.4 %s 61.2Z" % (
+            f(cx - 8.6), f(cx + 8.6), f(cx + 8.2), f(cx), f(cx - 8.2), f(cx - 8.6)),
+            'fill="%s" stroke="%s" stroke-width="1.4"' % (rgb((40, 20, 70)), rgb((255, 92, 150)))))
+        out.append(path("M%s 63.4L%s 62.4" % (f(cx - 5.6), f(cx + 1.4)), line((255, 160, 210), 1.6, 0.9)))
+        out.append(path("M%s 66.4L%s 65.6" % (f(cx - 5.4), f(cx - 2.2)), line(WHITE, 1.1, 0.75)))
+    out.append(path("M50 61.6L50 61.6", line((255, 92, 150), 2.4)))
+    out.append(path("M33 62L23 58M67 62L77 58", line((255, 92, 150), 1.8)))
+    return "".join(out)
+
+
+def eye_patch():
+    leather = (150, 60, 40)
+    return "".join([
+        path("M24 54Q40 58 58 76", line((60, 24, 14), 2.6)),
+        path("M24 54Q40 58 58 76", line(leather, 1.4)),
+        path("M35.6 61.4Q43.6 57.2 51.4 61.4Q52 70.6 43.6 74Q35.2 70.6 35.6 61.4Z",
+             'fill="%s" stroke="%s" stroke-width="1"' % (rgb(leather), rgb((60, 24, 14)))),
+        path("M38 62.6Q43.6 59.6 49 62.6Q49.4 69.4 43.6 71.8Q37.8 69.4 38 62.6Z",
+             'fill="none" stroke="%s" stroke-width="0.6" stroke-dasharray="1.2 1"' % rgb((230, 180, 140))),
+        circle(43.6, 66.2, 1.4, paint(GOLD)),
+    ])
+
+
+def spiderling(svg, cx, cy, s, gaze=0):
+    out = []
+    for side in (-1, 1):
+        for k, (dx, dy) in enumerate(((1.1, -0.2), (1.25, 0.25), (1.15, 0.65), (0.9, 0.95))):
+            kx, ky = cx + side * s * dx * 0.8, cy + s * (dy - 0.25)
+            fx, fy = cx + side * s * dx * 1.35, cy + s * (dy + 0.25)
+            out.append(path("M%s %sL%s %sL%s %s" % (f(cx), f(cy), f(kx), f(ky), f(fx), f(fy)),
+                            line(PITCH, s * 0.18)))
+    out.append(circle(cx, cy, s * 0.78, 'fill="%s"' % svg.radial(
+        cx - s * 0.3, cy - s * 0.3, s * 1.1, [(0, SHELL_LIGHT), (0.6, SHELL), (1, PITCH)])))
+    out.append(path("M%s %sQ%s %s %s %sQ%s %s %s %sZ" % (
+        f(cx - s * 0.74), f(cy - s * 0.18), f(cx), f(cy - s * 1.25),
+        f(cx + s * 0.74), f(cy - s * 0.18), f(cx), f(cy - s * 0.55),
+        f(cx - s * 0.74), f(cy - s * 0.18)), 'fill="%s"' % svg.linear(
+            cx, cy - s, cx, cy, [(0, LILAC), (1, PLUM)])))
+    out.append(circle(cx, cy - s * 0.52, s * 0.13, paint(GLOW)))
+    for ex in (-0.28, 0.28):
+        out.append(circle(cx + ex * s, cy + s * 0.12, s * 0.22, paint(PITCH)))
+        out.append(circle(cx + ex * s, cy + s * 0.12, s * 0.19, line(GLOW, s * 0.05)))
+        out.append(circle(cx + ex * s + gaze * s * 0.05 - s * 0.06, cy + s * 0.06, s * 0.07, paint(WHITE)))
+    out.append(path("M%s %sQ%s %s %s %s" % (f(cx - s * 0.16), f(cy + s * 0.44), f(cx),
+                                         f(cy + s * 0.56), f(cx + s * 0.16), f(cy + s * 0.44)),
+                    line(GLOW, s * 0.06)))
+    return "".join(out)
+
+
+def web_weaver(svg, tier):
+    scene = [
+        glow(svg, 64, 56, 44, GLOW, 0.35),
+        full_web(64, 58, 50, 12, 5, (200, 255, 248), 0.55, 0.9),
+        full_web(64, 58, 50, 12, 5, GLOW, 0.5, 0.4),
+        path("M64 8L64 30", line((220, 255, 250), 1, 0.8)),
+        place(spider(svg, {"grin": 2.4, "gaze": (0, 0.3)}), 27, 26, 74),
+        sparkles(((22, 46, 3.2), (106, 44, 3.6), (30, 92, 2.4), (98, 94, 2.8)), WHITE),
+    ]
+    return medal(svg, tier, accent_of((150, 255, 240), (40, 200, 190), (10, 90, 100), (6, 50, 60)),
+                 ((90, 220, 210), (24, 110, 140), (6, 24, 46)), scene)
+
+
+def six_eyes(svg, tier):
+    lens_x, lens_y = 71.5, 74.5
+    scene = [
+        sparkles(((24, 34, 3.4), (104, 32, 3.8), (22, 84, 2.6)), WHITE),
+        place(spider(svg, {"bust": True, "gaze": (0.7, 0.4), "grin": 2.2}), 13, 6, 102),
+        circle(lens_x, lens_y, 14, 'fill="%s"' % svg.radial(lens_x - 5, lens_y - 6, 20, [
+            (0, WHITE, 0.55), (0.6, (170, 230, 255), 0.25), (1, (90, 160, 220), 0.35)])),
+        path("M%s %sL%s %s" % (f(lens_x + 10), f(lens_y + 10), f(lens_x + 26), f(lens_y + 26)),
+             line((90, 50, 20), 7.4)),
+        path("M%s %sL%s %s" % (f(lens_x + 10), f(lens_y + 10), f(lens_x + 26), f(lens_y + 26)),
+             line((176, 110, 50), 5)),
+        circle(lens_x, lens_y, 14, 'fill="none" stroke="%s" stroke-width="4.2"' % svg.linear(
+            lens_x - 14, lens_y - 14, lens_x + 14, lens_y + 14, GOLD_FILL)),
+        circle(lens_x, lens_y, 15.9, line(GOLD_DEEP, 0.8)),
+        path("M%s %sQ%s %s %s %s" % (f(lens_x - 9), f(lens_y - 3), f(lens_x - 8), f(lens_y - 9),
+                                      f(lens_x - 2), f(lens_y - 10)), line(WHITE, 1.6, 0.85)),
+    ]
+    return medal(svg, tier, accent_of((170, 220, 255), (70, 140, 230), (20, 50, 120), (10, 30, 80)),
+                 ((180, 230, 255), (70, 140, 230), (16, 32, 96)), scene)
+
+
+def quick_silk(svg, tier):
+    watch_x, watch_y = 96, 82
+    scene = [
+        path("M64 6L64 36", line(WHITE, 1.2, 0.9)),
+    ]
+    for x, y1, y2 in ((44, 14, 34), (52, 8, 24), (76, 8, 24), (84, 14, 34)):
+        scene.append(path("M%s %sL%s %s" % (f(x), f(y1), f(x), f(y2)), line(WHITE, 2.2, 0.5)))
+    scene += [
+        place(spider(svg, {"mouth": "open", "gaze": (0, 1)}), 28, 32, 72),
+        glow(svg, watch_x, watch_y, 16, WHITE, 0.4),
+        circle(watch_x, watch_y - 13, 2.6, metal_fill(svg, watch_x - 3, watch_y - 16, watch_x + 3, watch_y - 10, SILVER_FILL, SILVER_DARK)),
+        circle(watch_x, watch_y, 11.5, metal_fill(svg, watch_x - 11, watch_y - 11, watch_x + 11, watch_y + 11, SILVER_FILL, SILVER_DARK, 1.2)),
+        circle(watch_x, watch_y, 8.8, paint(WHITE)),
+        path("M%s %sA8.8 8.8 0 0 1 %s %sL%s %sZ" % (f(watch_x), f(watch_y - 8.8), f(watch_x + 8.8),
+                                                    f(watch_y), f(watch_x), f(watch_y)), paint((255, 120, 70), 0.85)),
+        path("M%s %sL%s %s" % (f(watch_x), f(watch_y), f(watch_x + 5.6), f(watch_y - 4.6)), line(PITCH, 1.5)),
+        circle(watch_x, watch_y, 1.3, paint(PITCH)),
+    ]
+    return medal(svg, tier, accent_of((255, 214, 160), (245, 140, 60), (150, 60, 20), (100, 36, 10)),
+                 ((255, 210, 130), (245, 120, 60), (120, 30, 40)), scene)
+
+
+def carpet_ride(svg, tier):
+    rug = (102, 61, 168)
+    carpet = "M14 88Q32 80 50 86Q66 92 82 84Q98 76 114 82L108 98Q92 92 78 100Q62 108 46 100Q30 94 18 102Z"
+    scene = [
+        glow(svg, 98, 30, 26, (255, 230, 160), 0.6),
+        circle(98, 30, 11, paint((255, 236, 180))),
+    ]
+    for y, x1, x2 in ((40, 14, 34), (52, 10, 26), (64, 14, 30)):
+        scene.append(path("M%s %sL%s %s" % (f(x1), f(y), f(x2), f(y)), line(WHITE, 2, 0.6)))
+    scene += [
+        place(spider(svg, {"grin": 3, "extra": sunglasses()}), 27, 22, 74),
+        path(carpet, 'fill="%s" stroke="%s" stroke-width="2"' % (svg.linear(18, 84, 112, 104, [
+            (0, (140, 90, 210)), (0.5, rug), (1, PLUM)]), rgb(GOLD))),
+        path("M22 92Q36 86 50 91Q66 97 82 90Q96 84 108 87", line(GOLD, 1.2, 0.8)),
+    ]
+    for x, y in ((20, 104), (14, 98)):
+        scene.append(path("M%s %sl-5 4" % (f(x + 2), f(y)), line(GOLD, 1.6)))
+    scene.append(path(sparkle_path(38, 99, 2.4), paint(GOLD_LIGHT)))
+    scene.append(path(sparkle_path(74, 97, 2.4), paint(GOLD_LIGHT)))
+    return medal(svg, tier, accent_of((255, 190, 220), (236, 90, 150), (130, 30, 80), (90, 20, 60)),
+                 ((255, 190, 130), (236, 96, 150), (80, 30, 110)), scene)
+
+
+def eight_hands(svg, tier):
+    left = leg_svg(svg, (6, 50), (15, 32), (28.5, 15), outward=1)
+    right = leg_svg(svg, (54, 50), (45, 32), (31.5, 15), outward=-1)
+    scene = [
+        glow(svg, 64, 46, 30, (255, 250, 200), 0.75),
+        '<g transform="translate(4 12) scale(2)">%s</g>' % (left + right),
+    ]
+    for k in range(10):
+        a = math.radians(-90 + k * 36)
+        scene.append(path("M%s %sL%s %s" % (f(64 + math.cos(a) * 9), f(46 + math.sin(a) * 9),
+                                            f(64 + math.cos(a) * 17), f(46 + math.sin(a) * 17)),
+                          line(GOLD_LIGHT, 2.2, 0.95)))
+    scene.append(path(sparkle_path(64, 46, 8), paint(WHITE)))
+    scene.append(sparkles(((24, 30, 3), (104, 30, 3.4), (30, 100, 2.4), (98, 100, 2.6)), WHITE))
+    return medal(svg, tier, accent_of((190, 250, 190), (70, 190, 110), (20, 90, 60), (10, 60, 40)),
+                 ((190, 250, 180), (70, 180, 120), (14, 70, 60)), scene)
+
+
+def oracle(svg, tier):
+    cx, cy, r = 64, 56, 29
+    ball = svg.clip(circle(cx, cy, r, ""))
+    swirl = []
+    for arm in range(2):
+        pts = []
+        for k in range(40):
+            u = k / 39
+            a = math.radians(arm * 180 + u * 540)
+            rr = 2 + u * 24
+            pts.append("%s %s" % (f(cx + math.cos(a) * rr), f(cy + math.sin(a) * rr * 0.6)))
+        swirl.append(path("M" + " L".join(pts), line((255, 150, 220), 3.2, 0.55)))
+        swirl.append(path("M" + " L".join(pts), line(GLOW, 1.2, 0.9)))
+    inside = [circle(cx, cy, r, 'fill="%s"' % svg.radial(cx, cy, r, [
+        (0, (90, 60, 190)), (0.7, (40, 20, 110)), (1, (20, 10, 60))]))] + swirl + [
+        glow(svg, cx, cy, 9, WHITE, 0.95),
+        sparkles(((cx - 14, cy - 12, 1.8), (cx + 16, cy - 6, 2.2), (cx - 8, cy + 14, 1.6),
+                  (cx + 9, cy + 13, 1.4)), WHITE),
+    ]
+    scene = [
+        sparkles(((22, 30, 3), (106, 36, 3.4), (20, 74, 2.2), (108, 78, 2.6)), (255, 230, 255)),
+        glow(svg, cx, cy, 42, (190, 140, 255), 0.6),
+        '<g clip-path="%s">%s</g>' % (ball, "".join(inside)),
+        circle(cx, cy, r, 'fill="%s"' % svg.radial(cx - 10, cy - 12, r * 1.3, [
+            (0, WHITE, 0.55), (0.35, WHITE, 0.08), (1, (190, 160, 235), 0.25)])),
+        circle(cx, cy, r, line((230, 210, 255), 1.4, 0.9)),
+        ellipse(cx - 11, cy - 14, 6, 3.6, paint(WHITE, 0.7)),
+        path("M44 84L84 84L92 100L36 100Z", metal_fill(svg, 0, 84, 0, 100, GOLD_FILL, (120, 80, 20))),
+        ellipse(64, 84, 20, 3.4, metal_fill(svg, 44, 81, 84, 87, GOLD_FILL, (120, 80, 20), 0.8)),
+        circle(64, 92, 2.6, 'fill="%s"' % svg.radial(63, 91, 3, [(0, WHITE), (0.5, GLOW), (1, GLOW_DEEP)])),
+    ]
+    return medal(svg, tier, accent_of((220, 190, 255), (140, 90, 230), (50, 24, 120), (30, 14, 80)),
+                 ((130, 90, 220), (50, 26, 120), (8, 8, 32)), scene)
+
+
+def many_webs(svg, tier):
+    cx, cy, r = 64, 66, 30
+    globe = svg.clip(circle(cx, cy, r, ""))
+    land = [
+        "M44 50Q52 42 62 48Q66 56 58 60Q50 66 46 60Z",
+        "M70 70Q80 62 88 70Q90 82 80 86Q72 84 70 76Z",
+        "M48 78Q54 74 58 80Q56 88 50 86Z",
+    ]
+    inside = [circle(cx, cy, r, 'fill="%s"' % svg.radial(cx - 10, cy - 10, r * 1.5, [
+        (0, (120, 210, 255)), (0.6, (40, 120, 210)), (1, (14, 40, 110))]))]
+    inside += [path(d, paint((90, 210, 150))) for d in land]
+    for k in range(-2, 3):
+        inside.append(ellipse(cx, cy, abs(k) * 7 + 0.5, r, line(WHITE, 1, 0.55)) if k else
+                      path("M%s %sL%s %s" % (f(cx), f(cy - r), f(cx), f(cy + r)), line(WHITE, 1, 0.55)))
+    for y in (-18, -6, 6, 18):
+        w = math.sqrt(max(r * r - y * y, 0))
+        inside.append(path("M%s %sQ%s %s %s %s" % (f(cx - w), f(cy + y), f(cx), f(cy + y + 3),
+                                                  f(cx + w), f(cy + y)), line(WHITE, 1, 0.55)))
+    scene = [
+        sparkles(((22, 30, 3.2), (106, 30, 3.6), (18, 86, 2.4), (110, 90, 2.6)), WHITE),
+        glow(svg, cx, cy, 40, GLOW, 0.4),
+        '<g clip-path="%s">%s</g>' % (globe, "".join(inside)),
+        circle(cx, cy, r, line((200, 240, 255), 1.4)),
+        ellipse(cx - 10, cy - 14, 7, 4, paint(WHITE, 0.4)),
+        path("M64 14L64 30", line(WHITE, 1, 0.9)),
+        place(spider(svg, {"grin": 2.4, "gaze": (0, 0.6)}), 50, 16, 28),
+    ]
+    return medal(svg, tier, accent_of((170, 230, 255), (60, 150, 230), (16, 56, 130), (8, 34, 90)),
+                 ((170, 230, 255), (60, 140, 230), (12, 36, 96)), scene)
+
+
+def brood(svg, tier):
+    sac = "M40 74Q38 52 52 46L58 52L64 44L70 52L76 46Q90 52 88 74Q88 100 64 104Q40 100 40 74Z"
+    scene = [
+        sparkles(((22, 40, 3), (106, 44, 3.2), (24, 92, 2.4)), WHITE),
+        glow(svg, 64, 76, 34, WHITE, 0.45),
+        path(sac, 'fill="%s" stroke="%s" stroke-width="1"' % (svg.radial(56, 66, 40, [
+            (0, WHITE), (0.6, (230, 236, 248)), (1, (170, 180, 210))]), rgb((150, 160, 190)))),
+        path("M46 64Q64 72 84 62M44 80Q64 88 86 78M48 94Q64 98 82 92M58 52Q54 76 58 102M72 52Q76 76 70 102",
+             line((170, 180, 210), 0.9, 0.8)),
+        spiderling(svg, 64, 50, 9),
+        spiderling(svg, 34, 40, 7.5, gaze=1),
+        spiderling(svg, 95, 38, 7.5, gaze=-1),
+        spiderling(svg, 100, 74, 6),
+    ]
+    return medal(svg, tier, accent_of((200, 255, 210), (90, 200, 140), (24, 100, 70), (14, 64, 44)),
+                 ((200, 255, 220), (90, 196, 150), (20, 80, 70)), scene)
+
+
+def fan_club(svg, tier):
+    scene = [
+        place(spider(svg, {"bust": True, "eyes": "heart", "mouth": "open", "blush": True}), 13, 8, 102),
+    ]
+    for x, y, w in ((22, 34, 12), (104, 30, 14), (18, 70, 8), (110, 66, 9), (30, 18, 7), (96, 104, 8)):
+        scene.append(path(heart_path(x, y, w), 'fill="%s"' % svg.linear(
+            x - w / 2, y - w / 2, x + w / 2, y + w / 2,
+            [(0, (255, 210, 225)), (1, (255, 80, 140))])))
+    return medal(svg, tier, accent_of((255, 200, 225), (240, 100, 160), (130, 30, 90), (90, 20, 60)),
+                 ((255, 200, 225), (240, 100, 170), (100, 24, 80)), scene)
+
+
+def night_watch(svg, tier):
+    moon = "M74 20A30 30 0 1 0 104 64A24 24 0 1 1 74 20Z"
+    lx, ly = 50, 76
+    scene = [
+        sparkles(((24, 34, 2.4), (38, 22, 1.8), (100, 92, 2.2), (20, 66, 1.6), (88, 18, 1.6)), (255, 240, 200)),
+        glow(svg, 80, 46, 36, (255, 230, 170), 0.35),
+        path(moon, 'fill="%s"' % svg.linear(60, 20, 100, 70, [(0, (255, 248, 220)), (1, (240, 200, 120))])),
+        circle(72, 50, 3, paint((220, 180, 110), 0.5)),
+        circle(84, 62, 2, paint((220, 180, 110), 0.5)),
+        path("M68 66Q60 62 %s %s" % (f(lx), f(ly - 16)), line(WHITE, 1, 0.9)),
+        glow(svg, lx, ly, 22, GLOW, 0.7),
+        path("M%s %sL%s %s" % (f(lx - 7), f(ly - 12), f(lx + 7), f(ly - 12)), line(GOLD_DEEP, 2.4)),
+        path("M%s %sQ%s %s %s %s" % (f(lx - 5), f(ly - 12), f(lx), f(ly - 20), f(lx + 5), f(ly - 12)),
+             line(GOLD, 1.8)),
+        path("M%s %sL%s %sL%s %sL%s %sZ" % (f(lx - 8), f(ly - 11), f(lx + 8), f(ly - 11),
+                                            f(lx + 10), f(ly + 9), f(lx - 10), f(ly + 9)),
+             'fill="%s" stroke="%s" stroke-width="1.6"' % (svg.radial(lx, ly, 12, [
+                 (0, WHITE), (0.4, GLOW), (1, GLOW_DEEP)]), rgb(GOLD_DEEP))),
+        path("M%s %sL%s %sM%s %sL%s %s" % (f(lx), f(ly - 11), f(lx), f(ly + 9), f(lx - 9), f(ly - 1),
+                                            f(lx + 9), f(ly - 1)), line(GOLD, 1.2, 0.9)),
+        path("M%s %sL%s %s" % (f(lx - 11), f(ly + 10), f(lx + 11), f(ly + 10)), line(GOLD_DEEP, 3)),
+    ]
+    return medal(svg, tier, accent_of((180, 190, 255), (80, 90, 200), (24, 26, 90), (14, 16, 60)),
+                 ((70, 80, 170), (22, 26, 84), (4, 6, 24)), scene)
+
+
+def daily_spinner(svg, tier):
+    outer = "M64 18C72 34 92 44 88 72C86 92 74 102 64 102C50 102 38 92 38 74C38 58 48 52 50 40C56 48 58 54 60 58C64 46 62 32 64 18Z"
+    mid = "M64 46C70 58 80 64 78 80C76 92 70 96 64 96C56 96 50 90 50 80C50 70 56 66 58 60C62 66 62 68 63 70C66 62 64 54 64 46Z"
+    core = "M64 70C68 78 72 82 71 88C70 93 67 95 64 95C60 95 57 92 57 88C57 82 61 78 64 70Z"
+    scene = [
+        glow(svg, 64, 70, 44, (255, 200, 90), 0.65),
+        path(outer, 'fill="%s"' % svg.linear(64, 18, 64, 102, [(0, (255, 120, 60)), (1, (220, 40, 40))])),
+        path(mid, 'fill="%s"' % svg.linear(64, 46, 64, 96, [(0, GOLD), (1, (255, 150, 50))])),
+        path(core, 'fill="%s"' % svg.linear(64, 70, 64, 95, [(0, WHITE), (1, (160, 255, 240))])),
+        ellipse(64, 74, 36, 9, line(WHITE, 1.6, 0.85)),
+        ellipse(64, 74, 36, 9, line(GLOW, 0.7, 0.9)),
+        sparkles(((30, 40, 2.8), (100, 36, 3.2), (24, 92, 2), (104, 96, 2.4)), WHITE),
+    ]
+    return medal(svg, tier, accent_of((255, 210, 150), (240, 110, 50), (140, 40, 20), (100, 26, 10)),
+                 ((255, 220, 140), (250, 130, 60), (120, 30, 40)), scene)
+
+
+def bug_catcher(svg, tier):
+    bx, by = 64, 64
+    scene = [
+        full_web(64, 64, 52, 10, 5, WHITE, 0.6, 0.9, turn=-72),
+        glow(svg, bx, by, 22, (255, 240, 180), 0.5),
+        path("M%s %sL%s %sM%s %sL%s %sM%s %sL%s %s" % (
+            f(bx - 14), f(by - 4), f(bx - 6), f(by - 2), f(bx - 14), f(by + 6), f(bx - 6), f(by + 4),
+            f(bx - 12), f(by + 14), f(bx - 5), f(by + 9)), line(PITCH, 2)),
+        path("M%s %sL%s %sM%s %sL%s %sM%s %sL%s %s" % (
+            f(bx + 14), f(by - 4), f(bx + 6), f(by - 2), f(bx + 14), f(by + 6), f(bx + 6), f(by + 4),
+            f(bx + 12), f(by + 14), f(bx + 5), f(by + 9)), line(PITCH, 2)),
+        ellipse(bx, by + 3, 11, 13, 'fill="%s" stroke="%s" stroke-width="1.2"' % (
+            svg.radial(bx - 4, by - 3, 16, [(0, (255, 140, 120)), (0.6, (220, 40, 50)), (1, (130, 10, 20))]),
+            rgb(PITCH))),
+        path("M%s %sL%s %s" % (f(bx), f(by - 9), f(bx), f(by + 16)), line(PITCH, 1.4)),
+        circle(bx - 5, by + 2, 2.2, paint(PITCH)), circle(bx + 5, by + 6, 2.4, paint(PITCH)),
+        circle(bx - 4, by + 10, 1.8, paint(PITCH)), circle(bx + 4, by - 3, 1.6, paint(PITCH)),
+        ellipse(bx, by - 11, 7, 5.4, paint(PITCH)),
+        circle(bx - 3, by - 12, 2.2, paint(WHITE)), circle(bx + 3, by - 12, 2.2, paint(WHITE)),
+        circle(bx - 2.4, by - 12.6, 1, paint(PITCH)), circle(bx + 3.6, by - 12.6, 1, paint(PITCH)),
+        path("M%s %sQ%s %s %s %sM%s %sQ%s %s %s %s" % (
+            f(bx - 3), f(by - 16), f(bx - 7), f(by - 24), f(bx - 10), f(by - 22),
+            f(bx + 3), f(by - 16), f(bx + 7), f(by - 24), f(bx + 10), f(by - 22)), line(PITCH, 1.2)),
+        path("M%s %sQ%s %s %s %sM%s %sQ%s %s %s %s" % (
+            f(bx - 13), f(by - 1), f(bx), f(by + 5), f(bx + 13), f(by + 1),
+            f(bx - 12), f(by + 9), f(bx), f(by + 14), f(bx + 12), f(by + 10)), line(WHITE, 2.4, 0.85)),
+        sparkles(((26, 32, 2.8), (102, 30, 3), (100, 98, 2.4)), WHITE),
+    ]
+    return medal(svg, tier, accent_of((220, 250, 170), (110, 190, 70), (40, 90, 30), (24, 60, 20)),
+                 ((210, 250, 160), (100, 190, 90), (24, 80, 44)), scene)
+
+
+def lift_off(svg, tier):
+    body = "M0 -34C10 -24 12 -6 10 14L-10 14C-12 -6 -10 -24 0 -34Z"
+    rocket = "".join([
+        path("M-10 4L-20 18L-10 16Z", 'fill="%s"' % svg.linear(-20, 4, -10, 18, [(0, LILAC), (1, PLUM)])),
+        path("M10 4L20 18L10 16Z", 'fill="%s"' % svg.linear(10, 4, 20, 18, [(0, LILAC), (1, PLUM)])),
+        path(body, metal_fill(svg, -12, 0, 12, 0, [(0, (200, 205, 225)), (0.4, WHITE), (1, (150, 155, 180))], SILVER_DARK, 1)),
+        path("M0 -34C6 -28 8.5 -22 9 -18L-9 -18C-8.5 -22 -6 -28 0 -34Z",
+             'fill="%s"' % svg.linear(0, -34, 0, -18, [(0, LILAC), (1, VIOLET)])),
+        path("M-9 -18L9 -18", line(SILVER, 1.6)),
+        circle(0, -6, 6.4, metal_fill(svg, -6, -12, 6, 0, SILVER_FILL, SILVER_DARK, 0.8)),
+        circle(0, -6, 4.8, 'fill="%s"' % rgb(SHELL)),
+        circle(-1.8, -5.2, 1.3, line(GLOW, 0.5)), circle(1.8, -5.2, 1.3, line(GLOW, 0.5)),
+        circle(-3, -7.6, 0.8, line(GLOW, 0.4)), circle(3, -7.6, 0.8, line(GLOW, 0.4)),
+        path("M-1 -3.2Q0 -2.6 1 -3.2", line(GLOW, 0.4)),
+        path("M-7 14L7 14L5 18L-5 18Z", paint(SILVER_DARK)),
+    ])
+    flame = "M-6 18Q0 44 6 18Z"
+    scene = [
+        sparkles(((24, 28, 2.6), (40, 18, 1.8), (100, 40, 3), (108, 24, 2)), WHITE),
+        ellipse(36, 100, 16, 8, paint(WHITE, 0.85)), ellipse(52, 106, 14, 7, paint(WHITE, 0.8)),
+        ellipse(22, 92, 10, 6, paint(WHITE, 0.7)),
+        '<g transform="translate(70 58) rotate(35) scale(1.25)">%s%s%s</g>' % (
+            path("M-8 18Q0 52 8 18Z", paint((255, 120, 60), 0.9)),
+            path(flame, 'fill="%s"' % svg.linear(0, 18, 0, 44, [(0, WHITE), (0.4, GOLD), (1, (255, 120, 60), 0)])),
+            rocket),
+    ]
+    return medal(svg, tier, accent_of((255, 190, 180), (230, 80, 80), (120, 20, 30), (80, 12, 20)),
+                 ((150, 210, 255), (70, 110, 220), (20, 20, 70)), scene)
+
+
+def shopkeeper(svg, tier):
+    wood = [(0, (190, 120, 70)), (1, (110, 60, 30))]
+    scene = [
+        glow(svg, 64, 58, 34, (255, 230, 150), 0.8),
+        path("M30 60L98 60L94 98L34 98Z", metal_fill(svg, 0, 60, 0, 98, wood, (70, 36, 16), 1.2)),
+        path("M30 60L98 60L100 52L28 52Z", metal_fill(svg, 0, 52, 0, 60, wood, (70, 36, 16), 1)),
+        path("M28 52L32 30Q64 22 96 30L100 52Z", metal_fill(svg, 0, 24, 0, 52, [(0, (150, 90, 50)), (1, (90, 46, 20))], (70, 36, 16), 1.2)),
+        path("M34 34Q64 27 94 34", line(GOLD, 2.4)),
+        path("M44 60L44 98M84 60L84 98M42 28L44 52M86 28L84 52", line(GOLD, 3.2)),
+        path("M58 66L70 66L70 78L64 82L58 78Z", metal_fill(svg, 58, 66, 70, 82, GOLD_FILL, GOLD_DEEP, 0.8)),
+        circle(64, 72, 1.8, paint(PITCH)),
+    ]
+    for x, y, c in ((50, 54, GLOW), (64, 50, (255, 92, 150)), (78, 54, GOLD), (57, 46, GOLD), (72, 46, LILAC)):
+        scene.append(path("M%s %sL%s %sL%s %sL%s %sZ" % (f(x), f(y - 5), f(x + 4), f(y), f(x), f(y + 5), f(x - 4), f(y)),
+                          'fill="%s" stroke="%s" stroke-width="0.6"' % (rgb(c), rgb(PITCH))))
+    scene.append(sparkles(((40, 36, 3), (90, 40, 3.4), (64, 34, 2.6), (24, 70, 2.2), (106, 72, 2.4)), WHITE))
+    return medal(svg, tier, accent_of((255, 220, 160), (220, 150, 60), (120, 70, 20), (80, 44, 10)),
+                 ((220, 170, 255), (130, 70, 210), (40, 20, 90)), scene)
+
+
+def critic(svg, tier):
+    scene = [
+        path("M28 34Q28 28 34 28L92 28Q98 28 98 34L98 94Q98 100 92 100L34 100Q28 100 28 94Z",
+             metal_fill(svg, 0, 28, 0, 100, [(0, (255, 248, 230)), (1, (236, 220, 190))], (170, 140, 100), 1.2)),
+        path("M24 30Q24 22 32 22L96 22", line((200, 170, 120), 3)),
+        path("M38 76L74 76M38 84L66 84M38 92L58 92", line((150, 120, 90), 2.2, 0.8)),
+    ]
+    for k in range(5):
+        x = 39 + k * 11
+        fill = 'fill="%s" stroke="%s" stroke-width="0.8"' % (
+            svg.linear(x - 5, 40, x + 5, 52, GOLD_FILL) if k < 4 else rgb((220, 210, 190)), rgb(GOLD_DEEP))
+        scene.append(path(star_path(x, 52, 5.4, 2.4), fill))
+    feather = "M50 28Q44 13 55 0.5"
+    quill = ('<g transform="translate(78 46) rotate(32) scale(1.6) translate(-50 -28)">%s</g>' % "".join([
+        path("M50 28L52 36", line(GOLD_DEEP, 1.4)),
+        path("M50 28C42 22 40 10 55 0.5C56 12 56 22 50 28Z", 'fill="%s"' % svg.linear(42, 8, 58, 26, [
+            (0, LILAC), (0.5, VIOLET), (1, PLUM)])),
+        path(feather, line(GLOW, 0.8, 0.95)),
+    ]))
+    scene.append(quill)
+    return medal(svg, tier, accent_of((180, 235, 240), (60, 160, 190), (16, 70, 90), (8, 46, 60)),
+                 ((180, 235, 245), (60, 150, 190), (14, 50, 80)), scene)
+
+
+def bounty_hunter(svg, tier):
+    cx, cy = 96, 92
+    scene = [
+        sparkles(((22, 34, 3), (106, 30, 3.4)), WHITE),
+        place(spider(svg, {"bust": True, "grin": 2.8, "gaze": (0.6, 0.2), "extra": eye_patch()}), 13, 6, 102),
+        glow(svg, cx, cy, 18, GOLD, 0.7),
+        circle(cx, cy, 12, metal_fill(svg, cx - 12, cy - 12, cx + 12, cy + 12, GOLD_FILL, GOLD_DEEP, 1.4)),
+        circle(cx, cy, 8.6, line(GOLD_DEEP, 1, 0.8)),
+        path(star_path(cx, cy, 5.6, 2.5), paint(GOLD_DEEP)),
+        path("M%s %sQ%s %s %s %s" % (f(cx - 7), f(cy - 5), f(cx - 4), f(cy - 9), f(cx), f(cy - 10)), line(WHITE, 1.4, 0.8)),
+    ]
+    return medal(svg, tier, accent_of((255, 200, 170), (210, 70, 60), (110, 20, 20), (70, 12, 12)),
+                 ((255, 220, 150), (230, 140, 70), (110, 40, 30)), scene)
+
+
 MEDALLIONS = {
     "stargazer": ("Stargazer", stargazer, ("default", "bronze", "silver", "gold")),
     "genies_gift": ("Genie's Gift", genies_gift, ("default",)),
+    "web_weaver": ("Web Weaver", web_weaver, ("default", "bronze", "silver", "gold")),
+    "six_eyes": ("Six Eyes", six_eyes, ("default", "bronze", "silver", "gold")),
+    "quick_silk": ("Quick Silk", quick_silk, ("default",)),
+    "carpet_ride": ("Carpet Ride", carpet_ride, ("default",)),
+    "eight_hands": ("Eight Hands", eight_hands, ("default", "bronze", "silver", "gold")),
+    "oracle": ("Oracle", oracle, ("default", "bronze", "silver", "gold")),
+    "many_webs": ("Many Webs", many_webs, ("default", "bronze", "silver", "gold")),
+    "brood": ("Brood", brood, ("default", "bronze", "silver", "gold")),
+    "fan_club": ("Fan Club", fan_club, ("default", "bronze", "silver", "gold")),
+    "night_watch": ("Night Watch", night_watch, ("default", "bronze", "silver", "gold")),
+    "daily_spinner": ("Daily Spinner", daily_spinner, ("default", "bronze", "silver", "gold")),
+    "bug_catcher": ("Bug Catcher", bug_catcher, ("default", "bronze", "silver", "gold")),
+    "lift_off": ("Lift Off", lift_off, ("default", "bronze", "silver", "gold")),
+    "shopkeeper": ("Shopkeeper", shopkeeper, ("default", "bronze", "silver", "gold")),
+    "critic": ("Critic", critic, ("default", "bronze", "silver", "gold")),
+    "bounty_hunter": ("Bounty Hunter", bounty_hunter, ("default", "bronze", "silver", "gold")),
 }
 
 
