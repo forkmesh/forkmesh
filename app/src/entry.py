@@ -1010,6 +1010,7 @@ NOTIFICATION_IMMEDIATE_KINDS = frozenset({
     "issue_opened", "pull_submitted", "issue_assigned"})
 NOTIFICATION_IMMEDIATE_SOURCES = frozenset({"issue", "pull", "discussion"})
 NOTIFICATION_IMMEDIATE_CONTEXTS = frozenset({"reminder"})
+NOTIFICATION_EMAIL_SKIP_SOURCES = frozenset({"ios_build"})
 NOTIFICATION_IMMEDIATE_SCAN = 20
 NOTIFICATION_IMMEDIATE_FRESH_MS = 60 * 60 * 1000
 NOTIFICATION_PULL_STATE_KINDS = frozenset({"pull_submitted", "pending_inbox"})
@@ -37415,6 +37416,8 @@ async def _notification_email_items(env, rows, email_rec, last):
         kind = clean_string(payload.get("kind", ""), 40)
         if not prefs.get(kind, False):
             continue
+        if clean_string(payload.get("source", ""), 80) in NOTIFICATION_EMAIL_SKIP_SOURCES:
+            continue
         items.append(payload)
     return items, newest
 
@@ -38076,7 +38079,7 @@ def _forkmesh_email_action_html(label, url):
 def _forkmesh_email_card_html(
         heading, intro_html, body_html, footer_html="",
         action_label="Open ForkMesh",
-        action_url="https://forkmesh.com/"):
+        action_url="https://forkmesh.com/", preheader=""):
     intro_html = _light_email_fragment(intro_html)
     body_html = _light_email_fragment(body_html)
     footer_html = _light_email_fragment(footer_html)
@@ -38089,7 +38092,10 @@ def _forkmesh_email_card_html(
         "<style>:root{color-scheme:light;supported-color-schemes:light}"
         "a{color:#171717}</style>"
         "</head>"
-        "<body style=\"margin:0;padding:0;background:#fafafa\">"
+        "<body style=\"margin:0;padding:0;background:#fafafa\">" +
+        ("<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;"
+         "color:transparent\">" + _html_escape(preheader) + "</div>"
+         if preheader else "") +
         "<div class=\"fm-bg\" style=\"margin:0;padding:40px 20px;background:#fafafa;"
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',"
         "Helvetica,Arial,sans-serif;color:#171717;font-size:14px;"

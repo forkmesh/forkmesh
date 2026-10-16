@@ -53,7 +53,7 @@ FIRST_PARTY_PACKAGES = {
     "code": "Code",
     "commits": "Commits",
     "competitor": "Competitor Watch",
-    "computer-security": "Computer Security Checkup",
+    "computer-security": "Security",
     "coves": "Coves",
     "crm": "CRM",
     "design-system": "Design System",

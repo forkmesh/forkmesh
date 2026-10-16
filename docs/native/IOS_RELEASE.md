@@ -280,6 +280,19 @@ icon). Run it after changing `logo.svg` (needs pycairo and Pillow);
 `--preview out.png` renders one icon. The PNGs are committed. The in-app
 `Logo.imageset` holds `logo.svg` with `preserves-vector-representation`.
 
+The same run writes the Android launcher icons (`mipmap-*/ic_launcher.png`,
+`drawable-nodpi/fm_logo.png`). To check the committed icons are current, run
+the script and confirm `git status` shows no change. The phone and watch
+targets are the only app icon sets (`ASSETCATALOG_COMPILER_APPICON_NAME =
+AppIcon`); widgets, extensions and `codemagic.yaml` set no icon of their own,
+and there are no alternate icons.
+
+The white-ringed hexagon icon replaced the grey cube on 2026-10-04 (commit
+`a038e73b1c`). A phone that still shows the cube is running a build archived
+before that date: ship a new `ios-native-release` build. If the new build is
+installed and the home screen still shows the cube, iOS is showing its cached
+icon; restarting the phone clears it.
+
 ## Flutter-to-native migration
 
 `FMAccount/FlutterMigration.swift`, run by
