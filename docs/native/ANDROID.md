@@ -627,3 +627,19 @@ bottom bar.
   layer into itself): `FmBackdropHost` clears `LocalFmBackdrop` for its
   content, so such glass uses the solid fill. Only the host's overlay (the tab
   bar) blurs.
+- **Segment bars and action bars.** `FmSegmentTabBar` is a 46 dp strip whose
+  tabs sit in a 12 dp glass panel (no fill, no hairlines), and
+  `FmBottomActionBar` is a glass panel with 24 dp corners, 8 dp side and 4 dp
+  vertical margin, as iOS `Kit/FmExplorer.swift` and `Kit/FmSurfaces.swift`.
+- **Composer.** The prompt composer card and its slash menu use `fmGlass` with
+  the composer's own translucent tint (iOS `Kit/PromptComposer.swift`, 28 dp).
+- **Chat header**, as iOS `Features/Chat/ChatScreen.swift`: on the Chat tab the
+  shell bar is hidden and the room draws one row of glass: a 48 dp channels
+  circle, the room pill (icon, bold name, "n online • public"), a compose
+  circle, the new-agent button and an avatar capsule. Android has no separate
+  new-message picker, so compose opens the channels panel. The disappearing
+  messages timer and the encryption note moved from the header into the room
+  pill's menu, keeping the row to the iOS five controls.
+- **Sheets** keep the iOS pre-26 look (sheetSurface, 12 dp corners, 35% and 55%
+  scrim); a blurred sheet would need `Window.setBackgroundBlurRadius` on the
+  sheet's own window.

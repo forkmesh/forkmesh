@@ -377,7 +377,8 @@ class HomeShell : Screen() {
         }
         val body: @Composable () -> Unit = {
             Column(Modifier.fillMaxSize()) {
-                if (!shellChromeHidden && atRoot) {
+                val chatRoot = !homeSelected && selectedTab == AppTab.Chat && tabNav.depth <= 1
+                if (!shellChromeHidden && atRoot && !chatRoot) {
                     TopBar(
                         navigator = tabNav,
                         connection = relay.connection,
