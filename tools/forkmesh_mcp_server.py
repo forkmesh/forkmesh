@@ -4586,6 +4586,9 @@ TOOLS += [
                        "creator, assignee or an organization manager may "
                        "delete it; a batch deletes all or nothing. A task "
                        "with a running agent job or awaiting QA is refused. "
+                       "A deleted task counts as done until it is restored, "
+                       "and its creator and assignee (other than you) get "
+                       "one email saying who deleted it and why. "
                        "Nothing on disk is touched.",
         "inputSchema": {
             "type": "object",
@@ -4596,7 +4599,8 @@ TOOLS += [
                              "description": "up to 50 32-character hex task "
                                             "ids, deleted all or nothing"},
                 "reason": {"type": "string", "maxLength": 500,
-                           "description": "why, shown in the trash"},
+                           "description": "why, shown in the trash and the "
+                                          "deletion email"},
             },
         },
         "handler": tool_delete_task,
