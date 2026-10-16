@@ -115,6 +115,39 @@ def test_issue_delete_is_offered_to_every_authorized_issue_manager():
     assert "issueCreator" not in gate
 
 
+def test_issue_moves_to_a_task_before_it_is_deleted():
+    detail = _slice(
+        REPO_UI,
+        "function renderRepoIssueDetail(repo, number, parsed)",
+        "function setRepoIssueRecordOpen(open)",
+    )
+    gate = _slice(detail, "data-repo-issue-sidebar-actions", "</aside>")
+    assert "${canManage ? `<button type=\"button\" data-repo-issue-move-to-task" in gate
+    assert "moveWebIssueToTask(" in WIRING
+
+    move = _slice(
+        ISSUE_IO,
+        "async function moveWebIssueToTask(button = null)",
+        "async function handleWebIssueTitleSubmit(form)",
+    )
+    create = move.index('orgApiRequest(\n        "POST", "/api/tasks"')
+    delete = move.index('submitWebIssueEvent(repo, number, "delete", { target: "self" })')
+    undo = move.index('"DELETE", `/api/tasks/${encodeURIComponent(task.id)}`')
+    leave = move.index("location.assign(`/dashboard/tasks?task=")
+    assert create < delete < undo < leave
+    assert move[create:delete].count("return;") == 1
+    assert move[undo:leave].count("return;") == 1
+
+    body = _slice(
+        ISSUE_IO,
+        "function webIssueTaskBody(repo, number, values, body)",
+        "async function moveWebIssueToTask(",
+    )
+    assert ".slice(0, 160)" in body
+    assert "const room = 4000 - source.length - 2;" in body
+    assert "/^[A-Za-z0-9._-]{1,100}$/" in body
+
+
 def test_owner_delete_removes_the_issue_on_every_materializer():
     store = (ROOT.parent / "desktop/src/IssueStore.cpp").read_text()
     apply_remote = store[store.index("bool IssueStore::applyRemoteEvent("):]

@@ -6450,7 +6450,8 @@
             ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${parsed.issueSubscribed ? "You're receiving notifications because you're subscribed to this thread." : "You're not receiving notifications from this thread."}</p>`)}
             ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}`, participantsValue)}
             <div data-repo-issue-sidebar-actions class="grid gap-0.5 py-3">
-              ${canManage ? `<button type="button" data-repo-issue-delete class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-destructive hover:underline"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete issue</button>` : ""}
+              ${canManage ? `<button type="button" data-repo-issue-move-to-task class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-foreground hover:underline"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Move to task</button>` : ""}
+              ${canManage ? `<button type="button" data-repo-issue-deleteclass="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-destructive hover:underline"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete issue</button>` : ""}
             </div>
           </aside>
         </div>
