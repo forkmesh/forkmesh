@@ -59,6 +59,48 @@ organization member, and owners and admins are offered the install. The
 `campaigns` query and `campaign_report` (with a `term` grouping) feed the
 Marketing package.
 
+## Conversion tracking
+
+The site's conversion points send `forkmesh_product_action` with `action` and
+its funnel `stage` (`PRODUCT_ACTIONS` in `analytics.js` maps each action to
+one). An action that is not in the map is dropped, and
+`www/tests/test_product_action_allowlist.py` fails when markup names one, so
+a button can't look tracked while recording nothing.
+
+| Stage | Actions |
+| --- | --- |
+| `interest` | `home-proof-opened`, `home-capabilities-world-opened`, `pricing-contract-opened`, `pricing-managed-interest`, `commercial-proof-opened`, `onboarding-proof-opened`, `repository-proof-opened`, `proof-clone-copied` |
+| `install` | `home-install-hero` (hero copy button), `home-install-nav` (Desktop app in the menus), `home-download` (homepage download cards), `desktop-install-copied`, `desktop-download` (`/desktop`) |
+| `signup` | `home-signup-nav`, `home-signup-free`, `home-signup-supporter`, `home-pro-membership`, `home-signup-final`, `home-start-instance` |
+| `account` | `signup-completed`, sent by `signup.js` once the account is created |
+| `activation` | `repository-clone-copied` |
+
+Elements carry `data-forkmesh-product-action`; links built in script
+(download cards, the signed-out "Sign up" header link) set
+`dataset.forkmeshProductAction`. Only visitors who allowed analytics send
+anything.
+
+The Analytics **website playbook** turns these into goals (Install intent,
+Signup intent, Account created, Proof opened) and two funnels on the
+site-default project; see the package README, "Conversions and the website
+playbook".
+
+### Homepage experiment
+
+`analytics.js` runs experiments declared in markup: an element with
+`data-fm-experiment="<flag key>"` holds one child per variant,
+`data-fm-variant="<variant>"`, all but `control` `hidden`. Once flags load
+(`onFeatureFlags`), each host shows the child named by the flag's variant and
+`control` for anything else. Reading the flag records the
+`$feature_flag_called` exposure the experiment counts, so only visitors who
+saw an experiment element are counted. Withdrawing consent shows `control`
+again. Without consent, or with the flag off, `control` stays as served.
+
+The homepage hero runs `home-hero-headline` (control: "Your Code, Your
+World."; concrete: "Git hosting no single provider can take away." with a
+sub-line naming the outcome). The playbook creates the flag (50/50) and a
+running experiment whose goal is install intent.
+
 ## Client error reports
 
 `analytics.js` reports unhandled rejections with a stable description of the
@@ -111,4 +153,6 @@ browser `confirm()` prompts are left as they are.
 
 `app/tests/test_first_party_analytics.py`,
 `app/tests/test_analytics_consent_prompt.py`,
-`app/tests/test_client_error_rejection_reasons.py`, and the package tests.
+`app/tests/test_client_error_rejection_reasons.py`,
+`www/tests/test_product_action_allowlist.py` (conversion points and the
+homepage experiment), and the package tests.

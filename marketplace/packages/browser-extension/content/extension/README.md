@@ -111,6 +111,18 @@ outside your domain first) and move **Last contacted**. Gmail sends are linked
 after the 10-second undo window or when the tab closes. No contact is created
 for a send to unknown recipients.
 
+**Sort a Zoho Mail list**: a header strip sits above Zoho Mail's message
+list with **Sender**, **Subject** and **Date** over their columns (or side by
+side when the list is too narrow for columns). Click one to sort; click it
+again to reverse it. Subjects sort without their `Re:`/`Fwd:` prefixes.
+**Date** is Zoho's own order, newest first, with its Today/Yesterday
+headings; any other sort hides those headings. Sorting only reorders the rows
+already loaded, on screen (CSS `order`, never moving Zoho's nodes), and is
+redone as Zoho loads more while you scroll; the choice lasts until the tab is
+reloaded. Keyboard navigation and shift-click selection still follow Zoho's
+order. Nothing is read from or sent to ForkMesh, and it needs no sign-in
+(`zoho-sort.js`).
+
 **Save this page to a contact** appends a dated line with the current page's
 title and address to a contact's notes; only the address bar is read.
 
@@ -274,6 +286,7 @@ extension's storage with the host permission Chrome granted.
 | `popup-vault.js`   | The popup's Password Vault section.                           |
 | `panel.js`         | The CRM panel and header, shared by every page and the popup. |
 | `content.js`       | Reads the open email in Gmail and Zoho Mail; tracks sends.    |
+| `zoho-sort.js`     | The Sender, Subject and Date sort header above a Zoho Mail list. |
 | `mastodon.js`      | Reads the open conversation on a Mastodon instance.           |
 | `x.js`             | Reads the tracked X profile's counts for Marketing.           |
 | `x-developer.js`   | Guides Connect X through X's developer console and reads the keys. |

@@ -34,6 +34,7 @@ change something are dry runs unless given `--execute`.
 | `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([prune-merged.md](prune-merged.md)) |
 | `free_disk_space.py` | Deletes agent scratch, build and test debris nothing uses; the **Free disk space** shortcut ([free-disk-space.md](free-disk-space.md)) |
 | `branch_inventory.py` | Classifies unmerged branches and saves daily snapshots ([branch-inventory.md](branch-inventory.md)) |
+| `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
 | `cutover_*.py`, `rehost.py` | Hostname and cutover tooling ([CUTOVER.md](../CUTOVER.md)) |
 
 **Paths and layout** ([projects-layout.md](projects-layout.md)): `forkmesh_paths.py`
@@ -60,7 +61,8 @@ security scan runners.
 `sync_*_header.py` scripts; edit the Python, then regenerate),
 `forkmesh_mcp_server.py` ([../agents/tools.md](../agents/tools.md#forkmesh-mcp-server)),
 `branch_pr_review.py` (loopback-only diff viewer),
-`pull_ledger.py` (comment on, close and reopen a native pull from the terminal, [pull-ledger.md](pull-ledger.md)), `code_health.py`,
+`pull_ledger.py` (comment on, close and reopen a native pull from the terminal, [pull-ledger.md](pull-ledger.md)),
+`zoho_mail.py` (send email from a Zoho Mail mailbox with no prompts, the `send_email` MCP tool, [zoho-mail.md](zoho-mail.md)), `code_health.py`,
 `measure_startup.py`, `run_critical_tests.py`, `quality_gate.py`.
 
 **Evidence ledgers and contracts**: each backs a `www/docs` page; inputs and

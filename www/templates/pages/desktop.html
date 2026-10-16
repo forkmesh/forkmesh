@@ -326,7 +326,7 @@
         <div class="install-cmd">
           <span class="install-cmd-prompt" aria-hidden="true">$</span>
           <code class="install-cmd-text" data-install-command>curl -fsSL https://forkmesh.com/install.sh | bash</code>
-          <button type="button" class="install-copy" data-install-copy aria-label="Copy install command">
+          <button type="button" class="install-copy" data-install-copy data-forkmesh-product-action="desktop-install-copied" aria-label="Copy install command">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h8"></path></svg>
             <span>Copy</span>
           </button>
@@ -625,6 +625,7 @@
             const link = document.createElement("a");
             link.className = "native-download";
             link.href = `/api/repo/forkmesh/forkmesh/releases/blob/sha256/${asset.blob_sha256}?filename=${encodeURIComponent(name)}`;
+            link.dataset.forkmeshProductAction = "desktop-download";
             link.title = `Download ${manifest.tag} · ${assetLabel(name)}`;
             link.setAttribute("download", name);
             const size = formatSize(asset.size);

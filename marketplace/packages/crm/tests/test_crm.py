@@ -417,7 +417,11 @@ def test_starter_flows_are_customizable_and_contacts_keep_their_flow():
     runtime = Runtime()
     initial = call(runtime.use("GET"), "/api/crm/acme")
     assert [flow["id"] for flow in initial["data"]["settings"]["flows"]] == [
-        "investment", "applicants", "partnerships", "customers"]
+        "investment", "applicants", "partnerships", "customers", "grants"]
+    assert initial["data"]["settings"]["flows"][-1] == {
+        "id": "grants", "name": "Grants", "icon": "grants",
+        "stages": ["researching", "eligible", "drafting", "submitted",
+                   "awarded", "declined"]}
 
     saved = call(runtime.use("PUT", body={"flows": [
         {"id": "fundraising", "name": "Fundraising",
@@ -1002,6 +1006,47 @@ def test_a_pipeline_tab_is_a_sheet_bound_to_one_flow():
     assert crm._view_data({"flow": "!!!"})["flow"] == ""
 
 
+def test_a_grants_csv_adds_the_grants_pipeline_and_binds_its_new_list():
+    runtime = Runtime()
+    call(runtime.use("PUT", body={"flows": [
+        {"id": "customers", "name": "Customers", "stages": ["lead", "won"]},
+    ]}), "/api/crm/acme/settings")
+    grants_csv = (
+        "Name,Website,Pipeline,Stage,Amount,Rank\r\n"
+        "Commons Fund,https://example.org/commons,grants,eligible,50000,1\r\n"
+        "Tech Fund,https://example.org/tech,grants,researching,150000,2\r\n"
+    )
+
+    # A member's import cannot change the organization's pipelines.
+    member = call(runtime.use("POST", "charlie", {
+        "fileName": "member grants.csv", "csv": grants_csv,
+    }), "/api/crm/acme/contacts/import")
+    assert member["data"]["view"]["flow"] == ""
+    flows = call(runtime.use("GET"), "/api/crm/acme")["data"]["settings"]["flows"]
+    assert [flow["id"] for flow in flows] == ["customers"]
+
+    imported = call(runtime.use("POST", "alice", {
+        "fileName": "ForkMesh grants.csv", "csv": grants_csv,
+    }), "/api/crm/acme/contacts/import")
+    assert imported["data"]["view"]["flow"] == "grants"
+    flows = call(runtime.use("GET"), "/api/crm/acme")["data"]["settings"]["flows"]
+    assert [(flow["id"], flow["icon"]) for flow in flows] == [
+        ("customers", "customers"), ("grants", "grants")]
+    contacts = call(runtime.use("GET"), "/api/crm/acme")["data"]["contacts"]
+    commons = next(item for item in contacts if item["name"] == "Commons Fund")
+    assert (commons["flow"], commons["stage"], commons["value"]) == (
+        "grants", "eligible", 50000)
+    assert runtime.audits[-1][0][1] == "crm.contacts.import"
+    assert any(audit[0][1] == "crm.flows.add" for audit in runtime.audits)
+
+    # A file mixing pipelines opens a plain list.
+    mixed = call(runtime.use("POST", "alice", {
+        "fileName": "mixed.csv",
+        "csv": "Name,Pipeline\r\nOne,grants\r\nTwo,customers\r\n",
+    }), "/api/crm/acme/contacts/import")
+    assert mixed["data"]["view"]["flow"] == ""
+
+
 def test_a_csv_whose_rows_are_all_rejected_leaves_no_empty_tab_behind():
     runtime = Runtime()
     rejected = call(runtime.use("POST", body={
@@ -1357,7 +1402,7 @@ def test_linking_an_email_can_put_the_contact_in_a_pipeline_stage():
                  "/api/crm/acme/contacts/lookup")
     assert found["data"]["contact"] is None
     assert [flow["id"] for flow in found["data"]["flows"]] == [
-        "investment", "applicants", "partnerships", "customers"]
+        "investment", "applicants", "partnerships", "customers", "grants"]
 
     # A sent Zoho message creates the contact straight into a stage, with the
     # details the extension read off the email.

@@ -19,6 +19,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStackedWidget>
 #include <QStyle>
 #include <QTableWidget>
 #include <QToolTip>
@@ -323,6 +324,20 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     m_project->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     m_project->setAccessibleName(QStringLiteral("Project"));
     heading->addWidget(m_project);
+    m_sectionGroup = new QButtonGroup(this);
+    m_sectionGroup->setExclusive(true);
+    const QStringList sectionNames{QStringLiteral("Overview"), QStringLiteral("Conversions"),
+                                   QStringLiteral("Experiments")};
+    for (int index = 0; index < sectionNames.size(); ++index) {
+        auto *button = new QPushButton(sectionNames.at(index));
+        button->setCheckable(true);
+        button->setChecked(index == 0);
+        button->setObjectName(QStringLiteral("ghostButton"));
+        button->setAccessibleName(sectionNames.at(index));
+        m_sectionGroup->addButton(button, index);
+        heading->addWidget(button);
+    }
+    heading->addSpacing(8);
     m_rangeGroup = new QButtonGroup(this);
     m_rangeGroup->setExclusive(true);
     static constexpr std::pair<const char *, int> ranges[] = {
@@ -339,7 +354,7 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     auto *webButton = new QPushButton(QStringLiteral("Open in browser"));
     webButton->setToolTip(QStringLiteral(
-        "Funnels, retention, session recordings, heatmaps, flags, experiments and surveys open on the web dashboard"));
+        "Retention, session recordings, heatmaps, feature flags and surveys open on the web dashboard"));
     for (QPushButton *button : {refreshButton, webButton}) {
         button->setObjectName(QStringLiteral("ghostButton"));
         heading->addWidget(button);
@@ -481,26 +496,33 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     layout->addLayout(setupRow);
     layout->addStretch();
     scroll->setWidget(body);
-    outer->addWidget(m_content, 1);
+    m_sections = new QStackedWidget;
+    m_sections->addWidget(m_content);
+    m_sections->addWidget(buildConversionsPage());
+    m_sections->addWidget(buildExperimentsPage());
+    outer->addWidget(m_sections, 1);
 
     connect(m_organization, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0 || m_loading)
             return;
         m_projects = QJsonObject();
         m_overview = QJsonObject();
+        clearManaged();
         loadOrganization();
     });
     connect(m_project, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0 || m_loading)
             return;
         m_overview = QJsonObject();
+        clearManaged();
         applyState();
-        loadOverview();
+        reloadSection();
     });
     connect(m_rangeGroup, &QButtonGroup::idClicked, this, [this](int hours) {
         m_rangeHours = hours;
-        loadOverview();
+        reloadSection();
     });
+    connect(m_sectionGroup, &QButtonGroup::idClicked, this, [this](int index) { showSection(index); });
     connect(refreshButton, &QPushButton::clicked, this, [this] { refreshOrganizations(); });
     connect(webButton, &QPushButton::clicked, this, [this] { openWebDashboard(); });
     connect(m_installButton, &QPushButton::clicked, this, [this] { installPlugin(); });
@@ -705,7 +727,7 @@ void AnalyticsFeature::loadOrganization()
             m_searchIndexChanged();
         if (projects.isEmpty())
             return setStatus(QStringLiteral("%1 has no analytics project yet.").arg(organization()));
-        loadOverview();
+        reloadSection();
     });
 }
 
@@ -891,7 +913,14 @@ void AnalyticsFeature::applyState()
     m_project->setVisible(installed && m_project->count() > 1);
     for (QAbstractButton *button : m_rangeGroup->buttons())
         button->setVisible(installed && hasProjects);
-    m_content->setVisible(installed && hasProjects && !m_overview.isEmpty());
+    for (QAbstractButton *button : m_sectionGroup->buttons())
+        button->setVisible(installed && hasProjects);
+    m_content->setVisible(!m_overview.isEmpty());
+    m_sections->setVisible(installed && hasProjects && (m_section != 0 || !m_overview.isEmpty()));
+    m_playbook->setVisible(canManage && m_section == 1
+                           && projectRecord().value(QStringLiteral("playbook")).toObject()
+                                  .value(QStringLiteral("applied")).toArray().isEmpty());
+    m_newExperiment->setEnabled(canManage);
     const QString key = text(projectRecord(), "writeKey");
     m_writeKey->setText(key.isEmpty() ? QString()
                                       : QStringLiteral("Write key %1 · send events to %2/api/analytics/_/capture")

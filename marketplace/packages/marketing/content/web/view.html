@@ -196,6 +196,20 @@
             .mk-insights li[data-level="win"] svg { color: var(--mk-good); }
             .mk-insights li small { display: block; font-size: 11.5px; color: var(--mk-muted); }
             .mk-attention { display: grid; gap: 2px; }
+            .mk-pill.high { --fm-label-rgb: var(--dashboard-destructive-rgb); --fm-label-fg: var(--dashboard-destructive-rgb); }
+            .mk-pill.medium { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); }
+            .mk-pill.low { --fm-label-fg: var(--dashboard-muted-foreground-rgb); }
+            .mk-advice td { white-space: normal; }
+            .mk-advice td small, .mk-plan small { display: block; font-size: 11.5px; color: var(--mk-muted); }
+            .mk-plan { display: grid; gap: 2px; }
+            .mk-plan li { display: grid; grid-template-columns: 2.2rem 1fr auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--mk-line-soft); font-size: 12.5px; }
+            .mk-plan li:last-child { border-bottom: 0; }
+            .mk-plan .mk-score { font: 600 13px var(--mk-mono); color: var(--mk-fg); }
+            .mk-plan ul { margin: 4px 0 0; padding-left: 1rem; color: var(--mk-muted); font-size: 11.5px; }
+            .mk-ready li { display: flex; gap: 8px; align-items: start; padding: 6px 0; font-size: 12.5px; }
+            .mk-ready li svg { flex: none; margin-top: 2px; width: 14px; height: 14px; }
+            .mk-ready li[data-done="true"] svg { color: rgb(var(--dashboard-success-rgb)); }
+            .mk-ready li[data-done="false"] svg { color: rgb(var(--dashboard-muted-foreground-rgb)); }
             .mk-attention button { display: flex; align-items: start; gap: 8px; border: 0; background: none; padding: 6px; margin: 0 -6px; border-radius: 6px; text-align: left; font-size: 12.5px; color: var(--mk-fg); }
             .mk-attention button:hover { background: var(--mk-line-soft); }
             .mk-attention button svg { margin-top: 2px; color: var(--mk-warn); }
@@ -445,6 +459,7 @@
                 <div class="mk-head-r">
                   <div data-marketing-requires-install class="mk-seg" role="group" aria-label="Marketing section" hidden>
                     <button data-marketing-page="dashboard" type="button" aria-pressed="true">Dashboard</button>
+                    <button data-marketing-page="advisor" type="button" aria-pressed="false">Advisor</button>
                     <button data-marketing-page="channels" type="button" aria-pressed="false">Channels</button>
                     <button data-marketing-page="ads" type="button" aria-pressed="false">Ads manager</button>
                     <button data-marketing-page="growth" type="button" aria-pressed="false">Growth</button>
@@ -559,7 +574,7 @@
                     </section>
 
                     <section data-marketing-panel="agent" class="mk-panel mk-span-4 mk-agent">
-                      <div class="mk-ph"><h2><span class="mk-agent-face" aria-hidden="true">M</span>Marketing agent</h2><button data-marketing-agent-handoff type="button" class="mk-link" title="Put a task for the Marketing special agent on the organization's task board">Hand off</button></div>
+                      <div class="mk-ph"><h2><span class="mk-agent-face" aria-hidden="true">M</span>Marketing agent</h2><div class="mk-ph-tools"><button data-marketing-page="advisor" type="button" class="mk-link">All to-dos</button><button data-marketing-agent-handoff type="button" class="mk-link" title="Put a task for the Marketing special agent on the organization's task board">Hand off</button></div></div>
                       <form data-marketing-assistant-form class="mk-ask">
                         <select data-marketing-assistant-campaign aria-label="Campaign to plan" class="mk-select"></select>
                         <input data-marketing-assistant-question maxlength="600" class="mk-input" placeholder="Ask, e.g. what should we post this week?" aria-label="Question for the Marketing agent" />
@@ -736,6 +751,17 @@
                     </section>
                   </div>
 
+                  <div class="mk-row">
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Where to advertise</h2><span data-marketing-plan-note class="mk-hint">Ranked from your visits, conversions and logged ads</span></div>
+                      <div class="mk-pb"><ol data-marketing-plan class="mk-plan" style="list-style:none;margin:0;padding:0"></ol></div>
+                    </section>
+                    <section class="mk-panel">
+                      <div class="mk-ph"><h2>Ad readiness</h2><span data-marketing-readiness-count class="mk-hint"></span></div>
+                      <div class="mk-pb"><ul data-marketing-readiness class="mk-ready" style="list-style:none;margin:0;padding:0"></ul></div>
+                    </section>
+                  </div>
+
                   <section class="mk-panel">
                     <div class="mk-ph"><h2>Ads</h2><span data-marketing-ads-count class="mk-hint"></span></div>
                     <div data-marketing-ads-status-tabs class="mk-tabs" role="tablist" aria-label="Filter ads by status"></div>
@@ -752,6 +778,25 @@
                     <div data-marketing-ads-empty class="mk-empty fm-blankslate" hidden><svg class="mk-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3Z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><p class="fm-blankslate-title">No ads match this view</p><p class="fm-blankslate-desc">Plan an ad for any channel, then log its results here.</p><button data-marketing-ad-open type="button" class="fm-btn fm-btn-sm">New ad</button></div>
                   </section>
                   <p class="mk-hint">Ads are planned and measured here and bought in each platform’s own console. Results are logged by hand; ForkMesh never spends money or connects to an ad account. Follow each platform’s advertising policies and the disclosure rules of every market you advertise in.</p>
+                </div>
+
+                <div data-marketing-advisor-page class="mk-page hidden">
+                  <section class="mk-panel">
+                    <div class="mk-ph"><h2>Next to-dos</h2><span data-marketing-advisor-count class="mk-hint"></span></div>
+                    <div data-marketing-advisor-areas class="mk-tabs" role="tablist" aria-label="Filter to-dos by area"></div>
+                    <div class="mk-tools">
+                      <select data-marketing-advisor-priority aria-label="Priority" class="mk-select"><option value="">All priorities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+                      <label class="mk-hint" style="display:inline-flex;align-items:center;gap:6px"><input data-marketing-advisor-show-done type="checkbox" /> Show items marked done</label>
+                    </div>
+                    <div class="mk-table-wrap">
+                      <table class="mk-table mk-advice">
+                        <thead><tr><th>Priority</th><th>To-do</th><th>Area</th><th class="r"></th></tr></thead>
+                        <tbody data-marketing-advisor-list></tbody>
+                      </table>
+                    </div>
+                    <div data-marketing-advisor-empty hidden></div>
+                  </section>
+                  <p class="mk-hint">The advisor reads every channel, campaign, piece of content, ad, experiment, the funnel scorecard and the last 30 days of Analytics, and lists what to do next, most important first. “Done” hides an item on this device for 7 days.</p>
                 </div>
 
                 <div data-marketing-growth-page class="mk-page hidden">

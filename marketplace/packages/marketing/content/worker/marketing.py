@@ -925,7 +925,7 @@ def _route(path):
     match = re.fullmatch(
         r"/api/marketing/([a-z][a-z0-9-]{0,62})"
         r"(?:/(content|metrics|settings|refresh|capture|ads|experiments|funnel|links|"
-        r"report|performance|reddit-rules|reddit|campaigns|keywords|x-connection|x-post|"
+        r"report|advisor|performance|reddit-rules|reddit|campaigns|keywords|x-connection|x-post|"
         r"assistant|posts|mastodon|email-suggestions|discord-posts|ready-post|activity|"
         r"app-store)"
         r"(?:/([0-9a-f]{32}))?)?", clean) or re.fullmatch(
@@ -2407,6 +2407,15 @@ def _traffic_channels(rows, has_goals):
     return result
 
 
+def _source_rows(rows):
+    return [{"source": str(row.get("source") or "").lower(),
+             "medium": str(row.get("medium") or "").lower(),
+             "sessions": _integer(row.get("sessions")),
+             "conversions": row.get("conversions"),
+             "conversionRate": row.get("conversionRate")}
+            for row in rows][:100]
+
+
 def _keyword_rows(rows):
     return [{key: row.get(key) for key in (
         "term", "sessions", "previousSessions", "visitors", "bounceRate",
@@ -2466,6 +2475,7 @@ async def _performance(runtime, org_bi, settings, ads, threads, params):
         "channels": _traffic_channels(
             (results.get("source") or results["campaign"])["rows"], has_goals),
         "visitsDays": _daily_visits(results["source"]["rows"]),
+        "sources": _source_rows(results["source"]["rows"]),
         "keywords": _keyword_rows((results.get("term") or {}).get("rows") or [])})
     perf.update(_channel_page_views(settings, results.get("pages") or {}))
     google = _google_referrer_traffic(results["source"]["rows"])
@@ -3641,7 +3651,459 @@ def _summary_data(content, metrics, settings, now=0, posts=()):
     }
 
 
-async def _overview(runtime, org_bi, org_name, role, refresh=None, account_bi=""):
+ADVISOR_WINDOW_DAYS = 30
+ADVISOR_LIMIT = 40
+ADVISOR_PRIORITIES = ("high", "medium", "low")
+ADVISOR_BASE = {"high": 300, "medium": 200, "low": 100}
+ADVISOR_SUGGESTION_PRIORITY = {"warning": "high", "setup": "medium", "action": "medium",
+                               "info": "low", "win": "low"}
+AD_PLACEMENTS = (
+    {"id": "search", "channel": "google-ads", "name": "Google Search ads",
+     "kind": "search", "intent": 90, "fit": 85, "hosts": ("google.",),
+     "source": "google", "medium": "cpc", "daily": (20, 50),
+     "how": "Exact and phrase match on the searches people make when they look for "
+            "what you offer; one ad group per intent, each landing on the page that "
+            "answers it."},
+    {"id": "reddit", "channel": "reddit", "name": "Reddit Ads", "kind": "community",
+     "intent": 60, "fit": 80, "hosts": ("reddit.com",), "source": "reddit",
+     "medium": "paid_social", "daily": (15, 30),
+     "how": "Target the communities on the Reddit watch list; write the ad like a "
+            "post, disclose who you are and link to a page that shows the product."},
+    {"id": "sponsorships", "channel": "", "name": "Developer newsletters and ad networks",
+     "kind": "sponsorship", "intent": 55, "fit": 75,
+     "hosts": ("ethicalads.io", "carbonads.net", "selfh.st", "console.dev", "tldr.tech"),
+     "source": "newsletter", "medium": "sponsorship", "daily": (10, 35),
+     "how": "Privacy-friendly developer ad networks (EthicalAds, Carbon) and paid "
+            "placements in newsletters your audience reads (selfh.st, Console.dev, TLDR); "
+            "buy one issue or one week first and give each its own utm_content."},
+    {"id": "bing", "channel": "microsoft-advertising", "name": "Microsoft Advertising search",
+     "kind": "search", "intent": 80, "fit": 45, "hosts": ("bing.com", "duckduckgo.com"),
+     "source": "bing", "medium": "cpc", "daily": (5, 15),
+     "how": "Import the Google Search campaign once it converts; Bing also serves "
+            "DuckDuckGo results."},
+    {"id": "youtube", "channel": "youtube", "name": "YouTube creator sponsorships",
+     "kind": "video", "intent": 40, "fit": 55, "hosts": ("youtube.com", "youtu.be"),
+     "source": "youtube", "medium": "sponsorship", "daily": (20, 60),
+     "how": "Sponsor a segment with a creator whose viewers match your audience; give "
+            "them a tagged link and measure visits, not views."},
+    {"id": "x", "channel": "x", "name": "X Ads", "kind": "social", "intent": 35,
+     "fit": 45, "hosts": ("x.com", "t.co", "twitter.com"), "source": "x",
+     "medium": "paid_social", "daily": (10, 25),
+     "how": "Promote posts that already did well organically to follower look-alikes "
+            "and keyword audiences."},
+    {"id": "linkedin", "channel": "linkedin", "name": "LinkedIn Ads", "kind": "social",
+     "intent": 30, "fit": 35, "hosts": ("linkedin.com", "lnkd.in"), "source": "linkedin",
+     "medium": "paid_social", "daily": (30, 60),
+     "how": "Only for a team or company offer: clicks cost several times more than "
+            "elsewhere."},
+    {"id": "meta", "channel": "facebook", "name": "Meta (Facebook and Instagram) ads",
+     "kind": "display", "intent": 20, "fit": 25,
+     "hosts": ("facebook.com", "instagram.com", "fb.com"), "source": "meta",
+     "medium": "paid_social", "daily": (10, 30),
+     "how": "Broad interest targeting reaches few people looking for a tool; leave it "
+            "until a narrower channel converts."},
+)
+AD_SEARCH_CHANNELS = {"google-ads": ("google-ads", "google-search"),
+                      "microsoft-advertising": ("microsoft-advertising", "bing")}
+
+
+def _advisor_rate(conversions, sessions):
+    return round(conversions / sessions, 4) if sessions else 0
+
+
+def _placement_traffic(placement, sources):
+    sessions = conversions = 0
+    for row in sources:
+        host = row["source"]
+        if row["medium"] in ("cpc", "ppc", "paid", "paid_social", "display", "sponsorship"):
+            continue
+        if any(host == item or host.endswith("." + item) or (item.endswith(".") and (
+                host.startswith(item) or ("." + item) in host))
+               for item in placement["hosts"]):
+            sessions += row["sessions"]
+            conversions += _integer(row["conversions"])
+    return sessions, conversions
+
+
+def _placement_ads(placement, ads):
+    channels = AD_SEARCH_CHANNELS.get(placement["channel"], (placement["channel"],))
+    totals = {"ads": 0, "spendCents": 0, "clicks": 0, "conversions": 0,
+              "revenueCents": 0, "impressions": 0, "currency": ""}
+    for ad in ads:
+        if ad["status"] == "archived" or not placement["channel"] or ad["channel"] not in channels:
+            continue
+        totals["ads"] += 1
+        totals["currency"] = totals["currency"] or ad["currency"]
+        for key in ("spendCents", "clicks", "conversions", "revenueCents", "impressions"):
+            totals[key] += ad[key]
+    return totals
+
+
+def _ads_currency(ads):
+    counts = {}
+    for ad in ads:
+        if ad["status"] != "archived" and ad["currency"]:
+            counts[ad["currency"]] = counts.get(ad["currency"], 0) + 1
+    return max(sorted(counts), key=lambda key: counts[key]) if counts else "USD"
+
+
+def _best_landing(performance, attribution):
+    host = performance.get("host") or ""
+    rows = [row for row in performance.get("landing") or []
+            if _integer(row.get("sessions")) >= SMALL_SAMPLE
+            and row.get("conversionRate") is not None and _integer(row.get("conversions"))]
+    rows.sort(key=lambda row: (-(row.get("conversionRate") or 0), -_integer(row.get("sessions"))))
+    if rows and host and str(rows[0].get("key") or "").startswith("/"):
+        return "https://" + host + str(rows[0]["key"]), str(rows[0]["key"]), rows[0]
+    if attribution.get("landingUrl"):
+        return attribution["landingUrl"], "", None
+    if host:
+        return "https://" + host + "/", "", None
+    return "", "", None
+
+
+def _ad_campaign_tag(campaigns):
+    for item in campaigns:
+        if item["status"] in ("active", "planned") and item.get("slug"):
+            return item["slug"]
+    return "ads-test"
+
+
+def _ad_readiness(data, performance):
+    settings, now = data["settings"], data["now"]
+    ok = performance.get("status") == "ok"
+    recent = ok and _integer(performance.get("lastEventAt")) >= now - 7 * DAY_MS
+    goals = settings["analytics"]["goals"]
+    converting = [row for row in performance.get("landing") or []
+                  if _integer(row.get("conversions"))]
+    tagged = [item for item in data["campaigns"]
+              if item["status"] in CAMPAIGN_OPEN_STATUSES and item.get("slug")]
+    attribution = settings["attribution"]
+    budgeted = [ad for ad in data["ads"] if ad["status"] in (
+        "draft", "review", "scheduled", "active") and ad["budgetCents"]]
+    testing = [item for item in data["experiments"] if item["status"] in ("planned", "running")]
+    checks = [
+        ("analytics", "Analytics is receiving visits", recent,
+         "Visits recorded in the last 7 days." if recent else
+         "Ads can only be judged on visits Analytics records; install it and check the "
+         "site sends events.", {"type": "analytics"}),
+        ("goals", "A conversion goal is defined", bool(goals),
+         "%d goal%s: %s." % (len(goals), "" if len(goals) == 1 else "s",
+                             ", ".join(goal["label"] for goal in goals)) if goals else
+         "Without a goal every click looks the same; add the sign-up or install event.",
+         {"type": "goals"}),
+        ("landing", "A landing page converts", bool(converting),
+         "%s converted %d visit%s in %d days." % (
+             converting[0].get("key") or "A page", _integer(converting[0].get("conversions")),
+             "" if _integer(converting[0].get("conversions")) == 1 else "s",
+             ADVISOR_WINDOW_DAYS) if converting else
+         "No page converted a visit in the last %d days; fix the page before paying for "
+         "traffic to it." % ADVISOR_WINDOW_DAYS, {"type": "page", "page": "website"}),
+        ("campaign", "A tagged campaign holds the ads", bool(tagged),
+         "Campaign tag %s." % tagged[0]["slug"] if tagged else
+         "Create a campaign so every ad link carries the same utm_campaign.",
+         {"type": "campaign"}),
+        ("domains", "Tracked domains are listed for links", bool(attribution.get("domains")),
+         ", ".join(attribution["domains"][:3]) if attribution.get("domains") else
+         "List your site's domains in the link settings so ad links are checked.",
+         {"type": "page", "page": "growth"}),
+        ("budget", "A planned ad has a budget", bool(budgeted),
+         "%d ad%s with a budget." % (len(budgeted), "" if len(budgeted) == 1 else "s")
+         if budgeted else "Plan the first test ad with a daily or lifetime budget.",
+         {"type": "ad-new"}),
+        ("experiment", "A landing-page experiment is planned or running", bool(testing),
+         "%d planned or running." % len(testing) if testing else
+         "Log the landing-page test you will run alongside the ads.",
+         {"type": "page", "page": "growth"}),
+    ]
+    return [{"id": key, "label": label, "done": bool(done), "detail": detail,
+             "action": action} for key, label, done, detail, action in checks]
+
+
+def _ad_plan(data, performance):
+    settings, ads = data["settings"], data["ads"]
+    attribution = settings["attribution"]
+    sources = performance.get("sources") or []
+    totals = performance.get("totals") or {}
+    has_goals = bool(settings["analytics"]["goals"])
+    average = totals.get("conversionRate") if has_goals else None
+    currency = _ads_currency(ads)
+    landing_url, landing_path, landing_row = _best_landing(performance, attribution)
+    campaign = _ad_campaign_tag(data["campaigns"])
+    keywords = sorted(data["keywords"], key=lambda item: (-item["priority"], item["term"]))
+    terms = [item["term"] for item in keywords if item["term"]][:6]
+    terms += [row["term"] for row in performance.get("keywords") or []
+              if row.get("term") and row["term"] not in terms
+              and not str(row["term"]).startswith("(")][:6 - len(terms)]
+    subreddits = [item for item in settings["reddit"]["subreddits"]][:6]
+    goal = (performance.get("goals") or [""])[0]
+    recommendations = []
+    for placement in AD_PLACEMENTS:
+        why, evidence = [], 0
+        sessions, conversions = _placement_traffic(placement, sources)
+        if sessions >= SMALL_SAMPLE and average:
+            rate = _advisor_rate(conversions, sessions)
+            evidence += max(-15, min(15, round((rate / average - 1) * 15)))
+            why.append("Unpaid visits from %s: %d in %d days, %s%% converted against "
+                       "%s%% site-wide." % (placement["source"], sessions,
+                                            ADVISOR_WINDOW_DAYS, _number(rate * 100),
+                                            _number(average * 100)))
+        elif sessions >= SMALL_SAMPLE:
+            evidence += 3
+            why.append("%d unpaid visits from %s in %d days; add a goal to see whether "
+                       "they convert." % (sessions, placement["source"], ADVISOR_WINDOW_DAYS))
+        elif sessions:
+            why.append("Only %d unpaid visit%s from %s so far: too few to judge." % (
+                sessions, "" if sessions == 1 else "s", placement["source"]))
+        logged = _placement_ads(placement, ads)
+        if logged["spendCents"] and logged["conversions"]:
+            roas = logged["revenueCents"] / logged["spendCents"]
+            evidence += 15 if roas >= 1 else 8
+            why.append("Logged ads here converted %d time%s for %s %s spent." % (
+                logged["conversions"], "" if logged["conversions"] == 1 else "s",
+                _number(logged["spendCents"] / 100), logged["currency"]))
+        elif logged["spendCents"] and logged["clicks"] >= 50:
+            evidence -= 25
+            why.append("Logged ads here spent %s %s for %d clicks and no conversions." % (
+                _number(logged["spendCents"] / 100), logged["currency"], logged["clicks"]))
+        targeting = []
+        if placement["kind"] == "search":
+            targeting = terms
+            if len(terms) >= 3:
+                evidence += 5
+                why.append("%d tracked search terms to bid on." % len(terms))
+        elif placement["id"] == "reddit":
+            targeting = ["r/" + name for name in subreddits]
+            if subreddits:
+                why.append("Watch list: %s." % ", ".join(targeting[:4]))
+        intent = {"search": "People are already searching for this.",
+                  "community": "Communities where the audience discusses tools like this.",
+                  "sponsorship": "Reaches developers in places they already read, without "
+                                 "tracking pixels.",
+                  "video": "Long-form demos build trust, but clicks are fewer.",
+                  "social": "Interrupts a feed: low intent, good for retargeting proof.",
+                  "display": "Broad reach with the lowest intent."}[placement["kind"]]
+        why.insert(0, intent)
+        link, _error = _build_link({"url": landing_url, "source": placement["source"],
+                                    "medium": placement["medium"], "campaign": campaign},
+                                   attribution) if landing_url else (None, "")
+        score = max(0, min(100, round((placement["intent"] + placement["fit"]) / 2 + evidence)))
+        recommendations.append({
+            "id": placement["id"], "channel": placement["channel"], "name": placement["name"],
+            "kind": placement["kind"], "score": score, "why": why,
+            "how": placement["how"],
+            "suggestedDailyBudget": {"low": placement["daily"][0],
+                                     "high": placement["daily"][1], "currency": currency},
+            "targeting": targeting, "landingPage": landing_url, "link": link or "",
+            "measure": goal or "Define a conversion goal before buying traffic.",
+            "evidence": {"sessions": sessions, "conversions": conversions if has_goals else None,
+                         "adSpendCents": logged["spendCents"],
+                         "adConversions": logged["conversions"]},
+            "manager": AD_PLATFORMS.get(placement["channel"], ("", ""))[1]})
+    recommendations.sort(key=lambda item: (-item["score"], item["name"]))
+    readiness = _ad_readiness(data, performance)
+    return {"recommendations": recommendations, "readiness": readiness,
+            "ready": all(item["done"] for item in readiness),
+            "landingPage": landing_url, "landingPath": landing_path,
+            "landingConversionRate": (landing_row or {}).get("conversionRate"),
+            "campaign": campaign, "currency": currency,
+            "windowDays": ADVISOR_WINDOW_DAYS, "analytics": performance.get("status")}
+
+
+def _advisor_item(items, key, priority, weight, area, title, detail="", action=None,
+                  channel="", campaign=""):
+    if any(item["id"] == key for item in items):
+        return
+    items.append({"id": key, "priority": priority,
+                  "score": ADVISOR_BASE[priority] + max(0, min(99, int(weight))),
+                  "area": area, "title": title, "detail": detail[:400],
+                  "channel": channel, "campaignId": campaign, "action": action or {}})
+
+
+CHECK_TITLES = {"link": "Add the %s link", "fresh": "Update the %s numbers",
+                "posting": "Post on %s", "growing": "Find out why %s is shrinking",
+                "zoho": "Connect Zoho Mail for %s", "outbound": "Send this week's %s",
+                "deals": "Follow up on %s deals"}
+
+
+def _advisor_channels(items, data):
+    for position, channel in enumerate(data["summary"].get("channels") or []):
+        health = channel.get("health") or {}
+        state = health.get("state")
+        name = CHANNEL_NAMES.get(channel["channel"], channel["channel"])
+        weight = 60 - position
+        action = {"type": "channel", "channel": channel["channel"]}
+        if state == "setup":
+            _advisor_item(items, "channel-setup-" + channel["channel"], "low", weight,
+                          "channels", "Set up " + name,
+                          "No link and no numbers yet.", action, channel["channel"])
+            continue
+        if state not in ("stale", "attention"):
+            continue
+        for check in health.get("checks") or ():
+            if check.get("ok"):
+                continue
+            title = CHECK_TITLES.get(check["id"], "Fix %s") % name
+            detail = check.get("label", "") + " is failing."
+            if check["id"] == "fresh" and health.get("ageDays") is not None:
+                detail = "The newest numbers are %d days old." % health["ageDays"]
+            priority = "medium" if check["id"] in ("fresh", "posting", "growing") else "low"
+            _advisor_item(items, "channel-%s-%s" % (check["id"], channel["channel"]),
+                          priority, weight, "channels", title, detail, action,
+                          channel["channel"])
+
+
+def _advisor_ads(items, data):
+    for ad in data["ads"]:
+        if ad["status"] == "archived":
+            continue
+        label = "“" + (ad["name"] or "Untitled ad") + "”"
+        state = ad["pacing"]["state"]
+        if state in ("overspent", "over", "under"):
+            detail = {"overspent": "It spent more than its whole budget.",
+                      "over": "It is spending faster than its flight allows.",
+                      "under": "It is spending slower than planned."}[state]
+            _advisor_item(items, "ad-pacing-" + ad["id"],
+                          "high" if state != "under" else "medium", 80, "ads",
+                          "Check pacing on ad " + label, detail,
+                          {"type": "ad", "id": ad["id"]}, ad["channel"])
+        errors = [check for check in ad.get("linkChecks") or () if check["level"] == "error"]
+        if errors:
+            _advisor_item(items, "ad-link-" + ad["id"], "medium", 70, "ads",
+                          "Fix the tracking link on ad " + label, errors[0]["message"],
+                          {"type": "ad", "id": ad["id"]}, ad["channel"])
+
+
+def _advisor_content(items, data):
+    now = data["now"]
+    upcoming = 0
+    for item in data["content"]:
+        if item["status"] in ("published", "archived"):
+            continue
+        if item["scheduledAt"] and item["scheduledAt"] < now:
+            days = max(1, (now - item["scheduledAt"]) // DAY_MS)
+            _advisor_item(items, "content-overdue-" + item["id"], "high", 90 - min(days, 30),
+                          "content", "Publish or reschedule “%s”" % (item["title"] or "Untitled"),
+                          "It was due %d day%s ago on %s." % (
+                              days, "" if days == 1 else "s",
+                              CHANNEL_NAMES.get(item["channel"], item["channel"])),
+                          {"type": "content-open", "id": item["id"]}, item["channel"])
+        elif item["scheduledAt"] and item["scheduledAt"] <= now + 7 * DAY_MS:
+            upcoming += 1
+    if not upcoming:
+        _advisor_item(items, "content-week-empty", "medium", 55, "content",
+                      "Schedule next week's posts",
+                      "Nothing is scheduled for the next 7 days.",
+                      {"type": "content", "campaign": "", "channel": "blog"})
+
+
+def _advisor_growth(items, data):
+    now = data["now"]
+    report, summary = data["funnelReport"], data["experimentsSummary"]
+    week = _week_start(now) - 7 * DAY_MS
+    if not data["funnel"] or data["funnel"][0]["weekStart"] < week:
+        _advisor_item(items, "funnel-week", "medium", 60, "growth",
+                      "Log last week's funnel numbers",
+                      "The scorecard has no row for the week that started %s." %
+                      datetime.fromtimestamp(week / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                      {"type": "funnel-new"})
+    bottleneck = next((item for item in report.get("rates") or ()
+                       if item["key"] == report.get("bottleneck")), None)
+    if bottleneck and bottleneck["value"] < bottleneck["target"]:
+        _advisor_item(items, "funnel-bottleneck", "medium", 50, "growth",
+                      "Raise the " + bottleneck["label"].lower(),
+                      report.get("bottleneckReason") or "", {"type": "page", "page": "growth"})
+    by_id = {item["id"]: item for item in data["experiments"]}
+    for experiment_id in summary["reviewsDue"]:
+        item = by_id.get(experiment_id)
+        if item:
+            _advisor_item(items, "experiment-review-" + experiment_id, "high", 70, "growth",
+                          "Review experiment “%s”" % (item["title"] or "Untitled"),
+                          "Its review date or end date has passed.",
+                          {"type": "experiment", "id": experiment_id})
+    if summary["overLimit"]:
+        _advisor_item(items, "experiments-over-limit", "medium", 45, "growth",
+                      "Stop or finish an experiment",
+                      "%d are running; more than %d at once muddles the results." % (
+                          summary["running"], summary["runningLimit"]),
+                      {"type": "page", "page": "growth"})
+    elif not summary["running"] and summary["top"]:
+        item = by_id.get(summary["top"][0])
+        if item:
+            _advisor_item(items, "experiment-start-" + item["id"], "medium", 40, "growth",
+                          "Start experiment “%s”" % (item["title"] or "Untitled"),
+                          "Nothing is running and it is the top-scored idea (%d)." %
+                          item["score"], {"type": "experiment", "id": item["id"]})
+
+
+def _advisor(data, performance, plan):
+    items = []
+    status = performance.get("status")
+    if status in ("not_installed", "no_project"):
+        _advisor_item(items, "analytics-" + status, "high", 99, "website",
+                      _analytics_setup(status)[0]["title"].rstrip("."),
+                      _analytics_setup(status)[0]["detail"], {"type": "analytics"})
+    elif status == "ok":
+        for position, insight in enumerate(performance.get("insights") or ()):
+            if position >= 6:
+                break
+            priority = ADVISOR_SUGGESTION_PRIORITY.get(insight.get("level"), "low")
+            _advisor_item(items, "website-" + insight.get("code", str(position)), priority,
+                          85 - position, "website", insight["title"].rstrip("."),
+                          insight.get("detail", ""), {"type": "page", "page": "website"})
+    if not data["settings"]["analytics"]["goals"]:
+        _advisor_item(items, "goals-missing", "high", 95, "website",
+                      "Define a conversion goal",
+                      "Visits are counted but nothing says which of them converted, so "
+                      "channels, campaigns and ads cannot be compared.", {"type": "goals"})
+    _advisor_content(items, data)
+    _advisor_ads(items, data)
+    for check in plan["readiness"]:
+        if not check["done"] and check["id"] not in ("analytics", "goals"):
+            _advisor_item(items, "ads-ready-" + check["id"], "medium", 35, "ads",
+                          check["label"].replace(" is ", " ").rstrip("."),
+                          check["detail"], check["action"])
+    if plan["ready"] and plan["recommendations"]:
+        top = plan["recommendations"][0]
+        _advisor_item(items, "ads-start-" + top["id"], "medium", 30, "ads",
+                      "Start a test on " + top["name"],
+                      "Ad readiness passes; begin at %d–%d %s a day." % (
+                          top["suggestedDailyBudget"]["low"],
+                          top["suggestedDailyBudget"]["high"],
+                          top["suggestedDailyBudget"]["currency"]),
+                      {"type": "ad-new", "channel": top["channel"]}, top["channel"])
+    _advisor_growth(items, data)
+    for position, suggestion in enumerate(data["suggestions"]):
+        code = suggestion.get("code", "")
+        if code.startswith("channel_"):
+            continue
+        area = ("search" if "keyword" in code else
+                "campaigns" if code.startswith("campaign") or code == "no_campaign" else
+                "content")
+        priority = ADVISOR_SUGGESTION_PRIORITY.get(suggestion.get("level"), "low")
+        _advisor_item(items, "suggestion-%s-%s" % (code, suggestion.get("campaign") or position),
+                      priority, 65 - position, area, suggestion["title"].rstrip("."),
+                      suggestion.get("detail", ""), suggestion.get("action"),
+                      campaign=suggestion.get("campaign") or "")
+    reddit = data["redditDesk"]["summary"]
+    if reddit.get("open"):
+        _advisor_item(items, "reddit-open", "medium", 45, "community",
+                      "Review %d open Reddit thread%s" % (
+                          reddit["open"], "" if reddit["open"] == 1 else "s"),
+                      "Threads logged to review or draft are waiting on the Reddit desk.",
+                      {"type": "page", "page": "reddit"}, "reddit")
+    _advisor_channels(items, data)
+    items.sort(key=lambda item: (-item["score"], item["title"]))
+    shown = items[:ADVISOR_LIMIT]
+    return {"items": shown, "total": len(items),
+            "byPriority": {key: sum(1 for item in items if item["priority"] == key)
+                           for key in ADVISOR_PRIORITIES},
+            "byArea": {area: sum(1 for item in items if item["area"] == area)
+                       for area in sorted({item["area"] for item in items})},
+            "windowDays": ADVISOR_WINDOW_DAYS, "generatedAt": data["now"]}
+
+
+async def _marketing_inputs(runtime, org_bi):
     content = await _content(runtime, org_bi)
     metrics = await _metrics(runtime, org_bi)
     settings = await _settings(runtime, org_bi)
@@ -3655,15 +4117,66 @@ async def _overview(runtime, org_bi, org_name, role, refresh=None, account_bi=""
     campaigns = _campaigns_with_stats(await _campaigns(runtime, org_bi), content, ads, now,
                                       posts)
     keywords = await _keywords(runtime, org_bi)
+    return {"content": content, "metrics": metrics, "settings": settings, "ads": ads,
+            "experiments": experiments, "funnel": funnel, "threads": threads,
+            "posts": posts, "now": now, "summary": summary, "campaigns": campaigns,
+            "keywords": keywords,
+            "experimentsSummary": _experiments_summary(experiments),
+            "funnelReport": _funnel_report(funnel, settings["targets"]),
+            "redditDesk": _reddit_desk(settings, threads, now, content, posts, keywords),
+            "suggestions": _campaign_suggestions(campaigns, summary, keywords, now)}
+
+
+async def _advisor_performance(runtime, org_bi, data):
+    now = data["now"]
+    try:
+        return await _performance(runtime, org_bi, data["settings"], data["ads"],
+                                  data["threads"],
+                                  {"from": now - ADVISOR_WINDOW_DAYS * DAY_MS, "to": now})
+    except Exception:
+        return {"status": "unavailable", "goals": [], "insights": _analytics_setup("unavailable")}
+
+
+async def _advisor_bundle(runtime, org_bi, data):
+    performance = await _advisor_performance(runtime, org_bi, data)
+    plan = _ad_plan(data, performance)
+    return _advisor(data, performance, plan), plan
+
+
+def _advisor_report_lines(advisor):
+    lines = ["", "## Advisor: next to-dos", ""]
+    if not advisor["items"]:
+        return lines + ["Nothing to do."]
+    for item in advisor["items"][:10]:
+        lines.append("- **%s** (%s, %s)%s" % (
+            item["title"], item["priority"], item["area"],
+            ": " + item["detail"] if item["detail"] else ""))
+    if advisor["total"] > 10:
+        lines.append("- …and %d more on the Advisor page." % (advisor["total"] - 10))
+    return lines
+
+
+async def _handle_advisor(runtime, org_bi):
+    data = await _marketing_inputs(runtime, org_bi)
+    advisor, plan = await _advisor_bundle(runtime, org_bi, data)
+    return _response(runtime, {"ok": True, "advisor": advisor, "adPlan": plan})
+
+
+async def _overview(runtime, org_bi, org_name, role, refresh=None, account_bi=""):
+    data = await _marketing_inputs(runtime, org_bi)
+    content, metrics, settings = data["content"], data["metrics"], data["settings"]
+    ads, experiments, funnel = data["ads"], data["experiments"], data["funnel"]
+    threads, posts, summary = data["threads"], data["posts"], data["summary"]
+    campaigns, keywords = data["campaigns"], data["keywords"]
     payload = {"ok": True, "organization": org_name, "role": role,
         "canManageSettings": role in MANAGER_ROLES, "content": content,
         "metrics": metrics, "settings": _public_settings(settings),
         "ads": ads, "adsSummary": _ads_summary(ads),
         "experiments": experiments,
-        "experimentsSummary": _experiments_summary(experiments),
-        "funnel": funnel, "funnelReport": _funnel_report(funnel, settings["targets"]),
+        "experimentsSummary": data["experimentsSummary"],
+        "funnel": funnel, "funnelReport": data["funnelReport"],
         "redditThreads": threads,
-        "redditDesk": _reddit_desk(settings, threads, now, content, posts, keywords),
+        "redditDesk": data["redditDesk"],
         "posts": posts, "postsSummary": _posts_summary(posts),
         "adPlatforms": _ad_platforms(),
         "refreshableChannels": list(REFRESHERS),
@@ -3672,7 +4185,7 @@ async def _overview(runtime, org_bi, org_name, role, refresh=None, account_bi=""
         "channelPlaybooks": _channel_playbooks(),
         "campaigns": campaigns, "campaignTemplates": _campaign_templates(),
         "keywords": keywords,
-        "suggestions": _campaign_suggestions(campaigns, summary, keywords, now),
+        "suggestions": data["suggestions"],
         "assistantAvailable": getattr(runtime, "ai_json", None) is not None,
         "referringSites": await _referring_sites(runtime, settings),
         "readyPosts": await _ready_posts_overview(runtime, org_bi),
@@ -5540,18 +6053,13 @@ async def _handle_funnel(runtime, method, org_bi, org_name, account_bi, actor, i
 
 
 async def _report(runtime, org_bi, org_name):
-    settings = await _settings(runtime, org_bi)
-    experiments = await _experiments(runtime, org_bi)
-    weeks = await _funnel(runtime, org_bi)
-    ads = await _ads(runtime, org_bi, settings["attribution"])
-    content = await _content(runtime, org_bi)
-    now = runtime.now()
-    threads = await _reddit_threads(runtime, org_bi, settings["attribution"])
-    desk = _reddit_desk(settings, threads, now, content)
-    report = _funnel_report(weeks, settings["targets"])
-    summary = _experiments_summary(experiments)
-    channels = _summary_data(content, await _metrics(runtime, org_bi), settings,
-                             now, await _posts(runtime, org_bi))["channels"]
+    data = await _marketing_inputs(runtime, org_bi)
+    settings, experiments, ads = data["settings"], data["experiments"], data["ads"]
+    content, now, threads = data["content"], data["now"], data["threads"]
+    desk, report = data["redditDesk"], data["funnelReport"]
+    summary = data["experimentsSummary"]
+    channels = data["summary"]["channels"]
+    advisor, _plan = await _advisor_bundle(runtime, org_bi, data)
     try:
         performance = await _performance(runtime, org_bi, settings, ads, threads,
                                          {"from": now - 7 * DAY_MS, "to": now})
@@ -5565,7 +6073,7 @@ async def _report(runtime, org_bi, org_name):
         "performanceInsights": performance["insights"],
         "markdown": _weekly_report(org_name, now, report, experiments, summary, ads, content,
                                    threads, desk, channels)
-        + "\n".join(_performance_report_lines(performance)
+        + "\n".join(_advisor_report_lines(advisor) + _performance_report_lines(performance)
                     + _referring_sites_report_lines(
                         await _referring_sites(runtime, settings))) + "\n"})
 
@@ -7630,6 +8138,7 @@ async def handle(runtime, path):
                ("organization", "funnel"): ("GET", "POST"),
                ("organization", "links"): ("POST",),
                ("organization", "report"): ("GET",),
+               ("organization", "advisor"): ("GET",),
                ("organization", "performance"): ("GET",),
                ("organization", "reddit"): ("GET", "POST"),
                ("organization", "reddit-rules"): ("GET", "POST"),
@@ -7765,6 +8274,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                                     actor, item, data)
     if resource == "report":
         return await _report(runtime, org_bi, org_name)
+    if resource == "advisor":
+        return await _handle_advisor(runtime, org_bi)
     if resource == "performance":
         settings = await _settings(runtime, org_bi)
         return _response(runtime, {"ok": True, "performance": await _performance(

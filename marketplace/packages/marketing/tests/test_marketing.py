@@ -3831,3 +3831,110 @@ def test_plugin_race_template_tracks_its_hashtag_across_posted_links():
     assert stats["postChannels"] == ["mastodon", "x"]
     assert marketing._tracking_hashtags({"hashtags": ["#ForkMesh", "#SelfHosted"]}) == set()
 
+
+
+def _referred_visits(runtime, analytics, sessions):
+    events = []
+    for index, (referrer, paths) in enumerate(sessions):
+        start = runtime.clock - 3 * marketing.DAY_MS + index * 60000
+        for step, path in enumerate(paths):
+            properties = {"$pathname": path, "$host": "forkmesh.com"}
+            if referrer and not step:
+                properties["$referrer"] = referrer
+            events.append({"e": "$pageview", "d": "visitor-%d" % index,
+                           "s": "session-%04d" % index, "t": start + step * 20000,
+                           "p": properties})
+    runtime.db.execute(
+        "INSERT INTO analytics_batches VALUES(?,?,?,?,?,?,?,?,?)",
+        ("c" * 32, "a" * 32, "org:acme", analytics._day(events[0]["t"]),
+         events[0]["t"], events[-1]["t"], len(events), 0,
+         "sealed:" + json.dumps(events)))
+
+
+def test_advisor_ranks_next_todos_and_the_ad_plan_follows_the_evidence():
+    runtime, analytics = _analytics_runtime()
+    runtime.db.execute(
+        "INSERT INTO analytics_projects VALUES(?,?,?,?,?,?,?,?,?)",
+        ("a" * 32, "org:acme", "acme", "fma_" + "0" * 40, 1, "alice", 1, 1,
+         'sealed:{"name": "Site"}'))
+    call(runtime.use("PUT", body={
+        "attribution": {"landingUrl": "https://forkmesh.com/"},
+        "analytics": {"goals": [{"label": "Signup", "event": "$pageview",
+                                 "property": "$pathname", "operator": "exact",
+                                 "value": "/signup"}]}}),
+        "/api/marketing/acme/settings")
+    call(runtime.use("POST", body={
+        "name": "Boost", "channel": "x", "status": "active", "spendCents": 9000,
+        "clicks": 120, "destinationUrl": "https://forkmesh.com/"}),
+        "/api/marketing/acme/ads")
+    google, reddit = "https://www.google.com/", "https://www.reddit.com/r/selfhosted/"
+    _referred_visits(runtime, analytics,
+                     [(google, ["/", "/signup"])] * 12 + [(google, ["/"])] * 18
+                     + [(reddit, ["/"])] * 25 + [("", ["/"])] * 10)
+    payload = call(runtime.use("GET"), "/api/marketing/acme/advisor")["data"]
+    plan, advisor = payload["adPlan"], payload["advisor"]
+    ranked = [item["id"] for item in plan["recommendations"]]
+    assert ranked[0] == "search" and ranked.index("reddit") > ranked.index("sponsorships")
+    search = plan["recommendations"][0]
+    assert search["evidence"] == {"sessions": 30, "conversions": 12, "adSpendCents": 0,
+                                  "adConversions": 0}
+    assert "utm_source=google" in search["link"] and "utm_medium=cpc" in search["link"]
+    assert search["measure"] == "Signup" and search["suggestedDailyBudget"]["currency"] == "USD"
+    x = next(item for item in plan["recommendations"] if item["id"] == "x")
+    assert x["score"] < 40 and any("no conversions" in line for line in x["why"])
+    readiness = {item["id"]: item["done"] for item in plan["readiness"]}
+    assert readiness["analytics"] and readiness["goals"] and readiness["landing"]
+    assert not readiness["budget"] and plan["ready"] is False
+    assert plan["landingPath"] == "/signup" or plan["landingPage"].startswith("https://")
+    items = advisor["items"]
+    assert [item["score"] for item in items] == sorted(
+        (item["score"] for item in items), reverse=True)
+    assert len({item["id"] for item in items}) == len(items)
+    ids = {item["id"] for item in items}
+    assert "ads-ready-budget" in ids and "goals-missing" not in ids
+    assert "funnel-week" in ids and "content-week-empty" in ids
+    assert advisor["total"] == sum(advisor["byPriority"].values())
+    assert all(item["action"].get("type") for item in items)
+    overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
+    assert "advisor" not in overview and "adPlan" not in overview
+    report = call(runtime.use("GET"), "/api/marketing/acme/report")["data"]["markdown"]
+    assert "## Advisor: next to-dos" in report
+
+
+def test_advisor_without_analytics_or_goals_puts_measurement_first():
+    runtime = Runtime()
+    advisor = call(runtime.use("GET"), "/api/marketing/acme/advisor")["data"]["advisor"]
+    first = [item["id"] for item in advisor["items"][:2]]
+    assert set(first) == {"analytics-not_installed", "goals-missing"}
+    assert all(item["priority"] == "high" for item in advisor["items"][:2])
+    plan = call(runtime.use("GET"), "/api/marketing/acme/advisor")["data"]["adPlan"]
+    assert plan["analytics"] == "not_installed"
+    assert [item["id"] for item in plan["recommendations"][:3]] == [
+        "search", "reddit", "sponsorships"]
+    assert not any(item["done"] for item in plan["readiness"] if item["id"] in (
+        "analytics", "goals", "landing"))
+
+
+def test_desktop_shows_the_advisor_and_the_ad_plan():
+    desktop = PACKAGE / "content" / "desktop"
+    pages = (desktop / "MarketingPages.cpp").read_text()
+    feature = (desktop / "MarketingFeature.cpp").read_text()
+    assert 'QStringLiteral("Growth"),\n                              QStringLiteral("Advisor")}' in pages
+    assert 'addPage(advisor, "marketingAdvisorPage");' in pages
+    assert 'organizationPath(QStringLiteral("/advisor"))' in pages
+    assert 'new DashboardPanel(QStringLiteral("Where to advertise"))' in pages
+    assert 'new DashboardPanel(QStringLiteral("Ad readiness"))' in pages
+    assert 'QStringLiteral("growth"), QStringLiteral("advisor")};' in feature
+    actions = pages.split("void MarketingFeature::runAdvisorAction(const QJsonObject &action)", 1)[1].split(
+        "\n}\n", 1)[0]
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    web_actions = web.split("function runAction(action = {}) {", 1)[1].split("\n  }\n", 1)[0]
+    for kind in ("campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
+                 "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"):
+        assert 'QLatin1String("%s")' % kind in actions, kind
+        assert 'action.type === "%s"' % kind in web_actions, kind
+    worker = (PACKAGE / "content" / "worker" / "marketing.py").read_text()
+    emitted = set(re.findall(r'"type": "([a-z-]+)"', worker.split("ADVISOR_WINDOW_DAYS = 30", 1)[1].split(
+        "async def _marketing_inputs", 1)[0]))
+    assert emitted <= {"campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
+                       "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"}, emitted

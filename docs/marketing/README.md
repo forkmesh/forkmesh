@@ -24,6 +24,7 @@ ForkMesh marketing is run by special agents:
 | Acquisition data | `/admin/acquisition`, [../attribution.md](../attribution.md) |
 | Campaigns, keywords, Ads manager, channel metrics, posting to X | `marketplace/packages/marketing/` ([package README](../../marketplace/packages/marketing/README.md)) |
 | Herald, the ready X post | [x-ready-post.md](x-ready-post.md) |
+| Where to advertise first, and the ad readiness checks | [ads-plan.md](ads-plan.md) |
 | Marketing email to opted-in users | [../app/marketing-email.md](../app/marketing-email.md) |
 | Contract tests | `app/tests/test_teammate_documentation_cadence.py` |
 
