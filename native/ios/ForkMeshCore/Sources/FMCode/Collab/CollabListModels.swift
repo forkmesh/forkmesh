@@ -10,7 +10,7 @@ import Observation
 extension CollabAccount {
     /// `context.watch<AuthService?>()?.session`.
     public init(session: AuthSession?) {
-        self.init(nodeName: session?.nodeName, pubkey: session?.pubkey)
+        self.init(nodeName: session?.nodeName, pubkey: session?.pubkey, canOwnerSign: session?.canOwnerSign ?? false)
     }
 }
 

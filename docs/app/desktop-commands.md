@@ -24,6 +24,11 @@ most 50 pending (429). The request is queued for `ownerAccount`'s own desktop
 (the serving account's queue, or the member's), and success rings that
 account's node socket (topic `desktop-commands`).
 
+A phone's mobile-node key is an enabled `owner_sign` key in addition to the
+account's primary desktop key. The phone must use its mobile-node session's
+owner-sign capability; it does not need to equal the primary key. The relay
+verifies the submitted signature against every enabled owner-signing key.
+
 The `<owner>` signed is the name the phone addressed: the serving account, or an
 organization alias (`_public_repository_owner`). The relay keeps it as
 `repoOwner` and the drain's `canonical` uses it.

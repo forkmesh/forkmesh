@@ -264,13 +264,13 @@ public enum DesktopCommand {
 
     /// The account allowed to sign the request. Throws an exception
     /// (shown as "Exception: ...") when there is no session or identity, or
-    /// this device is not the account's paired key.
+    /// the session cannot sign as the account owner.
     public static func ownerAccount(_ account: CollabAccount, identityPublicKey: String?) throws -> String {
         let name = account.nodeName?.dartTrimmed.lowercased() ?? ""
         if account.nodeName == nil || identityPublicKey == nil || name.isEmpty {
             throw ApiException("Sign in with the repo owner account to request desktop control.")
         }
-        if (account.pubkey ?? "").dartTrimmed != identityPublicKey {
+        if !account.canOwnerSign {
             throw ApiException("Pair this mobile device with the owner key before requesting desktop control.")
         }
         return name

@@ -22,7 +22,7 @@ final class CollabPullThreadTests: XCTestCase {
     func testPullDetailQueuesSignedDesktopMergeRequests() throws {
         XCTAssertEqual(
             try DesktopCommand.ownerAccount(
-                CollabAccount(nodeName: "Owner ", pubkey: "key"), identityPublicKey: "key"),
+                CollabAccount(nodeName: "Owner ", pubkey: "key", canOwnerSign: true), identityPublicKey: "key"),
             "owner")
         XCTAssertTrue(PullDetail.canRequestMerge(pull))
         XCTAssertTrue(PullDetail.shipControlsCopy(pull).contains("desktop node will verify mergeability"))
@@ -84,7 +84,7 @@ final class CollabPullThreadTests: XCTestCase {
         XCTAssertFalse(PullDetail.canEditHead(branch))
     }
 
-    func testDesktopRequestsNeedTheOwnersPairedKey() {
+    func testDesktopRequestsNeedAnOwnerSigningDevice() {
         func message(_ account: CollabAccount, _ key: String?) -> String {
             do {
                 _ = try DesktopCommand.ownerAccount(account, identityPublicKey: key)
@@ -98,9 +98,10 @@ final class CollabPullThreadTests: XCTestCase {
         XCTAssertEqual(
             message(CollabAccount(nodeName: "owner", pubkey: "key"), nil),
             "Exception: Sign in with the repo owner account to request desktop control.")
-        XCTAssertEqual(message(CollabAccount(nodeName: "mona", pubkey: "key"), "key"), "no error")
         XCTAssertEqual(
-            message(CollabAccount(nodeName: "owner", pubkey: "other"), "key"),
+            message(CollabAccount(nodeName: "mona", pubkey: "desktop-key", canOwnerSign: true), "phone-key"), "no error")
+        XCTAssertEqual(
+            message(CollabAccount(nodeName: "owner", pubkey: "key"), "key"),
             "Exception: Pair this mobile device with the owner key before requesting desktop control.")
         var merged = pull
         merged.status = "merged"
