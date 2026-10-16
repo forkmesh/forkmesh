@@ -679,13 +679,13 @@ QWidget *MainWindow::buildBreadcrumb()
     chromeRow->setSpacing(8);
     chromeRow->addWidget(buildProjectMenuButton());
     chromeRow->addWidget(forkmesh::ui::NextAccess::railToggleButton(*this));
-    chromeRow->addWidget(m_navSignInButton);
     chromeRow->addWidget(m_relayJoinApproveButton);
     chromeRow->addWidget(m_runnerAttentionButton);
     auto *projectContextStash = new QWidget(bar);
     projectContextStash->hide();
     m_relayMenuButton->setParent(projectContextStash);
     m_accountSwitcherButton->setParent(projectContextStash);
+    m_navSignInButton->setParent(projectContextStash);
     m_repoMenuButton->setParent(projectContextStash);
     auto *identityBalanceRow = new QHBoxLayout;
     identityBalanceRow->setContentsMargins(0, 0, 0, 0);
@@ -3248,12 +3248,14 @@ void MainWindow::updateConnectionStatus()
         text = QString::fromUtf8("Connected \xC2\xB7 %1 %2 online")
                    .arg(onlineCount)
                    .arg(onlineCount == 1 ? "node" : "nodes");
-    } else if (m_backend) {
+    } else if (m_backend && !projectInstancePending()) {
         color = "#d29922"; // amber: connecting / backing off
         text = QString::fromUtf8("Connecting\xE2\x80\xA6");
     } else {
         color = "#8b949e"; // grey: offline / not started
-        text = QStringLiteral("Offline");
+        text = projectInstancePending() && !m_offlineMode
+                   ? QStringLiteral("Online, no instance chosen")
+                   : QStringLiteral("Offline");
     }
     m_connectionDot->setToolTip(text);
     if (color == m_connectionStatusColor)
@@ -3346,11 +3348,6 @@ void MainWindow::announceRestoredOfflineMode()
 
 void MainWindow::setOfflineMode(bool offline, bool automatic)
 {
-    if (!offline && projectInstancePending()) {
-        updateOfflineModeControls();
-        QTimer::singleShot(0, this, &MainWindow::promptChooseProjectInstance);
-        return;
-    }
     automatic = offline && automatic;
     if (offline == m_offlineMode && automatic == m_offlineModeAuto) {
         updateOfflineModeControls();
@@ -3374,7 +3371,8 @@ void MainWindow::setOfflineMode(bool offline, bool automatic)
         networkInfo && networkInfo->reachability() ==
                            QNetworkInformation::Reachability::Disconnected;
     if (m_backend)
-        m_backend->setNetworkAvailable(!offline && !systemDisconnected);
+        m_backend->setNetworkAvailable(!offline && !systemDisconnected &&
+                                       !projectInstancePending());
 
     if (offline) {
         if (m_connectedAtMs > 0) {
@@ -3454,7 +3452,7 @@ void MainWindow::startNodePresence()
         networkInfo && networkInfo->reachability() ==
                            QNetworkInformation::Reachability::Disconnected;
     if (m_nodeOffline || m_offlineMode || systemDisconnected || !m_backend ||
-        !hasOwnerSigningCapability()) {
+        projectInstancePending() || !hasOwnerSigningCapability()) {
         return;
     }
     if (m_connectedAtMs <= 0)
@@ -3848,7 +3846,7 @@ void MainWindow::probeRelayLatency()
     // request. Automatic offline mode is different: its one marked probe is
     // how we discover that the connection has returned.
     if (!m_relaySpeedDot || !m_networkAccess || m_relayProbeInFlight ||
-        (m_offlineMode && !m_offlineModeAuto)) {
+        projectInstancePending() || (m_offlineMode && !m_offlineModeAuto)) {
         return;
     }
     if (!(m_offlineMode && m_offlineModeAuto) &&
@@ -3960,7 +3958,8 @@ void MainWindow::initRelayReachabilityWatch()
             // automatic offline mode in place until its marked HTTP probe
             // succeeds, while allowing a normal session to reconnect now.
             if (m_backend)
-                m_backend->setNetworkAvailable(!m_offlineMode);
+                m_backend->setNetworkAvailable(!m_offlineMode &&
+                                               !projectInstancePending());
             // A machine that started with no network to mesh over has one
             // now; the local room does not care whether the relay answers.
             startLocalMesh();
