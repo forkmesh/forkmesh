@@ -48671,9 +48671,11 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
     # Waiving the independent-review gate is a merge-only option, and only a
     # repository owner reaches the handler that forwards it at all.
     optional = {"sessionToken"} | (
-        {"overrideReview", "deployApproval"} if profile.get("override")
+        {"overrideReview", "deleteHead", "deployApproval"} if profile.get("override")
         else set())
     override_review = value.get("overrideReview", False) if isinstance(
+        value, dict) else False
+    delete_head = value.get("deleteHead", False) if isinstance(
         value, dict) else False
     if (
         not isinstance(value, dict)
@@ -48682,6 +48684,7 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
         or value.get("schemaVersion") != 1
         or value.get("type") != profile["wireType"]
         or not isinstance(override_review, bool)
+        or not isinstance(delete_head, bool)
     ):
         return None
     try:
@@ -48713,6 +48716,7 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
         # Absent unless waived, so a mirror that predates the waiver keeps
         # receiving exactly the request shape it already accepts.
         **({"overrideReview": True} if override_review else {}),
+        **({"deleteHead": True} if delete_head else {}),
         **({
             "sessionToken": clean_string(
                 value.get("sessionToken", ""), 512).strip()
