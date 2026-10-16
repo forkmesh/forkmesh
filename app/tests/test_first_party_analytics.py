@@ -54,7 +54,8 @@ def test_site_controller_is_consent_gated_and_first_party():
     assert "sdk.optOut();" in stop and "sdk.shutdown();" in stop
     assert "if (!library || !started) return;" in start
     assert "PRODUCT_ACTIONS.has(action)" in js
-    assert 'sdk.capture("forkmesh_product_action", { action });' in js
+    assert 'sdk.capture("forkmesh_product_action", {' in js
+    assert "stage: PRODUCT_ACTIONS.get(action)," in js
     assert '"home-pro-membership"' in js
     assert '"repository-clone-copied"' in js
     assert "data-forkmesh-product-action" in js

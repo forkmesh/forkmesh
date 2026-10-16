@@ -204,6 +204,80 @@ pacing (on pace, fast, slow, over budget) and totals per currency and channel;
 currencies are never added together. Self-serve channels link to their ad
 console.
 
+## Advisor
+
+`GET /api/marketing/<org>/advisor` (any member; a read, so no activity ping)
+returns `{advisor, adPlan}`. Both read the package's own records and the last
+`ADVISOR_WINDOW_DAYS` (30) days of Analytics through the same
+`analytics.campaign_report` call the Website page makes. They live on their
+own route so that loading the dashboard does not scan Analytics events on
+every visit.
+
+`advisor` is one ranked list of next to-dos across the whole organization:
+`items` (at most 40) of `{id, priority: high|medium|low, score, area, title,
+detail, channel, campaignId, action}`, plus `total`, `byPriority` and
+`byArea`. `score` is 300, 200 or 100 for the priority plus a weight inside it,
+and items are ordered by it. `id` is stable (`channel-fresh-x`,
+`ad-pacing-<id>`, …), so one cause appears once. The rules:
+
+| Area | Items |
+| --- | --- |
+| website | Analytics not installed or without a project (high); no conversion goal (high); the Website page's "where to improve" findings (their level mapped to a priority) |
+| content | A scheduled item past its date (high); nothing scheduled in the next 7 days |
+| ads | Pacing over or overspent (high) or under; an ad link that fails the link checks; each unmet ad-readiness check; "start a test on" the top placement once readiness passes |
+| growth | No funnel week for last week; the bottleneck rate below its target; experiments past their review or end date (high); more running than the limit; nothing running while the backlog has a scored idea |
+| campaigns, search | The campaign suggestions (`overview.suggestions`) except their channel lines |
+| community | Open Reddit threads to review |
+| channels | One item per failing health check (stale numbers, posting, shrinking audience, missing link) and channels not set up |
+
+`action.type` is one of `campaign`, `campaign-edit`, `content`,
+`content-open`, `channel`, `keyword`, `page` (`page`), `ad` (`id`), `ad-new`
+(`channel`), `experiment` (`id`), `funnel-new`, `goals`, `analytics`. The
+weekly report starts with the top 10 under "Advisor: next to-dos".
+
+The web **Advisor** page (`?page=advisor`, next to Dashboard; "All to-dos" on
+the Marketing agent panel) lists the items with area tabs, a priority
+filter and each item's action. **Done** hides an item on that device for 7
+days (`localStorage` `forkmesh.marketing.advisorDone.<org>`); nothing is
+stored on the server.
+
+### Ad placement plan
+
+`adPlan` ranks where to advertise: `recommendations` of `{id, channel, name,
+kind, score, why, how, suggestedDailyBudget: {low, high, currency}, targeting,
+landingPage, link, measure, evidence, manager}`, `readiness`, `ready`,
+`landingPage`, `campaign`, `currency`. The package never calls an ad platform.
+
+Each placement in `AD_PLACEMENTS` starts from a fixed prior: how much intent
+its audience has (search highest, broad social and display lowest) and how
+well it fits a developer audience. Evidence moves the score:
+
+- unpaid sessions from the placement's hosts in the window, compared with the
+  site-wide conversion rate (at most ±15; at least `SMALL_SAMPLE` sessions, and
+  only with goals; with too few the reason says so);
+- logged ads on that channel: conversions add up to 15, spend on 50 or more
+  clicks with no conversion takes 25 off;
+- three or more tracked search terms add 5 to search placements, which use
+  them (and Analytics `utm_term`s) as `targeting`; Reddit targets the watch
+  list.
+
+`link` is a tagged link built with the link builder: the best-converting
+landing page (at least `SMALL_SAMPLE` sessions), else the attribution landing
+URL, with `utm_source` for the placement, `utm_medium` `cpc`, `paid_social` or
+`sponsorship`, and the first open campaign's tag (else `ads-test`). The
+budget currency is the one most of the organization's ads use. "Developer
+newsletters and ad networks" has no catalog channel, so its ads are logged on
+whichever channel fits.
+
+`readiness` checks: Analytics received visits in 7 days, a goal is defined, a
+landing page converted, an open campaign has a tag, tracked domains are
+listed, a planned ad has a budget, and a growth experiment is planned or
+running. The Ads manager shows **Where to advertise** (top six, with Plan ad,
+Copy link and the ad console) and **Ad readiness** with a Fix action per
+unmet check. Plan ad opens New ad with the channel, the tagged link and the
+targeting filled in. [docs/marketing/ads-plan.md](../../../docs/marketing/ads-plan.md)
+explains ForkMesh's own ranking.
+
 ## Growth
 
 - **Funnel scorecard**: one row per week (Monday, UTC) with visits, signups,
@@ -432,8 +506,10 @@ neither does a failed request.
 
 ## Surfaces
 
-- **Web**: Dashboard, Website channel, Channels (cards with health, playbooks,
-  desks and actions), Ads manager and Growth.
+- **Web**: Dashboard, Advisor, Website channel, Channels (cards with health,
+  playbooks, desks and actions), Ads manager (with Where to advertise and Ad
+  readiness) and Growth. The Advisor and the ad plan are web-only for now; the
+  desktop and phone apps do not show them yet.
 - **Desktop** (`MarketingDashboard.cpp`, `MarketingPages.cpp`,
   `MarketingCommon.cpp`): the same five sections from the same API, a channel
   bar with one chip per channel (each with a sparkline), a page per channel

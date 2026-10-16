@@ -177,6 +177,7 @@
       secondary.href = "/login";
       primary.textContent = "Sign up";
       primary.href = "/signup";
+      primary.dataset.forkmeshProductAction = "home-signup-nav";
       primary.removeAttribute("title");
       primary.removeAttribute("aria-label");
       return;
@@ -185,6 +186,7 @@
     // inject markup.
     secondary.textContent = "Dashboard";
     secondary.href = "https://app.forkmesh.com/";
+    delete primary.dataset.forkmeshProductAction;
     primary.textContent = "";
     primary.append(makeAvatar(session));
     const status = document.createElement("span");

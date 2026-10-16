@@ -15,7 +15,8 @@ instance's data key.
 | Session replay | DOM snapshot + mutations, mouse movement, clicks, scroll, input (masked), viewport. Player with speed, skip-inactivity, and an event timeline. |
 | Heatmaps | Click, rage-click, and mouse-movement maps plus scroll depth per page. |
 | Feature flags | Boolean and multivariate flags, percentage rollout, person-property and static-cohort targeting, JSON payloads. |
-| Experiments | A/B results per variant from flag exposures and a goal, with lift and a significance test. |
+| Conversions | Conversion goals (any event, with property filters), conversion rate per visitor and per session against the previous period, by channel and landing page. |
+| Experiments | A/B results per variant from flag exposures and a goal, with lift and a significance test. A website playbook sets up the instance's own goals, funnels and homepage experiment. |
 | Surveys | Open text, rating, NPS, single / multiple choice, link. URL, flag, and event targeting. Results with NPS. |
 | Errors | `$exception` grouping by fingerprint with users, sessions, and a jump to the replay. |
 | Dashboards | Saved insights, dashboards of tiles, annotations, JSON export. |
@@ -159,6 +160,7 @@ unknown_project` until a site project exists. The documentation pages show
 | `POST /{org}/projects` | Create a project (owner/admin) |
 | `GET/PATCH/DELETE /{org}/projects/{id}` | Read (with 30-day usage), update settings, delete with all data |
 | `POST /{org}/projects/{id}/rotate-key` | Replace the write key |
+| `POST /{org}/projects/{id}/playbook` | Add the website playbook (owner/admin); see Conversions |
 | `POST /{org}/projects/{id}/query` | Run an insight; see below |
 | `GET/POST /{org}/projects/{id}/objects?kind=` | List / create saved objects |
 | `GET/PATCH/DELETE /{org}/projects/{id}/objects/{objectId}` | One saved object |
@@ -176,7 +178,9 @@ Saved object kinds: `insight` `{name, description, query, pinned}`,
 `annotation` `{content, date}`, `flag` `{key, name, active, conditions:
 [{properties, rolloutPercent, variant}], variants: [{key, percent}], payloads}`,
 `experiment` `{name, flagKey, goal, status, startedAt, endedAt}`, `survey`
-`{name, active, questions, targeting, appearance}`.
+`{name, active, questions, targeting, appearance}`, `goal` `{name,
+description, event, properties, pinned}` (kept in the project settings, see
+Conversions).
 
 Every query body carries `kind`, `from`, `to` (ms), and optionally `filters`,
 `filterTestAccounts`, `tzOffsetMinutes`. The response is
@@ -207,6 +211,52 @@ lte is_set is_not_set`; a cohort filter's `value` is the cohort id. A
 | `experiment` | `flagKey`, `goal` (series) | `variants: [{variant, exposures, conversions, conversionRate, lift, probabilityToBeatControl, significant}]` |
 | `survey` | `surveyId` | `shown dismissed sent responseRate questions` |
 | `campaigns` | `goals` (up to 5 series), `groupBy: campaign|content|source|landing|term`, `host`, `limit` (≤200) | `totals`, `previous` (`sessions visitors pageviews bounces bounceRate averageSessionMs conversions conversionRate goals`, plus `taggedSessions taggedShare` on `totals`), `rows: [{key, source, medium, campaign?, content?, landing?, term?, topSources? (term only), …totals, previousSessions, previousConversions, tagged, topLanding}]`, `goals` (labels), `rowCount` |
+| `conversions` | `goals` (up to 10 series), `interval` | `totals`, `previous` (`visitors sessions`), `goals: [{name, conversions, sessions, events, rate, sessionRate, previous: {conversions, sessions, rate}}]`, `labels`, `series: [{name, data, total}]` (converting visitors per bucket), `channels` and `landing` (`[{value, sessions, visitors, conversions: [per goal], rates: [per goal]}]`, at most 12 and 20 rows) |
+
+### Conversions and the website playbook (1.6.0)
+
+A **goal** is one event, or an action, with optional property filters: a
+sign-up click, a copied install command, a finished form. Goals use the
+objects API (`kind=goal`) but are stored in the project's sealed settings
+(`settings.goals`, at most 20), not in `analytics_objects`: that table's
+`kind` CHECK constraint lists the older kinds, and widening it would mean
+rebuilding the table on every existing instance.
+
+The `conversions` query counts, for each goal, the visitors who reached it
+(`conversions`, `rate` = over all visitors of the range), the sessions with a
+goal event (`sessions`, `sessionRate`), and the goal events. `previous` is the
+window of the same length just before. Each session is credited to its
+landing pageview's channel (the overview's classes) and landing path. The web
+page shows it as the **Conversions** tab (`#analytics/conversions`).
+
+The **website playbook** (`SITE_PLAYBOOK`, version `PLAYBOOK_VERSION`) holds
+what the instance's own pages need, keyed by a stable id:
+
+| Key | Object |
+| --- | --- |
+| `goal.install-intent`, `goal.signup-intent`, `goal.account-created`, `goal.proof-opened` | Goals on `forkmesh_product_action` with `stage` `install`, `signup`, `account`, `interest` |
+| `funnel.home-install` | Saved funnel: homepage pageview → install intent within a day |
+| `funnel.home-account` | Saved funnel: homepage pageview → signup intent → account created within a week |
+| `flag.home-hero-headline` | Multivariate flag, `control` 50 / `concrete` 50, active |
+| `experiment.home-hero-headline` | Running experiment on that flag with install intent as its goal |
+
+The package's periodic hook applies it to the site-default project once per
+playbook version (at most once an hour per isolate); owners and admins can
+apply it to any project with `POST …/playbook`. The applied keys are kept in
+`settings.playbook` (`{version, applied, appliedAt}`, exposed as
+`project.playbook` with `latest`), so an item someone deleted or edited is
+never added again, and a flag whose key already exists is kept as it is.
+Created objects are attributed to `website-playbook`.
+
+**The homepage experiment.** The hero headline "Your Code, Your World." is a
+slogan; the `concrete` variant says what the product does: "Git hosting no
+single provider can take away." The hypothesis is that naming the outcome
+raises the share of homepage visitors who copy the install command or open a
+download (install intent). Only visitors who allowed analytics are assigned:
+everyone else, and anyone whose flag is off, sees `control`. Stop the
+experiment at a significant result (the experiment panel marks it at 95% with
+at least 100 visitors per arm) or after four weeks, then turn the flag off or
+make the winner the default copy.
 
 ### Recordings (1.5.0)
 

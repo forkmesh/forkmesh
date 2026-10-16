@@ -7597,7 +7597,7 @@
                     <span class="home-menu-title">Features</span>
                     <span class="home-menu-desc">Mirror, route, sign and merge across nodes</span>
                   </a>
-                  <a class="home-menu-item" href="/desktop">
+                  <a class="home-menu-item" href="/desktop" data-forkmesh-product-action="home-install-nav">
                     <span class="home-menu-title">Desktop app</span>
                     <span class="home-menu-desc">Run a node on your own machine</span>
                   </a>
@@ -7716,7 +7716,7 @@
               </button>
               <a data-home-auth-secondary class="home-nav-signin" href="/login">Sign in</a>
               <span class="home-nav-divider" aria-hidden="true"></span>
-              <a data-home-auth-primary class="home-nav-signup" href="/signup">Sign up</a>
+              <a data-home-auth-primary class="home-nav-signup" href="/signup" data-forkmesh-product-action="home-signup-nav">Sign up</a>
               <button
                 id="mobile-menu-toggle"
                 type="button"
@@ -7742,7 +7742,7 @@
             <div class="home-mobile-group">
               <p class="home-mobile-heading">Product</p>
               <a href="/features">Features</a>
-              <a href="/desktop">Desktop app</a>
+              <a href="/desktop" data-forkmesh-product-action="home-install-nav">Desktop app</a>
               <a href="/mobile">Mobile app</a>
               <a href="/market">Marketplace</a>
               <a href="/ecosystem">Ecosystem</a>
@@ -8011,14 +8011,22 @@
         </div>
 
         <div class="hero-inner">
-          <h1 id="hero-title" class="motion-in motion-delay-1">
-            Your Code, Your World.
+          <h1 id="hero-title" class="motion-in motion-delay-1" data-fm-experiment="home-hero-headline">
+            <span data-fm-variant="control">Your Code, Your World.</span>
+            <span data-fm-variant="concrete" hidden>Git hosting no single provider can take away.</span>
           </h1>
-          <p class="hero-sub motion-in motion-delay-2">
-            Need more than a mirror? ForkMesh gives you collaboration,
-            mirroring, and preservation across independent hosts &mdash; so you
-            can launch faster, keep your code verifiable, and avoid depending on
-            a single provider.
+          <p class="hero-sub motion-in motion-delay-2" data-fm-experiment="home-hero-headline">
+            <span data-fm-variant="control">
+              Need more than a mirror? ForkMesh gives you collaboration,
+              mirroring, and preservation across independent hosts &mdash; so you
+              can launch faster, keep your code verifiable, and avoid depending on
+              a single provider.
+            </span>
+            <span data-fm-variant="concrete" hidden>
+              ForkMesh mirrors every repository across independent hosts, so your
+              code stays online, portable and verifiable when any one of them goes
+              away. Collaboration is built in. Install the desktop app in one command.
+            </span>
           </p>
 
           <div class="hero-agent motion-in motion-delay-3">
@@ -8047,6 +8055,7 @@
                 id="hero-agent-copy"
                 class="hero-agent-copy"
                 data-copy="curl -fsSL https://forkmesh.com/install.sh | bash"
+                data-forkmesh-product-action="home-install-hero"
                 aria-label="Copy install command"
                 title="Copy install command"
               >
@@ -8063,7 +8072,7 @@
           </div>
 
           <p class="hero-instance motion-in motion-delay-3">
-            <a class="hero-instance-link" href="/start">Start your own instance <span aria-hidden="true">&rarr;</span></a>
+            <a class="hero-instance-link" href="/start" data-forkmesh-product-action="home-start-instance">Start your own instance <span aria-hidden="true">&rarr;</span></a>
             <span class="hero-instance-note">Your own ForkMesh under your name, on your server and domain. We set it up for you, live.</span>
           </p>
         </div>
@@ -8752,7 +8761,7 @@
                       <span class="p-was"></span>
                     </div>
                     <div class="sold"><span class="gdot"></span> Portable and self-hostable forever</div>
-                    <a class="p-btn" href="/signup">Start for free <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+                    <a class="p-btn" href="/signup" data-forkmesh-product-action="home-signup-free">Start for free <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
                   </div>
 
                   <div class="plan" role="columnheader">
@@ -8763,7 +8772,7 @@
                       <span class="p-was"></span>
                     </div>
                     <div class="sold"><span class="gdot"></span> Recognition; no service entitlement</div>
-                    <a class="p-btn" href="/signup">Become a supporter <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+                    <a class="p-btn" href="/signup" data-forkmesh-product-action="home-signup-supporter">Become a supporter <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
                   </div>
 
                   <div class="plan popular" role="columnheader">
@@ -8774,7 +8783,7 @@
                       <span class="p-was"></span>
                     </div>
                     <div class="sold"><span class="gdot"></span> No reserved capacity or SLO</div>
-                    <a class="p-btn" href="/signup">Start Pro <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+                    <a class="p-btn" href="/signup" data-forkmesh-product-action="home-pro-membership">Start Pro <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
                   </div>
 
                   <div class="plan" role="columnheader">
@@ -9668,8 +9677,8 @@
               outlives any single platform.
             </p>
             <div class="final-cta-actions">
-              <a href="/signup" class="button-primary">Get Started <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
-              <a href="/start" class="button-outline">Start your own instance</a>
+              <a href="/signup" class="button-primary" data-forkmesh-product-action="home-signup-final">Get Started <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+              <a href="/start" class="button-outline" data-forkmesh-product-action="home-start-instance">Start your own instance</a>
             </div>
           </div>
         </div>
