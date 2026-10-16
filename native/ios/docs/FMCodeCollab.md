@@ -93,6 +93,9 @@ native/android `collab/*.kt`.
   `issueFilterValues/Options`, `normalizeIssueFilters`, `formatUsd`, `issueStatusText`,
   `parsePatchFiles`, `dartLines`, `changedFilesTitle`, `diffStatBar`, `applyDiffEmphasis`,
   `diffAge`, `collabBadgeTone`.
+- `IssueTaskMove`: `taskBody` and `move` (create the task, send the signed issue delete, trash the
+  task again if the delete fails), behind **Move to task** in `IssueToolsMenu`; see
+  `docs/app/issue-to-task.md`.
 - `DiffFileLayout(file)`: prepared file, `unifiedRows`/`splitRows`, `hunkLabel` ("⋯ 9 unchanged
   lines"), `notices`, `runs(line, syntax:)` (highlighted pieces with intra-line marks, cached).
 

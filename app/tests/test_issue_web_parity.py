@@ -148,6 +148,34 @@ def test_issue_moves_to_a_task_before_it_is_deleted():
     assert "/^[A-Za-z0-9._-]{1,100}$/" in body
 
 
+def test_desktop_issue_moves_to_a_task_before_it_is_deleted():
+    issues = (ROOT.parent / "desktop/src/MainWindowIssues.cpp").read_text()
+    move = _slice(
+        issues,
+        "void MainWindow::moveCurrentIssueToTask()",
+        "void MainWindow::deleteCurrentIssueWithHistory(int number)",
+    )
+    create = move.index('QByteArrayLiteral("POST"), QStringLiteral("/api/tasks")')
+    remove = move.index("store.removeIssue(number, &removeError)")
+    undo = move.index('QByteArrayLiteral("DELETE"),')
+    opened = move.index("openCreatedOrganizationTask(task);")
+    assert create < remove < undo < opened
+    assert "if (!store.canWrite())" in move
+    assert "moveCurrentIssueToTask(); });" in issues
+    assert "&MainWindow::moveCurrentIssueToTask);" in issues
+
+
+def test_phone_issue_moves_create_the_task_before_the_delete():
+    native = ROOT.parent / "native"
+    swift = (native / "ios/ForkMeshCore/Sources/FMCode/Collab/IssueTaskMove.swift").read_text()
+    kotlin = (native / "android/core/src/main/kotlin/com/forkmesh/nativeapp/collab/IssueTaskMove.kt").read_text()
+    for source, create, delete, undo in (
+        (swift, 'tasks("POST", ""', "writer.sendIssue(issue.number, .deleteOwnIssue())", '"DELETE", "/\\(id)"'),
+        (kotlin, 'tasks("POST", ""', "writer.sendIssue(issue.number, IssueEdit.deleteOwnIssue())", 'tasks("DELETE", "/$id"'),
+    ):
+        assert source.index(create) < source.index(delete) < source.index(undo)
+
+
 def test_owner_delete_removes_the_issue_on_every_materializer():
     store = (ROOT.parent / "desktop/src/IssueStore.cpp").read_text()
     apply_remote = store[store.index("bool IssueStore::applyRemoteEvent("):]

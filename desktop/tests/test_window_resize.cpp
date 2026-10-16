@@ -24961,6 +24961,7 @@ else:
                   has(QStringLiteral("Edit/Labels…")) &&
                   has(QStringLiteral("Priority/Raise priority")) &&
                   has(QStringLiteral("Copy link")) &&
+                  has(QStringLiteral("Move to task…")) &&
                   has(QStringLiteral("Delete issue…")),
               QStringLiteral("issue row context menu offers manage actions (%1)")
                   .arg(actions.join(QStringLiteral(" | "))));

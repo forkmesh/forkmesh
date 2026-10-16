@@ -95,6 +95,17 @@ internal object CodeServices {
         }
     }
 
+    fun canManageIssues(repo: Repository): Boolean {
+        val who = account
+        if (who.isEmpty()) return false
+        if (who.equals(repo.owner, ignoreCase = true)) return true
+        return try {
+            api.orgProfile(api.readOwner(repo.owner, repo.name)).canManage
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun canMergePulls(repo: Repository): Boolean {
         if (account.isEmpty()) return false
         return try {
