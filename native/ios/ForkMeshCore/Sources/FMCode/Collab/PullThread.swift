@@ -525,5 +525,7 @@ public enum PullMerge {
 
     public static func mergeLabel(busy: Bool) -> String { busy ? "Merging…" : "Merge pull request" }
 
+    public static let mergeDeleteLabel = "Merge & delete"
+
     public static func mergedNotice(_ number: Int) -> String { "Merged pull request #\(number)." }
 }

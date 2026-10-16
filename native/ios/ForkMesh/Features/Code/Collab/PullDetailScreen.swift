@@ -70,7 +70,13 @@ struct PullDetailScreen: View {
                 VStack(alignment: .leading, spacing: 12) {
                     headerCard(pull)
                     changesCard(pull)
-                    PullMergeCard(repo: repo, pull: pull, onMerged: { refresh() })
+                    PullMergeCard(
+                        repo: repo,
+                        pull: pull,
+                        onMerged: { refresh() },
+                        onMergeAndDelete: DesktopCommandAvailability.shared.available
+                            ? { requestMergeAndDelete(pull) }
+                            : nil)
                     reviewActions(pull)
                     if DesktopCommandAvailability.shared.available && !model.offeredShipCommands.isEmpty {
                         shipControls(pull)
@@ -261,6 +267,13 @@ struct PullDetailScreen: View {
         }
     }
 
+    private func requestMergeAndDelete(_ pull: PublishedPull) {
+        guard let command = PullShipCommands.offered(pull).first(where: { $0.command == "pull.merge_delete" }) else {
+            return
+        }
+        request(command)
+    }
+
     private func refresh() {
         let model: PullDetailModel = self.model
         Task {
@@ -328,9 +341,16 @@ private struct PullMergeCard: View {
     @State private var model: PullMergeModel
 
     private let onMerged: () -> Void
+    private let onMergeAndDelete: (() -> Void)?
 
-    init(repo: Repository, pull: PublishedPull, onMerged: @escaping () -> Void) {
+    init(
+        repo: Repository,
+        pull: PublishedPull,
+        onMerged: @escaping () -> Void,
+        onMergeAndDelete: (() -> Void)?
+    ) {
         self.onMerged = onMerged
+        self.onMergeAndDelete = onMergeAndDelete
         _model = State(initialValue: PullMergeModel(repo: repo, pull: pull, api: CollabEnv.api))
     }
 
@@ -407,6 +427,13 @@ private struct PullMergeCard: View {
                     onPressed: mergeAction
                 )
                 .accessibilityIdentifier("pull-merge")
+                if let onMergeAndDelete {
+                    FmToneButton(
+                        label: PullMerge.mergeDeleteLabel, icon: "delete_sweep_outlined", tone: .success,
+                        onPressed: model.canMerge ? onMergeAndDelete : nil
+                    )
+                    .accessibilityIdentifier("pull-merge-delete")
+                }
                 FmToneButton(label: PullMerge.recheck, icon: "refresh", onPressed: recheckAction)
                 if !plan.clean || !plan.conflicts.isEmpty {
                     PullConflictFixButton(repo: model.repo, pull: model.pull, files: plan.conflicts)

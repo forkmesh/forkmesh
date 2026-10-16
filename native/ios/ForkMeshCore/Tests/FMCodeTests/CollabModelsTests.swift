@@ -641,6 +641,7 @@ final class CollabModelsTests: XCTestCase {
             PullMerge.planCopy(try! XCTUnwrap(conflicted.plan), collabFixturePull),
             "The branches conflict, so this cannot be merged as it stands. Resolve the conflict and refresh.")
         XCTAssertEqual(PullMerge.mergeLabel(busy: true), "Merging…")
+        XCTAssertEqual(PullMerge.mergeDeleteLabel, "Merge & delete")
     }
 
     @MainActor func testApproveReviewComposerSubmitsApproveState() async {
