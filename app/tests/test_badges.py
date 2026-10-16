@@ -212,7 +212,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None):
         return existing_awards or []
 
     ns = _load(
-        "account_badges_handler", "_account_badges",
+        "account_badges_handler", "_account_badges", "_account_badge_progress",
         extra_globals={
             "MAX_NODE_NAME": 63,
             "badge_catalog": badges,
@@ -1622,3 +1622,49 @@ def test_answer_fact_migration_creates_the_table():
     assert "DROP TABLE IF EXISTS badge_answer_facts" in down
     sweep = _function_source("sweep_badge_records")
     assert "complete = pulls and issues and answers" in sweep
+
+
+def test_account_badges_report_progress_toward_locked_badges():
+    rows = [{"badge_slug": "fan_club", "value": 4},
+            {"badge_slug": "stargazer", "value": 9},
+            {"badge_slug": "genies_gift", "value": 1},
+            {"badge_slug": "nope", "value": 3}]
+
+    async def d1_all(env, sql, *params):
+        assert "FROM badge_progress WHERE account_bi=?" in sql
+        return rows
+
+    ns = _load("_account_badge_progress", extra_globals={
+        "badge_catalog": badges, "d1_all": d1_all})
+    out = _run(ns["_account_badge_progress"](None, "ada-bi", {"stargazer"}))
+    assert out == [{"slug": "fan_club", "progress": 4, "unit": "followers",
+                    "nextTier": "default", "nextThreshold": 10}]
+
+
+def test_the_sweep_refreshes_progress_below_the_first_level():
+    sweep = _function_source("run_badge_sweep")
+    assert "refresh_badge_progress(env, slug)" in sweep
+    refresh = _function_source("refresh_badge_progress")
+    assert "m.value>0 AND m.value<?" in refresh
+    assert "value=MAX(value, excluded.value)" in refresh
+
+
+def test_locked_progress_refresh_runs_on_the_real_schema():
+    sql = _badge_sql()
+    db = _sqlite_badge_db()
+    db.execute(
+        "WITH " + sql["BADGE_METRIC_SQL"]["brood"] + " "
+        "INSERT INTO badge_progress (badge_slug, account_bi, value, "
+        "updated_at) SELECT ?, m.account_bi, m.value, ? FROM m "
+        "JOIN users u ON u.user_bi=m.account_bi "
+        "LEFT JOIN badge_progress p ON p.badge_slug=? "
+        "AND p.account_bi=m.account_bi "
+        "WHERE m.value>0 AND m.value<? AND m.value>COALESCE(p.value, 0) "
+        "ON CONFLICT(badge_slug, account_bi) DO UPDATE SET "
+        "value=MAX(value, excluded.value), updated_at=excluded.updated_at",
+        ("brood", 7, "brood", 16))
+    rows = db.execute(
+        "SELECT account_bi, value FROM badge_progress WHERE badge_slug='brood'"
+    ).fetchall()
+    assert [(row["account_bi"], row["value"]) for row in rows] == [
+        ("u_ada", 2)]

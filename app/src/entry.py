@@ -30181,6 +30181,23 @@ async def _record_swept_progress(env, slug, rows, key="value"):
     return awarded
 
 
+async def refresh_badge_progress(env, slug):
+    await ensure_schema(env)
+    await d1_run(
+        env,
+        "WITH " + BADGE_METRIC_SQL[slug] + " "
+        "INSERT INTO badge_progress (badge_slug, account_bi, value, "
+        "updated_at) SELECT ?, m.account_bi, m.value, ? FROM m "
+        "JOIN users u ON u.user_bi=m.account_bi "
+        "LEFT JOIN badge_progress p ON p.badge_slug=? "
+        "AND p.account_bi=m.account_bi "
+        "WHERE m.value>0 AND m.value<? AND m.value>COALESCE(p.value, 0) "
+        "ON CONFLICT(badge_slug, account_bi) DO UPDATE SET "
+        "value=MAX(value, excluded.value), updated_at=excluded.updated_at",
+        slug, int(Date.now()), slug, badge_catalog.badge_tiers(slug)[0])
+    return {"awarded": []}
+
+
 async def award_metric_badges(env, slug):
     await ensure_schema(env)
     rows = await d1_all(
@@ -30587,6 +30604,9 @@ async def run_badge_sweep(env):
     for slug in BADGE_METRIC_SQL:
         sweeps.append(
             (slug, lambda env, slug=slug: award_metric_badges(env, slug)))
+        sweeps.append(
+            ("progress:" + slug,
+             lambda env, slug=slug: refresh_badge_progress(env, slug)))
     for slug in BADGE_FACT_SQL:
         sweeps.append(
             (slug, lambda env, slug=slug: award_fact_badges(env, slug)))
@@ -30777,6 +30797,31 @@ async def _account_badges(env, name_bi):
     return out
 
 
+async def _account_badge_progress(env, name_bi, earned):
+    rows = await d1_all(
+        env,
+        "SELECT badge_slug, value FROM badge_progress WHERE account_bi=?",
+        name_bi)
+    out = []
+    for row in rows or []:
+        slug = badge_catalog.normalize_badge_slug(row.get("badge_slug"))
+        tiers = badge_catalog.badge_tiers(slug)
+        if not slug or not tiers or slug in earned:
+            continue
+        try:
+            value = max(0, int(row.get("value") or 0))
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "slug": slug,
+            "progress": value,
+            "unit": badge_catalog.BADGE_DEFINITIONS[slug].get("unit", ""),
+            "nextTier": badge_catalog.tier_name(0),
+            "nextThreshold": tiers[0],
+        })
+    return out
+
+
 async def badges_catalog_handler(env, request):
     if method_name(request) != "GET":
         return json_response({"error": "method_not_allowed"}, status=405)
@@ -30798,9 +30843,11 @@ async def account_badges_handler(env, request, raw_name):
         return json_response({"error": "not_found"}, status=404)
     method = method_name(request)
     if method == "GET":
+        badges = await _account_badges(env, name_bi)
+        earned = {badge["slug"] for badge in badges}
         return json_response(
-            {"ok": True, "account": name,
-             "badges": await _account_badges(env, name_bi)},
+            {"ok": True, "account": name, "badges": badges,
+             "progress": await _account_badge_progress(env, name_bi, earned)},
             cache_seconds=30)
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
