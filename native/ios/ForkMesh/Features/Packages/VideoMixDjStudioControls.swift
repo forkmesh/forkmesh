@@ -107,6 +107,8 @@ struct DjGearMenu: View {
             Button("Deck A Settings", systemImage: "slider.horizontal.3") { model.sheet = .deck(.a) }
             Button("Deck B Settings", systemImage: "slider.horizontal.3") { model.sheet = .deck(.b) }
             Button("Sampler Pads", systemImage: "square.grid.3x3") { model.sheet = .pads }
+            Divider()
+            Button("Reset All", systemImage: "arrow.counterclockwise", role: .destructive) { model.confirmingReset = true }
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: size * 0.62, weight: .regular))
@@ -139,6 +141,25 @@ struct DjInfoButton: View {
         }
         .buttonStyle(DjPressStyle())
         .accessibilityLabel("Track info")
+    }
+}
+
+struct DjResetButton: View {
+    let model: DjStudioModel
+    let size: CGFloat
+
+    var body: some View {
+        Button {
+            model.confirmingReset = true
+        } label: {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: size * 0.5, weight: .bold))
+                .foregroundStyle(DjTheme.muted)
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(DjPressStyle())
+        .accessibilityLabel("Reset all")
     }
 }
 
