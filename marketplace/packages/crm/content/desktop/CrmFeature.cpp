@@ -576,6 +576,38 @@ QString sheetNameFromFile(const QString &fileName)
     return name.isEmpty() ? QStringLiteral("Imported contacts") : name;
 }
 
+QString autoEmailTip()
+{
+    return QStringLiteral("A model writes the email from their record, our past emails and what "
+                          "got opened or clicked, then sends it at once from the outreach sender. "
+                          "It carries their tracked deck link (investor pipelines) or your referral "
+                          "link, and you get a ping when they open it or click.");
+}
+
+QString autoEmailError(const QString &code, const QString &fallback)
+{
+    static const QHash<QString, QString> known{
+        {QStringLiteral("outreach_forbidden"),
+         QStringLiteral("only owners, admins and the outreach team can send automated emails.")},
+        {QStringLiteral("recently_emailed"),
+         QStringLiteral("they already got an email from the CRM in the last three days.")},
+        {QStringLiteral("contact_closed"), QStringLiteral("they are at an ended stage.")},
+        {QStringLiteral("contact_has_no_email"), QStringLiteral("they have no email address.")},
+        {QStringLiteral("daily_limit_reached"), QStringLiteral("you reached today's outreach limit.")},
+        {QStringLiteral("ai_unavailable"),
+         QStringLiteral("this host has no AI model. Pick Claude Code or Codex as the default "
+                        "agent in Settings to write it on this computer.")},
+        {QStringLiteral("draft_unusable"),
+         QStringLiteral("the draft had placeholders or links we could not check. Try again.")},
+        {QStringLiteral("rate_limited"), QStringLiteral("the AI model is busy. Try again in a minute.")},
+        {QStringLiteral("send_failed"), QStringLiteral("the email provider refused the send.")},
+    };
+    const QString message = known.value(code);
+    if (!message.isEmpty())
+        return message;
+    return fallback.isEmpty() ? QStringLiteral("no answer came back.") : fallback;
+}
+
 // Import failures the worker already closed with a "failed" ping of its own.
 bool workerClosedImport(const QJsonObject &payload)
 {
@@ -3739,6 +3771,8 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     QPushButton *ai = addButton(QStringLiteral("Write with AI"),
                                 QStringLiteral("Gather everything about them and us into a prompt "
                                                "for ChatGPT or Claude to write the message"));
+    QPushButton *autoSend = email.isEmpty() ? nullptr : addButton(
+        QStringLiteral("Send AI email"), autoEmailTip());
     QPushButton *open = addButton(QStringLiteral("Open contact"),
                                   QStringLiteral("Show everything about them in the side panel"));
     QPushButton *contacted = addButton(QStringLiteral("Mark contacted"),
@@ -3757,6 +3791,12 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     connect(ai, &QPushButton::clicked, this, [this, contactId, reach, reason] {
         showAiWriter(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"), reason);
     });
+    if (autoSend) {
+        connect(autoSend, &QPushButton::clicked, this, [this, contactId, reach, reason] {
+            sendAutoEmail(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"),
+                          reason);
+        });
+    }
     connect(open, &QPushButton::clicked, this,
             [this, contactId] { showContactDetail(contactId); });
     connect(contacted, &QPushButton::clicked, this, [this, contactId] {
@@ -8985,15 +9025,19 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     auto *prompt = new QPushButton(QStringLiteral("Write with AI"));
     prompt->setToolTip(QStringLiteral("Gather everything about them and us into a prompt for "
                                       "ChatGPT or Claude to write the message"));
+    auto *autoSend = new QPushButton(QStringLiteral("Send AI email"));
+    autoSend->setToolTip(autoEmailTip());
+    autoSend->setEnabled(!text(contact, "email").isEmpty());
     auto *toot = new QPushButton(QStringLiteral("Log toot"));
     toot->setToolTip(QStringLiteral("Paste a toot's link to log it as a Mastodon "
                                     "conversation with this contact"));
     auto *again = new QPushButton(QStringLiteral("Read again"));
     again->setEnabled(!sources.isEmpty());
-    for (QPushButton *button : {edit, write, draft, prompt, toot, again})
+    for (QPushButton *button : {edit, write, draft, prompt, autoSend, toot, again})
         actions->addWidget(button);
     actions->addStretch(1);
     layout->addLayout(actions);
+    connect(autoSend, &QPushButton::clicked, this, [this, contactId] { sendAutoEmail(contactId); });
     connect(toot, &QPushButton::clicked, this, [this, contactId] { logToot(contactId); });
     connect(again, &QPushButton::clicked, reads, [reads] { reads->readAccounts(true); });
     connect(prompt, &QPushButton::clicked, this,
@@ -10368,6 +10412,101 @@ void CrmFeature::askAgentForEmail(const QString &contactId, const QString &deckU
                                        "opens of the deck link are tracked and pinged.")
                             .arg(agent));
         self->composeEmail(current, subject, body);
+    });
+}
+
+void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
+                               const QString &reason, const QJsonObject &draft)
+{
+    const QJsonObject contact = contactById(contactId);
+    const QString email = text(contact, "email");
+    if (contactId.isEmpty() || email.isEmpty() || m_autoSending.contains(contactId) ||
+        m_organization->currentData().toString().isEmpty())
+        return;
+    if (draft.isEmpty()) {
+        const QString flowId = text(contact, "flow");
+        const bool investor = flowIconId(flowId) == QLatin1String("investors") ||
+                              flowId == QLatin1String("investors") ||
+                              flowId == QLatin1String("investment");
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("Send AI email"),
+            QStringLiteral("Write and send an email to %1 <%2> now?\n\nA model writes it from "
+                           "their record and from what our past emails got opened or clicked "
+                           "for, with %3. It goes out straight away from the outreach sender.")
+                .arg(contactLabel(contact), email,
+                     investor ? QStringLiteral("their tracked deck link")
+                              : QStringLiteral("your referral link")));
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    m_autoSending.insert(contactId);
+    setStatus(QString::fromUtf8("Writing an email to %1\xE2\x80\xA6").arg(contactLabel(contact)));
+    QJsonObject body{{QStringLiteral("contactId"), contactId},
+                     {QStringLiteral("mode"), mode},
+                     {QStringLiteral("reason"), reason},
+                     {QStringLiteral("list"), text(activeSheet(), "name")}};
+    for (auto item = draft.constBegin(); item != draft.constEnd(); ++item)
+        body.insert(item.key(), item.value());
+    const bool written = !draft.isEmpty();
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/outreach/auto")), body,
+            [this, contactId, mode, reason, written](bool ok, const QJsonObject &payload,
+                                                     const QString &error) {
+        m_autoSending.remove(contactId);
+        const QString label = contactLabel(contactById(contactId));
+        const QString code = text(payload, "error");
+        if (ok) {
+            const QJsonObject learning = payload.value(QStringLiteral("learning")).toObject();
+            const int past = learning.value(QStringLiteral("sent")).toInt();
+            setStatus(QString::fromUtf8("Sent \xE2\x80\x9C%1\xE2\x80\x9D to %2. You get a ping when "
+                                        "they open it or click.%3")
+                          .arg(text(payload, "subject"), label,
+                               past ? QStringLiteral(" Learned from %1 past emails (%2% opened, "
+                                                     "%3% clicked).")
+                                          .arg(past)
+                                          .arg(learning.value(QStringLiteral("openRate")).toInt())
+                                          .arg(learning.value(QStringLiteral("clickRate")).toInt())
+                                    : QString()));
+            loadOrganization();
+            return;
+        }
+        if (!written && !text(payload, "prompt").isEmpty() && m_askAgent && m_agentName &&
+            !m_agentName().isEmpty() &&
+            (code == QLatin1String("ai_unavailable") || code == QLatin1String("draft_unusable"))) {
+            autoEmailWithAgent(contactId, mode, reason, payload);
+            return;
+        }
+        setStatus(QStringLiteral("Nothing was sent to %1: %2").arg(label, autoEmailError(code, error)),
+                  true);
+    });
+}
+
+void CrmFeature::autoEmailWithAgent(const QString &contactId, const QString &mode,
+                                    const QString &reason, const QJsonObject &payload)
+{
+    const QString agent = m_agentName();
+    m_autoSending.insert(contactId);
+    setStatus(QString::fromUtf8("The host has no model for this, so %1 is writing the email to "
+                                "%2\xE2\x80\xA6")
+                  .arg(agent, contactLabel(contactById(contactId))));
+    QPointer<CrmFeature> self(this);
+    m_askAgent(text(payload, "prompt"),
+               [self, contactId, mode, reason, agent](const QString &reply, const QString &error) {
+        if (!self)
+            return;
+        self->m_autoSending.remove(contactId);
+        QString subject;
+        QString body;
+        if (!error.isEmpty() || !parseEmailDraft(reply, QString(), &subject, &body)) {
+            self->setStatus(QStringLiteral("%1 did not write the email: %2")
+                                .arg(agent, error.isEmpty() ? QStringLiteral("the reply was empty")
+                                                            : error),
+                            true);
+            return;
+        }
+        self->sendAutoEmail(contactId, mode, reason,
+                            QJsonObject{{QStringLiteral("subject"), subject},
+                                        {QStringLiteral("text"), body},
+                                        {QStringLiteral("model"), agent}});
     });
 }
 

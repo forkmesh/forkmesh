@@ -774,6 +774,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       <div class="mt-3 flex flex-wrap items-center gap-2">
         ${channels.map((channel, index) => `<a data-crm-next-channel="${channel.kind}" href="${escapeHtml(channel.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(channel.title)}" class="${index === 0 ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:bg-secondary"} whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold">${escapeHtml(channel.label)} &#8599;</a>`).join("")}
         <button data-crm-next-ai="${id}" data-crm-next-ai-mode="${mode}" type="button" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
+        ${crmEmailAddress(contact) ? `<button data-crm-next-auto="${id}" data-crm-next-auto-mode="${mode}" type="button" title="${escapeHtml(CRM_AUTO_EMAIL_TITLE)}" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Send AI email</button>` : ""}
         <button data-crm-next-contacted="${id}" type="button" title="Stamp Last contacted now and show the next person" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Mark contacted</button>
         <button data-crm-next-skip="${id}" type="button" title="Show the next person; nothing is saved" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary">Skip</button>
       </div>`);
@@ -801,6 +802,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (event.target.closest("[data-crm-next-unskip]")) { state.crmView.nextSkipped.clear(); renderCrmNextContact(); return; }
     const contacted = event.target.closest("[data-crm-next-contacted]");
     if (contacted) { contacted.disabled = true; void markCrmNextContacted(contacted.dataset.crmNextContacted); return; }
+    const auto = event.target.closest("[data-crm-next-auto]");
+    if (auto) {
+      const mode = auto.dataset.crmNextAutoMode === "reach" ? "reach" : "follow";
+      const next = crmNextContact(mode);
+      void sendCrmAutoEmail(auto.dataset.crmNextAuto, mode, next.contact?.id === auto.dataset.crmNextAuto ? next.reason : "", auto);
+      return;
+    }
     const ai = event.target.closest("[data-crm-next-ai]");
     if (ai) {
       const mode = ai.dataset.crmNextAiMode === "reach" ? "reach" : "follow";
@@ -810,6 +818,46 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     const detail = event.target.closest("[data-crm-contact-detail]");
     if (detail) openCrmContactDetail(detail.dataset.crmContactDetail);
+  }
+
+  const CRM_AUTO_EMAIL_TITLE = "A model writes the email from their record, our past emails and what got opened or clicked, then sends it at once from the outreach sender. It carries their tracked deck link (investor pipelines) or your referral link, and you get a ping when they open it or click.";
+  const CRM_AUTO_EMAIL_ERRORS = {
+    outreach_forbidden: "Only owners, admins and the outreach team can send automated emails.",
+    recently_emailed: "They already got an email from the CRM in the last three days.",
+    contact_closed: "They are at an ended stage, so nothing was sent.",
+    contact_has_no_email: "They have no email address on record.",
+    daily_limit_reached: "You reached today's outreach limit.",
+    ai_unavailable: "This host has no AI model for writing emails. Use Write with AI, or the desktop app's agent.",
+    draft_unusable: "The model's draft had placeholders or links we could not check, so nothing was sent. Try again.",
+    rate_limited: "The AI model is busy. Try again in a minute.",
+    send_failed: "The email provider refused the send.",
+  };
+
+  function crmEmailAddress(contact) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact?.email || "").trim());
+  }
+
+  async function sendCrmAutoEmail(contactId, mode, reason, button) {
+    const contact = crmContactById(contactId);
+    if (!contact || !crmEmailAddress(contact)) return;
+    const investor = crmFlow(contact.flow)?.icon === "investors" || ["investors", "investment"].includes(contact.flow);
+    const kind = investor ? "their tracked deck link" : "your referral link";
+    if (!window.confirm(`Write and send an email to ${crmContactLabel(contact)} <${contact.email}> now?\n\nA model writes it from their record and what our past emails got opened or clicked for, with ${kind}. It goes out straight away from the outreach sender.`)) return;
+    if (button) { button.disabled = true; button.textContent = "Sending…"; }
+    crmMessage("notice", `Writing an email to ${crmContactLabel(contact)}…`);
+    try {
+      const sent = await crmRequest(crmOrganizationPath("/outreach/auto"), "POST", {
+        contactId, mode, reason, list: crmActiveView()?.name || "",
+      });
+      const learned = sent.learning?.sent ? ` Learned from ${sent.learning.sent} past emails (${sent.learning.openRate}% opened, ${sent.learning.clickRate}% clicked).` : "";
+      crmMessage("notice", `Sent “${sent.subject}” to ${crmContactLabel(contact)}. You get a ping when they open it or click.${learned}`);
+    } catch (error) {
+      const known = CRM_AUTO_EMAIL_ERRORS[error.payload?.error || ""];
+      crmMessage("error", `Nothing was sent: ${known || error.message}`);
+      if (button) { button.disabled = false; button.textContent = "Send AI email"; }
+      return;
+    }
+    await loadCrm();
   }
 
   const CRM_AI_TARGETS = {
@@ -3313,7 +3361,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function crmContactActivity(contact) {
     const items = crmLinkedEmails(contact.id).map((email) => ({
       at: email.sentAt || email.createdAt || 0,
-      label: `${email.direction === "inbound" ? "Received" : "Sent"} · ${crmProviderLabel(email)}`,
+      label: [`${email.direction === "inbound" ? "Received" : email.automated ? "Sent by AI" : "Sent"} · ${crmProviderLabel(email)}`,
+        Number(email.opens) ? `${email.opens} open${Number(email.opens) === 1 ? "" : "s"}` : "",
+        Number(email.clicks) ? `${email.clicks} click${Number(email.clicks) === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
       text: email.subject || "No subject",
       url: crmHttpsUrl(email.providerUrl),
     }));
@@ -3413,6 +3463,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
           <button type="button" data-crm-contact-compose="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Email</button>
           <button type="button" data-crm-contact-toot="${id}" title="Log a toot sent to or from them by pasting its link" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Log toot</button>
           <button type="button" data-crm-contact-ai="${id}" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
+          ${crmEmailAddress(contact) ? `<button type="button" data-crm-contact-auto="${id}" title="${escapeHtml(CRM_AUTO_EMAIL_TITLE)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Send AI email</button>` : ""}
           <button type="button" data-crm-contact-deck="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Deck</button>
           <button type="button" data-crm-contact-link="${id}" title="Copy a link that opens this contact for members of ${escapeHtml(contact.organization || state.crmView.organization)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Copy link</button>
           <button type="button" data-crm-contact-edit="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Open the full form</button>
@@ -6422,6 +6473,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (toot) { void logCrmToot(toot.dataset.crmContactToot); return; }
       const ai = event.target.closest("[data-crm-contact-ai]");
       if (ai) { detailDialog.close(); openCrmAi(ai.dataset.crmContactAi); return; }
+      const auto = event.target.closest("[data-crm-contact-auto]");
+      if (auto) { void sendCrmAutoEmail(auto.dataset.crmContactAuto, "", "", auto); return; }
       const advance = event.target.closest("[data-crm-account-advance]");
       if (advance) { detailDialog.close(); void advanceCrmFromAccount(advance.dataset.crmAccountAdvance); return; }
       // Email, Deck and the full form are dialogs of their own: the card
