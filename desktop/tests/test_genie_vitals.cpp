@@ -796,6 +796,34 @@ void testSaidLog()
 
 }
 
+void testBadgeLine()
+{
+    auto ping = [](const QString &celebrate, const QString &name, const QString &tier) {
+        QJsonObject meta;
+        meta.insert(QStringLiteral("celebrate"), celebrate);
+        meta.insert(QStringLiteral("badgeName"), name);
+        meta.insert(QStringLiteral("tier"), tier);
+        QJsonObject alert;
+        alert.insert(QStringLiteral("meta"), meta);
+        return alert;
+    };
+    check(GeniePings::badgeLine(ping(QStringLiteral("badge"), QStringLiteral("Stargazer"),
+                                     QStringLiteral("default")))
+              == QStringLiteral("You earned Stargazer!"),
+          "a first badge is announced by name");
+    check(GeniePings::badgeLine(ping(QStringLiteral("badge"), QStringLiteral("Fan Club"),
+                                     QStringLiteral("silver")))
+              == QStringLiteral("You reached Silver Fan Club!"),
+          "a level names the metal");
+    check(GeniePings::badgeLine(ping(QStringLiteral("badge"), QString(), QString()))
+              == QStringLiteral("You earned a new badge!"),
+          "a nameless badge still cheers");
+    check(GeniePings::badgeLine(ping(QStringLiteral("crm-email-tracked"),
+                                     QStringLiteral("Stargazer"), QString())).isEmpty(),
+          "other celebrations stay quiet");
+    check(GeniePings::badgeLine(QJsonObject()).isEmpty(), "a ping without meta stays quiet");
+}
+
 int main()
 {
     testScoring();
@@ -808,6 +836,7 @@ int main()
     testLessons();
     testSaidLog();
     testMarketingDigest();
+    testBadgeLine();
     if (failures)
         return 1;
     std::cout << "genie vitals tests passed\n";
