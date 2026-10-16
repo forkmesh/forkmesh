@@ -1761,12 +1761,12 @@ let redditWalkStopped = false;
 
 const walkWait = (low, high) => captureSleep(Math.round(low + Math.random() * (high - low)));
 
-function redditWalkPlan(state) {
-  const subreddits = state.watch.subreddits.map((name) => ({
+function redditWalkPlan(state, rulesOnly = false) {
+  const subreddits = rulesOnly ? [] : state.watch.subreddits.map((name) => ({
     kind: "subreddit", label: `r/${name}`,
     url: `https://www.reddit.com/r/${encodeURIComponent(name)}/new/`,
   }));
-  const searches = state.watch.queries.map((query) => ({
+  const searches = rulesOnly ? [] : state.watch.queries.map((query) => ({
     kind: "search", label: query,
     url: `https://www.reddit.com/search/?q=${encodeURIComponent(query)}&sort=new&t=week`,
   }));
@@ -1872,8 +1872,9 @@ async function redditWalkStart(request, sender) {
     await redditSave(current);
     return current;
   });
-  const stops = redditWalkPlan(state);
-  if (!stops.length) throw new ApiError("reddit_watch_empty", 400);
+  const rulesOnly = request?.rulesOnly === true;
+  const stops = redditWalkPlan(state, rulesOnly);
+  if (!stops.length) throw new ApiError(rulesOnly && state.watch.subreddits.length ? "reddit_rules_on_file" : "reddit_watch_empty", 400);
   redditWalking = true;
   redditWalkStopped = false;
   try {

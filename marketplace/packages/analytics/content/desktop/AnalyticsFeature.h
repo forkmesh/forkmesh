@@ -39,6 +39,8 @@ public:
     static QString durationText(qint64 milliseconds);
     static QString changeText(double current, double previous);
     static QJsonObject overviewQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes);
+    static QJsonObject campaignQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes, const QString &groupBy,
+                                     const QString &host);
     static QString snippetText(const QString &origin, const QString &writeKey);
     static QString projectName(const QJsonObject &project);
 
@@ -52,6 +54,8 @@ private:
     void refreshOrganizations();
     void loadOrganization();
     void loadOverview();
+    void loadCampaigns(int serial);
+    void fillCampaigns(const QString &groupBy, const QJsonObject &result);
     void installPlugin();
     void createProject();
     void copySnippet();
@@ -86,6 +90,9 @@ private:
     QTableWidget *m_devices = nullptr;
     QTableWidget *m_browsers = nullptr;
     QTableWidget *m_events = nullptr;
+    QTableWidget *m_campaigns = nullptr;
+    QTableWidget *m_landing = nullptr;
+    QTableWidget *m_terms = nullptr;
     QLabel *m_writeKey = nullptr;
     QLabel *m_truncated = nullptr;
     QJsonArray m_organizations;
