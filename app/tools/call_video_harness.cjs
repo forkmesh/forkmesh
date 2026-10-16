@@ -7,7 +7,7 @@ const path = require("path");
 
 const REPOSITORY = path.resolve(__dirname, "..", "..");
 const PUBLIC = path.join(REPOSITORY, "app", "public");
-const NATIVE_PAGE = path.join(REPOSITORY, "native", "ios", "ForkMesh", "Features", "Chat", "Calls");
+const NATIVE_PAGE = path.join(REPOSITORY, "native", "ios", "ForkMesh", "Features", "FaceChanger");
 const TYPES = {
   ".js": "text/javascript", ".html": "text/html", ".jpg": "image/jpeg", ".png": "image/png",
   ".json": "application/json", ".fmnn": "application/octet-stream",

@@ -3,6 +3,7 @@ import FMBase
 import FMChat
 import Foundation
 import Observation
+import SwiftUI
 import WebKit
 
 enum CallAudioRoute {
@@ -33,6 +34,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
         if let previewed = current, previewed.previewing, media == .video {
             previewed.previewing = false
+            previewed.dropRecording()
             do {
                 _ = try await previewed.run(
                     "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
@@ -58,9 +60,14 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         return peer
     }
 
+    var busy: Bool {
+        guard let current else { return false }
+        return !current.previewing
+    }
+
     func preview(face: String, background: String, image: String, faceImage: String = "") async throws -> WebCallPeer {
         if let previewed = current, previewed.previewing { return previewed }
-        current?.close()
+        guard !busy else { throw WebCallError.failed("busy") }
         let peer = WebCallPeer { [weak self] closed in
             if self?.current === closed { self?.current = nil }
         }
@@ -406,4 +413,12 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     ) async -> WKPermissionDecision {
         origin.host == WebCallPeer.origin?.host ? .grant : .deny
     }
+}
+
+struct WebCallSurface: UIViewRepresentable {
+    let webView: WKWebView
+
+    func makeUIView(context: Context) -> WKWebView { webView }
+
+    func updateUIView(_ view: WKWebView, context: Context) {}
 }

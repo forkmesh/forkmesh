@@ -1,7 +1,7 @@
 const { test, expect, chromium } = require("@playwright/test");
 const path = require("node:path");
 
-const PAGE = path.resolve(__dirname, "..", "..", "..", "native", "ios", "ForkMesh", "Features", "Chat", "Calls", "direct-call.html");
+const PAGE = path.resolve(__dirname, "..", "..", "..", "native", "ios", "ForkMesh", "Features", "FaceChanger", "direct-call.html");
 const URL_PAGE = "http://127.0.0.1:4179/__native/direct-call.html";
 
 const BRIDGE = `
