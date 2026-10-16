@@ -75,6 +75,14 @@
             .an-kpi-delta { margin-top: .1rem; font-size: .68rem; color: var(--an-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             .an-delta-good { color: var(--an-good); font-weight: 600; }
             .an-delta-bad { color: var(--an-bad); font-weight: 600; }
+            .an-kpi-pick { display: block; width: 100%; text-align: left; font: inherit; color: var(--an-fg); cursor: pointer; }
+            .an-kpi-pick > span { display: block; }
+            .an-kpi-pick:hover { border-color: var(--an-muted); }
+            .an-kpi-pick[aria-pressed="true"] { border-color: rgb(var(--dashboard-primary-rgb)); box-shadow: inset 0 0 0 1px rgb(var(--dashboard-primary-rgb)); }
+            .an-kpi-pick:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+            .an-table .an-col-pick { background: rgb(var(--dashboard-primary-rgb) / .08); }
+            .an-table th.an-col-pick { color: var(--an-fg); }
+            .an-table .an-th-goal { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
             .an-grid-2 { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
             .an-grid-3 { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }
             .an-split { display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr); }
@@ -277,6 +285,7 @@
               <div data-analytics-app class="an-stack" hidden>
                 <nav data-analytics-tabs class="an-tabs" role="tablist" aria-label="Analytics sections">
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="overview" aria-selected="true"><i data-lucide="layout-dashboard"></i>Overview</button>
+                  <button type="button" role="tab" class="an-tab" data-analytics-tab="conversions" aria-selected="false"><i data-lucide="target"></i>Conversions</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="insights" aria-selected="false"><i data-lucide="line-chart"></i>Insights</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="dashboards" aria-selected="false"><i data-lucide="layout-grid"></i>Dashboards</button>
                   <button type="button" role="tab" class="an-tab" data-analytics-tab="events" aria-selected="false"><i data-lucide="list"></i>Events</button>
@@ -340,6 +349,50 @@
                     <section class="an-card">
                       <div class="an-card-head"><h2>Web vitals</h2><span class="an-hint">75th percentile of real visits</span></div>
                       <div data-analytics-vitals class="an-pad"></div>
+                    </section>
+                  </div>
+                </div>
+
+                <div data-analytics-page="conversions" role="tabpanel" class="an-stack" hidden>
+                  <div class="an-row" style="justify-content:space-between">
+                    <p class="an-sub" style="margin:0">A goal counts the visitors who did one event or action. Its rate is converting visitors over all visitors in the range.</p>
+                    <div class="an-row">
+                      <button data-analytics-playbook type="button" class="fm-btn" hidden><i data-lucide="book-open-check"></i>Add website playbook</button>
+                      <button data-analytics-goal-new type="button" class="fm-btn fm-btn-cta"><i data-lucide="plus"></i>New goal</button>
+                    </div>
+                  </div>
+                  <section data-analytics-conversions-empty class="an-card fm-blankslate" hidden>
+                    <i data-lucide="target"></i>
+                    <h2 class="fm-blankslate-title">No conversion goals yet</h2>
+                    <p class="fm-blankslate-desc">A goal is any event that means a visit worked: a click on the signup button, a submitted form, a view of the thank-you page. Each goal gets a conversion rate, a trend, and a breakdown by channel and landing page.</p>
+                    <div class="an-row" style="justify-content:center;margin-top:12px">
+                      <button data-analytics-goal-new type="button" class="fm-btn fm-btn-sm">New goal</button>
+                      <button data-analytics-playbook type="button" class="fm-btn fm-btn-sm" hidden>Add website playbook</button>
+                    </div>
+                  </section>
+                  <div data-analytics-conversions-body class="an-stack" hidden>
+                    <div data-analytics-conversion-kpis class="an-kpis"></div>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>Converting visitors</h2><div class="an-row"><span data-analytics-conversions-interval class="an-hint"></span><div class="an-seg" role="group" aria-label="Goals charted"><button type="button" data-analytics-conversions-chart="one" aria-pressed="true">Selected goal</button><button type="button" data-analytics-conversions-chart="all" aria-pressed="false">All goals</button></div></div></div>
+                      <div class="an-pad"><div data-analytics-conversions-chart-host class="an-chart"></div></div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>By channel</h2><span class="an-hint">Converting sessions and the share of sessions that converted</span></div>
+                      <div data-analytics-conversions-channels></div>
+                    </section>
+                    <section class="an-card">
+                      <div class="an-card-head"><h2>By landing page</h2><span class="an-hint">First page of the session</span></div>
+                      <div data-analytics-conversions-landing></div>
+                    </section>
+                  </div>
+                  <div class="an-split">
+                    <section data-analytics-goals-card class="an-card" hidden>
+                      <div class="an-card-head"><h2>Goals</h2><span data-analytics-goals-note class="an-hint"></span></div>
+                      <div class="an-table-wrap"><table class="an-table"><thead><tr><th scope="col">Goal</th><th scope="col">Event</th><th scope="col" class="r">Conversions</th><th scope="col" class="r">Rate</th><th scope="col">Updated</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead><tbody data-analytics-goals-list></tbody></table></div>
+                    </section>
+                    <section data-analytics-funnels-card class="an-card" hidden>
+                      <div class="an-card-head"><h2>Funnels</h2><button data-analytics-funnel-from-goals type="button" class="fm-btn fm-btn-sm" hidden>Build funnel from goals</button></div>
+                      <div data-analytics-funnels-list></div>
                     </section>
                   </div>
                 </div>

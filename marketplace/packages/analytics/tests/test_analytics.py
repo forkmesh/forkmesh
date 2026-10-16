@@ -471,6 +471,24 @@ def test_experiment_compares_variants_against_control():
     assert rows["control"]["probabilityToBeatControl"] is None
 
 
+def site_action(action, stage, distinct, ago, session):
+    return event("forkmesh_product_action", distinct, ago, session,
+                 action=action, stage=stage, **{"$pathname": "/"})
+
+
+def test_playbook_on_a_project_keeps_an_existing_flag_with_the_same_key():
+    runtime = Runtime()
+    item = project(runtime)
+    path = f"/api/analytics/acme/projects/{item['id']}"
+    call(runtime.use("POST", body={"kind": "flag", "key": "home-hero-headline",
+                                   "active": False}), path + "/objects")
+    added = call(runtime.use("POST"), path + "/playbook")["data"]["added"]
+    assert added == {"goal": 4, "insight": 2, "flag": 0, "experiment": 1}
+    flags = call(runtime.use("GET", params={"kind": "flag"}),
+                 path + "/objects")["data"]["objects"]
+    assert len(flags) == 1 and flags[0]["active"] is False
+
+
 def test_cohorts_actions_and_groups_feed_the_insights():
     runtime = Runtime()
     item = project(runtime)
@@ -830,3 +848,150 @@ def test_manifest_page_and_bundle_contracts():
     for name in ("page.js", "src/page.ui.js", "src/replay-player.js"):
         digest = hashlib.sha256((PACKAGE / "content" / "web" / name).read_bytes())
         assert digest.hexdigest()
+
+
+def product_action(action, stage, distinct, ago, session, **extra):
+    return event("forkmesh_product_action", distinct, ago, session,
+                 action=action, stage=stage, **extra)
+
+
+def test_goals_live_in_settings_behind_the_objects_api():
+    runtime = Runtime()
+    item = project(runtime)
+    path = f"/api/analytics/acme/projects/{item['id']}/objects"
+    created = call(runtime.use("POST", body={
+        "kind": "goal", "name": "Install intent", "event": "forkmesh_product_action",
+        "properties": [{"property": "stage", "operator": "exact", "value": "install"}]}),
+        path)
+    assert created["status"] == 201
+    goal = created["data"]["object"]
+    assert goal["kind"] == "goal" and goal["properties"][0]["type"] == "event"
+    listed = call(runtime.use("GET", params={"kind": "goal"}), path)["data"]["objects"]
+    assert [entry["id"] for entry in listed] == [goal["id"]]
+    renamed = call(runtime.use("PATCH", body={"name": "Install"}), f"{path}/{goal['id']}")
+    assert renamed["data"]["object"]["name"] == "Install"
+    assert renamed["data"]["object"]["event"] == "forkmesh_product_action"
+    settings = call(runtime.use("PATCH", body={"name": "Renamed site"}),
+                    f"/api/analytics/acme/projects/{item['id']}")
+    assert settings["data"]["project"]["settings"]["goals"][0]["name"] == "Install"
+    assert call(runtime.use("DELETE"), f"{path}/{goal['id']}")["data"]["deleted"] is True
+    assert call(runtime.use("GET", params={"kind": "goal"}), path)["data"]["objects"] == []
+    assert runtime.db.execute("SELECT COUNT(*) FROM analytics_objects").fetchone()[0] == 0
+
+
+def test_conversions_rate_goals_per_visitor_channel_and_landing_page():
+    runtime = Runtime()
+    item = project(runtime)
+    key = item["writeKey"]
+    capture(runtime, key, [
+        pageview("/", "a", 5 * HOUR, "sess-aaaa-0001",
+                 **{"$referrer": "https://www.google.com/", "$host": "example.test"}),
+        product_action("home-install-hero", "install", "a", 5 * HOUR - 10, "sess-aaaa-0001"),
+        product_action("home-install-final", "install", "a", 5 * HOUR - 5, "sess-aaaa-0001"),
+        pageview("/", "b", 4 * HOUR, "sess-bbbb-0001", **{"$host": "example.test"}),
+        pageview("/pricing", "c", 3 * HOUR, "sess-cccc-0001", **{"$host": "example.test"}),
+        product_action("home-signup-pricing", "signup", "c", 3 * HOUR - 5, "sess-cccc-0001"),
+        pageview("/", "d", 4 * DAY, "sess-dddd-0001", **{"$host": "example.test"}),
+        product_action("home-install-hero", "install", "d", 4 * DAY - 5, "sess-dddd-0001"),
+    ])
+    goals = [{"event": "forkmesh_product_action", "label": "Install intent",
+              "properties": [{"property": "stage", "operator": "exact", "value": "install"}]},
+             {"event": "forkmesh_product_action", "label": "Signup intent",
+              "properties": [{"property": "stage", "operator": "exact", "value": "signup"}]}]
+    result = query(runtime, item, "conversions", goals=goals, **{"from": NOW - 3 * DAY})
+    assert result["totals"] == {"visitors": 3, "sessions": 3}
+    install, signup = result["goals"]
+    assert (install["conversions"], install["events"], install["sessions"]) == (1, 2, 1)
+    assert install["rate"] == round(1 / 3, 4) and signup["conversions"] == 1
+    assert install["previous"] == {"conversions": 1, "sessions": 1, "rate": 1.0}
+    assert sum(result["series"][0]["data"]) == 1 and len(result["labels"]) >= 3
+    channels = {row["value"]: row for row in result["channels"]}
+    assert channels["Organic search"]["conversions"] == [1, 0]
+    assert channels["Direct"]["sessions"] == 2
+    landing = {row["value"]: row for row in result["landing"]}
+    assert landing["/"]["rates"] == [0.5, 0] and landing["/pricing"]["conversions"] == [0, 1]
+    assert query(runtime, item, "conversions")["goals"] == []
+
+
+def test_website_playbook_sets_up_goals_funnels_and_a_running_experiment():
+    runtime = Runtime()
+    item = project(runtime)
+    base = f"/api/analytics/acme/projects/{item['id']}"
+    assert item["playbook"]["applied"] == [] and item["playbook"]["latest"] == 1
+    assert call(runtime.use("POST", actor="charlie"), base + "/playbook")["status"] == 403
+    applied = call(runtime.use("POST"), base + "/playbook")["data"]
+    assert applied["added"] == {"goal": 4, "insight": 2, "flag": 1, "experiment": 1}
+    assert len(applied["project"]["playbook"]["applied"]) == len(analytics.SITE_PLAYBOOK)
+    objects = lambda kind: call(runtime.use("GET", params={"kind": kind}),
+                                base + "/objects")["data"]["objects"]
+    flag = objects("flag")[0]
+    assert flag["key"] == "home-hero-headline" and flag["active"] is True
+    assert [v["key"] for v in flag["variants"]] == ["control", "concrete"]
+    experiment = objects("experiment")[0]
+    assert experiment["status"] == "running" and experiment["startedAt"] > 0
+    assert experiment["flagKey"] == "home-hero-headline"
+    funnels = [entry for entry in objects("insight") if entry["query"]["kind"] == "funnel"]
+    assert sorted(entry["name"] for entry in funnels) == [
+        "Homepage → account", "Homepage → install"]
+    goal = next(entry for entry in objects("goal") if entry["name"] == "Install intent")
+    call(runtime.use("DELETE"), base + "/objects/" + goal["id"])
+    again = call(runtime.use("POST"), base + "/playbook")["data"]
+    assert again["added"] == {"goal": 0, "insight": 0, "flag": 0, "experiment": 0}
+    decided = call(runtime.use("POST", actor="", body={
+        "key": item["writeKey"], "distinctId": "visitor-1"}), "/api/analytics/_/decide")
+    assert decided["data"]["flags"]["home-hero-headline"] in ("control", "concrete")
+    capture(runtime, item["writeKey"], [
+        event("$feature_flag_called", "visitor-1", 2 * HOUR, "sess-eeee-0001",
+              **{"$feature_flag": "home-hero-headline",
+                 "$feature_flag_response": "concrete"}),
+        product_action("home-install-hero", "install", "visitor-1", HOUR, "sess-eeee-0001")])
+    result = query(runtime, item, "experiment", flagKey="home-hero-headline",
+                   goal=experiment["goal"])
+    assert result["variants"][0]["variant"] == "concrete"
+    assert result["variants"][0]["conversions"] == 1
+
+
+def test_maintenance_applies_the_playbook_to_the_site_project_once():
+    runtime = Runtime()
+    other = project(runtime)
+    item = project(runtime)
+    call(runtime.use("PATCH", body={"siteDefault": True}),
+         f"/api/analytics/acme/projects/{item['id']}")
+    analytics._MAINTENANCE["expired_at"] = 0
+    asyncio.run(analytics.deliver_reminders(runtime))
+    kinds = dict(runtime.db.execute(
+        "SELECT kind,COUNT(*) FROM analytics_objects WHERE project_id=? GROUP BY kind",
+        (item["id"],)).fetchall())
+    assert kinds == {"insight": 2, "flag": 1, "experiment": 1}
+    assert runtime.db.execute("SELECT COUNT(*) FROM analytics_objects WHERE project_id=?",
+                              (other["id"],)).fetchone()[0] == 0
+    analytics._MAINTENANCE["expired_at"] = 0
+    asyncio.run(analytics.deliver_reminders(runtime))
+    assert runtime.db.execute("SELECT COUNT(*) FROM analytics_objects").fetchone()[0] == 4
+    fresh = call(runtime.use("GET"), f"/api/analytics/acme/projects/{item['id']}")
+    assert fresh["data"]["project"]["playbook"]["version"] == analytics.PLAYBOOK_VERSION
+    assert len(fresh["data"]["project"]["settings"]["goals"]) == 4
+
+
+def test_desktop_manages_conversions_funnels_and_experiments():
+    desktop = PACKAGE / "content" / "desktop"
+    build = json.loads((desktop / "build.json").read_text())
+    assert "AnalyticsManage.cpp" in build["sources"]
+    feature = (desktop / "AnalyticsFeature.cpp").read_text()
+    manage = (desktop / "AnalyticsManage.cpp").read_text()
+    for section in ("Overview", "Conversions", "Experiments"):
+        assert 'QStringLiteral("%s")' % section in feature
+    assert "m_sections->addWidget(buildConversionsPage());" in feature
+    assert "m_sections->addWidget(buildExperimentsPage());" in feature
+    assert '{QStringLiteral("kind"), QStringLiteral("conversions")}' in manage
+    assert 'QStringLiteral("/objects?kind=") + kind' in manage
+    assert 'projectPath(QStringLiteral("/playbook"))' in manage
+    assert 'body.insert(QStringLiteral("kind"), QStringLiteral("goal"));' in manage
+    running = manage.split("void AnalyticsFeature::setExperimentRunning(bool running)", 1)[1].split(
+        "\nvoid AnalyticsFeature::", 1)[0]
+    assert 'QJsonObject{{QStringLiteral("active"), running}}' in running
+    assert 'body.insert(QStringLiteral("endedAt"), now);' in running
+    created = manage.split("void AnalyticsFeature::newExperiment()", 1)[1]
+    assert '{QStringLiteral("key"), QStringLiteral("control")}' in created
+    assert '{QStringLiteral("status"), QStringLiteral("running")}' in created
+    assert "if (!canManage())" in created

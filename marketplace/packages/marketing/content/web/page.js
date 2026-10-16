@@ -449,6 +449,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
   function showPage(name) {
     state.view.page = name;
     $(`[data-marketing-dashboard-page]`)?.classList.toggle("hidden", name !== "dashboard");
+    $(`[data-marketing-advisor-page]`)?.classList.toggle("hidden", name !== "advisor");
     $(`[data-marketing-catalog-page]`)?.classList.toggle("hidden", name !== "catalog");
     $(`[data-marketing-ads-page]`)?.classList.toggle("hidden", name !== "ads");
     $(`[data-marketing-growth-page]`)?.classList.toggle("hidden", name !== "growth");
@@ -458,7 +459,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-website-page]`)?.classList.toggle("hidden", name !== "website");
     syncHeader();
     if (name === "catalog") renderCatalog();
-    if (name === "ads") renderAds();
+    if (name === "ads") { renderAds(); renderAdPlan(); void loadAdvisor(); }
+    if (name === "advisor") { renderAdvisor(); void loadAdvisor(); }
     if (name === "growth") renderGrowth();
     if (name === "reddit") renderReddit();
     if (name === "app-store") { renderAppStore(); void loadAppStore(); }
@@ -2653,12 +2655,104 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       : `<li data-level="win">${CHECK_ICON}<span>Nothing needs attention. Ask the agent for ideas.</span></li>`;
   }
   function runSuggestion(index) {
-    const action = state.marketing.suggestions?.[index]?.action || {};
+    runAction(state.marketing.suggestions?.[index]?.action || {});
+  }
+  function runAction(action = {}) {
     if (action.type === "campaign") openCampaign();
     else if (action.type === "campaign-edit") openCampaign(campaignById(action.id));
     else if (action.type === "content") draftForCampaign(state.marketing.campaigns.find((item) => item.name === action.campaign), action.channel);
+    else if (action.type === "content-open") openContent(contentById(action.id));
     else if (action.type === "channel") showPage("channels");
     else if (action.type === "keyword") openKeyword();
+    else if (action.type === "page") showPage(action.page);
+    else if (action.type === "ad") openAd(adById(action.id));
+    else if (action.type === "ad-new") openAdFor({ channel: action.channel || "" });
+    else if (action.type === "experiment") openExperiment(experimentById(action.id));
+    else if (action.type === "funnel-new") openFunnel();
+    else if (action.type === "goals") { showPage("website"); openGoals(); }
+    else if (action.type === "analytics") location.href = "/dashboard/analytics";
+  }
+
+  const ADVISOR_AREAS = { website: "Website", content: "Content", ads: "Ads", growth: "Growth",
+    campaigns: "Campaigns", channels: "Channels", search: "Search", community: "Community" };
+  const ADVISOR_VERBS = { campaign: "New", "campaign-edit": "Open", content: "Draft", "content-open": "Open",
+    channel: "View", keyword: "Add", page: "Open", ad: "Open", "ad-new": "Plan ad", experiment: "Open",
+    "funnel-new": "Log week", goals: "Goals", analytics: "Analytics" };
+  const ADVISOR_DONE_DAYS = 7;
+  function advisorDoneKey() { return `forkmesh.marketing.advisorDone.${state.marketing.organization}`; }
+  function advisorDone() {
+    try { const stored = JSON.parse(localStorage.getItem(advisorDoneKey()) || "{}");
+      const fresh = Object.fromEntries(Object.entries(stored).filter(([, at]) => Date.now() - Number(at) < ADVISOR_DONE_DAYS * DAY));
+      return fresh; }
+    catch (_) { return {}; }
+  }
+  function markAdvisorDone(id) {
+    const done = advisorDone();
+    if (done[id]) delete done[id]; else done[id] = Date.now();
+    try { localStorage.setItem(advisorDoneKey(), JSON.stringify(done)); } catch (_) {}
+    renderAdvisor();
+  }
+  async function loadAdvisor() {
+    if (!state.marketing.installed || state.view.advisorLoading) return;
+    state.view.advisorLoading = true;
+    try { const payload = await request(orgPath("/advisor"));
+      state.marketing.advisor = payload.advisor || null; state.marketing.adPlan = payload.adPlan || null;
+      renderAdvisor(); renderAdPlan(); }
+    catch (error) { message("error", `Could not read the advisor: ${error.message}`); }
+    finally { state.view.advisorLoading = false; }
+  }
+  function advisorItems() {
+    const done = advisorDone(), area = state.view.advisorArea || "", priority = state.view.advisorPriority || "";
+    return (state.marketing.advisor?.items || []).filter((item) => (!area || item.area === area)
+      && (!priority || item.priority === priority) && (state.view.advisorShowDone || !done[item.id]));
+  }
+  function renderAdvisor() {
+    const list = $(`[data-marketing-advisor-list]`); if (!list) return;
+    const advisor = state.marketing.advisor, done = advisorDone();
+    const all = advisor?.items || [];
+    const counts = all.reduce((total, item) => ({ ...total, [item.area]: (total[item.area] || 0) + 1 }), {});
+    $(`[data-marketing-advisor-areas]`).innerHTML = [["", "All", all.length], ...Object.keys(ADVISOR_AREAS).filter((key) => counts[key]).map((key) => [key, ADVISOR_AREAS[key], counts[key]])]
+      .map(([key, label, count]) => `<button data-marketing-advisor-area="${key || "all"}" type="button" role="tab" class="mk-tab" aria-selected="${(state.view.advisorArea || "") === key}">${label}<em>${count}</em></button>`).join("");
+    const items = advisorItems();
+    const byPriority = advisor?.byPriority || {};
+    $(`[data-marketing-advisor-count]`).textContent = advisor ? `${fmtFull(advisor.total || 0)} to-do${advisor.total === 1 ? "" : "s"} · ${fmtFull(byPriority.high || 0)} high` : "Reading…";
+    list.innerHTML = items.map((item) => {
+      const index = all.indexOf(item), verb = ADVISOR_VERBS[item.action?.type];
+      return `<tr${done[item.id] ? ` style="opacity:.6"` : ""}><td><span class="fm-label mk-pill ${escapeHtml(item.priority)}">${escapeHtml(item.priority === "high" ? "High" : item.priority === "medium" ? "Medium" : "Low")}</span></td>
+        <td>${escapeHtml(item.title)}${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</td>
+        <td>${escapeHtml(ADVISOR_AREAS[item.area] || item.area)}${item.channel ? `<small>${escapeHtml(channelLabel(item.channel))}</small>` : ""}</td>
+        <td class="r" style="white-space:nowrap">${verb ? `<button data-marketing-advisor-action="${index}" type="button" class="fm-btn fm-btn-sm">${verb}</button> ` : ""}<button data-marketing-advisor-done="${escapeHtml(item.id)}" type="button" class="mk-link">${done[item.id] ? "Undo" : "Done"}</button></td></tr>`;
+    }).join("");
+    const empty = $(`[data-marketing-advisor-empty]`);
+    empty.hidden = items.length > 0;
+    empty.innerHTML = items.length ? "" : advisor ? blankslate("search", "Nothing to do", all.length ? "Every to-do in this view is marked done." : "Every channel, campaign, ad and experiment is on track.")
+      : blankslate("chart", "Reading your marketing", "The advisor is checking channels, content, ads, experiments and Analytics.");
+  }
+  function renderAdPlan() {
+    const host = $(`[data-marketing-plan]`); if (!host) return;
+    const plan = state.marketing.adPlan;
+    if (!plan) { host.innerHTML = `<li style="display:block">${blankslate("ads", "Ranking ad channels", "Reading visits, conversions and logged ads.")}</li>`; return; }
+    host.innerHTML = plan.recommendations.slice(0, 6).map((item, index) => {
+      const budget = item.suggestedDailyBudget;
+      return `<li><span class="mk-score" title="Score out of 100">${fmtFull(item.score)}</span>
+        <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.how)}</small>
+          <ul>${item.why.map((line) => `<li style="display:list-item;padding:0;border:0">${escapeHtml(line)}</li>`).join("")}</ul>
+          <small>Start at ${fmtFull(budget.low)}–${fmtFull(budget.high)} ${escapeHtml(budget.currency)} a day · measure: ${escapeHtml(item.measure)}${item.targeting?.length ? ` · target: ${escapeHtml(item.targeting.join(", "))}` : ""}</small></span>
+        <span style="display:grid;gap:4px;justify-items:end"><button data-marketing-plan-ad="${index}" type="button" class="fm-btn fm-btn-sm">Plan ad</button>${item.link ? `<button data-marketing-plan-link="${index}" type="button" class="mk-link">Copy link</button>` : ""}${item.manager ? outLink(item.manager, "Ad console ↗", `class="mk-link"`) : ""}</span></li>`;
+    }).join("");
+    $(`[data-marketing-plan-note]`).textContent = plan.landingPage ? `Landing page: ${plan.landingPage}` : "Ranked from your visits, conversions and logged ads";
+    const ready = plan.readiness || [];
+    $(`[data-marketing-readiness-count]`).textContent = `${ready.filter((item) => item.done).length} of ${ready.length} ready`;
+    $(`[data-marketing-readiness]`).innerHTML = ready.map((item, index) => `<li data-done="${item.done}">${item.done ? CHECK_ICON : CLOCK_ICON}<span style="flex:1">${escapeHtml(item.label)}<small style="display:block;font-size:11.5px;color:var(--mk-muted)">${escapeHtml(item.detail)}</small></span>${item.done ? "" : `<button data-marketing-readiness-action="${index}" type="button" class="mk-link">Fix</button>`}</li>`).join("");
+  }
+  function openAdFor(item) {
+    openAd();
+    const channel = $(`[data-marketing-ad-channel]`);
+    if (item.channel && channel && [...channel.options].some((option) => option.value === item.channel)) channel.value = item.channel;
+    if (item.link) $(`[data-marketing-ad-destination]`).value = item.link;
+    if (item.name) $(`[data-marketing-ad-name]`).value = `${item.name} test`;
+    if (item.targeting?.length) $(`[data-marketing-ad-audience]`).value = item.targeting.join(", ");
+    describeAdPlatform();
   }
   function renderAssistantCampaigns() {
     const select = $(`[data-marketing-assistant-campaign]`); if (!select) return;
@@ -3046,7 +3140,9 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     renderInstall(); if (!state.marketing.installed) return;
     try { const payload = await request(orgPath());
       applyOverview(payload);
+      state.marketing.advisor = null; state.marketing.adPlan = null;
       message("error", ""); render(); void loadTraffic();
+      if (["advisor", "ads"].includes(state.view.page)) void loadAdvisor();
       if (state.view.page === "website") void loadPerformance();
       const blog = (state.marketing.settings.channels || []).find((channel) => channel.id === "blog");
       if (blog?.enabled && String(blog.profileUrl || "").trim() &&
@@ -3122,7 +3218,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const wanted = state.marketing.organizations.find((org) => org.name === params.get("org"));
       state.marketing.organization = (wanted || state.marketing.organizations[0]).name; select.value = state.marketing.organization; await load();
       const page = params.get("page") === "performance" ? "website" : params.get("page");
-      if (["website", "ads", "growth", "reddit", "channels", "app-store"].includes(page)) showPage(page);
+      if (["advisor", "website", "ads", "growth", "reddit", "channels", "app-store"].includes(page)) showPage(page);
       const wantedCapture = params.get("capture");
       const wantedXSetup = params.get("xsetup") === "1";
       const wantedRules = params.get("rules") === "1";
@@ -3168,6 +3264,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-funnel-week]`)?.addEventListener("change", (event) => fillFunnel(funnelForWeek(Date.parse(`${event.target.value}T00:00:00Z`))));
     $(`[data-marketing-link-form]`)?.addEventListener("submit", buildLink);
     $(`[data-marketing-goals-open]`)?.addEventListener("click", openGoals);
+    $(`[data-marketing-advisor-priority]`)?.addEventListener("change", (event) => { state.view.advisorPriority = event.target.value; renderAdvisor(); });
+    $(`[data-marketing-advisor-show-done]`)?.addEventListener("change", (event) => { state.view.advisorShowDone = event.target.checked; renderAdvisor(); });
     $(`[data-marketing-goals-form]`)?.addEventListener("submit", saveGoals);
     $(`[data-marketing-funnel-analytics]`)?.addEventListener("click", () => void fillFunnelFromAnalytics());
     $(`[data-marketing-performance-project]`)?.addEventListener("change", (event) => { state.view.performanceProject = event.target.value; void loadPerformance(); });
@@ -3254,6 +3352,12 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if (data.marketingCampaignBrief) copyText(campaignBrief(campaignById(data.marketingCampaignBrief)), "Campaign brief copied as Markdown.");
       else if (data.marketingCampaignLink) copyText(campaignById(data.marketingCampaignLink)?.stats?.taggedLink || "", "Tagged link copied.");
       else if (data.marketingSuggestion) runSuggestion(Number(data.marketingSuggestion));
+      else if (data.marketingAdvisorAction) runAction(state.marketing.advisor?.items?.[Number(data.marketingAdvisorAction)]?.action);
+      else if (data.marketingAdvisorDone) markAdvisorDone(data.marketingAdvisorDone);
+      else if (data.marketingAdvisorArea) { state.view.advisorArea = data.marketingAdvisorArea === "all" ? "" : data.marketingAdvisorArea; renderAdvisor(); }
+      else if (data.marketingPlanAd) openAdFor(state.marketing.adPlan?.recommendations?.[Number(data.marketingPlanAd)] || {});
+      else if (data.marketingPlanLink) copyText(state.marketing.adPlan?.recommendations?.[Number(data.marketingPlanLink)]?.link || "", "Tagged ad link copied.");
+      else if (data.marketingReadinessAction) runAction(state.marketing.adPlan?.readiness?.[Number(data.marketingReadinessAction)]?.action);
       else if (data.marketingIdea) void applyIdea(Number(data.marketingIdea));
       else if (data.marketingKeywordEdit) openKeyword(keywordById(data.marketingKeywordEdit));
       else if (data.marketingKeywordTrack) openKeyword(null, data.marketingKeywordTrack);

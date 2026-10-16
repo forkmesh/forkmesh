@@ -27,6 +27,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QJsonDocument>
 #include <QImage>
 #include <QIntValidator>
 #include <QLabel>
@@ -45,6 +46,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSet>
+#include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -573,6 +575,34 @@ QList<QJsonObject> parseKeywordImport(const QString &source)
     return rows;
 }
 
+const QList<std::pair<QString, QString>> &advisorAreas()
+{
+    static const QList<std::pair<QString, QString>> areas{
+        {QString(), QStringLiteral("All")},
+        {QStringLiteral("website"), QStringLiteral("Website")},
+        {QStringLiteral("content"), QStringLiteral("Content")},
+        {QStringLiteral("ads"), QStringLiteral("Ads")},
+        {QStringLiteral("growth"), QStringLiteral("Growth")},
+        {QStringLiteral("campaigns"), QStringLiteral("Campaigns")},
+        {QStringLiteral("channels"), QStringLiteral("Channels")},
+        {QStringLiteral("search"), QStringLiteral("Search")},
+        {QStringLiteral("community"), QStringLiteral("Community")}};
+    return areas;
+}
+
+QStringList advisorAreaLabels()
+{
+    QStringList labels;
+    for (const auto &area : advisorAreas())
+        labels << area.second;
+    return labels;
+}
+
+QString advisorDoneKey(const QString &organization)
+{
+    return QStringLiteral("marketing/advisorDone/") + organization;
+}
+
 QStringList words(const QJsonValue &value)
 {
     QStringList list;
@@ -597,7 +627,8 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     nav->setSpacing(6);
     m_pageGroup = new QButtonGroup(this);
     nav->addWidget(segmented({QStringLiteral("Dashboard"), QStringLiteral("Channels"),
-                              QStringLiteral("Ads manager"), QStringLiteral("Growth")},
+                              QStringLiteral("Ads manager"), QStringLiteral("Growth"),
+                              QStringLiteral("Advisor")},
                              m_pageGroup, 0, QStringLiteral("Marketing section")));
     nav->addStretch(1);
     const auto tools = [this, nav] {
@@ -651,6 +682,11 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     growthTools->addWidget(goalsButton);
     growthTools->addWidget(reportButton);
     growthTools->addWidget(newExperimentButton);
+
+    QHBoxLayout *advisorTools = tools();
+    auto *advisorRefresh = button(QStringLiteral("Refresh"), false,
+                                  QStringLiteral("Read every channel, campaign, ad, experiment and Analytics again"));
+    advisorTools->addWidget(advisorRefresh);
 
     m_heading->insertWidget(1, m_pageNav, 1);
     m_channelBar = new TileGrid(196, 6);
@@ -724,6 +760,32 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_adsAttention->setSpacing(8);
     m_adsAttentionPanel->body()->addLayout(m_adsAttention);
     m_adsGrid->addPanel(m_adsAttentionPanel, 1);
+    m_adPlanPanel = new DashboardPanel(QStringLiteral("Where to advertise"));
+    m_adPlanPanel->hint()->setText(QStringLiteral("Ranked from your visits, conversions and logged ads"));
+    m_adPlanPanel->body()->setContentsMargins(6, 4, 6, 8);
+    m_adPlanTable = pageTable("marketingAdPlanTable",
+        {QStringLiteral("Score"), QStringLiteral("Where"), QStringLiteral("Start at / day"), QStringLiteral("Measure"),
+         QStringLiteral("Target")}, 1);
+    m_adPlanPanel->body()->addWidget(m_adPlanTable);
+    m_adPlanWhy = hintLabel();
+    m_adPlanWhy->setTextFormat(Qt::RichText);
+    m_adPlanWhy->setContentsMargins(6, 4, 6, 0);
+    m_adPlanPanel->body()->addWidget(m_adPlanWhy);
+    auto *planActions = new QHBoxLayout;
+    planActions->addStretch(1);
+    m_adPlanConsole = new QPushButton(QStringLiteral("Ad console"));
+    m_adPlanLink = new QPushButton(QStringLiteral("Copy link"));
+    m_adPlanAd = new QPushButton(QStringLiteral("Plan ad"));
+    for (QPushButton *item : {m_adPlanConsole, m_adPlanLink, m_adPlanAd})
+        planActions->addWidget(item);
+    m_adPlanPanel->body()->addLayout(planActions);
+    m_adsGrid->addPanel(m_adPlanPanel, 2);
+    m_readinessPanel = new DashboardPanel(QStringLiteral("Ad readiness"));
+    m_readinessPanel->body()->setContentsMargins(6, 4, 6, 8);
+    m_readinessTable = pageTable("marketingAdReadinessTable", {QStringLiteral("Check"), QStringLiteral("Status")}, 0);
+    m_readinessPanel->body()->addWidget(m_readinessTable);
+    m_readinessPanel->body()->addWidget(hintLabel(QStringLiteral("Double-click a check that is not ready to fix it.")));
+    m_adsGrid->addPanel(m_readinessPanel, 1);
     auto *adFilters = new QVBoxLayout;
     adFilters->setSpacing(6);
     auto *adTabsRow = new QHBoxLayout;
@@ -871,6 +933,42 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     growthGrid->addPanel(weeksPanel, 3);
     growth->addWidget(growthGrid);
     growth->addStretch(1);
+
+    QVBoxLayout *advisor = nullptr;
+    addPage(advisor, "marketingAdvisorPage");
+    auto *advisorPanel = new DashboardPanel(QStringLiteral("Next to-dos"));
+    advisorPanel->body()->setContentsMargins(6, 4, 6, 8);
+    m_advisorSummary = advisorPanel->hint();
+    m_advisorPriority = new QComboBox;
+    m_advisorPriority->setAccessibleName(QStringLiteral("Priority"));
+    m_advisorPriority->addItem(QStringLiteral("All priorities"), QString());
+    m_advisorPriority->addItem(QStringLiteral("High"), QStringLiteral("high"));
+    m_advisorPriority->addItem(QStringLiteral("Medium"), QStringLiteral("medium"));
+    m_advisorPriority->addItem(QStringLiteral("Low"), QStringLiteral("low"));
+    advisorPanel->tools()->addWidget(m_advisorPriority);
+    m_advisorShowDone = new QCheckBox(QStringLiteral("Show done"));
+    advisorPanel->tools()->addWidget(m_advisorShowDone);
+    auto *areaRow = new QHBoxLayout;
+    m_advisorArea = new QButtonGroup(this);
+    areaRow->addWidget(segmented(advisorAreaLabels(), m_advisorArea, 0, QStringLiteral("To-do area")));
+    areaRow->addStretch(1);
+    advisorPanel->body()->addLayout(areaRow);
+    m_advisorTable = pageTable("marketingAdvisorTable",
+        {QStringLiteral("Priority"), QStringLiteral("To-do"), QStringLiteral("Why"), QStringLiteral("Area"),
+         QStringLiteral("Channel")}, 2);
+    m_advisorTable->setWordWrap(true);
+    m_advisorTable->setMinimumHeight(360);
+    advisorPanel->body()->addWidget(m_advisorTable);
+    auto *advisorActions = new QHBoxLayout;
+    advisorActions->addWidget(hintLabel(QStringLiteral(
+        "Read from every channel, campaign, piece of content, ad, experiment, the funnel scorecard and the last 30 days of Analytics, most important first. Done hides an item on this computer for 7 days.")), 1);
+    m_advisorDone = new QPushButton(QStringLiteral("Mark done"));
+    m_advisorRun = new QPushButton(QStringLiteral("Open"));
+    advisorActions->addWidget(m_advisorDone);
+    advisorActions->addWidget(m_advisorRun);
+    advisorPanel->body()->addLayout(advisorActions);
+    advisor->addWidget(advisorPanel);
+    advisor->addStretch(1);
 
     auto *reddit = static_cast<QVBoxLayout *>(m_detailRedditBox->layout());
     auto *redditGrid = new DashboardGrid;
@@ -1049,6 +1147,73 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     });
 
     connect(m_pageGroup, &QButtonGroup::idClicked, this, [this](int id) { showPage(id); });
+    connect(advisorRefresh, &QPushButton::clicked, this, [this] { loadAdvisor(); });
+    connect(m_advisorArea, &QButtonGroup::idClicked, this, [this](int) { renderAdvisor(); });
+    connect(m_advisorPriority, &QComboBox::activated, this, [this](int) { renderAdvisor(); });
+    connect(m_advisorShowDone, &QCheckBox::toggled, this, [this](bool) { renderAdvisor(); });
+    const auto advisorItem = [this] {
+        const QString id = rowId(m_advisorTable);
+        for (const QJsonValue &value : m_advisor.value(QStringLiteral("items")).toArray())
+            if (!id.isEmpty() && text(value.toObject(), "id") == id)
+                return value.toObject();
+        return QJsonObject();
+    };
+    connect(m_advisorRun, &QPushButton::clicked, this, [this, advisorItem] {
+        runAdvisorAction(advisorItem().value(QStringLiteral("action")).toObject());
+    });
+    connect(m_advisorTable, &QTableWidget::itemDoubleClicked, this, [this, advisorItem](QTableWidgetItem *) {
+        runAdvisorAction(advisorItem().value(QStringLiteral("action")).toObject());
+    });
+    connect(m_advisorDone, &QPushButton::clicked, this, [this] {
+        if (!rowId(m_advisorTable).isEmpty())
+            toggleAdvisorDone(rowId(m_advisorTable));
+    });
+    connect(m_advisorTable, &QTableWidget::currentCellChanged, this, [this, advisorItem](int, int, int, int) {
+        const QJsonObject item = advisorItem();
+        m_advisorRun->setEnabled(!item.value(QStringLiteral("action")).toObject().isEmpty());
+        m_advisorDone->setEnabled(!item.isEmpty());
+        m_advisorDone->setText(advisorDone().contains(text(item, "id")) ? QStringLiteral("Undo done")
+                                                                         : QStringLiteral("Mark done"));
+    });
+    const auto planItem = [this] {
+        const int row = m_adPlanTable->currentRow();
+        const QJsonArray items = m_adPlan.value(QStringLiteral("recommendations")).toArray();
+        return row >= 0 && row < items.size() ? items.at(row).toObject() : QJsonObject();
+    };
+    connect(m_adPlanTable, &QTableWidget::currentCellChanged, this, [this, planItem](int, int, int, int) {
+        const QJsonObject item = planItem();
+        QStringList lines;
+        for (const QJsonValue &line : item.value(QStringLiteral("why")).toArray())
+            lines << QStringLiteral("• ") + line.toString().toHtmlEscaped();
+        m_adPlanWhy->setText(item.isEmpty() ? QString()
+                                            : QStringLiteral("<b>%1</b><br>%2<br>%3")
+                                                  .arg(text(item, "name").toHtmlEscaped(),
+                                                       text(item, "how").toHtmlEscaped(),
+                                                       lines.join(QStringLiteral("<br>"))));
+        m_adPlanAd->setEnabled(!item.isEmpty());
+        m_adPlanLink->setEnabled(!text(item, "link").isEmpty());
+        m_adPlanConsole->setEnabled(text(item, "manager").startsWith(QLatin1String("https://")));
+    });
+    connect(m_adPlanAd, &QPushButton::clicked, this, [this, planItem] { planAd(planItem()); });
+    connect(m_adPlanTable, &QTableWidget::itemDoubleClicked, this, [this, planItem](QTableWidgetItem *) {
+        planAd(planItem());
+    });
+    connect(m_adPlanLink, &QPushButton::clicked, this, [this, planItem] {
+        if (text(planItem(), "link").isEmpty())
+            return;
+        QGuiApplication::clipboard()->setText(text(planItem(), "link"));
+        setStatus(QStringLiteral("Tagged ad link copied."));
+    });
+    connect(m_adPlanConsole, &QPushButton::clicked, this, [planItem] {
+        const QUrl url(text(planItem(), "manager"));
+        if (url.isValid() && url.scheme() == QLatin1String("https"))
+            QDesktopServices::openUrl(url);
+    });
+    connect(m_readinessTable, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *cell) {
+        const QJsonArray checks = m_adPlan.value(QStringLiteral("readiness")).toArray();
+        if (cell && cell->row() < checks.size() && !checks.at(cell->row()).toObject().value(QStringLiteral("done")).toBool())
+            runAdvisorAction(checks.at(cell->row()).toObject().value(QStringLiteral("action")).toObject());
+    });
     connect(goalsButton, &QPushButton::clicked, this, [this] { editGoals(); });
     connect(m_healthFilter, &QButtonGroup::idClicked, this, [this](int) { renderChannelHealth(); });
     connect(m_channelsSearch, &QLineEdit::textChanged, this, [this](const QString &) { renderChannelHealth(); });
@@ -1153,8 +1318,10 @@ void MarketingFeature::showPage(int page)
     m_detailChannel.clear();
     m_detailRefresh.clear();
     applyView();
-    if (m_page >= 2 && (previous < 2 || m_performance.isEmpty()))
+    if ((m_page == 2 || m_page == 3) && (previous < 2 || previous > 3 || m_performance.isEmpty()))
         loadPerformance();
+    if ((m_page == 2 || m_page == 4) && m_advisor.isEmpty())
+        loadAdvisor();
 }
 
 void MarketingFeature::renderPages()
@@ -3905,6 +4072,231 @@ void MarketingFeature::editTracking()
         targetBody.insert(key, spin->value());
     saveSettings(QJsonObject{{QStringLiteral("attribution"), attributionBody}, {QStringLiteral("targets"), targetBody}},
                  QStringLiteral("Link tracking and targets saved."));
+}
+
+void MarketingFeature::loadAdvisor()
+{
+    if (!m_installed)
+        return;
+    const int serial = ++m_advisorSerial;
+    if (m_advisorSummary)
+        m_advisorSummary->setText(QStringLiteral("Reading…"));
+    request(QByteArrayLiteral("GET"), organizationPath(QStringLiteral("/advisor")), {},
+            [this, serial](bool ok, const QJsonObject &payload, const QString &error) {
+        if (serial != m_advisorSerial)
+            return;
+        if (!ok) {
+            m_advisorSummary->setText(QString());
+            return setStatus(QStringLiteral("The advisor could not read your marketing: %1").arg(error), true);
+        }
+        m_advisor = payload.value(QStringLiteral("advisor")).toObject();
+        m_adPlan = payload.value(QStringLiteral("adPlan")).toObject();
+        renderAdvisor();
+        renderAdPlan();
+    });
+}
+
+QJsonObject MarketingFeature::advisorDone() const
+{
+    const QJsonObject stored = QJsonDocument::fromJson(
+        QSettings().value(advisorDoneKey(m_organization->currentData().toString())).toByteArray()).object();
+    QJsonObject fresh;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (auto it = stored.begin(); it != stored.end(); ++it)
+        if (now - qint64(it.value().toDouble()) < 7 * kDay)
+            fresh.insert(it.key(), it.value());
+    return fresh;
+}
+
+void MarketingFeature::toggleAdvisorDone(const QString &id)
+{
+    QJsonObject done = advisorDone();
+    if (done.contains(id))
+        done.remove(id);
+    else
+        done.insert(id, double(QDateTime::currentMSecsSinceEpoch()));
+    QSettings().setValue(advisorDoneKey(m_organization->currentData().toString()),
+                         QJsonDocument(done).toJson(QJsonDocument::Compact));
+    renderAdvisor();
+}
+
+void MarketingFeature::renderAdvisor()
+{
+    if (!m_advisorTable)
+        return;
+    const QJsonArray items = m_advisor.value(QStringLiteral("items")).toArray();
+    const QJsonObject done = advisorDone();
+    const int areaIndex = qBound(0, m_advisorArea->checkedId(), int(advisorAreas().size()) - 1);
+    const QString area = advisorAreas().at(areaIndex).first;
+    const QString priority = m_advisorPriority->currentData().toString();
+    QHash<QString, int> counts;
+    for (const QJsonValue &value : items)
+        ++counts[text(value.toObject(), "area")];
+    QStringList labels;
+    for (const auto &[key, label] : advisorAreas())
+        labels << (key.isEmpty() ? QStringLiteral("All %1").arg(items.size())
+                                 : counts.value(key) ? QStringLiteral("%1 %2").arg(label).arg(counts.value(key)) : label);
+    setSegmentLabels(m_advisorArea, labels);
+    const QString previous = rowId(m_advisorTable);
+    const QSignalBlocker blocker(m_advisorTable);
+    m_advisorTable->setRowCount(0);
+    const bool dark = palette().color(QPalette::Window).lightness() < 128;
+    for (const QJsonValue &value : items) {
+        const QJsonObject item = value.toObject();
+        const QString id = text(item, "id");
+        if ((!area.isEmpty() && text(item, "area") != area) || (!priority.isEmpty() && text(item, "priority") != priority)
+            || (!m_advisorShowDone->isChecked() && done.contains(id)))
+            continue;
+        const QString level = text(item, "priority");
+        QString areaLabel = text(item, "area");
+        for (const auto &[key, label] : advisorAreas())
+            if (key == areaLabel)
+                areaLabel = label;
+        addRow(m_advisorTable,
+               {level == QLatin1String("high") ? QStringLiteral("High")
+                : level == QLatin1String("medium") ? QStringLiteral("Medium") : QStringLiteral("Low"),
+                text(item, "title"), text(item, "detail"), areaLabel,
+                text(item, "channel").isEmpty() ? QString() : channelLabel(text(item, "channel"))},
+               id, -1, {QString(), text(item, "title"), text(item, "detail")});
+        const int row = m_advisorTable->rowCount() - 1;
+        QTableWidgetItem *badge = m_advisorTable->item(row, 0);
+        badge->setForeground(level == QLatin1String("high")     ? QColor(dark ? "#f0685f" : "#d1453b")
+                             : level == QLatin1String("medium") ? QColor(dark ? "#e3a008" : "#b26a00")
+                                                                : palette().color(QPalette::PlaceholderText));
+        if (done.contains(id))
+            for (int column = 0; column < m_advisorTable->columnCount(); ++column)
+                m_advisorTable->item(row, column)->setForeground(palette().color(QPalette::PlaceholderText));
+    }
+    m_advisorTable->resizeRowsToContents();
+    int select = 0;
+    for (int row = 0; row < m_advisorTable->rowCount(); ++row)
+        if (m_advisorTable->item(row, 0)->data(Qt::UserRole).toString() == previous)
+            select = row;
+    if (m_advisorTable->rowCount())
+        m_advisorTable->setCurrentCell(select, 0);
+    const QJsonObject byPriority = m_advisor.value(QStringLiteral("byPriority")).toObject();
+    m_advisorSummary->setText(m_advisor.isEmpty() ? QStringLiteral("Reading…")
+                              : items.isEmpty()    ? QStringLiteral("Nothing to do: everything is on track")
+                                                   : QStringLiteral("%1 to-dos · %2 high · %3 medium")
+                                                         .arg(int(number(m_advisor, "total")))
+                                                         .arg(int(number(byPriority, "high")))
+                                                         .arg(int(number(byPriority, "medium"))));
+    const QString current = rowId(m_advisorTable);
+    QJsonObject selected;
+    for (const QJsonValue &value : items)
+        if (!current.isEmpty() && text(value.toObject(), "id") == current)
+            selected = value.toObject();
+    m_advisorRun->setEnabled(!selected.value(QStringLiteral("action")).toObject().isEmpty());
+    m_advisorDone->setEnabled(!selected.isEmpty());
+    m_advisorDone->setText(done.contains(current) ? QStringLiteral("Undo done") : QStringLiteral("Mark done"));
+}
+
+void MarketingFeature::renderAdPlan()
+{
+    if (!m_adPlanTable)
+        return;
+    const QJsonArray items = m_adPlan.value(QStringLiteral("recommendations")).toArray();
+    const int previous = m_adPlanTable->currentRow();
+    {
+        const QSignalBlocker blocker(m_adPlanTable);
+        m_adPlanTable->setRowCount(0);
+        for (const QJsonValue &value : items) {
+            const QJsonObject item = value.toObject();
+            const QJsonObject budget = item.value(QStringLiteral("suggestedDailyBudget")).toObject();
+            QStringList targeting;
+            for (const QJsonValue &entry : item.value(QStringLiteral("targeting")).toArray())
+                targeting << entry.toString();
+            addRow(m_adPlanTable,
+                   {QString::number(int(number(item, "score"))), text(item, "name"),
+                    QStringLiteral("%1–%2 %3").arg(int(number(budget, "low"))).arg(int(number(budget, "high")))
+                        .arg(text(budget, "currency")),
+                    text(item, "measure"), targeting.join(QStringLiteral(", "))},
+                   text(item, "id"), -1, {QString(), text(item, "how")});
+        }
+    }
+    m_adPlanPanel->hint()->setText(text(m_adPlan, "landingPage").isEmpty()
+                                       ? QStringLiteral("Ranked from your visits, conversions and logged ads")
+                                       : QStringLiteral("Landing page %1").arg(text(m_adPlan, "landingPage")));
+    if (m_adPlanTable->rowCount())
+        m_adPlanTable->setCurrentCell(qBound(0, previous, m_adPlanTable->rowCount() - 1), 0);
+    else
+        m_adPlanWhy->setText(m_adPlan.isEmpty() ? QStringLiteral("Reading visits, conversions and logged ads…")
+                                                : QString());
+    m_adPlanAd->setEnabled(m_adPlanTable->rowCount() > 0);
+    const QJsonArray checks = m_adPlan.value(QStringLiteral("readiness")).toArray();
+    int ready = 0;
+    m_readinessTable->setRowCount(0);
+    for (const QJsonValue &value : checks) {
+        const QJsonObject check = value.toObject();
+        const bool done = check.value(QStringLiteral("done")).toBool();
+        ready += done;
+        addRow(m_readinessTable, {text(check, "label"), done ? QStringLiteral("Ready") : QStringLiteral("To do")},
+               text(check, "id"), -1, {text(check, "detail"), text(check, "detail")});
+        m_readinessTable->item(m_readinessTable->rowCount() - 1, 1)->setForeground(
+            done ? QColor("#1baf7a") : palette().color(QPalette::PlaceholderText));
+    }
+    m_readinessPanel->hint()->setText(checks.isEmpty() ? QString()
+                                                       : QStringLiteral("%1 of %2 ready").arg(ready).arg(checks.size()));
+}
+
+void MarketingFeature::planAd(const QJsonObject &recommendation)
+{
+    if (recommendation.isEmpty())
+        return;
+    QStringList targeting;
+    for (const QJsonValue &entry : recommendation.value(QStringLiteral("targeting")).toArray())
+        targeting << entry.toString();
+    QJsonObject preset{{QStringLiteral("name"), text(recommendation, "name") + QStringLiteral(" test")},
+                       {QStringLiteral("destinationUrl"), text(recommendation, "link")},
+                       {QStringLiteral("audience"), targeting.join(QStringLiteral(", "))},
+                       {QStringLiteral("currency"), text(recommendation.value(QStringLiteral("suggestedDailyBudget"))
+                                                             .toObject(), "currency")},
+                       {QStringLiteral("budgetType"), QStringLiteral("daily")},
+                       {QStringLiteral("status"), QStringLiteral("draft")}};
+    if (!text(recommendation, "channel").isEmpty())
+        preset.insert(QStringLiteral("channel"), text(recommendation, "channel"));
+    editAd(preset);
+}
+
+void MarketingFeature::runAdvisorAction(const QJsonObject &action)
+{
+    const QString type = text(action, "type");
+    if (type == QLatin1String("campaign")) {
+        editCampaign(QJsonObject());
+    } else if (type == QLatin1String("campaign-edit")) {
+        editCampaign(campaignById(text(action, "id")));
+    } else if (type == QLatin1String("content")) {
+        editContent(QJsonObject{{QStringLiteral("campaign"), text(action, "campaign")},
+                                {QStringLiteral("channel"), text(action, "channel")},
+                                {QStringLiteral("status"), QStringLiteral("draft")}});
+    } else if (type == QLatin1String("content-open")) {
+        editContent(byId(m_content, text(action, "id")));
+    } else if (type == QLatin1String("channel")) {
+        openChannel(text(action, "channel"));
+    } else if (type == QLatin1String("keyword")) {
+        editKeyword(QJsonObject());
+    } else if (type == QLatin1String("ad")) {
+        editAd(byId(m_ads, text(action, "id")));
+    } else if (type == QLatin1String("ad-new")) {
+        planAd(QJsonObject{{QStringLiteral("name"), QStringLiteral("New ad")},
+                           {QStringLiteral("channel"), text(action, "channel")}});
+    } else if (type == QLatin1String("experiment")) {
+        editExperiment(byId(m_experiments, text(action, "id")));
+    } else if (type == QLatin1String("funnel-new")) {
+        editFunnelWeek();
+    } else if (type == QLatin1String("goals")) {
+        editGoals();
+    } else if (type == QLatin1String("page")) {
+        const QString page = text(action, "page");
+        if (page == QLatin1String("growth"))
+            showPage(3);
+        else if (page == QLatin1String("reddit"))
+            openChannel(QStringLiteral("reddit"));
+        else
+            openWebDashboard(QStringLiteral("page=") + QString::fromUtf8(QUrl::toPercentEncoding(page)));
+    } else if (type == QLatin1String("analytics")) {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://app.forkmesh.com/dashboard/analytics")));
+    }
 }
 
 } // namespace forkmesh::marketing

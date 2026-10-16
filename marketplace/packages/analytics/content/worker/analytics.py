@@ -62,11 +62,11 @@ DECIDE_CACHE_MS = 30000
 
 MANAGER_ROLES = frozenset({"owner", "admin"})
 OBJECT_KINDS = ("insight", "dashboard", "cohort", "action", "annotation",
-                "flag", "experiment", "survey")
+                "flag", "experiment", "survey", "goal")
 QUERY_KINDS = ("overview", "trends", "funnel", "retention", "paths",
                "stickiness", "lifecycle", "events", "heatmap", "errors",
                "taxonomy", "propertyValues", "experiment", "survey",
-               "sessions", "campaigns")
+               "sessions", "campaigns", "conversions")
 OPERATORS = ("exact", "is_not", "icontains", "not_icontains", "regex",
              "not_regex", "gt", "gte", "lt", "lte", "is_set", "is_not_set")
 MATHS = ("total", "dau", "sessions", "unique_group", "sum", "avg", "min",
@@ -81,6 +81,80 @@ PUBLIC_PAGE_PREFIXES = ("/docs",)
 FLAG_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 ORIGIN_RE = re.compile(r"^https?://[a-z0-9.-]{1,253}(?::[0-9]{1,5})?$")
+MAX_GOALS = 20
+
+PLAYBOOK_VERSION = 1
+PLAYBOOK_ACTOR = "website-playbook"
+SITE_ACTION_EVENT = "forkmesh_product_action"
+
+
+def _site_step(label, stage="", action=""):
+    if not stage and not action:
+        return {"event": "$pageview", "label": label, "math": "dau",
+                "properties": [{"type": "event", "property": "$pathname",
+                                "operator": "exact", "value": "/"}]}
+    prop, value = ("stage", stage) if stage else ("action", action)
+    return {"event": SITE_ACTION_EVENT, "label": label, "math": "dau",
+            "properties": [{"type": "event", "property": prop,
+                            "operator": "exact", "value": value}]}
+
+
+def _site_goal(name, description, stage):
+    step = _site_step(name, stage)
+    return {"name": name, "description": description, "event": step["event"],
+            "properties": step["properties"], "pinned": True}
+
+
+SITE_PLAYBOOK = (
+    {"key": "goal.install-intent", "kind": "goal", "data": _site_goal(
+        "Install intent",
+        "Copied the desktop install command or opened a download.", "install")},
+    {"key": "goal.signup-intent", "kind": "goal", "data": _site_goal(
+        "Signup intent", "Clicked a sign-up or plan button.", "signup")},
+    {"key": "goal.account-created", "kind": "goal", "data": _site_goal(
+        "Account created", "Finished the sign-up form.", "account")},
+    {"key": "goal.proof-opened", "kind": "goal", "data": dict(_site_goal(
+        "Proof opened", "Opened the product proof, the World or a pricing contract.",
+        "interest"), pinned=False)},
+    {"key": "funnel.home-install", "kind": "insight", "data": {
+        "name": "Homepage → install",
+        "description": "Homepage visitors who then copied the install command "
+                       "or opened a download within a day.",
+        "pinned": True,
+        "query": {"kind": "funnel", "filters": [], "order": "ordered",
+                  "windowSeconds": 86400,
+                  "steps": [_site_step("Homepage view"),
+                            _site_step("Install intent", "install")]}}},
+    {"key": "funnel.home-account", "kind": "insight", "data": {
+        "name": "Homepage → account",
+        "description": "Homepage visitors who clicked a sign-up button and "
+                       "created an account within a week.",
+        "pinned": True,
+        "query": {"kind": "funnel", "filters": [], "order": "ordered",
+                  "windowSeconds": 7 * 86400,
+                  "steps": [_site_step("Homepage view"),
+                            _site_step("Signup intent", "signup"),
+                            _site_step("Account created", "account")]}}},
+    {"key": "flag.home-hero-headline", "kind": "flag", "data": {
+        "key": "home-hero-headline", "name": "Homepage hero headline",
+        "description": "control keeps “Your Code, Your World.”; concrete names "
+                       "the outcome a visitor gets.",
+        "active": True,
+        "conditions": [{"properties": [], "rolloutPercent": 100, "variant": ""}],
+        "variants": [{"key": "control", "percent": 50},
+                     {"key": "concrete", "percent": 50}],
+        "payloads": {}}},
+    {"key": "experiment.home-hero-headline", "kind": "experiment", "data": {
+        "name": "Homepage hero: concrete headline",
+        "description": "Hypothesis: a headline that says what ForkMesh does "
+                       "(Git hosting no single provider can take away) gets more "
+                       "homepage visitors to copy the install command or open a "
+                       "download than the slogan. Goal: install intent. Stop at "
+                       "a significant result or after four weeks.",
+        "flagKey": "home-hero-headline",
+        "goal": _site_step("Install intent", "install"),
+        "status": "running"}},
+)
 
 DATA_SCHEMA_UP = [
     """CREATE TABLE IF NOT EXISTS analytics_projects (
@@ -454,6 +528,15 @@ def _settings_data(data, existing=None):
     return result
 
 
+def _playbook_state(settings):
+    record = settings.get("playbook") if isinstance(settings.get("playbook"), dict) else {}
+    return {"available": True, "version": _integer(record.get("version")),
+            "latest": PLAYBOOK_VERSION,
+            "applied": [key for key in record.get("applied") or ()
+                        if isinstance(key, str)],
+            "appliedAt": _integer(record.get("appliedAt"))}
+
+
 async def _project_project(runtime, row, usage=None):
     settings = _settings_data(None, await _open(runtime, row.get("data"), {}))
     return {"id": str(row.get("project_id") or ""),
@@ -463,6 +546,7 @@ async def _project_project(runtime, row, usage=None):
             "createdAt": _integer(row.get("created_at")),
             "updatedAt": _integer(row.get("updated_at")),
             "settings": settings,
+            "playbook": _playbook_state(settings),
             "usage": usage or {"events": 0, "replayBytes": 0, "requests": 0}}
 
 
@@ -2327,6 +2411,104 @@ def campaigns(events, query, context, start, end):
             "rows": rows[:limit], "rowCount": len(rows)}
 
 
+def _rate(part, whole):
+    return round(part / whole, 4) if whole else 0
+
+
+def _conversion_tally(window, goals, context, buckets=None, place=None):
+    sessions, actors, counts = {}, [set() for _ in goals], [0] * len(goals)
+    for event in window:
+        actor = context.actor(event)
+        key = event.get("s") or ("actor:" + actor)
+        entry = sessions.get(key)
+        if entry is None:
+            entry = sessions[key] = {"first": event, "actor": actor,
+                                     "goals": [0] * len(goals)}
+        elif (event["e"] != "$pageview", event["t"]) < (
+                entry["first"]["e"] != "$pageview", entry["first"]["t"]):
+            entry["first"] = event
+        for position, goal in enumerate(goals):
+            if not _series_matches(event, goal, context):
+                continue
+            entry["goals"][position] = 1
+            actors[position].add(actor)
+            counts[position] += 1
+            slot = place(event["t"]) if place else None
+            if slot is not None:
+                buckets[position][slot].add(actor)
+    return sessions, actors, counts
+
+
+def _conversion_groups(sessions, goals, name_of, limit):
+    table = {}
+    for entry in sessions.values():
+        key = name_of(entry["first"]) or "(none)"
+        row = table.setdefault(key, {"value": key, "sessions": 0, "actors": set(),
+                                     "conversions": [0] * len(goals)})
+        row["sessions"] += 1
+        row["actors"].add(entry["actor"])
+        for position, hit in enumerate(entry["goals"]):
+            row["conversions"][position] += hit
+    ranked = sorted(table.values(), key=lambda row: (-row["sessions"], row["value"]))
+    return [{"value": row["value"], "sessions": row["sessions"],
+             "visitors": len(row["actors"]), "conversions": row["conversions"],
+             "rates": [_rate(count, row["sessions"]) for count in row["conversions"]]}
+            for row in ranked[:limit]]
+
+
+def _landing_name(first):
+    return _path_name(first, "$pageview") if first["e"] == "$pageview" else "(none)"
+
+
+def conversions(events, query, context, start, end):
+    goals = _series(query.get("goals"), 10)
+    filters = _filters(query.get("filters"))
+    interval = query.get("interval") if query.get("interval") in INTERVALS else "day"
+    offset_ms = _bounded(query.get("tzOffsetMinutes"), -840, 840, 0) * 60000
+    labels = _buckets(start, end, interval, offset_ms)
+    index = {label: position for position, label in enumerate(labels)}
+    span = max(1, end - start)
+    current, previous = [], []
+    for event in events:
+        if not _event_matches(event, filters, context):
+            continue
+        if start <= event["t"] <= end:
+            current.append(event)
+        elif start - span <= event["t"] < start:
+            previous.append(event)
+    buckets = [[set() for _ in labels] for _ in goals]
+    sessions, actors, counts = _conversion_tally(
+        current, goals, context, buckets,
+        lambda ts: index.get(_bucket_start(ts, interval, offset_ms)))
+    old_sessions, old_actors, _ = _conversion_tally(previous, goals, context)
+    visitors = len({entry["actor"] for entry in sessions.values()})
+    old_visitors = len({entry["actor"] for entry in old_sessions.values()})
+    rows = []
+    for position, goal in enumerate(goals):
+        converted = sum(entry["goals"][position] for entry in sessions.values())
+        old_converted = sum(entry["goals"][position]
+                            for entry in old_sessions.values())
+        rows.append({
+            "name": _series_label(goal, context),
+            "conversions": len(actors[position]), "sessions": converted,
+            "events": counts[position],
+            "rate": _rate(len(actors[position]), visitors),
+            "sessionRate": _rate(converted, len(sessions)),
+            "previous": {"conversions": len(old_actors[position]),
+                         "sessions": old_converted,
+                         "rate": _rate(len(old_actors[position]), old_visitors)}})
+    return {
+        "totals": {"visitors": visitors, "sessions": len(sessions)},
+        "previous": {"visitors": old_visitors, "sessions": len(old_sessions)},
+        "goals": rows, "labels": labels, "interval": interval,
+        "series": [{"name": row["name"],
+                    "data": [len(cell) for cell in buckets[position]],
+                    "total": row["conversions"]}
+                   for position, row in enumerate(rows)],
+        "channels": _conversion_groups(sessions, goals, _channel, 12),
+        "landing": _conversion_groups(sessions, goals, _landing_name, 20)}
+
+
 def _page_sections(value):
     sections = []
     for item in (value if isinstance(value, list) else [])[:PAGE_SECTION_LIMIT]:
@@ -2383,11 +2565,11 @@ INSIGHTS = {
     "lifecycle": lifecycle, "events": event_list, "heatmap": heatmap,
     "errors": errors, "taxonomy": taxonomy, "propertyValues": property_values,
     "experiment": experiment, "survey": survey_results, "sessions": session_list,
-    "campaigns": campaigns,
+    "campaigns": campaigns, "conversions": conversions,
 }
 # Insights that look at history before the chosen window to classify it.
 LOOKBACK_KINDS = {"overview": 1.0, "lifecycle": 1.0, "retention": 0.0,
-                  "campaigns": 1.0}
+                  "campaigns": 1.0, "conversions": 1.0}
 
 
 # --------------------------------------------------------------------------
@@ -2951,8 +3133,139 @@ async def _object_project(runtime, row):
                 updatedAt=_integer(row.get("updated_at")))
 
 
+def _goal_data(data, existing=None):
+    result = dict(existing or {})
+    for key, limit in (("name", 120), ("description", 1000)):
+        if key in data or key not in result:
+            result[key] = _text(data.get(key), limit)
+    if "event" in data or "event" not in result:
+        result["event"] = _clean(data.get("event"), MAX_EVENT_NAME) or "$pageview"
+    if "properties" in data or "properties" not in result:
+        result["properties"] = _filters(data.get("properties"))
+    if "pinned" in data or "pinned" not in result:
+        result["pinned"] = bool(data.get("pinned"))
+    return result
+
+
+def _stored_goals(settings):
+    return [dict(goal) for goal in settings.get("goals") or ()
+            if isinstance(goal, dict) and ID_RE.fullmatch(str(goal.get("id") or ""))]
+
+
+async def _save_settings(runtime, project_id, settings, now):
+    await runtime.d1_run(
+        "UPDATE analytics_projects SET data=?,updated_at=? WHERE project_id=?",
+        await _seal(runtime, settings), now, project_id)
+
+
+async def _handle_goals(runtime, method, project, actor, item, data):
+    settings = project["settings"]
+    goals = _stored_goals(settings)
+    if not item and method == "GET":
+        return _response(runtime, {"ok": True, "kind": "goal", "objects": [
+            dict(goal, kind="goal") for goal in goals]})
+    now = runtime.now()
+    if not item:
+        if len(goals) >= MAX_GOALS:
+            return _response(runtime, {"error": "object_limit_reached"}, 409)
+        goal = dict(_goal_data(data), id=runtime.new_id(), createdBy=actor,
+                    updatedBy=actor, createdAt=now, updatedAt=now)
+        goals.append(goal)
+        status, verb = 201, "create"
+    else:
+        goal = next((entry for entry in goals if entry["id"] == item), None)
+        if goal is None:
+            return _response(runtime, {"error": "object_not_found"}, 404)
+        if method == "GET":
+            return _response(runtime, {"ok": True, "object": dict(goal, kind="goal")})
+        if method == "DELETE":
+            goals = [entry for entry in goals if entry["id"] != item]
+            status, verb = 200, "delete"
+        else:
+            goal.update(_goal_data(data, goal), updatedBy=actor, updatedAt=now)
+            status, verb = 200, "update"
+    settings["goals"] = goals
+    await _save_settings(runtime, project["id"], settings, now)
+    await runtime.audit(actor, "analytics.goal.%s" % verb, "analytics_object",
+                        goal["id"])
+    if verb == "delete":
+        return _response(runtime, {"ok": True, "deleted": True})
+    return _response(runtime, {"ok": True, "object": dict(goal, kind="goal")}, status)
+
+
+async def _insert_object(runtime, project, kind, parsed, actor, now):
+    object_id = runtime.new_id()
+    await runtime.d1_run(
+        "INSERT INTO analytics_objects(object_id,project_id,org_bi,kind,"
+        "created_by_name,updated_by_name,created_at,updated_at,data) "
+        "VALUES(?,?,?,?,?,?,?,?,?)", object_id, project["id"], project["org_bi"],
+        kind, actor, actor, now, now, await _seal(runtime, parsed))
+    return object_id
+
+
+async def _apply_playbook(runtime, project, actor, now):
+    settings = project["settings"]
+    record = settings.get("playbook") if isinstance(settings.get("playbook"), dict) else {}
+    applied = [key for key in record.get("applied") or () if isinstance(key, str)]
+    added = {"goal": 0, "insight": 0, "flag": 0, "experiment": 0}
+    goals = _stored_goals(settings)
+    flags = None
+    for entry in SITE_PLAYBOOK:
+        if entry["key"] in applied:
+            continue
+        kind, data = entry["kind"], json.loads(json.dumps(entry["data"]))
+        if kind == "goal":
+            if len(goals) >= MAX_GOALS:
+                continue
+            goals.append(dict(_goal_data(data), id=runtime.new_id(),
+                              createdBy=actor, updatedBy=actor, createdAt=now,
+                              updatedAt=now))
+        else:
+            if kind == "flag":
+                if flags is None:
+                    flags = await _objects(runtime, project["id"], "flag")
+                if any(flag.get("key") == data["key"] for flag in flags):
+                    applied.append(entry["key"])
+                    continue
+            if kind == "experiment":
+                data["startedAt"] = now
+            await _insert_object(runtime, project, kind, OBJECT_PARSERS[kind](data),
+                                 actor, now)
+        added[kind] += 1
+        applied.append(entry["key"])
+    settings["goals"] = goals
+    settings["playbook"] = {"version": PLAYBOOK_VERSION, "applied": applied,
+                            "appliedAt": now}
+    await _save_settings(runtime, project["id"], settings, now)
+    _DECIDE_CACHE.pop(project["id"], None)
+    return added, settings["playbook"]
+
+
+async def _apply_site_playbook(runtime, now):
+    row = await runtime.d1_first(
+        "SELECT project_id,org_bi,data FROM analytics_projects "
+        "WHERE site_default=1 ORDER BY created_at LIMIT 1")
+    if not row:
+        return None
+    settings = _settings_data(None, await _open(runtime, row.get("data"), {}))
+    record = settings.get("playbook") if isinstance(settings.get("playbook"), dict) else {}
+    if _integer(record.get("version")) >= PLAYBOOK_VERSION:
+        return None
+    project_id = str(row["project_id"])
+    added, _ = await _apply_playbook(runtime, {
+        "id": project_id, "org_bi": str(row["org_bi"]), "settings": settings},
+        PLAYBOOK_ACTOR, now)
+    await runtime.audit(PLAYBOOK_ACTOR, "analytics.playbook.apply",
+                        "analytics_project", project_id)
+    return added
+
+
 async def _handle_objects(runtime, method, project, actor, role, item, data):
     project_id = project["id"]
+    wanted = runtime.query_params().get("kind") if method == "GET" else data.get("kind")
+    if (item and any(goal["id"] == item for goal in _stored_goals(project["settings"]))) \
+            or (not item and wanted == "goal"):
+        return await _handle_goals(runtime, method, project, actor, item, data)
     if not item:
         if method == "GET":
             kind = _text(runtime.query_params().get("kind"), 16)
@@ -2977,12 +3290,8 @@ async def _handle_objects(runtime, method, project, actor, role, item, data):
             "AND kind=?", project_id, kind)
         if _integer((count or {}).get("total")) >= MAX_OBJECTS_PER_KIND:
             return _response(runtime, {"error": "object_limit_reached"}, 409)
-        now, object_id = runtime.now(), runtime.new_id()
-        await runtime.d1_run(
-            "INSERT INTO analytics_objects(object_id,project_id,org_bi,kind,"
-            "created_by_name,updated_by_name,created_at,updated_at,data) "
-            "VALUES(?,?,?,?,?,?,?,?,?)", object_id, project_id, project["org_bi"],
-            kind, actor, actor, now, now, await _seal(runtime, parsed))
+        now = runtime.now()
+        object_id = await _insert_object(runtime, project, kind, parsed, actor, now)
         _DECIDE_CACHE.pop(project_id, None)
         await runtime.audit(actor, "analytics.%s.create" % kind,
                             "analytics_object", object_id)
@@ -3294,6 +3603,16 @@ async def _handle_project(runtime, method, org_bi, actor, role, row, data, actio
     if role not in MANAGER_ROLES:
         return _response(runtime, {"error": "organization_admin_required"}, 403)
     now = runtime.now()
+    if action == "playbook":
+        settings = _settings_data(None, await _open(runtime, row.get("data"), {}))
+        added, record = await _apply_playbook(runtime, {
+            "id": project_id, "org_bi": org_bi, "settings": settings}, actor, now)
+        await runtime.audit(actor, "analytics.playbook.apply", "analytics_project",
+                            project_id)
+        fresh = await _project_row(runtime, org_bi, project_id)
+        return _response(runtime, {"ok": True, "added": added, "playbook": {
+            "version": record["version"], "applied": record["applied"]},
+            "project": await _project_project(runtime, fresh)})
     if action == "rotate-key":
         _forget_project(str(row["write_key"]), project_id)
         await runtime.d1_run(
@@ -3479,6 +3798,7 @@ async def deliver_reminders(runtime):
     if now - _MAINTENANCE["expired_at"] >= 3600000:
         _MAINTENANCE["expired_at"] = now
         await _expire(runtime, now)
+        await _apply_site_playbook(runtime, now)
     return {"delivered": 0}
 
 
@@ -3495,7 +3815,7 @@ def _route(path):
         return ("public", match.group(1))
     match = re.fullmatch(
         r"/api/analytics/([a-z][a-z0-9-]{0,62})(?:/projects(?:/([0-9a-f]{32})"
-        r"(?:/(query|objects|persons|groups|recordings|export|rotate-key)"
+        r"(?:/(query|objects|persons|groups|recordings|export|rotate-key|playbook)"
         r"(?:/([A-Za-z0-9_-]{8,64}))?)?)?)?", clean)
     if not match:
         return None
@@ -3558,7 +3878,7 @@ async def handle(runtime, path):
             allowed = ("GET", "POST")
         elif not resource:
             allowed = ("GET", "PATCH", "DELETE")
-        elif resource in ("query", "rotate-key"):
+        elif resource in ("query", "rotate-key", "playbook"):
             allowed = ("POST",) if not item else ()
         elif resource in ("groups", "export"):
             allowed = ("GET",) if not item else ()
@@ -3623,7 +3943,7 @@ async def handle(runtime, path):
     row = await _project_row(runtime, org_bi, project_id)
     if not row:
         return _response(runtime, {"error": "project_not_found"}, 404)
-    if not resource or resource == "rotate-key":
+    if not resource or resource in ("rotate-key", "playbook"):
         return await _handle_project(runtime, method, org_bi, actor, role, row,
                                      data, resource)
     project = {"id": project_id, "org_bi": org_bi, "settings": _settings_data(

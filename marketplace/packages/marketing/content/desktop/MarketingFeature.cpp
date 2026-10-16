@@ -1842,8 +1842,12 @@ void MarketingFeature::loadOrganization()
         }
         applyOrganization(payload);
         loadTraffic();
-        if (m_page >= 2 || m_detailChannel == QLatin1String("reddit"))
+        if (m_page == 2 || m_page == 3 || m_detailChannel == QLatin1String("reddit"))
             loadPerformance();
+        m_advisor = QJsonObject();
+        m_adPlan = QJsonObject();
+        if (m_page == 2 || m_page == 4)
+            loadAdvisor();
         if (m_detailChannel == QLatin1String("app-store") && !m_appStoreLoading)
             loadAppStore();
         if (firstBlogRead)
@@ -3123,8 +3127,8 @@ void MarketingFeature::saveAd(const QString &id, const QJsonObject &body,
 void MarketingFeature::editAd(const QJsonObject &ad)
 {
     QDialog dialog(this);
-    dialog.setWindowTitle(ad.isEmpty() ? QStringLiteral("New ad")
-                                       : QStringLiteral("Edit ad"));
+    dialog.setWindowTitle(text(ad, "id").isEmpty() ? QStringLiteral("New ad")
+                                                   : QStringLiteral("Edit ad"));
     dialog.resize(680, 760);
     auto *layout = new QVBoxLayout(&dialog);
     auto *form = new QFormLayout;
@@ -5596,7 +5600,7 @@ void MarketingFeature::openWebDashboard(const QString &query)
 {
     QUrl url(QString::fromLatin1(kMarketingPage));
     static const QStringList pages{QString(), QStringLiteral("channels"), QStringLiteral("ads"),
-                                   QStringLiteral("growth")};
+                                   QStringLiteral("growth"), QStringLiteral("advisor")};
     QString parameters = QStringLiteral("org=") + QString::fromUtf8(
         QUrl::toPercentEncoding(m_organization->currentData().toString()));
     if (!query.isEmpty())

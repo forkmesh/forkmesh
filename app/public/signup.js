@@ -496,6 +496,7 @@
       localStorage.removeItem("forkmesh.referral.claim");
     } catch (_) {}
     storeSession(body);
+    window.ForkMeshAnalytics?.recordProductAction?.("signup-completed");
     showVerifyView(nodeName, email);
   }
 
