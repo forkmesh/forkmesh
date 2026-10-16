@@ -8,8 +8,11 @@ public enum RSSReaderText {
     public static let onThisIPhone = "On This iPhone"
     public static let netNewsWireURL = "https://netnewswire.com/"
     public static let netNewsWireSourceURL = "https://github.com/Ranchero-Software/NetNewsWire"
+    public static let netNewsWireRequestsURL = "https://github.com/Ranchero-Software/NetNewsWire/issues"
     public static let credit =
         "Inspired by NetNewsWire, the free and open source RSS reader created by Brent Simmons and developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with NetNewsWire and is not affiliated with or endorsed by it."
+    public static let featureCredit =
+        "RSS Reader's smart feeds, timeline, article view and settings follow NetNewsWire's design, and its custom smart feeds, Read Later, content filters, timeline thumbnails, Media RSS images and other recent features were chosen from the feature requests NetNewsWire's users have filed on GitHub. Thanks to Brent Simmons and the NetNewsWire community."
     public static let about =
         "RSS Reader follows blogs, news sites and podcasts through their RSS, Atom and JSON feeds. Your subscriptions, articles and read and starred state stay on this iPhone; it only contacts the sites you follow: their feeds, their icons and images (unless you turn images off), and an article's page when you ask for reader view."
     public static let caughtUp = "You're all caught up."

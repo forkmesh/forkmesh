@@ -1373,7 +1373,9 @@ void testPage(const QString &home)
                            "developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with "
                            "NetNewsWire and is not affiliated with or endorsed by it.")) &&
                   about->text().contains(QStringLiteral("https://netnewswire.com/")) &&
-                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire")),
+                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire")) &&
+                  about->text().contains(QStringLiteral("feature requests NetNewsWire&#39;s users have filed")) &&
+                  about->text().contains(QStringLiteral("https://github.com/Ranchero-Software/NetNewsWire/issues")),
               "About credits NetNewsWire");
         if (auto *dialog = page.findChild<QDialog *>(QStringLiteral("rssSettingsDialog")))
             dialog->close();

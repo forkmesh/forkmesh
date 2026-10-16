@@ -13,13 +13,12 @@ layout follows NetNewsWire for iPhone; the About screen carries the credit.
 | HTML tokenizer, entities, sanitizer, summaries, feed discovery, reader-view extraction | `RSSReaderHTML.swift` |
 | XML tree over `XMLParser`, repair, charset decoding | `RSSReaderXML.swift` |
 | RSS / RDF / Atom / JSON Feed parser, dates, guid rule, OPML | `RSSReaderParser.swift` |
-| Stored models, settings, limits, filter matcher | `RSSReaderModels.swift` |
+| Stored models, settings, limits | `RSSReaderModels.swift` |
 | On-device store and persistence | `RSSReaderStore.swift` |
 | Fetching, redirects, discovery, reader view, bounded refresh | `RSSReaderFetcher.swift` |
-| Site rules for discovery (YouTube, Mastodon, Bluesky) | `RSSReaderDiscovery.swift` |
 | Article page HTML, dates, error texts, the NetNewsWire credit | `RSSReaderPage.swift` |
 | `@Observable` model the screens use | `RSSReaderModel.swift` |
-| Screens | `ForkMesh/Features/Packages/RSSReaderScreen.swift` (Feeds, Add Feed, Feed Info), `RSSReaderTimelineScreen.swift`, `RSSReaderArticleScreen.swift`, `RSSReaderSettingsScreen.swift`, `RSSReaderEditors.swift` (smart feed editor, Filters) |
+| Screens | `ForkMesh/Features/Packages/RSSReaderScreen.swift` (Feeds, Add Feed, Feed Info), `RSSReaderTimelineScreen.swift`, `RSSReaderArticleScreen.swift`, `RSSReaderSettingsScreen.swift` |
 | Tests | `ForkMeshCore/Tests/FMPackagesTests/RSSReader*Tests.swift` |
 
 ## Storage
@@ -29,18 +28,13 @@ slug>/rss-reader/` (the legacy project uses `Application
 Support/rss-reader/`), so removing a project removes its reader too:
 
 - `library.json`: folders, feeds (with ETag, Last-Modified, previous
-  addresses, error state, language and the `paused`, `excludeFromToday`,
-  `excludeFromUnread` switches), settings, `filters`, `smartFeeds`, the
-  activity log (200 entries), collapsed sections and the last refresh time.
+  addresses and error state), settings, the activity log (200 entries),
+  collapsed sections and the last refresh time.
 - `articles-<feed id>.json`: the article list of one feed (title, links,
-  author, 300-character summary, image, language, dates, read, starred, read
-  later).
-- `bodies-<feed id>.json`: sanitized content, comments link, enclosures, the
-  item's images and the cached reader view. Bodies load per feed when an article opens and only
-  the eight most recently used feeds stay in memory. A "Title or Text" filter
-or a smart feed with words reads each feed's bodies the first time it needs
-them and keeps their plain text in memory, so the first count after launch
-can take longer with many feeds.
+  author, 300-character summary, dates, read, starred).
+- `bodies-<feed id>.json`: sanitized content, comments link, enclosures and
+  the cached reader view. Bodies load per feed when an article opens and only
+  the eight most recently used feeds stay in memory.
 
 Writes are atomic with `completeFileProtectionUntilFirstUserAuthentication`,
 run on a background queue, and are debounced (0.8 s) after each change; the

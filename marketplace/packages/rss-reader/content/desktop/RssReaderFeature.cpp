@@ -3707,8 +3707,10 @@ void RssReaderFeature::showSettings()
         "<p>Inspired by NetNewsWire, the free and open source RSS reader created by Brent Simmons and "
         "developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with "
         "NetNewsWire and is not affiliated with or endorsed by it.</p>"
+        "<p>RSS Reader&#39;s smart feeds, timeline, article view and settings follow NetNewsWire&#39;s design, and its custom smart feeds, Read Later, content filters, timeline thumbnails, Media RSS images and other recent features were chosen from the feature requests NetNewsWire&#39;s users have filed on GitHub. Thanks to Brent Simmons and the NetNewsWire community.</p>"
         "<p><a href=\"https://netnewswire.com/\">netnewswire.com</a> · "
-        "<a href=\"https://github.com/Ranchero-Software/NetNewsWire\">github.com/Ranchero-Software/NetNewsWire</a></p>"));
+        "<a href=\"https://github.com/Ranchero-Software/NetNewsWire\">github.com/Ranchero-Software/NetNewsWire</a> · "
+        "<a href=\"https://github.com/Ranchero-Software/NetNewsWire/issues\">NetNewsWire feature requests</a></p>"));
     aboutLayout->addWidget(aboutText);
     aboutLayout->addStretch();
     tabs->addTab(about, QStringLiteral("About"));

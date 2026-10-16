@@ -360,6 +360,8 @@ struct RSSAboutScreen: View {
             Section("Credits") {
                 Text(RSSReaderText.credit)
                     .font(.subheadline)
+                Text(RSSReaderText.featureCredit)
+                    .font(.subheadline)
                 if let site = URL(string: RSSReaderText.netNewsWireURL) {
                     Link(destination: site) {
                         Label("NetNewsWire website", systemImage: "safari")
@@ -368,6 +370,11 @@ struct RSSAboutScreen: View {
                 if let source = URL(string: RSSReaderText.netNewsWireSourceURL) {
                     Link(destination: source) {
                         Label("NetNewsWire source code", systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
+                }
+                if let requests = URL(string: RSSReaderText.netNewsWireRequestsURL) {
+                    Link(destination: requests) {
+                        Label("NetNewsWire feature requests", systemImage: "list.bullet")
                     }
                 }
             }

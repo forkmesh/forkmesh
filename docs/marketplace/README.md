@@ -193,8 +193,7 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
   `competitor`, `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
   `rss-reader` (a local-only feed reader on iPhone, Android and the desktop,
-  [rss-reader.md](rss-reader.md), roadmap in
-  [rss-reader-roadmap.md](rss-reader-roadmap.md)),
+  [rss-reader.md](rss-reader.md)),
   `docs` (the `www/docs` library on desktop and phones), `workflows` with its
   nested `workflows-*` packs ([../app/workflows.md](../app/workflows.md)).
 - **Health:** `calories`, `steps`, `water`, `sleep`, `sugar-break`,

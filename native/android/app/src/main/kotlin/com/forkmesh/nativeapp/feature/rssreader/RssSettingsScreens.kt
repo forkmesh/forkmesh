@@ -487,10 +487,17 @@ internal class RssAboutScreen : Screen() {
                         "Inspired by NetNewsWire, the free and open source RSS reader created by Brent Simmons and developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with NetNewsWire and is not affiliated with or endorsed by it.",
                         style = Fm.text.bodyMedium,
                     )
+                    Text(
+                        "RSS Reader's smart feeds, timeline, article view and settings follow NetNewsWire's design, and its custom smart feeds, Read Later, content filters, timeline thumbnails, Media RSS images and other recent features were chosen from the feature requests NetNewsWire's users have filed on GitHub. Thanks to Brent Simmons and the NetNewsWire community.",
+                        style = Fm.text.bodyMedium,
+                        modifier = Modifier.padding(top = FmSpace.x3),
+                    )
                 }
                 SettingsRow("netnewswire.com", icon = "open_in_new", onClick = { openInBrowser(context, "https://netnewswire.com/") })
                 Divider()
                 SettingsRow("NetNewsWire on GitHub", icon = "open_in_new", onClick = { openInBrowser(context, "https://github.com/Ranchero-Software/NetNewsWire") })
+                Divider()
+                SettingsRow("NetNewsWire feature requests", icon = "open_in_new", onClick = { openInBrowser(context, "https://github.com/Ranchero-Software/NetNewsWire/issues") })
                 Spacer(Modifier.padding(FmSpace.x5))
             }
         }
