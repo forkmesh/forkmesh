@@ -245,6 +245,25 @@ public struct MarketingRecord: Equatable, Sendable, Identifiable {
         }
     }
 
+    public var redditReplyPrompt: String {
+        guard kind == .redditThread else { return "" }
+        let text: String = json.str("body").isEmpty ? json.str("text") : json.str("body")
+        return """
+        Draft one helpful, genuine Reddit reply to the post below. Help the author first and mention ForkMesh only when it directly solves their problem. Do not use hype, unverifiable claims, or a salesy tone. Respect r/\(json.str("subreddit"))'s rules, disclose that I work on or contribute to ForkMesh if recommending it, and use at most one relevant link. Return only a concise draft for me to review and rewrite before posting.
+
+        Reddit post
+        Subreddit: r/\(json.str("subreddit"))
+        Title: \(title)
+        URL: \(json.str("url"))
+        Text: \(text)
+
+        ForkMesh links
+        https://forkmesh.com/
+        https://forkmesh.com/docs/
+        https://github.com/forkmesh/forkmesh
+        """
+    }
+
     public func matches(_ query: String) -> Bool {
         PackagesText.matches(
             query, title, json.str("campaign"), json.str("owner"), json.str("subreddit"), json.str("url"),

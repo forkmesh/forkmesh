@@ -798,15 +798,18 @@ private fun LazyListScope.redditSection(model: MarketingModel, overview: Marketi
             items(threads, key = { "r-" + it.id }) { thread ->
                 var menu by remember { mutableStateOf(false) }
                 val context = LocalContext.current
-                Box {
-                    MarketingRecordRow(thread, overview, model.isWorking(thread.id), onTap = {
-                        navigator.push(MarketingFormScreen(model, MarketingDraft.of(MarketingKind.REDDIT_THREAD, overview, thread.json, thread.id, model.zone)))
-                    }, onLongPress = { menu = true })
-                    MarketingStatusMenu(MarketingKind.REDDIT_THREAD, thread.status, menu, { menu = false }, { next -> runner.run({ setStatus(MarketingKind.REDDIT_THREAD, thread.id, next) }) }) {
-                        FmDropdownMenuItem("Open thread", onClick = { menu = false; crmOpen(context, thread.json.str("url")) }, icon = "open_in_new")
-                        if (thread.json.str("taggedLink").isNotEmpty()) FmDropdownMenuItem("Copy tagged link", onClick = { menu = false; crmCopy(context, thread.json.str("taggedLink")) }, icon = "content_copy")
-                        FmDropdownMenuItem("Delete", onClick = { menu = false; runner.run({ delete(MarketingKind.REDDIT_THREAD, thread.id) }) }, icon = "delete", textColor = Fm.colors.danger)
+                Column {
+                    Box {
+                        MarketingRecordRow(thread, overview, model.isWorking(thread.id), onTap = {
+                            navigator.push(MarketingFormScreen(model, MarketingDraft.of(MarketingKind.REDDIT_THREAD, overview, thread.json, thread.id, model.zone)))
+                        }, onLongPress = { menu = true })
+                        MarketingStatusMenu(MarketingKind.REDDIT_THREAD, thread.status, menu, { menu = false }, { next -> runner.run({ setStatus(MarketingKind.REDDIT_THREAD, thread.id, next) }) }) {
+                            FmDropdownMenuItem("Open thread", onClick = { menu = false; crmOpen(context, thread.json.str("url")) }, icon = "open_in_new")
+                            if (thread.json.str("taggedLink").isNotEmpty()) FmDropdownMenuItem("Copy tagged link", onClick = { menu = false; crmCopy(context, thread.json.str("taggedLink")) }, icon = "content_copy")
+                            FmDropdownMenuItem("Delete", onClick = { menu = false; runner.run({ delete(MarketingKind.REDDIT_THREAD, thread.id) }) }, icon = "delete", textColor = Fm.colors.danger)
+                        }
                     }
+                    FmToneButton("Copy ChatGPT reply prompt", onPressed = { copyToClipboard(context, thread.redditReplyPrompt) }, Modifier.padding(start = 16.dp, bottom = 8.dp), icon = "content_copy")
                 }
             }
         }

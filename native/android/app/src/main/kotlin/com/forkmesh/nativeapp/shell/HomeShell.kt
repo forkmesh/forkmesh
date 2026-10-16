@@ -308,6 +308,7 @@ class HomeShell : Screen() {
 
         val tabNav = navigator(selectedTab)
         val atRoot = tabNav.depth <= 1
+        val shellChromeHidden = tabNav.stack.any { it.hidesShellChrome }
         val codeItem = CodeButton.selected(selectedTab == AppTab.Code, navigator(AppTab.Code).depth)
         val barItems = AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
             if (tab != AppTab.Code) {
@@ -327,7 +328,7 @@ class HomeShell : Screen() {
         }
         val body: @Composable () -> Unit = {
             Column(Modifier.fillMaxSize()) {
-                if (atRoot) {
+                if (!shellChromeHidden && atRoot) {
                     TopBar(
                         connection = relay.connection,
                         onlineCount = relay.onlineCount,
@@ -342,19 +343,19 @@ class HomeShell : Screen() {
                         },
                     )
                     ToolsFeature.TelemetryStrip(tabNav)
-                } else {
+                } else if (!shellChromeHidden) {
                     Spacer(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).windowInsetsTopHeight(WindowInsets.statusBars))
                 }
-                if (surfaces.signIn) AccountFeature.GuestBanner()
-                if (noInstance) NoInstanceBanner() else ConnectionBanner(relay.connection)
-                FmInlineStatusLine(
+                if (!shellChromeHidden && surfaces.signIn) AccountFeature.GuestBanner()
+                if (!shellChromeHidden && noInstance) NoInstanceBanner() else if (!shellChromeHidden) ConnectionBanner(relay.connection)
+                if (!shellChromeHidden) FmInlineStatusLine(
                     linkProblem,
                     isError = true,
                     modifier = Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4),
                     onDismiss = NavigationFeature::clearLinkProblem,
                 )
-                if (wide) FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
-                if (atRoot && selectedTab != AppTab.Agents && agentsOn) {
+                if (!shellChromeHidden && wide) FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
+                if (!shellChromeHidden && atRoot && selectedTab != AppTab.Agents && agentsOn) {
                     RunnerAttentionChip { items ->
                         if (items.size == 1) {
                             RunnerAttentionFeature.open(tabNav, items[0]) { url -> runCatching { uriHandler.openUri(url) } }
@@ -445,7 +446,7 @@ class HomeShell : Screen() {
                     ) {
                         body()
                     }
-                    if (!keyboardUp) {
+                    if (!keyboardUp && !shellChromeHidden) {
                         FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
                         StatusPageFeature.Dots(onOpen = { NavigationFeature.openFromHub(Route.Status) })
                         if (agentsOn) RunningAgentAccessory()

@@ -189,6 +189,26 @@ data class MarketingRecord(val kind: MarketingKind, val json: JsonMap) {
             else -> false
         }
 
+    val redditReplyPrompt: String
+        get() {
+            if (kind != MarketingKind.REDDIT_THREAD) return ""
+            val text = json.str("body").ifEmpty { json.str("text") }
+            return """
+                Draft one helpful, genuine Reddit reply to the post below. Help the author first and mention ForkMesh only when it directly solves their problem. Do not use hype, unverifiable claims, or a salesy tone. Respect r/${json.str("subreddit")}'s rules, disclose that I work on or contribute to ForkMesh if recommending it, and use at most one relevant link. Return only a concise draft for me to review and rewrite before posting.
+
+                Reddit post
+                Subreddit: r/${json.str("subreddit")}
+                Title: $title
+                URL: ${json.str("url")}
+                Text: $text
+
+                ForkMesh links
+                https://forkmesh.com/
+                https://forkmesh.com/docs/
+                https://github.com/forkmesh/forkmesh
+            """.trimIndent()
+        }
+
     fun matches(query: String): Boolean = PackagesText.matches(
         query, title, json.str("campaign"), json.str("owner"), json.str("subreddit"), json.str("url"), json.str("note"),
         json.str("notes"), json.str("hypothesis"),

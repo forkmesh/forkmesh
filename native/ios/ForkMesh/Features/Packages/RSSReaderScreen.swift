@@ -121,6 +121,7 @@ struct RSSReaderScreen: View {
 
     var body: some View {
         list
+            .bareShellTop()
             .navigationTitle(RSSReaderText.feedsTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

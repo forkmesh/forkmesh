@@ -24,6 +24,8 @@ abstract class Screen {
 
     open val title: String get() = javaClass.simpleName
 
+    open val hidesShellChrome: Boolean get() = false
+
     var pluginPackage: String? = null
 
     @Composable
