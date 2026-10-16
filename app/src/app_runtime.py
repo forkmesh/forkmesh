@@ -2018,6 +2018,10 @@ class Default:
             return await world_profile_social_handler(self.env, request)
 
         if url.path in (
+                "/api/world/profile-feed", "/api/world/profile-feed/"):
+            return await world_profile_activity_feed_handler(self.env, request)
+
+        if url.path in (
                 "/api/world/satellites", "/api/world/satellites/"):
             return await world_satellites_handler(self.env, request)
 

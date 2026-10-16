@@ -42720,8 +42720,31 @@
     return data;
   }
 
+  async function pluginDesktopUsage() {
+    if (!state.session?.sessionToken) throw new Error("desktop_sign_in_required");
+    const hub = await desktopControlHub();
+    const desktops = await hub.desktops();
+    const readings = await Promise.all((Array.isArray(desktops) ? desktops : []).map(async (desktop) => {
+      const node = String(desktop?.node || "");
+      if (!node) return null;
+      try {
+        const connection = await hub.connect(node);
+        const usage = await connection.request("agentops.usage", {});
+        return {
+          node,
+          name: String(connection.info?.name || desktop?.name || node),
+          usage: usage && typeof usage === "object" ? usage : {},
+        };
+      } catch (error) {
+        return { node, name: String(desktop?.name || node), error: desktopControlErrorText(error) };
+      }
+    }));
+    return { desktops: readings.filter(Boolean), observedAt: Date.now() };
+  }
+
   const pluginApi = Object.freeze({
     request: pluginRequest,
+    desktopUsage: pluginDesktopUsage,
     select: (selector) => document.querySelector(selector),
     selectAll: (selector) => Array.from(document.querySelectorAll(selector)),
     session: () => state.session ? { ...state.session } : null,

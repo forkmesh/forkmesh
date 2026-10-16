@@ -1487,6 +1487,8 @@ world_organizations_handler = _world_routes.export(
 world_preferences_handler = _world_routes.export("world_preferences_handler")
 world_profile_social_handler = _world_routes.export(
     "world_profile_social_handler")
+world_profile_activity_feed_handler = _world_routes.export(
+    "world_profile_activity_feed_handler")
 world_recent_installs_handler = _world_routes.export(
     "world_recent_installs_handler")
 world_relay_instances_handler = _world_routes.export(
