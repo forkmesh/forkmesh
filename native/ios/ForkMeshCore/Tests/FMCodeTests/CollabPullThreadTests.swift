@@ -59,14 +59,14 @@ final class CollabPullThreadTests: XCTestCase {
     func testOnlyTheDesktopRequestsThatFitThePullsStateAreOffered() {
         XCTAssertEqual(
             PullShipCommands.offered(pull).map(\.command),
-            ["pull.merge", "pull.merge_delete", "pull.fix_agent", "pull.close", "pull.delete"])
+            ["pull.fix_agent", "pull.close", "pull.delete"])
         XCTAssertEqual(
             PullShipCommands.offered(pull).map(\.chipLabel),
-            ["Merge on desktop", "Merge + delete branch", "Fix with agent", "Close", "Delete"])
+            ["Fix with agent", "Close", "Delete"])
         var patchOnly = pull
         patchOnly.head = ""
         XCTAssertEqual(
-            PullShipCommands.offered(patchOnly).map(\.command), ["pull.merge", "pull.fix_agent", "pull.close", "pull.delete"])
+            PullShipCommands.offered(patchOnly).map(\.command), ["pull.fix_agent", "pull.close", "pull.delete"])
         var closed = pull
         closed.status = "closed"
         XCTAssertEqual(PullShipCommands.offered(closed).map(\.command), ["pull.reopen", "pull.delete"])

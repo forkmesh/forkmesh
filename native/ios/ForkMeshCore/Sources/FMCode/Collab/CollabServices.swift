@@ -23,7 +23,7 @@ public protocol CollabAPI: AnyObject {
     func compare(_ owner: String, _ name: String, base: String, head: String) async throws -> RepoComparison
     func canMergePulls(_ owner: String, _ repo: String) async -> Bool
     func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan?
-    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool) async throws
+    func mergePull(_ owner: String, _ repo: String, _ plan: PullMergePlan, overrideReview: Bool, deleteHead: Bool) async throws
         -> PullMergeOutcome
 }
 

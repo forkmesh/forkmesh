@@ -284,6 +284,15 @@ final class ApiMergeTests: XCTestCase {
         XCTAssertEqual(portBody(http.lastRequest)["overrideReview"], true)
     }
 
+    func testMergeAndDeleteAddsTheCleanupField() async throws {
+        let http = FakeHTTPClient { _ in portJSON(["status": "merged"]) }
+        let api = ApiPortFixture.api(http)
+
+        _ = try await api.mergePull("alice", "mobile", plan, deleteHead: true)
+
+        XCTAssertEqual(portBody(http.lastRequest)["deleteHead"], true)
+    }
+
     func testA202IsPolledWithOneStableRequestIdUntilItLands() async throws {
         let http = FakeHTTPClient()
         http.enqueue(status: 202, json: ["status": "processing"])

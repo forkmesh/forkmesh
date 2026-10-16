@@ -98,15 +98,15 @@ class RepoCollaborationTest {
 
     fun testOnlyTheDesktopRequestsThatFitThePullsStateAreOffered() {
         assertEq(
-            listOf("pull.merge", "pull.merge_delete", "pull.fix_agent", "pull.close", "pull.delete"),
+            listOf("pull.fix_agent", "pull.close", "pull.delete"),
             PullShipCommands.offered(pull).map { it.command },
         )
         assertEq(
-            listOf("Merge on desktop", "Merge + delete branch", "Fix with agent", "Close", "Delete"),
+            listOf("Fix with agent", "Close", "Delete"),
             PullShipCommands.offered(pull).map { it.chipLabel },
         )
         assertEq(
-            listOf("pull.merge", "pull.fix_agent", "pull.close", "pull.delete"),
+            listOf("pull.fix_agent", "pull.close", "pull.delete"),
             PullShipCommands.offered(pull.copy(head = "")).map { it.command },
         )
         assertEq(listOf("pull.reopen", "pull.delete"), PullShipCommands.offered(pull.copy(status = "closed")).map { it.command })
