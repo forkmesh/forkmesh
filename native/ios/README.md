@@ -31,7 +31,6 @@ ForkMeshCore/        Swift package: everything that is not a SwiftUI view.
   Sources/FMAgents   agent sessions, launch model, terminal, on-device agents
   Sources/FMTools    activity, telemetry, logs, notes, tasks, calories, bug reports
   Sources/FMWatchWire phone-to-watch frames and commands (builds for watchOS)
-  Sources/FMMiniApps desktop background services as phone mini-apps: contract, cards, offline outbox
   Tests/<Module>Tests
 ForkMesh/            The app target: SwiftUI views and iOS glue only.
   App/               entry point, service wiring
@@ -59,7 +58,7 @@ Module notes: [FMBase](docs/FMBase.md), [FMCrypto](docs/FMCrypto.md) and
 FMCode ([repos](docs/FMCodeRepos.md), [collaboration](docs/FMCodeCollab.md),
 [local Git](docs/FMCodeLocal.md)), [FMLocalAI](docs/FMLocalAI.md),
 [FMAgents](docs/FMAgents.md), [FMTools](docs/FMTools.md),
-[FMAssistant](docs/FMAssistant.md), [FMMiniApps](docs/FMMiniApps.md). The developer home page for both native
+[FMAssistant](docs/FMAssistant.md). The developer home page for both native
 apps is [`docs/native/README.md`](../../docs/native/README.md); the parity
 matrix is [`docs/native/PARITY.md`](../../docs/native/PARITY.md).
 

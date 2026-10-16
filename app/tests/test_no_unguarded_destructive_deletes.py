@@ -22,8 +22,6 @@ HELPERS = {
     "tools/forkmesh-safe-rm.sh",
     "desktop/src/SafeDelete.h",
     "server/safedelete.go",
-    "desktop/core/internal/safedelete/safedelete.go",
-    "desktop/core/internal/safedelete/worktree.go",
 }
 
 
@@ -203,15 +201,6 @@ ALLOW: list[tuple[str, str, str]] = [
     ('desktop/src/PullStore.cpp',
      '"rm", "-r", "--ignore-unmatch"',
      'git rm of one pull folder in the ledger, committed and recoverable'),
-    ('desktop/core/internal/pulls/ledger.go',
-     '"checkout", "-f", "HEAD", "--"',
-     'core port of PullStore: restores only stale .forkmesh/pulls ledger paths from HEAD'),
-    ('desktop/core/internal/pulls/ledger.go',
-     '"rm", "-r", "--ignore-unmatch"',
-     'core port of PullStore: git rm of pull folders in the ledger, committed and recoverable'),
-    ('desktop/core/internal/pulls/sessions.go',
-     '"branch", "-D", sess.AmBranch',
-     'core port of PullStore: deletes only a pull branch this flow created; existing tips are restored'),
     ('desktop/src/TaskWorkItems.cpp',
      'QStringLiteral\\("-D"\\)|git branch -D %2',
      'task delete runs only after snapshotting the branch to a trash ref'),
@@ -221,15 +210,6 @@ ALLOW: list[tuple[str, str, str]] = [
     ('desktop/src/UpstreamCheckoutSync.cpp',
      'QStringLiteral\\("-D"\\)',
      'prunes merged or pull branches after saving their tips to a trash ref'),
-    ('desktop/core/internal/pulls/ledger.go',
-     '"checkout", "-f", "HEAD", "--"',
-     'restores only stale .forkmesh/pulls ledger paths from HEAD'),
-    ('desktop/core/internal/pulls/ledger.go',
-     '"rm", "-r", "--ignore-unmatch", "--"',
-     'git rm of pull folders in the ledger, committed and recoverable'),
-    ('desktop/core/internal/pulls/sessions.go',
-     '"branch", "-D", sess\\.AmBranch',
-     'drops the pull branch an aborted merge created, only after its tip is saved to a trash ref'),
     ('marketplace/packages/backups/content/desktop/BackupsFeature.cpp',
      'QDir\\(chosen\\.path\\)\\.removeRecursively\\(\\)',
      'moved-aside data folder validated by BackupShelf canDelete'),
@@ -591,15 +571,12 @@ def test_helpers_share_one_disposable_folder_list():
     python = (REPO / "tools/forkmesh_safe_delete.py").read_text()
     cpp = (REPO / "desktop/src/SafeDelete.h").read_text()
     go = (REPO / "server/safedelete.go").read_text()
-    core = (REPO / "desktop/core/internal/safedelete/safedelete.go").read_text()
     block = python[python.index("DISPOSABLE_NAMES"):python.index("DISPOSABLE_PREFIXES")]
     names = set(re.findall(r'"([^"]+)"', block))
     cpp_block = cpp[cpp.index("inline bool disposable"):cpp.index("inline bool sharedProjectFolder")]
     go_block = go[go.index("var safeDeleteDisposable"):go.index("func safeDeleteClean")]
     assert names == set(re.findall(r'QStringLiteral\("([^"]+)"\)', cpp_block))
     assert names == set(re.findall(r'"([^"]+)":', go_block))
-    core_block = core[core.index("var safeDeleteDisposable"):core.index("func safeDeleteClean")]
-    assert names == set(re.findall(r'"([^"]+)":', core_block))
     shell = (REPO / "tools/forkmesh-safe-rm.sh").read_text()
     for name in names:
         assert f"*/{name}/*" in shell, name

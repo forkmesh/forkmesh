@@ -25,5 +25,7 @@ bool loadForEntrypoint(const QString &entrypoint);
 bool providesEntrypoint(const QString &entrypoint);
 QList<Module> modules();
 QJsonArray status();
+QString installedDirectoryFor(const QString &appPath);
+int installBeside(const QString &builtBinary, const QString &appPath, QString *error = nullptr);
 
 } // namespace forkmesh::market::modules

@@ -559,7 +559,6 @@ void MainWindow::tapHostLogLineForPhones(const QString &node, int source,
     const QString host = lowerHost(node);
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const QString src = sourceId(source);
-    forwardHostLogLineToCore(host, src, text);
     QStringList &recent = m_hostRecentLogLines[host];
     recent.append(QStringLiteral("[%1] %2").arg(src, text.left(
                                                      hostctl::LogStream::kMaxLineChars)));

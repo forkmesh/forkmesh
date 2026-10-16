@@ -1,5 +1,4 @@
 #include "ActionStore.h"
-#include "ActionVariablesBackend.h"
 #include "HiddenTerms.h"
 #include "SafeDelete.h"
 
@@ -578,15 +577,6 @@ bool ActionStore::saveRun(const ActionRun &run) const
     return true;
 }
 
-void ActionStore::adoptRun(const ActionRun &run) const
-{
-    QMutexLocker lock(&m_runCacheMutex);
-    if (m_runCacheLoaded)
-        m_runCache.insert(run.id, run);
-    if (run.id >= m_nextRunId)
-        m_nextRunId = run.id + 1;
-}
-
 bool ActionStore::deleteRun(const ActionRun &run) const
 {
     bool removed = true;
@@ -693,47 +683,7 @@ int ActionStore::runDirectoryScanCountForTesting() const
 #endif
 
 
-namespace forkmesh::actionvars {
-
-namespace {
-
-struct Backend {
-    QMutex mutex;
-    Reader reader;
-    Writer writer;
-};
-
-Backend &backend()
-{
-    static Backend state;
-    return state;
-}
-
-void storePlaintext(const QMap<QString, QString> &vars)
-{
-    QJsonObject obj;
-    for (auto it = vars.constBegin(); it != vars.constEnd(); ++it)
-        obj.insert(it.key(), it.value());
-    QByteArray encoded = QJsonDocument(obj).toJson(QJsonDocument::Compact);
-    QSettings().setValue(QStringLiteral("actions/variables"), encoded);
-    encoded.fill('\0');
-}
-
-}
-
-void setBackend(Reader reader, Writer writer)
-{
-    QMutexLocker lock(&backend().mutex);
-    backend().reader = std::move(reader);
-    backend().writer = std::move(writer);
-}
-
-QString marker()
-{
-    return QStringLiteral("[stored in the ForkMesh vault]");
-}
-
-QMap<QString, QString> storedPlaintext()
+QMap<QString, QString> ActionStore::variables()
 {
     QMap<QString, QString> out;
     const QByteArray raw =
@@ -744,56 +694,13 @@ QMap<QString, QString> storedPlaintext()
     return out;
 }
 
-void writeMarkers(const QStringList &names)
-{
-    QMap<QString, QString> markers;
-    for (const QString &name : names)
-        markers.insert(name, marker());
-    storePlaintext(markers);
-}
-
-bool write(const QMap<QString, QString> &vars)
-{
-    Writer writer;
-    {
-        QMutexLocker lock(&backend().mutex);
-        writer = backend().writer;
-    }
-    const WriteResult result = writer ? writer(vars) : WriteResult::Unhandled;
-    if (result == WriteResult::Written)
-        return true;
-    if (result == WriteResult::Refused)
-        return false;
-    storePlaintext(vars);
-    return true;
-}
-
-}
-
-QMap<QString, QString> ActionStore::variables()
-{
-    forkmesh::actionvars::Reader reader;
-    {
-        QMutexLocker lock(&forkmesh::actionvars::backend().mutex);
-        reader = forkmesh::actionvars::backend().reader;
-    }
-    QMap<QString, QString> out;
-    if (reader && reader(&out))
-        return out;
-    out = forkmesh::actionvars::storedPlaintext();
-    const QString marker = forkmesh::actionvars::marker();
-    for (auto it = out.begin(); it != out.end();) {
-        if (it.value() == marker)
-            it = out.erase(it);
-        else
-            ++it;
-    }
-    return out;
-}
-
 void ActionStore::setVariables(const QMap<QString, QString> &vars)
 {
-    forkmesh::actionvars::write(vars);
+    QJsonObject obj;
+    for (auto it = vars.constBegin(); it != vars.constEnd(); ++it)
+        obj.insert(it.key(), it.value());
+    QSettings().setValue(QStringLiteral("actions/variables"),
+                         QJsonDocument(obj).toJson(QJsonDocument::Compact));
     forkmesh::hiddenterms::refreshVariableValues(vars);
 }
 

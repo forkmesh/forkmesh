@@ -902,9 +902,6 @@ void MainWindow::runHostInstall(bool forceUploadBinary,
                                 bool reinstall, bool fromSource,
                                 bool suppressFailureStatus)
 {
-    if (runHostInstallThroughCore(forceUploadBinary, onFinished, reinstall, fromSource,
-                                  suppressFailureStatus))
-        return;
     const QString attemptBanner = m_hostInstallAttemptBanner;
     m_hostInstallAttemptBanner.clear();
     if ((m_hostInstallProcess &&
@@ -1396,19 +1393,6 @@ void MainWindow::runHostDeployAllParallel(
     FleetDeployMode mode,
     const PublishedReleaseDeployment &publishedRelease)
 {
-    if (runHostDeployAllThroughCore(
-            int(mode),
-            publishedRelease.isValid()
-                ? QJsonObject{{QStringLiteral("tag"), publishedRelease.tag},
-                              {QStringLiteral("version"), publishedRelease.version},
-                              {QStringLiteral("buildCommit"), publishedRelease.buildCommit},
-                              {QStringLiteral("manifestSha256"), publishedRelease.manifestSha256},
-                              {QStringLiteral("linuxX86_64Sha256"), publishedRelease.linuxX86_64Sha256},
-                              {QStringLiteral("linuxArm64Sha256"), publishedRelease.linuxArm64Sha256},
-                              {QStringLiteral("artifactSha256s"),
-                               QJsonArray::fromStringList(publishedRelease.artifactSha256s)}}
-                : QJsonObject()))
-        return;
     if ((m_hostInstallProcess &&
          m_hostInstallProcess->state() != QProcess::NotRunning) ||
         m_hostDeployRemaining > 0) {
@@ -1793,8 +1777,6 @@ void MainWindow::onHostDeploySessionFinished(HostDeploySession *session, bool ok
 
 void MainWindow::runHostUninstall()
 {
-    if (runHostUninstallThroughCore())
-        return;
     if (m_hostInstallProcess &&
         m_hostInstallProcess->state() != QProcess::NotRunning) {
         if (m_hostInstallStatus)
@@ -1961,8 +1943,6 @@ void MainWindow::promptHostLinkCode(const QString &code)
 
 void MainWindow::submitHostLinkCode(const QString &code)
 {
-    if (submitHostLinkCodeThroughCore(code))
-        return;
     QString linkUser;
     const QString signer = hostLinkSigningAccountName(&linkUser);
     if (signer.isEmpty())
@@ -2003,71 +1983,6 @@ void MainWindow::submitHostLinkCode(const QString &code)
         if (m_hostInstallStatus)
             m_hostInstallStatus->setText(message.trimmed());
     });
-}
-
-QString MainWindow::hostInstallBuildCommit() const
-{
-    QString commit = QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
-#ifdef FORKMESH_WINDOW_TESTS
-    const QString testBuildCommit =
-        qEnvironmentVariable("FORKMESH_TEST_BUILD_COMMIT").trimmed().toLower();
-    if (!testBuildCommit.isEmpty())
-        commit = testBuildCommit;
-#endif
-    return commit;
-}
-
-QJsonArray MainWindow::hostInstallMirrorPackage() const
-{
-    QString mirrorBinary =
-        QStandardPaths::findExecutable(QStringLiteral("forkmesh-mirror-node"));
-    if (mirrorBinary.isEmpty()) {
-        const QString sibling = QDir(QCoreApplication::applicationDirPath())
-                                    .filePath(QStringLiteral("forkmesh-mirror-node"));
-        if (QFileInfo(sibling).isExecutable())
-            mirrorBinary = sibling;
-    }
-    if (mirrorBinary.isEmpty()) {
-        const QString installed = QFileInfo(runningClientExecutable())
-                                      .dir()
-                                      .filePath(QStringLiteral("forkmesh-mirror-node"));
-        if (QFileInfo(installed).isExecutable())
-            mirrorBinary = installed;
-    }
-    if (mirrorBinary.isEmpty()) {
-        const QString sourceBinary =
-            QDir(QStringLiteral(FORKMESH_SOURCE_DIR))
-                .filePath(QStringLiteral("../server/forkmesh-mirror-node"));
-        if (QFileInfo(sourceBinary).isExecutable())
-            mirrorBinary = sourceBinary;
-    }
-    const QList<QPair<QString, QString>> files{
-        {QStringLiteral("forkmesh-mirror-node"), mirrorBinary},
-        {QStringLiteral("mirror_gateway.py"),
-         packagedMirrorFile(QStringLiteral("tools/mirror_gateway.py"))},
-        {QStringLiteral("mirror_replica.py"),
-         packagedMirrorFile(QStringLiteral("app/src/mirror_replica.py"))},
-        {QStringLiteral("public_snapshots.py"),
-         packagedMirrorFile(QStringLiteral("app/src/public_snapshots.py"))},
-        {QStringLiteral("portable_sessions.py"),
-         packagedMirrorFile(QStringLiteral("app/src/portable_sessions.py"))},
-        {QStringLiteral("direct_https_bootstrap.py"),
-         packagedMirrorFile(QStringLiteral("tools/direct_https_bootstrap.py"))},
-        {QStringLiteral("node_operator_policy.py"),
-         packagedMirrorFile(QStringLiteral("tools/node_operator_policy.py"))},
-        {QStringLiteral("secret_gate.py"),
-         packagedMirrorFile(QStringLiteral("tools/secret_gate.py"))},
-        {QStringLiteral("forkmesh-mirror-node.service"),
-         packagedMirrorFile(QStringLiteral(
-             "server/packaging/systemd/forkmesh-mirror-node.service"))},
-    };
-    QJsonArray out;
-    for (const auto &file : files)
-        out.append(QJsonObject{{QStringLiteral("name"), file.first},
-                               {QStringLiteral("path"), file.second},
-                               {QStringLiteral("executable"),
-                                file.first == QLatin1String("forkmesh-mirror-node")}});
-    return out;
 }
 
 QString forkmesh::desktopBuildCommit()

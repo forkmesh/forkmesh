@@ -60,10 +60,7 @@ bool ClaudeIdeBridge::start(const QString &workspaceFolder)
     m_server = new QTcpServer(this);
     connect(m_server, &QTcpServer::newConnection, this,
             &ClaudeIdeBridge::onNewConnection);
-    if (m_preferredPort != 0 && m_server->listen(QHostAddress::LocalHost, m_preferredPort)) {
-        if (m_preferredToken.size() == 32)
-            m_authToken = m_preferredToken;
-    } else if (!m_server->listen(QHostAddress::LocalHost, 0)) {
+    if (!m_server->listen(QHostAddress::LocalHost, 0)) {
         emit log(QStringLiteral("[ide] failed to bind localhost: %1")
                      .arg(m_server->errorString()));
         delete m_server;
@@ -74,12 +71,6 @@ bool ClaudeIdeBridge::start(const QString &workspaceFolder)
     writeLockfile();
     emit log(QStringLiteral("[ide] listening on 127.0.0.1:%1").arg(m_port));
     return true;
-}
-
-void ClaudeIdeBridge::setPreferredEndpoint(quint16 port, const QString &authToken)
-{
-    m_preferredPort = port;
-    m_preferredToken = authToken;
 }
 
 void ClaudeIdeBridge::stop()

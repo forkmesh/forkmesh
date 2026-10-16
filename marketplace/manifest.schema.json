@@ -278,24 +278,6 @@
         }
       }
     },
-    "service": {
-      "description": "Optional background service run by forkmesh-core as a separate, sandboxed process (docs/desktop/service-plugins.md).",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["api", "exec", "methods"],
-      "properties": {
-        "api": { "const": 1 },
-        "exec": { "type": "string", "pattern": "^content/[A-Za-z0-9._/-]+$", "maxLength": 200 },
-        "interpreter": { "enum": ["python3", "sh", "bash", "node"] },
-        "start": { "enum": ["lazy", "boot"] },
-        "methods": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9_]{0,63}$" } },
-        "events": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9_]{0,63}$" } },
-        "remoteMethods": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9_]{0,63}$" } },
-        "remoteEvents": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][A-Za-z0-9_]{0,63}$" } },
-        "idleExitSeconds": { "type": "integer", "minimum": 10, "maximum": 86400 },
-        "memoryMB": { "type": "integer", "minimum": 64, "maximum": 4096 }
-      }
-    },
     "worker": {
       "description": "Optional Worker module and API route contributed by this package.",
       "type": "object",

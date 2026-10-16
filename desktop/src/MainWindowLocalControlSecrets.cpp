@@ -1,5 +1,4 @@
 #include "ActionStore.h"
-#include "ActionVariablesBackend.h"
 #include "LocalControl.h"
 #include "LocalControlHosts.h"
 #include "LocalControlSecrets.h"
@@ -105,11 +104,8 @@ void MainWindow::handleLocalControlSecretsRequest(int connectionId, int requestI
             fail(QStringLiteral("not_found"));
             return;
         }
-        if (!forkmesh::actionvars::write(setting ? secretsctl::applySet(current, name, value)
-                                                 : secretsctl::applyDelete(current, name))) {
-            fail(QStringLiteral("vault_unavailable"));
-            return;
-        }
+        ActionStore::setVariables(setting ? secretsctl::applySet(current, name, value)
+                                          : secretsctl::applyDelete(current, name));
         reloadVariablesList();
         logSystem(QStringLiteral("%1 the Actions variable %2, requested by %3.")
                       .arg(setting ? QStringLiteral("Set") : QStringLiteral("Deleted"), name,

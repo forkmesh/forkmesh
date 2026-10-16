@@ -174,6 +174,6 @@ function(forkmesh_add_package_module_tests)
         return()
     endif()
     add_test(NAME forkmesh-package-modules-resolve
-        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/core/tools/check_package_modules.py"
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_package_modules.py"
                 "$<TARGET_FILE_DIR:forkmesh>")
 endfunction()

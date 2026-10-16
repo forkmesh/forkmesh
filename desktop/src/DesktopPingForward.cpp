@@ -103,11 +103,6 @@ QString onlineSettingKey()
     return QStringLiteral("notifications/phoneOnlinePing");
 }
 
-QString coreOnlineFeature()
-{
-    return QStringLiteral("online-ping");
-}
-
 bool phoneLinked(const QList<Phone> &phones, const QString &account,
                  qint64 nowMs)
 {

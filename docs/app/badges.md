@@ -258,8 +258,7 @@ run. Both kinds run after the record sweep in the same phase, so a record
 read this hour can award this hour.
 
 Not covered yet: pull records written by the phones or the MCP tool carry no
-`mergedAt`, `mergedBy` or `coAuthors` until those writers add them, and the
-new Go desktop (`desktop_go_new`) does not write them either.
+`mergedAt`, `mergedBy` or `coAuthors` until those writers add them.
 
 ## Oracle
 

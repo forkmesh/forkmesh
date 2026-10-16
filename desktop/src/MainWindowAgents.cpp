@@ -2527,10 +2527,7 @@ void MainWindow::buildAgentOutputViews(QWidget *detailPane)
     });
 
     m_agentTerminal = new TerminalWidget;
-    m_agentTerminal->setPersistKey(QStringLiteral("agent"));
-    QTimer::singleShot(0, this, [this] { resumeCoreAgentTerminal(); });
     connect(m_agentTerminal, &TerminalWidget::finished, this, [this](int) {
-        QSettings().remove(QStringLiteral("core/agentTerminalSession"));
         if (m_terminalSessionId <= 0)
             return;
         const int sid = m_terminalSessionId; // reloadAgents() below dangles `s`

@@ -5,8 +5,6 @@
 #include <QString>
 #include <QStringList>
 
-#include <functional>
-
 namespace forkmesh::mirror_actions {
 
 QJsonObject applyConfiguration(const QJsonObject &request,
@@ -49,12 +47,6 @@ void resetStartupRecoveryStatusForTesting();
 } // namespace detail
 
 int runConfigurationStdin(int argc, char *argv[]);
-
-using ConfigurationDelegate =
-    std::function<bool(const QJsonObject &request, QJsonObject *response)>;
-void setConfigurationDelegate(ConfigurationDelegate delegate);
-QJsonObject refusedConfiguration(const QJsonObject &request,
-                                 const QString &errorCode);
 
 inline constexpr auto kEnabledSetting = "actions/mirrorEnabled";
 inline constexpr auto kGenerationSetting = "actions/mirrorConfigGeneration";

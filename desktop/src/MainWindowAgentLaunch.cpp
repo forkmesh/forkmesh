@@ -2827,19 +2827,6 @@ ClaudeIdeBridge *MainWindow::ensureIdeBridge()
     if (m_ideBridge)
         return m_ideBridge;
     m_ideBridge = new ClaudeIdeBridge(this);
-    {
-        const QSettings settings;
-        m_ideBridge->setPreferredEndpoint(
-            quint16(settings.value(QStringLiteral("core/ideBridge/port")).toUInt()),
-            settings.value(QStringLiteral("core/ideBridge/token")).toString());
-    }
-    connect(m_ideBridge, &ClaudeIdeBridge::log, this, [this](const QString &line) {
-        if (!line.startsWith(QLatin1String("[ide] listening on ")) || !m_ideBridge)
-            return;
-        QSettings settings;
-        settings.setValue(QStringLiteral("core/ideBridge/port"), m_ideBridge->port());
-        settings.setValue(QStringLiteral("core/ideBridge/token"), m_ideBridge->authToken());
-    });
     connect(m_ideBridge, &ClaudeIdeBridge::openDiffRequested, this,
             &MainWindow::onClaudeOpenDiff);
     connect(m_ideBridge, &ClaudeIdeBridge::openFileRequested, this,
@@ -3047,7 +3034,6 @@ void MainWindow::startClaudeCodeTerminal(AgentSession &session, const Issue &iss
                   QStringLiteral("bash"), repoPath,
                   {QStringLiteral("-lc"), cmd})
             : cmd;
-    QSettings().setValue(QStringLiteral("core/agentTerminalSession"), session.id);
     if (!forkmesh::vm::active() && guardrails.enforced()) {
         QProcessEnvironment processEnv = QProcessEnvironment::systemEnvironment();
         for (const QString &kv : std::as_const(env)) {

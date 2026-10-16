@@ -497,26 +497,9 @@ LocalMeshNode::LocalMeshNode(const QString &userName, const QString &nodeName,
 LocalMeshNode::~LocalMeshNode()
 {
     stop();
-    delete std::exchange(m_core, nullptr);
-}
-
-void LocalMeshNode::setBackend(LocalMeshBackend *backend)
-{
-    if (m_core == backend)
-        return;
-    delete std::exchange(m_core, backend);
 }
 
 bool LocalMeshNode::start()
-{
-    if (m_running)
-        return true;
-    if (m_core && m_crypto.isValid() && m_seal.isValid() && m_core->start())
-        return true;
-    return startNative();
-}
-
-bool LocalMeshNode::startNative()
 {
     if (m_running)
         return true;
@@ -630,13 +613,6 @@ void LocalMeshNode::refreshNetwork()
 }
 
 void LocalMeshNode::stop()
-{
-    if (m_core && m_core->stop())
-        return;
-    stopNative();
-}
-
-void LocalMeshNode::stopNative()
 {
     if (!m_running && !m_server && !m_discovery && !bluetoothActive())
         return;
@@ -907,8 +883,6 @@ void LocalMeshNode::onBluetoothService(const QBluetoothServiceInfo &service)
                 attachLink(socket, true, true);
                 if (Link *link = linkFor(socket))
                     link->btKey = address;
-                else if (m_core)
-                    m_core->setBluetoothKey(socket, address);
                 connect(socket, &QBluetoothSocket::disconnected, this,
                         [this, socket] { dropLink(socket, QString()); });
             });
@@ -927,7 +901,7 @@ void LocalMeshNode::onBluetoothService(const QBluetoothServiceInfo &service)
 
 bool LocalMeshNode::bluetoothDialAllowed(const QString &key) const
 {
-    if (m_btDialing.contains(key) || (m_core && m_core->hasBluetoothKey(key)))
+    if (m_btDialing.contains(key))
         return false;
     const auto quiet = m_btQuietUntil.constFind(key);
     if (quiet != m_btQuietUntil.constEnd() &&
@@ -987,8 +961,6 @@ void LocalMeshNode::onBleDevice(const QBluetoothDeviceInfo &device)
         attachLink(link, true, true);
         if (Link *attached = linkFor(link))
             attached->btKey = key;
-        else if (m_core)
-            m_core->setBluetoothKey(link, key);
     };
     link->onClosed = [this, link, key](const QString &reason) {
         m_btDialing.remove(key);
@@ -1297,10 +1269,6 @@ void LocalMeshNode::onDatagrams()
 
 void LocalMeshNode::announceNow()
 {
-    if (m_core && m_core->routed()) {
-        m_core->announceNow();
-        return;
-    }
     if (!m_running)
         return;
     refreshNetwork();
@@ -1311,8 +1279,6 @@ void LocalMeshNode::announceNow()
 
 bool LocalMeshNode::connectToPeer(const QHostAddress &address, quint16 port)
 {
-    if (m_core && m_core->routed())
-        return m_core->connectToPeer(address, port);
     if (!m_running || port == 0 || !isLocalNetworkAddress(address))
         return false;
     if (m_links.size() >= kMaxLinks)
@@ -1389,16 +1355,11 @@ void LocalMeshNode::onNewConnection()
 void LocalMeshNode::setControlHandler(ControlHandler handler)
 {
     m_controlHandler = std::move(handler);
-    if (m_core)
-        m_core->controlChanged();
 }
 
 void LocalMeshNode::attachLink(QIODevice *socket, bool outbound, bool bluetooth)
 {
     if (!socket || linkFor(socket))
-        return;
-    if (bluetooth && m_core && m_core->routed() &&
-        m_core->attachBluetooth(socket, outbound))
         return;
     auto *link = new Link;
     link->socket = socket;
@@ -1456,8 +1417,6 @@ void LocalMeshNode::onLinkReadyRead(QIODevice *socket)
 
 void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
 {
-    if (m_core && m_core->dropBluetooth(socket, reason))
-        return;
     for (qsizetype i = 0; i < m_links.size(); ++i) {
         Link *link = m_links.at(i);
         if (link->socket != socket)
@@ -2008,8 +1967,6 @@ void LocalMeshNode::rememberWake(const QString &senderId, const QJsonObject &pla
 
 QStringList LocalMeshNode::wakeTargets() const
 {
-    if (m_core && m_core->routed())
-        return m_core->wakeTargets();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QStringList tokens;
     for (auto it = m_wakeOrder.crbegin(); it != m_wakeOrder.crend(); ++it) {
@@ -2065,8 +2022,6 @@ void LocalMeshNode::setUserName(const QString &name)
     if (trimmed.isEmpty() || trimmed == m_userName)
         return;
     m_userName = trimmed;
-    if (m_core)
-        m_core->identityChanged();
     if (m_running) {
         sendBeacon();
         noteMembershipChange();
@@ -2084,8 +2039,6 @@ void LocalMeshNode::setNodeIdentity(const QString &nodeName,
         m_nodeName = node;
     if (!owner.isEmpty())
         m_ownerUser = owner;
-    if (m_core)
-        m_core->identityChanged();
     if (m_running) {
         sendBeacon();
         noteMembershipChange();
@@ -2098,16 +2051,12 @@ void LocalMeshNode::setAccountKind(const QString &kind)
     if (trimmed.isEmpty() || trimmed == m_accountKind)
         return;
     m_accountKind = trimmed;
-    if (m_core)
-        m_core->identityChanged();
     if (m_running)
         sendBeacon();
 }
 
 QList<MemberInfo> LocalMeshNode::members() const
 {
-    if (m_core && m_core->routed())
-        return m_core->members();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QList<MemberInfo> roster;
     MemberInfo self;
@@ -2142,8 +2091,6 @@ QList<MemberInfo> LocalMeshNode::members() const
 
 int LocalMeshNode::peerCount() const
 {
-    if (m_core && m_core->routed())
-        return m_core->peerCount();
     int linked = 0;
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it)
         if (it->linked)
@@ -2158,8 +2105,6 @@ QString LocalMeshNode::sealKeyId() const
 
 quint16 LocalMeshNode::listenPort() const
 {
-    if (m_core && m_core->routed())
-        return m_core->listenPort();
     return m_server ? m_server->serverPort() : 0;
 }
 
@@ -2205,8 +2150,6 @@ QString meshInterfaceText()
 
 QString LocalMeshNode::diagnosticsLine() const
 {
-    if (m_core && m_core->routed())
-        return m_core->diagnosticsLine();
     if (!m_running)
         return QStringLiteral("mesh stopped");
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -2267,8 +2210,6 @@ QString LocalMeshNode::diagnosticsLine() const
 
 QString LocalMeshNode::diagnosticsDetail() const
 {
-    if (m_core && m_core->routed())
-        return m_core->diagnosticsDetail();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     const Diagnostics &d = m_diag;
     QStringList lines;
@@ -2327,8 +2268,6 @@ QString LocalMeshNode::diagnosticsDetail() const
 
 QString LocalMeshNode::sendChat(const QString &text)
 {
-    if (m_core && m_core->routed())
-        return m_core->sendChat(text);
     const QString trimmed = text.trimmed().left(kMaxTextChars);
     if (!m_running || trimmed.isEmpty())
         return QString();
@@ -2340,8 +2279,6 @@ QString LocalMeshNode::sendChat(const QString &text)
 QString LocalMeshNode::sendFile(const QString &fileName, const QString &mimeType,
                               const QByteArray &data)
 {
-    if (m_core && m_core->routed())
-        return m_core->sendFile(fileName, mimeType, data);
     if (!m_running || data.isEmpty() || data.size() > kMaxFileBytes)
         return QString();
     QJsonObject message = makeMessage(QStringLiteral("chat"));
@@ -2354,10 +2291,6 @@ QString LocalMeshNode::sendFile(const QString &fileName, const QString &mimeType
 
 void LocalMeshNode::sendTyping(bool active)
 {
-    if (m_core && m_core->routed()) {
-        m_core->sendTyping(active);
-        return;
-    }
     if (!m_running || (!active && !m_typingActive))
         return;
     m_typingActive = active;

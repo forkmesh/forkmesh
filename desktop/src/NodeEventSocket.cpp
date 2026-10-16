@@ -1,5 +1,4 @@
 #include "NodeEventSocket.h"
-#include "CoreClient.h"
 #include "ForkMeshVersion.h"
 
 #include <QDateTime>
@@ -97,15 +96,6 @@ void NodeEventSocket::start()
     m_reconnectAttempts = 0;
     if (m_reconnectTimer)
         m_reconnectTimer->stop();
-    if (m_core) {
-        if (m_core->isConnected()) {
-            enterCoreMode();
-        } else {
-            m_coreMode = true;
-            armCoreFallback(5000);
-        }
-        return;
-    }
     openConnection();
 }
 
@@ -113,32 +103,15 @@ void NodeEventSocket::reconnectNow()
 {
     if (m_userStopped || m_wsReady || m_attemptActive)
         return;
-    if (m_coreMode) {
-        m_reconnectAttempts = 0;
-        if (m_reconnectTimer && m_reconnectTimer->isActive()) {
-            m_reconnectTimer->stop();
-            configureCore();
-        } else if (m_core && m_core->isConnected()) {
-            m_core->notify(QStringLiteral("core.relay.reconnect"));
-        }
-        return;
-    }
     m_reconnectAttempts = 0;
     if (m_reconnectTimer)
         m_reconnectTimer->stop();
     openConnection();
 }
 
-void NodeEventSocket::stop(bool stopCoreRelay)
+void NodeEventSocket::stop()
 {
     m_userStopped = true;
-    if (stopCoreRelay && m_coreMode && m_core && m_core->isConnected())
-        m_core->notify(QStringLiteral("core.relay.stop"));
-    m_coreMode = false;
-    m_coreBacklog = 0;
-    ++m_coreGeneration;
-    if (m_coreFallbackTimer)
-        m_coreFallbackTimer->stop();
     if (m_reconnectTimer)
         m_reconnectTimer->stop();
     if (m_connectTimeoutTimer)
@@ -259,11 +232,7 @@ void NodeEventSocket::scheduleReconnect()
         m_reconnectTimer = new QTimer(this);
         m_reconnectTimer->setSingleShot(true);
         connect(m_reconnectTimer, &QTimer::timeout, this, [this] {
-            if (m_userStopped)
-                return;
-            if (m_coreMode)
-                configureCore();
-            else
+            if (!m_userStopped)
                 openConnection();
         });
     }
@@ -590,9 +559,6 @@ void NodeEventSocket::processFrame(const QByteArray &payload)
 bool NodeEventSocket::sendSignedFrame(const QJsonObject &frame)
 {
     const QString kind = frame.value(QStringLiteral("type")).toString();
-    if (m_coreMode)
-        return !kind.isEmpty() && accepts(kind) &&
-               sendThroughCore(QStringLiteral("signed"), frame);
     // Never speak a frame kind this relay has not advertised: an older relay
     // silently drops what it does not understand, and the caller must be free
     // to treat "false" as "use the signed HTTPS route instead".
@@ -608,8 +574,6 @@ bool NodeEventSocket::sendSignedFrame(const QJsonObject &frame)
 
 bool NodeEventSocket::sendTerminalFrame(const QJsonObject &frame)
 {
-    if (m_coreMode)
-        return sendThroughCore(QStringLiteral("terminal"), frame);
     if (!m_wsReady || !m_socket)
         return false;
     const QByteArray payload =
@@ -622,8 +586,6 @@ bool NodeEventSocket::sendTerminalFrame(const QJsonObject &frame)
 
 bool NodeEventSocket::sendOwnerControlFrame(const QJsonObject &frame)
 {
-    if (m_coreMode)
-        return m_relaysControl && sendThroughCore(QStringLiteral("control"), frame);
     if (!m_wsReady || !m_socket || !m_relaysControl)
         return false;
     const QByteArray payload =

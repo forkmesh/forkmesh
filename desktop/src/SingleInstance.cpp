@@ -39,6 +39,7 @@ QLocalServer *g_server = nullptr;
 std::function<void(const QString &)> g_activationHandler;
 std::function<void()> g_yieldHandler;
 bool g_background = false;
+int g_backgroundLockWaitMs = 0;
 std::atomic_bool g_quitRequested{false};
 
 bool askRunningInstance(const QString &activationTarget)
@@ -88,6 +89,31 @@ void setBackgroundInstance()
     g_background = true;
 }
 
+void setBackgroundLockWait(int milliseconds)
+{
+    g_backgroundLockWaitMs = qMax(0, milliseconds);
+}
+
+bool singleInstanceHeld()
+{
+    return g_lockFile && g_lockFile->isLocked();
+}
+
+bool askBackgroundInstanceToQuit()
+{
+    QLocalSocket socket;
+    socket.connectToServer(serverName());
+    if (!socket.waitForConnected(500))
+        return false;
+    socket.write("quit");
+    socket.waitForBytesWritten(500);
+    QByteArray reply;
+    while (reply.size() < kYieldReply.size() && socket.waitForReadyRead(1500))
+        reply += socket.readAll();
+    socket.disconnectFromServer();
+    return reply.startsWith(kYieldReply);
+}
+
 bool isBackgroundInstance()
 {
     return g_background;
@@ -133,7 +159,7 @@ bool acquireSingleInstance(const QString &activationTarget,
     QDir().mkpath(forkmesh::paths::stateRoot());
 
     g_lockFile = new QLockFile(singleInstanceLockPath());
-    if (!g_lockFile->tryLock()) {
+    if (!g_lockFile->tryLock(g_background ? g_backgroundLockWaitMs : 0)) {
         const bool yielded = !g_background && askRunningInstance(activationTarget);
         if (!yielded || !waitForYieldedLock(whileWaiting)) {
             delete g_lockFile;
@@ -154,7 +180,7 @@ bool acquireSingleInstance(const QString &activationTarget,
             socket->waitForReadyRead(200);
             const QByteArray message = socket->read(4128);
             if (g_background) {
-                if (message.startsWith("activate")) {
+                if (message.startsWith("activate") || message.startsWith("quit")) {
                     socket->write(kYieldReply);
                     socket->waitForBytesWritten(500);
                     requestBackgroundQuit();
@@ -163,6 +189,8 @@ bool acquireSingleInstance(const QString &activationTarget,
                 continue;
             }
             socket->deleteLater();
+            if (message.startsWith("quit"))
+                continue;
             if (g_activationHandler) {
                 const QByteArray prefix("activate\n");
                 const QString target =

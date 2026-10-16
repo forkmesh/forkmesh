@@ -1,7 +1,7 @@
 #include "TrayMode.h"
 
 #include "AppPaths.h"
-#include "CoreClient.h"
+#include "BackgroundMode.h"
 #include "DesktopDisplayReadiness.h"
 #include "SingleInstance.h"
 
@@ -14,194 +14,104 @@
 #include <QMenu>
 #include <QProcess>
 #include <QProcessEnvironment>
-#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#else
+#ifdef Q_OS_UNIX
 #include <cerrno>
 #include <csignal>
 #endif
 
-#ifdef Q_OS_MACOS
-#include <dlfcn.h>
-#endif
-
 namespace forkmesh::tray {
+
+#if defined(Q_OS_LINUX)
 
 namespace {
 
 constexpr int kPollMs = 2000;
-constexpr qint64 kStartupGraceMs = 60000;
+constexpr qint64 kStartupGraceMs = 90000;
 constexpr qint64 kGoneGraceMs = 30000;
 constexpr qint64 kTrayWaitMs = 120000;
 constexpr int kDisplayWaitMs = 30000;
 
 bool pidAlive(qint64 pid)
 {
-#ifdef Q_OS_WIN
-    if (pid <= 0)
-        return false;
-    HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
-    if (!process)
-        return ::GetLastError() == ERROR_ACCESS_DENIED;
-    DWORD code = 0;
-    const bool running = ::GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
-    ::CloseHandle(process);
-    return running;
-#else
-    if (pid <= 1)
-        return false;
-    return ::kill(pid_t(pid), 0) == 0 || errno == EPERM;
-#endif
+    return pid > 1 && (::kill(pid_t(pid), 0) == 0 || errno == EPERM);
 }
 
-bool desktopWindowRunning()
+qint64 lockHolder()
 {
     qint64 pid = 0;
     QString host;
     QString application;
-    return QLockFile(singleInstanceLockPath()).getLockInfo(&pid, &host, &application) && pidAlive(pid) &&
-           pid != backgroundInstancePid();
+    if (!QLockFile(singleInstanceLockPath()).getLockInfo(&pid, &host, &application))
+        return 0;
+    return pidAlive(pid) ? pid : 0;
 }
 
-QString toolTip(const core::Endpoint &endpoint, const QString &project)
+QString toolTip(const QString &project)
 {
-    QString text = QStringLiteral("ForkMesh background engine %1").arg(endpoint.version).trimmed();
+    QString text = QStringLiteral("ForkMesh is running without a window");
     if (project != QLatin1String(paths::kHomeProjectSlug))
         text += QStringLiteral(" (%1)").arg(project);
     return text;
 }
 
-void hideFromDock()
-{
-#ifdef Q_OS_MACOS
-    using Lookup = void *(*)(const char *);
-    const auto getClass = reinterpret_cast<Lookup>(dlsym(RTLD_DEFAULT, "objc_getClass"));
-    const auto selector = reinterpret_cast<Lookup>(dlsym(RTLD_DEFAULT, "sel_registerName"));
-    void *send = dlsym(RTLD_DEFAULT, "objc_msgSend");
-    if (!getClass || !selector || !send)
-        return;
-    void *app = reinterpret_cast<void *(*)(void *, void *)>(send)(getClass("NSApplication"),
-                                                                  selector("sharedApplication"));
-    if (app)
-        reinterpret_cast<void (*)(void *, void *, long)>(send)(app, selector("setActivationPolicy:"), 1);
-#endif
-}
-
-void startDetached(const QString &program, const QStringList &arguments)
+void openDesktop(const QString &project)
 {
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    for (const QString &name : serviceVariables())
+    for (const QString &name : background::serviceVariables())
         environment.remove(name);
     QProcess process;
     process.setProcessEnvironment(environment);
     process.setWorkingDirectory(QDir::homePath());
-    process.setProgram(program);
-    process.setArguments(arguments);
+    process.setProgram(background::desktopBinaryPath());
+    process.setArguments({QStringLiteral("--project"), project});
     process.startDetached();
 }
 
 } // namespace
 
-QStringList arguments(const QString &project)
-{
-    return {QStringLiteral("--tray"), QStringLiteral("--project"), project};
-}
-
-QStringList serviceVariables()
-{
-    return {QStringLiteral("INVOCATION_ID"),  QStringLiteral("JOURNAL_STREAM"),
-            QStringLiteral("SYSTEMD_EXEC_PID"), QStringLiteral("MANAGERPID"),
-            QStringLiteral("NOTIFY_SOCKET"),  QStringLiteral("LISTEN_PID"),
-            QStringLiteral("LISTEN_FDS"),     QStringLiteral("LISTEN_FDNAMES"),
-            QStringLiteral("WATCHDOG_PID"),   QStringLiteral("WATCHDOG_USEC")};
-}
-
-QStringList scopeArguments(const QString &program, const QString &project)
-{
-    return QStringList{QStringLiteral("--user"), QStringLiteral("--scope"), QStringLiteral("--quiet"),
-                       QStringLiteral("--collect"), QStringLiteral("--unit=forkmesh-tray-") + project,
-                       QStringLiteral("--"), program} +
-           arguments(project);
-}
-
-bool launch()
-{
-    const QString platform = QGuiApplication::platformName();
-    if (platform == QLatin1String("offscreen") || platform == QLatin1String("minimal"))
-        return false;
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    const bool underService = !environment.value(QStringLiteral("INVOCATION_ID")).isEmpty();
-    for (const QString &name : serviceVariables())
-        environment.remove(name);
-    const QString project = paths::projectSlug();
-    const QString program = QCoreApplication::applicationFilePath();
-    QProcess process;
-    process.setProcessEnvironment(environment);
-    process.setWorkingDirectory(QDir::homePath());
-    process.setProgram(program);
-    process.setArguments(arguments(project));
-#if defined(Q_OS_LINUX)
-    const QString systemdRun =
-        underService ? QStandardPaths::findExecutable(QStringLiteral("systemd-run")) : QString();
-    if (!systemdRun.isEmpty()) {
-        process.setProgram(systemdRun);
-        process.setArguments(scopeArguments(program, project));
-    }
-#else
-    Q_UNUSED(underService);
-#endif
-    return process.startDetached();
-}
-
 int run(int argc, char *argv[])
 {
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     if (waitForDesktopDisplay(QProcessEnvironment::systemEnvironment(), kDisplayWaitMs, 500).state !=
         DesktopDisplayState::Ready)
         return 0;
-#endif
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("ForkMesh"));
     app.setOrganizationName(QStringLiteral("ForkMesh"));
     app.setQuitOnLastWindowClosed(false);
     paths::activate(app.arguments());
-    hideFromDock();
     const QIcon appIcon(QStringLiteral(":/app/forkmesh.png"));
     app.setWindowIcon(appIcon);
     QGuiApplication::setDesktopFileName(QStringLiteral("forkmesh"));
 
     const QString project = paths::projectSlug();
-    const QString stateDir = core::defaultStateDirectory();
-    QDir().mkpath(stateDir);
-    QLockFile lock(QDir(stateDir).filePath(QStringLiteral("tray.lock")));
+    QDir().mkpath(paths::stateRoot());
+    QLockFile lock(paths::stateRoot() + QStringLiteral("/tray.lock"));
     lock.setStaleLockTime(0);
     if (!lock.tryLock(0))
         return 0;
 
     QSystemTrayIcon icon(appIcon);
+    icon.setToolTip(toolTip(project));
     QMenu menu;
     QAction *openAction = menu.addAction(QStringLiteral("Open ForkMesh"));
-    QAction *stopAction = menu.addAction(QStringLiteral("Stop background engine"));
+    QAction *stopAction = menu.addAction(QStringLiteral("Stop ForkMesh running without a window"));
     menu.addSeparator();
     QAction *hideAction = menu.addAction(QStringLiteral("Hide icon"));
     icon.setContextMenu(&menu);
 
-    const auto openDesktop = [project] {
-        startDetached(QCoreApplication::applicationFilePath(), {QStringLiteral("--project"), project});
-    };
-    QObject::connect(openAction, &QAction::triggered, &app, openDesktop);
-    QObject::connect(stopAction, &QAction::triggered, &app, [project] {
-        startDetached(core::defaultBinaryPath(), {QStringLiteral("stop"), QStringLiteral("--project"), project});
+    QObject::connect(openAction, &QAction::triggered, &app, [project] { openDesktop(project); });
+    QObject::connect(stopAction, &QAction::triggered, &app, [&app] {
+        askBackgroundInstanceToQuit();
+        app.quit();
     });
     QObject::connect(hideAction, &QAction::triggered, &app, &QCoreApplication::quit);
     QObject::connect(&icon, &QSystemTrayIcon::activated, &app,
-                     [openDesktop](QSystemTrayIcon::ActivationReason reason) {
+                     [project](QSystemTrayIcon::ActivationReason reason) {
                          if (reason == QSystemTrayIcon::Trigger)
-                             openDesktop();
+                             openDesktop(project);
                      });
 
     QElapsedTimer started;
@@ -209,23 +119,19 @@ int run(int argc, char *argv[])
     QElapsedTimer lastSeen;
     bool trayFound = false;
     const auto poll = [&] {
-        const core::Endpoint endpoint = core::readEndpoint(stateDir);
-        const bool running = endpoint.pid > 0 && pidAlive(endpoint.pid);
         trayFound = trayFound || QSystemTrayIcon::isSystemTrayAvailable();
         if (!trayFound && started.elapsed() > kTrayWaitMs) {
             app.quit();
             return;
         }
-        if (running) {
+        const qint64 holder = lockHolder();
+        const qint64 background = backgroundInstancePid();
+        if (holder > 0 && holder != background && lastSeen.isValid()) {
+            app.quit();
+            return;
+        }
+        if (background > 0 && holder == background) {
             lastSeen.start();
-            if (desktopWindowRunning()) {
-                if (icon.isVisible())
-                    icon.hide();
-                return;
-            }
-            const QString tip = toolTip(endpoint, project);
-            if (icon.toolTip() != tip)
-                icon.setToolTip(tip);
             if (trayFound && !icon.isVisible())
                 icon.show();
             return;
@@ -243,5 +149,14 @@ int run(int argc, char *argv[])
     QTimer::singleShot(0, &app, poll);
     return app.exec();
 }
+
+#else
+
+int run(int, char *[])
+{
+    return 0;
+}
+
+#endif
 
 } // namespace forkmesh::tray
