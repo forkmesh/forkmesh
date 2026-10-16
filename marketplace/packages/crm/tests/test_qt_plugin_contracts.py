@@ -245,8 +245,8 @@ def test_desktop_stage_cells_and_mastodon_row_refresh():
     assert "flowStages(source.flow).indexOf(value)" in fill
     assert "item->setIcon(*dot)" in fill
     # Each Mastodon cell carries its own refresh button that reads that row's
-    # account again, and rests while the read is queued or in flight. It is
-    # the only thing that queues a read: drawing a row never reaches an
+    # account again, and rests while the read is queued or in flight. Besides
+    # it, only the Reach out card queues reads: drawing a row never reaches an
     # instance.
     assert "m_mastodonRefresh" not in FEATURE
     assert "item->setData(kRowButtonRole, true)" in fill
@@ -258,7 +258,13 @@ def test_desktop_stage_cells_and_mastodon_row_refresh():
     assert "m_mastodonQueue.takeFirst()" in updates
     assert "m_snapshot.rows" not in updates
     assert "refresh->setEnabled(!m_mastodonPending.contains(key) &&" in updates
-    assert FEATURE.count("m_mastodonQueue.append(") == 1
+    assert FEATURE.count("m_mastodonQueue.append(") == 2
+    reach = FEATURE.split("void CrmFeature::queueReachMastodon(const QStringList &ranked)", 1)[1].split("\n}\n", 1)[0]
+    assert "m_mastodonQueue.append(key)" in reach and "kReachMastodonReads" in reach
+    assert "kMastodonPerHost" in updates and "m_mastodonBackoff.value(host)" in updates
+    fetch = FEATURE.split("void CrmFeature::fetchMastodonLatest(const QString &key)", 1)[1].split("\n}\n", 1)[0]
+    assert "markExpectedHttpStatus(lookupRequest, 429)" in fetch and 'rawHeader("Retry-After")' in fetch
+    assert "m_mastodonIds.value(key)" in fetch and "scheduleNextRender();" in fetch
 
 
 def test_desktop_contact_names_carry_pictures_read_on_load_only():
@@ -1268,13 +1274,17 @@ def test_desktop_list_heads_with_a_lead_to_reach_and_one_to_follow_up():
     assert "if (waiting || closed || last > 0)" in rank
     assert "std::make_tuple(tier, step.isEmpty() ? 1 : 0, order, id)" in rank
     assert "step.isEmpty() ? 1 : 0, -marks.value," in rank
+    assert "posted > 0 ? 0 : 1, -posted," in rank
+    assert "best.upcoming << reachRanked.at(at).id" in rank
     assert "m_nextSkipped.contains(id)" in rank
     marks = FEATURE.split("LeadMarks leadMarks(const QJsonObject &contact)", 1)[1].split("\n}\n", 1)[0]
     assert 'endsWith(QLatin1String("_rank"))' in marks and 'endsWith(QLatin1String("_score"))' in marks
     pair = FEATURE.split("void CrmFeature::renderNextContact()", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "nextContactCard(NextMode::ReachOut)" in pair and "nextContactCard(NextMode::FollowUp)" in pair
+    assert "queueReachMastodon(nextContact(NextMode::ReachOut).ranked)" in pair
     card = FEATURE.split("QWidget *CrmFeature::nextContactCard(NextMode mode)", 1)[1].split("\nvoid CrmFeature::", 1)[0]
     assert "<b>Why them:</b>" in card
+    assert "nextPostLabel(contact, false)" in card and "nextPostLabel(person, true)" in card
     assert "openMailCompose(" in card and "markContacted(" in card and "showContactDetail(" in card
     assert "contactColumns()" in card and "contactListNames(contactId)" in card
     render = FEATURE.split("void CrmFeature::renderContacts()", 1)[1].split("\n}\n", 1)[0]
