@@ -97,10 +97,26 @@ def test_both_prompts_carry_the_same_sections():
     for section in ("## About us: ", "## Their recent public posts",
                     "## Our conversation so far (oldest first)", "## Why now",
                     "Not read yet: open their profiles linked above.",
-                    "Nothing on record yet: this is the first message.",
-                    "Reply with the finished message, ready to paste, then two"):
+                    "Nothing on record yet: this is the first message."):
         assert section in web
         assert section in desktop
+    rules = WEB_SCRIPT.split("const CRM_AI_MESSAGE_RULES = [", 1)[1].split("\n  function crmAiPrompt(", 1)[0]
+    for line in ("Reply with the finished message, ready to paste, then two",
+                 "Reply with the finished application, ready to paste, then a",
+                 "never invent it: list it at the end instead."):
+        assert line in rules
+        assert line in " ".join(re.findall(r'"([^"]*)"', desktop))
+    assert "...(format === \"application\" ? CRM_AI_APPLICATION_RULES : CRM_AI_MESSAGE_RULES)" in web
+    assert 'if (draft.format == QLatin1String("application")) {' in desktop
+
+
+def test_a_grants_pipeline_contact_opens_the_writer_on_a_grant_application():
+    assert 'if (crmFlow(contact.flow)?.icon === "grants") return "application";' in _web(
+        "crmAiDefaultFormat")
+    assert '{ id: "application", label: "Grant application" }' in WEB_SCRIPT
+    writer = _desktop("void CrmFeature::showAiWriter")
+    assert 'flowIconId(text(contact, "flow")) == QLatin1String("grants")' in writer
+    assert 'format->addItem(QStringLiteral("Grant application"), QStringLiteral("application"));' in writer
 
 
 def test_the_message_brief_is_an_organization_setting():
