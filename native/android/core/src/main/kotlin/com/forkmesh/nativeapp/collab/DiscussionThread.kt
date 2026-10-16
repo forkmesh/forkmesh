@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.collab
 
+import com.forkmesh.nativeapp.model.DiscussionEvent
 import com.forkmesh.nativeapp.model.FederatedReply
 import com.forkmesh.nativeapp.model.RepoDiscussion
 
@@ -30,6 +31,30 @@ object DiscussionDetail {
     }
 
     fun body(discussion: RepoDiscussion): String = discussion.body.ifEmpty { NO_DESCRIPTION }
+
+    const val ANSWER_TITLE = "Answer"
+    const val MARK_ANSWER = "Mark as answer"
+    const val CLEAR_ANSWER = "Clear answer"
+    const val ANSWER_SENT = "Answer marked. It shows for everyone once the repository records it."
+    const val ANSWER_CLEARED = "Answer cleared."
+    const val ANSWER_GUEST_ACTION = "mark answers"
+
+    private val ANSWER_CATEGORIES = setOf("q&a", "qa", "q and a", "q-and-a")
+
+    fun answerable(discussion: RepoDiscussion): Boolean =
+        discussion.category.trim().lowercase() in ANSWER_CATEGORIES
+
+    fun isAnswer(event: DiscussionEvent, discussion: RepoDiscussion): Boolean {
+        val target = discussion.answer?.target.orEmpty()
+        return answerable(discussion) && target.isNotEmpty() && event.type == "comment" && event.id == target
+    }
+
+    fun canMarkAnswer(discussion: RepoDiscussion, nodeName: String?, identityPublicKey: String?, repoOwner: String): Boolean {
+        if (!answerable(discussion) || identityPublicKey.isNullOrEmpty()) return false
+        if (identityPublicKey == discussion.authorKey) return true
+        val node = nodeName?.trim()?.lowercase().orEmpty()
+        return node.isNotEmpty() && node == repoOwner.trim().lowercase()
+    }
 }
 
 object FederatedThread {
