@@ -3001,6 +3001,12 @@ public:
     {
         applyTranscriptEvent(sessionId, event);
     }
+    void testFinishCliTranscriptRun(int sessionId, bool codex, int exitCode)
+    {
+        finishCliTranscriptRun(sessionId, codex, exitCode);
+    }
+    void testSetClosingDown(bool closing) { m_closingDown = closing; }
+    bool testAgentQueued(int sessionId) const { return m_agentQueue.contains(sessionId); }
     QString testReplayCliExitsWithoutResult(int sessionId, bool codex, int times)
     {
         QString outcomes;
@@ -10757,6 +10763,7 @@ private:
     // and must never be what puts the app into offline mode.
     int m_offlineProbeFailures = 0;
     static constexpr int kOfflineProbeFailureLimit = 3;
+    static constexpr qint64 kAutoOfflineProbeMaxDelayMs = 30 * 1000;
     QLabel *m_nodeLabel = nullptr;
     QLabel *m_repoLabel = nullptr;
     QLabel *m_navSolanaBalance = nullptr;
@@ -12122,6 +12129,7 @@ private:
     QTimer *m_autoUpdateTimer = nullptr; // periodic check for maybeAutoUpdate()
     bool m_autoUpdateChecking = false;   // a background "git fetch" check is in flight
     bool m_closingDown = false;
+    QSet<int> m_agentExitsSettling;
 
     QLineEdit *m_issueSearch = nullptr;
     QComboBox *m_issuesRepoCombo = nullptr;
@@ -14224,6 +14232,8 @@ private:
     void handleCliRuntimeEvent(int sid, const QJsonObject &ev,
                                const forkmesh::agentguard::Config &guardrails);
     void finishCliTranscriptRun(int sid, bool codex, int exitCode);
+    bool desktopStopping() const;
+    bool keepCliRunForNextStart(int sid, bool codex, int exitCode);
     void applyListedCodexModels(const QJsonArray &models);
     void launchCliRuntime(const CliRuntimeLaunchPlan &plan, const QString &workdir);
     void failCliTranscriptLaunch(int sid, const QString &why);

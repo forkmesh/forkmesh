@@ -34,6 +34,17 @@ Part of [the desktop docs](README.md).
   retried with backoff (5 s doubling to 5 min) on network errors, 408, 425, 429
   and 5xx. The relay answers a repeated signature with the original number and
   `duplicate: true`.
+- Automatic offline mode (the OS reports no network, or three failed relay
+  probes) drops the account event socket, so the phone cannot reach the
+  desktop over the internet until it ends, and only a successful
+  `probeRelayLatency()` ends it. That probe used to be skipped when a
+  WebSocket pong had been seen in the last 90 s, which is always true right
+  after a short outage, and its retries backed off to 5 minutes; the other
+  trigger, window activation, never fires without a window, so a windowless
+  desktop could stay offline for good. While automatic offline mode is on,
+  the probe now ignores the 90 s gate, retries at most every 30 s
+  (`kAutoOfflineProbeMaxDelayMs`), and the minute tick in `MainWindow.cpp`
+  probes as a backstop. Online, nothing new is polled.
 - `RoomSeal::acceptKeyFrame()` writes the peer list to QSettings only for a new
   peer, because each settings write rewrites the whole file on the GUI thread.
 

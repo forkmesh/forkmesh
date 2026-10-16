@@ -11,6 +11,7 @@
 #include "SafeDelete.h"
 #include "VirtualMachineRuntime.h"
 #include "BackgroundActivity.h"
+#include "CrashHandler.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -649,6 +650,11 @@ void AgentRunner::onProcessFinished(int exitCode)
         return;
     }
 
+    if (exitCode != 0 && forkmesh::terminationSignalReceived()) {
+        interruptForShutdown(exitCode);
+        return;
+    }
+
     if (exitCode != 0) {
         QString message =
             QStringLiteral("Agent command exited with code %1.").arg(exitCode);
@@ -819,6 +825,23 @@ bool AgentRunner::restorePreviousPatch()
     }
     emitLog(QStringLiteral("==> Restored previous session patch."));
     return true;
+}
+
+void AgentRunner::interruptForShutdown(int exitCode)
+{
+    if (m_noOutputTimer)
+        m_noOutputTimer->stop();
+    emitLog(QStringLiteral("==> ForkMesh is stopping, so the agent command "
+                           "stopped (exit %1). This session runs again when "
+                           "ForkMesh starts again, with or without a window.")
+                .arg(exitCode));
+    cleanupWorktree();
+    m_session.status = AgentStatus::Running;
+    m_session.finishedAtMs = 0;
+    m_session.lastError.clear();
+    m_store->saveSession(m_session);
+    m_phase = Phase::Idle;
+    m_busy = false;
 }
 
 void AgentRunner::complete(bool ok, const QString &status, const QString &message)
