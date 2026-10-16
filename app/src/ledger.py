@@ -14,6 +14,7 @@ before they are returned.
 """
 
 import calendar
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -32,6 +33,8 @@ _forkbot_blob_text: Any = None
 _forkbot_repo_gateway_json: Any = None
 _forkmesh_email_card_html: Any = None
 _html_escape: Any = None
+_is_admin: Any = None
+_plugin_scope_signed_session: Any = None
 _record_account_email: Any = None
 _reward_balance_lamports: Any = None
 _send_email: Any = None
@@ -2257,6 +2260,194 @@ async def _operating_expense_entries(env, cutoff, before_id, limit):
             ),
         ))
     return output
+
+
+EXPENSE_REQUEST_PROOF = "forkmesh-ledger-expense-request-v1"
+EXPENSES_PATH = "/api/ledger/expenses"
+EXPENSE_BODY_MAX = 8192
+EXPENSE_ACCOUNT_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+EXPENSE_AMOUNT_RE = re.compile(r"(\d{1,9})(?:\.(\d{1,2}))?")
+EXPENSE_CURRENCY_RE = re.compile(r"[A-Z]{3}")
+EXPENSE_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+EXPENSE_REFERENCE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}")
+EXPENSE_COLUMNS = (
+    "expense_id,vendor,description,paid_by_name,amount_minor,currency,"
+    "original_amount_minor,original_currency,external_reference,"
+    "incurred_at,recorded_at,reimbursement_status")
+
+
+def _expense_text(value, maximum):
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= maximum else ""
+
+
+def _expense_minor(value):
+    if isinstance(value, bool):
+        return 0
+    match = EXPENSE_AMOUNT_RE.fullmatch(
+        str(value if value is not None else "").strip())
+    if not match:
+        return 0
+    return int(match.group(1)) * 100 + int((match.group(2) or "").ljust(2, "0"))
+
+
+def _expense_day_ms(value):
+    text = str(value or "").strip()
+    if not EXPENSE_DATE_RE.fullmatch(text):
+        return 0
+    try:
+        day = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return 0
+    return calendar.timegm(day.timetuple()) * 1000
+
+
+def _expense_slug(value):
+    return re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
+
+
+def _expense_view(row):
+    return {
+        "id": str(row.get("expense_id") or ""),
+        "vendor": str(row.get("vendor") or ""),
+        "description": str(row.get("description") or ""),
+        "paidBy": str(row.get("paid_by_name") or ""),
+        "amountMinor": _integer(row.get("amount_minor")),
+        "currency": str(row.get("currency") or ""),
+        "originalAmountMinor": _integer(row.get("original_amount_minor")),
+        "originalCurrency": str(row.get("original_currency") or ""),
+        "externalReference": str(row.get("external_reference") or ""),
+        "incurredAt": _integer(row.get("incurred_at")),
+        "recordedAt": _integer(row.get("recorded_at")),
+        "reimbursementStatus": str(row.get("reimbursement_status") or ""),
+    }
+
+
+def _expense_error(error, status, **extra):
+    return json_response(
+        {"error": error, **extra}, status=status, cache_control="no-store")
+
+
+async def _expense_by_reference(env, reference):
+    return await d1_first(
+        env,
+        "SELECT " + EXPENSE_COLUMNS + " FROM operating_expenses "
+        "WHERE external_reference=?",
+        reference)
+
+
+def _expense_matches(row, expense):
+    return all(
+        str(row.get(key) or "") == str(expense[key])
+        for key in ("vendor", "paid_by_name", "amount_minor", "currency",
+                    "incurred_at"))
+
+
+async def operating_expense_record_handler(env, request):
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "POST"})
+    try:
+        raw = str(await request.text() or "")
+    except Exception:
+        return _expense_error("invalid_json", 400)
+    body_bytes = raw.encode("utf-8")
+    if len(body_bytes) > EXPENSE_BODY_MAX:
+        return _expense_error("payload_too_large", 413)
+    _, account = await _plugin_scope_signed_session(
+        env, request, hashlib.sha256(body_bytes).hexdigest(),
+        EXPENSE_REQUEST_PROOF, EXPENSES_PATH)
+    actor = str((account or {}).get("name") or "").strip().lower()
+    if not actor:
+        return _expense_error("unauthorized", 401)
+    if not await _is_admin(env, actor):
+        await _audit_sensitive_action(
+            env, actor, "ledger.expense.record", "operating_expense", "",
+            outcome="denied")
+        return _expense_error("admin_required", 403)
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return _expense_error("invalid_json", 400)
+
+    vendor = _expense_text(data.get("vendor"), 80)
+    description = _expense_text(data.get("description"), 200)
+    paid_by = str(data.get("paidBy") or "").strip().lstrip("@").lower()
+    amount_minor = _expense_minor(data.get("amount"))
+    currency = str(data.get("currency") or "USD").strip().upper()
+    reference = str(data.get("externalReference") or "").strip()
+    incurred_at = _expense_day_ms(data.get("incurredOn"))
+    original_given = data.get("originalAmount") not in (None, "")
+    original_minor = _expense_minor(data.get("originalAmount"))
+    original_currency = str(data.get("originalCurrency") or "").strip().upper()
+    now = _integer(Date.now())
+    invalid = [field for field, bad in (
+        ("vendor", not vendor),
+        ("description", not description),
+        ("paidBy", not EXPENSE_ACCOUNT_RE.fullmatch(paid_by)),
+        ("amount", amount_minor <= 0),
+        ("currency", not EXPENSE_CURRENCY_RE.fullmatch(currency)),
+        ("externalReference", not EXPENSE_REFERENCE_RE.fullmatch(reference)),
+        ("incurredOn", not incurred_at or incurred_at > now),
+        ("originalAmount", original_given and original_minor <= 0),
+        ("originalCurrency", (
+            original_given != bool(original_currency)
+            or (bool(original_currency)
+                and not EXPENSE_CURRENCY_RE.fullmatch(original_currency)))),
+    ) if bad]
+    if invalid:
+        return _expense_error("invalid_expense", 400, fields=invalid)
+    _, payer = await _account_row(env, paid_by)
+    if not payer or (payer.get("status") or "active") != "active":
+        return _expense_error("payer_not_found", 404)
+
+    await ensure_schema(env)
+    expense = {
+        "expense_id": (_expense_slug(vendor) + "-"
+                       + _expense_slug(reference)).strip("-")[:160],
+        "vendor": vendor,
+        "description": description,
+        "paid_by_name": paid_by,
+        "amount_minor": amount_minor,
+        "currency": currency,
+        "original_amount_minor": original_minor,
+        "original_currency": original_currency,
+        "external_reference": reference,
+        "incurred_at": incurred_at,
+        "recorded_at": now,
+        "reimbursement_status": "outstanding",
+    }
+    existing = await _expense_by_reference(env, reference)
+    if not existing:
+        await d1_run(
+            env,
+            "INSERT OR IGNORE INTO operating_expenses (" + EXPENSE_COLUMNS
+            + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            *(expense[key] for key in EXPENSE_COLUMNS.split(",")))
+        row = await _expense_by_reference(env, reference)
+        if not row:
+            return _expense_error("expense_id_conflict", 409)
+        if str(row.get("expense_id") or "") == expense["expense_id"] and _integer(
+                row.get("recorded_at")) == now:
+            await _audit_sensitive_action(
+                env, actor, "ledger.expense.record", "operating_expense",
+                expense["expense_id"],
+                details={"paidBy": paid_by, "amountMinor": amount_minor,
+                         "currency": currency})
+            return json_response(
+                {"ok": True, "created": True, "expense": _expense_view(row)},
+                status=201, cache_control="no-store")
+        existing = row
+    if not _expense_matches(existing, expense):
+        return _expense_error(
+            "expense_reference_conflict", 409,
+            expense=_expense_view(existing))
+    return json_response(
+        {"ok": True, "created": False, "expense": _expense_view(existing)},
+        cache_control="no-store")
 
 
 def _utc_month(timestamp_ms):

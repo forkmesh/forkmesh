@@ -1942,3 +1942,188 @@ def test_a_lapsed_monthly_vendor_stops_being_expected(monkeypatch):
     assert _run(ledger._expected_expenses(None, _utc_ms(2026, 8, 20)))
     assert _run(ledger._expected_expenses(
         None, _utc_ms(2026, 9, 20))) == []
+
+
+_EXPENSE_NOW_MS = 1_792_172_288_341
+
+
+def _expense_runtime(monkeypatch, *, actor="owner-user", admin=True,
+                     payers=("member",)):
+    database = sqlite3.connect(":memory:")
+    database.row_factory = sqlite3.Row
+    database.execute(
+        "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+    database.executescript(
+        (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
+            encoding="utf-8"))
+    database.execute("DELETE FROM operating_expenses")
+    seen = {"signed": [], "audits": [], "database": database}
+
+    async def signed(_env, request, digest, proof, prefix):
+        seen["signed"].append((digest, proof, prefix))
+        return ("actor-bi", {"name": actor}) if actor else ("", None)
+
+    async def is_admin(_env, name):
+        return admin and name == actor
+
+    async def account_row(_env, name):
+        return ((name + "-bi", {"name": name, "status": "active"})
+                if name in payers else ("", None))
+
+    async def audit(_env, who, action, target_type="", target="",
+                    outcome="success", details=None):
+        seen["audits"].append((who, action, target, outcome, details))
+
+    async def d1_first(_env, sql, *arguments):
+        row = database.execute(sql, arguments).fetchone()
+        return dict(row) if row else None
+
+    async def d1_run(_env, sql, *arguments):
+        database.execute(sql, arguments)
+
+    async def ensure_schema(_env):
+        return None
+
+    class Date:
+        @staticmethod
+        def now():
+            return _EXPENSE_NOW_MS
+
+    def response(payload, status=200, **options):
+        return {"status": status, "body": payload, "options": options}
+
+    for name, value in (
+        ("_plugin_scope_signed_session", signed), ("_is_admin", is_admin),
+        ("_account_row", account_row), ("_audit_sensitive_action", audit),
+        ("d1_first", d1_first), ("d1_run", d1_run),
+        ("ensure_schema", ensure_schema), ("Date", Date),
+        ("json_response", response),
+        ("method_name", lambda request: request.method),
+    ):
+        monkeypatch.setattr(ledger, name, value, raising=False)
+    return seen
+
+
+_EXPENSE = {
+    "vendor": "Example Vendor",
+    "description": "Monthly subscription",
+    "paidBy": "@Member",
+    "amount": "120.50",
+    "currency": "usd",
+    "externalReference": "INV-0001",
+    "incurredOn": "2026-10-16",
+}
+
+
+def _post_expense(body, method="POST"):
+    raw = body if isinstance(body, str) else __import__("json").dumps(body)
+
+    async def text():
+        return raw
+
+    return _run(ledger.operating_expense_record_handler(
+        object(),
+        SimpleNamespace(method=method, text=text,
+                        url="https://app.forkmesh.com/api/ledger/expenses")))
+
+
+def _expense_rows(seen):
+    return [dict(row) for row in seen["database"].execute(
+        "SELECT expense_id,vendor,paid_by_name,amount_minor,currency,"
+        "external_reference,incurred_at,recorded_at,reimbursement_status "
+        "FROM operating_expenses")]
+
+
+def test_an_admin_records_a_member_paid_expense_as_an_outstanding_debt(
+        monkeypatch):
+    import hashlib
+    import json
+
+    seen = _expense_runtime(monkeypatch)
+    result = _post_expense(_EXPENSE)
+
+    assert result["status"] == 201
+    assert result["body"]["created"] is True
+    assert result["body"]["expense"]["id"] == "example-vendor-inv-0001"
+    assert seen["signed"] == [(
+        hashlib.sha256(json.dumps(_EXPENSE).encode()).hexdigest(),
+        "forkmesh-ledger-expense-request-v1", "/api/ledger/expenses")]
+    assert _expense_rows(seen) == [{
+        "expense_id": "example-vendor-inv-0001", "vendor": "Example Vendor",
+        "paid_by_name": "member", "amount_minor": 12050, "currency": "USD",
+        "external_reference": "INV-0001",
+        "incurred_at": 1_792_108_800_000, "recorded_at": _EXPENSE_NOW_MS,
+        "reimbursement_status": "outstanding"}]
+    assert seen["audits"] == [(
+        "owner-user", "ledger.expense.record", "example-vendor-inv-0001",
+        "success", {"paidBy": "member", "amountMinor": 12050,
+                    "currency": "USD"})]
+
+
+def test_recording_the_same_invoice_again_is_idempotent(monkeypatch):
+    seen = _expense_runtime(monkeypatch)
+    assert _post_expense(_EXPENSE)["status"] == 201
+    again = _post_expense(_EXPENSE)
+
+    assert again["status"] == 200
+    assert again["body"]["created"] is False
+    assert len(_expense_rows(seen)) == 1
+    assert len(seen["audits"]) == 1
+
+
+def test_a_reused_invoice_reference_with_other_details_is_refused(monkeypatch):
+    seen = _expense_runtime(monkeypatch)
+    _post_expense(_EXPENSE)
+    result = _post_expense({**_EXPENSE, "amount": "100"})
+
+    assert result["status"] == 409
+    assert result["body"]["error"] == "expense_reference_conflict"
+    assert result["body"]["expense"]["amountMinor"] == 12050
+    assert [row["amount_minor"] for row in _expense_rows(seen)] == [12050]
+
+
+def test_only_a_signed_administrator_may_record_an_expense(monkeypatch):
+    seen = _expense_runtime(monkeypatch, admin=False)
+    denied = _post_expense(_EXPENSE)
+    assert denied["status"] == 403
+    assert denied["body"] == {"error": "admin_required"}
+    assert seen["audits"][0][3] == "denied"
+    assert _expense_rows(seen) == []
+
+    seen = _expense_runtime(monkeypatch, actor="")
+    unsigned = _post_expense(_EXPENSE)
+    assert unsigned["status"] == 401
+    assert _expense_rows(seen) == []
+
+
+def test_expense_fields_are_validated_before_anything_is_written(monkeypatch):
+    seen = _expense_runtime(monkeypatch)
+    bad = _post_expense({
+        **_EXPENSE, "amount": "120.505", "incurredOn": "2026-10-17",
+        "externalReference": "", "originalAmount": "100"})
+    assert bad["status"] == 400
+    assert bad["body"]["fields"] == [
+        "amount", "externalReference", "incurredOn", "originalCurrency"]
+
+    unknown = _post_expense({**_EXPENSE, "paidBy": "nobody"})
+    assert unknown["status"] == 404
+    assert unknown["body"] == {"error": "payer_not_found"}
+
+    assert _post_expense("not json")["status"] == 400
+    assert _post_expense(_EXPENSE, method="GET")["status"] == 405
+    assert _expense_rows(seen) == []
+
+
+def test_an_expense_keeps_its_original_card_currency(monkeypatch):
+    seen = _expense_runtime(monkeypatch, payers=("member",))
+    result = _post_expense({
+        "vendor": "Other Vendor", "description": "Annual licence",
+        "paidBy": "member", "amount": 25.5,
+        "externalReference": "INV-0002", "incurredOn": "2026-10-01",
+        "originalAmount": "23.40", "originalCurrency": "eur"})
+
+    assert result["status"] == 201
+    assert result["body"]["expense"]["amountMinor"] == 2550
+    assert result["body"]["expense"]["originalAmountMinor"] == 2340
+    assert result["body"]["expense"]["originalCurrency"] == "EUR"
+    assert len(_expense_rows(seen)) == 1

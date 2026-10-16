@@ -1201,6 +1201,8 @@ plugin_api_prefixes = _plugin_registry.export("api_prefixes")
 
 _ledger = _LazyModule("ledger")
 ledger_handler = _ledger.export("ledger_handler")
+operating_expense_record_handler = _ledger.export(
+    "operating_expense_record_handler")
 ledger_backfill_cron = _ledger.export("ledger_backfill_cron")
 contributor_reward_payment = _ledger.export("contributor_reward_payment")
 contributor_reward_estimates_handler = _ledger.export(
