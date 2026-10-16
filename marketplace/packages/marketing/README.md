@@ -534,11 +534,17 @@ neither does a failed request.
 
 - **Web**: Dashboard, Advisor, Website channel, Channels (cards with health,
   playbooks, desks and actions), Ads manager (with Where to advertise and Ad
-  readiness) and Growth. The Advisor and the ad plan are web-only for now; the
-  desktop and phone apps do not show them yet.
+  readiness) and Growth. The phone apps do not show the Advisor or the ad plan
+  yet.
 - **Desktop** (`MarketingDashboard.cpp`, `MarketingPages.cpp`,
   `MarketingCommon.cpp`): Dashboard, Channels, Ads manager and Growth from the
-  same API (website analytics live on the Analytics page), a channel
+  same API (website analytics live on the Analytics page), an **Advisor** page
+  (1.41.0: the same to-dos with area and priority filters, **Open** runs each
+  item's action in the desktop's own dialogs, **Mark done** hides it for 7 days
+  in `QSettings` `marketing/advisorDone/<org>`), **Where to advertise** and
+  **Ad readiness** on the Ads manager (**Plan ad** opens New ad with the
+  channel, tagged link, targeting and a daily budget filled in; a readiness
+  check is fixed by double-clicking it), a channel
   bar with one chip per channel (each with a sparkline), a page per channel
   (KPIs, next steps, desk, health, followers and views charts, playbook, posts
   and content with views per item, ads, recorded numbers, and

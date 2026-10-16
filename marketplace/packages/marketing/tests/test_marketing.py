@@ -3913,3 +3913,28 @@ def test_advisor_without_analytics_or_goals_puts_measurement_first():
         "search", "reddit", "sponsorships"]
     assert not any(item["done"] for item in plan["readiness"] if item["id"] in (
         "analytics", "goals", "landing"))
+
+
+def test_desktop_shows_the_advisor_and_the_ad_plan():
+    desktop = PACKAGE / "content" / "desktop"
+    pages = (desktop / "MarketingPages.cpp").read_text()
+    feature = (desktop / "MarketingFeature.cpp").read_text()
+    assert 'QStringLiteral("Growth"),\n                              QStringLiteral("Advisor")}' in pages
+    assert 'addPage(advisor, "marketingAdvisorPage");' in pages
+    assert 'organizationPath(QStringLiteral("/advisor"))' in pages
+    assert 'new DashboardPanel(QStringLiteral("Where to advertise"))' in pages
+    assert 'new DashboardPanel(QStringLiteral("Ad readiness"))' in pages
+    assert 'QStringLiteral("growth"), QStringLiteral("advisor")};' in feature
+    actions = pages.split("void MarketingFeature::runAdvisorAction(const QJsonObject &action)", 1)[1].split(
+        "\n}\n", 1)[0]
+    web = (PACKAGE / "content" / "web" / "page.js").read_text()
+    web_actions = web.split("function runAction(action = {}) {", 1)[1].split("\n  }\n", 1)[0]
+    for kind in ("campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
+                 "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"):
+        assert 'QLatin1String("%s")' % kind in actions, kind
+        assert 'action.type === "%s"' % kind in web_actions, kind
+    worker = (PACKAGE / "content" / "worker" / "marketing.py").read_text()
+    emitted = set(re.findall(r'"type": "([a-z-]+)"', worker.split("ADVISOR_WINDOW_DAYS = 30", 1)[1].split(
+        "async def _marketing_inputs", 1)[0]))
+    assert emitted <= {"campaign", "campaign-edit", "content", "content-open", "channel", "keyword", "page",
+                       "ad", "ad-new", "experiment", "funnel-new", "goals", "analytics"}, emitted

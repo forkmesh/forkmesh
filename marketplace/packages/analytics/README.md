@@ -31,7 +31,7 @@ is a plain JSON POST, so any server can call it).
 | --- | --- | --- |
 | Worker | `content/worker/analytics.py`, `/api/analytics` | Organization-scoped, sealed with the instance data key. |
 | Web | `content/web/view.html`, `page.js` | `/dashboard/analytics`, every feature in the table above. |
-| Desktop | `content/desktop/AnalyticsFeature.{h,cpp}` | Rail page **Analytics** (1.3.0), signed with `forkmesh-analytics-request-v1`. |
+| Desktop | `content/desktop/AnalyticsFeature.{h,cpp}`, `AnalyticsManage.cpp` | Rail page **Analytics** (1.3.0), signed with `forkmesh-analytics-request-v1`; Conversions and Experiments sections (1.7.0). |
 | iOS | `native/ios/ForkMesh/Features/Packages/AnalyticsScreen.swift` | Overview only. |
 
 The desktop page shows the web overview for one project: visitors,
@@ -46,8 +46,31 @@ each a `campaigns` query (`groupBy` `campaign`, `landing`, `term`, 15 rows,
 Marketing package's Website tab, which showed the same Analytics data through
 Marketing's `/performance`; Marketing kept only what needs its own records. It also installs the package for an
 organization, creates the first project and copies the site snippet; the
-top search box finds its projects and top pages. Funnels,
-retention, replay, heatmaps, flags, experiments and surveys stay on the web
+top search box finds its projects and top pages.
+
+Since 1.7.0 the header switches between **Overview**, **Conversions** and
+**Experiments** (`AnalyticsManage.cpp`); the range buttons apply to all three.
+
+- **Conversions**: the project's goals with converted visitors, rate, change
+  against the previous period, converting sessions and session rate (one
+  `conversions` query for up to 10 goals, pinned first); the selected goal by
+  channel and by landing page; and a saved funnel picked from the project's
+  funnel insights with visitors, conversion from the first and the previous
+  step, drop-off and median time per step. **New goal**, **Edit** and
+  **Delete** manage goals (event, one property condition, pinned; extra
+  conditions set on the web are kept). Owners and admins get **Add website
+  playbook** while the project has none applied.
+- **Experiments**: every experiment with its flag, status, split and goal, and
+  the selected one's results per variant (visitors, conversions, rate, lift,
+  chance to beat control, and Baseline / Winning / Losing / Not yet
+  significant), counted from its start to its end or now. Owners and admins can
+  **Stop** an experiment (status `stopped`, `endedAt`, and its flag turned off
+  so everyone sees control) or **Start** it again (flag back on), and create
+  one with **New experiment**: a name, hypothesis, flag key, a test variant and
+  its share of visitors, and a saved goal; it creates the flag (`control` plus
+  the variant) and a running experiment.
+
+Retention, replay, heatmaps, flag targeting rules and surveys stay on the web
 page; **Open in browser** goes there.
 
 ## Storage model

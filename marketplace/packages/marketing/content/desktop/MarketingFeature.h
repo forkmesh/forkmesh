@@ -224,6 +224,13 @@ private:
     QList<AdAttention> adAttention() const;
     bool adMatches(const QJsonObject &ad, bool withStatus) const;
     void renderGrowth();
+    void loadAdvisor();
+    void renderAdvisor();
+    void renderAdPlan();
+    void runAdvisorAction(const QJsonObject &action);
+    void planAd(const QJsonObject &recommendation);
+    QJsonObject advisorDone() const;
+    void toggleAdvisorDone(const QString &id);
     void renderReddit();
     void loadAppStore();
     void renderAppStore();
@@ -467,6 +474,24 @@ private:
     bool m_canManageSettings = false;
 
     QJsonArray m_experiments;
+    QJsonObject m_advisor;
+    QJsonObject m_adPlan;
+    int m_advisorSerial = 0;
+    QButtonGroup *m_advisorArea = nullptr;
+    QComboBox *m_advisorPriority = nullptr;
+    QCheckBox *m_advisorShowDone = nullptr;
+    QLabel *m_advisorSummary = nullptr;
+    QTableWidget *m_advisorTable = nullptr;
+    QPushButton *m_advisorRun = nullptr;
+    QPushButton *m_advisorDone = nullptr;
+    DashboardPanel *m_adPlanPanel = nullptr;
+    QTableWidget *m_adPlanTable = nullptr;
+    QLabel *m_adPlanWhy = nullptr;
+    QPushButton *m_adPlanAd = nullptr;
+    QPushButton *m_adPlanLink = nullptr;
+    QPushButton *m_adPlanConsole = nullptr;
+    DashboardPanel *m_readinessPanel = nullptr;
+    QTableWidget *m_readinessTable = nullptr;
     QJsonObject m_experimentsSummary;
     QJsonArray m_funnel;
     QJsonObject m_funnelReport;

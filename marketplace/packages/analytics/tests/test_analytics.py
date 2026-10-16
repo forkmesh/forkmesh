@@ -971,3 +971,27 @@ def test_maintenance_applies_the_playbook_to_the_site_project_once():
     fresh = call(runtime.use("GET"), f"/api/analytics/acme/projects/{item['id']}")
     assert fresh["data"]["project"]["playbook"]["version"] == analytics.PLAYBOOK_VERSION
     assert len(fresh["data"]["project"]["settings"]["goals"]) == 4
+
+
+def test_desktop_manages_conversions_funnels_and_experiments():
+    desktop = PACKAGE / "content" / "desktop"
+    build = json.loads((desktop / "build.json").read_text())
+    assert "AnalyticsManage.cpp" in build["sources"]
+    feature = (desktop / "AnalyticsFeature.cpp").read_text()
+    manage = (desktop / "AnalyticsManage.cpp").read_text()
+    for section in ("Overview", "Conversions", "Experiments"):
+        assert 'QStringLiteral("%s")' % section in feature
+    assert "m_sections->addWidget(buildConversionsPage());" in feature
+    assert "m_sections->addWidget(buildExperimentsPage());" in feature
+    assert '{QStringLiteral("kind"), QStringLiteral("conversions")}' in manage
+    assert 'QStringLiteral("/objects?kind=") + kind' in manage
+    assert 'projectPath(QStringLiteral("/playbook"))' in manage
+    assert 'body.insert(QStringLiteral("kind"), QStringLiteral("goal"));' in manage
+    running = manage.split("void AnalyticsFeature::setExperimentRunning(bool running)", 1)[1].split(
+        "\nvoid AnalyticsFeature::", 1)[0]
+    assert 'QJsonObject{{QStringLiteral("active"), running}}' in running
+    assert 'body.insert(QStringLiteral("endedAt"), now);' in running
+    created = manage.split("void AnalyticsFeature::newExperiment()", 1)[1]
+    assert '{QStringLiteral("key"), QStringLiteral("control")}' in created
+    assert '{QStringLiteral("status"), QStringLiteral("running")}' in created
+    assert "if (!canManage())" in created
