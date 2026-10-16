@@ -88,6 +88,16 @@ LinkedIn/GitHub/X profile, phone, or name when the address or company
 supports it. A name that contradicts the record's or fits two records never
 matches on its own, and the panel says how a record was found.
 
+**Zoho Mail header with names only**: Zoho often shows the sender as a name
+with no address in the open message (a Gmail reaction such as "Ada a réagi
+depuis Gmail" is one), which before 2.23.1 left the header at "No contact
+address found on this email". The reader now looks for the address in three
+more places, in order: any attribute of the message header (tooltips,
+`aria-label`, avatar URLs, URL-encoded `%40` included), the header's text, and
+the open message's row in the list (found by the message id from the URL,
+else the selected row). The list row gives the sender of received mail and
+the recipient of sent mail.
+
 **Mastodon**: add each instance in the popup (**Mastodon instances**), or
 press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
