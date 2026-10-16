@@ -91,6 +91,13 @@ and opened in the in-app browser or Safari, as the setting says. Reader view
 fetches the original page, extracts the main text on the phone and caches it
 with the article.
 
+Next to the back button the article screen shows how many articles are still
+unread in the timeline it was opened from (or the one **Next Unread** moved
+to), as NetNewsWire does, so you can see how much is left without going back.
+The count drops as each article is opened and marked read. On iOS 26 the item
+hides the shared glass background so it reads as plain text beside the back
+button.
+
 ## Choices worth knowing
 
 - Deleting a folder moves its feeds to the top level instead of deleting
