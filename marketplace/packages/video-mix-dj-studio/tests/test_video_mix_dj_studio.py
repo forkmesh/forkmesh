@@ -21,10 +21,11 @@ def test_manifest_catalog_and_places_describe_the_cross_platform_studio():
     assert row == {"id": MANIFEST["id"], "version": MANIFEST["version"], "manifest": "packages/video-mix-dj-studio/manifest.json"}
 
 
-def test_dashboard_page_has_two_touch_friendly_decks_and_mixer_controls():
-    for marker in ("data-vmdj-deck=\"a\"", "data-vmdj-deck=\"b\"", "data-vmdj=\"crossfader\"", "data-vmdj=\"sync\"", "data-vmdj=\"loop-a\"", "data-vmdj=\"save\""):
+def test_dashboard_page_has_two_touch_friendly_decks_mixer_and_sampler_controls():
+    for marker in ("data-vmdj-deck=\"a\"", "data-vmdj-deck=\"b\"", "data-vmdj=\"crossfader\"", "data-vmdj=\"sync\"", "data-vmdj=\"loop-a\"", "data-vmdj=\"save\"", "data-vmdj-pad=\"kick\"", "data-vmdj-pad=\"riser\""):
         assert marker in VIEW
     assert "@media (pointer: coarse)" in VIEW
+    assert "playsinline=1" in PAGE
     assert "registerPage(\"video-mix-dj-studio\"" in PAGE
 
 
@@ -32,6 +33,8 @@ def test_mix_uses_youtube_embed_messages_and_never_sends_the_set_to_a_server():
     assert "www.youtube-nocookie.com/embed" in PAGE
     assert '"setVolume"' in PAGE
     assert '"setPlaybackRate"' in PAGE
+    assert "AudioContext" in PAGE
+    assert "triggerPad" in PAGE
     assert "localStorage.setItem" in PAGE
     assert "fetch(" not in PAGE
     assert "XMLHttpRequest" not in PAGE
