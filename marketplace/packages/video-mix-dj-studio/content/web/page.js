@@ -8,7 +8,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
     b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
   };
-  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "" };
+  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "" };
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -121,10 +121,13 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   }
 
   function openModal(name, deck = "") {
+    state.modalOpener = document.activeElement;
     state.modal = name;
     if (deck) state.searchTarget = deck;
     const modal = el("modal");
+    const titles = { "load-a": "Load Deck A", "load-b": "Load Deck B", search: "Search YouTube", "deck-a": "Deck A controls", "deck-b": "Deck B controls", mixer: "Mixer controls", sampler: "Sampler", set: "Set controls" };
     for (const panel of modal.querySelectorAll("[data-vmdj-panel]")) panel.hidden = panel.dataset.vmdjPanel !== name;
+    el("modal-title").textContent = titles[name] || "DJ controls";
     modal.hidden = false;
     document.body.classList.add("vmdj-modal-open");
     const focus = modal.querySelector(`[data-vmdj-panel="${name}"] input, [data-vmdj-panel="${name}"] button`);
@@ -136,6 +139,9 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     el("modal").hidden = true;
     document.body.classList.remove("vmdj-modal-open");
     state.modal = "";
+    const opener = state.modalOpener;
+    state.modalOpener = null;
+    if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
   }
 
   function searchCards() {
@@ -436,6 +442,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     el("cross-value").textContent = state.crossfader === 0 ? "Center" : state.crossfader < 0 ? `${Math.abs(state.crossfader)}% A` : `${state.crossfader}% B`;
     el("search-target-a").classList.toggle("is-active", state.searchTarget === "a");
     el("search-target-b").classList.toggle("is-active", state.searchTarget === "b");
+    el("search-target-a").setAttribute("aria-pressed", String(state.searchTarget === "a"));
+    el("search-target-b").setAttribute("aria-pressed", String(state.searchTarget === "b"));
     el("sampler-level").value = String(state.sampler.level);
     for (const [index, sample] of state.samples.entries()) {
       const button = el(`section-${index}`);
@@ -505,6 +513,15 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   el("open-set").addEventListener("click", () => openModal("set"));
   el("close-modal").addEventListener("click", closeModal);
   el("modal").addEventListener("click", (event) => { if (event.target === el("modal")) closeModal(); });
+  el("modal").addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusable = [...el("modal").querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex=\"-1\"])")].filter((element) => !element.closest("[hidden]"));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
   el("search-form").addEventListener("submit", (event) => { event.preventDefault(); searchVideos(el("search-query").value); });
   for (const name of ["a", "b"]) el(`search-target-${name}`).addEventListener("click", () => { state.searchTarget = name; render(); });
   el("crossfader").addEventListener("input", (event) => changeCrossfader(event.target.value));

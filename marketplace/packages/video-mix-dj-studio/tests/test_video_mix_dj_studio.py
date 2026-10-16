@@ -34,6 +34,21 @@ def test_dashboard_page_has_a_fixed_mobile_two_deck_surface_and_overlay_controls
     assert "registerPage(\"video-mix-dj-studio\"" in PAGE
 
 
+def test_overlay_keeps_keyboard_focus_and_announces_its_current_context():
+    assert 'aria-labelledby="vmdj-modal-title"' in VIEW
+    assert 'data-vmdj="modal-title"' in VIEW
+    assert 'role="status" aria-live="polite"' in VIEW
+    assert 'data-vmdj="search-target-a" class="vmdj-btn" type="button" aria-pressed="true"' in VIEW
+    assert 'data-vmdj="search-target-b" class="vmdj-btn" type="button" aria-pressed="false"' in VIEW
+    assert 'state.modalOpener = document.activeElement;' in PAGE
+    assert 'if (opener instanceof HTMLElement && opener.isConnected) opener.focus();' in PAGE
+    assert 'el("modal").addEventListener("keydown", (event) => {' in PAGE
+    assert 'if (event.key !== "Tab") return;' in PAGE
+    assert 'last.focus();' in PAGE
+    assert 'first.focus();' in PAGE
+    assert 'el("search-target-a").setAttribute("aria-pressed", String(state.searchTarget === "a"));' in PAGE
+
+
 def test_mix_uses_youtube_embed_messages_local_storage_and_public_search_only():
     assert "www.youtube-nocookie.com/embed" in PAGE
     assert '"setVolume"' in PAGE
