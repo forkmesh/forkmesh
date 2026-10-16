@@ -1524,6 +1524,23 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
             }
             selectAgentAccount(provider, created);
             audit(QStringLiteral("Added the %1 account %2").arg(providerName, label));
+        } else if (method == QLatin1String("agentops.accounts.delete")) {
+            if (profile == profiles.cend()) {
+                fail(QStringLiteral("unknown_account"));
+                return;
+            }
+            if (profile->builtIn) {
+                fail(QStringLiteral("default_account"));
+                return;
+            }
+            const QString deletedLabel = profile->label;
+            if (!deleteAgentAccount(provider, accountId)) {
+                fail(QStringLiteral("account_failed"));
+                return;
+            }
+            refreshAgentAccountUsageMenu(provider);
+            audit(QStringLiteral("Deleted the %1 account %2")
+                      .arg(providerName, deletedLabel));
         } else {
             fail(QStringLiteral("unsupported"));
             return;

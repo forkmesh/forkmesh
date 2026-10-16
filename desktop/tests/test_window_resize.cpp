@@ -20201,8 +20201,44 @@ else:
                       QStringLiteral("claude-code")).label ==
                       QStringLiteral("Work Claude"),
               QStringLiteral("editing an account persists its label"));
+        QToolButton *deleteSaved = nullptr;
+        QToolButton *deleteDefault = nullptr;
+        if (accountMenu) {
+            deleteSaved = accountMenu->findChild<QToolButton *>(
+                QStringLiteral("agentAccountDelete_%1").arg(profileId));
+            deleteDefault = accountMenu->findChild<QToolButton *>(
+                QStringLiteral("agentAccountDelete_default"));
+        }
+        check(deleteSaved && deleteSaved->isEnabled() && deleteDefault &&
+                  !deleteDefault->isEnabled(),
+              QStringLiteral("account menu offers deleting saved accounts but "
+                             "not the default one"));
         if (accountMenu)
             accountMenu->close();
+        QApplication::processEvents();
+        check(!window.testDeleteAgentAccount(QStringLiteral("claude-code"),
+                                             QStringLiteral("default")),
+              QStringLiteral("the default account cannot be deleted"));
+        const bool deleted = window.testDeleteAgentAccount(
+            QStringLiteral("claude-code"), profileId);
+        const QList<forkmesh::ui::AgentAccountProfile> remaining =
+            forkmesh::ui::agentAccountProfiles(QStringLiteral("claude-code"));
+        check(deleted &&
+                  forkmesh::ui::activeAgentAccount(
+                      QStringLiteral("claude-code")).id ==
+                      QStringLiteral("default") &&
+                  std::none_of(
+                      remaining.cbegin(), remaining.cend(),
+                      [&profileId](const forkmesh::ui::AgentAccountProfile &p) {
+                          return p.id == profileId;
+                      }) &&
+                  !QFileInfo::exists(credentialPath) &&
+                  QFileInfo::exists(profileDir) &&
+                  !QSettings().contains(forkmesh::ui::agentAccountUsageSetting(
+                      QStringLiteral("claude-code"), profileId,
+                      QStringLiteral("claudeUsageFablePct"))),
+              QStringLiteral("deleting the active account falls back to the "
+                             "default, signs it out and keeps its history"));
         window.testSelectAgentAccount(QStringLiteral("claude-code"),
                                       QStringLiteral("default"));
     }
@@ -26725,6 +26761,14 @@ else:
             for (QAction *action : usageMenu->actions())
                 if (!action->objectName().isEmpty())
                     usageActions << action->objectName();
+        const bool usagePageFirst =
+            usageActions.value(0) == QStringLiteral("agentUsagePageAction");
+        if (usagePageFirst)
+            usageActions.removeFirst();
+        check(usagePageFirst,
+              QString("the Usage menu opens with the Usage page link "
+                      "(actions=%1)")
+                  .arg(usageActions.join(QLatin1Char(','))));
         check(usageMenu && usageActions.value(0) ==
                                QStringLiteral("agentUsageHeadingCodex") &&
                   usageActions.contains(QStringLiteral("agentUsageTerminalCodex")) &&

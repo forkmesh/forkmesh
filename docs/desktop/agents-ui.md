@@ -221,9 +221,24 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 ### Provider accounts and usage
 
 - The bottom bar shows the usage meter of the composer's provider. Its menu
-  (`showAgentAccountMenu`) has per-account **Edit**, **Log in**, **Log out**
-  and a terminal button that opens the CLI as that account
+  (`showAgentAccountMenu`) has per-account **Edit**, **Log in**, **Log out**,
+  **Delete** and a terminal button that opens the CLI as that account
   (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+- **Delete** (`confirmDeleteAgentAccount`, `deleteAgentAccount`) asks first,
+  switches new agents to the default account if the deleted one was selected,
+  drops the profile, identity, label and cached usage settings, and removes the
+  login file (`.credentials.json` / `auth.json`). The account folder stays: it
+  holds the account's agent history, and running agents and peer messaging
+  (`ClaudePeerMessaging.cpp`) still read it. A login still parked under
+  `claude-login/` is moved to `agent-accounts/<provider>/<id>` so the next
+  sign-in does not re-file it as a new account. The default account is the
+  CLI's own home folder (`~/.claude`, `~/.codex`) and cannot be deleted; sign
+  it out with **Log out**. On macOS a Claude login kept in the Keychain is not
+  touched.
+- Both account popups start with **Open the Usage page**
+  (`addAgentUsagePageAction`), which opens the Usage package's
+  `/dashboard/usage` page (`marketplace/packages/usage`) for every account
+  across the user's desktops. The entry is hidden when no ForkMesh host is set.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the
   window, mark even pace and add a pace note (`usagePaceNote`).
 - **Usage** (`agentUsageButton`, `showAgentUsageMenu`) shows the default

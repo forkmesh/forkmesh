@@ -727,6 +727,7 @@ void MainWindow::showAgentAccountMenu(const QString &provider,
     QFont headingFont = heading->font();
     headingFont.setBold(true);
     heading->setFont(headingFont);
+    addAgentUsagePageAction(menu);
     menu->addSeparator();
 
     if (!codex)
@@ -803,6 +804,18 @@ void MainWindow::showAgentAccountMenu(const QString &provider,
                    [this, provider, id = profile.id] {
                        launchAgentSystemTerminal(provider,
                                                  QStringLiteral("logout"), id);
+                   });
+        addControl(QStringLiteral("agentAccountDelete_%1"),
+                   QString::fromUtf8("Delete\xE2\x80\xA6"),
+                   profile.builtIn
+                       ? QStringLiteral("The default %1 account is the one in "
+                                        "your home folder and cannot be deleted")
+                             .arg(providerName)
+                       : QStringLiteral("Delete this %1 account from this desktop")
+                             .arg(providerName),
+                   !profile.builtIn,
+                   [this, provider, id = profile.id] {
+                       confirmDeleteAgentAccount(provider, id);
                    });
         controlsLayout->addStretch(1);
         QToolButton *launch = addControl(
@@ -922,6 +935,8 @@ void MainWindow::showAgentUsageMenu(const QPoint &globalPosition)
     menu->setAttribute(Qt::WA_DeleteOnClose);
     const QColor iconColor = menu->palette().color(QPalette::PlaceholderText);
     const QString dot = QString::fromUtf8(" \xC2\xB7 ");
+    if (addAgentUsagePageAction(menu))
+        menu->addSeparator();
 
     QStringList providers{kClaudeCodeProvider, kCodexProvider};
     if (agentIsCodexProvider(m_agentUsageProvider))
@@ -1038,6 +1053,23 @@ void MainWindow::showAgentUsageMenu(const QPoint &globalPosition)
     }
 
     menu->popup(globalPosition);
+}
+
+QAction *MainWindow::addAgentUsagePageAction(QMenu *menu)
+{
+    if (!nativePackageLinkUrl(QStringLiteral("usage")).isValid())
+        return nullptr;
+    QAction *page = menu->addAction(
+        forkmesh::ui::themedOcticon(
+            QStringLiteral("graph"),
+            menu->palette().color(QPalette::PlaceholderText), 14),
+        QStringLiteral("Open the Usage page"));
+    page->setObjectName(QStringLiteral("agentUsagePageAction"));
+    page->setToolTip(QStringLiteral("Every Claude Code and Codex account's usage "
+                                    "across your connected desktops"));
+    connect(page, &QAction::triggered, this,
+            [this] { openNativePackageLink(QStringLiteral("usage")); });
+    return page;
 }
 
 void MainWindow::refreshAgentAccountUsageMenu(const QString &provider)
@@ -1640,6 +1672,90 @@ void MainWindow::editAgentAccount(const QString &provider,
     }
     refreshAgentToolbarAccountButtons(); // the bar's tooltip carries the label
     flashMessage(QStringLiteral("%1 account renamed.").arg(providerName));
+}
+
+bool MainWindow::deleteAgentAccount(const QString &provider,
+                                    const QString &accountId)
+{
+    invalidateAgentAccountProfileCache();
+    const QList<AgentAccountProfile> profiles = agentAccountProfiles(provider);
+    const auto profile = std::find_if(
+        profiles.cbegin(), profiles.cend(), [&accountId](
+            const AgentAccountProfile &candidate) {
+            return candidate.id == accountId;
+        });
+    if (profile == profiles.cend() || profile->builtIn)
+        return false;
+
+    if (activeAgentAccount(provider).id == accountId)
+        selectAgentAccount(provider, QStringLiteral("default"));
+
+    const QString key = agentAccountProviderKey(provider);
+    QSettings settings;
+    settings.remove(agentAccountProfilesGroup(provider) + QLatin1Char('/') +
+                    accountId);
+    settings.remove(agentAccountIdentitySetting(provider, accountId));
+    settings.remove(agentAccountLabelSetting(provider, accountId));
+    settings.remove(
+        QStringLiteral("agents/accountUsage/%1/%2").arg(key, accountId));
+    invalidateAgentAccountProfileCache();
+
+    const QString configDir = QDir::cleanPath(profile->configDir);
+    QFile::remove(agentAccountCredentialPath(provider, configDir));
+    const QString loginRoot = QDir::cleanPath(claudeAccountLoginRoot());
+    if (configDir.startsWith(loginRoot + QLatin1Char('/')))
+        QDir().rename(configDir, forkmesh::paths::dataRoot() +
+                                     QStringLiteral("/agent-accounts/%1/%2")
+                                         .arg(key, accountId));
+    claudeCliIdentityCache().remove(configDir);
+
+    refreshAgentToolbarAccountButtons();
+    refreshQuickAddAgentModelSelector();
+    return true;
+}
+
+void MainWindow::confirmDeleteAgentAccount(const QString &provider,
+                                           const QString &accountId)
+{
+    const QList<AgentAccountProfile> profiles = agentAccountProfiles(provider);
+    const auto profile = std::find_if(
+        profiles.cbegin(), profiles.cend(), [&accountId](
+            const AgentAccountProfile &candidate) {
+            return candidate.id == accountId;
+        });
+    if (profile == profiles.cend() || profile->builtIn)
+        return;
+
+    const QString providerName = agentIsCodexProvider(provider)
+                                     ? QStringLiteral("Codex")
+                                     : QStringLiteral("Claude Code");
+    const QString label = profile->label.trimmed();
+    QMessageBox box(QMessageBox::Warning,
+                    QStringLiteral("Delete %1 account").arg(providerName),
+                    QStringLiteral("Delete the %1 account \"%2\"?")
+                        .arg(providerName, label),
+                    QMessageBox::Cancel, this);
+    box.setObjectName(QStringLiteral("agentAccountDeleteDialog"));
+    box.setInformativeText(
+        QStringLiteral("This desktop forgets the account and signs it out. "
+                       "Agents running as it stop being able to sign in. Its "
+                       "agent history stays in %1.")
+            .arg(QDir::toNativeSeparators(profile->configDir)));
+    QPushButton *remove =
+        box.addButton(QStringLiteral("Delete account"),
+                      QMessageBox::DestructiveRole);
+    box.setDefaultButton(QMessageBox::Cancel);
+    box.exec();
+    if (box.clickedButton() != remove)
+        return;
+    if (!deleteAgentAccount(provider, accountId)) {
+        flashMessage(QStringLiteral("Could not delete the %1 account %2.")
+                         .arg(providerName, label),
+                     true);
+        return;
+    }
+    flashMessage(QStringLiteral("Deleted the %1 account %2.")
+                     .arg(providerName, label));
 }
 
 void MainWindow::launchAgentSystemTerminal(const QString &provider,

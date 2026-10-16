@@ -671,9 +671,12 @@ Rename; Add account creates and selects a profile and opens its sign-in.
   reply adds `activeProvider`.
 - `agentops.accounts.select {provider, account}`,
   `agentops.accounts.rename {provider, account, label}`,
-  `agentops.accounts.add {provider, label}` answer the new usage summary (add
-  also answers `account`). Errors: `unsupported_provider`, `unknown_account`,
-  `bad_request`, `account_failed`.
+  `agentops.accounts.add {provider, label}`,
+  `agentops.accounts.delete {provider, account}` answer the new usage summary
+  (add also answers `account`). Errors: `unsupported_provider`,
+  `unknown_account`, `bad_request`, `account_failed`, `default_account` (the
+  default account cannot be deleted). Clients confirm a delete before sending
+  it.
 - Usage windows carry `windowMs`. `UsageWindowMeter` derives `segments`,
   `elapsedFraction`, `periodLabel` ("Day 2 of 7") and `paceLabel` ("41% over
   pace"); bars are drawn as segments (one per day or hour) with pace marks
