@@ -16,7 +16,8 @@ for _name in ("FORKMESH_HOME", "FORKMESH_PROJECTS_DIR", "FORKMESH_PROJECT",
               "FORKMESH_MCP_TOKEN", "FORKMESH_MCP_CONNECTOR",
               "FORKMESH_AGENT_INTAKE", "FORKMESH_AGENT_INTAKE_TOKEN",
               "ZOHO_MAIL_CONFIG", "ZOHO_MAIL_ADDRESS", "ZOHO_MAIL_APP_PASSWORD",
-              "ZOHO_MAIL_HOST", "ZOHO_MAIL_PORT", "ZOHO_MAIL_FROM_NAME"):
+              "ZOHO_MAIL_HOST", "ZOHO_MAIL_PORT", "ZOHO_MAIL_FROM_NAME",
+              "ZOHO_MAIL_CRM_ORGANIZATION", "ZOHO_MAIL_CRM_LIST"):
     os.environ.pop(_name, None)
 os.environ["HOME"] = _SANDBOX
 os.environ["XDG_DATA_HOME"] = os.path.join(_SANDBOX, "data")
@@ -31,6 +32,7 @@ _spec = importlib.util.spec_from_file_location(
     "fm_mcp_zoho", HERE / "forkmesh_mcp_server.py")
 srv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(srv)
+sys.modules["forkmesh_mcp_server"] = srv
 
 
 class FakeSMTP:
@@ -59,8 +61,52 @@ class FakeSMTP:
         self.closed = True
 
 
+class FakeCRM:
+    def __init__(self, organizations=("acme",)):
+        self.organizations = list(organizations)
+        self.views = [{"id": "a" * 32, "name": "Investors"}]
+        self.contacts = {}
+        self.requests = []
+        self.fail = None
+
+    def __call__(self, method, path, body=None):
+        self.requests.append((method, path, body))
+        if self.fail:
+            raise ValueError(self.fail)
+        parts = path.split("/")[3:]
+        if not parts:
+            return {"organizations": [{"name": name} for name in self.organizations]}
+        if parts[1:] == ["views"] and method == "GET":
+            return {"views": list(self.views)}
+        if parts[1:] == ["views"] and method == "POST":
+            view = {"id": f"{len(self.views):032x}", "name": body["name"]}
+            self.views.append(view)
+            return {"view": view}
+        if parts[1:] == ["emails", "link"]:
+            found = next((c for c in self.contacts.values() if c["email"] == body["contactEmail"]), None)
+            created = found is None
+            if created:
+                found = {"id": f"{len(self.contacts) + 1:032x}", "email": body["contactEmail"],
+                         "name": body["contactName"], "views": [], "emails": []}
+                self.contacts[found["id"]] = found
+            found["emails"].append(body)
+            return {"contact": dict(found), "contactCreated": created}
+        if parts[1] == "contacts" and method == "PATCH":
+            contact = self.contacts[parts[2]]
+            contact["views"] = contact["views"] + [v for v in body["views"] if v not in contact["views"]]
+            return {"contact": dict(contact)}
+        raise AssertionError((method, path))
+
+
+@pytest.fixture
+def crm(monkeypatch):
+    fake = FakeCRM()
+    monkeypatch.setattr(srv, "crm_request", fake)
+    return fake
+
+
 @pytest.fixture(autouse=True)
-def _fake_zoho(monkeypatch, tmp_path):
+def _fake_zoho(monkeypatch, tmp_path, crm):
     FakeSMTP.instances, FakeSMTP.reject_login, FakeSMTP.refuse = [], False, {}
     monkeypatch.setattr(zoho_mail, "SMTP", FakeSMTP)
     monkeypatch.setenv("ZOHO_MAIL_CONFIG", str(tmp_path / "zoho-mail.json"))
@@ -198,3 +244,80 @@ def test_mcp_send_email_is_a_write_tool(monkeypatch):
     monkeypatch.setenv("FORKMESH_MCP_TOKEN", "wrong")
     failed, _ = call_tool("send_email", {"to": "ada@example.org", "subject": "x", "body": "y"})
     assert failed and FakeSMTP.instances == []
+
+
+def test_mcp_send_email_logs_outside_recipients_in_the_initiatives_list(crm):
+    failed, text = call_tool("send_email", {
+        "to": "Ada Example <ada@example.org>", "cc": "colleague@example.com",
+        "subject": "Collaboration", "body": "Shall we work together?"})
+    assert not failed
+    assert "CRM: logged for Ada Example (new contact) in the Initiatives list (acme)" in text
+    initiatives = next(v for v in crm.views if v["name"] == "Initiatives")
+    contact = next(iter(crm.contacts.values()))
+    assert len(crm.contacts) == 1 and contact["email"] == "ada@example.org"
+    assert contact["views"] == [initiatives["id"]]
+    link = contact["emails"][0]
+    message_id = FakeSMTP.instances[-1].sent[0][0]["Message-ID"]
+    assert link["provider"] == "zoho" and link["direction"] == "outbound"
+    assert link["mailbox"] == "sender@example.com" and link["fromName"] == "Example Team"
+    assert link["messageId"] == f"{message_id} ada@example.org"
+    assert link["subject"] == "Collaboration" and link["text"] == "Shall we work together?"
+    record = json.loads(text.split("\n", 2)[2])["crm"]
+    assert record["listCreated"] is True and record["organization"] == "acme"
+
+
+def test_a_second_email_reuses_the_list_and_the_contact(crm):
+    call_tool("send_email", {"to": "ada@example.org", "subject": "One", "body": "First"})
+    lists = len(crm.views)
+    failed, text = call_tool("send_email", {"to": "ada@example.org", "subject": "Two", "body": "Second"})
+    assert not failed and "CRM: logged for ada@example.org in the Initiatives list" in text
+    assert "new contact" not in text and len(crm.views) == lists and len(crm.contacts) == 1
+    assert not any(m == "PATCH" for m, _, _ in crm.requests[-3:])
+
+
+def test_an_existing_list_is_matched_by_name(crm):
+    crm.views.append({"id": "b" * 32, "name": "initiatives"})
+    call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "b"})
+    assert next(iter(crm.contacts.values()))["views"] == ["b" * 32]
+    assert not any(m == "POST" and p.endswith("/views") for m, p, _ in crm.requests)
+
+
+def test_internal_only_email_touches_no_crm(crm):
+    failed, text = call_tool("send_email", {"to": "colleague@example.com", "subject": "s", "body": "b"})
+    assert not failed and "nothing to record" in text and crm.requests == []
+
+
+def test_crm_failure_still_reports_the_email_as_sent(crm):
+    crm.fail = "CRM API 503: unavailable"
+    failed, text = call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "b"})
+    assert not failed and text.startswith("Sent to ada@example.org")
+    assert "CRM not updated: CRM API 503: unavailable" in text
+
+
+def test_crm_can_be_turned_off_per_email(crm):
+    failed, text = call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "b", "crm": False})
+    assert not failed and "CRM" not in text.split("\n")[0] and crm.requests == []
+
+
+def test_several_organizations_need_one_chosen(crm, monkeypatch, _fake_zoho):
+    crm.organizations = ["acme", "globex"]
+    _, text = call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "b"})
+    assert "several CRM organizations (acme, globex)" in text and crm.contacts == {}
+    config = json.loads((_fake_zoho / "zoho-mail.json").read_text())
+    zoho_mail.save_config({**config, "crmOrganization": "globex", "crmList": "Partners"})
+    _, text = call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "b"})
+    assert "in the Partners list (globex)" in text
+    assert all("/globex/" in p for _, p, _ in crm.requests[-4:])
+
+
+def test_html_email_is_logged_as_text(crm):
+    call_tool("send_email", {"to": "ada@example.org", "subject": "s", "body": "<p>Hi &amp; bye</p>", "html": True})
+    assert next(iter(crm.contacts.values()))["emails"][0]["text"] == "Hi & bye\n"
+
+
+def test_cli_logs_in_the_crm_unless_told_not_to(crm, capsys):
+    assert zoho_mail.main(["send", "--to", "ada@example.org", "--subject", "s", "--body", "b"]) == 0
+    assert "CRM: logged for ada@example.org (new contact) in the Initiatives list (acme)" in capsys.readouterr().out
+    before = len(crm.requests)
+    assert zoho_mail.main(["send", "--no-crm", "--to", "ada@example.org", "--subject", "s", "--body", "b"]) == 0
+    assert len(crm.requests) == before and "CRM" not in capsys.readouterr().out

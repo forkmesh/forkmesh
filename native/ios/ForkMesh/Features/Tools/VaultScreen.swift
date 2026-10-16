@@ -141,8 +141,7 @@ private struct VaultMain: View {
     @ViewBuilder private var phaseBody: some View {
         switch model.phase {
         case .loading:
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         case .signedOut:
             FmEmptyState(icon: "lock_outline", title: VaultCopy.signedOutTitle, message: VaultCopy.signedOutMessage)
         case .notSetUp:

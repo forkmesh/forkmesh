@@ -10,7 +10,7 @@ import ssl
 import sys
 import time
 from email.message import EmailMessage
-from email.utils import formataddr, formatdate, make_msgid
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -84,6 +84,20 @@ def load_config(environ=None):
             "ZOHO_MAIL_ADDRESS and ZOHO_MAIL_APP_PASSWORD")
     clean_address(config["address"])
     return config
+
+
+def crm_settings(environ=None):
+    environ = os.environ if environ is None else environ
+    path = config_path(environ)
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except (OSError, ValueError):
+        stored = {}
+    stored = stored if isinstance(stored, dict) else {}
+    return {
+        "organization": (environ.get("ZOHO_MAIL_CRM_ORGANIZATION") or stored.get("crmOrganization") or "").strip(),
+        "list": (environ.get("ZOHO_MAIL_CRM_LIST") or stored.get("crmList") or "").strip(),
+    }
 
 
 def save_config(config, environ=None):
@@ -227,10 +241,15 @@ def send(to, subject, body, cc=None, bcc=None, reply_to="", html=False, environ=
         "sent": True,
         "messageId": message["Message-ID"],
         "from": config["address"],
+        "fromName": config["fromName"],
         "to": [address for _, address in to_list],
         "cc": [address for _, address in cc_list],
         "bcc": [address for _, address in bcc_list],
         "refused": refused,
+        "recipients": [
+            {"email": address, "name": parseaddr(header)[0], "field": field}
+            for field, items in (("to", to_list), ("cc", cc_list), ("bcc", bcc_list))
+            for header, address in items if address not in refused],
         "subject": subject,
         "at": int(time.time() * 1000),
     }
@@ -269,6 +288,10 @@ def command_setup(args):
         "port": args.port,
         "fromName": clean_text(args.from_name, "from name", 200),
     }
+    if args.crm_organization:
+        config["crmOrganization"] = clean_text(args.crm_organization, "CRM organization", 63).lower()
+    if args.crm_list:
+        config["crmList"] = clean_text(args.crm_list, "CRM list", 60)
     path = save_config(config)
     print(f"Saved {path}")
     if not args.no_check:
@@ -284,9 +307,16 @@ def command_check(args):
 
 
 def command_send(args):
-    result = send(args.to, args.subject, read_body(args), cc=args.cc, bcc=args.bcc,
+    body = read_body(args)
+    result = send(args.to, args.subject, body, cc=args.cc, bcc=args.bcc,
                   reply_to=args.reply_to, html=args.html)
-    print(json.dumps(result) if args.json else summary(result))
+    lines = [summary(result)]
+    if not args.no_crm:
+        import forkmesh_mcp_server
+        result["crm"] = forkmesh_mcp_server.record_sent_email(
+            result, body, args.html, args.crm_organization, args.crm_list)
+        lines.append(forkmesh_mcp_server.crm_sent_email_summary(result["crm"]))
+    print(json.dumps(result) if args.json else "\n".join(lines))
     return 0
 
 
@@ -308,6 +338,9 @@ def parser():
     setup.add_argument("--password-stdin", action="store_true",
                        help="read the app password from the first line of stdin")
     setup.add_argument("--no-check", action="store_true", help="save without signing in")
+    setup.add_argument("--crm-organization", default="",
+                       help="CRM organization sent email is logged in (default: the account's only one)")
+    setup.add_argument("--crm-list", default="", help="CRM list recipients join (default Initiatives)")
     setup.set_defaults(run=command_setup)
 
     probe = commands.add_parser("check", help="sign in to Zoho without sending anything")
@@ -326,6 +359,9 @@ def parser():
     body.add_argument("--body-file", help="read the message from a file, or - for stdin (the default)")
     send_parser.add_argument("--html", action="store_true", help="the body is HTML")
     send_parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    send_parser.add_argument("--no-crm", action="store_true", help="do not log the email in the CRM")
+    send_parser.add_argument("--crm-organization", default="", help="CRM organization to log it in")
+    send_parser.add_argument("--crm-list", default="", help="CRM list the recipients join (default Initiatives)")
     send_parser.set_defaults(run=command_send)
     return root
 

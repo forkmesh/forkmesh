@@ -84,5 +84,6 @@ struct MirrorsList: View {
             }
         }
         .listStyle(.insetGrouped)
+        .fmLoading(model.loading)
     }
 }

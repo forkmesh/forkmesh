@@ -31,6 +31,7 @@ struct RSSReaderTimelineScreen: View {
 
     var body: some View {
         content
+            .fmLoading(model.refreshing)
             .bareShellTop()
             .navigationTitle(model.title(scope))
             .navigationBarTitleDisplayMode(.inline)
@@ -156,7 +157,9 @@ struct RSSReaderTimelineScreen: View {
 
     @ViewBuilder private var content: some View {
         let list: [RSSArticle] = articles
-        if list.isEmpty {
+        if list.isEmpty && model.refreshing && query.isEmpty {
+            FmSkeletonList(rows: 6, hasLeading: false, label: "Loading articles")
+        } else if list.isEmpty {
             ScrollView {
                 VStack(spacing: 10) {
                     Image(systemName: query.isEmpty ? "tray" : "magnifyingglass")

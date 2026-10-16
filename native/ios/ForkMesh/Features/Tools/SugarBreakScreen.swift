@@ -104,8 +104,7 @@ private struct SugarBreakContent: View {
 
     @ViewBuilder private var main: some View {
         if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "no_food_outlined", title: SugarBreakModel.unavailableTitle, message: model.error)
         } else if model.showsInstall {

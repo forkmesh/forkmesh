@@ -68,8 +68,7 @@ private struct NotesList: View {
 
     var body: some View {
         if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "sticky_note_2_outlined", title: NotesListModel.unavailableTitle, message: model.error)
         } else if model.notes.isEmpty {
@@ -257,8 +256,7 @@ private struct NoteEditorBody: View {
 
     var body: some View {
         if model.loading {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList(rows: 6, hasLeading: false)
         } else if !model.error.isEmpty {
             FmEmptyState(icon: "sticky_note_2_outlined", title: "Note unavailable", message: model.error)
         } else {
@@ -343,8 +341,7 @@ private struct NoteHistorySheet: View {
                 }
             }
         } else if model.error.isEmpty {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList(rows: 6, hasLeading: false)
         } else {
             FmEmptyState(icon: "history", title: "History unavailable", message: model.error)
         }

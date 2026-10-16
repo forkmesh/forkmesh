@@ -12,7 +12,7 @@ final class HubPackageState {
 
     private(set) var installed: Set<String> = []
     private(set) var adReviewer = false
-    @ObservationIgnored private var refreshing = false
+    private(set) var refreshing = false
     @ObservationIgnored private var epoch = 0
 
     func reset() {
@@ -28,21 +28,19 @@ final class HubPackageState {
         let started = epoch
         refreshing = true
         defer { if started == epoch { refreshing = false } }
+        async let reviewing: Bool? = try? await client.isAdReviewer()
+        let names: [String] = Array(await PackagesFeature.organizationNames().filter(PackagesText.isOrgName).prefix(20))
+        if started != epoch { return }
+        let read: [OrgPackageState?] = await client.organizationPackages(names)
+        let states: [OrgPackageState] = read.compactMap { $0 }
+        let complete: Bool = states.count == read.count
         var found: Set<String> = []
-        var states: [OrgPackageState] = []
-        var complete = true
-        for name in await PackagesFeature.organizationNames().filter(PackagesText.isOrgName).prefix(20) {
-            if started != epoch { return }
-            guard let state = try? await client.organizationPackages(name) else {
-                complete = false
-                continue
-            }
-            states.append(state)
+        for state in states {
             for id in PackageRoutes.businessPackageIds where state.isInstalled(id) {
                 found.insert(id)
             }
         }
-        let reviewer: Bool = (try? await client.isAdReviewer()) ?? false
+        let reviewer: Bool = await reviewing ?? false
         if started != epoch { return }
         installed = found
         adReviewer = reviewer

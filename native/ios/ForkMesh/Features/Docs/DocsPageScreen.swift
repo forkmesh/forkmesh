@@ -86,7 +86,7 @@ struct DocsPageScreen: View {
                     } else if page == nil {
                         FmEmptyState(icon: "book_outlined", title: "Page not found", message: "This page is not in the documentation library.")
                     } else {
-                        FmCircularProgressIndicator()
+                        FmCircularProgressIndicator(size: 20, strokeWidth: 2)
                             .frame(maxWidth: .infinity)
                             .padding(.top, FmSpace.x6)
                     }
