@@ -13,6 +13,7 @@ struct RSSReaderArticleScreen: View {
     @State private var readerFailed = false
     @State private var browser: RSSBrowserLink?
     @State private var notice = ""
+    @State private var pageDirection = 1
     @Environment(\.openURL) private var openURL
 
     init(model: RSSReaderModel, scope: RSSScope, list: [RSSArticle], articleId: String) {
@@ -34,6 +35,7 @@ struct RSSReaderArticleScreen: View {
 
     var body: some View {
         content
+            .bareShellTop()
             .simultaneousGesture(
                 DragGesture(minimumDistance: 30).onEnded { value in
                     guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -84,17 +86,30 @@ struct RSSReaderArticleScreen: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let article {
-            RSSArticleWebView(
-                html: model.page(for: article, reader: reader), articleKey: "\(article.id)|\(reader)",
-                onLink: { (url: URL) in openLink(url) })
-                .ignoresSafeArea(edges: .bottom)
-                .accessibilityIdentifier("rss-article-body")
-        } else {
-            Text("This article is no longer on this iPhone.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            if let article {
+                RSSArticleWebView(
+                    html: model.page(for: article, reader: reader), articleKey: "\(article.id)|\(reader)",
+                    onLink: { (url: URL) in openLink(url) })
+                    .ignoresSafeArea(edges: .bottom)
+                    .accessibilityIdentifier("rss-article-body")
+                    .id(article.id)
+                    .transition(pageTransition)
+            } else {
+                Text("This article is no longer on this iPhone.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
+        .clipped()
+    }
+
+    private var pageTransition: AnyTransition {
+        let entering: Edge = pageDirection > 0 ? .trailing : .leading
+        let leaving: Edge = pageDirection > 0 ? .leading : .trailing
+        return .asymmetric(
+            insertion: .move(edge: entering).combined(with: .opacity),
+            removal: .move(edge: leaving).combined(with: .opacity))
     }
 
     @ViewBuilder private var noticeView: some View {
@@ -183,7 +198,10 @@ struct RSSReaderArticleScreen: View {
         guard let index else { return }
         let next: Int = index + step
         guard next >= 0 && next < list.count else { return }
-        articleId = list[next].id
+        pageDirection = step
+        withAnimation(.easeInOut(duration: 0.24)) {
+            articleId = list[next].id
+        }
     }
 
     private func nextUnread() {
@@ -195,7 +213,10 @@ struct RSSReaderArticleScreen: View {
             scope = found.scope
             list = model.timeline(found.scope)
         }
-        articleId = found.article.id
+        pageDirection = 1
+        withAnimation(.easeInOut(duration: 0.24)) {
+            articleId = found.article.id
+        }
     }
 
     private func toggleReader() {

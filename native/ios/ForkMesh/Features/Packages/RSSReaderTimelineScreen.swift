@@ -27,6 +27,7 @@ struct RSSReaderTimelineScreen: View {
 
     var body: some View {
         content
+            .bareShellTop()
             .navigationTitle(model.title(scope))
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search Articles")

@@ -5,6 +5,13 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +46,7 @@ import com.forkmesh.nativeapp.ui.kit.FmTextButton
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmMotion
 import kotlinx.coroutines.launch
 
 internal class RssArticleScreen(
@@ -47,17 +55,20 @@ internal class RssArticleScreen(
     private val source: () -> List<String>,
 ) : Screen() {
     override val title: String get() = "Article"
+    override val hidesShellChrome: Boolean get() = true
     private var scope by mutableStateOf(initialScope)
     private var currentId by mutableStateOf(initialId)
     private var list by mutableStateOf<List<String>?>(null)
     private var reader by mutableStateOf(false)
     private var readerBusy by mutableStateOf(false)
     private var readerFailed by mutableStateOf<String?>(null)
+    private var pageDirection by mutableStateOf(1)
     private val status = FmStatus()
 
     private fun ids(): List<String> = list ?: source().also { list = it }
 
-    private fun open(id: String) {
+    private fun open(id: String, direction: Int = 1) {
+        pageDirection = direction
         currentId = id
         reader = false
     }
@@ -83,7 +94,7 @@ internal class RssArticleScreen(
             feed?.displayTitle ?: "",
             navigator,
             actions = {
-                FmIconButton("keyboard_arrow_up", "Previous Article", onPressed = if (index > 0) ({ open(order[index - 1]) }) else null, iconSize = 28.dp)
+                FmIconButton("keyboard_arrow_up", "Previous Article", onPressed = if (index > 0) ({ open(order[index - 1], -1) }) else null, iconSize = 28.dp)
                 FmIconButton("keyboard_arrow_down", "Next Article", onPressed = if (index >= 0 && index < order.size - 1) ({ open(order[index + 1]) }) else null, iconSize = 28.dp)
             },
             bottomBar = {
@@ -124,47 +135,64 @@ internal class RssArticleScreen(
                 library == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
                 article == null -> FmEmptyState("article", "This article is no longer available")
                 else -> {
-                    val settings = library.settings()
-                    val style = RssPageStyle(
-                        settings.theme,
-                        settings.font,
-                        settings.textSize,
-                        Fm.dark,
-                        hex(Fm.colors.accent.toArgb()),
-                        settings.loadRemoteImages,
-                    )
-                    val html = remember(article, feed?.displayTitle, style, reader) {
-                        RssArticlePage.html(article, feed?.displayTitle.orEmpty(), style, service.iconDataUri(article.feedId), reader)
-                    }
-                    val background = Fm.colors.bgBase.toArgb()
-                    var swipeDistance by remember(currentId) { mutableStateOf(0f) }
-                    AndroidView(
-                        factory = { ctx -> articleWebView(ctx) },
-                        update = { view ->
-                            view.settings.blockNetworkImage = !settings.loadRemoteImages
-                            view.setBackgroundColor(background)
-                            if (view.tag != html) {
-                                view.tag = html
-                                view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                    AnimatedContent(
+                        targetState = article.id,
+                        transitionSpec = {
+                            val duration = FmMotion.normal
+                            if (pageDirection > 0) {
+                                (slideInHorizontally(tween(duration)) { it } + fadeIn(tween(duration))) togetherWith
+                                    (slideOutHorizontally(tween(duration)) { -it } + fadeOut(tween(duration)))
+                            } else {
+                                (slideInHorizontally(tween(duration)) { -it } + fadeIn(tween(duration))) togetherWith
+                                    (slideOutHorizontally(tween(duration)) { it } + fadeOut(tween(duration)))
                             }
                         },
-                        onRelease = { it.destroy() },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(order, index) {
-                                detectHorizontalDragGestures(
-                                    onHorizontalDrag = { _, distance -> swipeDistance += distance },
-                                    onDragEnd = {
-                                        when {
-                                            swipeDistance <= -72 && index >= 0 && index < order.size - 1 -> open(order[index + 1])
-                                            swipeDistance >= 72 && index > 0 -> open(order[index - 1])
-                                        }
-                                        swipeDistance = 0f
-                                    },
-                                    onDragCancel = { swipeDistance = 0f },
-                                )
+                        label = "rss-article",
+                    ) { id ->
+                        val displayed = library.article(id) ?: return@AnimatedContent
+                        val displayedFeed = library.feed(displayed.feedId)
+                        val settings = library.settings()
+                        val style = RssPageStyle(
+                            settings.theme,
+                            settings.font,
+                            settings.textSize,
+                            Fm.dark,
+                            hex(Fm.colors.accent.toArgb()),
+                            settings.loadRemoteImages,
+                        )
+                        val html = remember(displayed, displayedFeed?.displayTitle, style, reader) {
+                            RssArticlePage.html(displayed, displayedFeed?.displayTitle.orEmpty(), style, service.iconDataUri(displayed.feedId), reader)
+                        }
+                        val background = Fm.colors.bgBase.toArgb()
+                        var swipeDistance by remember(id) { mutableStateOf(0f) }
+                        AndroidView(
+                            factory = { ctx -> articleWebView(ctx) },
+                            update = { view ->
+                                view.settings.blockNetworkImage = !settings.loadRemoteImages
+                                view.setBackgroundColor(background)
+                                if (view.tag != html) {
+                                    view.tag = html
+                                    view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                                }
                             },
-                    )
+                            onRelease = { it.destroy() },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(order, index) {
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { _, distance -> swipeDistance += distance },
+                                        onDragEnd = {
+                                            when {
+                                                swipeDistance <= -72 && index >= 0 && index < order.size - 1 -> open(order[index + 1], 1)
+                                                swipeDistance >= 72 && index > 0 -> open(order[index - 1], -1)
+                                            }
+                                            swipeDistance = 0f
+                                        },
+                                        onDragCancel = { swipeDistance = 0f },
+                                    )
+                                },
+                        )
+                    }
                 }
             }
             FmInlineStatus(status)
