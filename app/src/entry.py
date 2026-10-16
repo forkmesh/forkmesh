@@ -13361,7 +13361,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c001b5e1691b7e406a0f778b87e193c27dafa246e70913476c444078966d5781"
+    "e450f00ab774ba52e4bf6bceeb6edf3fbeb957859962f869b7457477752aded3"
 )
 
 
@@ -30146,6 +30146,18 @@ BADGE_METRIC_SQL = {
         "FROM badge_coauthor_facts c "
         "JOIN repositories r ON r.key_bi=c.repo_bi "
         "WHERE r.is_private=0 GROUP BY c.account_bi)"),
+    "oracle": (
+        "m AS (SELECT COALESCE(NULLIF(an.user_bi, ''), an.node_bi) "
+        "AS account_bi, COUNT(DISTINCT a.repo_bi || '#' || a.number) "
+        "AS value FROM badge_answer_facts a "
+        "JOIN nodes an ON an.pubkey=a.answerer_key "
+        "JOIN repositories r ON r.key_bi=a.repo_bi "
+        "LEFT JOIN nodes onr ON onr.pubkey=a.opener_key "
+        "AND a.opener_key<>'' "
+        "WHERE a.answerer_key<>'' AND a.answerer_key<>a.opener_key "
+        "AND r.is_private=0 "
+        "AND COALESCE(NULLIF(an.user_bi, ''), an.node_bi)<>"
+        "COALESCE(NULLIF(onr.user_bi, ''), onr.node_bi, '') GROUP BY 1)"),
 }
 
 BADGE_PROGRESS_SELECT_SQL = (
@@ -30463,6 +30475,65 @@ async def _sweep_repo_issue_records(env, repo_bi, owner, repo, known):
     return complete
 
 
+async def _sweep_repo_discussion_answers(env, repo_bi, owner, repo):
+    tree = await _forkbot_repo_gateway_json(
+        env, owner, repo,
+        "tree?path=" + quote(".forkmesh/discussions", safe=""))
+    if tree is None:
+        return False
+    entries = tree.get("entries") if isinstance(tree, dict) else None
+    oids = {}
+    for entry in entries if isinstance(entries, list) else []:
+        name = str((entry or {}).get("name") or "") if isinstance(
+            entry, dict) else ""
+        if (entry.get("type") == "tree" and name.isdigit()
+                and 0 < int(name) <= 1_000_000_000):
+            oids[int(name)] = str(entry.get("oid") or "")
+    if not oids:
+        return True
+    known = {}
+    for row in await d1_all(
+            env,
+            "SELECT number, dir_oid, updated_at FROM badge_answer_facts "
+            "WHERE repo_bi=?", repo_bi) or []:
+        known[int(row.get("number") or 0)] = row
+    pending = sorted(
+        (int((known.get(number) or {}).get("updated_at") or 0), number)
+        for number, oid in oids.items()
+        if not oid or str((known.get(number) or {}).get("dir_oid")) != oid)
+    limit = BADGE_RECORD_BATCH // 2
+    complete = len(pending) <= limit
+    numbers = [number for _, number in pending[:limit]]
+    paths = []
+    for number in numbers:
+        paths.append(".forkmesh/discussions/%d/discussion.md" % number)
+        paths.append(".forkmesh/discussions/%d/answer.md" % number)
+    blobs = await _badge_record_blobs(env, owner, repo, paths)
+    if blobs is None:
+        return False
+    now = int(Date.now())
+    for number in numbers:
+        opened = microjobs.parse_pull_frontmatter(_forkbot_blob_text(
+            blobs.get(".forkmesh/discussions/%d/discussion.md" % number)))
+        if not opened:
+            complete = False
+            continue
+        answer = microjobs.parse_pull_frontmatter(_forkbot_blob_text(
+            blobs.get(".forkmesh/discussions/%d/answer.md" % number)))
+        fact = badge_catalog.answer_record_fact(opened, answer)
+        await d1_run(
+            env,
+            "INSERT INTO badge_answer_facts (repo_bi, number, dir_oid, "
+            "opener_key, answerer_key, marked_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(repo_bi, number) DO UPDATE "
+            "SET dir_oid=excluded.dir_oid, opener_key=excluded.opener_key, "
+            "answerer_key=excluded.answerer_key, "
+            "marked_at=excluded.marked_at, updated_at=excluded.updated_at",
+            repo_bi, number, oids[number], fact["opener_key"],
+            fact["answerer_key"], fact["marked_at"], now)
+    return complete
+
+
 async def sweep_badge_records(env):
     await ensure_schema(env)
     repos = await d1_all(
@@ -30488,7 +30559,9 @@ async def sweep_badge_records(env):
                 env, repo_bi, owner, repo, known)
             issues = await _sweep_repo_issue_records(
                 env, repo_bi, owner, repo, known)
-            complete = pulls and issues
+            answers = await _sweep_repo_discussion_answers(
+                env, repo_bi, owner, repo)
+            complete = pulls and issues and answers
         state_ts = int(row.get("state_ts") or 0) if complete else 0
         await d1_run(
             env,

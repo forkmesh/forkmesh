@@ -114,6 +114,7 @@ def test_catalog_is_a_fixed_known_set():
         "six_eyes", "brood", "fan_club", "night_watch", "daily_spinner",
         "bug_catcher", "lift_off", "shopkeeper", "critic", "bounty_hunter",
         "web_weaver", "many_webs", "quick_silk", "carpet_ride", "eight_hands",
+        "oracle",
     }
     for entry in badges.public_catalog():
         assert entry["name"] and entry["description"] and entry["icon"]
@@ -964,6 +965,7 @@ ACTIVITY_BADGES = {
     "web_weaver": (2, 16, 128, 1024),
     "many_webs": (2, 8, 32, 128),
     "eight_hands": (1, 10, 24, 48),
+    "oracle": (2, 8, 16, 32),
 }
 
 
@@ -1093,6 +1095,12 @@ def _sqlite_badge_db():
     for repo, number in (("r1", 1), ("r1", 2), ("rP", 1)):
         insert("badge_coauthor_facts", repo_bi=repo, number=number,
                account_bi="u_eve", created_at=1)
+    for repo, number, opener, answerer in (
+            ("r1", 1, "key_ada", "key_bob"), ("r2", 2, "web-key", "key_bob"),
+            ("r1", 3, "key_ada", "key_ada"), ("rP", 1, "key_ada", "key_bob"),
+            ("r1", 4, "key_ada", ""), ("r3", 5, "key_bob", "key_bob")):
+        insert("badge_answer_facts", repo_bi=repo, number=number,
+               opener_key=opener, answerer_key=answerer)
     for source, generation, captured in (("r1", "g1", 2), ("r2", "g2", 1)):
         insert("profile_contribution_projects", source_repo_bi=source,
                source_account_bi="u_ada", owner_user_bi="u_ada",
@@ -1172,6 +1180,7 @@ def test_activity_badge_queries_run_on_the_real_schema():
         "web_weaver": [("bob", 4)],
         "many_webs": [("bob", 3)],
         "eight_hands": [("eve", 2)],
+        "oracle": [("bob", 2)],
     }
     db.execute("INSERT INTO badge_progress VALUES ('fan_club','u_ada',10,5)")
     assert not db.execute(
@@ -1379,6 +1388,7 @@ def _sweep_namespace(db, gateway):
                     account["user_bi"]))
     db.execute("DELETE FROM badge_pull_facts")
     db.execute("DELETE FROM badge_coauthor_facts")
+    db.execute("DELETE FROM badge_answer_facts")
     db.execute("UPDATE repositories SET data=? WHERE key_bi='r1'",
                (json_module.dumps({"owner": "ada", "repo": "web"}),))
 
@@ -1406,6 +1416,7 @@ def _sweep_namespace(db, gateway):
         "_sweep_repo_issue_records", "_badge_record_numbers",
         "_badge_record_blobs", "_record_coauthor_facts",
         "_verified_email_account", "_record_web_merge_badge_fact",
+        "_sweep_repo_discussion_answers",
         extra_globals=dict(
             sql, d1_run=d1.run, d1_all=d1.all, d1_first=d1.first,
             ensure_schema=ensure_schema, decrypt_row=decrypt_row,
@@ -1447,13 +1458,20 @@ def test_record_sweep_stores_each_fact_once_and_feeds_the_badges():
             3, "open", author="key_cy", ts=opened),
         ".forkmesh/pulls/4/pull.md": _pull_md(
             4, "merged", author="key_cy", ts=opened),
+        ".forkmesh/discussions/5/discussion.md": "---\ncategory: Q&A\n"
+        "author: key_ada\n---\n",
+        ".forkmesh/discussions/5/answer.md": "---\ntype: answer\n"
+        "author: key_ada\nts: 1700000000000\ntarget: reply-1\n"
+        "targetAuthor: key_bob\n---\n",
+        ".forkmesh/discussions/6/discussion.md": "---\ncategory: Ideas\n"
+        "author: key_ada\n---\n",
         ".forkmesh/issues/closed/9/issue-9.json": json_module.dumps(
             {"events": [
                 {"type": "open", "author": "key_bob", "ts": opened},
                 {"type": "status", "status": "closed", "author": "key_cy",
                  "ts": opened + 1000}]}),
     }
-    gateway = {"calls": []}
+    gateway = {"calls": [], "oid5": "o5"}
 
     def answer(action):
         from urllib.parse import parse_qs
@@ -1471,6 +1489,10 @@ def test_record_sweep_stores_each_fact_once_and_feeds_the_badges():
             return {"entries": [{"name": "0003-review.md"}]}
         if kind == "tree" and path == ".forkmesh/issues/closed":
             return {"entries": [{"name": "9", "type": "tree"}]}
+        if kind == "tree" and path == ".forkmesh/discussions":
+            return {"entries": [
+                {"name": "5", "type": "tree", "oid": gateway["oid5"]},
+                {"name": "6", "type": "tree", "oid": "o6"}]}
         if kind == "blobs":
             return {"blobs": {p: _blob(records[p])
                               for p in params.get("path", [])
@@ -1498,6 +1520,11 @@ def test_record_sweep_stores_each_fact_once_and_feeds_the_badges():
         ("r1", 1, "u_eve")]
     assert [tuple(row) for row in db.execute(
         "SELECT repo_bi, state_ts FROM badge_repo_sweeps")] == [("r1", 20)]
+    assert [tuple(row) for row in db.execute(
+        "SELECT number, dir_oid, opener_key, answerer_key, marked_at "
+        "FROM badge_answer_facts ORDER BY number")] == [
+        (5, "o5", "key_ada", "key_bob", 1700000000000),
+        (6, "o6", "key_ada", "", 0)]
 
     calls = len(gateway["calls"])
     assert _run(ns["sweep_badge_records"](None)) == {"awarded": []}
@@ -1508,6 +1535,19 @@ def test_record_sweep_stores_each_fact_once_and_feeds_the_badges():
     read = [action for _, _, action in gateway["calls"]
             if action.startswith("blobs?")]
     assert len(read) == 1 and "pulls%2F3%2Fpull.md" in read[0]
+    gateway["oid5"] = "o5b"
+    records[".forkmesh/discussions/5/answer.md"] = (
+        "---\ntype: answer\nts: 1700000009000\ntarget: \n---\n")
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h3',40)")
+    gateway["calls"].clear()
+    _run(ns["sweep_badge_records"](None))
+    read = [action for _, _, action in gateway["calls"]
+            if action.startswith("blobs?") and "discussions" in action]
+    assert len(read) == 1 and "discussions%2F5%2F" in read[0]
+    assert "discussions%2F6%2F" not in read[0]
+    assert db.execute(
+        "SELECT answerer_key FROM badge_answer_facts WHERE number=5"
+    ).fetchone()[0] == ""
     assert db.execute(
         "SELECT COUNT(*) FROM badge_coauthor_facts").fetchone()[0] == 1
 
@@ -1553,3 +1593,32 @@ def test_record_fact_migration_creates_the_tables():
         assert "CREATE TABLE IF NOT EXISTS " + table in up
         assert "CREATE TABLE IF NOT EXISTS " + table in SCHEMA_TEXT
         assert "DROP TABLE IF EXISTS " + table in down
+
+
+def test_answer_facts_need_a_question_and_a_named_reply():
+    question = {"category": "Q&A", "author": "key_a"}
+    marked = {"target": "reply-1", "targetAuthor": "key_b",
+              "ts": "1700000000000"}
+    assert badges.answer_record_fact(question, marked) == {
+        "opener_key": "key_a", "answerer_key": "key_b",
+        "marked_at": 1700000000000}
+    assert badges.answer_record_fact(
+        {"category": "q&a", "author": "key_a"}, marked)["answerer_key"] == (
+        "key_b")
+    assert badges.answer_record_fact(
+        {"category": "Ideas", "author": "key_a"}, marked)["answerer_key"] == ""
+    assert badges.answer_record_fact(
+        question, dict(marked, target=""))["answerer_key"] == ""
+    assert badges.answer_record_fact(question, {}) == {
+        "opener_key": "key_a", "answerer_key": "", "marked_at": 0}
+
+
+def test_answer_fact_migration_creates_the_table():
+    up = (ROOT / "migrations" / "0267_badge_answer_facts.sql").read_text()
+    down = (ROOT / "migrations" / "down" /
+            "0267_badge_answer_facts.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS badge_answer_facts" in up
+    assert "CREATE TABLE IF NOT EXISTS badge_answer_facts" in SCHEMA_TEXT
+    assert "DROP TABLE IF EXISTS badge_answer_facts" in down
+    sweep = _function_source("sweep_badge_records")
+    assert "complete = pulls and issues and answers" in sweep

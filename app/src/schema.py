@@ -3413,6 +3413,15 @@ SCHEMA_STATEMENTS = [
         repo_bi TEXT PRIMARY KEY,
         state_ts INTEGER NOT NULL DEFAULT 0 CHECK (state_ts >= 0),
         swept_at INTEGER NOT NULL DEFAULT 0 CHECK (swept_at >= 0))""",
+    """CREATE TABLE IF NOT EXISTS badge_answer_facts (
+        repo_bi TEXT NOT NULL,
+        number INTEGER NOT NULL CHECK (number > 0),
+        dir_oid TEXT NOT NULL DEFAULT '',
+        opener_key TEXT NOT NULL DEFAULT '',
+        answerer_key TEXT NOT NULL DEFAULT '',
+        marked_at INTEGER NOT NULL DEFAULT 0 CHECK (marked_at >= 0),
+        updated_at INTEGER NOT NULL DEFAULT 0 CHECK (updated_at >= 0),
+        PRIMARY KEY (repo_bi, number))""",
     # Inbound website referrals: one aggregate row per referring hostname.
     # last_url is the latest bounded public referring URL, with credentials,
     # fragments, and sensitive query values removed (migration 0095).

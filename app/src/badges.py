@@ -220,6 +220,14 @@ BADGE_DEFINITIONS = {
         "tiers": (1, 10, 24, 48),
         "unit": "pull requests",
     },
+    "oracle": {
+        "name": "Oracle",
+        "description": "Wrote replies that were accepted as the answer to a "
+                       "question.",
+        "icon": "\U0001F52E",
+        "tiers": (2, 8, 16, 32),
+        "unit": "accepted answers",
+    },
 }
 
 QUICK_SILK_MS = 5 * 60 * 1000
@@ -407,3 +415,19 @@ def has_review_file(entries):
                 str(entry.get("name") or "")):
             return True
     return False
+
+
+def answer_record_fact(discussion_fields, answer_fields):
+    discussion_fields = discussion_fields or {}
+    answer_fields = answer_fields or {}
+    category = str(discussion_fields.get("category") or "").strip().lower()
+    opener_key = _record_key(discussion_fields.get("author"))
+    answerer_key = ""
+    if (category in ("q&a", "qa", "q and a", "q-and-a")
+            and str(answer_fields.get("target") or "").strip()):
+        answerer_key = _record_key(answer_fields.get("targetAuthor"))
+    return {
+        "opener_key": opener_key,
+        "answerer_key": answerer_key,
+        "marked_at": _record_ms(answer_fields.get("ts")) if answerer_key else 0,
+    }
