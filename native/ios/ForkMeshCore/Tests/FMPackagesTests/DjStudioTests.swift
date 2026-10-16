@@ -121,6 +121,21 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjSaved.decode(Data("nonsense".utf8)), DjSaved())
     }
 
+    func testHistoryKeepsLatestFirstWithoutDuplicates() {
+        var history = DjStudio.remember([], id: "dQw4w9WgXcQ", title: "Song", author: "Band")
+        history = DjStudio.remember(history, id: "9bZkp7q19f0", title: "Other", author: "")
+        history = DjStudio.remember(history, id: "dQw4w9WgXcQ", title: "", author: "")
+        XCTAssertEqual(history, [
+            DjHistoryItem(id: "dQw4w9WgXcQ", title: "Song", author: "Band"),
+            DjHistoryItem(id: "9bZkp7q19f0", title: "Other", author: ""),
+        ])
+        XCTAssertEqual(DjStudio.remember(history, id: "bad", title: "x", author: ""), history)
+        XCTAssertEqual(DjStudio.remember(history, id: "9bZkp7q19f0", title: "New", author: "", limit: 1), [DjHistoryItem(id: "9bZkp7q19f0", title: "New", author: "")])
+        let saved = DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ","title":"Song"},{"id":"nope"},{"id":"dQw4w9WgXcQ","title":"Again"},{"title":"x"}]}"#.utf8))
+        XCTAssertEqual(saved.history, [DjHistoryItem(id: "dQw4w9WgXcQ", title: "Song", author: "")])
+        XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
+    }
+
     func testDrumPadsAreAudibleAndBounded() {
         for pad in DjDrumPad.allCases {
             let samples = DjDrumSynth.samples(pad, sampleRate: 22_050)

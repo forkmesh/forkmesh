@@ -29,7 +29,8 @@ Position comes from a quarter-second player tick and is interpolated on device a
 - The crossfader is equal power and fades through the Web Audio gain described above; its arrows slam to one side and AUTOMIX starts the idle deck, fades to it over eight seconds and pauses the other.
 - The record button captures eight seconds from the deck you can hear into one of four sections; the sampler sheet replays them and has the eight synthesized drum pads, rendered once into `AVAudioEngine` buffers and triggered on touch-down.
 - Search uses the same public Invidious index as the web page, trying up to three healthy instances. Loading is one step: type and press return, and the top result loads straight onto the deck and the sheet closes; a pasted YouTube link loads directly. Reopening the loader shows the other results (the loaded one ticked) to swap in a different video.
-- Deck videos, titles, cues, tempo, BPM, loop, levels, sections, sampler level, crossfader and zoom are kept in `UserDefaults` (`fm.videoMixDjStudio.v1`) on the device only. While the studio is open the screen stays awake and the audio session mixes the decks with the sampler.
+- Every song a deck starts playing goes to the top of **Recently Played** in the loader (the latest 40, no duplicates, titles filled in once YouTube reports them; `DjStudio.remember`). With the search box empty it is the first list, so a past song reloads in one tap; swipe a row to remove it or use Clear. It is kept with the rest of the studio state on the device.
+- Deck videos, titles, cues, tempo, BPM, loop, levels, sections, sampler level, crossfader, zoom and the Recently Played history are kept in `UserDefaults` (`fm.videoMixDjStudio.v1`) on the device only. While the studio is open the screen stays awake and the audio session mixes the decks with the sampler.
 
 ## Web and desktop
 

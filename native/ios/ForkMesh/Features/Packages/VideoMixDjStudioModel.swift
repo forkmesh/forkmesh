@@ -114,6 +114,7 @@ final class DjStudioModel {
     var searchResults: [DjSearchResult] = []
     var searching = false
     var searchProblem = ""
+    var history: [DjHistoryItem] = []
     var flashedPad: DjDrumPad?
     var leavingAfterSheet = false
 
@@ -147,6 +148,7 @@ final class DjStudioModel {
         sections = saved.sections
         sectionCursor = sections.firstIndex(where: { $0 == nil }) ?? 0
         zoomed = saved.zoomed
+        history = saved.history
         host.onEvent = { [weak self] side, event in
             guard let self else { return }
             self.handle(event, self.deck(side))
@@ -344,6 +346,9 @@ final class DjStudioModel {
             if deck.title != title || deck.author != author {
                 deck.title = title
                 deck.author = author
+                if history.contains(where: { $0.id == deck.videoId }) {
+                    history = history.map { $0.id == deck.videoId ? DjHistoryItem(id: $0.id, title: title, author: author) : $0 }
+                }
                 save()
             }
         case let .failed(code):
@@ -394,6 +399,25 @@ final class DjStudioModel {
         deck.settle()
         deck.playing = true
         deck.player.play()
+        remember(deck)
+    }
+
+    private func remember(_ deck: DjDeck) {
+        guard deck.loaded else { return }
+        let updated = DjStudio.remember(history, id: deck.videoId, title: deck.title, author: deck.author)
+        guard updated != history else { return }
+        history = updated
+        save()
+    }
+
+    func forget(_ offsets: IndexSet) {
+        history.remove(atOffsets: offsets)
+        save()
+    }
+
+    func clearHistory() {
+        history = []
+        save()
     }
 
     private func pause(_ deck: DjDeck) {
@@ -795,6 +819,7 @@ final class DjStudioModel {
         saved.samplerLevel = samplerLevel
         saved.sections = sections
         saved.zoomed = zoomed
+        saved.history = history
         for deck in [a, b] {
             var stored = DjSavedDeck()
             stored.videoId = deck.videoId
