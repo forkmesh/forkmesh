@@ -52,6 +52,17 @@ public final class PackagesClient {
         OrgPackageState(json: try await call("GET", "/api/plugins/" + Self.segment(organization)))
     }
 
+    public func organizationPackages(_ organizations: [String]) async -> [OrgPackageState?] {
+        await withTaskGroup(of: (Int, OrgPackageState?).self) { group in
+            for (index, organization) in organizations.enumerated() {
+                group.addTask { @MainActor in (index, try? await self.organizationPackages(organization)) }
+            }
+            var states = [OrgPackageState?](repeating: nil, count: organizations.count)
+            for await (index, state) in group { states[index] = state }
+            return states
+        }
+    }
+
     public func install(_ packageId: String, organization: String) async throws -> OrgPackageState {
         guard PackagesText.isPackageId(packageId) else { throw PackagesError("plugin_not_found") }
         let state = OrgPackageState(

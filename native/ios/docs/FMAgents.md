@@ -70,8 +70,16 @@ code and sign-in link. `close()` waits 50 ms after the close frame because
 ## View models
 
 - `protocol AgentsApi` (ApiService conforms): the reads and queue calls the screens make.
-- `AgentsListModel`: subscribes to `AgentListSignal` (0.6 s debounce, no polling; a ring during a
-  load queues one more load), groups running runs first, and tracks sealed counts and load state.
+- `AgentsListModel`: subscribes to `AgentListSignal` (0.6 s debounce, no polling), groups running
+  runs first, and tracks sealed counts and load state.
+  - A ring never supersedes a load in flight, whether a ring or the first load started it. A
+    ring that arrives before that load has sent its per-repository reads is answered by those
+    reads. A ring that arrives after them queues one more load, which runs once the current load
+    has published its rows.
+  - The account socket rings as it connects at launch, about when the Agents tab's first load
+    is waiting on the relay. Through 1.4.1 that ring discarded the first load and read every
+    repository again, so each repository's `agents/list` and queue read went out twice and the
+    list stayed on its skeleton until the second pass returned (17 s in one 1.4.1 report).
   - Repositories whose sealed-session or queue read answers 403/404 are not re-read for 10 minutes
     per account (`AgentReadRefusals.shared`, shared with the watch bridge).
   - Branched runs read `publishedPullHeads` (number, head and status only), refreshed when a

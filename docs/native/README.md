@@ -224,8 +224,12 @@ avatar movement but does not silently change that saved feedback preference.
 - Write `@Observable` properties only when the value changes; every write
   notifies, equal or not.
 - Compute derived lists once per body and pass them down.
-- Do not let one ring cancel the load it triggered; mark it and run one more
-  load afterwards. Join in-flight loads (`loadIfStale`, shared reads).
+- Do not let a ring cancel a load in flight, whatever started it; mark it and
+  run one more load afterwards, or none when the load's reads had not gone out
+  yet. Join in-flight loads (`loadIfStale`, shared reads).
+- Fan out independent reads (`PackagesClient.organizationPackages([String])`).
+  Home's package gate asked each organization in turn, so its tiles waited
+  for up to 20 round trips one after another.
 - Read only what a screen needs (`publishedPullHeads`, front matter only) and
   keep ledgers between rings unless something relevant changed.
 - Build the selected tab first; build other tabs later or on first visit.

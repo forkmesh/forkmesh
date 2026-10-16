@@ -35,6 +35,7 @@ struct HomeShell: View {
     @State var composer: ShellComposer
     @State var updateCheck: UpdateRequiredCheck = UpdateRequiredCheck.shared
     @State var showContextPicker: Bool = false
+    @State var loadingRepoCounts: Bool = false
     @State var showPalette: Bool = false
     @State var showHub: Bool = false
     @State var showTour: Bool = false
@@ -342,8 +343,14 @@ struct HomeShell: View {
             ) { (item: ShellBarItem) in
                 ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)
             }
+            .fmLoading(
+                loadingRepoCounts || ShellNavigatorCounts.shared.loading || HubPackageState.shared.refreshing)
             .task(id: ShellCounts.shared.currentRepo) {
+                loadingRepoCounts = true
                 await loadRepoCounts()
+                if !Task.isCancelled {
+                    loadingRepoCounts = false
+                }
             }
             .task {
                 await ShellNavigatorCounts.shared.refresh()

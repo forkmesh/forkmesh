@@ -93,6 +93,7 @@ struct ChatChannelSidebar: View {
         }
         .safeAreaPadding(.bottom, shell?.clearance ?? 0)
         .background(fm.wallpaper ? Color.clear : fm.bgBase)
+        .fmLoading((hub.office?.loading ?? false) || (hub.direct?.loading ?? false))
         .fmRefreshable {
             await hub.office?.refresh()
             await hub.direct?.refresh()

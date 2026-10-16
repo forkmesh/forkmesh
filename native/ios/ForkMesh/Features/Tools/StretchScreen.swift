@@ -188,8 +188,7 @@ private struct StretchContent: View {
         if let run = model.run, let library = model.library {
             StretchSessionView(model: model, run: run, library: library)
         } else if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "self_improvement", title: StretchModel.unavailableTitle, message: model.error)
         } else if model.showsInstall {
@@ -523,7 +522,7 @@ private struct StretchSessionView: View {
                 .fmText(.bodyMedium, color: fm.textSecondary)
                 .multilineTextAlignment(.center)
             if model.busy {
-                FmCircularProgressIndicator()
+                FmCircularProgressIndicator(size: 20, strokeWidth: 2)
             } else if !model.logNote.isEmpty {
                 Text(model.logNote)
                     .fmText(.bodyMedium)

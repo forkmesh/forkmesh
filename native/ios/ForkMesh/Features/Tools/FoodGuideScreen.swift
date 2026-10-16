@@ -42,8 +42,7 @@ private struct FoodGuideContent: View {
 
     @ViewBuilder private var main: some View {
         if !model.loaded {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: FmSpace.x3) {

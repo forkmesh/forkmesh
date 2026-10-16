@@ -87,8 +87,7 @@ private struct StepsContent: View {
 
     @ViewBuilder private var main: some View {
         if model.showsSpinner {
-            FmCircularProgressIndicator()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            FmSkeletonList()
         } else if model.showsError {
             FmEmptyState(icon: "directions_walk_outlined", title: StepsModel.unavailableTitle, message: model.error)
         } else if model.showsInstall {
