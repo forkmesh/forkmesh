@@ -783,14 +783,42 @@ MarketingFeature::MarketingFeature(
     m_status->setWordWrap(true);
     outer->addWidget(m_status);
 
+    auto *body = new QHBoxLayout;
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(8);
+    auto *content = new QVBoxLayout;
+    content->setContentsMargins(0, 0, 0, 0);
+    content->setSpacing(6);
+    body->addLayout(content, 1);
+    outer->addLayout(body, 1);
+
+    m_activityColumn = new DashboardPanel(QStringLiteral("From your browser"));
+    m_activityColumn->setAccessibleName(QStringLiteral("Browser activity"));
+    m_activityColumn->setCompact();
+    m_activityColumn->setFixedWidth(240);
+    m_activityColumn->body()->setContentsMargins(0, 0, 0, 0);
+    static_cast<QVBoxLayout *>(m_activityColumn->layout())->setStretch(1, 1);
+    auto *activityScroll = new QScrollArea;
+    activityScroll->setFrameShape(QFrame::NoFrame);
+    activityScroll->setWidgetResizable(true);
+    activityScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    activityScroll->viewport()->setAutoFillBackground(false);
+    auto *activityPage = clearWidget();
+    auto *activityLayout = new QVBoxLayout(activityPage);
+    activityLayout->setContentsMargins(10, 6, 10, 8);
     m_browserActivity = new QLabel;
-    m_browserActivity->setObjectName(QStringLiteral("marketingBrowserActivity"));
-    m_browserActivity->setAccessibleName(QStringLiteral("Browser activity"));
+    m_browserActivity->setObjectName(QStringLiteral("marketingNote"));
     m_browserActivity->setTextFormat(Qt::RichText);
     m_browserActivity->setWordWrap(true);
     m_browserActivity->setOpenExternalLinks(true);
-    m_browserActivity->hide();
-    outer->addWidget(m_browserActivity);
+    m_browserActivity->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    activityLayout->addWidget(m_browserActivity);
+    activityLayout->addStretch(1);
+    activityScroll->setWidget(activityPage);
+    m_activityColumn->body()->addWidget(activityScroll, 1);
+    m_activityColumn->hide();
+    body->addWidget(m_activityColumn);
+    renderBrowserActivity();
 
     m_installPanel = new QWidget;
     auto *installLayout = new QVBoxLayout(m_installPanel);
@@ -807,7 +835,7 @@ MarketingFeature::MarketingFeature(
     installRow->addStretch();
     installLayout->addLayout(installRow);
     installLayout->addStretch();
-    outer->addWidget(m_installPanel, 1);
+    content->addWidget(m_installPanel, 1);
 
     m_scroll = new QScrollArea;
     m_scroll->setObjectName(QStringLiteral("marketingDashboard"));
@@ -827,7 +855,7 @@ MarketingFeature::MarketingFeature(
     pageLayout->addWidget(grid);
     pageLayout->addStretch(1);
     m_scroll->setWidget(page);
-    outer->addWidget(m_scroll, 1);
+    content->addWidget(m_scroll, 1);
 
     m_detailScroll = new QScrollArea;
     m_detailScroll->setObjectName(QStringLiteral("marketingChannelPage"));
@@ -852,7 +880,7 @@ MarketingFeature::MarketingFeature(
     detailLayout->addWidget(detailGrid);
     detailLayout->addStretch(1);
     m_detailScroll->setWidget(detailPage);
-    outer->addWidget(m_detailScroll, 1);
+    content->addWidget(m_detailScroll, 1);
     const auto detailBox = [detailGrid](const QString &title, int span, DashboardPanel **out = nullptr) {
         auto *panel = new DashboardPanel(title);
         panel->setCompact();
@@ -1466,7 +1494,7 @@ MarketingFeature::MarketingFeature(
     m_catalogTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_catalogTable->setAlternatingRowColors(true);
     m_catalogPanel->body()->addWidget(m_catalogTable);
-    buildPages(outer);
+    buildPages(outer, content);
 
     connect(m_organization, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0 || m_loading)
@@ -1702,31 +1730,34 @@ void MarketingFeature::packageChanged()
 
 void MarketingFeature::renderBrowserActivity()
 {
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const QDate today = QDate::currentDate();
+    const QString muted = DashboardColors::from(this).muted.name();
     QStringList lines;
     for (const QJsonValue &value : std::as_const(m_browserActivityItems)) {
         const QJsonObject item = value.toObject();
         const qint64 at = qint64(item.value(QStringLiteral("at")).toDouble());
-        if (at <= 0 || now - at > 24 * 60 * 60 * 1000LL)
+        if (at <= 0)
             continue;
         const QString kind = text(item, "kind");
         const QString mark = kind == QLatin1String("failed") ? QStringLiteral("⚠")
                              : kind == QLatin1String("sent") ? QStringLiteral("↑")
                                                              : QStringLiteral("↻");
-        QString line = QStringLiteral("%1 %2 %3")
-            .arg(QLocale().toString(QDateTime::fromMSecsSinceEpoch(at).time(),
-                                    QLocale::ShortFormat),
-                 mark, text(item, "text").toHtmlEscaped());
+        const QDateTime when = QDateTime::fromMSecsSinceEpoch(at);
+        const QString time = when.date() == today
+            ? QLocale().toString(when.time(), QLocale::ShortFormat)
+            : QLocale().toString(when, QLocale::ShortFormat);
+        QString line = QStringLiteral("<span style=\"color:%1\">%2</span> %3 %4")
+            .arg(muted, time.toHtmlEscaped(), mark,
+                 text(item, "text").toHtmlEscaped());
         const QString url = text(item, "url");
         if (url.startsWith(QLatin1String("https://")))
             line += QStringLiteral(" <a href=\"%1\">Open</a>").arg(url.toHtmlEscaped());
-        lines << line;
-        if (lines.size() >= 5)
-            break;
+        lines << QStringLiteral("<p style=\"margin:0 0 8px 0\">%1</p>").arg(line);
     }
-    m_browserActivity->setVisible(!lines.isEmpty());
-    m_browserActivity->setText(lines.isEmpty() ? QString()
-        : QStringLiteral("<b>From your browser</b><br>") + lines.join(QStringLiteral("<br>")));
+    m_browserActivity->setText(lines.isEmpty()
+        ? QStringLiteral("<span style=\"color:%1\">Channels the ForkMesh extension reads or updates in your "
+                         "browser stream in here.</span>").arg(muted)
+        : lines.join(QString()));
 }
 
 void MarketingFeature::refreshOrganizations()
@@ -3791,6 +3822,7 @@ void MarketingFeature::applyView()
         chip->style()->polish(chip);
     }
     m_detailScroll->setVisible(detail);
+    m_activityColumn->setVisible(m_installed && (detail || m_page == 1));
 }
 
 void MarketingFeature::renderChannelDetail()
