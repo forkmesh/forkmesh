@@ -36,6 +36,7 @@ def _run_with_rqlite_error(message, sql="INSERT INTO t (x) VALUES (?)"):
     "raft is already shutdown",
     "context deadline exceeded",
     "index 3589896: timeout waiting for fsm",
+    "store not open",
 ])
 def test_raft_backpressure_is_overload_not_sqlite_error(message):
     text = _run_with_rqlite_error(message)

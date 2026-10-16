@@ -221,7 +221,7 @@ _OVERLOAD_HINTS = (
     "leader not found", "not leader", "no leader", "leadership lost",
     "context deadline exceeded",
     "timeout", "timed out", "connection refused", "stale read",
-    "unavailable", "shutdown", "raft",
+    "unavailable", "shutdown", "raft", "store not open",
 )
 
 
@@ -229,6 +229,7 @@ _RAFT_ERROR_HINTS = (
     "leader not found", "not leader", "leadership lost",
     "context deadline exceeded", "timed out enqueuing",
     "raft is already shutdown", "timeout waiting for fsm",
+    "store not open",
 )
 
 
