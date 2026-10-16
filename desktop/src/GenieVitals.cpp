@@ -1985,3 +1985,24 @@ GenieCoaching coach(const GenieMarketingFacts &facts)
 }
 
 }
+
+namespace GeniePings {
+
+QString badgeLine(const QJsonObject &alert)
+{
+    const QJsonObject meta = alert.value(QStringLiteral("meta")).toObject();
+    if (meta.value(QStringLiteral("celebrate")).toString().trimmed() != QLatin1String("badge"))
+        return QString();
+    const QString name = meta.value(QStringLiteral("badgeName")).toString().trimmed();
+    if (name.isEmpty())
+        return QStringLiteral("You earned a new badge!");
+    QString tier = meta.value(QStringLiteral("tier")).toString().trimmed().toLower();
+    if (tier == QLatin1String("bronze") || tier == QLatin1String("silver")
+        || tier == QLatin1String("gold")) {
+        tier[0] = tier.at(0).toUpper();
+        return QStringLiteral("You reached %1 %2!").arg(tier, name);
+    }
+    return QStringLiteral("You earned %1!").arg(name);
+}
+
+}

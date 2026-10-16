@@ -6601,6 +6601,7 @@ void MainWindow::celebrateFreshWebAlerts()
         this, 10000, title.isEmpty() ? QStringLiteral("🎉") : title, body, 2);
     logSystem(title.isEmpty() ? QStringLiteral("🎉") : title);
     showPingTrayMessage(title, body);
+    cheerGenieFor(newest);
 }
 
 namespace {

@@ -11213,6 +11213,7 @@ private:
     void showGenieMenu(const QPoint &globalPos);
     void showNextGenieTip();
     void danceGenie();
+    void cheerGenieFor(const QJsonObject &alert);
     GenieDesktopStage *genieStage();
     void releaseGenieToDesktop(const QPoint &grab);
     void moveGenieToDesktop(bool thrown, const QPointF &foot, const QPointF &velocity);
