@@ -25,6 +25,7 @@ NEW_SYNCED = (
     "coves", "desktops", "discussions", "hosts", "inbox", "issues", "logs", "network", "on-device-ai",
     "organizations", "pull-requests", "releases", "shortcuts", "special-agents", "stats",
     "world")
+MOBILE_SYNCED = ("diagnostics",)
 CONVERTED_LEGACY = (
     "calendar", "design-system", "glasses-alert", "ledger", "notes", "speech", "status-page",
     "tasks", "tour")
@@ -132,7 +133,7 @@ def installed(runtime):
 
 
 def test_every_gated_package_is_account_synced_off_by_default_and_dated():
-    for plugin in NEW_SYNCED + CONVERTED_LEGACY:
+    for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY:
         entry = REGISTRY[plugin]
         assert entry["accountSync"] and not entry["default"], plugin
         assert entry["installedBefore"] == CUTOFF, plugin
@@ -152,7 +153,7 @@ def test_every_gated_package_is_account_synced_off_by_default_and_dated():
 
 def test_market_rows_carry_installed_before_only_when_set():
     rows = {row["id"]: row for row in market_packages.catalog_packages()}
-    for plugin in NEW_SYNCED + CONVERTED_LEGACY + ("sign-in",):
+    for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY + ("sign-in",):
         assert rows[plugin]["installedBefore"] == CUTOFF, plugin
         assert rows[plugin]["default"] is False and rows[plugin]["accountSync"] is (
             plugin != "sign-in")
@@ -167,7 +168,7 @@ def test_market_rows_carry_installed_before_only_when_set():
 def test_a_new_account_starts_with_every_gated_package_removed(hooks):
     runtime = Runtime(NEW)
     state = installed(runtime)
-    for plugin in NEW_SYNCED + CONVERTED_LEGACY + CONVERTED_OFF:
+    for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY + CONVERTED_OFF:
         assert state[plugin] is False, plugin
     assert not any(state[plugin] for plugin in state if plugin.startswith("status-check-"))
     assert state["workflows"] is False and state["workflows-examples"] is False
@@ -185,7 +186,7 @@ def test_an_account_created_on_the_cutoff_day_is_new(hooks):
 def test_an_older_account_keeps_every_dated_package(hooks):
     runtime = Runtime(OLD)
     state = installed(runtime)
-    for plugin in NEW_SYNCED + CONVERTED_LEGACY:
+    for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY:
         assert state[plugin] is True, plugin
     for plugin in CONVERTED_OFF:
         assert state[plugin] is False, plugin
@@ -200,7 +201,7 @@ def test_only_dated_fallback_installs_are_marked_legacy(hooks):
     call(runtime, "/api/plugins/@account/agents/install", "POST")
     payload = call(runtime, "/api/plugins/@account")["data"]
     legacy = {row["id"] for row in payload["packages"] if row.get("legacy")}
-    assert set(NEW_SYNCED + CONVERTED_LEGACY) - {"notes", "agents"} <= legacy
+    assert set(NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY) - {"notes", "agents"} <= legacy
     assert "workflows" in legacy
     assert not legacy & ({"notes", "agents"} | set(CONVERTED_OFF))
     fresh = call(Runtime(NEW), "/api/plugins/@account")["data"]
@@ -210,7 +211,7 @@ def test_only_dated_fallback_installs_are_marked_legacy(hooks):
 @pytest.mark.parametrize("created_at", [None, 0, "garbage"])
 def test_a_missing_creation_time_counts_as_an_old_account(hooks, created_at):
     state = installed(Runtime(created_at))
-    assert all(state[plugin] for plugin in NEW_SYNCED + CONVERTED_LEGACY)
+    assert all(state[plugin] for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY)
 
 
 def test_installing_pull_requests_brings_branches(hooks):

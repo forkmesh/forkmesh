@@ -177,6 +177,8 @@ public enum RouteCatalog {
         case .rssReader: return "RSS Reader"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
+        case .logs: return "Logs"
+        case .diagnostics: return "Diagnostics"
         case .stats: return "Stats"
         case .status: return "Status"
         case .admin: return "Admin"
@@ -249,6 +251,8 @@ public enum RouteCatalog {
         case .rssReader: return "dot.radiowaves.up.forward"
         case .localAI: return "cpu"
         case .activity: return "bolt"
+        case .logs: return "text.alignleft"
+        case .diagnostics: return "stethoscope"
         case .stats: return "chart.bar"
         case .status: return "waveform.path.ecg"
         case .admin: return "wrench.and.screwdriver"
@@ -347,6 +351,8 @@ public enum HubCatalog {
         .destination(.shortcuts(nil)),
         .destination(.hosts, guestAction: "manage your hosts"),
         .destination(.network(section: nil)),
+        .destination(.logs),
+        .destination(.diagnostics),
     ]
 
     public static let business: [HubItem] = [

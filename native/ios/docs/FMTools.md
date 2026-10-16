@@ -28,6 +28,7 @@ its views and clipboard live in the Tools feature.
 `TelemetryScreen(focusMetric:logCategory:)`, `TelemetryStrip`, `ReportBugSheet(screen:onFinished:)`,
 `BugReportButton(onReport:)` (a 48 pt glass button the shell places in the prompt bar beside send),
 `DevPerformanceOverlay` (debug builds). Screens are pushed inside the shell's NavigationStack.
+The Logs Home package opens TelemetryScreen's Logs tab; the Diagnostics package opens its Stats tab.
 
 ## Telemetry (`AppTelemetry.swift`, `TelemetryLogic.swift`)
 

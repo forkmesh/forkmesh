@@ -17,7 +17,7 @@ public enum PluginMenu {
         .teammates, .shortcuts, .notes, .tasks, .calendar, .timers, .desktops, .hosts, .network,
         .crm, .crmOrg, .marketing, .analytics, .competitors, .ledger, .vault, .coves,
         .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert,
-        .faceChanger, .appStoreStatus, .rssReader, .localAI, .activity, .people, .docs, .stats, .status, .orgs,
+        .faceChanger, .appStoreStatus, .rssReader, .localAI, .activity, .logs, .diagnostics, .people, .docs, .stats, .status, .orgs,
     ]
 
     public static func packageId(for route: Route) -> String? {

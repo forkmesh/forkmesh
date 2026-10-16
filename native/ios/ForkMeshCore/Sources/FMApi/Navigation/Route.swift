@@ -191,6 +191,8 @@ public enum Route: Codable, Hashable, Sendable {
     case rssReader
     case localAI
     case activity
+    case logs
+    case diagnostics
     // Insights and admin (WS20)
     case stats
     case status
@@ -296,6 +298,8 @@ public enum Route: Codable, Hashable, Sendable {
         case .rssReader: return .rssReader
         case .localAI: return .localAI
         case .activity: return .activity
+        case .logs: return .logs
+        case .diagnostics: return .diagnostics
         case .stats: return .stats
         case .status: return .status
         case .admin: return .admin
@@ -322,7 +326,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, faceChanger, appStoreStatus, rssReader, localAI, activity
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, faceChanger, appStoreStatus, rssReader, localAI, activity, logs, diagnostics
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
 
@@ -346,7 +350,7 @@ public enum Route: Codable, Hashable, Sendable {
             case .profile, .people, .docs, .settings: return "WS18"
             case .search, .tour, .updateRequired, .launchedAgent: return "WS8"
             case .desktops, .desktop, .provision, .node: return "WS16"
-            case .network, .stats, .status, .admin, .activity, .appStoreStatus: return "WS20"
+            case .network, .stats, .status, .admin, .activity, .logs, .diagnostics, .appStoreStatus: return "WS20"
             case .market, .package, .crm, .contact, .crmOrg, .marketing, .analytics, .competitors, .ads,
                 .ledger:
                 return "WS19"

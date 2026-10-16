@@ -57,6 +57,7 @@
     { "id": "computer-security", "version": "1.2.0", "manifest": "packages/computer-security/manifest.json" },
     { "id": "status-page", "version": "2.1.0", "manifest": "packages/status-page/manifest.json" },
     { "id": "logs", "version": "1.0.0", "manifest": "packages/logs/manifest.json" },
+    { "id": "diagnostics", "version": "1.0.0", "manifest": "packages/diagnostics/manifest.json" },
     { "id": "logs-app", "version": "1.0.0", "manifest": "packages/logs-app/manifest.json" },
     { "id": "logs-desktop", "version": "1.0.0", "manifest": "packages/logs-desktop/manifest.json" },
     { "id": "logs-hosts", "version": "1.0.0", "manifest": "packages/logs-hosts/manifest.json" },

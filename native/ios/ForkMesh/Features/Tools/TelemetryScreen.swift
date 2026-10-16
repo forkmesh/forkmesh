@@ -12,9 +12,10 @@ struct TelemetryScreen: View {
     @State private var model: TelemetryScreenModel?
     @State private var notice: FmNotice?
 
-    init(focusMetric: TelemetryMetric? = nil, logCategory: LogCategory? = nil) {
+    init(focusMetric: TelemetryMetric? = nil, logCategory: LogCategory? = nil, showLogs: Bool = false) {
         if let telemetry = Services.get(AppTelemetry.self) {
-            _model = State(initialValue: TelemetryScreenModel(telemetry: telemetry, focusMetric: focusMetric, logCategory: logCategory))
+            _model = State(initialValue: TelemetryScreenModel(
+                telemetry: telemetry, focusMetric: focusMetric, logCategory: logCategory, initialTab: showLogs ? 1 : 0))
         } else {
             _model = State(initialValue: nil)
         }
