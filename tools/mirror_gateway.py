@@ -6637,6 +6637,8 @@ def _verify_dashboard_discussion(
         ])
     elif event_type == "comment" and number > 0:
         content = str(event.get("body") or "")
+    elif event_type == "answer" and number > 0:
+        content = str(event.get("target") or "")
     else:
         return False
     try:
@@ -7617,6 +7619,13 @@ class DashboardService:
                 "titleIfNew": str(data.get("titleIfNew") or "")[:240],
                 "event": event,
             }
+            if (
+                str(event.get("type") or "") == "answer"
+                and actor
+                and actor == owner
+                and trusted_browser_origin
+            ):
+                item["meta"] = {"ownerApproved": True}
         item["submittedAt"] = self.application.clock_ms()
         payload = json.dumps(
             {
@@ -8314,12 +8323,15 @@ class GatewayApplication:
             # A repository owner may waive the executor's independent-review
             # gate; the router authorizes and audits that before signing the
             # request, so the only check owed here is the shape of the field.
-            set(value) - expected - {"overrideReview"}
+            set(value) - expected - {"overrideReview", "deleteHead"}
         ):
             raise GatewayError("merge request is invalid")
         override_review = value.get("overrideReview", False)
+        delete_head = value.get("deleteHead", False)
         if not isinstance(override_review, bool) or (
             override_review and operation != "merge-pull"
+        ) or not isinstance(delete_head, bool) or (
+            delete_head and operation != "merge-pull"
         ):
             raise GatewayError("merge request is invalid")
         try:
@@ -8355,6 +8367,7 @@ class GatewayApplication:
             # Absent unless waived, so an executor that predates the waiver
             # keeps seeing exactly the request shape it already accepts.
             **({"overrideReview": True} if override_review else {}),
+            **({"deleteHead": True} if delete_head else {}),
         }
 
     @staticmethod

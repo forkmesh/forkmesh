@@ -73,8 +73,8 @@ object PullShipCommands {
         val open = status == "open"
         return all(pull).filter {
             when (it.command) {
-                "pull.merge", "pull.fix_agent", "pull.close" -> open
-                "pull.merge_delete" -> open && pull.head.isNotBlank()
+                "pull.merge", "pull.merge_delete" -> false
+                "pull.fix_agent", "pull.close" -> open
                 "pull.reopen" -> status == "closed"
                 else -> true
             }

@@ -3165,6 +3165,40 @@
     return data;
   }
 
+  async function submitWebDiscussionAnswer(repo, number, target) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Math.floor(Date.now() / 1000);
+    const cleanTarget = String(target || "");
+    const contentHash = await sha256HexLower(cleanTarget);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}answer\n${number}\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    const event = {
+      type: "answer",
+      id: "answer-web-" + ts,
+      target: cleanTarget,
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number,
+      event,
+      sessionToken: state.session?.sessionToken || "",
+    };
+    return fetchRepoMutation(repo, "discussions", payload);
+  }
+
+  function webIssueKeyPublic() {
+    try {
+      return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");
+    } catch (_) {
+      return "";
+    }
+  }
+
   // Mirrors PullStore::contentForSigning's per-type field order (comment,
   // review, line-comment, thread-comment, thread-reply, thread-state,
   // suggestion-state) and the desktop's pull inbox POST
@@ -4173,6 +4207,49 @@
         hint.className = "text-[10px] text-destructive";
         hint.textContent = webIssueActionError(error);
       }
+    }
+  }
+
+  async function handleDiscussionAnswerClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionAnswerNumber || 0);
+    const target = String(button.dataset.repoDiscussionAnswer || "");
+    const section = button.closest("[data-repo-record-conversation]");
+    const hint = section?.querySelector("[data-repo-discussion-reply-hint]");
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!number) return;
+    button.disabled = true;
+    setHint("Signing and sending…");
+    try {
+      await submitWebDiscussionAnswer(repo, number, target);
+      const detail = state.repoRecordDetail;
+      const parsed = detail?.parsed;
+      if (parsed && Number(detail.number) === number) {
+        parsed.discussionAnswer = target ? { target } : null;
+        const list = section?.querySelector("[data-repo-discussion-conversation]");
+        if (list) {
+          list.innerHTML = renderRepoDiscussionConversation(parsed.discussionConversation || [], {
+            answer: parsed.discussionAnswer,
+            canMark: parsed.discussionAnswerAuthorized,
+            number,
+          });
+          window.lucide?.createIcons();
+        }
+      }
+      setHint(target ? "Answer marked. It shows for everyone once the repository records it." : "Answer cleared.");
+    } catch (error) {
+      button.disabled = false;
+      const code = String(error?.message || "");
+      setHint(
+        code === "bad_signature" ? "Could not verify the answer's signature."
+          : code === "inbox_full" ? "Delivery is temporarily full. Try again later."
+          : "Could not mark the answer. Please try again.",
+        true,
+      );
     }
   }
 
@@ -8428,6 +8505,7 @@
       { kind: "tip_sent", label: "Tips", email: true },
       { kind: "hackathon_squad", label: "Hackathon squad progress", email: false },
       { kind: "hackathon_reward", label: "Hackathon rewards", email: false },
+      { kind: "badge", label: "Badges earned", email: false },
     ] },
     { key: "devices", label: "Devices & apps", kinds: [
       { kind: "host_online", label: "Host came online", email: true },
@@ -9335,17 +9413,41 @@
   const profileBadgesLoading = new Set();
 
   const PROFILE_BADGE_SLUG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+  const PROFILE_BADGE_TIERS = ["bronze", "silver", "gold"];
 
-  function profileBadgeMedalSources(slug) {
-    const path = "/assets/badges/" + slug + ".svg";
+  function profileBadgeTier(badge) {
+    const tier = String(badge?.tier || "").trim().toLowerCase();
+    return PROFILE_BADGE_TIERS.includes(tier) ? tier : "";
+  }
+
+  function profileBadgeMedalSources(slug, tier) {
+    const files = tier ? [slug + "-" + tier, slug] : [slug];
     const sources = [];
-    try {
-      const routed = window.ForkMeshAPI?.url?.(path);
-      if (routed) sources.push(routed);
-    } catch (_) {}
-    const local = new URL(path, location.href).href;
-    if (!sources.includes(local)) sources.push(local);
+    files.forEach((file) => {
+      const path = "/assets/badges/" + file + ".svg";
+      try {
+        const routed = window.ForkMeshAPI?.url?.(path);
+        if (routed && !sources.includes(routed)) sources.push(routed);
+      } catch (_) {}
+      const local = new URL(path, location.href).href;
+      if (!sources.includes(local)) sources.push(local);
+    });
     return sources;
+  }
+
+  function profileBadgeTierText(badge) {
+    const tier = String(badge?.tier || "");
+    if (!tier || !Array.isArray(badge?.tiers)) return "";
+    const unit = String(badge.unit || "");
+    const progress = Number(badge.progress) || 0;
+    const parts = [];
+    if (progress > 0) parts.push(progress.toLocaleString() + (unit ? " " + unit : ""));
+    if (badge.nextTier && Number(badge.nextThreshold) > 0) {
+      parts.push(badge.nextTier.charAt(0).toUpperCase() + badge.nextTier.slice(1) + " at " + Number(badge.nextThreshold).toLocaleString());
+    } else {
+      parts.push("Highest level");
+    }
+    return parts.join(" \u00b7 ");
   }
 
   function profileBadgeMedalFallback(badge) {
@@ -9360,7 +9462,7 @@
   function profileBadgeMedal(badge) {
     const slug = String(badge.slug || "").trim().toLowerCase();
     if (!PROFILE_BADGE_SLUG_RE.test(slug)) return profileBadgeMedalFallback(badge);
-    const sources = profileBadgeMedalSources(slug);
+    const sources = profileBadgeMedalSources(slug, profileBadgeTier(badge));
     const medal = document.createElement("img");
     medal.className = "h-12 w-12 shrink-0 select-none";
     medal.width = 48;
@@ -9402,12 +9504,31 @@
         const text = document.createElement("div");
         text.className = "min-w-0";
         const title = document.createElement("p");
-        title.className = "font-semibold leading-5 text-foreground";
-        title.textContent = String(badge.name || badge.slug || "");
+        title.className = "flex items-center gap-2 font-semibold leading-5 text-foreground";
+        const titleText = document.createElement("span");
+        titleText.className = "truncate";
+        titleText.textContent = String(badge.name || badge.slug || "");
+        title.append(titleText);
+        const tier = profileBadgeTier(badge);
+        if (tier) {
+          const chip = document.createElement("span");
+          chip.className = "shrink-0 rounded-full border border-border px-1.5 text-xs font-medium leading-4 text-muted-foreground";
+          chip.dataset.profileBadgeTier = tier;
+          chip.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+          title.append(chip);
+        }
         const detail = document.createElement("p");
         detail.className = "text-xs leading-5 text-muted-foreground";
         detail.textContent = String(badge.description || "");
         text.append(title, detail);
+        const tierText = profileBadgeTierText(badge);
+        if (tierText) {
+          const level = document.createElement("p");
+          level.className = "text-xs leading-5 text-muted-foreground";
+          level.dataset.profileBadgeProgress = "";
+          level.textContent = tierText;
+          text.append(level);
+        }
         if (Number(badge.awardedAt) > 0) {
           const when = document.createElement("p");
           when.className = "text-xs leading-5 text-muted-foreground";
@@ -19446,10 +19567,43 @@
   // .forkmesh/discussions/<N>/NNNN-comment.md files alongside discussion.md (see
   // DiscussionStore.cpp on the desktop client). Reuses the pull conversation
   // row renderer since a discussion comment event has the same shape.
-  function renderRepoDiscussionConversation(events) {
+  function renderRepoDiscussionConversation(events, options = {}) {
     const rows = Array.isArray(events) ? events : [];
     if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No replies yet on this discussion.</div>';
-    return rows.map(renderPullConversationEvent).join("");
+    const answerId = String(options.answer?.target || "");
+    return rows.map((ev) => {
+      const isAnswer = Boolean(answerId) && ev.id === answerId;
+      const badge = isAnswer
+        ? '<span data-repo-discussion-answer-badge class="inline-flex items-center gap-1 rounded-md border border-success/40 px-1.5 py-0.5 text-[11px] font-medium text-success"><i data-lucide="circle-check" class="h-3.5 w-3.5"></i>Answer</span>'
+        : "";
+      const action = options.canMark && ev.id
+        ? `<button type="button" data-repo-discussion-answer="${escapeHtml(isAnswer ? "" : ev.id)}" data-repo-discussion-answer-number="${escapeHtml(options.number)}" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="${isAnswer ? "circle-x" : "circle-check"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${isAnswer ? "Clear answer" : "Mark as answer"}</button>`
+        : "";
+      const footer = badge || action
+        ? `<div class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 px-4 pb-3"><span aria-hidden="true"></span><div class="flex flex-wrap items-center gap-2">${badge}${action}</div></div>`
+        : "";
+      return `<div data-repo-discussion-reply data-answer="${isAnswer ? "true" : "false"}" class="border-t border-border first:border-t-0">${renderPullConversationEvent(ev)}${footer}</div>`;
+    }).join("");
+  }
+
+  function isQuestionDiscussion(category) {
+    return ["q&a", "qa", "q and a", "q-and-a"].includes(String(category || "").trim().toLowerCase());
+  }
+
+  async function loadRepoDiscussionAnswerAuthorization(repo, values) {
+    if (!repo || !state.session?.sessionToken || !isQuestionDiscussion(values?.category)) return false;
+    if (isRepoOwner(repo)) return true;
+    const opener = String(values?.author || "");
+    if (opener && opener === webIssueKeyPublic()) return true;
+    try {
+      const profile = await orgApiRequest(
+        "GET",
+        `/api/orgs/${encodeURIComponent(repo.owner || "")}`,
+      );
+      return String(profile?.viewerRole || "") === "owner";
+    } catch (_) {
+      return false;
+    }
   }
 
   async function loadRepoDiscussionConversation(repo, number) {
@@ -19457,26 +19611,40 @@
     try {
       tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: `.forkmesh/discussions/${number}` }));
     } catch (_) {
-      return [];
+      return { events: [], answer: null };
     }
-    const files = (Array.isArray(tree.entries) ? tree.entries : [])
+    const entries = Array.isArray(tree.entries) ? tree.entries : [];
+    const files = entries
       .filter((entry) => entry.type !== "tree" && /^\d+-comment\.md$/.test(String(entry.name || "")))
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    if (!files.length) return [];
-    const blobs = await fetchRepoBlobs(repo, files.map((entry) => `.forkmesh/discussions/${number}/${entry.name}`));
-    return files.map((entry) => {
+    const answerPath = entries.some((entry) => entry.type !== "tree" && entry.name === "answer.md")
+      ? `.forkmesh/discussions/${number}/answer.md`
+      : "";
+    const paths = files.map((entry) => `.forkmesh/discussions/${number}/${entry.name}`);
+    if (answerPath) paths.push(answerPath);
+    if (!paths.length) return { events: [], answer: null };
+    const blobs = await fetchRepoBlobs(repo, paths);
+    const events = files.map((entry) => {
       const blob = blobs[`.forkmesh/discussions/${number}/${entry.name}`];
       if (!blob) return null;
       const parsed = parseFrontMatter(blobText(blob));
       const values = parsed.values || {};
       return {
         type: "comment",
+        id: values.id || "",
         author: values.author || "",
         authorName: values.authorName || "",
         ts: values.ts || "",
         body: parsed.body || "",
       };
     }).filter(Boolean);
+    const answerValues = answerPath && blobs[answerPath]
+      ? parseFrontMatter(blobText(blobs[answerPath])).values || {}
+      : {};
+    const answer = answerValues.target
+      ? { target: answerValues.target, author: answerValues.author || "", ts: answerValues.ts || "" }
+      : null;
+    return { events, answer };
   }
 
   // GitHub's comment box: Write / Preview, a formatting toolbar, and the
@@ -20978,7 +21146,7 @@
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">
             <i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}
           </div>
-          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation)}</div>
+          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, number })}</div>
           ${renderDiscussionReplyForm(number)}
         </section>` : "";
     // The open section comes from the URL (/owner/repo/pulls/93/files), so a
@@ -22074,7 +22242,12 @@
       if (kind === "issues") {
         [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
       }
-      if (kind === "discussions") parsed.discussionConversation = await discussionConversation;
+      if (kind === "discussions") {
+        const thread = await discussionConversation;
+        parsed.discussionConversation = thread.events;
+        parsed.discussionAnswer = thread.answer;
+        parsed.discussionAnswerAuthorized = await loadRepoDiscussionAnswerAuthorization(repo, parsed.values || {});
+      }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
       if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
@@ -35391,6 +35564,7 @@
       desktop_ping: "monitor",
       hackathon_squad: "users",
       hackathon_reward: "gift",
+      badge: "award",
       package_review: "star",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
@@ -36175,6 +36349,12 @@
   }
 
   document.addEventListener("click", async (event) => {
+    const discussionAnswerButton = event.target.closest("[data-repo-discussion-answer]");
+    if (discussionAnswerButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
     if (event.target.closest("[data-repositories-retry]")) {
       const startedAt = interfaceNow();
       const list = $("#repoList");
@@ -38530,6 +38710,11 @@
       renderRepoDetail(repo);
     });
   }
+  // initAchievementsPage lives in 09-achievements.js (a per-page chunk).
+  function initAchievementsPage(...args) {
+    return loadDashboardChunk("achievements").then((chunk) => chunk.initAchievementsPage(...args));
+  }
+
   // ---------------------------------------------------------------------------
   // ForkMesh Ads: the first-party, human-reviewed, text-only contextual ad
   // network (Worker side: app/src/ad_network.py). Two surfaces live here:
@@ -42555,6 +42740,7 @@
   // LAZY_CHUNKS). A chunk's factory receives the names it uses from
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
+    "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agents": "/dashboard-page-agents.js?v=228adef39c05",
     "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
@@ -42565,7 +42751,7 @@
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=0fe24343526e",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=f6bb3d331b24",
+    "tasks": "/dashboard-page-tasks.js?v=64aaa15b9c85",
     "workflows": "/dashboard-page-workflows.js?v=31a4ee1ae76e",
   };
   const dashboardChunkScope = {
@@ -42588,6 +42774,8 @@
     mergeGroupsByPublicAddress,
     orgAgentRequest,
     parseFlexibleDate,
+    profileBadgeMedal,
+    profileBadgeTier,
     publicProfileUrl,
     publicSiteOrigin,
     relativeTimeLabel,
@@ -42679,6 +42867,7 @@
     "workflows": initWorkflowsPage,
     "bounties": initBountiesPage,
     "links": initLinksPage,
+    "achievements": initAchievementsPage,
     "settings": initSettingsPage,
     "profile": initProfileOverviewPage,
     "profile-repositories": initProfileOverviewPage,
@@ -42720,8 +42909,31 @@
     return data;
   }
 
+  async function pluginDesktopUsage() {
+    if (!state.session?.sessionToken) throw new Error("desktop_sign_in_required");
+    const hub = await desktopControlHub();
+    const desktops = await hub.desktops();
+    const readings = await Promise.all((Array.isArray(desktops) ? desktops : []).map(async (desktop) => {
+      const node = String(desktop?.node || "");
+      if (!node) return null;
+      try {
+        const connection = await hub.connect(node);
+        const usage = await connection.request("agentops.usage", {});
+        return {
+          node,
+          name: String(connection.info?.name || desktop?.name || node),
+          usage: usage && typeof usage === "object" ? usage : {},
+        };
+      } catch (error) {
+        return { node, name: String(desktop?.name || node), error: desktopControlErrorText(error) };
+      }
+    }));
+    return { desktops: readings.filter(Boolean), observedAt: Date.now() };
+  }
+
   const pluginApi = Object.freeze({
     request: pluginRequest,
+    desktopUsage: pluginDesktopUsage,
     select: (selector) => document.querySelector(selector),
     selectAll: (selector) => Array.from(document.querySelectorAll(selector)),
     session: () => state.session ? { ...state.session } : null,

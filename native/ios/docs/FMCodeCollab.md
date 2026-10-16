@@ -22,8 +22,8 @@ native/android `collab/*.kt`.
   record behind it, because the list rows carry no `changes.patch` or `commits.mbox`.
 - The pull request page, top to bottom: the header (status chips, head → base branch labels,
   author and age, description), the changed files card (up to eight rows and "Review changes",
-  which pushes `PullChangesScreen`), the phone merge card (and, when desktop control is available,
-  a `Merge & delete` request that uses the desktop's pull-and-head cleanup), the review card (Approve, Request
+  which pushes `PullChangesScreen`), the phone merge card (including `Merge & delete`, which merges
+  exact pinned commits and deletes the head branch in the same merge transaction), the review card (Approve, Request
   changes and Comment as `FmToneButton`s, plus the thread subscription), the desktop requests
   ("On the desktop": only the requests that fit the pull's state, `PullShipCommands.offered`,
   as short tone chips with the full label as the accessibility label), the timeline and the

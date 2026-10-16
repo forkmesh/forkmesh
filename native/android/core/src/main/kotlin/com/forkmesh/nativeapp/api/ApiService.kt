@@ -1684,7 +1684,9 @@ open class ApiService(
             author = meta["authorName"] ?: meta["author"] ?: "",
             category = meta["category"] ?: "general",
             updatedMs = dartIntTryParse(meta["updatedAt"] ?: meta["ts"] ?: "") ?: 0L,
-            events = events,
+            events = events.filter { it.type != "answer" },
+            authorKey = meta["author"] ?: "",
+            answer = events.lastOrNull { it.type == "answer" },
         )
     }
 
@@ -1696,6 +1698,8 @@ open class ApiService(
             author = meta["author"] ?: "",
             authorName = meta["authorName"] ?: "",
             ts = dartIntTryParse(meta["ts"] ?: "") ?: 0L,
+            id = meta["id"] ?: "",
+            target = meta["target"] ?: "",
         )
     }
 

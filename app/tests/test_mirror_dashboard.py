@@ -1060,6 +1060,28 @@ def test_direct_pull_and_discussion_signatures_match_browser_wire_format():
     ).decode().rstrip("=")
     assert gateway._verify_dashboard_discussion(0, discussion) is True
 
+    answer = {"type": "answer", "target": "reply-7", "author": author,
+              "ts": NOW}
+    answer_message = (
+        "forkmesh-discussion-event-v1\nanswer\n3\n" + author + "\n"
+        + str(NOW) + "\n" + hashlib.sha256(b"reply-7").hexdigest()
+    ).encode()
+    answer["sig"] = base64.urlsafe_b64encode(
+        private_key.sign(answer_message)
+    ).decode().rstrip("=")
+    assert gateway._verify_dashboard_discussion(3, answer) is True
+    assert gateway._verify_dashboard_discussion(
+        3, dict(answer, target="reply-8")) is False
+    assert gateway._verify_dashboard_discussion(0, answer) is False
+
+
+def test_direct_discussion_answers_flag_only_the_owners_session():
+    source = Path(gateway.__file__).read_text(encoding="utf-8")
+    flag = source.index('item["meta"] = {"ownerApproved": True}')
+    guard = source[flag - 260:flag]
+    assert 'str(event.get("type") or "") == "answer"' in guard
+    assert "actor == owner" in guard and "trusted_browser_origin" in guard
+
 
 def test_gateway_event_signatures_bind_the_repository(monkeypatch):
     private_key = Ed25519PrivateKey.generate()

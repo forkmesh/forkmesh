@@ -234,6 +234,7 @@ public final class InboxService {
         switch type {
         case "open": return [text(ev["title"]), text(ev["body"]), text(ev["category"])].joined(separator: "\0")
         case "comment": return text(ev["body"])
+        case "answer": return text(ev["target"])
         default: return ""
         }
     }
@@ -265,6 +266,16 @@ public final class InboxService {
     public func commentOnDiscussion(_ owner: String, _ name: String, _ number: Int, _ body: String) async throws {
         let event = signedDiscussionEvent(owner, name, number, "comment", ["body": .string(body)])
         try await post(repoEndpoint(owner, name, "discussions"), ["number": .int(Int64(number)), "event": .object(event)])
+    }
+
+    public func markDiscussionAnswer(
+        _ owner: String, _ name: String, _ number: Int, target: String, sessionToken: String
+    ) async throws {
+        let event = signedDiscussionEvent(
+            owner, name, number, "answer", ["id": .string("answer-ios-\(now)"), "target": .string(target)])
+        var body: JSONObject = ["number": .int(Int64(number)), "event": .object(event)]
+        if !sessionToken.isEmpty { body["sessionToken"] = .string(sessionToken) }
+        try await post(repoEndpoint(owner, name, "discussions"), body)
     }
 
     // MARK: Subscriptions

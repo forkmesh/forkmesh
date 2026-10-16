@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.tools
 
+import com.forkmesh.nativeapp.tools.TelemetryHealth
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +55,36 @@ import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmType
+
+@Composable
+internal fun TelemetryStripCompactView(telemetry: AppTelemetry, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val c = Fm.colors
+    telemetry.observe()
+    val summary = (listOf("Diagnostics") + TelemetryMetric.entries.map { "${it.title} ${it.format(telemetry.latest(it))}" }).joinToString(", ")
+    Row(
+        modifier
+            .clickable(onClick = onOpen)
+            .clearAndSetSemantics {
+                contentDescription = summary
+                role = Role.Button
+            }
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        for (metric in TelemetryMetric.entries) {
+            val series = telemetry.lastSeconds(metric, TelemetryStripLayout.SPARK_SECONDS)
+            val line = when (metric.health(series)) {
+                TelemetryHealth.Good -> c.success
+                TelemetryHealth.Warning -> c.warning
+                TelemetryHealth.Bad -> c.danger
+                null -> c.textTertiary
+            }
+            Canvas(Modifier.width(12.dp).height(10.dp)) {
+                drawTelemetryChart(series, TelemetryStripLayout.SPARK_SECONDS, metric.floor, line, Color.Transparent, strokeWidth = 1.dp.toPx())
+            }
+        }
+    }
+}
 
 @Composable
 internal fun TelemetryStripView(

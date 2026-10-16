@@ -172,8 +172,13 @@ fun ProjectSwitcherTitle(
     icon: Boolean = false,
     subtitle: String? = null,
     onOpen: () -> Unit = {},
+    iconOnly: Boolean = false,
 ) {
     val projects = Services.get<ProjectsService>()
+    if (projects == null && iconOnly) {
+        Image(painterResource(R.drawable.fm_logo), contentDescription = "ForkMesh", modifier = modifier.size(40.dp))
+        return
+    }
     if (projects == null) {
         Text(fallback, style = MaterialTheme.typography.titleLarge, color = Fm.colors.textPrimary, modifier = modifier)
         return
@@ -188,6 +193,10 @@ fun ProjectSwitcherTitle(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (iconOnly) {
+            ProjectIcon(active, size = 40.dp)
+            return@Row
+        }
         if (icon) {
             ProjectIcon(active, size = 36.dp)
             Spacer(Modifier.width(FmSpace.x3))

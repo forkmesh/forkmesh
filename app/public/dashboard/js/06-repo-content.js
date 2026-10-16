@@ -4530,10 +4530,43 @@
   // .forkmesh/discussions/<N>/NNNN-comment.md files alongside discussion.md (see
   // DiscussionStore.cpp on the desktop client). Reuses the pull conversation
   // row renderer since a discussion comment event has the same shape.
-  function renderRepoDiscussionConversation(events) {
+  function renderRepoDiscussionConversation(events, options = {}) {
     const rows = Array.isArray(events) ? events : [];
     if (!rows.length) return '<div class="px-4 py-3 text-sm text-muted-foreground">No replies yet on this discussion.</div>';
-    return rows.map(renderPullConversationEvent).join("");
+    const answerId = String(options.answer?.target || "");
+    return rows.map((ev) => {
+      const isAnswer = Boolean(answerId) && ev.id === answerId;
+      const badge = isAnswer
+        ? '<span data-repo-discussion-answer-badge class="inline-flex items-center gap-1 rounded-md border border-success/40 px-1.5 py-0.5 text-[11px] font-medium text-success"><i data-lucide="circle-check" class="h-3.5 w-3.5"></i>Answer</span>'
+        : "";
+      const action = options.canMark && ev.id
+        ? `<button type="button" data-repo-discussion-answer="${escapeHtml(isAnswer ? "" : ev.id)}" data-repo-discussion-answer-number="${escapeHtml(options.number)}" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="${isAnswer ? "circle-x" : "circle-check"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${isAnswer ? "Clear answer" : "Mark as answer"}</button>`
+        : "";
+      const footer = badge || action
+        ? `<div class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 px-4 pb-3"><span aria-hidden="true"></span><div class="flex flex-wrap items-center gap-2">${badge}${action}</div></div>`
+        : "";
+      return `<div data-repo-discussion-reply data-answer="${isAnswer ? "true" : "false"}" class="border-t border-border first:border-t-0">${renderPullConversationEvent(ev)}${footer}</div>`;
+    }).join("");
+  }
+
+  function isQuestionDiscussion(category) {
+    return ["q&a", "qa", "q and a", "q-and-a"].includes(String(category || "").trim().toLowerCase());
+  }
+
+  async function loadRepoDiscussionAnswerAuthorization(repo, values) {
+    if (!repo || !state.session?.sessionToken || !isQuestionDiscussion(values?.category)) return false;
+    if (isRepoOwner(repo)) return true;
+    const opener = String(values?.author || "");
+    if (opener && opener === webIssueKeyPublic()) return true;
+    try {
+      const profile = await orgApiRequest(
+        "GET",
+        `/api/orgs/${encodeURIComponent(repo.owner || "")}`,
+      );
+      return String(profile?.viewerRole || "") === "owner";
+    } catch (_) {
+      return false;
+    }
   }
 
   async function loadRepoDiscussionConversation(repo, number) {
@@ -4541,26 +4574,40 @@
     try {
       tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: `.forkmesh/discussions/${number}` }));
     } catch (_) {
-      return [];
+      return { events: [], answer: null };
     }
-    const files = (Array.isArray(tree.entries) ? tree.entries : [])
+    const entries = Array.isArray(tree.entries) ? tree.entries : [];
+    const files = entries
       .filter((entry) => entry.type !== "tree" && /^\d+-comment\.md$/.test(String(entry.name || "")))
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    if (!files.length) return [];
-    const blobs = await fetchRepoBlobs(repo, files.map((entry) => `.forkmesh/discussions/${number}/${entry.name}`));
-    return files.map((entry) => {
+    const answerPath = entries.some((entry) => entry.type !== "tree" && entry.name === "answer.md")
+      ? `.forkmesh/discussions/${number}/answer.md`
+      : "";
+    const paths = files.map((entry) => `.forkmesh/discussions/${number}/${entry.name}`);
+    if (answerPath) paths.push(answerPath);
+    if (!paths.length) return { events: [], answer: null };
+    const blobs = await fetchRepoBlobs(repo, paths);
+    const events = files.map((entry) => {
       const blob = blobs[`.forkmesh/discussions/${number}/${entry.name}`];
       if (!blob) return null;
       const parsed = parseFrontMatter(blobText(blob));
       const values = parsed.values || {};
       return {
         type: "comment",
+        id: values.id || "",
         author: values.author || "",
         authorName: values.authorName || "",
         ts: values.ts || "",
         body: parsed.body || "",
       };
     }).filter(Boolean);
+    const answerValues = answerPath && blobs[answerPath]
+      ? parseFrontMatter(blobText(blobs[answerPath])).values || {}
+      : {};
+    const answer = answerValues.target
+      ? { target: answerValues.target, author: answerValues.author || "", ts: answerValues.ts || "" }
+      : null;
+    return { events, answer };
   }
 
   // GitHub's comment box: Write / Preview, a formatting toolbar, and the
@@ -6062,7 +6109,7 @@
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">
             <i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}
           </div>
-          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation)}</div>
+          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, number })}</div>
           ${renderDiscussionReplyForm(number)}
         </section>` : "";
     // The open section comes from the URL (/owner/repo/pulls/93/files), so a
@@ -7158,7 +7205,12 @@
       if (kind === "issues") {
         [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
       }
-      if (kind === "discussions") parsed.discussionConversation = await discussionConversation;
+      if (kind === "discussions") {
+        const thread = await discussionConversation;
+        parsed.discussionConversation = thread.events;
+        parsed.discussionAnswer = thread.answer;
+        parsed.discussionAnswerAuthorized = await loadRepoDiscussionAnswerAuthorization(repo, parsed.values || {});
+      }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
       if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;

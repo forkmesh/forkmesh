@@ -45,6 +45,7 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "device_added": return "smartphone_outlined"
     case "hackathon_squad": return "groups_outlined"
     case "hackathon_reward": return "card_giftcard_outlined"
+    case "badge": return "emoji_events_outlined"
     case "package_review": return "rate_review_outlined"
     default: return notificationLineIcon
     }
@@ -57,7 +58,7 @@ public enum PingTone: String, Sendable {
 public func notificationToneForKind(_ kind: String) -> PingTone {
     switch kind.dartTrimmed.lowercased() {
     case "error", "error_group", "operational_alert", "security_alert", "local_failure": return .danger
-    case "agent-done", "agent_done", "host_online", "repository_hosted": return .success
+    case "agent-done", "agent_done", "host_online", "repository_hosted", "badge": return .success
     case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval": return .warning
     case "mention", "subscribed", "repo", "repo_shared", "repo_activity", "code_push", "pending_inbox",
          "mirror", "mirror_request", "calendar_invitation", "calendar_reminder", "calendar_rsvp",

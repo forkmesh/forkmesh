@@ -64,7 +64,10 @@ speaking.
 **Reactions** (`GenieReactions.swift`, `GenieCues.shared`), only while no
 session is busy: a periodic wave, glances on tab switches, nods on page opens,
 cheers when an agent starts, surprise on new pings, eureka on a spotted action,
-giggles on a bump.
+giggles on a bump. When a fresh `badge` ping celebrates, the spider says
+"You earned Stargazer!" or "You reached Silver Fan Club!"
+(`PingCelebration.badgeLine`) and cheers (`GenieSpiderLayer`, on
+`NotificationService.celebrationCount`).
 
 **Motion** (`GenieMotion`, CoreMotion at 30 Hz while visible): left-right tilt
 is absolute gravity, negated so the spider stays upright against the room;

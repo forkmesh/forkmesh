@@ -10,6 +10,7 @@ struct DiscussionDetailScreen: View {
     @Environment(\.fmPalette) private var fm
     @State private var model: DiscussionDetailModel
     @State private var sending: Bool = false
+    @State private var marking: Bool = false
 
     /// Opened by number (a deep link or a notification).
     init(repo: Repository, number: Int) {
@@ -76,21 +77,57 @@ struct DiscussionDetailScreen: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(discussion.events.indices, id: \.self) { (index: Int) in
-                        eventTile(discussion.events[index])
+                        eventRow(discussion.events[index], in: discussion)
                     }
                 }
             }
         }
     }
 
-    private func eventTile(_ event: DiscussionEvent) -> CollabTimelineTile {
+    private func eventRow(_ event: DiscussionEvent, in discussion: RepoDiscussion) -> some View {
+        let isAnswer: Bool = DiscussionDetail.isAnswer(event, in: discussion)
+        return VStack(alignment: .leading, spacing: 4) {
+            eventTile(event, isAnswer: isAnswer)
+            if canMarkAnswer(discussion), event.type == "comment", !event.id.isEmpty {
+                FmTextButton(
+                    isAnswer ? DiscussionDetail.clearAnswer : DiscussionDetail.markAnswer,
+                    icon: "task_alt", minHeight: 32,
+                    onPressed: marking ? nil : { markAnswer(isAnswer ? "" : event.id) })
+            }
+        }
+    }
+
+    private func eventTile(_ event: DiscussionEvent, isAnswer: Bool) -> CollabTimelineTile {
         CollabTimelineTile(
-            icon: "forum_outlined",
-            tone: .tertiary,
-            title: DiscussionDetail.eventTitle,
+            icon: isAnswer ? "task_alt" : "forum_outlined",
+            tone: isAnswer ? .success : .tertiary,
+            title: isAnswer ? DiscussionDetail.answerTitle : DiscussionDetail.eventTitle,
             author: event.displayAuthor,
             text: event.body,
             repo: RepoRef(owner: model.repo.owner, name: model.repo.name))
+    }
+
+    private func canMarkAnswer(_ discussion: RepoDiscussion) -> Bool {
+        DiscussionDetail.canMarkAnswer(
+            discussion, account: CollabEnv.account(), identityPublicKey: CollabEnv.identity?.publicKeyB64url,
+            repoOwner: model.repo.owner)
+    }
+
+    private func markAnswer(_ target: String) {
+        let model: DiscussionDetailModel = self.model
+        Task {
+            if !(await CollabEnv.requireAccount(DiscussionDetail.answerGuestAction)) {
+                return
+            }
+            marking = true
+            let notice: CollabNotice = await CollabEnv.writer(model.repo).markAnswer(
+                model.number, target: target, sessionToken: CollabEnv.auth?.session?.sessionToken ?? "")
+            marking = false
+            if !notice.isError {
+                model.showAnswer(target)
+            }
+            CollabMessenger.shared.show(notice)
+        }
     }
 
     /// "Signed discussion reply".

@@ -143,12 +143,14 @@ public struct RepoDiscussion: Equatable, Hashable, Sendable, Identifiable {
     public var category: String
     public var updatedMs: Int
     public var events: [DiscussionEvent]
+    public var authorKey: String
+    public var answer: DiscussionEvent?
 
     public var id: Int { number }
 
     public init(
         number: Int, title: String, body: String = "", author: String = "", category: String = "general",
-        updatedMs: Int = 0, events: [DiscussionEvent] = []
+        updatedMs: Int = 0, events: [DiscussionEvent] = [], authorKey: String = "", answer: DiscussionEvent? = nil
     ) {
         self.number = number
         self.title = title
@@ -157,6 +159,8 @@ public struct RepoDiscussion: Equatable, Hashable, Sendable, Identifiable {
         self.category = category
         self.updatedMs = updatedMs
         self.events = events
+        self.authorKey = authorKey
+        self.answer = answer
     }
 }
 
@@ -166,13 +170,20 @@ public struct DiscussionEvent: Equatable, Hashable, Sendable {
     public var author: String
     public var authorName: String
     public var ts: Int
+    public var id: String
+    public var target: String
 
-    public init(type: String, body: String = "", author: String = "", authorName: String = "", ts: Int = 0) {
+    public init(
+        type: String, body: String = "", author: String = "", authorName: String = "", ts: Int = 0, id: String = "",
+        target: String = ""
+    ) {
         self.type = type
         self.body = body
         self.author = author
         self.authorName = authorName
         self.ts = ts
+        self.id = id
+        self.target = target
     }
 
     public var displayAuthor: String { authorName.isEmpty ? author : authorName }

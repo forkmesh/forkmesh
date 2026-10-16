@@ -30,6 +30,14 @@ def _handler_block():
     raise AssertionError("world_profile_social_handler not found")
 
 
+def _profile_feed_handler_block():
+    for node in ast.parse(WORLD_ROUTE_SOURCE).body:
+        if (isinstance(node, ast.AsyncFunctionDef)
+                and node.name == "world_profile_activity_feed_handler"):
+            return ast.get_source_segment(WORLD_ROUTE_SOURCE, node)
+    raise AssertionError("world_profile_activity_feed_handler not found")
+
+
 def test_profile_social_route_is_authenticated_and_self_scoped():
     handler = _handler_block()
     assert '"/api/world/profile-social"' in ENTRY
@@ -64,3 +72,14 @@ def test_profile_update_uses_the_authenticated_user_actor_only():
     assert '"actorKind": AP_ACTOR_USER' in handler
     assert '"actorHandle": name' in handler
     assert "data.get(\"name\"" not in handler
+
+
+def test_profile_feed_exposes_only_public_user_updates():
+    handler = _profile_feed_handler_block()
+    assert '"/api/world/profile-feed"' in ENTRY
+    assert "WHERE a.kind=?" in handler
+    assert "AP_ACTOR_USER" in handler
+    assert "account.get(\"profile_private\")" in handler
+    assert '"access-control-allow-origin": "*"' in handler
+    assert '"actor_data"' in handler
+    assert "decrypt_row(env, row.get(\"data\"))" in handler

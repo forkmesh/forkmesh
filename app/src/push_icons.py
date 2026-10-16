@@ -42,6 +42,7 @@ PUSH_KIND_ICONS = {
     "code_push": "\U0001F4E4",
     "security_alert": "\U0001F6A8",
     "package_review": "\u2B50",
+    "badge": "\U0001F3C5",
 }
 PUSH_DESKTOP_CATEGORY_ICONS = {
     "agent-finished": "\U0001F916",

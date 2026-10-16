@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -106,6 +107,8 @@ internal class ReposScreen : Screen() {
     private var desktopTitle by mutableStateOf("Desktop")
 
     override val title: String get() = "Repos"
+
+    override val extendsUnderTabBar: Boolean get() = true
 
     private fun reload() {
         desktopTick++
@@ -362,7 +365,7 @@ internal class ReposScreen : Screen() {
         FmPullToRefreshBox(isRefreshing = false, onRefresh = { reload() }, modifier = Modifier.fillMaxSize()) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val remaining = (maxHeight - sectionHeight).coerceAtLeast(0.dp)
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalShellClearance.current)) {
                     item(key = "local-repos") {
                         Column(Modifier.onSizeChanged { sectionHeight = with(density) { it.height.toDp() } }) {
                             if (desktop != null && (desktopRows.isNotEmpty() || desktopProblem != null || desktopLoading)) {

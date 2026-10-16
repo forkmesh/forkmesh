@@ -204,6 +204,7 @@ open class InboxService(
     fun discussionContent(type: String, ev: Map<String, Any?>): String = when (type) {
         "open" -> join(ev["title"] ?: "", ev["body"] ?: "", ev["category"] ?: "")
         "comment" -> jsonText(ev["body"])
+        "answer" -> jsonText(ev["target"])
         else -> ""
     }
 
@@ -234,6 +235,15 @@ open class InboxService(
     open fun commentOnDiscussion(owner: String, name: String, number: Int, body: String) {
         val event = signedDiscussionEvent(owner, name, number, "comment", linkedMapOf("body" to body))
         post(repoEndpoint(owner, name, "discussions"), linkedMapOf("number" to number, "event" to event))
+    }
+
+    open fun markDiscussionAnswer(owner: String, name: String, number: Int, target: String, sessionToken: String) {
+        val event = signedDiscussionEvent(
+            owner, name, number, "answer", linkedMapOf("id" to "answer-android-${clock()}", "target" to target),
+        )
+        val body = linkedMapOf<String, Any?>("number" to number, "event" to event)
+        if (sessionToken.isNotEmpty()) body["sessionToken"] = sessionToken
+        post(repoEndpoint(owner, name, "discussions"), body)
     }
 
     open fun setThreadSubscription(owner: String, name: String, node: String, source: String, number: Int, subscribed: Boolean) {

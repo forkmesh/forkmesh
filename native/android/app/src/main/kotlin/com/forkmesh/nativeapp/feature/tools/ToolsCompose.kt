@@ -79,23 +79,9 @@ internal fun logCategoryColor(category: LogCategory, count: Int): Color {
 
 @Composable
 internal fun ToolsAppBar(title: String, navigator: Navigator, pluginMenu: Boolean = true, actions: @Composable RowScope.() -> Unit = {}) {
-    val c = Fm.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(c.bgRaised)
-            .windowInsetsPadding(fmSafeAreaInsets(bottom = false))
-            .height(56.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
-            FmIconButton("arrow_back", "Back", onPressed = { navigator.pop() }, color = c.textPrimary, iconSize = 24.dp)
-        }
-        Spacer(Modifier.width(16.dp))
-        Text(title, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.titleLarge)
+    com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }) {
         actions()
         if (pluginMenu) PluginMenuButton()
-        Spacer(Modifier.width(4.dp))
     }
 }
 

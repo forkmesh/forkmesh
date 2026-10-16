@@ -124,6 +124,8 @@ run_worker_first = [
   "!/dashboard/bounties/",
   "!/dashboard/links",
   "!/dashboard/links/",
+  "!/dashboard/achievements",
+  "!/dashboard/achievements/",
   "!/dashboard/runners",
   "!/dashboard/runners/",
   "!/dashboard/docs",

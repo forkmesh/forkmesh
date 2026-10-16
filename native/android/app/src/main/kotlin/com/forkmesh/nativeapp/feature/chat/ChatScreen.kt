@@ -1,5 +1,19 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import com.forkmesh.nativeapp.ui.kit.fmGlass
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -262,69 +276,100 @@ class ChatScreen : Screen() {
         val privateRoom = remember(conversation, revision) { ChatDepth.hub?.isPrivateRoom(conversation) ?: conversation.startsWith("@") }
         val otherRoomsUnread = relay.totalUnread > 0 || (!inMesh && mesh?.hasUnread == true)
         Column(Modifier.fillMaxSize().imePadding()) {
-            Box(Modifier.background(colors.bgRaised)) {
-                FmPanelHeader(
-                    title = title,
-                    subtitle = ChatDepth.hub?.serverCopiesLine(conversation)?.ifEmpty { null },
-                    leading = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (onOpenChannels != null) {
-                                Box {
-                                    FmIconButton(icon = "menu", label = "Channels", onPressed = onOpenChannels)
-                                    if (otherRoomsUnread) {
-                                        Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(8.dp).background(colors.danger, CircleShape))
-                                    }
-                                }
-                                Spacer(Modifier.width(FmSpace.x1))
-                            }
-                            FmIcon(
-                                when {
-                                    inMesh -> "lan_outlined"
-                                    title.startsWith("@") -> "alternate_email"
-                                    privateRoom -> "lock_outline"
-                                    inOffice -> "apartment"
-                                    else -> "tag"
-                                },
-                                size = 18.dp,
-                                tint = colors.textTertiary,
-                            )
+            val badgeLabel = if (inMesh) {
+                meshBadge(mesh?.networkActive == true, mesh?.bluetoothActive == true, mesh?.peerCount ?: 0)
+            } else {
+                ChatDepth.hub?.badge(conversation) ?: "encrypted"
+            }
+            val showSeal = {
+                val summary = ChatDepth.hub?.sealSummary(conversation).orEmpty()
+                if (summary.isNotEmpty()) {
+                    scope.launch {
+                        messenger.showConfirmDialog(
+                            title = if (privateRoom) "End-to-end encryption" else "Public channel",
+                            body = summary,
+                            hideCancel = true,
+                        )
+                    }
+                }
+            }
+            val detail = listOfNotNull(
+                if (!inMesh && relay.onlineCount > 0) "${relay.onlineCount} online" else null,
+                badgeLabel,
+                ChatDepth.hub?.serverCopiesLine(conversation)?.ifEmpty { null },
+            ).joinToString(" \u2022 ")
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
+                horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onOpenChannels != null) {
+                    ChatGlassCircle("chevron_left", "Channels", onOpenChannels, dot = otherRoomsUnread)
+                }
+                var roomMenu by remember { mutableStateOf(false) }
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .fmGlass(RoundedCornerShape(24.dp))
+                        .clickable { roomMenu = true }
+                        .padding(horizontal = FmSpace.x4),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FmDropdownMenu(expanded = roomMenu, onDismissRequest = { roomMenu = false }) {
+                        if (!inMesh) {
+                            FmDropdownMenuItem(if (privateRoom) "Encryption" else "About this channel", icon = "lock_outline", onClick = {
+                                roomMenu = false
+                                showSeal()
+                            })
                         }
-                    },
-                    trailing = {
-                        val label = if (inMesh) {
-                            meshBadge(mesh?.networkActive == true, mesh?.bluetoothActive == true, mesh?.peerCount ?: 0)
-                        } else {
-                            ChatDepth.hub?.badge(conversation) ?: "encrypted"
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            DirectCallButtons(conversation)
-                            FmIconButton(
-                                icon = "timer_outlined",
-                                label = "Messages disappear after",
-                                onPressed = { scope.launch { chatRetentionFlow(messenger, status, conversation, title) } },
-                            )
-                            val showSeal = {
-                                val summary = ChatDepth.hub?.sealSummary(conversation).orEmpty()
-                                if (summary.isNotEmpty()) {
-                                    scope.launch {
-                                        messenger.showConfirmDialog(
-                                            title = if (privateRoom) "End-to-end encryption" else "Public channel",
-                                            body = summary,
-                                            hideCancel = true,
-                                        )
-                                    }
-                                }
-                            }
-                            if (!inMesh && DirectMessageFrames.isDirect(conversation)) {
-                                FmIconButton(icon = "lock_outline", label = label, onPressed = showSeal, color = colors.success)
-                            } else {
-                                Box(Modifier.clickable(enabled = !inMesh) { showSeal() }) {
-                                    FmStatusBadge(label = label, color = colors.success)
-                                }
-                            }
-                        }
-                    },
-                )
+                        FmDropdownMenuItem("Messages disappear after", icon = "timer_outlined", onClick = {
+                            roomMenu = false
+                            scope.launch { chatRetentionFlow(messenger, status, conversation, title) }
+                        })
+                    }
+                    FmIcon(
+                        when {
+                            inMesh -> "lan_outlined"
+                            title.startsWith("@") -> "alternate_email"
+                            privateRoom -> "lock_outline"
+                            inOffice -> "apartment"
+                            else -> "tag"
+                        },
+                        size = 20.dp,
+                        tint = colors.textPrimary,
+                    )
+                    Spacer(Modifier.width(FmSpace.x2))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            title.removePrefix("#"),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary),
+                        )
+                        Text(detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                    }
+                    DirectCallButtons(conversation)
+                }
+                if (onOpenChannels != null) ChatGlassCircle("edit_outlined", "New message", onOpenChannels)
+                if (com.forkmesh.nativeapp.feature.market.PackageGateFeature.surfaces.collectAsState().value.agents) {
+                    com.forkmesh.nativeapp.feature.composer.PromptButton("Chat", onClick = {
+                        com.forkmesh.nativeapp.feature.navigation.NavigationFeature.shell()?.openPrompt()
+                    })
+                }
+                val account by com.forkmesh.nativeapp.feature.account.AccountFeature.shellState.collectAsState()
+                val avatarPng = com.forkmesh.nativeapp.core.Services.get<com.forkmesh.nativeapp.feature.account.AuthService>()?.session?.collectAsState()?.value?.avatarPng.orEmpty()
+                Box(
+                    Modifier
+                        .height(48.dp)
+                        .fmGlass(RoundedCornerShape(24.dp))
+                        .clickable { com.forkmesh.nativeapp.feature.navigation.NavigationFeature.shell()?.openHub() }
+                        .semantics { contentDescription = "You: projects, tools and settings" }
+                        .padding(horizontal = FmSpace.x2 + 5.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FmAvatar(account.label, 30.dp, avatarPng = avatarPng, textStyle = Fm.text.labelMedium)
+                }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize()) {
@@ -526,4 +571,22 @@ private fun copyToClipboard(context: Context, text: String): Boolean {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
     clipboard.setPrimaryClip(ClipData.newPlainText("ForkMesh", text))
     return true
+}
+
+@Composable
+private fun ChatGlassCircle(icon: String, label: String, onClick: () -> Unit, dot: Boolean = false) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .fmGlass(CircleShape)
+            .clickable(onClick = onClick)
+            .semantics {
+                role = Role.Button
+                contentDescription = label
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        FmIcon(icon, size = 22.dp, tint = Fm.colors.textPrimary)
+        if (dot) Box(Modifier.align(Alignment.TopEnd).padding(9.dp).size(9.dp).background(Fm.colors.danger, CircleShape))
+    }
 }

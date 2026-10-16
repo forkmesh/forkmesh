@@ -10,8 +10,9 @@
     "enabled": true,
     "focus": "Observe, Simplify & Repair",
     "id": "ux",
-    "improvementCycles": 4,
+    "improvementCycles": 5,
     "improvementNotes": [
+        "Audit every newly introduced modal for its accessible name, focus containment, return focus, and live updates as one keyboard journey.",
         "Exercise keyboard activation on representative search-result types, not merely result visibility and counts.",
         "Model fixed-channel action eligibility once in shared chat state, then exercise every menu surface against that rule.",
         "When auditing shared desktop search, verify that empty-state language, visible results, and accessibility descriptions all reflect the same filtered state.",
@@ -59,7 +60,7 @@
         "Usability Regression Testing"
     ],
     "specialty": "User Experience",
-    "updatedAtMs": 1792075711596,
+    "updatedAtMs": 1792159501846,
     "version": 2,
     "workflow": ""
 }

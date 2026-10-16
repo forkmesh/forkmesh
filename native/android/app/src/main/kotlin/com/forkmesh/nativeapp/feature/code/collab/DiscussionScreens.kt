@@ -36,7 +36,9 @@ import com.forkmesh.nativeapp.collab.DiscussionDetail
 import com.forkmesh.nativeapp.collab.FederatedThread
 import com.forkmesh.nativeapp.collab.PENDING_NOTE
 import com.forkmesh.nativeapp.collab.dartErrorText
+import com.forkmesh.nativeapp.collab.runFailureText
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.model.DiscussionEvent
 import com.forkmesh.nativeapp.model.FederatedReply
 import com.forkmesh.nativeapp.model.RepoDiscussion
 import com.forkmesh.nativeapp.model.Repository
@@ -82,6 +84,7 @@ internal class DiscussionDetailScreen(
     private var loaded by mutableStateOf(initial != null)
     private var loadStarted = initial != null
     private var reply by mutableStateOf("")
+    private var marking by mutableStateOf(false)
 
     override val title: String get() = "Discussion #${discussion?.number ?: number}"
 
@@ -139,7 +142,15 @@ internal class DiscussionDetailScreen(
             }
             item {
                 Spacer(Modifier.height(12.dp))
-                InfoCard("Timeline") { DiscussionTimelineView(discussion, RepoRef(repo.owner, repo.name)) }
+                val session = rememberSession()
+                val canMark = DiscussionDetail.canMarkAnswer(
+                    discussion, session?.nodeName, env.identity?.publicKeyB64url, repo.owner,
+                )
+                InfoCard("Timeline") {
+                    DiscussionTimelineView(discussion, RepoRef(repo.owner, repo.name), canMark, marking) { target ->
+                        markAnswer(env, discussion, target)
+                    }
+                }
             }
             if (!repo.isPrivate) {
                 item {
@@ -185,25 +196,67 @@ internal class DiscussionDetailScreen(
             item { NavigationBarSpacer() }
         }
     }
+
+    private fun markAnswer(env: CollabEnv, current: RepoDiscussion, target: String) {
+        if (marking) return
+        env.launch {
+            if (!requireAccount(DiscussionDetail.ANSWER_GUEST_ACTION)) return@launch
+            val token = auth?.session?.value?.sessionToken.orEmpty()
+            marking = true
+            try {
+                withContext(Dispatchers.IO) {
+                    inbox.markDiscussionAnswer(repo.owner, repo.name, current.number, target, token)
+                }
+                discussion = current.copy(
+                    answer = if (target.isEmpty()) null else DiscussionEvent(type = "answer", target = target),
+                )
+                status.show(if (target.isEmpty()) DiscussionDetail.ANSWER_CLEARED else DiscussionDetail.ANSWER_SENT)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                status.error(runFailureText(error))
+            } finally {
+                marking = false
+            }
+        }
+    }
 }
 
 @Composable
-private fun DiscussionTimelineView(discussion: RepoDiscussion, repo: RepoRef) {
+private fun DiscussionTimelineView(
+    discussion: RepoDiscussion,
+    repo: RepoRef,
+    canMark: Boolean = false,
+    marking: Boolean = false,
+    onMark: (String) -> Unit = {},
+) {
     if (discussion.events.isEmpty()) {
         Text(DiscussionDetail.TIMELINE_EMPTY)
         return
     }
     val tint = Fm.colors.textTertiary
+    val success = Fm.colors.success
     Column(Modifier.fillMaxWidth()) {
         for (event in discussion.events) {
+            val answer = DiscussionDetail.isAnswer(event, discussion)
             TimelineTile(
-                icon = "forum_outlined",
-                iconTint = tint,
-                title = "Reply",
+                icon = if (answer) "check_circle_outlined" else "forum_outlined",
+                iconTint = if (answer) success else tint,
+                title = if (answer) DiscussionDetail.ANSWER_TITLE else "Reply",
                 author = event.displayAuthor,
                 body = event.body,
                 repo = repo,
             )
+            if (canMark && event.type == "comment" && event.id.isNotEmpty()) {
+                FmTextButton(
+                    onClick = { onMark(if (answer) "" else event.id) },
+                    enabled = !marking,
+                ) {
+                    FmIcon(if (answer) "close" else "check_circle_outlined", size = 14.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (answer) DiscussionDetail.CLEAR_ANSWER else DiscussionDetail.MARK_ANSWER)
+                }
+            }
         }
     }
 }

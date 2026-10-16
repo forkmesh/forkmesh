@@ -251,6 +251,7 @@ public enum RouteParser {
         case "speech": return [.speech]
         case "glasses-alert": return [.glassesAlert]
         case "face-changer": return [.faceChanger]
+        case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "people": return [.people]

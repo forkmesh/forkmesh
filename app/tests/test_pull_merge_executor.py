@@ -134,7 +134,7 @@ def config(tmp_path, bare):
 
 def request(
     config, *, base, head, pulls, request_id="merge_request_0001",
-    override_review=False,
+    override_review=False, delete_head=False,
 ):
     value = {
         "schemaVersion": 1,
@@ -148,6 +148,7 @@ def request(
         "expectedHeadOid": head,
         "expectedPullsOid": pulls,
         **({"overrideReview": True} if override_review else {}),
+        **({"deleteHead": True} if delete_head else {}),
     }
     parsed = refresh._merge_request(config, value)
     parsed.pop("action")
@@ -261,8 +262,21 @@ def test_clean_merge_updates_code_metadata_and_owner_job_atomically(tmp_path):
     assert not marker.exists()
     assert_fsck_clean(bare)
 
-    # A retry returns the durable result even though main has already moved.
     assert refresh._merge_execute_locked(cfg, req) == result
+
+
+def test_clean_merge_can_delete_the_head_branch_atomically(tmp_path):
+    bare, base, head, pulls, _opening = repository(tmp_path)
+    cfg = config(tmp_path, bare)
+    req = request(cfg, base=base, head=head, pulls=pulls, delete_head=True)
+
+    result = refresh._merge_execute_locked(cfg, req)
+
+    assert result["status"] == "merged", result
+    assert optional_git_ref(bare, "refs/heads/feature") == ""
+    assert git_ref(bare, "refs/heads/main") == result["baseAfter"]
+    assert git_ref(bare, "refs/heads/forkmesh/pulls") == result["pullsAfter"]
+    assert_fsck_clean(bare)
 
 
 def test_merging_settles_the_pulls_reward_estimate(tmp_path):

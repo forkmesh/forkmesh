@@ -89,6 +89,8 @@ def _valid_segment(value):
 
 def _response(runtime, data, status=200, allow="", public=False):
     headers = {"x-content-type-options": "nosniff"}
+    if public:
+        headers["access-control-allow-origin"] = "*"
     if allow:
         headers["allow"] = allow
     return runtime.response(

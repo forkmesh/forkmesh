@@ -274,6 +274,13 @@ public final class CollabWriter {
             try await inbox.commentOnDiscussion(self.repo.owner, self.repo.name, number, text)
         }
     }
+
+    public func markAnswer(_ number: Int, target: String, sessionToken: String) async -> CollabNotice {
+        await run(target.isEmpty ? DiscussionDetail.answerCleared : DiscussionDetail.answerSent) { inbox in
+            try await inbox.markDiscussionAnswer(
+                self.repo.owner, self.repo.name, number, target: target, sessionToken: sessionToken)
+        }
+    }
 }
 
 // MARK: - Pull request
@@ -493,6 +500,12 @@ public final class DiscussionDetailModel {
 
     /// The reply button acts only on a non-blank reply.
     public var hasReply: Bool { !reply.dartTrimmed.isEmpty }
+
+    public func showAnswer(_ target: String) {
+        guard var current = discussion else { return }
+        current.answer = target.isEmpty ? nil : DiscussionEvent(type: "answer", target: target)
+        discussion = current
+    }
 }
 
 // MARK: - Fediverse
@@ -657,16 +670,17 @@ public final class PullMergeModel {
 
     /// `_merge` after the guest gate: the notice text, or nil when the
     /// merge was refused (the reason is `message`).
-    public func merge(overrideReview: Bool = false) async -> String? {
+    public func merge(overrideReview: Bool = false, deleteHead: Bool = false) async -> String? {
         guard let plan, !busy else { return nil }
         busy = true
         message = ""
         do {
-            let outcome = try await api.mergePull(repo.owner, repo.name, plan, overrideReview: overrideReview)
+            let outcome = try await api.mergePull(
+                repo.owner, repo.name, plan, overrideReview: overrideReview, deleteHead: deleteHead)
             busy = false
             merged = outcome.merged
             message = outcome.message
-            return outcome.merged ? PullMerge.mergedNotice(pull.number) : outcome.message
+            return outcome.merged ? PullMerge.mergedNotice(pull.number, deletedHead: deleteHead) : outcome.message
         } catch let error as AgentLaunchException {
             busy = false
             message = error.message

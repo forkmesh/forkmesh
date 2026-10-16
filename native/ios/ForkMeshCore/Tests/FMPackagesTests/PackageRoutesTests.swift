@@ -17,6 +17,7 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "speech", name: "Speech Playground")), .speech)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "glasses-alert", name: "Glasses Alert")), .glassesAlert)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "face-changer", name: "Face Changer")), .faceChanger)
+        XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "video-mix-dj-studio", name: "Video Mix DJ Studio")), .videoMixDjStudio)
         let appStore = MarketPackage(id: "app-store-status", name: "App Store Status", webRoute: "/dashboard/app-store-status")
         XCTAssertEqual(appStore.phoneSurface, .native("appStoreStatus"))
         XCTAssertEqual(PackageRoutes.route(for: appStore), .appStoreStatus)
