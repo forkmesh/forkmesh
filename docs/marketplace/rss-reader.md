@@ -87,8 +87,9 @@ unread count.
   share (on phones) or copy link (desktop). The article title opens the
   original, as does the desktop's Open in Browser button and the offer shown
   when reader view finds no text. On phones the ForkMesh shell header and
-  navigation are hidden while reading, and a horizontal swipe moves to the
-  previous or next article.
+  navigation stay hidden from feeds through the timeline and article detail;
+  a horizontal swipe moves the full article page to the previous or next
+  article.
 - Settings: the timeline switches above, article theme (Default, Sepia, Paper,
   High contrast), font and size, load remote images, appearance, Error Log,
   Activity Log, Stats, About.

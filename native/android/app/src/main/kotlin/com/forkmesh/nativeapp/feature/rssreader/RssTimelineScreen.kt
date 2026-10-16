@@ -52,6 +52,7 @@ import com.forkmesh.nativeapp.ui.theme.FmSpace
 
 internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
     override val title: String get() = RssReaderFeature.service.library?.let { scopeTitle(it, scope) } ?: "Articles"
+    override val hidesShellChrome: Boolean get() = true
     private var searching by mutableStateOf(false)
     private var query by mutableStateOf("")
     private var keep by mutableStateOf<Set<String>?>(null)
