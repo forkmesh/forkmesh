@@ -1375,6 +1375,7 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         }, 502)
     created = 0
     updated = 0
+    outbound_recorded = 0
     now = runtime.now()
     for source in list((result or {}).get("messages") or [])[:limit]:
         source = source if isinstance(source, dict) else {}
@@ -1416,6 +1417,30 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         )
         updated += 1 if existing else 0
         created += 0 if existing else 1
+        if source.get("sent"):
+            linked, _ = await _linked_email_row(runtime, org_bi, "zoho", provider_id)
+            if not linked:
+                sent_at = received_at or now
+                await runtime.d1_run(
+                    "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+                    "sender_bi,sender_name,transport,status,external_id,created_at,"
+                    "sent_at,status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    runtime.new_id(), org_bi, org_name, None, account_bi, actor,
+                    "external", "external", provider_id, sent_at, sent_at, now,
+                    await runtime.seal({
+                        "to": _clean(source.get("to"), 1000),
+                        "fromEmail": _email(source.get("from")),
+                        "fromName": _clean(source.get("sender"), 160),
+                        "subject": _clean(source.get("subject"), 300),
+                        "text": "", "html": "",
+                        "providerUrl": _https(source.get("providerUrl")),
+                        "provider": "zoho", "direction": "outbound",
+                        "threadId": _clean(source.get("threadId"), 200),
+                        "mailbox": _email(source.get("from")),
+                        "handle": "", "account": "", "error": "",
+                    }),
+                )
+                outbound_recorded += 1
     zoho["lastSyncAt"] = now
     settings["zoho"] = zoho
     await runtime.d1_run(
@@ -1425,7 +1450,8 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     )
     await runtime.audit(
         actor, "crm.zoho.import", "organization", org_name,
-        details={"created": created, "updated": updated},
+        details={"created": created, "updated": updated,
+                 "outboundRecorded": outbound_recorded},
     )
     if created:
         await _activity_notify(
@@ -1433,6 +1459,7 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
             "%d new message%s" % (created, "" if created == 1 else "s"))
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
+        "outboundRecorded": outbound_recorded,
         "mail": await _mail_messages(runtime, org_bi),
         "settings": await _settings(runtime, org_bi),
     })

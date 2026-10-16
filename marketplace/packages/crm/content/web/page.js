@@ -4925,7 +4925,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const button = $(`[data-crm-zoho-sync]`); if (button) button.disabled = true;
     try {
       const payload = await crmRequest(crmOrganizationPath("/mail/import"), "POST", { limit: 200 });
-      crmMessage("notice", `Zoho Mail synced: ${payload.created || 0} new, ${payload.updated || 0} refreshed.`);
+      crmMessage("notice", `Zoho Mail synced: ${payload.created || 0} new, ${payload.updated || 0} refreshed, ${payload.outboundRecorded || 0} sent emails recorded.`);
       await loadCrm();
     } catch (error) { crmMessage("error", `Zoho Mail sync failed: ${error.message}`); }
     finally { if (button) button.disabled = false; }
