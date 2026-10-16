@@ -27,6 +27,8 @@
   let taskRemindOpenId = "";
   let taskRemindBusy = false;
   let taskPersistentReminderBusy = false;
+  let taskActionMenuOpenId = "";
+  const taskCollapsedGroups = new Set();
   // query null = the caret is not inside an @token, so no suggestions are open.
   const taskMentionState = { query: null, index: 0, matches: [] };
 
@@ -55,15 +57,6 @@
     return { done: "check-circle-2", active: "loader-circle", queued: "bot", ready: "circle-dot" }[taskStatusKey(task)];
   }
 
-  function taskStatusTone(task) {
-    return {
-      done: "text-emerald-400 border-border bg-background",
-      active: "text-primary border-primary/40 bg-primary/10",
-      queued: "text-amber-400 border-border bg-background",
-      ready: "text-muted-foreground border-border bg-background",
-    }[taskStatusKey(task)];
-  }
-
   function taskProgress(task) {
     if (taskIsDone(task)) return 100;
     const value = Math.round(Number(task?.progress));
@@ -85,10 +78,10 @@
 
   function taskProgressCardHtml(task) {
     const bar = taskProgressBarHtml(task, "Task progress");
-    if (!taskCanEditProgress(task)) return taskDetailCard("gauge", "Progress", bar, true);
+    if (!taskCanEditProgress(task)) return taskPropsGroupHtml("Progress", bar);
     const value = taskProgressDrafts.has(task.id) ? taskProgressDrafts.get(task.id) : taskProgress(task);
-    const editor = `<form class="task-progress-editor" data-task-progress-form="${escapeHtml(task.id)}"><input type="range" min="0" max="100" step="1" value="${value}" data-task-progress-range aria-label="Set progress"><input type="number" min="0" max="100" step="1" inputmode="numeric" value="${value}" class="task-input" data-task-progress-number aria-label="Progress percent"><button type="submit" class="task-action-button" data-tone="primary"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save</button></form>`;
-    return taskDetailCard("gauge", "Progress", bar + editor + taskNoticeHtml(task, "progress"), true);
+    const editor = `<form class="task-progress-editor" data-task-progress-form="${escapeHtml(task.id)}"><input type="range" min="0" max="100" step="1" value="${value}" data-task-progress-range aria-label="Set progress"><input type="number" min="0" max="100" step="1" inputmode="numeric" value="${value}" class="task-input" data-task-progress-number aria-label="Progress percent"><button type="submit" class="task-action-button" data-tone="primary">Save</button></form>`;
+    return taskPropsGroupHtml("Progress", bar + editor + taskNoticeHtml(task, "progress"));
   }
 
   const TASK_PERSISTENT_REMINDER_CHOICES = [[15, "15 minutes"], [30, "30 minutes"], [60, "1 hour"], [240, "4 hours"], [1440, "1 day"], [10080, "1 week"]];
@@ -102,9 +95,9 @@
     const status = enabled
       ? (taskIsDone(task) ? "Paused while the task is done." : `Pings ${escapeHtml(who)} until the task is done${reminder.nextAt ? ` · next ${escapeHtml(taskDate(reminder.nextAt))}` : ""}.`)
       : "Off. Turn it on to keep pinging until the task is done.";
-    if (!taskCanEditProgress(task)) return taskDetailCard("alarm-clock", "Persistent reminder", `<p>${enabled ? "On" : "Off"}</p><p class="mt-1 text-xs text-muted-foreground">${status}</p>`);
+    if (!taskCanEditProgress(task)) return taskPropsGroupHtml("Persistent reminder", `<p class="task-switch-row">${enabled ? "On" : "Off"}</p><p class="task-props-note">${status}</p>`);
     const options = TASK_PERSISTENT_REMINDER_CHOICES.map(([minutes, label]) => `<option value="${minutes}"${minutes === every ? " selected" : ""}>Every ${label}</option>`).join("");
-    return taskDetailCard("alarm-clock", "Persistent reminder", `<label class="flex items-center gap-2"><input type="checkbox" data-task-persistent-reminder${enabled ? " checked" : ""}${taskPersistentReminderBusy ? " disabled" : ""}><span>Keep reminding</span></label><select class="task-input mt-2" data-task-persistent-reminder-every aria-label="Reminder interval"${taskPersistentReminderBusy ? " disabled" : ""}>${options}</select><p class="mt-2 text-xs text-muted-foreground">${status}</p>${taskNoticeHtml(task, "persistent")}`);
+    return taskPropsGroupHtml("Persistent reminder", `<label class="task-switch-row"><span>Keep reminding</span><input type="checkbox" class="task-switch" data-task-persistent-reminder${enabled ? " checked" : ""}${taskPersistentReminderBusy ? " disabled" : ""}></label><select class="task-input" data-task-persistent-reminder-every aria-label="Reminder interval"${taskPersistentReminderBusy || !enabled ? " disabled" : ""}>${options}</select><p class="task-props-note">${status}</p>${taskNoticeHtml(task, "persistent")}`);
   }
 
   function taskAssigneeLabel(task) {
@@ -119,17 +112,17 @@
     return png.length <= 90_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
-  function taskAvatarHtml(task, size = "h-7 w-7") {
+  function taskAvatarHtml(task, size = "task-avatar") {
     const kind = taskAssigneeKind(task);
     if (kind === "agent") {
-      return `<span class="${size} flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-sm" title="Bot assignee" aria-label="Bot assignee avatar">🤖</span>`;
+      return `<span class="${size}" data-kind="agent" title="Bot assignee" aria-label="Bot assignee avatar"><i data-lucide="bot" class="h-3 w-3"></i></span>`;
     }
     if (kind === "unassigned") {
-      return `<span class="${size} flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-xs font-semibold text-muted-foreground" title="Unassigned" aria-label="Unassigned">?</span>`;
+      return `<span class="${size}" data-kind="unassigned" title="Unassigned" aria-label="Unassigned">?</span>`;
     }
     const name = String(task?.assignee || "").trim().toLowerCase();
     const initial = Array.from(name)[0]?.toUpperCase() || "?";
-    return `<span class="${size} flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-[10px] font-semibold text-muted-foreground" data-task-assignee-avatar="${escapeHtml(name)}" title="@${escapeHtml(name || "member")}" aria-label="@${escapeHtml(name || "member")} avatar">${escapeHtml(initial)}</span>`;
+    return `<span class="${size}" data-task-assignee-avatar="${escapeHtml(name)}" title="@${escapeHtml(name || "member")}" aria-label="@${escapeHtml(name || "member")} avatar">${escapeHtml(initial)}</span>`;
   }
 
   function taskAvatarForName(name) {
@@ -194,6 +187,22 @@
     const size = Math.max(0, Number(bytes || 0));
     return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MiB`
       : size >= 1024 ? `${Math.round(size / 1024)} KiB` : `${size} B`;
+  }
+
+  function taskFlash(node, text) {
+    if (!node) return;
+    node.replaceChildren();
+    if (text) {
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", node.dataset.flashIcon || "circle-alert");
+      icon.setAttribute("aria-hidden", "true");
+      const body = document.createElement("span");
+      body.className = "fm-flash-body";
+      body.textContent = text;
+      node.append(icon, body);
+      window.lucide?.createIcons();
+    }
+    node.hidden = !text;
   }
 
   function taskFriendlyError(error) {
@@ -482,32 +491,84 @@
     }).join("");
   }
 
+  const TASK_GROUPS = [["active", "In progress"], ["queued", "Bot queue"], ["ready", "Ready"], ["done", "Done"]];
+  const TASK_PRIORITY_LABELS = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" };
+
+  function taskRingSvg(key, value) {
+    if (key === "done") return '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="rgb(var(--dashboard-card-rgb))" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    if (key === "trash") return '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    const share = Math.max(0, Math.min(100, Number(value) || 0)) / 100;
+    const pie = share > 0 ? `<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="6" stroke-dasharray="${(share * 18.85).toFixed(2)} 18.85" transform="rotate(-90 8 8)"/>` : "";
+    return `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"${key === "queued" ? ' stroke-dasharray="2.2 2"' : ""}/>${pie}</svg>`;
+  }
+
+  function taskRingHtml(task, bar = false) {
+    const key = task.deletedAt ? "trash" : taskStatusKey(task);
+    const value = taskProgress(task);
+    const label = task.deletedAt ? "In trash" : taskStatusLabel(task);
+    const role = bar
+      ? ` role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}" aria-valuetext="${value}% complete" aria-label="${escapeHtml(`Progress: ${task.title || "task"}`)}"`
+      : ' aria-hidden="true"';
+    return `<span class="task-ring" data-state="${key}" title="${escapeHtml(`${label} · ${value}%`)}"${role}>${taskRingSvg(key, value)}</span>`;
+  }
+
+  function taskPriorityLevel(task) {
+    const value = Number(task?.priority ?? 50);
+    return value <= 5 ? "urgent" : value <= 15 ? "high" : value <= 40 ? "medium" : "low";
+  }
+
+  function taskPriorityHtml(task) {
+    const level = taskPriorityLevel(task);
+    const title = `Priority ${task?.priority ?? 50} · ${TASK_PRIORITY_LABELS[level]}`;
+    if (level === "urgent") {
+      return `<span class="task-prio" data-level="urgent" title="${escapeHtml(title)}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="currentColor"/><path d="M8 4.5v4.2" stroke="rgb(var(--dashboard-card-rgb))" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="11.3" r="1" fill="rgb(var(--dashboard-card-rgb))"/></svg></span>`;
+    }
+    const filled = { high: 3, medium: 2, low: 1 }[level];
+    const bars = [[2, 10, 3], [6.5, 7, 6], [11, 4, 9]].map(([x, y, height], index) => `<rect x="${x}" y="${y}" width="3" height="${height}" rx="1" fill="currentColor" opacity="${index < filled ? 1 : 0.3}"/>`).join("");
+    return `<span class="task-prio" data-level="${level}" title="${escapeHtml(title)}"><svg viewBox="0 0 16 16" aria-hidden="true">${bars}</svg></span>`;
+  }
+
+  function taskShortAge(value) {
+    const elapsed = Math.max(0, Date.now() - Number(value || 0));
+    if (!Number(value)) return "";
+    const minutes = Math.floor(elapsed / 60000);
+    if (minutes < 60) return `${Math.max(1, minutes)}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 60) return `${days}d`;
+    return `${Math.floor(days / 30)}mo`;
+  }
+
+  function taskReplyCount(task) {
+    return Number(task.replyCount || (Array.isArray(task.replies) ? task.replies.length : 0));
+  }
+
   function taskRowHtml(task) {
     const selected = task.id === state.tasksView.selectedId;
-    const updated = relativeTimeLabel(task.updatedAt || task.createdAt);
-    const route = [task.department ? `#${task.department}` : "", task.team, task.repository].filter(Boolean);
-    const details = String(task.details || "").trim();
+    const changed = task.updatedAt || task.createdAt;
+    const updated = relativeTimeLabel(changed);
     const branches = taskWorkItems(task).length;
-    return `<button type="button" class="task-row px-4 py-3.5 sm:px-5" data-task-select="${escapeHtml(task.id)}" aria-current="${selected}">
-      <span class="flex items-start gap-3">
-        <span class="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${taskStatusTone(task)}"><i data-lucide="${taskStatusIcon(task)}" class="h-3.5 w-3.5${task.status === "active" ? " task-active-icon" : ""}"></i></span>
-        <span class="min-w-0 flex-1">
-          <span class="flex items-start gap-2">
-            <strong class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">${escapeHtml(task.title)}</strong>
-            <span class="shrink-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground" title="Priority ${escapeHtml(String(task.priority ?? 50))}">P${escapeHtml(String(task.priority ?? 50))}</span>
-          </span>
-          ${details ? `<span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(details)}</span>` : ""}
-          <span class="mt-2 block">${taskProgressBarHtml(task, `Progress: ${task.title || "task"}`)}</span>
-          <span class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-            <span class="inline-flex items-center gap-1">${taskAvatarHtml(task)}<span>${escapeHtml(taskAssigneeLabel(task))}</span></span>
-            ${route.map((part) => `<span class="truncate">${escapeHtml(part)}</span>`).join('<span aria-hidden="true">·</span>')}
-            ${branches ? `<span class="inline-flex items-center gap-1" title="${branches} work item${branches === 1 ? "" : "s"}"><i data-lucide="git-branch" class="h-3 w-3"></i>${branches}</span>` : ""}
-            ${updated ? `<span class="ml-auto shrink-0">${escapeHtml(updated)}</span>` : ""}
-          </span>
-        </span>
-        ${taskRowThumbnailsHtml(task)}
-      </span>
+    const replies = taskReplyCount(task);
+    return `<button type="button" class="task-row" data-task-select="${escapeHtml(task.id)}" aria-current="${selected}" title="${escapeHtml(task.title)}">
+      ${taskPriorityHtml(task)}
+      ${taskRingHtml(task, true)}
+      <span class="task-row-title">${escapeHtml(task.title)}</span>
+      <span class="task-row-tags">${branches ? `<span class="task-row-count" title="${branches} work item${branches === 1 ? "" : "s"}"><i data-lucide="git-branch" class="h-3 w-3"></i>${branches}</span>` : ""}${replies ? `<span class="task-row-count" title="${replies} comment${replies === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-3 w-3"></i>${replies}</span>` : ""}${task.department ? `<span class="task-label"><span>#${escapeHtml(task.department)}</span></span>` : ""}</span>
+      ${taskRowThumbnailsHtml(task)}
+      ${taskAvatarHtml(task)}
+      <span class="task-row-age"${updated ? ` title="Updated ${escapeHtml(updated)}"` : ""}>${escapeHtml(taskShortAge(changed))}</span>
     </button>`;
+  }
+
+  function taskListHtml(tasks) {
+    if (state.tasksView.filter === "trash") return tasks.map(taskRowHtml).join("");
+    return TASK_GROUPS.map(([key, label]) => {
+      const items = tasks.filter((task) => taskStatusKey(task) === key);
+      if (!items.length) return "";
+      const open = !taskCollapsedGroups.has(key);
+      return `<section class="task-group" data-task-group="${key}"><button type="button" class="task-group-head" data-task-group-toggle="${key}" aria-expanded="${open}"><span class="task-ring" data-state="${key}" aria-hidden="true">${taskRingSvg(key, key === "active" ? 50 : 0)}</span>${escapeHtml(label)}<span class="task-group-count">${formatCount(items.length)}</span><i data-lucide="chevron-down" class="task-group-chevron"></i></button>${open ? items.map(taskRowHtml).join("") : ""}</section>`;
+    }).join("");
   }
 
   function taskRowThumbnailsHtml(task) {
@@ -527,8 +588,17 @@
     return `<span class="task-row-thumbs" role="img" aria-label="${escapeHtml(label)}">${tiles}</span>`;
   }
 
-  function taskDetailCard(icon, label, copy, wide = false) {
-    return `<section class="task-detail-card"${wide ? ' data-wide="true"' : ""}><h3 class="task-detail-label"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(label)}</h3><div class="task-detail-copy">${copy || '<span class="text-muted-foreground">—</span>'}</div></section>`;
+  function taskDetailCard(icon, label, copy, wide = false, panel = false) {
+    return `<section class="task-detail-card"${wide ? ' data-wide="true"' : ""}${panel ? ' data-panel="true"' : ""}><h3 class="task-detail-label"><i data-lucide="${icon}" class="h-4 w-4"></i>${escapeHtml(label)}</h3><div class="task-detail-copy">${copy || '<span class="text-muted-foreground">—</span>'}</div></section>`;
+  }
+
+  function taskPropsGroupHtml(title, body) {
+    return `<section class="task-props-group">${title ? `<h3 class="task-props-title">${escapeHtml(title)}</h3>` : ""}${body}</section>`;
+  }
+
+  function taskPropsHtml(rows) {
+    const items = rows.filter(Boolean).map(([label, value]) => `<div class="task-prop"><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`).join("");
+    return items ? `<dl class="task-props">${items}</dl>` : "";
   }
 
   function taskRepositoryHtml(repository) {
@@ -617,7 +687,7 @@
       dialog = document.createElement("dialog");
       dialog.className = "task-image-modal p-3 sm:p-5";
       dialog.dataset.taskImagePreview = "true";
-      dialog.innerHTML = '<header class="mb-3 flex items-center justify-between gap-3"><strong class="min-w-0 truncate text-sm text-foreground" data-task-image-preview-name></strong><button type="button" class="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" data-task-image-preview-close>Close</button></header><img data-task-image-preview-image alt="" /><p class="mt-3 text-center text-xs text-muted-foreground">Click outside the image or press Escape to close.</p>';
+      dialog.innerHTML = '<header class="mb-3 flex items-center justify-between gap-3"><strong class="min-w-0 truncate text-sm text-foreground" data-task-image-preview-name></strong><button type="button" class="task-btn" data-size="small" data-task-image-preview-close>Close</button></header><img data-task-image-preview-image alt="" /><p class="mt-3 text-center text-xs text-muted-foreground">Click outside the image or press Escape to close.</p>';
       dialog.querySelector("[data-task-image-preview-close]").addEventListener("click", () => dialog.close());
       dialog.addEventListener("click", (event) => {
         if (event.target === dialog) dialog.close();
@@ -646,7 +716,7 @@
     const history = Array.isArray(task.completionHistory) ? task.completionHistory : [];
     if (!history.length) return "";
     const items = [...history].reverse().map((entry) => `<li class="border-t border-border pt-3 first:border-t-0 first:pt-0">
-      <div class="flex flex-wrap items-center gap-2 text-xs"><strong class="text-foreground">${escapeHtml(entry.completedBy ? `@${entry.completedBy}` : "Completed")}</strong><time class="text-muted-foreground">${escapeHtml(taskDate(entry.completedAt))}</time><span class="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">QA: ${escapeHtml(entry.qaStatus || "unknown")}</span>${entry.qaReviewer ? `<span class="text-muted-foreground">reviewed by @${escapeHtml(entry.qaReviewer)}${entry.qaReviewedAt ? ` · ${escapeHtml(taskDate(entry.qaReviewedAt))}` : ""}</span>` : ""}${entry.undoneAt ? `<span class="rounded border border-border px-1.5 py-0.5 text-[10px] text-amber-400">Reopened by ${escapeHtml(entry.undoneBy ? `@${entry.undoneBy}` : "a member")} · ${escapeHtml(taskDate(entry.undoneAt))}</span>` : ""}</div>
+      <div class="flex flex-wrap items-center gap-2 text-xs"><strong class="text-foreground">${escapeHtml(entry.completedBy ? `@${entry.completedBy}` : "Completed")}</strong><time class="text-muted-foreground">${escapeHtml(taskDate(entry.completedAt))}</time><span class="task-label">QA: ${escapeHtml(entry.qaStatus || "unknown")}</span>${entry.qaReviewer ? `<span class="text-muted-foreground">reviewed by @${escapeHtml(entry.qaReviewer)}${entry.qaReviewedAt ? ` · ${escapeHtml(taskDate(entry.qaReviewedAt))}` : ""}</span>` : ""}${entry.undoneAt ? `<span class="task-label">Reopened by ${escapeHtml(entry.undoneBy ? `@${entry.undoneBy}` : "a member")} · ${escapeHtml(taskDate(entry.undoneAt))}</span>` : ""}</div>
       ${entry.note ? `<div class="mt-2 text-xs leading-5 text-muted-foreground">${taskMarkdownHtml(entry.note)}</div>` : '<p class="mt-2 text-xs leading-5 text-muted-foreground">No completion note</p>'}
     </li>`).join("");
     return taskDetailCard("history", `Completion history (${history.length})`, `<ol class="grid gap-3">${items}</ol>`, true);
@@ -793,7 +863,7 @@
       : `<p class="task-comment-hint mb-3">${pending ? "Loading activity…" : "Nothing has happened to this task yet."}</p>`;
     const count = Number(task.replyCount || (Array.isArray(task.replies) ? task.replies.length : 0));
     const composer = `<form data-task-reply-form="${escapeHtml(task.id)}" class="task-comment-form">
-      <div class="task-mention-field"><textarea data-task-reply-input data-task-mention-input="${escapeHtml(task.id)}" maxlength="2000" rows="3" required autocomplete="off" placeholder="Leave a comment — type @ to ping a teammate" class="task-input">${escapeHtml(taskCommentDrafts.get(task.id) || "")}</textarea><div data-task-mention-list class="task-mention-list" role="listbox" aria-label="Mention a teammate" hidden></div></div>
+      <div class="task-mention-field"><textarea data-task-reply-input data-task-mention-input="${escapeHtml(task.id)}" maxlength="2000" rows="3" required autocomplete="off" placeholder="Leave a comment — type @ to ping a teammate" class="task-input">${escapeHtml(taskCommentDrafts.get(task.id) || "")}</textarea><div data-task-mention-list class="task-mention-list fm-popover" role="listbox" aria-label="Mention a teammate" hidden></div></div>
       <div class="task-comment-footer"><span class="task-comment-hint">Private to your organization. Everyone on the task is pinged; Ctrl+Enter posts.</span><button type="submit" class="task-action-button" data-tone="primary"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment</button></div>${taskNoticeHtml(task, "activity")}
     </form>`;
     return taskDetailCard("messages-square", `Activity · ${count} comment${count === 1 ? "" : "s"}`, timeline + composer, true);
@@ -808,8 +878,8 @@
     if (taskCheckinOpenId !== task.id || !taskCanCheckIn(task)) return "";
     const buttons = TASK_CHECKIN_STATES.map(([key, icon, label, tone]) => `<button type="button" class="task-action-button" data-task-checkin-state="${key}"${tone ? ` data-tone="${tone}"` : ""}${taskCheckinBusy ? " disabled" : ""}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(label)}</button>`).join("");
     return taskDetailCard("radio", "Check in", `<p class="task-comment-hint">Tell your team how this is going. Everyone on the task is pinged, and so is anyone you @mention.</p>
-      <div class="task-mention-field mt-3"><input data-task-checkin-note data-task-mention-input="${escapeHtml(task.id)}" maxlength="${TASK_CHECKIN_NOTE_MAX}" autocomplete="off" value="${escapeHtml(taskCheckinNotes.get(task.id) || "")}" placeholder="Optional note — @mention whoever should know" class="task-input" /><div data-task-mention-list class="task-mention-list" role="listbox" aria-label="Mention a teammate" hidden></div></div>
-      <div class="task-checkin-states mt-3">${buttons}<button type="button" class="task-action-button" data-task-checkin-cancel>Cancel</button></div>${taskNoticeHtml(task, "checkin")}`, true);
+      <div class="task-mention-field mt-3"><input data-task-checkin-note data-task-mention-input="${escapeHtml(task.id)}" maxlength="${TASK_CHECKIN_NOTE_MAX}" autocomplete="off" value="${escapeHtml(taskCheckinNotes.get(task.id) || "")}" placeholder="Optional note — @mention whoever should know" class="task-input" /><div data-task-mention-list class="task-mention-list fm-popover" role="listbox" aria-label="Mention a teammate" hidden></div></div>
+      <div class="task-checkin-states mt-3">${buttons}<button type="button" class="task-action-button" data-task-checkin-cancel>Cancel</button></div>${taskNoticeHtml(task, "checkin")}`, true, true);
   }
 
   function taskCanRemind(task) {
@@ -843,7 +913,7 @@
       : `Ping @${escapeHtml(task.assignee)} to check in and share how this task is going.`;
     return taskDetailCard("bell-ring", "Ask for a check-in", `<p class="task-comment-hint">${hint}</p>
       <input data-task-remind-note maxlength="${TASK_REMINDER_NOTE_MAX}" autocomplete="off" value="${escapeHtml(taskReminderNotes.get(task.id) || "")}" placeholder="Optional note, like “Can you share an update before standup?”" class="task-input mt-3" />
-      <div class="task-checkin-states mt-3"><button type="button" class="task-action-button" data-tone="primary" data-task-remind-send${taskRemindBusy || wait ? " disabled" : ""}><i data-lucide="send" class="h-3.5 w-3.5"></i>Send reminder</button><button type="button" class="task-action-button" data-task-remind-cancel>Cancel</button></div>${taskNoticeHtml(task, "remind")}`, true);
+      <div class="task-checkin-states mt-3"><button type="button" class="task-action-button" data-tone="primary" data-task-remind-send${taskRemindBusy || wait ? " disabled" : ""}><i data-lucide="send" class="h-3.5 w-3.5"></i>Send reminder</button><button type="button" class="task-action-button" data-task-remind-cancel>Cancel</button></div>${taskNoticeHtml(task, "remind")}`, true, true);
   }
 
   // Candidates come from what this viewer can already read — the roster the
@@ -910,7 +980,32 @@
   }
 
   function taskActionHtml(action, icon, label, enabled = true, tone = "") {
-    return `<button type="button" class="task-action-button" data-task-action="${action}"${tone ? ` data-tone="${tone}"` : ""}${enabled ? "" : " disabled"}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${escapeHtml(label)}</button>`;
+    return { action, icon, label, enabled, tone };
+  }
+
+  function taskActionButtonHtml(item, tone = item.tone) {
+    return `<button type="button" class="task-action-button" data-task-action="${item.action}"${tone ? ` data-tone="${tone}"` : ""}${item.enabled ? "" : " disabled"}><i data-lucide="${item.icon}" class="h-3.5 w-3.5"></i>${escapeHtml(item.label)}</button>`;
+  }
+
+  function taskActionMenuItemHtml(item) {
+    return `<button type="button" role="menuitem" class="task-menu-item" data-task-action="${item.action}"${item.tone === "danger" ? ' data-tone="danger"' : ""}${item.enabled ? "" : " disabled"}><i data-lucide="${item.icon}"></i>${escapeHtml(item.label)}</button>`;
+  }
+
+  const TASK_QUICK_ACTIONS = ["stop", "start", "checkin", "remind", "complete", "qa", "edit", "assign", "followup"];
+
+  function taskActionLayoutHtml(task, items) {
+    const find = (action) => items.find((item) => item.action === action && item.enabled);
+    const order = task.deletedAt ? ["restore", "copy"]
+      : taskIsDone(task) ? ["undo", "followup", "copy"]
+        : [task.status === "active" ? "complete" : "start", "remind", "complete", "qa", "edit", "copy"];
+    const primary = order.map(find).find(Boolean);
+    const quick = TASK_QUICK_ACTIONS.map(find).filter((item) => item && item !== primary).slice(0, 3);
+    const rest = items.filter((item) => item !== primary && !quick.includes(item));
+    const safe = rest.filter((item) => item.tone !== "danger");
+    const danger = rest.filter((item) => item.tone === "danger");
+    const open = taskActionMenuOpenId === task.id;
+    const menu = rest.length ? `<span class="task-action-spacer"></span><div class="task-menu-wrap"><button type="button" class="task-action-button" data-task-action-menu aria-haspopup="menu" aria-expanded="${open}"><i data-lucide="ellipsis" class="h-3.5 w-3.5"></i>More</button>${open ? `<div class="task-menu" role="menu">${safe.map(taskActionMenuItemHtml).join("")}${safe.length && danger.length ? '<hr class="task-menu-divider">' : ""}${danger.map(taskActionMenuItemHtml).join("")}</div>` : ""}</div>` : "";
+    return `${primary ? taskActionButtonHtml(primary, "solid") : ""}${quick.map((item) => taskActionButtonHtml(item, item.tone === "primary" ? "" : item.tone)).join("")}${menu}`;
   }
 
   function taskActionsHtml(task) {
@@ -923,12 +1018,12 @@
     const reviewer = task.qa?.reviewer === actor;
     const agent = taskAssigneeKind(task) === "agent";
     if (task.deletedAt) {
-      return [
+      return taskActionLayoutHtml(task, [
         taskActionHtml("restore", "archive-restore", "Restore", task.canRestore !== false && !state.tasksView.busyId, "primary"),
         taskActionHtml("copy", "copy", "Copy prompt", true),
-      ].join("");
+      ]);
     }
-    return [
+    return taskActionLayoutHtml(task, [
       taskActionHtml("edit", "pencil", "Edit", manager && !active && !done),
       taskActionHtml("assign", "bot", agent ? "Bot assigned" : "Assign bot", manager && !active && !done && Boolean(task.repository) && !agent),
       taskActionHtml(active ? "stop" : "start", active ? "square" : "play", active ? "Stop" : "Start", mine && !done, active ? "" : "primary"),
@@ -941,7 +1036,7 @@
       taskActionHtml("followup", "git-branch", "Follow up", manager || mine || creator),
       taskActionHtml("copy", "copy", "Copy prompt", true),
       taskActionHtml("delete", "trash-2", "Delete", manager || mine || creator, "danger"),
-    ].join("");
+    ]);
   }
 
   function renderTaskDetail() {
@@ -949,7 +1044,7 @@
     if (!detail) return;
     const task = selectedTask();
     if (!task) {
-      detail.innerHTML = '<div class="flex min-h-[28rem] items-center justify-center p-8 text-center text-sm text-muted-foreground"><div><i data-lucide="clipboard-list" class="mx-auto mb-3 h-8 w-8 opacity-60"></i><p>Select a task to inspect every detail and manage its lifecycle.</p></div></div>';
+      detail.innerHTML = '<div class="task-blankslate" data-framed="true"><i data-lucide="list-checks"></i><strong>No task selected</strong><p>Pick a task from the list to see its details and activity.</p></div>';
       window.lucide?.createIcons();
       return;
     }
@@ -965,37 +1060,63 @@
       agent.finishedBy && `Finished by: ${agent.finishedBy}`,
       (task.agentSessionId || agent.sessionId) && `Session: ${task.agentSessionId || agent.sessionId}`,
     ].filter(Boolean);
-    const qaLines = [
-      `Status: ${qa.status || "unknown"}`, qa.reviewer && `Reviewer: @${qa.reviewer}`,
-      qa.requestedAt && `Requested: ${taskDate(qa.requestedAt)}`, qa.reviewedAt && `Reviewed: ${taskDate(qa.reviewedAt)}`,
-    ].filter(Boolean);
-    detail.innerHTML = `<article data-task-detail-id="${escapeHtml(task.id)}">
-      <header class="border-b border-border p-4 sm:p-5">
-        <div class="flex items-start gap-3">${taskAvatarHtml(task, "h-10 w-10")}<div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><span class="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${taskStatusTone(task)}"><i data-lucide="${taskStatusIcon(task)}" class="h-3 w-3"></i>${escapeHtml(taskStatusLabel(task))}</span><span class="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">Priority ${escapeHtml(String(task.priority ?? 50))}</span>${task.kind === "bid" ? '<span class="rounded border border-border px-2 py-1 text-[10px] text-amber-400">Bounty bid</span>' : ""}</div><h2 class="mt-2 text-lg font-semibold leading-6 text-foreground">${escapeHtml(task.title || "Organization task")}</h2><p class="mt-1 font-mono text-[10px] text-muted-foreground">${escapeHtml(task.id)}</p></div></div>
-        <div class="task-action-bar mt-4">${taskActionsHtml(task)}</div>
-        ${taskNoticeHtml(task, "actions")}
-      </header>
-      <div class="task-detail-grid p-4 sm:p-5">
-        ${task.deletedAt ? taskDetailCard("trash-2", "In trash", `<p>Deleted ${escapeHtml(taskDate(task.deletedAt))}${task.deletedBy ? ` by @${escapeHtml(task.deletedBy)}` : ""}</p>${task.deleteReason ? `<p class="mt-1 text-xs text-muted-foreground">${escapeHtml(task.deleteReason)}</p>` : ""}<p class="mt-2 text-xs text-muted-foreground">Restorable until ${escapeHtml(taskDate(task.purgeAt))}; after that it is purged with its replies, check-ins, QA reviews and attachments.</p>`, true) : ""}
+    const routingHtml = routing.map((value) => `<span class="task-label"><span>${escapeHtml(value)}</span></span>`).join("") || '<span class="text-muted-foreground">None</span>';
+    const priorityLevel = taskPriorityLevel(task);
+    const qaTone = { passed: "", failed: "bad", requested: "attention" }[qa.status];
+    const qaLabel = { passed: "Passed", failed: "Failed", requested: "Awaiting review" }[qa.status] || (qa.status && qa.status !== "unknown" ? qa.status : "Not requested");
+    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}@${escapeHtml(task.createdBy)}` : "—";
+    detail.innerHTML = `<article class="task-detail" data-task-detail-id="${escapeHtml(task.id)}">
+      <div class="task-detail-main">
+        <header class="task-detail-head">
+          <div class="task-detail-crumbs">${task.repository ? `${taskRepositoryHtml(task.repository)}<span aria-hidden="true">/</span>` : ""}${task.department ? `<span>#${escapeHtml(task.department)}</span><span aria-hidden="true">/</span>` : ""}<button type="button" class="task-detail-id" data-task-action="copy-id" title="Copy task ID ${escapeHtml(task.id)}">${escapeHtml(task.id.slice(0, 8))}<i data-lucide="copy" class="h-3 w-3"></i></button>${task.kind === "bid" ? '<span class="task-label">Bounty bid</span>' : ""}</div>
+          <h2 class="task-detail-title">${escapeHtml(task.title || "Organization task")}</h2>
+          <div class="task-action-bar">${taskActionsHtml(task)}</div>
+          ${taskNoticeHtml(task, "actions")}
+        </header>
+        ${task.deletedAt ? taskDetailCard("trash-2", "In trash", `<p>Deleted ${escapeHtml(taskDate(task.deletedAt))}${task.deletedBy ? ` by @${escapeHtml(task.deletedBy)}` : ""}</p>${task.deleteReason ? `<p class="mt-1 text-xs text-muted-foreground">${escapeHtml(task.deleteReason)}</p>` : ""}<p class="mt-2 text-xs text-muted-foreground">Restorable until ${escapeHtml(taskDate(task.purgeAt))}; after that it is purged with its replies, check-ins, QA reviews and attachments.</p>`, true, true) : ""}
         ${taskCheckinHtml(task)}
         ${taskRemindHtml(task)}
-        ${taskPersistentReminderHtml(task)}
-        ${taskProgressCardHtml(task)}
-        ${taskDetailCard("align-left", "Details", task.details ? taskMarkdownHtml(task.details) : "<p>No details provided.</p>", true)}
-        ${taskDetailCard("route", "Routing", `<div class="flex flex-wrap gap-1.5">${routing.map((value) => `<span class="rounded border border-border bg-background px-2 py-1 text-xs">${escapeHtml(value)}</span>`).join("") || "—"}</div><p class="mt-2 text-xs text-muted-foreground">Repository: ${taskRepositoryHtml(task.repository)}</p>`)}
-        ${taskDetailCard("user-round", "Ownership", `<div class="flex items-center gap-2">${taskAvatarHtml(task, "h-7 w-7")}<span>${escapeHtml(taskAssigneeLabel(task))}</span></div><p class="mt-2 text-xs text-muted-foreground">Created by ${task.createdBy ? `@${escapeHtml(task.createdBy)}` : "—"}${task.parentTaskId ? `<br>Follows task <span class="font-mono">${escapeHtml(task.parentTaskId)}</span>` : ""}</p>`)}
-        ${taskDetailCard("clock-3", "Timing", `<p>Created ${escapeHtml(taskDate(task.createdAt))}</p><p class="mt-1 text-xs text-muted-foreground">Updated ${escapeHtml(taskDate(task.updatedAt))}${updated ? ` · ${escapeHtml(updated)}` : ""}<br>Tracked time ${escapeHtml(taskElapsed(task.elapsedMs))}${task.startedAt ? `<br>Started ${escapeHtml(taskDate(task.startedAt))}` : ""}${task.nextCheckinAt ? `<br>Next check-in ${escapeHtml(taskDate(task.nextCheckinAt))}` : ""}${task.completedAt ? `<br>Completed ${escapeHtml(taskDate(task.completedAt))}` : ""}</p>`)}
-        ${taskDetailCard("shield-check", "Quality assurance", `<p>${qaLines.map(escapeHtml).join("<br>") || "Not requested"}</p>${qa.howToTest ? `<p class="mt-3 border-t border-border pt-3 text-xs text-muted-foreground"><strong class="text-foreground">How to test</strong></p>${taskMarkdownHtml(qa.howToTest)}` : ""}`)}
-        ${agentLines.length ? taskDetailCard("bot", "Agent run", agentLines.map(escapeHtml).join("<br>")) : ""}
-        ${task.bountyRequest ? taskDetailCard("badge-dollar-sign", "Bounty request", `<p>${escapeHtml(task.bountyRequest.amountSol || "—")} ${escapeHtml(task.bountyRequest.currency || "SOL")}</p><p class="mt-1 text-xs capitalize text-muted-foreground">${escapeHtml(task.bountyRequest.status || "requested")}</p>`) : ""}
-        ${checkin ? taskDetailCard("activity", "Latest check-in", `<p class="capitalize">${escapeHtml(String(checkin.state || "").replaceAll("_", " "))}</p><p class="mt-2 text-xs text-muted-foreground">${escapeHtml(checkin.note || "No note")} · ${escapeHtml(taskDate(checkin.at))}</p>`) : ""}
-        ${task.lastReminder ? taskDetailCard("bell-ring", "Last reminder", `<p>@${escapeHtml(task.lastReminder.by || "someone")} asked for a check-in</p><p class="mt-2 text-xs text-muted-foreground">${escapeHtml(task.lastReminder.note || "No note")} · ${escapeHtml(taskDate(task.lastReminder.at))}</p><p class="mt-1 text-xs text-muted-foreground">${escapeHtml(taskReminderStatus(task.lastReminder))}</p>`) : ""}
+        ${taskDetailCard("align-left", "Description", task.details ? taskMarkdownHtml(task.details) : '<p class="text-muted-foreground">No details provided.</p>', true)}
         ${task.completionNote ? taskDetailCard("badge-check", "Completion note", taskMarkdownHtml(task.completionNote), true) : ""}
         ${taskWorkItemsHtml(task)}
         ${taskAttachmentsHtml(task)}
         ${taskHistoryHtml(task)}
         ${taskActivityHtml(task)}
       </div>
+      <aside class="task-detail-aside" aria-label="Task properties">
+        ${taskPropsGroupHtml("", taskPropsHtml([
+          ["Status", `<span class="task-state" data-state="${task.deletedAt ? "trash" : taskStatusKey(task)}">${taskRingHtml(task)}${escapeHtml(task.deletedAt ? "In trash" : taskStatusLabel(task))}</span>`],
+          ["Priority", `${taskPriorityHtml(task)}<span class="tabular-nums">P${escapeHtml(String(task.priority ?? 50))}</span><span class="text-muted-foreground">${TASK_PRIORITY_LABELS[priorityLevel]}</span>`],
+          ["Assignee", `${taskAvatarHtml(task)}<span>${escapeHtml(taskAssigneeLabel(task))}</span>`],
+          ["Created by", creator],
+          task.parentTaskId && ["Follows", `<span class="font-mono text-xs">${escapeHtml(task.parentTaskId.slice(0, 8))}</span>`],
+          ["Repository", task.repository ? taskRepositoryHtml(task.repository) : '<span class="text-muted-foreground">None</span>'],
+          ["Routing", routingHtml],
+        ]))}
+        ${taskProgressCardHtml(task)}
+        ${taskPersistentReminderHtml(task)}
+        ${taskPropsGroupHtml("Timing", taskPropsHtml([
+          ["Created", escapeHtml(taskDate(task.createdAt))],
+          ["Updated", escapeHtml(updated || taskDate(task.updatedAt))],
+          ["Tracked", `<span class="tabular-nums">${escapeHtml(taskElapsed(task.elapsedMs))}</span>`],
+          task.startedAt && ["Started", escapeHtml(taskDate(task.startedAt))],
+          task.nextCheckinAt && ["Next check-in", escapeHtml(taskDate(task.nextCheckinAt))],
+          task.completedAt && ["Completed", escapeHtml(taskDate(task.completedAt))],
+        ]))}
+        ${taskPropsGroupHtml("Quality assurance", taskPropsHtml([
+          ["Status", `<span class="task-state"${qaTone ? ` data-tone="${qaTone}"` : ""}${qa.status === "passed" ? ' data-state="done"' : ""}>${escapeHtml(qaLabel)}</span>`],
+          qa.reviewer && ["Reviewer", `@${escapeHtml(qa.reviewer)}`],
+          qa.requestedAt && ["Requested", escapeHtml(taskDate(qa.requestedAt))],
+          qa.reviewedAt && ["Reviewed", escapeHtml(taskDate(qa.reviewedAt))],
+        ]) + (qa.howToTest ? `<div class="task-props-note"><strong>How to test</strong>${taskMarkdownHtml(qa.howToTest)}</div>` : ""))}
+        ${agentLines.length ? taskPropsGroupHtml("Agent run", taskPropsHtml(agentLines.map((line) => { const at = line.indexOf(": "); return [line.slice(0, at), `<span class="break-all">${escapeHtml(line.slice(at + 2))}</span>`]; }))) : ""}
+        ${task.bountyRequest ? taskPropsGroupHtml("Bounty request", taskPropsHtml([
+          ["Amount", `${escapeHtml(task.bountyRequest.amountSol || "—")} ${escapeHtml(task.bountyRequest.currency || "SOL")}`],
+          ["Status", `<span class="capitalize">${escapeHtml(task.bountyRequest.status || "requested")}</span>`],
+        ])) : ""}
+        ${checkin ? taskPropsGroupHtml("Latest check-in", `<div class="flex flex-wrap items-center gap-2">${taskCheckinChipHtml(checkin.state).trim() || `<span class="capitalize">${escapeHtml(String(checkin.state || "").replaceAll("_", " "))}</span>`}<span class="text-xs text-muted-foreground">${escapeHtml(taskDate(checkin.at))}</span></div><p class="task-props-note">${escapeHtml(checkin.note || "No note")}</p>`) : ""}
+        ${task.lastReminder ? taskPropsGroupHtml("Last reminder", `<p class="task-props-note"><strong>@${escapeHtml(task.lastReminder.by || "someone")}</strong> asked for a check-in · ${escapeHtml(taskDate(task.lastReminder.at))}</p><p class="task-props-note">${escapeHtml(task.lastReminder.note || "No note")}</p><p class="task-props-note text-muted-foreground">${escapeHtml(taskReminderStatus(task.lastReminder))}</p>`) : ""}
+      </aside>
     </article>`;
     window.lucide?.createIcons();
     hydrateTaskAvatars();
@@ -1044,8 +1165,8 @@
 
     if (state.tasksView.loading || state.tasksView.error) {
       list.innerHTML = state.tasksView.loading
-        ? `<div class="px-4 py-8 text-sm text-muted-foreground sm:px-5">${loadingHtml("Loading organization tasks...")}</div>`
-        : `<div class="px-4 py-8 text-sm text-muted-foreground sm:px-5"><i data-lucide="lock-keyhole" class="mb-3 h-5 w-5"></i>${escapeHtml(state.tasksView.error)}</div>`;
+        ? `<div class="task-blankslate"><span>${loadingHtml("Loading organization tasks...")}</span></div>`
+        : `<div class="task-blankslate"><i data-lucide="lock-keyhole"></i><strong>Tasks are unavailable</strong><p>${escapeHtml(state.tasksView.error)}</p></div>`;
       if (summary) summary.textContent = "";
       if (count) count.textContent = state.tasksView.loading ? "Loading" : "Unavailable";
       if (pageList) pageList.innerHTML = "";
@@ -1060,7 +1181,7 @@
     const trashView = state.tasksView.filter === "trash";
     if (trashView && !state.tasksView.trashLoaded) {
       if (!state.tasksView.trashLoading) void loadTaskTrash();
-      list.innerHTML = `<div class="px-4 py-8 text-sm text-muted-foreground sm:px-5">${loadingHtml("Loading the trash...")}</div>`;
+      list.innerHTML = `<div class="task-blankslate"><span>${loadingHtml("Loading the trash...")}</span></div>`;
       if (summary) summary.textContent = "";
       if (pageList) pageList.innerHTML = "";
       [prev, next].forEach((button) => { if (button) button.disabled = true; });
@@ -1086,10 +1207,10 @@
     if (visibleMatches.length && !visibleMatches.some((task) => task.id === state.tasksView.selectedId)) {
       state.tasksView.selectedId = visibleMatches[0].id;
     }
-    list.innerHTML = matches.length ? visibleMatches.map(taskRowHtml).join("")
+    list.innerHTML = matches.length ? taskListHtml(visibleMatches)
       : trashView
-        ? `<div class="px-4 py-10 text-center text-sm text-muted-foreground sm:px-5"><i data-lucide="trash-2" class="mx-auto mb-3 h-6 w-6"></i>The trash is empty. Deleted tasks stay here for ${TASK_TRASH_DAYS} days.</div>`
-        : '<div class="px-4 py-10 text-center text-sm text-muted-foreground sm:px-5"><i data-lucide="search-x" class="mx-auto mb-3 h-6 w-6"></i>No tasks match this view.</div>';
+        ? `<div class="task-blankslate"><i data-lucide="trash-2"></i><strong>The trash is empty</strong><p>Deleted tasks stay here for ${TASK_TRASH_DAYS} days.</p></div>`
+        : '<div class="task-blankslate"><i data-lucide="search-x"></i><strong>No tasks match this view</strong><p>Try another status, person, or search.</p></div>';
     if (summary) summary.textContent = !matches.length
       ? (trashView ? "Trash is empty" : "No matching tasks")
       : trashView
@@ -1101,9 +1222,9 @@
       const visiblePages = [...new Set([1, state.tasksView.page - 1, state.tasksView.page, state.tasksView.page + 1, pages])]
         .filter((page) => page >= 1 && page <= pages).sort((a, b) => a - b);
       pageList.innerHTML = visiblePages.map((page, index) => {
-        const gap = index && page - visiblePages[index - 1] > 1 ? '<span class="px-1 text-xs text-muted-foreground">…</span>' : "";
+        const gap = index && page - visiblePages[index - 1] > 1 ? '<span class="px-1 text-sm text-muted-foreground">…</span>' : "";
         const active = page === state.tasksView.page;
-        return `${gap}<button type="button" data-tasks-page="${page}" class="h-8 min-w-8 rounded-md border px-2 font-mono text-xs ${active ? "border-border bg-secondary text-foreground" : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary"}"${active ? ' aria-current="page"' : ""}>${page}</button>`;
+        return `${gap}<button type="button" data-tasks-page="${page}" class="task-page-button"${active ? ' aria-current="page"' : ""}>${page}</button>`;
       }).join("");
     }
     renderTaskDetail();
@@ -1262,7 +1383,7 @@
     const assignment = taskAssigneeKind(task) === "user" ? `user:${task?.assignee || state.tasksView.actor}` : taskAssigneeKind(task);
     taskField("assignee").value = mode === "create" ? "unassigned" : assignment;
     const status = $("[data-task-editor-status]");
-    status.hidden = true; status.textContent = "";
+    taskFlash(status, "");
     dialog.showModal();
     taskField("title")?.focus();
     window.lucide?.createIcons();
@@ -1355,8 +1476,7 @@
       taskDetailNotice = { taskId: payload.task.id, place: "actions", message: mode === "edit" ? "Task updated." : mode === "followup" ? "Follow-up task created." : "Task created.", tone: "good" };
       renderTasksPage();
     } catch (error) {
-      status.textContent = taskFriendlyError(error);
-      status.hidden = false;
+      taskFlash(status, taskFriendlyError(error));
     } finally {
       save.disabled = false;
       save.textContent = mode === "edit" ? "Save changes" : mode === "followup" ? "Create follow-up" : "Create task";
@@ -1388,8 +1508,8 @@
     $("[data-task-action-copy]").closest("label").hidden = !config[2];
     $("[data-task-action-submit]").textContent = config[4];
     $("[data-task-action-submit]").dataset.tone = action === "delete" || action === "clear" ? "danger" : "primary";
-    const warning = $("[data-task-action-warning]"); warning.textContent = config[5]; warning.hidden = !config[5];
-    const status = $("[data-task-action-status]"); status.textContent = ""; status.hidden = true;
+    taskFlash($("[data-task-action-warning]"), config[5]);
+    taskFlash($("[data-task-action-status]"), "");
     dialog.showModal();
     if (config[2]) $("[data-task-action-copy]").focus();
     window.lucide?.createIcons();
@@ -1472,11 +1592,10 @@
       const blocked = taskBlockedReason(error);
       if (action === "delete" && error?.message === "task_delete_blocked") {
         dialog.dataset.force = "1";
-        status.textContent = `This task is busy: ${blocked}. An organization owner can move it to trash anyway.`;
+        taskFlash(status, `This task is busy: ${blocked}. An organization owner can move it to trash anyway.`);
       } else {
-        status.textContent = `${taskFriendlyError(error)}${blocked ? ` (${blocked})` : ""}`;
+        taskFlash(status, `${taskFriendlyError(error)}${blocked ? ` (${blocked})` : ""}`);
       }
-      status.hidden = false;
       if (action === "clear") renderTasksPage();
     } finally {
       submit.disabled = false;
@@ -1643,6 +1762,14 @@
         renderTasksPage();
         return;
       }
+      const group = event.target.closest("[data-task-group-toggle]");
+      if (group) {
+        const key = group.dataset.taskGroupToggle;
+        if (taskCollapsedGroups.has(key)) taskCollapsedGroups.delete(key);
+        else taskCollapsedGroups.add(key);
+        renderTasksPage();
+        return;
+      }
       const selected = event.target.closest("[data-task-select]");
       if (selected) { if (selected.dataset.taskSelect !== state.tasksView.selectedId) taskDetailNotice = null; state.tasksView.selectedId = selected.dataset.taskSelect; renderTasksPage(); void loadSelectedTaskDetail(); return; }
       const page = event.target.closest("[data-tasks-page]");
@@ -1682,11 +1809,25 @@
         renderTaskDetail();
         return;
       }
+      if (event.target.closest("[data-task-action-menu]")) {
+        const id = selectedTask()?.id || "";
+        taskActionMenuOpenId = taskActionMenuOpenId === id ? "" : id;
+        renderTaskDetail();
+        detailPane.querySelector(".task-menu-item:not(:disabled)")?.focus();
+        return;
+      }
       const button = event.target.closest("[data-task-action]");
       if (!button || button.disabled) return;
       const task = selectedTask();
       const action = button.dataset.taskAction;
-      if (action === "checkin") {
+      if (taskActionMenuOpenId) {
+        taskActionMenuOpenId = "";
+        renderTaskDetail();
+      }
+      if (action === "copy-id") {
+        const copied = await copyTextToClipboard(task.id);
+        setTaskNotice(task.id, "actions", copied ? "Task ID copied." : "Could not copy the task ID.", copied ? "good" : "bad");
+      } else if (action === "checkin") {
         taskCheckinOpenId = taskCheckinOpenId === task?.id ? "" : task?.id || "";
         renderTaskDetail();
         detailPane.querySelector("[data-task-checkin-note]")?.focus();
@@ -1784,6 +1925,29 @@
       if (!input) return;
       taskMentionState.query = null;
       renderTaskMentionList(input);
+    });
+    document.addEventListener("click", (event) => {
+      if (!taskActionMenuOpenId || event.target.closest?.(".task-menu-wrap")) return;
+      taskActionMenuOpenId = "";
+      renderTaskDetail();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && taskActionMenuOpenId) {
+        taskActionMenuOpenId = "";
+        renderTaskDetail();
+        detailPane?.querySelector("[data-task-action-menu]")?.focus();
+        return;
+      }
+      if (event.key !== "j" && event.key !== "k") return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.target.closest?.("input, textarea, select, [contenteditable], dialog")) return;
+      const rows = $$("[data-tasks-list] [data-task-select]");
+      if (!rows.length) return;
+      const index = rows.findIndex((row) => row.dataset.taskSelect === state.tasksView.selectedId);
+      const next = rows[Math.max(0, Math.min(rows.length - 1, index + (event.key === "j" ? 1 : -1)))];
+      if (!next || next.dataset.taskSelect === state.tasksView.selectedId) return;
+      event.preventDefault();
+      next.click();
+      $(`[data-tasks-list] [data-task-select="${next.dataset.taskSelect}"]`)?.scrollIntoView({ block: "nearest" });
     });
     $$('[data-task-dialog-close]').forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
     $("[data-task-editor-form]")?.addEventListener("submit", (event) => { event.preventDefault(); void saveTaskEditor(); });
