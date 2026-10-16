@@ -1488,6 +1488,82 @@
     }
   }
 
+  function webIssueTaskError(error) {
+    return ({
+      org_member_required: "Only members of this site's organization can create tasks.",
+      invalid_session: "Your sign-in has expired. Sign in again to move this issue.",
+      office_organization_unavailable: "Organization tasks are unavailable right now. Try again later.",
+      payload_too_large: "This issue is too large to move into a task.",
+    })[String(error?.code || "")] || "The task could not be created, so the issue was kept.";
+  }
+
+  function webIssueTaskBody(repo, number, values, body) {
+    const owner = repoPublicOwner(repo) || String(repo.owner || "");
+    const name = String(repo.name || "");
+    const segment = /^[A-Za-z0-9._-]{1,100}$/;
+    const repository = segment.test(owner) && segment.test(name) ? `${owner}/${name}` : "";
+    const source = `Moved from issue ${repository || name}#${number} by ${state.session?.nodeName || "a repository manager"}.`;
+    const text = String(body || "").trim();
+    const room = 4000 - source.length - 2;
+    return {
+      title: String(values.title || `Issue #${number}`).trim().slice(0, 160),
+      details: text ? `${text.length > room ? `${text.slice(0, room - 1)}…` : text}\n\n${source}` : source,
+      repository,
+      department: "general",
+      destination: "department",
+      assigneeKind: "unassigned",
+    };
+  }
+
+  async function moveWebIssueToTask(button = null) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "issues" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const values = detail.parsed?.values || {};
+    const title = String(values.title || `issue #${number}`);
+    if (!await confirmAccountAction({
+      title: `Move issue #${number} “${title}” to a task?`,
+      body: "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash so nothing is left twice.",
+      confirmLabel: "Move to task",
+    })) return;
+    if (button) button.disabled = true;
+    let task = null;
+    try {
+      const created = await orgApiRequest(
+        "POST", "/api/tasks", webIssueTaskBody(repo, number, values, detail.parsed?.body));
+      task = created.task;
+    } catch (error) {
+      if (button) button.disabled = false;
+      showErrorNotice(webIssueTaskError(error));
+      return;
+    }
+    try {
+      const result = await submitWebIssueEvent(repo, number, "delete", { target: "self" });
+      optimisticWebIssueEvent(result.event);
+    } catch (error) {
+      const undone = await orgApiRequest(
+        "DELETE", `/api/tasks/${encodeURIComponent(task.id)}`,
+        { reason: `Issue #${number} could not be deleted.` },
+      ).then(() => true, () => false);
+      if (button) button.disabled = false;
+      showErrorNotice(`${webIssueActionError(error, "delete-issue")} ${undone
+        ? "The new task was moved to trash, so the issue is unchanged."
+        : "The new task could not be removed; delete it from Tasks."}`);
+      return;
+    }
+    state.issuesView.items = (state.issuesView.items || []).filter(
+      (issue) => Number(issue.number) !== number,
+    );
+    state.repoRecordDetail = null;
+    location.assign(`/dashboard/tasks?task=${encodeURIComponent(task.id)}`);
+  }
+
   async function handleWebIssueTitleSubmit(form) {
     const detail = state.repoRecordDetail;
     const title = String(

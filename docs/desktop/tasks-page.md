@@ -46,6 +46,8 @@ Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
   undone, Assign Bot, Start agent, Add to prompt, Send to QA, Follow up, Move
   to issue, Comment, Check in, Delete) above the text, with fields in a fixed
   300 px right column.
+- **From an issue.** The issue view's **Move to task** goes the other way
+  ([issue-to-task](../app/issue-to-task.md)).
 
 ## The no-timer rule
 

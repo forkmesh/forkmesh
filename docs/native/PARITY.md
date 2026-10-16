@@ -44,7 +44,7 @@ desktop-only; on-device models run through MLX on iOS).
 | 20 | World (the `world-general` room plus the external World link) |
 | 21 | Repository catalog (filters, sort) |
 | 22 | Repository detail: code explorer, go-to-file, highlighted preview; commits; mirrors; releases; about; actions (runs and logs); agents; worktrees |
-| 23 | Issues: filters, detail, timeline, sub-issues, subscribe, new issue |
+| 23 | Issues: filters, detail, timeline, sub-issues, subscribe, new issue, move to task ([issue-to-task](../app/issue-to-task.md)) |
 | 24 | Pull requests: detail, files changed and commits, review, timeline, merge plan and merge (branch- and patch-backed) |
 | 25 | Discussions, including federated replies |
 | 26 | Branch diff and diff viewer (unified or side by side) |
