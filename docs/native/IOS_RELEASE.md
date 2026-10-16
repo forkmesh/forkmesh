@@ -123,6 +123,10 @@ To submit `main` without a tag, run
 `.forkmesh/shortcuts/deploy-native-ios-app-store-mac.sh`
 (`tools/mac_adhoc_deploy.py --app-store --execute`; see [MAC_BUILD.md](MAC_BUILD.md)).
 
+Releasing a version locks every older install out until it updates: the app
+compares itself with the App Store's current version on launch and shows a
+blocking update screen ([NAVIGATION.md](NAVIGATION.md), "Forced update").
+
 Rejections and missing metadata fail the submit step with App Store Connect's
 error; the release host retries after an hour. `asc_appstore.py status` shows
 versions and submissions; `asc_appstore.py plan VERSION` is a dry run.

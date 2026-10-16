@@ -866,7 +866,8 @@ struct HomeShell: View {
             .fullScreenCover(isPresented: updateRequiredShown) {
                 UpdateRequiredView(
                     requirement: updateCheck.requirement,
-                    onClose: updateCheck.requirement == nil ? { router.dismissPresented() } : nil)
+                    available: updateCheck.available,
+                    onClose: updateCheck.blocksUse ? nil : { router.dismissPresented() })
             }
     }
 
@@ -949,7 +950,7 @@ struct HomeShell: View {
         let router: AppRouter = self.router
         let check: UpdateRequiredCheck = updateCheck
         return Binding<Bool>(
-            get: { router.presented == .updateRequired || check.requirement != nil },
+            get: { router.presented == .updateRequired || check.blocksUse },
             set: { (shown: Bool) in
                 if !shown {
                     router.dismissPresented()
