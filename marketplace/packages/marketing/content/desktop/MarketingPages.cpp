@@ -1028,8 +1028,8 @@ void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
     redditFilter->addStretch(1);
     m_redditPanel->body()->addLayout(redditFilter);
     m_redditTable = pageTable("marketingRedditTable",
-        {QStringLiteral("Thread"), QStringLiteral("Subreddit"), QStringLiteral("Status"), QStringLiteral("Checks"),
-         QStringLiteral("Tagged link")}, 4);
+        {QStringLiteral("Thread"), QStringLiteral("Subreddit"), QStringLiteral("Status"), QStringLiteral("Activity"),
+         QStringLiteral("Checks"), QStringLiteral("Tagged link"), QString()}, 5);
     m_redditTable->setTextElideMode(Qt::ElideMiddle);
     m_redditPanel->body()->addWidget(m_redditTable);
     auto *threadActions = new QHBoxLayout;
@@ -1042,9 +1042,11 @@ void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
     addThread->setObjectName(QStringLiteral("primaryButton"));
     auto *monitorThread = new QPushButton(QStringLiteral("Monitor a thread…"));
     monitorThread->setToolTip(QStringLiteral("Paste a Reddit thread or comment link to follow its views, points and comments. The ForkMesh browser extension reads them in your signed-in browser."));
-    for (QPushButton *item : {openThread, copyThreadLink, editThread, monitorThread})
+    auto *updateThreads = new QPushButton(QStringLiteral("Update all"));
+    updateThreads->setToolTip(QStringLiteral("Opens the Reddit desk in your browser, where the ForkMesh extension reads every logged thread's comments, points and views in a background tab. This log updates as they are read."));
+    for (QPushButton *item : {updateThreads, openThread, copyThreadLink, editThread, monitorThread})
         item->setObjectName(QStringLiteral("ghostButton"));
-    for (QPushButton *item : {openThread, copyThreadLink, editThread, monitorThread, addThread})
+    for (QPushButton *item : {updateThreads, openThread, copyThreadLink, editThread, monitorThread, addThread})
         threadActions->addWidget(item);
     m_redditPanel->body()->addLayout(threadActions);
     redditGrid->addPanel(m_redditPanel, 2);
@@ -1286,6 +1288,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
     connect(readRules, &QPushButton::clicked, this, [this] { readRedditRules(); });
     connect(addThread, &QPushButton::clicked, this, [this] { editRedditThread(); });
     connect(monitorThread, &QPushButton::clicked, this, [this] { monitorRedditThread(); });
+    connect(updateThreads, &QPushButton::clicked, this, [this] { updateRedditThreads(); });
     const auto selectedThread = [this] { return byId(m_redditThreads, rowId(m_redditTable)); };
     connect(editThread, &QPushButton::clicked, this, [this, selectedThread] {
         if (selectedThread().isEmpty())
@@ -2490,11 +2493,7 @@ void MarketingFeature::renderReddit()
             read << QStringLiteral("from the browser extension");
         QString monitored;
         if (item.value(QStringLiteral("monitored")).toBool()) {
-            const QString change = redditViewsChange(item);
-            monitored = present(item.value(QStringLiteral("views")))
-                ? QStringLiteral(" · ") + plural(qint64(number(item, "views")), QStringLiteral("view"), QStringLiteral("views"))
-                    + (change.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(change))
-                : QStringLiteral(" · monitored");
+            monitored = QStringLiteral(" · monitored");
             read << QStringLiteral("Monitored: ") + redditMonitorSummary(item);
         }
         QStringList tip{text(item, "url"),
@@ -2509,21 +2508,47 @@ void MarketingFeature::renderReddit()
             checks << QStringLiteral("⚠ ") + text(check.toObject(), "message");
         const bool rulesRead = item.value(QStringLiteral("rulesChecked")).toBool();
         const bool disclosed = item.value(QStringLiteral("disclosed")).toBool();
+        QStringList activity;
+        if (present(item.value(QStringLiteral("comments"))))
+            activity << plural(qint64(number(item, "comments")), QStringLiteral("comment"), QStringLiteral("comments"));
+        if (present(item.value(QStringLiteral("score"))))
+            activity << plural(qint64(number(item, "score")), QStringLiteral("point"), QStringLiteral("points"));
+        if (present(item.value(QStringLiteral("views")))) {
+            const QString change = redditViewsChange(item);
+            activity << plural(qint64(number(item, "views")), QStringLiteral("view"), QStringLiteral("views"))
+                            + (change.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(change));
+        }
+        const qint64 readAt = qint64(number(item, "checkedAt"));
+        activity << (readAt > 0 ? QStringLiteral("read ") + relativeLabel(readAt) : QStringLiteral("not read yet"));
+        const QString threadId = text(item, "id");
         addRow(m_redditTable,
                {text(item, "title").isEmpty() ? text(item, "url") : text(item, "title"),
                 QStringLiteral("r/") + text(item, "subreddit"),
                 choiceLabel(redditStatuses(), text(item, "status")) + (text(item, "replyUrl").isEmpty() ? QString() : QStringLiteral(" · reply saved")) + monitored,
+                activity.join(QStringLiteral(" · ")),
                 QStringLiteral("%1 Rules read   %2 Disclosed").arg(rulesRead ? QStringLiteral("✓") : QStringLiteral("✗"),
                                                                     disclosed ? QStringLiteral("✓") : QStringLiteral("✗")),
                 (checks.isEmpty() ? QString() : QStringLiteral("⚠ ")) + text(item, "taggedLink")},
-               text(item, "id"), -1,
-               {tip.join(QLatin1Char('\n')), QString(), text(item, "replyUrl"), QString(), checks.join(QLatin1Char('\n'))});
+               threadId, -1,
+               {tip.join(QLatin1Char('\n')), QString(), text(item, "replyUrl"),
+                readAt > 0 ? QStringLiteral("Read by the browser extension %1").arg(relativeLabel(readAt))
+                           : QStringLiteral("Not read by the browser extension yet: press Update"),
+                QString(), checks.join(QLatin1Char('\n'))});
         const int row = m_redditTable->rowCount() - 1;
+        auto *update = linkButton(QStringLiteral("Update"),
+            QStringLiteral("Opens the Reddit desk in your browser, where the ForkMesh extension reads this thread's comments, points and views in a background tab and updates this row."));
+        update->setAccessibleName(QStringLiteral("Update %1 with the browser extension").arg(text(item, "title").isEmpty() ? text(item, "url") : text(item, "title")));
+        connect(update, &QPushButton::clicked, this, [this, threadId] { updateRedditThreads(threadId); });
+        m_redditTable->setCellWidget(row, 6, update);
         if (text(item, "status") == QLatin1String("skipped")) {
-            for (int column = 0; column < m_redditTable->columnCount(); ++column)
-                m_redditTable->item(row, column)->setForeground(colors.muted);
+            for (int column = 0; column < m_redditTable->columnCount(); ++column) {
+                if (QTableWidgetItem *cell = m_redditTable->item(row, column))
+                    cell->setForeground(colors.muted);
+            }
         }
-        m_redditTable->item(row, 3)->setForeground(rulesRead && disclosed ? colors.good : colors.muted);
+        if (readAt <= 0)
+            m_redditTable->item(row, 3)->setForeground(colors.muted);
+        m_redditTable->item(row, 4)->setForeground(rulesRead && disclosed ? colors.good : colors.muted);
         if (text(item, "id") == selected)
             m_redditTable->selectRow(row);
     }
@@ -3639,6 +3664,28 @@ void MarketingFeature::monitorRedditThread()
             loadOrganization();
         });
     });
+}
+
+void MarketingFeature::updateRedditThreads(const QString &threadId)
+{
+    if (m_redditThreads.isEmpty())
+        return setStatus(QStringLiteral("Log a thread first."), true);
+    openWebDashboard(QStringLiteral("page=reddit&update=") +
+                     (threadId.isEmpty() ? QStringLiteral("all") : QString::fromUtf8(QUrl::toPercentEncoding(threadId))));
+    setStatus(threadId.isEmpty()
+        ? QStringLiteral("Opened the Reddit desk in your browser: the ForkMesh extension reads each logged thread in a background tab, and this log updates as they are read.")
+        : QStringLiteral("Opened the Reddit desk in your browser: the ForkMesh extension reads the thread in a background tab, and its row updates here when it is read."));
+    if (!m_redditFollow) {
+        m_redditFollow = new QTimer(this);
+        m_redditFollow->setInterval(15 * 1000);
+        connect(m_redditFollow, &QTimer::timeout, this, [this] {
+            if (++m_redditFollowPolls > 16)
+                return m_redditFollow->stop();
+            m_changedReload->start();
+        });
+    }
+    m_redditFollowPolls = 0;
+    m_redditFollow->start();
 }
 
 void MarketingFeature::editRedditWatch()

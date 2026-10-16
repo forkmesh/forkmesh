@@ -457,13 +457,24 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
         'only "Send to Reddit desk" and the end of a walk send the desk anything')
     assert "redditSync(state)" in BACKGROUND.split("const redditSyncNow =", 1)[1]
     assert "redditSync(state)" in BACKGROUND.split("async function redditWalkRun(", 1)[1]
-    assert BACKGROUND.count("await redditFetchWatch(state)") == 9
+    assert BACKGROUND.count("await redditFetchWatch(state)") == 10
     assert "await redditFetchWatch(current)" in BACKGROUND.split("async function redditWalkStart(", 1)[1]
     for caller in ("const redditStatsNow =", "const redditRefresh =",
                    "async function redditSync(state)", "const redditMonitorAdd =",
                    "const redditMonitorRemove =", "async function redditCheck()",
-                   "async function redditProfileUpdate(", "async function redditAccountsUpdate("):
+                   "async function redditProfileUpdate(", "async function redditAccountsUpdate(",
+                   "async function redditThreadsUpdate("):
         assert "await redditFetchWatch(state)" in BACKGROUND.split(caller, 1)[1].split("\n}", 1)[0]
+    threads = BACKGROUND.split("async function redditThreadsUpdate(", 1)[1].split("\n}\n", 1)[0]
+    assert '"fm-reddit-threads-update"' in BACKGROUND.split("const REDDIT_WALK_SENDERS = new Set(", 1)[1].split(");", 1)[0]
+    assert '!== await xOrganization()) throw new ApiError("reddit_organization_mismatch"' in threads
+    assert "redditReadTab(entry)" in threads and "redditKeepReading(state, monitor, true)" in threads
+    assert "redditSendReadings(state, await redditBase(), result)" in threads
+    assert "redditSync(" not in threads
+    assert "if (read) redditSendSoon();" in observe
+    send_soon = BACKGROUND.split("function redditSendSoon()", 1)[1].split("\n}\n", 1)[0]
+    assert "redditSendReadings(" in send_soon and "redditSync(" not in send_soon
+    assert "monitored: redditTracked(state).map(" in watch
     assert '"fm-reddit-profile-update"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
     accounts = BACKGROUND.split("async function redditAccountsUpdate(", 1)[1].split("\n}\n", 1)[0]
     assert '"fm-reddit-accounts-update"' in BACKGROUND.split("const REDDIT_WALK_SENDERS = new Set(", 1)[1].split(");", 1)[0]
