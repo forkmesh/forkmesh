@@ -169,7 +169,7 @@ Agent, window and release tools need the desktop's intake socket
 | Agents | `create_agent` | Desktop socket; 12 per 10 minutes; `task` / `handoff` hand an organization task to the new agent |
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Ledger | `record_expense` | Signed `POST /api/ledger/expenses`; the signed-in account must be an administrator with two-factor sign-in ([../finance/cfo.md](../finance/cfo.md#recording-expenses)) |
-| Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |
+| Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step, then logs outside recipients in the CRM's Initiatives list ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |
 | Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page` | Desktop socket; the user can stop a page being shared |
 
 Details: [../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
