@@ -378,6 +378,42 @@ final class ApiServiceRepoTests: XCTestCase {
         XCTAssertEqual(discussion.events.first?.displayAuthor, "Mona")
     }
 
+    func testPublishedDiscussionsSplitTheMarkedAnswerFromTheReplies() {
+        let reply = PublishedRecords.discussionEventFromMarkdown("""
+            ---
+            type: comment
+            id: reply-1
+            author: helper-key
+            ts: 10
+            ---
+            Use the desktop node.
+            """)
+        let answer = PublishedRecords.discussionEventFromMarkdown("""
+            ---
+            type: answer
+            id: answer-1
+            author: opener-key
+            ts: 20
+            target: reply-1
+            targetAuthor: helper-key
+            ---
+            """)
+        let discussion = PublishedRecords.discussionFromMarkdown("3", """
+            ---
+            title: How?
+            category: Q&A
+            author: opener-key
+            authorName: Alice
+            ---
+            Question
+            """, events: [reply, answer])
+        XCTAssertEqual(reply.id, "reply-1")
+        XCTAssertEqual(discussion.events.map(\.id), ["reply-1"])
+        XCTAssertEqual(discussion.answer?.target, "reply-1")
+        XCTAssertEqual(discussion.authorKey, "opener-key")
+        XCTAssertEqual(discussion.author, "Alice")
+    }
+
     func testPublishedMarkdownPullsReadTheLedgerBranchWithTimelineEvents() async throws {
         let http = apiRouteByPath { path, query, _ in
             let p = query["path"] ?? ""
