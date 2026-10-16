@@ -34,6 +34,10 @@ LIST_ACTIVITY_LIMIT = 200
 LIST_ACTIVITY_KEEP_MS = 90 * DAY_MS
 LIST_VIEW_GAP_MS = 30 * 60 * 1000
 LIST_ACTIVITY_NAMES = 5
+CONTACT_NOTE_LIMIT = 4000
+CONTACT_NOTE_KEEP = 100
+NOTE_PING_RECIPIENTS = 50
+NOTE_PING_EXCERPT = 140
 ACTIVITY_QUERIES = (
     ("emails",
      "SELECT sender_name AS name,(created_at+?)/? AS day,COUNT(*) AS n "
@@ -923,7 +927,7 @@ def _route(path):
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
         r"(?:/([0-9a-f]{32}|import|export|send|lookup|link|copy|order|team|bulk|merge"
         r"|toots|toot"
-        r"|duplicates|evidence|activity"
+        r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
         r"|delete-column"
         r"|[a-z0-9]{10,40}))?)?",
@@ -1101,6 +1105,7 @@ def _contact_fields(row, data):
         "owner": str(data.get("owner") or ""),
         "source": str(data.get("source") or ""),
         "notes": str(data.get("notes") or ""),
+        "noteLog": _note_log(data.get("noteLog")),
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
@@ -2176,6 +2181,8 @@ def _merged_contact_data(kept, duplicate):
     result["notes"] = _text("\n\n".join(
         note for index, note in enumerate(notes)
         if note and note not in notes[:index]), 20000)
+    result["noteLog"] = _note_log(
+        _note_log(kept.get("noteLog")) + _note_log(duplicate.get("noteLog")))
     result["tags"] = _tags(_tags(kept.get("tags")) + _tags(duplicate.get("tags")))
     if not isinstance(kept.get("account"), dict) and isinstance(duplicate.get("account"), dict):
         result["account"] = duplicate["account"]
@@ -2193,6 +2200,128 @@ def _merged_contact_data(kept, duplicate):
         fields["other_emails"] = f"{known}, {other}" if known else other
     result["fields"] = _custom_fields(fields)
     return result
+
+
+def _note_log(value):
+    entries = {}
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        note_id = str(item.get("id") or "")
+        text = _text(item.get("text"), CONTACT_NOTE_LIMIT).strip()
+        if not text or not CONTACT_ID_RE.fullmatch(note_id):
+            continue
+        entries[note_id] = {"id": note_id, "at": max(0, _integer(item.get("at"))),
+                            "by": _clean(item.get("by"), 64).lower(), "text": text}
+    ordered = sorted(entries.values(), key=lambda entry: (entry["at"], entry["id"]))
+    return ordered[-CONTACT_NOTE_KEEP:]
+
+
+def _note_excerpt(text):
+    clean = _clean(text, NOTE_PING_EXCERPT + 1)
+    if len(clean) <= NOTE_PING_EXCERPT:
+        return clean
+    return clean[:NOTE_PING_EXCERPT - 1].rstrip() + "\u2026"
+
+
+async def _note_recipients(runtime, org_bi, actor, lists):
+    rows = await runtime.d1_all(
+        "SELECT name,role FROM org_members WHERE org_bi=? "
+        "ORDER BY created_at,name LIMIT 500", org_bi)
+    members = {}
+    for row in rows or []:
+        name = _clean(row.get("name"), 64).lower()
+        if name and name not in members:
+            members[name] = str(row.get("role") or "")
+    recipients = {}
+
+    def add(name, view, member):
+        if name and name != actor and name not in recipients:
+            recipients[name] = (view, member)
+
+    if not lists:
+        for name in members:
+            add(name, None, True)
+    for view in lists:
+        owner = _clean(view.get("owner"), 64).lower()
+        for name, role in members.items():
+            if (view.get("visibility") == "organization" or name == owner
+                    or role in MANAGER_ROLES or name in view.get("sharedWith", [])):
+                add(name, view, True)
+        for name in view.get("sharedWith", []):
+            add(name, view, name in members)
+    return list(recipients.items())[:NOTE_PING_RECIPIENTS]
+
+
+def _note_shows_text(view, member):
+    if member or view is None:
+        return True
+    return any(column.get("field") == "notes" and not column.get("hidden")
+               for column in view.get("columns") or [])
+
+
+async def _note_ping(runtime, org_bi, org_name, actor, contact_id, contact, note,
+                     lists):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not actor:
+        return 0
+    try:
+        recipients = await _note_recipients(runtime, org_bi, actor, lists)
+    except Exception:
+        return 0
+    title = "Note on " + _contact_label(contact)
+    excerpt = _note_excerpt(note["text"])
+    sent = 0
+    for recipient, (view, member) in recipients:
+        where = org_name + (" \u00b7 " + view["name"] if view else "")
+        body = "By %s in %s" % (actor, where)
+        if _note_shows_text(view, member):
+            body += ": " + excerpt
+        href = (ACTIVITY_HREF + "?contact=" + contact_id if member
+                else ACTIVITY_HREF + "?list=" + view["id"])
+        try:
+            await notify(recipient, "plugin_activity", title, body=body, href=href,
+                         dedupe="crm-note:" + note["id"])
+            sent += 1
+        except Exception:
+            pass
+    return sent
+
+
+async def _add_contact_note(runtime, org_bi, org_name, account_bi, actor, data):
+    contact_id = _clean(data.get("contact"), 32).lower()
+    row = (await _contact_row(runtime, org_bi, contact_id)
+           if CONTACT_ID_RE.fullmatch(contact_id) else None)
+    if not row:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    text = _text(data.get("text"), CONTACT_NOTE_LIMIT + 1).strip()
+    if not text:
+        return _response(runtime, {"error": "note_required"}, 400)
+    if len(text) > CONTACT_NOTE_LIMIT:
+        return _response(runtime, {"error": "note_too_long"}, 413)
+    existing = await runtime.open(row.get("data"))
+    existing = existing if isinstance(existing, dict) else {}
+    note = {"id": runtime.new_id(), "at": runtime.now(), "by": actor, "text": text}
+    contact = dict(existing, noteLog=_note_log(
+        _note_log(existing.get("noteLog")) + [note]))
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET data=? WHERE org_bi=? AND contact_id=?",
+        await runtime.seal(contact), org_bi, contact_id)
+    await runtime.audit(actor, "crm.contact.note", "crm_contact", contact_id)
+    views = await _org_list_views(runtime, org_bi)
+    list_ids = _contact_lists(contact, views, _pipeline_lists(views))
+    await _record_list_activity(
+        runtime, org_bi, list_ids, account_bi, actor, "contact.noted",
+        {"count": 1, "contacts": [_contact_label(contact)],
+         "note": _note_excerpt(text)})
+    lists = [view for view in views if view["id"] in list_ids]
+    pinged = await _note_ping(runtime, org_bi, org_name, actor, contact_id,
+                              contact, note, lists)
+    return _response(runtime, {
+        "ok": True, "note": note, "pinged": pinged,
+        "contact": await _contact_project(
+            runtime, await _contact_row(runtime, org_bi, contact_id)),
+    }, 201)
 
 
 async def _merge_contacts(runtime, org_bi, account_bi, actor, data):
@@ -2704,6 +2833,10 @@ def _list_activity_text(action, details):
     if action == "contact.merged":
         return "merged %s into %s" % (_clean(details.get("merged"), 160) or "a contact",
                                       _names_phrase(details))
+    if action == "contact.noted":
+        note = _clean(details.get("note"), NOTE_PING_EXCERPT)
+        return "added a note on " + _names_phrase(details) + (
+            ": \u201c" + note + "\u201d" if note else "")
     if action == "contact.emailed":
         subject = _clean(details.get("subject"), 200)
         return "emailed " + _names_phrase(details) + (
@@ -5437,6 +5570,7 @@ ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "lookup", "bulk", "merge", "delete-column", "evidence", "send", "link",
+    "note",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange"})
 ACTIVITY_PINGS = {
     ("contacts", "", "POST"): ("New CRM contact", "team", False),
@@ -5586,7 +5720,7 @@ async def handle(runtime, path):
     elif route[0] == "shared-contacts":
         allowed = ("PATCH",) if item else ("POST",)
     elif resource == "contacts" and item in ("import", "lookup", "bulk", "merge",
-                                             "delete-column", "evidence"):
+                                             "delete-column", "evidence", "note"):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
@@ -5801,6 +5935,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "lookup":
             return await _lookup_contact(runtime, org_bi, data)
+        if item == "note":
+            return await _add_contact_note(
+                runtime, org_bi, org_name, account_bi, actor, data)
         if item == "bulk":
             return await _bulk_update_contacts(
                 runtime, org_bi, org_name, account_bi, actor, data)
