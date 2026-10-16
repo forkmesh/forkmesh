@@ -682,8 +682,6 @@ void MainWindow::exportConfigData()
         setDataStatus("There's no configuration to export yet.", true);
         return;
     }
-    if (coreExportArchive(out))
-        return;
 
     // The archive covers the whole live database, which the hint above warns
     // can run to gigabytes; gzipping it took minutes with the GUI thread parked
@@ -799,8 +797,6 @@ void MainWindow::restoreConfigArchive(const QString &in)
     const QString workRoot =
         appParent + QStringLiteral("/tmp-forkmesh-import-") + stamp;
     QDir().mkpath(workRoot);
-    if (coreUnpackArchive(in, workRoot, stamp))
-        return;
 
     // Unpacking is the mirror image of the export: gigabytes of gzip, minutes
     // of work. Run it asynchronously and pick the restore back up in
@@ -958,7 +954,7 @@ void MainWindow::installBackupHost()
         pruneOldBackups();
         refreshBackupTable();
     };
-    host.running = [this] { return m_backupProcess != nullptr || coreBackupRunning(); };
+    host.running = [this] { return m_backupProcess != nullptr; };
     host.backUpNow = [this] { takeBackupNow(false); };
     host.restore = [this](const QString &path) { restoreConfigArchive(path); };
     host.snapshotsChanged = [this] { refreshBackupTable(); };
@@ -967,11 +963,6 @@ void MainWindow::installBackupHost()
 
 void MainWindow::startAutoBackups()
 {
-    if (coreConfigureBackups(true)) {
-        if (m_backupTimer)
-            m_backupTimer->stop();
-        return;
-    }
     if (!m_backupTimer) {
         m_backupTimer = new QTimer(this);
         m_backupTimer->setInterval(
@@ -995,8 +986,6 @@ void MainWindow::startAutoBackups()
 
 void MainWindow::takeBackupNow(bool automatic)
 {
-    if (coreTakeBackup(automatic))
-        return;
     if (automatic && !autoBackupEnabled())
         return;
     if (m_backupProcess) {
@@ -1080,8 +1069,6 @@ void MainWindow::takeBackupNow(bool automatic)
 
 void MainWindow::pruneOldBackups()
 {
-    if (corePruneBackups())
-        return;
     const QList<forkmesh::BackupSnapshot> stale = forkmesh::backupsToPrune(
         forkmesh::listBackups(backupRoot()), backupKeepCount());
     for (const forkmesh::BackupSnapshot &snapshot : stale)
@@ -1275,7 +1262,6 @@ void MainWindow::stopLiveServicesForDataOp()
         m_heartbeatTimer->stop();
     if (m_backupTimer)
         m_backupTimer->stop();
-    cancelCoreBackups();
     if (m_backupProcess) {
         // code-health: allow(blocking-wait) stop path before a confirmed data wipe or config restore; SIGKILL then a reap bounded at 2 s
         m_backupProcess->disconnect(this);

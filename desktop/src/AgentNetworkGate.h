@@ -107,7 +107,7 @@ public:
     Server();
     ~Server();
 
-    bool listen(QString *error = nullptr, const QString &path = QString());
+    bool listen(QString *error = nullptr);
     QString socketPath() const;
     void setRequestHandler(RequestHandler handler) { m_onRequest = std::move(handler); }
     void setFailureHandler(FailureHandler handler) { m_onFailure = std::move(handler); }

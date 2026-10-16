@@ -1074,24 +1074,3 @@ def test_the_mac_lock_is_shared_with_the_ios_builds_and_retaken_by_a_retry(tmp_p
     ran = _mac_shell(tmp_path, owned)
     assert ran.stdout == "ran\n"
     assert (tmp_path / "ci/lock/pid").read_text().strip().isdigit()
-
-
-def test_vaulted_actions_variable_is_read_from_the_vault(monkeypatch):
-    asked = []
-    monkeypatch.setattr(tool, "vault_actions_variable", lambda name: asked.append(name) or "from-vault")
-    conf = ('[actions]\nvariables="@ByteArray({\\"CODEMAGIC_APP_ID\\":\\"plain\\",'
-            '\\"CODEMAGIC_API_TOKEN\\":\\"[stored in the ForkMesh vault]\\"})"\n')
-    assert tool.actions_variable(conf, "CODEMAGIC_APP_ID") == "plain"
-    assert tool.actions_variable(conf, "CODEMAGIC_API_TOKEN") == "from-vault"
-    assert asked == ["CODEMAGIC_API_TOKEN"]
-
-
-def test_release_password_reads_plain_files_and_reports_an_unreadable_vault(tmp_path, monkeypatch):
-    monkeypatch.setattr(tool, "FORKMESH_DATA", tmp_path)
-    password = tmp_path / ".apk-keystore-password"
-    password.write_text(" secret \n")
-    assert tool.release_password(password, "apk-keystore-password") == "secret"
-    password.write_text("[stored in the ForkMesh vault]\n")
-    with pytest.raises(tool.ConfigError) as raised:
-        tool.release_password(password, "apk-keystore-password")
-    assert "vault_missing" in str(raised.value)

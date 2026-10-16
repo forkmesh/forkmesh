@@ -11,6 +11,12 @@ bool acquireSingleInstance(const QString &activationTarget = QString(),
 
 void setBackgroundInstance();
 
+void setBackgroundLockWait(int milliseconds);
+
+bool singleInstanceHeld();
+
+bool askBackgroundInstanceToQuit();
+
 bool isBackgroundInstance();
 
 void onSingleInstanceYield(std::function<void()> handler);

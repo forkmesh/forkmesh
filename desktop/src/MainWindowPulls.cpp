@@ -5,7 +5,6 @@
 #include "PullDecision.h"
 #include "SafeDelete.h"
 #include "AgentCliLocator.h"
-#include "CoreClient.h"
 #include "SystemPressure.h"
 #include "FederatedThreadView.h"
 #include "KebabHeaderView.h"
@@ -12481,11 +12480,6 @@ void MainWindow::sweepPullChecksFor(RepositoryRecord repo)
     if (nowMs - m_pullChecksSweepAtMs.value(key, 0) < kSweepIntervalMs)
         return;
     m_pullChecksSweepAtMs.insert(key, nowMs);
-    if (coreActionQueueActive() &&
-        m_coreClient->hasNativeRoute(QStringLiteral("core.actions.queue.pullChecks"))) {
-        queueChecksForOpenPulls(writable, {});
-        return;
-    }
     runOffThread<QList<PullRequest>>(
         [store] {
             const forkmesh::BackgroundScope activity(

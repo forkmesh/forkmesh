@@ -22,8 +22,8 @@ Topic pages in this folder:
 - [ui-redesign.md](ui-redesign.md): the interface redesign plan: design tokens, components, welcome and sign-in, expanded sidebar, phases and rules
 - [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
 - [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
-- [core.md](core.md): `forkmesh-core`, the Go background engine the desktop and phones share, and the migration checklist
-- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children) and what it leaves running
+- [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
+- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
@@ -43,6 +43,8 @@ Everything is in `desktop/`.
 | `src/MainWindowInternal.h`, `src/MainWindowInternal1-4.cpp` | Shared helper widgets and functions (namespace `forkmesh::ui`) |
 | `src/MainWindowNavigation.cpp`, `src/Rail*.h` | The left rail: sections, folders, groups, sorting, shortcuts |
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
+| `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/TrayMode.*` | Running without a window (`--headless`), start at boot, the tray ([lifecycle](lifecycle.md#running-without-a-window)) |
+| `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
 | `src/ProjectAgentAccess.*`, `src/AgentRunRules.*`, `src/AgentNetworkGate.*` | Agent access policy, run/ask/deny decisions, external-call and destructive-command gate |
@@ -57,7 +59,6 @@ Everything is in `desktop/`.
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
 | `src/MarkdownRender.h`, `src/MarkdownDocument.h` | Markdown rendering shared by README views and packages |
 | `src/Tooltips.h` | The app-drawn tooltip window |
-| `src/CoreClient.*`, `src/Core*.*`, `src/MainWindowCore*.cpp` | The desktop's client and facades for `forkmesh-core`, the Go engine in `core/` ([core.md](core.md)) |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 
 ## Architecture
@@ -67,9 +68,11 @@ Everything is in `desktop/`.
   default project is `forkmesh`. A second launch hands its target (a
   `forkmesh://` link, a folder path or a `file://` URL) to the running window
   over that socket; macOS delivers it as a `QFileOpenEvent`. If the running
-  instance is the one the engine runs without a window, it answers `yield`
-  and quits, and the new launch takes the lock and opens the window
-  ([core.md](core.md), Independent lifecycle). The socket name carries the
+  instance is ForkMesh running without a window, it answers `yield` and
+  quits, and the new launch takes the lock and opens the window
+  ([lifecycle.md](lifecycle.md#running-without-a-window)). Several projects
+  run side by side, each with its own window or windowless instance, tray,
+  and start-at-boot unit. The socket name carries the
   project and, for a state folder outside the default place, the first 16
   hex digits of the SHA-256 of that folder. Until 2026-10-15 it used
   `qHash`, which Qt seeds per process, so two launches of a sandboxed

@@ -8,23 +8,11 @@
 #include <QString>
 #include <QStringList>
 
-#include <memory>
-
 #include "ActionFile.h"
 #include "ActionStore.h"
 
 class QProcess;
 class QTimer;
-
-class ActionRunnerCoreLink
-{
-public:
-    virtual ~ActionRunnerCoreLink() = default;
-    virtual bool start(const ActionRun &run, const ActionWorkflow &workflow,
-                       const QString &mirrorPath, const QString &workTreePath,
-                       const QMap<QString, QString> &variables) = 0;
-    virtual bool stop() = 0;
-};
 
 struct ActionSandboxLimits {
     qint64 maxMemoryBytes = 4LL * 1024 * 1024 * 1024;
@@ -93,10 +81,6 @@ public:
                                                qint64 graceMs = -1);
     static QSet<QString> claimedSandboxNames();
     static QString removeUnclaimedSandbox(const QString &base, const QString &path);
-
-    void setCoreLink(std::unique_ptr<ActionRunnerCoreLink> link) { m_coreLink = std::move(link); }
-    ActionRunnerCoreLink *coreLink() const { return m_coreLink.get(); }
-    bool coreRun() const { return m_coreRun; }
     static bool checkoutLostWorktreeRace(const QString &output);
 
 signals:
@@ -224,7 +208,4 @@ private:
     QTimer *m_jobTimer = nullptr;
     QTimer *m_terminationTimer = nullptr;
     QProcess *m_process = nullptr;
-    friend class CoreActionRunnerLink;
-    std::unique_ptr<ActionRunnerCoreLink> m_coreLink;
-    bool m_coreRun = false;
 };

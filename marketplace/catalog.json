@@ -54,7 +54,7 @@
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
     { "id": "backups", "version": "1.0.0", "manifest": "packages/backups/manifest.json" },
     { "id": "docs", "version": "1.2.0", "manifest": "packages/docs/manifest.json" },
-    { "id": "cleanup", "version": "1.1.0", "manifest": "packages/cleanup/manifest.json" },
+    { "id": "cleanup", "version": "1.2.0", "manifest": "packages/cleanup/manifest.json" },
     { "id": "computer-security", "version": "1.2.0", "manifest": "packages/computer-security/manifest.json" },
     { "id": "status-page", "version": "2.1.0", "manifest": "packages/status-page/manifest.json" },
     { "id": "logs", "version": "1.0.0", "manifest": "packages/logs/manifest.json" },

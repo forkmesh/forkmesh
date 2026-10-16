@@ -5,7 +5,6 @@
 // a host that will not resolve), the agent waits on a prompt that lets the
 // user grant the access (AgentAccessFailure.h).
 
-#include "CoreClient.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "AgentNetworkGate.h"
@@ -20,7 +19,6 @@
 #include "ProjectRegistry.h"
 #include "VirtualMachineRuntime.h"
 
-#include <QCryptographicHash>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -303,17 +301,7 @@ QStringList MainWindow::agentNetworkGateEnv(int sessionId)
     if (!m_agentNetworkGate) {
         m_agentNetworkGate = std::make_unique<forkmesh::agentnet::Server>();
         QString error;
-        const QString stablePath = QDir(QDir::tempPath()).filePath(
-            QStringLiteral("forkmesh-agent-gate-%1-%2")
-                .arg(QString::fromLatin1(qgetenv("USER")).isEmpty()
-                         ? QStringLiteral("user")
-                         : QString::fromLatin1(qgetenv("USER")))
-                .arg(QString::fromLatin1(
-                    QCryptographicHash::hash(forkmesh::core::defaultStateDirectory().toUtf8(),
-                                             QCryptographicHash::Sha256)
-                        .toHex()
-                        .left(12))));
-        if (!m_agentNetworkGate->listen(&error, stablePath)) {
+        if (!m_agentNetworkGate->listen(&error)) {
             m_agentNetworkGate.reset();
             if (!gateCalls)
                 return {};

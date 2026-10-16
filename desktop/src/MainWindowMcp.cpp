@@ -3,7 +3,6 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "McpConnector.h"
-#include "SettingsSecretBackend.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -378,7 +377,7 @@ void MainWindow::refreshMcpConnectorTab()
     // Genie: show the saved website credential and workflow.
     const QSettings settings;
     const QString genieToken =
-        forkmesh::settingsecrets::value(settings, kGenieTokenSetting).trimmed();
+        settings.value(kGenieTokenSetting).toString().trimmed();
     if (m_genieTokenEdit && m_genieTokenEdit->text().trimmed() != genieToken)
         m_genieTokenEdit->setText(genieToken);
     if (m_genieOrgEdit)
@@ -576,7 +575,7 @@ QUrl MainWindow::genieMcpUrl() const
 QString MainWindow::genieSetupPrompt(const QString &extraInstruction) const
 {
     const QSettings settings;
-    const QString token = forkmesh::settingsecrets::value(settings, kGenieTokenSetting).trimmed();
+    const QString token = settings.value(kGenieTokenSetting).toString().trimmed();
     const QString org = settings.value(kGenieOrgSetting).toString().trimmed();
     const bool deploy =
         settings.value(kGenieWorkflowSetting, QStringLiteral("pr")).toString() ==
@@ -673,7 +672,7 @@ void MainWindow::startGenieAgent()
     const QString typed =
         m_issueQuickAdd ? m_issueQuickAdd->toPlainText().trimmed() : QString();
     const QString token =
-        forkmesh::settingsecrets::value(QSettings(), kGenieTokenSetting).trimmed();
+        QSettings().value(kGenieTokenSetting).toString().trimmed();
     if (token.isEmpty()) {
         // Nothing to configure by hand: this install is already signed in as its
         // account, so it mints its own task-only credential and then launches.
@@ -752,7 +751,7 @@ void MainWindow::requestGenieCredential(int repoIndex,
                     return;
                 }
                 QSettings settings;
-                forkmesh::settingsecrets::store(settings, kGenieTokenSetting, token, token);
+                settings.setValue(kGenieTokenSetting, token);
                 const QString org =
                     obj.value(QStringLiteral("organization")).toString().trimmed();
                 if (!org.isEmpty())
@@ -862,18 +861,11 @@ void MainWindow::saveGenieSettings()
         return;
     QSettings settings;
     const QString token = m_genieTokenEdit->text().trimmed();
-    const bool stored = forkmesh::settingsecrets::store(settings, kGenieTokenSetting, token, token);
+    settings.setValue(kGenieTokenSetting, token);
     settings.setValue(kGenieOrgSetting, m_genieOrgEdit->text().trimmed());
     settings.setValue(kGenieWorkflowSetting,
                       m_genieWorkflowCombo->currentData().toString());
     refreshMcpConnectorTab();
-    if (!stored) {
-        showLocalNotice(m_genieStatusLabel,
-                        QStringLiteral("The Genie credential was not saved: it lives in the encrypted "
-                                       "vault and the background engine is not running."),
-                        true);
-        return;
-    }
     showLocalNotice(m_genieStatusLabel,
                     token.isEmpty()
                         ? QStringLiteral("Genie credential cleared.")

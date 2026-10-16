@@ -5,13 +5,10 @@
 #include "AgentToolPolicy.h"
 
 #include "AgentJail.h"
-#include "AgentProcess.h"
 #include "AgentResources.h"
-#include "CoreAgentRun.h"
 #include "VirtualMachineRuntime.h"
 
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMetaObject>
@@ -113,9 +110,6 @@ void ClaudeStreamSession::startRuntime(const AgentRuntimeLaunch &launch)
     m_extraSettings = launch.options.value(QStringLiteral("claudeSettings")).toString();
     if (m_extraSettings.contains(QLatin1Char('\'')))
         m_extraSettings.clear(); // would break out of the quoted argument
-    m_processKey = launch.options.value(QStringLiteral("processKey")).toString();
-    m_processMeta = launch.options.value(QStringLiteral("processMeta")).toObject();
-    m_hostSessionId = launch.sessionId;
     start(launch.workingDirectory, launch.environment, launch.initialPrompt,
           launch.permissionMode, launch.resumeId, launch.model, launch.effort,
           launch.fallbackModels.value(0), launch.memoryLimitMb,
@@ -154,34 +148,13 @@ void ClaudeStreamSession::launch()
     stop();
     m_framer.reset();
     m_conversationOpened = false;
-    m_turnIdle = false;
     m_exitReported = false;
     m_exitBarrierPending = false;
 
     const QString cwd = m_cwd;
     const QString initialPrompt = m_initialPrompt;
 
-    AgentProcess::Options processOptions;
-    m_currentKey.clear();
-    const bool transientParse = m_processKey.isEmpty() && forkmesh::coreagentrun::available();
-    if (!m_processKey.isEmpty()) {
-        m_currentKey = QStringLiteral("%1-%2").arg(m_processKey).arg(
-            QDateTime::currentMSecsSinceEpoch());
-        processOptions.key = m_currentKey;
-        processOptions.detachable = true;
-    } else if (transientParse) {
-        m_currentKey = forkmesh::coreagentrun::transientKey(QStringLiteral("claude"));
-        processOptions.key = m_currentKey;
-    }
-    m_deliveredOffset = -1;
-    m_ackedOffset = -1;
-    m_ackPending = false;
-    m_parseRequested = transientParse ||
-                       (!m_processKey.isEmpty() && !m_hostSessionId.isEmpty() &&
-                        forkmesh::coreagentrun::available());
-    if (m_parseRequested)
-        forkmesh::coreagentrun::pushCredentials();
-    m_proc = AgentProcess::create(this, processOptions);
+    m_proc = new QProcess(this);
     m_proc->setWorkingDirectory(cwd);
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -200,7 +173,27 @@ void ClaudeStreamSession::launch()
     forkmesh::vm::applyGuestEnvironmentPolicy(env);
     forkmesh::agentresources::applyEnvironment(env);
     m_proc->setProcessEnvironment(env);
-    connectProcess();
+
+    connect(m_proc, &QProcess::readyReadStandardOutput, this,
+            &ClaudeStreamSession::onStdout);
+    connect(m_proc, &QProcess::readyReadStandardError, this,
+            &ClaudeStreamSession::onStderr);
+    connect(m_proc, &QProcess::started, this, &ClaudeStreamSession::started);
+    connect(m_proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this](int code, QProcess::ExitStatus) {
+                processExited(code);
+            });
+    connect(m_proc, &QProcess::errorOccurred, this,
+            [this](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                emit stderrText(
+                    QStringLiteral(
+                        "Claude Code could not be started in %1 (the working "
+                        "directory may be gone, or `claude` is not on PATH).\n")
+                        .arg(m_cwd));
+                reportExit(-1);
+            });
 
     QString cmd = QStringLiteral(
         "exec claude --output-format stream-json --input-format stream-json "
@@ -241,7 +234,7 @@ void ClaudeStreamSession::launch()
             QStringLiteral("bash"), {QStringLiteral("-lc"), cmd}, cwd,
             m_guardrails, env);
     if (!guarded.error.isEmpty()) {
-        AgentProcess *failed = m_proc;
+        QProcess *failed = m_proc;
         m_proc = nullptr;
         failed->deleteLater();
         emit stderrText(QStringLiteral("Agent guardrails refused the launch: %1\n")
@@ -252,157 +245,25 @@ void ClaudeStreamSession::launch()
     const forkmesh::vm::LaunchCommand launchCmd =
         forkmesh::vm::isolateCommand(guarded.program, guarded.arguments, cwd);
     if (!launchCmd.error.isEmpty()) {
-        AgentProcess *failed = m_proc;
+        QProcess *failed = m_proc;
         m_proc = nullptr;
         failed->deleteLater();
         emit stderrText(QStringLiteral("KVM launch failed: %1").arg(launchCmd.error));
         QTimer::singleShot(0, this, [this] { reportExit(-1); });
         return;
     }
-    m_proc->updateMeta(processMeta());
-    if (launchCmd.isolated)
-        m_proc->start(launchCmd.program, launchCmd.arguments);
-    else
-        m_proc->startContained(launchCmd.program, launchCmd.arguments,
-                               forkmesh::agentresources::launchLabel(
-                                   QStringLiteral("claude"), env));
+    const forkmesh::agentresources::Launch contained =
+        launchCmd.isolated
+            ? forkmesh::agentresources::Launch{launchCmd.program,
+                                               launchCmd.arguments}
+            : forkmesh::agentresources::contain(
+                  launchCmd.program, launchCmd.arguments,
+                  forkmesh::agentresources::launchLabel(
+                      QStringLiteral("claude"), env));
+    m_proc->start(contained.program, contained.arguments);
 
     if (!initialPrompt.isEmpty())
         writeUserTurn(initialPrompt);
-}
-
-void ClaudeStreamSession::connectProcess()
-{
-    connect(m_proc, &AgentProcess::readyReadStandardOutput, this,
-            &ClaudeStreamSession::onStdout);
-    connect(m_proc, &AgentProcess::readyReadStandardError, this,
-            &ClaudeStreamSession::onStderr);
-    connect(m_proc, &AgentProcess::started, this, [this] {
-        if (m_parseRequested && !m_coreParsed && !m_coreAttachPending) {
-            if (m_proc && m_proc->parsedByCore())
-                beginCoreParse(0);
-        }
-        emit started();
-    });
-    connect(m_proc, &AgentProcess::finished, this,
-            [this](int code, QProcess::ExitStatus) { onNativeExit(code); });
-    connect(m_proc, &AgentProcess::errorOccurred, this,
-            [this](QProcess::ProcessError error) {
-                if (error != QProcess::FailedToStart)
-                    return;
-                emit stderrText(
-                    QStringLiteral(
-                        "Claude Code could not be started in %1 (the working "
-                        "directory may be gone, or `claude` is not on PATH).\n")
-                        .arg(m_cwd));
-                reportExit(-1);
-            });
-}
-
-QJsonObject ClaudeStreamSession::processMeta() const
-{
-    QJsonObject meta = m_processMeta;
-    meta.insert(QStringLiteral("runtime"), AgentRuntimeIds::ClaudeStreamJson);
-    meta.insert(QStringLiteral("processKey"), m_processKey);
-    meta.insert(QStringLiteral("sessionId"), m_hostSessionId);
-    meta.insert(QStringLiteral("cwd"), m_cwd);
-    meta.insert(QStringLiteral("permissionMode"), m_permissionMode);
-    meta.insert(QStringLiteral("launchedPermissionMode"), m_launchedPermissionMode);
-    meta.insert(QStringLiteral("launchedBypassing"), m_launchedBypassing);
-    meta.insert(QStringLiteral("resumeSessionId"), m_resumeSessionId);
-    meta.insert(QStringLiteral("model"), m_model);
-    meta.insert(QStringLiteral("effort"), m_effort);
-    meta.insert(QStringLiteral("conversationOpened"), m_conversationOpened);
-    if (m_parseRequested)
-        meta.insert(QStringLiteral("parse"), QStringLiteral("claude"));
-    if (m_parseRequested && m_processKey.isEmpty())
-        meta.insert(QStringLiteral("transient"), true);
-    return meta;
-}
-
-bool ClaudeStreamSession::attachProcess(const QString &key, const QJsonObject &meta,
-                                        qint64 stdoutOffset, qint64 stderrOffset,
-                                        qint64 pid)
-{
-    stop();
-    m_exitReported = false;
-    m_exitBarrierPending = false;
-    m_processMeta = meta;
-    m_processKey = meta.value(QStringLiteral("processKey")).toString();
-    m_hostSessionId = meta.value(QStringLiteral("sessionId")).toString();
-    m_cwd = meta.value(QStringLiteral("cwd")).toString();
-    m_permissionMode = meta.value(QStringLiteral("permissionMode")).toString();
-    m_launchedPermissionMode = meta.value(QStringLiteral("launchedPermissionMode")).toString();
-    m_launchedBypassing = meta.value(QStringLiteral("launchedBypassing")).toBool();
-    m_pendingPermissionMode.clear();
-    m_pendingPermissionRequestId.clear();
-    m_resumeSessionId = meta.value(QStringLiteral("resumeSessionId")).toString();
-    m_model = meta.value(QStringLiteral("model")).toString();
-    m_effort = meta.value(QStringLiteral("effort")).toString();
-    m_conversationOpened = meta.value(QStringLiteral("conversationOpened")).toBool(true);
-    m_resumeFallbackUsed = true;
-    AgentProcess::Options options;
-    options.attachKey = key;
-    options.detachable = true;
-    options.stdoutOffset = stdoutOffset;
-    options.stderrOffset = stderrOffset;
-    options.pid = pid;
-    options.meta = meta;
-    m_parseRequested = meta.value(QStringLiteral("parse")).toString() == QLatin1String("claude") &&
-                       forkmesh::coreagentrun::available();
-    if (!m_parseRequested)
-        options.meta.remove(QStringLiteral("parse"));
-    m_proc = AgentProcess::create(this, options);
-    if (!m_proc)
-        return false;
-    m_currentKey = key;
-    m_deliveredOffset = stdoutOffset;
-    m_ackedOffset = stdoutOffset;
-    m_ackPending = false;
-    connectProcess();
-    if (m_parseRequested)
-        beginCoreParse(stdoutOffset);
-    return true;
-}
-
-void ClaudeStreamSession::scheduleAck()
-{
-    if (m_coreParsed || m_coreAttachPending || m_ackPending || !m_proc || !m_proc->coreBacked() ||
-        m_deliveredOffset <= m_ackedOffset)
-        return;
-    m_ackPending = true;
-    const quint64 generation = m_parseGeneration;
-    QPointer<ClaudeStreamSession> guard(this);
-    QPointer<AgentProcess> process(m_proc);
-    QTimer::singleShot(250, this, [guard, generation, process] {
-        if (!guard || guard->m_parseGeneration != generation || !process ||
-            guard->m_proc != process) {
-            if (guard)
-                guard->m_ackPending = false;
-            return;
-        }
-        const qint64 target = guard->m_deliveredOffset;
-        const auto acknowledge = [guard, generation, process, target] {
-            QMetaObject::invokeMethod(
-                guard,
-                [guard, generation, process, target] {
-                    if (!guard)
-                        return;
-                    guard->m_ackPending = false;
-                    if (guard->m_parseGeneration != generation || !process ||
-                        guard->m_proc != process)
-                        return;
-                    process->acknowledge(target, process->stderrOffset());
-                    guard->m_ackedOffset = qMax(guard->m_ackedOffset, target);
-                    guard->scheduleAck();
-                },
-                Qt::QueuedConnection);
-        };
-        if (guard->m_finishBarrier)
-            guard->m_finishBarrier(acknowledge);
-        else
-            acknowledge();
-    });
 }
 
 bool ClaudeStreamSession::setPermissionMode(const QString &permissionMode)
@@ -435,7 +296,6 @@ bool ClaudeStreamSession::setPermissionMode(const QString &permissionMode)
     m_permissionMode = mode;
     m_pendingPermissionMode = mode;
     m_pendingPermissionRequestId = requestId;
-    m_proc->updateMeta({{QStringLiteral("permissionMode"), m_permissionMode}});
     return true;
 }
 
@@ -458,8 +318,6 @@ void ClaudeStreamSession::notePermissionModeResponse(const QJsonObject &ev)
         m_permissionMode = m_launchedPermissionMode;
     m_pendingPermissionMode.clear();
     m_pendingPermissionRequestId.clear();
-    if (m_proc)
-        m_proc->updateMeta({{QStringLiteral("permissionMode"), m_permissionMode}});
 }
 
 bool ClaudeStreamSession::sendUserText(const QString &text)
@@ -490,9 +348,6 @@ bool ClaudeStreamSession::sendCommand(const AgentRuntimeCommand &command)
 
 bool ClaudeStreamSession::writeUserTurn(const QString &text)
 {
-    m_turnIdle = false;
-    if (m_proc)
-        m_proc->setIdle(false);
     return writeLine(QJsonObject{
         {QStringLiteral("type"), QStringLiteral("user")},
         {QStringLiteral("message"),
@@ -557,108 +412,8 @@ void ClaudeStreamSession::reportExit(int exitCode)
 
 void ClaudeStreamSession::stop()
 {
-    endCoreParse();
     resetParsing();
     stopProcess(/*finalTeardown=*/false);
-}
-
-void ClaudeStreamSession::beginCoreParse(qint64 after)
-{
-    if (m_currentKey.isEmpty())
-        return;
-    const QString key = m_currentKey;
-    const quint64 generation = m_parseGeneration;
-    m_coreAttachPending = true;
-    m_storedOffset = qMax<qint64>(0, after);
-    QPointer<ClaudeStreamSession> guard(this);
-    forkmesh::coreagentrun::subscribe(key, this, [guard, key](const QString &event, const QJsonObject &data) {
-        if (guard && guard->m_currentKey == key)
-            guard->onCoreRunEvent(event, data);
-    });
-    forkmesh::coreagentrun::attach(
-        key, m_storedOffset, this,
-        [guard, key, generation](bool ok, const QJsonObject &, const QString &) {
-            if (!guard || guard->m_currentKey != key || guard->m_parseGeneration != generation)
-                return;
-            guard->m_coreAttachPending = false;
-            guard->m_coreParsed = ok;
-            if (ok)
-                return;
-            forkmesh::coreagentrun::unsubscribe(key, guard);
-            if (guard->m_deferredNativeExit) {
-                const int code = *guard->m_deferredNativeExit;
-                guard->m_deferredNativeExit.reset();
-                guard->processExited(code);
-            }
-        });
-}
-
-void ClaudeStreamSession::endCoreParse()
-{
-    if (!m_coreParsed && !m_coreAttachPending)
-        return;
-    if (!m_currentKey.isEmpty()) {
-        forkmesh::coreagentrun::unsubscribe(m_currentKey, this);
-        forkmesh::coreagentrun::detach(m_currentKey);
-    }
-    m_coreParsed = false;
-    m_coreAttachPending = false;
-    m_deferredNativeExit.reset();
-}
-
-void ClaudeStreamSession::onNativeExit(int exitCode)
-{
-    if (m_coreParsed)
-        return;
-    if (m_coreAttachPending) {
-        m_deferredNativeExit = exitCode;
-        return;
-    }
-    processExited(exitCode);
-}
-
-void ClaudeStreamSession::onCoreRunEvent(const QString &event, const QJsonObject &data)
-{
-    if (event == QLatin1String("core.agentrun.reconnected")) {
-        if (m_coreParsed && !m_pendingProcessExit && !m_exitReported) {
-            m_coreParsed = false;
-            beginCoreParse(m_storedOffset);
-        }
-        return;
-    }
-    if (event == QLatin1String("core.agentrun.exit")) {
-        if (!m_coreParsed && !m_coreAttachPending)
-            return;
-        m_deferredNativeExit.reset();
-        m_pendingProcessExit = data.value(QStringLiteral("code")).toInt();
-        finishAfterParsing();
-        return;
-    }
-    if (event != QLatin1String("core.agentrun.event"))
-        return;
-    const QString errorText = data.value(QStringLiteral("stderr")).toString();
-    if (!errorText.isEmpty())
-        emit stderrText(errorText);
-    const qint64 so = data.contains(QStringLiteral("so"))
-                          ? qint64(data.value(QStringLiteral("so")).toDouble())
-                          : -1;
-    if (so > m_storedOffset)
-        m_storedOffset = so;
-    const QString line = data.value(QStringLiteral("line")).toString();
-    if (!line.isEmpty()) {
-        queueParsedLine(line.toUtf8(), so, true);
-        return;
-    }
-    const QString raw = data.value(QStringLiteral("raw")).toString();
-    if (!raw.isEmpty()) {
-        ParsedLine parsed;
-        parsed.raw = raw;
-        parsed.stored = true;
-        parsed.endOffset = so;
-        const quint64 sequence = m_nextQueuedLine++;
-        ++m_pendingParseCount;
-        receiveParsedLine(sequence, m_parseGeneration, std::move(parsed));
-    }
 }
 
 void ClaudeStreamSession::resetParsing()
@@ -682,13 +437,9 @@ void ClaudeStreamSession::stopProcess(bool finalTeardown)
 {
     if (!m_proc)
         return;
-    AgentProcess *proc = m_proc;
+    QProcess *proc = m_proc;
     m_proc = nullptr;
     proc->disconnect(this);
-    if (finalTeardown && !m_turnIdle && proc->keepsRunningAfterQuit()) {
-        delete proc;
-        return;
-    }
     if (finalTeardown) {
         // MainWindow is destroyed after QApplication::exec() returns.  At that
         // point deleteLater() has no event-loop turn left in which to run.
@@ -706,12 +457,11 @@ void ClaudeStreamSession::stopProcess(bool finalTeardown)
         return;
     }
     proc->setParent(nullptr);
-    proc->setForgetOnExit(true);
     if (proc->state() == QProcess::NotRunning) {
         proc->deleteLater();
         return;
     }
-    connect(proc, &AgentProcess::finished, proc, &QObject::deleteLater);
+    connect(proc, &QProcess::finished, proc, &QObject::deleteLater);
     proc->closeWriteChannel(); // signal end-of-input first
     proc->terminate();
     QTimer::singleShot(1500, proc, [proc] {
@@ -739,36 +489,7 @@ void ClaudeStreamSession::onStdout()
 {
     if (!m_proc)
         return;
-    QByteArray bytes = m_proc->readAllStandardOutput();
-    const qint64 end = m_proc->stdoutOffset();
-    if (end < 0) {
-        ingestStdout(std::move(bytes));
-        return;
-    }
-    const qint64 start = end - bytes.size();
-    ingestStdoutAt(std::move(bytes), start);
-}
-
-void ClaudeStreamSession::ingestStdoutAt(QByteArray bytes, qint64 startOffset)
-{
-    qsizetype from = 0;
-    while (from < bytes.size()) {
-        const qsizetype newline = bytes.indexOf('\n', from);
-        const qsizetype to = newline < 0 ? bytes.size() : newline + 1;
-        AgentJsonlFramer::Result framed = m_framer.append(bytes.mid(from, to - from));
-        for (const QString &error : std::as_const(framed.errors)) {
-            emit stderrText(error);
-            emit event(QJsonObject{
-                {QStringLiteral("type"), QStringLiteral("_runtime_protocol_error")},
-                {QStringLiteral("message"), error}});
-        }
-        for (QByteArray &line : framed.frames) {
-            if (line.isEmpty() || isWhitespaceOnly(line))
-                continue;
-            queueStdoutLine(std::move(line), startOffset + to);
-        }
-        from = to;
-    }
+    ingestStdout(m_proc->readAllStandardOutput());
 }
 
 void ClaudeStreamSession::ingestStdout(QByteArray bytes)
@@ -787,22 +508,14 @@ void ClaudeStreamSession::ingestStdout(QByteArray bytes)
     }
 }
 
-void ClaudeStreamSession::queueStdoutLine(QByteArray line, qint64 endOffset)
-{
-    queueParsedLine(std::move(line), endOffset, false);
-}
-
-void ClaudeStreamSession::queueParsedLine(QByteArray line, qint64 endOffset, bool stored)
+void ClaudeStreamSession::queueStdoutLine(QByteArray line)
 {
     const quint64 generation = m_parseGeneration;
     const quint64 sequence = m_nextQueuedLine++;
     ++m_pendingParseCount;
     QPointer<ClaudeStreamSession> guard(this);
-    m_parsePool.start([guard, generation, sequence, endOffset, stored,
-                       line = std::move(line)]() mutable {
+    m_parsePool.start([guard, generation, sequence, line = std::move(line)]() mutable {
         ParsedLine parsed;
-        parsed.endOffset = endOffset;
-        parsed.stored = stored;
         parsed.raw = rawLineForDebugView(line);
         const QJsonDocument doc = QJsonDocument::fromJson(line);
         if (doc.isObject()) {
@@ -859,34 +572,14 @@ void ClaudeStreamSession::deliverParsedLines()
         ++m_nextDeliveredLine;
         --m_pendingParseCount;
 
-        if (!parsed.stored && parsed.endOffset > m_deliveredOffset)
-            m_deliveredOffset = parsed.endOffset;
         emit rawLine(parsed.raw);
         if (parsed.hasEvent) {
-            if (parsed.opensConversation && !m_conversationOpened) {
+            if (parsed.opensConversation)
                 m_conversationOpened = true;
-                if (m_proc)
-                    m_proc->updateMeta({{QStringLiteral("conversationOpened"), true}});
-            }
             notePermissionModeResponse(parsed.event);
-            if (parsed.event.value(QStringLiteral("type")).toString() == QLatin1String("result")) {
-                m_turnIdle = true;
-                if (m_proc)
-                    m_proc->setIdle(true);
-            }
-            if (parsed.stored) {
-                const forkmesh::coreagentrun::StoredDelivery delivery(&parsed.event);
-                emit event(parsed.event);
-                continue;
-            }
-            if (parsed.endOffset >= 0 && !m_currentKey.isEmpty()) {
-                parsed.event.insert(QStringLiteral("_so"), double(parsed.endOffset));
-                parsed.event.insert(QStringLiteral("_sk"), m_currentKey);
-            }
             emit event(parsed.event);
         }
     }
-    scheduleAck();
     finishAfterParsing();
 }
 

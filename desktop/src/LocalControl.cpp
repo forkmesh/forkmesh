@@ -458,7 +458,7 @@ void LocalControlServer::setReceiveDirectory(const QString &path)
 
 QList<LocalControlServer::Device> LocalControlServer::pairedDevices() const
 {
-    QList<Device> out = m_coreAttached ? m_coreDevices.values() : m_devices.values();
+    QList<Device> out = m_devices.values();
     std::sort(out.begin(), out.end(), [](const Device &a, const Device &b) {
         return a.pairedAtMs < b.pairedAtMs;
     });
@@ -467,14 +467,14 @@ QList<LocalControlServer::Device> LocalControlServer::pairedDevices() const
 
 bool LocalControlServer::isPaired(const QString &key) const
 {
-    return m_coreAttached ? m_coreDevices.contains(key) : m_devices.contains(key);
+    return m_devices.contains(key);
 }
 
 QList<LocalControlServer::Device> LocalControlServer::connectedDevices() const
 {
-    QList<Device> out = m_coreAttached ? m_coreConnected : QList<Device>();
+    QList<Device> out;
     for (const Connection *conn : m_connections)
-        if (conn->state != State::AwaitAuth && !conn->viaCore)
+        if (conn->state != State::AwaitAuth)
             out.append(conn->device);
     return out;
 }
@@ -489,12 +489,6 @@ bool LocalControlServer::isConnected(const QString &key) const
 
 void LocalControlServer::forget(const QString &key)
 {
-    if (m_coreAttached) {
-        if (m_core.request)
-            m_core.request(QStringLiteral("control.forget"),
-                           {{QStringLiteral("key"), key}}, {});
-        return;
-    }
     if (!m_devices.remove(key))
         return;
     saveDevices();
@@ -545,8 +539,6 @@ LocalControlServer::Device LocalControlServer::deviceFor(int connectionId) const
 
 bool LocalControlServer::linkOpen(const Connection &conn) const
 {
-    if (conn.viaCore)
-        return m_coreAttached && bool(m_core.notify);
     if (conn.relayed())
         return bool(m_relaySink);
     return conn.socket &&
@@ -789,7 +781,7 @@ void LocalControlServer::maintain(qint64 nowMs)
     QList<int> idle;
     QList<int> recheck;
     for (const Connection *conn : std::as_const(m_connections)) {
-        if (conn->state != State::Paired || conn->viaCore)
+        if (conn->state != State::Paired)
             continue;
         if (conn->relayed() && nowMs - conn->lastHeardMs >= kRelayIdleMs)
             idle.append(conn->id);
@@ -1060,7 +1052,8 @@ void LocalControlServer::admitStored(Connection &conn)
 {
     Device stored = m_devices.value(conn.device.key);
     stored.name = conn.device.name.isEmpty() ? stored.name : conn.device.name;
-    stored.user = conn.device.user.isEmpty() ? stored.user : conn.device.user;
+    if (!conn.device.user.isEmpty() && stored.approval == accountApproval())
+        stored.user = conn.device.user;
     stored.platform = conn.device.platform;
     stored.lastSeenMs = QDateTime::currentMSecsSinceEpoch();
     conn.device = stored;
@@ -1167,12 +1160,6 @@ QJsonObject LocalControlServer::sessionInfo(const Connection &conn) const
 
 void LocalControlServer::approvePairing(int connectionId)
 {
-    if (isCoreConnection(connectionId)) {
-        if (m_coreAttached && m_core.request)
-            m_core.request(QStringLiteral("control.approve"),
-                           {{QStringLiteral("connection"), connectionId - kCoreConnectionBase}}, {});
-        return;
-    }
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Pending)
         return;
@@ -1185,12 +1172,6 @@ void LocalControlServer::approvePairing(int connectionId)
 
 void LocalControlServer::denyPairing(int connectionId)
 {
-    if (isCoreConnection(connectionId)) {
-        if (m_coreAttached && m_core.request)
-            m_core.request(QStringLiteral("control.deny"),
-                           {{QStringLiteral("connection"), connectionId - kCoreConnectionBase}}, {});
-        return;
-    }
     Connection *conn = connection(connectionId);
     if (!conn || conn->state != State::Pending)
         return;
@@ -1346,10 +1327,6 @@ bool LocalControlServer::writeJson(Connection &conn, const QJsonObject &object)
 {
     if (conn.state == State::AwaitAuth || !linkOpen(conn))
         return false;
-    if (conn.viaCore)
-        return m_core.notify(QStringLiteral("control.reply"),
-                             {{QStringLiteral("connection"), conn.id - kCoreConnectionBase},
-                              {QStringLiteral("message"), object}});
     const QByteArray sealed = sealFrame(
         conn.sendKey, conn.sendCounter,
         QJsonDocument(object).toJson(QJsonDocument::Compact));
@@ -1428,35 +1405,6 @@ bool LocalControlServer::sendEventTo(int connectionId, const QString &event,
 bool LocalControlServer::sendFile(const QString &deviceKey, const QString &path,
                                   QString *error)
 {
-    if (m_coreAttached) {
-        bool connectedOnLan = false;
-        for (const Connection *conn : std::as_const(m_connections))
-            if (conn->viaCore && conn->state == State::Paired &&
-                conn->device.key == deviceKey && !conn->relayed())
-                connectedOnLan = true;
-        if (!connectedOnLan) {
-            if (error)
-                *error = QStringLiteral("That phone is not connected.");
-            return false;
-        }
-        const QFileInfo info(path);
-        if (!info.isFile() || !info.isReadable()) {
-            if (error)
-                *error = QStringLiteral("The file cannot be read.");
-            return false;
-        }
-        if (info.size() > kMaxFileBytes) {
-            if (error)
-                *error = QStringLiteral("The file is too large.");
-            return false;
-        }
-        if (m_core.request)
-            m_core.request(QStringLiteral("control.sendFile"),
-                           {{QStringLiteral("key"), deviceKey},
-                            {QStringLiteral("path"), info.absoluteFilePath()}},
-                           {});
-        return true;
-    }
     Connection *target = nullptr;
     for (Connection *conn : std::as_const(m_connections))
         if (conn->state == State::Paired && conn->device.key == deviceKey &&
@@ -1516,7 +1464,7 @@ void LocalControlServer::closeConnection(int id, const QString &reason)
     if (!conn)
         return;
     m_connections.removeOne(conn);
-    if (conn->relayed() && !conn->viaCore) {
+    if (conn->relayed()) {
         noteBounded(m_relayToldGone, conn->relaySession);
         if (!sendRelay({{QStringLiteral("type"), QStringLiteral("control")},
                         {QStringLiteral("action"), QStringLiteral("close")},
@@ -1614,190 +1562,4 @@ void LocalControlServer::saveDevices() const
     file.write(QJsonDocument(QJsonObject{{QStringLiteral("devices"), devices}})
                    .toJson(QJsonDocument::Indented));
     file.commit();
-}
-
-LocalControlServer::Device LocalControlServer::deviceFromJson(const QJsonObject &object)
-{
-    Device device;
-    device.key = object.value(QStringLiteral("key")).toString();
-    device.name = boundedText(object, "name");
-    device.user = boundedText(object, "user");
-    device.platform = boundedText(object, "platform", 16);
-    device.pairedAtMs = qint64(object.value(QStringLiteral("pairedAtMs")).toDouble());
-    device.lastSeenMs = qint64(object.value(QStringLiteral("lastSeenMs")).toDouble());
-    device.approval = boundedText(object, "approval", 16);
-    device.accountCheckedMs =
-        qint64(object.value(QStringLiteral("accountCheckedMs")).toDouble());
-    return device;
-}
-
-QJsonObject LocalControlServer::deviceToJson(const Device &device)
-{
-    QJsonObject object{
-        {QStringLiteral("key"), device.key},
-        {QStringLiteral("name"), device.name},
-        {QStringLiteral("user"), device.user},
-        {QStringLiteral("platform"), device.platform},
-        {QStringLiteral("pairedAtMs"), double(device.pairedAtMs)},
-        {QStringLiteral("lastSeenMs"), double(device.lastSeenMs)},
-    };
-    if (!device.approval.isEmpty())
-        object.insert(QStringLiteral("approval"), device.approval);
-    if (device.accountCheckedMs > 0)
-        object.insert(QStringLiteral("accountCheckedMs"), double(device.accountCheckedMs));
-    return object;
-}
-
-void LocalControlServer::attachCore(CoreBridge bridge)
-{
-    m_core = std::move(bridge);
-    m_coreAttached = bool(m_core.notify) && bool(m_core.request);
-    if (!m_coreAttached)
-        return;
-    QList<int> native;
-    for (const Connection *conn : std::as_const(m_connections))
-        if (!conn->viaCore)
-            native.append(conn->id);
-    for (int id : std::as_const(native))
-        closeConnection(id, QStringLiteral("moved to forkmesh-core"));
-    m_coreDevices.clear();
-    m_coreConnected.clear();
-    for (const Device &device : std::as_const(m_devices))
-        m_coreDevices.insert(device.key, device);
-    if (onDevicesChanged)
-        onDevicesChanged();
-}
-
-void LocalControlServer::detachCore()
-{
-    if (!m_coreAttached)
-        return;
-    m_coreAttached = false;
-    QList<int> viaCore;
-    for (const Connection *conn : std::as_const(m_connections))
-        if (conn->viaCore)
-            viaCore.append(conn->id);
-    for (int id : std::as_const(viaCore))
-        closeConnection(id, QStringLiteral("forkmesh-core gone"));
-    m_core = {};
-    m_coreDevices.clear();
-    m_coreConnected.clear();
-    loadDevices();
-    if (onDevicesChanged)
-        onDevicesChanged();
-}
-
-LocalControlServer::Connection *LocalControlServer::coreConnection(const QJsonObject &params,
-                                                                   bool create)
-{
-    const int coreId = params.value(QStringLiteral("connection")).toInt();
-    if (coreId <= 0)
-        return nullptr;
-    const int id = kCoreConnectionBase + coreId;
-    if (Connection *existing = connection(id))
-        return existing;
-    if (!create)
-        return nullptr;
-    auto *conn = new Connection;
-    conn->id = id;
-    conn->viaCore = true;
-    conn->state = State::Paired;
-    conn->device = deviceFromJson(params.value(QStringLiteral("device")).toObject());
-    conn->coreRelayed = params.value(QStringLiteral("relayed")).toBool();
-    conn->lastHeardMs = QDateTime::currentMSecsSinceEpoch();
-    m_connections.append(conn);
-    return conn;
-}
-
-void LocalControlServer::coreOpened(const QJsonObject &params)
-{
-    if (!m_coreAttached)
-        return;
-    Connection *conn = coreConnection(params, true);
-    if (!conn)
-        return;
-    conn->device = deviceFromJson(params.value(QStringLiteral("device")).toObject());
-    conn->coreRelayed = params.value(QStringLiteral("relayed")).toBool();
-    if (onDevicesChanged)
-        onDevicesChanged();
-}
-
-void LocalControlServer::coreClosed(const QJsonObject &params)
-{
-    if (Connection *conn = coreConnection(params, false))
-        closeConnection(conn->id, params.value(QStringLiteral("reason")).toString());
-}
-
-void LocalControlServer::coreRequest(const QJsonObject &params)
-{
-    if (!m_coreAttached)
-        return;
-    Connection *conn = coreConnection(params, true);
-    if (!conn)
-        return;
-    conn->lastHeardMs = QDateTime::currentMSecsSinceEpoch();
-    handleMessage(*conn, {{QStringLiteral("id"), params.value(QStringLiteral("id"))},
-                          {QStringLiteral("method"), params.value(QStringLiteral("method"))},
-                          {QStringLiteral("params"), params.value(QStringLiteral("params"))}});
-}
-
-void LocalControlServer::corePairing(const QJsonObject &params)
-{
-    const int coreId = params.value(QStringLiteral("connection")).toInt();
-    if (!m_coreAttached || coreId <= 0 || !onPairingRequested)
-        return;
-    onPairingRequested(kCoreConnectionBase + coreId,
-                       deviceFromJson(params.value(QStringLiteral("device")).toObject()),
-                       params.value(QStringLiteral("code")).toString());
-}
-
-void LocalControlServer::corePairingClosed(const QJsonObject &params)
-{
-    const int coreId = params.value(QStringLiteral("connection")).toInt();
-    if (coreId > 0 && onPairingClosed)
-        onPairingClosed(kCoreConnectionBase + coreId);
-}
-
-void LocalControlServer::coreDevices(const QJsonObject &params)
-{
-    if (!m_coreAttached)
-        return;
-    m_coreDevices.clear();
-    for (const QJsonValue &value : params.value(QStringLiteral("paired")).toArray()) {
-        const Device device = deviceFromJson(value.toObject());
-        if (!device.key.isEmpty())
-            m_coreDevices.insert(device.key, device);
-    }
-    m_coreConnected.clear();
-    for (const QJsonValue &value : params.value(QStringLiteral("connected")).toArray())
-        m_coreConnected.append(deviceFromJson(value.toObject()));
-    if (onDevicesChanged)
-        onDevicesChanged();
-}
-
-void LocalControlServer::coreFileReceived(const QJsonObject &params)
-{
-    if (onFileReceived)
-        onFileReceived(deviceFromJson(params.value(QStringLiteral("device")).toObject()),
-                       params.value(QStringLiteral("path")).toString());
-}
-
-void LocalControlServer::coreAccountCheck(const QJsonObject &params,
-                                          std::function<void(const QString &verdict)> done)
-{
-    if (!accountDeviceCheck) {
-        done(QStringLiteral("unreachable"));
-        return;
-    }
-    accountDeviceCheck(deviceFromJson(params.value(QStringLiteral("device")).toObject()),
-                       [done](AccountCheck verdict) {
-                           done(verdict == AccountCheck::Owned      ? QStringLiteral("owned")
-                                : verdict == AccountCheck::NotOwned ? QStringLiteral("not_owned")
-                                                                    : QStringLiteral("unreachable"));
-                       });
-}
-
-bool LocalControlServer::coreRelaySend(const QJsonObject &frame)
-{
-    return m_relaySink && m_relaySink(frame);
 }

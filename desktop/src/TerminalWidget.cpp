@@ -1,7 +1,5 @@
 #include "TerminalWidget.h"
 
-#include "TerminalBackend.h"
-
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
@@ -87,17 +85,10 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent)
     setContextMenuPolicy(Qt::DefaultContextMenu);
 }
 
-TerminalWidget::~TerminalWidget()
-{
-    if (m_core && !m_persistKey.isEmpty() && m_core->running())
-        std::exchange(m_core, nullptr)->keepRunning();
-    stop();
-}
+TerminalWidget::~TerminalWidget() { stop(); }
 
 bool TerminalWidget::isRunning() const
 {
-    if (m_core)
-        return m_core->running();
 #ifdef Q_OS_WIN
     return m_process && m_process->state() != QProcess::NotRunning;
 #else
@@ -151,8 +142,12 @@ void TerminalWidget::resizeGrid(int rows, int cols)
 }
 
 
-void TerminalWidget::resetScreen()
+void TerminalWidget::runCommand(const QString &commandLine, const QString &cwd,
+                                const QStringList &extraEnv,
+                                bool keepHostShell)
 {
+    stop();
+
     m_altActive = false;
     m_scrollback.clear();
     m_viewOffset = 0;
@@ -169,89 +164,6 @@ void TerminalWidget::resetScreen()
     recomputeGrid();
     for (Row &r : m_screen)
         clearRow(r);
-}
-
-void TerminalWidget::releaseCore()
-{
-    if (TerminalBackend *backend = std::exchange(m_core, nullptr))
-        backend->deleteLater();
-}
-
-bool TerminalWidget::startViaCore(const QString &commandLine, const QString &cwd,
-                                  const QStringList &extraEnv, bool keepHostShell)
-{
-    const TerminalBackend::Hooks &hooks = TerminalBackend::hooks();
-    if (!hooks.start)
-        return false;
-    TerminalBackend::Callbacks callbacks;
-    callbacks.output = [this](const QByteArray &bytes) { feed(bytes); };
-    callbacks.started = [this] { emit started(); };
-    callbacks.exited = [this](int code) {
-        releaseCore();
-        emit finished(code);
-        update();
-    };
-    callbacks.failed = [this, commandLine, cwd, extraEnv, keepHostShell](const QString &) {
-        releaseCore();
-        m_forceNative = true;
-        runCommand(commandLine, cwd, extraEnv, keepHostShell);
-    };
-    TerminalBackend::Start request;
-    request.commandLine = commandLine;
-    request.cwd = cwd;
-    request.extraEnv = extraEnv;
-    request.keepHostShell = keepHostShell;
-    request.cols = m_cols;
-    request.rows = m_rows;
-    request.persistKey = m_persistKey;
-    m_core = hooks.start(this, request, std::move(callbacks));
-    if (!m_core)
-        return false;
-    update();
-    return true;
-}
-
-void TerminalWidget::resumeOr(const std::function<void()> &start)
-{
-    if (isRunning())
-        return;
-    const TerminalBackend::Hooks &hooks = TerminalBackend::hooks();
-    if (!m_persistKey.isEmpty() && hooks.resume && hooks.persisted &&
-        !hooks.persisted(m_persistKey).isEmpty()) {
-        stop();
-        resetScreen();
-        TerminalBackend::Callbacks callbacks;
-        callbacks.output = [this](const QByteArray &bytes) { feed(bytes); };
-        callbacks.started = [this] { emit started(); };
-        callbacks.exited = [this](int code) {
-            releaseCore();
-            emit finished(code);
-            update();
-        };
-        callbacks.failed = [this, start](const QString &) {
-            releaseCore();
-            if (start)
-                start();
-        };
-        m_core = hooks.resume(this, m_persistKey, m_cols, m_rows, std::move(callbacks));
-        if (m_core) {
-            update();
-            return;
-        }
-    }
-    if (start)
-        start();
-}
-
-void TerminalWidget::runCommand(const QString &commandLine, const QString &cwd,
-                                const QStringList &extraEnv,
-                                bool keepHostShell)
-{
-    stop();
-    resetScreen();
-    if (!std::exchange(m_forceNative, false) &&
-        startViaCore(commandLine, cwd, extraEnv, keepHostShell))
-        return;
 
 #ifdef Q_OS_WIN
     auto *process = new QProcess(this);
@@ -391,10 +303,6 @@ void TerminalWidget::runCommand(const QString &commandLine, const QString &cwd,
 // code-health: allow(blocking-wait) teardown path; Windows waits at most 1 s after kill, POSIX reap() polls at most 200 ms
 void TerminalWidget::stop()
 {
-    if (TerminalBackend *backend = std::exchange(m_core, nullptr)) {
-        backend->close();
-        backend->deleteLater();
-    }
 #ifdef Q_OS_WIN
     if (m_process) {
         QProcess *process = m_process;
@@ -498,10 +406,6 @@ void TerminalWidget::writeToPty(const QByteArray &bytes)
             emit inputTyped(bytes);
         return;
     }
-    if (m_core) {
-        m_core->write(bytes);
-        return;
-    }
 #ifdef Q_OS_WIN
     if (m_process && !bytes.isEmpty())
         m_process->write(bytes);
@@ -578,10 +482,6 @@ void TerminalWidget::pasteFromClipboard()
 
 void TerminalWidget::applyWinSize()
 {
-    if (m_core) {
-        m_core->resize(m_cols, m_rows);
-        return;
-    }
 #ifndef Q_OS_WIN
     if (m_master < 0)
         return;

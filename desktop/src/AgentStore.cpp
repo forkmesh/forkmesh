@@ -1,5 +1,4 @@
 #include "AgentStore.h"
-#include "CoreAgentStore.h"
 #include "SafeDelete.h"
 
 #include <QDateTime>
@@ -38,12 +37,11 @@ namespace {
 class AgentTranscriptWriter final : public QThread
 {
 public:
-    enum class Kind { Event, Log, Remove, Barrier, Sync };
+    enum class Kind { Event, Log, Remove, Barrier };
 
     struct Task {
         Kind kind = Kind::Event;
         QString path;
-        QString rel;
         QJsonObject event;
         QString text;
         QPointer<QObject> context;
@@ -61,32 +59,29 @@ public:
         wait(); // drain queued transcript data before static teardown finishes
     }
 
-    void appendEvent(const QString &path, const QJsonObject &event, const QString &rel = QString())
+    void appendEvent(const QString &path, const QJsonObject &event)
     {
         Task task;
         task.kind = Kind::Event;
         task.path = path;
-        task.rel = rel;
         task.event = event; // implicitly shared; serialization stays off the UI
         enqueue(std::move(task));
     }
 
-    void appendLog(const QString &path, const QString &text, const QString &rel = QString())
+    void appendLog(const QString &path, const QString &text)
     {
         Task task;
         task.kind = Kind::Log;
         task.path = path;
-        task.rel = rel;
         task.text = text; // UTF-8 conversion and file I/O happen on this thread
         enqueue(std::move(task));
     }
 
-    void removeFile(const QString &path, const QString &rel = QString())
+    void removeFile(const QString &path)
     {
         Task task;
         task.kind = Kind::Remove;
         task.path = path;
-        task.rel = rel;
         enqueue(std::move(task));
     }
 
@@ -105,10 +100,6 @@ public:
     {
         if (QThread::currentThread() == this)
             return;
-        if (forkmesh::coreagentstore::attached()) {
-            syncWithCore();
-            return;
-        }
         QMutexLocker lock(&m_mutex);
         const quint64 target = m_nextSequence;
         while (m_completedSequence < target)
@@ -119,10 +110,6 @@ public:
     {
         if (QThread::currentThread() == this)
             return;
-        if (forkmesh::coreagentstore::attached()) {
-            syncWithCore();
-            return;
-        }
         QMutexLocker lock(&m_mutex);
         const quint64 target = m_lastPathSequence.value(path, 0);
         while (m_completedSequence < target)
@@ -154,21 +141,6 @@ protected:
     }
 
 private:
-    void syncWithCore()
-    {
-        Task task;
-        task.kind = Kind::Sync;
-        QMutexLocker lock(&m_mutex);
-        task.sequence = ++m_nextSequence;
-        const quint64 target = task.sequence;
-        m_tasks.enqueue(std::move(task));
-        if (!isRunning())
-            start();
-        m_ready.wakeOne();
-        while (m_completedSequence < target)
-            m_drained.wait(&m_mutex);
-    }
-
     void enqueue(Task task)
     {
         const QMutexLocker lock(&m_mutex);
@@ -181,47 +153,13 @@ private:
         m_ready.wakeOne();
     }
 
-    bool performInCore(const Task &task)
+    static void perform(Task &task)
     {
-        if (task.rel.isEmpty() || !forkmesh::coreagentstore::attached())
-            return false;
-        if (!m_core)
-            m_core = std::make_unique<forkmesh::coreagentstore::Lane>();
-        QJsonObject params{{QStringLiteral("path"), task.rel}};
-        QString method;
-        if (task.kind == Kind::Event) {
-            method = QStringLiteral("core.agentstore.appendEvent");
-            params.insert(QStringLiteral("event"), task.event);
-        } else if (task.kind == Kind::Log) {
-            method = QStringLiteral("core.agentstore.appendLog");
-            params.insert(QStringLiteral("text"), task.text);
-        } else {
-            method = QStringLiteral("core.agentstore.clearEvents");
-        }
-        return m_core->notify(method, params);
-    }
-
-    void syncCore()
-    {
-        if (m_core && m_core->dirty())
-            m_core->sync();
-    }
-
-    void perform(Task &task)
-    {
-        if (task.kind == Kind::Sync) {
-            syncCore();
-            return;
-        }
-        if ((task.kind == Kind::Event || task.kind == Kind::Log || task.kind == Kind::Remove) &&
-            performInCore(task))
-            return;
         if (task.kind == Kind::Remove) {
             QFile::remove(task.path);
             return;
         }
         if (task.kind == Kind::Barrier) {
-            syncCore();
             const QPointer<QObject> context = task.context;
             if (!context)
                 return;
@@ -249,7 +187,6 @@ private:
         }
     }
 
-    std::unique_ptr<forkmesh::coreagentstore::Lane> m_core;
     QMutex m_mutex;
     QWaitCondition m_ready;
     QWaitCondition m_drained;
@@ -518,46 +455,7 @@ QString sanitize(const QString &owner, const QString &name)
     return key;
 }
 
-QString coreRelative(const QString &root, const QString &path)
-{
-    if (!forkmesh::coreagentstore::routes(root))
-        return QString();
-    const QString prefix = root + QLatin1Char('/');
-    return path.startsWith(prefix) ? path.mid(prefix.size()) : QString();
-}
-
-bool coreTransportFailed(const QString &error)
-{
-    return error == QLatin1String("core_unavailable") || error == QLatin1String("core_gone") ||
-           error == QLatin1String("core_timeout") || error == QLatin1String("unsupported");
-}
-
-enum class CoreOutcome { Native, Done };
-
-CoreOutcome coreStoreCall(const QString &root, const QString &method, const QJsonObject &params,
-                          QJsonObject *result)
-{
-    if (!forkmesh::coreagentstore::routes(root))
-        return CoreOutcome::Native;
-    QString error;
-    if (forkmesh::coreagentstore::call(method, params, result, &error))
-        return CoreOutcome::Done;
-    if (coreTransportFailed(error))
-        return CoreOutcome::Native;
-    *result = QJsonObject{{QStringLiteral("error"), error}};
-    return CoreOutcome::Done;
-}
-
 } // namespace
-
-namespace forkmesh::coreagentstore {
-
-void notifyLogAppended(int sessionId)
-{
-    notifyLogObserver(sessionId);
-}
-
-} // namespace forkmesh::coreagentstore
 
 QString AgentSession::repoKey() const
 {
@@ -908,20 +806,6 @@ int AgentStore::nextId() const
 
 AgentSession AgentStore::createSession(AgentSession session)
 {
-    {
-        AgentSession input = session;
-        input.id = 0;
-        input.createdAtMs = 0;
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.create"),
-                          {{QStringLiteral("session"), input.toJson()}}, &result) == CoreOutcome::Done &&
-            result.value(QStringLiteral("id")).toInt() > 0) {
-            session.id = result.value(QStringLiteral("id")).toInt();
-            session.createdAtMs = qint64(result.value(QStringLiteral("createdAtMs")).toDouble());
-            reviveSession(sessionDir(session));
-            return session;
-        }
-    }
     session.id = nextId();
     session.createdAtMs = QDateTime::currentMSecsSinceEpoch();
     reviveSession(sessionDir(session)); // this id is live again
@@ -946,31 +830,6 @@ bool AgentStore::saveSession(const AgentSession &session) const
     if (sessionRetired(sessionDir(session)))
         return false;
     const QString path = sessionDir(session) + QStringLiteral("/meta.json");
-    if (forkmesh::coreagentstore::routes(m_root)) {
-        const QJsonObject json = session.toJson();
-        const QByteArray sent = QByteArrayLiteral("core:") +
-                                QJsonDocument(json).toJson(QJsonDocument::Compact);
-        WrittenSessionMetas &written = writtenSessionMetas();
-        {
-            const QMutexLocker lock(&written.mutex);
-            const auto last = written.entries.constFind(path);
-            if (last != written.entries.constEnd() && last->bytes == sent &&
-                last->stamp == sessionFileStamp(path))
-                return true;
-        }
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.save"),
-                          {{QStringLiteral("session"), json}}, &result) == CoreOutcome::Done) {
-            const bool saved = result.value(QStringLiteral("saved")).toBool();
-            forgetSessionMeta(path);
-            const QMutexLocker lock(&written.mutex);
-            if (saved)
-                written.entries.insert(path, WrittenSessionMeta{sent, sessionFileStamp(path)});
-            else
-                written.entries.remove(path);
-            return saved;
-        }
-    }
     const QByteArray bytes =
         QJsonDocument(session.toJson()).toJson(QJsonDocument::Indented);
     WrittenSessionMetas &written = writtenSessionMetas();
@@ -1004,18 +863,6 @@ bool AgentStore::deleteSession(const AgentSession &session) const
     // a save that slips in between would otherwise leave a directory nothing
     // deletes again.
     retireSession(path);
-    {
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.delete"),
-                          {{QStringLiteral("session"), session.toJson()}}, &result) == CoreOutcome::Done) {
-            forgetSessionMeta(path + QStringLiteral("/meta.json"));
-            if (!result.value(QStringLiteral("ok")).toBool()) {
-                reviveSession(path);
-                return false;
-            }
-            return true;
-        }
-    }
     QDir dir(path);
     if (!dir.exists())
         return true;
@@ -1039,18 +886,6 @@ bool AgentStore::recycleSession(const AgentSession &session) const
     // transcript append that slips in afterwards would recreate the directory
     // that was just moved away.
     retireSession(path);
-    {
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.recycle"),
-                          {{QStringLiteral("session"), session.toJson()}}, &result) == CoreOutcome::Done) {
-            forgetSessionMeta(path + QStringLiteral("/meta.json"));
-            if (!result.value(QStringLiteral("ok")).toBool()) {
-                reviveSession(path);
-                return false;
-            }
-            return true;
-        }
-    }
     QDir dir(path);
     if (!dir.exists())
         return true;
@@ -1111,16 +946,6 @@ QList<AgentSession> AgentStore::loadRecycledSessions() const
 
 bool AgentStore::restoreRecycledSession(int sessionId) const
 {
-    {
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.restore"),
-                          {{QStringLiteral("id"), sessionId}}, &result) == CoreOutcome::Done) {
-            const QString rel = result.value(QStringLiteral("path")).toString();
-            if (!rel.isEmpty())
-                reviveSession(m_root + QLatin1Char('/') + rel);
-            return result.value(QStringLiteral("ok")).toBool();
-        }
-    }
     const QString binDir = findRecycledSessionDir(sessionId);
     if (binDir.isEmpty())
         return false;
@@ -1157,12 +982,6 @@ bool AgentStore::restoreRecycledSession(int sessionId) const
 
 bool AgentStore::purgeRecycledSession(int sessionId) const
 {
-    {
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.purge"),
-                          {{QStringLiteral("id"), sessionId}}, &result) == CoreOutcome::Done)
-            return result.value(QStringLiteral("ok")).toBool();
-    }
     const QString binDir = findRecycledSessionDir(sessionId);
     if (binDir.isEmpty())
         return false;
@@ -1174,14 +993,6 @@ int AgentStore::purgeExpiredRecycledSessions(qint64 retentionMs,
 {
     if (retentionMs <= 0)
         return 0;
-    {
-        QJsonObject result;
-        if (coreStoreCall(m_root, QStringLiteral("core.agentstore.purgeExpired"),
-                          {{QStringLiteral("retentionMs"), double(retentionMs)},
-                           {QStringLiteral("nowMs"), double(nowMs)}},
-                          &result) == CoreOutcome::Done)
-            return result.value(QStringLiteral("purged")).toInt();
-    }
     int purged = 0;
     QDir root(recycleBinDir());
     const QStringList repos = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -1300,8 +1111,7 @@ void AgentStore::appendLog(const AgentSession &session, const QString &text) con
     const QString dir = sessionDir(session);
     if (sessionRetired(dir))
         return;
-    const QString path = dir + QStringLiteral("/transcript.txt");
-    transcriptLogWriter().appendLog(path, text, coreRelative(m_root, path));
+    transcriptLogWriter().appendLog(dir + QStringLiteral("/transcript.txt"), text);
     notifyLogObserver(session.id);
 }
 
@@ -1339,8 +1149,7 @@ void AgentStore::appendEvent(const AgentSession &session, const QJsonObject &ev)
     const QString dir = sessionDir(session);
     if (sessionRetired(dir))
         return;
-    const QString path = dir + QStringLiteral("/events.jsonl");
-    transcriptEventWriter().appendEvent(path, ev, coreRelative(m_root, path));
+    transcriptEventWriter().appendEvent(dir + QStringLiteral("/events.jsonl"), ev);
 }
 
 QList<QJsonObject> AgentStore::loadEvents(const AgentSession &session) const
@@ -1364,8 +1173,8 @@ QList<QJsonObject> AgentStore::loadEvents(const AgentSession &session) const
 
 void AgentStore::clearEvents(const AgentSession &session) const
 {
-    const QString path = sessionDir(session) + QStringLiteral("/events.jsonl");
-    transcriptEventWriter().removeFile(path, coreRelative(m_root, path));
+    transcriptEventWriter().removeFile(
+        sessionDir(session) + QStringLiteral("/events.jsonl"));
 }
 
 void AgentStore::whenTranscriptWritesDrained(
@@ -1397,15 +1206,6 @@ void AgentStore::writePatch(const AgentSession &session, const QString &patch) c
 {
     if (sessionRetired(sessionDir(session)))
         return;
-    {
-        const QString rel = coreRelative(m_root, sessionDir(session) + QStringLiteral("/changes.patch"));
-        QJsonObject result;
-        if (!rel.isEmpty() &&
-            coreStoreCall(m_root, QStringLiteral("core.agentstore.writePatch"),
-                          {{QStringLiteral("path"), rel}, {QStringLiteral("patch"), patch}},
-                          &result) == CoreOutcome::Done)
-            return;
-    }
     QDir().mkpath(sessionDir(session));
     QFile file(sessionDir(session) + QStringLiteral("/changes.patch"));
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))

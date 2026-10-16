@@ -318,6 +318,7 @@ QString earlyMainLogPath(int argc, char **argv);
 
 // Local-socket name of the single-instance server; one per project.
 QString singleInstanceServerName();
+bool isDefaultStateRoot();
 
 // --- storage map -------------------------------------------------------------
 

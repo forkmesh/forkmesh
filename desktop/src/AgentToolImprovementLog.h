@@ -4,7 +4,6 @@
 
 #include <QByteArray>
 #include <QHash>
-#include <QJsonArray>
 #include <QString>
 #include <QVector>
 
@@ -96,7 +95,6 @@ public:
     bool archiveSent();
     QString logPath() const { return m_logPath; }
     QString sentLogPath() const;
-    void loadSnapshot(const QJsonArray &signalRows, qint64 occurrences);
 
     static QString kindLabel(const QString &kind);
     static bool kindIsFailure(const QString &kind);

@@ -5,7 +5,6 @@
 #include "AgentLogText.h"
 #include "AppPaths.h"
 #include "ClaudePeerMessaging.h"
-#include "CoreClient.h"
 #include "TerminalHandoff.h"
 #include "ClaudeSessionScan.h"
 #include "DesktopBuildCommit.h"
@@ -228,16 +227,11 @@ bool MainWindow::ensureLocalControlServer()
 
 void MainWindow::startLocalControl()
 {
-    startCoreClient();
     if (!m_localMesh || !ensureLocalControlServer())
         return;
     m_localControl->setDesktopInfo(machineNodeName(), nodeOwnerDisplayName());
-    sendCoreControlInfo();
     m_localMesh->setControlHandler(
         [this](QTcpSocket *socket, const QByteArray &hello, const QByteArray &rest) {
-            if (m_localControl && m_localControl->coreAttached() && m_coreClient &&
-                m_coreClient->adoptControlSocket(socket, hello, rest))
-                return;
             if (m_localControl)
                 m_localControl->adopt(socket, hello, rest);
         });
@@ -253,21 +247,12 @@ void MainWindow::onNodeControlFrame(const QJsonObject &frame)
         return;
     if (!ensureLocalControlServer())
         return;
-    if (m_localControl->coreAttached() && m_coreClient &&
-        m_coreClient->notify(QStringLiteral("control.relay.in"),
-                             {{QStringLiteral("frame"), frame}}))
-        return;
     m_localControl->setDesktopInfo(machineNodeName(), nodeOwnerDisplayName());
     m_localControl->relayFrame(frame);
 }
 
 void MainWindow::onNodeControlRelayRestored()
 {
-    if (m_nodeEventSocket && m_nodeEventSocket->coreOwned())
-        return;
-    if (m_localControl && m_localControl->coreAttached() && m_coreClient &&
-        m_coreClient->notify(QStringLiteral("control.relay.restored")))
-        return;
     if (m_localControl)
         m_localControl->relayRestored();
 }
@@ -383,98 +368,6 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
                   .arg(who, spaced));
 }
 
-QJsonArray MainWindow::localControlOutsideRows()
-{
-    const auto repositoryFor = [this](const QString &cwd) -> const RepositoryRecord * {
-        const QString path = QDir::cleanPath(cwd);
-        for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
-            if (repo.localPath.isEmpty() || repo.owner.isEmpty() || repo.name.isEmpty())
-                continue;
-            const QString root = QDir::cleanPath(repo.localPath);
-            if (path == root || path.startsWith(root + QLatin1Char('/')))
-                return &repo;
-        }
-        return nullptr;
-    };
-    QJsonArray outside;
-    for (auto it = m_externalSurfaced.constBegin(); it != m_externalSurfaced.constEnd(); ++it) {
-        if (!externalIsLive(it->uuid))
-            continue;
-        const QString repo = m_externalSurfacedRepo.value(it.key());
-        const QString folder = QFileInfo(it->cwd).fileName();
-        outside.append(QJsonObject{
-            {QStringLiteral("id"), it.key()},
-            {QStringLiteral("kind"), QStringLiteral("claude")},
-            {QStringLiteral("label"), MachineAgentScan::label(QStringLiteral("claude"))},
-            {QStringLiteral("provider"), MachineAgentScan::provider(QStringLiteral("claude"))},
-            {QStringLiteral("model"), QString()},
-            {QStringLiteral("title"), it->title.isEmpty() ? folder : it->title.left(200)},
-            {QStringLiteral("cwd"), it->cwd},
-            {QStringLiteral("branchName"), it->gitBranch},
-            {QStringLiteral("repositoryOwner"), repo.section(QLatin1Char('/'), 0, 0)},
-            {QStringLiteral("repositoryName"), repo.section(QLatin1Char('/'), 1)},
-            {QStringLiteral("lastActivityMs"), double(it->lastActivityMs)},
-            {QStringLiteral("steer"), outsideAgentSteerable(it.key())},
-            {QStringLiteral("typeable"), outsideAgentTerminal(it.key()) != nullptr},
-            {QStringLiteral("stoppable"), outsideAgentTerminal(it.key()) != nullptr},
-        });
-    }
-    for (auto it = m_machineAgents.constBegin(); it != m_machineAgents.constEnd(); ++it) {
-        if (const auto surfaced = m_externalSurfaced.constFind(it.key());
-            surfaced != m_externalSurfaced.constEnd() && externalIsLive(surfaced->uuid))
-            continue;
-        const QString folder = QFileInfo(it->cwd).fileName();
-        const QString label = MachineAgentScan::label(it->kind);
-        const RepositoryRecord *repo = repositoryFor(it->cwd);
-        outside.append(QJsonObject{
-            {QStringLiteral("id"), it.key()},
-            {QStringLiteral("kind"), it->kind},
-            {QStringLiteral("label"), label},
-            {QStringLiteral("provider"), MachineAgentScan::provider(it->kind)},
-            {QStringLiteral("model"), it->model},
-            {QStringLiteral("title"),
-             !it->otherUser.isEmpty()
-                 ? QStringLiteral("%1 (%2)").arg(label, it->otherUser)
-                 : folder.isEmpty() ? label : folder},
-            {QStringLiteral("cwd"), it->cwd},
-            {QStringLiteral("branchName"), QString()},
-            {QStringLiteral("repositoryOwner"), repo ? repo->owner : QString()},
-            {QStringLiteral("repositoryName"), repo ? repo->name : QString()},
-            {QStringLiteral("lastActivityMs"), 0.0},
-            {QStringLiteral("steer"), outsideAgentSteerable(it.key())},
-            {QStringLiteral("typeable"), outsideAgentTerminal(it.key()) != nullptr},
-            {QStringLiteral("stoppable"), outsideAgentTerminal(it.key()) != nullptr},
-            {QStringLiteral("otherUser"), it->otherUser},
-        });
-    }
-    if (!m_localControlTerminals.isEmpty()) {
-        QSet<QString> listed;
-        for (qsizetype i = 0; i < outside.size(); ++i) {
-            QJsonObject row = outside.at(i).toObject();
-            const QString terminal =
-                localControlTerminalForOutside(row.value(QStringLiteral("id")).toInt());
-            if (terminal.isEmpty() || listed.contains(terminal))
-                continue;
-            if (m_localControlTerminals.value(terminal).session > 0) {
-                outside.removeAt(i--);
-                continue;
-            }
-            listed.insert(terminal);
-            row.insert(QStringLiteral("terminal"), terminal);
-            outside.replace(i, row);
-        }
-        for (const forkmesh::localcontrol::terminals::Terminal &terminal :
-             std::as_const(m_localControlTerminals)) {
-            if (terminal.pid <= 0 || terminal.session > 0 || !terminal.mode.isEmpty() ||
-                listed.contains(terminal.id))
-                continue;
-            outside.append(forkmesh::localcontrol::terminals::outsideRow(
-                terminal, externalTempIdFor(QStringLiteral("terminal:") + terminal.id)));
-        }
-    }
-    return outside;
-}
-
 QJsonObject MainWindow::localControlAgentsPayload()
 {
     QList<const AgentSession *> sessions;
@@ -563,7 +456,93 @@ QJsonObject MainWindow::localControlAgentsPayload()
         repositories.append(QJsonObject{{QStringLiteral("owner"), repo.owner},
                                         {QStringLiteral("name"), repo.name}});
     }
-    const QJsonArray outside = localControlOutsideRows();
+    const auto repositoryFor = [this](const QString &cwd) -> const RepositoryRecord * {
+        const QString path = QDir::cleanPath(cwd);
+        for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
+            if (repo.localPath.isEmpty() || repo.owner.isEmpty() || repo.name.isEmpty())
+                continue;
+            const QString root = QDir::cleanPath(repo.localPath);
+            if (path == root || path.startsWith(root + QLatin1Char('/')))
+                return &repo;
+        }
+        return nullptr;
+    };
+    QJsonArray outside;
+    for (auto it = m_externalSurfaced.constBegin(); it != m_externalSurfaced.constEnd(); ++it) {
+        if (!externalIsLive(it->uuid))
+            continue;
+        const QString repo = m_externalSurfacedRepo.value(it.key());
+        const QString folder = QFileInfo(it->cwd).fileName();
+        outside.append(QJsonObject{
+            {QStringLiteral("id"), it.key()},
+            {QStringLiteral("kind"), QStringLiteral("claude")},
+            {QStringLiteral("label"), MachineAgentScan::label(QStringLiteral("claude"))},
+            {QStringLiteral("provider"), MachineAgentScan::provider(QStringLiteral("claude"))},
+            {QStringLiteral("model"), QString()},
+            {QStringLiteral("title"), it->title.isEmpty() ? folder : it->title.left(200)},
+            {QStringLiteral("cwd"), it->cwd},
+            {QStringLiteral("branchName"), it->gitBranch},
+            {QStringLiteral("repositoryOwner"), repo.section(QLatin1Char('/'), 0, 0)},
+            {QStringLiteral("repositoryName"), repo.section(QLatin1Char('/'), 1)},
+            {QStringLiteral("lastActivityMs"), double(it->lastActivityMs)},
+            {QStringLiteral("steer"), outsideAgentSteerable(it.key())},
+            {QStringLiteral("typeable"), outsideAgentTerminal(it.key()) != nullptr},
+            {QStringLiteral("stoppable"), outsideAgentTerminal(it.key()) != nullptr},
+        });
+    }
+    for (auto it = m_machineAgents.constBegin(); it != m_machineAgents.constEnd(); ++it) {
+        if (const auto surfaced = m_externalSurfaced.constFind(it.key());
+            surfaced != m_externalSurfaced.constEnd() && externalIsLive(surfaced->uuid))
+            continue;
+        const QString folder = QFileInfo(it->cwd).fileName();
+        const QString label = MachineAgentScan::label(it->kind);
+        const RepositoryRecord *repo = repositoryFor(it->cwd);
+        outside.append(QJsonObject{
+            {QStringLiteral("id"), it.key()},
+            {QStringLiteral("kind"), it->kind},
+            {QStringLiteral("label"), label},
+            {QStringLiteral("provider"), MachineAgentScan::provider(it->kind)},
+            {QStringLiteral("model"), it->model},
+            {QStringLiteral("title"),
+             !it->otherUser.isEmpty()
+                 ? QStringLiteral("%1 (%2)").arg(label, it->otherUser)
+                 : folder.isEmpty() ? label : folder},
+            {QStringLiteral("cwd"), it->cwd},
+            {QStringLiteral("branchName"), QString()},
+            {QStringLiteral("repositoryOwner"), repo ? repo->owner : QString()},
+            {QStringLiteral("repositoryName"), repo ? repo->name : QString()},
+            {QStringLiteral("lastActivityMs"), 0.0},
+            {QStringLiteral("steer"), outsideAgentSteerable(it.key())},
+            {QStringLiteral("typeable"), outsideAgentTerminal(it.key()) != nullptr},
+            {QStringLiteral("stoppable"), outsideAgentTerminal(it.key()) != nullptr},
+            {QStringLiteral("otherUser"), it->otherUser},
+        });
+    }
+    if (!m_localControlTerminals.isEmpty()) {
+        QSet<QString> listed;
+        for (qsizetype i = 0; i < outside.size(); ++i) {
+            QJsonObject row = outside.at(i).toObject();
+            const QString terminal =
+                localControlTerminalForOutside(row.value(QStringLiteral("id")).toInt());
+            if (terminal.isEmpty() || listed.contains(terminal))
+                continue;
+            if (m_localControlTerminals.value(terminal).session > 0) {
+                outside.removeAt(i--);
+                continue;
+            }
+            listed.insert(terminal);
+            row.insert(QStringLiteral("terminal"), terminal);
+            outside.replace(i, row);
+        }
+        for (const forkmesh::localcontrol::terminals::Terminal &terminal :
+             std::as_const(m_localControlTerminals)) {
+            if (terminal.pid <= 0 || terminal.session > 0 || !terminal.mode.isEmpty() ||
+                listed.contains(terminal.id))
+                continue;
+            outside.append(forkmesh::localcontrol::terminals::outsideRow(
+                terminal, externalTempIdFor(QStringLiteral("terminal:") + terminal.id)));
+        }
+    }
     return QJsonObject{
         {QStringLiteral("sessions"), list},
         {QStringLiteral("outside"),
@@ -614,111 +593,9 @@ QJsonArray MainWindow::localControlAgentFolders() const
     return folders;
 }
 
-QJsonObject MainWindow::localControlAgentsContext()
-{
-    QJsonArray sessions;
-    QJsonArray inFlight;
-    for (const AgentSession &s : std::as_const(m_agentSessions)) {
-        if (s.cloud || isExternalSession(s.id) || s.deletedAtMs > 0)
-            continue;
-        if (sessionActive(s) && agentSessionWorkInFlight(s.id))
-            inFlight.append(s.id);
-        QJsonObject row{{QStringLiteral("id"), s.id}};
-        if (agentSessionUnread(s))
-            row.insert(QStringLiteral("unread"), true);
-        if (const QString terminal = localControlTerminalForRow(s.id); !terminal.isEmpty())
-            row.insert(QStringLiteral("terminal"), terminal);
-        const auto stat = m_agentDiffStats.constFind(s.id);
-        if (stat != m_agentDiffStats.cend()) {
-            row.insert(QStringLiteral("diffStats"),
-                       QJsonObject{{QStringLiteral("files"), stat->files},
-                                   {QStringLiteral("ahead"), stat->ahead},
-                                   {QStringLiteral("behind"), stat->behind},
-                                   {QStringLiteral("added"), stat->added},
-                                   {QStringLiteral("removed"), stat->removed},
-                                   {QStringLiteral("dirty"), stat->dirty},
-                                   {QStringLiteral("conflicted"), stat->conflicted}});
-            row.insert(QStringLiteral("worktree"), !stat->worktree.isEmpty());
-        }
-        if (const QStringList images = agentSessionImages(s.id); !images.isEmpty())
-            row.insert(QStringLiteral("images"), QJsonArray::fromStringList(images));
-        if (row.size() > 1)
-            sessions.append(row);
-    }
-    const QJsonArray outside = localControlOutsideRows();
-    QJsonArray sources;
-    for (const QJsonValue &value : outside) {
-        const int id = value.toObject().value(QStringLiteral("id")).toInt();
-        if (id >= 0 || !isExternalSession(id) || isCloudSession(id))
-            continue;
-        QJsonObject source{{QStringLiteral("id"), id}};
-        QString terminal = localControlTerminalForRow(id);
-        source.insert(QStringLiteral("terminal"), !terminal.isEmpty());
-        if (terminal.isEmpty())
-            terminal = localControlTerminalForOutside(id);
-        if (const auto machine = m_machineAgents.constFind(id); machine != m_machineAgents.constEnd()) {
-            source.insert(QStringLiteral("label"), MachineAgentScan::label(machine->kind));
-            source.insert(QStringLiteral("cwd"), machine->cwd);
-            source.insert(QStringLiteral("otherUser"), !machine->otherUser.isEmpty());
-        } else if (const auto surfaced = m_externalSurfaced.constFind(id);
-                   surfaced != m_externalSurfaced.constEnd() && externalIsLive(surfaced->uuid)) {
-            source.insert(QStringLiteral("label"), MachineAgentScan::label(QStringLiteral("claude")));
-            source.insert(QStringLiteral("cwd"), surfaced->cwd);
-        } else if (const auto open = m_localControlTerminals.constFind(terminal);
-                   !terminal.isEmpty() && open != m_localControlTerminals.constEnd()) {
-            source.insert(QStringLiteral("label"),
-                          forkmesh::localcontrol::terminals::cliLabel(open->provider));
-            source.insert(QStringLiteral("cwd"), open->cwd);
-        } else {
-            continue;
-        }
-        if (const auto surfaced = m_externalSurfaced.constFind(id);
-            surfaced != m_externalSurfaced.constEnd() && externalIsLive(surfaced->uuid))
-            source.insert(QStringLiteral("transcript"),
-                          QJsonObject{{QStringLiteral("path"), surfaced->path},
-                                      {QStringLiteral("kind"), QStringLiteral("claude")},
-                                      {QStringLiteral("cwd"), surfaced->cwd}});
-        else if (const auto machine = m_machineAgents.constFind(id); machine != m_machineAgents.constEnd())
-            source.insert(QStringLiteral("transcript"),
-                          QJsonObject{{QStringLiteral("path"), machine->transcript},
-                                      {QStringLiteral("kind"), machine->kind},
-                                      {QStringLiteral("cwd"), machine->cwd}});
-        sources.append(source);
-    }
-    QJsonArray repositories;
-    for (const RepositoryRecord &repo : std::as_const(m_repositories))
-        repositories.append(QJsonObject{{QStringLiteral("owner"), repo.owner},
-                                        {QStringLiteral("name"), repo.name},
-                                        {QStringLiteral("localPath"), repo.localPath},
-                                        {QStringLiteral("mirrorPath"), repo.mirrorPath},
-                                        {QStringLiteral("previewOnly"), repo.previewOnly},
-                                        {QStringLiteral("active"), repositoryBelongsToActiveRelay(repo)}});
-    QJsonArray queue;
-    for (const int id : std::as_const(m_agentQueue))
-        queue.append(id);
-    QJsonObject context = localControlAgentOpsContext();
-    context.insert(QStringLiteral("sessions"), sessions);
-    context.insert(QStringLiteral("inFlight"), inFlight);
-    context.insert(QStringLiteral("outside"), outside);
-    context.insert(QStringLiteral("outsideSources"), sources);
-    context.insert(QStringLiteral("repositories"), repositories);
-    context.insert(QStringLiteral("folders"), localControlAgentFolders());
-    context.insert(QStringLiteral("providers"), providerChoices());
-    context.insert(QStringLiteral("defaultProvider"), defaultAgentProvider());
-    context.insert(QStringLiteral("defaultMode"),
-                   localControlDefaultAgentMode(m_quickAddModeSelector));
-    context.insert(QStringLiteral("running"), runningAgentCount());
-    context.insert(QStringLiteral("queue"), queue);
-    context.insert(QStringLiteral("limit"), maxRunningAgents());
-    context.insert(QStringLiteral("detailRepo"), m_repoDetailIndex);
-    context.insert(QStringLiteral("externalIdBase"), kExternalIdBase);
-    return context;
-}
-
 void MainWindow::notifyLocalControlAgentsChanged()
 {
-    if (!m_localControl ||
-        (m_localControl->connectedDevices().isEmpty() && !coreAgentModelAttached()))
+    if (!m_localControl || m_localControl->connectedDevices().isEmpty())
         return;
     // A running session changes many times a second; the phone re-reads the
     // list on each bell, so ring at most a few times a second.
@@ -728,8 +605,6 @@ void MainWindow::notifyLocalControlAgentsChanged()
         m_localControlAgentsTimer->setSingleShot(true);
         connect(m_localControlAgentsTimer, &QTimer::timeout, this, [this] {
             m_localControlAgentsRungAtMs = QDateTime::currentMSecsSinceEpoch();
-            if (pushCoreAgentModel())
-                return;
             if (m_localControl)
                 m_localControl->broadcast(QStringLiteral("agents.changed"));
         });

@@ -865,6 +865,41 @@ static QJsonObject storedRecord(const QString &path, const QString &key)
     return {};
 }
 
+static void testCodePairedUserStays()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey phoneKey;
+    const QString store = dir.filePath("paired.json");
+    writeStore(store, QJsonArray{QJsonObject{
+        {"key", phoneKey.publicKey}, {"name", "Guest phone"},
+        {"user", "bob"}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    QList<QJsonObject> outbox;
+    server.setRelaySink(
+        [&](const QJsonObject &f) {
+            outbox.append(f);
+            return true;
+        },
+        "desk");
+    RelayTestClient phone(phoneKey);
+    phone.session = QStringLiteral("relay-session-owner-claim-1");
+    phone.server = &server;
+    phone.open();
+    for (int i = 0; i < 3; ++i) {
+        phone.fromDesktop.append(outbox);
+        outbox.clear();
+        phone.pump();
+    }
+    check(server.isConnected(phoneKey.publicKey), "a code-paired phone reconnects");
+    check(storedRecord(store, phoneKey.publicKey).value("user").toString() == "bob",
+          "a code-paired phone cannot rename its user to the owner");
+}
+
 static void testRelayResilience()
 {
     QTemporaryDir dir;
@@ -1319,6 +1354,7 @@ int main(int argc, char **argv)
     testRelay();
     testAccountDevices();
     testRelayResilience();
+    testCodePairedUserStays();
     testAccountRevocation();
     testHostPolicy();
     testStream();

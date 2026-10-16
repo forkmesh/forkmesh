@@ -50,7 +50,6 @@ folder under the node key's folder on macOS).
 | Python | `forkmesh_safe_delete.remove_tree(target, parent)` in `tools/forkmesh_safe_delete.py`; raises `RefusedDelete`; `remove_trees()` checks all targets first | `worktree=True` | `move_aside(...)` |
 | Shell | `fm_safe_rm_tree <parent> <target>...` in `tools/forkmesh-safe-rm.sh`; returns 64 on refusal | `FM_SAFE_RM_WORKTREE=1` | `mv` to a stamped sibling |
 | Go (`server/`) | `removeTreeUnder(parent, target)` in `server/safedelete.go` | `removeOwnWorktreeUnder`, `removeOwnCloneUnder` | `moveAside(target, label)` |
-| Go (`desktop/core/`, forkmesh-core) | `safedelete.RemoveTreeUnder(parent, target)` in `desktop/core/internal/safedelete/` | `RemoveOwnWorktreeUnder`, `ForceRemoveWorktree` | |
 
 `www/public/install.sh` and `uninstall.sh` run as `curl | bash`, so they carry
 a byte-identical copy of `fm_safe_rm_tree`. Standalone server tools whose few
@@ -59,8 +58,8 @@ deletes cannot import a helper bound them in place and are allow-listed.
 ## The contract test
 
 `app/tests/test_no_unguarded_destructive_deletes.py` scans tracked sources
-in `desktop` (the Go engine in `desktop/core` included), `app`, `world`,
-`tools`, `deploy`, `www/public`, `marketplace`, `native`, `server` and `conformance` (tests
+in `desktop`, `app`, `world`, `tools`, `deploy`,
+`www/public`, `marketplace`, `native`, `server` and `conformance` (tests
 excluded) for recursive deletes in every language used (`rm -r`,
 `shutil.rmtree`, `QDir::removeRecursively`, `std::filesystem::remove_all`,
 `os.RemoveAll`, `deleteRecursively`, `removeItem(at:)`, recursive `rmSync`,
@@ -73,8 +72,9 @@ quality gate) and in the auto-deploy must-pass set, so a new unguarded delete
 blocks a deploy. Outside a git checkout, as in the deploy gate's archive, it
 walks the folders instead and skips generated trees (`build*`,
 `app/src_build`, `node_modules`). Until 2026-10-15 it ran in no gate and had
-gone stale: three iOS single-file removes were unlisted and the Go engine
-(then `desktop_go_new/`) was not scanned at all.
+gone stale: three iOS single-file removes were unlisted and the Go desktop
+engine of that time was not scanned at all. That engine was removed on
+2026-10-16 ([lifecycle.md](../desktop/lifecycle.md#running-without-a-window)).
 
 Each hit must be in a helper file or match an `ALLOW` entry (path, line regex,
 and a reason of at least four words). The test also fails on stale entries,
@@ -93,9 +93,6 @@ that says why the target can never be a checkout or user data.
 
 - Agent clones and worktrees are reused; unpushed work is never discarded.
 - Forced branch moves first save the old tip under a backup ref.
-- Aborting a pull merge in `desktop/core` drops the pull branch it created
-  only after saving its tip under `refs/forkmesh/trash/am-abort/<branch>`; if
-  that save fails the branch is kept.
 - Deleting a project moves it aside as `<slug>.deleted-<stamp>`.
 - Conflicting files in moves are kept as `<name>.conflict-<stamp>`.
 - The in-app uninstall removes only roots that pass the wipe checks, opens a

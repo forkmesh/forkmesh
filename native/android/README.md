@@ -172,9 +172,7 @@ the same: a reinstall under another id or key starts empty.
 2. To build the release APK by hand, work in a worktree at the release commit
    and use the **v3** direct-distribution signing key
    (`~/projects/forkmesh/data/release/android-direct-distribution-v3.jks`,
-   alias `forkmesh`, password file `.apk-keystore-password` next to it, which
-   holds only a vault marker once forkmesh-core has moved the password into
-   the encrypted vault (`tools/forkmesh_desktop_vault.py` reads it); never
+   alias `forkmesh`, password file `.apk-keystore-password` next to it; never
    print it):
    ```sh
    cd native/android

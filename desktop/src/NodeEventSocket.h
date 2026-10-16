@@ -5,7 +5,6 @@
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
-#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QUrl>
@@ -15,7 +14,6 @@
 
 #include <functional>
 
-class CoreClient;
 class QTcpSocket;
 class QTimer;
 
@@ -40,11 +38,8 @@ public:
     // which desktop held a socket without changing socket authorization.
     void setClientIdentity(const QString &account, const QString &node);
 
-    void setCoreClient(CoreClient *client);
-    bool coreOwned() const { return m_coreMode; }
-
     void start();
-    void stop(bool stopCoreRelay = true);
+    void stop();
     void reconnectNow();
     bool isConnected() const { return m_wsReady; }
     bool accepts(const QString &kind) const
@@ -66,10 +61,7 @@ public:
     // the two devices (LocalControl.h); false when the relay does not carry
     // control frames or the socket is down.
     bool sendOwnerControlFrame(const QJsonObject &frame);
-    int controlBacklog() const
-    {
-        return m_coreMode ? m_coreBacklog : int(m_controlQueue.size());
-    }
+    int controlBacklog() const { return int(m_controlQueue.size()); }
 
 signals:
     void eventReceived(const QString &topic, const QString &repo,
@@ -108,14 +100,6 @@ private:
     void onPingTick();
     void pumpControlQueue();
     void resetControlQueue();
-    void enterCoreMode();
-    void leaveCoreMode(bool openNative);
-    void armCoreFallback(int delayMs);
-    void configureCore();
-    void applyCoreState(const QJsonObject &state);
-    void onCoreEvent(const QString &event, const QJsonObject &data);
-    void onCoreConnectedChanged(bool connected);
-    bool sendThroughCore(const QString &kind, const QJsonObject &frame);
 
     std::function<QUrl()> m_urlFactory;
     std::function<bool(const QUrl &)> m_connectionAuthorizer;
@@ -145,10 +129,4 @@ private:
     // Any text frame refreshes the relay's socket lease. Signed heartbeats and
     // status writes therefore replace, rather than duplicate, the keepalive.
     qint64 m_lastAppSendMs = 0;
-    QPointer<CoreClient> m_core;
-    bool m_coreMode = false;
-    int m_coreBacklog = 0;
-    qint64 m_coreStateSeq = 0;
-    quint64 m_coreGeneration = 0;
-    QTimer *m_coreFallbackTimer = nullptr;
 };
