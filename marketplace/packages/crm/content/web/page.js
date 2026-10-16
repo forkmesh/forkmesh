@@ -220,6 +220,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       body: `<rect x="1.75" y="1.75" width="12.5" height="12.5" rx="2.5"/><path d="M4.75 8.25L7 10.5l4.25-5"/>` },
     { id: "events", label: "Events", color: "#e16f24",
       body: `<rect x="1.75" y="3" width="12.5" height="11.25" rx="2"/><path d="M1.75 6.75h12.5M5 1.5V4M11 1.5V4"/>` },
+    { id: "grants", label: "Grants", color: "#bf8700",
+      body: `<circle cx="8" cy="5.75" r="4.25"/><path d="M5.5 9.25l-.75 5.25L8 12.75l3.25 1.75-.75-5.25"/>` },
   ];
 
   function crmFlowIcon(icon, size = 14) {
@@ -381,8 +383,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const CRM_PROFILE_BADGES = { twitter: "X", mastodon: "Md", bluesky: "Bs", linkedin: "in", github: "gh", website: "www" };
   // Stage names that close a relationship out, one way or the other, across
   // the starter flows. They only pick a colour; any stage name still works.
-  const CRM_WON_STAGES = new Set(["customer", "committed", "hired", "active"]);
-  const CRM_CLOSED_STAGES = new Set(["inactive", "passed", "rejected", "closed"]);
+  const CRM_WON_STAGES = new Set(["customer", "committed", "hired", "active", "awarded"]);
+  const CRM_CLOSED_STAGES = new Set(["inactive", "passed", "rejected", "closed", "declined"]);
   const CRM_QUIET_DAYS = 30;
   const CRM_BULK_EDIT_LIMIT = 500;
 
@@ -619,7 +621,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     zoho.href = `https://${CRM_ZOHO_MAIL_HOSTS[region] || CRM_ZOHO_MAIL_HOSTS.com}/`;
   }
 
-  const CRM_NEXT_WON_STAGES = new Set(["won", "closed-won", "customer", "renewal", "committed", "signed", "paid", "active"]);
+  const CRM_NEXT_WON_STAGES = new Set(["won", "closed-won", "customer", "renewal", "committed", "signed", "paid", "active", "awarded"]);
   const CRM_NEXT_ENDED_STAGES = new Set(["passed", "rejected", "closed", "inactive", "hired", "lost", "closed-lost", "churned", "declined", "unsubscribed", "do-not-contact"]);
   const CRM_NEXT_UNSENT_STATUSES = new Set(["draft", "sending", "failed", "reject"]);
   const CRM_NEXT_REPLY_DAYS = 60;
@@ -818,6 +820,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     { id: "email", label: "Email" },
     { id: "message", label: "Direct message" },
     { id: "toot", label: "Toot" },
+    { id: "application", label: "Grant application" },
   ];
   const CRM_AI_URL_LIMIT = 14000;
   const CRM_AI_MESSAGE_LIMIT = 6;
@@ -853,6 +856,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   function crmAiDefaultFormat(contact) {
+    if (crmFlow(contact.flow)?.icon === "grants") return "application";
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact.email || "").trim())) return "email";
     return crmMastodonKey(contact.mastodon) ? "toot" : "message";
   }
@@ -874,6 +878,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
   }
 
   const CRM_AI_ANGLES = [
+    { words: ["grant"],
+      angle: (group) => `They are on our "${group}" list as a grant funder, so write to their published priorities and evaluation criteria: problem, approach, impact, team, budget and milestones. Never invent traction, numbers, partners or names.` },
     { words: ["journalist", "press", "media", "reporter", "writer", "editor", "podcast", "newsletter", "blog"],
       angle: (group) => `They are on our "${group}" list as a journalist, so pitch a story: why it matters now and what is new, and offer an interview or a demo. No sales talk.` },
     { words: ["investor", "angel", "vc", "fund", "capital"],
@@ -892,6 +898,23 @@ window.ForkMeshDashboard.registerPage("crm", ({
     return match ? match.angle(name) : `They are on our "${name}" list, so pitch it the way that suits that group.`;
   }
 
+  const CRM_AI_MESSAGE_RULES = [
+    "- Make it personal. Open with something specific to them, taken from their recent posts, work or links below, never a compliment that would fit anyone.",
+    "- Say plainly who we are, why we are writing to them in particular, and why now.",
+    "- End with one clear, low-effort ask (a reply, a short call, or trying one thing).",
+    "- Plain, warm words, short paragraphs, no hype, no emoji, no [placeholders]. Use only facts given here or found on the linked pages; leave out anything you cannot back up.",
+    "- If you can browse, open their profiles and posts and our site, blog and changelog below first, and use anything newer than what is written here.",
+    "- Reply with the finished message, ready to paste, then two alternative opening lines.",
+  ];
+  const CRM_AI_APPLICATION_RULES = [
+    "- If you can browse, open their program page and application form (links below) first, and use their current questions, limits, deadline and criteria; say so if anything on our record is out of date.",
+    "- Answer each question under its own heading, with its word or character count after it.",
+    "- Fit the request to their range and to what they fund; break the budget into milestones with dates and deliverables.",
+    "- Plain, specific words, no hype, no emoji. Use only facts given here or found on the linked pages; leave out anything you cannot back up.",
+    "- Where the form needs something only we can supply (legal entity, registration numbers, bank details, CVs, letters of support), never invent it: list it at the end instead.",
+    "- Reply with the finished application, ready to paste, then a checklist of every document and fact we still have to supply, then three ways to make it stronger.",
+  ];
+
   function crmAiPrompt(input) {
     const { contact, format, mode } = input;
     const name = crmContactLabel(contact);
@@ -902,9 +925,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const ask = {
       email: `an email to ${name}. Start with a "Subject:" line, then the body, signed by ${sender}. Keep the body under 150 words.`,
       message: `a short direct message to ${name} for LinkedIn, X or Bluesky: under 80 words, no subject line, signed by ${sender}.`,
+      application: `a complete draft of our grant application to ${name}. Follow their form: answer every question they ask, in their order and under their headings, within their word or character limits, with a budget in their currency that fits the amount they award.`,
       toot: `a Mastodon post (toot) to ${name}${mastodon ? ` that mentions @${mastodon} at the start` : ""}, at most 500 characters including the mention and any link, with no more than two hashtags.${input.thread ? ` Write it as a reply in our existing thread: ${input.thread}` : ""}`,
     }[format] || "";
-    const goal = mode === "reach"
+    const goal = format === "application"
+      ? `We are applying to ${name} for funding: make the case that funding ${organization} advances their mission, and propose one concrete, fundable piece of ${organization} work with milestones and deliverables.`
+      : mode === "reach"
       ? `This is our first contact with ${name}: introduce ${organization} in a sentence and give them one concrete reason it matters to them in particular.`
       : `We are already in touch with ${name}: pick up where the conversation below left off, answer anything they asked, and do not repeat the first pitch.`;
     const angle = crmAiAngle(input.group, input.flowName);
@@ -946,12 +972,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       ...(angle ? [angle] : []),
       "",
       "How to write it:",
-      "- Make it personal. Open with something specific to them, taken from their recent posts, work or links below, never a compliment that would fit anyone.",
-      "- Say plainly who we are, why we are writing to them in particular, and why now.",
-      "- End with one clear, low-effort ask (a reply, a short call, or trying one thing).",
-      "- Plain, warm words, short paragraphs, no hype, no emoji, no [placeholders]. Use only facts given here or found on the linked pages; leave out anything you cannot back up.",
-      "- If you can browse, open their profiles and posts and our site, blog and changelog below first, and use anything newer than what is written here.",
-      "- Reply with the finished message, ready to paste, then two alternative opening lines.",
+      ...(format === "application" ? CRM_AI_APPLICATION_RULES : CRM_AI_MESSAGE_RULES),
       "",
       `## About us: ${organization}`,
       String(input.brief || "").trim() || `(No description saved yet. Look ${organization} up before writing.)`,

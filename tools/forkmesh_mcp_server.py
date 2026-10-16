@@ -122,6 +122,7 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import forkmesh_paths  # noqa: E402  (sibling module; tools run as scripts)
 import forkmesh_safe_delete  # noqa: E402
+import zoho_mail  # noqa: E402
 
 # The open project's files: the desktop that spawns this server exports
 # FORKMESH_PROJECT / FORKMESH_DATA_DIR, and forkmesh_paths follows them.
@@ -140,6 +141,7 @@ WRITE_TOOLS = {
     "create_task", "update_task", "complete_task", "reopen_task",
     "attach_work_item", "detach_work_item", "delete_task", "restore_task",
     "create_agent", "create_release", "publish_release", "record_expense",
+    "send_email",
 }
 DESTRUCTIVE_TOOLS = {"delete_task", "crm_merge_contacts"}
 WINDOW_TOOLS = {"show_window", "read_window", "close_window",
@@ -3307,6 +3309,17 @@ def tool_record_expense(args):
     return json.dumps(record_expense(args), indent=2)
 
 
+def tool_send_email(args):
+    try:
+        result = zoho_mail.send(
+            args.get("to"), args.get("subject"), args.get("body"),
+            cc=args.get("cc"), bcc=args.get("bcc"),
+            reply_to=args.get("reply_to") or "", html=bool(args.get("html")))
+    except zoho_mail.ZohoMailError as exc:
+        raise ValueError(str(exc)) from exc
+    return zoho_mail.summary(result) + "\n" + json.dumps(result, indent=2)
+
+
 def tool_get_note(args):
     note, _path, _repo = locate_note(args["note_id"])
     return json.dumps(public_note(note, include_content=True), indent=2)
@@ -4085,6 +4098,25 @@ TOOLS = [
                          "external_reference", "incurred_on"],
         },
         "handler": tool_record_expense,
+    },
+    {
+        "name": "send_email",
+        "description": "Send one email through the Zoho Mail account set up on this machine with `python3 tools/zoho_mail.py setup`, with no confirmation step, and return that it was sent with its Message-ID. Plain text unless html is true. Fails, sending nothing, when Zoho is not set up or rejects the login.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": ["string", "array"], "items": {"type": "string"},
+                       "description": "recipient address, a comma-separated list, or an array; \"Name <a@example.com>\" is accepted"},
+                "subject": {"type": "string"},
+                "body": {"type": "string", "description": "the message; HTML when html is true"},
+                "cc": {"type": ["string", "array"], "items": {"type": "string"}},
+                "bcc": {"type": ["string", "array"], "items": {"type": "string"}},
+                "reply_to": {"type": "string", "description": "one address replies should go to"},
+                "html": {"type": "boolean", "description": "body is HTML; a plain-text copy is added"},
+            },
+            "required": ["to", "subject", "body"],
+        },
+        "handler": tool_send_email,
     },
     {
         "name": "get_note",
@@ -4985,7 +5017,7 @@ def tools_list_payload():
             "destructiveHint": tool["name"] in DESTRUCTIVE_TOOLS,
             "idempotentHint": not writable,
             "openWorldHint": tool["name"] in {
-                "read_chat_messages", "post_chat_message"} or
+                "read_chat_messages", "post_chat_message", "send_email"} or
             tool["name"] in CRM_TOOLS or tool["name"] in MARKETING_TOOLS or
             tool["name"] in TASK_READ_TOOLS,
         }
@@ -5039,6 +5071,9 @@ def handle_request(msg):
             "Desktop releases (same condition): list_releases, "
             "create_release (bumps, tags and starts the release workflows "
             "and mirror rollout with no dialog), publish_release. "
+            "Email: send_email sends one message through the Zoho Mail "
+            "account set up with tools/zoho_mail.py, with no confirmation "
+            "step, and returns its Message-ID. "
             "Desktop windows (same condition): show_window opens a small "
             "window to show the user a result or ask a question with buttons "
             "or a text field, open_browser_window opens a web page (such as a "
