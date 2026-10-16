@@ -229,7 +229,8 @@ _RAFT_ERROR_HINTS = (
     "leader not found", "not leader", "leadership lost",
     "context deadline exceeded", "timed out enqueuing",
     "raft is already shutdown", "timeout waiting for fsm",
-    "store not open",
+    "store not open", "connection reset by peer", "connection refused",
+    "broken pipe", "i/o timeout",
 )
 
 

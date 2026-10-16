@@ -17,6 +17,8 @@ and the insight maths (trends, funnels, retention, paths, ...) runs here in
 plain Python over the opened batches. No IP address is ever stored.
 """
 
+import asyncio
+import bisect
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -46,6 +48,8 @@ MAX_PROJECTS = 20
 MAX_OBJECTS_PER_KIND = 300
 MAX_QUERY_BATCHES = 1500
 MAX_QUERY_EVENTS = 60000
+EVENT_CACHE_MS = 15000
+MAX_EVENT_CACHE = 4
 MAX_PERSON_SCAN = 3000
 MAX_ALIAS_SCAN = 20000
 MAX_EXPORT_EVENTS = 20000
@@ -300,6 +304,8 @@ DATA_SCHEMA_DOWN = ["DROP TABLE IF EXISTS " + name for name in DATA_TABLES]
 # public path at one project read instead of three.
 _DECIDE_CACHE = {}
 _PROJECT_CACHE = {}
+_EVENT_CACHE = {}
+_EVENT_LOCKS = {}
 _PAGE_SCHEMA = {"ready": False}
 
 
@@ -943,6 +949,7 @@ async def _capture(runtime, data):
             "last_ts,events,compacted,data) VALUES(?,?,?,?,?,?,?,0,?)",
             runtime.new_id(), project["id"], project["org_bi"], _day(first),
             first, last, len(events), await _seal(runtime, events))
+        _forget_events(project["id"])
         await _count_pages(runtime, project, events, visitors, now)
 
     replay_bytes, replay_error = 0, ""
@@ -2887,7 +2894,52 @@ async def _decide(runtime, data):
 # Loading events and people for a query
 
 
+def _forget_events(project_id=None):
+    if project_id is None:
+        _EVENT_CACHE.clear()
+    else:
+        _EVENT_CACHE.pop(project_id, None)
+
+
+def _cached_events(project_id, start, end, now):
+    entry = _EVENT_CACHE.get(project_id)
+    if not entry:
+        return None
+    at, low, high, events, times = entry
+    if not 0 <= now - at <= EVENT_CACHE_MS or start < low or end > high + EVENT_CACHE_MS:
+        return None
+    return events[bisect.bisect_left(times, start):bisect.bisect_right(times, end)], False
+
+
+def _events_lock(project_id):
+    loop = asyncio.get_running_loop()
+    held = _EVENT_LOCKS.get(project_id)
+    if held is None or held[0] is not loop:
+        if len(_EVENT_LOCKS) > 50:
+            _EVENT_LOCKS.clear()
+        held = (loop, asyncio.Lock())
+        _EVENT_LOCKS[project_id] = held
+    return held[1]
+
+
 async def _load_events(runtime, project_id, start, end):
+    cached = _cached_events(project_id, start, end, runtime.now())
+    if cached is not None:
+        return cached
+    async with _events_lock(project_id):
+        cached = _cached_events(project_id, start, end, runtime.now())
+        if cached is not None:
+            return cached
+        events, truncated = await _read_events(runtime, project_id, start, end)
+        if not truncated:
+            if len(_EVENT_CACHE) >= MAX_EVENT_CACHE:
+                _EVENT_CACHE.clear()
+            _EVENT_CACHE[project_id] = (runtime.now(), start, end, events,
+                                        [event["t"] for event in events])
+        return list(events), truncated
+
+
+async def _read_events(runtime, project_id, start, end):
     rows = await runtime.d1_all(
         "SELECT data FROM analytics_batches WHERE project_id=? AND day>=? "
         "AND day<=? AND last_ts>=? AND first_ts<=? ORDER BY first_ts DESC LIMIT ?",
@@ -3449,6 +3501,7 @@ async def _erase_person(runtime, project_id, person_id):
          (project_id, person_id)),
         ("DELETE FROM analytics_persons WHERE project_id=? AND person_id=?",
          (project_id, person_id))])
+    _forget_events(project_id)
     return removed
 
 
@@ -3656,6 +3709,7 @@ async def _purge_project(runtime, project_id):
     await _run_batch(runtime, [
         ("DELETE FROM " + table + " WHERE project_id=?", (project_id,))
         for table in DATA_TABLES])
+    _forget_events(project_id)
 
 
 async def _export_project(runtime, project, now):
@@ -3715,6 +3769,7 @@ async def export_org_data(runtime, org_bi, org_name):
 async def purge_org_data(runtime, org_bi):
     _PROJECT_CACHE.clear()
     _DECIDE_CACHE.clear()
+    _forget_events()
     for table in DATA_TABLES:
         await runtime.d1_run("DELETE FROM " + table + " WHERE org_bi=?", org_bi)
 
@@ -3770,6 +3825,7 @@ async def _expire(runtime, now):
     for row in rows:
         settings = _settings_data(None, await _open(runtime, row.get("data"), {}))
         project_id = str(row["project_id"])
+        _forget_events(project_id)
         await runtime.d1_run(
             "DELETE FROM analytics_batches WHERE project_id=? AND day<?",
             project_id, _day(now - settings["retentionDays"] * DAY_MS))

@@ -37,6 +37,9 @@ def _run_with_rqlite_error(message, sql="INSERT INTO t (x) VALUES (?)"):
     "context deadline exceeded",
     "index 3589896: timeout waiting for fsm",
     "store not open",
+    "read protobuf length: read tcp 10.77.0.2:17738->10.77.0.3:4002: read: "
+    "connection reset by peer",
+    "dial tcp 10.77.0.3:4002: connect: connection refused",
 ])
 def test_raft_backpressure_is_overload_not_sqlite_error(message):
     text = _run_with_rqlite_error(message)

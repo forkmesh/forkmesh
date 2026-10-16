@@ -2286,6 +2286,7 @@ def test_reddit_rules_copy_for_the_scout_is_dated_markdown_without_the_reader():
 def _analytics_runtime():
     runtime = Runtime()
     analytics = marketing._analytics_module()
+    analytics._EVENT_CACHE.clear()
     runtime.db.executescript(";\n".join(analytics.DATA_SCHEMA_UP))
     runtime.db.execute("INSERT INTO org_plugin_installs VALUES(?,?,?,?,?,?)",
                        ("org:acme", "analytics", "acme", "bi:alice", "alice", 1))
