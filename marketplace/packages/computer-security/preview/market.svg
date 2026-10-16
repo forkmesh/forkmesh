@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
-  <title id="title">Computer Security Checkup</title>
+  <title id="title">Security</title>
   <desc id="desc">A security checkup table with green passing checks, amber reviews and an orange warning.</desc>
   <rect width="1200" height="720" fill="#f6f8fb"/>
   <rect x="42" y="38" width="1116" height="644" rx="18" fill="#ffffff" stroke="#d7dee9" stroke-width="2"/>
   <path d="M94 102l38-18 38 18v46c0 44-38 59-38 59s-38-15-38-59z" fill="#1d6f42"/>
   <path d="M113 145l13 13 28-35" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="196" y="118" fill="#172033" font-family="system-ui, sans-serif" font-size="34" font-weight="700">Computer Security Checkup</text>
+  <text x="196" y="118" fill="#172033" font-family="system-ui, sans-serif" font-size="34" font-weight="700">Security</text>
   <text x="196" y="154" fill="#62708a" font-family="system-ui, sans-serif" font-size="19">108 checks: 82 pass, 14 need review, 10 warnings, 0 critical, 2 unavailable</text>
   <rect x="940" y="92" width="166" height="48" rx="9" fill="#235fdb"/>
   <text x="962" y="123" fill="#fff" font-family="system-ui, sans-serif" font-size="17" font-weight="650">Run checkup</text>

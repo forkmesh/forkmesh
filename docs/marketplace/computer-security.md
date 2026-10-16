@@ -1,10 +1,25 @@
-# Computer Security Checkup package
+# Security package
 
 `marketplace/packages/computer-security` is a bundled desktop package (Market
 id `computer-security`) that runs a local security checkup, explains every
 result, shows whether the thing it found is actually in use, and offers a
 confirmed one-click fix where a safe one exists. It is off by default and
 appears in the desktop rail when installed.
+
+## Name and icon
+
+The package is shown as **Security** in the desktop rail, the page heading, the
+Market listing and review pages; it was called "Computer Security Checkup"
+until 2026-10-16. The Market id `computer-security`, the entrypoint
+`builtin:computer-security` and the C++ class names are unchanged, so installed
+copies and saved reviews keep working.
+
+The rail icon is `shield`, a plain octicon-style shield outline in
+`desktop/resources/icons/forkmesh/shield.svg` (registered in
+`desktop/resources/icons.qrc`). The package always asked for `shield`, but no
+such icon was bundled, so the rail button rendered blank.
+`marketplace/tests/test_package_rail_icons.py` now fails any native package
+whose rail icon is missing from `icons.qrc`.
 
 ## What it checks
 

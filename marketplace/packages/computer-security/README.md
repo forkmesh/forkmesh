@@ -1,4 +1,4 @@
-# Computer Security Checkup
+# Security
 
 A desktop security checkup. It scans local configuration, the process list and
 the operating system's TCP and UDP listener tables, then groups more than 300
@@ -13,7 +13,7 @@ fix button: it shows exactly what will change, asks for confirmation and then
 the administrator password, and never deletes anything (suspicious files are
 quarantined).
 
-Install it from the Market to add **Computer Security Checkup** to the desktop
+Install it from the Market to add **Security** to the desktop
 rail. It is bundled but off by default.
 
 The scan itself is read-only and sends results nowhere. Its checks, fixes and
