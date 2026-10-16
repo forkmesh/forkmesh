@@ -164,6 +164,12 @@ struct GenieSpiderLayer: View {
             .onChange(of: counts.agents) { (old: Int, new: Int) in
                 hub.agentsChanged(from: old, to: new)
             }
+            .onChange(of: notifications?.celebrationCount ?? 0) { (_: Int, _: Int) in
+                guard let ping = notifications?.celebration,
+                      let line = PingCelebration.badgeLine(ping) else { return }
+                hub.show(line: line)
+                cues.play(.cheer)
+            }
     }
 
     private func layout() {

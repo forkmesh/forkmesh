@@ -2,19 +2,25 @@
 
 Badges are public recognition marks on a profile. The catalog is fixed; each
 badge is awarded once per account, automatically at a platform event or by a
-platform administrator. An award is permanent.
+platform administrator. An award is permanent. Some badges have levels
+(default, bronze, silver, gold); a level only ever goes up.
 
 ## Code map
 
 | Piece | Where |
 |---|---|
-| Catalog, slug validation, thresholds | `app/src/badges.py` |
-| `_award_badge`, `_send_badge_email`, `award_distinguished_contributor_badges` | `app/src/entry.py` |
+| Catalog, slug validation, thresholds, levels (`tiers`, `tier_for_value`, `tier_summary`) | `app/src/badges.py` |
+| `_award_badge`, `_record_badge_progress`, `_send_badge_email`, `run_badge_sweep` and its sweeps | `app/src/entry.py` |
+| Stargazer hook | `_award_stargazer_for_repo`, called by `repo_star_handler` after a new star |
+| Genie's Gift hook | `_award_genies_gift`, called by `_account_tip_notice` after the tip row is written |
 | `GET /api/badges`, `GET/POST/DELETE /api/badges/<name>` | `badges_catalog_handler`, `account_badges_handler` |
 | Profile card | `data-profile-badges`, `renderProfileBadges`, `profileBadgeMedal` in `app/public/dashboard/js/04-account.js` |
-| Medallion artwork | `app/public/assets/badges/<slug>.svg`, one per catalog slug |
-| Hourly sweep | cron phase `badge-sweep` |
-| Table | `badge_awards` |
+| Medallion artwork | `app/public/assets/badges/<slug>.svg`, one per catalog slug, plus `<slug>-bronze.svg`, `-silver` and `-gold` for a badge with levels |
+| Medallion generator | `app/tools/build_badge_medallions.py` (`--check` fails when a file is stale) |
+| Hourly sweep | cron phase `badge-sweep` runs `run_badge_sweep` |
+| Activity badges | `BADGE_METRIC_SQL` (one query per badge), `award_metric_badges`, `award_daily_spinner_badges`, `badges.longest_streak` |
+| Node uptime totals | `_credit_node_uptime`, called by `record_online_sample`; table `node_uptime_totals` (migration `0265_node_uptime_totals`) |
+| Tables | `badge_awards` (`tier` 0-3, `tier_at`), `badge_progress` (best value seen per badge and account); migration `0264_badge_tiers` |
 | Tests | `app/tests/test_badges.py`, `app/tests/test_cron_runner.py` |
 
 ## Rules
@@ -35,6 +41,108 @@ platform administrator. An award is permanent.
 - **Profile**: the Badges card is hidden when there are none; answers are
   cached in memory for a minute per name.
 
+## Levels
+
+A badge with `tiers` in the catalog has four thresholds, for default,
+bronze, silver and gold, and a `unit`. `_record_badge_progress` keeps the
+best value seen in `badge_progress` (`MAX`, so an unstar never lowers it)
+and awards the highest level that value reaches. `_award_badge` inserts the
+row at that level, or raises an existing row with `UPDATE ... WHERE tier<?`;
+a new row or a raise sends the badge email, whose subject names the new
+level ("Your Stargazer badge is now Gold on ForkMesh"). An award can skip
+levels, for example when the sweep first sees a repository with 600 stars.
+
+`GET /api/badges/<name>` adds `tier`, `tierLevel`, `tierAt`, `progress`,
+`unit`, `tiers`, `nextTier` and `nextThreshold` to a badge with levels. The
+profile loads `<slug>-<tier>.svg` (falling back to `<slug>.svg`), shows the
+level as a chip after the name, and a line such as "640 stars · Gold at
+4,096".
+
+## Stargazer and Genie's Gift
+
+- **Stargazer** (16 / 128 / 512 / 4096 stars, GitHub's Starstruck
+  thresholds): the stars on one public repository a user account owns. The
+  owner's own star does not count. Organisation-owned repositories earn
+  nothing yet. A new star checks that repository at once; the hourly sweep
+  backfills repositories that reached a threshold before the hook existed,
+  at most `BADGE_SWEEP_LIMIT` (25) per run.
+- **Genie's Gift** (one level): paid another account through a tip that the
+  server confirmed on chain, on mainnet. A plain tip is only the sender's
+  claim, so it does not count; a Ledger work payment (`context["task"]`) or a
+  paid contributor reward does. The sweep backfills from `tip_notice` rows
+  with a task, or whose signature is a `paid` `contributor_reward_estimates`
+  row.
+
+## Activity badges
+
+Ten badges are earned from data the server already stores per account. The
+hourly `badge-sweep` runs one query per badge (`BADGE_METRIC_SQL`); each
+query yields `(account_bi, value)`, and only accounts at or above the first
+threshold whose value beats their stored progress come back, at most
+`BADGE_SWEEP_LIMIT` (25) per badge per run, highest first. A row must match
+an active user account by name and blind index before
+`_record_badge_progress` raises its level. A node's activity counts for the
+user that owns it (`nodes.user_bi`); an unowned node earns nothing.
+
+| Slug | Name | Value | Levels |
+|---|---|---|---|
+| `six_eyes` | Six Eyes | sum of the `reviews` column of the user's public contribution days | 1 / 16 / 64 / 256 |
+| `brood` | Brood | forks of the user's public repositories owned by someone else | 2 / 16 / 64 / 256 |
+| `fan_club` | Fan Club | followers | 10 / 50 / 250 / 1000 |
+| `night_watch` | Night Watch | hours the user's nodes were online, summed across nodes | 24 / 168 / 720 / 8760 |
+| `daily_spinner` | Daily Spinner | longest run of consecutive days with a contribution | 7 / 30 / 100 / 365 |
+| `bug_catcher` | Bug Catcher | paid `issue_report` microjobs plus paid `issue` contributor rewards | 1 / 10 / 50 / 200 |
+| `lift_off` | Lift Off | release downloads of the user's public repositories | 10 / 100 / 1000 / 10000 |
+| `shopkeeper` | Shopkeeper | distinct other accounts using any of the user's listed apps or published community packages | 10 / 100 / 1000 / 10000 |
+| `critic` | Critic | visible marketplace reviews with a helpful vote from another account | 1 / 10 / 50 / 200 |
+| `bounty_hunter` | Bounty Hunter | paid microjobs plus paid contributor rewards | 1 / 5 / 25 / 100 |
+
+Rules and limits worth knowing:
+
+- **Contribution days** (Six Eyes, Daily Spinner) use the same source
+  selection as the profile graph: one active generation per project, from
+  the most recently captured public source, so a project mirrored in several
+  places counts once. `reviews` is the desktop-signed per-day figure the
+  graph shows; the server only checks that it is a bounded integer.
+- **Daily Spinner** is the longest run ever, not the current one. Candidates
+  are users whose count of active days beats their progress, least recently
+  checked first, so a run that does not grow cannot starve other users.
+- **Night Watch** history starts when `0261` is deployed: the older
+  `online_hourly_nodes` keeps only 48 hours and at most 50 nodes per sample,
+  so it is not used. Every 10-minute sample credits 10 minutes to each live
+  node key (repository hosts, healthy HTTPS mirrors and present accounts),
+  up to `NODE_UPTIME_MAX_KEYS` (2000) keys, before the 50-node cap applies.
+- **Brood and Lift Off** join through `repositories.key_bi`. Fork parents
+  are stored lowercased and download rows use the URL's case, so a
+  repository whose name has capitals can miss forks or downloads.
+- **Lift Off** downloads are anonymous. One release file fetched by the same
+  User-Agent on the same day counts once, which blunts reload loops but does
+  not prove distinct people.
+- **Bug Catcher and Bounty Hunter** add two separate payment pipelines, so
+  work paid both as a microjob and as a contributor reward counts twice.
+- **Shopkeeper** leaves out first-party ForkMesh packages and the
+  publisher's own use.
+- The first sweeps after deploy backfill existing activity 25 accounts per
+  badge per hour, and each award or level-up sends the badge email.
+
+## Badges planned next
+
+Medallions are already drawn; none of these is in the catalog yet.
+"Sweep" needs the sweep over each repository's `.forkmesh/` records;
+"Feature" needs a product feature first.
+
+| Slug | Name | Earned by | Levels | Data | Medallion |
+|---|---|---|---|---|---|
+| `web_weaver` | Web Weaver | pull requests merged into repositories the author does not own (GitHub: Pull Shark) | 2 / 16 / 128 / 1024 | Sweep | the Genie in the middle of a glowing web |
+| `many_webs` | Many Webs | distinct repositories, not the author's own, with a merged pull request (Open Sourcerer) | 2 / 8 / 32 / 128 | Sweep | a globe wrapped in web lines, the Genie dangling on top |
+| `quick_silk` | Quick Silk | closed an issue or pull request within 5 minutes of opening it (Quickdraw) | one | Sweep, plus `closedAt` in `pull.md` | the Genie dropping on a thread, stopwatch beside it |
+| `carpet_ride` | Carpet Ride | merged a pull request without a review (YOLO) | one | Sweep, or the web merge `overrideReview` flag | the Genie in pink sunglasses on the magic carpet |
+| `eight_hands` | Eight Hands | co-authored commits on merged pull requests (Pair Extraordinaire) | 1 / 10 / 24 / 48 | Sweep, plus `Co-authored-by` parsing | two spider claws meeting in a high five |
+| `oracle` | Oracle | accepted answers in discussions (Galaxy Brain) | 2 / 8 / 16 / 32 | Feature: mark an answer | a crystal ball holding a galaxy, on a gold stand |
+
+The first pull request, issue and discussion stay the existing Coder, QA and
+Poster badges.
+
 ## Medallions
 
 The profile card shows each badge as an SVG medallion in place of the
@@ -42,7 +150,8 @@ catalog's emoji (the `icon` field stays in the API for other clients). Every
 slug in `BADGE_DEFINITIONS` has a file `app/public/assets/badges/<slug>.svg`;
 a new badge needs its medallion in the same change.
 
-The art follows GitHub's achievement badges: a 128-unit square with a rim
+The first fifteen medallions are hand-drawn and follow GitHub's achievement
+badges: a 128-unit square with a rim
 (gradient ring, dark outer hairline so it holds an edge on white, light inner
 hairline so it reads on `#0d1117`), a face disc and one bold glyph, using two
 or three colours per badge. Strokes are at least 2.5 units so the glyph stays
@@ -66,6 +175,47 @@ of a circle to mark it as the rarer award.
 | `hackathon_finalist` | silver rim, laurel wreath around a silver "2" coin |
 | `hackathon_ambassador` | red rim, megaphone with sound waves |
 | `hackathon_winner` | gold rim, crimson face, gold trophy |
+
+### Generated medallions
+
+Medallions from Stargazer on are drawn by `app/tools/build_badge_medallions.py`
+and must not be edited by hand; change the script and run it. The look is
+ForkMesh's own rather than GitHub's:
+
+- **Frame**: a rim etched with a spider web (16 spokes, two sagging rings),
+  a highlight arc and bevel hairlines. The default level uses the badge's own
+  colour; bronze, silver and gold swap only the frame metal, so the picture
+  stays in full colour at every level.
+- **Level gems**: one, two or three teal gems at the bottom of the rim, so a
+  level reads without relying on colour; gold also gets four rim glints.
+- **Subject**: one bold picture on a bright gradient. Not every badge shows
+  the Genie spider. When it does, it is the pet's own painter
+  (`www/public/genie-spider.js`) ported to SVG, wearing an expression or
+  costume for that badge (`spider(svg, pose)`: `bust`, `eyes`, `mouth`,
+  `blush`, `raised`). Other badges are an object.
+- The fine detail of the spider is thinner than 2.5 units; the subject's
+  silhouette is what has to read at 32px.
+
+| Slug | Medallion |
+|---|---|
+| `stargazer` | the Genie up close and starstruck: six gold star eyes, open grin, pink blush, on a violet sunburst |
+| `genies_gift` | no spider: the golden lamp, its smoke curling up into a pink heart, on teal |
+| `six_eyes` | the Genie peering through a gold magnifying glass |
+| `brood` | a silk egg sac with baby Genies hatching |
+| `fan_club` | the Genie with heart eyes and blush, hearts around it |
+| `night_watch` | a crescent moon with a glowing lantern on a thread |
+| `daily_spinner` | a flame ringed by a silk orbit |
+| `bug_catcher` | a ladybird caught in a web, silk across it |
+| `lift_off` | a rocket with a violet nose, the Genie's eyes in the porthole |
+| `shopkeeper` | an open treasure chest spilling gems |
+| `critic` | a parchment of stars and the Genie's feather as a quill |
+| `bounty_hunter` | the Genie in a leather eye patch with a gold coin |
+| `web_weaver` | the Genie in the middle of a glowing web |
+| `many_webs` | a globe wrapped in web lines, the Genie dangling on top |
+| `quick_silk` | the Genie dropping on a thread, stopwatch beside it |
+| `carpet_ride` | the Genie in pink sunglasses on the magic carpet |
+| `eight_hands` | two spider claws meeting in a high five |
+| `oracle` | a crystal ball holding a galaxy, on a gold stand |
 
 The image is requested through `ForkMeshAPI.url()`, because the public
 profile on forkmesh.com is proxied from the App while `/assets/` there is the

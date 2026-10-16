@@ -318,3 +318,9 @@ QList<GenieSuggestion> suggestions(const GenieMarketingFacts &facts);
 GenieCoaching coach(const GenieMarketingFacts &facts);
 
 }
+
+namespace GeniePings {
+
+QString badgeLine(const QJsonObject &alert);
+
+}

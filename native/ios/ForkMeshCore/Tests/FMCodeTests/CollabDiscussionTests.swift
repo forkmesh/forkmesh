@@ -76,8 +76,8 @@ final class CollabDiscussionTests: XCTestCase {
     }
 
     func testNewDiscussionCategoriesAndDiscussionDetail() {
-        XCTAssertEqual(discussionCategoryLabels.map(\.key), ["general", "ideas", "help", "show-and-tell"])
-        XCTAssertEqual(discussionCategoryLabels.map(\.label), ["General", "Ideas", "Help", "Show & tell"])
+        XCTAssertEqual(discussionCategoryLabels.map(\.key), ["general", "ideas", "help", "show-and-tell", "q&a"])
+        XCTAssertEqual(discussionCategoryLabels.map(\.label), ["General", "Ideas", "Help", "Show & tell", "Q&A"])
         XCTAssertEqual(discussionCategoryLabels.first { $0.label == "Ideas" }?.key, "ideas")
 
         var discussion = RepoDiscussion(
@@ -99,5 +99,32 @@ final class CollabDiscussionTests: XCTestCase {
         XCTAssertTrue(NewDiscussionComposer.ready(title: "t", body: "b"))
         XCTAssertFalse(NewDiscussionComposer.ready(title: "t", body: " \n"))
         XCTAssertEqual(NewDiscussionComposer.defaultCategory, "general")
+    }
+
+    func testOnlyQuestionsTakeAnAnswerMarkedByTheOpenerOrTheOwner() {
+        let reply = DiscussionEvent(type: "comment", body: "Use the desktop", author: "helper-key", id: "reply-1")
+        var question = RepoDiscussion(
+            number: 3, title: "How?", category: "Q&A", events: [reply], authorKey: "opener-key",
+            answer: DiscussionEvent(type: "answer", target: "reply-1"))
+        let signedIn = CollabAccount(nodeName: "Owner", pubkey: "owner-key")
+        XCTAssertTrue(DiscussionDetail.answerable(question))
+        XCTAssertTrue(DiscussionDetail.isAnswer(reply, in: question))
+        XCTAssertTrue(DiscussionDetail.canMarkAnswer(
+            question, account: .signedOut, identityPublicKey: "opener-key", repoOwner: "owner"))
+        XCTAssertTrue(DiscussionDetail.canMarkAnswer(
+            question, account: signedIn, identityPublicKey: "owner-key", repoOwner: "owner"))
+        XCTAssertFalse(DiscussionDetail.canMarkAnswer(
+            question, account: CollabAccount(nodeName: "mona", pubkey: "k"), identityPublicKey: "k",
+            repoOwner: "owner"))
+        XCTAssertFalse(DiscussionDetail.canMarkAnswer(
+            question, account: signedIn, identityPublicKey: nil, repoOwner: "owner"))
+        question.answer = DiscussionEvent(type: "answer", target: "")
+        XCTAssertFalse(DiscussionDetail.isAnswer(reply, in: question))
+        question.category = "ideas"
+        question.answer = DiscussionEvent(type: "answer", target: "reply-1")
+        XCTAssertFalse(DiscussionDetail.answerable(question))
+        XCTAssertFalse(DiscussionDetail.isAnswer(reply, in: question))
+        XCTAssertFalse(DiscussionDetail.canMarkAnswer(
+            question, account: .signedOut, identityPublicKey: "opener-key", repoOwner: "owner"))
     }
 }

@@ -274,6 +274,13 @@ public final class CollabWriter {
             try await inbox.commentOnDiscussion(self.repo.owner, self.repo.name, number, text)
         }
     }
+
+    public func markAnswer(_ number: Int, target: String, sessionToken: String) async -> CollabNotice {
+        await run(target.isEmpty ? DiscussionDetail.answerCleared : DiscussionDetail.answerSent) { inbox in
+            try await inbox.markDiscussionAnswer(
+                self.repo.owner, self.repo.name, number, target: target, sessionToken: sessionToken)
+        }
+    }
 }
 
 // MARK: - Pull request
@@ -493,6 +500,12 @@ public final class DiscussionDetailModel {
 
     /// The reply button acts only on a non-blank reply.
     public var hasReply: Bool { !reply.dartTrimmed.isEmpty }
+
+    public func showAnswer(_ target: String) {
+        guard var current = discussion else { return }
+        current.answer = target.isEmpty ? nil : DiscussionEvent(type: "answer", target: target)
+        discussion = current
+    }
 }
 
 // MARK: - Fediverse

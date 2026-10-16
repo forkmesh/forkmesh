@@ -4517,6 +4517,32 @@ async def _live_online_nodes(env, now):
     return nodes
 
 
+NODE_UPTIME_MAX_KEYS = 2000
+
+
+async def _credit_node_uptime(env, node_keys, now):
+    keys = sorted({str(key) for key in node_keys or () if key})
+    keys = keys[:NODE_UPTIME_MAX_KEYS]
+    for offset in range(0, len(keys), 50):
+        chunk = keys[offset:offset + 50]
+        args = []
+        for key in chunk:
+            args.extend([key, ONLINE_SAMPLE_WEIGHT_MINUTES, now])
+        try:
+            await d1_run(
+                env,
+                "INSERT INTO node_uptime_totals (node_key, minutes, "
+                "updated_at) VALUES " + ", ".join(["(?, ?, ?)"] * len(chunk)) +
+                " ON CONFLICT(node_key) DO UPDATE SET "
+                "minutes=minutes+excluded.minutes, "
+                "updated_at=excluded.updated_at",
+                *args)
+        except Exception as error:
+            print("node uptime credit failed: %s" %
+                  _safe_error_text(error)[:160])
+            return
+
+
 async def record_online_sample(env):
     # Only aligned ten-minute buckets do the decrypt/query/write work. Keep the
     # guard for direct/self-hosted callers as well as the edge phase schedule.
@@ -4527,6 +4553,7 @@ async def record_online_sample(env):
     await ensure_schema(env)
     nodes = await _live_online_nodes(env, now)
     online = len(nodes)
+    await _credit_node_uptime(env, list(nodes), now)
     # The public history exposes at most fifty node series. Bound persistence
     # to the same deterministic roster so a presence spike cannot turn one
     # ten-minute sample into an unbounded Free-plan write burst.
@@ -13183,6 +13210,12 @@ SCHEMA_PRE_CREATE_ALTER_STATEMENTS = [
 # Post-CREATE column additions for tables that predate them. Idempotent: a
 # re-run raises "duplicate column name", which the applier swallows.
 SCHEMA_ALTER_STATEMENTS = [
+    """ALTER TABLE badge_awards
+       ADD COLUMN tier INTEGER NOT NULL DEFAULT 0
+       CHECK (tier BETWEEN 0 AND 3)""",
+    """ALTER TABLE badge_awards
+       ADD COLUMN tier_at INTEGER NOT NULL DEFAULT 0
+       CHECK (tier_at >= 0)""",
     # Existing activity rows gain only a whole-step aggregate. Coordinates,
     # paths, and individual samples remain ephemeral socket state.
     """ALTER TABLE world_user_activity
@@ -13328,7 +13361,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "ad25ed4761784ba8ed1739f3932706abf1fc5aebe29af5eef61cce77a5bf1572"
+    "a5893d085c0a40f89092da1e1b5847e10e39915039ae754ef33df3de67b58681"
 )
 
 
@@ -29810,6 +29843,7 @@ async def purge_trashed_organization_tasks(env, now=None):
 # revoke an already-earned badge.
 FIRST_100_USERS_LIMIT = 100
 DISTINGUISHED_CONTRIBUTOR_SWEEP_LIMIT = 25
+BADGE_SWEEP_LIMIT = 25
 WORLD_FIRST_HOUR_BADGE_MS = 60 * 60 * 1000
 ACTIVITY_BADGE_BY_CONTRIBUTION_KIND = {
     "issues": "qa",
@@ -29845,30 +29879,332 @@ async def _award_contributor_badge(env, author, kind):
         pass
 
 
-async def _award_badge(env, name, name_bi, slug, granted_by="system"):
+def _d1_changed(result):
+    try:
+        return int(result.meta.changes) > 0
+    except Exception:
+        return False
+
+
+async def _award_badge(env, name, name_bi, slug, granted_by="system", tier=0):
     slug = badge_catalog.normalize_badge_slug(slug)
     if not slug or not name_bi:
         return False
+    tiers = badge_catalog.badge_tiers(slug)
+    tier = max(0, min(int(tier or 0), len(tiers) - 1)) if tiers else 0
     await ensure_schema(env)
-    result = await d1_run(
-        env,
-        "INSERT OR IGNORE INTO badge_awards "
-        "(badge_slug, account_bi, name, granted_by, created_at) "
-        "VALUES (?,?,?,?,?)",
-        slug, name_bi, name, (granted_by or "system"), int(Date.now()))
-    try:
-        inserted = int(result.meta.changes) > 0
-    except Exception:
-        inserted = False
-    if inserted:
+    now = int(Date.now())
+    if not tier:
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO badge_awards "
+            "(badge_slug, account_bi, name, granted_by, created_at) "
+            "VALUES (?,?,?,?,?)",
+            slug, name_bi, name, (granted_by or "system"), now)
+    else:
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO badge_awards "
+            "(badge_slug, account_bi, name, granted_by, created_at, tier, "
+            "tier_at) VALUES (?,?,?,?,?,?,?)",
+            slug, name_bi, name, (granted_by or "system"), now, tier, now)
+    inserted = _d1_changed(result)
+    upgraded = False
+    if not inserted and tier:
+        upgraded = _d1_changed(await d1_run(
+            env,
+            "UPDATE badge_awards SET tier=?, tier_at=? "
+            "WHERE badge_slug=? AND account_bi=? AND tier<?",
+            tier, now, slug, name_bi, tier))
+    if inserted or upgraded:
         try:
-            await _send_badge_email(env, name, slug)
+            await _send_badge_email(env, name, slug, tier, upgraded)
         except Exception as error:
             print("badge email failed: %s" % _safe_error_text(error)[:160])
-    return inserted
+    return inserted or upgraded
 
 
-async def _send_badge_email(env, name, slug):
+async def _record_badge_progress(env, name, name_bi, slug, value):
+    slug = badge_catalog.normalize_badge_slug(slug)
+    if not slug or not name_bi or not badge_catalog.badge_tiers(slug):
+        return False
+    value = max(0, int(value or 0))
+    await ensure_schema(env)
+    await d1_run(
+        env,
+        "INSERT INTO badge_progress (badge_slug, account_bi, value, "
+        "updated_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(badge_slug, account_bi) DO UPDATE SET "
+        "value=MAX(value, excluded.value), updated_at=excluded.updated_at",
+        slug, name_bi, value, int(Date.now()))
+    tier = badge_catalog.tier_for_value(slug, value)
+    if tier < 0:
+        return False
+    return await _award_badge(env, name, name_bi, slug, tier=tier)
+
+
+async def _active_user_account(env, name):
+    name = clean_string(name or "", MAX_NODE_NAME).strip().lower()
+    if not valid_node_name(name):
+        return "", "", None
+    name_bi, rec = await _account_row(env, name)
+    if (
+        not rec
+        or _account_kind(rec) != "user"
+        or rec.get("status") != "active"
+    ):
+        return "", "", None
+    return name, name_bi, rec
+
+
+async def _repo_stargazer_count(env, repo_bi, owner_bi):
+    row = await d1_first(
+        env,
+        "SELECT COUNT(*) AS n FROM repo_stars "
+        "WHERE repo_bi=? AND account_bi<>?",
+        repo_bi, owner_bi)
+    return int((row or {}).get("n", 0) or 0)
+
+
+async def _award_stargazer_for_repo(env, owner, repo_bi):
+    try:
+        name, name_bi, _ = await _active_user_account(env, owner)
+        if not name:
+            return False
+        stars = await _repo_stargazer_count(env, repo_bi, name_bi)
+        return await _record_badge_progress(
+            env, name, name_bi, "stargazer", stars)
+    except Exception as error:
+        print("stargazer badge failed: %s" % _safe_error_text(error)[:160])
+        return False
+
+
+async def _award_genies_gift(env, sender, recipient, network, verified):
+    if not verified or network != "mainnet":
+        return False
+    try:
+        name, name_bi, _ = await _active_user_account(env, sender)
+        if not name or name == str(recipient or "").strip().lower():
+            return False
+        return await _award_badge(env, name, name_bi, "genies_gift")
+    except Exception as error:
+        print("genies gift badge failed: %s" % _safe_error_text(error)[:160])
+        return False
+
+
+async def award_stargazer_badges(env):
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "SELECT r.owner_bi, u.username, COUNT(*) AS stars "
+        "FROM repo_stars s "
+        "JOIN repositories r ON r.key_bi=s.repo_bi "
+        "JOIN users u ON u.user_bi=r.owner_bi "
+        "LEFT JOIN badge_progress p ON p.account_bi=r.owner_bi "
+        "AND p.badge_slug=? "
+        "WHERE r.is_private=0 AND s.account_bi<>r.owner_bi "
+        "GROUP BY s.repo_bi "
+        "HAVING COUNT(*)>=? AND COUNT(*)>COALESCE(MAX(p.value), 0) "
+        "ORDER BY stars DESC LIMIT ?",
+        "stargazer", badge_catalog.badge_tiers("stargazer")[0],
+        BADGE_SWEEP_LIMIT)
+    awarded = []
+    for row in rows or []:
+        name, name_bi, _ = await _active_user_account(
+            env, row.get("username") or "")
+        if not name or name_bi != row.get("owner_bi"):
+            continue
+        if await _record_badge_progress(
+                env, name, name_bi, "stargazer", row.get("stars")):
+            awarded.append(name)
+    return {"awarded": awarded}
+
+
+async def award_genies_gift_badges(env):
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "SELECT DISTINCT t.from_bi, u.username FROM tip_notice t "
+        "JOIN users u ON u.user_bi=t.from_bi "
+        "LEFT JOIN badge_awards b ON b.account_bi=t.from_bi "
+        "AND b.badge_slug=? "
+        "WHERE b.account_bi IS NULL AND t.network='mainnet' "
+        "AND t.from_bi<>t.to_bi "
+        "AND (t.task_description<>'' OR EXISTS ("
+        "SELECT 1 FROM contributor_reward_estimates e "
+        "WHERE e.tx_signature=t.signature AND e.status='paid')) "
+        "LIMIT ?",
+        "genies_gift", BADGE_SWEEP_LIMIT)
+    awarded = []
+    for row in rows or []:
+        name, name_bi, _ = await _active_user_account(
+            env, row.get("username") or "")
+        if not name or name_bi != row.get("from_bi"):
+            continue
+        if await _award_badge(env, name, name_bi, "genies_gift"):
+            awarded.append(name)
+    return {"awarded": awarded}
+
+
+BADGE_CONTRIBUTION_SOURCES_SQL = (
+    "src AS (SELECT p.source_repo_bi, p.active_generation_bi, "
+    "ROW_NUMBER() OVER (PARTITION BY p.project_bi "
+    "ORDER BY p.captured_at DESC, p.source_repo_bi) AS rk "
+    "FROM profile_contribution_projects p "
+    "JOIN repositories r ON r.key_bi=p.source_repo_bi "
+    "WHERE p.is_public=1 AND r.is_private=0 "
+    "AND p.active_generation_bi IS NOT NULL)")
+
+BADGE_CONTRIBUTION_DAYS_SQL = (
+    "FROM src s JOIN profile_contribution_days d "
+    "ON d.source_repo_bi=s.source_repo_bi "
+    "AND d.generation_bi=s.active_generation_bi WHERE s.rk=1")
+
+BADGE_METRIC_SQL = {
+    "six_eyes": (
+        BADGE_CONTRIBUTION_SOURCES_SQL + ", "
+        "m AS (SELECT d.subject_user_bi AS account_bi, "
+        "SUM(d.reviews) AS value " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+        "GROUP BY d.subject_user_bi)"),
+    "brood": (
+        "m AS (SELECT COALESCE(NULLIF(po.user_bi, ''), r.owner_bi) "
+        "AS account_bi, COUNT(*) AS value FROM repo_forks f "
+        "JOIN repositories r ON r.key_bi=f.parent_bi "
+        "LEFT JOIN nodes po ON po.node_bi=r.owner_bi "
+        "LEFT JOIN nodes fo ON fo.node_bi=f.account_bi "
+        "WHERE r.is_private=0 "
+        "AND COALESCE(NULLIF(fo.user_bi, ''), f.account_bi)<>"
+        "COALESCE(NULLIF(po.user_bi, ''), r.owner_bi) GROUP BY 1)"),
+    "fan_club": (
+        "m AS (SELECT target_bi AS account_bi, COUNT(*) AS value "
+        "FROM profile_follows WHERE follower_bi<>target_bi "
+        "GROUP BY target_bi)"),
+    "night_watch": (
+        "m AS (SELECT COALESCE(NULLIF(n.user_bi, ''), t.node_key) "
+        "AS account_bi, SUM(t.minutes)/60 AS value "
+        "FROM node_uptime_totals t "
+        "LEFT JOIN nodes n ON n.node_bi=t.node_key GROUP BY 1)"),
+    "bug_catcher": (
+        "m AS (SELECT account_bi, SUM(n) AS value FROM ("
+        "SELECT account_bi, COUNT(*) AS n FROM microjob_claims "
+        "WHERE job='issue_report' AND status='paid' GROUP BY account_bi "
+        "UNION ALL SELECT recipient_bi, COUNT(*) "
+        "FROM contributor_reward_estimates "
+        "WHERE source_kind='issue' AND status='paid' "
+        "GROUP BY recipient_bi) GROUP BY account_bi)"),
+    "lift_off": (
+        "m AS (SELECT COALESCE(NULLIF(n.user_bi, ''), r.owner_bi) "
+        "AS account_bi, COUNT(*) AS value FROM ("
+        "SELECT DISTINCT repo_bi, sha256, ua, ts/86400000 AS day "
+        "FROM release_downloads) d "
+        "JOIN repositories r ON r.key_bi=d.repo_bi "
+        "LEFT JOIN nodes n ON n.node_bi=r.owner_bi "
+        "WHERE r.is_private=0 GROUP BY 1)"),
+    "shopkeeper": (
+        "pub AS (SELECT 'forkmesh-apps' AS market, slug AS package_id, "
+        "owner_bi FROM apps WHERE listing='listed' "
+        "UNION SELECT marketplace_id, package_id, submitted_by_bi "
+        "FROM marketplace_submissions WHERE state='published'), "
+        "m AS (SELECT pub.owner_bi AS account_bi, "
+        "COUNT(DISTINCT x.account_bi) AS value FROM pub "
+        "JOIN marketplace_package_uses x ON x.market=pub.market "
+        "AND x.package_id=pub.package_id "
+        "WHERE x.account_bi<>pub.owner_bi GROUP BY pub.owner_bi)"),
+    "critic": (
+        "m AS (SELECT r.reviewer_bi AS account_bi, COUNT(*) AS value "
+        "FROM marketplace_reviews r WHERE r.hidden=0 AND EXISTS ("
+        "SELECT 1 FROM marketplace_review_votes v "
+        "WHERE v.review_id=r.review_id AND v.voter_bi<>r.reviewer_bi) "
+        "GROUP BY r.reviewer_bi)"),
+    "bounty_hunter": (
+        "m AS (SELECT account_bi, SUM(n) AS value FROM ("
+        "SELECT account_bi, COUNT(*) AS n FROM microjob_claims "
+        "WHERE status='paid' GROUP BY account_bi "
+        "UNION ALL SELECT recipient_bi, COUNT(*) "
+        "FROM contributor_reward_estimates WHERE status='paid' "
+        "GROUP BY recipient_bi) GROUP BY account_bi)"),
+}
+
+BADGE_PROGRESS_SELECT_SQL = (
+    "SELECT m.account_bi, u.username, m.value FROM m "
+    "JOIN users u ON u.user_bi=m.account_bi "
+    "LEFT JOIN badge_progress p ON p.badge_slug=? "
+    "AND p.account_bi=m.account_bi "
+    "WHERE m.value>=? AND m.value>COALESCE(p.value, 0) ")
+
+
+async def _record_swept_progress(env, slug, rows, key="value"):
+    awarded = []
+    for row in rows or []:
+        name, name_bi, _ = await _active_user_account(
+            env, row.get("username") or "")
+        if not name or name_bi != row.get("account_bi"):
+            continue
+        if await _record_badge_progress(env, name, name_bi, slug,
+                                        row.get(key)):
+            awarded.append(name)
+    return awarded
+
+
+async def award_metric_badges(env, slug):
+    await ensure_schema(env)
+    rows = await d1_all(
+        env,
+        "WITH " + BADGE_METRIC_SQL[slug] + " " + BADGE_PROGRESS_SELECT_SQL +
+        "ORDER BY m.value DESC LIMIT ?",
+        slug, badge_catalog.badge_tiers(slug)[0], BADGE_SWEEP_LIMIT)
+    return {"awarded": await _record_swept_progress(env, slug, rows)}
+
+
+async def award_daily_spinner_badges(env):
+    await ensure_schema(env)
+    candidates = await d1_all(
+        env,
+        "WITH " + BADGE_CONTRIBUTION_SOURCES_SQL + ", "
+        "m AS (SELECT d.subject_user_bi AS account_bi, "
+        "COUNT(DISTINCT d.day) AS value " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+        "AND d.commits+d.issues+d.pulls+d.reviews>0 "
+        "GROUP BY d.subject_user_bi) " + BADGE_PROGRESS_SELECT_SQL +
+        "ORDER BY COALESCE(p.updated_at, 0) LIMIT ?",
+        "daily_spinner", badge_catalog.badge_tiers("daily_spinner")[0],
+        BADGE_SWEEP_LIMIT)
+    rows = []
+    for row in candidates or []:
+        days = await d1_all(
+            env,
+            "WITH " + BADGE_CONTRIBUTION_SOURCES_SQL + " "
+            "SELECT DISTINCT d.day " + BADGE_CONTRIBUTION_DAYS_SQL + " "
+            "AND d.subject_user_bi=? "
+            "AND d.commits+d.issues+d.pulls+d.reviews>0",
+            row.get("account_bi"))
+        rows.append(dict(row, streak=badge_catalog.longest_streak(
+            [day.get("day") for day in days or []])))
+    return {"awarded": await _record_swept_progress(
+        env, "daily_spinner", rows, key="streak")}
+
+
+async def run_badge_sweep(env):
+    out = {}
+    sweeps = [
+        ("distinguished_contributor", award_distinguished_contributor_badges),
+        ("stargazer", award_stargazer_badges),
+        ("genies_gift", award_genies_gift_badges),
+        ("daily_spinner", award_daily_spinner_badges),
+    ]
+    for slug in BADGE_METRIC_SQL:
+        sweeps.append(
+            (slug, lambda env, slug=slug: award_metric_badges(env, slug)))
+    for key, sweep in sweeps:
+        try:
+            out[key] = (await sweep(env)).get("awarded", [])
+        except Exception as error:
+            print("badge sweep %s failed: %s" % (
+                key, _safe_error_text(error)[:160]))
+            out[key] = []
+    return out
+
+
+async def _send_badge_email(env, name, slug, tier=0, upgraded=False):
     info = badge_catalog.badge_definition(slug)
     name = clean_string(name or "", MAX_NODE_NAME).strip().lower()
     if not info or not valid_node_name(name):
@@ -29888,8 +30224,15 @@ async def _send_badge_email(env, name, slug):
     profile_url = (
         origin + "/dashboard/profile" if rec.get("profile_private")
         else "%s/@%s" % (origin, quote(name)))
-    badge_name = info["name"]
-    subject = "You earned the %s badge on ForkMesh" % badge_name
+    tier_label = (
+        badge_catalog.tier_name(tier).capitalize()
+        if tier and badge_catalog.badge_tiers(slug) else "")
+    badge_name = (
+        tier_label + " " + info["name"] if tier_label else info["name"])
+    subject = (
+        "Your %s badge is now %s on ForkMesh" % (info["name"], tier_label)
+        if upgraded and tier_label
+        else "You earned the %s badge on ForkMesh" % badge_name)
     text = (
         "Hi " + name + ",\n\n"
         "You just earned the " + info["icon"] + " " + badge_name +
@@ -30008,22 +30351,33 @@ async def chat_badge_activity_handler(env, request):
 async def _account_badges(env, name_bi):
     rows = await d1_all(
         env,
-        "SELECT badge_slug, granted_by, created_at FROM badge_awards "
-        "WHERE account_bi=? ORDER BY created_at", name_bi)
+        "SELECT a.badge_slug, a.granted_by, a.created_at, a.tier, a.tier_at, "
+        "p.value AS progress FROM badge_awards a "
+        "LEFT JOIN badge_progress p ON p.badge_slug=a.badge_slug "
+        "AND p.account_bi=a.account_bi "
+        "WHERE a.account_bi=? ORDER BY a.created_at", name_bi)
     out = []
     for row in rows or []:
-        info = badge_catalog.badge_definition(row.get("badge_slug"))
+        slug = str(row.get("badge_slug") or "")
+        info = badge_catalog.badge_definition(slug)
         if not info:
             continue
         granted_by = str(row.get("granted_by") or "system")
-        out.append({
-            "slug": str(row.get("badge_slug") or ""),
+        entry = {
+            "slug": slug,
             "name": info["name"],
             "description": info["description"],
             "icon": info["icon"],
             "grantedBy": "system" if granted_by == "system" else "admin",
             "awardedAt": int(row.get("created_at") or 0),
-        })
+        }
+        summary = badge_catalog.tier_summary(
+            slug, row.get("tier"), row.get("progress"))
+        if summary:
+            summary["tierAt"] = int(
+                row.get("tier_at") or row.get("created_at") or 0)
+            entry.update(summary)
+        out.append(entry)
     return out
 
 
@@ -31909,6 +32263,10 @@ async def _account_tip_notice(env, request):
                  (signature, from_bi, to_bi, lamports, network, ts, emailed)
                VALUES (?,?,?,?,?,?,0)""",
             signature, sender_bi, recipient_bi, lamports, network, now)
+
+    await _award_genies_gift(
+        env, sender, recipient, network,
+        bool(context["task"]) or reward is not None)
 
     email = (rec.get("email", "") or "").strip()
     wants_email = (
@@ -34352,6 +34710,7 @@ async def repo_star_handler(env, request, owner, repo):
             "VALUES (?,?,?)",
             repo_bi, account_bi, int(Date.now()))
         starred = True
+        await _award_stargazer_for_repo(env, public_owner, repo_bi)
     else:
         await d1_run(
             env, "DELETE FROM repo_stars WHERE repo_bi=? AND account_bi=?",
@@ -39472,6 +39831,20 @@ async def pulls_handler(env, request, owner, repo):
     return json_response({"error": "method_not_allowed"}, status=405)
 
 
+async def _discussion_answer_by_owner(env, request, data, owner, repo):
+    try:
+        ok, _ = await _authorize_owner_account(
+            env, owner, data, request, allow_admin=False)
+        if ok:
+            return True
+        _, rec = await _account_session_record(env, request, data)
+        actor = clean_string(
+            (rec or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+        return await _org_owner_of_linked_repo(env, owner, repo, actor)
+    except Exception:
+        return False
+
+
 async def discussions_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -39516,6 +39889,9 @@ async def discussions_handler(env, request, owner, repo):
             "submitter": clean_string(event.get("author", ""), 120),
             "submittedAt": int(Date.now()),
         }
+        if event.get("type") == "answer" and await _discussion_answer_by_owner(
+                env, request, data, owner, repo):
+            item["meta"] = {"ownerApproved": True}
         await d1_run(
             env,
             "INSERT INTO discussion_inbox (repo_bi, data, submitter_bi) "
@@ -39539,9 +39915,10 @@ async def discussions_handler(env, request, owner, repo):
                 env, request, owner, repo, "discussion", event.get("type"),
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-        await _record_contributor(
-            env, event.get("author", ""), "discussions",
-            event.get("authorName", ""))
+        if event.get("type") in ("open", "comment"):
+            await _record_contributor(
+                env, event.get("author", ""), "discussions",
+                event.get("authorName", ""))
         return json_response({"ok": True}, status=201)
 
     if method == "GET":
@@ -50836,7 +51213,7 @@ async def _run_cron_phase(env, phase, minute_slot):
     if phase == "attribution-clone-snapshot":
         return await _attribution.snapshot_clone_counts(env)
     if phase == "badge-sweep":
-        return await award_distinguished_contributor_badges(env)
+        return await run_badge_sweep(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
     raise ValueError("unknown cron phase")

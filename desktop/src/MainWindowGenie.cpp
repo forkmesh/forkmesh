@@ -925,6 +925,19 @@ void MainWindow::showNextGenieTip()
     measureGenieVitals(false);
 }
 
+void MainWindow::cheerGenieFor(const QJsonObject &alert)
+{
+    const QString line = GeniePings::badgeLine(alert);
+    if (line.isEmpty() || !m_genieSpider || !m_genieTip || m_genieSpider->parked())
+        return;
+    if (m_genieCoach)
+        m_genieCoach->hide();
+    m_genieSpider->play(GenieReaction::Cheer);
+    m_genieTip->say(line, m_genieSpider->bodyRect(), kGenieLineMs);
+    recordGenieSaid(QLatin1String(GenieSaidLog::kindUnasked), line, QString(),
+                    alert.value(QStringLiteral("title")).toString().trimmed());
+}
+
 GenieDesktopStage *MainWindow::genieStage()
 {
     if (!m_genieStage) {

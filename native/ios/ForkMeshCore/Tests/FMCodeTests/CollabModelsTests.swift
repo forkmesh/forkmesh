@@ -178,6 +178,12 @@ final class RecordingInbox: CollabInbox {
         try record("discussion comment #\(number)")
     }
 
+    func markDiscussionAnswer(
+        _ owner: String, _ name: String, _ number: Int, target: String, sessionToken: String
+    ) async throws {
+        try record("answer #\(number) \(target) \(sessionToken.isEmpty ? "unsigned-in" : "session")")
+    }
+
     func setThreadSubscription(
         _ owner: String, _ name: String, node: String, source: String, number: Int, subscribed: Bool
     ) async throws {

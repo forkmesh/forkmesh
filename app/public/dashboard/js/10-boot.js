@@ -25,6 +25,7 @@
     "workflows": initWorkflowsPage,
     "bounties": initBountiesPage,
     "links": initLinksPage,
+    "achievements": initAchievementsPage,
     "settings": initSettingsPage,
     "profile": initProfileOverviewPage,
     "profile-repositories": initProfileOverviewPage,

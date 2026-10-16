@@ -161,6 +161,24 @@ class InboxContractTest {
         verify("forkmesh-discussion-event-v2\no/r\ncomment\n3\n$author\n1770000000000\n${sha256Hex("Reply")}", reply.map("event")["sig"])
     }
 
+    fun testDiscussionAnswersSignTheirTargetAndCarryTheSession() = with(Fixture()) {
+        inbox.markDiscussionAnswer("o", "r", 3, target = "reply-1", sessionToken = "tok")
+        inbox.markDiscussionAnswer("o", "r", 3, target = "", sessionToken = "")
+        val author = identity.publicKeyB64url
+        val marked = transport.requests[0].bodyJson()
+        assertEq("/api/repo/o/r/discussions", transport.requests[0].path())
+        assertEq(3L, marked["number"])
+        assertEq("tok", marked["sessionToken"])
+        val event = marked.map("event")
+        assertEq("answer", event["type"])
+        assertEq("reply-1", event["target"])
+        expect(event["id"].toString().startsWith("answer-android-"))
+        verify("forkmesh-discussion-event-v2\no/r\nanswer\n3\n$author\n1770000000000\n${sha256Hex("reply-1")}", event["sig"])
+        val cleared = transport.requests[1].bodyJson()
+        expect(!cleared.containsKey("sessionToken"))
+        verify("forkmesh-discussion-event-v2\no/r\nanswer\n3\n$author\n1770000000000\n${sha256Hex("")}", cleared.map("event")["sig"])
+    }
+
     fun testThreadSubscriptionSignsTheSubscribeTemplate() = with(Fixture()) {
         inbox.setThreadSubscription("owner", "repo", node = " Mona ", source = "pull", number = 7, subscribed = true)
         inbox.setThreadSubscription("owner", "repo", node = "mona", source = "issue", number = 12, subscribed = false)

@@ -9,14 +9,17 @@ writes, and the event hooks that call into this module live in entry.py.
 """
 
 import re
+from datetime import date, timedelta
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 DISTINGUISHED_CONTRIBUTOR_MIN = 15
+TIER_NAMES = ("default", "bronze", "silver", "gold")
 
 # Ordered so the catalog and any UI built from it render in a stable,
 # meaningful sequence rather than dict-insertion happenstance.
 BADGE_DEFINITIONS = {
     "first_100_users": {
+        "hidden_until_earned": True,
         "name": "Founding Member",
         "description": "One of the first 100 people to create a ForkMesh account.",
         "icon": "\U0001F947",
@@ -72,31 +75,118 @@ BADGE_DEFINITIONS = {
     # ledger actually credited. None of them can be bought, and like every
     # other badge an award is permanent once earned.
     "hackathon_builder": {
+        "hidden_until_earned": True,
         "name": "Hackathon Builder",
         "description": "Submitted a valid project to a ForkMesh hackathon.",
         "icon": "\U0001F528",
     },
     "hackathon_connector": {
+        "hidden_until_earned": True,
         "name": "Hackathon Connector",
         "description": "Brought ten independently active members into a "
                        "ForkMesh hackathon.",
         "icon": "\U0001F578",
     },
     "hackathon_finalist": {
+        "hidden_until_earned": True,
         "name": "Hackathon Finalist",
         "description": "Placed second in a ForkMesh hackathon track.",
         "icon": "\U0001F948",
     },
     "hackathon_ambassador": {
+        "hidden_until_earned": True,
         "name": "Hackathon Ambassador",
         "description": "Approved to represent a ForkMesh hackathon as part of "
                        "its street team.",
         "icon": "\U0001F4E3",
     },
     "hackathon_winner": {
+        "hidden_until_earned": True,
         "name": "Hackathon Winner",
         "description": "Won a ForkMesh hackathon track.",
         "icon": "\U0001F3C6",
+    },
+    "stargazer": {
+        "name": "Stargazer",
+        "description": "Owns a repository that other people starred.",
+        "icon": "\u2B50",
+        "tiers": (16, 128, 512, 4096),
+        "unit": "stars",
+    },
+    "genies_gift": {
+        "name": "Genie's Gift",
+        "description": "Paid a ForkMesh contributor, confirmed on chain.",
+        "icon": "\U0001FA94",
+    },
+    "six_eyes": {
+        "name": "Six Eyes",
+        "description": "Reviewed pull requests.",
+        "icon": "\U0001F50D",
+        "tiers": (1, 16, 64, 256),
+        "unit": "reviews",
+    },
+    "brood": {
+        "name": "Brood",
+        "description": "Other people forked repositories you own.",
+        "icon": "\U0001F95A",
+        "tiers": (2, 16, 64, 256),
+        "unit": "forks",
+    },
+    "fan_club": {
+        "name": "Fan Club",
+        "description": "Followed by other ForkMesh members.",
+        "icon": "\U0001F496",
+        "tiers": (10, 50, 250, 1000),
+        "unit": "followers",
+    },
+    "night_watch": {
+        "name": "Night Watch",
+        "description": "Kept a ForkMesh node online.",
+        "icon": "\U0001F319",
+        "tiers": (24, 168, 720, 8760),
+        "unit": "hours online",
+    },
+    "daily_spinner": {
+        "name": "Daily Spinner",
+        "description": "Contributed on many days in a row.",
+        "icon": "\U0001F525",
+        "tiers": (7, 30, 100, 365),
+        "unit": "days in a row",
+    },
+    "bug_catcher": {
+        "name": "Bug Catcher",
+        "description": "Reported bugs that were accepted and paid.",
+        "icon": "\U0001F41E",
+        "tiers": (1, 10, 50, 200),
+        "unit": "bug reports",
+    },
+    "lift_off": {
+        "name": "Lift Off",
+        "description": "People downloaded releases of repositories you own.",
+        "icon": "\U0001F680",
+        "tiers": (10, 100, 1000, 10000),
+        "unit": "downloads",
+    },
+    "shopkeeper": {
+        "name": "Shopkeeper",
+        "description": "Published a marketplace package that other members use.",
+        "icon": "\U0001F6CD",
+        "tiers": (10, 100, 1000, 10000),
+        "unit": "users",
+    },
+    "critic": {
+        "name": "Critic",
+        "description": "Wrote marketplace reviews that others found helpful.",
+        "icon": "\U0001F58B",
+        "tiers": (1, 10, 50, 200),
+        "unit": "helpful reviews",
+    },
+    "bounty_hunter": {
+        "name": "Bounty Hunter",
+        "description": "Was paid for completed ForkMesh work.",
+        "icon": "\U0001FA99",
+        "tiers": (1, 5, 25, 100),
+        "unit": "paid jobs",
     },
 }
 
@@ -111,12 +201,81 @@ def badge_definition(slug):
     return BADGE_DEFINITIONS.get(normalize_badge_slug(slug))
 
 
+def badge_tiers(slug):
+    info = badge_definition(slug)
+    return tuple(info.get("tiers") or ()) if info else ()
+
+
+def tier_for_value(slug, value):
+    try:
+        value = int(value or 0)
+    except (TypeError, ValueError):
+        return -1
+    reached = -1
+    for level, threshold in enumerate(badge_tiers(slug)):
+        if value >= threshold:
+            reached = level
+    return reached
+
+
+def tier_name(level):
+    try:
+        level = int(level or 0)
+    except (TypeError, ValueError):
+        level = 0
+    return TIER_NAMES[max(0, min(level, len(TIER_NAMES) - 1))]
+
+
+def tier_summary(slug, level, progress):
+    tiers = badge_tiers(slug)
+    if not tiers:
+        return {}
+    level = max(0, min(int(level or 0), len(tiers) - 1))
+    progress = max(0, int(progress or 0))
+    following = level + 1 if level + 1 < len(tiers) else -1
+    return {
+        "tier": tier_name(level),
+        "tierLevel": level,
+        "progress": progress,
+        "unit": BADGE_DEFINITIONS[normalize_badge_slug(slug)].get("unit", ""),
+        "tiers": [{"tier": tier_name(i), "threshold": t}
+                  for i, t in enumerate(tiers)],
+        "nextTier": tier_name(following) if following >= 0 else "",
+        "nextThreshold": tiers[following] if following >= 0 else 0,
+    }
+
+
 def public_catalog():
-    return [
-        {"slug": slug, "name": info["name"], "description": info["description"],
-         "icon": info["icon"]}
-        for slug, info in BADGE_DEFINITIONS.items()
-    ]
+    out = []
+    for slug, info in BADGE_DEFINITIONS.items():
+        entry = {"slug": slug, "name": info["name"],
+                 "description": info["description"], "icon": info["icon"]}
+        if info.get("hidden_until_earned"):
+            entry["hiddenUntilEarned"] = True
+        if info.get("tiers"):
+            entry["unit"] = info.get("unit", "")
+            entry["tiers"] = [{"tier": tier_name(i), "threshold": t}
+                              for i, t in enumerate(info["tiers"])]
+        out.append(entry)
+    return out
+
+
+def longest_streak(days):
+    parsed = set()
+    for day in days or ():
+        try:
+            parsed.add(date.fromisoformat(str(day)[:10]))
+        except ValueError:
+            continue
+    best = 0
+    for day in parsed:
+        if day - timedelta(days=1) in parsed:
+            continue
+        run = 1
+        while day + timedelta(days=run) in parsed:
+            run += 1
+        best = max(best, run)
+    return best
 
 
 def contribution_count(row):

@@ -6312,6 +6312,52 @@ int main(int argc, char *argv[])
               "discussion archive succeeds");
         check(discussions.setStatus(dn, "open", &err),
               "archived discussion can be reopened");
+        const int qn = discussions.createDiscussion(
+            "How?", "question", "Q&A", &err);
+        check(discussions.addComment(qn, "an answer", &err),
+              "Q&A discussion takes a reply");
+        Discussion question;
+        for (const Discussion &d : discussions.loadAll())
+            if (d.number == qn)
+                question = d;
+        const QString replyId = question.events.value(1).id;
+        check(question.answerable() && question.answerId().isEmpty() &&
+                  discussions.mayMarkAnswer(question),
+              "a Q&A discussion starts unanswered and its owner may mark one");
+        check(discussions.markAnswer(qn, replyId, &err),
+              "markAnswer records the chosen reply");
+        QFile answerFile(tmp.path() + QStringLiteral("/.forkmesh/discussions/%1/answer.md").arg(qn));
+        check(answerFile.open(QIODevice::ReadOnly) &&
+                  QString::fromUtf8(answerFile.readAll())
+                      .contains("\ntargetAuthor: " + identity.publicKey() + "\n"),
+              "answer.md names the answering comment's author");
+        for (const Discussion &d : discussions.loadAll())
+            if (d.number == qn)
+                question = d;
+        check(question.answerId() == replyId && !question.answer.sig.isEmpty(),
+              "the marked answer loads back signed");
+        check(!discussions.markAnswer(qn, "missing-comment", &err),
+              "an answer must be a reply in the discussion");
+        check(!discussions.markAnswer(dn, discussions.loadAll().first().events.value(1).id, &err),
+              "only Q&A discussions take an answer");
+        DiscussionEvent stranger;
+        stranger.type = "answer";
+        stranger.target = replyId;
+        stranger.author = "someone-else";
+        stranger.ts = QDateTime::currentMSecsSinceEpoch() + 1000;
+        check(!discussions.applyRemoteEvent(qn, stranger, QString(), &err),
+              "a remote answer from anyone but the opener is refused");
+        DiscussionEvent clear;
+        clear.type = "answer";
+        clear.ts = QDateTime::currentMSecsSinceEpoch() + 2000;
+        clear = discussions.makeSignedEvent(qn, clear);
+        check(discussions.applyRemoteEvent(qn, clear, QString(), &err),
+              "the opener can clear the answer remotely");
+        for (const Discussion &d : discussions.loadAll())
+            if (d.number == qn)
+                question = d;
+        check(question.answerId().isEmpty(), "a cleared answer loads as none");
+        check(discussions.deleteDiscussion(qn, &err), "Q&A discussion delete succeeds");
         check(discussions.deleteDiscussion(dn, &err),
               "discussion delete succeeds");
         const QList<Discussion> afterDiscussionDelete = discussions.loadAll();

@@ -34,6 +34,7 @@ FRAGMENTS = (
     "06-repo-content.js",
     "07-repo-compose-branch.js",
     "08-repo-detail-network.js",
+    "09-achievements.js",
     "09-ads.js",
     "09-agent-profiles.js",
     "09-agents.js",
@@ -90,6 +91,7 @@ def compose_from_reader(read):
 # stub for each name other fragments call (``chunk_exports``). The build
 # refuses a chunk whose code the core reaches in any other way.
 LAZY_CHUNKS = {
+    "achievements": "09-achievements.js",
     "agents": "09-agents.js",
     "apps": "09-apps.js",
     "bounties": "09-bounties.js",

@@ -205,6 +205,29 @@ class RepoCollaborationTest {
         assertEq("No description provided.", DiscussionDetail.body(discussion.copy(body = "")))
     }
 
+    fun testOnlyQAndADiscussionsTakeAnAnswerFromTheOpenerOrOwner() {
+        val reply = DiscussionEvent(type = "comment", body = "Use the desktop", id = "reply-1")
+        val question = RepoDiscussion(
+            number = 4,
+            title = "How do I mirror?",
+            category = "Q&A",
+            authorKey = "opener-key",
+            events = listOf(reply),
+            answer = DiscussionEvent(type = "answer", target = "reply-1"),
+        )
+        expect(DiscussionDetail.answerable(question))
+        expect(DiscussionDetail.isAnswer(reply, question))
+        expect(!DiscussionDetail.isAnswer(reply.copy(id = "reply-2"), question))
+        expect(DiscussionDetail.canMarkAnswer(question, "someone", "opener-key", "owner"))
+        expect(DiscussionDetail.canMarkAnswer(question, " Owner ", "other-key", "owner"))
+        expect(!DiscussionDetail.canMarkAnswer(question, "someone", "other-key", "owner"))
+        expect(!DiscussionDetail.canMarkAnswer(question, "owner", null, "owner"))
+        val idea = question.copy(category = "ideas")
+        expect(!DiscussionDetail.answerable(idea))
+        expect(!DiscussionDetail.isAnswer(reply, idea))
+        expect(!DiscussionDetail.canMarkAnswer(idea, "owner", "opener-key", "owner"))
+    }
+
     fun testReviewComposersTitleAndValidate() {
         assertEq("Approve PR #7", PullReview.composerTitle("approve", 7))
         expect(PullReview.composerHelper("approve").startsWith("Approval is signed and sent to the pull inbox"))

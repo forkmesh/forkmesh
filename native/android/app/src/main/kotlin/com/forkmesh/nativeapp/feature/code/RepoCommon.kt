@@ -167,21 +167,9 @@ internal fun CodeAppBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(c.bgRaised)
-            .windowInsetsPadding(fmSafeAreaInsets(bottom = false)),
+            .background(c.bgBase),
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .padding(end = FmSpace.x1),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
-                FmIconButton("arrow_back", "Back", onPressed = { navigator.pop() }, color = c.textPrimary, iconSize = 24.dp)
-            }
-            Spacer(Modifier.width(FmSpace.x4))
-            Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = titleStyle)
+        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }) {
             actions()
             if (pluginMenu) PluginMenuButton()
         }

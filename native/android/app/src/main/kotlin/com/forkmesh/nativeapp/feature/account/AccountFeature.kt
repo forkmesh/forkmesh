@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.account
 
+import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -282,6 +283,11 @@ object AccountFeature {
     @Composable
     fun ProjectTitle(icon: Boolean = false, subtitle: String? = null, onOpen: () -> Unit = {}) {
         com.forkmesh.nativeapp.feature.account.projects.ProjectSwitcherTitle(icon = icon, subtitle = subtitle, onOpen = onOpen)
+    }
+
+    @Composable
+    fun ProjectSlot(modifier: Modifier = Modifier) {
+        com.forkmesh.nativeapp.feature.account.projects.ProjectSwitcherTitle(modifier = modifier, iconOnly = true)
     }
 
     @Composable
