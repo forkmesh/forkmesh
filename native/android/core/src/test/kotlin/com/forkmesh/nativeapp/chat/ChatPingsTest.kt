@@ -22,23 +22,56 @@ class ChatPingsTest {
     private fun message(id: String, conversation: String, text: String = "hello", ts: Long = now - 1_000, self: Boolean = false, fileName: String = "") =
         ChatMessage(id, conversation, "pat-node", "Pat", text, ts, self, fileName)
 
-    fun testIncomingMessagesBecomeChatPings() {
+    fun testPublicMessagesBecomeChatPings() {
         val (hub, relay, log) = hub()
         relay.conversation = "#random"
         var changed = 0
         hub.onPingsChanged = { changed++ }
         hub.filePing(message("m1", "#general"), now)
-        hub.filePing(message("m2", "@pat-node", text = "  are you there?  "), now)
-        hub.filePing(message("m3", "direct:" + "d".repeat(32), text = "", fileName = "plan.pdf"), now)
+        hub.filePing(message("m2", "#random", text = "  are you there?  "), now)
+        hub.filePing(message("m3", "#general", text = "", fileName = "plan.pdf"), now)
         assertEq(3, changed)
         val items = log.items
         assertEq(listOf("local:chat:m1", "local:chat:m2", "local:chat:m3"), items.map { it.id })
-        assertEq(listOf("Pat in #general", "Pat sent you a message", "Pat sent you a message"), items.map { it.title })
+        assertEq(listOf("Pat in #general", "Pat in #random", "Pat in #general"), items.map { it.title })
         assertEq(listOf("hello", "are you there?", "📎 plan.pdf"), items.map { it.body })
-        expect(items.all { it.source == InboxSource.Local && it.kind == "chat" && it.unread })
+        expect(items.all { it.source == InboxSource.Local && it.kind == "chat" })
         assertEq(Route.Channel("#general"), items[0].route)
         assertEq("Chat", items[0].kindLabel)
         assertEq("chat_bubble_outline", items[0].icon)
+    }
+
+    fun testPrivateMessagesAreNeverFiled() {
+        val (hub, _, log) = hub()
+        var changed = 0
+        hub.onPingsChanged = { changed++ }
+        hub.extras.restoreChannels(listOf("#hush"), emptyList())
+        hub.filePing(message("d1", "@pat-node", text = "secret one"), now)
+        hub.filePing(message("d2", "direct:" + "d".repeat(32), text = "", fileName = "plan.pdf"), now)
+        hub.filePing(message("d3", "#hush", text = "secret two"), now)
+        assertEq(0, changed)
+        assertEq(emptyList<String>(), log.pings.map { it.id })
+    }
+
+    fun testStoredPrivatePingsArePurgedOnAttach() {
+        val prefs = MemoryPrefStore()
+        val stored = LocalPingLog(prefs, { now })
+        stored.recordChat("p1", "Pat", "Pat in #general", "hello", "#general", now - 3_000, false)
+        stored.recordChat("p2", "Pat", "Pat sent you a message", "secret", "@pat-node", now - 2_000, false)
+        stored.recordChat("p3", "Pat", "Pat sent you a message", "secret", "direct:" + "d".repeat(32), now - 1_000, false)
+        stored.recordChat("p4", "Pat", "Pat in #hush", "secret", "#hush", now - 500, false)
+        stored.record("git", "Push failed", "x")
+        val hub = ChatHub(FakeChatRelay())
+        val log = LocalPingLog(prefs, { now })
+        hub.pings = log
+        assertEq(listOf("chat:p4", "chat:p1"), log.pings.filter { it.kind == "chat" }.map { it.id })
+        var changed = 0
+        hub.onPingsChanged = { changed++ }
+        hub.extras.restoreChannels(listOf("#hush"), emptyList())
+        assertEq(1, changed)
+        assertEq(listOf("chat:p1"), log.pings.filter { it.kind == "chat" }.map { it.id })
+        assertEq(listOf("chat:p1"), LocalPingLog(prefs).pings.filter { it.kind == "chat" }.map { it.id })
+        expect(log.pings.any { it.title == "Push failed" })
     }
 
     fun testOwnStaleAndRepeatedMessagesAreSkipped() {

@@ -981,6 +981,8 @@ void MainWindow::onMessage(const ChatMessage &message)
     }
 
     if (!message.historical && !ownMessage) {
+        const bool privateConversation =
+            isPrivateChatConversation(conversation);
         const QString where =
             isDirectConversation(conversation) ||
                     forkmesh::office::isDirectOfficeConversation(conversation)
@@ -996,7 +998,7 @@ void MainWindow::onMessage(const ChatMessage &message)
                                     QLatin1Char('\n') + formatted
                               : formatted);
         constexpr qint64 kChatPingFreshMs = 10 * 60 * 1000;
-        if (conversation != kWelcomeChannel &&
+        if (!privateConversation && conversation != kWelcomeChannel &&
             message.timestampMs >
                 QDateTime::currentMSecsSinceEpoch() - kChatPingFreshMs) {
             NotificationLink link;
@@ -1026,14 +1028,16 @@ void MainWindow::onMessage(const ChatMessage &message)
                         : message.senderName + QStringLiteral(" mentioned you");
                 postNotification(mentionTitle, preview, /*warning=*/false,
                                  chatNotificationIcon(message.senderId,
-                                                      message.senderName));
+                                                      message.senderName),
+                                 QString(), false, !privateConversation);
             }
         } else if (notifyEnabled(kChatMessageAlertSetting) &&
                    !isActiveWindow()) {
             notifyIfInactive(message.senderName + " " + where, preview,
                              QString(),
                              chatNotificationIcon(message.senderId,
-                                                  message.senderName));
+                                                  message.senderName),
+                             !privateConversation);
         }
     }
     scheduleChatSave();
@@ -5011,6 +5015,29 @@ void MainWindow::restorePrivateChannels()
         persistPrivateChannels();
 }
 
+QSet<QString> MainWindow::savedPrivateChannels() const
+{
+    QSettings settings;
+    QSet<QString> channels;
+    const auto addAll = [&channels](const QStringList &names) {
+        for (const QString &name : names) {
+            const QString trimmed = name.trimmed();
+            if (trimmed.isEmpty())
+                continue;
+            channels.insert(trimmed.startsWith(QLatin1Char('#'))
+                                ? trimmed
+                                : QLatin1Char('#') + trimmed);
+        }
+    };
+    addAll(settings.value(QStringLiteral("chat/privateChannels")).toStringList());
+    settings.beginGroup(QStringLiteral("chat/privateChannelsByInstance"));
+    const QStringList instances = settings.childKeys();
+    for (const QString &instance : instances)
+        addAll(settings.value(instance).toStringList());
+    settings.endGroup();
+    return channels;
+}
+
 QString MainWindow::privateChannelsSettingsKey() const
 {
     QString instance = activeServerInstanceId();
@@ -5043,6 +5070,41 @@ void MainWindow::ensureTeamRoom()
 bool MainWindow::isOfficeConversation(const QString &conversation) const
 {
     return forkmesh::office::isOfficeConversation(conversation);
+}
+
+bool MainWindow::isPrivateChatConversation(const QString &conversation) const
+{
+    return isDirectConversation(conversation) ||
+           conversation.startsWith(QLatin1String("direct:")) ||
+           forkmesh::office::isDirectOfficeConversation(conversation) ||
+           conversation == QLatin1String("#team") ||
+           m_privateChannels.contains(conversation) ||
+           (m_officeChannelMirror &&
+            m_officeChannelMirror->isPrivateConversation(conversation));
+}
+
+void MainWindow::purgePrivateChatPings(const QSet<QString> &savedPrivate)
+{
+    const qsizetype removed = m_notifications.removeIf(
+        [this, &savedPrivate](const AppNotification &item) {
+            return item.link.kind == QLatin1String("chat") &&
+                   (savedPrivate.contains(item.link.ref) ||
+                    isPrivateChatConversation(item.link.ref));
+        });
+    if (removed == 0)
+        return;
+    updateNotificationButton();
+    saveNotificationJournal();
+    if (m_notificationsTable)
+        refreshNotificationsTable();
+}
+
+void MainWindow::onPrivateChannelJoined(const QString &channel)
+{
+    m_privateChannels.insert(channel);
+    persistPrivateChannels();
+    refreshChannelList();
+    purgePrivateChatPings();
 }
 
 bool MainWindow::isDiscordConversation(const QString &conversation) const
