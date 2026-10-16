@@ -7,9 +7,6 @@
 #include <QVector>
 #include <QWidget>
 
-#include <functional>
-
-class TerminalBackend;
 class QContextMenuEvent;
 class QMouseEvent;
 class QProcess;
@@ -30,8 +27,6 @@ public:
     void setRemoteInput(bool remote);
     bool remoteInput() const { return m_remoteInput; }
     void feed(const QByteArray &bytes);
-    void setPersistKey(const QString &key) { m_persistKey = key; }
-    void resumeOr(const std::function<void()> &start);
 
 signals:
     void started();
@@ -103,14 +98,6 @@ private:
     void clearSelection();
 
     void scanForSignInUrl(const QByteArray &chunk);
-
-    void resetScreen();
-    bool startViaCore(const QString &commandLine, const QString &cwd,
-                      const QStringList &extraEnv, bool keepHostShell);
-    void releaseCore();
-    TerminalBackend *m_core = nullptr;
-    QString m_persistKey;
-    bool m_forceNative = false;
 
     int m_master = -1;
     long long m_childPid = -1;

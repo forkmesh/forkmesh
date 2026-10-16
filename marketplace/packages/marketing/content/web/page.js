@@ -1151,6 +1151,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     not_signed_in: "Sign in to the ForkMesh browser extension first (click its toolbar icon).",
     reddit_walk_running: "A walk is already running.",
     reddit_watch_empty: "The watch list is empty. Add subreddits and searches first.",
+    reddit_rules_on_file: "Every watched subreddit's rules are already on file.",
     extension_unavailable: "The browser extension did not answer. Reload this page.",
     forbidden_sender: "Reload this page and try again.",
   };
@@ -1174,10 +1175,19 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     node.textContent = `${REDDIT_WALK_STATES[walk.state] || "Walking"}${at}: ${fmtFull(read)} of ${fmtFull(stops.length)} pages read, ${fmtFull(walk.posts || 0)} post${walk.posts === 1 ? "" : "s"} seen.${sent}`;
   }
 
-  function askRedditWalk(type) {
+  function askRedditWalk(type, extra = {}) {
     const request = `reddit-walk-${++redditWalk.sequence}`;
     redditWalk.requests.set(request, type);
-    window.postMessage({ source: "forkmesh-marketing-page", type, request }, location.origin);
+    window.postMessage({ source: "forkmesh-marketing-page", type, request, ...extra }, location.origin);
+  }
+
+  function readRedditRules() {
+    if (!redditWalk.available) {
+      message("notice", "Install the ForkMesh browser extension (Extension page) and reload this page to read the rules from here.");
+      return;
+    }
+    if (redditWalk.job && ["running", "stopping"].includes(redditWalk.job.state)) return;
+    askRedditWalk("marketing-reddit-walk", { rulesOnly: true });
   }
 
   function toggleRedditWalk() {
@@ -3211,8 +3221,9 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       if (["advisor", "website", "ads", "growth", "reddit", "channels", "app-store"].includes(page)) showPage(page);
       const wantedCapture = params.get("capture");
       const wantedXSetup = params.get("xsetup") === "1";
-      if (wantedCapture || wantedXSetup || params.has("page")) {
-        params.delete("capture"); params.delete("xsetup");
+      const wantedRules = params.get("rules") === "1";
+      if (wantedCapture || wantedXSetup || wantedRules || params.has("page")) {
+        params.delete("capture"); params.delete("xsetup"); params.delete("rules");
         history.replaceState(null, "", `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`);
       }
       if (wantedCapture && state.marketing.installed) {
@@ -3223,6 +3234,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
           else message("error", "That channel is not set up for this organization.");
         }, capture.available ? 0 : 700);
       }
+      if (wantedRules && state.marketing.installed) setTimeout(readRedditRules, redditWalk.available ? 0 : 700);
       if (wantedXSetup && state.marketing.installed) {
         openXSettings();
         setTimeout(startXSetup, xSetup.available ? 0 : 700);
@@ -3266,6 +3278,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-reddit-delete]`)?.addEventListener("click", () => void deleteRedditThread());
     $(`[data-marketing-reddit-watch-edit]`)?.addEventListener("click", openRedditWatch);
     $(`[data-marketing-reddit-rules-copy]`)?.addEventListener("click", copyRedditRules);
+    $(`[data-marketing-reddit-rules-read]`)?.addEventListener("click", readRedditRules);
     $(`[data-marketing-reddit-walk]`)?.addEventListener("click", toggleRedditWalk);
     $(`[data-marketing-reddit-posts-update]`)?.addEventListener("click", updateRedditPosts);
     $(`[data-marketing-reddit-post-new]`)?.addEventListener("click", () => openRedditPost());

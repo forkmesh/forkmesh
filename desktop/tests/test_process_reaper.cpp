@@ -148,7 +148,8 @@ void testUnitNames()
           "fm-roll-1.service", "forkmesh-node-deploy.service",
           "forkmesh-source-publish.service", "forkmesh-mirror-renew.service",
           "forkmesh-release-host.service", "forkmesh-backup.service",
-          "forkmesh-dns-health.service"})
+          "forkmesh-dns-health.service", "forkmesh-headless-forkmesh.service",
+          "forkmesh-tray-forkmesh.scope"})
         check(pr::isProtectedUnit(QString::fromLatin1(unit), prefixes), unit);
     check(!pr::isProtectedUnit(QStringLiteral("forkmesh-agent-a-1-1.scope"), prefixes),
           "agent scopes are not protected");

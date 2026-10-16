@@ -404,8 +404,6 @@ void MainWindow::restoreVultrProvision()
 
 void MainWindow::resumeVultrProvision()
 {
-    if (resumeVultrProvisionThroughCore())
-        return;
     if (!m_vultrResumeRequested || m_vultrProvisionNode.isEmpty())
         return;
     QString apiKey = m_vultrApiKeyEdit
@@ -515,8 +513,6 @@ void MainWindow::endVultrProvision()
         this, QStringLiteral("End deployment"), warning,
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (reply != QMessageBox::Yes)
-        return;
-    if (endVultrProvisionThroughCore())
         return;
 
     m_vultrProvisionActive = false;
@@ -644,9 +640,6 @@ void MainWindow::runMirrorNodeSsh(
     std::function<void(bool ok, QString output)> onDone,
     bool preferProvisioningHost)
 {
-    if (runMirrorNodeSshThroughCore(node, remoteCommand, timeoutMs, onDone,
-                                    preferProvisioningHost))
-        return;
     // The provisioning checks reach the server being created, whose address
     // and key are not saved yet; everything else names a saved host.
     QString ip = preferProvisioningHost ? m_vultrInstanceIp.trimmed() : QString();
@@ -1366,8 +1359,6 @@ void MainWindow::resolveVultrSshKeyId(
 
 void MainWindow::createVultrMirrorFromForm()
 {
-    if (createVultrMirrorThroughCore())
-        return;
     if (m_vultrResumeRequested) {
         resumeVultrProvision();
         return;

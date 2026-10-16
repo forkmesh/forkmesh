@@ -1,7 +1,6 @@
 #include "AgentGuardrailLedger.h"
 
 #include "BackgroundFileWriter.h"
-#include "CoreInsightsHook.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -83,15 +82,6 @@ void AgentGuardrailLedger::recordBlocked(const QString &repository,
                                          const QString &path,
                                          bool outsideRepository, qint64 nowMs)
 {
-    if (forkmesh::coreinsights::owns(m_persistPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.guardrail"),
-                                        {{QStringLiteral("op"), QStringLiteral("blocked")},
-                                         {QStringLiteral("repository"), repository},
-                                         {QStringLiteral("tool"), tool},
-                                         {QStringLiteral("path"), path},
-                                         {QStringLiteral("outside"), outsideRepository}});
-        return;
-    }
     if (repository.isEmpty())
         return;
     const qint64 now = currentMs(nowMs);
@@ -117,13 +107,6 @@ void AgentGuardrailLedger::recordBlocked(const QString &repository,
 void AgentGuardrailLedger::recordDecision(const QString &repository,
                                           bool approved, qint64 nowMs)
 {
-    if (forkmesh::coreinsights::owns(m_persistPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.guardrail"),
-                                        {{QStringLiteral("op"), QStringLiteral("decision")},
-                                         {QStringLiteral("repository"), repository},
-                                         {QStringLiteral("approved"), approved}});
-        return;
-    }
     if (repository.isEmpty())
         return;
     AgentGuardrailRepoStats &stats = touch(repository, currentMs(nowMs));
@@ -137,13 +120,6 @@ void AgentGuardrailLedger::recordDecision(const QString &repository,
 void AgentGuardrailLedger::recordAgentsStopped(const QString &repository,
                                                int count, qint64 nowMs)
 {
-    if (forkmesh::coreinsights::owns(m_persistPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.guardrail"),
-                                        {{QStringLiteral("op"), QStringLiteral("stopped")},
-                                         {QStringLiteral("repository"), repository},
-                                         {QStringLiteral("count"), count}});
-        return;
-    }
     if (repository.isEmpty() || count <= 0)
         return;
     touch(repository, currentMs(nowMs)).agentsStopped += count;
@@ -185,11 +161,6 @@ AgentGuardrailTotals AgentGuardrailLedger::totals(qint64 nowMs) const
 
 void AgentGuardrailLedger::clear()
 {
-    if (forkmesh::coreinsights::owns(m_persistPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.clear"),
-                                        {{QStringLiteral("what"), QStringLiteral("guardrails")}});
-        return;
-    }
     m_repositories.clear();
     m_activity.clear();
     m_activityBucketStartMs = 0;
@@ -289,8 +260,6 @@ bool AgentGuardrailLedger::save(QString *error) const
 {
     if (m_persistPath.isEmpty())
         return fail(error, QStringLiteral("no ledger path"));
-    if (forkmesh::coreinsights::owns(m_persistPath))
-        return true;
     return forkmesh::diskwrite::writeNow(
         m_persistPath, QJsonDocument(toJson()).toJson(QJsonDocument::Compact),
         error);
@@ -298,16 +267,12 @@ bool AgentGuardrailLedger::save(QString *error) const
 
 void AgentGuardrailLedger::saveLater() const
 {
-    if (forkmesh::coreinsights::owns(m_persistPath))
-        return;
     forkmesh::diskwrite::writeLater(
         m_persistPath, QJsonDocument(toJson()).toJson(QJsonDocument::Compact));
 }
 
 void AgentGuardrailLedger::notify()
 {
-    if (!forkmesh::coreinsights::owns(m_persistPath))
-        forkmesh::coreinsights::hooks().guardrailsLocalDirty = true;
     if (changed)
         changed();
 }

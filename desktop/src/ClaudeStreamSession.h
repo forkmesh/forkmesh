@@ -14,7 +14,7 @@
 #include <functional>
 #include <optional>
 
-class AgentProcess;
+class QProcess;
 
 class ClaudeStreamSession : public AgentRuntimeSession
 {
@@ -63,9 +63,6 @@ public:
     bool running() const override;
     bool acceptsInput() const override;
     qint64 processId() const override;
-    bool attachProcess(const QString &key, const QJsonObject &meta,
-                       qint64 stdoutOffset, qint64 stderrOffset, qint64 pid);
-    QString processKey() const { return m_currentKey; }
 
     // Event delivery is synchronous, but transcript persistence is deliberately
     // asynchronous.  The owner can install a barrier so finished() cannot race
@@ -88,19 +85,13 @@ private:
         QJsonObject event;
         bool hasEvent = false;
         bool opensConversation = false;
-        bool stored = false;
-        qint64 endOffset = -1;
     };
 
     void launch();
     void onStdout();
     void onStderr();
     void ingestStdout(QByteArray bytes);
-    void ingestStdoutAt(QByteArray bytes, qint64 startOffset);
-    void queueStdoutLine(QByteArray line, qint64 endOffset = -1);
-    void connectProcess();
-    QJsonObject processMeta() const;
-    void scheduleAck();
+    void queueStdoutLine(QByteArray line);
     void receiveParsedLine(quint64 sequence, quint64 generation,
                            ParsedLine parsed);
     void deliverParsedLines();
@@ -112,25 +103,8 @@ private:
     void reportExit(int exitCode);
     void resetParsing();
     void stopProcess(bool finalTeardown);
-    void beginCoreParse(qint64 after);
-    void endCoreParse();
-    void onCoreRunEvent(const QString &event, const QJsonObject &data);
-    void queueParsedLine(QByteArray line, qint64 endOffset, bool stored);
-    void onNativeExit(int exitCode);
 
-    AgentProcess *m_proc = nullptr;
-    QString m_processKey;
-    QString m_currentKey;
-    QString m_hostSessionId;
-    QJsonObject m_processMeta;
-    qint64 m_deliveredOffset = -1;
-    qint64 m_ackedOffset = -1;
-    bool m_ackPending = false;
-    bool m_parseRequested = false;
-    bool m_coreParsed = false;
-    bool m_coreAttachPending = false;
-    qint64 m_storedOffset = 0;
-    std::optional<int> m_deferredNativeExit;
+    QProcess *m_proc = nullptr;
     AgentJsonlFramer m_framer;
     QThreadPool m_parsePool;
     QMap<quint64, ParsedLine> m_parsedLines;
@@ -164,7 +138,6 @@ private:
     forkmesh::agentguard::Config m_guardrails;
     QString m_resumeFallbackPrompt;
     bool m_conversationOpened = false;
-    bool m_turnIdle = false;
     bool m_resumeFallbackUsed = false; // one retry per start(), never a loop
     bool m_exitReported = false;       // one finished() per launch, never two
     bool m_exitBarrierPending = false;

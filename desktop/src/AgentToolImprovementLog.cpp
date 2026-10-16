@@ -1,7 +1,6 @@
 #include "AgentToolImprovementLog.h"
 
 #include "AgentToolCatalog.h"
-#include "CoreInsightsHook.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -874,8 +873,6 @@ bool AgentToolImprovementLog::kindIsFailure(const QString &kind)
 
 int AgentToolImprovementLog::observe(const AgentToolCallObservation &call)
 {
-    if (forkmesh::coreinsights::owns(m_logPath))
-        return 0;
     const qint64 ms = call.completedMs > 0 ? call.completedMs
                                            : QDateTime::currentMSecsSinceEpoch();
     const QString subject = subjectOf(call);
@@ -1101,8 +1098,6 @@ bool AgentToolImprovementLog::noteRepeat(const AgentToolCallObservation &call)
 
 void AgentToolImprovementLog::forgetSession(int sessionId)
 {
-    if (forkmesh::coreinsights::owns(m_logPath))
-        return;
     m_seen.remove(sessionId);
 }
 
@@ -1311,11 +1306,6 @@ bool AgentToolImprovementLog::load(QString *error)
 
 void AgentToolImprovementLog::clear()
 {
-    if (forkmesh::coreinsights::owns(m_logPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.clear"),
-                                        {{QStringLiteral("what"), QStringLiteral("improvements")}});
-        return;
-    }
     m_signals.clear();
     m_index.clear();
     m_seen.clear();
@@ -1337,13 +1327,6 @@ bool AgentToolImprovementLog::archiveSent()
 {
     if (m_logPath.isEmpty())
         return false;
-    if (forkmesh::coreinsights::owns(m_logPath)) {
-        forkmesh::coreinsights::forward(QStringLiteral("core.insights.archiveSent"), {});
-        loadSnapshot({}, 0);
-        if (changed)
-            changed();
-        return true;
-    }
     const QString sent = sentLogPath();
     QFile::remove(sent);
     const bool moved = !QFile::exists(m_logPath) || QFile::rename(m_logPath, sent);
@@ -1357,30 +1340,4 @@ bool AgentToolImprovementLog::archiveSent()
     if (changed)
         changed();
     return true;
-}
-
-void AgentToolImprovementLog::loadSnapshot(const QJsonArray &signalRows, qint64 occurrences)
-{
-    m_signals.clear();
-    m_index.clear();
-    m_seen.clear();
-    for (const QJsonValue &value : signalRows) {
-        const QJsonObject row = value.toObject();
-        AgentToolImprovement signal;
-        signal.key = row.value(QStringLiteral("key")).toString();
-        signal.kind = row.value(QStringLiteral("kind")).toString();
-        signal.family = row.value(QStringLiteral("family")).toString();
-        signal.runtimeName = row.value(QStringLiteral("tool")).toString();
-        signal.signature = row.value(QStringLiteral("signature")).toString();
-        signal.topic = row.value(QStringLiteral("topic")).toString();
-        signal.detail = row.value(QStringLiteral("detail")).toString();
-        signal.suggestion = row.value(QStringLiteral("suggestion")).toString();
-        signal.occurrences = qint64(row.value(QStringLiteral("occurrences")).toDouble());
-        signal.tokensAtStake = qint64(row.value(QStringLiteral("tokensAtStake")).toDouble());
-        signal.firstMs = qint64(row.value(QStringLiteral("firstMs")).toDouble());
-        signal.lastMs = qint64(row.value(QStringLiteral("lastMs")).toDouble());
-        m_index.insert(signal.key, int(m_signals.size()));
-        m_signals.append(signal);
-    }
-    m_occurrences = occurrences;
 }

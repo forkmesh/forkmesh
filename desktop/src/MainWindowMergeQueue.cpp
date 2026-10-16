@@ -476,8 +476,6 @@ void MainWindow::queueBranchForMerge(const QString &branch)
 
 void MainWindow::scheduleMergeQueueRun(int delayMs)
 {
-    if (handOffMergeQueueToCore(delayMs))
-        return;
     if (!m_mergeQueueTimer) {
         m_mergeQueueTimer = new QTimer(this);
         m_mergeQueueTimer->setSingleShot(true);
@@ -494,8 +492,6 @@ void MainWindow::scheduleMergeQueueRun(int delayMs)
 
 void MainWindow::processMergeQueue()
 {
-    if (handOffMergeQueueToCore(0))
-        return;
     if (m_mergeQueueBusy) {
         scheduleMergeQueueRun(kMergeQueueNextMs);
         return;

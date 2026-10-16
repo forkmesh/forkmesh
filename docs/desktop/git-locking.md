@@ -63,23 +63,17 @@ unheld and at least 60 s old (`removeGitLockIfStale`), including the sweep
 before a Merge click or a worktree update. The **Clear lock** button asks first
 when the lock is younger than 60 s or held.
 
-## With forkmesh-core attached (2026-10-02)
+## Background reads take no optional locks
 
-The core has the same per-repository lane, with the same rules, in
-`desktop/core/internal/git`. While the desktop is connected to it,
-`routeGitIndexWrite()` hands index-writing commands from worker threads to
-`core.git.run`, so the desktop and the core queue on one lane. A command stays
-on `GitIndexWriteGuard` in these cases:
-
-- it runs on the GUI thread, or on a thread that already holds a lane;
-- the desktop's own lane for the repository is held or has waiters;
-- it is `git pull` or a `filter-branch` rewrite, which need the desktop's
-  environment;
-- its stdin is larger than 32 MB.
-
-A request the core never received runs natively. A request it received is
-never re-run. See
-[core.md](core.md#coregitrun).
+`git status` refreshes the index's stat cache when it can, which means taking
+`index.lock` for a moment and renaming it over `index`. A background read that
+did that inside an agent's worktree could collide with the agent's own `git
+add`, and could even rename away a stale `index.lock` that the compare
+header's Clear lock button was about to show. Every read the desktop starts in
+the background runs with `GIT_OPTIONAL_LOCKS=0`: `runGitCaptureDirect` and,
+since 2026-10-16, `runGitDetached` (the Source Control badge, the Git page's
+dirty check, transcript and code map reads). Until then `runGitDetached` set
+nothing and only the Go engine's route set it.
 
 ## Tests
 

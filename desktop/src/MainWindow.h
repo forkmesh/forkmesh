@@ -292,7 +292,6 @@ class WorldSpeechBridge;
 class OfficeChannelMirror;
 class LocalMeshNode;
 class LocalControlServer;
-class CoreClient;
 class DiscordClient;
 class PrivateMirrorMaterialization;
 class ActionRunner;
@@ -3783,148 +3782,6 @@ private:
     void startLocalControl();
     // Creates the control server (LAN or relay, whichever reaches it first).
     bool ensureLocalControlServer();
-    void startCoreClient();
-    void onCoreConnectedChanged(bool connected);
-    void sendCoreControlInfo();
-    void registerCoreControlHandlers();
-    void registerCoreInsightsHandlers();
-    void requestCoreInsightsState(bool attaching);
-    void applyCoreInsightsState(const QJsonObject &state);
-    void noteCoreSettingsWritten(const QStringList &keys);
-    bool startShortcutInCore(const QString &filePath, int repoIndex);
-    bool stopShortcutInCore();
-    void onCoreInsightsEvent(const QString &event, const QJsonObject &data);
-    void registerCoreHostsHandlers();
-    bool coreHostsAttached() const;
-    QJsonObject coreHostsContext();
-    void forwardHostLogLineToCore(const QString &host, const QString &source,
-                                  const QString &text);
-    bool probeSavedHostThroughCore(
-        const QString &key, const QString &name, const QString &ip, const QString &user,
-        const QString &savedStatus, const QString &password, const QString &identityFile,
-        const std::function<void(const QString &, const QString &, const QString &,
-                                 const QString &)> &render);
-    bool runMirrorNodeSshThroughCore(const QString &node, const QString &remoteCommand,
-                                     int timeoutMs,
-                                     const std::function<void(bool, QString)> &onDone,
-                                     bool preferProvisioningHost);
-    bool coreHostJobsAttached() const;
-    bool coreHostInstallBusy() const;
-    void registerCoreHostJobHandlers();
-    void onCoreHostJobsConnected(bool connected);
-    void onCoreHostJobsEvent(const QString &event, const QJsonObject &data);
-    QJsonObject coreHostsEnvironment();
-    QString hostInstallBuildCommit() const;
-    QJsonArray hostInstallMirrorPackage() const;
-    bool runHostInstallThroughCore(bool forceUploadBinary, std::function<void(bool)> onFinished,
-                                   bool reinstall, bool fromSource, bool suppressFailureStatus);
-    bool runHostUninstallThroughCore();
-    bool runHostDeployAllThroughCore(int mode, const QJsonObject &release);
-    bool runAgentCliInstallThroughCore(const QString &node, const QString &ip,
-                                       const QString &user, const QString &sshPassword,
-                                       const QString &identityFile, bool copyCredentials,
-                                       std::function<void(bool, QString)> onFinished);
-    bool runHostActionsConfigurationThroughCore(
-        forkmesh::control::MirrorActionsConfigurationRequest &request,
-        const QString &sshPassword);
-    bool submitHostLinkCodeThroughCore(const QString &code);
-    bool destroyVultrHostThroughCore(const QString &name,
-                                     std::function<void(bool, QString)> onDone);
-    bool createVultrMirrorThroughCore();
-    bool resumeVultrProvisionThroughCore();
-    bool endVultrProvisionThroughCore();
-    bool deleteMeshNodeThroughCore(const QString &target, const QString &nodeId);
-    bool launchHostLogFeedThroughCore(const QString &key);
-    void stopHostLogFeedInCore(const QString &key);
-    void onCoreHostFeedEvent(const QString &event, const QJsonObject &data);
-    void detachCoreHostFeeds();
-    bool coreMirrorPushAttached() const;
-    void registerCoreMirrorPushHandlers();
-    void syncCoreMirrorRepos();
-    bool pushToSshMirrorRemotesThroughCore(int index, bool userInitiated, const QString &releaseTag,
-                                           QString *idleReason, bool pruneRefs, int *targets);
-    bool pushRefsToManagedHostsThroughCore(int index, bool wakeIfUnchanged,
-                                           const QString &releaseTag,
-                                           const QStringList &releaseArtifactHashes,
-                                           std::function<void(int, int)> onFinished,
-                                           bool reconcileArtifacts, bool pruneRefs, int *targets);
-    bool removeSshMirrorRemotesForNodeThroughCore(const QString &node, int *removed);
-    void applyCoreProvisionSnapshot(const QJsonObject &snapshot);
-    void applyCoreDeploySnapshot(const QJsonObject &deploy);
-    void applyRelayConfirmedNodeDeletion(const QString &node, const QSet<QString> &deletedNames,
-                                         bool alreadyAbsent, bool local);
-    void registerCoreOpsHandlers();
-    bool coreOpsAttached() const;
-    bool coreRebuildRunning() const;
-    bool coreBackupRunning() const;
-    void pushCoreUpdateConfig();
-    void onCoreOpsConnected(bool connected);
-    void onCoreOpsEvent(const QString &event, const QJsonObject &data);
-    void reattachCoreRebuild(const QJsonObject &state);
-    void applyCoreUpdateStatus(const QString &status, bool isError);
-    QJsonObject coreRelaunchRequest(const QString &kind, const QString &clientDir,
-                                    const QString &relaunchPath, const QString &buildType) const;
-    bool startCoreJob(const QJsonObject &request, std::function<void()> fallback);
-    bool startCoreRebuild(const QString &clientDir, const QString &asUser,
-                          const QString &relaunchPath, const QString &buildType);
-    bool startCoreUpdate(const QString &installUrl, const QString &repoDir,
-                         const QString &clientDir, const QString &relaunchPath);
-    bool startCoreCleanRebuild(const QString &clientDir);
-    bool startCorePrebuilt(const QString &clientDir, const QString &tag, const QString &tagCommit);
-    void cancelCoreRebuild();
-    void pushCoreUpdateDesktopState(const QString &activity);
-    void forwardCoreUpdateLog(const QString &text);
-    void forwardCoreUpdateStatus(const QString &status, bool isError);
-    void forwardCoreUpdateReset();
-    QJsonObject coreBackupConfig(bool arm) const;
-    bool coreConfigureBackups(bool arm);
-    bool coreTakeBackup(bool automatic);
-    bool corePruneBackups();
-    void cancelCoreBackups();
-    bool coreUnpackArchive(const QString &archive, const QString &workRoot, const QString &stamp);
-    bool coreExportArchive(const QString &out);
-    void registerCoreActionsHandlers();
-    void registerCoreDiagHandlers();
-    void registerCoreMergeQueueHandlers();
-    bool coreMergeQueueAttached() const;
-    QJsonObject coreMergeQueueView() const;
-    bool handOffMergeQueueToCore(int delayMs);
-    QJsonObject coreActionsRepoFacts(const QJsonObject &params, QString *error) const;
-    void performCoreRepoAction(const QJsonObject &params,
-                               const std::function<void(const QJsonObject &, const QString &)> &respond);
-    bool deferActionRunToCore(const ActionRun &run);
-    void requeueCoreActionRuns(const QSet<int> &ids);
-    void reconcileCoreActionRuns();
-    QSet<int> m_coreActionReconcileIds;
-    bool m_coreActionReconcileArmed = false;
-    bool coreActionQueueActive() const;
-    void attachCoreActionQueue();
-    QJsonObject coreActionQueueSnapshot() const;
-    void pushCoreActionQueueSnapshot(bool force = false);
-    void onCoreActionQueueEvent(const QString &event, const QJsonObject &data);
-    void registerCoreActionQueueHandlers();
-    bool coreActionQueueCall(const QString &method, const QJsonObject &params,
-                             QJsonObject *result, QString *error);
-    void coreActionQueueRequest(const QString &method, const QJsonObject &params);
-    bool m_coreActionQueueAttached = false;
-    QByteArray m_coreActionQueueFingerprint;
-    QHash<int, QString> m_coreActionQueueReasons;
-    QJsonArray localControlOutsideRows();
-    QJsonObject localControlAgentsContext();
-    QJsonObject localControlAgentOpsContext();
-    QJsonObject localControlAgentOpsUsageInputs();
-    bool coreAgentModelAttached() const;
-    QJsonObject coreAgentModelContext();
-    bool pushCoreAgentModel();
-    void scheduleCoreAgentModelPush();
-    void registerCoreAgentModelHandlers();
-    bool watchCoreBackgroundWork(int sessionId, qint64 processId);
-    void cancelCoreBackgroundWork(int sessionId);
-    void applyCoreBackgroundWork(const QJsonObject &data);
-    QTimer *m_coreAgentModelTimer = nullptr;
-    QByteArray m_coreAgentModelFingerprint;
-    qint64 m_coreAgentModelSeq = 0;
-    QJsonObject localControlRepoLocate(const QJsonObject &params, QString *error) const;
     void handleLocalControlRequest(int connectionId, int requestId,
                                    const QString &method,
                                    const QJsonObject &params);
@@ -10649,7 +10506,6 @@ private:
                        const QString &coveName, const QString &inviterName,
                        const QString &shareUrl, qint64 ts);
     void quickRebuildRestart();
-    void runRebuildRestartShortcut(QPushButton *button);
     void maybeStartQueuedRebuild();
     void changeMirrorLocation();
     void changePreviewCacheLocation();
@@ -12342,25 +12198,6 @@ private:
     OfficeChannelMirror *m_officeChannelMirror = nullptr;
     LocalMeshNode *m_localMesh = nullptr;
     LocalControlServer *m_localControl = nullptr;
-    CoreClient *m_coreClient = nullptr;
-    struct CoreAgentAdoption;
-    std::shared_ptr<CoreAgentAdoption> m_coreAgentAdoption;
-    void installCoreAgentProcesses();
-    bool adoptCoreAgentAtStartup(AgentSession &session);
-    void reattachCoreAgentSessions();
-    void beginCoreAgentReattach(int sessionId, const QJsonObject &info);
-    void finishCoreAgentReattach(int sessionId);
-    void finishCoreCodexReattach(int sessionId, const QString &key, const QJsonObject &meta,
-                                 qint64 stdoutOffset, qint64 stderrOffset, qint64 pid,
-                                 const forkmesh::agentguard::Config &guardrails,
-                                 const QList<QJsonObject> &events);
-    void finishCoreRunnerReattach(int sessionId, const QString &key, const QJsonObject &meta,
-                                  qint64 pid);
-    void coreAgentEventsLoaded(int sessionId);
-    void stopUnadoptedCoreAgent(const QString &key, bool running);
-    void requeueUnattachedCoreAgent(int sessionId);
-    void fallBackFromCoreAgentAdoption();
-    void resumeCoreAgentTerminal();
     forkmesh::localcontrolimages::Staging m_localControlImages;
     // Host management from the phone: one-use confirmations, the log streams
     // each phone holds open, and the newest lines per host for "detail".

@@ -1240,15 +1240,10 @@ Server::~Server()
     delete m_server;
 }
 
-bool Server::listen(QString *error, const QString &path)
+bool Server::listen(QString *error)
 {
     if (m_server->isListening())
         return true;
-    if (!path.isEmpty()) {
-        QLocalServer::removeServer(path);
-        if (m_server->listen(path))
-            return true;
-    }
     const QString name = QDir(QDir::tempPath())
                              .filePath(QStringLiteral("forkmesh-agent-gate-%1-%2")
                                            .arg(QCoreApplication::applicationPid())

@@ -12,8 +12,6 @@
 #include "ActionFailureSummary.h"
 #include "ActionPushRange.h"
 #include "CoveFileSupport.h"
-#include "CoreActions.h"
-#include "CoreClient.h"
 #include "CrashHandler.h"
 #include "ForkMeshVersion.h"
 #include "KebabHeaderView.h"
@@ -327,8 +325,6 @@ void MainWindow::initActionStore()
         connect(runner, &ActionRunner::releaseMetadataLanded, this,
                 &MainWindow::onReleaseMetadataLanded);
         m_actionRunners.append(runner);
-        if (m_coreClient)
-            forkmesh::coreactions::attach(runner, m_coreClient);
     }
 }
 
@@ -374,8 +370,7 @@ void MainWindow::restoreActionRuns()
 
                         for (int i = 0; i < m_actionRuns.size(); ++i) {
                             ActionRun &run = m_actionRuns[i];
-                            if (deferActionRunToCore(run)) {
-                            } else if (run.requeueAfterDesktopInterruption()) {
+                            if (run.requeueAfterDesktopInterruption()) {
                                 m_actionStore->appendLog(
                                     run,
                                     QString::fromUtf8(
@@ -396,8 +391,6 @@ void MainWindow::restoreActionRuns()
                                 m_actionQueue.append(run.id);
                             }
                         }
-
-                        reconcileCoreActionRuns();
 
                         for (const RepositoryRecord &repo :
                              std::as_const(m_repositories))
@@ -863,10 +856,6 @@ void MainWindow::scanActionSpool()
         propagateRepoUpdate(idx);
     }
 
-    if (coreActionQueueActive()) {
-        pushCoreActionQueueSnapshot();
-        return;
-    }
     const QStringList files =
         dir.entryList({QStringLiteral("*.push")}, QDir::Files, QDir::Name);
     QSet<int> reattested;
@@ -1132,8 +1121,7 @@ void MainWindow::syncMirrorActionsConfiguration()
 
 void MainWindow::scanExternalActionsSources()
 {
-    if (forkmesh::mirror_actions::actionsSuspendedByRecoveryFailure() ||
-        coreActionQueueActive())
+    if (forkmesh::mirror_actions::actionsSuspendedByRecoveryFailure())
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (now - m_lastExternalActionsScanMs < 3500)
@@ -1220,7 +1208,7 @@ void MainWindow::scanExternalActionsSources()
 
 void MainWindow::updateMirrorActionsRuntimeState()
 {
-    if (m_mirrorActionsConfigGeneration.isEmpty() || coreActionQueueActive())
+    if (m_mirrorActionsConfigGeneration.isEmpty())
         return;
     QSettings settings;
     const bool enabled =
@@ -1277,8 +1265,7 @@ void MainWindow::updateMirrorActionsRuntimeState()
 
 void MainWindow::scheduleMirrorActionsSummary(int delayMs)
 {
-    if (m_mirrorActionsConfigGeneration.isEmpty() || !m_actionStore ||
-        coreActionQueueActive())
+    if (m_mirrorActionsConfigGeneration.isEmpty() || !m_actionStore)
         return;
     if (!m_mirrorActionsSummaryTimer) {
         m_mirrorActionsSummaryTimer = new QTimer(this);
@@ -1323,15 +1310,6 @@ void MainWindow::enqueuePushEvent(const QString &owner, const QString &name,
                                   const QString &commit, const QString &ref,
                                   const QString &before)
 {
-    if (coreActionQueueActive()) {
-        coreActionQueueRequest(QStringLiteral("core.actions.queue.push"),
-                               {{QStringLiteral("owner"), owner},
-                                {QStringLiteral("name"), name},
-                                {QStringLiteral("commit"), commit},
-                                {QStringLiteral("ref"), ref},
-                                {QStringLiteral("before"), before}});
-        return;
-    }
     const int lookupIndex = repoIndexFor(owner, name);
     if (lookupIndex < 0)
         return;
@@ -1423,29 +1401,6 @@ void MainWindow::queueWorkflowsForCommit(int repoIndex, const QString &owner,
 {
     if (repoIndex < 0 || repoIndex >= m_repositories.size() || !m_actionStore)
         return;
-    if (coreActionQueueActive()) {
-        static const char *const triggers[] = {"push", "release", "pull_request",
-                                               "pull_request_manual"};
-        pushCoreActionQueueSnapshot();
-        coreActionQueueRequest(
-            QStringLiteral("core.actions.queue.commit"),
-            {{QStringLiteral("owner"), owner},
-             {QStringLiteral("name"), name},
-             {QStringLiteral("commit"), commit},
-             {QStringLiteral("ref"), ref},
-             {QStringLiteral("trigger"), QLatin1String(triggers[int(trigger)])},
-             {QStringLiteral("before"), before},
-             {QStringLiteral("explicit"),
-              m_explicitActionPushes.contains(owner + QLatin1Char('\x1f') + name +
-                                              QLatin1Char('\x1f') +
-                                              commit.trimmed().toLower())},
-             {QStringLiteral("pull"),
-              QJsonObject{{QStringLiteral("number"), pull.number},
-                          {QStringLiteral("author"), pull.author},
-                          {QStringLiteral("base"), pull.base},
-                          {QStringLiteral("firstTimeAuthor"), pull.firstTimeAuthor}}}});
-        return;
-    }
     const QString mirrorPath = m_repositories.at(repoIndex).mirrorPath;
     const QString ownerKey = owner;
     const QString nameKey = name;
@@ -1998,16 +1953,6 @@ MainWindow::pullCheckCandidate(const PullRequest &pr,
 void MainWindow::queueChecksForOpenPulls(RepositoryRecord repo,
                                          QList<PullRequest> pulls)
 {
-    if (coreActionQueueActive() &&
-        m_coreClient->hasNativeRoute(QStringLiteral("core.actions.queue.pullChecks"))) {
-        m_coreClient->request(
-            QStringLiteral("core.actions.queue.pullChecks"),
-            forkmesh::coreactions::pullChecksParams(
-                repo.owner, repo.name,
-                {m_profileIdentity.publicKey(), accountOwner(), repo.owner, m_userName},
-                m_profileIdentity.isValid(), false, false, {}));
-        return;
-    }
     if (m_pullChecksScanInFlight)
         return; // the next pull reload picks up whatever this pass misses
 
@@ -2078,20 +2023,6 @@ void MainWindow::resolvePullCheckHeads(RepositoryRecord repo,
     const QString mirror = repo.mirrorPath.trimmed();
     if (workTree.isEmpty() || mirror.isEmpty() || !QDir(mirror).exists())
         return;
-    if (coreActionQueueActive() &&
-        m_coreClient->hasNativeRoute(QStringLiteral("core.actions.queue.pullChecks"))) {
-        QList<int> numbers;
-        for (const PullCheckCandidate &candidate : std::as_const(candidates))
-            numbers.append(candidate.number);
-        coreActionQueueRequest(
-            QStringLiteral("core.actions.queue.pullChecks"),
-            forkmesh::coreactions::pullChecksParams(
-                repo.owner, repo.name,
-                {m_profileIdentity.publicKey(), accountOwner(), repo.owner, m_userName},
-                m_profileIdentity.isValid(), trigger == WorkflowTrigger::PullRequestManual, force,
-                numbers));
-        return;
-    }
 
     // The flag tracks the automatic pass only: a maintainer's click must not be
     // dropped because a background scan happens to be running.
@@ -2562,8 +2493,6 @@ QString MainWindow::actionRunQueueReason(int runId)
     const ActionRun *run = findRun(runId);
     if (!run || run->status != ActionStatus::Queued)
         return QString();
-    if (coreActionQueueActive())
-        return m_coreActionQueueReasons.value(runId);
     QString detail;
     switch (actionRunNeedsState(runId, &detail)) {
     case ActionNeeds::State::Waiting:
@@ -2758,11 +2687,6 @@ void MainWindow::processActionQueue()
 {
     if (m_actionRunners.isEmpty())
         return;
-    if (coreActionQueueActive()) {
-        pushCoreActionQueueSnapshot();
-        refreshQueuedRunReasons();
-        return;
-    }
     requeueOrphanedActionRuns();
     if (!m_actionWaitingRuns.isEmpty()) {
         const QSet<int> queued(m_actionQueue.cbegin(), m_actionQueue.cend());
@@ -2864,8 +2788,6 @@ void MainWindow::processActionQueue()
 void MainWindow::finishActionQueueVerification(ActionQueueVerification result)
 {
     m_actionVerifyingRuns.remove(result.runId);
-    if (coreActionQueueActive())
-        return;
     ActionRun *run = findRun(result.runId);
     if (!run || run->status != ActionStatus::Queued) {
         processActionQueue();
@@ -3246,14 +3168,12 @@ void MainWindow::onReleaseMetadataLanded(int runId)
     if (!releaseRepo.mirrorPath.trimmed().isEmpty() &&
         releaseRepo.localPath != releaseRepo.mirrorPath &&
         QDir(releaseRepo.mirrorPath).exists()) {
-        if (!forkmesh::coreactions::takeServedLanding(runId, &servedMirrorReady,
-                                                      &servedMirrorError))
-            servedMirrorReady = runGitCapture(
-                releaseRepo.mirrorPath,
-                {QStringLiteral("fetch"), releaseRepo.localPath,
-                 QStringLiteral("+refs/heads/*:refs/heads/*"),
-                 QStringLiteral("+refs/tags/*:refs/tags/*")},
-                nullptr, &servedMirrorError);
+        servedMirrorReady = runGitCapture(
+            releaseRepo.mirrorPath,
+            {QStringLiteral("fetch"), releaseRepo.localPath,
+             QStringLiteral("+refs/heads/*:refs/heads/*"),
+             QStringLiteral("+refs/tags/*:refs/tags/*")},
+            nullptr, &servedMirrorError);
         index = repoIndexFor(run.owner, run.name);
         if (index < 0)
             return;
@@ -3452,7 +3372,7 @@ void MainWindow::onReleaseMetadataLanded(int runId)
                         QDateTime::currentMSecsSinceEpoch() - queuedAtMs <
                             30 * 60 * 1000 &&
                         (releaseRolloutPending(owner, name, releaseTag) ||
-                         m_hostDeployRemaining > 0 || coreHostInstallBusy() ||
+                         m_hostDeployRemaining > 0 ||
                          (m_hostInstallProcess &&
                           m_hostInstallProcess->state() !=
                               QProcess::NotRunning));
@@ -3502,7 +3422,7 @@ void MainWindow::deployPendingReleaseRollout(
     // The durable intent survives both this short wait and an app restart.
     if ((m_hostInstallProcess &&
          m_hostInstallProcess->state() != QProcess::NotRunning) ||
-        m_hostDeployRemaining > 0 || coreHostInstallBusy()) {
+        m_hostDeployRemaining > 0) {
         QTimer::singleShot(
             1000, this,
             [this, owner, name, publishedRelease, managedRefsReady] {
@@ -7892,21 +7812,6 @@ void MainWindow::startManualWorkflowRun(
 {
     const QString loading =
         QStringLiteral("Actions history is still loading. Try again in a moment.");
-    if (coreActionQueueActive() && repoIndex >= 0 && repoIndex < m_repositories.size()) {
-        QPointer<MainWindow> self(this);
-        m_coreClient->request(
-            QStringLiteral("core.actions.queue.manual"),
-            {{QStringLiteral("owner"), m_repositories.at(repoIndex).owner},
-             {QStringLiteral("name"), m_repositories.at(repoIndex).name},
-             {QStringLiteral("path"), path},
-             {QStringLiteral("branch"), branch}},
-            [self, done](bool ok, const QJsonValue &result, const QString &error) {
-                if (self)
-                    done(ok ? result.toObject().value(QStringLiteral("run")).toInt() : 0,
-                         ok ? QString() : error);
-            });
-        return;
-    }
     if (m_actionRunsRestoreInFlight) {
         done(0, loading);
         return;
@@ -8566,9 +8471,6 @@ void MainWindow::watchAllLiveRuns()
 // released from wherever the maintainer happens to be reading it.
 bool MainWindow::approveActionRun(int runId, QString *error)
 {
-    if (coreActionQueueActive())
-        return coreActionQueueCall(QStringLiteral("core.actions.queue.approve"),
-                                   {{QStringLiteral("run"), runId}}, nullptr, error);
     ActionRun *run = findRun(runId);
     if (!run || run->status != ActionStatus::AwaitingApproval) {
         if (error)
@@ -8673,13 +8575,6 @@ bool MainWindow::resolveActionApproval(const RepositoryRecord &repo,
 
 int MainWindow::autoApproveAwaitingRuns(const RepositoryRecord &repo)
 {
-    if (coreActionQueueActive()) {
-        if (repo.actionsEnabled && repo.actionsAutoApprove)
-            coreActionQueueRequest(QStringLiteral("core.actions.queue.autoApprove"),
-                                   {{QStringLiteral("owner"), repo.owner},
-                                    {QStringLiteral("name"), repo.name}});
-        return 0;
-    }
     if (!m_actionStore || !repo.actionsEnabled || !repo.actionsAutoApprove)
         return 0;
 
@@ -8754,9 +8649,6 @@ void MainWindow::rejectSelectedRun()
 
 bool MainWindow::rejectActionRun(int runId)
 {
-    if (coreActionQueueActive())
-        return coreActionQueueCall(QStringLiteral("core.actions.queue.reject"),
-                                   {{QStringLiteral("run"), runId}}, nullptr, nullptr);
     ActionRun *run = findRun(runId);
     if (!run || run->status != ActionStatus::AwaitingApproval)
         return false;
@@ -8780,27 +8672,6 @@ void MainWindow::rerunSelectedRun()
 
 int MainWindow::rerunActionRun(int runId)
 {
-    if (coreActionQueueActive()) {
-        QJsonObject result;
-        QString error;
-        if (!coreActionQueueCall(QStringLiteral("core.actions.queue.rerun"),
-                                 {{QStringLiteral("run"), runId}}, &result, &error)) {
-            if (!error.isEmpty() && error != QLatin1String("not_started"))
-                flashMessage(error);
-            return 0;
-        }
-        const int created = result.value(QStringLiteral("run")).toInt();
-        const int column = parallelRunIds().indexOf(runId);
-        if (column >= 0) {
-            QList<int> ids = parallelRunIds();
-            ids[column] = created;
-            setParallelRunIds(ids);
-            selectActionRunRows(openActionRunIds());
-        } else if (findRun(created)) {
-            showRun(created);
-        }
-        return created;
-    }
     if (m_actionRunsRestoreInFlight) {
         flashMessage(QStringLiteral(
             "Actions history is still loading. Try again in a moment."));
@@ -8884,11 +8755,6 @@ void MainWindow::stopSelectedRun()
 
 void MainWindow::stopActionRun(int runId)
 {
-    if (coreActionQueueActive()) {
-        coreActionQueueRequest(QStringLiteral("core.actions.queue.stop"),
-                               {{QStringLiteral("run"), runId}});
-        return;
-    }
     ActionRun *run = findRun(runId);
     if (!run)
         return;
@@ -8929,11 +8795,6 @@ void MainWindow::skipSelectedRun()
 
 void MainWindow::skipActionRun(int runId)
 {
-    if (coreActionQueueActive()) {
-        coreActionQueueRequest(QStringLiteral("core.actions.queue.skip"),
-                               {{QStringLiteral("run"), runId}});
-        return;
-    }
     ActionRun *run = findRun(runId);
     if (!run)
         return;
@@ -9061,8 +8922,6 @@ void MainWindow::sendActionRunToAgent(int runId, const QString &provider,
 
 void MainWindow::maybeAutoFixFailedRun(const ActionRun &run)
 {
-    if (forkmesh::coreactions::takeCoreAutoFix(run.id))
-        return;
     if (!QSettings().value(kAutoFixFailuresSetting, true).toBool())
         return;
     const QString branch = run.ref.startsWith(QLatin1String("refs/heads/"))

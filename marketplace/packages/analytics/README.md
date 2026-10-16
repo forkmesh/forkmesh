@@ -38,7 +38,13 @@ The desktop page shows the web overview for one project: visitors,
 pageviews, sessions, bounce rate and average session with the change against
 the previous period of the same length, a visitors and pageviews chart, and
 top pages, referrers, countries, devices, browsers and custom events, over the
-last 24 hours, 7, 30 or 90 days. It also installs the package for an
+last 24 hours, 7, 30 or 90 days. Below them (1.6.0) come **Campaigns** (source,
+medium and campaign with visits, change against the previous period, bounce,
+average time and the top landing page), **Landing pages** and **Search terms**,
+each a `campaigns` query (`groupBy` `campaign`, `landing`, `term`, 15 rows,
+`host` from the project's first allowed origin). They replace the desktop
+Marketing package's Website tab, which showed the same Analytics data through
+Marketing's `/performance`; Marketing kept only what needs its own records. It also installs the package for an
 organization, creates the first project and copies the site snippet; the
 top search box finds its projects and top pages. Funnels,
 retention, replay, heatmaps, flags, experiments and surveys stay on the web
@@ -213,7 +219,7 @@ lte is_set is_not_set`; a cohort filter's `value` is the cohort id. A
 | `campaigns` | `goals` (up to 5 series), `groupBy: campaign|content|source|landing|term`, `host`, `limit` (≤200) | `totals`, `previous` (`sessions visitors pageviews bounces bounceRate averageSessionMs conversions conversionRate goals`, plus `taggedSessions taggedShare` on `totals`), `rows: [{key, source, medium, campaign?, content?, landing?, term?, topSources? (term only), …totals, previousSessions, previousConversions, tagged, topLanding}]`, `goals` (labels), `rowCount` |
 | `conversions` | `goals` (up to 10 series), `interval` | `totals`, `previous` (`visitors sessions`), `goals: [{name, conversions, sessions, events, rate, sessionRate, previous: {conversions, sessions, rate}}]`, `labels`, `series: [{name, data, total}]` (converting visitors per bucket), `channels` and `landing` (`[{value, sessions, visitors, conversions: [per goal], rates: [per goal]}]`, at most 12 and 20 rows) |
 
-### Conversions and the website playbook (1.6.0)
+### Conversions and the website playbook (1.7.0)
 
 A **goal** is one event, or an action, with optional property filters: a
 sign-up click, a copied install command, a finished form. Goals use the

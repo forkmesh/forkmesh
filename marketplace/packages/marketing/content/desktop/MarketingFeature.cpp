@@ -837,18 +837,18 @@ MarketingFeature::MarketingFeature(
     auto *detailPage = new QWidget;
     detailPage->setObjectName(QStringLiteral("marketingDashboardPage"));
     auto *detailLayout = new QVBoxLayout(detailPage);
-    detailLayout->setContentsMargins(0, 2, 6, 14);
-    detailLayout->setSpacing(10);
+    detailLayout->setContentsMargins(0, 2, 6, 10);
+    detailLayout->setSpacing(6);
     m_detailHead = new QFrame;
     m_detailHead->setObjectName(QStringLiteral("marketingPanel"));
     auto *detailHeadLayout = new QVBoxLayout(m_detailHead);
-    detailHeadLayout->setContentsMargins(12, 9, 12, 10);
-    detailHeadLayout->setSpacing(6);
+    detailHeadLayout->setContentsMargins(10, 6, 10, 6);
+    detailHeadLayout->setSpacing(4);
     m_detailKpis = new KpiStrip;
     m_detailKpis->setCompact(true);
     detailLayout->addWidget(m_detailKpis);
     auto *detailGrid = new DashboardGrid;
-    static_cast<QGridLayout *>(detailGrid->layout())->setSpacing(10);
+    static_cast<QGridLayout *>(detailGrid->layout())->setSpacing(6);
     detailLayout->addWidget(detailGrid);
     detailLayout->addStretch(1);
     m_detailScroll->setWidget(detailPage);
@@ -857,7 +857,7 @@ MarketingFeature::MarketingFeature(
         auto *panel = new DashboardPanel(title);
         panel->setCompact();
         auto *box = new QVBoxLayout;
-        box->setSpacing(4);
+        box->setSpacing(3);
         panel->body()->addLayout(box);
         detailGrid->addPanel(panel, span);
         if (out)
@@ -868,7 +868,7 @@ MarketingFeature::MarketingFeature(
         auto *panel = new DashboardPanel(title);
         panel->setCompact();
         auto *box = new QVBoxLayout;
-        box->setSpacing(4);
+        box->setSpacing(3);
         panel->body()->addLayout(box);
         column->addWidget(panel);
         *out = panel;
@@ -889,14 +889,14 @@ MarketingFeature::MarketingFeature(
         m_detailMetric, 0, QStringLiteral("Channel chart metric")));
     m_detailChart = new LineChart;
     m_detailChart->setAccessibleName(QStringLiteral("Channel history chart"));
-    m_detailChart->setMaximumHeight(210);
+    m_detailChart->setMaximumHeight(160);
     m_detailChart->setMinimumWidth(240);
     m_detailChartPanel->body()->addWidget(m_detailChart);
     m_detailFollowingPanel = new DashboardPanel(QStringLiteral("Following over time"));
     m_detailFollowingPanel->setCompact();
     m_detailFollowingChart = new LineChart;
     m_detailFollowingChart->setAccessibleName(QStringLiteral("Channel following chart"));
-    m_detailFollowingChart->setMaximumHeight(210);
+    m_detailFollowingChart->setMaximumHeight(160);
     m_detailFollowingChart->setMinimumWidth(240);
     m_detailFollowingPanel->body()->addWidget(m_detailFollowingChart);
     m_detailFollowingPanel->hide();
@@ -904,7 +904,7 @@ MarketingFeature::MarketingFeature(
     m_detailViewsPanel->setCompact();
     m_detailViewsChart = new LineChart;
     m_detailViewsChart->setAccessibleName(QStringLiteral("Channel views chart"));
-    m_detailViewsChart->setMaximumHeight(210);
+    m_detailViewsChart->setMaximumHeight(160);
     m_detailViewsChart->setMinimumWidth(240);
     m_detailViewsPanel->body()->addWidget(m_detailViewsChart);
     m_detailDiscordChartPanel = new DashboardPanel(QStringLiteral("Posts over time"));
@@ -912,14 +912,14 @@ MarketingFeature::MarketingFeature(
     m_detailDiscordChartPanel->setCompact();
     m_detailDiscordChart = new LineChart;
     m_detailDiscordChart->setAccessibleName(QStringLiteral("Discord posts per day chart"));
-    m_detailDiscordChart->setMaximumHeight(210);
+    m_detailDiscordChart->setMaximumHeight(160);
     m_detailDiscordChart->setMinimumWidth(240);
     m_detailDiscordChartPanel->body()->addWidget(m_detailDiscordChart);
     m_detailDiscordChartPanel->hide();
     auto *detailCharts = clearWidget();
     auto *detailChartsLayout = new QHBoxLayout(detailCharts);
     detailChartsLayout->setContentsMargins(0, 0, 0, 0);
-    detailChartsLayout->setSpacing(10);
+    detailChartsLayout->setSpacing(6);
     detailChartsLayout->addWidget(m_detailChartPanel, 1);
     detailChartsLayout->addWidget(m_detailFollowingPanel, 1);
     detailChartsLayout->addWidget(m_detailViewsPanel, 1);
@@ -928,12 +928,12 @@ MarketingFeature::MarketingFeature(
     auto *detailSide = clearWidget();
     auto *detailSideLayout = new QVBoxLayout(detailSide);
     detailSideLayout->setContentsMargins(0, 0, 0, 0);
-    detailSideLayout->setSpacing(10);
+    detailSideLayout->setSpacing(6);
     detailSideLayout->addWidget(m_detailHead);
     auto *stepsPanel = new DashboardPanel(QStringLiteral("Next steps"));
     stepsPanel->setCompact();
     m_detailSteps = new QVBoxLayout;
-    m_detailSteps->setSpacing(4);
+    m_detailSteps->setSpacing(2);
     stepsPanel->body()->addLayout(m_detailSteps);
     detailSideLayout->addWidget(stepsPanel);
     detailSideLayout->addStretch(1);
@@ -944,7 +944,7 @@ MarketingFeature::MarketingFeature(
         QStringLiteral("Open the link builder with this channel as the source"));
     m_detailDeskPanel->tools()->addWidget(tagLink);
     connect(tagLink, &QPushButton::clicked, this, [this] { tagChannelLink(m_detailChannel); });
-    m_detailDesk = new TileGrid(168, 6);
+    m_detailDesk = new TileGrid(150, 4);
     m_detailDesk->setAccessibleName(QStringLiteral("Channel desk"));
     m_detailDeskPanel->body()->addWidget(m_detailDesk);
     detailGrid->addPanel(m_detailDeskPanel, 3);
@@ -952,14 +952,14 @@ MarketingFeature::MarketingFeature(
     m_detailRedditBox->setAccessibleName(QStringLiteral("Reddit desk"));
     auto *redditBoxLayout = new QVBoxLayout(m_detailRedditBox);
     redditBoxLayout->setContentsMargins(0, 0, 0, 0);
-    redditBoxLayout->setSpacing(10);
+    redditBoxLayout->setSpacing(6);
     detailGrid->addPanel(m_detailRedditBox, 3);
     m_detailRedditBox->hide();
     m_detailAppStoreBox = clearWidget();
     m_detailAppStoreBox->setAccessibleName(QStringLiteral("App Store desk"));
     auto *appStoreBoxLayout = new QVBoxLayout(m_detailAppStoreBox);
     appStoreBoxLayout->setContentsMargins(0, 0, 0, 0);
-    appStoreBoxLayout->setSpacing(10);
+    appStoreBoxLayout->setSpacing(6);
     detailGrid->addPanel(m_detailAppStoreBox, 3);
     m_detailAppStoreBox->hide();
     m_detailHealth = detailBox(QStringLiteral("Health and settings"), 1);
@@ -1044,7 +1044,7 @@ MarketingFeature::MarketingFeature(
     auto *detailWork = clearWidget();
     auto *detailWorkLayout = new QHBoxLayout(detailWork);
     detailWorkLayout->setContentsMargins(0, 0, 0, 0);
-    detailWorkLayout->setSpacing(10);
+    detailWorkLayout->setSpacing(6);
     m_detailPeople = sideBox(detailWorkLayout, QStringLiteral("People to follow"), &m_detailPeoplePanel);
     m_detailPeoplePanel->setMinimumWidth(286);
     m_detailPeoplePanel->setMaximumWidth(340);
@@ -1095,7 +1095,7 @@ MarketingFeature::MarketingFeature(
     auto *detailFind = clearWidget();
     auto *detailFindLayout = new QVBoxLayout(detailFind);
     detailFindLayout->setContentsMargins(0, 0, 0, 0);
-    detailFindLayout->setSpacing(10);
+    detailFindLayout->setSpacing(6);
     m_detailSearches = sideBox(detailFindLayout, QStringLiteral("Searches to check"), &m_detailSearchesPanel);
     m_detailSearchesPanel->hide();
 
@@ -1475,7 +1475,6 @@ MarketingFeature::MarketingFeature(
         m_trafficLoaded = false;
         m_assistant = QJsonObject();
         m_performance = QJsonObject();
-        m_performanceProject.clear();
         closeChannel();
         loadOrganization();
     });
@@ -1843,7 +1842,7 @@ void MarketingFeature::loadOrganization()
         }
         applyOrganization(payload);
         loadTraffic();
-        if (m_page == 1 || m_detailChannel == QLatin1String("reddit"))
+        if (m_page >= 2 || m_detailChannel == QLatin1String("reddit"))
             loadPerformance();
         if (m_detailChannel == QLatin1String("app-store") && !m_appStoreLoading)
             loadAppStore();
@@ -5596,8 +5595,8 @@ void MarketingFeature::reveal(QWidget *panel)
 void MarketingFeature::openWebDashboard(const QString &query)
 {
     QUrl url(QString::fromLatin1(kMarketingPage));
-    static const QStringList pages{QString(), QStringLiteral("performance"), QStringLiteral("channels"),
-                                   QStringLiteral("ads"), QStringLiteral("growth")};
+    static const QStringList pages{QString(), QStringLiteral("channels"), QStringLiteral("ads"),
+                                   QStringLiteral("growth")};
     QString parameters = QStringLiteral("org=") + QString::fromUtf8(
         QUrl::toPercentEncoding(m_organization->currentData().toString()));
     if (!query.isEmpty())

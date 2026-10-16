@@ -558,6 +558,20 @@ REDDIT_LANDED_POINTS = 5
 REDDIT_LANDED_VIEWS = 500
 REDDIT_LANDED_COMMENTS = 3
 REDDIT_POST_PATH_RE = re.compile(r"^/r/([A-Za-z0-9_]{2,21})/comments/")
+REDDIT_DISCOVER_LIMIT = 10
+REDDIT_KEYWORD_TOPICS = 4
+REDDIT_RELATED = (
+    (("git", "forge", "repo", "mirror"), ("git", "github", "gitlab", "programming", "coolgithubprojects")),
+    (("self-host", "self host", "selfhost", "homelab", "server"), ("selfhosted", "homelab", "HomeServer")),
+    (("backup", "archive", "hoard"), ("DataHoarder", "Backup", "selfhosted")),
+    (("agent", "claude", "llm", "gpt", "coding ai", "vibe"), ("ClaudeAI", "ClaudeCode", "ChatGPTCoding", "LocalLLaMA", "AI_Agents")),
+    (("open source", "open-source", "opensource", "foss"), ("opensource", "foss", "coolgithubprojects")),
+    (("devops", "ci", "deploy", "docker", "kubernetes"), ("devops", "sysadmin", "docker", "kubernetes")),
+    (("decentral", "p2p", "peer", "privacy"), ("privacy", "degoogle", "selfhosted")),
+    (("linux", "terminal", "cli"), ("linux", "commandline", "linuxadmin")),
+    (("startup", "launch", "side project", "indie", "saas"), ("SideProject", "startups", "indiehackers", "SaaS")),
+    (("developer", "engineer", "programming", "code"), ("programming", "ExperiencedDevs", "webdev", "devtools")),
+)
 REDDIT_DRAFT_PRODUCT = (
     "ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories "
     "across independent hosts, without relying on any single hosting provider.",
@@ -3095,7 +3109,50 @@ def _reddit_where_to_post(desk, threads, now, posts=(), attribution=None):
     return places[:REDDIT_IDEA_LIMIT]
 
 
-def _reddit_what_to_talk_about(desk, threads, content, now):
+def _reddit_communities_url(topic):
+    return REDDIT_ORIGIN + "/search/?type=communities&q=" + quote(topic)
+
+
+def _reddit_discover(desk, threads, posts, topics, keywords=()):
+    watched = {item["name"].lower() for item in desk["subreddits"]}
+    found = {}
+
+    def offer(name, reason, source, weight):
+        name = _subreddit_name(name)
+        key = name.lower()
+        if not name or key in watched:
+            return
+        entry = found.setdefault(key, {"name": name, "url": REDDIT_ORIGIN + "/r/" + name + "/new/",
+                                       "rulesUrl": _reddit_rules_url(name), "reason": reason,
+                                       "source": source, "score": 0})
+        entry["score"] += weight
+
+    logged = {}
+    for thread in threads:
+        if thread.get("subreddit"):
+            logged[thread["subreddit"]] = logged.get(thread["subreddit"], 0) + 1
+    for name, count in logged.items():
+        offer(name, "%d thread%s logged here" % (count, "" if count == 1 else "s"), "threads", 10 + count)
+    posted = {}
+    for item in _reddit_outcomes([], posts):
+        posted[item["subreddit"]] = posted.get(item["subreddit"], 0) + 1
+    for name, count in posted.items():
+        offer(name, "We posted here %d time%s" % (count, "" if count == 1 else "s"), "posts", 8 + count)
+    text = " ".join([item["query"] for item in desk["queries"]]
+                    + [item["topic"] for item in topics]
+                    + [str(item.get("term") or "") for item in keywords or ()]
+                    + [item["name"] for item in desk["subreddits"]]).lower()
+    for words, names in REDDIT_RELATED:
+        matched = next((word for word in words if word in text), "")
+        if matched:
+            for rank, name in enumerate(names):
+                offer(name, "Related to \u201c%s\u201d" % matched, "related", 3 - rank * 0.1)
+    ranked = sorted(found.values(), key=lambda item: (-item["score"], item["name"].lower()))
+    return [{key: item[key] for key in ("name", "url", "rulesUrl", "reason", "source")}
+            for item in ranked[:REDDIT_DISCOVER_LIMIT]]
+
+
+def _reddit_what_to_talk_about(desk, threads, content, now, keywords=()):
     recent = [thread for thread in threads
               if thread["createdAt"] >= now - REDDIT_TOPIC_WINDOW_MS]
     published = [item for item in content if item.get("status") == "published"
@@ -3110,6 +3167,13 @@ def _reddit_what_to_talk_about(desk, threads, content, now):
                sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
                if seen >= REDDIT_TOPIC_MIN_THREADS
                and not any(_reddit_topic_matches(topic, phrase) for topic in watched)]
+    taken = {topic.lower() for topic, _ in topics}
+    for item in keywords or ():
+        term = " ".join(str(item.get("term") or "").lower().split())[:REDDIT_QUERY_LIMIT]
+        if (term and term not in taken
+                and sum(1 for _, source in topics if source == "keywords") < REDDIT_KEYWORD_TOPICS):
+            topics.append((term, "keywords"))
+            taken.add(term)
     ideas = []
     for topic, source in topics:
         matched = [thread for thread in recent if _reddit_topic_matches(topic, thread["title"])]
@@ -3121,6 +3185,7 @@ def _reddit_what_to_talk_about(desk, threads, content, now):
         ideas.append({
             "topic": topic, "source": source, "threads": len(matched),
             "replied": len(replied), "searchUrl": _reddit_search_url(topic),
+            "communitiesUrl": _reddit_communities_url(topic),
             "subreddits": sorted({thread["subreddit"] for thread in matched
                                   if thread["subreddit"]})[:4],
             "examples": [{"title": thread["title"] or thread["url"], "url": thread["url"],
@@ -3131,11 +3196,12 @@ def _reddit_what_to_talk_about(desk, threads, content, now):
     return ideas[:REDDIT_TOPIC_LIMIT]
 
 
-def _reddit_ideas(desk, threads, content, now, posts=(), attribution=None):
+def _reddit_ideas(desk, threads, content, now, posts=(), attribution=None, keywords=()):
     places = _reddit_where_to_post(desk, threads, now, posts, attribution)
-    topics = _reddit_what_to_talk_about(desk, threads, content, now)
+    topics = _reddit_what_to_talk_about(desk, threads, content, now, keywords)
     return {
         "subreddits": places, "topics": topics,
+        "discover": _reddit_discover(desk, threads, posts, topics, keywords),
         "ready": [item["name"] for item in places if item["ready"]][:5],
         "rulesMissing": [item["name"] for item in places if not item["rulesRead"]][:10],
         "quietDays": REDDIT_QUIET_DAYS, "windowDays": REDDIT_TOPIC_WINDOW_MS // DAY_MS,
@@ -3143,7 +3209,7 @@ def _reddit_ideas(desk, threads, content, now, posts=(), attribution=None):
     }
 
 
-def _reddit_desk(settings, threads, now, content=(), posts=()):
+def _reddit_desk(settings, threads, now, content=(), posts=(), keywords=()):
     desk = _reddit_watch_links(settings["reddit"])
     store = settings.get("redditRules") or {}
     for item in desk["subreddits"]:
@@ -3156,7 +3222,7 @@ def _reddit_desk(settings, threads, now, content=(), posts=()):
             "summary": _reddit_summary(threads, now),
             "rulesOnFile": sum(1 for item in desk["subreddits"] if item["rulesRead"]),
             "ideas": _reddit_ideas(desk, threads, content, now, posts,
-                                   settings.get("attribution")),
+                                   settings.get("attribution"), keywords),
             "statuses": list(REDDIT_STATUSES),
             "sources": list(REDDIT_SOURCES),
             "landingOrigin": REDDIT_LANDING_ORIGIN, "utm": dict(REDDIT_UTM)}
@@ -4057,7 +4123,7 @@ async def _marketing_inputs(runtime, org_bi):
             "keywords": keywords,
             "experimentsSummary": _experiments_summary(experiments),
             "funnelReport": _funnel_report(funnel, settings["targets"]),
-            "redditDesk": _reddit_desk(settings, threads, now, content, posts),
+            "redditDesk": _reddit_desk(settings, threads, now, content, posts, keywords),
             "suggestions": _campaign_suggestions(campaigns, summary, keywords, now)}
 
 

@@ -3,8 +3,6 @@
 #include "ActionRunner.h"
 #include "AgentScratch.h"
 #include "CleanupHostFeed.h"
-#include "CoreClient.h"
-#include "CoreCleanup.h"
 #include "TaskWorkItems.h"
 
 #include <QDate>
@@ -12,11 +10,6 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QPointer>
-#include <QSemaphore>
-#include <QThread>
-
-#include <memory>
 
 using namespace forkmesh::ui;
 namespace cf = forkmesh::cleanupfeed;
@@ -146,101 +139,13 @@ void MainWindow::installCleanupHost()
         return m_actionStore ? m_actionStore->sandboxDir() : QString();
     };
     host.claimedSandboxes = [] { return ActionRunner::claimedSandboxNames(); };
-    host.removeActionSandbox = [this](const QString &base, const QString &path) {
-        struct Pending {
-            QSemaphore done;
-            QString error;
-            bool answered = false;
-        };
-        if (QThread::currentThread() != thread()) {
-            auto pending = std::make_shared<Pending>();
-            QPointer<MainWindow> self(this);
-            QMetaObject::invokeMethod(
-                this,
-                [self, pending, base, path] {
-                    CoreClient *client = self ? self->m_coreClient : nullptr;
-                    if (!client || !client->isConnected() ||
-                        !client->hasNativeRoute(QStringLiteral("core.cleanup.removeSandbox"))) {
-                        pending->done.release();
-                        return;
-                    }
-                    QJsonArray claimed;
-                    for (const QString &name : ActionRunner::claimedSandboxNames())
-                        claimed.append(name);
-                    client->request(QStringLiteral("core.cleanup.removeSandbox"),
-                                    {{QStringLiteral("base"), base},
-                                     {QStringLiteral("path"), path},
-                                     {QStringLiteral("claimed"), claimed}},
-                                    [pending](bool ok, const QJsonValue &result, const QString &) {
-                                        if (ok) {
-                                            pending->error = result.toObject()
-                                                                 .value(QStringLiteral("error"))
-                                                                 .toString();
-                                            pending->answered = true;
-                                        }
-                                        pending->done.release();
-                                    },
-                                    600000);
-                },
-                Qt::QueuedConnection);
-            if (pending->done.tryAcquire(1, 610000) && pending->answered)
-                return pending->error;
-        }
+    host.removeActionSandbox = [](const QString &base, const QString &path) {
         return ActionRunner::removeUnclaimedSandbox(base, path);
     };
     host.log = [this](const QString &text) { logSystem(text); };
     host.removeWorktree = [this](const cf::WorktreeRemoval &request,
                                  cf::WorktreeRemovalDone done) {
         const QList<int> released = releaseTrackedWorktree(request.worktreePath);
-        const auto finish = [this, request, released, done](cf::WorktreeRemovalResult result) {
-            if (!result.removed)
-                retrackWorktree(released, request.worktreePath);
-            logSystem(result.removed
-                          ? QStringLiteral("Cleanup: removed worktree %1%2%3.")
-                                .arg(request.worktreePath,
-                                     result.branchRetired
-                                         ? QStringLiteral("; branch saved as ") + result.trashRef
-                                         : QString(),
-                                     result.wipRef.isEmpty()
-                                         ? QString()
-                                         : QStringLiteral("; uncommitted work saved as ") +
-                                               result.wipRef)
-                          : QStringLiteral("Cleanup: %1").arg(result.message));
-            if (repoDetailShows(request.repoPath))
-                loadWorktreesPanel();
-            if (done)
-                done(result);
-        };
-        if (m_coreClient && m_coreClient->isConnected() &&
-            m_coreClient->hasNativeRoute(QStringLiteral("core.cleanup.removeWorktree"))) {
-            m_coreClient->request(
-                QStringLiteral("core.cleanup.removeWorktree"),
-                {{QStringLiteral("repoPath"), request.repoPath},
-                 {QStringLiteral("worktreePath"), request.worktreePath},
-                 {QStringLiteral("branch"), request.branch},
-                 {QStringLiteral("discardChanges"), request.discardChanges},
-                 {QStringLiteral("retireBranch"), request.retireBranch}},
-                [request, finish](bool ok, const QJsonValue &value, const QString &error) {
-                    cf::WorktreeRemovalResult result;
-                    if (!ok) {
-                        result.message =
-                            QStringLiteral("the background engine could not remove %1 (%2); "
-                                           "nothing was removed.")
-                                .arg(request.worktreePath, error);
-                        finish(result);
-                        return;
-                    }
-                    const QJsonObject reply = value.toObject();
-                    result.removed = reply.value(QStringLiteral("removed")).toBool();
-                    result.branchRetired = reply.value(QStringLiteral("branchRetired")).toBool();
-                    result.trashRef = reply.value(QStringLiteral("trashRef")).toString();
-                    result.wipRef = reply.value(QStringLiteral("wipRef")).toString();
-                    result.message = reply.value(QStringLiteral("message")).toString();
-                    finish(result);
-                },
-                600000);
-            return;
-        }
         runOffThread<cf::WorktreeRemovalResult>(
             [request] {
                 cf::WorktreeRemovalResult result;
@@ -339,8 +244,25 @@ void MainWindow::installCleanupHost()
                 }
                 return result;
             },
-            finish);
+            [this, request, released, done](cf::WorktreeRemovalResult result) {
+                if (!result.removed)
+                    retrackWorktree(released, request.worktreePath);
+                logSystem(result.removed
+                              ? QStringLiteral("Cleanup: removed worktree %1%2%3.")
+                                    .arg(request.worktreePath,
+                                         result.branchRetired
+                                             ? QStringLiteral("; branch saved as ") + result.trashRef
+                                             : QString(),
+                                         result.wipRef.isEmpty()
+                                             ? QString()
+                                             : QStringLiteral("; uncommitted work saved as ") +
+                                                   result.wipRef)
+                              : QStringLiteral("Cleanup: %1").arg(result.message));
+                if (repoDetailShows(request.repoPath))
+                    loadWorktreesPanel();
+                if (done)
+                    done(result);
+            });
     };
-    forkmesh::corecleanup::install(host, this, [this] { return m_coreClient; });
     cf::setHost(this, std::move(host));
 }

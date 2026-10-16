@@ -68,6 +68,13 @@ Override any severity with `[ids] severity = { detector = "lockdown" }` in
 A process that exits mid-scan is marked `vanished` and skipped by the unit
 checks; a live process with no unit still alerts.
 
+`service_user_exe` skips systemd's `systemd-executor` (systemd 255+) while it
+starts a service: between dropping to the service user and `execve`, the
+process runs `/usr/lib/systemd/systemd-executor` under the unit's cgroup with
+a name like `(caddy)`. Only that path, a parenthesised name and the user's own
+unit are skipped (n3, 2026-10-16, a Caddy restart); the executor anywhere
+else, or under another name, still alerts.
+
 ## Lockdown on a core
 
 1. **Seal**: the app drops `DATA_KEY` and every vault value and exits.

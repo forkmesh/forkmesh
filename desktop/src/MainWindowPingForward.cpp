@@ -1,11 +1,9 @@
 #include "ClientErrorReports.h"
-#include "CoreClient.h"
 #include "DesktopPingForward.h"
 #include "DesktopPowerAlert.h"
 #include "LocalControl.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
-#include "NodeEventSocket.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -148,9 +146,6 @@ void MainWindow::deleteForwardedPings(const QStringList &pingIds)
 void MainWindow::announceDesktopOnline(qint64 nowMs)
 {
     if (!QSettings().value(pingforward::onlineSettingKey(), true).toBool())
-        return;
-    if (m_nodeEventSocket && m_nodeEventSocket->coreOwned() && m_coreClient &&
-        m_coreClient->isConnected() && m_coreClient->supports(pingforward::coreOnlineFeature()))
         return;
     const pingforward::Source source =
         pingforward::onlineSource(machineNodeName(), m_lastHeartbeatOkMs, nowMs);

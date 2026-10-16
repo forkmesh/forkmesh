@@ -1,4 +1,5 @@
 #include "CrashHandler.h"
+#include "BackgroundMode.h"
 #include "PackageModules.h"
 #include "ProcessReaper.h"
 #include "AgentCliLocator.h"
@@ -12,7 +13,6 @@
 #endif
 #include "ForkMeshIdentity.h"
 #include "MainWindow.h"
-#include "CoreMirrorActions.h"
 #include "MirrorActionsConfiguration.h"
 #include "PlatformLogFilter.h"
 #include "PublicMirrorRuntime.h"
@@ -67,6 +67,7 @@
 #include <QStringList>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -312,6 +313,19 @@ const char *moveOutcomeText(forkmesh::paths::MoveResult::Outcome outcome)
         return "FAIL";
     }
     return "";
+}
+
+int runStopBackground(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    configureApplicationIdentity(app, launchArguments(argc, argv));
+    if (forkmesh::askBackgroundInstanceToQuit()) {
+        std::printf("ForkMesh without a window is stopping.\n");
+        return 0;
+    }
+    std::printf("ForkMesh is not running without a window for project %s.\n",
+                qPrintable(forkmesh::paths::projectSlug()));
+    return 1;
 }
 
 // forkmesh --migrate-layout [--dry-run] [--project <name>]
@@ -600,11 +614,15 @@ int main(int argc, char *argv[])
         }
         if (qstrcmp(argv[i], "--tray") == 0)
             return forkmesh::tray::run(argc, argv);
+        if (qstrcmp(argv[i], "--stop-background") == 0)
+            return runStopBackground(argc, argv);
         if (qstrcmp(argv[i], "--headless") == 0) {
             qputenv("QT_QPA_PLATFORM", "offscreen");
             qputenv("FORKMESH_NO_SPLASH", "1");
             forkmesh::setBackgroundInstance();
         }
+        if (qstrcmp(argv[i], "--wait-for-lock") == 0)
+            forkmesh::setBackgroundLockWait(forkmesh::background::kLockWaitMs);
         if (qstrcmp(argv[i], "--build-commit") == 0) {
             std::printf("%s\n", FORKMESH_BUILD_COMMIT);
             static const QRegularExpression exactCommit(
@@ -665,10 +683,8 @@ int main(int argc, char *argv[])
     if (rawArgs.contains(QStringLiteral("--materialize-public-mirror")))
         return runPublicMirrorMaterializer(argc, argv);
     if (rawArgs.contains(
-            QStringLiteral("--configure-mirror-actions-stdin"))) {
-        forkmesh::coremirroractions::install();
+            QStringLiteral("--configure-mirror-actions-stdin")))
         return forkmesh::mirror_actions::runConfigurationStdin(argc, argv);
-    }
 
     forkmesh::logStartupTrace(
         QStringLiteral("launch mode resolved: desktop; Qt platform=%1")
@@ -991,6 +1007,9 @@ int main(int argc, char *argv[])
         });
     forkmesh::sonify::UiSounds::instance();
     forkmesh::activity::UserActivityLog::instance();
+    QTimer::singleShot(5000, window, [] {
+        QThreadPool::globalInstance()->start([] { forkmesh::background::migrateLegacyEngine(); });
+    });
     if (!localActionLink.isEmpty()) {
         // A deep link may build a heavy destination. Let the already-built
         // shell paint once before constructing that page-specific surface.
@@ -1019,6 +1038,7 @@ int main(int argc, char *argv[])
         false);
 
     forkmesh::enableGracefulTerminationShutdown(&app, [&app, window]() {
+        forkmesh::background::noteStopSignal();
         qInfo().noquote() << QStringLiteral(
             "Stop requested (SIGTERM/SIGINT): shutting down.");
         window->close();

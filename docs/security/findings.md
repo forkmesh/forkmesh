@@ -74,8 +74,8 @@ IDs: `C-` code audit, `I-` infrastructure audit, `S-<n>` later reviews.
 | S-21 | `forkmesh://control/cloudflare?mode=vultr` read a token from the clipboard and created a mirror at once, handing it the saved Cloudflare token | High | Fixed | `desktop/tests/validate_system_link_vultr_confirm.py` |
 | S-22 | A branch or base ref with a quote ran shell code in the agent worktree script | Medium | Fixed | `desktop/tests/test_agent_prompt_title.cpp` |
 | S-23 | The IDE bridge lockfile holding its token was readable by other local users, and the token compare was not constant-time | Low | Fixed | `desktop/tests/test_ide_bridge.cpp` |
-| S-24 | A code-approved phone could rename its stored user to the owner and pass every owner gate | High | Fixed | `desktop/core/internal/control/owner_claim_test.go` |
-| S-25 | The agent socket folder in `/tmp` could be pre-created by another local user | Medium | Fixed | `desktop/core/internal/agentproc/socket_dir_test.go` |
+| S-24 | A code-approved phone could rename its stored user to the owner and pass every owner gate | High | Fixed | `desktop/tests/test_local_control.cpp` `testCodePairedUserStays` |
+| S-25 | The agent socket folder in `/tmp` could be pre-created by another local user | Medium | Removed | The Go engine that made the folder was removed on 2026-10-16; the desktop makes no such folder |
 | S-26 | A package migration could `END` the host transaction and `ATTACH` a database at any path | High | Fixed | `marketplace/tests/test_marketplace_lifecycle.py` |
 | S-27 | Symlinks in a git or local package source copied local files into the package | Medium | Fixed | `marketplace/tests/test_marketplace_lifecycle.py` |
 | S-28 | A committed `base: --output=/path` in a pull record made the MCP server's `git diff` truncate any file | Medium | Fixed | `tools/test_forkmesh_mcp_server.py` |

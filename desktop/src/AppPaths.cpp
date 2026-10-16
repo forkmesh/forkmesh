@@ -784,6 +784,14 @@ QString accountHome()
 
 } // namespace
 
+bool isDefaultStateRoot()
+{
+    const QString state = clean(stateRoot());
+    const QString home = accountHome();
+    return state == join(home, QStringLiteral(".forkmesh")) ||
+           state == join(home, QStringLiteral("projects/") + projectSlug() + QStringLiteral("/state"));
+}
+
 QString singleInstanceServerName()
 {
     // The socket namespace is per user, not per folder, so the name carries
@@ -794,14 +802,9 @@ QString singleInstanceServerName()
     const QString slug = projectSlug();
     if (slug != QLatin1String(kHomeProjectSlug))
         name += QLatin1Char('-') + slug;
-    const QString state = clean(stateRoot());
-    const QString home = accountHome();
-    const bool defaultPlace =
-        state == join(home, QStringLiteral(".forkmesh")) ||
-        state == join(home, QStringLiteral("projects/") + slug + QStringLiteral("/state"));
-    if (!defaultPlace)
+    if (!isDefaultStateRoot())
         name += QLatin1Char('-') +
-                QString::fromLatin1(QCryptographicHash::hash(state.toUtf8(),
+                QString::fromLatin1(QCryptographicHash::hash(clean(stateRoot()).toUtf8(),
                                                              QCryptographicHash::Sha256)
                                         .toHex()
                                         .left(16));

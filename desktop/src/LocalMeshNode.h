@@ -140,33 +140,6 @@ qint64 wakeTokenExpiry(const QString &token);
 
 } // namespace forkmesh::localmesh
 
-class LocalMeshBackend
-{
-public:
-    virtual ~LocalMeshBackend() = default;
-    virtual bool start() = 0;
-    virtual bool stop() = 0;
-    virtual bool routed() const = 0;
-    virtual QList<MemberInfo> members() const = 0;
-    virtual int peerCount() const = 0;
-    virtual quint16 listenPort() const = 0;
-    virtual QStringList wakeTargets() const = 0;
-    virtual QString diagnosticsLine() = 0;
-    virtual QString diagnosticsDetail() = 0;
-    virtual QString sendChat(const QString &text) = 0;
-    virtual QString sendFile(const QString &fileName, const QString &mimeType,
-                             const QByteArray &data) = 0;
-    virtual void sendTyping(bool active) = 0;
-    virtual bool connectToPeer(const QHostAddress &address, quint16 port) = 0;
-    virtual void announceNow() = 0;
-    virtual void identityChanged() = 0;
-    virtual void controlChanged() = 0;
-    virtual bool attachBluetooth(QIODevice *socket, bool outbound) = 0;
-    virtual bool dropBluetooth(QIODevice *socket, const QString &reason) = 0;
-    virtual void setBluetoothKey(QIODevice *socket, const QString &key) = 0;
-    virtual bool hasBluetoothKey(const QString &key) const = 0;
-};
-
 class LocalMeshNode : public QObject
 {
     Q_OBJECT
@@ -221,8 +194,6 @@ public:
                                               const QByteArray &hello,
                                               const QByteArray &rest)>;
     void setControlHandler(ControlHandler handler);
-
-    void setBackend(LocalMeshBackend *backend);
 
     // Direct link to a peer this device already knows how to reach, for a
     // network that filters multicast. The address must be a local one.
@@ -281,11 +252,6 @@ signals:
     void inboundLinkAccepted();
 
 private:
-    friend class CoreMesh;
-
-    bool startNative();
-    void stopNative();
-
     struct Link {
         // Either a QTcpSocket or a QBluetoothSocket: the framing, sealing and
         // room logic are identical, so everything past the handshake works
@@ -498,5 +464,4 @@ private:
     Diagnostics m_diag;
     qint64 m_startedMs = 0;
     ControlHandler m_controlHandler;
-    LocalMeshBackend *m_core = nullptr;
 };
