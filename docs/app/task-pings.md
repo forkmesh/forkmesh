@@ -3,7 +3,8 @@
 Every change to an organization task files a Ping of kind
 `organization_task_update` (label **Tasks**, on by default): an inbox row that
 wakes web and desktop clients over the account socket and pushes to phones via
-APNs. The change is also emailed ([task-email.md](task-email.md)).
+APNs. The change is also emailed ([task-email.md](task-email.md)); a delete
+is emailed as one deletion notice per recipient instead.
 
 Code: `_notify_activity` in `world/src/world_office_tasks.py`,
 `notify_organization_task_update` in `world/src/world_office_routes.py`, text and

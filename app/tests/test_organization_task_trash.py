@@ -407,6 +407,88 @@ def test_batch_delete_is_all_or_nothing_and_bounded():
     assert all(item["target_type"] == "organization_task" for item in audits)
 
 
+def _completed_at(runtime, task_id):
+    return runtime.db.execute(
+        "SELECT completed_at FROM organization_tasks WHERE task_id=?",
+        (task_id,)).fetchone()[0]
+
+
+def test_a_deleted_task_counts_as_done_until_it_is_restored():
+    runtime = Runtime()
+    open_task = runtime.create(title="open work", assignee="bob")
+    runtime.now_ms += 1000
+    deleted = runtime.call("DELETE", "alice", f"{TASKS}/{open_task}")
+    assert deleted["status"] == 200, deleted
+    assert _completed_at(runtime, open_task) == runtime.now_ms
+    trashed, = runtime.trash()
+    assert trashed["status"] == "done"
+    assert trashed["completedAt"] == runtime.now_ms
+    assert trashed["progress"] == tasks_api.MAX_PROGRESS
+    assert runtime.audits[-1]["details"]["completed"] is True
+    restored = runtime.call(
+        "POST", "alice", f"{TASKS}/{open_task}/restore", {})
+    assert restored["status"] == 200, restored
+    assert restored["data"]["task"]["status"] == "idle"
+    assert restored["data"]["task"]["completedAt"] == 0
+    assert _completed_at(runtime, open_task) == 0
+
+    finished = runtime.create(title="finished work", assignee="bob")
+    _complete(runtime, finished)
+    finished_at = _completed_at(runtime, finished)
+    runtime.db.execute(
+        "UPDATE organization_tasks SET qa_reviewed_at=?,qa_status='passed' "
+        "WHERE task_id=?", (runtime.now_ms, finished))
+    runtime.db.commit()
+    runtime.now_ms += 5000
+    assert runtime.call(
+        "DELETE", "bob", f"{TASKS}/{finished}")["status"] == 200
+    assert runtime.audits[-1]["details"]["completed"] is False
+    assert _completed_at(runtime, finished) == finished_at
+    assert runtime.call(
+        "POST", "bob", f"{TASKS}/{finished}/restore", {})["status"] == 200
+    assert _completed_at(runtime, finished) == finished_at
+
+
+def test_deletes_hand_the_deleted_tasks_to_one_notice_per_request():
+    runtime = Runtime()
+    notices = []
+
+    async def notify(org_bi, actor, tasks, reason):
+        notices.append((actor, [task["id"] for task in tasks],
+                        [(task["createdBy"], task["assignee"])
+                         for task in tasks], reason))
+
+    runtime.notify_organization_task_deletions = notify
+    single = runtime.create(title="single", assignee="bob")
+    assert runtime.call(
+        "DELETE", "bob", f"{TASKS}/{single}",
+        {"reason": "not needed"})["status"] == 200
+    assert notices == [("bob", [single], [("alice", "bob")], "not needed")]
+
+    batch = [runtime.create(title="batch %d" % index, assignee="bob")
+             for index in range(3)]
+    notices.clear()
+    done = runtime.call(
+        "POST", "alice", f"{TASKS}/delete", {"ids": batch, "reason": "dupes"})
+    assert done["status"] == 200, done
+    assert notices == [("alice", batch, [("alice", "bob")] * 3, "dupes")]
+
+    notices.clear()
+    refused = runtime.call(
+        "POST", "carol", f"{TASKS}/delete",
+        {"ids": [runtime.create(title="keep")]})
+    assert refused["status"] == 403
+    assert notices == []
+
+    async def broken(org_bi, actor, tasks, reason):
+        raise RuntimeError("mail down")
+
+    runtime.notify_organization_task_deletions = broken
+    survivor = runtime.create(title="still deletes")
+    assert runtime.call(
+        "DELETE", "alice", f"{TASKS}/{survivor}")["status"] == 200
+
+
 def test_schema_migration_rekey_and_cron_wiring():
     migration = (
         APP / "migrations" / "0222_organization_task_trash.sql"
