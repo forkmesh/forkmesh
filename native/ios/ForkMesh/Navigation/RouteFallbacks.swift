@@ -17,7 +17,8 @@ enum NavigationRoutes {
         }
         routes.register(.tour, by: owner) { _ in AnyView(TourView(onFinish: nil)) }
         routes.register(.updateRequired, by: owner) { _ in
-            AnyView(UpdateRequiredView(requirement: UpdateRequiredCheck.shared.requirement))
+            AnyView(UpdateRequiredView(
+                requirement: UpdateRequiredCheck.shared.requirement, available: UpdateRequiredCheck.shared.available))
         }
         routes.register(.launchedAgent, by: owner) { route in
             guard case let .launchedAgent(repo, sessionId) = route else { return AnyView(RoutePlaceholderView(route: route)) }

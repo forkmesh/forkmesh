@@ -209,27 +209,60 @@
         color: var(--kit-body);
       }
 
-      .press-beta {
-        grid-column: span 2;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 18px;
-        align-items: center;
+      .press-wide {
+        grid-column: 1 / -1;
       }
 
-      .press-status {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 30px;
-        padding: 0 12px;
-        border: 1px solid color-mix(in srgb, var(--warning) 44%, transparent);
-        border-radius: 999px;
-        background: color-mix(in srgb, var(--warning) 12%, transparent);
-        color: var(--warning);
+      .press-boilerplate-item {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--kit-line);
+      }
+
+      .press-boilerplate-item h3,
+      .press-shot figcaption strong {
+        margin: 0;
+        color: var(--foreground);
         font-size: 13px;
         font-weight: 700;
-        white-space: nowrap;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .press-shots {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .press-shot {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        margin: 0;
+      }
+
+      .press-shot img {
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--background);
+      }
+
+      .press-shot figcaption {
+        display: grid;
+        gap: 2px;
+        color: var(--kit-body);
+        font-size: 13px;
+      }
+
+      .press-shot figcaption a {
+        color: var(--kit-ink);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
       }
 
       .press-boilerplate {
@@ -243,16 +276,12 @@
       @media (max-width: 900px) {
         .press-hero,
         .press-grid,
-        .press-beta {
+        .press-shots {
           grid-template-columns: 1fr;
         }
 
         .press-logo-stage {
           min-height: 300px;
-        }
-
-        .press-beta {
-          grid-column: auto;
         }
       }
 
@@ -351,32 +380,38 @@
         <article class="press-panel kit-card">
           <h2>Colors</h2>
           <p>
-            Keep the palette dark, crisp, and code-native, with neutral surfaces and green reserved for live status.
+            Neutral, solid surfaces. Blue marks what you can act on; green is kept for the one create button and for live status.
           </p>
           <div class="press-swatch-grid">
             <div class="press-swatch">
               <span class="press-swatch-chip" style="--swatch: #090909"></span>
-              <div><span>Background</span><code>#090909</code></div>
+              <div><span>Website background</span><code>#090909</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #010409"></span>
+              <div><span>App background</span><code>#010409</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #f0f6fc"></span>
+              <div><span>App foreground</span><code>#f0f6fc</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #4493f8"></span>
+              <div><span>Primary blue: links, focus, selection</span><code>#4493f8</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #238636"></span>
+              <div><span>Create green: the one create button</span><code>#238636</code></div>
+            </div>
+            <div class="press-swatch">
+              <span class="press-swatch-chip" style="--swatch: #3fb950"></span>
+              <div><span>Status green: online, passed, done</span><code>#3fb950</code></div>
             </div>
             <div class="press-swatch">
               <span class="press-swatch-chip" style="--swatch: #4ade80"></span>
-              <div><span>Status green</span><code>#4ade80</code></div>
-            </div>
-            <div class="press-swatch">
-              <span class="press-swatch-chip" style="--swatch: #a371f7"></span>
-              <div><span>Accent purple</span><code>#a371f7</code></div>
+              <div><span>Website green</span><code>#4ade80</code></div>
             </div>
           </div>
-        </article>
-
-        <article class="press-panel press-beta kit-card">
-          <div>
-            <h2>BetaNYC</h2>
-            <p>
-              We will post the BetaNYC link here when it comes out, along with any related event or coverage notes.
-            </p>
-          </div>
-          <span class="press-status">coming soon</span>
         </article>
 
         <article class="press-panel kit-card">
@@ -385,15 +420,90 @@
             <li><strong>Category</strong><span>Developer infrastructure</span></li>
             <li><strong>Focus</strong><span>Distributed Git collaboration</span></li>
             <li><strong>Availability</strong><span>Public beta</span></li>
+            <li><strong>License</strong><span>MIT</span></li>
+            <li><strong>Desktop</strong><span>Linux, macOS, Windows</span></li>
+            <li><strong>Mobile</strong><span>iPhone and iPad, Android (signed APK)</span></li>
+            <li><strong>Web</strong><a href="https://app.forkmesh.com/dashboard">app.forkmesh.com</a></li>
+          </ul>
+        </article>
+
+        <article class="press-panel kit-card">
+          <h2>How it works</h2>
+          <ul class="press-list">
+            <li><strong>Mirrors</strong><span>Full Git mirrors on independently operated nodes</span></li>
+            <li><strong>Clone URL</strong><span>forkmesh.com/owner/repo over plain Git HTTPS</span></li>
+            <li><strong>Failover</strong><span>Routes to a healthy, integrity-checked mirror</span></li>
+            <li><strong>Identity</strong><span>Local Ed25519 keys, signed collaboration</span></li>
+            <li><strong>Agents</strong><span>AI agents take an issue to a pull request</span></li>
+            <li><strong>Hosting</strong><span>Three self-hosted core nodes and a runner tier</span></li>
+          </ul>
+        </article>
+
+        <article class="press-panel kit-card">
+          <h2>Press contact</h2>
+          <p>
+            Interviews, briefings, quotes and asset requests go to the founders. Security reports have their own address.
+          </p>
+          <ul class="press-list">
+            <li><strong>Press</strong><a href="mailto:founders@forkmesh.com?subject=ForkMesh%20press%20request">founders@forkmesh.com</a></li>
+            <li><strong>Security</strong><a href="mailto:security@forkmesh.com">security@forkmesh.com</a></li>
+            <li><strong>Company</strong><a href="/about">About ForkMesh</a></li>
+            <li><strong>Updates</strong><a href="/blog">Blog</a></li>
+          </ul>
+        </article>
+
+        <article class="press-panel press-wide kit-card">
+          <h2>Screenshots</h2>
+          <p>
+            Product screenshots from this website. Download the full-size file and credit ForkMesh.
+          </p>
+          <div class="press-shots">
+            <figure class="press-shot">
+              <img src="/assets/desktop-mockup/desktop-app.webp" alt="ForkMesh desktop app showing a repository" width="2048" height="1332" loading="lazy" />
+              <figcaption><strong>Desktop app</strong><a href="/assets/desktop-mockup/desktop-app.webp" download="forkmesh-desktop.webp">WebP, 2048×1332</a></figcaption>
+            </figure>
+            <figure class="press-shot">
+              <img src="/assets/mobile/repos.webp" alt="ForkMesh iPhone app listing repositories and their mirrors" loading="lazy" />
+              <figcaption><strong>iPhone: repositories</strong><a href="/assets/mobile/repos.webp" download="forkmesh-iphone-repos.webp">WebP</a></figcaption>
+            </figure>
+            <figure class="press-shot">
+              <img src="/assets/mobile/review.webp" alt="ForkMesh iPhone app reviewing a pull request" loading="lazy" />
+              <figcaption><strong>iPhone: review</strong><a href="/assets/mobile/review.webp" download="forkmesh-iphone-review.webp">WebP</a></figcaption>
+            </figure>
+          </div>
+          <ul class="press-list">
+            <li><strong>Web repository page</strong><a href="/assets/everywhere/web.webp" download="forkmesh-web.webp">WebP, 480×360</a></li>
+            <li><strong>Social card</strong><a href="/assets/social-card.jpg" download="forkmesh-social-card.jpg">JPEG, 1200×630</a></li>
+            <li><strong>Small logo</strong><a href="/assets/logo-96.png" download="forkmesh-logo-96.png">PNG, 84×96</a></li>
           </ul>
         </article>
 
         <article class="press-panel press-boilerplate kit-card">
           <h2>Boilerplate</h2>
-          <p>
-            ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.
-            The public proof uses ordinary developer actions: collaborate, add a mirror, take the source host offline, and clone again.
-          </p>
+          <div class="press-boilerplate-item">
+            <h3>Short</h3>
+            <p>
+              ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider.
+            </p>
+          </div>
+          <div class="press-boilerplate-item">
+            <h3>Medium</h3>
+            <p>
+              ForkMesh is an MIT-licensed code forge built so a repository can outlive any one host. Repositories are copied to independently operated mirror nodes, and an ordinary Git clone of forkmesh.com/owner/repo is routed to a healthy, integrity-checked mirror, even while the source host is offline. Issues, pull requests and reviews are signed with each person's own key, and ForkMesh runs on Linux, macOS, Windows, iPhone, Android and the web.
+            </p>
+          </div>
+          <div class="press-boilerplate-item">
+            <h3>Long</h3>
+            <p>
+              ForkMesh lets developers collaborate on, mirror, and preserve source-code repositories across independent hosts—without relying on any single hosting provider. Repositories are kept as full Git mirrors on independently operated nodes: desktops, servers and headless Linux machines that anyone can turn into a mirror with one install command. A routing layer stores signed discovery and health metadata, never the repository itself, and sends ordinary Git clone traffic to a fresh mirror whose history matches what the author published.
+            </p>
+            <p>
+              Around that sits a complete forge: issues and milestones, signed pull requests and reviews, releases, encrypted chat, shell-step CI on your own desktop, a marketplace of signed extensions, agents and themes, and AI agents that can pick up an issue and open a pull request. People and nodes are identified by local Ed25519 keys rather than passwords. ForkMesh ships as desktop apps for Linux, macOS and Windows, an iPhone and iPad app, a signed Android APK and a web dashboard, and forkmesh.com itself is served from three self-hosted core nodes. The source code is published under the MIT License.
+            </p>
+            <p>
+              The public proof uses ordinary developer actions: collaborate, add a mirror, take the source host offline, and clone again.
+            </p>
+          </div>
         </article>
       </section>
     </main>

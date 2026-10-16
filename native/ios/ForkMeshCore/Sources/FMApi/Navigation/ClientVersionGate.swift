@@ -33,11 +33,16 @@ public struct AvailableUpdate: Equatable, Sendable {
     public var label: String {
         version.hasPrefix("v") ? version : "v\(version)"
     }
+
+    public var summary: String {
+        "ForkMesh \(label) is out. This version can no longer be used."
+    }
 }
 
 public enum ClientVersionGate {
     public static let platformKey = "ios"
     public static let defaultStoreURL = URL(string: "https://apps.apple.com/app/id6803060735")
+    public static let storeRecheckInterval: TimeInterval = 15 * 60
     public static let storeLookupURL = URL(string: "https://itunes.apple.com/lookup?id=6803060735")
 
     public static func versionNumbers(_ version: String) -> [Int]? {

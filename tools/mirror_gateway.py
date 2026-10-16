@@ -6601,9 +6601,78 @@ def _dashboard_pull_event_content(event: Mapping[str, Any]) -> str | None:
                 str(event.get("state") or ""),
                 str(event.get("appliedCommit") or ""), body,
             ])
+        if event_type == "status":
+            if event.get("state") != "closed":
+                return None
+            return "closed\0" + body
+        if event_type == "delete":
+            return body
     except (TypeError, ValueError):
         return None
     return None
+
+
+PULL_LIFECYCLE_EVENT_TYPES = frozenset({"status", "delete"})
+PULL_LIFECYCLE_FINAL_STATUSES = frozenset({"merged", "closed-merged", "deleted"})
+
+
+def _pull_record_fields(text: str) -> dict[str, str]:
+    raw = str(text or "").lstrip()
+    if not raw.startswith("---"):
+        return {}
+    header = raw[3:]
+    end = header.find("\n---")
+    if end < 0:
+        return {}
+    fields: dict[str, str] = {}
+    for line in header[:end].splitlines():
+        key, separator, value = line.partition(":")
+        key = key.strip()
+        if separator and key and key not in fields:
+            fields[key] = value.strip()
+    return fields
+
+
+def _pull_lifecycle_record(repository: Any, number: int) -> dict[str, str]:
+    path = ".forkmesh/pulls/%d/pull.md" % number
+    for ref in (
+        "refs/heads/forkmesh/pull/%d" % number,
+        "refs/pr/%d/metadata" % number,
+        "refs/heads/forkmesh/pulls",
+    ):
+        try:
+            payload = repository.blob({"path": path, "ref": ref})
+        except (GatewayError, GitError):
+            continue
+        if payload.get("encoding") != "utf8":
+            continue
+        fields = _pull_record_fields(payload.get("content") or "")
+        if fields.get("number") == str(number):
+            return fields
+    return {}
+
+
+def _pull_lifecycle_refusal(
+    repository: Any, number: int, event: Mapping[str, Any], owner: str,
+    actor: str, trusted_browser_origin: bool,
+) -> tuple[str, int] | None:
+    record = _pull_lifecycle_record(repository, number)
+    if not record:
+        return "pull_unavailable", 503
+    status = str(record.get("status") or "open").strip().lower()
+    if status in PULL_LIFECYCLE_FINAL_STATUSES:
+        return "pull_final", 409
+    pull_key = str(record.get("author") or "").strip()
+    if pull_key and str(event.get("author") or "").strip() == pull_key:
+        return None
+    actor = str(actor or "").strip().lower()
+    if not actor or not trusted_browser_origin:
+        return "not_authorized", 403
+    if actor == str(owner or "").strip().lower():
+        return None
+    if actor == str(record.get("authorName") or "").strip().lower():
+        return None
+    return "not_authorized", 403
 
 
 def _verify_dashboard_pull_event(
@@ -7604,6 +7673,15 @@ class DashboardService:
                     return json_response(
                         {"ok": False, "error": "event_too_large"}, 413
                     )
+                if str(event.get("type") or "") in PULL_LIFECYCLE_EVENT_TYPES:
+                    refusal = _pull_lifecycle_refusal(
+                        repository, number, event, owner, actor,
+                        trusted_browser_origin,
+                    )
+                    if refusal is not None:
+                        return json_response(
+                            {"ok": False, "error": refusal[0]}, refusal[1]
+                        )
                 event = dict(event)
                 event["authorName"] = actor
                 item = {"number": number, "event": event}

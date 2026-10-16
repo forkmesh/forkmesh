@@ -1238,7 +1238,10 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 			return false, number, nil
 		}
 		path := filepath.Join(pullDir, fmt.Sprintf("%04d-%s.md", index, typeName))
-		return true, number, os.WriteFile(path, []byte(pullEventMarkdown(item.Event)), 0600)
+		if err := os.WriteFile(path, []byte(pullEventMarkdown(item.Event)), 0600); err != nil {
+			return false, number, err
+		}
+		return true, number, applyPullLifecycleEvent(pullDir, item.Event)
 	}
 	if len(item.Pull) == 0 {
 		return false, 0, nil
@@ -1282,6 +1285,60 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 		}
 	}
 	return true, number, nil
+}
+
+var pullLifecycleStatus = map[string]string{"status": "closed", "delete": "deleted"}
+
+func applyPullLifecycleEvent(pullDir string, event map[string]any) error {
+	typeName := stringValue(event["type"])
+	status, ok := pullLifecycleStatus[typeName]
+	if !ok || (typeName == "status" && stringValue(event["state"]) != "closed") {
+		return nil
+	}
+	recordPath := filepath.Join(pullDir, "pull.md")
+	raw, err := os.ReadFile(recordPath)
+	if err != nil {
+		return err
+	}
+	updated, changed := setPullRecordStatus(string(raw), status)
+	if !changed {
+		return nil
+	}
+	if err := os.WriteFile(recordPath, []byte(updated), 0600); err != nil {
+		return err
+	}
+	if status != "deleted" {
+		return nil
+	}
+	for _, name := range []string{"changes.patch", "commits.mbox"} {
+		if err := os.Remove(filepath.Join(pullDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func setPullRecordStatus(record, status string) (string, bool) {
+	lines := strings.Split(record, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return record, false
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			break
+		}
+		key, value, found := strings.Cut(lines[i], ":")
+		if !found || strings.TrimSpace(key) != "status" {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "merged", "closed-merged", "deleted", status:
+			return record, false
+		}
+		lines[i] = "status: " + status
+		return strings.Join(lines, "\n"), true
+	}
+	return record, false
 }
 
 func pullMarkdown(number int, pull map[string]any) string {

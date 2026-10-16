@@ -172,6 +172,16 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   messages. Bubbles in one run join on the sender's side: `MessagesBubbleShape` takes
   `joinsAbove` and `joinsBelow` and drops those corners to 5 pt, photos use the same corners,
   rows in a run are 2 pt apart, and only the last bubble has the tail.
+- **Bubbles** (`MessagesBubbles.swift`): on iOS 26 each bubble is Liquid Glass tinted with the
+  bubble colour (`messagesBubbleGlass`, blue for own messages, grey for others); earlier
+  systems draw `MessagesBubbleSheen`, a material and gradient with a top highlight and a hairline
+  rim. Every bubble ends in `MessagesBubbleMeta`: the send time in 12-hour form ("3:42 PM"), a
+  9 pt ring (`MessagesExpiryRing`) that empties as the message nears the end of its retention
+  (`ChatHub.expiresAt`, the conversation's retention from `ChatHub.lifetime`; VoiceOver reads
+  "Disappears in 5 hours"), and the receipt mark. A small dot before the time marks an own
+  direct message the relay still stores: the receipt is Sent, not yet Delivered, and the room's
+  server-copies count is not 0 (`ChatHub.isOnServer`). The time sits on the text's last line
+  when it fits and drops under it otherwise.
 - **Header** (`MessagesConversationView.header`): back circle, then one glass pill with the
   avatar and, to its right, the name over "Online · N messages on the server", then the call
   buttons. It has no new agent button or own avatar; those stay in the channel list's top bar.
@@ -187,9 +197,22 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 - **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
   strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
   in `docs/app/chat-private-rooms.md`). While a direct conversation is visible, its motion feed
-  shares phone direction automatically and an impact sends a centred taptic tap; the peer's
-  avatar shifts, turns and changes depth with that direction. The composer control only opens
-  and closes the coloured drawing canvas.
+  shares phone direction automatically and an impact sends a centred taptic tap. The peer's
+  direction moves only their avatar in the header (`MessagesLivePartnerAvatar`): while they
+  share, the avatar shrinks into its own 38 pt circle and shifts, turns and changes depth inside
+  it like a level, with a pink rim that brightens on a jolt; there is no separate card over the
+  transcript. The composer has two live controls: the hand (`DirectLiveTapButton`) sends a tap
+  straight away, and the pencil opens the coloured drawing canvas, where a short tap also sends a
+  tap and a drag draws. Sending and receiving a tap always vibrate (`DirectLiveHaptics.sent` and
+  `tapped`), even with app haptics turned off in Settings, because the tap is the message.
+- **No pings for private conversations**: `ChatHub.filePing` skips every conversation
+  `isPrivateConversation` names (relay DMs, server DMs, private office rooms, relay private
+  channels) and drops that conversation's stored chat pings. A ping stores the decrypted text in
+  the local ping log (UserDefaults, shared by every account and project on the phone, in device
+  backups), where it outlived the message's retention, deletion and sign-out. Setting
+  `ChatHub.pings` and restoring the chat history purge any private chat pings filed by earlier
+  builds (`LocalPingLog.removeChats`). Public channels still ping; anyone on the relay can read
+  them anyway.
 
 ## Workspace features
 

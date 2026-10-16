@@ -2,7 +2,7 @@
   "$schema": "../../manifest.schema.json",
   "schemaVersion": 1,
   "id": "computer-security",
-  "name": "Computer Security Checkup",
+  "name": "Security",
   "creator": {
     "id": "did:forkmesh:forkmesh",
     "handle": "forkmesh",
@@ -16,7 +16,7 @@
   "screenshots": [
     {
       "path": "preview/market.svg",
-      "alt": "The Computer Security Checkup page showing a summary and a table of passing, review and warning checks"
+      "alt": "The Security page showing a summary and a table of passing, review and warning checks"
     }
   ],
   "license": {

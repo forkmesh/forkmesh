@@ -1013,6 +1013,7 @@ NOTIFICATION_IMMEDIATE_KINDS = frozenset({
     "issue_opened", "pull_submitted", "issue_assigned"})
 NOTIFICATION_IMMEDIATE_SOURCES = frozenset({"issue", "pull", "discussion"})
 NOTIFICATION_IMMEDIATE_CONTEXTS = frozenset({"reminder"})
+NOTIFICATION_EMAIL_SKIP_SOURCES = frozenset({"ios_build"})
 NOTIFICATION_IMMEDIATE_SCAN = 20
 NOTIFICATION_IMMEDIATE_FRESH_MS = 60 * 60 * 1000
 NOTIFICATION_PULL_STATE_KINDS = frozenset({"pull_submitted", "pending_inbox"})
@@ -11956,9 +11957,10 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
 
     async def send_mailtrap(self, supplied_token, payload):
         token = str(supplied_token or "").strip()
+        payload = dict(payload if isinstance(payload, dict) else {})
+        tracked = bool(payload.pop("tracked", False))
         if not token and smtp_mail.enabled(self.env):
-            return await self._send_package_smtp(
-                dict(payload if isinstance(payload, dict) else {}))
+            return await self._send_package_smtp(payload, footer=not tracked)
         if not token:
             token = str(getattr(self.env, "MAILTRAP_API_TOKEN", "") or "").strip()
             if token and not await _mail_budget_spend(self.env, "package"):
@@ -12021,7 +12023,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
                 outbound, "failed", 0, type(error).__name__, "", via=via)
             return {"accepted": False, "error": "mailtrap_unavailable"}
 
-    async def _send_package_smtp(self, outbound):
+    async def _send_package_smtp(self, outbound, footer=True):
         via = {"via": "postfix", "node": smtp_mail.node(),
                "sender": "no-reply@forkmesh.com"}
         sender = outbound.get("from") if isinstance(
@@ -12037,8 +12039,9 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         html = outbound.get("html") or mail_activity.text_html(
             outbound.get("text"))
         try:
-            html, _unsubscribe = await _mail_tracked_html(
-                self.env, send_id, html, footer=True)
+            if footer:
+                html, _unsubscribe = await _mail_tracked_html(
+                    self.env, send_id, html, footer=True)
         except Exception as error:
             print("package mail tracking skipped: %s" % type(error).__name__)
             html = outbound.get("html")
@@ -37442,6 +37445,8 @@ async def _notification_email_items(env, rows, email_rec, last):
         kind = clean_string(payload.get("kind", ""), 40)
         if not prefs.get(kind, False):
             continue
+        if clean_string(payload.get("source", ""), 80) in NOTIFICATION_EMAIL_SKIP_SOURCES:
+            continue
         items.append(payload)
     return items, newest
 
@@ -38103,7 +38108,7 @@ def _forkmesh_email_action_html(label, url):
 def _forkmesh_email_card_html(
         heading, intro_html, body_html, footer_html="",
         action_label="Open ForkMesh",
-        action_url="https://forkmesh.com/"):
+        action_url="https://forkmesh.com/", preheader=""):
     intro_html = _light_email_fragment(intro_html)
     body_html = _light_email_fragment(body_html)
     footer_html = _light_email_fragment(footer_html)
@@ -38116,7 +38121,10 @@ def _forkmesh_email_card_html(
         "<style>:root{color-scheme:light;supported-color-schemes:light}"
         "a{color:#171717}</style>"
         "</head>"
-        "<body style=\"margin:0;padding:0;background:#fafafa\">"
+        "<body style=\"margin:0;padding:0;background:#fafafa\">" +
+        ("<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;"
+         "color:transparent\">" + _html_escape(preheader) + "</div>"
+         if preheader else "") +
         "<div class=\"fm-bg\" style=\"margin:0;padding:40px 20px;background:#fafafa;"
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',"
         "Helvetica,Arial,sans-serif;color:#171717;font-size:14px;"
@@ -40002,6 +40010,60 @@ async def _fill_signer_author_name(env, record):
         record["authorName"] = name
 
 
+PULL_LIFECYCLE_RECORD_REFS = (
+    "forkmesh/pull/{}", "refs/pr/{}/metadata", "forkmesh/pulls")
+PULL_LIFECYCLE_FINAL_STATUSES = frozenset({"merged", "closed-merged", "deleted"})
+
+
+async def _pull_lifecycle_record(env, owner, repo, number):
+    for ref in PULL_LIFECYCLE_RECORD_REFS:
+        try:
+            data = await _forkbot_repo_gateway_json(
+                env, owner, repo, "blob?path=%s&ref=%s" % (
+                    quote(".forkmesh/pulls/%d/pull.md" % int(number), safe=""),
+                    quote(ref.format(int(number)), safe="")))
+            fields = microjobs.parse_pull_frontmatter(
+                _forkbot_blob_text(data) if data else "")
+        except Exception:
+            fields = {}
+        if str(fields.get("number") or "").strip() == str(int(number)):
+            return fields
+    return {}
+
+
+async def _authorize_pull_lifecycle(env, owner, repo, number, data, request,
+                                    event):
+    record = await _pull_lifecycle_record(env, owner, repo, number)
+    if not record:
+        return False, json_response(
+            {"error": "pull_unavailable"}, status=503), ""
+    status = str(record.get("status") or "open").strip().lower()
+    if status in PULL_LIFECYCLE_FINAL_STATUSES:
+        return False, json_response({"error": "pull_final"}, status=409), ""
+    _, rec = await _account_session_record(env, request, data)
+    actor = clean_string(
+        rec.get("name", "") if rec else "", MAX_NODE_NAME
+    ).strip().lower()
+    manager, _ = await _authorize_issue_manager(env, owner, data, request)
+    if manager:
+        return True, None, actor
+    pull_key = str(record.get("author") or "").strip()
+    if pull_key and str(event.get("author") or "").strip() == pull_key:
+        return True, None, actor
+    if actor:
+        pull_name = clean_string(
+            record.get("authorName") or "", MAX_NODE_NAME).strip().lower()
+        if pull_name and pull_name == actor:
+            return True, None, actor
+        if pull_key and valid_node_pubkey(pull_key):
+            owner_name = clean_string(
+                await _git_push_account_for_pubkey(env, pull_key) or "",
+                MAX_NODE_NAME).strip().lower()
+            if owner_name and owner_name == actor:
+                return True, None, actor
+    return False, json_response({"error": "not_authorized"}, status=403), ""
+
+
 async def pulls_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -40065,6 +40127,14 @@ async def pulls_handler(env, request, owner, repo):
                     number, event,
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
+            if event.get("type") in ("status", "delete"):
+                allowed, refusal, lifecycle_actor = (
+                    await _authorize_pull_lifecycle(
+                        env, owner, repo, number, data, request, event))
+                if not allowed:
+                    return refusal
+                if lifecycle_actor:
+                    event["authorName"] = lifecycle_actor
             await _fill_signer_author_name(env, event)
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi

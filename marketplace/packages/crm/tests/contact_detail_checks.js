@@ -21,6 +21,8 @@ const exported = [
   "crmOwnerMatches", "crmFocusMatches", "crmFlow", "crmInvestorFlow",
   "crmAccountChip", "crmAccountProof",
   "crmNextContact", "crmNextChannels", "crmZohoComposeUrl",
+  "crmQueueReachMastodon", "crmMastodonLatest", "crmNextCardHtml", "CRM_NEXT_MODES", "refreshCrmMastodonNow",
+  "crmRetryAfterMs",
   "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
 ];
 const page = new Function(
@@ -385,6 +387,93 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     view.settings = { messageBrief: "  Acme makes anvils.  " };
     same(page.crmAiBrief(), "Acme makes anvils.", "a saved brief wins");
     view.organization = saved.organization; view.settings = saved.settings;
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { contacts: view.contacts, emails: view.emails, fetch: globalThis.fetch, parser: globalThis.DOMParser };
+    const day = 86400000; const now = Date.now();
+    globalThis.DOMParser = class { parseFromString(html) { return { body: { textContent: html.replace(/<[^>]*>/g, " ") } }; } };
+    const posts = {
+      "old@mastodon.social": { id: "1", at: now - 9 * day, text: "An older post about mirrors" },
+      "new@hachyderm.io": { id: "2", at: now - 2 * day, text: "Fresh post about forges" },
+      "mid@mastodon.social": { id: "3", at: now - 5 * day, text: "Middle post" },
+      "quiet@mastodon.social": { id: "4", at: 0 },
+    };
+    const calls = []; const inFlight = new Map(); let peak = 0;
+    const reply = (status, payload, headers = {}) => ({
+      ok: status >= 200 && status < 300, status, json: async () => payload,
+      headers: { get: (name) => headers[name] ?? null },
+    });
+    globalThis.fetch = async (url) => {
+      calls.push(url);
+      const host = new URL(url).host;
+      inFlight.set(host, (inFlight.get(host) || 0) + 1);
+      peak = Math.max(peak, inFlight.get("mastodon.social") || 0);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight.set(host, inFlight.get(host) - 1);
+      if (host === "busy.example") return reply(429, {}, { "Retry-After": "600" });
+      if (host === "down.example") throw new TypeError("fetch failed");
+      const lookup = url.match(/accounts\/lookup\?acct=([^&]+)/);
+      if (lookup) {
+        const key = `${decodeURIComponent(lookup[1])}@${host}`;
+        return posts[key] ? reply(200, { id: posts[key].id }) : reply(404, { error: "Record not found" });
+      }
+      const id = url.match(/accounts\/([^/]+)\/statuses/)[1];
+      const post = Object.values(posts).find((entry) => entry.id === id);
+      return reply(200, post.at ? [{ created_at: new Date(post.at).toISOString(), content: `<p>${post.text}</p>`, url: `https://${host}/@x/${id}` }] : []);
+    };
+    const settle = async () => {
+      for (let i = 0; i < 400 && (page.crmMastodonLatest.pending.size || page.crmMastodonLatest.queue.length); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+    view.emails = []; view.nextSkipped.clear();
+    view.contacts = [
+      { id: "valued", email: "v@example.com", value: 5000, createdAt: now - day },
+      { id: "old", mastodon: "@old@mastodon.social", createdAt: now - 3 * day },
+      { id: "new", mastodon: "@new@hachyderm.io", createdAt: now - 3 * day },
+      { id: "mid", mastodon: "mid@mastodon.social", createdAt: now - 3 * day },
+      { id: "quiet", mastodon: "@quiet@mastodon.social", createdAt: now - 3 * day },
+      { id: "gone", mastodon: "@gone@mastodon.social", createdAt: now - 3 * day },
+      { id: "busy", mastodon: "@a@busy.example", createdAt: now - 3 * day },
+      { id: "busy-too", mastodon: "@b@busy.example", createdAt: now - 4 * day },
+      { id: "down", mastodon: "@c@down.example", createdAt: now - 3 * day },
+    ];
+    same(page.crmNextContact("reach", now).contact?.id, "valued", "before any post is read, the current order holds");
+    page.crmQueueReachMastodon(page.crmNextContact("reach", now).ranked);
+    await settle();
+    same(page.crmNextContact("reach", now).ranked.map((contact) => contact.id),
+         ["new", "mid", "old", "valued", "busy-too", "busy", "down", "gone", "quiet"],
+         "reach out lists the newest Mastodon post first, then everyone else in the current order");
+    check(peak <= 2, `no more than two reads at once go to one instance (saw ${peak})`);
+    const busyCalls = calls.filter((url) => url.includes("busy.example")).length;
+    page.refreshCrmMastodonNow("a@busy.example");
+    await settle();
+    same(calls.filter((url) => url.includes("busy.example")).length, busyCalls,
+         "an instance that answers 429 is not asked again during its back-off, even on refresh");
+    same(page.crmMastodonLatest.latest.get("b@busy.example")?.error.includes("fewer requests"), true,
+         "the account held back by a 429 says why");
+    check(page.crmMastodonLatest.latest.get("gone@mastodon.social").error.includes("no such account"), "a missing account is an error, not a post");
+    check(page.crmMastodonLatest.latest.get("c@down.example").error.includes("could not be reached"), "an unreachable instance is an error, not a post");
+    same(page.crmRetryAfterMs({ get: (name) => (name === "Retry-After" ? "30" : null) }), 30000, "Retry-After seconds are honoured");
+    const reach = page.crmNextContact("reach", now);
+    check(reach.reason.includes("posted on Mastodon 2 days ago"), "the reason names the recent post");
+    same(reach.upcoming.map((contact) => contact.id), ["mid", "old", "valued", "busy-too", "busy"], "the next five wait under the card");
+    const html = page.crmNextCardHtml(page.CRM_NEXT_MODES[0]);
+    check(html.includes("Fresh post about forges") && html.includes("https://hachyderm.io/@x/2"), "the card shows the newest post with its link");
+    check(html.includes("data-crm-next-upcoming") && html.includes("Middle post") && html.includes("5 days ago"), "the list shows each person's newest post and when");
+    check(!page.crmNextCardHtml(page.CRM_NEXT_MODES[1]).includes("data-crm-next-upcoming"), "follow up keeps its single card");
+    const before = calls.length;
+    page.crmQueueReachMastodon(page.crmNextContact("reach", now).ranked);
+    await settle();
+    same(calls.length, before, "a second render reads nothing fresh from the cache");
+    page.refreshCrmMastodonNow("old@mastodon.social");
+    await settle();
+    same(calls.slice(before).map((url) => url.includes("/lookup")), [false], "a refresh reuses the account id and reads only the statuses");
+    view.contacts = saved.contacts; view.emails = saved.emails;
+    globalThis.fetch = saved.fetch; globalThis.DOMParser = saved.parser;
+    page.crmMastodonLatest.latest.clear(); page.crmMastodonLatest.ids.clear(); page.crmMastodonLatest.backoff.clear();
   }
 
   if (failures) {

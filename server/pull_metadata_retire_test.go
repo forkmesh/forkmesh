@@ -92,7 +92,7 @@ func TestRetireMergedPullBranchesKeepsTheRecordAndDropsTheBranch(t *testing.T) {
 		if kept == "" || !gitIsAncestor(context.Background(), f.bare, tips[number], kept) {
 			t.Fatalf("pull #%d metadata ref %q does not contain the retired tip %s", number, kept, tips[number])
 		}
-		if !pullRecordMerged(pullRecordAt(context.Background(), f.bare, kept, number)) {
+		if !pullRecordRetired(pullRecordAt(context.Background(), f.bare, kept, number)) {
 			t.Fatalf("pull #%d metadata ref does not record the merge", number)
 		}
 	}

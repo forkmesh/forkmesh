@@ -235,6 +235,14 @@ public final class LocalPingLog {
         return ping
     }
 
+    public func removeChats(where matches: (String) -> Bool) {
+        let before = pings.count
+        pings.removeAll { $0.kind == LocalPingLog.chatKind && matches($0.conversation ?? "") }
+        guard pings.count != before else { return }
+        save()
+        listeners.notify()
+    }
+
     public func markConversationRead(_ conversation: String) {
         guard pings.contains(where: { !$0.read && $0.conversation == conversation }) else { return }
         for index in pings.indices where pings[index].conversation == conversation { pings[index].read = true }

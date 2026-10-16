@@ -40,13 +40,6 @@ struct MessagesConversationView<Drawer: View>: View {
         let conversation: String = hub.relay.currentConversation
         ZStack(alignment: .leading) {
             transcript(palette)
-                .overlay(alignment: .topTrailing) {
-                    if let live = hub.live, hub.inDirect {
-                        MessagesLivePartnerMotion(engine: live, conversation: conversation, partner: hub.conversationName)
-                            .padding(.trailing, FmSpace.x3)
-                            .padding(.top, FmSpace.x2)
-                    }
-                }
                 .overlay {
                     if drawing, let live = hub.live, hub.inDirect {
                         MessagesLiveTouchSurface(
@@ -195,7 +188,15 @@ struct MessagesConversationView<Drawer: View>: View {
             },
             onPhoto: { viewing = MessagesPhotoBox(attachment: $0) },
             quoteAuthor: quote.map { hub.replyAuthor($0, in: bubble.row.message.conversation) } ?? "",
-            onQuote: shown ? { jumpTarget = quote?.id } : nil)
+            onQuote: shown ? { jumpTarget = quote?.id } : nil,
+            life: life(bubble))
+    }
+
+    private func life(_ bubble: ChatBubble) -> MessagesBubbleLife {
+        let message: ChatMessage = bubble.row.message
+        return MessagesBubbleLife(
+            expiresAt: hub.expiresAt(message), lifetime: hub.lifetime(message.conversation),
+            onServer: hub.isOnServer(message, receipt: bubble.receipt))
     }
 
     private func stopSharing(_ conversation: String) {
@@ -261,6 +262,16 @@ struct MessagesConversationView<Drawer: View>: View {
         [hub.conversationSubtitle, hub.serverCopiesLine].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 
+    @ViewBuilder private var headerAvatar: some View {
+        if let live = hub.live, hub.inDirect {
+            MessagesLivePartnerAvatar(engine: live, conversation: hub.relay.currentConversation, size: 38) {
+                MessagesConversationAvatar(hub: hub, size: 38)
+            }
+        } else {
+            MessagesConversationAvatar(hub: hub, size: 38)
+        }
+    }
+
     private func header(_ palette: MessagesColors) -> some View {
         let ink: Color = palette.dark ? Color.white : Color.black
         let detail: String = headerDetail
@@ -283,7 +294,7 @@ struct MessagesConversationView<Drawer: View>: View {
             }
             Button(action: { details = true }) {
                 HStack(spacing: FmSpace.x2) {
-                    MessagesConversationAvatar(hub: hub, size: 38)
+                    headerAvatar
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 3) {
                             Text(hub.conversationName)
@@ -506,6 +517,7 @@ struct MessagesComposer: View {
         HStack(alignment: .bottom, spacing: FmSpace.x2) {
             plusMenu
             DirectLiveTouchButton(hub: hub, dark: colors.dark, drawing: $drawing, focused: $focused)
+            DirectLiveTapButton(hub: hub, dark: colors.dark)
             if recorder.recording {
                 recordingField
             } else {

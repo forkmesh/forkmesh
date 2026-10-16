@@ -85,7 +85,14 @@ Everything is in `desktop/`.
   the project's `data/`, `ssh/` and identity key would land in its working
   tree. A new project starts offline with no instance and asks which instance
   to join when its window first opens; it never joins a default relay on its
-  own. Project settings is a page of the main window.
+  own. Turning offline mode off does not require an instance: the project goes
+  online for everything else, while the relay connection, node presence and
+  relay probe stay off until an instance is chosen. Project settings is a page
+  of the main window.
+- **Project menu.** The instance, account and repository live as rows in the
+  project picker's menu rather than in the top bar. When no account is signed
+  in, the account row is the "Log in / Sign up" entry; the top bar has no
+  separate sign-in button.
 - **Main window.** One `MainWindow` class with a left rail of sections
   (indices are `k*SectionIndex` constants in `MainWindow.h`). Most sections are
   built lazily on first open. Settings is one scrolling page whose sections

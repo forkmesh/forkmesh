@@ -242,6 +242,8 @@ async def plan_pulls(reader, branch):
                 rows.append(_record_row(int(name), *parse_front_matter(
                     blob_text(blob)), "pulls"))
     await root
+    rows = [row for row in rows
+            if str(row["state"]).strip().lower() != "deleted"]
     rows.sort(key=lambda r: (-_stamp(r), -r["number"]))
     return {"rows": rows}
 

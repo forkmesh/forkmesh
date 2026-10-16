@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.31.0",
+  "version": "1.35.0",
   "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
   "screenshots": [
     {
@@ -112,6 +112,11 @@
     {
       "id": "platform.accounts.evidence",
       "label": "For ForkMesh administrators, record which contacts have a ForkMesh account, pay, or are on a trial",
+      "risk": "high"
+    },
+    {
+      "id": "ai.outreach.write",
+      "label": "Send a contact's record and past emails' open and click results to the host AI model to write automated outreach",
       "risk": "high"
     },
     {

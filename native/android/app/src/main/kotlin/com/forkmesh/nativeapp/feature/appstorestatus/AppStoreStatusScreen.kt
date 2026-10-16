@@ -368,6 +368,7 @@ private fun FeedbackCard(row: AppStoreFeedback) {
             if (row.device.isNotEmpty()) Muted(row.device)
             if (row.comment.isNotEmpty()) Text(row.comment, style = Fm.text.bodyMedium.copy(color = c.textPrimary))
             else Muted(if (row.crash) "Crash report with no comment" else "Screenshot with no comment")
+            ScreenshotStrip(row)
         }
     }
 }

@@ -147,6 +147,94 @@ async def _address(env, name):
     return email
 
 
+async def _deliver(env, name, email, view, send_id, ref, now):
+    if await mail_activity.sent_since(
+            env, KIND, email, now - HOUR_MS) >= HOURLY_CAP:
+        await mail_log.enqueue(env, mail_log.note(
+            KIND, email, view["subject"], "suppressed", at=now,
+            body=view["text"],
+            error="task email limit, %d an hour per person" % HOURLY_CAP))
+        return False
+    ok = await _send_email(env, email, view["subject"], view["text"],
+                           _html(view), email_kind=KIND, send_id=send_id,
+                           ref=ref, recipient=name)
+    await _record_account_email(env, name, KIND, ok)
+    return bool(ok)
+
+
+def _task_title(task):
+    return _short((task or {}).get("title") or "Organization task", 160)
+
+
+def deleted_message(tasks, actor, reason, url, org):
+    titles = [_task_title(task) for task in tasks]
+    who = ("@" + actor) if _name(actor) else "a team member"
+    if len(titles) == 1:
+        subject = _short("Task deleted: " + titles[0], 160)
+    else:
+        subject = "%d tasks deleted" % len(titles)
+    lines = ["“%s” deleted by %s" % (title, who) for title in titles]
+    reason = _short(reason, 500)
+    if reason:
+        lines.append("Reason: " + reason)
+    where = ("the %s organization" % org) if org else "your organization"
+    details = (
+        "%s deleted %s in %s. A deleted task counts as done. It stays in the "
+        "trash for 30 days, where its creator, assignee or a manager can "
+        "restore it." % (
+            who, "this task" if len(titles) == 1 else "these tasks", where))
+    footer = (
+        "You get this email because you created or were assigned this task "
+        "in %s. Turn off email notifications in your ForkMesh settings, or "
+        "unsubscribe, to stop these emails." % where)
+    text = "\n".join(lines) + "\n\n" + details
+    text += "\n\nOpen the tasks: " + url + "\n\n" + footer
+    return {"subject": subject, "lines": lines, "details": details,
+            "url": url, "footer": footer, "text": text}
+
+
+async def send_deleted(env, org_bi, org, actor, plan, reason=""):
+    now = int(Date.now())
+    actor = _name(actor)
+    base = (_public_base_url(env) or FORKMESH_SITE_URL).rstrip("/")
+    url = task_url(base, "", deleted=True)
+    reached = {}
+    subjects = {}
+    count = 0
+    for name, tasks in plan or []:
+        name = _name(name)
+        tasks = [task for task in tasks or []
+                 if isinstance(task, dict)
+                 and str(task.get("id") or "")]
+        if not name or name == actor or not tasks:
+            continue
+        try:
+            email = await _address(env, name)
+            if not email:
+                continue
+            view = deleted_message(tasks, actor, reason, url, org)
+            ref = task_ref(org_bi, tasks[0]["id"])
+            if not await _deliver(env, name, email, view, _ap_uuid(), ref,
+                                  now):
+                continue
+            count += 1
+            for task in tasks:
+                task_id = str(task["id"]).lower()
+                reached.setdefault(task_id, []).append(name)
+                subjects[task_id] = _short(
+                    "Task deleted: " + _task_title(task), 160)
+        except Exception as error:
+            print("task delete email to @%s failed: %s" % (
+                name, type(error).__name__))
+    for task_id, names in reached.items():
+        try:
+            await record(env, org_bi, task_id, actor, "emailed",
+                         emailed_summary(subjects[task_id], names), now)
+        except Exception:
+            pass
+    return count
+
+
 async def send_activity(env, org_bi, org, actor, task_id, action, changes,
                         names, meta, details):
     now = int(Date.now())
@@ -172,19 +260,7 @@ async def send_activity(env, org_bi, org, actor, task_id, action, changes,
             view = message(meta, entries, details,
                            task_url(base, task_id, token, deleted), org)
             subject = view["subject"]
-            if await mail_activity.sent_since(
-                    env, KIND, email, now - HOUR_MS) >= HOURLY_CAP:
-                await mail_log.enqueue(env, mail_log.note(
-                    KIND, email, subject, "suppressed", at=now,
-                    body=view["text"],
-                    error="task email limit, %d an hour per person" % (
-                        HOURLY_CAP)))
-                continue
-            ok = await _send_email(env, email, subject, view["text"],
-                                   _html(view), email_kind=KIND,
-                                   send_id=send_id, ref=ref, recipient=name)
-            await _record_account_email(env, name, KIND, ok)
-            if ok:
+            if await _deliver(env, name, email, view, send_id, ref, now):
                 sent.append(name)
         except Exception as error:
             print("task email to @%s failed: %s" % (

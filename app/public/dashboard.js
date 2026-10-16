@@ -3243,6 +3243,10 @@
       content = [fields.threadId || "", fields.state || "", cleanBody].join(NUL);
     } else if (type === "suggestion-state") {
       content = [fields.threadId || "", fields.state || "", fields.appliedCommit || "", cleanBody].join(NUL);
+    } else if (type === "status") {
+      content = [fields.state || "", cleanBody].join(NUL);
+    } else if (type === "delete") {
+      content = cleanBody;
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -3272,6 +3276,14 @@
 
   async function submitWebPullReview(repo, number, reviewState, body) {
     return submitWebPullEvent(repo, number, "review", { state: reviewState, body });
+  }
+
+  async function submitWebPullClose(repo, number) {
+    return submitWebPullEvent(repo, number, "status", { state: "closed" });
+  }
+
+  async function submitWebPullDelete(repo, number) {
+    return submitWebPullEvent(repo, number, "delete", {});
   }
 
   function pullRequestTargetRepo(repo) {
@@ -3371,6 +3383,21 @@
     if (!patch.trim()) {
       throw new Error("no_changes");
     }
+    return signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits);
+  }
+
+  async function submitWebFileProposal(repo, proposal, title, body = "") {
+    const patch = String(proposal?.patch || "");
+    const commits = String(proposal?.commits || "");
+    const base = String(proposal?.base || "");
+    const head = String(proposal?.head || "");
+    if (!patch.trim() || !base || !head) throw new Error("no_changes");
+    const pull = await signWebPullContent(repo, title, body, base, head, patch, commits);
+    const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull });
+    return { ...data, pull, targetRepo: repo };
+  }
+
+  async function signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits) {
     if (ISSUE_TEXT_ENCODER.encode(patch).byteLength
         + ISSUE_TEXT_ENCODER.encode(commits).byteLength > 4 * 1024 * 1024) {
       throw new Error("pull_too_large");
@@ -14192,6 +14219,7 @@
       const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
       error.status = response.status;
       error.code = data?.error || "";
+      error.data = data;
       throw error;
     }
     return data;
@@ -14202,8 +14230,86 @@
       return "The file changed while you were editing. Reload and try again.";
     }
     if (error?.status === 401) return "Sign in to edit repository files.";
-    if (error?.status === 403) return "You need repository write permission to edit this file.";
+    if (error?.status === 403) return "You don't have write access to this repository. Save again to propose your change as a pull request.";
     return error?.message || "Could not save the file.";
+  }
+
+  function repoFileSignInUrl() {
+    return "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+  }
+
+  const REPO_FILE_PROPOSE_NOTICE = "You don't have write access to this repository. Saving proposes your change as a pull request.";
+
+  function setRepoFileEditorProposing(editor, proposing, { access = "" } = {}) {
+    if (!editor) return;
+    editor.dataset.repoFileEditorMode = proposing ? "propose" : "commit";
+    if (access) editor.dataset.repoFileEditorAccess = access;
+    const readOnly = editor.dataset.repoFileEditorAccess === "propose";
+    const notice = editor.querySelector("[data-repo-file-editor-notice]");
+    if (notice) notice.hidden = !readOnly;
+    const proposeToggle = editor.querySelector("[data-repo-file-editor-propose-wrap]");
+    if (proposeToggle) proposeToggle.hidden = editor.dataset.repoFileEditorAccess !== "write";
+    const checkbox = editor.querySelector("[data-repo-file-editor-propose]");
+    if (checkbox) checkbox.checked = proposing;
+    const branchLabel = editor.querySelector("[data-repo-file-editor-branch-label]");
+    if (branchLabel) branchLabel.textContent = proposing ? "Base branch" : "Branch";
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    if (branchInput) branchInput.readOnly = proposing;
+    const saveLabel = editor.querySelector("[data-repo-file-editor-save-label]");
+    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : "Save";
+  }
+
+  async function probeRepoFileEditAccess(viewer, editor, repo, signal) {
+    try {
+      const data = await repoFileEditRequest(repo, { mode: "probe" });
+      if (signal.aborted || !editor.isConnected) return;
+      if (data?.access === "propose") {
+        setRepoFileEditorProposing(editor, true, { access: "propose" });
+        const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+        if (branchInput) branchInput.value = editor.dataset.repoFileEditorBase || branchInput.value;
+      } else if (data?.access === "write") {
+        setRepoFileEditorProposing(editor, editor.dataset.repoFileEditorMode === "propose", { access: "write" });
+      }
+    } catch (error) {
+      if (signal.aborted || !editor.isConnected) return;
+      if (error?.status === 401) {
+        updateRepoFileStatus(viewer, "Sign in to edit repository files.", "bad");
+        location.href = repoFileSignInUrl();
+      }
+    }
+  }
+
+  async function proposeRepoFileEdit(viewer, repo, proposal) {
+    const title = String(proposal.subject || "").trim();
+    updateRepoFileStatus(viewer, "Signing and sending the pull request...", "good");
+    const result = await submitWebFileProposal(repo, proposal, title);
+    const number = Number(result?.number || 0);
+    if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
+    rememberOptimisticRepoRecord(repo, "pulls", number, {
+      values: {
+        number,
+        title,
+        status: "open",
+        base: result.pull.base,
+        head: result.pull.head,
+        author: result.pull.author,
+        authorName: result.pull.authorName || "you",
+        ts: result.pull.ts,
+      },
+      body: "",
+      pullPatch: {
+        patch: result.pull.patch,
+        files: parsePatchStats(result.pull.patch),
+        unavailable: false,
+      },
+      pullConversation: [],
+      pullCommits: [],
+      pullAgents: [],
+      pullTimeline: [],
+    });
+    updateRepoFileStatus(viewer, `Opened pull request #${number}.`, "good");
+    window.location.assign(repoRecordUrl(repo, "pulls", number, "conversation"));
+    return number;
   }
 
   function repoFileEditorBranchOptions(repo, current) {
@@ -14246,10 +14352,11 @@
     editor.dataset.repoFileEditor = "true";
     editor.className = "grid gap-3 border-t border-border bg-background p-3";
     editor.innerHTML = `
+      <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
       <textarea data-repo-file-editor-content spellcheck="false" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70">${escapeHtml(content)}</textarea>
       <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
         <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <span>Branch</span>
+          <span data-repo-file-editor-branch-label>Branch</span>
           <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
           <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
         </label>
@@ -14259,9 +14366,13 @@
         </label>
         <div class="flex items-end gap-2">
           <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
-          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save</button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>Save</span></button>
         </div>
-      </div>`;
+      </div>
+      <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+        <span>Propose as a pull request instead of committing</span>
+      </label>`;
     fileContent.classList.add("hidden");
     viewer.querySelector("[data-repo-file-modes]")?.classList.add("hidden");
     shell.appendChild(editor);
@@ -14283,15 +14394,51 @@
         editor.requestSubmit();
       }
     }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
     editor.addEventListener("submit", async (event) => {
       event.preventDefault();
       const nextContent = textarea?.value || "";
-      const branch = String(branchInput?.value || "").trim();
       const message = String(messageInput?.value || "").trim();
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
       saveButton.disabled = true;
+      if (proposing) {
+        updateRepoFileStatus(viewer, "Preparing your proposed change...", "good");
+        let proposal = null;
+        try {
+          proposal = await repoFileEditRequest(repo, {
+            mode: "propose",
+            path,
+            branch,
+            oid: String(meta?.oid || ""),
+            content: nextContent,
+            message,
+          });
+          if (proposal.unchanged) {
+            saveButton.disabled = false;
+            updateRepoFileStatus(viewer, "No changes to propose.", "good");
+            return;
+          }
+          await proposeRepoFileEdit(viewer, repo, proposal);
+        } catch (error) {
+          saveButton.disabled = false;
+          if (!proposal && error?.status === 401) {
+            location.href = repoFileSignInUrl();
+            return;
+          }
+          updateRepoFileStatus(viewer, proposal
+            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayKey(repo))
+            : repoFileEditError(error), "bad");
+        }
+        return;
+      }
       updateRepoFileStatus(viewer, "Saving file...", "good");
       try {
         const payload = await repoFileEditRequest(repo, {
+          mode: "commit",
           path,
           branch,
           baseRef: currentBranch,
@@ -14320,9 +14467,20 @@
         }
       } catch (error) {
         saveButton.disabled = false;
+        if (error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
         updateRepoFileStatus(viewer, repoFileEditError(error), "bad");
       }
     }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
     textarea?.focus();
     updateRepoFileStatus(viewer, "Editing file.", "good");
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
@@ -14379,6 +14537,11 @@
       if (action === "raw") {
         setRepoFileMode(viewer, "raw", lines, path, meta);
       } else if (action === "edit") {
+        if (!state.session?.nodeName) {
+          updateRepoFileStatus(viewer, "Sign in to edit this file.", "bad");
+          location.href = repoFileSignInUrl();
+          return;
+        }
         openRepoFileEditor(viewer, repo, path, content, lines, meta);
       } else if (action === "copy") {
         const copied = await copyTextToClipboard(content);
@@ -19069,6 +19232,8 @@
     if (ev.type === "thread-reply") return { label: "reply", tone: neutral };
     if (ev.type === "thread-state") return { label: `thread ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
+    if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
     return { label: "comment", tone: neutral };
   }
 
@@ -19163,7 +19328,9 @@
     if (!body) {
       const icon = ev.type === "agent" ? "bot"
         : ev.type === "review" && ev.state === "approved" ? "check"
-          : ev.type === "review" && ev.state === "changes_requested" ? "file-diff" : "eye";
+          : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
+            : ev.type === "status" ? "git-pull-request-closed"
+              : ev.type === "delete" ? "trash-2" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -19838,7 +20005,24 @@
       </form>`;
   }
 
-  function renderPullReviewForm(number) {
+  function pullLifecycleAllowed(repo, parsed) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !parsed) return false;
+    const values = parsed.values || {};
+    const status = String(values.status || "open").trim().toLowerCase();
+    if (status !== "open" && status !== "closed") return false;
+    if (parsed.pullMergeAuthorized === true || isRepoOwner(repo) || state.session?.isAdmin) return true;
+    return String(values.authorName || "").trim().toLowerCase() === me;
+  }
+
+  function renderPullLifecycleButtons(repo, parsed) {
+    if (!pullLifecycleAllowed(repo, parsed)) return "";
+    const open = String(parsed.values?.status || "open").trim().toLowerCase() === "open";
+    const button = "inline-flex h-control items-center gap-2 rounded-md border border-border bg-secondary px-3 text-control font-medium transition-colors hover:bg-secondary/70 disabled:opacity-50";
+    return `${open ? `<button type="submit" data-repo-pull-review-action="close" class="${button} text-foreground"><i data-lucide="git-pull-request-closed" class="h-4 w-4 text-muted-foreground"></i>Close pull request</button>` : ""}<button type="submit" data-repo-pull-review-action="delete" class="${button} text-destructive"><i data-lucide="trash-2" class="h-4 w-4 text-muted-foreground"></i>Delete pull request</button>`;
+  }
+
+  function renderPullReviewForm(repo, number, parsed) {
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
@@ -19852,6 +20036,7 @@
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
             <div class="flex flex-wrap items-center gap-2">
+              ${renderPullLifecycleButtons(repo, parsed)}
               <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
               <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>
               <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50">Comment</button>
@@ -19861,8 +20046,65 @@
       </form>`;
   }
 
+  async function handlePullLifecycle(repo, form, action) {
+    const number = Number(form.dataset.repoPullReviewNumber || 0);
+    const hint = form.querySelector("[data-repo-pull-review-hint]");
+    const buttons = form.querySelectorAll("[data-repo-pull-review-action]");
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!number) {
+      setHint("This pull request hasn't finished loading yet.", true);
+      return;
+    }
+    const deleting = action === "delete";
+    const prompt = deleting
+      ? `Delete pull request #${number}? Its changes are removed and it leaves the pull request list.`
+      : `Close pull request #${number} without merging it?`;
+    if (!window.confirm(prompt)) return;
+    buttons.forEach((button) => { button.disabled = true; });
+    setHint("Signing and sending…");
+    try {
+      if (deleting) await submitWebPullDelete(repo, number);
+      else await submitWebPullClose(repo, number);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "pulls" && String(detail.number) === String(number)) {
+        detail.parsed.values = { ...(detail.parsed.values || {}), status: deleting ? "deleted" : "closed" };
+        const container = $("[data-repo-pulls]");
+        if (container) {
+          container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, detail.parsed);
+          window.lucide?.createIcons();
+        }
+      }
+      const notice = $("[data-repo-pull-review-hint]");
+      if (notice) {
+        notice.className = "text-[11px] text-muted-foreground";
+        notice.textContent = deleting
+          ? `Delete of pull request #${number} sent. It leaves the list once the mirror applies it.`
+          : `Pull request #${number} is closing. The mirror applies it shortly.`;
+      }
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      const code = String(error?.message || "");
+      setHint(
+        code === "not_authorized" ? "Only the pull request's author or a maintainer can do this."
+          : code === "pull_final" ? "This pull request is already merged or deleted."
+          : code === "pull_unavailable" ? "The pull request record could not be read. Try again in a moment."
+          : code === "bad_signature" ? "Could not verify the request's signature."
+          : deleting ? "Could not delete the pull request. Please try again."
+          : "Could not close the pull request. Please try again.",
+        true);
+    }
+  }
+
   async function handlePullReviewSubmit(repo, form, action) {
     if (!repo || !form) return;
+    if (action === "close" || action === "delete") {
+      await handlePullLifecycle(repo, form, action);
+      return;
+    }
     const number = Number(form.dataset.repoPullReviewNumber || 0);
     const bodyInput = form.querySelector("[data-repo-pull-review-body]");
     const buttons = form.querySelectorAll("[data-repo-pull-review-action]");
@@ -21211,7 +21453,7 @@
     const pullConversationSection = isPulls ? `
           <section class="grid min-w-0 gap-3">
             <div data-repo-pull-conversation data-empty="${pullTimeline.length ? "false" : "true"}" class="grid min-w-0 gap-2">${renderRepoPullConversation(pullTimeline)}</div>
-            ${renderPullReviewForm(number)}
+            ${renderPullReviewForm(repo, number, parsed)}
           </section>` : "";
     const pullFilesSection = isPulls
       ? renderRepoPullFilesSection(pullPatch, pullViewed)
@@ -24059,6 +24301,7 @@
   }
 
   function pullMatchesQueryFilters(pull, filters = pullQueryFilters()) {
+    if (String(pull?.state || "").trim().toLowerCase() === "deleted") return false;
     if (filters.author && String(pull.author || "").toLowerCase() !== filters.author.toLowerCase()
         && String(pull.authorKey || "").toLowerCase() !== filters.author.toLowerCase()) return false;
     if (filters.base && String(pull.base || "").toLowerCase() !== filters.base.toLowerCase()) return false;

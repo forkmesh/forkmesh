@@ -24,6 +24,15 @@ node, agent header, client class) and log a `task delete refused:` line.
 - Trashing sets `deleted_at` / `deleted_by_bi`, seals the reason, and stops a
   running timer. Trashed tasks are hidden from every board read, item route,
   the QA desk and the agent-run completion hook; child rows remain until purge.
+- A delete counts the task as done: an open task gets `completed_at` set to
+  the delete time (so it reports `done` and progress 100, and anything counting
+  `completed_at>0` treats it as finished). The sealed trash record keeps
+  `completed: true` for that case, and restore clears `completed_at` again; a
+  task that was already done keeps its original completion time either way.
+- Deleting emails the task's creator and assignee (a person, not the bot),
+  organization members only, never the deleter, once each per request: a batch
+  sends each recipient one email listing every deleted task they are on. See
+  [task-email.md](task-email.md#deleted-tasks).
 - Allowed to creator, assignee or manager. A bot token acts with its creator's
   current rights.
 - Guards `agent_running` and `qa_in_progress` block deletion; only an owner may

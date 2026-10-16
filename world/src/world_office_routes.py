@@ -1121,6 +1121,8 @@ async def notify_organization_task_update(
         print("task ping: task %s action %s by %s to %s filed %d" % (
             str(task_id or "")[:8], safe_action, safe_actor or "-",
             ",".join(recipients), filed))
+    if safe_action == "deleted":
+        return filed
     try:
         emailed = await task_email.send_activity(
             env, str(org_bi or ""), org_name, safe_actor, task_id,
@@ -1136,6 +1138,63 @@ async def notify_organization_task_update(
     except Exception as error:
         print("task email failed: %s" % type(error).__name__)
     return filed
+
+
+def _task_deletion_plan(tasks, roster, actor):
+    plan = []
+    for task in tasks or []:
+        if not isinstance(task, dict):
+            continue
+        names = [task.get("createdBy")]
+        if str(task.get("assigneeKind") or "user") == "user":
+            names.append(task.get("assignee"))
+        for name in names:
+            name = clean_string(name or "", MAX_NODE_NAME).strip().lower()
+            if (
+                not valid_node_name(name)
+                or name == actor
+                or name not in roster
+            ):
+                continue
+            entry = next((item for item in plan if item[0] == name), None)
+            if entry is None:
+                entry = (name, [])
+                plan.append(entry)
+            if task not in entry[1]:
+                entry[1].append(task)
+    return plan
+
+
+async def notify_organization_task_deletions(
+        env, org_bi, actor, tasks, reason=""):
+    safe_actor = clean_string(actor or "", MAX_NODE_NAME).strip().lower()
+    org_row = await d1_first(
+        env, "SELECT name FROM orgs WHERE org_bi=?", str(org_bi or ""))
+    member_rows = await d1_all(
+        env,
+        "SELECT name,role FROM org_members WHERE org_bi=? LIMIT ?",
+        str(org_bi or ""),
+        1000,
+    )
+    roster = set()
+    for row in member_rows or []:
+        name = clean_string(
+            row.get("name") or "", MAX_NODE_NAME).strip().lower()
+        if valid_node_name(name):
+            roster.add(name)
+    plan = _task_deletion_plan(tasks, roster, safe_actor)
+    if not plan:
+        return 0
+    try:
+        emailed = await task_email.send_deleted(
+            env, str(org_bi or ""), (org_row or {}).get("name") or "",
+            safe_actor, plan, reason)
+        print("task email: %d deleted task(s) by %s emailed %d" % (
+            len(tasks or []), safe_actor or "-", emailed))
+        return emailed
+    except Exception as error:
+        print("task delete email failed: %s" % type(error).__name__)
+        return 0
 
 
 class _OfficeMarketingTasksRuntime:
@@ -1477,6 +1536,11 @@ class _OfficeMarketingTasksRuntime:
         return await notify_organization_task_update(
             self.env, org_bi, actor, task_id, task, action,
             changes=changes, participants=participants, skip=skip)
+
+    async def notify_organization_task_deletions(
+            self, org_bi, actor, tasks, reason=""):
+        return await notify_organization_task_deletions(
+            self.env, org_bi, actor, tasks, reason)
 
     async def task_email_viewed(self, org_bi, task_id, token, viewer, now):
         return await task_email.viewed(

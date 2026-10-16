@@ -207,7 +207,7 @@ private:
     QWidget *channelTile(const QJsonObject &item);
     QWidget *channelChip(const QJsonObject &item, const QJsonArray &agents);
     QString channelLabel(const QString &id) const;
-    void buildPages(QVBoxLayout *outer);
+    void buildPages(QVBoxLayout *outer, QVBoxLayout *content);
     void showPage(int page);
     void renderPages();
     void loadPerformance();
@@ -249,6 +249,7 @@ private:
     void postImagesArrived();
     void editRedditWatch();
     void monitorRedditThread();
+    void updateRedditThreads(const QString &threadId = QString());
     void copyRedditRules();
     void addRedditPlace();
     void addRedditWatch(const QString &kind, const QString &value);
@@ -285,6 +286,7 @@ private:
     bool m_postImagesRender = false;
     QComboBox *m_organization = nullptr;
     QLabel *m_status = nullptr;
+    DashboardPanel *m_activityColumn = nullptr;
     QLabel *m_browserActivity = nullptr;
     QJsonArray m_browserActivityItems;
     QHBoxLayout *m_heading = nullptr;
@@ -441,6 +443,8 @@ private:
     QTimer *m_xGuideTimer = nullptr;
     QTimer *m_railRetry = nullptr;
     QTimer *m_changedReload = nullptr;
+    QTimer *m_redditFollow = nullptr;
+    int m_redditFollowPolls = 0;
     int m_railRetryMs = 0;
     QString m_xGuidePath;
     qint64 m_xGuideSince = 0;
