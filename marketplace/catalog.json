@@ -45,7 +45,7 @@
     { "id": "sugar-break", "version": "1.1.0", "manifest": "packages/sugar-break/manifest.json" },
     { "id": "stretch", "version": "1.1.0", "manifest": "packages/stretch/manifest.json" },
     { "id": "food-guide", "version": "2.1.0", "manifest": "packages/food-guide/manifest.json" },
-    { "id": "browser-extension", "version": "2.22.0", "manifest": "packages/browser-extension/manifest.json" },
+    { "id": "browser-extension", "version": "2.22.1", "manifest": "packages/browser-extension/manifest.json" },
     { "id": "voice-changer", "version": "1.1.0", "manifest": "packages/voice-changer/manifest.json" },
     { "id": "face-changer", "version": "1.2.0", "manifest": "packages/face-changer/manifest.json" },
     { "id": "video-mix-dj-studio", "version": "1.0.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },

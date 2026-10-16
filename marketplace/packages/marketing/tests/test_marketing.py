@@ -1447,7 +1447,8 @@ def test_desktop_reloads_marketing_when_the_package_rings():
     assert "page.widget->packageChanged();" in window
     assert "void MarketingFeature::packageChanged()" in native
     assert 'payload.value(QStringLiteral("browserActivity"))' in native
-    assert 'QStringLiteral("<b>From your browser</b><br>")' in native
+    assert 'new DashboardPanel(QStringLiteral("From your browser"))' in native
+    assert "m_activityColumn->setVisible(m_installed && (detail || m_page == 1));" in native
     assert marketing.CHANGED_TOPIC == "package:marketing"
 
 

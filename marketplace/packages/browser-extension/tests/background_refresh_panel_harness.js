@@ -240,10 +240,11 @@ const settle = async (test) => {
   delete storage.sessionToken;
   check("signing out hides it", (await plan("https://www.reddit.com/r/git/new/")).show === false);
 
+  const domChild = (item) => (item && typeof item === "object" && !Array.isArray(item) ? item : { tag: "#text", textContent: String(item) });
   const element = (tag) => ({
     tag, children: [], handlers: {}, hidden: false, className: "", textContent: "", title: "", disabled: false,
-    append(...items) { this.children.push(...items); },
-    replaceChildren(...items) { this.children = items.filter(Boolean); },
+    append(...items) { this.children.push(...items.map(domChild)); },
+    replaceChildren(...items) { this.children = items.map(domChild); },
     addEventListener(event, handler) { this.handlers[event] = handler; },
   });
   const find = (node, test) => {
@@ -345,6 +346,12 @@ const settle = async (test) => {
   const buttons = [];
   find(root, (node) => { if (node.tag === "button") buttons.push(node.textContent); return false; });
   check("one card, one button when the page's refresh is the suggestion", buttons.join("|") === "Refresh Discord", buttons.join("|"));
+  const here = element("div");
+  panel.ForkMeshRefreshView.render(here, { ...panelPlan, title: "", here: false, pages: [], suggest: { ...panelPlan.suggest, covered: false } },
+    { title: "Reddit · r/git", kind: "subreddit", lines: ["r/git is watched.", "Nothing waiting to send."], actions: [] });
+  check("the popup's lines show as paragraphs, not object names", here.children.every((node) => node.tag !== "#text")
+    && here.children.filter((node) => node.className === "muted").map((node) => node.textContent).join("|")
+      === "r/git is watched.|Nothing waiting to send.", text(here));
 
   server.kill();
   console.log(`${checks} checks passed`);

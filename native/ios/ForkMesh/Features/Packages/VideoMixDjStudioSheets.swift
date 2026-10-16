@@ -330,9 +330,14 @@ struct DjInfoSheet: View {
                 Label("AUTOMIX fades to the other deck over 8 seconds.", systemImage: "arrow.left.arrow.right")
                 Label("The record button captures 8 seconds for the sampler.", systemImage: "record.circle")
                 Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
+                Label("Reset All (the circular arrow) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
             }
             .font(.footnote)
             Section {
+                Button("Reset All", role: .destructive) {
+                    model.resettingAfterSheet = true
+                    model.sheet = nil
+                }
                 Button("Leave Studio", role: .destructive) {
                     model.leavingAfterSheet = true
                     model.sheet = nil
