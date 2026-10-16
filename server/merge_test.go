@@ -204,7 +204,7 @@ func TestMergeExecutorMergesBranchBackedPullAtomicallyAndIdempotently(t *testing
 		t.Fatalf("merge kept the merged pull's metadata branch")
 	}
 	metadataAfter := f.ref(t, "refs/pr/7/metadata")
-	if !pullRecordMerged(pullRecordAt(context.Background(), f.bare, metadataAfter, 7)) {
+	if !pullRecordRetired(pullRecordAt(context.Background(), f.bare, metadataAfter, 7)) {
 		t.Fatalf("merge did not publish the merged record on the PR metadata ref")
 	}
 	isolatedPaths := run(t, ".", "git", "--git-dir="+f.bare, "ls-tree", "-r",
@@ -320,7 +320,7 @@ func TestMergeExecutorDeletesTheMergedPullBranchInTheSameTransaction(t *testing.
 		t.Fatalf("metadata ref %s does not extend the deleted branch tip %s: %v", kept, branchTip, parents)
 	}
 	record := pullRecordAt(ctx, f.bare, kept, 7)
-	if !pullRecordMerged(record) || record.values["rewardId"] != "rw_merge" ||
+	if !pullRecordRetired(record) || record.values["rewardId"] != "rw_merge" ||
 		record.values["rewardStatus"] != "pending_wallet" {
 		t.Fatalf("metadata ref record: %+v", record)
 	}

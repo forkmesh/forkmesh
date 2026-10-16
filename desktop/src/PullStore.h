@@ -377,6 +377,8 @@ public:
     // Merge a signed event received from the relay inbox into.forkmesh/pulls/<N>/. The
     // event must already be signed and verified by the caller.
     bool applyRemoteEvent(int number, const PullEvent &ev, QString *error = nullptr);
+    static bool isLifecycleEvent(const PullEvent &ev);
+    bool applyRemoteLifecycleEvent(int number, const PullEvent &ev, QString *error = nullptr);
 
     static QString branchReviewKey(const QString &branch);
     QString branchReviewDir(const QString &branch) const;

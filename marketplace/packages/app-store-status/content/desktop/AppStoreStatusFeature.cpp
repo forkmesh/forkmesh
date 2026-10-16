@@ -2,7 +2,15 @@
 #include "AppStoreStatusModel.h"
 
 #include <QDateTime>
+#include <QDialog>
+#include <QFile>
+#include <QFileDialog>
 #include <QFrame>
+#include <QIcon>
+#include <QImage>
+#include <QPixmap>
+#include <QScreen>
+#include <QToolButton>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -15,6 +23,7 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include <memory>
 #include <utility>
 
 namespace forkmesh::appstorestatus {
@@ -457,8 +466,184 @@ void AppStoreStatusFeature::addFeedback(QVBoxLayout *layout, const QJsonObject &
         const QString comment = text(feedback, "comment");
         if (!comment.isEmpty())
             row->addWidget(label(comment, "appStoreBody"));
+        addScreenshots(row, feedback);
     }
     section.empty(QStringLiteral("No tester feedback."));
+}
+
+void AppStoreStatusFeature::addScreenshots(QVBoxLayout *row, const QJsonObject &feedback)
+{
+    const QList<Screenshot> shots = screenshotsOf(feedback);
+    if (shots.isEmpty())
+        return;
+    const QString detail = feedbackTitle(feedback) + QStringLiteral(" · ") + feedbackDetail(feedback);
+    auto *strip = new QHBoxLayout;
+    strip->setSpacing(8);
+    strip->setContentsMargins(0, 4, 0, 0);
+    for (int index = 0; index < shots.size(); ++index) {
+        auto *button = new QToolButton;
+        button->setObjectName(QStringLiteral("appStoreScreenshot"));
+        button->setProperty("screenshotId", shots[index].id);
+        button->setFixedSize(72, 108);
+        button->setIconSize(QSize(64, 100));
+        button->setText(QStringLiteral("…"));
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(QStringLiteral("Open screenshot %1 of %2 full size").arg(index + 1).arg(shots.size()));
+        button->setAccessibleName(button->toolTip());
+        connect(button, &QToolButton::clicked, this, [this, shots, index, detail] {
+            openScreenshot(shots, index, detail);
+        });
+        const QPointer<QToolButton> guard(button);
+        loadScreenshot(shots[index].id, [guard](const QByteArray &bytes, const QString &) {
+            if (!guard)
+                return;
+            const QImage image = QImage::fromData(bytes);
+            if (image.isNull()) {
+                guard->setText(QStringLiteral("Not uploaded"));
+                guard->setToolTip(QStringLiteral("This screenshot has not been uploaded yet. Run the "
+                                                 "iOS App Store status shortcut again."));
+                return;
+            }
+            guard->setIcon(QIcon(QPixmap::fromImage(image.scaled(guard->iconSize(), Qt::KeepAspectRatio,
+                                                                  Qt::SmoothTransformation))));
+            guard->setToolButtonStyle(Qt::ToolButtonIconOnly);
+            guard->setProperty("loaded", true);
+        });
+        strip->addWidget(button);
+    }
+    strip->addStretch();
+    row->addLayout(strip);
+}
+
+void AppStoreStatusFeature::loadScreenshot(
+    const QString &id, std::function<void(const QByteArray &, const QString &)> done)
+{
+    if (m_screenshots.contains(id)) {
+        done(m_screenshots.value(id), QString());
+        return;
+    }
+    const bool started = m_screenshotWaits.contains(id);
+    m_screenshotWaits[id].append(std::move(done));
+    if (started)
+        return;
+    request(QByteArrayLiteral("GET"), screenshotPath(id),
+            [this, id](bool ok, const QJsonObject &payload, const QString &error) {
+        const QByteArray bytes = ok ? screenshotBytes(payload) : QByteArray();
+        if (!bytes.isEmpty())
+            m_screenshots.insert(id, bytes);
+        const QString problem = !bytes.isEmpty() ? QString()
+                                : !ok           ? (error.isEmpty() ? text(payload, "error") : error)
+                                                : QStringLiteral("not a picture");
+        const auto waits = m_screenshotWaits.take(id);
+        for (const auto &wait : waits)
+            wait(bytes, problem);
+    });
+}
+
+void AppStoreStatusFeature::openScreenshot(const QList<Screenshot> &shots, int index, const QString &detail)
+{
+    auto *dialog = new QDialog(this);
+    dialog->setObjectName(QStringLiteral("appStoreScreenshotDialog"));
+    dialog->setWindowTitle(QStringLiteral("Tester screenshot"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setModal(true);
+    auto *layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(16, 14, 16, 14);
+    layout->setSpacing(10);
+    QLabel *heading = label(QString(), "settingsRowTitle", false);
+    layout->addWidget(heading);
+    layout->addWidget(label(detail, "settingsRowDescription"));
+    auto *picture = new QLabel;
+    picture->setObjectName(QStringLiteral("appStoreScreenshotImage"));
+    picture->setAlignment(Qt::AlignCenter);
+    picture->setWordWrap(true);
+    picture->setMinimumSize(240, 240);
+    layout->addWidget(picture, 1);
+    auto *buttons = new QHBoxLayout;
+    auto *previous = new QPushButton(QStringLiteral("Previous"));
+    auto *next = new QPushButton(QStringLiteral("Next"));
+    auto *save = new QPushButton(QStringLiteral("Save…"));
+    auto *close = new QPushButton(QStringLiteral("Close"));
+    for (QPushButton *button : {previous, next, save})
+        button->setObjectName(QStringLiteral("ghostButton"));
+    previous->setVisible(shots.size() > 1);
+    next->setVisible(shots.size() > 1);
+    buttons->addWidget(previous);
+    buttons->addWidget(next);
+    buttons->addStretch();
+    buttons->addWidget(save);
+    buttons->addWidget(close);
+    layout->addLayout(buttons);
+
+    const QScreen *display = screen();
+    const QRect area = display ? display->availableGeometry() : QRect(0, 0, 1280, 800);
+    const QSize bound(qMax(240, int(area.width() * 0.8)), qMax(240, int(area.height() * 0.7)));
+    auto current = std::make_shared<int>(qBound(0, index, int(shots.size()) - 1));
+    const QPointer<QDialog> guard(dialog);
+    auto showCurrent = std::make_shared<std::function<void()>>();
+    *showCurrent = [this, guard, shots, current, heading, picture, previous, next, save, bound] {
+        if (!guard)
+            return;
+        const Screenshot shot = shots.value(*current);
+        heading->setText(shots.size() > 1
+                             ? QStringLiteral("Screenshot %1 of %2").arg(*current + 1).arg(shots.size())
+                             : QStringLiteral("Screenshot"));
+        previous->setEnabled(*current > 0);
+        next->setEnabled(*current < shots.size() - 1);
+        save->setEnabled(false);
+        picture->setPixmap(QPixmap());
+        picture->setText(QStringLiteral("Loading…"));
+        loadScreenshot(shot.id, [guard, current, shots, shot, picture, save, bound](const QByteArray &bytes,
+                                                                                     const QString &error) {
+            if (!guard || shots.value(*current).id != shot.id)
+                return;
+            const QImage image = QImage::fromData(bytes);
+            if (image.isNull()) {
+                picture->setText(QStringLiteral("This screenshot could not be loaded%1. Run the iOS App Store "
+                                                "status shortcut again to upload it.")
+                                     .arg(error.isEmpty() ? QString() : QStringLiteral(": ") + error));
+                return;
+            }
+            const QImage fitted = image.width() > bound.width() || image.height() > bound.height()
+                ? image.scaled(bound, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+                : image;
+            picture->setText(QString());
+            picture->setPixmap(QPixmap::fromImage(fitted));
+            save->setEnabled(true);
+        });
+    };
+    connect(previous, &QPushButton::clicked, dialog, [current, showCurrent] {
+        if (*current > 0) {
+            --*current;
+            (*showCurrent)();
+        }
+    });
+    connect(next, &QPushButton::clicked, dialog, [current, showCurrent, count = int(shots.size())] {
+        if (*current < count - 1) {
+            ++*current;
+            (*showCurrent)();
+        }
+    });
+    connect(save, &QPushButton::clicked, dialog, [this, dialog, shots, current] {
+        const QString id = shots.value(*current).id;
+        const QByteArray bytes = m_screenshots.value(id);
+        if (bytes.isEmpty())
+            return;
+        const bool png = bytes.startsWith("\x89PNG");
+        const QString path = QFileDialog::getSaveFileName(
+            dialog, QStringLiteral("Save screenshot"),
+            QStringLiteral("testflight-screenshot-%1.%2")
+                .arg(id.left(8), png ? QStringLiteral("png") : QStringLiteral("jpg")));
+        if (path.isEmpty())
+            return;
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly))
+            file.write(bytes);
+    });
+    connect(close, &QPushButton::clicked, dialog, &QDialog::close);
+    (*showCurrent)();
+    dialog->show();
 }
 
 void AppStoreStatusFeature::addReviews(QVBoxLayout *layout, const QJsonObject &snapshot)

@@ -4055,6 +4055,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-window-tests --ui-snapshots-only)
     add_test(NAME forkmesh-chat-unread-window-tests
              COMMAND forkmesh-window-tests --chat-unread-only)
+    add_test(NAME forkmesh-chat-pings-window-tests
+             COMMAND forkmesh-window-tests --chat-pings-only)
     add_test(NAME forkmesh-project-settings-window-tests
              COMMAND forkmesh-window-tests --project-settings-only)
     add_test(NAME forkmesh-perf-tests COMMAND forkmesh-perf-tests)

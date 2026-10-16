@@ -10,7 +10,6 @@ enum DirectLiveHaptics {
     @MainActor private static let brush: UIImpactFeedbackGenerator = UIImpactFeedbackGenerator(style: .soft)
 
     @MainActor static func tapped() {
-        guard FmHaptics.enabled else { return }
         knock.impactOccurred(intensity: 1)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 90_000_000)
@@ -25,7 +24,6 @@ enum DirectLiveHaptics {
     }
 
     @MainActor static func sent() {
-        guard FmHaptics.enabled else { return }
         brush.impactOccurred(intensity: 0.45)
     }
 }
@@ -212,11 +210,15 @@ struct MessagesLiveTouchSurface: View {
                             .onEnded { (value: DragGesture.Value) in ended(value, size: geometry.size) })
                     .accessibilityElement()
                     .accessibilityLabel("Touch canvas")
-                    .accessibilityHint("Drag to draw on the background.")
+                    .accessibilityHint("Tap to make their phone tap back. Drag to draw on the background.")
                     .accessibilityAddTraits(.allowsDirectInteraction)
+                    .accessibilityAction(named: "Send a tap") {
+                        engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
+                        DirectLiveHaptics.sent()
+                    }
             }
             VStack {
-                Text("Draw on the background.")
+                Text("Tap to buzz. Draw on the background.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(fm.textPrimary)
                     .padding(.horizontal, 14)
@@ -294,7 +296,10 @@ struct MessagesLiveTouchSurface: View {
     }
 
     private func ended(_ value: DragGesture.Value, size: CGSize) {
-        if !strokeId.isEmpty {
+        if strokeId.isEmpty {
+            engine.tap(conversation, at: DirectLiveGeometry.point(value.location, in: size))
+            DirectLiveHaptics.sent()
+        } else {
             engine.extendStroke(conversation, id: strokeId, to: DirectLiveGeometry.point(value.location, in: size))
             engine.endStroke(conversation, id: strokeId)
         }
@@ -319,53 +324,78 @@ enum DirectLiveTouchNames {
     }
 }
 
-struct MessagesLivePartnerMotion: View {
-    @Environment(\.fmPalette) private var fm
+struct MessagesLivePartnerAvatar<Avatar: View>: View {
     let engine: DirectLiveEngine
     let conversation: String
-    let partner: String
+    let size: CGFloat
+    @ViewBuilder let avatar: () -> Avatar
 
     var body: some View {
-        if engine.partnerMotion(conversation) != nil {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
-                let sample: DirectLiveMotionSample? = engine.motion[conversation]?.sample(at: context.date.epochMillis)
-                card(sample)
+        let sharing: Bool = engine.partnerMotion(conversation) != nil
+        Group {
+            if sharing {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
+                    well(engine.motion[conversation]?.sample(at: context.date.epochMillis))
+                }
+            } else {
+                avatar().frame(width: size, height: size)
             }
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(partner) is sharing their movement")
-            .accessibilityIdentifier("chat-live-partner-motion")
         }
+        .frame(width: size, height: size)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: sharing)
+        .accessibilityIdentifier(sharing ? "chat-live-partner-motion" : "chat-live-partner-still")
     }
 
-    private func card(_ sample: DirectLiveMotionSample?) -> some View {
+    private func well(_ sample: DirectLiveMotionSample?) -> some View {
         let roll: Double = sample?.steadyRoll ?? 0
         let pitch: Double = sample?.pitch ?? 0
         let depth: Double = min(max(pitch / (.pi / 2), -1), 1)
         let jolt: Double = min(sample?.jolt ?? 0, 2)
-        let direction: CGSize = CGSize(
-            width: CGFloat(roll) * 17 + CGFloat(sample?.ax ?? 0) * 6,
-            height: CGFloat(depth) * 17 - CGFloat(sample?.ay ?? 0) * 6)
-        return VStack(spacing: 6) {
-            ZStack {
-                Circle()
-                    .stroke(Color(fmARGB: 0xFFFF375F).opacity(min(0.9, jolt * 0.8)), lineWidth: 2)
-                    .frame(width: 58 + CGFloat(jolt) * 18, height: 58 + CGFloat(jolt) * 18)
-                MessagesPersonAvatar(name: partner, size: 52)
-                    .rotation3DEffect(.radians(-pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
-                    .rotationEffect(.radians(roll))
-                    .scaleEffect(1 + CGFloat(depth) * 0.12)
-                    .offset(direction)
-            }
-            .frame(width: 84, height: 84)
-            Text(partner)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(fm.textPrimary)
-                .lineLimit(1)
+        let inner: CGFloat = size * 0.74
+        let reach: CGFloat = (size - inner) / 2 + size * 0.08
+        let shift: CGSize = CGSize(
+            width: min(max(CGFloat(roll) * reach + CGFloat(sample?.ax ?? 0) * 3, -reach), reach),
+            height: min(max(CGFloat(depth) * reach - CGFloat(sample?.ay ?? 0) * 3, -reach), reach))
+        return ZStack {
+            Circle().fill(Color.primary.opacity(0.08))
+            avatar()
+                .frame(width: inner, height: inner)
+                .rotation3DEffect(.radians(-pitch * 0.6), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+                .rotationEffect(.radians(roll))
+                .scaleEffect(1 + CGFloat(depth) * 0.08)
+                .offset(shift)
         }
-        .padding(8)
-        .frame(width: 100)
-        .chatGlass(RoundedRectangle(cornerRadius: 20, style: .continuous), border: fm.border)
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color(fmARGB: 0xFFFF375F).opacity(min(0.9, 0.25 + jolt * 0.6)), lineWidth: 1.5))
+    }
+}
+
+struct DirectLiveTapButton: View {
+    @Environment(\.fmPalette) private var fm
+    let hub: ChatHub
+    let dark: Bool
+    @State private var pulse: Int = 0
+
+    var body: some View {
+        if let engine = hub.live, hub.inDirect {
+            Button(action: {
+                engine.tap(hub.relay.currentConversation, at: DirectLivePoint(x: 0.5, y: 0))
+                DirectLiveHaptics.sent()
+                pulse += 1
+            }) {
+                Image(systemName: "hand.tap.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(dark ? Color.white : Color.black.opacity(0.7))
+                    .symbolEffect(.bounce, value: pulse)
+                    .frame(width: 38, height: 38)
+                    .chatGlass(Circle(), border: fm.border)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send a tap")
+            .accessibilityHint("Their phone taps back with a vibration.")
+            .accessibilityIdentifier("chat-live-tap-button")
+        }
     }
 }
 

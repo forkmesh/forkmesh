@@ -112,11 +112,16 @@ def test_ios_decks_play_together_and_keep_playing_in_the_background(tmp_path):
     assert "<string>audio</string>" in modes
     frame = swift_literal(player, "frameScript")
     host = swift_literal(player, "html")
+    assert 'delete window[n]' in frame
+    assert 'document.createElement("audio")' in frame
+    assert "var m=want(v)||!solo(v)" in frame
+    assert "function start(e){if(e.ended)return;" in frame
+    assert "fmmse:M" in host
     assert "S.prototype.addSourceBuffer=function(type)" in frame
-    assert '["MediaSource","ManagedMediaSource"]' in frame
-    assert "hold(this,true)" in frame
     assert "visibilitychange" in frame
     assert "function fmBackground(on)" in host
+    assert 'fmdjFrame==="voice"' in host
+    assert "func reset()" in player
     assert "didEnterBackgroundNotification" in player
     assert "willEnterForegroundNotification" in player
     node = shutil.which("node")

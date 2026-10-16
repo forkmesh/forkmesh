@@ -58,11 +58,20 @@ struct DjStudioView: View {
         .overlay(alignment: .top) { DjNotice(model: model) }
         .animation(.easeOut(duration: 0.2), value: model.notice)
         .sheet(item: $model.sheet, onDismiss: {
+            if model.resettingAfterSheet {
+                model.resettingAfterSheet = false
+                model.confirmingReset = true
+            }
             guard model.leavingAfterSheet else { return }
             model.leavingAfterSheet = false
             model.leave()
         }) { (sheet: DjSheet) in
             DjSheetView(model: model, sheet: sheet)
+        }
+        .confirmationDialog("Reset everything?", isPresented: $model.confirmingReset, titleVisibility: .visible) {
+            Button("Reset All", role: .destructive) { model.resetAll() }
+        } message: {
+            Text("Stops and unloads both decks, and clears cues, loops, tempo, BPM, levels, the crossfader and sampler sections. Recently Played is kept.")
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -98,6 +107,7 @@ struct DjLandscape: View {
                             DjGearMenu(model: model, size: 30 * u)
                             DjRecordButton(model: model, size: 44 * u)
                             DjInfoButton(model: model, size: 30 * u)
+                            DjResetButton(model: model, size: 30 * u)
                         }
                         Spacer(minLength: 4 * u)
                         DjDeckInfo(model: model, deck: model.b, mirrored: true, u: u)
@@ -176,6 +186,7 @@ struct DjPortrait: View {
                     DjGearMenu(model: model, size: 30 * u)
                     DjRecordButton(model: model, size: 40 * u)
                     DjInfoButton(model: model, size: 30 * u)
+                    DjResetButton(model: model, size: 30 * u)
                     Spacer(minLength: 0)
                     DjZoomButton(model: model, u: u)
                     DjPadsButton(model: model, size: 30 * u)

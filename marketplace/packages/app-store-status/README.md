@@ -19,6 +19,8 @@ desktop rail page (**App Store**), the iPhone app and the Android app.
 - **TestFlight groups**: internal or external, testers, every or chosen
   builds, the public link, and whether feedback is on.
 - **Tester feedback** (screenshots and crashes) and **customer reviews**.
+  The screenshots testers attached show as thumbnails; tap or click one to
+  see it full size.
 
 ## How it stays up to date
 
@@ -30,6 +32,8 @@ Every client then shows that snapshot and when it was published. Run the
 shortcut again to refresh it.
 
 The snapshot is private to your account and encrypted at rest. Uninstalling
-the package, or deleting your account, removes it.
+the package, or deleting your account, removes it. The desktop uploads the
+screenshots testers attached with the snapshot, and they are kept and removed
+the same way.
 
 Developer notes: [docs/marketplace/app-store-status.md](../../../docs/marketplace/app-store-status.md).

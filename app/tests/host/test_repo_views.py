@@ -205,6 +205,15 @@ def test_pull_list_reads_the_ledger_and_branch_only_pulls():
     assert 'data-ssr-record="pulls"' in html and "Merged thing" not in html
 
 
+def test_pull_list_leaves_out_a_pull_its_author_deleted(monkeypatch):
+    ledger = dict(FILES[LEDGER])
+    ledger[".forkmesh/pulls/5/pull.md"] = pull_md(5, "Withdrawn", "deleted")
+    monkeypatch.setitem(FILES, LEDGER, ledger)
+    bundle, _fast = build("pulls")
+    assert [r["number"] for r in bundle.model["rows"]] == [7, 4, 3]
+    assert "Withdrawn" not in repo_views.render(bundle)
+
+
 def test_pull_detail_reads_patch_and_conversation():
     bundle, _fast = build("pull", 4)
     keys = set(reads(bundle))

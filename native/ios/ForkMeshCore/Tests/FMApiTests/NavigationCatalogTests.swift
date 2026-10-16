@@ -147,6 +147,7 @@ final class NavigationCatalogTests: XCTestCase {
         let update = ClientVersionGate.availableUpdate(lookup: lookup, running: "1.2.5+14")
         XCTAssertEqual(update?.version, "1.3.0")
         XCTAssertEqual(update?.label, "v1.3.0")
+        XCTAssertEqual(update?.summary, "ForkMesh v1.3.0 is out. This version can no longer be used.")
         XCTAssertEqual(update?.storeURL, URL(string: "https://apps.apple.com/us/app/forkmesh/id6803060735"))
         XCTAssertNil(ClientVersionGate.availableUpdate(lookup: lookup, running: "1.3.0+2"))
         XCTAssertNil(ClientVersionGate.availableUpdate(lookup: JSONObject(), running: "1.0.0"))

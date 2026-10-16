@@ -2323,7 +2323,7 @@ void MainWindow::startSession()
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
     const auto *networkInfo = QNetworkInformation::instance();
-    if (m_offlineMode ||
+    if (m_offlineMode || projectInstancePending() ||
         (networkInfo && networkInfo->reachability() ==
                             QNetworkInformation::Reachability::Disconnected)) {
         server->setNetworkAvailable(false);
@@ -3149,6 +3149,7 @@ void MainWindow::startOfficeChannelMirror()
         connect(m_officeChannelMirror, &OfficeChannelMirror::conversationsChanged,
                 this, [this](const QStringList &conversations) {
                     m_officeConversations = conversations;
+                    purgePrivateChatPings();
                     setChannels(m_channels);
                     refreshChatMembers();
                     refreshChannelSettingsButton();

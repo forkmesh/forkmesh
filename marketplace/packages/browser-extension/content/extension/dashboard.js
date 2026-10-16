@@ -4,8 +4,9 @@
 // Tells the page which extension version is installed, so it can offer an
 // update, and opens chrome://extensions when the page asks: Chrome refuses
 // that address from a web page but lets an extension open it. On Marketing it
-// also passes "update this channel", "walk the Reddit watch list" and "update
-// my Reddit posts" to the extension, and their progress back.
+// also passes "update this channel", "walk the Reddit watch list", "update
+// my Reddit posts" and "update the logged threads" to the extension, and their
+// progress back.
 // Nothing else crosses: no storage, no token, no vault key, no requests.
 
 (() => {
@@ -39,7 +40,7 @@
     }
     if (!marketing || event.data.source !== "forkmesh-marketing-page") return;
     if (event.data.type === "marketing-hello") {
-      reply({ type: "marketing-ready", version, xSetup: true, redditWalk: true, redditPosts: true });
+      reply({ type: "marketing-ready", version, xSetup: true, redditWalk: true, redditPosts: true, redditThreads: true });
       return;
     }
     if (REDDIT_WALK[event.data.type]) {
@@ -54,6 +55,14 @@
       chrome.runtime.sendMessage({ type: "fm-reddit-accounts-update", organization: String(event.data.organization || "").slice(0, 64) })
         .then((response) => reply({ type: "marketing-reddit-posts-update", request, response: response || { ok: false } }))
         .catch((error) => reply({ type: "marketing-reddit-posts-update", request, response: { ok: false, error: "extension_unavailable", message: String(error?.message || "") } }));
+      return;
+    }
+    if (event.data.type === "marketing-reddit-threads-update") {
+      const request = String(event.data.request || "").slice(0, 64);
+      const threadIds = (Array.isArray(event.data.threadIds) ? event.data.threadIds : []).slice(0, 200).map((id) => String(id).slice(0, 64));
+      chrome.runtime.sendMessage({ type: "fm-reddit-threads-update", organization: String(event.data.organization || "").slice(0, 64), threadIds })
+        .then((response) => reply({ type: "marketing-reddit-threads-update", request, response: response || { ok: false } }))
+        .catch((error) => reply({ type: "marketing-reddit-threads-update", request, response: { ok: false, error: "extension_unavailable", message: String(error?.message || "") } }));
       return;
     }
     if (event.data.type === "marketing-x-setup") {
@@ -79,7 +88,8 @@
       if (message?.type === "fm-x-setup-update") reply({ type: "marketing-x-setup-update", setup: message.setup });
       if (message?.type === "fm-reddit-walk-update") reply({ type: "marketing-reddit-walk-update", walk: message.walk });
       if (message?.type === "fm-reddit-posts-progress") reply({ type: "marketing-reddit-posts-progress", check: message.check });
+      if (message?.type === "fm-reddit-threads-progress") reply({ type: "marketing-reddit-threads-progress", update: message.update });
     });
-    reply({ type: "marketing-ready", version, xSetup: true, redditWalk: true, redditPosts: true });
+    reply({ type: "marketing-ready", version, xSetup: true, redditWalk: true, redditPosts: true, redditThreads: true });
   }
 })();

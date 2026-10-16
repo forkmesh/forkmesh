@@ -304,6 +304,40 @@ QString feedbackDetail(const QJsonObject &feedback)
     return joined({text(feedback, "device"), dateText(feedback.value(QStringLiteral("createdAt")))});
 }
 
+QList<Screenshot> screenshotsOf(const QJsonObject &feedback)
+{
+    static const QRegularExpression idPattern(QStringLiteral("^[0-9a-f]{24}$"));
+    QList<Screenshot> found;
+    for (const QJsonValue &value : feedback.value(QStringLiteral("screenshots")).toArray()) {
+        const QJsonObject shot = value.toObject();
+        const QString id = text(shot, "id");
+        if (!idPattern.match(id).hasMatch())
+            continue;
+        found.append({id, int(std::clamp<qint64>(integer(shot, "width"), 0, 20000)),
+                      int(std::clamp<qint64>(integer(shot, "height"), 0, 20000))});
+        if (found.size() >= 4)
+            break;
+    }
+    return found;
+}
+
+QString screenshotPath(const QString &id)
+{
+    return QStringLiteral("/api/app-store-status/screenshots/") + id;
+}
+
+QByteArray screenshotBytes(const QJsonObject &payload)
+{
+    const QString mime = text(payload, "mime");
+    const QByteArray raw = QByteArray::fromBase64(payload.value(QStringLiteral("data")).toString().toLatin1(),
+                                                  QByteArray::AbortOnBase64DecodingErrors);
+    if (mime == QLatin1String("image/jpeg") && raw.startsWith("\xff\xd8\xff"))
+        return raw;
+    if (mime == QLatin1String("image/png") && raw.startsWith("\x89PNG\r\n\x1a\n"))
+        return raw;
+    return {};
+}
+
 QString stars(int rating)
 {
     const int filled = std::clamp(rating, 0, 5);

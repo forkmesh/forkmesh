@@ -6278,11 +6278,7 @@ void MainWindow::attachBackend(ChatBackend *backend)
             [this](const QString &text) { logSystem(text); });
     connect(backend, &ChatBackend::channelsChanged, this, &MainWindow::setChannels);
     connect(backend, &ChatBackend::privateChannelJoined, this,
-            [this](const QString &channel) {
-                m_privateChannels.insert(channel);
-                persistPrivateChannels();
-                refreshChannelList();
-            });
+            &MainWindow::onPrivateChannelJoined);
     connect(backend, &ChatBackend::rosterChanged, this, &MainWindow::setRoster);
     connect(backend, &ChatBackend::latencySampled, this,
             &MainWindow::onRelayLatencySampled);
@@ -11138,7 +11134,7 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
 
 void MainWindow::notifyIfInactive(const QString &title, const QString &body,
                                   const QString &activateHref,
-                                  const QString &icon)
+                                  const QString &icon, bool fileLocally)
 {
     // postNotification() has always suppressed its OS card while paused, but
     // this helper raised the taskbar-attention flash first. Treat both as one
@@ -11163,7 +11159,7 @@ void MainWindow::notifyIfInactive(const QString &title, const QString &body,
     if (!lines.isEmpty() && lines.last().size() > 180)
         lines.last() = lines.last().left(177) + QStringLiteral("...");
     postNotification(title, lines.join(QLatin1Char('\n')), /*warning=*/false,
-                     icon, activateHref);
+                     icon, activateHref, false, fileLocally);
 }
 
 // ----------------------------------------------------------------- security tab

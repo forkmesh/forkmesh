@@ -3193,6 +3193,65 @@ void checkChatPingRaisesNoCard(MainWindow &window)
     QApplication::processEvents();
 }
 
+void checkPrivateChatNotFiledAsPing(MainWindow &window)
+{
+    const QString publicText = QStringLiteral("public-ping-fixture lunch at noon");
+    window.testDeliverChatMessage(QStringLiteral("#general"),
+                                  QStringLiteral("peer-public-fixture"),
+                                  QStringLiteral("Ada"), publicText);
+    QApplication::processEvents();
+    check(window.testNotificationsMentioning(publicText) >= 1,
+          QStringLiteral("a public channel message is filed as a ping"));
+
+    const QStringList privateConversations = {
+        QStringLiteral("@peer-private-fixture"),
+        QStringLiteral("#office/@private-fixture"),
+        QStringLiteral("#team")};
+    int index = 0;
+    for (const QString &conversation : privateConversations) {
+        const QString secret =
+            QStringLiteral("private-ping-fixture secret %1").arg(++index);
+        window.testDeliverChatMessage(conversation,
+                                      QStringLiteral("peer-private-fixture"),
+                                      QStringLiteral("Bea"), secret);
+        QApplication::processEvents();
+        check(window.testNotificationsMentioning(secret) == 0,
+              QStringLiteral("a message in private conversation %1 is never "
+                             "filed as a ping")
+                  .arg(conversation));
+    }
+
+    const QString hushText = QStringLiteral("private-ping-fixture hush room");
+    window.testJoinPrivateChannel(QStringLiteral("#hush-fixture"));
+    window.testDeliverChatMessage(QStringLiteral("#hush-fixture"),
+                                  QStringLiteral("peer-private-fixture"),
+                                  QStringLiteral("Bea"), hushText);
+    QApplication::processEvents();
+    check(window.testNotificationsMentioning(hushText) == 0,
+          QStringLiteral("a relay private channel message is never filed as "
+                         "a ping"));
+
+    const QString staleDm = QStringLiteral("private-ping-fixture stale dm");
+    const QString staleRoom = QStringLiteral("private-ping-fixture stale room");
+    const QString stalePublic = QStringLiteral("public-ping-fixture stale general");
+    window.testFileChatPing(QStringLiteral("@peer-private-fixture"),
+                            QStringLiteral("Bea sent you a message"), staleDm);
+    window.testFileChatPing(QStringLiteral("#later-private-fixture"),
+                            QStringLiteral("Bea in #later-private-fixture"),
+                            staleRoom);
+    window.testFileChatPing(QStringLiteral("#general"),
+                            QStringLiteral("Ada in #general"), stalePublic);
+    window.testPurgePrivateChatPings();
+    check(window.testNotificationsMentioning(staleDm) == 0 &&
+              window.testNotificationsMentioning(staleRoom) == 1 &&
+              window.testNotificationsMentioning(stalePublic) == 1,
+          QStringLiteral("a purge drops stored DM pings and keeps public ones"));
+    window.testJoinPrivateChannel(QStringLiteral("#later-private-fixture"));
+    check(window.testNotificationsMentioning(staleRoom) == 0 &&
+              window.testNotificationsMentioning(stalePublic) == 1,
+          QStringLiteral("joining a private channel drops its stored pings"));
+}
+
 // The Ledger rail opens a page inside the app rather than handing the reader
 // to a browser, and that page is where a pending contributor reward is paid.
 // The rules that matter are which rows get a "Send payment" button: a record
@@ -14686,6 +14745,13 @@ else:
         return failures == 0 ? 0 : 1;
     }
 
+    if (app.arguments().contains(QStringLiteral("--chat-pings-only"))) {
+        checkChatPingRaisesNoCard(window);
+        checkPrivateChatNotFiledAsPing(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (app.arguments().contains(QStringLiteral("--chat-unread-only"))) {
         checkEveryoneChannels(window);
         checkChatUnreadSurface(window);
@@ -21857,6 +21923,7 @@ else:
     checkAgentDoneCelebration(window);
     checkAgentAttentionDoesNotTakeFocus(window);
     checkChatPingRaisesNoCard(window);
+    checkPrivateChatNotFiledAsPing(window);
     checkReplayedBacklogRepaintsOnce(window);
     checkCloudLogMonitorAlert(window);
     checkCloudLogMerged(window);
@@ -27470,6 +27537,35 @@ else:
               QStringLiteral("a session whose CLI keeps exiting without a turn "
                              "fails with a reason instead of requeuing forever"));
         window.testRemoveAgentSession(pastRun.id);
+    }
+    {
+        AgentSession interrupted;
+        interrupted.id = 133897;
+        interrupted.owner = QStringLiteral("me");
+        interrupted.name = QStringLiteral("r");
+        interrupted.provider = QStringLiteral("claude-code");
+        interrupted.prompt = QStringLiteral("Interrupted by shutdown fixture");
+        interrupted.status = AgentStatus::Running;
+        window.testAddAgentSession(interrupted);
+        window.testSeedResumeConversationId(
+            interrupted.id, QStringLiteral("33333333-4444-5555-6666-777777777777"),
+            /*codex=*/false);
+        window.testSetClosingDown(true);
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 143);
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 1);
+        window.testSetClosingDown(false);
+        check(window.testAgentSessionStatus(interrupted.id) == AgentStatus::Running &&
+                  window.testAgentSessionLastError(interrupted.id).isEmpty() &&
+                  !window.testAgentQueued(interrupted.id),
+              QStringLiteral("an agent the shutdown kills stays running on disk, "
+                             "so the next start (window or headless) resumes it"));
+        window.testFinishCliTranscriptRun(interrupted.id, /*codex=*/false, 143);
+        check(window.testAgentSessionStatus(interrupted.id) == AgentStatus::Running &&
+                  !window.testAgentQueued(interrupted.id),
+              QStringLiteral("an agent stopped by SIGTERM waits before it is "
+                             "judged, so a shutdown signal arriving just after "
+                             "it does not fail the session"));
+        window.testRemoveAgentSession(interrupted.id);
     }
     // Everything the composer parks for a session that has no process must still
     // be there when one finally starts (adhoc #1618). Two things used to lose it.

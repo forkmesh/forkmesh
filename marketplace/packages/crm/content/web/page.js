@@ -688,7 +688,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       if (!linked.has(message.contactId)) linked.set(message.contactId, []);
       linked.get(message.contactId).push(message);
     }
-    let best = null; let due = 0;
+    const ranked = [];
     for (const contact of state.crmView.contacts || []) {
       if (state.crmView.nextSkipped.has(contact.id) || !crmNextChannels(contact).length) continue;
       const last = Number(contact.lastContactedAt || 0);
@@ -711,7 +711,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
         const marks = crmLeadMarks(contact);
         const created = Number(contact.createdAt || 0);
         const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact.email || "").trim());
+        const posted = crmMastodonPostedAt(contact);
         const qualifies = [
+          posted > 0 && `posted on Mastodon ${crmAgo(posted, now)}`,
           step && `next step on the record: ${step}`,
           marks.value && `deal value ${marks.value.toLocaleString()}`,
           marks.rank && `ranked ${marks.rank} (${marks.rankField})`,
@@ -721,7 +723,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         reason = `${created > 0 ? `Added ${crmAgo(created, now)} and never contacted` : "Never contacted"}. ${qualifies.length
           ? `Best qualified new lead: ${qualifies.join("; ")}.`
           : "Nothing on the record sets a new lead apart, so the longest on the CRM goes first."}`;
-        key = [step ? 0 : 1, -marks.value, marks.rank || Infinity, -marks.score, email ? 0 : 1, created, String(contact.id)];
+        key = [posted > 0 ? 0 : 1, -posted, step ? 0 : 1, -marks.value, marks.rank || Infinity, -marks.score, email ? 0 : 1, created, String(contact.id)];
       } else if (waiting) {
         reason = `They wrote to us ${crmAgo(heardAt, now)}${heardSubject ? ` (“${heardSubject}”)` : ""} and have had no answer yet, so the next move is ours.`;
         key = [0, step ? 0 : 1, -heardAt, String(contact.id)];
@@ -731,11 +733,61 @@ window.ForkMeshDashboard.registerPage("crm", ({
       } else {
         continue;
       }
-      due += 1;
       if (mode !== "reach" && step) reason += ` Next step on the record: ${step}.`;
-      if (!best || crmKeyBefore(key, best.key)) best = { contact, reason, key };
+      ranked.push({ contact, reason, key });
     }
-    return { contact: best?.contact || null, reason: best?.reason || "", due };
+    ranked.sort((a, b) => (crmKeyBefore(a.key, b.key) ? -1 : crmKeyBefore(b.key, a.key) ? 1 : 0));
+    const best = ranked[0];
+    return { contact: best?.contact || null, reason: best?.reason || "", due: ranked.length,
+      upcoming: ranked.slice(1, 1 + CRM_NEXT_UPCOMING).map((entry) => entry.contact), ranked: ranked.map((entry) => entry.contact) };
+  }
+
+  function crmMastodonPostedAt(contact) {
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    return key ? Number(crmMastodonLatest.latest.get(key)?.postedAt) || 0 : 0;
+  }
+
+  function crmNextPostHtml(contact, compact = false) {
+    const key = crmMastodonKey(contact?.mastodon).toLowerCase();
+    if (!key) return "";
+    const latest = crmMastodonLatest.latest.get(key);
+    const running = crmMastodonLatest.pending.has(key) || crmMastodonLatest.queue.includes(key);
+    const size = compact ? "text-xs" : "text-sm";
+    if (!latest || latest.error || latest.postedAt <= 0) {
+      const note = !latest ? (running ? `Reading @${key}…` : "")
+        : latest.error ? `Mastodon post unavailable: ${latest.error}` : "No public Mastodon posts";
+      return note ? `<p data-crm-next-post="${escapeHtml(key)}" class="mt-1 truncate text-xs text-muted-foreground" title="${escapeHtml(note)}">${escapeHtml(note)}</p>` : "";
+    }
+    const when = `<span class="whitespace-nowrap text-muted-foreground">${escapeHtml(crmAgo(latest.postedAt, Date.now()))} · </span>`;
+    const excerpt = escapeHtml(compact ? crmPlainText(latest.excerpt, 90) : latest.excerpt);
+    const title = escapeHtml(`${crmTimestamp(latest.postedAt)}\n${latest.detail}`);
+    const text = latest.url
+      ? `<a href="${escapeHtml(latest.url)}" target="_blank" rel="noopener noreferrer" class="crm-link">${excerpt}</a>`
+      : `<span class="text-foreground">${excerpt}</span>`;
+    return `<p data-crm-next-post="${escapeHtml(key)}" class="mt-1 ${compact ? "truncate" : ""} ${size} text-foreground" title="${title}">${when}${text}</p>`;
+  }
+
+  function crmQueueReachMastodon(ranked) {
+    let queued = 0; const now = Date.now();
+    for (const contact of ranked) {
+      if (queued >= CRM_REACH_MASTODON_READS) break;
+      const key = crmMastodonKey(contact.mastodon).toLowerCase();
+      if (!key) continue;
+      queued += 1;
+      const cached = crmMastodonLatest.latest.get(key);
+      if ((cached && now - cached.fetchedAt < CRM_MASTODON_FRESH_MS)
+          || crmMastodonLatest.pending.has(key) || crmMastodonLatest.queue.includes(key)) continue;
+      crmMastodonLatest.queue.push(key);
+    }
+    crmPumpMastodonLatest();
+  }
+
+  function crmScheduleNextRender() {
+    if (crmMastodonLatest.renderTimer) return;
+    crmMastodonLatest.renderTimer = setTimeout(() => {
+      crmMastodonLatest.renderTimer = 0;
+      renderCrmNextContact();
+    }, CRM_NEXT_RENDER_DELAY_MS);
   }
 
   function crmNextThread(contactId) {
@@ -769,14 +821,25 @@ window.ForkMeshDashboard.registerPage("crm", ({
         <button data-crm-contact-detail="${id}" type="button" class="text-left text-base font-semibold text-foreground hover:underline">${escapeHtml(crmContactLabel(contact))}</button>
         ${about ? `<p class="text-xs text-muted-foreground">${about}</p>` : ""}
         <div class="mt-1">${crmLastContacted(contact)}</div>
+        ${mode === "reach" ? crmNextPostHtml(contact) : ""}
         <p data-crm-next-reason class="mt-2 text-sm text-foreground"><b>Why them:</b> ${escapeHtml(next.reason)}</p>
       </div></div>
       <div class="mt-3 flex flex-wrap items-center gap-2">
         ${channels.map((channel, index) => `<a data-crm-next-channel="${channel.kind}" href="${escapeHtml(channel.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(channel.title)}" class="${index === 0 ? "bg-primary text-primary-foreground" : "border border-border text-foreground hover:bg-secondary"} whitespace-nowrap rounded-md px-3 py-2 text-xs font-semibold">${escapeHtml(channel.label)} &#8599;</a>`).join("")}
         <button data-crm-next-ai="${id}" data-crm-next-ai-mode="${mode}" type="button" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
+        ${crmEmailAddress(contact) ? `<button data-crm-next-auto="${id}" data-crm-next-auto-mode="${mode}" type="button" title="${escapeHtml(CRM_AUTO_EMAIL_TITLE)}" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Send AI email</button>` : ""}
         <button data-crm-next-contacted="${id}" type="button" title="Stamp Last contacted now and show the next person" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Mark contacted</button>
         <button data-crm-next-skip="${id}" type="button" title="Show the next person; nothing is saved" class="whitespace-nowrap rounded-md border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary">Skip</button>
-      </div>`);
+      </div>${mode === "reach" ? crmNextUpcomingHtml(next.upcoming) : ""}`);
+  }
+
+  function crmNextUpcomingHtml(upcoming) {
+    if (!upcoming?.length) return "";
+    return `<div class="mt-3 border-t border-border pt-2"><h3 class="text-xs font-semibold text-muted-foreground">Next in line · newest Mastodon post first</h3><ul data-crm-next-upcoming class="mt-1 divide-y divide-border">${upcoming.map((contact) => {
+      const id = escapeHtml(contact.id);
+      const about = [contact.title, contact.company].filter(Boolean).map(escapeHtml).join(" · ");
+      return `<li data-crm-next-upcoming-id="${id}" class="min-w-0 py-1.5"><div class="flex min-w-0 items-baseline gap-2"><button data-crm-contact-detail="${id}" type="button" class="truncate text-left text-sm font-medium text-foreground hover:underline">${escapeHtml(crmContactLabel(contact))}</button>${about ? `<span class="truncate text-xs text-muted-foreground">${about}</span>` : ""}</div>${crmNextPostHtml(contact, true)}</li>`;
+    }).join("")}</ul></div>`;
   }
 
   function renderCrmNextContact() {
@@ -785,6 +848,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     card.hidden = false;
     card.innerHTML = CRM_NEXT_MODES.map(crmNextCardHtml).join("");
     crmWatchPictures();
+    crmQueueReachMastodon(crmNextContact("reach").ranked);
   }
 
   async function markCrmNextContacted(contactId) {
@@ -801,6 +865,13 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (event.target.closest("[data-crm-next-unskip]")) { state.crmView.nextSkipped.clear(); renderCrmNextContact(); return; }
     const contacted = event.target.closest("[data-crm-next-contacted]");
     if (contacted) { contacted.disabled = true; void markCrmNextContacted(contacted.dataset.crmNextContacted); return; }
+    const auto = event.target.closest("[data-crm-next-auto]");
+    if (auto) {
+      const mode = auto.dataset.crmNextAutoMode === "reach" ? "reach" : "follow";
+      const next = crmNextContact(mode);
+      void sendCrmAutoEmail(auto.dataset.crmNextAuto, mode, next.contact?.id === auto.dataset.crmNextAuto ? next.reason : "", auto);
+      return;
+    }
     const ai = event.target.closest("[data-crm-next-ai]");
     if (ai) {
       const mode = ai.dataset.crmNextAiMode === "reach" ? "reach" : "follow";
@@ -810,6 +881,46 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     const detail = event.target.closest("[data-crm-contact-detail]");
     if (detail) openCrmContactDetail(detail.dataset.crmContactDetail);
+  }
+
+  const CRM_AUTO_EMAIL_TITLE = "A model writes the email from their record, our past emails and what got opened or clicked, then sends it at once from the outreach sender. It carries their tracked deck link (investor pipelines) or your referral link, and you get a ping when they open it or click.";
+  const CRM_AUTO_EMAIL_ERRORS = {
+    outreach_forbidden: "Only owners, admins and the outreach team can send automated emails.",
+    recently_emailed: "They already got an email from the CRM in the last three days.",
+    contact_closed: "They are at an ended stage, so nothing was sent.",
+    contact_has_no_email: "They have no email address on record.",
+    daily_limit_reached: "You reached today's outreach limit.",
+    ai_unavailable: "This host has no AI model for writing emails. Use Write with AI, or the desktop app's agent.",
+    draft_unusable: "The model's draft had placeholders or links we could not check, so nothing was sent. Try again.",
+    rate_limited: "The AI model is busy. Try again in a minute.",
+    send_failed: "The email provider refused the send.",
+  };
+
+  function crmEmailAddress(contact) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(contact?.email || "").trim());
+  }
+
+  async function sendCrmAutoEmail(contactId, mode, reason, button) {
+    const contact = crmContactById(contactId);
+    if (!contact || !crmEmailAddress(contact)) return;
+    const investor = crmFlow(contact.flow)?.icon === "investors" || ["investors", "investment"].includes(contact.flow);
+    const kind = investor ? "their tracked deck link" : "your referral link";
+    if (!window.confirm(`Write and send an email to ${crmContactLabel(contact)} <${contact.email}> now?\n\nA model writes it from their record and what our past emails got opened or clicked for, with ${kind}. It goes out straight away from the outreach sender.`)) return;
+    if (button) { button.disabled = true; button.textContent = "Sending…"; }
+    crmMessage("notice", `Writing an email to ${crmContactLabel(contact)}…`);
+    try {
+      const sent = await crmRequest(crmOrganizationPath("/outreach/auto"), "POST", {
+        contactId, mode, reason, list: crmActiveView()?.name || "",
+      });
+      const learned = sent.learning?.sent ? ` Learned from ${sent.learning.sent} past emails (${sent.learning.openRate}% opened, ${sent.learning.clickRate}% clicked).` : "";
+      crmMessage("notice", `Sent “${sent.subject}” to ${crmContactLabel(contact)}. You get a ping when they open it or click.${learned}`);
+    } catch (error) {
+      const known = CRM_AUTO_EMAIL_ERRORS[error.payload?.error || ""];
+      crmMessage("error", `Nothing was sent: ${known || error.message}`);
+      if (button) { button.disabled = false; button.textContent = "Send AI email"; }
+      return;
+    }
+    await loadCrm();
   }
 
   const CRM_AI_TARGETS = {
@@ -3158,6 +3269,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!response.ok) {
       const error = new Error(`the service answered ${response.status}`);
       error.status = response.status;
+      error.retryAfter = crmRetryAfterMs(response.headers);
       throw error;
     }
     return response.json();
@@ -3165,12 +3277,21 @@ window.ForkMeshDashboard.registerPage("crm", ({
 
   // Two calls against the contact's own instance: the account lookup, which
   // also names the picture, then that account's newest original posts.
+  function crmRetryAfterMs(headers, now = Date.now()) {
+    const retry = String(headers?.get?.("Retry-After") || "").trim();
+    if (/^\d+$/.test(retry)) return Number(retry) * 1000;
+    const reset = Date.parse(retry || String(headers?.get?.("X-RateLimit-Reset") || ""));
+    return Number.isFinite(reset) && reset > now ? reset - now : 0;
+  }
+
   async function crmMastodonUpdates(account, limit = CRM_UPDATE_LIMIT) {
     const at = account.key.lastIndexOf("@");
     const [user, host] = [account.key.slice(0, at), account.key.slice(at + 1)];
-    const profile = await crmReadPublicJson(
+    const known = crmMastodonLatest.ids.get(account.key.toLowerCase());
+    const profile = known && account.reuseId ? { id: known } : await crmReadPublicJson(
       `https://${host}/api/v1/accounts/lookup?acct=${encodeURIComponent(user)}`);
     if (!profile?.id) throw new Error("the instance knows no such account");
+    crmMastodonLatest.ids.set(account.key.toLowerCase(), String(profile.id));
     const statuses = await crmReadPublicJson(
       `https://${host}/api/v1/accounts/${encodeURIComponent(profile.id)}/statuses`
       + `?limit=${limit}&exclude_replies=true&exclude_reblogs=true`);
@@ -3313,10 +3434,15 @@ window.ForkMeshDashboard.registerPage("crm", ({
   function crmContactActivity(contact) {
     const items = crmLinkedEmails(contact.id).map((email) => ({
       at: email.sentAt || email.createdAt || 0,
-      label: `${email.direction === "inbound" ? "Received" : "Sent"} · ${crmProviderLabel(email)}`,
+      label: [`${email.direction === "inbound" ? "Received" : email.automated ? "Sent by AI" : "Sent"} · ${crmProviderLabel(email)}`,
+        Number(email.opens) ? `${email.opens} open${Number(email.opens) === 1 ? "" : "s"}` : "",
+        Number(email.clicks) ? `${email.clicks} click${Number(email.clicks) === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
       text: email.subject || "No subject",
       url: crmHttpsUrl(email.providerUrl),
     }));
+    for (const note of contact.noteLog || []) {
+      items.push({ at: note.at || 0, label: `Note · ${note.by || "a member"}`, text: note.text, url: "" });
+    }
     const deck = crmDeckFor(contact.id);
     if (deck?.views) {
       items.push({
@@ -3396,6 +3522,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
           <p class="mt-2 text-xs text-muted-foreground">${escapeHtml(provenance)}.</p>
         </section>
         <section>
+          <h3 class="crm-detail-heading">Add a note</h3>
+          <textarea data-crm-note-text rows="3" maxlength="4000" aria-label="Note" placeholder="What happened, what was agreed, what comes next" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground focus:border-primary focus:outline-none"></textarea>
+          <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-muted-foreground">Saved to the activity below and pinged to everyone on this contact's lists, including the people a list is shared with.</p>
+            <button type="button" data-crm-note-save="${id}" class="h-control-sm rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary">Save note</button>
+          </div>
+        </section>
+        <section>
           <h3 class="crm-detail-heading">Activity</h3>
           ${activity.length
             ? `<ul class="grid gap-2">${activity.map(crmDetailLine).join("")}</ul>`
@@ -3413,12 +3547,32 @@ window.ForkMeshDashboard.registerPage("crm", ({
           <button type="button" data-crm-contact-compose="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Email</button>
           <button type="button" data-crm-contact-toot="${id}" title="Log a toot sent to or from them by pasting its link" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Log toot</button>
           <button type="button" data-crm-contact-ai="${id}" title="Gather everything about them and us into a prompt for ChatGPT or Claude to write the message" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Write with AI</button>
+          ${crmEmailAddress(contact) ? `<button type="button" data-crm-contact-auto="${id}" title="${escapeHtml(CRM_AUTO_EMAIL_TITLE)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Send AI email</button>` : ""}
           <button type="button" data-crm-contact-deck="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Deck</button>
           <button type="button" data-crm-contact-link="${id}" title="Copy a link that opens this contact for members of ${escapeHtml(contact.organization || state.crmView.organization)}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Copy link</button>
           <button type="button" data-crm-contact-edit="${id}" class="rounded-md border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary">Open the full form</button>
         </div>
       </div>`;
     renderCrmContactUpdates();
+  }
+
+  async function saveCrmContactNote(contactId, button) {
+    const field = $(`[data-crm-note-text]`);
+    const text = (field?.value || "").trim();
+    if (!text) { field?.focus(); return; }
+    if (button) button.disabled = true;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/note"), "POST", { contact: contactId, text });
+      if (payload.contact) {
+        state.crmView.contacts = state.crmView.contacts.map((contact) => contact.id === payload.contact.id ? payload.contact : contact);
+      }
+      if (state.crmView.detailContactId === contactId) renderCrmContactDetail();
+      const pinged = Number(payload.pinged || 0);
+      crmMessage("notice", pinged ? `Note saved. Pinged ${pinged} ${pinged === 1 ? "person" : "people"}.` : "Note saved.");
+    } catch (error) {
+      crmMessage("error", `The note was not saved: ${error.message}`);
+      if (button?.isConnected) button.disabled = false;
+    }
   }
 
   function renderCrmContactUpdates() {
@@ -5406,7 +5560,12 @@ window.ForkMeshDashboard.registerPage("crm", ({
   const crmPeople = { open: false, sort: "recent", timer: 0 };
   const CRM_MASTODON_FRESH_MS = 15 * 60 * 1000;
   const CRM_MASTODON_IN_FLIGHT = 4;
-  const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [] };
+  const CRM_MASTODON_PER_HOST = 2;
+  const CRM_MASTODON_BACKOFF_MS = 5 * 60 * 1000;
+  const CRM_REACH_MASTODON_READS = 40;
+  const CRM_NEXT_UPCOMING = 5;
+  const CRM_NEXT_RENDER_DELAY_MS = 400;
+  const crmMastodonLatest = { latest: new Map(), pending: new Set(), queue: [], backoff: new Map(), ids: new Map(), renderTimer: 0 };
   const CRM_NUMERIC_SORT = new Set(["lastContactedAt", "value", "linked-emails", "linked-toots", "mastodon-latest"]);
 
   function crmSessionColumnKeys() {
@@ -5519,22 +5678,41 @@ window.ForkMeshDashboard.registerPage("crm", ({
     crmRepaintMastodonLatest(key);
   }
 
+  function crmMastodonHostOf(key) {
+    return String(key || "").slice(String(key || "").lastIndexOf("@") + 1);
+  }
+
   function crmPumpMastodonLatest() {
     const now = Date.now();
+    const held = [];
     while (crmMastodonLatest.queue.length && crmMastodonLatest.pending.size < CRM_MASTODON_IN_FLIGHT) {
       const key = crmMastodonLatest.queue.shift();
       if (!key || crmMastodonLatest.pending.has(key)) continue;
       const cached = crmMastodonLatest.latest.get(key);
       if (cached && now - cached.fetchedAt < CRM_MASTODON_FRESH_MS) continue;
+      const host = crmMastodonHostOf(key);
+      const until = crmMastodonLatest.backoff.get(host) || 0;
+      if (until > now) {
+        crmMastodonLatest.latest.set(key, { ...(cached || { postedAt: 0, excerpt: "", detail: "", url: "" }),
+          error: cached?.postedAt > 0 ? "" : `${host} asked for fewer requests; it is read again later`,
+          fetchedAt: until - CRM_MASTODON_FRESH_MS });
+        crmRepaintMastodonLatest(key);
+        continue;
+      }
+      if ([...crmMastodonLatest.pending].filter((other) => crmMastodonHostOf(other) === host).length >= CRM_MASTODON_PER_HOST) {
+        held.push(key);
+        continue;
+      }
       void readCrmMastodonLatest(key);
     }
+    crmMastodonLatest.queue.unshift(...held);
   }
 
   async function readCrmMastodonLatest(key) {
     crmMastodonLatest.pending.add(key);
     const latest = { fetchedAt: 0, postedAt: 0, excerpt: "", detail: "", url: "", error: "" };
     try {
-      const post = ((await crmMastodonUpdates({ key }, 1)).posts || [])[0];
+      const post = ((await crmMastodonUpdates({ key, reuseId: true }, 1)).posts || [])[0];
       if (post) {
         const plain = crmMastodonText(post.html);
         latest.postedAt = post.at;
@@ -5543,15 +5721,24 @@ window.ForkMeshDashboard.registerPage("crm", ({
         latest.url = post.url;
       }
     } catch (error) {
+      if (error.status === 404) crmMastodonLatest.ids.delete(key);
+      if (error.status === 429) {
+        const host = crmMastodonHostOf(key);
+        crmMastodonLatest.backoff.set(host, Date.now() + Math.max(error.retryAfter || 0, CRM_MASTODON_BACKOFF_MS));
+      }
       latest.error = [404, 406, 410].includes(error.status) ? "the instance knows no such account"
+        : error.status === 429 ? "the instance asked for fewer requests; it is read again later"
         : error.name === "TimeoutError" ? "it did not answer in time"
         : error instanceof TypeError ? "the instance could not be reached from this browser"
         : error.message;
     }
+    const previous = crmMastodonLatest.latest.get(key);
     latest.fetchedAt = Date.now();
+    if (latest.error && previous?.postedAt > 0) Object.assign(latest, { ...previous, fetchedAt: latest.fetchedAt });
     crmMastodonLatest.latest.set(key, latest);
     crmMastodonLatest.pending.delete(key);
     crmRepaintMastodonLatest(key);
+    crmScheduleNextRender();
     crmPumpMastodonLatest();
   }
 
@@ -6416,12 +6603,16 @@ window.ForkMeshDashboard.registerPage("crm", ({
         if (contact) void loadCrmContactUpdates(contact);
         return;
       }
+      const note = event.target.closest("[data-crm-note-save]");
+      if (note) { void saveCrmContactNote(note.dataset.crmNoteSave, note); return; }
       const link = event.target.closest("[data-crm-contact-link]");
       if (link) { void copyCrmContactLink(link.dataset.crmContactLink, link); return; }
       const toot = event.target.closest("[data-crm-contact-toot]");
       if (toot) { void logCrmToot(toot.dataset.crmContactToot); return; }
       const ai = event.target.closest("[data-crm-contact-ai]");
       if (ai) { detailDialog.close(); openCrmAi(ai.dataset.crmContactAi); return; }
+      const auto = event.target.closest("[data-crm-contact-auto]");
+      if (auto) { void sendCrmAutoEmail(auto.dataset.crmContactAuto, "", "", auto); return; }
       const advance = event.target.closest("[data-crm-account-advance]");
       if (advance) { detailDialog.close(); void advanceCrmFromAccount(advance.dataset.crmAccountAdvance); return; }
       // Email, Deck and the full form are dialogs of their own: the card

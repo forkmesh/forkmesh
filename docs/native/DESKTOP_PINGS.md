@@ -106,10 +106,15 @@ unplugged, UPS took over).
 
 ### Chat on the phone's Pings
 
-Phones file a local `chat` row for each live message from someone else (relay
-rooms and DMs, sealed DMs, office rooms) through `ChatHub.filePing`. Own
-messages, messages older than 10 minutes and duplicates by message id are
-skipped. Rows live only in `LocalPingLog` (`inbox/local-pings.v1`, 50 rows),
+Phones file a local `chat` row for each live message from someone else in a
+public channel (relay rooms, public office rooms) through `ChatHub.filePing`.
+Private conversations (`@` and `direct:` DMs, relay private channels, private
+office rooms: Android `ChatHub.isPrivateRoom`) are never filed: the ping log is
+plain preferences, so the decrypted text would outlive disappearing-message
+expiry, deletion and sign-out. On Android `ChatHub.purgePrivatePings` removes
+such rows already stored when the log is attached, a private channel is joined
+or office rooms change. Own messages, messages older than 10 minutes and
+duplicates by message id are skipped. Rows live only in `LocalPingLog` (`inbox/local-pings.v1`, 50 rows),
 open the conversation, and are marked read when the conversation is open. They
 are not account inbox rows, because the relay already pushes chat banners.
 

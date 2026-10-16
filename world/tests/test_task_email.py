@@ -231,6 +231,69 @@ def test_deleted_task_mail_links_to_the_list_without_a_view_token(
         mail["text"]
 
 
+OTHER_ID = "b" * 32
+
+
+def _deleted_tasks():
+    return [{"id": TASK_ID, "title": "Fix the login bug"},
+            {"id": OTHER_ID, "title": "Write the release notes"}]
+
+
+def test_deleted_tasks_send_one_email_per_recipient_with_the_reason(
+        monkeypatch):
+    harness = _Harness(monkeypatch)
+    first, second = _deleted_tasks()
+    plan = [("bob", [first, second]), ("carol", [second]),
+            ("alice", [first])]
+    count = asyncio.run(task_email.send_deleted(
+        None, ORG_BI, "forkmesh", "alice", plan, "duplicate work"))
+    assert count == 2
+    assert [mail["to"] for mail in harness.sent] == [
+        "bob@mailbox.org", "carol@mailbox.org"]
+    bob, carol = harness.sent
+    assert bob["subject"] == "2 tasks deleted"
+    assert bob["text"].startswith(
+        "“Fix the login bug” deleted by @alice\n"
+        "“Write the release notes” deleted by @alice\n"
+        "Reason: duplicate work\n\n@alice deleted these tasks in the "
+        "forkmesh organization. A deleted task counts as done.")
+    assert "Open the tasks: https://forkmesh.example/dashboard/tasks/\n" in \
+        bob["text"]
+    assert "&mail=" not in bob["text"]
+    assert bob["kind"] == "task"
+    assert bob["ref"] == task_email.task_ref(ORG_BI, TASK_ID)
+    assert carol["subject"] == "Task deleted: Write the release notes"
+    assert "this task" in carol["text"]
+    summaries = sorted(data["summary"] for kind, data in harness.events()
+                       if kind == "emailed")
+    assert summaries == [
+        "Task deleted: Fix the login bug → @bob",
+        "Task deleted: Write the release notes → @bob, @carol"]
+
+
+def test_deleted_task_mail_respects_opt_outs_and_the_hourly_cap(monkeypatch):
+    accounts = {
+        "bob": {"name": "bob", "email": "bob@mailbox.org",
+                "email_verified": True, "status": "active",
+                "email_notifications": False},
+        "carol": {"name": "carol", "email": "carol@mailbox.org",
+                  "email_verified": True, "status": "active"},
+    }
+    harness = _Harness(monkeypatch, accounts=accounts)
+    first, _second = _deleted_tasks()
+    for index in range(task_email.HOURLY_CAP):
+        asyncio.run(mail_activity.sent(
+            None, "%032x" % (900 + index), "task", "carol@mailbox.org", "x",
+            NOW, ref="r", recipient="carol"))
+    count = asyncio.run(task_email.send_deleted(
+        None, ORG_BI, "forkmesh", "alice",
+        [("bob", [first]), ("carol", [first])], ""))
+    assert count == 0
+    assert harness.sent == []
+    assert harness.mail_log.notes[-1]["result"] == "suppressed"
+    assert [kind for kind, _ in harness.events()] == []
+
+
 @pytest.mark.parametrize("change", [
     {"email_verified": False}, {"email": ""}, {"status": "disabled"},
     {"kind": "org"}, {"email_notifications": False},

@@ -55,6 +55,7 @@ Qt statically in an older-distribution container
 ./desktop/run.sh test       # configure with tests ON, build critical-tests, run tools/run_critical_tests.py qt
 ./desktop/run.sh clean      # remove desktop/build
 ./desktop/run.sh rebuild    # clean, build, launch
+./desktop/run.sh --quiet    # any mode without the step and timing log (also FORKMESH_RUN_QUIET=1)
 ```
 
 It records the caller's directory in `FORKMESH_START_DIRECTORY`, prefers Ninja,
@@ -62,6 +63,37 @@ sizes `--parallel` from free memory (6 GiB reserved, 2 GiB per job, at most 12;
 same as `ramCappedBuildJobs()`), and configures `-DFORKMESH_BUILD_TESTS=OFF` for
 `run`. CMake also declares a heavy-compile job pool for the `MainWindow*.cpp`
 units (`FORKMESH_HEAVY_JOBS`, override `FORKMESH_HEAVY_JOBS_OVERRIDE`).
+
+### Step and timing log
+
+`run`, `rebuild` and `test` print the same log as the desktop's Rebuild &
+restart (`buildAndRelaunch`, `runUpdateStep` and `setUpdateStatus` in
+`MainWindowSetup.cpp`, `logRestart` in `MainWindowShared.cpp`), so a terminal
+build reads like the update log:
+
+- on stderr, `[restart +NNNNNms] ...` lines timed from the start of the script:
+  the mode started, each status, `run: <command>`, `done in Nms (exit N):
+  <command>`, `build pass 1: N parallel jobs, HEAD <sha>`, a `summary:` line
+  and `launching <binary>`;
+- on stdout, `==> Configuring...` / `==> Rebuilding...` / `==> Launching...`,
+  `$ <command>` with `(in <dir>)` before each step, the step's own output, and
+  `— finished in Nms (exit N)` after it;
+- `==> Built in <total> (configure <t>, build <t>)` before the launch (or
+  `==> Failed in ...`).
+
+A failed step prints `!! Build failed: <reason>` on stderr and exits with the
+step's code. The reason is picked like `updateFailureSummary()`: a full disk,
+else the first line containing `error:` or starting `fatal:` (300 characters),
+else the output's tail. Each step's output is also kept in
+`desktop/build/run-sh-last-step.log`.
+
+The desktop's log is C++ in the running app and run.sh is a shell script, so the
+two cannot share one implementation; `app/tests/test_desktop_run_sh_restart_log.py`
+pins the shared wording against the C++ strings and runs run.sh with a fake
+`cmake` to check the order, the quiet mode and the failure line. run.sh does not
+copy the parts of Rebuild & restart that it never did: it still configures every
+time, builds once (no extra pass when the sources move), and does not build the
+Go mirror-node companion, install, or record restart history for the countdown.
 
 ## Machine-wide compile gate
 

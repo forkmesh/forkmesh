@@ -12,6 +12,9 @@ own. What it does is documented in `content/extension/README.md`:
   mail you send to the recipient's record, logs the people your own Mastodon
   posts mention (adding the new ones as contacts), and files pages under a
   contact (`crm` package);
+- sorts, searches and groups a Zoho Mail list by sender and selects, marks
+  read, archives or deletes the shown messages in bulk through Zoho's own
+  toolbar, for inbox zero (no package needed);
 - reads channel counts, the organization's X profile and posts, and Reddit
   pages for the Marketing package, only when asked, and guides an owner or
   admin through X's developer console to connect X for posting;

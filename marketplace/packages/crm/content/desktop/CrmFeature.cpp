@@ -576,6 +576,38 @@ QString sheetNameFromFile(const QString &fileName)
     return name.isEmpty() ? QStringLiteral("Imported contacts") : name;
 }
 
+QString autoEmailTip()
+{
+    return QStringLiteral("A model writes the email from their record, our past emails and what "
+                          "got opened or clicked, then sends it at once from the outreach sender. "
+                          "It carries their tracked deck link (investor pipelines) or your referral "
+                          "link, and you get a ping when they open it or click.");
+}
+
+QString autoEmailError(const QString &code, const QString &fallback)
+{
+    static const QHash<QString, QString> known{
+        {QStringLiteral("outreach_forbidden"),
+         QStringLiteral("only owners, admins and the outreach team can send automated emails.")},
+        {QStringLiteral("recently_emailed"),
+         QStringLiteral("they already got an email from the CRM in the last three days.")},
+        {QStringLiteral("contact_closed"), QStringLiteral("they are at an ended stage.")},
+        {QStringLiteral("contact_has_no_email"), QStringLiteral("they have no email address.")},
+        {QStringLiteral("daily_limit_reached"), QStringLiteral("you reached today's outreach limit.")},
+        {QStringLiteral("ai_unavailable"),
+         QStringLiteral("this host has no AI model. Pick Claude Code or Codex as the default "
+                        "agent in Settings to write it on this computer.")},
+        {QStringLiteral("draft_unusable"),
+         QStringLiteral("the draft had placeholders or links we could not check. Try again.")},
+        {QStringLiteral("rate_limited"), QStringLiteral("the AI model is busy. Try again in a minute.")},
+        {QStringLiteral("send_failed"), QStringLiteral("the email provider refused the send.")},
+    };
+    const QString message = known.value(code);
+    if (!message.isEmpty())
+        return message;
+    return fallback.isEmpty() ? QStringLiteral("no answer came back.") : fallback;
+}
+
 // Import failures the worker already closed with a "failed" ping of its own.
 bool workerClosedImport(const QJsonObject &payload)
 {
@@ -646,6 +678,11 @@ const QStringList kDefaultViewFields{
     QStringLiteral("bluesky"), QStringLiteral("twitter"), QStringLiteral("linkedin"),
     QStringLiteral("github"), QStringLiteral("lastContactedAt")};
 constexpr int kMastodonInFlight = 4;
+constexpr int kMastodonPerHost = 2;
+constexpr qint64 kMastodonBackoffMs = 5 * 60 * 1000;
+constexpr int kReachMastodonReads = 40;
+constexpr int kNextUpcoming = 5;
+constexpr int kNextRenderDelayMs = 400;
 constexpr qint64 kMastodonFreshMs = 15 * 60 * 1000;
 constexpr qint64 kDayMs = 24LL * 60 * 60 * 1000;
 constexpr int kNextReplyDays = 60;
@@ -3531,7 +3568,15 @@ NextContact CrmFeature::nextContact(NextMode mode) const
     const QLocale locale;
     NextContact best;
     std::tuple<int, int, qint64, QString> followKey;
-    std::tuple<int, qint64, double, double, int, qint64, QString> reachKey;
+    using ReachKey = std::tuple<int, qint64, int, qint64, double, double, int, qint64, QString>;
+    struct ReachEntry
+    {
+        ReachKey key;
+        QString id;
+        int row = -1;
+        QString reason;
+    };
+    QList<ReachEntry> reachRanked;
     for (const int index : m_snapshot.sheetRows.value(m_sheet->currentData().toString())) {
         if (index < 0 || index >= m_snapshot.rows.size())
             continue;
@@ -3571,7 +3616,13 @@ NextContact CrmFeature::nextContact(NextMode mode) const
                 continue;
             const LeadMarks marks = leadMarks(contact);
             const qint64 created = qint64(contact.value(QStringLiteral("createdAt")).toDouble());
+            const auto latestPost =
+                m_mastodonLatest.constFind(mastodonHandleKey(text(contact, "mastodon")));
+            const qint64 posted =
+                latestPost == m_mastodonLatest.constEnd() ? 0 : qMax<qint64>(latestPost->postedAt, 0);
             QStringList qualifies;
+            if (posted > 0)
+                qualifies << QStringLiteral("posted on Mastodon %1").arg(ago(posted));
             if (!step.isEmpty())
                 qualifies << QStringLiteral("next step on the record: %1").arg(step);
             if (marks.value > 0)
@@ -3589,13 +3640,11 @@ NextContact CrmFeature::nextContact(NextMode mode) const
                                            "longest on the list goes first.")
                           : QStringLiteral("Best qualified new lead: %1.")
                                 .arg(qualifies.join(QStringLiteral("; "))));
-            const auto key = std::make_tuple(
+            reachRanked.append({std::make_tuple(
+                posted > 0 ? 0 : 1, -posted,
                 step.isEmpty() ? 1 : 0, -marks.value,
                 marks.rank > 0 ? marks.rank : std::numeric_limits<double>::infinity(), -marks.score,
-                email.isEmpty() ? 1 : 0, created, id);
-            better = best.id.isEmpty() || key < reachKey;
-            if (better)
-                reachKey = key;
+                email.isEmpty() ? 1 : 0, created, id), id, index, reason});
         } else {
             int tier = 0;
             qint64 order = 0;
@@ -3632,6 +3681,18 @@ NextContact CrmFeature::nextContact(NextMode mode) const
             best.reason = reason;
         }
     }
+    if (mode == NextMode::ReachOut && !reachRanked.isEmpty()) {
+        std::sort(reachRanked.begin(), reachRanked.end(),
+                  [](const ReachEntry &a, const ReachEntry &b) { return a.key < b.key; });
+        best.id = reachRanked.first().id;
+        best.row = reachRanked.first().row;
+        best.reason = reachRanked.first().reason;
+        for (int at = 0; at < reachRanked.size(); ++at) {
+            best.ranked << reachRanked.at(at).id;
+            if (at > 0 && at <= kNextUpcoming)
+                best.upcoming << reachRanked.at(at).id;
+        }
+    }
     return best;
 }
 
@@ -3656,6 +3717,86 @@ void CrmFeature::renderNextContact()
     cardLayout->addWidget(nextContactCard(NextMode::ReachOut), 1);
     cardLayout->addWidget(nextContactCard(NextMode::FollowUp), 1);
     m_nextCard->show();
+    queueReachMastodon(nextContact(NextMode::ReachOut).ranked);
+}
+
+void CrmFeature::queueReachMastodon(const QStringList &ranked)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    int wanted = 0;
+    for (const QString &id : ranked) {
+        if (wanted >= kReachMastodonReads)
+            break;
+        const QString key = mastodonHandleKey(text(contactById(id), "mastodon"));
+        if (key.isEmpty())
+            continue;
+        ++wanted;
+        const auto cached = m_mastodonLatest.constFind(key);
+        if ((cached != m_mastodonLatest.constEnd() && now - cached->fetchedAt < kMastodonFreshMs) ||
+            m_mastodonPending.contains(key) || m_mastodonQueue.contains(key))
+            continue;
+        m_mastodonQueue.append(key);
+    }
+    refreshMastodonUpdates();
+}
+
+void CrmFeature::scheduleNextRender()
+{
+    if (m_nextRenderQueued)
+        return;
+    m_nextRenderQueued = true;
+    QTimer::singleShot(kNextRenderDelayMs, this, [this] {
+        m_nextRenderQueued = false;
+        renderNextContact();
+    });
+}
+
+QLabel *CrmFeature::nextPostLabel(const QJsonObject &contact, bool compact) const
+{
+    const QString key = mastodonHandleKey(text(contact, "mastodon"));
+    if (key.isEmpty())
+        return nullptr;
+    const auto latest = m_mastodonLatest.constFind(key);
+    auto *label = new QLabel;
+    label->setObjectName(QStringLiteral("crmNextPost"));
+    label->setWordWrap(!compact);
+    if (latest == m_mastodonLatest.constEnd() || !latest->error.isEmpty() || latest->postedAt <= 0) {
+        QString note;
+        if (latest == m_mastodonLatest.constEnd()) {
+            if (m_mastodonPending.contains(key) || m_mastodonQueue.contains(key))
+                note = QString::fromUtf8("Reading @%1\xE2\x80\xA6").arg(key);
+        } else if (!latest->error.isEmpty()) {
+            note = QStringLiteral("Mastodon post unavailable: %1").arg(latest->error);
+        } else {
+            note = QStringLiteral("No public Mastodon posts");
+        }
+        if (note.isEmpty()) {
+            delete label;
+            return nullptr;
+        }
+        label->setObjectName(QStringLiteral("mutedLabel"));
+        label->setTextFormat(Qt::PlainText);
+        label->setText(note);
+        label->setToolTip(note);
+        return label;
+    }
+    const qint64 days = (QDateTime::currentMSecsSinceEpoch() - latest->postedAt) / kDayMs;
+    const QString when = days <= 0 ? QStringLiteral("today")
+                       : days == 1 ? QStringLiteral("yesterday")
+                                   : QStringLiteral("%1 days ago").arg(days);
+    const QString excerpt = compact ? plainExcerpt(latest->text, 90) : latest->excerpt;
+    const QUrl url(latest->url);
+    label->setTextFormat(Qt::RichText);
+    label->setText(QString::fromUtf8("%1 \xC2\xB7 %2")
+                       .arg(when.toHtmlEscaped(),
+                            url.isValid() && url.scheme() == QLatin1String("https")
+                                ? QStringLiteral("<a href=\"%1\">%2</a>")
+                                      .arg(url.toString().toHtmlEscaped(), excerpt.toHtmlEscaped())
+                                : excerpt.toHtmlEscaped()));
+    label->setOpenExternalLinks(true);
+    label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    label->setToolTip(timestamp(latest->postedAt) + QLatin1Char('\n') + latest->detail);
+    return label;
 }
 
 QWidget *CrmFeature::nextContactCard(NextMode mode)
@@ -3739,6 +3880,8 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     QPushButton *ai = addButton(QStringLiteral("Write with AI"),
                                 QStringLiteral("Gather everything about them and us into a prompt "
                                                "for ChatGPT or Claude to write the message"));
+    QPushButton *autoSend = email.isEmpty() ? nullptr : addButton(
+        QStringLiteral("Send AI email"), autoEmailTip());
     QPushButton *open = addButton(QStringLiteral("Open contact"),
                                   QStringLiteral("Show everything about them in the side panel"));
     QPushButton *contacted = addButton(QStringLiteral("Mark contacted"),
@@ -3757,6 +3900,12 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     connect(ai, &QPushButton::clicked, this, [this, contactId, reach, reason] {
         showAiWriter(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"), reason);
     });
+    if (autoSend) {
+        connect(autoSend, &QPushButton::clicked, this, [this, contactId, reach, reason] {
+            sendAutoEmail(contactId, reach ? QStringLiteral("reach") : QStringLiteral("follow"),
+                          reason);
+        });
+    }
     connect(open, &QPushButton::clicked, this,
             [this, contactId] { showContactDetail(contactId); });
     connect(contacted, &QPushButton::clicked, this, [this, contactId] {
@@ -3808,6 +3957,10 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     heading->setSpacing(2);
     heading->addWidget(name);
     heading->addWidget(subtitle);
+    if (reach) {
+        if (QLabel *post = nextPostLabel(contact, false))
+            heading->addWidget(post);
+    }
     heading->addWidget(why);
     auto *who = new QHBoxLayout;
     who->setSpacing(12);
@@ -3815,6 +3968,36 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     who->addLayout(heading, 1);
     layout->addLayout(who);
     layout->addLayout(head);
+    if (reach && !next.upcoming.isEmpty()) {
+        auto *lineTitle = new QLabel(QString::fromUtf8("Next in line \xC2\xB7 newest Mastodon post first"));
+        lineTitle->setObjectName(QStringLiteral("mutedLabel"));
+        layout->addWidget(lineTitle);
+        auto *upcoming = new QVBoxLayout;
+        upcoming->setSpacing(2);
+        for (const QString &upcomingId : next.upcoming) {
+            const QJsonObject person = contactById(upcomingId);
+            auto *row = new QHBoxLayout;
+            row->setSpacing(6);
+            auto *open = new QPushButton(text(person, "name").isEmpty()
+                ? (text(person, "email").isEmpty() ? QStringLiteral("Unnamed contact") : text(person, "email"))
+                : text(person, "name"));
+            open->setObjectName(QStringLiteral("crmNextUpcoming"));
+            open->setFlat(true);
+            open->setCursor(Qt::PointingHandCursor);
+            open->setToolTip(QStringLiteral("Show everything about them in the side panel"));
+            connect(open, &QPushButton::clicked, this,
+                    [this, upcomingId] { showContactDetail(upcomingId); });
+            row->addWidget(open, 0, Qt::AlignTop);
+            if (QLabel *post = nextPostLabel(person, true)) {
+                post->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+                row->addWidget(post, 1);
+            } else {
+                row->addStretch(1);
+            }
+            upcoming->addLayout(row);
+        }
+        layout->addLayout(upcoming);
+    }
 
     const auto valueLabel = [&dash](const QString &value, const QUrl &link) {
         auto *label = new QLabel;
@@ -3910,7 +4093,8 @@ QWidget *CrmFeature::nextContactCard(NextMode mode)
     layout->addLayout(grid);
 
     auto *how = new QLabel(reach
-        ? QStringLiteral("Picked from the %1 never contacted on this list. A next step goes first, "
+        ? QStringLiteral("Picked from the %1 never contacted on this list. The newest Mastodon "
+                         "post goes first, then a next step, "
                          "then the highest deal value, the lowest number in a rank column, the "
                          "highest in a score column, an email address over a handle alone, and "
                          "the longest on the list. Won and ended stages are left out.")
@@ -8038,6 +8222,7 @@ void CrmFeature::fillMastodonItem(QTableWidgetItem *item, const QString &key) co
 void CrmFeature::refreshMastodonUpdates()
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QStringList held;
     while (!m_mastodonQueue.isEmpty() &&
            m_mastodonPending.size() < kMastodonInFlight) {
         const QString key = m_mastodonQueue.takeFirst();
@@ -8049,8 +8234,31 @@ void CrmFeature::refreshMastodonUpdates()
         if (cached != m_mastodonLatest.constEnd() &&
             now - cached->fetchedAt < kMastodonFreshMs)
             continue;
+        const QString host = key.mid(key.lastIndexOf(QLatin1Char('@')) + 1);
+        const qint64 until = m_mastodonBackoff.value(host);
+        if (until > now) {
+            MastodonLatest waiting =
+                cached != m_mastodonLatest.constEnd() ? *cached : MastodonLatest();
+            if (waiting.postedAt <= 0)
+                waiting.error = QStringLiteral("%1 asked for fewer requests; it is read again later")
+                                    .arg(host);
+            waiting.fetchedAt = until - kMastodonFreshMs;
+            m_mastodonLatest.insert(key, waiting);
+            applyMastodonLatest(key);
+            continue;
+        }
+        int onHost = 0;
+        for (const QString &other : std::as_const(m_mastodonPending)) {
+            if (other.mid(other.lastIndexOf(QLatin1Char('@')) + 1) == host)
+                ++onHost;
+        }
+        if (onHost >= kMastodonPerHost) {
+            held.append(key);
+            continue;
+        }
         fetchMastodonLatest(key);
     }
+    m_mastodonQueue = held + m_mastodonQueue;
     // Each row's button rests while its account is queued or being read.
     const int column = columnIndex(ContactColumnSpec::MastodonLatest);
     if (column < 0)
@@ -8076,8 +8284,6 @@ void CrmFeature::refreshMastodonNow(const QString &key)
     const auto latest = m_mastodonLatest.find(key);
     if (latest != m_mastodonLatest.end())
         latest->fetchedAt = 0;
-    // The one account on the pressed row: the reads start here and nowhere
-    // else.
     m_mastodonQueue.append(key);
     refreshMastodonUpdates();
     applyMastodonLatest(key);
@@ -8098,11 +8304,82 @@ void CrmFeature::fetchMastodonLatest(const QString &key)
         latest.fetchedAt = QDateTime::currentMSecsSinceEpoch();
         latest.excerpt = plainExcerpt(latest.text, 140);
         latest.detail = plainExcerpt(latest.text, 2000);
+        const auto previous = m_mastodonLatest.constFind(key);
+        if (!latest.error.isEmpty() && previous != m_mastodonLatest.constEnd() &&
+            previous->postedAt > 0) {
+            const qint64 fetchedAt = latest.fetchedAt;
+            latest = *previous;
+            latest.fetchedAt = fetchedAt;
+        }
         m_mastodonLatest.insert(key, latest);
         m_mastodonPending.remove(key);
         applyMastodonLatest(key);
+        scheduleNextRender();
         refreshMastodonUpdates();
     };
+    const auto statusOf = [](QNetworkReply *reply) {
+        return reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    };
+    const auto slowDown = [this, host](QNetworkReply *reply) {
+        const QByteArray retry = reply->rawHeader("Retry-After").trimmed();
+        bool seconds = false;
+        const qint64 wait = retry.toLongLong(&seconds) * 1000;
+        m_mastodonBackoff.insert(host, QDateTime::currentMSecsSinceEpoch() +
+                                           qMax(seconds ? wait : 0, kMastodonBackoffMs));
+        MastodonLatest latest;
+        latest.error = QStringLiteral("the instance asked for fewer requests; it is read again later");
+        return latest;
+    };
+    const auto readStatuses = [this, key, host, finish, statusOf, slowDown](const QString &accountId) {
+        QUrl statuses;
+        statuses.setScheme(QStringLiteral("https"));
+        statuses.setHost(host);
+        statuses.setPath(QStringLiteral("/api/v1/accounts/") + accountId +
+                         QStringLiteral("/statuses"));
+        QUrlQuery statusQuery;
+        statusQuery.addQueryItem(QStringLiteral("limit"), QStringLiteral("1"));
+        statusQuery.addQueryItem(QStringLiteral("exclude_replies"),
+                                 QStringLiteral("true"));
+        statusQuery.addQueryItem(QStringLiteral("exclude_reblogs"),
+                                 QStringLiteral("true"));
+        statuses.setQuery(statusQuery);
+        QNetworkRequest statusRequest = instanceRequest(statuses);
+        forkmesh::markExpectedHttpStatus(statusRequest, 404);
+        forkmesh::markExpectedHttpStatus(statusRequest, 429);
+        QNetworkReply *second = m_network->get(statusRequest);
+        connect(second, &QNetworkReply::finished, this,
+                [this, second, key, finish, statusOf, slowDown] {
+            second->deleteLater();
+            MastodonLatest latest;
+            const int status = statusOf(second);
+            if (status == 429) {
+                latest = slowDown(second);
+            } else if (status == 404) {
+                m_mastodonIds.remove(key);
+                latest.error = QStringLiteral("the instance knows no such account");
+            } else if (second->error() != QNetworkReply::NoError) {
+                latest.error = second->errorString();
+            } else {
+                const QJsonArray items =
+                    QJsonDocument::fromJson(second->readAll()).array();
+                if (!items.isEmpty()) {
+                    const QJsonObject post = items.first().toObject();
+                    latest.postedAt = QDateTime::fromString(
+                        text(post, "created_at"), Qt::ISODateWithMs)
+                        .toMSecsSinceEpoch();
+                    latest.text = text(post, "content");
+                    latest.url = text(post, "url").isEmpty()
+                        ? text(post, "uri") : text(post, "url");
+                }
+            }
+            finish(latest);
+        });
+    };
+    const QString knownId = m_mastodonIds.value(key);
+    if (!knownId.isEmpty()) {
+        readStatuses(knownId);
+        return;
+    }
     QUrl lookup;
     lookup.setScheme(QStringLiteral("https"));
     lookup.setHost(host);
@@ -8110,15 +8387,19 @@ void CrmFeature::fetchMastodonLatest(const QString &key)
     QUrlQuery lookupQuery;
     lookupQuery.addQueryItem(QStringLiteral("acct"), user);
     lookup.setQuery(lookupQuery);
-    // A handle the instance does not know answers 404 {"error":"Record not
-    // found"}: that is the lookup's answer, not a failed request.
     QNetworkRequest lookupRequest = instanceRequest(lookup);
     forkmesh::markExpectedHttpStatus(lookupRequest, 404);
     forkmesh::markExpectedHttpStatus(lookupRequest, 406);
     forkmesh::markExpectedHttpStatus(lookupRequest, 410);
+    forkmesh::markExpectedHttpStatus(lookupRequest, 429);
     QNetworkReply *reply = m_network->get(lookupRequest);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, host, finish] {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, key, finish, statusOf, slowDown, readStatuses] {
         reply->deleteLater();
+        if (statusOf(reply) == 429) {
+            finish(slowDown(reply));
+            return;
+        }
         if (forkmesh::networkReplyStatusIsExpected(reply)) {
             MastodonLatest latest;
             latest.error = QStringLiteral("the instance knows no such account");
@@ -8139,39 +8420,8 @@ void CrmFeature::fetchMastodonLatest(const QString &key)
             finish(latest);
             return;
         }
-        QUrl statuses;
-        statuses.setScheme(QStringLiteral("https"));
-        statuses.setHost(host);
-        statuses.setPath(QStringLiteral("/api/v1/accounts/") + accountId +
-                         QStringLiteral("/statuses"));
-        QUrlQuery statusQuery;
-        statusQuery.addQueryItem(QStringLiteral("limit"), QStringLiteral("1"));
-        statusQuery.addQueryItem(QStringLiteral("exclude_replies"),
-                                 QStringLiteral("true"));
-        statusQuery.addQueryItem(QStringLiteral("exclude_reblogs"),
-                                 QStringLiteral("true"));
-        statuses.setQuery(statusQuery);
-        QNetworkReply *second = m_network->get(instanceRequest(statuses));
-        connect(second, &QNetworkReply::finished, this, [second, finish] {
-            second->deleteLater();
-            MastodonLatest latest;
-            if (second->error() != QNetworkReply::NoError) {
-                latest.error = second->errorString();
-            } else {
-                const QJsonArray items =
-                    QJsonDocument::fromJson(second->readAll()).array();
-                if (!items.isEmpty()) {
-                    const QJsonObject status = items.first().toObject();
-                    latest.postedAt = QDateTime::fromString(
-                        text(status, "created_at"), Qt::ISODateWithMs)
-                        .toMSecsSinceEpoch();
-                    latest.text = text(status, "content");
-                    latest.url = text(status, "url").isEmpty()
-                        ? text(status, "uri") : text(status, "url");
-                }
-            }
-            finish(latest);
-        });
+        m_mastodonIds.insert(key, accountId);
+        readStatuses(accountId);
     });
 }
 
@@ -8985,15 +9235,19 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     auto *prompt = new QPushButton(QStringLiteral("Write with AI"));
     prompt->setToolTip(QStringLiteral("Gather everything about them and us into a prompt for "
                                       "ChatGPT or Claude to write the message"));
+    auto *autoSend = new QPushButton(QStringLiteral("Send AI email"));
+    autoSend->setToolTip(autoEmailTip());
+    autoSend->setEnabled(!text(contact, "email").isEmpty());
     auto *toot = new QPushButton(QStringLiteral("Log toot"));
     toot->setToolTip(QStringLiteral("Paste a toot's link to log it as a Mastodon "
                                     "conversation with this contact"));
     auto *again = new QPushButton(QStringLiteral("Read again"));
     again->setEnabled(!sources.isEmpty());
-    for (QPushButton *button : {edit, write, draft, prompt, toot, again})
+    for (QPushButton *button : {edit, write, draft, prompt, autoSend, toot, again})
         actions->addWidget(button);
     actions->addStretch(1);
     layout->addLayout(actions);
+    connect(autoSend, &QPushButton::clicked, this, [this, contactId] { sendAutoEmail(contactId); });
     connect(toot, &QPushButton::clicked, this, [this, contactId] { logToot(contactId); });
     connect(again, &QPushButton::clicked, reads, [reads] { reads->readAccounts(true); });
     connect(prompt, &QPushButton::clicked, this,
@@ -10368,6 +10622,101 @@ void CrmFeature::askAgentForEmail(const QString &contactId, const QString &deckU
                                        "opens of the deck link are tracked and pinged.")
                             .arg(agent));
         self->composeEmail(current, subject, body);
+    });
+}
+
+void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
+                               const QString &reason, const QJsonObject &draft)
+{
+    const QJsonObject contact = contactById(contactId);
+    const QString email = text(contact, "email");
+    if (contactId.isEmpty() || email.isEmpty() || m_autoSending.contains(contactId) ||
+        m_organization->currentData().toString().isEmpty())
+        return;
+    if (draft.isEmpty()) {
+        const QString flowId = text(contact, "flow");
+        const bool investor = flowIconId(flowId) == QLatin1String("investors") ||
+                              flowId == QLatin1String("investors") ||
+                              flowId == QLatin1String("investment");
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("Send AI email"),
+            QStringLiteral("Write and send an email to %1 <%2> now?\n\nA model writes it from "
+                           "their record and from what our past emails got opened or clicked "
+                           "for, with %3. It goes out straight away from the outreach sender.")
+                .arg(contactLabel(contact), email,
+                     investor ? QStringLiteral("their tracked deck link")
+                              : QStringLiteral("your referral link")));
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+    m_autoSending.insert(contactId);
+    setStatus(QString::fromUtf8("Writing an email to %1\xE2\x80\xA6").arg(contactLabel(contact)));
+    QJsonObject body{{QStringLiteral("contactId"), contactId},
+                     {QStringLiteral("mode"), mode},
+                     {QStringLiteral("reason"), reason},
+                     {QStringLiteral("list"), text(activeSheet(), "name")}};
+    for (auto item = draft.constBegin(); item != draft.constEnd(); ++item)
+        body.insert(item.key(), item.value());
+    const bool written = !draft.isEmpty();
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/outreach/auto")), body,
+            [this, contactId, mode, reason, written](bool ok, const QJsonObject &payload,
+                                                     const QString &error) {
+        m_autoSending.remove(contactId);
+        const QString label = contactLabel(contactById(contactId));
+        const QString code = text(payload, "error");
+        if (ok) {
+            const QJsonObject learning = payload.value(QStringLiteral("learning")).toObject();
+            const int past = learning.value(QStringLiteral("sent")).toInt();
+            setStatus(QString::fromUtf8("Sent \xE2\x80\x9C%1\xE2\x80\x9D to %2. You get a ping when "
+                                        "they open it or click.%3")
+                          .arg(text(payload, "subject"), label,
+                               past ? QStringLiteral(" Learned from %1 past emails (%2% opened, "
+                                                     "%3% clicked).")
+                                          .arg(past)
+                                          .arg(learning.value(QStringLiteral("openRate")).toInt())
+                                          .arg(learning.value(QStringLiteral("clickRate")).toInt())
+                                    : QString()));
+            loadOrganization();
+            return;
+        }
+        if (!written && !text(payload, "prompt").isEmpty() && m_askAgent && m_agentName &&
+            !m_agentName().isEmpty() &&
+            (code == QLatin1String("ai_unavailable") || code == QLatin1String("draft_unusable"))) {
+            autoEmailWithAgent(contactId, mode, reason, payload);
+            return;
+        }
+        setStatus(QStringLiteral("Nothing was sent to %1: %2").arg(label, autoEmailError(code, error)),
+                  true);
+    });
+}
+
+void CrmFeature::autoEmailWithAgent(const QString &contactId, const QString &mode,
+                                    const QString &reason, const QJsonObject &payload)
+{
+    const QString agent = m_agentName();
+    m_autoSending.insert(contactId);
+    setStatus(QString::fromUtf8("The host has no model for this, so %1 is writing the email to "
+                                "%2\xE2\x80\xA6")
+                  .arg(agent, contactLabel(contactById(contactId))));
+    QPointer<CrmFeature> self(this);
+    m_askAgent(text(payload, "prompt"),
+               [self, contactId, mode, reason, agent](const QString &reply, const QString &error) {
+        if (!self)
+            return;
+        self->m_autoSending.remove(contactId);
+        QString subject;
+        QString body;
+        if (!error.isEmpty() || !parseEmailDraft(reply, QString(), &subject, &body)) {
+            self->setStatus(QStringLiteral("%1 did not write the email: %2")
+                                .arg(agent, error.isEmpty() ? QStringLiteral("the reply was empty")
+                                                            : error),
+                            true);
+            return;
+        }
+        self->sendAutoEmail(contactId, mode, reason,
+                            QJsonObject{{QStringLiteral("subject"), subject},
+                                        {QStringLiteral("text"), body},
+                                        {QStringLiteral("model"), agent}});
     });
 }
 

@@ -2,8 +2,15 @@
 
 #include "NativePackageExtension.h"
 
+#include "AppStoreStatusModel.h"
+
+#include <QByteArray>
+#include <QHash>
 #include <QJsonObject>
+#include <QList>
 #include <QString>
+
+#include <functional>
 
 class QFrame;
 class QLabel;
@@ -34,6 +41,10 @@ private:
     void addGroups(QVBoxLayout *layout, const QJsonObject &snapshot);
     void addFeedback(QVBoxLayout *layout, const QJsonObject &snapshot);
     void addReviews(QVBoxLayout *layout, const QJsonObject &snapshot);
+    void addScreenshots(QVBoxLayout *row, const QJsonObject &feedback);
+    void loadScreenshot(const QString &id,
+                        std::function<void(const QByteArray &, const QString &)> done);
+    void openScreenshot(const QList<Screenshot> &shots, int index, const QString &detail);
     void setError(const QString &text);
 
     forkmesh::market::NativePackageRequest m_request;
@@ -45,6 +56,8 @@ private:
     QPushButton *m_refresh = nullptr;
     QScrollArea *m_scroll = nullptr;
     QJsonObject m_payload;
+    QHash<QString, QByteArray> m_screenshots;
+    QHash<QString, QList<std::function<void(const QByteArray &, const QString &)>>> m_screenshotWaits;
     bool m_loaded = false;
     bool m_loading = false;
 };

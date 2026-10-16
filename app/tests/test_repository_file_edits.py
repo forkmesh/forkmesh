@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -91,7 +92,8 @@ class FakeRequest:
         self.body = body or {}
 
 
-def harness(bare, owner_write=True, org_write=False, access=True):
+def harness(bare, owner_write=True, org_write=False, access=True,
+            actor="jett"):
     calls = {"pushes": [], "audits": []}
 
     async def js_fetch_with_timeout(url, init, timeout):
@@ -133,7 +135,7 @@ def harness(bare, owner_write=True, org_write=False, access=True):
         return request.body
 
     async def authed(env, request, data=None):
-        return "jett"
+        return actor
 
     async def repository_access(env, request, owner, repo, viewer=None):
         return {"owner": owner, "repo": repo} if access else None
@@ -321,3 +323,152 @@ def test_create_refuses_an_existing_file_and_edit_refuses_a_missing_one(bare_rep
         "path": "missing.md", "branch": "main", "content": "x\n",
     }))
     assert missing["status"] == 404, missing
+
+
+def apply_proposal(tmp_path, bare, proposal):
+    work = tmp_path / "apply"
+    git(tmp_path, "clone", "-q", str(bare), str(work))
+    git(work, "checkout", "-q", "--detach", proposal["baseOid"])
+    (tmp_path / "proposal.mbox").write_text(proposal["commits"])
+    git(work, "am", "--3way", str(tmp_path / "proposal.mbox"))
+    return work
+
+
+def test_read_only_viewer_proposes_a_pull_request(bare_repo, tmp_path):
+    calls = harness(bare_repo, owner_write=False, org_write=False)
+    before = git_out(bare_repo, "rev-parse", "main").strip()
+    refs_before = git_out(bare_repo, "for-each-ref")
+    result = run("alice", "project", FakeRequest(body={
+        "mode": "propose",
+        "path": "README.md",
+        "branch": "main",
+        "oid": blob_oid(bare_repo, "main", "README.md"),
+        "content": "# Top\n\nSuggested by a reader.\n",
+        "message": "Fix README wording",
+    }))
+    assert result["status"] == 200, result
+    data = result["data"]
+    assert data["proposal"] is True
+    assert data["base"] == "main"
+    assert data["baseOid"] == before
+    assert data["subject"] == "Fix README wording"
+    assert data["head"] == "jett/edit-readme-md-" + data["headOid"][:7]
+    assert calls["pushes"] == []
+    assert git_out(bare_repo, "for-each-ref") == refs_before
+    assert calls["audits"][0][1] == "repository.file_edit_proposal"
+    assert data["patch"] in data["commits"]
+    work = apply_proposal(tmp_path, bare_repo, data)
+    assert (work / "README.md").read_text() == (
+        "# Top\n\nSuggested by a reader.\n")
+    assert (work / "docs" / "guide.md").read_text() == "# Guide\n"
+    assert git_out(work, "log", "-1", "--format=%an|%s").strip() == (
+        "jett|Fix README wording")
+
+
+def test_proposal_patch_matches_git_diff(bare_repo, tmp_path):
+    harness(bare_repo, owner_write=False)
+    work = tmp_path / "seed"
+    git(tmp_path, "clone", "-q", str(bare_repo), str(work))
+    lines = "".join("line %d\n" % n for n in range(1, 21))
+    (work / "notes.txt").write_text(lines + "tail")
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "notes")
+    git(work, "push", "-q", "origin", "main")
+    edited = lines.replace("line 3\n", "line three\n").replace(
+        "line 17\n", "") + "tail\n"
+    result = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "notes.txt", "branch": "main",
+        "content": edited,
+    }))
+    assert result["status"] == 200, result
+    (work / "notes.txt").write_text(edited)
+    expected = re.sub(
+        r"^(@@ [^@]* @@).*$", r"\1",
+        git_out(work, "diff", "--full-index", "notes.txt"), flags=re.M)
+    assert result["data"]["patch"] == expected
+    assert result["data"]["subject"] == "Edit notes.txt on the web"
+    applied = apply_proposal(tmp_path, bare_repo, result["data"])
+    assert (applied / "notes.txt").read_text() == edited
+
+
+def test_proposal_can_add_a_file(bare_repo, tmp_path):
+    harness(bare_repo, owner_write=False)
+    result = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "docs/new page.md", "branch": "main",
+        "create": True, "content": "# New\n",
+        "message": "Add a page — with notes",
+    }))
+    assert result["status"] == 200, result
+    assert "new file mode 100644" in result["data"]["patch"]
+    work = apply_proposal(tmp_path, bare_repo, result["data"])
+    assert (work / "docs" / "new page.md").read_text() == "# New\n"
+    assert git_out(work, "log", "-1", "--format=%s").strip() == (
+        "Add a page — with notes")
+
+
+def test_proposal_needs_an_existing_base_branch(bare_repo):
+    calls = harness(bare_repo, owner_write=False)
+    result = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "README.md", "branch": "web/new",
+        "baseRef": "main", "content": "x\n",
+    }))
+    assert result["status"] == 404
+    assert result["data"]["error"] == "branch_not_found"
+    assert calls["pushes"] == []
+
+
+def test_read_only_direct_write_is_refused_and_offers_a_proposal(bare_repo):
+    calls = harness(bare_repo, owner_write=False, org_write=False)
+    before = git_out(bare_repo, "rev-parse", "main").strip()
+    for mode in ("", "commit"):
+        result = run("alice", "project", FakeRequest(body={
+            "mode": mode, "path": "README.md", "branch": "main",
+            "content": "x\n",
+        }))
+        assert result["status"] == 403
+        assert result["data"]["error"] == "forbidden"
+        assert result["data"]["canPropose"] is True
+    assert calls["pushes"] == []
+    assert git_out(bare_repo, "rev-parse", "main").strip() == before
+
+
+def test_writer_still_commits_directly(bare_repo):
+    calls = harness(bare_repo)
+    result = run("alice", "project", FakeRequest(body={
+        "mode": "commit", "path": "README.md", "branch": "main",
+        "content": "# Top\n\nDirect.\n",
+    }))
+    assert result["status"] == 200, result
+    assert "proposal" not in result["data"]
+    assert len(calls["pushes"]) == 1
+    assert git_out(bare_repo, "show", "main:README.md") == "# Top\n\nDirect.\n"
+
+
+def test_probe_reports_write_or_propose(bare_repo):
+    harness(bare_repo)
+    writer = run("alice", "project", FakeRequest(body={"mode": "probe"}))
+    assert writer["data"] == {"ok": True, "access": "write", "account": "jett"}
+    harness(bare_repo, owner_write=False)
+    reader = run("alice", "project", FakeRequest(body={"mode": "probe"}))
+    assert reader["data"]["access"] == "propose"
+    harness(bare_repo, owner_write=False, access=False)
+    hidden = run("alice", "project", FakeRequest(body={"mode": "probe"}))
+    assert hidden["status"] == 404
+
+
+def test_signed_out_cannot_commit_propose_or_probe(bare_repo):
+    calls = harness(bare_repo, actor="")
+    for mode in ("", "commit", "propose", "probe"):
+        result = run("alice", "project", FakeRequest(body={
+            "mode": mode, "path": "README.md", "branch": "main",
+            "content": "x\n",
+        }))
+        assert result["status"] == 401, (mode, result)
+        assert result["data"]["error"] == "unauthorized"
+    assert calls["pushes"] == []
+
+
+def test_unknown_mode_is_rejected(bare_repo):
+    harness(bare_repo)
+    result = run("alice", "project", FakeRequest(body={"mode": "force"}))
+    assert result["status"] == 400

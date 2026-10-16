@@ -58,6 +58,74 @@ fields the payout check reads, and the pull number.
   `server/pull_metadata_retire_test.go`,
   `TestMergeExecutorDeletesTheMergedPullBranchInTheSameTransaction`.
 
+### Authors close and delete their own pulls
+
+The person who opened a pull request can close it or delete it, not only the
+repository's maintainers (task f9c7d2e2). Both are signed pull events that go
+through the pull inbox like a comment:
+
+- `{"type": "status", "state": "closed"}` closes. A reopen is not an author
+  event: `status` with any other state fails verification.
+- `{"type": "delete"}` deletes.
+- The signed content (`pull_comment_content`, `PullStore::contentForSigning`,
+  `submitWebPullEvent`) is
+  `state + NUL + body` for `status` and `body` for `delete`, inside the usual
+  `forkmesh-pull-comment-v2` canonical string.
+
+Who may send one. Both the App (`_authorize_pull_lifecycle` in
+`app/src/entry.py`) and the mirror gateway's direct intake
+(`_pull_lifecycle_refusal` in `tools/mirror_gateway.py`) read the pull's own
+`pull.md` (its `forkmesh/pull/<n>` branch, then `refs/pr/<n>/metadata`, then
+`forkmesh/pulls`) and accept the event when:
+
+1. the event is signed by the pull's `author` key (a desktop author signs
+   with the same node key that opened the pull); or
+2. the signed-in account is the pull's `authorName`, or, on the App, owns the
+   pull's `author` key (`_git_push_account_for_pubkey`); or
+3. the account manages the repository: the owner, a network admin or an
+   organization role with `organization.issues.manage` on the App
+   (`_authorize_issue_manager`), the owner on a mirror.
+
+Anyone else gets `403 not_authorized`. A merged, `closed-merged` or already
+deleted pull gets `409 pull_final` (a merged record carries reward and payout
+data), and an unreadable record `503 pull_unavailable`. A browser's signing key
+is per browser, so rule 2 is what lets a web author act; the session name, not
+the self-asserted `authorName` in the event, is what is checked, and the queued
+event's `authorName` is replaced by it.
+
+What each writer does with an accepted event:
+
+- **Go intake** (`applyPullLifecycleEvent` in `server/intake.go`) writes the
+  event file, then rewrites only the `status:` line of `pull.md`: `closed`, or
+  `deleted` for a delete, which also removes `changes.patch` and
+  `commits.mbox` from the tip (history is not rewritten). A merged or deleted
+  record is never changed. `deleted` counts as retired in
+  `pullRecordRetired`, so the visible `forkmesh/pull/<n>` branch is retired
+  exactly like a merged pull's and the number stays reserved by
+  `refs/pr/<n>/metadata`. Keeping a record with a status, instead of removing
+  the folder, lets every core converge on it through the normal ledger merge.
+- **Qt desktop** (`PullStore::applyRemoteLifecycleEvent`, called from
+  `applyPullsInboxPayload`) closes the record with `status: closed` (it does not
+  use the owner's own close, which deletes) and deletes with
+  `deletePull(number, false)`, never rewriting history for a remote request.
+- The web list (`pullMatchesQueryFilters`) and the server-rendered list
+  (`plan_pulls` in `app/host/forkmesh_host/repo_views.py`) leave out `deleted`
+  pulls.
+
+Where the buttons are. The web pull page shows "Close pull request" (open
+pulls) and "Delete pull request" (open or closed pulls) beside the review
+buttons to the author and to maintainers (`pullLifecycleAllowed`). The Qt
+desktop enables its Close and Delete buttons on a repository it cannot write
+when the selected pull was opened with this node's key, and sends the signed
+event to the owner's inbox (`requestCurrentPullLifecycle`). The phone apps'
+Close and Delete remain requests to the user's own desktop, so they still only
+serve repositories that desktop owns.
+
+Tests: `app/tests/test_pull_author_lifecycle.py`,
+`server/pull_lifecycle_test.go`,
+`test_pull_list_leaves_out_a_pull_its_author_deleted` in
+`app/tests/host/test_repo_views.py`.
+
 ## Issue numbers
 
 Every allocator (desktop `IssueStore::nextNumber`, the Go intake fallback,

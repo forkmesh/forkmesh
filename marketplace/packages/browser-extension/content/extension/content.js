@@ -228,6 +228,62 @@
     return { node: null, text: String(pane.innerText || "") };
   }
 
+  function xpathNodes(expression, root) {
+    const snapshot = document.evaluate(expression, root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+    return Array.from({ length: snapshot.snapshotLength }, (_, index) => snapshot.snapshotItem(index));
+  }
+
+  function decoded(value) {
+    try { return decodeURIComponent(value); } catch { return value; }
+  }
+
+  function attributePeople(root, skip = () => false) {
+    const found = [];
+    if (!root) return found;
+    for (const node of xpathNodes("descendant-or-self::*[@*[contains(., '@') or contains(., '%40')]]", root)) {
+      if (skip(node) || node.tagName === "IFRAME") continue;
+      for (const { value } of node.attributes) {
+        for (const person of addressList(decoded(value))) {
+          if (found.some((item) => item.email === person.email)) continue;
+          const label = text(node);
+          const name = person.name || (label && !label.includes("@") && NAME_RE.test(label) ? label : zohoName(node, person.email, root));
+          found.push({ email: person.email, name: name.slice(0, 120) });
+        }
+      }
+    }
+    return found;
+  }
+
+  function zohoRow(messageId, pane) {
+    const outside = (node) => visible(node) && !pane.contains(node) && !node.contains(pane);
+    const hit = /^\d+$/.test(messageId)
+      ? xpathNodes(`//*[@*[contains(., "${messageId}")]]`, document).find(outside) : null;
+    if (hit) {
+      let row = hit;
+      for (let depth = 0; depth < 8; depth += 1) {
+        const parent = row.parentElement;
+        if (!parent || parent.contains(pane)) break;
+        const alike = [...parent.children].filter((child) => child.tagName === row.tagName).length;
+        if (alike >= 3) return row;
+        row = parent;
+      }
+      return hit;
+    }
+    return [...document.querySelectorAll('[aria-selected="true"], [class*="selected"], [class*="Selected"], [class*="zmLSel"]')]
+      .find((node) => outside(node) && node.textContent.includes("@")) || null;
+  }
+
+  function rowPeople(row) {
+    if (!row) return [];
+    const people = [];
+    for (const person of [...addressList(row.textContent), ...attributePeople(row)]) {
+      const known = people.find((item) => item.email === person.email);
+      if (!known) people.push(person);
+      else if (!known.name) known.name = person.name;
+    }
+    return people;
+  }
+
   function zohoMailbox() {
     const node = document.querySelector('[class*="zmUserEmail"], [class*="userEmail"], [class*="accountEmail"]');
     return address(attr(node, "title") || text(node));
@@ -281,21 +337,20 @@
       const name = label.includes("@") || !label ? zohoName(node, email, pane) : label;
       header.push({ email, name: name.slice(0, 120) });
     }
+    if (!header.length) header.push(...attributePeople(pane, inBody));
     if (!header.length) {
       const headerText = String(pane.innerText || "").replace(body.node ? body.text : "", "");
       header.push(...addressList(headerText));
     }
     const sentHint = ZOHO_SENT_FOLDERS.has(folder) || meFirst;
+    const listed = sentHint || !header.length ? rowPeople(zohoRow(messageId, pane)) : [];
+    if (!sentHint && !header.length) header.push(...listed.filter((person) => person.email !== mailbox));
     let from;
     let to;
     if (sentHint) {
-      // The selected row of a sent list reads "grace"<grace@example.com>:
-      // the recipient, even when the header only shows names.
-      const row = [...document.querySelectorAll('[aria-selected="true"], [class*="selected"], [class*="Selected"], [class*="zmLSel"]')]
-        .find((node) => visible(node) && !pane.contains(node) && node.textContent.includes("@"));
       from = header.find((item) => item.email === mailbox) || { email: mailbox, name: "" };
       to = [];
-      for (const person of [...addressList(row?.textContent || ""), ...header]) {
+      for (const person of [...listed, ...header]) {
         if (person.email !== from.email && !to.some((item) => item.email === person.email)) to.push(person);
       }
     } else {

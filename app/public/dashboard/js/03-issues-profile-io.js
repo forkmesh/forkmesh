@@ -980,6 +980,10 @@
       content = [fields.threadId || "", fields.state || "", cleanBody].join(NUL);
     } else if (type === "suggestion-state") {
       content = [fields.threadId || "", fields.state || "", fields.appliedCommit || "", cleanBody].join(NUL);
+    } else if (type === "status") {
+      content = [fields.state || "", cleanBody].join(NUL);
+    } else if (type === "delete") {
+      content = cleanBody;
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -1009,6 +1013,14 @@
 
   async function submitWebPullReview(repo, number, reviewState, body) {
     return submitWebPullEvent(repo, number, "review", { state: reviewState, body });
+  }
+
+  async function submitWebPullClose(repo, number) {
+    return submitWebPullEvent(repo, number, "status", { state: "closed" });
+  }
+
+  async function submitWebPullDelete(repo, number) {
+    return submitWebPullEvent(repo, number, "delete", {});
   }
 
   function pullRequestTargetRepo(repo) {
@@ -1108,6 +1120,21 @@
     if (!patch.trim()) {
       throw new Error("no_changes");
     }
+    return signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits);
+  }
+
+  async function submitWebFileProposal(repo, proposal, title, body = "") {
+    const patch = String(proposal?.patch || "");
+    const commits = String(proposal?.commits || "");
+    const base = String(proposal?.base || "");
+    const head = String(proposal?.head || "");
+    if (!patch.trim() || !base || !head) throw new Error("no_changes");
+    const pull = await signWebPullContent(repo, title, body, base, head, patch, commits);
+    const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull });
+    return { ...data, pull, targetRepo: repo };
+  }
+
+  async function signWebPullContent(signingRepo, title, body, base, signedHead, patch, commits) {
     if (ISSUE_TEXT_ENCODER.encode(patch).byteLength
         + ISSUE_TEXT_ENCODER.encode(commits).byteLength > 4 * 1024 * 1024) {
       throw new Error("pull_too_large");

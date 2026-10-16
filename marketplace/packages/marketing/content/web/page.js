@@ -1067,7 +1067,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         <td><span class="fm-label mk-pill ${escapeHtml(item.status)}">${escapeHtml(labelOf(REDDIT_STATUSES, item.status))}</span>${item.replyUrl ? `<small style="display:block;font-size:11.5px">${outLink(item.replyUrl, "Reply ↗", `class="mk-link" style="padding:0"`)}</small>` : ""}</td>
         <td>${tick(item.rulesChecked, "Rules read")}${tick(item.disclosed, "Disclosed")}</td>
         <td style="min-width:16rem">${item.taggedLink ? `<code class="mk-link-out">${escapeHtml(item.taggedLink)}</code>` : ""}${checks.length ? `<ul class="mk-checks">${checks.map((check) => `<li class="${escapeHtml(check.level)}">${WARN_ICON}<span>${escapeHtml(check.message)}</span></li>`).join("")}</ul>` : ""}</td>
-        <td class="r">${item.taggedLink ? `<button data-marketing-reddit-copy="${escapeHtml(item.id)}" type="button" class="mk-link">Copy link</button>` : ""}<button data-marketing-reddit-edit="${escapeHtml(item.id)}" type="button" class="mk-link">Edit</button></td>
+        <td class="r"><button data-marketing-reddit-update="${escapeHtml(item.id)}" type="button" class="mk-link" title="Read this thread's comments, points and views again with the ForkMesh browser extension">Update</button>${item.taggedLink ? `<button data-marketing-reddit-copy="${escapeHtml(item.id)}" type="button" class="mk-link">Copy link</button>` : ""}<button data-marketing-reddit-edit="${escapeHtml(item.id)}" type="button" class="mk-link">Edit</button></td>
       </tr>`;
     }).join("");
   }
@@ -1079,6 +1079,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (Number.isFinite(item.score)) parts.push(`score ${item.score.toLocaleString()}`);
     if (item.postedAt) parts.push(`posted ${relativeTimeLabel(item.postedAt)}`);
     if (item.source === "extension") parts.push("from the browser extension");
+    if (!item.monitored && Number.isFinite(item.views)) parts.push(`${fmtFull(item.views)} view${item.views === 1 ? "" : "s"}`);
+    if (!item.monitored && item.checkedAt) parts.push(`read ${relativeTimeLabel(item.checkedAt)}`);
     return parts.join(" · ");
   }
 
@@ -1354,6 +1356,52 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       redditPostsStatus(`Views read for ${fmtFull(read)} of ${fmtFull(total)} link${total === 1 ? "" : "s"}${check.missed ? `; Reddit showed no views for ${fmtFull(check.missed)}` : ""}.`);
       void load();
     } else if (total) redditPostsStatus(`Reading views: ${fmtFull(read + Number(check.missed || 0))} of ${fmtFull(total)} links…`);
+  }
+
+  const redditThreadsJob = { available: false, requests: new Set(), sequence: 0, running: false, loadedAt: 0 };
+  const REDDIT_THREADS_ERRORS = {
+    not_signed_in: "Sign in to the ForkMesh browser extension first (click its toolbar icon).",
+    reddit_update_running: "The extension is already updating threads; wait for it to finish.",
+    reddit_threads_empty: "No logged threads to update yet.",
+    reddit_organization_mismatch: "The extension is set to another organization: choose this one in its popup, then try again.",
+    extension_unavailable: "The browser extension did not answer. Reload this page.",
+    forbidden_sender: "Reload this page and try again.",
+  };
+
+  function redditThreadsStatus(text, error = false) {
+    const node = $(`[data-marketing-reddit-update-status]`); if (!node) return;
+    node.textContent = text || "";
+    node.hidden = !text;
+    node.style.color = error ? "var(--mk-bad)" : "";
+  }
+
+  function updateRedditThreads(threadIds = []) {
+    if (!redditThreadsJob.available) {
+      redditThreadsStatus("Install or update the ForkMesh browser extension (Extension page, 2.23.0 or newer) and reload this page to update threads from here.", true);
+      return;
+    }
+    if (redditThreadsJob.running) { redditThreadsStatus("The extension is already updating threads; wait for it to finish."); return; }
+    redditThreadsJob.running = true;
+    redditThreadsStatus(threadIds.length === 1 ? "The extension is reading the thread in a background tab…" : "The extension is reading the logged threads in background tabs…");
+    const request = `reddit-threads-${++redditThreadsJob.sequence}`;
+    redditThreadsJob.requests.add(request);
+    window.postMessage({ source: "forkmesh-marketing-page", type: "marketing-reddit-threads-update", request, organization: state.marketing.organization, threadIds }, location.origin);
+  }
+
+  function redditThreadsDone(response) {
+    redditThreadsJob.running = false;
+    if (!response.ok) { redditThreadsStatus(REDDIT_THREADS_ERRORS[response.error] || response.message || "The extension could not update the threads.", true); return; }
+    redditThreadsStatus(response.text || "Threads updated.");
+    void load();
+  }
+
+  function redditThreadsProgress(update) {
+    if (!update) return;
+    if (update.text) redditThreadsStatus(update.text, Boolean(update.error));
+    if (update.done || Date.now() - redditThreadsJob.loadedAt > 8000) {
+      redditThreadsJob.loadedAt = Date.now();
+      void load();
+    }
   }
 
   function redditPostDay(ts) { return ts ? utcDate(ts) : ""; }
@@ -1649,6 +1697,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (data.type === "marketing-ready") {
       if (data.xSetup) xSetup.available = true;
       if (data.redditPosts) redditPosts.available = true;
+      if (data.redditThreads) redditThreadsJob.available = true;
       if (data.redditWalk && !redditWalk.available) {
         redditWalk.available = true;
         askRedditWalk("marketing-reddit-walk-state");
@@ -1658,6 +1707,11 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     }
     if (data.type === "marketing-reddit-walk-update") { redditWalkProgress(data.walk); return; }
     if (data.type === "marketing-reddit-posts-progress") { redditPostsProgress(data.check); return; }
+    if (data.type === "marketing-reddit-threads-progress") { redditThreadsProgress(data.update); return; }
+    if (data.type === "marketing-reddit-threads-update") {
+      if (redditThreadsJob.requests.delete(data.request)) redditThreadsDone(data.response || {});
+      return;
+    }
     if (data.type === "marketing-reddit-posts-update") {
       if (redditPosts.requests.delete(data.request)) redditPostsDone(data.response || {});
       return;
@@ -3222,8 +3276,9 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       const wantedCapture = params.get("capture");
       const wantedXSetup = params.get("xsetup") === "1";
       const wantedRules = params.get("rules") === "1";
-      if (wantedCapture || wantedXSetup || wantedRules || params.has("page")) {
-        params.delete("capture"); params.delete("xsetup"); params.delete("rules");
+      const wantedUpdate = params.get("update") || "";
+      if (wantedCapture || wantedXSetup || wantedRules || wantedUpdate || params.has("page")) {
+        params.delete("capture"); params.delete("xsetup"); params.delete("rules"); params.delete("update");
         history.replaceState(null, "", `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`);
       }
       if (wantedCapture && state.marketing.installed) {
@@ -3235,6 +3290,12 @@ window.ForkMeshDashboard.registerPage("marketing", ({
         }, capture.available ? 0 : 700);
       }
       if (wantedRules && state.marketing.installed) setTimeout(readRedditRules, redditWalk.available ? 0 : 700);
+      if (wantedUpdate && state.marketing.installed) {
+        const threadIds = wantedUpdate === "all" ? [] : wantedUpdate.split(",").map((id) => id.trim()).filter(Boolean).slice(0, 200);
+        const asked = Date.now();
+        const start = () => (redditThreadsJob.available || Date.now() - asked > 3000 ? updateRedditThreads(threadIds) : setTimeout(start, 250));
+        start();
+      }
       if (wantedXSetup && state.marketing.installed) {
         openXSettings();
         setTimeout(startXSetup, xSetup.available ? 0 : 700);
@@ -3281,6 +3342,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     $(`[data-marketing-reddit-rules-read]`)?.addEventListener("click", readRedditRules);
     $(`[data-marketing-reddit-walk]`)?.addEventListener("click", toggleRedditWalk);
     $(`[data-marketing-reddit-posts-update]`)?.addEventListener("click", updateRedditPosts);
+    $(`[data-marketing-reddit-update-all]`)?.addEventListener("click", () => updateRedditThreads([]));
     $(`[data-marketing-reddit-post-new]`)?.addEventListener("click", () => openRedditPost());
     $(`[data-marketing-reddit-post-form]`)?.addEventListener("submit", saveRedditPost);
     $(`[data-marketing-reddit-post-delete]`)?.addEventListener("click", () => void deleteRedditPost());
@@ -3379,6 +3441,7 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       else if ("marketingFunnelOpen" in data) openFunnel();
       else if (data.marketingRedditPostEdit) openRedditPost(redditPostById(data.marketingRedditPostEdit));
       else if (data.marketingRedditEdit) openRedditThread(redditThreadById(data.marketingRedditEdit));
+      else if (data.marketingRedditUpdate) updateRedditThreads([data.marketingRedditUpdate]);
       else if ("marketingRedditOpen" in data) openRedditThread();
       else if ("marketingRedditTab" in data) { state.view.redditStatus = data.marketingRedditTab; renderReddit(); }
       else if (data.marketingRedditCopy) copyText(redditThreadById(data.marketingRedditCopy)?.taggedLink || "", "Link copied.");

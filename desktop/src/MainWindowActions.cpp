@@ -3822,6 +3822,7 @@ void MainWindow::loadNotificationJournal()
         restored.append(item);
     }
     m_notifications.append(restored);
+    purgePrivateChatPings(savedPrivateChannels());
     trimLocalPings();
     updateNotificationButton();
     if (m_notificationsTable)

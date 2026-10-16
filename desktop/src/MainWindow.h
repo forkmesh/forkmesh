@@ -1249,6 +1249,23 @@ public:
         return m_privateChannels.contains(conversation);
     }
     void testEnsureTeamRoom() { ensureTeamRoom(); }
+    void testJoinPrivateChannel(const QString &channel)
+    {
+        onPrivateChannelJoined(channel);
+    }
+    void testFileChatPing(const QString &conversation, const QString &title,
+                          const QString &body)
+    {
+        AppNotification item;
+        item.title = title;
+        item.body = body;
+        item.kind = QStringLiteral("chat");
+        item.link.kind = QStringLiteral("chat");
+        item.link.ref = conversation;
+        item.quiet = true;
+        recordNotification(item);
+    }
+    void testPurgePrivateChatPings() { purgePrivateChatPings(); }
     void testAttachChatBackend(ChatBackend *backend) { attachBackend(backend); }
     void testTriggerTeamChatMention(const QString &text,
                                     const QString &threadRootId)
@@ -3001,6 +3018,12 @@ public:
     {
         applyTranscriptEvent(sessionId, event);
     }
+    void testFinishCliTranscriptRun(int sessionId, bool codex, int exitCode)
+    {
+        finishCliTranscriptRun(sessionId, codex, exitCode);
+    }
+    void testSetClosingDown(bool closing) { m_closingDown = closing; }
+    bool testAgentQueued(int sessionId) const { return m_agentQueue.contains(sessionId); }
     QString testReplayCliExitsWithoutResult(int sessionId, bool codex, int times)
     {
         QString outcomes;
@@ -3774,6 +3797,9 @@ private:
     void fetchRoomPassphrase();
     void startOfficeChannelMirror();
     bool isOfficeConversation(const QString &conversation) const;
+    bool isPrivateChatConversation(const QString &conversation) const;
+    void purgePrivateChatPings(const QSet<QString> &savedPrivate = {});
+    QSet<QString> savedPrivateChannels() const;
     // The local mesh room: people running ForkMesh on this network, found
     // automatically, with nothing about the room leaving it.
     void startLocalMesh();
@@ -6523,6 +6549,8 @@ private:
     void postPullLinkComment(int pullNumber, const QString &body);
     void linkAgentPullToIssue(const AgentSession &session, int prNumber);
     void closeCurrentPull();
+    bool currentPullAuthoredHere() const;
+    void requestCurrentPullLifecycle(const QString &type);
     void reopenCurrentPull();
     void restoreCurrentArchivedPull();
     void sendCurrentPullToSource();
@@ -10276,6 +10304,7 @@ private:
     void wrapComposerSelection(const QString &before, const QString &after);
     void sendMessageToPrompt(const QString &text);
     void restorePrivateChannels();
+    void onPrivateChannelJoined(const QString &channel);
     void persistPrivateChannels();
     QString privateChannelsSettingsKey() const;
     void ensureTeamRoom();
@@ -10571,7 +10600,8 @@ private:
     void noteLocalMeshReachable();
     void notifyIfInactive(const QString &title, const QString &body,
                           const QString &activateHref = QString(),
-                          const QString &icon = QString());
+                          const QString &icon = QString(),
+                          bool fileLocally = true);
     // Direct tray balloons predate postNotification(), so keep their pause
     // check here instead of relying on every event source to remember it.
     void showPingTrayMessage(const QString &title, const QString &body,
@@ -10764,6 +10794,7 @@ private:
     // and must never be what puts the app into offline mode.
     int m_offlineProbeFailures = 0;
     static constexpr int kOfflineProbeFailureLimit = 3;
+    static constexpr qint64 kAutoOfflineProbeMaxDelayMs = 30 * 1000;
     QLabel *m_nodeLabel = nullptr;
     QLabel *m_repoLabel = nullptr;
     QLabel *m_navSolanaBalance = nullptr;
@@ -12129,6 +12160,7 @@ private:
     QTimer *m_autoUpdateTimer = nullptr; // periodic check for maybeAutoUpdate()
     bool m_autoUpdateChecking = false;   // a background "git fetch" check is in flight
     bool m_closingDown = false;
+    QSet<int> m_agentExitsSettling;
 
     QLineEdit *m_issueSearch = nullptr;
     QComboBox *m_issuesRepoCombo = nullptr;
@@ -14231,6 +14263,8 @@ private:
     void handleCliRuntimeEvent(int sid, const QJsonObject &ev,
                                const forkmesh::agentguard::Config &guardrails);
     void finishCliTranscriptRun(int sid, bool codex, int exitCode);
+    bool desktopStopping() const;
+    bool keepCliRunForNextStart(int sid, bool codex, int exitCode);
     void applyListedCodexModels(const QJsonArray &models);
     void launchCliRuntime(const CliRuntimeLaunchPlan &plan, const QString &workdir);
     void failCliTranscriptLaunch(int sid, const QString &why);

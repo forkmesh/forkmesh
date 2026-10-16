@@ -121,7 +121,9 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var onMessageRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var calls: DirectCallEngine?
     @ObservationIgnored public var live: DirectLiveEngine?
-    @ObservationIgnored public var pings: LocalPingLog?
+    @ObservationIgnored public var pings: LocalPingLog? {
+        didSet { purgePrivatePings() }
+    }
     public private(set) var retention: ChatRetention = .standard
     @ObservationIgnored private var pruneTask: Task<Void, Never>?
     @ObservationIgnored public var forkbot: ChatAccountCalling?
@@ -249,6 +251,7 @@ public final class ChatHub: ShellChatBridge {
         loadedScope = scope
         guard let snapshot = history.load(scope: scope) else { return }
         extras.restoreChannels(privateChannels: snapshot.privateChannels, hiddenChannels: snapshot.hiddenChannels)
+        purgePrivatePings()
         relay.restoreHistory(
             snapshot.messages.filter {
                 !snapshot.hiddenChannels.contains($0.conversation) && !DirectMessageFrames.isDirect($0.conversation)
@@ -327,6 +330,10 @@ public final class ChatHub: ShellChatBridge {
         guard let pings, !message.isSelf, !message.id.isEmpty, !isFromBlocked(message),
               clock.now.timeIntervalSince(message.timestamp) < ChatHub.pingFreshness else { return }
         let conversation = message.conversation
+        if isPrivateConversation(conversation) {
+            pings.removeChats { $0 == conversation }
+            return
+        }
         let name = message.senderName.dartTrimmed
         let text = message.text.dartTrimmed
         let title: String
@@ -336,8 +343,6 @@ public final class ChatHub: ShellChatBridge {
         } else if conversation == ChatHub.welcomeChannel || conversation == ChatEveryone.welcomeConversation {
             title = "New user joined"
             body = name.isEmpty ? "Someone new said hello in #welcome" : "\(name) said hello in #welcome"
-        } else if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) {
-            title = "\(name.isEmpty ? "Someone" : name) sent you a message"
         } else {
             title = "\(name.isEmpty ? "Someone" : name) in \(office?.room(for: conversation)?.name ?? conversation)"
         }
@@ -828,11 +833,16 @@ public final class ChatHub: ShellChatBridge {
         return names
     }
 
-    public var isPrivateRoom: Bool {
-        let conversation = relay.currentConversation
+    public var isPrivateRoom: Bool { isPrivateConversation(relay.currentConversation) }
+
+    public func isPrivateConversation(_ conversation: String) -> Bool {
         if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) { return true }
         if let room = office?.room(for: conversation) { return room.isPrivate }
         return extras.isPrivate(conversation)
+    }
+
+    func purgePrivatePings() {
+        pings?.removeChats { self.isPrivateConversation($0) }
     }
 
     public func isServerVisible(_ conversation: String) -> Bool { office?.room(for: conversation)?.serverVisible == true }
