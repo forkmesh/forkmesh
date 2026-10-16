@@ -112,7 +112,10 @@ normal path, at most once a minute.
 - `mail_activity.FOLLOWERS` lets a feature (such as tasks) hear its own
   sends' events.
 - Package mail on the cores carries one send id for both mail tables, its
-  package variables, and a tracked logo footer that records opens.
+  package variables, and a tracked logo footer that records opens. A package
+  that tracks its own opens and clicks sends `"tracked": true` in the
+  `send_mailtrap` payload; the host drops the key and skips its footer, so the
+  email carries one logo, not two (the CRM's automated outreach does this).
 - `GET /api/mail/footer` gives each account a tracked signature footer for
   mail written in other mail apps; it counts opens per account, not per
   message.
