@@ -128,6 +128,38 @@ services see the reading device's IP address and the account asked about; see
 desktop pictures are cached on disk for a week, including negative results.
 Nothing is stored server-side.
 
+### Notes
+
+**Add a note** on the card saves a dated note to the contact and pings the
+people connected to its lists. Notes are separate from the free-text
+**Notes** field and never overwrite it.
+
+- **API**: `POST /api/crm/<org>/contacts/note` with `{"contact": "<id>",
+  "text": "..."}` (any organization member; up to 4000 characters, else
+  `413 note_too_long`; blank is `400 note_required`; an unknown contact is
+  `404 contact_not_found`). It answers `201` with the note, the saved contact
+  and `pinged`, the number of people pinged.
+- **Stored**: in the sealed contact as `noteLog`, `[{"id", "at", "by",
+  "text"}]`, oldest first, the newest 100 kept (`CONTACT_NOTE_KEEP`). Other
+  edits keep it; merging two contacts keeps both logs. Shared sheets never
+  carry it. Saving a note does not change the record's "last edited".
+- **Logged**: the card's **Activity** lists each note ("Note · <author>"); the
+  history of every list the contact is on gets a `contact.noted` entry ("added
+  a note on Grace: “...”", the first 140 characters, sealed); the audit log
+  gets `crm.contact.note`.
+- **Pinged** (`plugin_activity`, title "Note on <contact>", body "By <author>
+  in <org> · <list>: <first 140 characters>", one ping per note via
+  `dedupe = crm-note:<note id>`), never the author, at most 50 people:
+  - a list visible to the organization: every member;
+  - a private list: its owner, the organization's owners and admins, and the
+    members it is shared with;
+  - everyone a list is shared with outside the organization (for example a
+    partner sheet shared for editing). Their ping opens the list
+    (`/dashboard/crm?list=<id>`) and carries the note text only when the list
+    shows its Notes column;
+  - a contact on no list: every member.
+  Members' pings open the card (`/dashboard/crm?contact=<id>`).
+
 ## Reach out and follow up
 
 The top of the CRM shows two cards (desktop and web) or two sections (phones):
@@ -424,7 +456,8 @@ outreach. Without the capability the list is empty.
   `GET /api/crm/<org>`, days cut in the caller's `?tz=` offset).
 - **List activity history** (`crm_list_activity`): opens (at most one per
   person per list every 30 minutes), list changes, contact changes (field
-  names only, never values) and imports. Actor and action are stored in the
+  names only, never values), notes (their first 140 characters) and
+  imports. Actor and action are stored in the
   clear; names, field names and subjects are sealed. Rows older than 90 days
   are dropped. `GET /views/activity?view=<id>` returns up to 200 entries, only
   for lists the caller can open.
@@ -451,6 +484,8 @@ changes, settings and a Zoho connection.
 - **Bursts fold**: contact, email and list edits, bulk updates, settings and
   mailbox refreshes share one ping per member, action and item for 10
   minutes. The first rings the phone; later ones update it silently.
+- **Notes** ping everyone connected to the contact's lists instead (see
+  [Notes](#notes)), each note once.
 
 ## Leads from the platform
 

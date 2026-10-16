@@ -3367,6 +3367,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
       text: email.subject || "No subject",
       url: crmHttpsUrl(email.providerUrl),
     }));
+    for (const note of contact.noteLog || []) {
+      items.push({ at: note.at || 0, label: `Note · ${note.by || "a member"}`, text: note.text, url: "" });
+    }
     const deck = crmDeckFor(contact.id);
     if (deck?.views) {
       items.push({
@@ -3446,6 +3449,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
           <p class="mt-2 text-xs text-muted-foreground">${escapeHtml(provenance)}.</p>
         </section>
         <section>
+          <h3 class="crm-detail-heading">Add a note</h3>
+          <textarea data-crm-note-text rows="3" maxlength="4000" aria-label="Note" placeholder="What happened, what was agreed, what comes next" class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-control text-foreground focus:border-primary focus:outline-none"></textarea>
+          <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-muted-foreground">Saved to the activity below and pinged to everyone on this contact's lists, including the people a list is shared with.</p>
+            <button type="button" data-crm-note-save="${id}" class="h-control-sm rounded-md border border-border px-3 text-xs font-semibold text-foreground hover:bg-secondary">Save note</button>
+          </div>
+        </section>
+        <section>
           <h3 class="crm-detail-heading">Activity</h3>
           ${activity.length
             ? `<ul class="grid gap-2">${activity.map(crmDetailLine).join("")}</ul>`
@@ -3470,6 +3481,25 @@ window.ForkMeshDashboard.registerPage("crm", ({
         </div>
       </div>`;
     renderCrmContactUpdates();
+  }
+
+  async function saveCrmContactNote(contactId, button) {
+    const field = $(`[data-crm-note-text]`);
+    const text = (field?.value || "").trim();
+    if (!text) { field?.focus(); return; }
+    if (button) button.disabled = true;
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/note"), "POST", { contact: contactId, text });
+      if (payload.contact) {
+        state.crmView.contacts = state.crmView.contacts.map((contact) => contact.id === payload.contact.id ? payload.contact : contact);
+      }
+      if (state.crmView.detailContactId === contactId) renderCrmContactDetail();
+      const pinged = Number(payload.pinged || 0);
+      crmMessage("notice", pinged ? `Note saved. Pinged ${pinged} ${pinged === 1 ? "person" : "people"}.` : "Note saved.");
+    } catch (error) {
+      crmMessage("error", `The note was not saved: ${error.message}`);
+      if (button?.isConnected) button.disabled = false;
+    }
   }
 
   function renderCrmContactUpdates() {
@@ -6467,6 +6497,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
         if (contact) void loadCrmContactUpdates(contact);
         return;
       }
+      const note = event.target.closest("[data-crm-note-save]");
+      if (note) { void saveCrmContactNote(note.dataset.crmNoteSave, note); return; }
       const link = event.target.closest("[data-crm-contact-link]");
       if (link) { void copyCrmContactLink(link.dataset.crmContactLink, link); return; }
       const toot = event.target.closest("[data-crm-contact-toot]");

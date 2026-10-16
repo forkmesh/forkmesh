@@ -18,7 +18,7 @@
     { "id": "ledger", "version": "1.4.0", "manifest": "packages/ledger/manifest.json" },
     { "id": "x-banner-board", "version": "1.0.0", "manifest": "packages/x-banner-board/manifest.json" },
     { "id": "reddit-banner-board", "version": "1.0.0", "manifest": "packages/reddit-banner-board/manifest.json" },
-    { "id": "crm", "version": "1.33.0", "manifest": "packages/crm/manifest.json" },
+    { "id": "crm", "version": "1.34.0", "manifest": "packages/crm/manifest.json" },
     { "id": "marketing", "version": "1.42.0", "manifest": "packages/marketing/manifest.json" },
     { "id": "competitor", "version": "1.0.0", "manifest": "packages/competitor/manifest.json" },
     { "id": "analytics", "version": "1.7.0", "manifest": "packages/analytics/manifest.json" },
