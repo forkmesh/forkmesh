@@ -2,7 +2,7 @@
 
 Part of [the desktop docs](README.md). The desktop port of the phone's Genie
 spider ([../native/GENIE.md](../native/GENIE.md)): a pet whose health follows
-code velocity and marketing velocity, and a marketing coach. It has no speech,
+code velocity and marketing velocity, and a marketing coach. It has no voice,
 model or tools of its own; replies go to the Genie special agent. The web has a
 tips-only variant ([../www/genie-spider.md](../www/genie-spider.md)).
 
@@ -33,8 +33,12 @@ platforms.
   2,200 px/s², quadratic drag, throw capped at 4,200 px/s, floor and wall
   restitution, skidding), stepped at 120 Hz.
 - A plain click shows one 5–10 word line (`GenieCoaching::lines`) in a bubble
-  for 5 s; a drag says nothing; a 0.55 s press opens the menu. It never speaks
-  unasked.
+  for 5 s; a drag says nothing; a 0.55 s press opens the menu. The one line it
+  says unasked announces a badge: when a fresh `badge` ping celebrates,
+  `MainWindow::cheerGenieFor` plays a cheer and shows "You earned Stargazer!"
+  or "You reached Silver Fan Club!" (`GeniePings::badgeLine`, tested in
+  `test_genie_vitals.cpp`), logged as an `unasked` line. A hidden or tucked
+  away spider stays quiet.
 - Reactions (wave, cheer, nod, eureka, giggle, surprise) follow page changes,
   tips and health changes. `MainWindow::danceGenie` plays one of 10 dances
   (never the same twice in a row) when an agent starts or a branch is merged.

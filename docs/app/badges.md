@@ -15,6 +15,9 @@ platform administrator. An award is permanent. Some badges have levels
 | Genie's Gift hook | `_award_genies_gift`, called by `_account_tip_notice` after the tip row is written |
 | `GET /api/badges`, `GET/POST/DELETE /api/badges/<name>` | `badges_catalog_handler`, `account_badges_handler` |
 | Profile card | `data-profile-badges`, `renderProfileBadges`, `profileBadgeMedal` in `app/public/dashboard/js/04-account.js` |
+| Achievements page | `/dashboard/achievements`: `partials/views/achievements.html`, `js/09-achievements.js` (lazy chunk); tests `app/tests/test_dashboard_achievements.py` |
+| Badge pings | `badge_ping`, `_send_badge_ping` in `app/src/entry.py`; kind `badge` in `NOTIFICATION_KINDS` and `ping_settings.PING_KIND_CATALOG` |
+| Locked progress | `refresh_badge_progress`, `_account_badge_progress` |
 | Medallion artwork | `app/public/assets/badges/<slug>.svg`, one per catalog slug, plus `<slug>-bronze.svg`, `-silver` and `-gold` for a badge with levels |
 | Medallion generator | `app/tools/build_badge_medallions.py` (`--check` fails when a file is stale) |
 | Hourly sweep | cron phase `badge-sweep` runs `run_badge_sweep` |
@@ -43,6 +46,37 @@ platform administrator. An award is permanent. Some badges have levels
   against the bulk mail budget.
 - **Profile**: the Badges card is hidden when there are none; answers are
   cached in memory for a minute per name.
+
+## Achievements page
+
+`/dashboard/achievements` lists every catalog badge. Earned badges come first,
+newest first, each with its level medallion, a level chip, progress to the next
+level and the date. Locked badges follow, greyed with a lock and sorted by how
+close the member is: a progress bar once there is progress, otherwise "First
+level at N". Badges flagged `hidden_until_earned` in the catalog (Founding
+Member and the hackathon awards, which can no longer be earned on demand) are
+shown only once earned; `GET /api/badges` returns them with
+`hiddenUntilEarned`. The sidebar links the page under Profile, and the profile
+Badges card links to it.
+
+Locked progress comes from `refresh_badge_progress`: each hourly sweep writes
+the value of every account with `0 < value < first threshold` for each metric
+badge, in one `INSERT ... SELECT`, only where it grew. `GET /api/badges/<name>`
+returns those rows as `progress`. Stargazer records its progress on every
+star, and Daily Spinner shows only "First level at 7" until it is earned.
+
+## Badge pings
+
+Every new badge and every level-up also sends a ping of kind `badge`
+(`_send_badge_ping`), deduplicated per badge and level (`badge:<slug>:<level>`),
+titled "You earned the Stargazer badge" or "Your Stargazer badge is now
+Silver", linking to the achievements page. Its `meta` is
+`{celebrate: "badge", badge, badgeName, tier}`, so the existing celebration
+overlays play on the web, desktop, iOS and Android, and the Genie spider
+cheers and announces the badge on the desktop and iOS. Android has no Genie
+spider; it shows the celebration overlay. The kind sits under Money & rewards
+in Pings settings, with a trophy icon, and sends no email of its own because
+the badge email already goes out.
 
 ## Levels
 

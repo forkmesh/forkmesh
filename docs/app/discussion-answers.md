@@ -50,6 +50,7 @@ milliseconds) changes nothing.
 | Desktop without it | signs the event and posts it to the relay inbox, like a reply |
 | Web | `submitWebDiscussionAnswer` posts through the mirror, then the relay, with the session for the owner check |
 | iOS | `InboxService.markDiscussionAnswer` posts to the relay with the session token |
+| Android | `InboxService.markDiscussionAnswer` (core) posts to the relay with the session token; the event id is `answer-android-<ms>` |
 
 The relay (`discussions_handler`) verifies the signature and, when the
 session owns the repository or its organization, stores the item with
@@ -74,6 +75,11 @@ above, and the owner may mark any reply anyway.
 - iOS: the answer's timeline tile turns into a green Answer tile; the opener
   (the device key signed the discussion) or the owner (the session's account
   is the repository owner) gets a button under each reply.
+- Android: the same rules and strings (`DiscussionDetail.answerable`,
+  `isAnswer`, `canMarkAnswer` in `collab/DiscussionThread.kt`); the answer's
+  tile in `DiscussionScreens.kt` uses the check-circle icon in the success
+  colour, and the parser splits `answer.md` out of the reply list
+  (`ApiService.discussionFromMarkdown`).
 
 A browser's signing key is generated per browser, so a discussion opened on
 the web can only be answered by that browser or by the owner.
