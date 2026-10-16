@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
+import com.forkmesh.nativeapp.facechanger.FaceChangerPart
 import com.forkmesh.nativeapp.json.jsonText
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -25,8 +27,6 @@ data class DirectCallInvite(
     val partner: String,
     val media: DirectCallKind,
 )
-
-data class DirectCallFace(val id: String, val label: String)
 
 interface DirectCallPeer {
     var onIceCandidate: ((Map<String, Any?>) -> Unit)?
@@ -85,6 +85,7 @@ class DirectCallEngine(
     private val partnerFor: (String) -> String,
     private val sendSignal: (String, String, Map<String, Any?>) -> Boolean,
     private val scheduler: CallScheduler = ExecutorCallScheduler,
+    val look: FaceChangerLook = FaceChangerLook(),
 ) {
     companion object {
         val ICE_SERVERS = listOf("stun:stun.cloudflare.com:3478")
@@ -94,52 +95,6 @@ class DirectCallEngine(
         val FRAME_TYPES = setOf(
             "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
         )
-        val FACES = listOf(
-            DirectCallFace("maya", "Maya"),
-            DirectCallFace("theo", "Theo"),
-            DirectCallFace("kofi", "Kofi"),
-            DirectCallFace("ingrid", "Ingrid"),
-            DirectCallFace("ren", "Ren"),
-        )
-        const val CUSTOM_FACE = "custom"
-        val FACE_CHOICES: List<DirectCallFace> by lazy { FACES + DirectCallFace(CUSTOM_FACE, "Your photo") }
-
-        fun faceLabel(id: String): String = FACE_CHOICES.firstOrNull { it.id == id }?.label ?: "Your own face"
-
-        const val CUSTOM_BACKGROUND = "custom"
-        val BACKGROUNDS = listOf(
-            DirectCallFace("", "No background"),
-            DirectCallFace("blur", "Blur"),
-            DirectCallFace("blur-strong", "Strong blur"),
-            DirectCallFace("world", "ForkMesh World"),
-            DirectCallFace("office", "ForkMesh office"),
-            DirectCallFace("meeting", "Meeting room"),
-            DirectCallFace("library", "Home library"),
-            DirectCallFace("skyline", "City window"),
-            DirectCallFace(CUSTOM_BACKGROUND, "Your photo"),
-        )
-
-        fun backgroundLabel(id: String): String = BACKGROUNDS.firstOrNull { it.id == id }?.label ?: "No background"
-        const val VOICE_MATCH_FACE = "face"
-        const val VOICE_OFF = "off"
-        val VOICES = listOf(
-            DirectCallFace("maya", "Maya"),
-            DirectCallFace("theo", "Theo"),
-            DirectCallFace("kofi", "Kofi"),
-            DirectCallFace("ingrid", "Ingrid"),
-            DirectCallFace("ren", "Ren"),
-            DirectCallFace("deep", "Deep man"),
-            DirectCallFace("older-man", "Older man"),
-            DirectCallFace("young-man", "Young man"),
-            DirectCallFace("warm", "Warm woman"),
-            DirectCallFace("low", "Low woman"),
-            DirectCallFace("older-woman", "Older woman"),
-            DirectCallFace("teen", "Teen"),
-            DirectCallFace("neutral", "Neutral"),
-            DirectCallFace("robot", "Robot"),
-        )
-
-        fun voiceLabel(id: String): String = VOICES.firstOrNull { it.id == id }?.label ?: "Your own"
     }
 
     @Volatile
@@ -147,16 +102,6 @@ class DirectCallEngine(
 
     @Volatile
     var onMissed: ((String, DirectCallKind) -> Unit)? = null
-
-    @Volatile
-    var onFaceChanged: ((String) -> Unit)? = null
-    var onFaceImageChanged: ((String) -> Unit)? = null
-
-    @Volatile
-    var onVoiceChanged: ((String) -> Unit)? = null
-
-    @Volatile
-    var onBackgroundChanged: ((String, String) -> Unit)? = null
 
     private val lock = Any()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -194,35 +139,30 @@ class DirectCallEngine(
         private set
 
     @Volatile
-    var face: String = ""
-        private set
-
-    @Volatile
-    var faceImage: String = ""
-        private set
-
-    @Volatile
-    var background: String = ""
-        private set
-
-    @Volatile
-    var backgroundImage: String = ""
-        private set
-
-    @Volatile
-    var voiceChoice: String = VOICE_MATCH_FACE
-        private set
-
-    @Volatile
     var voice: String = ""
         private set
 
-    val effectiveVoice: String
-        get() = when (val choice = voiceChoice) {
-            VOICE_OFF -> ""
-            VOICE_MATCH_FACE -> if (face == CUSTOM_FACE) "" else face
-            else -> choice
-        }
+    val face: String get() = look.face
+
+    val faceImage: String get() = look.faceImage
+
+    val background: String get() = look.background
+
+    val backgroundImage: String get() = look.backgroundImage
+
+    val voiceChoice: String get() = look.voiceChoice
+
+    val effectiveVoice: String get() = look.effectiveVoice
+
+    private val lookListener: (FaceChangerPart) -> Unit = { part -> lookChanged(part) }
+
+    init {
+        look.addListener(lookListener)
+    }
+
+    fun detach() {
+        look.removeListener(lookListener)
+    }
 
     private var caller = false
     private var peerId = ""
@@ -365,57 +305,35 @@ class DirectCallEngine(
         notifyListeners()
     }
 
-    fun setFace(id: String, image: String = ""): Boolean {
-        val custom = id == CUSTOM_FACE
-        if (id.isNotEmpty() && !custom && FACES.none { it.id == id }) return false
+    fun setFace(id: String, image: String = ""): Boolean = look.setFace(id, image)
+
+    fun setBackground(id: String, image: String = ""): Boolean = look.setBackground(id, image)
+
+    fun setVoiceChoice(choice: String): Boolean = look.setVoiceChoice(choice)
+
+    private fun lookChanged(part: FaceChangerPart) {
         val target: DirectCallPeer?
-        val picture: String
-        val pictureChanged: Boolean
-        synchronized(lock) {
-            picture = if (custom && image.isNotEmpty()) image else faceImage
-            if (custom && picture.isEmpty()) return false
-            pictureChanged = picture != faceImage
-            face = id
-            faceImage = picture
-            target = if (media == DirectCallKind.VIDEO) peer else null
+        synchronized(lock) { target = if (media == DirectCallKind.VIDEO) peer else null }
+        when (part) {
+            FaceChangerPart.FACE -> {
+                notifyListeners()
+                target?.let { made -> runCatching { applyFaceTo(made) } }
+                if (voiceChoice == FaceChangerLook.VOICE_MATCH_FACE) pushVoice()
+            }
+            FaceChangerPart.BACKGROUND -> {
+                notifyListeners()
+                target?.let { made -> runCatching { made.setBackground(background, look.customBackgroundImage) } }
+            }
+            FaceChangerPart.VOICE -> {
+                notifyListeners()
+                pushVoice()
+            }
         }
-        notifyListeners()
-        if (pictureChanged) onFaceImageChanged?.invoke(picture)
-        onFaceChanged?.invoke(id)
-        target?.let { runCatching { if (custom) it.setFace(id, picture) else it.setFace(id) } }
-        if (voiceChoice == VOICE_MATCH_FACE) pushVoice()
-        return true
     }
 
-    fun setBackground(id: String, image: String = ""): Boolean {
-        if (BACKGROUNDS.none { it.id == id }) return false
-        val custom = id == CUSTOM_BACKGROUND
-        val target: DirectCallPeer?
-        val picture: String
-        synchronized(lock) {
-            picture = if (custom && image.isNotEmpty()) image else backgroundImage
-            if (custom && picture.isEmpty()) return false
-            if (id == background && picture == backgroundImage) return true
-            background = id
-            backgroundImage = picture
-            target = if (media == DirectCallKind.VIDEO) peer else null
-        }
-        notifyListeners()
-        onBackgroundChanged?.invoke(id, picture)
-        target?.let { runCatching { it.setBackground(id, if (custom) picture else "") } }
-        return true
-    }
-
-    fun setVoiceChoice(choice: String): Boolean {
-        val valid = choice == VOICE_OFF || choice == VOICE_MATCH_FACE || VOICES.any { it.id == choice }
-        if (!valid) return false
-        synchronized(lock) {
-            if (voiceChoice == choice) return true
-            voiceChoice = choice
-        }
-        onVoiceChanged?.invoke(choice)
-        pushVoice()
-        return true
+    private fun applyFaceTo(made: DirectCallPeer) {
+        val chosen = face
+        if (chosen == FaceChangerLook.CUSTOM_FACE) made.setFace(chosen, faceImage) else made.setFace(chosen)
     }
 
     private fun pushVoice() {
@@ -445,16 +363,10 @@ class DirectCallEngine(
     }
 
     private fun applyFace(made: DirectCallPeer, kind: DirectCallKind) {
-        val chosen = face
-        if (kind == DirectCallKind.VIDEO && chosen == CUSTOM_FACE) {
-            made.setFace(chosen, faceImage)
-        } else if (kind == DirectCallKind.VIDEO && chosen.isNotEmpty()) {
-            made.setFace(chosen)
-        }
+        if (kind != DirectCallKind.VIDEO) return
+        if (face.isNotEmpty()) applyFaceTo(made)
         val scene = background
-        if (kind == DirectCallKind.VIDEO && scene.isNotEmpty()) {
-            made.setBackground(scene, if (scene == CUSTOM_BACKGROUND) backgroundImage else "")
-        }
+        if (scene.isNotEmpty()) made.setBackground(scene, look.customBackgroundImage)
     }
 
     fun handleFrame(plain: Map<String, Any?>, scope: String) {

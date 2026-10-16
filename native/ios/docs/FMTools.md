@@ -109,7 +109,11 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
 - **Sleep** (`SleepModel`, `/api/sleep`): `SleepDetector` infers a night from Core Motion
   activity minus ForkMesh's own foreground time; `healthNights` sums Health sleep samples;
   `SleepSchedule` assigns times to nights (boundary five hours after the wake time);
-  `SleepHealthSync` posts both sources at most every 15 minutes.
+  `SleepHealthSync` posts both sources at most every 15 minutes. `SleepModels.collect` runs
+  `healthNights` and `SleepDetector.detect(nights:...)` (sorts the rest samples once for every
+  night) in a detached task, and `HealthKitBridge` takes Core Motion's activity history on its
+  own `OperationQueue`: up to seven days of activity rows used to be mapped and scanned per
+  night on the main thread at every resume.
 - **Sugar Break** (`SugarBreakModel`, `/api/sugar-break`, reads pass `?day=<local today>`):
   start a break (1–365 days, default 30), +1 skips, slips, undo, end early; Health Dietary Sugar is
   read-only and suggests a slip. `SugarContract` builds the shareable no-sugar contract rendered

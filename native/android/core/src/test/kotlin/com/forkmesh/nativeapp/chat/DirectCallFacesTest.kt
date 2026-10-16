@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
@@ -59,7 +60,7 @@ class DirectCallFacesTest {
             scheduler = CallScheduler { _, _ -> {} },
         ).also { engine ->
             engine.peerFactory = DirectCallPeerFactory { _, _ -> FakePeer(log) }
-            engine.onFaceChanged = { saved.add(it) }
+            engine.look.onFaceChanged = { saved.add(it) }
         }
 
         fun peerAccepts() {
@@ -71,8 +72,8 @@ class DirectCallFacesTest {
     }
 
     fun testTheFiveFacesAreListedInOrder() {
-        assertEq(listOf("maya", "theo", "kofi", "ingrid", "ren"), DirectCallEngine.FACES.map { it.id })
-        assertEq(listOf("Maya", "Theo", "Kofi", "Ingrid", "Ren"), DirectCallEngine.FACES.map { it.label })
+        assertEq(listOf("maya", "theo", "kofi", "ingrid", "ren"), FaceChangerLook.FACES.map { it.id })
+        assertEq(listOf("Maya", "Theo", "Kofi", "Ingrid", "Ren"), FaceChangerLook.FACES.map { it.label })
     }
 
     fun testAnUnknownFaceIsRejected() {

@@ -75,8 +75,9 @@ public enum SleepHealthSync {
         var healthNights: [SleepNight] = []
         if bridge.available, let read = await bridge.sleepSamples(from: first, to: now), !read.isEmpty {
             samples = read
-            healthNights = SleepDetector.healthNights(read, schedule: plan, timeZone: timeZone)
-                .filter { keys.contains($0.night) }
+            healthNights = await Task.detached(priority: .utility) {
+                SleepDetector.healthNights(read, schedule: plan, timeZone: timeZone).filter { keys.contains($0.night) }
+            }.value
             let found = Set(healthNights.map(\.night))
             healthBodies = healthNights.map(\.body) + keys.filter { !found.contains($0) }.map { SleepNight.cleared($0) }
         }
@@ -85,15 +86,10 @@ public enum SleepHealthSync {
         let motionStart = max(first, now.addingTimeInterval(-motionHistory))
         if bridge.motionAvailable, let rest = await bridge.restHistory(from: motionStart, to: now), !rest.isEmpty {
             let usage = SleepUsageLog.intervals(prefs, now: now)
-            for (key, window) in windows where window.start >= motionStart && window.start < now {
-                if let night = SleepDetector.detect(
-                    night: key, rest: rest, usage: usage, schedule: plan, timeZone: timeZone, now: now) {
-                    detected.append(night)
-                    phone.append(night.body)
-                } else {
-                    phone.append(SleepNight.cleared(key))
-                }
-            }
+            let keyed = windows.filter { $0.1.start >= motionStart && $0.1.start < now }.map(\.0)
+            (phone, detected) = await Task.detached(priority: .utility) {
+                SleepDetector.detect(nights: keyed, rest: rest, usage: usage, schedule: plan, timeZone: timeZone, now: now)
+            }.value
         }
         return (phone, healthBodies, detected, healthNights, samples)
     }

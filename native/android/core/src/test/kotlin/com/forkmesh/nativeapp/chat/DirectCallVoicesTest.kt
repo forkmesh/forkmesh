@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
@@ -52,7 +53,7 @@ class DirectCallVoicesTest {
             scheduler = CallScheduler { _, _ -> {} },
         ).also { engine ->
             engine.peerFactory = DirectCallPeerFactory { _, _ -> FakePeer(log).also { peer = it } }
-            engine.onVoiceChanged = { saved.add(it) }
+            engine.look.onVoiceChanged = { saved.add(it) }
         }
 
         fun peerAccepts() {
@@ -65,7 +66,7 @@ class DirectCallVoicesTest {
 
     fun testTheVoiceMatchesTheFaceByDefaultEvenInAVoiceCall() {
         val rig = Rig()
-        assertEq(DirectCallEngine.VOICE_MATCH_FACE, rig.engine.voiceChoice)
+        assertEq(FaceChangerLook.VOICE_MATCH_FACE, rig.engine.voiceChoice)
         rig.engine.setFace("kofi")
         expect(rig.engine.start("direct:abc", DirectCallKind.AUDIO))
         rig.peerAccepts()
@@ -82,7 +83,7 @@ class DirectCallVoicesTest {
         rig.engine.setFace("maya")
         expect(rig.engine.setVoiceChoice("theo"))
         rig.engine.setFace("ren")
-        expect(rig.engine.setVoiceChoice(DirectCallEngine.VOICE_OFF))
+        expect(rig.engine.setVoiceChoice(FaceChangerLook.VOICE_OFF))
         assertEq(listOf("offer", "face:maya", "voice:maya", "voice:theo", "face:ren", "voice:"), rig.log)
         assertEq(listOf("theo", "off"), rig.saved)
         rig.peer?.observer?.invoke("")
@@ -90,8 +91,8 @@ class DirectCallVoicesTest {
         rig.engine.hangUp()
         assertEq("", rig.engine.voice)
         assertEq("off", rig.engine.voiceChoice)
-        assertEq("Ren", DirectCallEngine.voiceLabel("ren"))
-        assertEq("Your own", DirectCallEngine.voiceLabel(""))
+        assertEq("Ren", FaceChangerLook.voiceLabel("ren"))
+        assertEq("Your own", FaceChangerLook.voiceLabel(""))
     }
 
     fun testVoicesAreTheFaceVoicesPlusTheExtraVoices() {
@@ -100,9 +101,9 @@ class DirectCallVoicesTest {
                 "maya", "theo", "kofi", "ingrid", "ren",
                 "deep", "older-man", "young-man", "warm", "low", "older-woman", "teen", "neutral", "robot",
             ),
-            DirectCallEngine.VOICES.map { it.id },
+            FaceChangerLook.VOICES.map { it.id },
         )
-        assertEq("Older woman", DirectCallEngine.voiceLabel("older-woman"))
+        assertEq("Older woman", FaceChangerLook.voiceLabel("older-woman"))
         val rig = Rig()
         expect(rig.engine.setVoiceChoice("robot"))
         assertEq("robot", rig.engine.effectiveVoice)

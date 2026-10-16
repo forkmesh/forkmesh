@@ -12,7 +12,7 @@ VOICE = (PUBLIC / "chat-call-voice.js").read_text(encoding="utf-8")
 WORKLET = (PUBLIC / "chat-call-voice-worklet.js").read_text(encoding="utf-8")
 HTML = (PUBLIC / "chat.html").read_text(encoding="utf-8")
 NATIVE = ROOT.parent / "native"
-IOS_PAGE = NATIVE / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "direct-call.html"
+IOS_PAGE = NATIVE / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "direct-call.html"
 ANDROID_PAGE = NATIVE / "android" / "app" / "src" / "main" / "assets" / "direct-call.html"
 
 DSP_HARNESS = r'''
@@ -365,23 +365,26 @@ def test_native_call_page_exposes_voice_operations():
 
 
 def test_apps_wire_the_voice_choice():
+    ios_look = (NATIVE / "ios" / "ForkMeshCore" / "Sources" / "FMChat" / "FaceChanger" / "FaceChangerLook.swift").read_text(encoding="utf-8")
     ios_engine = (NATIVE / "ios" / "ForkMeshCore" / "Sources" / "FMChat" / "Direct" / "DirectCalls.swift").read_text(encoding="utf-8")
-    ios_peer = (NATIVE / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "WebCallPeer.swift").read_text(encoding="utf-8")
+    ios_peer = (NATIVE / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "WebCallPeer.swift").read_text(encoding="utf-8")
+    ios_controls = (NATIVE / "ios" / "ForkMesh" / "Features" / "FaceChanger" / "FaceChangerControls.swift").read_text(encoding="utf-8")
     ios_views = (NATIVE / "ios" / "ForkMesh" / "Features" / "Chat" / "Calls" / "DirectCallViews.swift").read_text(encoding="utf-8")
-    ios_services = (NATIVE / "ios" / "ForkMesh" / "App" / "AppServices+Chat.swift").read_text(encoding="utf-8")
-    assert 'public static let voiceKey = "chat.callVoice"' in ios_engine
+    assert 'public static let voiceKey = "chat.callVoice"' in ios_look
     assert "func setVoice(_ id: String)" in ios_engine
     assert 'case "voice":' in ios_peer
     assert "static var headphonesConnected: Bool" in ios_peer
-    assert 'accessibilityIdentifier("chat-call-voice")' in ios_views
-    assert "calls.setVoiceChoice(" in ios_services
+    assert 'accessibilityIdentifier("chat-call-voice")' in ios_controls
+    assert "FaceChangerVoiceMenu(look: engine.look, shown: engine.voice)" in ios_views
+    assert "look.setVoiceChoice(prefs?.string(forKey: FaceChangerLook.voiceKey)" in ios_controls
     android = NATIVE / "android" / "app" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp"
-    core = (NATIVE / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "chat" / "DirectCalls.kt").read_text(encoding="utf-8")
-    peer = (android / "feature" / "chat" / "WebCallPeer.kt").read_text(encoding="utf-8")
-    feature = (android / "feature" / "chat" / "DirectCallFeature.kt").read_text(encoding="utf-8")
-    views = (android / "feature" / "chat" / "DirectCallViews.kt").read_text(encoding="utf-8")
+    core = (NATIVE / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "facechanger" / "FaceChangerLook.kt").read_text(encoding="utf-8")
+    peer = (android / "feature" / "facechanger" / "WebCallPeer.kt").read_text(encoding="utf-8")
+    feature = (android / "feature" / "facechanger" / "FaceChangerFeature.kt").read_text(encoding="utf-8")
+    controls = (android / "feature" / "facechanger" / "FaceChangerControls.kt").read_text(encoding="utf-8")
     assert "fun setVoiceChoice(choice: String): Boolean" in core
+    assert 'const val VOICE_PREF = "chat.callVoice"' in core
     assert '"voice" -> {' in peer
     assert "fun callHeadphonesConnected(context: Context): Boolean" in peer
-    assert 'const val VOICE_PREF = "chat.callVoice"' in feature
-    assert "pickCallVoice(messenger, state.voiceChoice)" in views
+    assert "prefs?.putString(FaceChangerLook.VOICE_PREF, choice)" in feature
+    assert "pickVoice(messenger, state.voiceChoice)" in controls
