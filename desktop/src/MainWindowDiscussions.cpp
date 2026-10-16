@@ -495,7 +495,10 @@ void MainWindow::renderDiscussionThread(const Discussion &discussion)
     if (discussion.number <= 0)
         return;
 
-    const bool canModerate = discussionStoreForCurrentRepo().canWrite();
+    const DiscussionStore threadStore = discussionStoreForCurrentRepo();
+    const bool canModerate = threadStore.canWrite();
+    const bool canAnswer = threadStore.mayMarkAnswer(discussion);
+    const QString answerId = discussion.answerId();
     const int number = discussion.number;
     for (const DiscussionEvent &ev : discussion.events) {
         if (ev.type != QLatin1String("open") &&
@@ -504,12 +507,25 @@ void MainWindow::renderDiscussionThread(const Discussion &discussion)
         const bool isOpen = ev.type == QLatin1String("open");
         const QString who =
             ev.authorName.isEmpty() ? ev.author.left(10) : ev.authorName;
-        const QString header =
+        const bool isAnswer = !isOpen && !answerId.isEmpty() && ev.id == answerId;
+        QString header =
             QStringLiteral("<b>%1</b> %2 %3")
                 .arg(who.toHtmlEscaped(),
                      isOpen ? QStringLiteral("opened")
                             : QStringLiteral("commented"),
                      formatIssueRelativeTime(ev.ts).toHtmlEscaped());
+        if (isAnswer)
+            header += QStringLiteral(" &nbsp;<b style=\"color:%1\">\u2713 Answer</b>")
+                          .arg(Theme::nextOrHex(Theme::Role::Success,
+                                                QStringLiteral("#3fb950")));
+        QList<QPair<QString, std::function<void()>>> extraActions;
+        if (!isOpen && canAnswer && !ev.id.isEmpty()) {
+            const QString target = isAnswer ? QString() : ev.id;
+            extraActions.append(
+                {isAnswer ? QStringLiteral("Clear answer")
+                          : QStringLiteral("Mark as answer"),
+                 [this, number, target] { markDiscussionAnswer(number, target); }});
+        }
         std::function<void()> onDelete;
         if (!isOpen && canModerate && !ev.id.isEmpty()) {
             const QString eventId = ev.id;
@@ -521,7 +537,7 @@ void MainWindow::renderDiscussionThread(const Discussion &discussion)
                             isOpen ? Theme::nextOrHex(Theme::Role::AccentFg,
                                                       QStringLiteral("#58a6ff"))
                                    : QString(),
-                            QString(), ev.author, onDelete);
+                            QString(), ev.author, onDelete, extraActions);
     }
     // Private repositories have no ActivityPub actor, so there is no remote
     // thread to show and the lookup would only leak the repo name in a URL.
@@ -891,6 +907,33 @@ void MainWindow::deleteDiscussionComment(int number, const QString &eventId)
     setDiscussionInlineNotice(QStringLiteral("Comment deleted."));
 }
 
+void MainWindow::markDiscussionAnswer(int number, const QString &commentId)
+{
+    if (number <= 0)
+        return;
+    DiscussionStore store = discussionStoreForCurrentRepo();
+    if (store.canWrite()) {
+        QString error;
+        if (!store.markAnswer(number, commentId, &error)) {
+            setDiscussionInlineNotice(
+                error.isEmpty() ? QStringLiteral("Could not mark the answer.") : error,
+                true);
+            return;
+        }
+        reloadDiscussions();
+        showDiscussion(number);
+        propagateRepoUpdate(m_repoDetailIndex);
+        setDiscussionInlineNotice(commentId.isEmpty()
+                                      ? QStringLiteral("Answer cleared.")
+                                      : QStringLiteral("Marked as the answer."));
+        return;
+    }
+    DiscussionEvent ev;
+    ev.type = QStringLiteral("answer");
+    ev.target = commentId;
+    submitDiscussionEventToInbox(number, store.makeSignedEvent(number, ev));
+}
+
 void MainWindow::submitDiscussionEventToInbox(int number, const DiscussionEvent &ev,
                                               const QString &titleIfNew)
 {
@@ -933,6 +976,9 @@ void MainWindow::submitDiscussionEventToInbox(int number, const DiscussionEvent 
             setDiscussionInlineNotice(
                 type == QLatin1String("open")
                     ? QStringLiteral("Your signed discussion was delivered to %1/%2.")
+                          .arg(repo.owner, repo.name)
+                : type == QLatin1String("answer")
+                    ? QStringLiteral("Your answer choice was delivered to %1/%2.")
                           .arg(repo.owner, repo.name)
                     : QStringLiteral("Your signed comment was delivered to %1/%2.")
                           .arg(repo.owner, repo.name));
@@ -1097,7 +1143,10 @@ void MainWindow::applyDiscussionsInboxPayload(const RepositoryRecord &repo,
             ev.body = eventObj.value("body").toString();
         const QString titleIfNew = item.value("titleIfNew").toString();
         QString error;
-        if (!store.applyRemoteEvent(number, ev, titleIfNew, &error))
+        const bool ownerApproved = item.value("meta").toObject()
+                                       .value("ownerApproved").toBool();
+        if (!store.applyRemoteEvent(number, ev, titleIfNew, &error,
+                                    ownerApproved))
             continue;
         if (!inboxId.isEmpty())
             drainedIds << inboxId;
@@ -1112,6 +1161,8 @@ void MainWindow::applyDiscussionsInboxPayload(const RepositoryRecord &repo,
         } else if (ev.type == QLatin1String("comment")) {
             ++comments;
             lastTitle = QStringLiteral("comment on #%1").arg(number);
+        } else if (ev.type == QLatin1String("answer")) {
+            lastTitle = QStringLiteral("answer on #%1").arg(number);
         }
     }
     if (!drainedIds.isEmpty()) {

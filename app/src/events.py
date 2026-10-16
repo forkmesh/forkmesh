@@ -334,6 +334,8 @@ def discussion_event_content(ev):
         ])
     if t == "comment":
         return ev.get("body", "")
+    if t == "answer":
+        return ev.get("target", "")
     return ""
 
 
@@ -345,7 +347,10 @@ async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
     author = ev.get("author", "")
     signature = ev.get("sig", "")
     event_type = ev.get("type", "")
-    if not author or not signature or event_type not in ("open", "comment"):
+    if not author or not signature or event_type not in (
+            "open", "comment", "answer"):
+        return False
+    if event_type == "answer" and int(number or 0) <= 0:
         return False
     if event_type == "open" and not normalized_discussion_category(
             ev.get("category", "")):

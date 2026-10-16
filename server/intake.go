@@ -1394,6 +1394,9 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 		return true, number, os.WriteFile(filepath.Join(dir, "discussion.md"),
 			[]byte(strings.Join(lines, "\n")), 0600)
 	}
+	if typeName == "answer" && number > 0 {
+		return writeDiscussionAnswer(filepath.Join(base, strconv.Itoa(number)), item)
+	}
 	if typeName != "comment" || number <= 0 {
 		return false, number, nil
 	}
@@ -1418,6 +1421,76 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%04d-comment.md", index))
 	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
+}
+
+func discussionTimestampMs(value int) int {
+	if value > 0 && value < 10000000000 {
+		return value * 1000
+	}
+	return value
+}
+
+func writeDiscussionAnswer(dir string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	raw, err := os.ReadFile(filepath.Join(dir, "discussion.md"))
+	if err != nil {
+		return false, number, nil
+	}
+	opened, ok := parseFrontMatter(raw)
+	if !ok {
+		return false, number, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(opened.values["category"])) {
+	case "q&a", "qa", "q and a", "q-and-a":
+	default:
+		return false, number, nil
+	}
+	author := safeHeader(stringValue(item.Event["author"]))
+	approved, _ := item.Meta["ownerApproved"].(bool)
+	if author == "" || (!approved && author != opened.values["author"]) {
+		return false, number, nil
+	}
+	ts := issueNumber(item.Event["ts"])
+	if current, err := os.ReadFile(filepath.Join(dir, "answer.md")); err == nil {
+		if previous, ok := parseFrontMatter(current); ok {
+			before, _ := strconv.Atoi(previous.values["ts"])
+			if discussionTimestampMs(before) > discussionTimestampMs(ts) {
+				return true, number, nil
+			}
+		}
+	}
+	target := safeHeader(stringValue(item.Event["target"]))
+	targetAuthor := ""
+	if target != "" {
+		entries, _ := os.ReadDir(dir)
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), "-comment.md") {
+				continue
+			}
+			body, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			if comment, ok := parseFrontMatter(body); ok && comment.values["id"] == target {
+				targetAuthor = comment.values["author"]
+				break
+			}
+		}
+		if targetAuthor == "" {
+			return false, number, nil
+		}
+	}
+	lines := []string{
+		"---", "type: answer", "id: " + safeHeader(stringValue(item.Event["id"])),
+		"author: " + author,
+		"authorName: " + safeHeader(stringValue(item.Event["authorName"])),
+		"ts: " + strconv.Itoa(ts),
+		"target: " + target,
+		"targetAuthor: " + safeHeader(targetAuthor),
+		"sig: " + safeHeader(stringValue(item.Event["sig"])), "---", "",
+	}
+	return true, number, os.WriteFile(filepath.Join(dir, "answer.md"),
+		[]byte(strings.Join(lines, "\n")), 0600)
 }
 
 func safeHeader(value string) string {

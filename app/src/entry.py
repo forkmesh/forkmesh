@@ -39829,6 +39829,20 @@ async def pulls_handler(env, request, owner, repo):
     return json_response({"error": "method_not_allowed"}, status=405)
 
 
+async def _discussion_answer_by_owner(env, request, data, owner, repo):
+    try:
+        ok, _ = await _authorize_owner_account(
+            env, owner, data, request, allow_admin=False)
+        if ok:
+            return True
+        _, rec = await _account_session_record(env, request, data)
+        actor = clean_string(
+            (rec or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+        return await _org_owner_of_linked_repo(env, owner, repo, actor)
+    except Exception:
+        return False
+
+
 async def discussions_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -39873,6 +39887,9 @@ async def discussions_handler(env, request, owner, repo):
             "submitter": clean_string(event.get("author", ""), 120),
             "submittedAt": int(Date.now()),
         }
+        if event.get("type") == "answer" and await _discussion_answer_by_owner(
+                env, request, data, owner, repo):
+            item["meta"] = {"ownerApproved": True}
         await d1_run(
             env,
             "INSERT INTO discussion_inbox (repo_bi, data, submitter_bi) "
@@ -39896,9 +39913,10 @@ async def discussions_handler(env, request, owner, repo):
                 env, request, owner, repo, "discussion", event.get("type"),
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-        await _record_contributor(
-            env, event.get("author", ""), "discussions",
-            event.get("authorName", ""))
+        if event.get("type") in ("open", "comment"):
+            await _record_contributor(
+                env, event.get("author", ""), "discussions",
+                event.get("authorName", ""))
         return json_response({"ok": True}, status=201)
 
     if method == "GET":

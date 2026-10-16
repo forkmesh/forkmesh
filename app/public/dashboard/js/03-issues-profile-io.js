@@ -902,6 +902,40 @@
     return data;
   }
 
+  async function submitWebDiscussionAnswer(repo, number, target) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Math.floor(Date.now() / 1000);
+    const cleanTarget = String(target || "");
+    const contentHash = await sha256HexLower(cleanTarget);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}answer\n${number}\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    const event = {
+      type: "answer",
+      id: "answer-web-" + ts,
+      target: cleanTarget,
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number,
+      event,
+      sessionToken: state.session?.sessionToken || "",
+    };
+    return fetchRepoMutation(repo, "discussions", payload);
+  }
+
+  function webIssueKeyPublic() {
+    try {
+      return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");
+    } catch (_) {
+      return "";
+    }
+  }
+
   // Mirrors PullStore::contentForSigning's per-type field order (comment,
   // review, line-comment, thread-comment, thread-reply, thread-state,
   // suggestion-state) and the desktop's pull inbox POST
@@ -1910,6 +1944,49 @@
         hint.className = "text-[10px] text-destructive";
         hint.textContent = webIssueActionError(error);
       }
+    }
+  }
+
+  async function handleDiscussionAnswerClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionAnswerNumber || 0);
+    const target = String(button.dataset.repoDiscussionAnswer || "");
+    const section = button.closest("[data-repo-record-conversation]");
+    const hint = section?.querySelector("[data-repo-discussion-reply-hint]");
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!number) return;
+    button.disabled = true;
+    setHint("Signing and sending…");
+    try {
+      await submitWebDiscussionAnswer(repo, number, target);
+      const detail = state.repoRecordDetail;
+      const parsed = detail?.parsed;
+      if (parsed && Number(detail.number) === number) {
+        parsed.discussionAnswer = target ? { target } : null;
+        const list = section?.querySelector("[data-repo-discussion-conversation]");
+        if (list) {
+          list.innerHTML = renderRepoDiscussionConversation(parsed.discussionConversation || [], {
+            answer: parsed.discussionAnswer,
+            canMark: parsed.discussionAnswerAuthorized,
+            number,
+          });
+          window.lucide?.createIcons();
+        }
+      }
+      setHint(target ? "Answer marked. It shows for everyone once the repository records it." : "Answer cleared.");
+    } catch (error) {
+      button.disabled = false;
+      const code = String(error?.message || "");
+      setHint(
+        code === "bad_signature" ? "Could not verify the answer's signature."
+          : code === "inbox_full" ? "Delivery is temporarily full. Try again later."
+          : "Could not mark the answer. Please try again.",
+        true,
+      );
     }
   }
 
