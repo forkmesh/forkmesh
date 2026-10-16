@@ -1,7 +1,8 @@
 window.ForkMeshDashboard.registerPage("app-store-status", ({ select: $, session, escapeHtml }) => {
   const TONES = { action: "fm-label-danger", pending: "fm-label-attention", good: "fm-label-success", neutral: "" };
   const KINDS = [["downloads", "Downloads"], ["redownloads", "Redownloads"], ["updates", "Updates"]];
-  const state = { loading: false };
+  const state = { loading: false, shots: [], index: 0 };
+  const images = new Map();
 
   function apiPath(suffix = "") { return `/api/app-store-status${suffix}`; }
   async function request(path) {
@@ -43,6 +44,75 @@ window.ForkMeshDashboard.registerPage("app-store-status", ({ select: $, session,
     const problem = (snapshot.unavailable || {})[section];
     const notice = problem ? `<div class="px-4 py-2.5"><span class="fm-label fm-label-attention">Unavailable</span> <span class="text-xs text-muted-foreground">${escapeHtml(problem)}</span></div>` : "";
     $(selector).innerHTML = notice + (rows.length ? rows.join("") : problem ? "" : empty(none));
+  }
+  function shotPath(id) { return apiPath(`/screenshots/${encodeURIComponent(id)}`); }
+  function picture(id) {
+    if (!images.has(id)) {
+      images.set(id, request(shotPath(id)).then((payload) => {
+        if (!/^image\/(jpeg|png)$/.test(payload.mime || "") || !payload.data) throw new Error("not a picture");
+        return `data:${payload.mime};base64,${payload.data}`;
+      }).catch((error) => { images.delete(id); throw error; }));
+    }
+    return images.get(id);
+  }
+  function thumbnails(item, index) {
+    const shots = item.screenshots || [];
+    if (!shots.length) return "";
+    return `<div class="mt-2 flex flex-wrap gap-2">${shots.map((shot, number) => `<button type="button" data-asc-shot="${escapeHtml(shot.id)}" data-asc-feedback-index="${index}" data-asc-shot-number="${number}" aria-label="Open screenshot ${number + 1} of ${shots.length} full size" class="grid h-24 w-16 place-items-center overflow-hidden rounded-md border border-border bg-background text-xs text-muted-foreground hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span data-asc-shot-placeholder>…</span><img alt="" class="hidden h-full w-full object-cover" /></button>`).join("")}</div>`;
+  }
+  function fillThumbnails() {
+    document.querySelectorAll("[data-asc-shot]").forEach((button) => {
+      const id = button.dataset.ascShot;
+      picture(id).then((source) => {
+        const image = button.querySelector("img");
+        image.src = source;
+        image.classList.remove("hidden");
+        button.querySelector("[data-asc-shot-placeholder]")?.remove();
+      }).catch(() => {
+        const placeholder = button.querySelector("[data-asc-shot-placeholder]");
+        if (placeholder) placeholder.textContent = "Not uploaded";
+        button.title = "This screenshot has not been uploaded yet. Run the iOS App Store status shortcut again.";
+      });
+    });
+  }
+  function showShot() {
+    const dialog = $("[data-asc-shot-dialog]");
+    const entry = state.shots[state.index];
+    if (!dialog || !entry) return;
+    const image = $("[data-asc-shot-image]");
+    const status = $("[data-asc-shot-status]");
+    const save = $("[data-asc-shot-save]");
+    $("[data-asc-shot-title]").textContent = state.shots.length > 1 ? `Screenshot ${state.index + 1} of ${state.shots.length}` : "Screenshot";
+    $("[data-asc-shot-detail]").textContent = [entry.item.from, entry.item.device, when(entry.item.createdAt)].filter(Boolean).join(" · ");
+    $("[data-asc-shot-prev]").disabled = state.index === 0;
+    $("[data-asc-shot-next]").disabled = state.index >= state.shots.length - 1;
+    show("[data-asc-shot-prev]", state.shots.length > 1);
+    show("[data-asc-shot-next]", state.shots.length > 1);
+    image.classList.add("hidden");
+    save.classList.add("hidden");
+    status.textContent = "Loading…";
+    status.classList.remove("hidden");
+    const wanted = entry.shot.id;
+    picture(wanted).then((source) => {
+      if (state.shots[state.index]?.shot.id !== wanted) return;
+      image.src = source;
+      image.alt = `Tester screenshot ${state.index + 1}${entry.item.comment ? `: ${entry.item.comment}` : ""}`;
+      image.classList.remove("hidden");
+      status.classList.add("hidden");
+      save.href = source;
+      save.download = `testflight-screenshot-${wanted.slice(0, 8)}.${source.startsWith("data:image/png") ? "png" : "jpg"}`;
+      save.classList.remove("hidden");
+    }).catch((error) => {
+      if (state.shots[state.index]?.shot.id !== wanted) return;
+      status.textContent = `This screenshot could not be loaded: ${error.message}. Run the iOS App Store status shortcut again to upload it.`;
+    });
+    if (!dialog.open) dialog.showModal();
+  }
+  function openShot(feedback, button) {
+    const item = feedback[Number(button.dataset.ascFeedbackIndex)] || {};
+    state.shots = (item.screenshots || []).map((shot) => ({ shot, item }));
+    state.index = Math.min(Number(button.dataset.ascShotNumber) || 0, Math.max(0, state.shots.length - 1));
+    showShot();
   }
   function plural(count, word) { return `${Number(count || 0).toLocaleString()} ${word}${count === 1 ? "" : "s"}`; }
 
@@ -103,10 +173,13 @@ window.ForkMeshDashboard.registerPage("app-store-status", ({ select: $, session,
         item.feedbackEnabled ? "feedback on" : "feedback off"].filter(Boolean).join(" · "))),
     snapshot, "groups", "No TestFlight groups.");
 
-    fill("[data-asc-feedback]", (snapshot.feedback || []).map((item) => `<div class="px-4 py-2.5">
+    const feedback = snapshot.feedback || [];
+    fill("[data-asc-feedback]", feedback.map((item, index) => `<div class="px-4 py-2.5">
       <p class="text-xs text-muted-foreground"><span class="fm-label ${item.kind === "crash" ? "fm-label-danger" : ""}">${item.kind === "crash" ? "Crash" : "Screenshot"}</span> ${escapeHtml(item.from)} · ${escapeHtml(item.device || "unknown device")} · ${escapeHtml(when(item.createdAt))}</p>
-      <p class="mt-1 text-sm text-foreground">${escapeHtml(item.comment || "(no comment)")}</p></div>`),
+      <p class="mt-1 text-sm text-foreground">${escapeHtml(item.comment || "(no comment)")}</p>${thumbnails(item, index)}</div>`),
     snapshot, "feedback", "No tester feedback.");
+    state.feedback = feedback;
+    fillThumbnails();
 
     fill("[data-asc-reviews]", (snapshot.reviews || []).map((item) => {
       const rating = Math.max(0, Math.min(5, Number(item.rating || 0)));
@@ -132,5 +205,19 @@ window.ForkMeshDashboard.registerPage("app-store-status", ({ select: $, session,
   }
 
   $("[data-asc-refresh]")?.addEventListener("click", load);
+  $("[data-asc-feedback]")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-asc-shot]");
+    if (button) openShot(state.feedback || [], button);
+  });
+  $("[data-asc-shot-close]")?.addEventListener("click", () => $("[data-asc-shot-dialog]")?.close());
+  $("[data-asc-shot-prev]")?.addEventListener("click", () => { state.index = Math.max(0, state.index - 1); showShot(); });
+  $("[data-asc-shot-next]")?.addEventListener("click", () => { state.index = Math.min(state.shots.length - 1, state.index + 1); showShot(); });
+  $("[data-asc-shot-dialog]")?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" && state.index > 0) { state.index -= 1; showShot(); }
+    if (event.key === "ArrowRight" && state.index < state.shots.length - 1) { state.index += 1; showShot(); }
+  });
+  $("[data-asc-shot-dialog]")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
   load();
 });

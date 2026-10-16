@@ -4,6 +4,7 @@ import FMChat
 import FMControl
 import FMPackages
 import SwiftUI
+import UIKit
 
 struct AppStoreStatusScreen: View {
     @Environment(\.fmPalette) private var fm
@@ -12,10 +13,19 @@ struct AppStoreStatusScreen: View {
     init() {
         if let api = Services.get(ApiService.self) {
             _model = State(
-                initialValue: AppStoreStatusModel(api: AppStoreStatusAPI(api: api, desktop: Self.desktopSource())))
+                initialValue: AppStoreStatusModel(api: AppStoreStatusAPI(
+                    api: api, desktop: Self.desktopSource(), direct: Self.directDownload)))
         } else {
             _model = State(initialValue: nil)
         }
+    }
+
+    static let directDownload: @Sendable (URL) async throws -> Data = { url in
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw AppStoreScreenshotError("App Store Connect answered \(http.statusCode).")
+        }
+        return data
     }
 
     @MainActor
@@ -81,7 +91,7 @@ private struct AppStoreStatusContent: View {
             ScrollView {
                 AppStoreStatusDashboard(
                     snapshot: snapshot, response: response, notice: model.refreshError,
-                    onDismissNotice: { model.dismissError() })
+                    screenshots: model.screenshots, onDismissNotice: { model.dismissError() })
                     .padding(FmSpace.x4)
             }
             .fmRefreshable { await model.load() }
@@ -104,7 +114,9 @@ private struct AppStoreStatusDashboard: View {
     let snapshot: AppStoreSnapshot
     let response: AppStoreStatusResponse
     let notice: String
+    let screenshots: AppStoreScreenshotLoader
     let onDismissNotice: () -> Void
+    @State private var viewing: AppStoreScreenshotViewerItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: FmSpace.x3) {
@@ -120,6 +132,9 @@ private struct AppStoreStatusDashboard: View {
             section(.reviews, count: snapshot.reviews.count) { reviews }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fullScreenCover(item: $viewing) { (item: AppStoreScreenshotViewerItem) in
+            AppStoreScreenshotViewer(item: item, loader: screenshots)
+        }
     }
 
     private var header: some View {
@@ -435,8 +450,29 @@ private struct AppStoreStatusDashboard: View {
                         .textSelection(.enabled)
                 }
                 meta([item.from, item.device])
+                if !item.screenshots.isEmpty { screenshotStrip(item) }
             }
         }
+    }
+
+    private func screenshotStrip(_ item: AppStoreFeedback) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: FmSpace.x2) {
+                ForEach(Array(item.screenshots.enumerated()), id: \.element.id) { (entry: (offset: Int, element: AppStoreScreenshot)) in
+                    Button {
+                        FmHaptics.tap()
+                        viewing = AppStoreScreenshotViewerItem(feedback: item, start: entry.offset)
+                    } label: {
+                        AppStoreScreenshotThumbnail(shot: entry.element, loader: screenshots)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(
+                        "\(AppStoreStatusText.screenshotTitle(index: entry.offset, count: item.screenshots.count)). Opens full screen."))
+                    .accessibilityIdentifier("app-store-status-screenshot")
+                }
+            }
+        }
+        .padding(.top, FmSpace.x1)
     }
 
     private var reviews: some View {
@@ -460,6 +496,182 @@ private struct AppStoreStatusDashboard: View {
                 }
                 meta([review.territory, review.createdAt.isEmpty ? "" : AppStoreStatusText.date(review.createdAt)])
             }
+        }
+    }
+}
+
+struct AppStoreScreenshotViewerItem: Identifiable {
+    let id = UUID()
+    let feedback: AppStoreFeedback
+    let start: Int
+}
+
+private struct AppStoreScreenshotThumbnail: View {
+    static let width: CGFloat = 64
+    static let height: CGFloat = 112
+    @Environment(\.fmPalette) private var fm
+    let shot: AppStoreScreenshot
+    let loader: AppStoreScreenshotLoader
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            fm.bgOverlay
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else if failed {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .foregroundStyle(fm.textTertiary)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .frame(width: Self.width, height: Self.height)
+        .clipShape(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous)
+                .stroke(fm.border, lineWidth: 0.5)
+        )
+        .task(id: shot.id) { await load() }
+    }
+
+    private func load() async {
+        do {
+            let data = try await loader.load(shot)
+            let side = Self.height * 3
+            let decoded: UIImage? = await Task.detached(priority: .utility) {
+                UIImage(data: data)?.preparingThumbnail(of: CGSize(width: side, height: side))
+            }.value
+            if Task.isCancelled { return }
+            if let decoded { image = decoded } else { failed = true }
+        } catch {
+            if !Task.isCancelled { failed = true }
+        }
+    }
+}
+
+private struct AppStoreScreenshotViewer: View {
+    @Environment(\.dismiss) private var dismiss
+    let item: AppStoreScreenshotViewerItem
+    let loader: AppStoreScreenshotLoader
+    @State private var current: Int
+    @State private var images: [String: UIImage] = [:]
+    @State private var problems: [String: String] = [:]
+
+    init(item: AppStoreScreenshotViewerItem, loader: AppStoreScreenshotLoader) {
+        self.item = item
+        self.loader = loader
+        _current = State(initialValue: min(max(item.start, 0), max(item.feedback.screenshots.count - 1, 0)))
+    }
+
+    private var shots: [AppStoreScreenshot] { item.feedback.screenshots }
+    private var currentImage: UIImage? { shots.indices.contains(current) ? images[shots[current].id] : nil }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $current) {
+                ForEach(Array(shots.enumerated()), id: \.element.id) { (entry: (offset: Int, element: AppStoreScreenshot)) in
+                    page(entry.element)
+                        .tag(entry.offset)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: shots.count > 1 ? .automatic : .never))
+            .ignoresSafeArea()
+            VStack(spacing: 6) {
+                topBar
+                if !item.feedback.comment.isEmpty {
+                    Text(item.feedback.comment)
+                        .font(.footnote)
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .padding(.horizontal, 20)
+                }
+                Spacer()
+            }
+        }
+        .statusBarHidden()
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            barButton("xmark", label: "Close") { dismiss() }
+            Spacer()
+            Text(AppStoreStatusText.screenshotTitle(index: current, count: shots.count))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.9))
+                .lineLimit(1)
+            Spacer()
+            if let image = currentImage {
+                ShareLink(item: Image(uiImage: image), preview: SharePreview(
+                    AppStoreStatusText.screenshotTitle(index: current, count: shots.count), image: Image(uiImage: image))) {
+                    barIcon("square.and.arrow.up")
+                }
+                .accessibilityLabel(Text("Share"))
+            } else {
+                barIcon("square.and.arrow.up").opacity(0.4)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+
+    private func barIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(Color.white)
+            .frame(width: 44, height: 44)
+            .background(Circle().fill(Color.white.opacity(0.14)))
+    }
+
+    private func barButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { barIcon(symbol) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(label))
+    }
+
+    @ViewBuilder private func page(_ shot: AppStoreScreenshot) -> some View {
+        Group {
+            if let image = images[shot.id] {
+                AgentZoomableImage(image: image)
+            } else if let problem = problems[shot.id] {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .font(.largeTitle)
+                    Text(problem)
+                        .font(.callout)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .foregroundStyle(Color.white.opacity(0.8))
+            } else {
+                ProgressView().tint(Color.white)
+            }
+        }
+        .task(id: shot.id) { await load(shot) }
+    }
+
+    private func load(_ shot: AppStoreScreenshot) async {
+        if images[shot.id] != nil { return }
+        do {
+            let data = try await loader.load(shot)
+            let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
+                UIImage(data: data)?.preparingForDisplay()
+            }.value
+            if let decoded {
+                images[shot.id] = decoded
+            } else {
+                problems[shot.id] = "This screenshot could not be shown."
+            }
+        } catch let error as AppStoreScreenshotError {
+            problems[shot.id] = error.message
+        } catch {
+            problems[shot.id] = "This screenshot could not be loaded."
         }
     }
 }

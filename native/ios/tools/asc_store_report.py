@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import csv
 import gzip
+import hashlib
 import io
 import json
 import os
 import sys
 import time
 import urllib.parse
+import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -57,6 +60,10 @@ PRODUCT_KINDS = {
 KINDS = ("downloads", "redownloads", "updates")
 MONTHLY_REPORT_DELAY = timedelta(days=7)
 RECENT_DAYS = (7, 30)
+SCREENSHOTS_SHOWN = 4
+SCREENSHOT_MAX_BYTES = 3 * 1024 * 1024
+SCREENSHOT_SIDES = (2048, 1600, 1280, 1024)
+SCREENSHOT_QUALITIES = (82, 70, 55)
 MARKETING_PREFIX = "/api/marketing"
 MARKETING_BACKFILL_DAYS = 365
 MARKETING_OVERLAP_DAYS = 3
@@ -358,15 +365,17 @@ def feedback(api, app: str, shown: int, snapshot: dict) -> None:
         found = optional(api, problems, f"/v1/apps/{app}/{kind}",
                          {"sort": "-createdDate", "limit": str(shown)})
         for row in (found or {}).get("data", []):
-            entries.append(("crash" if "Crash" in kind else "screenshot", row["attributes"]))
+            entries.append(("crash" if "Crash" in kind else "screenshot", row))
     unavailable(snapshot, "feedback", problems)
-    entries.sort(key=lambda entry: entry[1].get("createdDate", ""), reverse=True)
-    for kind, a in entries[:shown]:
+    entries.sort(key=lambda entry: entry[1]["attributes"].get("createdDate", ""), reverse=True)
+    for kind, row in entries[:shown]:
+        a = row["attributes"]
         snapshot["feedback"].append({
             "kind": kind, "createdAt": a.get("createdDate") or "",
             "from": a.get("email") or "anonymous",
             "device": " ".join(filter(None, [a.get("deviceModel"), a.get("osVersion")])),
-            "comment": " ".join((a.get("comment") or "").split())[:300]})
+            "comment": " ".join((a.get("comment") or "").split())[:300],
+            "screenshots": screenshots(row)})
 
     problems = []
     found = optional(api, problems, f"/v1/apps/{app}/customerReviews",
@@ -378,6 +387,103 @@ def feedback(api, app: str, shown: int, snapshot: dict) -> None:
             "createdAt": a.get("createdDate") or "", "rating": int(a.get("rating") or 0),
             "title": a.get("title") or "", "territory": a.get("territory") or "",
             "body": " ".join((a.get("body") or "").split())[:300]})
+
+
+def screenshot_id(row: dict, index: int) -> str:
+    a = row.get("attributes") or {}
+    source = row.get("id") or f"{a.get('createdDate')}|{a.get('email')}|{a.get('comment')}"
+    return hashlib.sha256(f"{source}|{index}".encode()).hexdigest()[:24]
+
+
+def screenshots(row: dict) -> list:
+    found = []
+    for index, shot in enumerate((row.get("attributes") or {}).get("screenshots") or []):
+        if len(found) >= SCREENSHOTS_SHOWN:
+            break
+        if not isinstance(shot, dict) or not str(shot.get("url") or "").startswith("https://"):
+            continue
+        found.append({"id": screenshot_id(row, index), "width": int(shot.get("width") or 0),
+                      "height": int(shot.get("height") or 0), "url": shot["url"]})
+    return found
+
+
+def public(snapshot: dict) -> dict:
+    copy = json.loads(json.dumps(snapshot))
+    for row in copy.get("feedback", []):
+        for shot in row.get("screenshots", []):
+            shot.pop("url", None)
+    return copy
+
+
+def screenshot_sources(snapshot: dict) -> dict:
+    return {shot["id"]: shot["url"] for row in snapshot.get("feedback", [])
+            for shot in row.get("screenshots", []) if shot.get("url")}
+
+
+def download(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as response:
+        return response.read(32 * 1024 * 1024)
+
+
+def image_mime(raw: bytes) -> str:
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    return ""
+
+
+def shrink(raw: bytes) -> tuple[bytes, str]:
+    try:
+        from PIL import Image
+    except ImportError:
+        mime = image_mime(raw)
+        return (raw, mime) if mime and len(raw) <= SCREENSHOT_MAX_BYTES else (b"", "")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image.load()
+    except (OSError, ValueError):
+        return b"", ""
+    image = image.convert("RGB")
+    for side in SCREENSHOT_SIDES:
+        sized = image.copy()
+        sized.thumbnail((side, side))
+        for quality in SCREENSHOT_QUALITIES:
+            out = io.BytesIO()
+            sized.save(out, "JPEG", quality=quality, optimize=True)
+            if out.tell() <= SCREENSHOT_MAX_BYTES:
+                return out.getvalue(), "image/jpeg"
+    return b"", ""
+
+
+def upload_screenshots(snapshot: dict, missing: list, request, fetch=download) -> tuple[int, list]:
+    sources = screenshot_sources(snapshot)
+    sizes = {shot["id"]: shot for row in snapshot.get("feedback", [])
+             for shot in row.get("screenshots", [])}
+    sent, problems = 0, []
+    for shot_id in missing:
+        url = sources.get(shot_id)
+        if not url:
+            continue
+        try:
+            raw, mime = shrink(fetch(url))
+        except (OSError, ValueError) as error:
+            problems.append(f"screenshot {shot_id[:8]} could not be downloaded: {error}")
+            continue
+        if not raw:
+            problems.append(f"screenshot {shot_id[:8]} is not a picture that fits in 3 MB")
+            continue
+        try:
+            request("App Store Status", PUBLISH_PREFIX, PUBLISH_PROOF, "PUT",
+                    f"{PUBLISH_PREFIX}/screenshots/{shot_id}",
+                    {"mime": mime, "width": sizes[shot_id]["width"],
+                     "height": sizes[shot_id]["height"],
+                     "data": base64.b64encode(raw).decode("ascii")})
+        except Exception as error:
+            problems.append(f"screenshot {shot_id[:8]} was not uploaded: {error}")
+            continue
+        sent += 1
+    return sent, problems
 
 
 def collect(api, app: str, shown: int, vendor: str, today) -> dict:
@@ -486,8 +592,10 @@ def render(snapshot: dict) -> None:
     if not problem(snapshot, "feedback") and not snapshot["feedback"]:
         print("  none")
     for row in snapshot["feedback"]:
+        count = len(row.get("screenshots") or [])
+        pictures = f" [{count} screenshot{'s' if count != 1 else ''}]" if count else ""
         print(f"  {day(row['createdAt'])} {row['kind']} from {row['from']} "
-              f"({row['device'] or '?'}): {row['comment'] or '(no comment)'}")
+              f"({row['device'] or '?'}): {row['comment'] or '(no comment)'}{pictures}")
 
     heading("App Store customer reviews")
     if not problem(snapshot, "reviews") and not snapshot["reviews"]:
@@ -497,7 +605,7 @@ def render(snapshot: dict) -> None:
               f"({row['territory']}): {row['body']}")
 
 
-def publish(snapshot: dict, request=None) -> bool:
+def publish(snapshot: dict, request=None, fetch=download) -> bool:
     try:
         if request is None:
             if str(TOOLS_DIR) not in sys.path:
@@ -507,12 +615,20 @@ def publish(snapshot: dict, request=None) -> bool:
             origin = forkmesh_mcp_server.crm_origin()
         else:
             origin = ""
-        request("App Store Status", PUBLISH_PREFIX, PUBLISH_PROOF, "PUT",
-                PUBLISH_PREFIX + "/snapshot", snapshot)
+        answer = request("App Store Status", PUBLISH_PREFIX, PUBLISH_PROOF, "PUT",
+                         PUBLISH_PREFIX + "/snapshot", public(snapshot))
     except Exception as error:
         print(f"\nnot published to the App Store Status page: {error}")
         return False
     print(f"\npublished to the App Store Status page: {origin}{PAGE_PATH}")
+    missing = (answer or {}).get("missingScreenshots") if isinstance(answer, dict) else None
+    if isinstance(missing, list) and missing:
+        sent, problems = upload_screenshots(snapshot, [str(item) for item in missing],
+                                            request, fetch)
+        print(f"uploaded {sent} of {len(missing)} new tester feedback screenshot"
+              f"{'s' if len(missing) != 1 else ''}")
+        for problem in problems:
+            print(f"  {problem}")
     return True
 
 

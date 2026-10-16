@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Developer Tools",
-  "version": "1.0.0",
-  "summary": "See your iOS app in App Store Connect on the web, desktop, iPhone, or Android: App Review state, what needs action, downloads, TestFlight builds and groups, tester feedback, and customer reviews.",
+  "version": "1.1.0",
+  "summary": "See your iOS app in App Store Connect on the web, desktop, iPhone, or Android: App Review state, what needs action, downloads, TestFlight builds and groups, tester feedback with its screenshots, and customer reviews.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -61,7 +61,7 @@
     },
     {
       "id": "account.appstore.write",
-      "label": "Let your desktop publish a new snapshot when the iOS App Store status shortcut runs",
+      "label": "Let your desktop publish a new snapshot and tester screenshots when the iOS App Store status shortcut runs",
       "risk": "sensitive"
     }
   ],

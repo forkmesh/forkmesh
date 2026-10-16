@@ -33,7 +33,7 @@
     { "id": "winamp", "version": "1.0.0", "manifest": "packages/winamp/manifest.json" },
     { "id": "forkmesh-ide", "version": "0.1.1", "manifest": "packages/forkmesh-ide/manifest.json" },
     { "id": "sentry", "version": "1.0.1", "manifest": "packages/sentry/manifest.json" },
-    { "id": "app-store-status", "version": "1.0.0", "manifest": "packages/app-store-status/manifest.json" },
+    { "id": "app-store-status", "version": "1.1.0", "manifest": "packages/app-store-status/manifest.json" },
     { "id": "timers", "version": "1.1.0", "manifest": "packages/timers/manifest.json" },
     { "id": "forkmesh-sky-office", "version": "1.0.0", "manifest": "packages/forkmesh-sky-office/manifest.json" },
     { "id": "calories", "version": "2.5.1", "manifest": "packages/calories/manifest.json" },
