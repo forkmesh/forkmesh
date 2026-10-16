@@ -12,6 +12,8 @@ The design follows [NetNewsWire](https://netnewswire.com/) (Brent Simmons,
 Ranchero Software, MIT licensed): smart feeds, the timeline, the article view
 and its toolbar, and the settings layout. No NetNewsWire code is used. Every
 client shows the credit in its About screen; keep it there.
+[rss-reader-roadmap.md](rss-reader-roadmap.md) sorts NetNewsWire's open
+feature requests into what we would build next, later or not at all.
 
 ## Where it runs
 
