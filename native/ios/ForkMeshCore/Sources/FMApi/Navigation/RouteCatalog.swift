@@ -173,6 +173,7 @@ public enum RouteCatalog {
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
         case .faceChanger: return "Face Changer"
+        case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
         case .rssReader: return "RSS Reader"
         case .localAI: return "On-device AI"
@@ -247,6 +248,7 @@ public enum RouteCatalog {
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
         case .faceChanger: return "theatermasks"
+        case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .localAI: return "cpu"
@@ -378,6 +380,7 @@ public enum HubCatalog {
         .destination(.speech),
         .destination(.glassesAlert),
         .destination(.faceChanger),
+        .destination(.videoMixDjStudio),
         .destination(.rssReader),
         .destination(.localAI),
         .destination(.activity),

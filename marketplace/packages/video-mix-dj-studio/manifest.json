@@ -12,7 +12,7 @@
   "type": "extension.native",
   "category": "Audio",
   "version": "1.0.0",
-  "summary": "Load two YouTube videos into a responsive two-deck DJ studio. Crossfade their sound and picture, cue, loop, sync, adjust tempo, play local sampler pads and save your set on this device.",
+  "summary": "Mix two YouTube decks with turntables, crossfader, cues, loops, captured sections, tempo and local sampler pads on iOS, desktop and web.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -31,6 +31,7 @@
   },
   "entrypoints": {
     "desktop": "builtin:video-mix-dj-studio",
+    "ios": "builtin:video-mix-dj-studio",
     "dashboard-view": "content/web/view.html",
     "dashboard-script": "content/web/page.js",
     "settings": "builtin:package"
@@ -42,7 +43,7 @@
       "config": {
         "route": "/dashboard/video-mix-dj-studio",
         "title": "Video Mix DJ Studio",
-        "description": "Mix two YouTube videos with cue points, loops, tempo controls, a crossfader and local drum sampler pads. Your set stays in this browser.",
+        "description": "Mix two YouTube videos with touch turntables, captured sections, cue points, loops, tempo controls, a crossfader and local drum sampler pads.",
         "script": "dashboard-script",
         "navigation": {
           "label": "Video Mix DJ",
@@ -60,7 +61,7 @@
     },
     {
       "id": "storage.local.write",
-      "label": "Keep your deck choices, cue points, sampler level and saved set in this browser only",
+      "label": "Keep your deck choices, cue points, captured sections, sampler level and saved set in this browser only",
       "risk": "low"
     },
     {

@@ -187,6 +187,7 @@ public enum Route: Codable, Hashable, Sendable {
     case speech
     case glassesAlert
     case faceChanger
+    case videoMixDjStudio
     case appStoreStatus
     case rssReader
     case localAI
@@ -294,6 +295,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .speech: return .speech
         case .glassesAlert: return .glassesAlert
         case .faceChanger: return .faceChanger
+        case .videoMixDjStudio: return .videoMixDjStudio
         case .appStoreStatus: return .appStoreStatus
         case .rssReader: return .rssReader
         case .localAI: return .localAI
@@ -326,7 +328,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, faceChanger, appStoreStatus, rssReader, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, localAI, activity, logs, diagnostics
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
 
@@ -355,7 +357,7 @@ public enum Route: Codable, Hashable, Sendable {
                 .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .faceChanger, .rssReader, .localAI, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .faceChanger, .videoMixDjStudio, .rssReader, .localAI, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

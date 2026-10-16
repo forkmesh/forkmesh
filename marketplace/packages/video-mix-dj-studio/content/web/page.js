@@ -1,13 +1,14 @@
 window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   const root = select('[data-view="video-mix-dj-studio"]');
   if (!root) return;
+  if (new URLSearchParams(location.search).get("presentation") === "studio") document.documentElement.classList.add("vmdj-fullscreen");
   const el = (name) => root.querySelector(`[data-vmdj="${name}"]`);
   const key = "forkmesh.videoMixDjStudio.v1";
   const decks = {
     a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
     b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
   };
-  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 } };
+  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null } };
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -19,6 +20,10 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       const saved = JSON.parse(localStorage.getItem(key) || "{}");
       state.crossfader = safeNumber(saved.crossfader, 0, -100, 100);
       state.sampler.level = safeNumber(saved.sampler?.level, 80, 0, 100);
+      state.samples = Array.from({ length: 4 }, (_, index) => {
+        const sample = saved.samples?.[index] || {};
+        return ["a", "b"].includes(sample.deck) ? { deck: sample.deck, start: safeNumber(sample.start, 0, 0, 864000), duration: safeNumber(sample.duration, 8, 1, 30) } : null;
+      });
       for (const name of ["a", "b"]) {
         const value = saved.decks?.[name] || {};
         decks[name].url = typeof value.url === "string" ? value.url : "";
@@ -32,7 +37,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   }
 
   function persist() {
-    const saved = { crossfader: state.crossfader, sampler: { level: state.sampler.level }, decks: {} };
+    const saved = { crossfader: state.crossfader, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
     for (const name of ["a", "b"]) {
       const deck = decks[name];
       saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop };
@@ -167,6 +172,74 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     render();
   }
 
+  function captureSection(name) {
+    const deck = decks[name];
+    if (!deck.player || !deck.duration) {
+      status(`Let Deck ${name.toUpperCase()} load before capturing a section.`, "error");
+      return;
+    }
+    const slot = state.sampleCursor;
+    state.samples[slot] = { deck: name, start: deck.time, duration: Math.min(8, Math.max(1, deck.duration - deck.time)) };
+    state.sampleCursor = (slot + 1) % state.samples.length;
+    status(`Captured ${formatTime(state.samples[slot].duration)} from Deck ${name.toUpperCase()} in Section ${slot + 1}.`);
+    persist();
+    render();
+  }
+
+  function playSection(index) {
+    const sample = state.samples[index];
+    const deck = sample && decks[sample.deck];
+    if (!sample || !deck?.player) return;
+    command(deck, "seekTo", [sample.start, true]);
+    command(deck, "playVideo");
+    const startedAt = sample.start;
+    window.setTimeout(() => {
+      if (Math.abs(deck.time - startedAt) < sample.duration + 2) command(deck, "pauseVideo");
+    }, sample.duration * 1000 + 120);
+    status(`Playing Section ${index + 1} from Deck ${sample.deck.toUpperCase()}.`);
+  }
+
+  function platterAngle(event, platter) {
+    const rect = platter.getBoundingClientRect();
+    return Math.atan2(event.clientY - rect.top - rect.height / 2, event.clientX - rect.left - rect.width / 2);
+  }
+
+  function scratchStart(name, event) {
+    const deck = decks[name];
+    if (!deck.player || !deck.duration) return;
+    const platter = el(`platter-${name}`);
+    state.scratch[name] = { pointer: event.pointerId, angle: platterAngle(event, platter), resume: deck.playing };
+    platter.setPointerCapture?.(event.pointerId);
+    platter.classList.add("is-scratching");
+    command(deck, "pauseVideo");
+    event.preventDefault();
+  }
+
+  function scratchMove(name, event) {
+    const scratch = state.scratch[name];
+    const deck = decks[name];
+    if (!scratch || scratch.pointer !== event.pointerId || !deck.duration) return;
+    const angle = platterAngle(event, el(`platter-${name}`));
+    let change = angle - scratch.angle;
+    if (change > Math.PI) change -= Math.PI * 2;
+    if (change < -Math.PI) change += Math.PI * 2;
+    scratch.angle = angle;
+    deck.time = Math.max(0, Math.min(deck.duration, deck.time + change / (Math.PI * 2) * deck.duration));
+    command(deck, "seekTo", [deck.time, true]);
+    render();
+    event.preventDefault();
+  }
+
+  function scratchEnd(name, event) {
+    const scratch = state.scratch[name];
+    if (!scratch || scratch.pointer !== event.pointerId) return;
+    state.scratch[name] = null;
+    const platter = el(`platter-${name}`);
+    platter.releasePointerCapture?.(event.pointerId);
+    platter.classList.remove("is-scratching");
+    if (scratch.resume) command(decks[name], "playVideo");
+  }
+
   function samplerContext() {
     if (state.sampler.context) return state.sampler.context;
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -262,6 +335,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       el(`cue-${name}`).disabled = !deck.player;
       el(`set-cue-${name}`).disabled = !deck.player;
       el(`loop-${name}`).disabled = !deck.player;
+      el(`capture-${name}`).disabled = !deck.player || !deck.duration;
       el(`loop-${name}`).setAttribute("aria-pressed", deck.loop ? "true" : "false");
       el(`seek-${name}`).disabled = !deck.player || !deck.duration;
       el(`seek-${name}`).value = String(deck.duration ? Math.round(deck.time / deck.duration * 1000) : 0);
@@ -272,10 +346,19 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       el(`rate-${name}`).value = String(deck.rate);
       el(`rate-value-${name}`).textContent = `${deck.rate.toFixed(2)}×`;
       if (deck.player) deck.player.style.opacity = String(gain[name]);
+      const platter = el(`platter-${name}`);
+      platter.classList.toggle("is-spinning", deck.playing && !state.scratch[name]);
+      platter.setAttribute("aria-valuenow", String(deck.duration ? Math.round(deck.time / deck.duration * 100) : 0));
     }
     el("crossfader").value = String(state.crossfader);
     el("cross-value").textContent = state.crossfader === 0 ? "Center" : state.crossfader < 0 ? `${Math.abs(state.crossfader)}% A` : `${state.crossfader}% B`;
     el("sampler-level").value = String(state.sampler.level);
+    for (const [index, sample] of state.samples.entries()) {
+      const button = el(`section-${index}`);
+      button.disabled = !sample;
+      button.querySelector(".vmdj-pad-name").textContent = sample ? `Section ${index + 1}` : `Section ${index + 1}`;
+      button.querySelector(".vmdj-pad-key").textContent = sample ? `${sample.deck.toUpperCase()} · ${formatTime(sample.start)}` : "Empty";
+    }
   }
 
   function refresh() {
@@ -317,10 +400,16 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     el(`cue-${name}`).addEventListener("click", () => cue(name));
     el(`set-cue-${name}`).addEventListener("click", () => { decks[name].cue = decks[name].time; status(`Deck ${name.toUpperCase()} cue set at ${formatTime(decks[name].cue)}.`); persist(); render(); });
     el(`loop-${name}`).addEventListener("click", () => { decks[name].loop = !decks[name].loop; status(decks[name].loop ? `Deck ${name.toUpperCase()} loops eight seconds from its cue.` : `Deck ${name.toUpperCase()} loop is off.`); persist(); render(); });
+    el(`capture-${name}`).addEventListener("click", () => captureSection(name));
     el(`seek-${name}`).addEventListener("input", (event) => { const deck = decks[name]; if (!deck.duration) return; deck.time = deck.duration * Number(event.target.value) / 1000; render(); });
     el(`seek-${name}`).addEventListener("change", () => command(decks[name], "seekTo", [decks[name].time, true]));
     el(`level-${name}`).addEventListener("input", (event) => { decks[name].level = safeNumber(event.target.value, 100, 0, 100); applyMix(); persist(); render(); });
     el(`rate-${name}`).addEventListener("change", (event) => { decks[name].rate = safeNumber(event.target.value, 1, 0.25, 2); command(decks[name], "setPlaybackRate", [decks[name].rate]); persist(); render(); });
+    const platter = el(`platter-${name}`);
+    platter.addEventListener("pointerdown", (event) => scratchStart(name, event));
+    platter.addEventListener("pointermove", (event) => scratchMove(name, event));
+    platter.addEventListener("pointerup", (event) => scratchEnd(name, event));
+    platter.addEventListener("pointercancel", (event) => scratchEnd(name, event));
   }
   el("crossfader").addEventListener("input", (event) => changeCrossfader(event.target.value));
   el("cut-a").addEventListener("click", () => changeCrossfader(-100));
@@ -331,6 +420,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   el("pause-both").addEventListener("click", () => { command(decks.a, "pauseVideo"); command(decks.b, "pauseVideo"); });
   el("sampler-level").addEventListener("input", (event) => { state.sampler.level = safeNumber(event.target.value, 80, 0, 100); persist(); });
   for (const pad of root.querySelectorAll("[data-vmdj-pad]")) pad.addEventListener("click", () => triggerPad(pad.dataset.vmdjPad));
+  for (const index of [0, 1, 2, 3]) el(`section-${index}`).addEventListener("click", () => playSection(index));
   el("save").addEventListener("click", () => { persist(); status("Set saved on this device."); });
   el("reset").addEventListener("click", () => { destroyDeck("a"); destroyDeck("b"); state.crossfader = 0; try { localStorage.removeItem(key); } catch (_) {} status("Studio cleared."); render(); });
   window.addEventListener("message", handleMessage);
@@ -342,6 +432,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     else if (keyName === "q") cue("a");
     else if (keyName === "w") cue("b");
     else if ({ e: "kick", r: "snare", t: "hat", y: "clap", u: "tom", i: "perc", o: "stab", p: "riser" }[keyName]) triggerPad({ e: "kick", r: "snare", t: "hat", y: "clap", u: "tom", i: "perc", o: "stab", p: "riser" }[keyName]);
+    else if (/^[3-6]$/.test(keyName)) playSection(Number(keyName) - 3);
     else if (event.key === "ArrowLeft") { event.preventDefault(); changeCrossfader(state.crossfader - 5); }
     else if (event.key === "ArrowRight") { event.preventDefault(); changeCrossfader(state.crossfader + 5); }
   });
