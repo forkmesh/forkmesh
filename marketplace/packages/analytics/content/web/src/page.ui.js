@@ -14,7 +14,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   const DAY = 86400000;
   const h = escapeHtml;
-  const TABS = ["overview", "insights", "dashboards", "events", "people", "replay",
+  const TABS = ["overview", "conversions", "insights", "dashboards", "events", "people", "replay",
     "heatmaps", "flags", "surveys", "errors", "settings"];
   const SUBS = {
     insights: ["builder", "saved", "actions", "annotations"],
@@ -32,6 +32,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     actions: ["insights", "actions"], annotations: ["insights", "annotations"],
     groups: ["people", "groups"], cohorts: ["people", "cohorts"],
     experiments: ["flags", "experiments"], recordings: ["replay"],
+    goals: ["conversions"], conversion: ["conversions"],
   };
   const RANGE_SPANS = { "24h": DAY, "7d": 7 * DAY, "14d": 14 * DAY, "30d": 30 * DAY, "90d": 90 * DAY };
   const OPERATOR_LABELS = {
@@ -69,6 +70,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     taxonomy: { events: [], properties: [], personProperties: [] },
     objects: {}, objectLoads: {},
     overview: null, overviewPick: { pages: "pages", referrals: "referringDomains", sources: "sources", tech: "devices" },
+    conversions: { result: null, goals: [], goalId: "", chartAll: false, interval: "day" },
     insight: null, insightResult: null, insightPrevious: null,
     dashboardId: "",
     events: { rows: [], nextBefore: 0, name: "", filters: [], open: new Set() },
@@ -706,6 +708,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       project: null, usageHistory: [], loadedTabs: new Set(),
       taxonomy: { events: [], properties: [], personProperties: [] }, objects: {}, objectLoads: {},
       overview: null, insight: null, insightResult: null, insightPrevious: null, dashboardId: "",
+      conversions: { result: null, goals: [], goalId: "", chartAll: false, interval: "day" },
       events: { rows: [], nextBefore: 0, name: "", filters: [], open: new Set() },
       people: { rows: [], nextBefore: 0, total: 0, identified: 0 }, groups: [],
       replay: { rows: [], nextBefore: 0, personId: "", open: "", recording: null, player: null, loadToken: 0 },
@@ -750,7 +753,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
   }
 
   const TAB_LOADERS = {
-    overview: () => loadOverview(), insights: () => loadInsights(), dashboards: () => loadDashboards(),
+    overview: () => loadOverview(), conversions: () => loadConversions(), insights: () => loadInsights(), dashboards: () => loadDashboards(),
     events: () => loadEvents(false), people: () => loadPeopleTab(), replay: () => loadRecordings(false),
     heatmaps: () => loadHeatmapTab(), flags: () => loadFlagsTab(), surveys: () => loadSurveys(),
     errors: () => loadErrors(), settings: () => loadSettings(),
@@ -913,6 +916,12 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       bounceRate: data.sessionSeries?.bounceRate, averageSessionMs: data.sessionSeries?.averageSessionMs,
     };
   }
+  function kpiDelta(now, before, format, upIsGood = true) {
+    if (!before) return `<span>No earlier data</span>`;
+    const change = (now - before) / before, flat = Math.abs(change) < 0.0005;
+    const tone = flat ? "" : (change > 0) === upIsGood ? "an-delta-good" : "an-delta-bad";
+    return `<span class="${tone}">${flat ? "→" : change > 0 ? "▲" : "▼"} ${h(fmtPct(Math.abs(change)))}</span> <span title="Previous period">vs ${h(format(before))}</span>`;
+  }
   function sparkline(values) {
     const points = (values || []).map((value) => Number(value) || 0);
     if (points.length < 2) return "";
@@ -961,13 +970,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const trend = kpiSeries(data);
     $(`[data-analytics-kpis]`).innerHTML = KPI_TILES.map(([key, label, format, upIsGood]) => {
       const now = Number(totals[key]) || 0, before = Number(previous[key]) || 0;
-      let delta = `<span>No earlier data</span>`;
-      if (before) {
-        const change = (now - before) / before, flat = Math.abs(change) < 0.0005;
-        const tone = flat ? "" : (change > 0) === upIsGood ? "an-delta-good" : "an-delta-bad";
-        delta = `<span class="${tone}">${flat ? "→" : change > 0 ? "▲" : "▼"} ${h(fmtPct(Math.abs(change)))}</span> <span title="Previous period">vs ${h(format(before))}</span>`;
-      }
-      return `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(format(now))}</div><div class="an-kpi-delta">${delta}</div>${sparkline(trend[key])}</div>`;
+      return `<div class="an-kpi"><div class="an-kpi-label">${h(label)}</div><div class="an-kpi-value">${h(format(now))}</div><div class="an-kpi-delta">${kpiDelta(now, before, format, upIsGood)}</div>${sparkline(trend[key])}</div>`;
     }).join("");
 
     const series = data.timeseries || { labels: [], series: [] }, interval = series.interval || "day";
@@ -1055,6 +1058,186 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       }).join("")}</tbody></table></div>` : `<div class="fm-blankslate"><p class="fm-blankslate-desc">${pick.startsWith("referring") ? "No visits from other sites in this range." : "Nothing recorded."}</p></div>`;
       return `<section class="an-card"><div class="an-card-head"><h3>${h(card.title)}</h3>${picker}</div>${body}</section>`;
     }).join("");
+  }
+
+  const MAX_GOALS = 10;
+  function sortedGoals() { return (state.objects.goal || []).slice().sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))); }
+  function goalSeries(goal) { return { event: goal.event || "$pageview", properties: cleanFilters(goal.properties), label: goal.name || "", math: "dau" }; }
+  function goalStep(goal) { return { ...newSeries(goal.event || "$pageview"), label: goal.name || "", properties: cleanFilters(goal.properties) }; }
+  function conversionInterval() {
+    const window_ = rangeWindow(), span = window_.to - window_.from;
+    return span <= 2 * DAY ? "hour" : span > 62 * DAY ? "week" : "day";
+  }
+  function funnelInsights() { return (state.objects.insight || []).filter((item) => item.query?.kind === "funnel"); }
+  function playbookOffered() {
+    const playbook = state.project?.playbook;
+    return canManage() && Boolean(playbook?.available) && !(playbook.applied || []).length;
+  }
+  async function loadConversions() {
+    await Promise.all([loadObjects("goal"), loadObjects("insight")]);
+    const view = state.conversions, goals = sortedGoals().slice(0, MAX_GOALS);
+    Object.assign(view, { result: null, goals, interval: conversionInterval() });
+    renderConversions();
+    if (!goals.length) return;
+    const body = $(`[data-analytics-conversions-body]`);
+    body.style.opacity = ".55";
+    try {
+      const result = await query("conversions", { goals: goals.map(goalSeries), interval: view.interval });
+      if (view !== state.conversions) return;
+      view.result = result;
+    } catch (error) {
+      if (!isAbort(error)) $(`[data-analytics-conversion-kpis]`).innerHTML = `<div class="fm-blankslate"><p class="fm-blankslate-desc">${h(error.message)}</p></div>`;
+      throw error;
+    } finally { body.style.opacity = ""; }
+    renderConversions();
+  }
+  function conversionTable(rows, goals, at, column) {
+    if (!rows.length) return `<div class="fm-blankslate"><p class="fm-blankslate-desc">No sessions in this range.</p></div>`;
+    const peak = Math.max(1, ...rows.map((row) => Number(row.sessions) || 0));
+    const pick = (index) => index === at ? " an-col-pick" : "";
+    return `<div class="an-table-wrap an-scroll"><table class="an-table"><thead><tr><th scope="col">${h(column)}</th><th scope="col" class="r">Sessions</th>${goals.map((goal, index) => `<th scope="col" class="r an-th-goal${pick(index)}" title="${h(goal.name || "Untitled goal")}">${h(goal.name || "Untitled goal")}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr><th scope="row" class="an-bar-cell" style="--an-share:${((Number(row.sessions) || 0) / peak * 100).toFixed(1)}%"><span class="an-break">${h(row.value)}</span></th><td class="r">${h(fmtInt(row.sessions))}</td>${goals.map((_, index) => {
+      const rate = h(fmtPct(row.rates?.[index]));
+      return `<td class="r${pick(index)}"><span class="an-hint">${h(fmtInt(row.conversions?.[index]))}</span> ${index === at ? `<b>${rate}</b>` : rate}</td>`;
+    }).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+  function renderConversions() {
+    const view = state.conversions, goals = view.goals, result = view.result, all = sortedGoals();
+    $$(`[data-analytics-playbook]`).forEach((button) => { button.hidden = !playbookOffered(); });
+    $(`[data-analytics-conversions-empty]`).hidden = all.length > 0;
+    $(`[data-analytics-conversions-body]`).hidden = !goals.length;
+    $(`[data-analytics-goals-card]`).hidden = !all.length;
+    const funnels = funnelInsights();
+    $(`[data-analytics-funnels-card]`).hidden = !all.length && !funnels.length;
+    $(`[data-analytics-funnel-from-goals]`).hidden = !all.length;
+    $(`[data-analytics-funnels-list]`).innerHTML = funnels.length ? `<div class="an-table-wrap"><table class="an-table"><tbody>${funnels.map((item) => `<tr><th scope="row"><span class="an-break">${h(item.name || "Untitled insight")}</span><div class="an-hint an-break">${h((item.query.steps || []).map((step) => step.label || eventLabel(step.event)).join(" → "))}</div></th><td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-insight-open="${h(item.id)}">Open</button></td></tr>`).join("")}</tbody></table></div>`
+      : `<div class="fm-blankslate"><p class="fm-blankslate-desc">No saved funnels yet. Build one from your goals, then save it in the builder.</p></div>`;
+
+    const rows = result?.goals || [];
+    const measured = (goal) => { const index = goals.findIndex((item) => item.id === goal.id); return index < 0 || !result ? null : rows[index] || {}; };
+    $(`[data-analytics-goals-note]`).textContent = all.length > MAX_GOALS ? `The first ${MAX_GOALS} goals, pinned first, are measured.` : "Pinned goals come first.";
+    $(`[data-analytics-goals-list]`).innerHTML = all.map((goal) => {
+      const row = measured(goal), filters = (goal.properties || []).length;
+      return `<tr><th scope="row"><span class="an-break">${h(goal.name || "Untitled goal")}</span>${goal.pinned ? ` <span class="fm-label">Pinned</span>` : ""}${goal.description ? `<div class="an-hint an-break">${h(goal.description)}</div>` : ""}</th>
+        <td class="an-break">${h(eventLabel(goal.event))}${filters ? `<div class="an-hint">${filters} filter${filters === 1 ? "" : "s"}</div>` : ""}</td>
+        <td class="r">${row ? h(fmtInt(row.conversions)) : "—"}</td><td class="r">${row ? h(fmtPct(row.rate)) : "—"}</td>
+        <td>${h(relTime(goal.updatedAt))}</td>
+        <td class="r"><button type="button" class="fm-btn fm-btn-sm" data-analytics-goal-edit="${h(goal.id)}">Edit…</button></td></tr>`;
+    }).join("");
+    if (!goals.length) return;
+
+    let at = goals.findIndex((goal) => goal.id === view.goalId);
+    if (at < 0) at = 0;
+    const kpis = $(`[data-analytics-conversion-kpis]`), chart = $(`[data-analytics-conversions-chart-host]`);
+    const channelsHost = $(`[data-analytics-conversions-channels]`), landingHost = $(`[data-analytics-conversions-landing]`);
+    $$(`[data-analytics-conversions-chart]`).forEach((button) => button.setAttribute("aria-pressed", String((button.dataset.analyticsConversionsChart === "all") === view.chartAll)));
+    if (!result) {
+      const loading = `<div class="fm-blankslate"><p class="fm-blankslate-desc">Loading…</p></div>`;
+      kpis.innerHTML = loading; chart.innerHTML = loading; channelsHost.innerHTML = loading; landingHost.innerHTML = loading;
+      $(`[data-analytics-conversions-interval]`).textContent = "";
+      return;
+    }
+    const series = result.series || [], totals = result.totals || {};
+    kpis.innerHTML = goals.map((goal, index) => {
+      const row = rows[index] || {}, rate = Number(row.rate) || 0, before = Number(row.previous?.rate) || 0;
+      return `<button type="button" class="an-kpi an-kpi-pick" data-analytics-goal-pick="${h(goal.id)}" aria-pressed="${index === at}">
+        <span class="an-kpi-label" title="${h(goal.name || "Untitled goal")}">${h(goal.name || "Untitled goal")}</span>
+        <span class="an-kpi-value">${h(fmtPct(rate))}</span>
+        <span class="an-kpi-delta">${h(fmtInt(row.conversions))} converted · ${h(fmtInt(row.sessions))} sessions</span>
+        <span class="an-kpi-delta">${kpiDelta(rate, before, (value) => fmtPct(value), true)}</span>${sparkline(series[index]?.data)}</button>`;
+    }).join("");
+
+    const interval = result.interval || view.interval;
+    $(`[data-analytics-conversions-interval]`).textContent = `${rangeLabel()} · by ${interval} · ${fmtInt(totals.visitors)} visitors, ${fmtInt(totals.sessions)} sessions`;
+    const charted = view.chartAll
+      ? series.slice(0, MAX_CHART_SERIES).map((item, index) => ({ item, index }))
+      : series[at] ? [{ item: series[at], index: at }] : [];
+    drawChart(chart, {
+      type: "line", labels: result.labels || [], timeAxis: true, annotations: state.objects.annotation || [],
+      formatLabel: (label, long) => fmtBucket(label, interval, long), height: 220, legend: true, formatValue: fmtInt,
+      label: `Converting visitors by ${interval}`,
+      series: charted.map(({ item, index }) => ({ name: goals[index]?.name || item.name, data: item.data || [], total: item.total, color: PALETTE[index % PALETTE.length] })),
+    });
+
+    const channelRows = [...(result.channels || [])].sort((a, b) => (Number(b.sessions) || 0) - (Number(a.sessions) || 0));
+    channelsHost.innerHTML = conversionTable(channelRows, goals, at, "Channel");
+    landingHost.innerHTML = conversionTable(result.landing || [], goals, at, "Landing page");
+  }
+  function goalDialog(id = "") {
+    const item = (state.objects.goal || []).find((entry) => entry.id === id);
+    const draft = JSON.parse(JSON.stringify({ event: item?.event || "$pageview", properties: item?.properties || [] }));
+    let custom = false;
+    function renderEvent(host) {
+      host.innerHTML = field("Event or action", `<select class="an-select" data-g="event">${eventOptions(custom ? "" : draft.event).replace('value="__custom"', `value="__custom"${custom ? " selected" : ""}`)}</select>`)
+        + (custom ? field("Event name", `<input class="an-input" data-g="custom" list="an-events-list" autocomplete="off" maxlength="200" value="${h(draft.event === "*" ? "" : draft.event)}" />`) : "");
+    }
+    openDialog({
+      title: item ? "Edit goal" : "New goal",
+      render(body) {
+        body.innerHTML = `<div class="an-form-grid">
+            ${field("Name", `<input class="an-input" data-d="name" maxlength="120" required value="${h(item?.name || "")}" placeholder="Signed up" />`)}
+            ${field("Description", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`)}
+          </div><div data-d="event" class="an-form-grid"></div>
+          <fieldset class="an-fieldset"><legend>Only count it when</legend><div data-d="filters"></div></fieldset>
+          <label class="an-check"><input type="checkbox" data-d="pinned"${item?.pinned ? " checked" : ""} /> Pinned: measure and show this goal first</label>
+          <p class="an-hint" style="margin:0">A visitor converts when they do this event at least once in the date range. An action matches a click or page by URL, text, or selector.</p>`;
+        const eventHost = body.querySelector(`[data-d="event"]`);
+        renderEvent(eventHost);
+        eventHost.addEventListener("change", (event) => {
+          const control = event.target.closest("[data-g]"); if (!control) return;
+          if (control.dataset.g === "event") {
+            custom = control.value === "__custom";
+            if (!custom) draft.event = control.value;
+            renderEvent(eventHost);
+            if (custom) eventHost.querySelector(`[data-g="custom"]`)?.focus();
+          } else draft.event = control.value.trim();
+        });
+        mountFilters(body.querySelector(`[data-d="filters"]`), draft.properties, { addLabel: "Property filter" });
+      },
+      async onSave() {
+        const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
+        const event = custom ? body.querySelector(`[data-g="custom"]`)?.value.trim() || "" : draft.event;
+        if (!name) throw new Error("Give the goal a name.");
+        if (!event || event === "*") throw new Error("Choose the event or action that counts as a conversion.");
+        await saveObject("goal", id, { name, description: body.querySelector(`[data-d="description"]`).value.trim(), event, properties: cleanFilters(draft.properties), pinned: body.querySelector(`[data-d="pinned"]`).checked });
+        refreshGoals(); setMessage("notice", "Goal saved.");
+      },
+      onDelete: item ? async () => {
+        if (!confirm(`Delete the goal “${item.name || "Untitled goal"}”? Its events are kept.`)) return false;
+        await deleteObject("goal", id); refreshGoals();
+      } : null,
+    });
+  }
+  function refreshGoals() {
+    state.loadedTabs.delete("conversions:");
+    if (state.tab === "conversions") void loadTab();
+  }
+  function funnelFromGoals() {
+    const goals = state.conversions.goals.length ? state.conversions.goals : sortedGoals().slice(0, MAX_GOALS);
+    if (!goals.length) return;
+    const insight = blankInsight("funnel");
+    insight.name = "Conversion funnel";
+    insight.query.steps = [newSeries("$pageview"), ...goals.slice(0, 11).map(goalStep)];
+    state.insight = insight; state.insightResult = null; state.loadedTabs.delete("insights:builder");
+    showTab("insights", "builder");
+  }
+  async function applyPlaybook() {
+    if (!playbookOffered()) return;
+    if (!confirm("Add the website playbook to this project? It adds conversion goals, two saved funnels, and a homepage experiment with its feature flag.")) return;
+    const buttons = $$(`[data-analytics-playbook]`);
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      const payload = await request(projectPath("/playbook"), "POST", {});
+      if (payload.project) applyProject(payload.project);
+      else if (state.project) state.project.playbook = { ...(state.project.playbook || {}), ...(payload.playbook || {}) };
+      const added = payload.added || {}, count = (value) => Array.isArray(value) ? value.length : Number(value) || 0;
+      const parts = [["goal", "goal", "goals"], ["insight", "funnel", "funnels"], ["flag", "feature flag", "feature flags"], ["experiment", "experiment", "experiments"]]
+        .filter(([key]) => count(added[key])).map(([key, one, many]) => `${count(added[key])} ${count(added[key]) === 1 ? one : many}`);
+      await Promise.all(["goal", "insight", "flag", "experiment"].map((kind) => loadObjects(kind, true).catch(() => [])));
+      state.loadedTabs.clear();
+      await loadTab(true);
+      setMessage("notice", parts.length ? `Website playbook added: ${parts.join(", ")}.` : "The website playbook is already in this project.");
+    } catch (error) { fail(error, "Could not add the playbook"); }
+    finally { buttons.forEach((button) => { button.disabled = false; }); if (state.tab === "conversions") renderConversions(); }
   }
 
   // ==========================================================================
@@ -2121,7 +2304,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
 
   async function loadFlagsTab() {
     if (state.sub.flags === "experiments") {
-      await Promise.all([loadObjects("experiment"), loadObjects("flag")]);
+      await Promise.all([loadObjects("experiment"), loadObjects("flag"), loadObjects("goal").catch(() => [])]);
       return renderExperiments();
     }
     await loadObjects("flag");
@@ -2269,6 +2452,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     const item = (state.objects.experiment || []).find((entry) => entry.id === id);
     const flags = state.objects.flag || [];
     const goal = [item?.goal ? { ...newSeries(), ...JSON.parse(JSON.stringify(item.goal)) } : newSeries("$pageview")];
+    const savedGoals = sortedGoals();
     openDialog({
       title: item ? "Edit experiment" : "New experiment",
       render(body) {
@@ -2277,9 +2461,15 @@ window.ForkMeshDashboard.registerPage("analytics", ({
             ${field("Feature flag", flags.length ? `<select class="an-select" data-d="flagKey">${optionList(flags.map((flag) => [flag.key, `${flag.key}${(flag.variants || []).length ? ` (${flag.variants.length} variants)` : " (on/off)"}`]), item?.flagKey || flags.find((flag) => (flag.variants || []).length)?.key || "")}</select>` : `<input class="an-input an-mono" data-d="flagKey" maxlength="80" value="${h(item?.flagKey || "")}" placeholder="Create the flag first" />`)}
             ${field("Status", `<select class="an-select" data-d="status">${optionList([["draft", "Draft"], ["running", "Running"], ["stopped", "Stopped"]], item?.status || "draft")}</select>`)}
             ${field("Hypothesis", `<input class="an-input" data-d="description" maxlength="1000" value="${h(item?.description || "")}" />`, true)}
-          </div><fieldset class="an-fieldset"><legend>Goal: a person converts when they do</legend><div data-d="goal"></div></fieldset>
+          </div><fieldset class="an-fieldset"><legend>Goal: a person converts when they do</legend>${savedGoals.length ? `<div class="an-form-grid">${field("Use a saved goal", `<select class="an-select" data-d="useGoal"><option value="">Choose a goal…</option>${optionList(savedGoals.map((saved) => [saved.id, saved.name || "Untitled goal"]), "")}</select>`)}</div>` : ""}<div data-d="goal"></div></fieldset>
           <p class="an-hint" style="margin:0">Exposure is the first <span class="an-mono">$feature_flag_called</span> for this flag, which the SDK sends whenever code reads it. Results count only goal events after exposure.</p>`;
-        mountSeries(body.querySelector(`[data-d="goal"]`), goal, { max: 1, maths: false, colors: false, noun: "Goal" });
+        const goalHost = body.querySelector(`[data-d="goal"]`);
+        mountSeries(goalHost, goal, { max: 1, maths: false, colors: false, noun: "Goal" });
+        body.querySelector(`[data-d="useGoal"]`)?.addEventListener("change", (event) => {
+          const saved = savedGoals.find((entry) => entry.id === event.target.value); if (!saved) return;
+          goal[0] = goalStep(saved);
+          mountSeries(goalHost, goal, { max: 1, maths: false, colors: false, noun: "Goal" });
+        });
       },
       async onSave() {
         const body = $(`[data-analytics-dialog-body]`), name = body.querySelector(`[data-d="name"]`).value.trim();
@@ -2652,6 +2842,12 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["[data-analytics-sub]", (node) => { const [owner, name] = node.dataset.analyticsSub.split(":"); showTab(owner, name); }],
     ["[data-analytics-pick]", (node) => { const [key, value] = node.dataset.analyticsPick.split(":"); state.overviewPick[key] = value; renderBreakdowns(); }],
     ["[data-analytics-heatmap-open]", (node) => openHeatmap(node.dataset.analyticsHeatmapOpen)],
+    ["[data-analytics-goal-new]", () => goalDialog()],
+    ["[data-analytics-goal-edit]", (node) => goalDialog(node.dataset.analyticsGoalEdit)],
+    ["[data-analytics-goal-pick]", (node) => { state.conversions.goalId = node.dataset.analyticsGoalPick; renderConversions(); }],
+    ["[data-analytics-conversions-chart]", (node) => { state.conversions.chartAll = node.dataset.analyticsConversionsChart === "all"; renderConversions(); }],
+    ["[data-analytics-funnel-from-goals]", () => funnelFromGoals()],
+    ["[data-analytics-playbook]", () => void applyPlaybook()],
     ["[data-analytics-insight-type]", (node) => switchInsightKind(node.dataset.analyticsInsightType)],
     ["[data-analytics-insight-new]", () => { state.insight = blankInsight(state.insight?.query.kind || "trends"); state.insightResult = null; renderBuilder(); void runInsight(); }],
     ["[data-analytics-insight-save]", () => saveInsightDialog()],
@@ -2682,7 +2878,7 @@ window.ForkMeshDashboard.registerPage("analytics", ({
     ["[data-analytics-replay-jump]", (node) => { const player = state.replay.player; if (!player) return; player.seek(Number(node.dataset.analyticsReplayJump) || 0); if (!player.playing) player.play(); }],
     ["[data-analytics-flag-new]", () => flagDialog()],
     ["[data-analytics-flag-edit]", (node) => flagDialog(node.dataset.analyticsFlagEdit)],
-    ["[data-analytics-experiment-new]", () => void loadObjects("flag").then(() => experimentDialog(), (error) => fail(error))],
+    ["[data-analytics-experiment-new]", () => void Promise.all([loadObjects("flag"), loadObjects("goal").catch(() => [])]).then(() => experimentDialog(), (error) => fail(error))],
     ["[data-analytics-experiment-edit]", (node) => experimentDialog(node.dataset.analyticsExperimentEdit)],
     ["[data-analytics-experiment-open]", (node) => void openExperiment(node.dataset.analyticsExperimentOpen)],
     ["[data-analytics-survey-new]", () => surveyDialog()],
