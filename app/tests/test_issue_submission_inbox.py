@@ -280,3 +280,15 @@ def test_issue_keeps_the_name_its_author_signed_with():
 
     assert response["status"] == 201
     assert inserted[0][1]["event"]["authorName"] == "mirror-node"
+
+
+def test_discussion_handler_resolves_an_unnamed_signer_before_notifying():
+    tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
+    handler = next(
+        node for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "discussions_handler")
+    source = ast.get_source_segment(ENTRY_TEXT, handler)
+    assert source is not None
+    assert source.index("await _fill_signer_author_name(env, event)") < source.index(
+        'actor = clean_string(event.get("authorName", "")')

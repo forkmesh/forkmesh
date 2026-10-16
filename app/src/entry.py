@@ -39497,6 +39497,7 @@ async def discussions_handler(env, request, owner, repo):
                 number, event,
                 _event_signing_repo_keys(request, owner, repo)):
             return json_response({"error": "bad_signature"}, status=401)
+        await _fill_signer_author_name(env, event)
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )

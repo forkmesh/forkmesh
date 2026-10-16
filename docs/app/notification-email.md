@@ -13,6 +13,14 @@ Each runs from the notification queue consumer and from the
 `notification-digest` cron phase, and on ForkMesh Next every core (n2, n3, n4)
 runs its own consumer against the one rqlite database.
 
+## Collaboration author display
+
+Issue, pull request, and discussion inbox handlers resolve an unnamed valid
+signing key to its owning account before storing or notifying about the event.
+That lets notification titles name the account rather than the abbreviated
+key. The supplied `authorName` is retained when present, and an unrecognized
+key remains unnamed.
+
 ## Why a watermark is not enough
 
 Each sender reads the rows above a per-recipient watermark

@@ -1,0 +1,46 @@
+{
+    "assignees": [
+    ],
+    "author": "jett",
+    "authorName": "jett",
+    "bountyAddress": "",
+    "bountyStatus": "",
+    "bountyUsd": 0,
+    "createdAt": 1792119529730,
+    "endDate": 0,
+    "events": [
+        {
+            "attachments": [
+            ],
+            "author": "jett",
+            "authorName": "jett",
+            "body": "Have the ability to see the images attached\n\n---\n_Filed from the in-app bug report button._\n\n- Severity: normal\n- Plugin: app-store-status\n- Screen: App Store Status\n- Source: mobile\n- Platform: ios\n- App version: 1.4.1+246\n- OS version: Version 27.2 (Build 24B5099f)\n- Reporter: jett\n- Report id: da1f602eeb452d15c8bf5cc39933700d",
+            "id": "forkbot-1792119529730",
+            "sig": "",
+            "title": "[app-store-status] Have the ability to see the images attached",
+            "ts": 1792119529730,
+            "type": "open"
+        }
+    ],
+    "labels": [
+        "bug",
+        "in-app-report",
+        "plugin"
+    ],
+    "milestone": "",
+    "number": 736,
+    "priority": 0,
+    "progress": 0,
+    "rewardCondition": "",
+    "rewardEstimateLamports": 0,
+    "rewardId": "",
+    "rewardRecipient": "",
+    "rewardStatus": "",
+    "rewardTxSignature": "",
+    "schema": "forkmesh-issue-v1",
+    "startDate": 0,
+    "status": "open",
+    "title": "[app-store-status] Have the ability to see the images attached",
+    "updatedAt": 1792119529730,
+    "votes": 0
+}
