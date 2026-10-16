@@ -71,27 +71,63 @@ struct DjLoadSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Section {
-                ForEach(model.searchResults) { (result: DjSearchResult) in
-                    Button {
-                        model.load(model.searchTarget, id: result.id, title: result.title, author: result.author)
-                        model.sheet = nil
-                    } label: {
-                        DjResultRow(result: result)
-                    }
-                    .buttonStyle(.plain)
-                }
+            if model.searchText.isEmpty {
+                recent
+                results
+            } else {
+                results
+                recent
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .navigationTitle("Load Deck \(model.searchTarget.label)")
-        .onAppear { focused = model.searchResults.isEmpty }
+        .onAppear { focused = true }
+    }
+
+    @ViewBuilder private var results: some View {
+        if !model.searchResults.isEmpty {
+            Section("Search Results") {
+                ForEach(model.searchResults) { (result: DjSearchResult) in
+                    row(result)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var recent: some View {
+        if !model.history.isEmpty {
+            Section {
+                ForEach(model.history) { (item: DjHistoryItem) in
+                    row(DjSearchResult(id: item.id, title: item.title.isEmpty ? "YouTube video" : item.title, author: item.author))
+                }
+                .onDelete { model.forget($0) }
+            } header: {
+                HStack {
+                    Text("Recently Played")
+                    Spacer()
+                    Button("Clear") { model.clearHistory() }
+                        .font(.footnote)
+                        .textCase(nil)
+                }
+            }
+        }
+    }
+
+    private func row(_ result: DjSearchResult) -> some View {
+        Button {
+            model.load(model.searchTarget, id: result.id, title: result.title, author: result.author)
+            model.sheet = nil
+        } label: {
+            DjResultRow(result: result, loaded: model.deck(model.searchTarget).videoId == result.id)
+        }
+        .buttonStyle(.plain)
     }
 }
 
 struct DjResultRow: View {
     let result: DjSearchResult
+    var loaded = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -112,7 +148,7 @@ struct DjResultRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            Image(systemName: "plus.circle")
+            Image(systemName: loaded ? "checkmark.circle.fill" : "plus.circle")
                 .foregroundStyle(.tint)
         }
         .contentShape(Rectangle())
@@ -285,11 +321,15 @@ struct DjInfoSheet: View {
                 }
             }
             Section("How it works") {
-                Label("Drag a record to search through its track.", systemImage: "hand.draw")
+                Label("Search and press return: the top result loads straight onto the deck.", systemImage: "magnifyingglass")
+                Label("Songs you play are kept under Recently Played in the loader for one-tap reloading.", systemImage: "clock.arrow.circlepath")
+                Label("Drag a record to scratch it.", systemImage: "hand.draw")
+                Label("START plays, PAUSE holds, STOP goes back to the beginning, RESTART starts over; SAMPLE saves 8 seconds to a pad.", systemImage: "playpause")
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
                 Label("AUTOMIX fades to the other deck over 8 seconds.", systemImage: "arrow.left.arrow.right")
                 Label("The record button captures 8 seconds for the sampler.", systemImage: "record.circle")
+                Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
             }
             .font(.footnote)
             Section {

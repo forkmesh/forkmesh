@@ -24,7 +24,7 @@ struct DjPlatter: View {
                 .accessibilityElement()
                 .accessibilityLabel("Deck \(deck.side.label) turntable")
                 .accessibilityValue(deck.loaded ? "\(DjStudio.clock(deck.time)) of \(DjStudio.clock(deck.duration))" : "Empty")
-                .accessibilityHint(deck.loaded ? "Drag around the record to search through the track" : "Double-tap to load a video")
+                .accessibilityHint(deck.loaded ? "Drag around the record to scratch through the track" : "Double-tap to load a video")
                 .accessibilityAction { if !deck.loaded { model.openLoad(deck.side) } }
             DjTonearm(deck: deck, d: d)
                 .allowsHitTesting(false)
@@ -80,25 +80,18 @@ struct DjRecord: View {
 
     var body: some View {
         let r = d * 0.82
-        let video = deck.playing && !deck.scratching
         ZStack {
             DjVinyl(d: r).equatable()
-            if deck.loaded {
-                DjVideoSurface(player: deck.player)
-                    .frame(width: r * 16 / 9, height: r)
-                    .frame(width: r, height: r)
-                    .clipShape(Circle())
-                    .modifier(DjGainOpacity(model: model, side: deck.side))
-            }
             TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.playing || deck.scratching)) { _ in
                 let angle = Angle.degrees(DjStudio.turnDegrees(deck.position()))
                 ZStack {
-                    if let artwork = deck.artwork, !video {
+                    if let artwork = deck.artwork {
                         Image(uiImage: artwork)
                             .resizable()
                             .interpolation(.medium)
                             .frame(width: r, height: r)
                             .clipShape(Circle())
+                            .modifier(DjGainOpacity(model: model, side: deck.side))
                             .rotationEffect(angle)
                     }
                     DjRimDots(d: d).equatable().rotationEffect(angle)

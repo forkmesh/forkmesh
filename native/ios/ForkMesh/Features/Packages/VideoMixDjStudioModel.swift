@@ -34,7 +34,7 @@ final class DjDeck {
     var time: Double = 0
     var duration: Double = 0
     var playing = false
-    var buffering = false
+    var advancing = false
     var cue: Double = 0
     var level: Double = 1
     var rate: Double = 1
@@ -42,19 +42,23 @@ final class DjDeck {
     var bpm: Double = 0
     var loop = false
     var scratching = false
+    var sampling = false
     var showsRemaining = false
 
     @ObservationIgnored var tickDate = CACurrentMediaTime()
     @ObservationIgnored var tapTempo = DjTapTempo()
     @ObservationIgnored var resumeAfterScratch = false
-    @ObservationIgnored var lastScratchSeek: CFTimeInterval = 0
+    @ObservationIgnored var scratchStamp: CFTimeInterval = 0
+    @ObservationIgnored var scratchSent: CFTimeInterval = 0
+    @ObservationIgnored var scratchSpeed: Double = 0
+    @ObservationIgnored var scratchTask: Task<Void, Never>?
     @ObservationIgnored var settleUntil: CFTimeInterval = 0
     @ObservationIgnored var rateTask: Task<Void, Never>?
-    @ObservationIgnored let player: DjYouTubePlayer
+    @ObservationIgnored let player: DjDeckPlayer
 
-    init(side: DjDeckSide, origin: URL) {
+    init(side: DjDeckSide, host: DjPlayerHost) {
         self.side = side
-        player = DjYouTubePlayer(origin: origin)
+        player = DjDeckPlayer(side: side, host: host)
     }
 
     var loaded: Bool { !videoId.isEmpty }
@@ -62,7 +66,7 @@ final class DjDeck {
     var shownBpm: Double { bpm * effectiveRate }
 
     func position(at now: CFTimeInterval = CACurrentMediaTime()) -> Double {
-        guard playing, !scratching, !buffering else { return time }
+        guard advancing, !scratching else { return time }
         let moved = time + (now - tickDate) * effectiveRate
         return duration > 0 ? min(duration, moved) : moved
     }
@@ -79,6 +83,20 @@ final class DjDeck {
 
 @MainActor
 @Observable
+final class DjStudioHub {
+    static let shared = DjStudioHub()
+    private(set) var model: DjStudioModel?
+
+    func studio() -> DjStudioModel {
+        if let model { return model }
+        let made = DjStudioModel()
+        model = made
+        return made
+    }
+}
+
+@MainActor
+@Observable
 final class DjStudioModel {
     let a: DjDeck
     let b: DjDeck
@@ -88,6 +106,7 @@ final class DjStudioModel {
     var zoomed = false
     var automixing = false
     var recording = false
+    var onScreen = false
     var notice: String?
     var sheet: DjSheet?
     var searchTarget: DjDeckSide = .a
@@ -95,10 +114,12 @@ final class DjStudioModel {
     var searchResults: [DjSearchResult] = []
     var searching = false
     var searchProblem = ""
+    var history: [DjHistoryItem] = []
     var flashedPad: DjDrumPad?
     var leavingAfterSheet = false
 
     @ObservationIgnored var onLeave: (() -> Void)?
+    @ObservationIgnored let host: DjPlayerHost
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let sampler = DjSampler()
     @ObservationIgnored private var sectionCursor = 0
@@ -111,13 +132,15 @@ final class DjStudioModel {
     @ObservationIgnored private var previousCategory: AVAudioSession.Category?
     @ObservationIgnored private var previousOptions: AVAudioSession.CategoryOptions = []
     @ObservationIgnored private var previousIdle = false
+    @ObservationIgnored private var audioClaimed = false
     @ObservationIgnored private var active = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let origin = DjStudioModel.origin()
-        a = DjDeck(side: .a, origin: origin)
-        b = DjDeck(side: .b, origin: origin)
+        let host = DjPlayerHost(origin: DjStudioModel.origin())
+        self.host = host
+        a = DjDeck(side: .a, host: host)
+        b = DjDeck(side: .b, host: host)
         let saved = DjSaved.decode(defaults.data(forKey: DjStudio.storageKey))
         crossfader = saved.crossfader
         samplerLevel = saved.samplerLevel
@@ -125,11 +148,12 @@ final class DjStudioModel {
         sections = saved.sections
         sectionCursor = sections.firstIndex(where: { $0 == nil }) ?? 0
         zoomed = saved.zoomed
+        history = saved.history
+        host.onEvent = { [weak self] side, event in
+            guard let self else { return }
+            self.handle(event, self.deck(side))
+        }
         for deck in [a, b] {
-            deck.player.onEvent = { [weak self, weak deck] event in
-                guard let self, let deck else { return }
-                self.handle(event, deck)
-            }
             let stored = saved[deck.side]
             deck.cue = stored.cue
             deck.level = stored.level
@@ -156,38 +180,68 @@ final class DjStudioModel {
 
     func deck(_ side: DjDeckSide) -> DjDeck { side == .a ? a : b }
 
+    var audibleDeck: DjDeck? {
+        [a, b].filter(\.playing).max { left, right in
+            DjStudio.gain(left.side, crossfader: crossfader) * left.level < DjStudio.gain(right.side, crossfader: crossfader) * right.level
+        }
+    }
+
     func appear() {
         guard !active else { return }
         active = true
-        let session = AVAudioSession.sharedInstance()
-        previousCategory = session.category
-        previousOptions = session.categoryOptions
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-        try? session.setActive(true)
+        onScreen = true
+        claimAudio()
         previousIdle = UIApplication.shared.isIdleTimerDisabled
         UIApplication.shared.isIdleTimerDisabled = true
         FmOrientationLock.allowLandscape(true)
+        host.dock()
         applyMix()
     }
 
     func disappear() {
         guard active else { return }
         active = false
-        automixTask?.cancel()
-        automixing = false
-        for deck in [a, b] where deck.playing { pause(deck) }
+        onScreen = false
+        for deck in [a, b] where deck.scratching { scratchEnded(deck.side) }
         sampler.stop()
         save(now: true)
         UIApplication.shared.isIdleTimerDisabled = previousIdle
-        if let previousCategory {
-            try? AVAudioSession.sharedInstance().setCategory(previousCategory, options: previousOptions)
-        }
         FmOrientationLock.allowLandscape(false)
+        if !a.playing, !b.playing {
+            automixTask?.cancel()
+            automixing = false
+            releaseAudio()
+        }
     }
 
     func leave() {
         disappear()
         onLeave?()
+    }
+
+    func stopAll() {
+        automixTask?.cancel()
+        automixing = false
+        for deck in [a, b] where deck.playing { pause(deck) }
+        if !active { releaseAudio() }
+    }
+
+    private func claimAudio() {
+        guard !audioClaimed else { return }
+        audioClaimed = true
+        let session = AVAudioSession.sharedInstance()
+        previousCategory = session.category
+        previousOptions = session.categoryOptions
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true)
+    }
+
+    private func releaseAudio() {
+        guard audioClaimed else { return }
+        audioClaimed = false
+        if let previousCategory {
+            try? AVAudioSession.sharedInstance().setCategory(previousCategory, options: previousOptions)
+        }
     }
 
     func show(_ text: String) {
@@ -203,7 +257,7 @@ final class DjStudioModel {
     func load(_ side: DjDeckSide, id: String, title: String = "", author: String = "") {
         let deck = deck(side)
         prepare(deck, id: id, title: title, author: author, start: 0, keepSettings: false)
-        show("Deck \(side.label) loaded.")
+        show(title.isEmpty ? "Deck \(side.label) loaded." : "Deck \(side.label): \(title)")
         save()
     }
 
@@ -225,15 +279,14 @@ final class DjStudioModel {
         deck.tickDate = CACurrentMediaTime()
         deck.duration = 0
         deck.playing = false
-        deck.buffering = false
+        deck.advancing = false
         if !keepSettings {
             deck.cue = 0
             deck.bpm = 0
             deck.loop = false
             deck.tapTempo = DjTapTempo()
         }
-        let volume = volume(for: deck)
-        deck.player.load(id, start: start, rate: deck.effectiveRate, volume: volume.level, muted: volume.muted)
+        deck.player.load(id, start: start, rate: deck.effectiveRate, volume: volume(for: deck))
         Task { [weak deck] in
             let image = await DjArtwork.load(id)
             guard let deck, deck.videoId == id else { return }
@@ -253,6 +306,7 @@ final class DjStudioModel {
         deck.time = 0
         deck.duration = 0
         deck.playing = false
+        deck.advancing = false
         deck.cue = 0
         deck.bpm = 0
         deck.loop = false
@@ -267,26 +321,39 @@ final class DjStudioModel {
             deck.player.setRate(deck.effectiveRate)
         case let .tick(time, duration, state):
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
-            guard CACurrentMediaTime() >= deck.settleUntil else { return }
-            apply(state, deck)
-            if !deck.scratching {
-                if abs(deck.time - time) > 0.001 { deck.time = time }
-                deck.tickDate = CACurrentMediaTime()
+            guard !deck.scratching else { return }
+            let now = CACurrentMediaTime()
+            if now < deck.settleUntil {
+                advance(state == 1 && deck.playing, deck)
+                return
             }
-            if deck.loop, deck.playing, !deck.scratching, deck.time >= deck.cue + DjStudio.loopSeconds {
+            apply(state, deck)
+            let continuous = deck.advancing && state == 1
+            let tracked = DjStudio.trackedPosition(predicted: deck.position(at: now), reported: time, continuous: continuous)
+            if abs(deck.time - tracked) > 0.0005 { deck.time = tracked }
+            deck.tickDate = now
+            advance(state == 1, deck)
+            if deck.loop, deck.playing, deck.time >= deck.cue + DjStudio.loopSeconds {
                 deck.player.seek(deck.cue)
                 deck.time = deck.cue
+                deck.tickDate = now
+                deck.settle(now)
             }
         case let .state(state):
             apply(state, deck)
+            if state == 1 { advance(true, deck) }
         case let .meta(title, author):
             if deck.title != title || deck.author != author {
                 deck.title = title
                 deck.author = author
+                if history.contains(where: { $0.id == deck.videoId }) {
+                    history = history.map { $0.id == deck.videoId ? DjHistoryItem(id: $0.id, title: title, author: author) : $0 }
+                }
                 save()
             }
         case let .failed(code):
             deck.playing = false
+            advance(false, deck)
             switch code {
             case 2: show("Deck \(deck.side.label): that YouTube link is not valid.")
             case 100: show("Deck \(deck.side.label): that video was removed or is private.")
@@ -297,33 +364,90 @@ final class DjStudioModel {
         }
     }
 
+    private func advance(_ advancing: Bool, _ deck: DjDeck) {
+        guard deck.advancing != advancing, !deck.scratching else { return }
+        deck.rebase()
+        deck.advancing = advancing
+    }
+
     private func apply(_ state: Int, _ deck: DjDeck) {
         guard !deck.scratching else { return }
         let playing = state == 1 || state == 3
-        let buffering = state == 3
         if deck.playing != playing { deck.playing = playing }
-        if deck.buffering != buffering { deck.buffering = buffering }
+        if state != 1 { advance(false, deck) }
         if state == 0, deck.duration > 0 { deck.time = deck.duration }
     }
 
-    func togglePlay(_ side: DjDeckSide) {
+    func start(_ side: DjDeckSide) {
         let deck = deck(side)
         guard deck.loaded else {
             openLoad(side)
             return
         }
-        if deck.playing { pause(deck) } else { play(deck) }
+        if !deck.playing { play(deck) }
+    }
+
+    func pauseDeck(_ side: DjDeckSide) {
+        let deck = deck(side)
+        if deck.playing { pause(deck) }
+    }
+
+    func stop(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else { return }
+        sectionTasks[side]?.cancel()
+        if deck.playing { pause(deck) }
+        rewind(deck)
+    }
+
+    func restart(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else {
+            openLoad(side)
+            return
+        }
+        sectionTasks[side]?.cancel()
+        rewind(deck)
+        if !deck.playing { play(deck) }
+    }
+
+    private func rewind(_ deck: DjDeck) {
+        deck.player.seek(0)
+        deck.time = 0
+        deck.tickDate = CACurrentMediaTime()
+        deck.settle()
     }
 
     private func play(_ deck: DjDeck) {
+        host.dock()
+        claimAudio()
         deck.rebase()
         deck.settle()
         deck.playing = true
         deck.player.play()
+        remember(deck)
+    }
+
+    private func remember(_ deck: DjDeck) {
+        guard deck.loaded else { return }
+        let updated = DjStudio.remember(history, id: deck.videoId, title: deck.title, author: deck.author)
+        guard updated != history else { return }
+        history = updated
+        save()
+    }
+
+    func forget(_ offsets: IndexSet) {
+        history.remove(atOffsets: offsets)
+        save()
+    }
+
+    func clearHistory() {
+        history = []
+        save()
     }
 
     private func pause(_ deck: DjDeck) {
-        deck.rebase()
+        advance(false, deck)
         deck.settle()
         deck.playing = false
         deck.player.pause()
@@ -383,7 +507,7 @@ final class DjStudioModel {
     private func sendRate(_ deck: DjDeck) {
         guard deck.rateTask == nil else { return }
         deck.rateTask = Task { [weak deck] in
-            try? await Task.sleep(for: .milliseconds(80))
+            try? await Task.sleep(for: .milliseconds(40))
             guard let deck else { return }
             deck.rateTask = nil
             deck.player.setRate(deck.effectiveRate)
@@ -445,30 +569,60 @@ final class DjStudioModel {
         guard deck.loaded, deck.duration > 0, !deck.scratching else { return }
         deck.rebase()
         deck.resumeAfterScratch = deck.playing
+        deck.advancing = false
         deck.scratching = true
-        deck.player.pause()
+        let now = CACurrentMediaTime()
+        deck.scratchStamp = now
+        deck.scratchSent = now
+        deck.scratchSpeed = 0
+        deck.player.scratch(0, at: deck.time)
+        sampler.beginScratch()
+        deck.scratchTask?.cancel()
+        deck.scratchTask = Task { [weak self, weak deck] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(45))
+                guard let self, let deck, deck.scratching else { return }
+                guard CACurrentMediaTime() - deck.scratchStamp > 0.06, deck.scratchSpeed != 0 else { continue }
+                deck.scratchSpeed = abs(deck.scratchSpeed) < 0.05 ? 0 : deck.scratchSpeed * 0.35
+                self.sendScratch(deck, force: true)
+            }
+        }
     }
 
     func scratchMoved(_ side: DjDeckSide, radians: Double) {
         let deck = deck(side)
         guard deck.scratching else { return }
-        deck.time = min(deck.duration, max(0, deck.time + DjStudio.scratchSeconds(fromRadians: radians)))
+        let seconds = DjStudio.scratchSeconds(fromRadians: radians)
         let now = CACurrentMediaTime()
-        if now - deck.lastScratchSeek > 0.08 {
-            deck.lastScratchSeek = now
-            deck.player.seek(deck.time)
-        }
+        deck.time = min(deck.duration, max(0, deck.time + seconds))
+        deck.scratchSpeed = DjStudio.scratchSpeed(previous: deck.scratchSpeed, seconds: seconds, elapsed: now - deck.scratchStamp)
+        deck.scratchStamp = now
+        sendScratch(deck, force: false)
+    }
+
+    private func sendScratch(_ deck: DjDeck, force: Bool) {
+        let gain = DjStudio.gain(deck.side, crossfader: crossfader) * deck.level
+        sampler.scratch(level: DjStudio.scratchLevel(deck.scratchSpeed) * gain, speed: abs(deck.scratchSpeed))
+        let now = CACurrentMediaTime()
+        guard force || now - deck.scratchSent >= 0.04 else { return }
+        deck.scratchSent = now
+        deck.player.scratch(deck.scratchSpeed, at: deck.time)
     }
 
     func scratchEnded(_ side: DjDeckSide) {
         let deck = deck(side)
         guard deck.scratching else { return }
+        deck.scratchTask?.cancel()
+        deck.scratchTask = nil
+        deck.scratchSpeed = 0
+        sampler.scratch(level: 0, speed: 0)
+        deck.player.scratch(nil, at: deck.time)
         deck.player.seek(deck.time)
         deck.scratching = false
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
         deck.playing = deck.resumeAfterScratch
-        if deck.resumeAfterScratch { deck.player.play() }
+        if deck.resumeAfterScratch { deck.player.play() } else { deck.player.pause() }
     }
 
     func setCrossfader(_ value: Double, cancelAutomix: Bool = true) {
@@ -483,16 +637,13 @@ final class DjStudioModel {
         save()
     }
 
-    private func volume(for deck: DjDeck) -> (level: Int, muted: Bool) {
+    private func volume(for deck: DjDeck) -> DjVolume {
         let gain = DjStudio.gain(deck.side, crossfader: crossfader) * deck.level
-        return (Int((gain * 100).rounded()), gain < 0.02)
+        return DjVolume(level: Int((gain * 100).rounded()), muted: gain < 0.02, gain: (gain * 100).rounded() / 100)
     }
 
     private func applyMix() {
-        for deck in [a, b] {
-            let volume = volume(for: deck)
-            deck.player.setVolume(volume.level, muted: volume.muted)
-        }
+        for deck in [a, b] { deck.player.setVolume(volume(for: deck)) }
     }
 
     func slam(_ side: DjDeckSide) {
@@ -542,26 +693,28 @@ final class DjStudioModel {
         }
     }
 
-    func capture() {
-        let candidates = [a, b].filter { $0.loaded && $0.duration > 0 }
+    func capture(_ side: DjDeckSide? = nil) {
+        let candidates = [a, b].filter { $0.loaded && $0.duration > 0 && (side == nil || $0.side == side) }
         guard let deck = candidates.max(by: { left, right in
             let leftScore = (left.playing ? 2 : 0) + DjStudio.gain(left.side, crossfader: crossfader)
             let rightScore = (right.playing ? 2 : 0) + DjStudio.gain(right.side, crossfader: crossfader)
             return leftScore < rightScore
         }) else {
-            show("Load and start a deck before capturing a section.")
+            show(side.map { "Load Deck \($0.label) before sampling it." } ?? "Load and start a deck before capturing a section.")
             return
         }
         let start = deck.position()
         let slot = sectionCursor
         sections[slot] = DjSection(deck: deck.side, start: start, duration: min(DjStudio.sectionSeconds, max(1, deck.duration - start)))
         sectionCursor = (slot + 1) % DjStudio.sectionCount
-        recording = true
-        Task { [weak self] in
+        recording = side == nil
+        deck.sampling = true
+        Task { [weak self, weak deck] in
             try? await Task.sleep(for: .milliseconds(650))
             self?.recording = false
+            deck?.sampling = false
         }
-        show("Captured Deck \(deck.side.label) at \(DjStudio.clock(start)) into Section \(slot + 1).")
+        show("Sampled Deck \(deck.side.label) at \(DjStudio.clock(start)) into Section \(slot + 1). Play it from the pads.")
         save()
     }
 
@@ -629,17 +782,23 @@ final class DjStudioModel {
         searchTask?.cancel()
         searching = true
         searchProblem = ""
+        let target = searchTarget
         searchTask = Task { [weak self] in
             guard let self else { return }
             let results = await self.fetchResults(query)
             guard !Task.isCancelled else { return }
             self.searching = false
-            if let results {
-                self.searchResults = results
-                if results.isEmpty { self.searchProblem = "No YouTube videos matched that search." }
-            } else {
+            guard let results else {
                 self.searchProblem = "YouTube search is unavailable right now. Paste a YouTube link to load it directly."
+                return
             }
+            self.searchResults = results
+            guard let top = results.first else {
+                self.searchProblem = "No YouTube videos matched that search."
+                return
+            }
+            self.load(target, id: top.id, title: top.title, author: top.author)
+            if self.sheet == .load(target) { self.sheet = nil }
         }
     }
 
@@ -686,6 +845,7 @@ final class DjStudioModel {
         saved.samplerLevel = samplerLevel
         saved.sections = sections
         saved.zoomed = zoomed
+        saved.history = history
         for deck in [a, b] {
             var stored = DjSavedDeck()
             stored.videoId = deck.videoId

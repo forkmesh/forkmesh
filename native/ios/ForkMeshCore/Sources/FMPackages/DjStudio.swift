@@ -51,6 +51,7 @@ public enum DjStudio {
     public static let automixSeconds: Double = 8
     public static let rateBounds: ClosedRange<Double> = 0.25...2
     public static let storageKey = "fm.videoMixDjStudio.v1"
+    public static let historyLimit = 40
 
     public static func isVideoId(_ value: String) -> Bool {
         value.utf8.count == 11 && value.unicodeScalars.allSatisfy { scalar in
@@ -142,6 +143,42 @@ public enum DjStudio {
 
     public static func scratchSeconds(fromRadians change: Double) -> Double {
         change / (2 * Double.pi) * secondsPerTurn
+    }
+
+    public static func scratchSpeed(previous: Double, seconds: Double, elapsed: Double) -> Double {
+        guard seconds.isFinite, elapsed.isFinite, elapsed > 0 else { return previous }
+        let instant = min(8, max(-8, seconds / max(0.008, elapsed)))
+        return previous * 0.4 + instant * 0.6
+    }
+
+    public static func scratchLevel(_ speed: Double) -> Double {
+        guard speed.isFinite else { return 0 }
+        return min(1, abs(speed) / 2.5) * (speed < 0 ? 1 : 0.5)
+    }
+
+    public static func trackedPosition(predicted: Double, reported: Double, continuous: Bool) -> Double {
+        guard reported.isFinite else { return predicted }
+        guard continuous, predicted.isFinite else { return reported }
+        let error = reported - predicted
+        return abs(error) > 0.3 ? reported : predicted + error * 0.35
+    }
+
+    public static func miniBars(_ bars: [DjWaveBar], time: Double, duration: Double, count: Int = 7, spacing: Double = 0.18) -> [DjWaveBar] {
+        guard count > 0, !bars.isEmpty, duration > 0, time.isFinite else {
+            return Array(repeating: DjWaveBar(level: 0.08, hue: 0), count: max(0, count))
+        }
+        return (0..<count).map { index in
+            let moment = time + (Double(index) - Double(count - 1) / 2) * spacing
+            guard moment >= 0, moment <= duration else { return DjWaveBar(level: 0.08, hue: 0) }
+            return bars[min(bars.count - 1, max(0, Int(moment / duration * Double(bars.count))))]
+        }
+    }
+
+    public static func remember(_ history: [DjHistoryItem], id: String, title: String, author: String, limit: Int = historyLimit) -> [DjHistoryItem] {
+        guard isVideoId(id), limit > 0 else { return history }
+        let known = history.first { $0.id == id }
+        let item = DjHistoryItem(id: id, title: title.isEmpty ? known?.title ?? "" : title, author: author.isEmpty ? known?.author ?? "" : author)
+        return Array(([item] + history.filter { $0.id != id }).prefix(limit))
     }
 
     public static func turnDegrees(_ seconds: Double) -> Double {
@@ -267,6 +304,30 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
     }
 }
 
+public struct DjHistoryItem: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    public var author: String
+
+    public init(id: String, title: String, author: String) {
+        self.id = id
+        self.title = String(title.prefix(300))
+        self.author = String(author.prefix(200))
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try values.decode(String.self, forKey: .id)
+        guard DjStudio.isVideoId(id) else {
+            throw DecodingError.dataCorruptedError(forKey: .id, in: values, debugDescription: "Not a YouTube video id")
+        }
+        self.init(
+            id: id,
+            title: ((try? values.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "",
+            author: ((try? values.decodeIfPresent(String.self, forKey: .author)) ?? nil) ?? "")
+    }
+}
+
 public struct DjSection: Codable, Equatable, Sendable {
     public var deck: DjDeckSide
     public var start: Double
@@ -294,6 +355,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var samplerLevel: Double = 0.8
     public var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
     public var zoomed = false
+    public var history: [DjHistoryItem] = []
 
     public init() {}
 
@@ -306,6 +368,9 @@ public struct DjSaved: Codable, Equatable, Sendable {
         let stored = ((try? values.decodeIfPresent([DjSection?].self, forKey: .sections)) ?? nil) ?? []
         sections = (0..<DjStudio.sectionCount).map { $0 < stored.count ? stored[$0] : nil }
         zoomed = ((try? values.decodeIfPresent(Bool.self, forKey: .zoomed)) ?? nil) ?? false
+        let entries = ((try? values.decodeIfPresent([DjHistoryEntry].self, forKey: .history)) ?? nil) ?? []
+        var seen = Set<String>()
+        history = Array(entries.compactMap(\.item).filter { seen.insert($0.id).inserted }.prefix(DjStudio.historyLimit))
     }
 
     public subscript(side: DjDeckSide) -> DjSavedDeck {
@@ -323,6 +388,14 @@ public struct DjSaved: Codable, Equatable, Sendable {
     static func clamp(_ value: Double?, _ fallback: Double, _ range: ClosedRange<Double>) -> Double {
         guard let value, value.isFinite else { return fallback }
         return min(range.upperBound, max(range.lowerBound, value))
+    }
+}
+
+struct DjHistoryEntry: Decodable {
+    let item: DjHistoryItem?
+
+    init(from decoder: Decoder) throws {
+        item = try? DjHistoryItem(from: decoder)
     }
 }
 

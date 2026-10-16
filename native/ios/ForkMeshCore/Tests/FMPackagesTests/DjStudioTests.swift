@@ -41,6 +41,35 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjStudio.scratchSeconds(fromRadians: 2 * Double.pi), DjStudio.secondsPerTurn, accuracy: 1e-9)
     }
 
+    func testScratchSpeedFollowsTheHand() {
+        let forward = DjStudio.scratchSpeed(previous: 0, seconds: 0.1, elapsed: 0.1)
+        XCTAssertEqual(forward, 0.6, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.scratchSpeed(previous: forward, seconds: 0.1, elapsed: 0.1), 0.84, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.scratchSpeed(previous: 0, seconds: 5, elapsed: 0.001), 4.8, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.scratchSpeed(previous: 1, seconds: 0.1, elapsed: 0), 1)
+        XCTAssertEqual(DjStudio.scratchLevel(-5), 1)
+        XCTAssertEqual(DjStudio.scratchLevel(5), 0.5)
+        XCTAssertEqual(DjStudio.scratchLevel(0), 0)
+        XCTAssertEqual(DjStudio.scratchLevel(.nan), 0)
+    }
+
+    func testTrackedPositionSmoothsSmallDriftAndSnapsLargeJumps() {
+        XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: 10.1, continuous: true), 10.035, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: 12, continuous: true), 12)
+        XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: 10.1, continuous: false), 10.1)
+        XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: .nan, continuous: true), 10)
+    }
+
+    func testMiniBarsFollowThePlayhead() {
+        let bars = DjStudio.waveform("dQw4w9WgXcQ", count: 1200)
+        let early = DjStudio.miniBars(bars, time: 30, duration: 200)
+        XCTAssertEqual(early.count, 7)
+        XCTAssertEqual(early[3], bars[180])
+        XCTAssertNotEqual(early, DjStudio.miniBars(bars, time: 90, duration: 200))
+        XCTAssertEqual(DjStudio.miniBars(bars, time: 0, duration: 200)[0].level, 0.08)
+        XCTAssertEqual(DjStudio.miniBars([], time: 5, duration: 0).count, 7)
+    }
+
     func testWaveformIsStablePerVideo() {
         let first = DjStudio.waveform("dQw4w9WgXcQ", count: 200)
         XCTAssertEqual(first.count, 200)
@@ -90,6 +119,21 @@ final class DjStudioTests: XCTestCase {
         XCTAssertTrue(saved.zoomed)
         XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
         XCTAssertEqual(DjSaved.decode(Data("nonsense".utf8)), DjSaved())
+    }
+
+    func testHistoryKeepsLatestFirstWithoutDuplicates() {
+        var history = DjStudio.remember([], id: "dQw4w9WgXcQ", title: "Song", author: "Band")
+        history = DjStudio.remember(history, id: "9bZkp7q19f0", title: "Other", author: "")
+        history = DjStudio.remember(history, id: "dQw4w9WgXcQ", title: "", author: "")
+        XCTAssertEqual(history, [
+            DjHistoryItem(id: "dQw4w9WgXcQ", title: "Song", author: "Band"),
+            DjHistoryItem(id: "9bZkp7q19f0", title: "Other", author: ""),
+        ])
+        XCTAssertEqual(DjStudio.remember(history, id: "bad", title: "x", author: ""), history)
+        XCTAssertEqual(DjStudio.remember(history, id: "9bZkp7q19f0", title: "New", author: "", limit: 1), [DjHistoryItem(id: "9bZkp7q19f0", title: "New", author: "")])
+        let saved = DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ","title":"Song"},{"id":"nope"},{"id":"dQw4w9WgXcQ","title":"Again"},{"title":"x"}]}"#.utf8))
+        XCTAssertEqual(saved.history, [DjHistoryItem(id: "dQw4w9WgXcQ", title: "Song", author: "")])
+        XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
     }
 
     func testDrumPadsAreAudibleAndBounded() {

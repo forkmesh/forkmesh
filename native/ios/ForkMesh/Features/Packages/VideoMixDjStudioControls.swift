@@ -347,6 +347,17 @@ enum DjWaveDrawing {
         context.fill(Path(CGRect(x: size.width / 2 - 0.75, y: 0, width: 1.5, height: size.height)), with: .color(DjTheme.playhead))
     }
 
+    static func mini(_ context: GraphicsContext, _ size: CGSize, bars: [DjWaveBar]) {
+        guard !bars.isEmpty, size.width > 0 else { return }
+        let slot = size.width * 0.8 / CGFloat(bars.count)
+        for (index, bar) in bars.enumerated() {
+            let height = max(1, CGFloat(bar.level) * size.height * 0.72)
+            let rect = CGRect(x: size.width * 0.1 + CGFloat(index) * slot + slot * 0.2, y: (size.height - height) / 2, width: slot * 0.6, height: height)
+            let bucket = min(DjTheme.waveColors.count - 1, max(0, Int(bar.hue * Double(DjTheme.waveColors.count))))
+            context.fill(Path(roundedRect: rect, cornerRadius: slot * 0.3), with: .color(DjTheme.waveColors[bucket]))
+        }
+    }
+
     @MainActor static func playhead(height: CGFloat) -> some View {
         Rectangle().fill(DjTheme.playhead).frame(width: 1.5, height: height)
     }
@@ -364,30 +375,75 @@ enum DjWaveDrawing {
     }
 }
 
-struct DjPlayButton: View {
+struct DjBackButton: View {
     let model: DjStudioModel
-    let deck: DjDeck
     let size: CGFloat
 
     var body: some View {
-        Button {
-            DjTheme.tick()
-            model.togglePlay(deck.side)
-        } label: {
-            ZStack {
-                Circle().fill(LinearGradient(colors: [DjTheme.rgb(0x15161A), DjTheme.rgb(0x33363B)], startPoint: .top, endPoint: .bottom))
-                Circle().inset(by: size * 0.07).fill(DjTheme.control)
-                Circle().inset(by: size * 0.07).strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                Image(systemName: deck.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: size * 0.36, weight: .bold))
-                    .foregroundStyle(DjTheme.play.opacity(deck.loaded ? 1 : 0.45))
-                    .shadow(color: DjTheme.play.opacity(deck.playing ? 0.9 : 0.3), radius: deck.playing ? size * 0.14 : size * 0.05)
-                    .offset(x: deck.playing ? 0 : size * 0.03)
-            }
-            .frame(width: size, height: size)
+        DjRoundButton(size: size, action: { model.leave() }) {
+            Image(systemName: "chevron.left")
+        }
+        .accessibilityLabel("Back")
+        .accessibilityHint("Closes the studio. Playing decks keep playing.")
+    }
+}
+
+struct DjTransport: View {
+    let model: DjStudioModel
+    let deck: DjDeck
+    let u: CGFloat
+    var vertical = false
+    var cell = CGSize(width: 58, height: 32)
+
+    var body: some View {
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+        let atStart = deck.position() < 0.05
+        layout {
+            button("START", symbol: "play.fill", tint: DjTheme.play, lit: deck.playing) { model.start(deck.side) }
+                .accessibilityLabel("Start Deck \(deck.side.label)")
+                .accessibilityValue(deck.playing ? "Playing" : "Stopped")
+            divider
+            button("PAUSE", symbol: "pause.fill", tint: DjTheme.ink, lit: deck.loaded && !deck.playing && !atStart) { model.pauseDeck(deck.side) }
+                .accessibilityLabel("Pause Deck \(deck.side.label)")
+            divider
+            button("STOP", symbol: "stop.fill", tint: DjTheme.record, lit: deck.loaded && !deck.playing && atStart) { model.stop(deck.side) }
+                .accessibilityLabel("Stop Deck \(deck.side.label) and go back to the beginning")
+            divider
+            button("RESTART", symbol: "backward.end.fill", tint: DjTheme.active, lit: false) { model.restart(deck.side) }
+                .accessibilityLabel("Start Deck \(deck.side.label) over from the beginning")
         }
         .buttonStyle(DjPressStyle())
-        .accessibilityLabel(deck.playing ? "Pause Deck \(deck.side.label)" : "Play Deck \(deck.side.label)")
+        .background(DjTheme.control, in: RoundedRectangle(cornerRadius: 4 * u, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 4 * u, style: .continuous).strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+        .animation(.easeOut(duration: 0.15), value: deck.playing)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.black.opacity(0.55)).frame(width: vertical ? cell.width * u : 1, height: vertical ? 1 : cell.height * u)
+    }
+
+    private func button(_ title: String, symbol: String, tint: Color, lit: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            DjTheme.tick()
+            action()
+        } label: {
+            VStack(spacing: 2 * u) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12 * u, weight: .bold))
+                    .foregroundStyle(tint.opacity(deck.loaded ? 1 : 0.45))
+                    .shadow(color: tint.opacity(lit ? 0.9 : 0), radius: 5 * u)
+                Text(title)
+                    .font(.system(size: 8 * u, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(DjTheme.ink.opacity(deck.loaded ? 0.9 : 0.5))
+            }
+            .padding(.horizontal, 2 * u)
+            .frame(width: cell.width * u, height: cell.height * u)
+            .background(tint.opacity(lit ? 0.16 : 0))
+            .contentShape(Rectangle())
+        }
     }
 }
 
@@ -396,6 +452,7 @@ struct DjCueButtons: View {
     let deck: DjDeck
     let u: CGFloat
     var vertical = false
+    var segment: CGFloat = 58
 
     var body: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
@@ -408,11 +465,11 @@ struct DjCueButtons: View {
                     Text("SET").font(.system(size: 12 * u, weight: .bold))
                     Circle().fill(DjTheme.ink).frame(width: 8 * u, height: 8 * u)
                 }
-                .frame(width: 58 * u, height: 36 * u)
+                .frame(width: segment * u, height: 34 * u)
                 .contentShape(Rectangle())
             }
             .accessibilityLabel("Set cue on Deck \(deck.side.label)")
-            Rectangle().fill(Color.black.opacity(0.55)).frame(width: vertical ? 58 * u : 1, height: vertical ? 1 : 36 * u)
+            divider
             Button {
                 DjTheme.tick()
                 model.jumpToCue(deck.side)
@@ -422,16 +479,41 @@ struct DjCueButtons: View {
                         .font(.system(size: 17 * u, weight: .semibold))
                     Circle().fill(DjTheme.ink).frame(width: 6 * u, height: 6 * u).offset(x: 3 * u, y: 2 * u)
                 }
-                .frame(width: 58 * u, height: 36 * u)
+                .frame(width: segment * u, height: 34 * u)
                 .contentShape(Rectangle())
             }
             .accessibilityLabel("Jump to Deck \(deck.side.label) cue")
+            divider
+            Button {
+                DjTheme.tick()
+                model.capture(deck.side)
+            } label: {
+                HStack(spacing: 3 * u) {
+                    Circle()
+                        .fill(DjTheme.record)
+                        .frame(width: 7 * u, height: 7 * u)
+                        .shadow(color: DjTheme.record.opacity(deck.sampling ? 1 : 0), radius: 4 * u)
+                    Text("SAMPLE").font(.system(size: 10 * u, weight: .bold))
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: segment * u, height: 34 * u)
+                .background(DjTheme.record.opacity(deck.sampling ? 0.3 : 0))
+                .contentShape(Rectangle())
+            }
+            .animation(.easeOut(duration: 0.25), value: deck.sampling)
+            .accessibilityLabel("Sample 8 seconds of Deck \(deck.side.label)")
+            .accessibilityHint("Saves the next 8 seconds to a sampler pad")
         }
         .buttonStyle(DjPressStyle())
         .foregroundStyle(deck.loaded ? DjTheme.ink : DjTheme.muted)
         .background(DjTheme.control, in: RoundedRectangle(cornerRadius: 4 * u, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 4 * u, style: .continuous).strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.black.opacity(0.55)).frame(width: vertical ? segment * u : 1, height: vertical ? 1 : 34 * u)
     }
 }
 
@@ -450,10 +532,10 @@ struct DjPitchStrip: View {
                 Button {
                     model.tapTempo(deck.side)
                 } label: {
-                    Text(deck.bpm > 0 ? String(format: "%.1f", deck.shownBpm) : "TAP")
+                    Text(deck.bpm > 0 ? String(format: "%.1f", deck.shownBpm) : abs(deck.effectiveRate - 1) > 0.0005 ? String(format: "%+.1f%%", (deck.effectiveRate - 1) * 100) : "TAP")
                         .font(.system(size: (deck.bpm > 0 ? 16 : 13) * u, weight: .regular))
                         .monospacedDigit()
-                        .foregroundStyle(deck.bpm > 0 ? DjTheme.ink : DjTheme.muted)
+                        .foregroundStyle(deck.bpm > 0 || abs(deck.effectiveRate - 1) > 0.0005 ? DjTheme.ink : DjTheme.muted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity, minHeight: 28 * u)

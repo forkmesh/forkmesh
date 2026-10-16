@@ -120,6 +120,7 @@ struct ShellTopBar: View {
                 ShellProjectSlot()
                     .genieKeepsClear()
                 HStack(spacing: FmSpace.x2) {
+                    DjNowPlayingChip()
                     GlassesRadarChip()
                     StepsWalkChip()
                     ShellSuggestionChips()
