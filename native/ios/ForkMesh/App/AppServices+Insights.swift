@@ -22,6 +22,8 @@ struct InsightsInstaller: AppServicesInstaller {
             return AnyView(AdminDestination(section: section))
         }
         services.routes.register(.activity, by: "WS20") { _ in AnyView(ActivityDestination()) }
+        services.routes.register(.logs, by: "WS20") { _ in AnyView(TelemetryScreen(showLogs: true)) }
+        services.routes.register(.diagnostics, by: "WS20") { _ in AnyView(TelemetryScreen()) }
         RepoSectionRegistry.register(.insights, by: "WS20") { repo in AnyView(RepoInsightsScreen(repo: repo)) }
         RepoSectionRegistry.register(.quality, by: "WS20") { repo in AnyView(RepoQualityScreen(repo: repo)) }
         #if canImport(MetricKit)

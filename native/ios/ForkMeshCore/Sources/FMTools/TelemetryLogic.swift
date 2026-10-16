@@ -200,10 +200,10 @@ public final class TelemetryScreenModel {
     public var tab: Int
 
     public init(telemetry: AppTelemetry, focusMetric: TelemetryMetric? = nil, logCategory: LogCategory? = nil,
-                now: (() -> Date)? = nil) {
+                initialTab: Int = 0, now: (() -> Date)? = nil) {
         self.telemetry = telemetry
         self.now = now ?? { Date() }
-        tab = logCategory != nil ? 1 : 0
+        tab = logCategory != nil ? 1 : initialTab
         focus = focusMetric
         if let logCategory { categories = [logCategory] }
     }

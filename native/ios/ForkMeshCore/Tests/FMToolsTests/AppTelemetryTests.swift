@@ -322,6 +322,8 @@ final class AppTelemetryTests: XCTestCase {
         let (clock, log, telemetry) = seeded()
         let model = TelemetryScreenModel(telemetry: telemetry, now: { clock.now })
         XCTAssertEqual(model.tab, 0)
+        let logs = TelemetryScreenModel(telemetry: telemetry, initialTab: 1, now: { clock.now })
+        XCTAssertEqual(logs.tab, 1)
         model.togglePause()
         XCTAssertEqual(model.pauseLabel, "Resume")
         clock.advance(1)

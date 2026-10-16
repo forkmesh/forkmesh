@@ -108,6 +108,8 @@ public enum PackageRoutes {
         case "coves": return .coves(nil)
         case "localAI": return .localAI
         case "activity": return .activity
+        case "logs": return .logs
+        case "diagnostics": return .diagnostics
         case "stats": return .stats
         case "orgs": return .orgs
         default: return nil

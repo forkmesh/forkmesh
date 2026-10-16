@@ -18,7 +18,7 @@ public enum PackageGate {
         "repo-issues": "issues", "repo-commits": "commits", "repo-branches": "branches", "repo-pulls": "pull-requests",
         "repo-releases": "releases", "repo-actions": "actions", "repo-discussions": "discussions",
         "desktops": "desktops", "teammates": "special-agents", "shortcuts": "shortcuts", "hosts": "hosts",
-        "network": "network", "coves": "coves", "localAI": "on-device-ai", "activity": "activity", "stats": "stats",
+        "network": "network", "coves": "coves", "localAI": "on-device-ai", "activity": "activity", "logs": "logs", "diagnostics": "diagnostics", "stats": "stats",
         "orgs": "organizations", "world": "world", "people": "people", "docs": "docs",
         "notes": "notes", "tasks": "tasks", "calendar": "calendar", "timers": "timers", "ledger": "ledger",
         "tour": "tour", "designSystem": "design-system", "status": "status-page", "speech": "speech",
@@ -46,7 +46,7 @@ public enum PackageGate {
         .competitors: "competitor", .ledger: "ledger",
         .vault: "vault", .coves: "coves", .cove: "coves", .calories: "calories", .steps: "steps", .water: "water",
         .sleep: "sleep", .sugarBreak: "sugar-break", .stretch: "stretch", .foodGuide: "food-guide", .speech: "speech",
-        .glassesAlert: "glasses-alert", .faceChanger: "face-changer", .appStoreStatus: "app-store-status", .rssReader: "rss-reader", .localAI: "on-device-ai", .activity: "activity", .people: "people", .docs: "docs",
+        .glassesAlert: "glasses-alert", .faceChanger: "face-changer", .appStoreStatus: "app-store-status", .rssReader: "rss-reader", .localAI: "on-device-ai", .activity: "activity", .logs: "logs", .diagnostics: "diagnostics", .people: "people", .docs: "docs",
         .stats: "stats", .status: "status-page", .orgs: "organizations", .org: "organizations", .tour: "tour",
     ]
 
