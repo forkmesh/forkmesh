@@ -1197,3 +1197,14 @@ def test_node_uptime_migration_creates_the_totals_table():
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in up
     assert "DROP TABLE IF EXISTS node_uptime_totals" in down
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in SCHEMA_TEXT
+
+
+def test_record_fact_migration_creates_the_tables():
+    up = (ROOT / "migrations" / "0266_badge_pull_facts.sql").read_text()
+    down = (ROOT / "migrations" / "down" /
+            "0266_badge_pull_facts.sql").read_text()
+    for table in ("badge_pull_facts", "badge_coauthor_facts",
+                  "badge_repo_sweeps"):
+        assert "CREATE TABLE IF NOT EXISTS " + table in up
+        assert "CREATE TABLE IF NOT EXISTS " + table in SCHEMA_TEXT
+        assert "DROP TABLE IF EXISTS " + table in down
