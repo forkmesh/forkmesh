@@ -11374,9 +11374,10 @@ void CrmFeature::syncZohoMail()
             setStatus(QStringLiteral("Zoho Mail sync failed: %1").arg(error), true);
             return;
         }
-        setStatus(QStringLiteral("Zoho Mail synced: %1 new, %2 refreshed.")
+        setStatus(QStringLiteral("Zoho Mail synced: %1 new, %2 refreshed, %3 sent emails recorded.")
                       .arg(payload.value(QStringLiteral("created")).toInt())
-                      .arg(payload.value(QStringLiteral("updated")).toInt()));
+                      .arg(payload.value(QStringLiteral("updated")).toInt())
+                      .arg(payload.value(QStringLiteral("outboundRecorded")).toInt()));
         loadOrganization();
     });
 }

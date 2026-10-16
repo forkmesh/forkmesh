@@ -177,8 +177,10 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 - The in-app **Zoho setup guide** covers both paths.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
-for it. Email cells open a compose window in the organization's Zoho data
-center (`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
+for it, and records each sent-folder message as an outbound CRM email unless
+that provider message is already linked. Email cells open a compose window in
+the organization's Zoho data center (`https://<data center>/zm/comp.do?ct=mailto:<address>`)
+or Gmail.
 
 ### Sending and tracking
 
