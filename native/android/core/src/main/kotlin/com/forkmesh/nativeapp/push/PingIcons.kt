@@ -8,6 +8,7 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "mention" to "📣",
     "hackathon_squad" to "🏁",
     "hackathon_reward" to "🏆",
+    "badge" to "🏅",
     "subscribed" to "👀",
     "issue_opened" to "🐛",
     "pull_submitted" to "🔀",

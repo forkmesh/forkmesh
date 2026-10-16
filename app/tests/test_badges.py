@@ -113,6 +113,8 @@ def test_catalog_is_a_fixed_known_set():
         "distinguished_contributor", "stargazer", "genies_gift",
         "six_eyes", "brood", "fan_club", "night_watch", "daily_spinner",
         "bug_catcher", "lift_off", "shopkeeper", "critic", "bounty_hunter",
+        "web_weaver", "many_webs", "quick_silk", "carpet_ride", "eight_hands",
+        "oracle",
     }
     for entry in badges.public_catalog():
         assert entry["name"] and entry["description"] and entry["icon"]
@@ -210,7 +212,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None):
         return existing_awards or []
 
     ns = _load(
-        "account_badges_handler", "_account_badges",
+        "account_badges_handler", "_account_badges", "_account_badge_progress",
         extra_globals={
             "MAX_NODE_NAME": 63,
             "badge_catalog": badges,
@@ -960,6 +962,10 @@ ACTIVITY_BADGES = {
     "shopkeeper": (10, 100, 1000, 10000),
     "critic": (1, 10, 50, 200),
     "bounty_hunter": (1, 5, 25, 100),
+    "web_weaver": (2, 16, 128, 1024),
+    "many_webs": (2, 8, 32, 128),
+    "eight_hands": (1, 10, 24, 48),
+    "oracle": (2, 8, 16, 32),
 }
 
 
@@ -987,7 +993,12 @@ def _entry_literal(name):
 
 def _badge_sql():
     names = ("BADGE_CONTRIBUTION_SOURCES_SQL", "BADGE_CONTRIBUTION_DAYS_SQL",
-             "BADGE_METRIC_SQL", "BADGE_PROGRESS_SELECT_SQL")
+             "BADGE_FOREIGN_MERGES_SQL", "BADGE_METRIC_SQL",
+             "BADGE_PROGRESS_SELECT_SQL", "BADGE_FACT_CLOSER_SQL",
+             "BADGE_FACT_SQL", "BADGE_FACT_SELECT_SQL",
+             "BADGE_RECORD_REPOS_SQL", "BADGE_RECORD_UPSERT_SQL",
+             "BADGE_RECORD_REPOS_PER_RUN", "BADGE_RECORD_BATCH",
+             "BADGE_RECORD_REVIEW_CHECKS")
     module = ast.Module(body=[_entry_literal(n) for n in names],
                         type_ignores=[])
     namespace = {}
@@ -1060,11 +1071,36 @@ def _sqlite_badge_db():
 
     for name in ("ada", "bob", "cy", "eve"):
         insert("users", user_bi="u_" + name, username=name, data="{}")
-    insert("nodes", node_bi="n_ada", user_bi="u_ada", data="{}")
-    insert("nodes", node_bi="n_free", user_bi="", data="{}")
-    for key, owner in (("r1", "u_ada"), ("r2", "u_bob"), ("kA", "u_ada")):
+    insert("nodes", node_bi="n_ada", user_bi="u_ada", pubkey="key_ada",
+           data="{}")
+    insert("nodes", node_bi="n_free", user_bi="", pubkey="key_free",
+           data="{}")
+    for name in ("bob", "cy"):
+        insert("nodes", node_bi="u_" + name, user_bi="u_" + name,
+               pubkey="key_" + name, data="{}")
+    for key, owner, private in (("r1", "u_ada", 0), ("r2", "u_bob", 0),
+                                ("kA", "u_ada", 0), ("r3", "u_cy", 0),
+                                ("rP", "u_cy", 1)):
         insert("repositories", key_bi=key, owner_bi=owner, data="{}",
-               is_private=0)
+               is_private=private)
+    for repo, number, merged in (("r1", 1, 1), ("r1", 2, 1), ("r1", 3, 0),
+                                 ("kA", 1, 1), ("r3", 1, 1), ("r2", 5, 1),
+                                 ("rP", 1, 1)):
+        insert("badge_pull_facts", repo_bi=repo, kind="pull", number=number,
+               author_key="key_bob", opened_at=1, merged=merged)
+    insert("badge_pull_facts", repo_bi="r2", kind="pull", number=1,
+           author_key="key_ada", opened_at=1, merged=1)
+    insert("badge_pull_facts", repo_bi="r1", kind="pull", number=4,
+           author_key="key_free", opened_at=1, merged=1)
+    for repo, number in (("r1", 1), ("r1", 2), ("rP", 1)):
+        insert("badge_coauthor_facts", repo_bi=repo, number=number,
+               account_bi="u_eve", created_at=1)
+    for repo, number, opener, answerer in (
+            ("r1", 1, "key_ada", "key_bob"), ("r2", 2, "web-key", "key_bob"),
+            ("r1", 3, "key_ada", "key_ada"), ("rP", 1, "key_ada", "key_bob"),
+            ("r1", 4, "key_ada", ""), ("r3", 5, "key_bob", "key_bob")):
+        insert("badge_answer_facts", repo_bi=repo, number=number,
+               opener_key=opener, answerer_key=answerer)
     for source, generation, captured in (("r1", "g1", 2), ("r2", "g2", 1)):
         insert("profile_contribution_projects", source_repo_bi=source,
                source_account_bi="u_ada", owner_user_bi="u_ada",
@@ -1141,6 +1177,10 @@ def test_activity_badge_queries_run_on_the_real_schema():
         "shopkeeper": [("cy", 10)],
         "critic": [("eve", 1)],
         "bounty_hunter": [("bob", 2)],
+        "web_weaver": [("bob", 4)],
+        "many_webs": [("bob", 3)],
+        "eight_hands": [("eve", 2)],
+        "oracle": [("bob", 2)],
     }
     db.execute("INSERT INTO badge_progress VALUES ('fan_club','u_ada',10,5)")
     assert not db.execute(
@@ -1197,3 +1237,507 @@ def test_node_uptime_migration_creates_the_totals_table():
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in up
     assert "DROP TABLE IF EXISTS node_uptime_totals" in down
     assert "CREATE TABLE IF NOT EXISTS node_uptime_totals" in SCHEMA_TEXT
+
+
+# --- Pull, issue and co-author records ----------------------------------------
+
+def test_pull_record_facts_read_the_merge_fields():
+    fact = badges.pull_record_fact({
+        "number": "7", "status": "merged", "author": "key_a",
+        "ts": "1700000000000", "mergedAt": "1700000200000",
+        "mergedBy": "key_m",
+        "coAuthors": "Pat@Example.TEST, pat@example.test,nope,<x>@y,b@c.io",
+    }, 7)
+    assert fact == {
+        "author_key": "key_a", "closer_key": "key_m",
+        "opened_at": 1700000000000, "closed_at": 1700000200000,
+        "merged": True, "co_authors": ["pat@example.test", "b@c.io"]}
+    opened = badges.pull_record_fact(
+        {"number": "7", "status": "open", "author": "key_a", "ts": "5",
+         "mergedBy": "key_m", "coAuthors": "a@b.io"}, 7)
+    assert opened["merged"] is False and opened["closer_key"] == ""
+    assert opened["co_authors"] == [] and opened["opened_at"] == 5000
+    assert badges.pull_record_fact({"number": "8"}, 7) is None
+    assert badges.pull_record_fact({}, 7) is None
+
+
+def test_issue_record_fact_takes_the_first_close_after_opening():
+    record = {"events": [
+        {"type": "status", "status": "closed", "author": "early", "ts": 1},
+        {"type": "open", "author": "key_a", "ts": 1700000000000},
+        {"type": "comment", "author": "x", "ts": 1700000001000},
+        {"type": "status", "status": "open", "author": "x",
+         "ts": 1700000002000},
+        {"type": "status", "status": "closed", "author": "key_c",
+         "ts": 1700000100000},
+        {"type": "status", "status": "closed", "author": "late",
+         "ts": 1700000900000},
+    ]}
+    assert badges.issue_record_fact(record) == {
+        "author_key": "key_a", "closer_key": "key_c",
+        "opened_at": 1700000000000, "closed_at": 1700000100000}
+    assert badges.issue_record_fact({"events": [{"type": "open"}]}) is None
+    assert badges.issue_record_fact(None) is None
+
+
+def test_quick_close_is_five_minutes_and_needs_both_times():
+    assert badges.QUICK_SILK_MS == 300000
+    assert badges.quick_close(1000, 1000 + badges.QUICK_SILK_MS)
+    assert not badges.quick_close(1000, 1001 + badges.QUICK_SILK_MS)
+    assert not badges.quick_close(1000, 999)
+    assert not badges.quick_close(0, 10)
+    assert "f.closed_at-f.opened_at<=%d" % badges.QUICK_SILK_MS in (
+        _badge_sql()["BADGE_FACT_SQL"]["quick_silk"])
+
+
+def test_review_files_are_the_numbered_review_events():
+    assert badges.has_review_file([{"name": "0003-review.md"}])
+    assert not badges.has_review_file(
+        [{"name": "pull.md"}, {"name": "0002-comment.md"},
+         {"name": "review.md"}])
+
+
+def test_one_level_record_badges_run_on_the_real_schema():
+    sql = _badge_sql()
+    db = _sqlite_badge_db()
+    db.execute("DELETE FROM badge_pull_facts")
+    for values in (
+            ("r1", "issue", 7, "key_cy", "", 1000000, 1200000, 0, 0, 0),
+            ("r1", "pull", 8, "", "u_eve", 1000000, 1100000, 1, 1, 0),
+            ("r1", "pull", 9, "key_ada", "", 1000000, 1400001, 1, 1, 0),
+            ("rP", "issue", 1, "key_ada", "", 1000000, 1000001, 0, 0, 0),
+            ("r1", "pull", 10, "", "u_ada", 0, 1, 1, 0, 0),
+            ("r2", "pull", 11, "key_bob", "", 1, 9000000, 1, 0, 0),
+            ("r2", "pull", 12, "key_ada", "", 1, 9000000, 1, 1, 0),
+            ("r3", "pull", 13, "", "u_cy", 1, 9000000, 1, 1, 1),
+            ("r3", "pull", 14, "key_free", "", 1, 9000000, 1, 0, 0)):
+        db.execute(
+            "INSERT INTO badge_pull_facts (repo_bi, kind, number, "
+            "closer_key, closer_bi, opened_at, closed_at, merged, reviewed, "
+            "review_waived) VALUES (?,?,?,?,?,?,?,?,?,?)", values)
+
+    def winners(slug):
+        return sorted(row["username"] for row in db.execute(
+            "WITH " + sql["BADGE_FACT_SQL"][slug] + " " +
+            sql["BADGE_FACT_SELECT_SQL"] + "LIMIT ?", (slug, 25)))
+
+    assert winners("quick_silk") == ["cy", "eve"]
+    assert winners("carpet_ride") == ["bob", "cy"]
+    db.execute("INSERT INTO badge_awards (badge_slug, account_bi, name, "
+               "granted_by, created_at) VALUES ('quick_silk','u_cy','cy',"
+               "'system',1)")
+    assert winners("quick_silk") == ["eve"]
+
+
+def test_record_sweep_picks_public_repos_whose_refs_moved():
+    sql = _badge_sql()
+    db = _sqlite_badge_db()
+    for key, ts in (("r1", 10), ("r1", 20), ("r2", 5), ("rP", 50),
+                    ("r3", 30)):
+        db.execute("INSERT INTO repo_state_history VALUES (?,?,?)",
+                   (key, "h%d" % ts, ts))
+    db.execute("INSERT INTO badge_repo_sweeps VALUES ('r1', 10, 100)")
+    db.execute("INSERT INTO badge_repo_sweeps VALUES ('r3', 30, 1)")
+    rows = db.execute(sql["BADGE_RECORD_REPOS_SQL"], (4,)).fetchall()
+    assert [(row["key_bi"], row["state_ts"]) for row in rows] == [
+        ("r2", 5), ("r1", 20)]
+
+
+class _SqliteD1:
+    def __init__(self, db):
+        self.db = db
+
+    async def run(self, env, sql, *params):
+        self.db.execute(sql, params)
+
+    async def all(self, env, sql, *params):
+        return [dict(row) for row in self.db.execute(sql, params)]
+
+    async def first(self, env, sql, *params):
+        rows = await self.all(env, sql, *params)
+        return rows[0] if rows else None
+
+
+class _MsClock:
+    value = 1_700_001_000_000
+
+    @classmethod
+    def now(cls):
+        return cls.value
+
+
+def _sweep_namespace(db, gateway):
+    import base64
+    import json as json_module
+    from urllib.parse import quote
+    d1 = _SqliteD1(db)
+    accounts = {
+        "pat@example.test": {"user_bi": "u_eve", "rec": {
+            "email": "pat@example.test", "email_verified": True,
+            "status": "active", "kind": "user"}},
+        "own@example.test": {"user_bi": "u_bob", "rec": {
+            "email": "own@example.test", "email_verified": True,
+            "status": "active", "kind": "user"}},
+        "new@example.test": {"user_bi": "u_cy", "rec": {
+            "email": "new@example.test", "email_verified": False,
+            "status": "active", "kind": "user"}},
+    }
+    for email, account in accounts.items():
+        db.execute("UPDATE users SET email_bi=?, data=? WHERE user_bi=?",
+                   ("bi:" + email, json_module.dumps(account["rec"]),
+                    account["user_bi"]))
+    db.execute("DELETE FROM badge_pull_facts")
+    db.execute("DELETE FROM badge_coauthor_facts")
+    db.execute("DELETE FROM badge_answer_facts")
+    db.execute("UPDATE repositories SET data=? WHERE key_bi='r1'",
+               (json_module.dumps({"owner": "ada", "repo": "web"}),))
+
+    async def decrypt_row(env, data):
+        return json_module.loads(data or "null")
+
+    async def blind_index(env, value):
+        return "bi:" + value
+
+    async def ensure_schema(env):
+        return None
+
+    async def repo_gateway(env, owner, repo, action):
+        gateway["calls"].append((owner, repo, action))
+        return gateway["answer"](action)
+
+    def blob_text(blob):
+        if not isinstance(blob, dict) or not blob.get("ok"):
+            return ""
+        return base64.b64decode(blob["content"]).decode()
+
+    sql = _badge_sql()
+    namespace = _load(
+        "sweep_badge_records", "_sweep_repo_pull_records",
+        "_sweep_repo_issue_records", "_badge_record_numbers",
+        "_badge_record_blobs", "_record_coauthor_facts",
+        "_verified_email_account", "_record_web_merge_badge_fact",
+        "_sweep_repo_discussion_answers",
+        extra_globals=dict(
+            sql, d1_run=d1.run, d1_all=d1.all, d1_first=d1.first,
+            ensure_schema=ensure_schema, decrypt_row=decrypt_row,
+            blind_index=blind_index, Date=_MsClock, json=json_module,
+            quote=quote, badge_catalog=badges, microjobs=_module("microjobs"),
+            _forkbot_repo_gateway_json=repo_gateway,
+            _forkbot_blob_text=blob_text,
+            clean_string=lambda value, limit: str(value or "")[:limit],
+            _account_kind=lambda rec: rec.get("kind", "user")))
+    return namespace
+
+
+def _blob(text):
+    import base64
+    return {"ok": True, "encoding": "base64",
+            "content": base64.b64encode(text.encode()).decode()}
+
+
+def _pull_md(number, status, **fields):
+    lines = ["---", "number: %d" % number, "status: " + status]
+    lines += ["%s: %s" % item for item in fields.items()]
+    return "\n".join(lines + ["---", "", "body"]) + "\n"
+
+
+def test_record_sweep_stores_each_fact_once_and_feeds_the_badges():
+    import json as json_module
+    db = _sqlite_badge_db()
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h',20)")
+    opened = 1_700_000_000_000
+    records = {
+        ".forkmesh/pulls/1/pull.md": _pull_md(
+            1, "merged", author="key_bob", ts=opened,
+            mergedAt=opened + 60000, mergedBy="key_ada",
+            coAuthors="pat@example.test,own@example.test,new@example.test"),
+        ".forkmesh/pulls/2/pull.md": _pull_md(
+            2, "merged", author="key_bob", ts=opened,
+            mergedAt=opened + 900000, mergedBy="key_ada"),
+        ".forkmesh/pulls/3/pull.md": _pull_md(
+            3, "open", author="key_cy", ts=opened),
+        ".forkmesh/pulls/4/pull.md": _pull_md(
+            4, "merged", author="key_cy", ts=opened),
+        ".forkmesh/discussions/5/discussion.md": "---\ncategory: Q&A\n"
+        "author: key_ada\n---\n",
+        ".forkmesh/discussions/5/answer.md": "---\ntype: answer\n"
+        "author: key_ada\nts: 1700000000000\ntarget: reply-1\n"
+        "targetAuthor: key_bob\n---\n",
+        ".forkmesh/discussions/6/discussion.md": "---\ncategory: Ideas\n"
+        "author: key_ada\n---\n",
+        ".forkmesh/issues/closed/9/issue-9.json": json_module.dumps(
+            {"events": [
+                {"type": "open", "author": "key_bob", "ts": opened},
+                {"type": "status", "status": "closed", "author": "key_cy",
+                 "ts": opened + 1000}]}),
+    }
+    gateway = {"calls": [], "oid5": "o5"}
+
+    def answer(action):
+        from urllib.parse import parse_qs
+        kind, _, query = action.partition("?")
+        params = parse_qs(query)
+        path = params.get("path", [""])[0]
+        if kind == "tree" and path == ".forkmesh/pulls":
+            return {"entries": [{"name": str(n), "type": "tree"}
+                                for n in (1, 2, 3, 4)] + [
+                {"name": "README.md", "type": "blob"}]}
+        if kind == "tree" and path == ".forkmesh/pulls/1":
+            return {"entries": [{"name": "pull.md"},
+                                {"name": "0002-comment.md"}]}
+        if kind == "tree" and path == ".forkmesh/pulls/2":
+            return {"entries": [{"name": "0003-review.md"}]}
+        if kind == "tree" and path == ".forkmesh/issues/closed":
+            return {"entries": [{"name": "9", "type": "tree"}]}
+        if kind == "tree" and path == ".forkmesh/discussions":
+            return {"entries": [
+                {"name": "5", "type": "tree", "oid": gateway["oid5"]},
+                {"name": "6", "type": "tree", "oid": "o6"}]}
+        if kind == "blobs":
+            return {"blobs": {p: _blob(records[p])
+                              for p in params.get("path", [])
+                              if p in records}}
+        raise AssertionError(action)
+
+    gateway["answer"] = answer
+    ns = _sweep_namespace(db, gateway)
+    _run(ns["_record_web_merge_badge_fact"](None, "r1", 4, "u_bob", True))
+    assert _run(ns["sweep_badge_records"](None)) == {"awarded": ["ada/web"]}
+    facts = {(row["kind"], row["number"]): dict(row) for row in db.execute(
+        "SELECT * FROM badge_pull_facts WHERE repo_bi='r1'")}
+    assert facts[("pull", 1)]["closer_key"] == "key_ada"
+    assert facts[("pull", 1)]["closed_at"] == opened + 60000
+    assert facts[("pull", 1)]["reviewed"] == 0
+    assert facts[("pull", 2)]["reviewed"] == 1
+    assert facts[("pull", 3)]["merged"] == 0
+    assert facts[("pull", 4)]["closer_bi"] == "u_bob"
+    assert facts[("pull", 4)]["review_waived"] == 1
+    assert facts[("pull", 4)]["opened_at"] == opened
+    assert facts[("pull", 4)]["closed_at"] == _MsClock.value
+    assert facts[("issue", 9)]["closer_key"] == "key_cy"
+    assert [tuple(row) for row in db.execute(
+        "SELECT repo_bi, number, account_bi FROM badge_coauthor_facts")] == [
+        ("r1", 1, "u_eve")]
+    assert [tuple(row) for row in db.execute(
+        "SELECT repo_bi, state_ts FROM badge_repo_sweeps")] == [("r1", 20)]
+    assert [tuple(row) for row in db.execute(
+        "SELECT number, dir_oid, opener_key, answerer_key, marked_at "
+        "FROM badge_answer_facts ORDER BY number")] == [
+        (5, "o5", "key_ada", "key_bob", 1700000000000),
+        (6, "o6", "key_ada", "", 0)]
+
+    calls = len(gateway["calls"])
+    assert _run(ns["sweep_badge_records"](None)) == {"awarded": []}
+    assert len(gateway["calls"]) == calls
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h2',30)")
+    gateway["calls"].clear()
+    _run(ns["sweep_badge_records"](None))
+    read = [action for _, _, action in gateway["calls"]
+            if action.startswith("blobs?")]
+    assert len(read) == 1 and "pulls%2F3%2Fpull.md" in read[0]
+    gateway["oid5"] = "o5b"
+    records[".forkmesh/discussions/5/answer.md"] = (
+        "---\ntype: answer\nts: 1700000009000\ntarget: \n---\n")
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h3',40)")
+    gateway["calls"].clear()
+    _run(ns["sweep_badge_records"](None))
+    read = [action for _, _, action in gateway["calls"]
+            if action.startswith("blobs?") and "discussions" in action]
+    assert len(read) == 1 and "discussions%2F5%2F" in read[0]
+    assert "discussions%2F6%2F" not in read[0]
+    assert db.execute(
+        "SELECT answerer_key FROM badge_answer_facts WHERE number=5"
+    ).fetchone()[0] == ""
+    assert db.execute(
+        "SELECT COUNT(*) FROM badge_coauthor_facts").fetchone()[0] == 1
+
+    sql = _badge_sql()
+
+    def winners(slug):
+        return sorted(row["username"] for row in db.execute(
+            "WITH " + sql["BADGE_FACT_SQL"][slug] + " " +
+            sql["BADGE_FACT_SELECT_SQL"] + "LIMIT 25", (slug,)))
+
+    assert winners("quick_silk") == ["ada", "cy"]
+    assert winners("carpet_ride") == ["ada", "bob"]
+
+
+def test_record_sweep_keeps_a_repo_pending_when_the_mirror_fails():
+    db = _sqlite_badge_db()
+    db.execute("INSERT INTO repo_state_history VALUES ('r1','h',20)")
+    gateway = {"calls": [], "answer": lambda action: None}
+    ns = _sweep_namespace(db, gateway)
+    assert _run(ns["sweep_badge_records"](None)) == {"awarded": []}
+    assert [tuple(row) for row in db.execute(
+        "SELECT repo_bi, state_ts, swept_at FROM badge_repo_sweeps")] == [
+        ("r1", 0, _MsClock.value)]
+
+
+def test_web_merges_record_the_merger_for_the_sweep():
+    handler = (ROOT / "src" / "route_handlers.py").read_text(encoding="utf-8")
+    hook = handler.index('globals().get("_record_web_merge_badge_fact")')
+    assert handler.index('if mutation == "merge":') < hook
+    assert "actor_bi, override_review)" in handler[hook:hook + 400]
+    sweep = _function_source("run_badge_sweep")
+    assert sweep.index("('records', sweep_badge_records)") < sweep.index(
+        "for slug in BADGE_METRIC_SQL:")
+    assert "for slug in BADGE_FACT_SQL:" in sweep
+
+
+def test_record_fact_migration_creates_the_tables():
+    up = (ROOT / "migrations" / "0266_badge_pull_facts.sql").read_text()
+    down = (ROOT / "migrations" / "down" /
+            "0266_badge_pull_facts.sql").read_text()
+    for table in ("badge_pull_facts", "badge_coauthor_facts",
+                  "badge_repo_sweeps"):
+        assert "CREATE TABLE IF NOT EXISTS " + table in up
+        assert "CREATE TABLE IF NOT EXISTS " + table in SCHEMA_TEXT
+        assert "DROP TABLE IF EXISTS " + table in down
+
+
+def test_answer_facts_need_a_question_and_a_named_reply():
+    question = {"category": "Q&A", "author": "key_a"}
+    marked = {"target": "reply-1", "targetAuthor": "key_b",
+              "ts": "1700000000000"}
+    assert badges.answer_record_fact(question, marked) == {
+        "opener_key": "key_a", "answerer_key": "key_b",
+        "marked_at": 1700000000000}
+    assert badges.answer_record_fact(
+        {"category": "q&a", "author": "key_a"}, marked)["answerer_key"] == (
+        "key_b")
+    assert badges.answer_record_fact(
+        {"category": "Ideas", "author": "key_a"}, marked)["answerer_key"] == ""
+    assert badges.answer_record_fact(
+        question, dict(marked, target=""))["answerer_key"] == ""
+    assert badges.answer_record_fact(question, {}) == {
+        "opener_key": "key_a", "answerer_key": "", "marked_at": 0}
+
+
+def test_answer_fact_migration_creates_the_table():
+    up = (ROOT / "migrations" / "0267_badge_answer_facts.sql").read_text()
+    down = (ROOT / "migrations" / "down" /
+            "0267_badge_answer_facts.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS badge_answer_facts" in up
+    assert "CREATE TABLE IF NOT EXISTS badge_answer_facts" in SCHEMA_TEXT
+    assert "DROP TABLE IF EXISTS badge_answer_facts" in down
+    sweep = _function_source("sweep_badge_records")
+    assert "complete = pulls and issues and answers" in sweep
+
+
+def test_account_badges_report_progress_toward_locked_badges():
+    rows = [{"badge_slug": "fan_club", "value": 4},
+            {"badge_slug": "stargazer", "value": 9},
+            {"badge_slug": "genies_gift", "value": 1},
+            {"badge_slug": "nope", "value": 3}]
+
+    async def d1_all(env, sql, *params):
+        assert "FROM badge_progress WHERE account_bi=?" in sql
+        return rows
+
+    ns = _load("_account_badge_progress", extra_globals={
+        "badge_catalog": badges, "d1_all": d1_all})
+    out = _run(ns["_account_badge_progress"](None, "ada-bi", {"stargazer"}))
+    assert out == [{"slug": "fan_club", "progress": 4, "unit": "followers",
+                    "nextTier": "default", "nextThreshold": 10}]
+
+
+def test_the_sweep_refreshes_progress_below_the_first_level():
+    sweep = _function_source("run_badge_sweep")
+    assert "refresh_badge_progress(env, slug)" in sweep
+    refresh = _function_source("refresh_badge_progress")
+    assert "m.value>0 AND m.value<?" in refresh
+    assert "value=MAX(value, excluded.value)" in refresh
+
+
+def test_locked_progress_refresh_runs_on_the_real_schema():
+    sql = _badge_sql()
+    db = _sqlite_badge_db()
+    db.execute(
+        "WITH " + sql["BADGE_METRIC_SQL"]["brood"] + " "
+        "INSERT INTO badge_progress (badge_slug, account_bi, value, "
+        "updated_at) SELECT ?, m.account_bi, m.value, ? FROM m "
+        "JOIN users u ON u.user_bi=m.account_bi "
+        "LEFT JOIN badge_progress p ON p.badge_slug=? "
+        "AND p.account_bi=m.account_bi "
+        "WHERE m.value>0 AND m.value<? AND m.value>COALESCE(p.value, 0) "
+        "ON CONFLICT(badge_slug, account_bi) DO UPDATE SET "
+        "value=MAX(value, excluded.value), updated_at=excluded.updated_at",
+        ("brood", 7, "brood", 16))
+    rows = db.execute(
+        "SELECT account_bi, value FROM badge_progress WHERE badge_slug='brood'"
+    ).fetchall()
+    assert [(row["account_bi"], row["value"]) for row in rows] == [
+        ("u_ada", 2)]
+
+
+# --- Badge pings ------------------------------------------------------------------
+
+def _badge_ping_fn():
+    return _load("badge_ping", extra_globals={"badge_catalog": badges})[
+        "badge_ping"]
+
+
+def test_a_badge_ping_celebrates_and_names_the_level():
+    ping = _badge_ping_fn()
+    first = ping("stargazer", 0, False)
+    assert first["title"] == "You earned the Stargazer badge"
+    assert first["href"] == "/dashboard/achievements"
+    assert first["dedupe"] == "badge:stargazer:default"
+    assert first["meta"] == {"celebrate": "badge", "badge": "stargazer",
+                             "badgeName": "Stargazer", "tier": "default"}
+    up = ping("stargazer", 2, True)
+    assert up["title"] == "Your Stargazer badge is now Silver"
+    assert up["dedupe"] == "badge:stargazer:silver"
+    skipped = ping("fan_club", 3, False)
+    assert skipped["title"] == "You earned the Gold Fan Club badge"
+    single = ping("genies_gift", 0, False)
+    assert single["title"] == "You earned the Genie's Gift badge"
+    assert single["dedupe"] == "badge:genies_gift:earned"
+    assert single["meta"]["tier"] == ""
+    assert ping("nope") is None
+
+
+def test_a_new_award_or_level_sends_one_badge_ping():
+    pings = []
+
+    async def ensure_schema(env):
+        return None
+
+    results = []
+
+    async def d1_run(env, sql, *params):
+        return _RunResult(results.pop(0) if results else 0)
+
+    async def send_email(env, name, slug, tier=0, upgraded=False):
+        return True
+
+    async def send_ping(env, name, slug, tier=0, upgraded=False):
+        pings.append((name, slug, tier, upgraded))
+        return True
+
+    ns = _load("_award_badge", "_d1_changed", extra_globals={
+        "badge_catalog": badges, "ensure_schema": ensure_schema,
+        "d1_run": d1_run, "Date": Clock, "_send_badge_email": send_email,
+        "_send_badge_ping": send_ping, "_safe_error_text": str})
+    results[:] = [1]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=1))
+    results[:] = [0, 1]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=2))
+    results[:] = [0, 0]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=2))
+    assert pings == [("ada", "stargazer", 1, False),
+                     ("ada", "stargazer", 2, True)]
+
+
+def test_badge_is_a_ping_kind_with_an_icon_and_a_setting():
+    assert '"badge",' in _entry_literal_source("NOTIFICATION_KINDS")
+    settings = _module("ping_settings")
+    assert ("badge", "rewards", "Badges earned") in settings.PING_KIND_CATALOG
+    icons = _module("push_icons")
+    assert icons.PUSH_KIND_ICONS["badge"] == "\U0001F3C5"
+    sender = _function_source("_send_badge_ping")
+    assert "await enqueue_notification(" in sender and "'badge'" in sender
+
+
+def _entry_literal_source(name):
+    return ast.unparse(_entry_literal(name)).replace("'", '"')

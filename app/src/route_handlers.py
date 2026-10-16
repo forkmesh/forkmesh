@@ -4619,6 +4619,13 @@ async def repository_pull_merge_handler(
         # merged pull request, and only once the node reported the result
         # published — a queued build must never point at refs no mirror serves.
         if mutation == "merge":
+            badge_fact = globals().get("_record_web_merge_badge_fact")
+            if badge_fact is not None:
+                try:
+                    await badge_fact(env, context["repoBi"], int(pull_number),
+                                     actor_bi, override_review)
+                except Exception:
+                    pass
             await queue_repo_webhook_event(
                 env, context["owner"], context["repo"], "pull.merged",
                 {

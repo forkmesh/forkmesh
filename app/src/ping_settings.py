@@ -68,6 +68,7 @@ PING_KIND_CATALOG = (
     ("tip_sent", "rewards", "Tips"),
     ("hackathon_squad", "rewards", "Hackathon squad progress"),
     ("hackathon_reward", "rewards", "Hackathon rewards"),
+    ("badge", "rewards", "Badges earned"),
     ("host_online", "devices", "Host came online"),
     ("host_offline", "devices", "Host went offline"),
     ("device_added", "devices", "New device signed in"),

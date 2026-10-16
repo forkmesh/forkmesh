@@ -47,8 +47,8 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Notifications | [notification-email](notification-email.md) |
 | Tasks | [task-progress](task-progress.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |
 | Agents and desktop | [agents-page](agents-page.md), [desktop-agents-web](desktop-agents-web.md), [desktop-commands](desktop-commands.md), [settings-agents-and-runners](settings-agents-and-runners.md), [agent-notes](agent-notes.md), [activity-today](activity-today.md), [workflows](workflows.md) |
-| Accounts and organizations | [member-roster](member-roster.md), [organization-bot-scopes](organization-bot-scopes.md), [payments-and-plans](payments-and-plans.md), [badges](badges.md), [challenges](challenges.md), [feedback-bounties-links](feedback-bounties-links.md), [early-ios-testers](early-ios-testers.md) |
-| Operations and growth | [affiliates](affiliates.md), [plugin-race](plugin-race.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [marketing-email](marketing-email.md), [ecosystem](ecosystem.md), [package-ai-failures](package-ai-failures.md) |
+| Accounts and organizations | [member-roster](member-roster.md), [organization-bot-scopes](organization-bot-scopes.md), [payments-and-plans](payments-and-plans.md), [badges](badges.md), [discussion-answers](discussion-answers.md), [challenges](challenges.md), [feedback-bounties-links](feedback-bounties-links.md), [early-ios-testers](early-ios-testers.md) |
+| Operations and growth | [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [marketing-email](marketing-email.md), [ecosystem](ecosystem.md), [package-ai-failures](package-ai-failures.md) |
 
 ## Architecture
 
