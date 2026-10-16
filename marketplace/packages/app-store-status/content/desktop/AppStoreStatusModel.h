@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QByteArray>
 #include <QDateTime>
+#include <QList>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -10,6 +12,12 @@
 namespace forkmesh::appstorestatus {
 
 enum class Tone { Neutral, Good, Pending, Action };
+
+struct Screenshot {
+    QString id;
+    int width = 0;
+    int height = 0;
+};
 
 struct Figures {
     QString label;
@@ -46,6 +54,9 @@ QString groupDetail(const QJsonObject &group);
 
 QString feedbackTitle(const QJsonObject &feedback);
 QString feedbackDetail(const QJsonObject &feedback);
+QList<Screenshot> screenshotsOf(const QJsonObject &feedback);
+QString screenshotPath(const QString &id);
+QByteArray screenshotBytes(const QJsonObject &payload);
 
 QString stars(int rating);
 QString reviewTitle(const QJsonObject &review);
