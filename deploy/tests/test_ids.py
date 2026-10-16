@@ -804,6 +804,24 @@ def test_service_user_outside_unit_still_alerts(tmp_path):
     assert "(user@997.service)" in spoofed["summary"]
 
 
+
+def test_systemd_executor_starting_a_unit_is_not_unexpected(tmp_path):
+    proc = tmp_path / "proc"
+    fake_proc(proc, 50, 998, "/usr/lib/systemd/systemd-executor",
+              "forkmesh-app.service", name="(python3)")
+    fake_proc(proc, 51, 997, "/lib/systemd/systemd-executor",
+              "forkmesh-mirror-node.service", name="(forkmesh-)")
+    fake_proc(proc, 52, 998, "/usr/lib/systemd/systemd-executor",
+              "forkmesh-app.service", name="systemd-executo")
+    fake_proc(proc, 53, 998, "/usr/lib/systemd/systemd-executor",
+              "cron.service", name="(python3)")
+    fake_proc(proc, 54, 998, "/usr/local/bin/x", "forkmesh-app.service",
+              name="(python3)")
+    events = proc_monitor(tmp_path).scan()
+    found = sorted(e["detail"]["pid"] for e in events
+                   if e["detector"] == "service_user_exe")
+    assert found == [52, 53, 54]
+
 def test_listeners(tmp_path):
     net = tmp_path / "net"
     net.mkdir()
