@@ -90,8 +90,13 @@ def _load(extra):
     module = ast.fix_missing_locations(
         ast.Module(body=selected, type_ignores=[]))
     namespace = dict(extra)
+    namespace.setdefault("_award_genies_gift", _no_badge)
     exec(compile(module, str(ENTRY), "exec"), namespace)
     return namespace
+
+
+async def _no_badge(*args, **kwargs):
+    return False
 
 
 def _harness(sender="alice", recipient_rec=None, rows=None, sent=True,

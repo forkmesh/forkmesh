@@ -12,6 +12,7 @@ import re
 
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 DISTINGUISHED_CONTRIBUTOR_MIN = 15
+TIER_NAMES = ("default", "bronze", "silver", "gold")
 
 # Ordered so the catalog and any UI built from it render in a stable,
 # meaningful sequence rather than dict-insertion happenstance.
@@ -98,6 +99,18 @@ BADGE_DEFINITIONS = {
         "description": "Won a ForkMesh hackathon track.",
         "icon": "\U0001F3C6",
     },
+    "stargazer": {
+        "name": "Stargazer",
+        "description": "Owns a repository that other people starred.",
+        "icon": "\u2B50",
+        "tiers": (16, 128, 512, 4096),
+        "unit": "stars",
+    },
+    "genies_gift": {
+        "name": "Genie's Gift",
+        "description": "Paid a ForkMesh contributor, confirmed on chain.",
+        "icon": "\U0001FA94",
+    },
 }
 
 
@@ -111,12 +124,61 @@ def badge_definition(slug):
     return BADGE_DEFINITIONS.get(normalize_badge_slug(slug))
 
 
+def badge_tiers(slug):
+    info = badge_definition(slug)
+    return tuple(info.get("tiers") or ()) if info else ()
+
+
+def tier_for_value(slug, value):
+    try:
+        value = int(value or 0)
+    except (TypeError, ValueError):
+        return -1
+    reached = -1
+    for level, threshold in enumerate(badge_tiers(slug)):
+        if value >= threshold:
+            reached = level
+    return reached
+
+
+def tier_name(level):
+    try:
+        level = int(level or 0)
+    except (TypeError, ValueError):
+        level = 0
+    return TIER_NAMES[max(0, min(level, len(TIER_NAMES) - 1))]
+
+
+def tier_summary(slug, level, progress):
+    tiers = badge_tiers(slug)
+    if not tiers:
+        return {}
+    level = max(0, min(int(level or 0), len(tiers) - 1))
+    progress = max(0, int(progress or 0))
+    following = level + 1 if level + 1 < len(tiers) else -1
+    return {
+        "tier": tier_name(level),
+        "tierLevel": level,
+        "progress": progress,
+        "unit": BADGE_DEFINITIONS[normalize_badge_slug(slug)].get("unit", ""),
+        "tiers": [{"tier": tier_name(i), "threshold": t}
+                  for i, t in enumerate(tiers)],
+        "nextTier": tier_name(following) if following >= 0 else "",
+        "nextThreshold": tiers[following] if following >= 0 else 0,
+    }
+
+
 def public_catalog():
-    return [
-        {"slug": slug, "name": info["name"], "description": info["description"],
-         "icon": info["icon"]}
-        for slug, info in BADGE_DEFINITIONS.items()
-    ]
+    out = []
+    for slug, info in BADGE_DEFINITIONS.items():
+        entry = {"slug": slug, "name": info["name"],
+                 "description": info["description"], "icon": info["icon"]}
+        if info.get("tiers"):
+            entry["unit"] = info.get("unit", "")
+            entry["tiers"] = [{"tier": tier_name(i), "threshold": t}
+                              for i, t in enumerate(info["tiers"])]
+        out.append(entry)
+    return out
 
 
 def contribution_count(row):
