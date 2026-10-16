@@ -111,6 +111,9 @@ def test_gateway_parser_binds_exact_route_number_and_oids():
         "expectedHeadOid": OID_B,
         "expectedPullsOid": OID_C,
     }
+    cleanup = gateway.GatewayApplication._merge_request(
+        "mirror2", "forkmesh", merge_body(deleteHead=True))
+    assert cleanup["deleteHead"] is True
     with pytest.raises(gateway.GatewayError):
         gateway.GatewayApplication._merge_request(
             "mirror2", "forkmesh", merge_body(pullNumber=0))
@@ -190,6 +193,8 @@ def test_worker_body_rejects_duplicates_and_result_pins_reviewed_oids():
     validate = ns["_https_mirror_merge_result"]
     parsed = parse(merge_body().decode(), 7)
     assert parsed and "sessionToken" not in parsed
+    cleanup = parse(merge_body(deleteHead=True).decode(), 7)
+    assert cleanup["deleteHead"] is True
     assert parse(
         merge_body().decode()[:-1]
         + ',"requestId":"merge_request_0002"}',

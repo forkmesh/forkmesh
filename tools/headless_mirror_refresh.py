@@ -3891,17 +3891,20 @@ def _merge_request(
             "expectedHeadOid",
             "expectedPullsOid",
         },
-        optional={"overrideReview"},
+        optional={"overrideReview", "deleteHead"},
         label="merge executor request",
     )
     override_review = value.get("overrideReview", False)
+    delete_head = value.get("deleteHead", False)
     if (
         value.get("schemaVersion") != 1
         or value.get("type") != operation.executor_type
         or value.get("action") not in {"execute", "status", "register"}
         or not isinstance(override_review, bool)
+        or not isinstance(delete_head, bool)
         # Only merging has a review gate, so only merging may waive one.
         or (override_review and operation is not MERGE_OPERATION)
+        or (delete_head and operation is not MERGE_OPERATION)
     ):
         raise RefreshError("merge executor request protocol is unsupported")
     owner = str(value.get("owner") or "").strip().lower()
@@ -3937,6 +3940,8 @@ def _merge_request(
     # same objects, while every ordinary request keeps the digest it has had.
     if override_review:
         request["overrideReview"] = True
+    if delete_head:
+        request["deleteHead"] = True
     request["requestDigest"] = hashlib.sha256(
         _canonical_json(request)
     ).hexdigest()
@@ -4824,6 +4829,8 @@ def _merge_quarantine_record(
         "expectedBaseOid", "expectedHeadOid", "expectedPullsOid",
         "baseBranch", "headBranch",
     } | set(operation.after_fields)
+    if value.get("deleteHead") is True:
+        expected.add("deleteHead")
     branches = (
         _valid_merge_branch(value.get("baseBranch")),
         _valid_merge_branch(value.get("headBranch")),
@@ -4849,6 +4856,8 @@ def _merge_quarantine_record(
         or branches[0] == branches[1]
         or any(not GIT_OBJECT_ID_RE.fullmatch(oid) for oid in oids)
         or len({len(oid) for oid in oids}) != 1
+        or (request is not None and bool(value.get("deleteHead"))
+            != bool(request.get("deleteHead")))
     ):
         raise RefreshError("merge transaction journal is invalid")
     if request is not None and (
@@ -5185,6 +5194,7 @@ def _merge_prepare_quarantine(
             "headBranch": head_branch,
             "baseAfter": base_after,
             "pullsAfter": pulls_after,
+            **({"deleteHead": True} if request.get("deleteHead") else {}),
         }
         _merge_write_quarantine(path, journal)
         journal_written = True
@@ -5216,16 +5226,20 @@ def _merge_atomic_update(
          metadata_staged or ("0" * len(metadata_after))],
         maximum_output=256,
     )
-    lines = [
-        "start",
-        "verify refs/heads/%s %s" % (
-            journal["headBranch"], request["expectedHeadOid"]),
+    lines = ["start"]
+    if not request.get("deleteHead"):
+        lines.append("verify refs/heads/%s %s" % (
+            journal["headBranch"], request["expectedHeadOid"]))
+    lines.extend([
         "update refs/heads/%s %s %s" % (
             journal["baseBranch"], journal["baseAfter"],
             request["expectedBaseOid"]),
         "update refs/heads/forkmesh/pulls %s %s" % (
             journal["pullsAfter"], request["expectedPullsOid"]),
-    ]
+    ])
+    if request.get("deleteHead"):
+        lines.append("delete refs/heads/%s %s" % (
+            journal["headBranch"], request["expectedHeadOid"]))
     if metadata_before:
         lines.append("delete %s %s" % (metadata_ref, metadata_before))
     lines.append(

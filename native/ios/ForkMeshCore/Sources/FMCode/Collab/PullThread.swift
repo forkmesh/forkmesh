@@ -213,8 +213,7 @@ public enum PullShipCommands {
         let isOpen = status == "open"
         return all(pull).filter { (command: PullShipCommand) -> Bool in
             switch command.command {
-            case "pull.merge": return isOpen
-            case "pull.merge_delete": return isOpen && !pull.head.dartTrimmed.isEmpty
+            case "pull.merge", "pull.merge_delete": return false
             case "pull.fix_agent": return isOpen
             case "pull.close": return isOpen
             case "pull.reopen": return status == "closed"
@@ -527,5 +526,7 @@ public enum PullMerge {
 
     public static let mergeDeleteLabel = "Merge & delete"
 
-    public static func mergedNotice(_ number: Int) -> String { "Merged pull request #\(number)." }
+    public static func mergedNotice(_ number: Int, deletedHead: Bool = false) -> String {
+        deletedHead ? "Merged pull request #\(number) and deleted its branch." : "Merged pull request #\(number)."
+    }
 }

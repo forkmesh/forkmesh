@@ -657,16 +657,17 @@ public final class PullMergeModel {
 
     /// `_merge` after the guest gate: the notice text, or nil when the
     /// merge was refused (the reason is `message`).
-    public func merge(overrideReview: Bool = false) async -> String? {
+    public func merge(overrideReview: Bool = false, deleteHead: Bool = false) async -> String? {
         guard let plan, !busy else { return nil }
         busy = true
         message = ""
         do {
-            let outcome = try await api.mergePull(repo.owner, repo.name, plan, overrideReview: overrideReview)
+            let outcome = try await api.mergePull(
+                repo.owner, repo.name, plan, overrideReview: overrideReview, deleteHead: deleteHead)
             busy = false
             merged = outcome.merged
             message = outcome.message
-            return outcome.merged ? PullMerge.mergedNotice(pull.number) : outcome.message
+            return outcome.merged ? PullMerge.mergedNotice(pull.number, deletedHead: deleteHead) : outcome.message
         } catch let error as AgentLaunchException {
             busy = false
             message = error.message
