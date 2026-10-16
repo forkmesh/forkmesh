@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "StrataModel.h",
+    "StrataModel.cpp",
+    "StrataViews.h",
+    "StrataViews.cpp",
+    "StrataFeature.h",
+    "StrataFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_strata.cpp",
+    "StrataModel.h",
+    "StrataModel.cpp",
+    "StrataViews.h",
+    "StrataViews.cpp",
+    "StrataFeature.h",
+    "StrataFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets",
+    "Qt6::Concurrent"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp",
+    "RepoInsight.h",
+    "RepoInsight.cpp",
+    "RepoInsightBar.h",
+    "RepoInsightBar.cpp"
+  ]
+}

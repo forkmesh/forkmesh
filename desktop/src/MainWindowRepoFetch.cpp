@@ -269,6 +269,7 @@ bool MainWindow::completePendingRepoAutoOpen(int index)
     m_pendingAutoOpenRepoKey.clear();
     m_repoDetailIndex = index;
     renderPageNotices();
+    QTimer::singleShot(0, this, [this] { notifyNativePackagesRepositoryChanged(); });
     refreshRepositoryList();
     m_repoInfo = RepoInfo();
     m_repoBranch.clear();

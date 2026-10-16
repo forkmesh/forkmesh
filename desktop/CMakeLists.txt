@@ -1088,6 +1088,10 @@ set(FORKMESH_APP_SOURCES
     src/TerminalHandoff.cpp
     src/DirectorySizeScan.h
     src/DirectorySizeScan.cpp
+    src/RepoInsight.h
+    src/RepoInsight.cpp
+    src/RepoInsightBar.h
+    src/RepoInsightBar.cpp
     src/AppPaths.h
     src/AppPaths.cpp
     src/ProjectRegistry.h
@@ -3129,6 +3133,18 @@ forkmesh_link_opengl(forkmesh-window-tests)
              ${_forkmesh_package_test_target})
     endforeach()
 
+    qt_add_executable(forkmesh-repo-insight-tests
+        tests/test_repo_insight.cpp
+        src/RepoInsight.h
+        src/RepoInsight.cpp
+    )
+    target_link_libraries(forkmesh-repo-insight-tests PRIVATE Qt6::Core Qt6::Concurrent)
+    target_include_directories(forkmesh-repo-insight-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-repo-insight-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     # Log retention: rotation, the 30-day age-out and the chart digest. Core
     # only, so it stays runnable where the window suite is flaky.
     qt_add_executable(forkmesh-network-log-tests
@@ -3752,6 +3768,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
                  COMMAND ${_forkmesh_package_test_target})
     endforeach()
     add_test(NAME forkmesh-network-log-tests COMMAND forkmesh-network-log-tests)
+    add_test(NAME forkmesh-repo-insight-tests COMMAND forkmesh-repo-insight-tests)
     add_test(NAME forkmesh-restart-timing-tests
              COMMAND forkmesh-restart-timing-tests)
     add_test(NAME forkmesh-host-log-tests COMMAND forkmesh-host-log-tests)
