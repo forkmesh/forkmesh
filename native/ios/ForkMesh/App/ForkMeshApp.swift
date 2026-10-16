@@ -90,13 +90,17 @@ struct ThemedAppView: View {
 /// signing in later swaps the session in underneath without rebuilding it.
 struct AppHomeView: View {
     @Environment(\.fmPalette) var fm
+    @Environment(\.scenePhase) var scenePhase
     let auth: AuthService
     @State private var projects: ProjectRuntime? = Services.get(ProjectRuntime.self)
     @State private var settings: SettingsService? = Services.get(SettingsService.self)
+    @State private var updateCheck: UpdateRequiredCheck = UpdateRequiredCheck.shared
 
     var body: some View {
         Group {
-            if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
+            if updateCheck.blocksUse {
+                UpdateRequiredView(requirement: updateCheck.requirement, available: updateCheck.available)
+            } else if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
                 StarterPackView(settings: settings)
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {
                 HomeShell()
@@ -110,5 +114,14 @@ struct AppHomeView: View {
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
         .background(fm.canvas.ignoresSafeArea())
+        .task {
+            await updateCheck.check()
+            await updateCheck.checkStore()
+        }
+        .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
+            if phase == .active {
+                Task { await updateCheck.checkStore() }
+            }
+        }
     }
 }
