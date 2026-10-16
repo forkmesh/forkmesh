@@ -27,20 +27,29 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.rssreader.RssAppearance
+import com.forkmesh.nativeapp.rssreader.RssCatchUp
 import com.forkmesh.nativeapp.rssreader.RssFeed
+import com.forkmesh.nativeapp.rssreader.RssFormat
+import com.forkmesh.nativeapp.rssreader.RssScope
+import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import com.forkmesh.nativeapp.ui.kit.fmSafeAreaInsets
@@ -196,4 +205,69 @@ internal fun openInBrowser(context: Context, url: String) {
 internal fun shareText(context: Context, subject: String, text: String) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, subject).putExtra(Intent.EXTRA_TEXT, text)
     runCatching { context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+@Composable
+internal fun RssThumbnail(url: String, size: Dp = 56.dp) {
+    val service = RssReaderFeature.service
+    val pixels = with(LocalDensity.current) { size.roundToPx() }
+    var image by remember(url) { mutableStateOf(service.cachedThumbnail(url)) }
+    LaunchedEffect(url) { if (image == null) image = service.thumbnail(url, pixels) }
+    val bitmap = image ?: return
+    Image(
+        bitmap,
+        contentDescription = null,
+        modifier = Modifier.padding(start = FmSpace.x3).size(size).clip(RoundedCornerShape(6.dp)),
+        contentScale = ContentScale.Crop,
+    )
+}
+
+internal class RssCatchUpState {
+    var choosing by mutableStateOf(false)
+    var confirm by mutableStateOf<Pair<RssCatchUp, List<String>>?>(null)
+}
+
+@Composable
+internal fun RssCatchUpDialogs(state: RssCatchUpState, scope: RssScope?, title: String, onMarked: (List<String>) -> Unit = {}) {
+    val service = RssReaderFeature.service
+    val mark = { ids: List<String> ->
+        service.mutate { it.setRead(ids, true) }
+        onMarked(ids)
+    }
+    if (state.choosing) {
+        FmConfirmDialog(
+            title = "Mark Older as Read",
+            confirmLabel = "Cancel",
+            hideCancel = true,
+            onConfirm = { state.choosing = false },
+            onDismissRequest = { state.choosing = false },
+        ) {
+            for (option in RssCatchUp.entries) {
+                SettingsRow(option.label, onClick = {
+                    state.choosing = false
+                    val library = service.library
+                    val now = System.currentTimeMillis()
+                    val ids = library?.catchUpIds(scope, option.cutoff(now), now).orEmpty()
+                    when {
+                        library == null || ids.isEmpty() -> {}
+                        library.settings().confirmMarkAllRead -> state.confirm = option to ids
+                        else -> mark(ids)
+                    }
+                })
+            }
+        }
+    }
+    state.confirm?.let { (option, ids) ->
+        val where = if (scope == null) "" else " in “$title”"
+        FmConfirmDialog(
+            title = "Mark Older as Read?",
+            body = "Mark ${RssFormat.plural(ids.size, "article")} ${option.label.lowercase()}$where as read?",
+            confirmLabel = "Mark as Read",
+            onDismissRequest = { state.confirm = null },
+            onConfirm = {
+                state.confirm = null
+                mark(ids)
+            },
+        )
+    }
 }

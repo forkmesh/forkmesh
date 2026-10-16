@@ -2439,10 +2439,16 @@ void MainWindow::layoutIssueSidebar(QWidget *meta, QWidget *agentBox)
             copyReferenceLink(QStringLiteral("issue"),
                               QString::number(m_currentIssueNumber));
     });
+    m_issueMoveToTaskButton = makeAction("Move to task", "checklist");
+    m_issueMoveToTaskButton->setToolTip(
+        "Create an organization task from this issue and delete the issue "
+        "once the task exists");
+    connect(m_issueMoveToTaskButton, &QPushButton::clicked, this,
+            &MainWindow::moveCurrentIssueToTask);
     auto *feedbackIssue = makeAction("Give feedback", "comment");
     for (QPushButton *action :
          {transferIssue, cloneIssue, lockIssue, pinIssue, copyIssueLink,
-          m_issueDeleteButton, feedbackIssue})
+          m_issueMoveToTaskButton, m_issueDeleteButton, feedbackIssue})
         metaLayout->addWidget(action);
     metaLayout->addStretch();
 }
@@ -6001,6 +6007,9 @@ void MainWindow::updateIssueActionState()
         if (b)
             b->setEnabled(writable && haveIssue);
     }
+    if (m_issueMoveToTaskButton)
+        m_issueMoveToTaskButton->setEnabled(writable && haveIssue &&
+                                            !m_issueTaskMoveInFlight);
     // Assignment is host-only, so the whole control - gear, editor and the
     // sidebar's "Assign yourself" link alike - stays shut on a mirror, and says
     // why, rather than taking a selection Save cannot keep (issue #638).
@@ -9244,6 +9253,9 @@ QMenu *MainWindow::buildIssueListContextMenu(int number, QWidget *parent)
     });
     menu->addSeparator();
 
+    add(QStringLiteral("Move to task…"),
+        writable && !m_issueHistoryDeleteInProgress && !m_issueTaskMoveInFlight,
+        [this]() { moveCurrentIssueToTask(); });
     add(QStringLiteral("Delete issue…"),
         writable && !m_issueHistoryDeleteInProgress,
         [this]() { deleteCurrentIssue(); });
@@ -9317,6 +9329,133 @@ void MainWindow::deleteCurrentIssue()
     }
     removeIssueFromCurrentList(number);
     setIssueInlineNotice("Issue deleted.");
+}
+
+void MainWindow::moveCurrentIssueToTask()
+{
+    if (m_currentIssueNumber < 0 || m_issueTaskMoveInFlight)
+        return;
+    const int repoIndex = issuesRepoIndex();
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return;
+    const Issue *issue = nullptr;
+    for (const Issue &candidate : std::as_const(m_currentIssues))
+        if (candidate.number == m_currentIssueNumber)
+            issue = &candidate;
+    if (!issue)
+        return;
+    IssueStore store = issueStoreForCurrentRepo();
+    if (!store.canWrite()) {
+        setIssueInlineNotice(
+            "Only the repository's host can move this issue to a task.", true);
+        return;
+    }
+
+    const int number = issue->number;
+    QString openId;
+    QString body;
+    for (const IssueEvent &ev : issue->events) {
+        if (ev.type == QLatin1String("open") && openId.isEmpty()) {
+            openId = ev.id;
+            body = ev.body;
+        } else if (ev.type == QLatin1String("edit") && !openId.isEmpty() &&
+                   ev.target == openId) {
+            body = ev.body;
+        }
+    }
+    const RepositoryRecord &repo = m_repositories.at(repoIndex);
+    QString title = issue->title.simplified();
+    if (title.isEmpty())
+        title = QStringLiteral("Issue #%1").arg(number);
+    if (title.size() > 160)
+        title = title.left(159).trimmed() + QString::fromUtf8("\xE2\x80\xA6");
+    const QString source =
+        QStringLiteral("Moved from issue %1/%2#%3 by %4.")
+            .arg(repo.owner, repo.name)
+            .arg(number)
+            .arg(chatDisplayName().isEmpty() ? QStringLiteral("a repository manager")
+                                              : chatDisplayName());
+    body = body.trimmed();
+    const int room = 4000 - static_cast<int>(source.size()) - 2;
+    if (body.size() > room)
+        body = body.left(room - 1) + QString::fromUtf8("\xE2\x80\xA6");
+    const QString details =
+        body.isEmpty() ? source : body + QStringLiteral("\n\n") + source;
+
+    if (QMessageBox::question(
+            this, QStringLiteral("Move issue to task"),
+            QStringLiteral("Move issue #%1 \"%2\" to an organization task?\n\n"
+                           "The task is created from its title and description, "
+                           "then the issue is deleted. If the issue cannot be "
+                           "deleted, the new task is moved to trash.")
+                .arg(number)
+                .arg(title),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) !=
+        QMessageBox::Yes)
+        return;
+
+    m_issueTaskMoveInFlight = true;
+    updateIssueActionState();
+    const QJsonObject request{
+        {QStringLiteral("title"), title},
+        {QStringLiteral("details"), details},
+        {QStringLiteral("department"), QStringLiteral("general")},
+        {QStringLiteral("destination"), QStringLiteral("department")},
+        {QStringLiteral("assigneeKind"), QStringLiteral("unassigned")},
+        {QStringLiteral("repository"), repo.owner + QLatin1Char('/') + repo.name},
+        {QStringLiteral("priority"), 50},
+    };
+    requestOrganizationTasks(
+        QByteArrayLiteral("POST"), QStringLiteral("/api/tasks"), request,
+        [this, store, number, repoIndex](bool ok, const QJsonObject &payload,
+                                         const QString &error) mutable {
+            if (!ok) {
+                m_issueTaskMoveInFlight = false;
+                updateIssueActionState();
+                setIssueInlineNotice(
+                    QStringLiteral("The task could not be created, so the "
+                                   "issue was kept: %1")
+                        .arg(error),
+                    true);
+                return;
+            }
+            const QJsonObject task =
+                payload.value(QStringLiteral("task")).toObject();
+            const QString taskId = task.value(QStringLiteral("id")).toString();
+            QString removeError;
+            if (!store.removeIssue(number, &removeError)) {
+                const QString why = removeError.isEmpty()
+                                        ? QStringLiteral("Could not delete the issue.")
+                                        : removeError;
+                requestOrganizationTasks(
+                    QByteArrayLiteral("DELETE"),
+                    QStringLiteral("/api/tasks/") + taskId,
+                    QJsonObject{{QStringLiteral("reason"),
+                                 QStringLiteral("Issue #%1 could not be deleted.")
+                                     .arg(number)}},
+                    [this, why](bool undone, const QJsonObject &,
+                                const QString &) {
+                        m_issueTaskMoveInFlight = false;
+                        updateIssueActionState();
+                        setIssueInlineNotice(
+                            why + (undone
+                                       ? QStringLiteral(" The new task was moved to "
+                                                        "trash, so the issue is "
+                                                        "unchanged.")
+                                       : QStringLiteral(" The new task could not be "
+                                                        "removed; delete it from "
+                                                        "Tasks.")),
+                            true);
+                    });
+                return;
+            }
+            m_issueTaskMoveInFlight = false;
+            if (issuesRepoIndex() == repoIndex)
+                removeIssueFromCurrentList(number);
+            updateIssueActionState();
+            openCreatedOrganizationTask(task);
+            flashMessage(QStringLiteral("Issue #%1 moved to a task.").arg(number));
+        });
 }
 
 void MainWindow::deleteCurrentIssueWithHistory(int number)

@@ -38,6 +38,10 @@ data class RssFeed(
     val error: String = "",
     val errorAt: Long = 0,
     val viaHttps: Boolean = false,
+    val paused: Boolean = false,
+    val excludeFromToday: Boolean = false,
+    val excludeFromUnread: Boolean = false,
+    val language: String = "",
 ) {
     val displayTitle: String get() = customTitle.ifEmpty { title }.ifEmpty { RssUrls.host(url).ifEmpty { url } }
 
@@ -49,6 +53,8 @@ data class RssFeed(
         "lastModified" to lastModified, "previousUrls" to previousUrls, "addedAt" to addedAt,
         "lastCheck" to lastCheck, "lastSuccess" to lastSuccess, "nextCheck" to nextCheck,
         "errorCount" to errorCount, "error" to error, "errorAt" to errorAt, "viaHttps" to viaHttps,
+        "paused" to paused, "excludeFromToday" to excludeFromToday, "excludeFromUnread" to excludeFromUnread,
+        "language" to language,
     )
 
     companion object {
@@ -59,6 +65,8 @@ data class RssFeed(
             previousUrls = json.strings("previousUrls"), addedAt = json.long("addedAt"), lastCheck = json.long("lastCheck"),
             lastSuccess = json.long("lastSuccess"), nextCheck = json.long("nextCheck"), errorCount = json.int("errorCount"),
             error = json.str("error"), errorAt = json.long("errorAt"), viaHttps = json.bool("viaHttps"),
+            paused = json.bool("paused"), excludeFromToday = json.bool("excludeFromToday"),
+            excludeFromUnread = json.bool("excludeFromUnread"), language = json.str("language"),
         )
     }
 }
@@ -83,6 +91,9 @@ data class RssArticle(
     val starred: Boolean = false,
     val readerHtml: String = "",
     val contentKey: String = "",
+    val images: List<String> = emptyList(),
+    val language: String = "",
+    val readLater: Boolean = false,
 ) {
     val link: String get() = url.ifEmpty { externalUrl }
 
@@ -91,7 +102,8 @@ data class RssArticle(
         "author" to author, "summary" to summary, "contentHtml" to contentHtml, "commentsUrl" to commentsUrl,
         "enclosures" to enclosures.map { linkedMapOf("url" to it.url, "type" to it.type, "length" to it.length) },
         "image" to image, "published" to published, "updated" to updated, "arrived" to arrived, "read" to read,
-        "starred" to starred, "readerHtml" to readerHtml, "contentKey" to contentKey,
+        "starred" to starred, "readerHtml" to readerHtml, "contentKey" to contentKey, "images" to images,
+        "language" to language, "readLater" to readLater,
     )
 
     companion object {
@@ -102,7 +114,8 @@ data class RssArticle(
             enclosures = json.maps("enclosures").map { RssEnclosure(it.str("url"), it.str("type"), it.long("length")) },
             image = json.str("image"), published = json.long("published"), updated = json.long("updated"),
             arrived = json.long("arrived"), read = json.bool("read"), starred = json.bool("starred"),
-            readerHtml = json.str("readerHtml"), contentKey = json.str("contentKey"),
+            readerHtml = json.str("readerHtml"), contentKey = json.str("contentKey"), images = json.strings("images"),
+            language = json.str("language"), readLater = json.bool("readLater"),
         )
     }
 }
@@ -146,13 +159,20 @@ data class RssSettings(
     val appearance: RssAppearance = RssAppearance.AUTOMATIC,
     val collapsed: Set<String> = emptySet(),
     val blogFeedOffered: Boolean = false,
+    val showThumbnails: Boolean = false,
+    val hideReadArticles: Boolean = false,
+    val foldDuplicates: Boolean = false,
+    val markAllKeepsStarred: Boolean = false,
+    val sortFeedsByUnread: Boolean = false,
 ) {
     fun toJson(): Map<String, Any?> = linkedMapOf(
         "sortOldestFirst" to sortOldestFirst, "groupByFeed" to groupByFeed, "refreshClearsRead" to refreshClearsRead,
         "confirmMarkAllRead" to confirmMarkAllRead, "timelineLines" to timelineLines, "showFeedIcons" to showFeedIcons,
         "feedsUnreadOnly" to feedsUnreadOnly, "articleTheme" to theme.wire, "articleFont" to font.wire,
         "articleSize" to textSize, "loadRemoteImages" to loadRemoteImages, "appearance" to appearance.wire,
-        "collapsed" to collapsed.sorted(), "blogFeedOffered" to blogFeedOffered,
+        "collapsed" to collapsed.sorted(), "blogFeedOffered" to blogFeedOffered, "showThumbnails" to showThumbnails,
+        "hideReadArticles" to hideReadArticles, "foldDuplicates" to foldDuplicates,
+        "markAllKeepsStarred" to markAllKeepsStarred, "sortFeedsByUnread" to sortFeedsByUnread,
     )
 
     companion object {
@@ -174,6 +194,11 @@ data class RssSettings(
             appearance = RssAppearance.of(json.str("appearance")),
             collapsed = json.strings("collapsed").toSet(),
             blogFeedOffered = json.bool("blogFeedOffered"),
+            showThumbnails = json.bool("showThumbnails"),
+            hideReadArticles = json.bool("hideReadArticles"),
+            foldDuplicates = json.bool("foldDuplicates"),
+            markAllKeepsStarred = json.bool("markAllKeepsStarred"),
+            sortFeedsByUnread = json.bool("sortFeedsByUnread"),
         )
     }
 }
@@ -186,10 +211,72 @@ data class RssActivity(val at: Long, val kind: String, val text: String) {
     }
 }
 
+enum class RssFilterField(val wire: String, val label: String) {
+    TITLE("title", "Title"), TITLE_OR_TEXT("titleOrText", "Title or Text"), AUTHOR("author", "Author");
+
+    companion object {
+        fun of(wire: String?) = entries.firstOrNull { it.wire == wire } ?: TITLE
+    }
+}
+
+enum class RssFilterAction(val wire: String, val label: String) {
+    HIDE("hide", "Hide"), MARK_READ("markRead", "Mark as Read");
+
+    companion object {
+        fun of(wire: String?) = entries.firstOrNull { it.wire == wire } ?: HIDE
+    }
+}
+
+data class RssFilter(
+    val id: String,
+    val feedId: String = "",
+    val field: RssFilterField = RssFilterField.TITLE,
+    val pattern: String = "",
+    val regex: Boolean = false,
+    val action: RssFilterAction = RssFilterAction.HIDE,
+) {
+    fun toJson(): Map<String, Any?> = linkedMapOf(
+        "id" to id, "feedId" to feedId, "field" to field.wire, "pattern" to pattern, "regex" to regex, "action" to action.wire,
+    )
+
+    companion object {
+        fun fromJson(json: JsonMap) = RssFilter(
+            id = json.str("id"), feedId = json.str("feedId"), field = RssFilterField.of(json.str("field")),
+            pattern = json.str("pattern"), regex = json.bool("regex"), action = RssFilterAction.of(json.str("action")),
+        )
+    }
+}
+
+data class RssSmartFeed(
+    val id: String,
+    val name: String,
+    val words: String = "",
+    val regex: Boolean = false,
+    val scope: String = "",
+    val unreadOnly: Boolean = false,
+    val starredOnly: Boolean = false,
+    val maxAgeDays: Int = 0,
+) {
+    fun toJson(): Map<String, Any?> = linkedMapOf(
+        "id" to id, "name" to name, "words" to words, "regex" to regex, "scope" to scope,
+        "unreadOnly" to unreadOnly, "starredOnly" to starredOnly, "maxAgeDays" to maxAgeDays,
+    )
+
+    companion object {
+        fun fromJson(json: JsonMap) = RssSmartFeed(
+            id = json.str("id"), name = json.str("name"), words = json.str("words"), regex = json.bool("regex"),
+            scope = json.str("scope"), unreadOnly = json.bool("unreadOnly"), starredOnly = json.bool("starredOnly"),
+            maxAgeDays = maxOf(0, json.int("maxAgeDays")),
+        )
+    }
+}
+
 sealed class RssScope {
     data object Today : RssScope()
     data object Unread : RssScope()
     data object Starred : RssScope()
+    data object ReadLater : RssScope()
+    data class Smart(val id: String) : RssScope()
     data class Feed(val id: String) : RssScope()
     data class Folder(val id: String) : RssScope()
 
@@ -198,6 +285,8 @@ sealed class RssScope {
             Today -> "today"
             Unread -> "unread"
             Starred -> "starred"
+            ReadLater -> "readLater"
+            is Smart -> "smart:$id"
             is Feed -> "feed:$id"
             is Folder -> "folder:$id"
         }
@@ -207,6 +296,8 @@ sealed class RssScope {
             key == "today" -> Today
             key == "unread" -> Unread
             key == "starred" -> Starred
+            key == "readLater" -> ReadLater
+            key.startsWith("smart:") -> Smart(key.removePrefix("smart:"))
             key.startsWith("feed:") -> Feed(key.removePrefix("feed:"))
             key.startsWith("folder:") -> Folder(key.removePrefix("folder:"))
             else -> null
@@ -220,11 +311,16 @@ data class RssCounts(
     val starred: Int = 0,
     val byFeed: Map<String, Int> = emptyMap(),
     val byFolder: Map<String, Int> = emptyMap(),
+    val readLater: Int = 0,
+    val readLaterTotal: Int = 0,
+    val bySmartFeed: Map<String, Int> = emptyMap(),
 ) {
     fun of(scope: RssScope): Int = when (scope) {
         RssScope.Today -> today
         RssScope.Unread -> unread
         RssScope.Starred -> starred
+        RssScope.ReadLater -> readLater
+        is RssScope.Smart -> bySmartFeed[scope.id] ?: 0
         is RssScope.Feed -> byFeed[scope.id] ?: 0
         is RssScope.Folder -> byFolder[scope.id] ?: 0
     }
@@ -259,6 +355,8 @@ data class RssLibraryData(
     val settings: RssSettings = RssSettings(),
     val activity: List<RssActivity> = emptyList(),
     val lastRefresh: Long = 0,
+    val filters: List<RssFilter> = emptyList(),
+    val smartFeeds: List<RssSmartFeed> = emptyList(),
 ) {
     fun toJson(): Map<String, Any?> = linkedMapOf(
         "version" to 1,
@@ -267,6 +365,8 @@ data class RssLibraryData(
         "settings" to settings.toJson(),
         "activity" to activity.map { it.toJson() },
         "lastRefresh" to lastRefresh,
+        "filters" to filters.map { it.toJson() },
+        "smartFeeds" to smartFeeds.map { it.toJson() },
     )
 
     companion object {
@@ -276,6 +376,8 @@ data class RssLibraryData(
             settings = RssSettings.fromJson(json.obj("settings")),
             activity = json.maps("activity").map(RssActivity::fromJson),
             lastRefresh = json.long("lastRefresh"),
+            filters = json.maps("filters").map(RssFilter::fromJson).filter { it.id.isNotEmpty() }.take(RssLibrary.MAX_FILTERS),
+            smartFeeds = json.maps("smartFeeds").map(RssSmartFeed::fromJson).filter { it.id.isNotEmpty() }.take(RssLibrary.MAX_SMART_FEEDS),
         )
     }
 }

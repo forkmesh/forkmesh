@@ -1,10 +1,13 @@
 #include "RssReaderFetch.h"
 
+#include <QFile>
+#include <QFileInfo>
 #include <QLocale>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QTimer>
 
 #include <utility>
 
@@ -30,6 +33,7 @@ QString sizeText(qint64 bytes)
 struct Discovery {
     FetchQueue *queue = nullptr;
     QUrl address;
+    bool local = false;
     QList<QUrl> candidates;
     bool triedFallbacks = false;
     FetchResult first;
@@ -42,6 +46,38 @@ void tryCandidates(const std::shared_ptr<Discovery> &state, const QList<QUrl> &c
 {
     state->candidates = candidates;
     tryNext(state);
+}
+
+void handleFirst(const std::shared_ptr<Discovery> &state, const FetchResult &fetched);
+
+void fetchAddress(const std::shared_ptr<Discovery> &state)
+{
+    FetchRequest request;
+    request.url = state->address;
+    request.allowFile = state->local;
+    state->queue->get(request, [state](const FetchResult &fetched) { handleFirst(state, fetched); });
+}
+
+void tryPreferred(const std::shared_ptr<Discovery> &state, const QUrl &feed,
+                  std::function<void()> otherwise)
+{
+    FetchRequest request;
+    request.url = feed;
+    state->queue->get(request, [state, feed, otherwise](const FetchResult &fetched) {
+        if (fetched.ok() && !fetched.notModified) {
+            const ParsedFeed parsed = parseFeed(fetched.body, fetched.finalUrl);
+            if (parsed.ok) {
+                DiscoveryResult result;
+                result.ok = true;
+                result.feed = parsed;
+                result.fetch = fetched;
+                result.feedUrl = fetched.permanentRedirect ? fetched.finalUrl : feed;
+                state->done(result);
+                return;
+            }
+        }
+        otherwise();
+    });
 }
 
 void tryNext(const std::shared_ptr<Discovery> &state)
@@ -68,6 +104,7 @@ void tryNext(const std::shared_ptr<Discovery> &state)
     const QUrl candidate = state->candidates.takeFirst();
     FetchRequest request;
     request.url = candidate;
+    request.allowFile = state->local;
     state->queue->get(request, [state, candidate](const FetchResult &fetched) {
         if (fetched.ok() && !fetched.notModified) {
             const ParsedFeed parsed = parseFeed(fetched.body, fetched.finalUrl);
@@ -83,6 +120,38 @@ void tryNext(const std::shared_ptr<Discovery> &state)
         }
         tryNext(state);
     });
+}
+
+void handleFirst(const std::shared_ptr<Discovery> &state, const FetchResult &fetched)
+{
+    state->first = fetched;
+    if (!fetched.ok() && fetched.status == 0) {
+        DiscoveryResult result;
+        result.fetch = fetched;
+        result.error = fetched.error;
+        state->done(result);
+        return;
+    }
+    if (fetched.ok() && !fetched.notModified) {
+        const ParsedFeed parsed = parseFeed(fetched.body, fetched.finalUrl);
+        if (parsed.ok) {
+            DiscoveryResult result;
+            result.ok = true;
+            result.feed = parsed;
+            result.fetch = fetched;
+            result.feedUrl = fetched.permanentRedirect ? fetched.finalUrl : state->address;
+            state->done(result);
+            return;
+        }
+        if (!state->local && looksLikeHtml(fetched.body, fetched.contentType)) {
+            const QList<QUrl> links = discoverFeedLinks(QString::fromUtf8(fetched.body), fetched.finalUrl);
+            if (!links.isEmpty()) {
+                tryCandidates(state, links);
+                return;
+            }
+        }
+    }
+    tryNext(state);
 }
 
 }
@@ -156,12 +225,39 @@ void FetchQueue::finish(const std::shared_ptr<Job> &job, const FetchResult &resu
     pump();
 }
 
+void FetchQueue::readFile(const std::shared_ptr<Job> &job)
+{
+    FetchResult result;
+    result.requestedUrl = job->request.url;
+    result.finalUrl = job->current;
+    const QString path = job->current.toLocalFile();
+    QFile file(path);
+    if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly)) {
+        result.error = QStringLiteral("The file %1 could not be read.").arg(path);
+    } else if (file.size() > job->request.maxBytes) {
+        result.error = QStringLiteral("The response is larger than %1.").arg(sizeText(job->request.maxBytes));
+    } else {
+        result.body = file.read(job->request.maxBytes + 1);
+        if (result.body.size() > job->request.maxBytes) {
+            result.body.clear();
+            result.error = QStringLiteral("The response is larger than %1.").arg(sizeText(job->request.maxBytes));
+        } else {
+            result.status = 200;
+        }
+    }
+    finish(job, result);
+}
+
 void FetchQueue::start(const std::shared_ptr<Job> &job)
 {
     FetchResult failed;
     failed.requestedUrl = job->request.url;
     failed.finalUrl = job->current;
     const QString scheme = job->current.scheme().toLower();
+    if (scheme == QLatin1String("file") && job->request.allowFile && job->current.isLocalFile()) {
+        QTimer::singleShot(0, m_guard, [this, job] { readFile(job); });
+        return;
+    }
     if (!m_network) {
         failed.error = QStringLiteral("The desktop network is not available.");
         finish(job, failed);
@@ -270,40 +366,34 @@ void discoverFeed(FetchQueue *queue, const QUrl &address,
     auto state = std::make_shared<Discovery>();
     state->queue = queue;
     state->address = address;
+    state->local = address.isLocalFile();
     state->done = std::move(done);
-    FetchRequest request;
-    request.url = address;
-    queue->get(request, [state](const FetchResult &fetched) {
-        state->first = fetched;
-        if (!fetched.ok() && fetched.status == 0) {
-            DiscoveryResult result;
-            result.fetch = fetched;
-            result.error = fetched.error;
-            state->done(result);
-            return;
-        }
-        if (fetched.ok() && !fetched.notModified) {
-            const ParsedFeed parsed = parseFeed(fetched.body, fetched.finalUrl);
-            if (parsed.ok) {
-                DiscoveryResult result;
-                result.ok = true;
-                result.feed = parsed;
-                result.fetch = fetched;
-                result.feedUrl = fetched.permanentRedirect ? fetched.finalUrl : state->address;
-                state->done(result);
+    if (state->local) {
+        fetchAddress(state);
+        return;
+    }
+    const DiscoveryRewrite rewrite = discoveryRewrite(address);
+    if (rewrite.feed.isValid() && feedKey(rewrite.feed) != feedKey(address)) {
+        tryPreferred(state, rewrite.feed, [state] { fetchAddress(state); });
+        return;
+    }
+    if (rewrite.channelLookup) {
+        FetchRequest request;
+        request.url = address;
+        request.accept = QByteArrayLiteral("text/html,application/xhtml+xml;q=0.9,*/*;q=0.5");
+        queue->get(request, [state](const FetchResult &page) {
+            const QString channel = page.ok() && !page.notModified
+                                        ? youtubeChannelId(QString::fromUtf8(page.body))
+                                        : QString();
+            if (channel.isEmpty()) {
+                handleFirst(state, page);
                 return;
             }
-            if (looksLikeHtml(fetched.body, fetched.contentType)) {
-                const QList<QUrl> links =
-                    discoverFeedLinks(QString::fromUtf8(fetched.body), fetched.finalUrl);
-                if (!links.isEmpty()) {
-                    tryCandidates(state, links);
-                    return;
-                }
-            }
-        }
-        tryNext(state);
-    });
+            tryPreferred(state, youtubeChannelFeed(channel), [state, page] { handleFirst(state, page); });
+        });
+        return;
+    }
+    fetchAddress(state);
 }
 
 }

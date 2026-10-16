@@ -257,6 +257,16 @@ extension ApiService {
         }
     }
 
+    public func canManageIssues(_ owner: String, _ repo: String, account: String, isAdmin: Bool) async -> Bool {
+        if !hasSession { return false }
+        if isAdmin || (!account.isEmpty && account.lowercased() == owner.lowercased()) { return true }
+        do {
+            return try await orgProfile(readOwner(owner, repo)).canManage
+        } catch {
+            return false
+        }
+    }
+
     /// Resolve the object ids a merge of `pull` must pin, or nil when it cannot be merged from
     /// here (not open, refs unknown, a merge trial unavailable or against another base).
     public func pullMergePlan(_ owner: String, _ repo: String, _ pull: PublishedPull) async -> PullMergePlan? {

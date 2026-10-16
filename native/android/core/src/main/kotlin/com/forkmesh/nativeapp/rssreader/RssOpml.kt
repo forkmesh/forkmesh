@@ -43,7 +43,8 @@ object RssOpml {
         )
         fun outline(feed: RssFeed, indent: String): String {
             val title = RssText.escape(feed.displayTitle)
-            return "$indent<outline text=\"$title\" title=\"$title\" type=\"rss\" version=\"RSS\" xmlUrl=\"${RssText.escape(feed.url)}\" htmlUrl=\"${RssText.escape(feed.siteUrl)}\"/>"
+            val home = if (feed.siteUrl.isNotEmpty()) " htmlUrl=\"${RssText.escape(feed.siteUrl)}\"" else ""
+            return "$indent<outline text=\"$title\" title=\"$title\" type=\"rss\" version=\"RSS\" xmlUrl=\"${RssText.escape(feed.url)}\"$home/>"
         }
         val known = folders.map { it.id }.toSet()
         val byName = compareBy<RssFeed, String>(String.CASE_INSENSITIVE_ORDER) { it.displayTitle }

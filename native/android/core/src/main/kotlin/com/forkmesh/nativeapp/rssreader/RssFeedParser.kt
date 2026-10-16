@@ -20,6 +20,9 @@ data class RssParsedItem(
     val summaryHtml: String = "",
     val commentsUrl: String = "",
     val enclosures: List<RssEnclosure> = emptyList(),
+    val images: List<String> = emptyList(),
+    val image: String = "",
+    val language: String = "",
 )
 
 data class RssParsedFeed(
@@ -28,7 +31,11 @@ data class RssParsedFeed(
     val iconUrl: String = "",
     val description: String = "",
     val items: List<RssParsedItem> = emptyList(),
+    val language: String = "",
+    val format: String = "",
 )
+
+private class RssMedia(val images: List<String>, val description: String, val title: String)
 
 class RssFeedException(val code: String) : Exception(code)
 
@@ -51,6 +58,7 @@ object RssFeedParser {
     const val MAX_ITEMS = 200
     private val AUTHOR_EMAIL = Regex("^\\S+@\\S+\\s+\\((.*)\\)$")
     private val TITLE_MARKUP = Regex("</[a-zA-Z][^>]*>|<br\\s*/?>", RegexOption.IGNORE_CASE)
+    private const val MAX_IMAGES = 8
 
     fun parse(document: String, base: String = ""): RssParsedFeed {
         val text = document.trimStart('﻿', ' ', '\t', '\r', '\n')
@@ -95,6 +103,42 @@ object RssFeedParser {
         return RssText.clean(RssText.unescape(value), 1000)
     }
 
+    private fun mediaNodes(item: RssElement): List<RssElement> {
+        val out = ArrayList<RssElement>()
+        fun walk(node: RssElement, depth: Int) {
+            for (child in node.elements) {
+                if (child.tag == "media:group") {
+                    if (depth < 3) walk(child, depth + 1)
+                } else {
+                    out.add(child)
+                }
+            }
+        }
+        walk(item, 0)
+        return out
+    }
+
+    private fun isImage(element: RssElement): Boolean =
+        element.attr("medium").lowercase() == "image" || element.attr("type").lowercase().startsWith("image/")
+
+    private fun media(item: RssElement, base: String, enclosureImages: List<String> = emptyList()): RssMedia {
+        val nodes = mediaNodes(item)
+        val thumbnails = nodes.filter { it.tag == "media:thumbnail" }.map { RssUrls.httpUrl(it.attr("url"), base) }
+        val contents = nodes.filter { it.tag == "media:content" && isImage(it) }.map { RssUrls.httpUrl(it.attr("url"), base) }
+        val images = (thumbnails + contents + enclosureImages.map { RssUrls.httpUrl(it, base) }).filter { it.isNotEmpty() }.distinct().take(MAX_IMAGES)
+        val description = nodes.firstOrNull { it.tag == "media:description" }?.let { node ->
+            if (node.attr("type").lowercase() == "html") {
+                if (node.elements.isNotEmpty()) node.inner() else text(node)
+            } else {
+                RssText.plainToHtml(text(node))
+            }
+        }.orEmpty()
+        val title = nodes.firstOrNull { it.tag == "media:title" }?.let { node ->
+            if (node.attr("type").lowercase() == "html") RssSanitizer.plainText(text(node), 1000) else RssText.clean(text(node), 1000)
+        }.orEmpty()
+        return RssMedia(images, description, title)
+    }
+
     private fun rssItems(container: RssElement, base: String): List<RssParsedItem> =
         container.all("item").take(MAX_ITEMS).map { item ->
             var link = RssUrls.httpUrl(text(item.child("link")), base)
@@ -112,17 +156,20 @@ object RssFeedParser {
                     val kind = it.attrs["medium"]?.ifEmpty { null } ?: it.attr("type")
                     kind.startsWith("audio") || kind.startsWith("video")
                 }.map { Triple(it.attr("url"), it.attr("type"), it.attr("filesize")) }
+            val extra = media(item, base, item.all("enclosure").filter { it.attr("type").lowercase().startsWith("image/") }.map { it.attr("url") })
             RssParsedItem(
                 guid = guid.ifEmpty { link }.ifEmpty { item.attr("about") },
-                title = rssTitle(item.child("title")),
+                title = rssTitle(item.child("title")).ifEmpty { extra.title },
                 url = link.ifEmpty { RssUrls.httpUrl(item.attr("about"), base) },
                 author = RssText.clean(AUTHOR_EMAIL.replace(author, "$1"), 200),
                 published = RssDates.parse(text(item.child("pubdate", "dc:date", "date"))),
                 updated = RssDates.parse(text(item.child("updated", "dc:modified"))),
-                contentHtml = content.ifEmpty { summaryHtml },
+                contentHtml = content.ifEmpty { summaryHtml }.ifEmpty { extra.description },
                 summaryHtml = if (content.isNotEmpty()) summaryHtml else "",
                 commentsUrl = RssUrls.httpUrl(text(item.child("comments")), base),
                 enclosures = enclosures(media),
+                images = extra.images,
+                language = RssRules.language(text(item.child("dc:language"))),
             )
         }
 
@@ -143,6 +190,8 @@ object RssFeedParser {
             iconUrl = icon,
             description = RssSanitizer.plainText(text(channel.child("description")), 500),
             items = rssItems(container, site),
+            language = RssRules.language(text(channel.child("language", "dc:language"))),
+            format = if (root.tag == "rdf") "RSS 1.0" else "RSS " + RssText.clean(root.attr("version"), 10).ifEmpty { "2.0" },
         )
     }
 
@@ -186,25 +235,31 @@ object RssFeedParser {
             val summary = atomText(entry.child("summary"), true)
             val author = entry.child("author")?.let { text(it.child("name")) }.orEmpty()
             val media = entry.all("link").filter { it.attr("rel").lowercase() == "enclosure" }.map { Triple(it.attr("href"), it.attr("type"), it.attr("length")) }
+            val extra = media(entry, base)
             RssParsedItem(
                 guid = text(entry.child("id")).ifEmpty { url },
-                title = atomText(entry.child("title")),
+                title = atomText(entry.child("title")).ifEmpty { extra.title },
                 url = url,
                 author = RssText.clean(author.ifEmpty { feedAuthor }, 200),
                 published = RssDates.parse(text(entry.child("published", "issued", "created"))),
                 updated = RssDates.parse(text(entry.child("updated", "modified"))),
-                contentHtml = content.ifEmpty { summary },
+                contentHtml = content.ifEmpty { summary }.ifEmpty { extra.description },
                 summaryHtml = if (content.isNotEmpty()) summary else "",
                 commentsUrl = atomLink(entry, base, "replies"),
                 enclosures = enclosures(media),
+                images = extra.images,
+                language = RssRules.language(entry.attr("lang")),
             )
         }
+        val version = RssText.clean(root.attr("version"), 10)
         return RssParsedFeed(
             title = atomText(root.child("title")),
             siteUrl = site,
             iconUrl = RssUrls.httpUrl(text(root.child("icon", "logo")), base),
             description = atomText(root.child("subtitle")),
             items = items,
+            language = RssRules.language(root.attr("lang")),
+            format = "Atom " + version.ifEmpty { "1.0" },
         )
     }
 
@@ -238,14 +293,23 @@ object RssFeedParser {
                 contentHtml = content.ifEmpty { RssText.escape(summary) },
                 summaryHtml = if (content.isNotEmpty() && summary.isNotEmpty()) RssText.escape(summary) else "",
                 enclosures = enclosures(attachments),
+                image = RssUrls.httpUrl(jsonText(item["image"]), site).ifEmpty { RssUrls.httpUrl(jsonText(item["banner_image"]), site) },
+                language = RssRules.language(jsonText(item["language"])),
             )
         }
+        val version = jsonText(data["version"]).trimEnd('/').substringAfterLast('/')
         return RssParsedFeed(
             title = RssText.clean(jsonText(data["title"]), 1000),
             siteUrl = site,
             iconUrl = RssUrls.httpUrl(jsonText(data["icon"]).ifEmpty { jsonText(data["favicon"]) }, base),
             description = RssText.clean(jsonText(data["description"]), 500),
             items = items,
+            language = RssRules.language(jsonText(data["language"])),
+            format = "JSON Feed " + when {
+                version.isEmpty() -> "1.0"
+                '.' in version -> RssText.clean(version, 10)
+                else -> RssText.clean(version, 8) + ".0"
+            },
         )
     }
 }

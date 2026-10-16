@@ -39,10 +39,12 @@ import com.forkmesh.nativeapp.rssreader.RssErrors
 import com.forkmesh.nativeapp.rssreader.RssFeedException
 import com.forkmesh.nativeapp.rssreader.RssFont
 import com.forkmesh.nativeapp.rssreader.RssFormat
+import com.forkmesh.nativeapp.rssreader.RssImportResult
 import com.forkmesh.nativeapp.rssreader.RssLibrary
 import com.forkmesh.nativeapp.rssreader.RssSettings
 import com.forkmesh.nativeapp.rssreader.RssTheme
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
+import com.forkmesh.nativeapp.ui.kit.FmPromptDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
@@ -61,7 +63,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-private fun <T> ChoiceRow(title: String, current: T, options: List<T>, label: (T) -> String, onSelect: (T) -> Unit) {
+internal fun <T> ChoiceRow(title: String, current: T, options: List<T>, label: (T) -> String, onSelect: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         SettingsRow(title, value = label(current), onClick = { open = true })
@@ -74,13 +76,19 @@ private fun <T> ChoiceRow(title: String, current: T, options: List<T>, label: (T
 }
 
 @Composable
-private fun Divider() {
+internal fun Divider() {
     HorizontalDivider(Modifier.padding(start = FmSpace.x4), thickness = 1.dp, color = Fm.colors.border)
 }
+
+internal fun importSummary(result: RssImportResult): String =
+    "Imported ${RssFormat.plural(result.imported, "subscription")}" +
+        (if (result.skipped > 0) "; ${result.skipped} already followed or over the limit." else ".") +
+        if (result.imported == 1) " Checking it now." else if (result.imported > 1) " Checking them now." else ""
 
 internal class RssSettingsScreen : Screen() {
     override val title: String get() = "Settings"
     private val status = FmStatus()
+    private var importUrl by mutableStateOf(false)
 
     @Composable
     override fun Content(navigator: Navigator) {
@@ -104,11 +112,7 @@ internal class RssSettingsScreen : Screen() {
                     }
                     service.importOpml(text)
                 }.onSuccess { result ->
-                    status.show(
-                        "Imported ${RssFormat.plural(result.imported, "subscription")}" +
-                            (if (result.skipped > 0) "; ${result.skipped} already followed or over the limit." else ".") +
-                            if (result.imported == 1) " Checking it now." else if (result.imported > 1) " Checking them now." else "",
-                    )
+                    status.show(importSummary(result))
                 }.onFailure { error ->
                     status.error(if (error is RssFeedException) RssErrors.describe(error.code) else service.errorText(error))
                 }
@@ -133,6 +137,8 @@ internal class RssSettingsScreen : Screen() {
                     importer.launch(arrayOf("text/x-opml", "text/xml", "application/xml", "application/octet-stream", "*/*"))
                 })
                 Divider()
+                SettingsRow("Import from URL…", subtitle = "Add feeds from an OPML file on the web", icon = "link", onClick = { importUrl = true })
+                Divider()
                 SettingsRow("Export Subscriptions", subtitle = "Save your feeds as an OPML file", icon = "upload", onClick = { exporter.launch("RSS Reader Subscriptions.opml") })
                 Divider()
                 SettingsRow("Add the ForkMesh Blog Feed", icon = "feed", onClick = {
@@ -143,19 +149,33 @@ internal class RssSettingsScreen : Screen() {
                             .onFailure { status.error(service.errorText(it)) }
                     }
                 })
+                Divider()
+                SettingsSwitch("Sort by Unread Count", settings.sortFeedsByUnread) { on -> update { it.copy(sortFeedsByUnread = on) } }
 
                 SettingsHeader("Timeline")
                 SettingsSwitch("Sort Oldest to Newest", settings.sortOldestFirst) { on -> update { it.copy(sortOldestFirst = on) } }
                 Divider()
                 SettingsSwitch("Group by Feed", settings.groupByFeed) { on -> update { it.copy(groupByFeed = on) } }
                 Divider()
+                SettingsSwitch("Hide Read Articles", settings.hideReadArticles) { on -> update { it.copy(hideReadArticles = on) } }
+                Divider()
                 SettingsSwitch("Refresh to Clear Read Articles", settings.refreshClearsRead) { on -> update { it.copy(refreshClearsRead = on) } }
                 Divider()
                 SettingsSwitch("Confirm Mark All as Read", settings.confirmMarkAllRead) { on -> update { it.copy(confirmMarkAllRead = on) } }
                 Divider()
+                SettingsSwitch("Mark All as Read Skips Starred", settings.markAllKeepsStarred) { on -> update { it.copy(markAllKeepsStarred = on) } }
+                Divider()
                 ChoiceRow("Summary Lines", settings.timelineLines, (0..4).toList(), { if (it == 0) "None" else "$it" }) { lines -> update { it.copy(timelineLines = lines) } }
                 Divider()
                 SettingsSwitch("Show Feed Icons", settings.showFeedIcons) { on -> update { it.copy(showFeedIcons = on) } }
+                Divider()
+                SettingsSwitch("Show Thumbnails", settings.showThumbnails) { on -> update { it.copy(showThumbnails = on) } }
+
+                SettingsHeader("Filters")
+                val filterCount = remember(version) { service.library?.filters()?.size ?: 0 }
+                SettingsRow("Filters", value = if (filterCount > 0) "$filterCount" else "None", icon = "filter_alt", onClick = { navigator.push(RssFiltersScreen()) })
+                Divider()
+                SettingsSwitch("Mark Duplicate Links as Read", settings.foldDuplicates) { on -> update { it.copy(foldDuplicates = on) } }
 
                 SettingsHeader("Articles")
                 ChoiceRow("Theme", settings.theme, RssTheme.entries.toList(), { it.label }) { theme -> update { it.copy(theme = theme) } }
@@ -187,6 +207,26 @@ internal class RssSettingsScreen : Screen() {
                     "Feeds are checked by this phone and stored only on it.",
                     Modifier.padding(FmSpace.x4),
                     style = Fm.text.bodySmall.copy(color = Fm.colors.textTertiary),
+                )
+            }
+            if (importUrl) {
+                FmPromptDialog(
+                    title = "Import from URL",
+                    hint = "OPML file address",
+                    confirmLabel = "Import",
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    onDismissRequest = { importUrl = false },
+                    onConfirm = { address ->
+                        importUrl = false
+                        if (address.isNotBlank()) {
+                            status.show("Importing…")
+                            scope.launch {
+                                runCatching { service.importOpmlUrl(address) }
+                                    .onSuccess { status.show(importSummary(it)) }
+                                    .onFailure { error -> status.error(if (error is RssFeedException) RssErrors.describe(error.code) else service.errorText(error)) }
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -279,8 +319,23 @@ internal class RssFeedInfoScreen(private val feedId: String) : Screen() {
         val library = service.library
         val feed = remember(version) { library?.feed(feedId) }
         var name by remember(feed?.id) { mutableStateOf(feed?.displayTitle.orEmpty()) }
+        var address by remember(feed?.id, feed?.url) { mutableStateOf(feed?.url.orEmpty()) }
+        var addressError by remember { mutableStateOf<String?>(null) }
+        var checking by remember { mutableStateOf(false) }
+        var checkResult by remember { mutableStateOf<String?>(null) }
         var folderMenu by remember { mutableStateOf(false) }
         var confirmRemove by remember { mutableStateOf(false) }
+        val coroutines = rememberCoroutineScope()
+        val runCheck = { work: suspend () -> String ->
+            checking = true
+            checkResult = null
+            coroutines.launch {
+                runCatching { work() }
+                    .onSuccess { line -> checkResult = line.ifEmpty { null } }
+                    .onFailure { error -> checkResult = service.errorText(error) }
+                checking = false
+            }
+        }
         RssScaffold("Feed Info", navigator) {
             if (library == null || feed == null) {
                 FmEmptyState("feed", "This feed is no longer subscribed")
@@ -323,10 +378,47 @@ internal class RssFeedInfoScreen(private val feedId: String) : Screen() {
                         }
                     }
                 }
+                SettingsHeader("Options")
+                SettingsSwitch("Pause Updates", feed.paused) { on ->
+                    service.mutate { it.setFeedSwitches(feed.id, on, feed.excludeFromToday, feed.excludeFromUnread) }
+                }
+                Divider()
+                SettingsSwitch("Hide from Today", feed.excludeFromToday) { on ->
+                    service.mutate { it.setFeedSwitches(feed.id, feed.paused, on, feed.excludeFromUnread) }
+                }
+                Divider()
+                SettingsSwitch("Hide from Unread Counts", feed.excludeFromUnread) { on ->
+                    service.mutate { it.setFeedSwitches(feed.id, feed.paused, feed.excludeFromToday, on) }
+                }
                 SettingsHeader("Addresses")
                 SettingsRow("Home Page", subtitle = feed.homePage.ifEmpty { "None" }, icon = "public", onClick = if (feed.homePage.isNotEmpty()) ({ openInBrowser(context, feed.homePage) }) else null)
                 Divider()
-                SettingsRow("Feed Address", subtitle = feed.url + if (feed.viaHttps) "\nFetched over HTTPS" else "", icon = "link")
+                Column(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
+                    Text("Feed Address", style = Fm.text.bodyLarge)
+                    FmTextField(
+                        value = address,
+                        onValueChange = { address = it; addressError = null },
+                        hint = "Feed address",
+                        errorText = addressError,
+                        helperText = if (feed.viaHttps) "Fetched over HTTPS" else null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    )
+                    FmTextButton(onClick = {
+                        val input = address
+                        addressError = null
+                        checking = true
+                        checkResult = null
+                        coroutines.launch {
+                            runCatching { service.changeFeedUrl(feed.id, input) }
+                                .onSuccess { line ->
+                                    checkResult = line.ifEmpty { null }
+                                    service.library?.feed(feed.id)?.let { address = it.url }
+                                }
+                                .onFailure { error -> addressError = service.errorText(error) }
+                            checking = false
+                        }
+                    }, enabled = !checking && address.isNotBlank() && address.trim() != feed.url) { Text("Save Address") }
+                }
                 if (feed.previousUrls.isNotEmpty()) {
                     Divider()
                     SettingsRow("Previous Addresses", subtitle = feed.previousUrls.joinToString("\n"), icon = "history")
@@ -342,11 +434,12 @@ internal class RssFeedInfoScreen(private val feedId: String) : Screen() {
                     titleColor = if (feed.error.isEmpty()) null else Fm.colors.danger,
                 )
                 Divider()
-                SettingsRow("Check Now", icon = "refresh", onClick = {
-                    service.mutate { it.checkSoon(feed.id) }
-                    service.refresh(force = false)
-                    status.show("Checking…")
-                })
+                SettingsRow(
+                    "Check Now",
+                    subtitle = if (checking) "Checking…" else checkResult,
+                    icon = "refresh",
+                    onClick = if (checking) null else ({ runCheck { service.checkNow(feed.id) } }),
+                )
                 Spacer(Modifier.padding(FmSpace.x3))
                 SettingsRow("Unsubscribe", titleColor = Fm.colors.danger, icon = "delete", onClick = { confirmRemove = true })
                 Spacer(Modifier.padding(FmSpace.x5))
@@ -394,10 +487,17 @@ internal class RssAboutScreen : Screen() {
                         "Inspired by NetNewsWire, the free and open source RSS reader created by Brent Simmons and developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with NetNewsWire and is not affiliated with or endorsed by it.",
                         style = Fm.text.bodyMedium,
                     )
+                    Text(
+                        "RSS Reader's smart feeds, timeline, article view and settings follow NetNewsWire's design, and its custom smart feeds, Read Later, content filters, timeline thumbnails, Media RSS images and other recent features were chosen from the feature requests NetNewsWire's users have filed on GitHub. Thanks to Brent Simmons and the NetNewsWire community.",
+                        style = Fm.text.bodyMedium,
+                        modifier = Modifier.padding(top = FmSpace.x3),
+                    )
                 }
                 SettingsRow("netnewswire.com", icon = "open_in_new", onClick = { openInBrowser(context, "https://netnewswire.com/") })
                 Divider()
                 SettingsRow("NetNewsWire on GitHub", icon = "open_in_new", onClick = { openInBrowser(context, "https://github.com/Ranchero-Software/NetNewsWire") })
+                Divider()
+                SettingsRow("NetNewsWire feature requests", icon = "open_in_new", onClick = { openInBrowser(context, "https://github.com/Ranchero-Software/NetNewsWire/issues") })
                 Spacer(Modifier.padding(FmSpace.x5))
             }
         }

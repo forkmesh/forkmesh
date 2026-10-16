@@ -76,7 +76,16 @@ public:
     void nextUnread();
     void toggleRead();
     void toggleStar();
+    void toggleReadLater();
     void markAllRead(bool ask);
+    void catchUp(int days, bool everywhere, bool ask);
+    void checkNow(const QString &feedId, std::function<void(const QString &)> done);
+    QString changeFeedAddress(const QString &feedId, const QString &address);
+    void setFeedFlags(const QString &feedId, bool paused, bool excludeFromToday, bool excludeFromUnread);
+    void importOpmlFromUrl(const QString &address, std::function<void(bool, const QString &)> done);
+    void setFeedSearch(const QString &text);
+    QStringList visibleSourceIds() const;
+    void updateSettings(const std::function<void(Settings &)> &change, bool timeline, bool article);
     void showReaderView();
     void saveNow();
 
@@ -94,8 +103,9 @@ private:
     QString dataPrefix() const;
     void persistExportKeys();
     void scheduleSave();
-    void fetchFeed(const QString &feedId);
-    void feedFetched(const QString &feedId, const FetchResult &result);
+    void fetchFeed(const QString &feedId, bool unconditional = false,
+                   std::function<void(const QString &)> done = {});
+    QString feedFetched(const QString &feedId, const FetchResult &result);
     void finishRefresh();
     void updateStatus();
     void updateCounts();
@@ -116,6 +126,17 @@ private:
     void sourceContextMenu(const QPoint &position);
     void timelineContextMenu(const QPoint &position);
     void showAddFeed();
+    void showSmartFeedEditor(const QString &id);
+    void deleteSmartFeed(const QString &id);
+    bool showFilterEditor(QWidget *parent, const QString &id);
+    void filtersEdited();
+    void addCatchUpMenu(QMenu *menu, bool everywhere);
+    void showSourcesMenu();
+    void importOpmlFromUrlDialog(QWidget *parent);
+    QString importSummary(const OpmlImportResult &result) const;
+    bool readHidden(const Source &source) const;
+    QPixmap thumbnail(const QString &url);
+    void fetchThumbnail(const QString &url);
     void showFeedInfo(const QString &feedId);
     void showSettings();
     void showLog(const QString &title, const QString &text);
@@ -147,6 +168,7 @@ private:
     Source m_source{SourceKind::AllUnread, QString()};
     ArticleRef m_article;
     QString m_search;
+    QString m_feedSearch;
     QSet<QString> m_keptRead;
     QSet<QString> m_inFlight;
     int m_refreshTotal = 0;
@@ -164,6 +186,9 @@ private:
     QSet<QString> m_iconAttempts;
     QHash<QString, QImage> m_images;
     QSet<QString> m_imagePending;
+    QHash<QString, QPixmap> m_thumbs;
+    QSet<QString> m_thumbPending;
+    QSet<QString> m_thumbFailed;
     QSet<QString> m_readerPending;
     QString m_readerError;
     bool m_readerMode = false;
@@ -177,6 +202,8 @@ private:
     QToolButton *m_unreadFeedsButton = nullptr;
     QToolButton *m_settingsButton = nullptr;
     QToolButton *m_addButton = nullptr;
+    QToolButton *m_sourcesMenuButton = nullptr;
+    QLineEdit *m_feedSearchField = nullptr;
     QTreeWidget *m_sources = nullptr;
     SourceDelegate *m_sourceDelegate = nullptr;
     QLabel *m_timelineTitle = nullptr;
@@ -184,6 +211,7 @@ private:
     QLineEdit *m_searchField = nullptr;
     QToolButton *m_markAllButton = nullptr;
     QToolButton *m_unreadTimelineButton = nullptr;
+    QToolButton *m_catchUpButton = nullptr;
     QListView *m_timeline = nullptr;
     TimelineModel *m_timelineModel = nullptr;
     TimelineDelegate *m_timelineDelegate = nullptr;
@@ -192,6 +220,7 @@ private:
     ArticleBrowser *m_browser = nullptr;
     QToolButton *m_readButton = nullptr;
     QToolButton *m_starButton = nullptr;
+    QToolButton *m_readLaterButton = nullptr;
     QToolButton *m_nextUnreadButton = nullptr;
     QToolButton *m_readerButton = nullptr;
     QToolButton *m_openButton = nullptr;

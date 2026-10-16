@@ -76,15 +76,25 @@ def test_desktop_link_and_preview_are_packaged():
     assert (PACKAGE / "preview" / "market.webp").stat().st_size > 1000
 
 
-def test_ios_opens_the_native_full_screen_inline_media_studio():
-    screen = (IOS / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioScreen.swift").read_text(encoding="utf-8")
+def test_ios_studio_is_native_full_screen_and_rotates():
+    packages = IOS / "ForkMesh" / "Features" / "Packages"
+    screen = (packages / "VideoMixDjStudioScreen.swift").read_text(encoding="utf-8")
+    player = (packages / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
+    model = (packages / "VideoMixDjStudioModel.swift").read_text(encoding="utf-8")
+    delegate = (IOS / "ForkMesh" / "App" / "AppDelegate.swift").read_text(encoding="utf-8")
     routes = (IOS / "ForkMeshCore" / "Sources" / "FMPackages" / "PackageRoutes.swift").read_text(encoding="utf-8")
     parser = (IOS / "ForkMeshCore" / "Sources" / "FMApi" / "Navigation" / "RouteParser.swift").read_text(encoding="utf-8")
-    assert "allowsInlineMediaPlayback = true" in screen
-    assert '.toolbar(.hidden, for: .navigationBar)' in screen
-    assert '.toolbar(.hidden, for: .tabBar)' in screen
-    assert 'URLQueryItem(name: "presentation", value: "studio")' in screen
-    assert 'target.host == "www.youtube-nocookie.com"' in screen
+    assert ".fullScreenCover(isPresented: $presented" in screen
+    assert "DjLandscape(model: model, size: geometry.size)" in screen
+    assert "DjPortrait(model: model, size: geometry.size)" in screen
+    assert ".persistentSystemOverlays(.hidden)" in screen
+    assert "WKWebView" not in screen
+    assert "allowsInlineMediaPlayback = true" in player
+    assert 'host:"https://www.youtube-nocookie.com"' in player
+    assert "webView.isUserInteractionEnabled = false" in player
+    assert "FmOrientationLock.allowLandscape(true)" in model
+    assert "FmOrientationLock.allowLandscape(false)" in model
+    assert "supportedInterfaceOrientationsFor window: UIWindow?" in delegate
     assert 'case "videoMixDjStudio": return .videoMixDjStudio' in routes
     assert 'case "video-mix-dj-studio": return [.videoMixDjStudio]' in parser
 

@@ -117,6 +117,10 @@ struct RSSReaderScreen: View {
     @State private var unsubscribeTarget: RSSFeed?
     @State private var deleteFolderTarget: RSSFolder?
     @State private var markTarget: RSSScope?
+    @State private var olderTarget: RSSOlderRequest?
+    @State private var smartEditor: RSSSmartFeedDraft?
+    @State private var deleteSmartTarget: RSSSmartFeed?
+    @State private var feedQuery = ""
     @State private var problem = ""
 
     var body: some View {
@@ -138,6 +142,21 @@ struct RSSReaderScreen: View {
                     .accessibilityElement(children: .combine)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Menu {
+                            ForEach(RSSCatchUp.allCases) { (choice: RSSCatchUp) in
+                                Button(choice.title) { askOlder(nil, choice) }
+                            }
+                        } label: {
+                            Label("Mark Older as Read\u{2026}", systemImage: "clock.arrow.circlepath")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More")
+                    .accessibilityIdentifier("rss-feeds-more")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         model.updateSettings { $0.feedsUnreadOnly.toggle() }
                     } label: {
@@ -148,6 +167,7 @@ struct RSSReaderScreen: View {
                     .accessibilityIdentifier("rss-feeds-filter")
                 }
             }
+            .searchable(text: $feedQuery, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find a Feed")
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
             .refreshable { await model.refresh(force: true) }
             .task { await model.refresh() }
@@ -166,6 +186,29 @@ struct RSSReaderScreen: View {
             .sheet(item: $infoFeed) { (feed: RSSFeed) in
                 RSSFeedInfoSheet(model: model, feedId: feed.id)
                     .rssPalette(model.settings.palette)
+            }
+            .sheet(item: $smartEditor) { (draft: RSSSmartFeedDraft) in
+                RSSSmartFeedEditor(model: model, draft: draft.smart)
+                    .rssPalette(model.settings.palette)
+            }
+            .confirmationDialog(
+                "Delete \u{201C}\(deleteSmartTarget?.name ?? "")\u{201D}?", isPresented: deleteSmartShown, titleVisibility: .visible
+            ) {
+                Button("Delete Smart Feed", role: .destructive) {
+                    if let smart = deleteSmartTarget { model.deleteSmartFeed(smart.id) }
+                }
+            }
+            .alert("Mark Older as Read?", isPresented: olderShown) {
+                Button("Cancel", role: .cancel) {}
+                Button("Mark as Read") {
+                    if let request = olderTarget { model.markOlderRead(request.scope, request.choice) }
+                }
+            } message: {
+                Text(olderTarget.map { (request: RSSOlderRequest) in
+                    RSSReaderText.markOlderPrompt(
+                        model.olderUnreadCount(request.scope, request.choice), request.choice,
+                        scope: request.scope.map { (scope: RSSScope) in model.title(scope) })
+                } ?? "")
             }
             .alert(folderPrompt?.title ?? "", isPresented: folderPromptShown) {
                 TextField("Name", text: $folderName)
@@ -222,28 +265,44 @@ struct RSSReaderScreen: View {
         Binding(get: { markTarget != nil }, set: { if !$0 { markTarget = nil } })
     }
 
+    private var olderShown: Binding<Bool> {
+        Binding(get: { olderTarget != nil }, set: { if !$0 { olderTarget = nil } })
+    }
+
+    private var deleteSmartShown: Binding<Bool> {
+        Binding(get: { deleteSmartTarget != nil }, set: { if !$0 { deleteSmartTarget = nil } })
+    }
+
     private var problemShown: Binding<Bool> {
         Binding(get: { !problem.isEmpty }, set: { if !$0 { problem = "" } })
     }
 
     private var list: some View {
         List {
-            Section {
-                if !model.isCollapsed("smart") {
-                    smartRow(.today, symbol: "sun.max.fill", tint: .orange)
-                    smartRow(.unread, symbol: "circle.fill", tint: .blue)
-                    smartRow(.starred, symbol: "star.fill", tint: .yellow)
+            if feedQuery.isEmpty {
+                Section {
+                    if !model.isCollapsed("smart") {
+                        smartRow(.today, symbol: "sun.max.fill", tint: .orange)
+                        smartRow(.unread, symbol: "circle.fill", tint: .blue)
+                        smartRow(.starred, symbol: "star.fill", tint: .yellow)
+                        if model.counts.readLaterTotal > 0 {
+                            smartRow(.readLater, symbol: "bookmark.fill", tint: .purple)
+                        }
+                        ForEach(model.smartFeeds) { (smart: RSSSmartFeed) in
+                            smartRow(.smart(smart.id), symbol: "gearshape.fill", tint: .gray, custom: smart)
+                        }
+                    }
+                } header: {
+                    sectionHeader(RSSReaderText.smartFeeds, key: "smart")
                 }
-            } header: {
-                sectionHeader(RSSReaderText.smartFeeds, key: "smart")
             }
             Section {
-                if !model.isCollapsed("subscriptions") {
-                    let entries: [RSSSidebarEntry] = model.sidebar()
+                if !model.isCollapsed("subscriptions") || !feedQuery.isEmpty {
+                    let entries: [RSSSidebarEntry] = model.sidebar(search: feedQuery)
                     if model.feeds.isEmpty {
                         emptyRows
                     } else if entries.isEmpty {
-                        Text("No feeds have unread articles.")
+                        Text(feedQuery.isEmpty ? "No feeds have unread articles." : "No feeds match.")
                             .foregroundStyle(.secondary)
                     }
                     ForEach(entries) { (entry: RSSSidebarEntry) in
@@ -276,7 +335,7 @@ struct RSSReaderScreen: View {
         .accessibilityHint("Shows or hides the section")
     }
 
-    private func smartRow(_ scope: RSSScope, symbol: String, tint: Color) -> some View {
+    private func smartRow(_ scope: RSSScope, symbol: String, tint: Color, custom: RSSSmartFeed? = nil) -> some View {
         NavigationLink {
             RSSReaderTimelineScreen(model: model, scope: scope)
         } label: {
@@ -296,6 +355,18 @@ struct RSSReaderScreen: View {
                     askMarkAll(scope)
                 } label: {
                     Label("Mark All as Read", systemImage: "checkmark.circle")
+                }
+            }
+            if let custom {
+                Button {
+                    smartEditor = RSSSmartFeedDraft(smart: custom)
+                } label: {
+                    Label("Edit Smart Feed", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    deleteSmartTarget = custom
+                } label: {
+                    Label("Delete Smart Feed", systemImage: "trash")
                 }
             }
         }
@@ -338,15 +409,23 @@ struct RSSReaderScreen: View {
             } label: {
                 HStack(spacing: 12) {
                     RSSFeedIcon(feed: feed, title: feed.displayTitle, size: 22, remote: model.settings.loadRemoteImages)
+                        .opacity(feed.paused ? 0.5 : 1)
                     Text(feed.displayTitle)
                         .lineLimit(1)
+                        .foregroundStyle(feed.paused ? Color.secondary : Color.primary)
+                    if feed.paused {
+                        Image(systemName: "pause.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Updates Paused")
+                    }
+                    Spacer()
                     if feed.errorCount > 0 {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                            .accessibilityLabel("Last update failed")
+                            .accessibilityLabel(RSSReaderText.lastCheckFailed(feed.error))
                     }
-                    Spacer()
                     RSSCountLabel(count: unread)
                 }
                 .padding(.leading, indented ? 28 : 0)
@@ -459,6 +538,15 @@ struct RSSReaderScreen: View {
         }
     }
 
+    private func askOlder(_ scope: RSSScope?, _ choice: RSSCatchUp) {
+        guard model.olderUnreadCount(scope, choice) > 0 else { return }
+        if model.settings.confirmMarkAllRead {
+            olderTarget = RSSOlderRequest(scope: scope, choice: choice)
+        } else {
+            model.markOlderRead(scope, choice)
+        }
+    }
+
     private func saveFolder() {
         guard let prompt = folderPrompt else { return }
         do {
@@ -499,6 +587,12 @@ struct RSSReaderScreen: View {
                 } label: {
                     Label("Add Folder", systemImage: "folder.badge.plus")
                 }
+                Button {
+                    smartEditor = RSSSmartFeedDraft(smart: RSSSmartFeed(id: ""))
+                } label: {
+                    Label("New Smart Feed\u{2026}", systemImage: "gearshape")
+                }
+                .disabled(model.smartFeeds.count >= RSSReaderLimits.maxSmartFeeds)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 21, weight: .semibold))
@@ -512,6 +606,17 @@ struct RSSReaderScreen: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
+}
+
+struct RSSOlderRequest: Equatable {
+    var scope: RSSScope?
+    var choice: RSSCatchUp
+}
+
+struct RSSSmartFeedDraft: Identifiable {
+    var smart: RSSSmartFeed
+
+    var id: String { smart.id.isEmpty ? "new" : smart.id }
 }
 
 struct RSSFolderPrompt: Equatable {
@@ -603,6 +708,10 @@ struct RSSFeedInfoSheet: View {
     @Environment(\.openURL) private var openURL
     @State private var name = ""
     @State private var folderId = ""
+    @State private var address = ""
+    @State private var addressError = ""
+    @State private var checking = false
+    @State private var checkLine = ""
     @State private var confirmUnsubscribe = false
 
     var body: some View {
@@ -621,7 +730,7 @@ struct RSSFeedInfoSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         save()
-                        dismiss()
+                        if saveAddress() { dismiss() }
                     }
                 }
             }
@@ -629,6 +738,7 @@ struct RSSFeedInfoSheet: View {
                 if let feed = model.feed(feedId) {
                     name = feed.displayTitle
                     folderId = feed.folderId
+                    address = feed.url
                 }
             }
         }
@@ -661,11 +771,17 @@ struct RSSFeedInfoSheet: View {
                         }
                     }
                 }
-                LabeledContent("Feed Address") {
-                    Text(feed.url)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Feed Address")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Feed Address", text: $address)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit { _ = saveAddress() }
+                        .accessibilityIdentifier("rss-feed-address")
                 }
                 .contextMenu {
                     Button {
@@ -674,6 +790,18 @@ struct RSSFeedInfoSheet: View {
                         Label("Copy Feed Address", systemImage: "doc.on.doc")
                     }
                 }
+                if address.trimmingCharacters(in: .whitespacesAndNewlines) != feed.url {
+                    Button("Save Address") { _ = saveAddress() }
+                }
+                if !addressError.isEmpty {
+                    Label(addressError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                }
+            }
+            Section("Options") {
+                Toggle("Pause Updates", isOn: flag(\.paused))
+                Toggle("Hide from Today", isOn: flag(\.excludeFromToday))
+                Toggle("Hide from Unread Counts", isOn: flag(\.excludeFromUnread))
             }
             Section("Status") {
                 LabeledContent("Last Check", value: RSSReaderText.stamp(feed.fetchedAt))
@@ -683,6 +811,24 @@ struct RSSFeedInfoSheet: View {
                             .foregroundStyle(.red)
                             .multilineTextAlignment(.trailing)
                     }
+                }
+                Button {
+                    checkNow()
+                } label: {
+                    HStack {
+                        Text("Check Now")
+                        if checking {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(checking)
+                .accessibilityIdentifier("rss-check-now")
+                if !checkLine.isEmpty {
+                    Text(checkLine)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             Section {
@@ -694,6 +840,42 @@ struct RSSFeedInfoSheet: View {
                 model.unsubscribe(feed.id)
                 dismiss()
             }
+        }
+    }
+
+    private func flag(_ path: WritableKeyPath<RSSFeed, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { model.feed(feedId)?[keyPath: path] ?? false },
+            set: { (value: Bool) in model.setFeedFlag(feedId, path, value) })
+    }
+
+    private func checkNow() {
+        guard !checking else { return }
+        checking = true
+        Task {
+            let line: String = await model.checkNow(feedId)
+            checkLine = line
+            checking = false
+        }
+    }
+
+    private func saveAddress() -> Bool {
+        guard let feed = model.feed(feedId) else { return true }
+        let trimmed: String = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != feed.url else {
+            addressError = ""
+            return true
+        }
+        do {
+            addressError = ""
+            if try model.changeAddress(feedId, to: trimmed) {
+                address = model.feed(feedId)?.url ?? trimmed
+                checkNow()
+            }
+            return true
+        } catch {
+            addressError = RSSReaderErrors.message(error)
+            return false
         }
     }
 
