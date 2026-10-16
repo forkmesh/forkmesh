@@ -19,6 +19,7 @@ platform administrator. An award is permanent. Some badges have levels
 | Medallion generator | `app/tools/build_badge_medallions.py` (`--check` fails when a file is stale) |
 | Hourly sweep | cron phase `badge-sweep` runs `run_badge_sweep` |
 | Activity badges | `BADGE_METRIC_SQL` (one query per badge), `award_metric_badges`, `award_daily_spinner_badges`, `badges.longest_streak` |
+| Oracle | `_sweep_repo_discussion_answers`, `answer_record_fact`, `BADGE_METRIC_SQL["oracle"]`; table `badge_answer_facts` (migration `0267_badge_answer_facts`) |
 | Record badges | `sweep_badge_records` and its `_sweep_repo_pull_records` / `_sweep_repo_issue_records`, `BADGE_FACT_SQL`, `award_fact_badges`, `_record_web_merge_badge_fact` (called by the web merge in `app/src/route_handlers.py`); readers `pull_record_fact`, `issue_record_fact`, `co_author_emails`, `has_review_file` in `badges.py` |
 | Merge fields in `pull.md` | desktop `PullStore::mergePull` and the landed-pull sweep in `desktop/src/PullStore.cpp`; web merges in `executeMerge`, `server/merge.go` |
 | Node uptime totals | `_credit_node_uptime`, called by `record_online_sample`; table `node_uptime_totals` (migration `0265_node_uptime_totals`) |
@@ -226,11 +227,27 @@ Not covered yet: pull records written by the phones or the MCP tool carry no
 `mergedAt`, `mergedBy` or `coAuthors` until those writers add them, and the
 new Go desktop (`desktop_go_new`) does not write them either.
 
-## Badges planned next
+## Oracle
 
-| Slug | Name | Earned by | Levels | Data | Medallion |
-|---|---|---|---|---|---|
-| `oracle` | Oracle | accepted answers in discussions (Galaxy Brain) | 2 / 8 / 16 / 32 | Feature: mark an answer, across the protocol, desktop and web | a crystal ball holding a galaxy, on a gold stand |
+`oracle` (2 / 8 / 16 / 32 accepted answers, GitHub's Galaxy Brain): replies
+of yours that were marked as the answer to a Q&A discussion. Marking an
+answer is described in [discussion-answers.md](discussion-answers.md).
+
+The record sweep reads each changed repository's `.forkmesh/discussions`
+tree (default branch). Every discussion folder's tree `oid` is stored in
+`badge_answer_facts` (migration `0267_badge_answer_facts`, one row per
+repository and discussion), so a folder is read again only when something in
+it changed, at most 25 discussions (`BADGE_RECORD_BATCH // 2`) per
+repository per run in one `blobs` read of `discussion.md` and `answer.md`.
+`answer_record_fact` keeps the answer only for a Q&A category and a non-empty
+target, and takes the answerer from `targetAuthor`. Clearing or moving an
+answer rewrites the row, so the value can fall; the badge level never does.
+
+`BADGE_METRIC_SQL["oracle"]` counts, per answerer account (through
+`nodes.pubkey`), the discussions in public repositories whose answer they
+wrote, leaving out answers to their own question (same key, or the same
+account). A reply signed with a browser's per-browser key maps to no account
+and earns nothing.
 
 The first pull request, issue and discussion stay the existing Coder, QA and
 Poster badges.
