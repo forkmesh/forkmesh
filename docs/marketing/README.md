@@ -25,6 +25,8 @@ ForkMesh marketing is run by special agents:
 | Campaigns, keywords, Ads manager, channel metrics, posting to X | `marketplace/packages/marketing/` ([package README](../../marketplace/packages/marketing/README.md)) |
 | Herald, the ready X post | [x-ready-post.md](x-ready-post.md) |
 | Marketing email to opted-in users | [../app/marketing-email.md](../app/marketing-email.md) |
+| Onboarding emails (first repo, day 3, day 7; drafted, not sending) | [../app/onboarding-email.md](../app/onboarding-email.md) |
+| Press kit page | [press-kit.md](press-kit.md) |
 | Contract tests | `app/tests/test_teammate_documentation_cadence.py` |
 
 Both are checked in paused, like every special agent (Marketing weekly on
