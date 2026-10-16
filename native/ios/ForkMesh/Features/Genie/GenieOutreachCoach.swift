@@ -170,7 +170,9 @@ final class GenieOutreachCoach {
                     self?.share(draft)
                     return
                 }
-                GenieHub.shared.show(line: GenieOutreachCoach.openedLine(draft))
+                let line: String = GenieOutreachCoach.openedLine(draft)
+                GenieHub.shared.show(line: line)
+                InboxLocalPings.report(surface: "genie", title: "The spider said", message: line)
             }
         case .mastodon:
             UIPasteboard.general.string = draft.body
