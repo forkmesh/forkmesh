@@ -4,7 +4,7 @@
 window.ForkMeshDashboard.registerPage("browser-extension", ({ select: $ }) => {
   // The extension this package version ships. The deploy stage zips
   // content/extension to this path (app/tools/build_app_plugins.py).
-  const EXTENSION_VERSION = "2.22.0";
+  const EXTENSION_VERSION = "2.22.1";
   const EXTENSION_ZIP = `/dashboard-plugins/browser-extension/browser-extension-${EXTENSION_VERSION}.zip`;
 
   function installedVersion() {
