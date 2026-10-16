@@ -250,6 +250,21 @@ final class GenieOutreachTests: XCTestCase {
         XCTAssertNil(GenieOutreach.fallback(pick(carolId)).zohoURL)
     }
 
+    func testSuggestedEmailsCcTheOtherOrganizationMembers() {
+        let data = CrmOrganizationData(json: [
+            "organization": "acme",
+            "contacts": .array([.object(["id": .string(bobId), "name": "Bob Builder", "email": "bob@example.com", "flow": "customers", "stage": "lead"])]),
+            "memberEmails": .array(["kim@acme.test", "bob@example.com", "lou@acme.test"]),
+        ])
+        let email = GenieOutreach.best([data])
+        XCTAssertEqual(email?.cc, ["kim@acme.test", "lou@acme.test"])
+        let draft = GenieOutreach.fallback(email!)
+        XCTAssertEqual(draft.cc, ["kim@acme.test", "lou@acme.test"])
+        XCTAssertTrue(draft.mailtoURL?.absoluteString.hasPrefix("mailto:bob@example.com?cc=kim@acme.test,lou@acme.test&subject=") ?? false)
+        XCTAssertTrue(draft.zohoURL?.absoluteString.contains("%3Fcc%3Dkim%40acme.test%2Clou%40acme.test%26subject%3D") ?? false)
+        XCTAssertEqual(GenieOutreach.fallback(pick(bobId)).cc, [])
+    }
+
     func testAMissingDeckLinkIsPutBackBeforeTheSignOff() {
         let reply = "Subject: ForkMesh\n\nHi Bob,\n\nForkMesh turns coding agents into attributable contributors.\n\nBest,\nSam"
         let draft = GenieOutreach.parse(reply, pick: investorPick(), deck: deck, writer: "Claude Opus 5.5")

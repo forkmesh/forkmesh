@@ -105,6 +105,11 @@
       "risk": "sensitive"
     },
     {
+      "id": "organization.members.email",
+      "label": "Read the verified email addresses of your organization's other members to cc them on email the spider suggests",
+      "risk": "sensitive"
+    },
+    {
       "id": "platform.accounts.evidence",
       "label": "For ForkMesh administrators, record which contacts have a ForkMesh account, pay, or are on a trial",
       "risk": "high"
