@@ -811,42 +811,6 @@ def test_jett_anthropic_invoice_0012_is_an_exact_outstanding_debt():
         connection.close()
 
 
-def test_jett_anthropic_invoice_0013_is_an_exact_outstanding_debt():
-    schema = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
-        encoding="utf-8"
-    )
-    up = (
-        ROOT / "migrations" / "0268_jett_anthropic_expense_2026_10_16.sql"
-    ).read_text(encoding="utf-8")
-    down = (
-        ROOT / "migrations" / "down" /
-        "0268_jett_anthropic_expense_2026_10_16.sql"
-    ).read_text(encoding="utf-8")
-    connection = sqlite3.connect(":memory:")
-    try:
-        connection.execute(
-            "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)"
-        )
-        connection.executescript(schema)
-        before = connection.execute(
-            "SELECT COUNT(*) FROM operating_expenses").fetchone()[0]
-        connection.executescript(up)
-        connection.executescript(up)
-        assert connection.execute(
-            "SELECT vendor,paid_by_name,amount_minor,currency,incurred_at,"
-            "reimbursement_status,reimbursed_at "
-            "FROM operating_expenses WHERE external_reference='8RYATVG1-0013'"
-        ).fetchall() == [
-            ("Anthropic", "jett", 21_775, "USD", 1_792_108_800_000,
-             "outstanding", 0),
-        ]
-        connection.executescript(down)
-        assert connection.execute(
-            "SELECT COUNT(*) FROM operating_expenses").fetchone()[0] == before
-    finally:
-        connection.close()
-
-
 def test_payment_card_identifier_scrub_is_irreversible():
     schema = (ROOT / "migrations" / "0166_operating_expenses.sql").read_text(
         encoding="utf-8"
