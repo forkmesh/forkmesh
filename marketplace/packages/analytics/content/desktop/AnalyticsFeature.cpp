@@ -261,6 +261,18 @@ QJsonObject AnalyticsFeature::overviewQuery(qint64 nowMs, int rangeHours, int tz
     };
 }
 
+QJsonObject AnalyticsFeature::campaignQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes, const QString &groupBy,
+                                            const QString &host)
+{
+    QJsonObject query = overviewQuery(nowMs, rangeHours, tzOffsetMinutes);
+    query.insert(QStringLiteral("kind"), QStringLiteral("campaigns"));
+    query.insert(QStringLiteral("groupBy"), groupBy);
+    query.insert(QStringLiteral("limit"), 15);
+    if (!host.isEmpty())
+        query.insert(QStringLiteral("host"), host);
+    return query;
+}
+
 QString AnalyticsFeature::snippetText(const QString &origin, const QString &writeKey)
 {
     return QStringLiteral(
@@ -430,6 +442,24 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         tables->addWidget(sectionLabel(sections.at(index).first), row, column);
         tables->addWidget(sections.at(index).second, row + 1, column);
     }
+    m_campaigns = topTable({QStringLiteral("Campaign"), QStringLiteral("Source / medium"), QStringLiteral("Visits"),
+                            QStringLiteral("Change"), QStringLiteral("Bounce"), QStringLiteral("Avg. time"),
+                            QStringLiteral("Lands on")},
+                           QStringLiteral("analyticsCampaigns"));
+    m_landing = topTable({QStringLiteral("Landing page"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
+                         QStringLiteral("analyticsLanding"));
+    m_terms = topTable({QStringLiteral("Search term"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
+                       QStringLiteral("analyticsSearchTerms"));
+    const int campaignRow = int(sections.size() + 1) / 2 * 2;
+    auto *campaignsLabel = sectionLabel(QStringLiteral("Campaigns"));
+    campaignsLabel->setToolTip(QStringLiteral(
+        "Visits grouped by their first page's campaign tags (utm_source, utm_medium, utm_campaign), or by the referring site when untagged"));
+    tables->addWidget(campaignsLabel, campaignRow, 0, 1, 2);
+    tables->addWidget(m_campaigns, campaignRow + 1, 0, 1, 2);
+    tables->addWidget(sectionLabel(QStringLiteral("Landing pages")), campaignRow + 2, 0);
+    tables->addWidget(m_landing, campaignRow + 3, 0);
+    tables->addWidget(sectionLabel(QStringLiteral("Search terms")), campaignRow + 2, 1);
+    tables->addWidget(m_terms, campaignRow + 3, 1);
     tables->setColumnStretch(0, 3);
     tables->setColumnStretch(1, 2);
     layout->addLayout(tables);
@@ -700,6 +730,80 @@ void AnalyticsFeature::loadOverview()
         if (m_searchIndexChanged)
             m_searchIndexChanged();
     });
+    loadCampaigns(serial);
+}
+
+void AnalyticsFeature::loadCampaigns(int serial)
+{
+    const QString id = m_project->currentData().toString();
+    QString host;
+    for (const QJsonValue &origin : projectRecord().value(QStringLiteral("settings")).toObject()
+                                        .value(QStringLiteral("allowedOrigins")).toArray()) {
+        host = QUrl(origin.toString()).host();
+        if (!host.isEmpty())
+            break;
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const int offset = QDateTime::currentDateTime().offsetFromUtc() / 60;
+    for (const QString &group : {QStringLiteral("campaign"), QStringLiteral("landing"), QStringLiteral("term")}) {
+        request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/projects/") + id + QStringLiteral("/query")),
+                campaignQuery(now, m_rangeHours, offset, group, host),
+                [this, serial, group](bool ok, const QJsonObject &payload, const QString &) {
+            if (serial != m_serial)
+                return;
+            fillCampaigns(group, ok ? payload.value(QStringLiteral("result")).toObject() : QJsonObject());
+        });
+    }
+}
+
+void AnalyticsFeature::fillCampaigns(const QString &groupBy, const QJsonObject &result)
+{
+    QTableWidget *table = groupBy == QLatin1String("campaign") ? m_campaigns
+                          : groupBy == QLatin1String("landing") ? m_landing
+                                                                : m_terms;
+    table->setRowCount(0);
+    const auto cell = [table](int row, int column, const QString &value, bool right) {
+        auto *item = new QTableWidgetItem(value);
+        item->setToolTip(value);
+        if (right)
+            item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        table->setItem(row, column, item);
+    };
+    const auto bounce = [](const QJsonObject &row) {
+        return QStringLiteral("%1%").arg(std::lround(number(row, "bounceRate") * 100));
+    };
+    for (const QJsonValue &value : result.value(QStringLiteral("rows")).toArray()) {
+        const QJsonObject row = value.toObject();
+        if (groupBy == QLatin1String("term") && text(row, "term").startsWith(QLatin1Char('(')))
+            continue;
+        const int index = table->rowCount();
+        table->insertRow(index);
+        if (groupBy == QLatin1String("campaign")) {
+            const QString campaign = text(row, "campaign");
+            const double sessions = number(row, "sessions");
+            const double before = number(row, "previousSessions");
+            const QJsonArray landing = row.value(QStringLiteral("topLanding")).toArray();
+            cell(index, 0, campaign == QLatin1String("(none)") ? QStringLiteral("No campaign") : campaign, false);
+            cell(index, 1, text(row, "source") + QStringLiteral(" / ") + text(row, "medium"), false);
+            cell(index, 2, countText(sessions), true);
+            cell(index, 3, before > 0 ? changeText(sessions, before) : QStringLiteral("new"), true);
+            cell(index, 4, bounce(row), true);
+            cell(index, 5, durationText(qint64(number(row, "averageSessionMs"))), true);
+            cell(index, 6, landing.isEmpty() ? QString() : text(landing.first().toObject(), "value"), false);
+        } else {
+            cell(index, 0, text(row, groupBy == QLatin1String("landing") ? "landing" : "term"), false);
+            cell(index, 1, countText(number(row, "sessions")), true);
+            cell(index, 2, bounce(row), true);
+        }
+    }
+    if (table->rowCount() == 0) {
+        table->insertRow(0);
+        auto *empty = new QTableWidgetItem(groupBy == QLatin1String("term")
+            ? QStringLiteral("No search terms in this range")
+            : QStringLiteral("No data in this range"));
+        empty->setForeground(palette().color(QPalette::PlaceholderText));
+        table->setItem(0, 0, empty);
+    }
 }
 
 void AnalyticsFeature::installPlugin()

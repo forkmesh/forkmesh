@@ -327,9 +327,9 @@ DashboardPanel::DashboardPanel(const QString &title, QWidget *parent) : QFrame(p
 
 void DashboardPanel::setCompact()
 {
-    m_head->setContentsMargins(12, 5, 8, 5);
-    m_body->setContentsMargins(12, 7, 12, 9);
-    m_body->setSpacing(5);
+    m_head->setContentsMargins(10, 3, 6, 3);
+    m_body->setContentsMargins(10, 5, 10, 6);
+    m_body->setSpacing(4);
 }
 
 DashboardGrid::DashboardGrid(QWidget *parent) : QWidget(parent)
@@ -569,7 +569,7 @@ int KpiStrip::heightForWidth(int width) const
 {
     const int cols = columns(width);
     const int rows = (qMax(1, int(m_kpis.size())) + cols - 1) / cols;
-    return rows * (m_compact ? 70 : 96);
+    return rows * (m_compact ? 58 : 96);
 }
 
 QSize KpiStrip::sizeHint() const
@@ -579,7 +579,7 @@ QSize KpiStrip::sizeHint() const
 
 QSize KpiStrip::minimumSizeHint() const
 {
-    return {280, m_compact ? 70 : 96};
+    return {280, m_compact ? 58 : 96};
 }
 
 QRect KpiStrip::cellRect(int index) const
@@ -620,19 +620,19 @@ void KpiStrip::paintEvent(QPaintEvent *)
         if (cell.top() > 0)
             painter.drawLine(QPointF(cell.left(), cell.top() + 0.5), QPointF(cell.right() + 1, cell.top() + 0.5));
 
-        const QRect inner = m_compact ? cell.adjusted(12, 8, -10, -6) : cell.adjusted(16, 12, -14, -10);
+        const QRect inner = m_compact ? cell.adjusted(10, 5, -8, -4) : cell.adjusted(16, 12, -14, -10);
         painter.setFont(sizedFont(font(), m_compact ? 11 : 12));
         painter.setPen(c.muted);
         painter.drawText(QRect(inner.left(), inner.top(), inner.width(), m_compact ? 14 : 16), Qt::AlignLeft | Qt::AlignVCenter,
                          painter.fontMetrics().elidedText(kpi.label, Qt::ElideRight, inner.width()));
-        painter.setFont(sizedFont(font(), m_compact ? 18 : 24, QFont::Medium));
+        painter.setFont(sizedFont(font(), m_compact ? 17 : 24, QFont::Medium));
         painter.setPen(c.fg);
-        painter.drawText(QRect(inner.left(), inner.top() + (m_compact ? 14 : 18), inner.width(), m_compact ? 24 : 32),
+        painter.drawText(QRect(inner.left(), inner.top() + (m_compact ? 13 : 18), inner.width(), m_compact ? 22 : 32),
                          Qt::AlignLeft | Qt::AlignVCenter,
                          painter.fontMetrics().elidedText(kpi.value, Qt::ElideRight, inner.width()));
 
-        const int baseline = inner.top() + (m_compact ? 39 : 54);
-        const int line = m_compact ? 16 : 18;
+        const int baseline = inner.top() + (m_compact ? 35 : 54);
+        const int line = m_compact ? 15 : 18;
         int x = inner.left();
         painter.setFont(sizedFont(font(), m_compact ? 10 : 11, QFont::Medium));
         if (!kpi.delta.isEmpty()) {

@@ -2082,16 +2082,23 @@ def test_desktop_has_every_web_marketing_section():
         assert f'QStringLiteral("{label}")' in pages, label
     assert 'data-marketing-page="performance"' not in view
     assert 'data-marketing-website-page' in view
-    assert 'QStringLiteral("Website")' in pages
-    for title in ("Where to improve", "Ads measured by Analytics", "Landing pages",
+    nav = pages.split("nav->addWidget(segmented(", 1)[1].split("m_pageGroup", 1)[0]
+    assert 'QStringLiteral("Website")' not in nav, "the desktop's Website tab moved to the Analytics page"
+    for title in ("Where to improve", "Ads measured by Analytics",
                   "Spend by channel", "Needs attention", "Funnel",
                   "Link builder", "Experiment backlog", "Weekly funnel"):
         assert f"<h2>{title}</h2>" in view or f"{title}</h2>" in view, title
         assert f'DashboardPanel(QStringLiteral("{title}"))' in pages, title
-    for title in ("Watch", "Before you reply", "Subreddit rules", "Thread log",
-                  "Where to post next", "What to talk about"):
+    analytics = (REPO / "marketplace" / "packages" / "analytics" / "content" / "desktop"
+                 / "AnalyticsFeature.cpp").read_text()
+    for title in ("Campaigns", "Landing pages", "Search terms"):
+        assert f'sectionLabel(QStringLiteral("{title}"))' in analytics, title
+    for title in ("Watch", "Thread log", "Where to post next"):
         assert f"<h2>{title}</h2>" in view or f"{title}</h2>" in view, title
         assert f'redditPanel(QStringLiteral("{title}"))' in pages, title
+    for section in ("Subreddits and their rules", "Discovered", "What to talk about"):
+        assert f'ideaColumn(QStringLiteral("{section}")' in pages, section
+    assert "Before you reply:" in pages
     assert 'redditPanel(QStringLiteral("Results by subreddit"))' in pages
     for path in ("/experiments", "/funnel", "/links", "/report", "/reddit", "/settings",
                  "/x-connection", "/keywords", "/performance"):
@@ -3447,6 +3454,42 @@ def test_the_reddit_desk_says_where_to_post_and_what_to_talk_about():
     assert "- r/selfhosted: 2 open threads waiting for an answer" in report
 
 
+def test_where_to_post_next_discovers_subreddits_and_topics_to_add():
+    runtime = Runtime()
+    call(runtime.use("PUT", body={"reddit": {
+        "subreddits": ["selfhosted"], "queries": ["self-hosted git"]}}),
+        "/api/marketing/acme/settings")
+    assert call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/homelab/comments/ccc333/git_server_at_home/",
+        "title": "Git server at home"}), "/api/marketing/acme/reddit")["status"] == 201
+    assert call(runtime.use("POST", body={"term": "Backup GitHub repos"}),
+                "/api/marketing/acme/keywords")["status"] == 201
+
+    ideas = call(runtime.use("GET"), "/api/marketing/acme")["data"]["redditDesk"]["ideas"]
+    found = {item["name"]: item for item in ideas["discover"]}
+    assert ideas["discover"][0]["name"] == "homelab", "a subreddit the log already found ranks first"
+    assert found["homelab"] == {
+        "name": "homelab", "url": "https://www.reddit.com/r/homelab/new/",
+        "rulesUrl": "https://old.reddit.com/r/homelab/about/rules",
+        "reason": "1 thread logged here", "source": "threads"}
+    assert "selfhosted" not in found, "a watched subreddit is never suggested again"
+    assert found["DataHoarder"]["source"] == "related" and "backup" in found["DataHoarder"]["reason"]
+    assert len(ideas["discover"]) <= marketing.REDDIT_DISCOVER_LIMIT
+
+    topics = {item["topic"]: item for item in ideas["topics"]}
+    assert topics["backup github repos"]["source"] == "keywords"
+    assert topics["self-hosted git"]["communitiesUrl"] == (
+        "https://www.reddit.com/search/?type=communities&q=self-hosted%20git")
+
+    call(runtime.use("PUT", body={"reddit": {"subreddits": ["selfhosted", "homelab"]}}),
+         "/api/marketing/acme/settings")
+    desk = call(runtime.use("GET"), "/api/marketing/acme")["data"]["redditDesk"]
+    assert "homelab" in [item["name"] for item in desk["subreddits"]]
+    assert "homelab" not in [item["name"] for item in desk["ideas"]["discover"]]
+    assert [item["query"] for item in desk["queries"]] == ["self-hosted git"], (
+        "adding a subreddit keeps the watched searches")
+
+
 def test_where_to_post_next_drafts_a_chatgpt_prompt_that_learns_from_results():
     runtime = Runtime()
     call(runtime.use("PUT", body={"reddit": {"subreddits": ["selfhosted", "git", "homelab"]}}),
@@ -3542,6 +3585,12 @@ def test_the_clues_the_walk_and_the_engagement_formula_reach_every_surface():
         assert event in walk, event
     background = (extension / "background.js").read_text()
     assert 'files: ["reddit-walk.js"]' in background
+    assert "redditWalkPlan(state, rulesOnly)" in background and '"reddit_rules_on_file"' in background
+    bridge = (extension / "dashboard.js").read_text()
+    assert "event.data.rulesOnly === true ? { rulesOnly: true } : {}" in bridge
+    assert 'askRedditWalk("marketing-reddit-walk", { rulesOnly: true })' in web
+    assert 'params.get("rules") === "1"' in web and "data-marketing-reddit-rules-read" in view
+    assert 'openWebDashboard(QStringLiteral("page=reddit&rules=1"))' in native
     assert '{ type: "fm-reddit-scan" }' in background
     assert '"fm-reddit-scan"' in (extension / "reddit.js").read_text()
 

@@ -892,6 +892,8 @@ NOTIFICATION_KINDS = frozenset({
 PLUGIN_NOTIFICATION_KINDS = frozenset({"plugin_activity"})
 PLUGIN_ACCOUNT_EVIDENCE_PERMISSION = "platform.accounts.evidence"
 PLUGIN_ACCOUNT_EVIDENCE_LIMIT = 500
+PLUGIN_MEMBER_EMAILS_PERMISSION = "organization.members.email"
+PLUGIN_MEMBER_EMAILS_LIMIT = 50
 PLUGIN_DISCORD_CONNECTOR_PERMISSION = "organization.discord.read"
 PLUGIN_DISCORD_MESSAGES_PERMISSION = "organization.discord.messages.read"
 PLUGIN_MEMBER_ROLES = {"pro_member": "pro", "supporting_member": "supporter"}
@@ -11894,6 +11896,32 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
                 account["trial"] = {"startedAt": int(trial.get("started_at") or 0),
                                     "endsAt": ends_at, "active": ends_at > now}
         return {account.pop("email"): account for account in accounts.values()}
+
+    async def organization_member_emails(self, org_bi, account_bi):
+        if (PLUGIN_MEMBER_EMAILS_PERMISSION not in plugin_data.permissions(self._plugin)
+                or not await self.plugin_installed(org_bi, self._plugin)):
+            return []
+        member = await d1_first(
+            self.env,
+            "SELECT role FROM org_members WHERE org_bi=? AND member_bi=?",
+            org_bi, account_bi)
+        if not member:
+            return []
+        rows = await d1_all(
+            self.env,
+            "SELECT u.data FROM org_members m JOIN users u ON u.user_bi=m.member_bi "
+            "WHERE m.org_bi=? AND m.member_bi<>? ORDER BY m.name COLLATE NOCASE LIMIT ?",
+            org_bi, account_bi, PLUGIN_MEMBER_EMAILS_LIMIT)
+        emails = []
+        for row in rows or []:
+            rec = await decrypt_row(self.env, row.get("data")) or {}
+            if (rec.get("status") != "active" or _account_kind(rec) != "user"
+                    or not rec.get("email_verified")):
+                continue
+            email = clean_string(rec.get("email", ""), 254).strip().lower()
+            if valid_account_email(email) and email not in emails:
+                emails.append(email)
+        return emails
 
     async def discord_guild(self, org_bi):
         if (PLUGIN_DISCORD_CONNECTOR_PERMISSION not in plugin_data.permissions(self._plugin)

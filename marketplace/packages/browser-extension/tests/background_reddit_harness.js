@@ -415,6 +415,9 @@ function message(request, sender) {
   });
   check("a stopped walk says so", ["stopped", "done"].includes(
     (await message({ type: "fm-reddit-walk-state" }, POPUP)).walk.state));
+  const rulesOnly = await message({ type: "fm-reddit-walk", rulesOnly: true }, POPUP);
+  check("a rules-only walk has nothing to read once every rule set is on file",
+    rulesOnly.error === "reddit_rules_on_file", JSON.stringify(rulesOnly));
 
   const jettPost = (id, sub, title, extra = {}) => node({
     id: `t3_${id}`, permalink: `/r/${sub}/comments/${id}/${title.toLowerCase().replace(/[^a-z]+/g, "_")}/`,

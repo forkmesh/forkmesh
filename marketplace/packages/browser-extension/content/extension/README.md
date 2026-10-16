@@ -223,7 +223,10 @@ older than six hours.
   week, unread rules pages). `reddit-walk.js` paces each page with scrolling
   and pointer movement only (no clicks, keys, form events, requests or page
   writes), `reddit.js` reads it, and the walk ends with **Send to Reddit desk**.
-  **Stop the walk** ends it; two walks never run at once. This is why
+  **Stop the walk** ends it; two walks never run at once. A walk asked for
+  with `rulesOnly` (2.21.0; Marketing's **Read missing rules**, relayed by
+  `dashboard.js`) visits only the rules pages not yet on file and fails with
+  `reddit_rules_on_file` when there are none. This is why
   `https://www.reddit.com/*` and `https://old.reddit.com/*` are in
   `host_permissions`.
 

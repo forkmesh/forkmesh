@@ -596,7 +596,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     nav->setContentsMargins(0, 0, 0, 0);
     nav->setSpacing(6);
     m_pageGroup = new QButtonGroup(this);
-    nav->addWidget(segmented({QStringLiteral("Dashboard"), QStringLiteral("Website"), QStringLiteral("Channels"),
+    nav->addWidget(segmented({QStringLiteral("Dashboard"), QStringLiteral("Channels"),
                               QStringLiteral("Ads manager"), QStringLiteral("Growth")},
                              m_pageGroup, 0, QStringLiteral("Marketing section")));
     nav->addStretch(1);
@@ -629,17 +629,6 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     dashboardTools->addWidget(m_metricButton);
     dashboardTools->addWidget(m_newButton);
 
-    QHBoxLayout *performanceTools = tools();
-    m_performanceRange = new QButtonGroup(this);
-    performanceTools->addWidget(segmented({QStringLiteral("7D"), QStringLiteral("28D"), QStringLiteral("90D")},
-                                          m_performanceRange, 1, QStringLiteral("Performance window")));
-    m_performanceProjectBox = new QComboBox;
-    m_performanceProjectBox->setAccessibleName(QStringLiteral("Analytics project"));
-    m_performanceProjectBox->hide();
-    performanceTools->addWidget(m_performanceProjectBox);
-    auto *goalsButton = button(QStringLiteral("Goals"), false, QStringLiteral("Which Analytics events count as a conversion"));
-    performanceTools->addWidget(goalsButton);
-
     QHBoxLayout *channelsTools = tools();
     auto *staleButton = button(QStringLiteral("Update stale"), false,
                                QStringLiteral("Refresh every channel whose numbers are older than 7 days"));
@@ -658,6 +647,8 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     auto *reportButton = button(QStringLiteral("Weekly report"), false,
                                 QStringLiteral("Scorecard, experiments, ads, content and Reddit as Markdown"));
     auto *newExperimentButton = button(QStringLiteral("New experiment"), true);
+    auto *goalsButton = button(QStringLiteral("Goals"), false, QStringLiteral("Which Analytics events count as a conversion"));
+    growthTools->addWidget(goalsButton);
     growthTools->addWidget(reportButton);
     growthTools->addWidget(newExperimentButton);
 
@@ -666,52 +657,6 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_channelBar->setAccessibleName(QStringLiteral("Marketing channels"));
     m_channelBar->hide();
     outer->insertWidget(1, m_channelBar);
-
-    QVBoxLayout *performance = nullptr;
-    addPage(performance, "marketingPerformancePage");
-    m_performanceSetup = richLabel();
-    m_performanceSetup->setContentsMargins(8, 8, 8, 8);
-    performance->addWidget(m_performanceSetup);
-    m_performanceBody = clearWidget();
-    auto *performanceBody = new QVBoxLayout(m_performanceBody);
-    performanceBody->setContentsMargins(0, 0, 0, 0);
-    performanceBody->setSpacing(14);
-    m_performanceKpis = new KpiStrip;
-    performanceBody->addWidget(m_performanceKpis);
-    auto *performanceGrid = new DashboardGrid;
-    performanceBody->addWidget(performanceGrid);
-    m_performanceCampaignsPanel = new DashboardPanel(QStringLiteral("Campaigns"));
-    m_performanceCampaignsPanel->body()->setContentsMargins(6, 4, 6, 8);
-    m_performanceCampaigns = pageTable("marketingPerformanceCampaignsTable",
-        {QStringLiteral("Campaign"), QStringLiteral("Source / medium"), QStringLiteral("Visits"),
-         QStringLiteral("Change"), QStringLiteral("Bounce"), QStringLiteral("Conv."), QStringLiteral("Rate"),
-         QStringLiteral("Spend / visit"), QStringLiteral("Lands on")}, 0);
-    m_performanceCampaignsPanel->body()->addWidget(m_performanceCampaigns);
-    performanceGrid->addPanel(m_performanceCampaignsPanel, 2);
-    m_performanceInsightsPanel = new DashboardPanel(QStringLiteral("Where to improve"));
-    m_performanceInsights = new QVBoxLayout;
-    m_performanceInsights->setSpacing(8);
-    m_performanceInsightsPanel->body()->addLayout(m_performanceInsights);
-    performanceGrid->addPanel(m_performanceInsightsPanel, 1);
-    auto *measuredAds = new DashboardPanel(QStringLiteral("Ads measured by Analytics"));
-    measuredAds->hint()->setText(QStringLiteral("Matched by each ad's link tags"));
-    measuredAds->body()->setContentsMargins(6, 4, 6, 8);
-    m_performanceAds = pageTable("marketingPerformanceAdsTable",
-        {QStringLiteral("Ad"), QStringLiteral("Channel"), QStringLiteral("Clicks logged"), QStringLiteral("Visits"),
-         QStringLiteral("Click → visit"), QStringLiteral("Conv."), QStringLiteral("Cost / visit"),
-         QStringLiteral("Cost / conv.")}, 0);
-    measuredAds->body()->addWidget(m_performanceAds);
-    performanceGrid->addPanel(measuredAds, 2);
-    auto *landing = new DashboardPanel(QStringLiteral("Landing pages"));
-    landing->body()->setContentsMargins(6, 4, 6, 8);
-    m_performanceLanding = pageTable("marketingPerformanceLandingTable",
-        {QStringLiteral("Page"), QStringLiteral("Visits"), QStringLiteral("Bounce"), QStringLiteral("Conv.")}, 0);
-    landing->body()->addWidget(m_performanceLanding);
-    performanceGrid->addPanel(landing, 1);
-    m_performanceSource = hintLabel();
-    performanceBody->addWidget(m_performanceSource);
-    performance->addWidget(m_performanceBody);
-    performance->addStretch(1);
 
     QVBoxLayout *channels = nullptr;
     addPage(channels, "marketingChannelsPage");
@@ -801,6 +746,16 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_adsPanel->body()->insertLayout(1, adFilters);
     m_adsSummary->hide();
     m_adsGrid->addPanel(m_adsPanel, 3);
+    auto *measuredAds = new DashboardPanel(QStringLiteral("Ads measured by Analytics"));
+    measuredAds->setCompact();
+    measuredAds->hint()->setText(QStringLiteral("Matched by each ad's link tags · last 28 days"));
+    measuredAds->body()->setContentsMargins(6, 4, 6, 8);
+    m_performanceAds = pageTable("marketingPerformanceAdsTable",
+        {QStringLiteral("Ad"), QStringLiteral("Channel"), QStringLiteral("Clicks logged"), QStringLiteral("Visits"),
+         QStringLiteral("Click → visit"), QStringLiteral("Conv."), QStringLiteral("Cost / visit"),
+         QStringLiteral("Cost / conv.")}, 0);
+    measuredAds->body()->addWidget(m_performanceAds);
+    m_adsGrid->addPanel(measuredAds, 3);
     ads->addWidget(m_adsGrid);
     ads->addWidget(hintLabel(QStringLiteral(
         "Ads are planned and measured here and bought in each platform's own console. Results are logged by hand; ForkMesh never spends money or connects to an ad account. Follow each platform's advertising policies and the disclosure rules of every market you advertise in.")));
@@ -888,7 +843,13 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     experimentActions->addWidget(editExperimentButton);
     experimentActions->addWidget(addExperimentButton);
     m_experimentsPanel->body()->addLayout(experimentActions);
-    growthGrid->addPanel(m_experimentsPanel, 3);
+    growthGrid->addPanel(m_experimentsPanel, 2);
+    m_performanceInsightsPanel = new DashboardPanel(QStringLiteral("Where to improve"));
+    m_performanceInsightsPanel->setCompact();
+    m_performanceInsights = new QVBoxLayout;
+    m_performanceInsights->setSpacing(6);
+    m_performanceInsightsPanel->body()->addLayout(m_performanceInsights);
+    growthGrid->addPanel(m_performanceInsightsPanel, 1);
     auto *weeksPanel = new DashboardPanel(QStringLiteral("Weekly funnel"));
     weeksPanel->hint()->setText(QStringLiteral("A dash means nobody logged it, not zero"));
     weeksPanel->body()->setContentsMargins(6, 4, 6, 8);
@@ -913,20 +874,54 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
 
     auto *reddit = static_cast<QVBoxLayout *>(m_detailRedditBox->layout());
     auto *redditGrid = new DashboardGrid;
-    static_cast<QGridLayout *>(redditGrid->layout())->setSpacing(10);
+    static_cast<QGridLayout *>(redditGrid->layout())->setSpacing(6);
     const auto redditPanel = [](const QString &title) {
         auto *panel = new DashboardPanel(title);
         panel->setCompact();
         return panel;
     };
-    const auto linkList = [] {
+    const auto linkList = [this] {
         auto *list = richLabel();
-        list->setOpenExternalLinks(true);
+        list->setOpenExternalLinks(false);
         list->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        connect(list, &QLabel::linkActivated, this, [this](const QString &link) { openRedditLink(link); });
         return list;
     };
+
+    m_redditIdeasPanel = redditPanel(QStringLiteral("Where to post next"));
+    m_redditIdeasPanel->setToolTip(QStringLiteral(
+        "Ranked by what the log already knows: open threads waiting for an answer, replies and posts that landed, and whether the subreddit's rules are on file. "
+        "Discovered subreddits come from threads and posts logged outside the watch list and from communities related to your topics and keywords. "
+        "Rules are read by the ForkMesh browser extension in your own browser and saved for the whole team; they do not tick “Rules read” on a thread. "
+        "Draft with ChatGPT opens a prompt with ForkMesh, links tagged for the subreddit, its rules, the posts logged there and how our earlier Reddit posts did."));
+    auto *addPlace = linkButton(QStringLiteral("Add"), QStringLiteral("Add a subreddit to post in or a topic to watch"));
+    auto *readRules = linkButton(QStringLiteral("Read missing rules"),
+                                 QStringLiteral("The ForkMesh browser extension opens each watched subreddit's rules page in one tab and saves what it reads"));
+    auto *copyRules = linkButton(QStringLiteral("Copy rules"),
+                                 QStringLiteral("Every rule set on file as Markdown, for a Reddit scout run"));
+    for (QPushButton *item : {addPlace, readRules, copyRules})
+        m_redditIdeasPanel->tools()->addWidget(item);
+    auto *ideaColumns = new QHBoxLayout;
+    ideaColumns->setSpacing(14);
+    const auto ideaColumn = [&ideaColumns, &linkList](const QString &title, int stretch) {
+        auto *column = new QVBoxLayout;
+        column->setSpacing(3);
+        auto *head = hintLabel(title.toUpper(), "marketingFactLabel");
+        column->addWidget(head);
+        QLabel *list = linkList();
+        column->addWidget(list);
+        column->addStretch(1);
+        ideaColumns->addLayout(column, stretch);
+        return list;
+    };
+    m_redditPlaces = ideaColumn(QStringLiteral("Subreddits and their rules"), 3);
+    m_redditDiscover = ideaColumn(QStringLiteral("Discovered"), 2);
+    m_redditTopics = ideaColumn(QStringLiteral("What to talk about"), 2);
+    m_redditIdeasPanel->body()->addLayout(ideaColumns);
+    redditGrid->addPanel(m_redditIdeasPanel, 3);
+
     m_redditPanel = redditPanel(QStringLiteral("Thread log"));
-    m_redditPanel->body()->setContentsMargins(6, 4, 6, 8);
+    m_redditPanel->body()->setContentsMargins(6, 4, 6, 6);
     m_redditStatus = new QButtonGroup(this);
     QStringList redditTabs{QStringLiteral("Open")};
     redditTabs << choiceLabels(redditStatuses()) << QStringLiteral("Monitored");
@@ -956,10 +951,6 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_redditPanel->body()->addLayout(threadActions);
     redditGrid->addPanel(m_redditPanel, 2);
 
-    auto *redditSide = clearWidget();
-    auto *redditSideLayout = new QVBoxLayout(redditSide);
-    redditSideLayout->setContentsMargins(0, 0, 0, 0);
-    redditSideLayout->setSpacing(10);
     auto *watchPanel = redditPanel(QStringLiteral("Watch"));
     watchPanel->setToolTip(QStringLiteral(
         "Each link opens Reddit's newest posts in your own browser. ForkMesh's servers never fetch or post to Reddit: log a thread by hand, or let the ForkMesh browser extension fill the log from the pages you open and send it from its popup."));
@@ -967,52 +958,21 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     watchPanel->tools()->addWidget(editWatch);
     m_redditSubreddits = linkList();
     m_redditQueries = linkList();
+    m_redditAccounts = linkList();
     watchPanel->body()->addWidget(m_redditSubreddits);
     watchPanel->body()->addWidget(m_redditQueries);
-    m_redditAccounts = linkList();
     watchPanel->body()->addWidget(m_redditAccounts);
-    redditSideLayout->addWidget(watchPanel);
-    auto *beforePanel = redditPanel(QStringLiteral("Before you reply"));
-    auto *checklist = richLabel();
-    checklist->setText(QStringLiteral(
-        "1. Read the subreddit's rules on self-promotion · 2. Say you work on ForkMesh · 3. Write and post the reply yourself · 4. Never vote or ask for votes"));
+    auto *checklist = hintLabel(QStringLiteral(
+        "Before you reply: read the rules on self-promotion · say you work on ForkMesh · write and post it yourself · never vote or ask for votes"));
     checklist->setToolTip(QStringLiteral(
         "A thread can be marked replied only after Rules read and Disclosed are ticked and the address of your reply is saved."));
-    beforePanel->body()->addWidget(checklist);
-    redditSideLayout->addWidget(beforePanel);
-    redditSideLayout->addStretch(1);
-    redditGrid->addPanel(redditSide, 1);
-
-    m_redditIdeasPanel = redditPanel(QStringLiteral("Where to post next"));
-    m_redditIdeasPanel->setToolTip(QStringLiteral(
-        "Ranked by what the log already knows: open threads waiting for an answer, replies and posts that landed, and whether the subreddit's rules are on file. "
-        "Draft with ChatGPT opens a prompt with ForkMesh, links tagged for the subreddit, its rules, the posts logged there and how our earlier Reddit posts did; "
-        "log what you post so the next draft learns from it."));
-    m_redditPlaces = linkList();
-    m_redditIdeasPanel->body()->addWidget(m_redditPlaces);
-    m_redditIdeasPanel->body()->addStretch(1);
-    redditGrid->addPanel(m_redditIdeasPanel, 1);
-    m_redditTopicsPanel = redditPanel(QStringLiteral("What to talk about"));
-    m_redditTopicsPanel->setToolTip(QStringLiteral(
-        "Topics come from the searches on the watch list and the words that keep coming back in the threads logged here. Nothing is generated."));
-    m_redditTopics = linkList();
-    m_redditTopicsPanel->body()->addWidget(m_redditTopics);
-    m_redditTopicsPanel->body()->addStretch(1);
-    redditGrid->addPanel(m_redditTopicsPanel, 1);
-    m_redditRulesPanel = redditPanel(QStringLiteral("Subreddit rules"));
-    m_redditRulesPanel->setToolTip(QStringLiteral(
-        "Read by the ForkMesh browser extension when you open a watched subreddit's rules page yourself, and saved for the whole team. They do not tick “Rules read” on a thread: that stays your own check."));
-    auto *copyRules = linkButton(QStringLiteral("Copy rules for the scout"),
-                                 QStringLiteral("Every rule set on file as Markdown, for a Reddit scout run"));
-    m_redditRulesPanel->tools()->addWidget(copyRules);
-    m_redditRules = linkList();
-    m_redditRulesPanel->body()->addWidget(m_redditRules);
-    m_redditRulesPanel->body()->addStretch(1);
-    redditGrid->addPanel(m_redditRulesPanel, 1);
+    watchPanel->body()->addWidget(checklist);
+    watchPanel->body()->addStretch(1);
+    redditGrid->addPanel(watchPanel, 1);
 
     m_performanceRedditPanel = redditPanel(QStringLiteral("Results by subreddit"));
     m_performanceRedditPanel->hint()->setText(QStringLiteral("Visits from each subreddit's tagged links"));
-    m_performanceRedditPanel->body()->setContentsMargins(6, 4, 6, 8);
+    m_performanceRedditPanel->body()->setContentsMargins(6, 4, 6, 6);
     m_performanceReddit = pageTable("marketingPerformanceRedditTable",
         {QStringLiteral("Subreddit"), QStringLiteral("Threads"), QStringLiteral("Replied"), QStringLiteral("Visits"),
          QStringLiteral("Bounce"), QStringLiteral("Conv.")}, 0);
@@ -1023,7 +983,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
 
     auto *appStore = static_cast<QVBoxLayout *>(m_detailAppStoreBox->layout());
     auto *appStoreHead = new QHBoxLayout;
-    appStoreHead->setSpacing(10);
+    appStoreHead->setSpacing(6);
     m_appStoreFacts = richLabel("marketingHint");
     m_appStoreFacts->setAccessibleName(QStringLiteral("App Store facts"));
     appStoreHead->addWidget(m_appStoreFacts, 1);
@@ -1040,7 +1000,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     m_appStoreKpis->setAccessibleName(QStringLiteral("App Store numbers"));
     appStore->addWidget(m_appStoreKpis);
     auto *appStoreGrid = new DashboardGrid;
-    static_cast<QGridLayout *>(appStoreGrid->layout())->setSpacing(10);
+    static_cast<QGridLayout *>(appStoreGrid->layout())->setSpacing(6);
     m_appStoreChartPanel = redditPanel(QStringLiteral("Downloads over time"));
     m_appStoreRange = new QButtonGroup(this);
     m_appStoreChartPanel->tools()->addWidget(segmented(
@@ -1048,7 +1008,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
         m_appStoreRange, 0, QStringLiteral("App Store range")));
     m_appStoreChart = new LineChart;
     m_appStoreChart->setAccessibleName(QStringLiteral("App Store downloads chart"));
-    m_appStoreChart->setMaximumHeight(230);
+    m_appStoreChart->setMaximumHeight(170);
     m_appStoreChart->setMinimumWidth(240);
     m_appStoreChartPanel->body()->addWidget(m_appStoreChart);
     appStoreGrid->addPanel(m_appStoreChartPanel, 2);
@@ -1089,19 +1049,7 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     });
 
     connect(m_pageGroup, &QButtonGroup::idClicked, this, [this](int id) { showPage(id); });
-    connect(m_performanceRange, &QButtonGroup::idClicked, this, [this](int id) {
-        static constexpr int windows[] = {7, 28, 90};
-        m_performanceDays = windows[qBound(0, id, 2)];
-        loadPerformance();
-    });
-    connect(m_performanceProjectBox, &QComboBox::activated, this, [this](int index) {
-        m_performanceProject = m_performanceProjectBox->itemData(index).toString();
-        loadPerformance();
-    });
     connect(goalsButton, &QPushButton::clicked, this, [this] { editGoals(); });
-    connect(m_performanceSetup, &QLabel::linkActivated, this, [](const QString &link) {
-        QDesktopServices::openUrl(QUrl(link));
-    });
     connect(m_healthFilter, &QButtonGroup::idClicked, this, [this](int) { renderChannelHealth(); });
     connect(m_channelsSearch, &QLineEdit::textChanged, this, [this](const QString &) { renderChannelHealth(); });
     connect(m_channelsCategory, &QComboBox::activated, this, [this](int) { renderChannelHealth(); });
@@ -1169,6 +1117,8 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
     connect(m_redditStatus, &QButtonGroup::idClicked, this, [this](int) { renderReddit(); });
     connect(editWatch, &QPushButton::clicked, this, [this] { editRedditWatch(); });
     connect(copyRules, &QPushButton::clicked, this, [this] { copyRedditRules(); });
+    connect(addPlace, &QPushButton::clicked, this, [this] { addRedditPlace(); });
+    connect(readRules, &QPushButton::clicked, this, [this] { readRedditRules(); });
     connect(addThread, &QPushButton::clicked, this, [this] { editRedditThread(); });
     connect(monitorThread, &QPushButton::clicked, this, [this] { monitorRedditThread(); });
     const auto selectedThread = [this] { return byId(m_redditThreads, rowId(m_redditTable)); };
@@ -1203,13 +1153,13 @@ void MarketingFeature::showPage(int page)
     m_detailChannel.clear();
     m_detailRefresh.clear();
     applyView();
-    if (m_page == 1 && (previous != 1 || m_performance.isEmpty()))
+    if (m_page >= 2 && (previous < 2 || m_performance.isEmpty()))
         loadPerformance();
 }
 
 void MarketingFeature::renderPages()
 {
-    if (!m_performanceKpis)
+    if (!m_performanceAds)
         return;
     renderPerformance();
     renderChannelHealth();
@@ -1226,9 +1176,7 @@ void MarketingFeature::loadPerformance()
     const int serial = ++m_performanceSerial;
     const qint64 to = QDateTime::currentMSecsSinceEpoch();
     const qint64 from = to - m_performanceDays * kDay;
-    QString path = organizationPath(QStringLiteral("/performance")) + QStringLiteral("?from=%1&to=%2").arg(from).arg(to);
-    if (!m_performanceProject.isEmpty())
-        path += QStringLiteral("&project=") + QString::fromUtf8(QUrl::toPercentEncoding(m_performanceProject));
+    const QString path = organizationPath(QStringLiteral("/performance")) + QStringLiteral("?from=%1&to=%2").arg(from).arg(to);
     request(QByteArrayLiteral("GET"), path, {},
             [this, serial](bool ok, const QJsonObject &payload, const QString &error) {
         if (serial != m_performanceSerial)
@@ -1244,123 +1192,28 @@ void MarketingFeature::loadPerformance()
 
 void MarketingFeature::renderPerformance()
 {
-    if (!m_performanceKpis)
+    if (!m_performanceAds)
         return;
     const DashboardColors colors = DashboardColors::from(this);
+    clearLayout(m_performanceInsights);
     if (m_performance.isEmpty()) {
-        m_performanceSetup->setText(QStringLiteral("Reading campaign results from Analytics…"));
-        m_performanceSetup->show();
-        m_performanceBody->hide();
-        m_performanceProjectBox->hide();
+        auto *loading = richLabel();
+        loading->setText(QStringLiteral("Reading campaign results from Analytics…"));
+        m_performanceInsights->addWidget(loading);
         return;
     }
     const bool ready = text(m_performance, "status") == QLatin1String("ok");
-    const QJsonArray projects = m_performance.value(QStringLiteral("projects")).toArray();
-    {
-        const QSignalBlocker blocker(m_performanceProjectBox);
-        m_performanceProjectBox->clear();
-        for (const QJsonValue &value : projects) {
-            const QJsonObject project = value.toObject();
-            m_performanceProjectBox->addItem(text(project, "name") +
-                (project.value(QStringLiteral("siteDefault")).toBool() ? QStringLiteral(" · site") : QString()),
-                text(project, "id"));
-        }
-        const QString current = text(m_performance.value(QStringLiteral("project")).toObject(), "id");
-        m_performanceProjectBox->setCurrentIndex(qMax(0, m_performanceProjectBox->findData(current)));
-    }
-    m_performanceProjectBox->setVisible(projects.size() >= 2);
-    const QJsonArray insights = m_performance.value(QStringLiteral("insights")).toArray();
-    if (!ready) {
-        QStringList lines{QStringLiteral("<b>Connect Analytics</b> &nbsp; <a style=\"color:%1; text-decoration:none\" href=\"https://app.forkmesh.com/dashboard/analytics\">Open Analytics ↗</a>")
-                              .arg(colors.primary.name())};
-        for (const QJsonValue &value : insights) {
-            const QJsonObject insight = value.toObject();
-            lines << icon(text(insight, "level"), colors) + QStringLiteral("&nbsp; ") + escaped(text(insight, "title")) +
-                         (text(insight, "detail").isEmpty() ? QString()
-                              : QStringLiteral("<br><span style=\"color:%1\">%2</span>").arg(colors.muted.name(), escaped(text(insight, "detail"))));
-        }
-        if (insights.isEmpty())
-            lines << escaped(QStringLiteral("Install Analytics for this organization and add a project to measure campaigns."));
-        m_performanceSetup->setText(lines.join(QStringLiteral("<br><br>")));
-        m_performanceSetup->show();
-        m_performanceBody->hide();
-        return;
-    }
-    m_performanceSetup->hide();
-    m_performanceBody->show();
-    const QJsonObject totals = m_performance.value(QStringLiteral("totals")).toObject();
-    const QJsonObject previous = m_performance.value(QStringLiteral("previous")).toObject();
     const bool goals = !m_performance.value(QStringLiteral("goals")).toArray().isEmpty();
     const auto value = [](const QJsonObject &object, const char *key) { return object.value(QLatin1String(key)); };
-    KpiStrip::Kpi visits;
-    visits.label = QStringLiteral("Visits");
-    visits.value = fullCount(number(totals, "sessions"));
-    std::tie(visits.delta, visits.tone) = windowDelta(value(totals, "sessions"), value(previous, "sessions"));
-    KpiStrip::Kpi visitors;
-    visitors.label = QStringLiteral("Visitors");
-    visitors.value = fullCount(number(totals, "visitors"));
-    std::tie(visitors.delta, visitors.tone) = windowDelta(value(totals, "visitors"), value(previous, "visitors"));
-    KpiStrip::Kpi conversions;
-    conversions.label = QStringLiteral("Conversions");
-    conversions.value = goals ? fullCount(number(totals, "conversions")) : kDash;
-    if (goals)
-        std::tie(conversions.delta, conversions.tone) = windowDelta(value(totals, "conversions"), value(previous, "conversions"));
-    conversions.note = goals ? QStringLiteral("%1 of visits").arg(shareText(value(totals, "conversionRate")))
-                             : QStringLiteral("No goal set");
-    KpiStrip::Kpi bounce;
-    bounce.label = QStringLiteral("Bounce rate");
-    bounce.value = shareText(value(totals, "bounceRate"));
-    std::tie(bounce.delta, bounce.tone) = windowDelta(value(totals, "bounceRate"), value(previous, "bounceRate"), true);
-    KpiStrip::Kpi tagged;
-    tagged.label = QStringLiteral("Tagged visits");
-    tagged.value = shareText(value(totals, "taggedShare"));
-    tagged.note = QStringLiteral("%1 carry a campaign").arg(fullCount(number(totals, "taggedSessions")));
-    m_performanceKpis->setKpis({visits, visitors, conversions, bounce, tagged});
-
-    const QJsonArray campaigns = m_performance.value(QStringLiteral("campaigns")).toArray();
-    m_performanceCampaignsPanel->hint()->setText(campaigns.isEmpty() ? QStringLiteral("No visits in this window")
-                                                                     : plural(campaigns.size(), QStringLiteral("source"), QStringLiteral("sources")));
-    m_performanceCampaigns->setRowCount(0);
-    for (const QJsonValue &entry : campaigns) {
-        const QJsonObject row = entry.toObject();
-        const QString campaign = text(row, "campaign");
-        const bool listed = row.value(QStringLiteral("listed")).toBool(true);
-        const double change = number(row, "sessions") - number(row, "previousSessions");
-        QStringList spend;
-        for (const QJsonValue &item : row.value(QStringLiteral("spend")).toArray()) {
-            const QJsonObject amount = item.toObject();
-            spend << money(present(amount.value(QStringLiteral("perSessionCents")))
-                               ? amount.value(QStringLiteral("perSessionCents"))
-                               : amount.value(QStringLiteral("cents")),
-                           text(amount, "currency"));
-        }
-        const QJsonArray topLanding = row.value(QStringLiteral("topLanding")).toArray();
-        addRow(m_performanceCampaigns,
-               {(campaign.isEmpty() || campaign == QLatin1String("(none)") ? QStringLiteral("No campaign") : campaign) +
-                    (listed ? QString() : QStringLiteral("  ⚠")),
-                text(row, "source") + QStringLiteral(" / ") + text(row, "medium"),
-                fullCount(number(row, "sessions")),
-                number(row, "previousSessions") > 0 ? (change > 0 ? QStringLiteral("+") : QString()) + fullCount(change)
-                                                    : QStringLiteral("new"),
-                shareText(value(row, "bounceRate")),
-                goals ? fullCount(number(row, "conversions")) : kDash,
-                goals ? shareText(value(row, "conversionRate")) : kDash,
-                number(row, "ads") > 0 && !spend.isEmpty() ? spend.join(QStringLiteral(" · ")) : kDash,
-                topLanding.isEmpty() ? QString() : text(topLanding.first().toObject(), "value")},
-               QString(), 2,
-               {text(row, "key") + (listed ? QString() : QStringLiteral("\nNot on the campaign allowlist"))});
-        for (int column = 7; column < 9; ++column) {
-            if (QTableWidgetItem *cell = m_performanceCampaigns->item(m_performanceCampaigns->rowCount() - 1, column))
-                cell->setTextAlignment(column == 8 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter);
-        }
-    }
-    fitTable(m_performanceCampaigns, 14);
-
-    clearLayout(m_performanceInsights);
+    const QJsonArray insights = m_performance.value(QStringLiteral("insights")).toArray();
     m_performanceInsightsPanel->hint()->setText(insights.isEmpty() ? QString() : QString::number(insights.size()));
-    if (insights.isEmpty()) {
+    if (!ready) {
+        auto *setup = richLabel();
+        setup->setText(QStringLiteral("<b>Connect Analytics</b> to measure campaigns. Visits, campaigns, landing pages and search terms are on the Analytics page."));
+        m_performanceInsights->addWidget(setup);
+    } else if (insights.isEmpty()) {
         auto *clear = richLabel();
-        clear->setText(icon(QStringLiteral("win"), colors) + QStringLiteral("&nbsp; Nothing stands out in this window."));
+        clear->setText(icon(QStringLiteral("win"), colors) + QStringLiteral("&nbsp; Nothing stands out in the last %1 days.").arg(m_performanceDays));
         m_performanceInsights->addWidget(clear);
     }
     for (const QJsonValue &entry : insights) {
@@ -1389,19 +1242,9 @@ void MarketingFeature::renderPerformance()
                text(ad, "id"), 2, {taggedLink ? QString() : QStringLiteral("The landing link has no campaign tags")});
     }
     if (m_performanceAds->rowCount() == 0)
-        addRow(m_performanceAds, {QStringLiteral("No ads yet. Plan one in the Ads manager with a tagged landing link.")}, QString(), -1);
+        addRow(m_performanceAds, {ready ? QStringLiteral("No ads yet. Plan one with a tagged landing link.")
+                                        : QStringLiteral("Connect Analytics to match ads to visits.")}, QString(), -1);
     fitTable(m_performanceAds, 10);
-
-    m_performanceLanding->setRowCount(0);
-    const QJsonArray landing = m_performance.value(QStringLiteral("landing")).toArray();
-    for (int index = 0; index < qMin<qsizetype>(12, landing.size()); ++index) {
-        const QJsonObject row = landing.at(index).toObject();
-        addRow(m_performanceLanding, {text(row, "landing"), fullCount(number(row, "sessions")),
-                                      shareText(value(row, "bounceRate")),
-                                      goals ? fullCount(number(row, "conversions")) : kDash},
-               QString(), 1);
-    }
-    fitTable(m_performanceLanding, 12);
 
     const QJsonArray redditRows = m_performance.value(QStringLiteral("reddit")).toArray();
     m_performanceRedditPanel->setVisible(!redditRows.isEmpty());
@@ -1416,16 +1259,6 @@ void MarketingFeature::renderPerformance()
     }
     fitTable(m_performanceReddit, 10);
     renderReddit();
-
-    const qint64 lastEvent = qint64(number(m_performance, "lastEventAt"));
-    m_performanceSource->setText(
-        QStringLiteral("From the Analytics project “%1”, %2 to %3%4%5. Only visitors who allow analytics are counted. Cost per visit uses each ad's logged lifetime spend, so pick a window that covers the flight.")
-            .arg(text(m_performance.value(QStringLiteral("project")).toObject(), "name"),
-                 shortDate(qint64(number(m_performance, "from"))), shortDate(qint64(number(m_performance, "to"))),
-                 lastEvent > 0 ? QStringLiteral("; last visit recorded %1").arg(relativeLabel(lastEvent)) : QString(),
-                 m_performance.value(QStringLiteral("truncated")).toBool()
-                     ? QStringLiteral("; this window holds more events than one read covers, so totals are a sample")
-                     : QString()));
 }
 
 void MarketingFeature::renderChannelHealth()
@@ -2081,7 +1914,7 @@ void MarketingFeature::renderChannelDesk(const QString &id)
         cell->setOpenExternalLinks(true);
         cell->setTextInteractionFlags(Qt::TextBrowserInteraction);
         cell->setText(QStringLiteral("<span style=\"color:%1; font-size:11px\">%2</span><br>"
-                                     "<span style=\"color:%3; font-size:15px; font-weight:600\">%4</span>%5")
+                                     "<span style=\"color:%3; font-size:14px; font-weight:600\">%4</span>%5")
                           .arg(colors.muted.name(), escaped(label), (tone.isValid() ? tone : colors.fg).name(), value,
                                detail.isEmpty() ? QString()
                                    : QStringLiteral("<br><span style=\"color:%1; font-size:11px\">%2</span>")
@@ -2334,82 +2167,113 @@ void MarketingFeature::renderReddit()
     QHash<QString, QJsonObject> results;
     for (const QJsonValue &value : m_performance.value(QStringLiteral("reddit")).toArray())
         results.insert(text(value.toObject(), "subreddit").toLower(), value.toObject());
+    QHash<QString, QJsonObject> watchedByName;
+    for (const QJsonValue &value : watched)
+        watchedByName.insert(text(value.toObject(), "name").toLower(), value.toObject());
     const QJsonObject ideas = m_redditDesk.value(QStringLiteral("ideas")).toObject();
     const QJsonArray places = ideas.value(QStringLiteral("subreddits")).toArray();
-    m_redditIdeasPanel->hint()->setText(places.isEmpty() ? QString()
-        : QStringLiteral("%1 ready · %2 need rules")
+    const QString small = QStringLiteral("<span style=\"color:%1; font-size:11px\">%2</span>");
+    const QString row = QStringLiteral("<div style=\"margin-bottom:5px\">%1</div>");
+    const auto action = [&link, &colors](const QString &href, const QString &label) {
+        return link.arg(colors.primary.name(), escaped(href), label);
+    };
+    m_redditIdeasPanel->hint()->setText(watched.isEmpty() ? QString()
+        : QStringLiteral("%1 ready · rules on file for %2 of %3 · %4 discovered")
               .arg(fullCount(ideas.value(QStringLiteral("ready")).toArray().size()),
-                   fullCount(ideas.value(QStringLiteral("rulesMissing")).toArray().size())));
+                   fullCount(number(m_redditDesk, "rulesOnFile")), fullCount(watched.size()),
+                   fullCount(ideas.value(QStringLiteral("discover")).toArray().size())));
     const QString draftUrl = text(ideas, "draftUrl");
     QStringList placeLines;
     for (const QJsonValue &value : places) {
         const QJsonObject item = value.toObject();
+        const QJsonObject watch = watchedByName.value(text(item, "name").toLower());
         QStringList blockers;
-        for (const QJsonValue &blocker : item.value(QStringLiteral("blockers")).toArray())
-            blockers << escaped(blocker.toString());
+        for (const QJsonValue &blocker : item.value(QStringLiteral("blockers")).toArray()) {
+            if (!blocker.toString().startsWith(QLatin1String("Read r/")))
+                blockers << escaped(blocker.toString());
+        }
         QString counts = QStringLiteral("%1 logged · %2 open · %3 replied")
                              .arg(fullCount(number(item, "threads")), fullCount(number(item, "open")),
                                   fullCount(number(item, "replied")));
         const QJsonObject result = results.value(text(item, "name").toLower());
         if (number(result, "sessions") > 0)
             counts += QStringLiteral(" · %1 visits").arg(fullCount(number(result, "sessions")));
+        if (!blockers.isEmpty())
+            counts += dot + QStringLiteral("<span style=\"color:%1\">%2</span>").arg(colors.warn.name(), blockers.join(dot));
         const QString prompt = text(item, "draftPrompt");
-        const QString draft = prompt.isEmpty() || draftUrl.isEmpty() ? QString()
-            : QStringLiteral(" &nbsp;") + link.arg(colors.primary.name(),
-                  escaped(draftUrl + QString::fromLatin1(QUrl::toPercentEncoding(prompt))),
-                  QStringLiteral("Draft with ChatGPT ↗"));
-        placeLines << QStringLiteral("%1 %2%7<br><span style=\"color:%3; font-size:11px\">%4%5%6</span>")
-                          .arg(link.arg(colors.primary.name(), escaped(text(item, "url")),
-                                        QStringLiteral("<b>r/%1</b>").arg(escaped(text(item, "name")))),
-                               muted.arg(colors.muted.name(), escaped(text(item, "reason"))),
-                               blockers.isEmpty() ? colors.good.name() : colors.warn.name(), counts, dot,
-                               blockers.isEmpty() ? QStringLiteral("clear to reply") : blockers.join(dot), draft);
+        if (!prompt.isEmpty() && !draftUrl.isEmpty())
+            counts += dot + action(draftUrl + QString::fromLatin1(QUrl::toPercentEncoding(prompt)), QStringLiteral("Draft with ChatGPT ↗"));
+        QString rules;
+        if (item.value(QStringLiteral("rulesRead")).toBool()) {
+            const QJsonArray entries = watch.value(QStringLiteral("rules")).toArray();
+            QStringList titles;
+            for (int index = 0; index < qMin<qsizetype>(3, entries.size()); ++index) {
+                QString title = text(entries.at(index).toObject(), "title").simplified();
+                if (title.size() > 38)
+                    title = title.left(37) + QStringLiteral("…");
+                titles << escaped(title.isEmpty() ? QStringLiteral("Untitled rule") : title);
+            }
+            rules = QStringLiteral("<span style=\"color:%1\">%2</span>%3%4%5")
+                        .arg(colors.good.name(), plural(int(entries.size()), QStringLiteral("rule"), QStringLiteral("rules")),
+                             titles.isEmpty() ? QString() : QStringLiteral(": ") + titles.join(dot) + (entries.size() > 3 ? QStringLiteral(" …") : QString()),
+                             dot + QStringLiteral("read ") + relativeLabel(qint64(number(watch, "rulesReadAt"))),
+                             dot + action(text(item, "rulesUrl"), QStringLiteral("Open ↗")));
+        } else {
+            rules = QStringLiteral("<span style=\"color:%1\">Rules not read</span>%2%3")
+                        .arg(colors.warn.name(), dot + action(QStringLiteral("fm:read-rules"), QStringLiteral("Read with the extension")),
+                             dot + action(text(item, "rulesUrl"), QStringLiteral("Open ↗")));
+        }
+        placeLines << row.arg(QStringLiteral("%1 %2<br>%3<br>%4")
+                                  .arg(action(text(item, "url"), QStringLiteral("<b>r/%1</b>").arg(escaped(text(item, "name")))),
+                                       small.arg(colors.muted.name(), escaped(text(item, "reason"))),
+                                       small.arg(colors.muted.name(), counts), small.arg(colors.muted.name(), rules)));
     }
     m_redditPlaces->setText(placeLines.isEmpty()
-        ? QStringLiteral("Add subreddits to the watch list to get suggestions.")
-        : placeLines.join(QStringLiteral("<br>")));
+        ? QStringLiteral("Add a subreddit, or one from Discovered, to get suggestions.")
+        : placeLines.join(QString()));
+
+    QStringList discoverLines;
+    for (const QJsonValue &value : ideas.value(QStringLiteral("discover")).toArray()) {
+        const QJsonObject item = value.toObject();
+        discoverLines << row.arg(QStringLiteral("%1 %2<br>%3")
+                                     .arg(action(text(item, "url"), QStringLiteral("<b>r/%1</b>").arg(escaped(text(item, "name")))),
+                                          action(QStringLiteral("fm:add-subreddit:") + text(item, "name"), QStringLiteral("+ Add")),
+                                          small.arg(colors.muted.name(), escaped(text(item, "reason")) + dot +
+                                                    action(text(item, "rulesUrl"), QStringLiteral("Rules ↗")))));
+    }
+    QStringList finders;
+    for (const QJsonValue &value : ideas.value(QStringLiteral("topics")).toArray()) {
+        const QJsonObject item = value.toObject();
+        if (finders.size() < 3 && !text(item, "communitiesUrl").isEmpty())
+            finders << action(text(item, "communitiesUrl"), escaped(text(item, "topic")) + QStringLiteral(" ↗"));
+    }
+    m_redditDiscover->setText(
+        (discoverLines.isEmpty() ? row.arg(QStringLiteral("Nothing new yet: log threads from your searches, or add topics and keywords."))
+                                 : discoverLines.join(QString())) +
+        (finders.isEmpty() ? QString() : small.arg(colors.muted.name(), QStringLiteral("Find communities on Reddit: ") + finders.join(dot))));
+
     QStringList topicLines;
     for (const QJsonValue &value : ideas.value(QStringLiteral("topics")).toArray()) {
         const QJsonObject item = value.toObject();
         const int threads = int(number(item, "threads"));
-        const QString counts = threads > 0
+        QString counts = threads > 0
             ? QStringLiteral("%1 logged, %2 answered").arg(fullCount(threads), fullCount(number(item, "replied")))
-            : QStringLiteral("watched, nothing logged");
-        topicLines << QStringLiteral("%1 %2")
-                          .arg(link.arg(colors.primary.name(), escaped(text(item, "searchUrl")),
-                                        QStringLiteral("<b>%1</b>").arg(escaped(text(item, "topic")))),
-                               QStringLiteral("<span style=\"color:%1; font-size:11px\">%2</span>").arg(colors.muted.name(), counts));
+            : text(item, "source") == QLatin1String("watch") ? QStringLiteral("watched, nothing logged")
+            : text(item, "source") == QLatin1String("keywords") ? QStringLiteral("a tracked search keyword")
+                                                                : QStringLiteral("nothing logged");
+        const QStringList seen = words(item.value(QStringLiteral("subreddits")));
+        if (!seen.isEmpty())
+            counts += QStringLiteral(" in r/") + escaped(seen.join(QStringLiteral(", r/")));
+        QString links = action(text(item, "searchUrl"), QStringLiteral("Search ↗"));
+        if (text(item, "source") != QLatin1String("watch"))
+            links += dot + action(QStringLiteral("fm:add-topic:") + QString::fromLatin1(QUrl::toPercentEncoding(text(item, "topic"))),
+                                  QStringLiteral("+ Watch"));
+        topicLines << row.arg(QStringLiteral("<b>%1</b><br>%2")
+                                  .arg(escaped(text(item, "topic")), small.arg(colors.muted.name(), counts + dot + links)));
     }
     m_redditTopics->setText(topicLines.isEmpty()
         ? QStringLiteral("No topics yet: log a few threads or add searches to the watch list.")
-        : topicLines.join(QStringLiteral("<br>")));
-
-    m_redditRulesPanel->hint()->setText(watched.isEmpty() ? QString()
-        : QStringLiteral("%1/%2 read").arg(fullCount(number(m_redditDesk, "rulesOnFile")), fullCount(watched.size())));
-    QStringList rules;
-    for (const QJsonValue &value : watched) {
-        const QJsonObject item = value.toObject();
-        const QString name = link.arg(colors.primary.name(), escaped(text(item, "rulesUrl")),
-                                      QStringLiteral("<b>r/%1</b>").arg(escaped(text(item, "name"))));
-        if (!item.value(QStringLiteral("rulesRead")).toBool()) {
-            rules << QStringLiteral("%1 <span style=\"color:%2\">not read yet</span>").arg(name, colors.warn.name());
-            continue;
-        }
-        QString when = QStringLiteral("read %1").arg(relativeLabel(qint64(number(item, "rulesReadAt"))));
-        if (!text(item, "rulesReadBy").isEmpty())
-            when += QStringLiteral(" by ") + text(item, "rulesReadBy");
-        QStringList list;
-        const QJsonArray entries = item.value(QStringLiteral("rules")).toArray();
-        for (int index = 0; index < entries.size(); ++index) {
-            const QString title = text(entries.at(index).toObject(), "title");
-            list << QStringLiteral("%1. %2").arg(index + 1).arg(escaped(title.isEmpty() ? QStringLiteral("Untitled rule") : title));
-        }
-        rules << QStringLiteral("%1 %2<br><span style=\"font-size:11px\">%3</span>")
-                     .arg(name, muted.arg(colors.muted.name(), escaped(when)),
-                          list.isEmpty() ? muted.arg(colors.muted.name(), QStringLiteral("The rules page listed no rules."))
-                                         : list.join(QStringLiteral(" &nbsp; ")));
-    }
-    m_redditRules->setText(rules.isEmpty() ? QStringLiteral("No subreddits on the watch list.") : rules.join(QStringLiteral("<br>")));
+        : topicLines.join(QString()));
 
     QHash<QString, int> statusCounts;
     int open = 0;
@@ -3681,10 +3545,92 @@ void MarketingFeature::copyRedditRules()
         lines << QString();
     }
     if (!any)
-        return setStatus(QStringLiteral("No rules on file yet: open a watched subreddit's rules page with the ForkMesh browser extension and press Send to Reddit desk."), true);
+        return setStatus(QStringLiteral("No rules on file yet: press Read missing rules, or open a watched subreddit's rules page with the ForkMesh browser extension."), true);
     lines << QStringLiteral("Not read yet: ") + (unread.isEmpty() ? QStringLiteral("none") : unread.join(QStringLiteral(", ")));
     QGuiApplication::clipboard()->setText(lines.join(QLatin1Char('\n')));
     setStatus(QStringLiteral("Rules copied for the scout."));
+}
+
+void MarketingFeature::addRedditPlace()
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Add to where to post next"));
+    dialog.resize(440, 200);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addWidget(dialogIntro(QStringLiteral(
+        "A subreddit joins the watch list and gets ranked, drafted and its rules read. A topic becomes a watched search.")));
+    auto *form = new QFormLayout;
+    auto *kind = new QComboBox;
+    kind->addItem(QStringLiteral("Subreddit"), QStringLiteral("subreddits"));
+    kind->addItem(QStringLiteral("Topic to talk about"), QStringLiteral("queries"));
+    auto *value = lineEdit();
+    value->setPlaceholderText(QStringLiteral("r/selfhosted"));
+    connect(kind, &QComboBox::activated, value, [kind, value](int) {
+        value->setPlaceholderText(kind->currentData().toString() == QLatin1String("queries")
+                                      ? QStringLiteral("self-hosted git") : QStringLiteral("r/selfhosted"));
+    });
+    form->addRow(QStringLiteral("Add"), kind);
+    form->addRow(QStringLiteral("Name"), value);
+    layout->addLayout(form);
+    if (!m_canManageSettings)
+        layout->addWidget(dialogIntro(QStringLiteral("Only organization owners and admins can change the watch list.")));
+    auto *buttons = dialogButtons(&dialog, QStringLiteral("Add"), false);
+    for (QAbstractButton *item : buttons->buttons()) {
+        if (buttons->buttonRole(item) == QDialogButtonBox::AcceptRole)
+            item->setEnabled(m_canManageSettings);
+    }
+    layout->addWidget(buttons);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    addRedditWatch(kind->currentData().toString(), value->text());
+}
+
+void MarketingFeature::addRedditWatch(const QString &kind, const QString &value)
+{
+    if (!m_canManageSettings)
+        return setStatus(QStringLiteral("Only organization owners and admins can change the watch list."), true);
+    QString entry = value.simplified();
+    if (kind == QLatin1String("subreddits"))
+        entry.remove(QRegularExpression(QStringLiteral("^(?:https?://(?:www\\.|old\\.)?reddit\\.com)?/?r/"),
+                     QRegularExpression::CaseInsensitiveOption)).remove(QLatin1Char('/'));
+    if (entry.isEmpty())
+        return setStatus(kind == QLatin1String("subreddits") ? QStringLiteral("Type a subreddit name.")
+                                                             : QStringLiteral("Type a topic to watch."), true);
+    const QJsonObject watch = m_settings.value(QStringLiteral("reddit")).toObject();
+    QJsonArray list = watch.value(kind).toArray();
+    for (const QJsonValue &item : std::as_const(list)) {
+        if (item.toString().compare(entry, Qt::CaseInsensitive) == 0)
+            return setStatus(QStringLiteral("%1 is already on the watch list.")
+                                 .arg(kind == QLatin1String("subreddits") ? QStringLiteral("r/") + entry : entry));
+    }
+    list.append(entry);
+    saveSettings(QJsonObject{{QStringLiteral("reddit"), QJsonObject{{kind, list}}}},
+                 kind == QLatin1String("subreddits") ? QStringLiteral("r/%1 added to where to post next.").arg(entry)
+                                                     : QStringLiteral("“%1” added to the watched searches.").arg(entry));
+}
+
+void MarketingFeature::readRedditRules()
+{
+    const QJsonArray missing = m_redditDesk.value(QStringLiteral("ideas")).toObject().value(QStringLiteral("rulesMissing")).toArray();
+    if (m_redditDesk.value(QStringLiteral("subreddits")).toArray().isEmpty())
+        return setStatus(QStringLiteral("Add a subreddit first."), true);
+    if (missing.isEmpty() && number(m_redditDesk, "rulesOnFile") >= m_redditDesk.value(QStringLiteral("subreddits")).toArray().size())
+        return setStatus(QStringLiteral("Every watched subreddit's rules are on file."));
+    openWebDashboard(QStringLiteral("page=reddit&rules=1"));
+    setStatus(QStringLiteral("Opened the Reddit desk in your browser: the ForkMesh extension opens each missing rules page in one tab, reads it and saves the rules here. Press Refresh when it finishes."));
+}
+
+void MarketingFeature::openRedditLink(const QString &link)
+{
+    if (link == QLatin1String("fm:read-rules"))
+        return readRedditRules();
+    if (link.startsWith(QLatin1String("fm:add-subreddit:")))
+        return addRedditWatch(QStringLiteral("subreddits"), link.mid(17));
+    if (link.startsWith(QLatin1String("fm:add-topic:")))
+        return addRedditWatch(QStringLiteral("queries"), QUrl::fromPercentEncoding(link.mid(13).toUtf8()));
+    const QUrl url(link);
+    if (url.isValid() && url.scheme() == QLatin1String("https"))
+        QDesktopServices::openUrl(url);
 }
 
 void MarketingFeature::editXConnection()

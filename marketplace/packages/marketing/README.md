@@ -220,6 +220,13 @@ console.
 
 ## Website channel
 
+The desktop has no Website tab (1.40.0): its visits, campaigns, landing pages
+and search terms are on the Analytics package's page, **Ads measured by
+Analytics** is on the Ads manager page, **Where to improve** and **Goals** are
+on Growth, and **Results by subreddit** stays on the Reddit desk. Those read
+`/performance` over the last 28 days with the default project. The web keeps
+its Website channel page.
+
 `GET /performance?from=&to=&project=` reads the organization's Analytics
 in-process (`analytics.campaign_report`, after membership and install checks):
 totals against the previous window, campaigns by UTM tags, ads matched to
@@ -280,11 +287,30 @@ page.
 - **Subreddit rules** (`POST/GET /reddit-rules`, any member): stored under
   `redditRules`, at most 30 rules per subreddit and 200 subreddits; settings
   writes keep them. **Copy rules for the scout** copies them as Markdown.
+  **Read missing rules** (1.40.0) asks the browser extension for a rules-only
+  walk: it opens each watched subreddit's rules page that is not on file in one
+  tab and saves what it reads. The desktop opens
+  `/dashboard/marketing?org=<org>&page=reddit&rules=1`, which starts it.
 - **Where to post next** and **What to talk about** (`redditDesk.ideas`) are
   counted from the desk's own data: open threads, landed replies, rules on
   file, quiet subreddits, a 7-day gap after a reply, and recurring two-word
   phrases from recent threads. A subreddit where a post or reply of ours
-  landed (5 points, 500 views or 3 comments) ranks higher (`landed`).
+  landed (5 points, 500 views or 3 comments) ranks higher (`landed`). Up to
+  four tracked search keywords that are not watched become topics too
+  (`source: "keywords"`), and each topic carries `communitiesUrl`, Reddit's
+  community search for it.
+- **Discovered** (`ideas.discover`, 1.40.0, at most 10): subreddits that are
+  not on the watch list, found in logged threads (`threads`), in our own
+  Reddit posted links (`posts`), or related to a word in the watched searches,
+  topics, keywords or subreddits (`related`, a fixed map,
+  `REDDIT_RELATED`). Each has its address, rules page and reason. Nothing is
+  read from Reddit to find them.
+- On the desktop, **Where to post next** is one panel with three columns:
+  the ranked subreddits with their rules inline (count, first titles, when
+  read, or **Read with the extension**), **Discovered** with **+ Add**, and
+  **What to talk about** with **+ Watch** for topics that are not watched
+  searches. **Add** puts a subreddit or a topic on the watch list (owners and
+  admins). The checklist that was **Before you reply** is a line in **Watch**.
 - **Draft with ChatGPT** on each "Where to post next" row opens
   `https://chatgpt.com/?hints=search&q=<prompt>` (`ideas.draftUrl` +
   `draftPrompt`, at most 5000 characters so the address stays under
@@ -435,14 +461,17 @@ neither does a failed request.
 - **Web**: Dashboard, Website channel, Channels (cards with health, playbooks,
   desks and actions), Ads manager and Growth.
 - **Desktop** (`MarketingDashboard.cpp`, `MarketingPages.cpp`,
-  `MarketingCommon.cpp`): the same five sections from the same API, a channel
+  `MarketingCommon.cpp`): Dashboard, Channels, Ads manager and Growth from the
+  same API (website analytics live on the Analytics page), a channel
   bar with one chip per channel (each with a sparkline), a page per channel
   (KPIs, next steps, desk, health, followers and views charts, playbook, posts
   and content with views per item, ads, recorded numbers, and
   channel-specific panels), and a square per channel in the status rail. When
   nothing changes for an hour the desktop raises a reminder ping for the
   channel that most needs attention. **Hand off** is web-only; the desktop
-  copies the brief.
+  copies the brief. Channel pages are dense by design (1.40.0): compact
+  panels and KPI strip, 6 px gaps, 160 px charts and 24 px table rows, so a
+  channel's numbers, desk and posts fit on one screen.
 - **iOS and Android**: under Business in the You hub, with Overview, Content,
   Campaigns, Channels, Ads, Growth, Reddit and Performance. They read
   `GET /api/marketing/<org>` and write through the same routes; each record's
