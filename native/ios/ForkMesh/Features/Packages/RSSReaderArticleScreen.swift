@@ -62,6 +62,24 @@ struct RSSReaderArticleScreen: View {
                         .accessibilityLabel("Next Article")
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            model.toggleReadLater(articleId)
+                        } label: {
+                            if article?.readLater ?? false {
+                                Label("Remove from Read Later", systemImage: "bookmark.slash")
+                            } else {
+                                Label("Read Later", systemImage: "bookmark")
+                            }
+                        }
+                        .disabled(article == nil)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More")
+                    .accessibilityIdentifier("rss-article-more")
+                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { toolbar }
             .overlay(alignment: .top) { noticeView }

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
+#include <QRegularExpression>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -27,6 +28,12 @@ constexpr int kMaxDiscoveryLinks = 3;
 constexpr int kMaxLogEntries = 200;
 constexpr int kMaxStarredHtml = 8 * 1024;
 constexpr int kMaxStarredExport = 2 * 1024 * 1024;
+constexpr int kMaxFilters = 100;
+constexpr int kMaxSmartFeeds = 50;
+constexpr int kMaxFilterText = 20000;
+constexpr int kWordsPerMinute = 230;
+constexpr int kCjkPerMinute = 500;
+constexpr qint64 kDayMs = qint64(24) * 60 * 60 * 1000;
 
 QString forkMeshBlogFeed();
 
@@ -45,6 +52,12 @@ struct ParsedItem {
     QString comments;
     QList<Enclosure> enclosures;
     qint64 publishedMs = -1;
+    QString language;
+    QString jsonImage;
+    QString bannerImage;
+    QStringList thumbnails;
+    QStringList mediaImages;
+    QStringList enclosureImages;
 };
 
 struct ParsedFeed {
@@ -54,6 +67,7 @@ struct ParsedFeed {
     QString title;
     QString homePage;
     QString iconUrl;
+    QString language;
     QList<ParsedItem> items;
 };
 
@@ -74,6 +88,14 @@ struct Article {
     bool datedByFeed = false;
     bool read = false;
     bool starred = false;
+    bool readLater = false;
+    QString image;
+    QStringList images;
+    QString language;
+    mutable quint64 filterGeneration = 0;
+    mutable bool filterHidden = false;
+    mutable bool textCached = false;
+    mutable QString textCache;
 };
 
 struct Feed {
@@ -92,12 +114,61 @@ struct Feed {
     qint64 lastSuccessMs = 0;
     qint64 nextDueMs = 0;
     int failures = 0;
+    bool paused = false;
+    bool excludeFromToday = false;
+    bool excludeFromUnread = false;
+    QString language;
+    QStringList previousUrls;
     QString displayName() const;
 };
 
 struct Folder {
     QString name;
     bool collapsed = false;
+};
+
+struct ContentFilter {
+    QString id;
+    QString feedId;
+    QString field = QStringLiteral("title");
+    QString pattern;
+    bool regex = false;
+    QString action = QStringLiteral("hide");
+    QJsonObject toJson() const;
+    static ContentFilter fromJson(const QJsonObject &object);
+    bool operator==(const ContentFilter &other) const;
+    bool operator!=(const ContentFilter &other) const { return !(*this == other); }
+};
+
+struct SmartFeed {
+    QString id;
+    QString name;
+    QString words;
+    bool regex = false;
+    QString scope;
+    bool unreadOnly = false;
+    bool starredOnly = false;
+    int maxAgeDays = 0;
+    QJsonObject toJson() const;
+    static SmartFeed fromJson(const QJsonObject &object);
+    bool operator==(const SmartFeed &other) const;
+    bool operator!=(const SmartFeed &other) const { return !(*this == other); }
+};
+
+class TextMatcher
+{
+public:
+    TextMatcher() = default;
+    TextMatcher(const QString &pattern, bool regex);
+    bool isValid() const { return m_valid; }
+    bool isEmpty() const { return m_pattern.isEmpty(); }
+    bool matches(const QString &text) const;
+
+private:
+    QString m_pattern;
+    bool m_regex = false;
+    bool m_valid = false;
+    QRegularExpression m_expression;
 };
 
 struct Settings {
@@ -113,6 +184,12 @@ struct Settings {
     bool loadRemoteImages = false;
     bool unreadOnlyFeeds = false;
     bool unreadOnlyTimeline = false;
+    bool showThumbnails = false;
+    bool foldDuplicates = false;
+    bool markAllKeepsStarred = false;
+    bool sortFeedsByUnread = false;
+    QList<ContentFilter> filters;
+    QList<SmartFeed> smartFeeds;
     QJsonObject toJson() const;
     static Settings fromJson(const QJsonObject &object);
 };
@@ -122,7 +199,7 @@ struct LogEntry {
     QString text;
 };
 
-enum class SourceKind { None, Today, AllUnread, Starred, Feed, Folder };
+enum class SourceKind { None, Today, AllUnread, Starred, Feed, Folder, ReadLater, Smart };
 
 struct Source {
     SourceKind kind = SourceKind::None;
@@ -167,6 +244,18 @@ struct Readable {
     QString html;
 };
 
+struct DiscoveryRewrite {
+    QUrl feed;
+    bool channelLookup = false;
+};
+
+struct SourceEntry {
+    QString name;
+    QString id;
+    bool folder = false;
+    int unread = 0;
+};
+
 struct Stats {
     int feeds = 0;
     int folders = 0;
@@ -186,8 +275,28 @@ ParsedFeed parseFeed(const QByteArray &data, const QUrl &base);
 bool looksLikeHtml(const QByteArray &data, const QString &contentType);
 QList<QUrl> discoverFeedLinks(const QString &html, const QUrl &base);
 QList<QUrl> fallbackFeedUrls(const QUrl &address);
-QUrl normalizeAddress(const QString &input);
+QUrl normalizeAddress(const QString &input, bool allowFile = false);
 QString feedKey(const QUrl &url);
+QString linkKey(const QString &link);
+QString articleKey(const ArticleRef &ref);
+DiscoveryRewrite discoveryRewrite(const QUrl &address);
+bool isYouTubeHost(const QString &host);
+QString youtubeChannelId(const QString &html);
+QUrl youtubeChannelFeed(const QString &channelId);
+QString plainTextToHtml(const QString &text);
+QStringList itemImages(const ParsedItem &item);
+QString firstImageSource(const QString &html);
+QString articleImage(const ParsedItem &item, const QString &sanitizedHtml);
+QString leadImagesHtml(const QStringList &images, const QString &html);
+QString addAltCaptions(const QString &html);
+int readingMinutes(const QString &text);
+QString textDirection(const QString &language);
+QString filterPatternError(const QString &pattern, bool regex);
+bool hideReadApplies(const Source &source);
+QList<int> catchUpDays();
+QString catchUpLabel(int days);
+bool feedMatchesSearch(const Feed &feed, const QString &needle);
+void sortSourceEntries(QList<SourceEntry> &entries, bool byUnread);
 QString sanitizeHtml(const QString &html, const QUrl &base);
 QString plainText(const QString &html, int maxLength = 600);
 Readable extractReadable(const QString &html, const QUrl &base);
@@ -215,17 +324,32 @@ public:
     bool renameFolder(const QString &from, const QString &to, QString *error);
     bool deleteFolder(const QString &name);
     void setFolderCollapsed(const QString &name, bool collapsed);
+    bool setFeedFlags(const QString &id, bool paused, bool excludeFromToday, bool excludeFromUnread);
+    bool changeFeedAddress(const QString &id, const QString &input, qint64 nowMs, QString *error);
 
     const QList<Article> &articles(const QString &feedId) const;
     const Article *article(const ArticleRef &ref) const;
     int merge(const QString &feedId, const ParsedFeed &parsed, qint64 nowMs);
     bool setRead(const ArticleRef &ref, bool read);
     bool setStarred(const ArticleRef &ref, bool starred);
+    bool setReadLater(const ArticleRef &ref, bool readLater);
+    int readLaterCount() const;
     int markRead(const QList<ArticleRef> &refs);
     void setReaderHtml(const ArticleRef &ref, const QString &html);
 
     QList<ArticleRef> query(const Source &source, const QString &search, bool unreadOnly,
-                            qint64 nowMs) const;
+                            qint64 nowMs, const QSet<QString> &kept = {}) const;
+    QList<ArticleRef> olderUnread(const Source &source, qint64 cutoffMs, bool keepStarred,
+                                  qint64 nowMs) const;
+    QList<ArticleRef> olderUnreadEverywhere(qint64 cutoffMs, bool keepStarred) const;
+    bool isHidden(const Article &article) const;
+    bool smartMatches(const SmartFeed &smart, const Article &article, qint64 nowMs) const;
+    const SmartFeed *smartFeed(const QString &id) const;
+    bool saveSmartFeed(const SmartFeed &smart, QString *error);
+    bool removeSmartFeed(const QString &id);
+    bool saveFilter(const ContentFilter &filter, QString *error);
+    bool removeFilter(const QString &id);
+    void filtersChanged();
     int unreadCount(const Source &source, qint64 nowMs) const;
     int feedUnread(const QString &feedId) const { return m_unread.value(feedId); }
     int totalUnread() const;
@@ -258,14 +382,27 @@ public:
 
     QJsonArray starredJson() const;
     int restoreStarred(const QJsonArray &array, qint64 nowMs);
-    OpmlImportResult importOpml(const OpmlDocument &document, qint64 nowMs);
+    OpmlImportResult importOpml(const OpmlDocument &document, qint64 nowMs, bool allowFile = false);
     QJsonObject exportBundle(qint64 nowMs) const;
     bool hasData() const;
     Stats stats() const;
     void clear();
 
 private:
+    struct CompiledFilter {
+        ContentFilter filter;
+        TextMatcher matcher;
+    };
     Feed *mutableFeed(const QString &id);
+    const QList<CompiledFilter> &compiledFilters() const;
+    bool filterMatches(const CompiledFilter &compiled, const Article &article) const;
+    const QString &filterText(const Article &article) const;
+    bool textMatches(const TextMatcher &matcher, const Article &article) const;
+    bool inScope(const SmartFeed &smart, const QString &feedId) const;
+    bool smartMatches(const SmartFeed &smart, const TextMatcher &words, const Article &article,
+                      qint64 nowMs) const;
+    bool countsTowardUnread(const QString &feedId) const;
+    void ensureLinkIndex();
     Article *mutableArticle(const ArticleRef &ref);
     void recount(const QString &feedId);
     void prune(QList<Article> &list);
@@ -282,6 +419,11 @@ private:
     QSet<QString> m_dirtyArticles;
     bool m_stateDirty = false;
     bool m_exportDirty = false;
+    QHash<QString, QSet<QString>> m_linkIndex;
+    bool m_linkIndexReady = false;
+    mutable QList<ContentFilter> m_compiledSource;
+    mutable QList<CompiledFilter> m_compiled;
+    mutable quint64 m_filterGeneration = 1;
 };
 
 class DiskStore

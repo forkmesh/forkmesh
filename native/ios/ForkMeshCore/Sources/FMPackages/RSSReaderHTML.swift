@@ -370,6 +370,10 @@ public enum RSSHTML {
         let base: String
         let remoteMedia: Bool
         var upgradeMedia = false
+        var altCaptions = false
+        var captioned: Set<Int> = []
+        var figures: [Int] = []
+        var position = 0
         var out = ""
         var stack: [String] = []
         var drop: [String] = []
@@ -432,9 +436,19 @@ public enum RSSHTML {
             return kept
         }
 
+        static func ignored(_ attrs: [RSSHTMLAttribute]) -> Bool {
+            guard let value = attrs.first(where: { $0.name == "class" })?.value else { return false }
+            return value.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" || $0 == "\u{0C}" })
+                .contains { $0 == "instapaper_ignore" }
+        }
+
         mutating func start(_ tag: String, _ attrs: [RSSHTMLAttribute]) {
             if !drop.isEmpty {
                 if tag == drop.last && !voidTags.contains(tag) { drop.append(tag) }
+                return
+            }
+            if Self.ignored(attrs) {
+                if !voidTags.contains(tag) { drop.append(tag) }
                 return
             }
             if droppedTags.contains(tag) {
@@ -474,6 +488,11 @@ public enum RSSHTML {
             }
             emit("<\(tag)\(rendered)>")
             if !voidTags.contains(tag) { stack.append(tag) }
+            if tag == "figure" { figures.append(position) }
+            if tag == "img" && altCaptions && !figures.contains(where: captioned.contains) {
+                let alt = kept.first { $0.0 == "alt" }?.1 ?? ""
+                if !alt.isEmpty { emit("<span class=\"alt-caption\">\(RSSText.escape(alt, quote: false))</span>") }
+            }
         }
 
         var mediaSpans: [String] = []
@@ -492,6 +511,7 @@ public enum RSSHTML {
             guard stack.contains(tag) else { return }
             while let open = stack.popLast() {
                 emit("</\(open)>")
+                if open == "figure" { _ = figures.popLast() }
                 if open == tag { break }
             }
         }
@@ -506,10 +526,35 @@ public enum RSSHTML {
         }
     }
 
-    public static func sanitize(_ html: String, base: String = "", remoteMedia: Bool = true, upgradeMedia: Bool = false) -> String {
+    static func captionedFigures(_ tokens: [RSSHTMLToken]) -> Set<Int> {
+        var open: [Int] = []
+        var found: Set<Int> = []
+        for (index, token) in tokens.enumerated() {
+            switch token {
+            case let .start(name, _, selfClosing):
+                if name == "figure" && !selfClosing { open.append(index) }
+                if name == "figcaption", let figure = open.last { found.insert(figure) }
+            case let .end(name):
+                if name == "figure" { _ = open.popLast() }
+            case .text:
+                break
+            }
+        }
+        return found
+    }
+
+    public static func sanitize(
+        _ html: String, base: String = "", remoteMedia: Bool = true, upgradeMedia: Bool = false, altCaptions: Bool = false
+    ) -> String {
         if RSSText.strip(html).isEmpty { return "" }
         var sanitizer = Sanitizer(base: base, remoteMedia: remoteMedia, upgradeMedia: upgradeMedia)
-        for token in RSSHTMLTokenizer.tokens(RSSText.prefix(html, maxContentChars * 2)) {
+        let tokens = RSSHTMLTokenizer.tokens(RSSText.prefix(html, maxContentChars * 2))
+        if altCaptions && remoteMedia {
+            sanitizer.altCaptions = true
+            sanitizer.captioned = captionedFigures(tokens)
+        }
+        for (index, token) in tokens.enumerated() {
+            sanitizer.position = index
             switch token {
             case let .start(name, attributes, selfClosing):
                 sanitizer.start(name, attributes)
@@ -565,6 +610,57 @@ public enum RSSHTML {
         return cut + "\u{2026}"
     }
 
+    public static func plainToHTML(_ text: String) -> String {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        var paragraphs: [[String]] = []
+        var current: [String] = []
+        for line in normalized.components(separatedBy: "\n") {
+            if RSSText.strip(line).isEmpty {
+                if !current.isEmpty { paragraphs.append(current) }
+                current = []
+            } else {
+                current.append(RSSText.strip(line))
+            }
+        }
+        if !current.isEmpty { paragraphs.append(current) }
+        return paragraphs.map { "<p>" + $0.map(linkify).joined(separator: "<br>") + "</p>" }.joined()
+    }
+
+    static let trailingPunctuation: Set<Character> = [".", ",", ";", ":", "!", "?", ")", "]", "'", "\""]
+
+    static func nextURL(_ text: Substring) -> Substring.Index? {
+        let secure = text.range(of: "https://", options: .caseInsensitive)?.lowerBound
+        let plain = text.range(of: "http://", options: .caseInsensitive)?.lowerBound
+        switch (secure, plain) {
+        case let (.some(left), .some(right)): return min(left, right)
+        case let (.some(left), nil): return left
+        case let (nil, .some(right)): return right
+        default: return nil
+        }
+    }
+
+    public static func linkify(_ line: String) -> String {
+        var out = ""
+        var rest = Substring(line)
+        while let start = nextURL(rest) {
+            var end = start
+            while end < rest.endIndex, !rest[end].isWhitespace, rest[end] != "<", rest[end] != ">", rest[end] != "\"" {
+                end = rest.index(after: end)
+            }
+            while end > start, trailingPunctuation.contains(rest[rest.index(before: end)]) { end = rest.index(before: end) }
+            let candidate = String(rest[start..<end])
+            let url = RSSURL.http(candidate)
+            out += RSSText.escape(String(rest[..<start]), quote: false)
+            if url.isEmpty {
+                out += RSSText.escape(candidate, quote: false)
+            } else {
+                out += "<a href=\"\(RSSText.escape(url, quote: true))\">\(RSSText.escape(candidate, quote: false))</a>"
+            }
+            rest = rest[end...]
+        }
+        return out + RSSText.escape(String(rest), quote: false)
+    }
+
     public static func firstImage(_ content: String) -> String {
         for token in RSSHTMLTokenizer.tokens(content) {
             if case let .start(name, attributes, _) = token, name == "img",
@@ -595,7 +691,7 @@ public enum RSSFeedTypes {
     ]
     public static let accept =
         "application/rss+xml, application/atom+xml, application/feed+json, application/json;q=0.9, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8, */*;q=0.5"
-    public static let guessPaths = ["/feed", "/rss", "/feed.xml", "/atom.xml"]
+    public static let guessPaths = ["/feed", "/rss", "/feed.xml", "/atom.xml", "/rss/"]
 
     public static func discover(_ document: String, base: String) -> RSSDiscovery {
         var feeds: [(String, String, String)] = []

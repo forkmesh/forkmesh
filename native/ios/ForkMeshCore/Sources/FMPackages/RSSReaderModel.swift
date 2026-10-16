@@ -102,9 +102,74 @@ public final class RSSReaderModel {
         changed()
     }
 
-    public func sidebar(selected: RSSScope? = nil) -> [RSSSidebarEntry] {
+    public func sidebar(selected: RSSScope? = nil, search: String = "") -> [RSSSidebarEntry] {
         _ = revision
-        return store.sidebar(unreadOnly: store.settings.feedsUnreadOnly, selected: selected, counts: store.counts())
+        return store.sidebar(unreadOnly: store.settings.feedsUnreadOnly, selected: selected, counts: store.counts(), search: search)
+    }
+
+    public var filters: [RSSFilter] {
+        _ = revision
+        return store.filters
+    }
+
+    public var smartFeeds: [RSSSmartFeed] {
+        _ = revision
+        return store.smartFeeds
+    }
+
+    public func smartFeed(_ id: String) -> RSSSmartFeed? {
+        _ = revision
+        return store.smartFeed(id)
+    }
+
+    public func saveFilter(_ filter: RSSFilter) throws {
+        try store.saveFilter(filter)
+        changed()
+    }
+
+    public func deleteFilter(_ id: String) {
+        store.deleteFilter(id)
+        changed()
+    }
+
+    @discardableResult
+    public func saveSmartFeed(_ smart: RSSSmartFeed) throws -> RSSSmartFeed {
+        let saved = try store.saveSmartFeed(smart)
+        changed()
+        return saved
+    }
+
+    public func deleteSmartFeed(_ id: String) {
+        store.deleteSmartFeed(id)
+        changed()
+    }
+
+    public func setFeedFlag(_ id: String, _ path: WritableKeyPath<RSSFeed, Bool>, _ value: Bool) {
+        store.setFeedFlag(id, path, value)
+        changed()
+    }
+
+    @discardableResult
+    public func changeAddress(_ id: String, to input: String) throws -> Bool {
+        guard try store.changeAddress(id, to: input) else { return false }
+        changed()
+        return true
+    }
+
+    public func checkNow(_ id: String) async -> String {
+        guard let feed = store.feed(id) else { return "" }
+        let stamp = store.now
+        let result = await fetcher.fetch(feed, now: stamp, conditional: false)
+        store.apply(result)
+        changed()
+        switch result.outcome {
+        case let .updated(parsed, _, _, _, _, _):
+            return RSSReaderText.checkResult(format: parsed.format, items: parsed.items.count, at: stamp)
+        case .notModified:
+            return RSSReaderText.notModified(at: stamp)
+        case .failed(let code):
+            return RSSReaderText.feedError(code)
+        }
     }
 
     public func unread(_ scope: RSSScope) -> Int {
@@ -255,6 +320,23 @@ public final class RSSReaderModel {
         setStarred([id], !article.starred)
     }
 
+    public func toggleReadLater(_ id: String) {
+        guard let article = store.article(id) else { return }
+        if store.setReadLater([id], !article.readLater) > 0 { changed() }
+    }
+
+    public func olderUnreadCount(_ scope: RSSScope?, _ choice: RSSCatchUp) -> Int {
+        _ = revision
+        return store.olderUnread(scope, choice).count
+    }
+
+    @discardableResult
+    public func markOlderRead(_ scope: RSSScope?, _ choice: RSSCatchUp) -> Int {
+        let count = store.markOlderRead(scope, choice)
+        if count > 0 { changed() }
+        return count
+    }
+
     public func open(_ id: String) {
         setRead([id], true)
     }
@@ -268,7 +350,8 @@ public final class RSSReaderModel {
 
     @discardableResult
     public func markRead(_ articles: [RSSArticle]) -> Int {
-        let count = store.setRead(articles.filter { !$0.read }.map(\.id), true)
+        let keepStarred = store.settings.markAllKeepsStarred
+        let count = store.setRead(articles.filter { !$0.read && !(keepStarred && $0.starred) }.map(\.id), true)
         if count > 0 { changed() }
         return count
     }
@@ -311,6 +394,15 @@ public final class RSSReaderModel {
         let result = store.importOPML(entries)
         changed()
         return "Imported \(RSSReaderText.plural(result.imported, "subscription")), skipped \(result.skipped)."
+    }
+
+    public func importOPML(fromURL address: String) async -> String {
+        switch await fetcher.opml(address) {
+        case .failure(let error):
+            return error == .invalidAddress ? RSSReaderError.invalidAddress.message : RSSReaderText.feedError(error.code)
+        case .success(let data):
+            return importOPML(data)
+        }
     }
 
     public func exportOPML() -> String { store.exportOPML() }

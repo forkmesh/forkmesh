@@ -111,6 +111,12 @@ internal class RssArticleScreen(
                     onPressed = article?.let { a -> { service.mutate { it.setStarred(listOf(a.id), !a.starred) } } },
                     color = if (article?.starred == true) RssColors.star else accent,
                 )
+                FmIconButton(
+                    if (article?.readLater == true) "bookmark" else "bookmark_border",
+                    if (article?.readLater == true) "Remove from Read Later" else "Read Later",
+                    onPressed = article?.let { a -> { service.mutate { it.setReadLater(listOf(a.id), !a.readLater) } } },
+                    color = accent,
+                )
                 Spacer(Modifier.weight(1f))
                 FmTextButton(onClick = { nextUnread() }) { Text("Next Unread") }
                 Spacer(Modifier.weight(1f))
@@ -160,8 +166,15 @@ internal class RssArticleScreen(
                             hex(Fm.colors.accent.toArgb()),
                             settings.loadRemoteImages,
                         )
-                        val html = remember(displayed, displayedFeed?.displayTitle, style, reader) {
-                            RssArticlePage.html(displayed, displayedFeed?.displayTitle.orEmpty(), style, service.iconDataUri(displayed.feedId), reader)
+                        val html = remember(displayed, displayedFeed?.displayTitle, displayedFeed?.language, style, reader) {
+                            RssArticlePage.html(
+                                displayed,
+                                displayedFeed?.displayTitle.orEmpty(),
+                                style,
+                                service.iconDataUri(displayed.feedId),
+                                reader,
+                                displayedFeed?.language.orEmpty(),
+                            )
                         }
                         val background = Fm.colors.bgBase.toArgb()
                         var swipeDistance by remember(id) { mutableStateOf(0f) }

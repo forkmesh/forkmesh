@@ -8,8 +8,11 @@ public enum RSSReaderText {
     public static let onThisIPhone = "On This iPhone"
     public static let netNewsWireURL = "https://netnewswire.com/"
     public static let netNewsWireSourceURL = "https://github.com/Ranchero-Software/NetNewsWire"
+    public static let netNewsWireRequestsURL = "https://github.com/Ranchero-Software/NetNewsWire/issues"
     public static let credit =
         "Inspired by NetNewsWire, the free and open source RSS reader created by Brent Simmons and developed by Ranchero Software and its contributors (MIT licensed). RSS Reader shares no code with NetNewsWire and is not affiliated with or endorsed by it."
+    public static let featureCredit =
+        "RSS Reader's smart feeds, timeline, article view and settings follow NetNewsWire's design, and its custom smart feeds, Read Later, content filters, timeline thumbnails, Media RSS images and other recent features were chosen from the feature requests NetNewsWire's users have filed on GitHub. Thanks to Brent Simmons and the NetNewsWire community."
     public static let about =
         "RSS Reader follows blogs, news sites and podcasts through their RSS, Atom and JSON feeds. Your subscriptions, articles and read and starred state stay on this iPhone; it only contacts the sites you follow: their feeds, their icons and images (unless you turn images off), and an article's page when you ask for reader view."
     public static let caughtUp = "You're all caught up."
@@ -94,6 +97,75 @@ public enum RSSReaderText {
     public static func markAllPrompt(_ count: Int, scope: String) -> String {
         "Mark \(plural(count, "article")) in \u{201C}\(scope)\u{201D} as read?"
     }
+
+    public static func markOlderPrompt(_ count: Int, _ choice: RSSCatchUp, scope: String?) -> String {
+        guard let scope else { return "Mark \(plural(count, "article")) \(choice.phrase) as read?" }
+        return "Mark \(plural(count, "article")) \(choice.phrase) in \u{201C}\(scope)\u{201D} as read?"
+    }
+
+    public static func time(_ millis: Int64, timeZone: TimeZone = .current, locale: Locale = .current) -> String {
+        formatter(.none, .short, timeZone: timeZone, locale: locale).string(from: Date(timeIntervalSince1970: Double(millis) / 1000))
+    }
+
+    public static func checkResult(format: String, items: Int, at millis: Int64, timeZone: TimeZone = .current, locale: Locale = .current) -> String {
+        let parts = [format, plural(items, "item"), "checked " + time(millis, timeZone: timeZone, locale: locale)]
+        return parts.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+    }
+
+    public static func notModified(at millis: Int64, timeZone: TimeZone = .current, locale: Locale = .current) -> String {
+        "Not modified \u{00B7} checked " + time(millis, timeZone: timeZone, locale: locale)
+    }
+
+    public static func lastCheckFailed(_ code: String) -> String { "Last check failed: \(feedError(code))" }
+
+    static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x1100...0x11FF, 0x2E80...0x2FDF, 0x3041...0x309F, 0x30A1...0x30FA, 0x3130...0x318F, 0x31F0...0x31FF,
+             0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7AF, 0xF900...0xFAFF, 0xFF66...0xFF9F, 0xFFA0...0xFFDC, 0x20000...0x3FFFF:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public static func readingMinutes(_ text: String) -> Int {
+        var words = 0
+        var cjk = 0
+        var inWord = false
+        for scalar in text.unicodeScalars {
+            if RSSText.isSpace(scalar) {
+                inWord = false
+            } else if isCJK(scalar) {
+                cjk += 1
+            } else if !inWord {
+                inWord = true
+                words += 1
+            }
+        }
+        if words == 0 && cjk == 0 { return 0 }
+        return max(1, Int((Double(words) / 230 + Double(cjk) / 500).rounded(.up)))
+    }
+
+    public static func readingTime(_ text: String) -> String {
+        let minutes = readingMinutes(text)
+        return minutes == 0 ? "" : "\(minutes) min read"
+    }
+}
+
+public enum RSSLanguage {
+    public static let rightToLeft: Set<String> = ["ar", "he", "iw", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb", "syr"]
+
+    public static func primary(_ tag: String) -> String {
+        String(RSSText.strip(tag).lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first ?? "")
+    }
+
+    public static func direction(_ tag: String) -> String { rightToLeft.contains(primary(tag)) ? "rtl" : "auto" }
+
+    public static func tag(_ value: String) -> String {
+        let clean = RSSText.strip(value).replacingOccurrences(of: "_", with: "-")
+        guard !clean.isEmpty, clean.count <= 35, clean.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }) else { return "" }
+        return clean
+    }
 }
 
 public struct RSSPageStyle: Equatable, Sendable {
@@ -165,9 +237,10 @@ public struct RSSPageStyle: Equatable, Sendable {
         figure{margin:1em 0;}
         figcaption{font-size:0.85em;color:var(--sub);}
         pre,code{font-family:ui-monospace,Menlo,monospace;font-size:0.88em;background:var(--code);border-radius:6px;}
-        pre{padding:12px;overflow-x:auto;white-space:pre-wrap;}
+        pre{padding:12px;overflow-x:auto;white-space:pre;word-wrap:normal;overflow-wrap:normal;}
         code{padding:1px 4px;}
-        pre code{padding:0;background:none;}
+        pre code{padding:0;background:none;white-space:inherit;}
+        .alt-caption{display:block;margin:4px 0 12px;font-size:0.8em;line-height:1.35;color:var(--sub);}
         blockquote{margin:1em 0;padding-left:14px;border-left:3px solid var(--rule);color:var(--sub);}
         table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;}
         td,th{border:0.5px solid var(--rule);padding:4px 8px;}
@@ -188,9 +261,10 @@ public struct RSSPageStyle: Equatable, Sendable {
 
 public enum RSSArticlePage {
     public static func enclosures(_ list: [RSSEnclosure], remote: Bool) -> String {
-        guard !list.isEmpty else { return "" }
+        let shown = list.filter { !$0.isImage }
+        guard !shown.isEmpty else { return "" }
         var out = "<div class=\"enclosures\">"
-        for item in list {
+        for item in shown {
             let url = RSSText.escape(item.url, quote: true)
             let player = RSSText.escape(RSSURL.upgraded(item.url), quote: true)
             if remote && item.isAudio {
@@ -205,6 +279,15 @@ public enum RSSArticlePage {
         return out + "</div>"
     }
 
+    public static func leadImages(_ images: [String], content: String) -> String {
+        var out = ""
+        for image in images where !image.isEmpty {
+            if content.contains(image) || content.contains(RSSText.escape(image, quote: true)) { continue }
+            out += "<p><img src=\"\(RSSText.escape(image, quote: true))\" alt=\"\"></p>"
+        }
+        return out
+    }
+
     public static func html(
         article: RSSArticle, body: RSSArticleBody, feed: RSSFeed?, settings: RSSReaderSettings, reader: Bool,
         timeZone: TimeZone = .current, locale: Locale = .current
@@ -214,8 +297,10 @@ public enum RSSArticlePage {
         let site = RSSURL.http(feed?.siteUrl ?? "")
         let base = link.isEmpty ? site : link
         let feedName = feed?.displayTitle ?? "Feed"
-        let source = reader && !body.readerHtml.isEmpty ? body.readerHtml : body.contentHtml
-        var content = RSSHTML.sanitize(source, base: base, remoteMedia: style.remoteImages, upgradeMedia: true)
+        let original = reader && !body.readerHtml.isEmpty ? body.readerHtml : body.contentHtml
+        let source = leadImages(body.images, content: original) + original
+        var content = RSSHTML.sanitize(source, base: base, remoteMedia: style.remoteImages, upgradeMedia: true, altCaptions: true)
+        let minutes = RSSReaderText.readingTime(RSSHTML.plainText(original, limit: Int.max))
         if content.isEmpty {
             let summary = article.summary.isEmpty ? "This article has no text in its feed." : article.summary
             content = "<p class=\"note\">\(RSSText.escape(summary, quote: false))</p>"
@@ -232,17 +317,21 @@ public enum RSSArticlePage {
             : "<div class=\"tile\">\(RSSText.escape(RSSText.letter(feedName), quote: false))</div>"
         let titleText = RSSText.escape(article.title.isEmpty ? "Untitled" : article.title, quote: false)
         let title = link.isEmpty ? titleText : "<a href=\"\(RSSText.escape(link, quote: true))\">\(titleText)</a>"
+        let date = RSSReaderText.articleDate(article.published, timeZone: timeZone, locale: locale)
+        let dateLine = [date, minutes].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+        let language = RSSLanguage.tag(article.language.isEmpty ? feed?.language ?? "" : article.language)
+        let langAttribute = language.isEmpty ? "" : " lang=\"\(RSSText.escape(language, quote: true))\""
         let comments = RSSURL.http(body.commentsUrl)
         let commentsMarkup = comments.isEmpty ? "" : "<p class=\"comments\"><a href=\"\(RSSText.escape(comments, quote: true))\">Comments</a></p>"
         return """
-        <!DOCTYPE html><html><head><meta charset="utf-8">\
+        <!DOCTYPE html><html\(langAttribute) dir="\(RSSLanguage.direction(language))"><head><meta charset="utf-8">\
         <meta http-equiv="Content-Security-Policy" content="\(style.policy)">\
         <meta name="viewport" content="width=device-width, initial-scale=1">\
         <meta name="referrer" content="no-referrer">\
         <style>\(style.css)</style></head><body>\
         <div class="byline"><div class="byline-text">\(feedMarkup)\(author)</div>\(tile)</div>\
         <hr class="rule"><h1 class="title">\(title)</h1>\
-        <p class="date">\(RSSText.escape(RSSReaderText.articleDate(article.published, timeZone: timeZone, locale: locale), quote: false))</p>\
+        <p class="date">\(RSSText.escape(dateLine, quote: false))</p>\
         \(enclosures(body.enclosures, remote: style.remoteImages))\
         <div class="body">\(content)</div>\(commentsMarkup)</body></html>
         """

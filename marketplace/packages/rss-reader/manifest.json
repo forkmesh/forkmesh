@@ -23,7 +23,7 @@
     "model": "free-open-source",
     "spdx": "MIT",
     "creatorRetainsOwnership": true,
-    "terms": "Included under the ForkMesh repository licence. Design inspired by NetNewsWire (MIT, Ranchero Software); no NetNewsWire code is included."
+    "terms": "Included under the ForkMesh repository licence. Design inspired by NetNewsWire (MIT, Brent Simmons and Ranchero Software), with features chosen from NetNewsWire's public feature requests (https://github.com/Ranchero-Software/NetNewsWire/issues); no NetNewsWire code is included."
   },
   "price": {
     "amount": 0,
