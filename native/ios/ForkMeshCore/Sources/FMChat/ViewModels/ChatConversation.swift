@@ -173,6 +173,19 @@ extension ChatHub {
             rows: rows, events: extras.lookEvents(in: relay.currentConversation), group: inGroupConversation)
     }
 
+    public func lifetime(_ conversation: String) -> TimeInterval {
+        TimeInterval(retention.effectiveMs(for: retentionKey(conversation))) / 1000
+    }
+
+    public func expiresAt(_ message: ChatMessage) -> Date {
+        message.timestamp.addingTimeInterval(lifetime(message.conversation))
+    }
+
+    public func isOnServer(_ message: ChatMessage, receipt: ChatReceipt?) -> Bool {
+        guard message.isSelf, receipt == .sent, DirectMessageFrames.isDirect(message.conversation) else { return false }
+        return direct?.serverCopies(message.conversation) != 0
+    }
+
     public var conversationPeer: Member? {
         let conversation = relay.currentConversation
         guard conversation.hasPrefix("@") else { return nil }

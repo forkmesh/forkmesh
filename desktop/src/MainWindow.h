@@ -1249,6 +1249,23 @@ public:
         return m_privateChannels.contains(conversation);
     }
     void testEnsureTeamRoom() { ensureTeamRoom(); }
+    void testJoinPrivateChannel(const QString &channel)
+    {
+        onPrivateChannelJoined(channel);
+    }
+    void testFileChatPing(const QString &conversation, const QString &title,
+                          const QString &body)
+    {
+        AppNotification item;
+        item.title = title;
+        item.body = body;
+        item.kind = QStringLiteral("chat");
+        item.link.kind = QStringLiteral("chat");
+        item.link.ref = conversation;
+        item.quiet = true;
+        recordNotification(item);
+    }
+    void testPurgePrivateChatPings() { purgePrivateChatPings(); }
     void testAttachChatBackend(ChatBackend *backend) { attachBackend(backend); }
     void testTriggerTeamChatMention(const QString &text,
                                     const QString &threadRootId)
@@ -3780,6 +3797,9 @@ private:
     void fetchRoomPassphrase();
     void startOfficeChannelMirror();
     bool isOfficeConversation(const QString &conversation) const;
+    bool isPrivateChatConversation(const QString &conversation) const;
+    void purgePrivateChatPings(const QSet<QString> &savedPrivate = {});
+    QSet<QString> savedPrivateChannels() const;
     // The local mesh room: people running ForkMesh on this network, found
     // automatically, with nothing about the room leaving it.
     void startLocalMesh();
@@ -10277,6 +10297,7 @@ private:
     void wrapComposerSelection(const QString &before, const QString &after);
     void sendMessageToPrompt(const QString &text);
     void restorePrivateChannels();
+    void onPrivateChannelJoined(const QString &channel);
     void persistPrivateChannels();
     QString privateChannelsSettingsKey() const;
     void ensureTeamRoom();
@@ -10572,7 +10593,8 @@ private:
     void noteLocalMeshReachable();
     void notifyIfInactive(const QString &title, const QString &body,
                           const QString &activateHref = QString(),
-                          const QString &icon = QString());
+                          const QString &icon = QString(),
+                          bool fileLocally = true);
     // Direct tray balloons predate postNotification(), so keep their pause
     // check here instead of relying on every event source to remember it.
     void showPingTrayMessage(const QString &title, const QString &body,

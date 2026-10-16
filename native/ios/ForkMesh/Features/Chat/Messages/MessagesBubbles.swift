@@ -149,6 +149,118 @@ struct MessagesColors {
     var canvas: Color { dark ? Color.black : Color.white }
 }
 
+struct MessagesBubbleLife: Equatable {
+    var expiresAt: Date?
+    var lifetime: TimeInterval = 0
+    var onServer: Bool = false
+}
+
+struct MessagesExpiryRing: View {
+    let expiresAt: Date
+    let lifetime: TimeInterval
+    let tint: Color
+
+    var body: some View {
+        TimelineView(.everyMinute) { (context: TimelineViewDefaultContext) in
+            let left: TimeInterval = max(0, expiresAt.timeIntervalSince(context.date))
+            let share: Double = lifetime > 0 ? min(1, left / lifetime) : 0
+            ZStack {
+                Circle().stroke(tint.opacity(0.28), lineWidth: 1.4)
+                Circle()
+                    .trim(from: 0, to: share)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 9, height: 9)
+            .accessibilityElement()
+            .accessibilityLabel("Disappears in \(MessagesExpiryRing.remaining(left))")
+        }
+    }
+
+    static func remaining(_ seconds: TimeInterval) -> String {
+        let minutes: Int = max(1, Int((seconds / 60).rounded(.up)))
+        if minutes < 60 { return minutes == 1 ? "1 minute" : "\(minutes) minutes" }
+        let hours: Int = Int((Double(minutes) / 60).rounded())
+        if hours < 48 { return hours == 1 ? "1 hour" : "\(hours) hours" }
+        let days: Int = Int((Double(hours) / 24).rounded())
+        return "\(days) days"
+    }
+}
+
+struct MessagesBubbleMeta: View {
+    let sentAt: Date
+    let life: MessagesBubbleLife
+    let tint: Color
+
+    static let clock: DateFormatter = {
+        let formatter: DateFormatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if life.onServer {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 4, height: 4)
+                    .accessibilityElement()
+                    .accessibilityLabel("Still on the server")
+            }
+            Text(MessagesBubbleMeta.clock.string(from: sentAt))
+                .font(.system(size: 11, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .fixedSize()
+            if let expiresAt = life.expiresAt {
+                MessagesExpiryRing(expiresAt: expiresAt, lifetime: life.lifetime, tint: tint)
+            }
+        }
+    }
+}
+
+struct MessagesBubbleSheen<S: Shape>: View {
+    let shape: S
+    let fill: Color
+    let mine: Bool
+    let dark: Bool
+
+    var body: some View {
+        ZStack {
+            if !mine { shape.fill(.ultraThinMaterial) }
+            shape.fill(
+                LinearGradient(
+                    colors: [fill.opacity(mine ? 0.78 : 0.55), fill.opacity(mine ? 0.98 : 0.8)], startPoint: .top,
+                    endPoint: .bottom))
+            shape.fill(
+                LinearGradient(
+                    colors: [Color.white.opacity(dark ? 0.14 : 0.32), Color.white.opacity(0)], startPoint: .top,
+                    endPoint: .center))
+            shape.stroke(
+                LinearGradient(
+                    colors: [Color.white.opacity(dark ? 0.35 : 0.7), Color.white.opacity(0.04)], startPoint: .top,
+                    endPoint: .bottom), lineWidth: 0.8)
+        }
+        .shadow(color: Color.black.opacity(dark ? 0.32 : 0.1), radius: 6, y: 2)
+    }
+}
+
+extension View {
+    @ViewBuilder func messagesBubbleGlass<S: Shape>(_ shape: S, fill: Color, mine: Bool, dark: Bool) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(fill.opacity(mine ? 0.88 : 0.5)), in: shape)
+        } else {
+            self.background(MessagesBubbleSheen(shape: shape, fill: fill, mine: mine, dark: dark))
+        }
+        #else
+        self.background(MessagesBubbleSheen(shape: shape, fill: fill, mine: mine, dark: dark))
+        #endif
+    }
+}
+
 struct MessagesBubbleRow: View {
     let bubble: ChatBubble
     let group: Bool
@@ -158,6 +270,7 @@ struct MessagesBubbleRow: View {
     let onPhoto: (ChatAttachment) -> Void
     var quoteAuthor: String = ""
     var onQuote: (() -> Void)? = nil
+    var life: MessagesBubbleLife = MessagesBubbleLife()
     @State private var confirmDelete: Bool = false
     @State private var selecting: Bool = false
 
@@ -228,28 +341,28 @@ struct MessagesBubbleRow: View {
     }
 
     private enum ReceiptPlace {
-        case none, text, photo, shell, below
+        case text, photo, shell, below
     }
 
     private var receiptPlace: ReceiptPlace {
-        guard bubble.receipt != nil else { return .none }
         if !row.text.isEmpty { return jumbo ? .below : .text }
         guard let attachment = row.attachment else { return message.fileName.isEmpty ? .below : .shell }
         if attachment.kind == .image { return FmImageCache.image(attachment.data) == nil ? .below : .photo }
         return .shell
     }
 
-    @ViewBuilder private func receiptBadge(tint: Color, fill: Color, accent: Color) -> some View {
-        if let receipt = bubble.receipt {
-            HStack(spacing: 3) {
-                if let label = OfficeFrames.recipientsLabel(message.recipients),
-                    let description = OfficeFrames.recipientsDescription(message.recipients)
-                {
-                    Text(label)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(tint)
-                        .accessibilityLabel(description)
-                }
+    private func receiptBadge(tint: Color, fill: Color, accent: Color) -> some View {
+        HStack(spacing: 4) {
+            MessagesBubbleMeta(sentAt: message.timestamp, life: life, tint: tint)
+            if let label = OfficeFrames.recipientsLabel(message.recipients),
+                let description = OfficeFrames.recipientsDescription(message.recipients)
+            {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(tint)
+                    .accessibilityLabel(description)
+            }
+            if let receipt = bubble.receipt {
                 ChatReceiptMark(receipt: receipt, muted: tint, background: fill, accent: accent)
             }
         }
@@ -257,16 +370,22 @@ struct MessagesBubbleRow: View {
 
     private var inBubbleReceipt: some View {
         receiptBadge(
-            tint: mine ? colors.sentText.opacity(0.8) : colors.meta, fill: mine ? colors.sentFill : colors.receivedFill,
-            accent: mine ? colors.sentText : MessagesColors.blue)
+            tint: mine ? colors.sentText.opacity(0.78) : colors.meta.opacity(0.9),
+            fill: mine ? colors.sentFill : colors.receivedFill, accent: mine ? colors.sentText : MessagesColors.blue)
             .padding(.bottom, 1)
     }
 
     @ViewBuilder private func withReceipt<Inner: View>(_ place: ReceiptPlace, @ViewBuilder _ inner: () -> Inner) -> some View {
         if receiptPlace == place {
-            HStack(alignment: .bottom, spacing: 6) {
-                inner()
-                inBubbleReceipt
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .lastTextBaseline, spacing: 8) {
+                    inner()
+                    inBubbleReceipt
+                }
+                VStack(alignment: .trailing, spacing: 2) {
+                    inner()
+                    inBubbleReceipt
+                }
             }
         } else {
             inner()
@@ -352,10 +471,11 @@ struct MessagesBubbleRow: View {
 
     private func bubbleShell<Inner: View>(@ViewBuilder _ inner: () -> Inner) -> some View {
         inner()
-            .padding(.vertical, 7)
-            .padding(.leading, mine ? 12 : 17)
-            .padding(.trailing, mine ? 17 : 12)
-            .background(shellShape.fill(mine ? colors.sentFill : colors.receivedFill))
+            .padding(.vertical, 8)
+            .padding(.leading, mine ? 13 : 18)
+            .padding(.trailing, mine ? 18 : 13)
+            .messagesBubbleGlass(
+                shellShape, fill: mine ? colors.sentFill : colors.receivedFill, mine: mine, dark: colors.dark)
             .contentShape(shellShape)
     }
 
@@ -534,7 +654,9 @@ struct MessagesTypingBubble: View {
                 .padding(.vertical, 12)
                 .padding(.leading, 18)
                 .padding(.trailing, 14)
-                .background(MessagesBubbleShape(fromSelf: false, tail: true).fill(colors.receivedFill))
+                .messagesBubbleGlass(
+                    MessagesBubbleShape(fromSelf: false, tail: true), fill: colors.receivedFill, mine: false,
+                    dark: colors.dark)
             }
             Text(ChatExtras.typingLabel(names))
                 .font(.system(size: 12))

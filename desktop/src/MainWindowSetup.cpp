@@ -3149,6 +3149,7 @@ void MainWindow::startOfficeChannelMirror()
         connect(m_officeChannelMirror, &OfficeChannelMirror::conversationsChanged,
                 this, [this](const QStringList &conversations) {
                     m_officeConversations = conversations;
+                    purgePrivateChatPings();
                     setChannels(m_channels);
                     refreshChatMembers();
                     refreshChannelSettingsButton();
