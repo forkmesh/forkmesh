@@ -6,7 +6,7 @@ const forkmesh::market::NativePackageRegistration feedRegistration({
     QStringLiteral("builtin:feed"),
     {QStringLiteral("extension.native")},
     QStringLiteral("Feed"),
-    QStringLiteral("rss"),
+    QStringLiteral("broadcast"),
     QString(),
     QString(),
     {},
