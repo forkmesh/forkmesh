@@ -239,8 +239,6 @@ static void checkOnline()
     check(pingFor(onlineSource(QString(), 0, now)).title ==
               QLatin1String("Your desktop is online"),
           "a nameless desktop still reads");
-    check(coreOnlineFeature() == QLatin1String("online-ping"),
-          "the window defers to a core that advertises the online ping");
 }
 
 static void checkDelete()

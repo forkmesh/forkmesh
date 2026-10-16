@@ -1,10 +1,10 @@
 
+#include "PackageModules.h"
 #include "PingSettingsPanel.h"
 #include "ProcessReaper.h"
 #include "ChatBlocks.h"
 #include "ChatRecipients.h"
 #include "ControlNode.h"
-#include "CoreOps.h"
 #include "DesktopPingForward.h"
 #include "DiscordClient.h"
 #include "ForkMeshPackageRegistry.h"
@@ -17,7 +17,6 @@
 #include "NodeEventSocket.h"
 #include "SafeDelete.h"
 #include "LocalMeshNode.h"
-#include "CoreMesh.h"
 #include "OfficeChannelMirror.h"
 #include "PrivateMirrorStore.h"
 #include "SourceTreeWatch.h"
@@ -3363,7 +3362,6 @@ void MainWindow::startLocalMesh()
     // Set before start() so the very first beacon already offers the phone
     // its control channel.
     startLocalControl();
-    CoreMesh::attach(m_localMesh, m_coreClient);
     if (!m_localMesh->start()) {
         m_localMesh->deleteLater();
         m_localMesh = nullptr;
@@ -5638,14 +5636,12 @@ void MainWindow::showUpdateLog()
         lay->addWidget(copyStatus);
     }
     m_updateFeed.reset();
-    forwardCoreUpdateReset();
     m_updateLog->clear();
     appendUpdateLog(QStringLiteral("==> ForkMesh update started\n"));
 }
 
 void MainWindow::appendUpdateLog(const QString &text)
 {
-    forwardCoreUpdateLog(text);
     m_updateFeed.append(text);
     if (!m_updateLog || text.isEmpty())
         return;
@@ -5857,7 +5853,6 @@ void MainWindow::setUpdateStatus(const QString &status, bool isError)
     appendUpdateLog((isError ? QStringLiteral("!! ") : QStringLiteral("==> ")) + status +
                     QStringLiteral("\n"));
     m_updateFeed.noteStatus(status, isError);
-    forwardCoreUpdateStatus(status, isError);
     flushLocalControlUpdate();
     if (isError && m_updateLogDialog) {
         m_updateLogDialog->show();
@@ -6023,7 +6018,6 @@ void MainWindow::runQuickUpdate()
     const QString clientDir = runningClientDir();
     const QString relaunchPath = runningClientExecutable();
 
-    const auto native = [this, clientDir, relaunchPath] {
     if (QDir(clientDir).exists("CMakeLists.txt")) {
         setUpdateStatus("Pulling the latest version...");
         runUpdateStep("git", quickUpdatePullArguments(clientDir), clientDir,
@@ -6040,16 +6034,6 @@ void MainWindow::runQuickUpdate()
             buildAndRelaunch(clientDir, QString(), relaunchPath);
         });
     }
-    };
-    if (coreOpsAttached() && forkmesh::coreops::can(this, QStringLiteral("quick"))) {
-        QJsonObject request = coreRelaunchRequest(QStringLiteral("quick"), clientDir, relaunchPath,
-                                                  QStringLiteral("Release"));
-        request.insert(QStringLiteral("label"), QStringLiteral("update"));
-        request.insert(QStringLiteral("repoUrl"), kRepoUrl);
-        if (startCoreJob(request, native))
-            return;
-    }
-    native();
 }
 
 void MainWindow::runUpdateStepUser(const QString &program,
@@ -6080,7 +6064,7 @@ bool MainWindow::restartInProgress() const
 {
     // The spin button is set the moment a restart button is clicked and cleared
     // by every finish/failure path, so it is the one honest "still going" flag.
-    if (m_restartSpinButton || m_rebuildRestartQueued || coreRebuildRunning())
+    if (m_restartSpinButton || m_rebuildRestartQueued)
         return true;
     // An auto-update rebuild has no spin button; cancelling it beats letting a
     // manual click start a second build in the same build directory.
@@ -6128,7 +6112,6 @@ void MainWindow::killUpdateSteps()
 void MainWindow::cancelRestart()
 {
     ++m_updateRunToken; // orphans every in-flight step callback
-    cancelCoreRebuild();
     m_rebuildRestartQueued = false;
     if (m_rebuildQueuePollTimer)
         m_rebuildQueuePollTimer->stop();
@@ -6152,8 +6135,6 @@ void MainWindow::cancelRestart()
 void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUser,
                                   const QString &relaunchPath, const QString &buildType)
 {
-    if (startCoreRebuild(clientDir, asUser, relaunchPath, buildType))
-        return;
     m_updateAsUser = asUser;
     const QString appPath = relaunchPath.isEmpty()
                                 ? QCoreApplication::applicationFilePath()
@@ -6472,6 +6453,16 @@ void MainWindow::installAndRelaunch(const QString &built, const QString &appPath
                           .arg(shellSingleQuote(companion),
                                shellSingleQuote(companionTarget));
         }
+        const QString builtModules =
+            QFileInfo(built).absolutePath() + QStringLiteral("/packages");
+        if (QFileInfo(builtModules).isDir()) {
+            const QString moduleTarget =
+                forkmesh::market::modules::installedDirectoryFor(appPath);
+            script += QStringLiteral(
+                          " && { mkdir -p %2 && for f in %1/*.json %1/*.so; do "
+                          "[ ! -f \"$f\" ] || cp -f \"$f\" %2/; done || true; }")
+                          .arg(shellSingleQuote(builtModules), shellSingleQuote(moduleTarget));
+        }
         setUpdateStatus("Installing for " + m_updateAsUser + "...");
         const QString probeUser = m_updateAsUser;
         if (!binaryPassesStartCheck(built, probeUser)) {
@@ -6560,6 +6551,17 @@ void MainWindow::installAndRelaunch(const QString &built, const QString &appPath
                 "could not install the Go mirror-node companion beside %1")
                            .arg(appPath));
     }
+    if (QFileInfo(built).canonicalFilePath() != QFileInfo(appPath).canonicalFilePath()) {
+        QString moduleError;
+        const int modules =
+            forkmesh::market::modules::installBeside(built, appPath, &moduleError);
+        if (!moduleError.isEmpty())
+            logRestart(QStringLiteral("package modules: %1").arg(moduleError));
+        else if (modules > 0)
+            logRestart(QStringLiteral("installed %1 package module files in %2")
+                           .arg(modules)
+                           .arg(forkmesh::market::modules::installedDirectoryFor(appPath)));
+    }
     if (m_closingDown)
         return;
     setRestartSpinProgress(100);
@@ -6633,8 +6635,6 @@ bool MainWindow::tryPrebuiltAutoUpdate(const QString &clientDir,
 {
     if (!invokingNonRootUser().isEmpty())
         return false;
-    if (startCorePrebuilt(clientDir, tag, tagCommit))
-        return true;
 
 #if defined(Q_OS_LINUX)
     const QString wantOs = QStringLiteral("linux");
@@ -6978,8 +6978,6 @@ void MainWindow::updateRebuildRestart()
     if (m_rebuildButton)
         m_rebuildButton->setEnabled(false);
     flashMessage(QStringLiteral("Updating ForkMesh from the install mirror..."));
-    if (startCoreUpdate(QString(), QFileInfo(clientDir).absolutePath(), clientDir, relaunchPath))
-        return;
     setUpdateStatus(user.isEmpty()
                         ? QStringLiteral("Finding an online ForkMesh mirror...")
                         : QStringLiteral("Finding an online ForkMesh mirror "
@@ -7000,8 +6998,6 @@ void MainWindow::updateRebuildRestart()
 
     const QString repoDir = QFileInfo(clientDir).absolutePath(); // .../src
     const bool haveCheckout = QDir(repoDir).exists(QStringLiteral(".git"));
-    if (user.isEmpty() && startCoreUpdate(installUrl, repoDir, clientDir, relaunchPath))
-        return;
 
     auto stopUntouched = [this, repoDir](const QString &reason) {
         m_updateAsUser.clear();

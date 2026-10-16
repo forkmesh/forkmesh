@@ -5,7 +5,6 @@
 
 #include "ActionStore.h"
 #include "AppPaths.h"
-#include "CoreAgentModel.h"
 #include "DesktopPowerAlert.h"
 #include "LocalControl.h"
 #include "LocalBackupStore.h"
@@ -169,10 +168,6 @@ QJsonObject MainWindow::localControlHealthSummary()
 
 void MainWindow::sampleHostVitals()
 {
-    if (m_localControl && m_localControl->coreAttached()) {
-        m_hostVitalsWatchers.clear();
-        return;
-    }
     diagctl::VitalsSample sample;
     sample.memory = diagctl::usedPercent(SystemStats::totalMemoryBytes(),
                                          SystemStats::availableMemoryBytes());
@@ -435,12 +430,9 @@ void MainWindow::handleLocalControlDiagnosticsRequest(int connectionId, int requ
         const QString action = params.value(QStringLiteral("action")).toString();
         QString error;
         const QString subject = diagctl::subjectFor(action, params, &error);
-        const hostctl::ConfirmationStore::Result verdict =
-            forkmesh::coreagentmodel::confirmedByCore(connectionId, params)
-                ? hostctl::ConfirmationStore::Result::Ok
-                : m_diagControlConfirmations.consume(
-                      params.value(QStringLiteral("token")).toString(), device.key, action,
-                      subject, QDateTime::currentMSecsSinceEpoch());
+        const hostctl::ConfirmationStore::Result verdict = m_diagControlConfirmations.consume(
+            params.value(QStringLiteral("token")).toString(), device.key, action, subject,
+            QDateTime::currentMSecsSinceEpoch());
         if (subject.isEmpty() || verdict != hostctl::ConfirmationStore::Result::Ok) {
             const QString why = subject.isEmpty() ? error : hostctl::confirmationError(verdict);
             logSystem(QStringLiteral("Refused a diagnostics %1 from %2: %3.")

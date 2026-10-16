@@ -483,48 +483,4 @@ GitAttempt runGitIndexSerialized(const QString &dir, const QStringList &args,
     }
 }
 
-namespace {
-
-QMutex &gitIndexRouteMutex()
-{
-    static QMutex mutex;
-    return mutex;
-}
-
-std::shared_ptr<GitIndexWriteRoute> &gitIndexRouteSlot()
-{
-    static std::shared_ptr<GitIndexWriteRoute> route;
-    return route;
-}
-
-} // namespace
-
-void setGitIndexWriteRoute(GitIndexWriteRoute route)
-{
-    QMutexLocker lock(&gitIndexRouteMutex());
-    gitIndexRouteSlot() =
-        route ? std::make_shared<GitIndexWriteRoute>(std::move(route)) : nullptr;
-}
-
-bool gitIndexLaneBusy(const QString &dir)
-{
-    const std::shared_ptr<GitIndexWriteGuard::Lane> lane = laneFor(gitRepositoryKey(dir));
-    QMutexLocker lock(&lane->mutex);
-    return lane->owner != nullptr || !lane->waiting.empty();
-}
-
-bool routeGitIndexWrite(const GitIndexWriteRequest &request, GitAttempt *out)
-{
-    if (!out || !gitArgsWriteIndex(request.args) || gitIndexLaneHeldOnThisThread())
-        return false;
-    std::shared_ptr<GitIndexWriteRoute> route;
-    {
-        QMutexLocker lock(&gitIndexRouteMutex());
-        route = gitIndexRouteSlot();
-    }
-    if (!route || gitIndexLaneBusy(request.dir))
-        return false;
-    return (*route)(request, out);
-}
-
 } // namespace forkmesh

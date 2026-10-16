@@ -99,7 +99,9 @@ QStringList defaultProtectedUnitPrefixes()
             QStringLiteral("forkmesh-mirror"),
             QStringLiteral("forkmesh-release"),
             QStringLiteral("forkmesh-backup"),
-            QStringLiteral("forkmesh-dns")};
+            QStringLiteral("forkmesh-dns"),
+            QStringLiteral("forkmesh-headless"),
+            QStringLiteral("forkmesh-tray")};
 }
 
 Policy currentPolicy()

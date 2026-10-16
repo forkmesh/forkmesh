@@ -4,12 +4,11 @@
 #include "AgentStore.h"
 #include "IssueStore.h"
 
-#include <QJsonObject>
 #include <QObject>
 #include <QProcessEnvironment>
 #include <QString>
 
-class AgentProcess;
+class QProcess;
 class QTimer;
 
 class AgentRunner : public QObject
@@ -57,8 +56,6 @@ public:
                const QString &repoPath, const Config &config);
     void stop();
     bool steer(const QString &prompt);
-    bool attachCoreProcess(const AgentSession &session, const Config &config,
-                           const QString &key, const QJsonObject &meta, qint64 pid);
 
 signals:
     void logLine(int sessionId, const QString &text);
@@ -72,13 +69,6 @@ private:
 
     void launch(Phase phase, const QString &program, const QStringList &args,
                 const QString &workingDir = QString());
-    void connectProcess(Phase phase, const QString &program);
-    QJsonObject coreProcessMeta() const;
-    void handleOutput(const QString &chunk, bool store);
-    void beginCoreParse();
-    void endCoreParse();
-    void onCoreRunEvent(const QString &event, const QJsonObject &data);
-    void finishProcess(int exitCode);
     QProcessEnvironment processEnvironment(Phase phase) const;
     void onProcessFinished(int exitCode);
     void runAgentProcess();
@@ -111,16 +101,11 @@ private:
     QString m_worktree;
     QString m_promptFilePath;
     QString m_prompt;
-    AgentProcess *m_process = nullptr;
+    QProcess *m_process = nullptr;
     QTimer *m_noOutputTimer = nullptr;
     qint64 m_processStartedAtMs = 0;
     qint64 m_lastOutputAtMs = 0;
     QString m_currentProgram;
     bool m_attentionRaised = false; // emit needsAttention only once per run
     bool m_restorePreviousPatch = false;
-    QString m_coreKey;
-    bool m_coreParsed = false;
-    bool m_coreAttachPending = false;
-    bool m_hasDeferredExit = false;
-    int m_deferredExit = 0;
 };

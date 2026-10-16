@@ -229,7 +229,7 @@ void MainWindow::applyAppViewMode()
             }
         }
         if (terminal && m_workspaceTerminal && !m_workspaceTerminal->isRunning())
-            m_workspaceTerminal->resumeOr([this] { startWorkspaceTerminal(); });
+            startWorkspaceTerminal();
     }
 
     NextAccess::syncWorkspace(*this);
@@ -280,7 +280,6 @@ QWidget *MainWindow::buildWorkspaceTerminalDock()
 
     m_workspaceTerminal = new TerminalWidget;
     m_workspaceTerminal->setObjectName(QStringLiteral("workspaceTerminal"));
-    m_workspaceTerminal->setPersistKey(QStringLiteral("workspace"));
     layout->addWidget(m_workspaceTerminal, 1);
 
     m_workspaceTerminalDock = dock;

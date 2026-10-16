@@ -67,8 +67,7 @@ searches, reading long files by range and docs by headings, anchored edits,
 background waits instead of foreground sleeps, test output piped through
 `tail`), and the guardrail wording names the folders the lock allows.
 
-The tool efficiency ledger (`AgentToolImprovementLog.cpp`, mirrored in
-`desktop/core/internal/insights/`) classifies every tool result into
+The tool efficiency ledger (`AgentToolImprovementLog.cpp`) classifies every tool result into
 outcomes, empty probes, oversized results and known refusals, each with a
 suggested fix; finished runs are logged to `agent-runs.jsonl`
 (`AgentRunEfficiencyLog`).

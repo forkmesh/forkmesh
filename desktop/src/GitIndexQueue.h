@@ -4,8 +4,6 @@
 #include <QString>
 #include <QStringList>
 
-#include "LogSource.h"
-
 #include <functional>
 #include <memory>
 
@@ -93,21 +91,5 @@ bool gitIndexLaneHeldOnThisThread();
 
 GitAttempt runGitIndexSerialized(const QString &dir, const QStringList &args,
                                  const std::function<GitAttempt()> &attempt);
-
-struct GitIndexWriteRequest {
-    QString dir;
-    QStringList args;
-    const QByteArray *input = nullptr;
-    int timeoutMs = 0;
-    QString detail;
-    LogSource source;
-};
-
-using GitIndexWriteRoute =
-    std::function<bool(const GitIndexWriteRequest &request, GitAttempt *out)>;
-
-void setGitIndexWriteRoute(GitIndexWriteRoute route);
-bool gitIndexLaneBusy(const QString &dir);
-bool routeGitIndexWrite(const GitIndexWriteRequest &request, GitAttempt *out);
 
 } // namespace forkmesh

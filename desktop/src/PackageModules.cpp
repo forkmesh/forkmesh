@@ -212,6 +212,57 @@ QList<Module> modules()
     return registry();
 }
 
+QString installedDirectoryFor(const QString &appPath)
+{
+    return QDir::cleanPath(QFileInfo(appPath).absolutePath() +
+                           QStringLiteral("/../lib/forkmesh/packages"));
+}
+
+int installBeside(const QString &builtBinary, const QString &appPath, QString *error)
+{
+    static const QStringList kinds{QStringLiteral("*.json"), QStringLiteral("*.so"),
+                                   QStringLiteral("*.dylib"), QStringLiteral("*.dll")};
+    const QDir source(QFileInfo(builtBinary).absolutePath() + QStringLiteral("/packages"));
+    if (!source.exists())
+        return 0;
+    const QString target = installedDirectoryFor(appPath);
+    const QString sourceCanonical = source.canonicalPath();
+    if (!sourceCanonical.isEmpty() && sourceCanonical == QFileInfo(target).canonicalFilePath())
+        return 0;
+    if (!QDir().mkpath(target)) {
+        if (error)
+            *error = QStringLiteral("could not create %1").arg(target);
+        return 0;
+    }
+    const QStringList wanted = source.entryList(kinds, QDir::Files, QDir::Name);
+    int installed = 0;
+    for (const QString &name : wanted) {
+        const QString staged = target + QStringLiteral("/.") + name + QStringLiteral(".update");
+        QFile::remove(staged);
+        if (!QFile::copy(source.filePath(name), staged)) {
+            if (error)
+                *error = QStringLiteral("could not copy %1").arg(name);
+            return installed;
+        }
+        QFile::setPermissions(staged, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup |
+                                          QFile::ReadOther);
+        const QString final = target + QLatin1Char('/') + name;
+        QFile::remove(final);
+        if (!QFile::rename(staged, final)) {
+            QFile::remove(staged);
+            if (error)
+                *error = QStringLiteral("could not install %1").arg(name);
+            return installed;
+        }
+        ++installed;
+    }
+    for (const QString &name : QDir(target).entryList(kinds, QDir::Files)) {
+        if (!wanted.contains(name))
+            QFile::remove(target + QLatin1Char('/') + name);
+    }
+    return installed;
+}
+
 QJsonArray status()
 {
     QJsonArray out;

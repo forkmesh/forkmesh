@@ -177,7 +177,6 @@ bool MainWindow::ensureStreamEventsLoadedAsync(int sessionId)
                 m_streamRaw[sessionId] = std::move(out.raw);
                 m_streamFiles[sessionId] = std::move(out.files);
             }
-            coreAgentEventsLoaded(sessionId);
             if (sessionId == m_selectedAgentSessionId)
                 showAgentSession(sessionId); // render the restored history
             if (m_agentQueueAwaitingEvents.contains(sessionId)) {

@@ -579,36 +579,3 @@ void MainWindow::runLocalControlRepoAction(int connectionId, int requestId, cons
     }
     server->respondError(connectionId, requestId, QStringLiteral("unsupported_action"));
 }
-
-QJsonObject MainWindow::localControlRepoLocate(const QJsonObject &params, QString *error) const
-{
-    const QJsonObject device = params.value(QStringLiteral("device")).toObject();
-    const QString user = device.value(QStringLiteral("user")).toString();
-    if (device.value(QStringLiteral("key")).toString().isEmpty() ||
-        (!hostctl::ownerMayManageHosts(user, nodeOwnerDisplayName()) &&
-         !hostctl::ownerMayManageHosts(user, accountOwner()))) {
-        *error = QStringLiteral("not_owner");
-        return {};
-    }
-    QString owner;
-    QString name;
-    if (!reposctl::parseRepoSlug(params.value(QStringLiteral("repo")).toString(), &owner,
-                                 &name)) {
-        *error = QStringLiteral("bad_request");
-        return {};
-    }
-    const int index = repoIndexFor(owner, name);
-    if (index < 0) {
-        *error = QStringLiteral("unknown_repo");
-        return {};
-    }
-    const RepositoryRecord &selected = m_repositories.at(index);
-    const RepositoryRecord &writable = writableRecordFor(selected);
-    const bool checkout = hasCheckout(writable.localPath);
-    const QString dir = checkout ? writable.localPath : selected.mirrorPath;
-    if (dir.isEmpty() || !QDir(dir).exists()) {
-        *error = QStringLiteral("no_checkout");
-        return {};
-    }
-    return {{QStringLiteral("dir"), dir}, {QStringLiteral("checkout"), checkout}};
-}

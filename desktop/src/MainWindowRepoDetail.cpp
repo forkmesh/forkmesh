@@ -14703,7 +14703,6 @@ void MainWindow::updateRestartCountdown()
     }
     m_restartSpinButton->setToolTip(
         QStringLiteral("Restarting… %1. Click again to cancel.").arg(text));
-    pushCoreUpdateDesktopState(text);
 }
 
 void MainWindow::startRestartSpin(QPushButton *button, RestartKind kind)
@@ -14775,7 +14774,6 @@ void MainWindow::stopRestartSpin()
     }
     stopButtonSpin(m_restartSpinButton);
     m_restartSpinButton = nullptr;
-    pushCoreUpdateDesktopState(QString());
 }
 
 void MainWindow::setRestartSpinProgress(int percent)

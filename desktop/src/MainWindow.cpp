@@ -25,6 +25,7 @@
 #include "MainWindowNextAccess.h"
 #include "SettingsSectionsView.h"
 #include "SingleInstance.h"
+#include "BackgroundMode.h"
 #include "StatsDashboard.h"
 #include "NetworkReplyError.h"
 #include "NodeEventSocket.h"
@@ -1134,7 +1135,8 @@ void MainWindow::showEvent(QShowEvent *event)
     // the event loop a five-second interactive runway so authentication and
     // session restoration cannot collide with the user's first navigation.
     // runDeferredStartup contains the no-paint fallback for headless platforms.
-    QTimer::singleShot(5000, this, &MainWindow::runDeferredStartup);
+    QTimer::singleShot(forkmesh::isBackgroundInstance() ? 0 : 5000, this,
+                       &MainWindow::runDeferredStartup);
 #endif
 }
 
@@ -1477,8 +1479,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
     // Stop WebSocket-backed services while the event loop can still drain
     // their close frames. Letting QObject destruction tear down their TCP
     // children produces code 1006 close events in the Durable Objects.
-    if (m_nodeEventSocket)
-        m_nodeEventSocket->stop(false);
     stopNodeEventSocket();
     if (m_officeChannelMirror)
         m_officeChannelMirror->stop();
@@ -1501,6 +1501,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     logSystem(QStringLiteral("Session ended."));
     logSystem(QStringLiteral("════════════════════════════════════════════════════════════"));
     persistNetworkLogOnShutdown();
+    forkmesh::background::handOverAfterWindowClose(supervisingUserServiceRestartRequested());
     // A user-service unit can deliberately use Restart=always for crash
     // recovery. Tell that manager an interactive close is intentional so it
     // does not immediately reopen the desktop.

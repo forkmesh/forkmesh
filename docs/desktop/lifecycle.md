@@ -91,6 +91,7 @@ and their process groups are found.
 | Launches meant to outlive the desktop | Started with `processreaper::startReleased()` or `releasedEnvironment()`, which drop the marker and double-fork (relaunch after update, hand-back to the supervising service, opening other apps). |
 | The shared VM for isolated agents | Slow to boot and shared; started without the marker. |
 | Other desktop instances | Different marker. |
+| ForkMesh without a window started at close, and its tray | Started released, in their own `forkmesh-headless-<project>` / `forkmesh-tray-<project>` scope or unit; both prefixes are protected. |
 
 ## Actions runs
 
@@ -105,3 +106,124 @@ and its scope are gone.
 - A process that clears its environment and leaves the process tree without
   entering a registered scope is not found.
 - Windows: no sweep; per-object stops apply.
+
+## Running without a window
+
+Code: `desktop/src/BackgroundMode.{h,cpp}`, `BackgroundSettings.{h,cpp}`,
+`TrayMode.cpp`, `SingleInstance.cpp`, `main.cpp`. Test:
+`forkmesh-background-mode-tests` (`desktop/tests/test_background_mode.cpp`).
+
+The desktop is a single Qt process. `forkmesh --headless` runs that same
+process with the `offscreen` platform and no splash: it signs in, opens the
+relay and the LAN room, runs agents and answers every phone request the window
+answers. It does not save the window geometry, and it runs the deferred
+startup (sign-in, relay, repository restore) at once instead of after the
+5 s a window leaves for its first paint. Linux only, and only for a
+project's own state folder (not a sandboxed `HOME` or test profile).
+
+### Why there is no separate engine
+
+From 2026-10-13 to 2026-10-16 a Go background engine, `forkmesh-core` in
+`desktop/core/`, took over method families from the desktop and talked to it
+over a local socket. It was removed on 2026-10-16. Every family it served
+already had a C++ handler, so the engine duplicated the desktop rather than
+replacing it: the IPC hop, the method fallbacks and two writers for the same
+files were the cost, and the phone still needed the desktop process for
+agents, teammates, wallet, Discord and pings. The parts worth keeping were the
+lifecycle ones (start at boot, run with no window, a tray icon), and they are
+now done by the desktop binary itself. Its service plug-ins and the iOS
+"Background services" mini-apps went with it, and so did its encrypted secrets
+vault, which was never finalized, so the plaintext settings it copied from
+stayed current.
+
+### Settings
+
+Settings → General → STARTUP:
+
+- **Keep ForkMesh running without a window after I close it**
+  (`background/keepRunning`, off by default). Closing the window starts
+  `forkmesh --headless --project <slug> --wait-for-lock` and the tray.
+- **Start ForkMesh without a window when the computer starts.** Turning it on
+  also turns on the first box. The settings page runs `systemctl` and
+  `loginctl` off the UI thread.
+
+### Handing over at close
+
+`MainWindow::closeEvent` calls `handOverAfterWindowClose`. It hands over
+only when the setting is on, the window still holds the single-instance lock,
+and the close was not a stop signal or a restart. Rebuild & restart, update,
+switching project and deleting the account all release the lock before they
+quit, so they never hand over. A window run as a systemd service
+(`forkmesh-source.service`) hands over too: the windowless instance is started
+in its own scope (`systemd-run --user --scope --unit=forkmesh-headless-<project>`),
+so stopping the window's unit does not stop it, and the service variables
+(`INVOCATION_ID`, `NOTIFY_SOCKET`, …) are removed from its environment. When
+the start-at-boot unit is installed, the window starts that unit instead
+(`systemctl --user start --no-block`), so systemd restarts it after a crash.
+`--wait-for-lock` makes the new instance wait up to 60 s for the closing window
+to let go of `state/forkmesh.lock`.
+
+### Opening a window again
+
+A new `forkmesh` finds the lock held and sends `activate`. The windowless
+instance answers `yield` and shuts down the way SIGTERM does (with a 25 s
+`_Exit` backstop), and the new launch waits up to 45 s for the lock behind the
+splash ("Taking over from ForkMesh running without a window"). A windowless
+instance that finds the lock held by a window exits without activating it. It
+writes its pid to `state/forkmesh-background.pid`.
+
+### Start at boot
+
+- `~/.config/systemd/user/forkmesh-headless-<project>.service`:
+  `ExecStart` quoted for systemd, `Environment=QT_QPA_PLATFORM=offscreen`,
+  `Restart=on-failure` (at most 5 starts in 10 minutes), `KillMode=mixed` so
+  the desktop shuts down its own agents before systemd kills what is left,
+  `WantedBy=default.target`, the ForkMesh path variables unset. Opening a
+  window makes it exit 0, so the unit stays stopped until the next close or
+  boot.
+- A user unit only starts at boot when the user lingers. Enabling runs
+  `loginctl --no-ask-password enable-linger <uid>` when lingering is off and
+  leaves `forkmesh-headless.linger` beside the units; disabling the last
+  `forkmesh-headless-*.service` turns lingering off only when that marker is
+  there, so lingering the user set is left alone. If polkit refuses, the unit
+  starts at log-in and Settings says how to turn lingering on.
+- Without a user systemd it writes
+  `~/.config/autostart/forkmesh-headless-<project>.desktop` instead.
+- Either way it writes `~/.config/autostart/forkmesh-tray-<project>.desktop`,
+  because a unit started at boot has no display for a tray.
+- Unit names carry `headless` so a project called `source` cannot collide with
+  `forkmesh-source.service`.
+
+### The tray
+
+`forkmesh --tray [--project <slug>]` is a small process with no window, one per
+project (`state/tray.lock`). It shows the ForkMesh icon while the windowless
+instance holds the lock, with "Open ForkMesh", "Stop ForkMesh running without
+a window" (sends `quit` over the single-instance socket; a window ignores it)
+and "Hide icon". It exits once a window takes over, 30 s after the windowless
+instance is gone, after 90 s if none appeared, or after 2 minutes with no
+system tray. The window keeps its own tray icon while it is open.
+`forkmesh --stop-background [--project <slug>]` does what the menu item does.
+
+### Several desktops at once
+
+Every piece is keyed by project: the lock and socket in the project's state
+folder, the pid file, the tray lock, the unit and autostart names. Two
+projects can each run a window or a windowless instance side by side, and
+start at boot independently.
+
+### Retiring the Go engine
+
+About 5 s after a window starts, `migrateLegacyEngine` (on a pool thread) looks for what
+`forkmesh-core` left behind for this project:
+`forkmesh-core-<project>.service` (disabled with `--now` and removed), its XDG
+entry, its `forkmesh-core.linger` marker (renamed to `forkmesh-headless.linger`),
+a running engine (the pid in `state/core/endpoint.json`, signalled only if
+`/proc/<pid>/comm` is `forkmesh-core`), and `background: true` in
+`config/core/daemon.json`. On macOS it removes
+`com.forkmesh.core.<project>.plist` and on Windows the `forkmesh-core-<project>`
+Run value. If the engine was set to start with the computer, the desktop
+turns on both settings above and installs its own unit. The old binary and
+`state/core/` are left on disk. `install.sh` no longer installs
+`forkmesh-core`.
+

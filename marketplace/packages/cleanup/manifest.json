@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Utilities",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "summary": "See what Claude Code, Codex and agent runs left on disk: transcripts, scratchpads, worktrees, build trees, sandboxes and caches, what each is attached to, and delete what nothing uses through git and guarded deletes.",
   "license": {
     "model": "free-open-source",

@@ -1,0 +1,26 @@
+#pragma once
+
+#include <QWidget>
+
+class QCheckBox;
+class QLabel;
+
+namespace forkmesh::background {
+struct StartStatus;
+}
+
+class BackgroundSettings : public QWidget
+{
+public:
+    explicit BackgroundSettings(QWidget *parent = nullptr);
+
+private:
+    void refresh();
+    void applyStatus(const forkmesh::background::StartStatus &status, const QString &error);
+    void setStartAtBoot(bool on);
+
+    QCheckBox *m_keepRunning = nullptr;
+    QCheckBox *m_startAtBoot = nullptr;
+    QLabel *m_status = nullptr;
+    bool m_busy = false;
+};

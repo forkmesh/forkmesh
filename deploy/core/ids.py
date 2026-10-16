@@ -111,6 +111,8 @@ SHELLS = ("sh", "bash", "dash", "zsh", "ksh", "csh", "tcsh", "fish", "ash",
 LOGIN_SHELL_EXCLUDE = ("nologin", "false", "sync", "halt", "shutdown")
 PRIVILEGED_GROUPS = ("root", "sudo", "wheel", "adm", "shadow", "disk",
                      "admin", "staff", "systemd-journal", "docker", "lxd")
+SYSTEMD_EXECUTORS = ("/usr/lib/systemd/systemd-executor",
+                     "/lib/systemd/systemd-executor")
 SUSPICIOUS_EXE_DIRS = ("/tmp/", "/dev/shm/", "/var/tmp/", "/run/user/",
                        "memfd:")
 MAIL_URL = "https://send.api.mailtrap.io/api/send"
@@ -940,13 +942,23 @@ class ProcessMonitor:
                                 detail, key="shell:" + key))
         elif spec.get("exe") and exe and not any(
                 fnmatch.fnmatchcase(exe.replace(" (deleted)", ""), p)
-                for p in spec["exe"]):
+                for p in spec["exe"]) and not self.unit_starting(
+                    info, exe, owner, units):
             events.append(Event("service_user_exe",
                                 spec.get("exe_severity", "alert"),
                                 "%s runs an unexpected program %s (pid %d)"
                                 % (user, exe[:120], info["pid"]), detail,
                                 key="exe:" + key))
         return events
+
+    @staticmethod
+    def unit_starting(info, exe, owner, units):
+        name = info.get("name") or ""
+        return (exe.replace(" (deleted)", "") in SYSTEMD_EXECUTORS
+                and len(name) > 2 and name[0] == "(" and name[-1] == ")"
+                and not info.get("vanished")
+                and (not units or any(fnmatch.fnmatchcase(owner, p)
+                                      for p in units)))
 
 
 def _hex_port(text):

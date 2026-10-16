@@ -1,13 +1,10 @@
 
 #include "AwsSettingsPanel.h"
-#include "CoreClient.h"
-#include "CoreDaemonSettings.h"
+#include "BackgroundSettings.h"
 #include "HiddenTerms.h"
 #include "OfficeChannelMirror.h"
 #include "ProcessReaper.h"
 #include "CoreNodeLogs.h"
-#include "CoreOps.h"
-#include "CoreStats.h"
 #include "PingSettingsPanel.h"
 #include "AgentResources.h"
 #include "AdBannerModel.h"
@@ -39,8 +36,6 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QColor>
-#include <QDir>
-#include <QFile>
 #include <QColorDialog>
 #include <QCompleter>
 #include <QDesktopServices>
@@ -3680,7 +3675,8 @@ void MainWindow::buildSettingsFooterParts(SettingsSectionParts &parts)
     connect(m_rebuildButton, &QPushButton::clicked, this, [this] {
         if (cancelRestartIfRunning())
             return;
-        runRebuildRestartShortcut(m_rebuildButton);
+        startRestartSpin(m_rebuildButton);
+        quickRebuildRestart();
     });
 
     auto *loginButton = new QPushButton("Log in to a user account…");
@@ -3850,7 +3846,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     startupGroup->addWidget(parts.autoUpdateCheck);
     startupGroup->addWidget(parts.autoRestartCheck);
     startupGroup->addWidget(parts.reopenAfterCloseCheck);
-    startupGroup->addWidget(new CoreDaemonSettings(m_coreClient));
+    startupGroup->addWidget(new BackgroundSettings);
 
     auto *agentBehaviourLabel = new QLabel("AGENT BEHAVIOUR");
     agentBehaviourLabel->setObjectName("sectionLabel");
@@ -6099,44 +6095,6 @@ void MainWindow::quickRebuildRestart()
                      QStringLiteral("RelWithDebInfo"));
 }
 
-void MainWindow::runRebuildRestartShortcut(QPushButton *button)
-{
-    const QString repoRoot = QDir::cleanPath(workingClientDir() + QStringLiteral("/.."));
-    const QString shortcut = repoRoot + QStringLiteral("/.forkmesh/shortcuts/rebuild-and-restart.sh");
-    const QString canonicalRoot = QFileInfo(repoRoot).canonicalFilePath();
-    int repoIndex = -1;
-    for (int i = 0; i < m_repositories.size() && !canonicalRoot.isEmpty() && repoIndex < 0; ++i)
-        if (QFileInfo(m_repositories.at(i).localPath).canonicalFilePath() == canonicalRoot)
-            repoIndex = i;
-    const bool usable = repoIndex >= 0 && coreOpsAttached() && m_coreClient &&
-                        m_coreClient->hasNativeRoute(QStringLiteral("core.update.rebuild")) &&
-                        QFileInfo::exists(repoRoot + QStringLiteral("/tools/rebuild_restart_log.py"));
-    if (usable && !QFileInfo::exists(shortcut)) {
-        QDir().mkpath(QFileInfo(shortcut).absolutePath());
-        QFile file(shortcut);
-        if (file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
-            file.write(
-                "#!/usr/bin/env bash\n"
-                "# name: Rebuild & restart\n"
-                "# description: Rebuild the desktop app and the Go background engine (forkmesh-core) "
-                "from this checkout and relaunch, logging every phase with timings and the modules "
-                "that were compiled.\n"
-                "set -euo pipefail\n\n"
-                "repo=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/../..\" && pwd)\"\n"
-                "exec python3 \"$repo/tools/rebuild_restart_log.py\" \"$@\"\n");
-            file.close();
-            file.setPermissions(file.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
-            logRestart(QStringLiteral("created the Rebuild & restart shortcut at %1").arg(shortcut));
-        }
-    }
-    if (usable && QFileInfo::exists(shortcut) && runShortcut(shortcut, repoIndex)) {
-        logRestart(QStringLiteral("rebuild & restart handed to the shortcut %1").arg(shortcut));
-        return;
-    }
-    startRestartSpin(button);
-    quickRebuildRestart();
-}
-
 void MainWindow::maybeStartQueuedRebuild()
 {
     if (!m_rebuildRestartQueued) {
@@ -6177,8 +6135,6 @@ void MainWindow::rebuildAndRelaunch()
         m_rebuildButton->setEnabled(true);
         return;
     }
-    if (startCoreCleanRebuild(clientDir))
-        return;
     setRestartPhase(QStringLiteral("clearing the build cache"));
     setUpdateStatus("Clearing build cache...");
     const QString refused =
@@ -6195,8 +6151,6 @@ void MainWindow::rebuildAndRelaunch()
 
 void MainWindow::maybeAutoUpdate()
 {
-    if (coreOpsAttached() && forkmesh::coreops::can(this, QStringLiteral("autoUpdate")))
-        return;
     if (!QSettings().value(kAutoUpdateSetting, false).toBool())
         return;
     if (!QSettings().value(kAutoUpdateRestartSetting, true).toBool())
@@ -9493,7 +9447,6 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
     // Counted once, here, whatever happens to it later: the digest is what the
     // 7- and 30-day views draw from once this line has aged out of the buffer.
     noteNetworkLogDigestLine(now.toMSecsSinceEpoch(), badge);
-    forkmesh::corestats::noteLogLine(m_coreClient, line, badge);
 
     queueNetworkLogAppend(line);
     ++m_networkLogDiskLines;
