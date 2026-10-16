@@ -152,8 +152,14 @@ struct RSSReaderTimelineScreen: View {
             RSSReaderArticleScreen(model: model, scope: scope, list: list, articleId: article.id)
         } label: {
             RSSTimelineRow(
-                article: article, feed: model.feed(article.feedId), settings: model.settings, now: model.store.now)
+                article: article,
+                feed: model.feed(article.feedId),
+                settings: model.settings,
+                now: model.store.now,
+                showFeedName: !grouped && !isFeedScope)
         }
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {
                 model.toggleRead(article.id)
@@ -188,6 +194,11 @@ struct RSSReaderTimelineScreen: View {
             }
         }
     }
+
+    private var isFeedScope: Bool {
+        if case .feed = scope { return true }
+        return false
+    }
 }
 
 struct RSSTimelineGroup: Identifiable {
@@ -202,54 +213,62 @@ struct RSSTimelineRow: View {
     let feed: RSSFeed?
     let settings: RSSReaderSettings
     let now: Int64
+    var showFeedName = true
 
     private var feedName: String { feed?.displayTitle ?? "Feed" }
 
     private var byline: String {
-        article.author.isEmpty || article.author == feedName ? feedName : "\(feedName) \u{00B7} \(article.author)"
+        if article.author.isEmpty || article.author == feedName { return feedName }
+        return showFeedName ? "\(feedName) \u{00B7} \(article.author)" : article.author
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 6) {
-                Circle()
-                    .fill(article.read ? Color.clear : Color.accentColor)
-                    .frame(width: 9, height: 9)
-                if article.starred {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.yellow)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(spacing: 6) {
+                    Circle()
+                        .fill(article.read ? Color.clear : Color.accentColor)
+                        .frame(width: 9, height: 9)
+                    if article.starred {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                .frame(width: 12)
+                .padding(.top, 6)
+                if settings.showFeedIcons {
+                    RSSFeedIcon(feed: feed, title: feedName, size: 28, remote: settings.loadRemoteImages)
+                        .padding(.top, 2)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(article.title.isEmpty ? "Untitled" : article.title)
+                        .font(.headline)
+                        .foregroundStyle(article.read ? Color.secondary : Color.primary)
+                        .lineLimit(3)
+                    if settings.timelineLines > 0 && !article.summary.isEmpty {
+                        Text(article.summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(settings.timelineLines)
+                    }
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(byline)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(RSSReaderText.timelineDate(article.published, now: now))
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 12)
-            .padding(.top, 6)
-            if settings.showFeedIcons {
-                RSSFeedIcon(feed: feed, title: feedName, size: 28, remote: settings.loadRemoteImages)
-                    .padding(.top, 2)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(article.title.isEmpty ? "Untitled" : article.title)
-                    .font(.headline)
-                    .foregroundStyle(article.read ? Color.secondary : Color.primary)
-                    .lineLimit(3)
-                if settings.timelineLines > 0 && !article.summary.isEmpty {
-                    Text(article.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(settings.timelineLines)
-                }
-                HStack(alignment: .firstTextBaseline) {
-                    Text(byline)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text(RSSReaderText.timelineDate(article.published, now: now))
-                        .monospacedDigit()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+            .padding(.leading, 18)
+            .padding(.trailing, 18)
+            .padding(.vertical, 14)
+            Divider()
+                .padding(.leading, settings.showFeedIcons ? 76 : 40)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityValue(Text([article.read ? "" : "Unread", article.starred ? "Starred" : ""].filter { !$0.isEmpty }.joined(separator: ", ")))
     }

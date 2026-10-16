@@ -233,7 +233,7 @@ public struct RSSReaderSettings: Codable, Equatable, Sendable {
     public var refreshClearsRead = false
     public var confirmMarkAllRead = true
     public var timelineLines = 2
-    public var showFeedIcons = true
+    public var showFeedIcons = false
     public var feedsUnreadOnly = false
     public var articleTheme: RSSArticleTheme = .standard
     public var articleFont: RSSArticleFont = .sans
