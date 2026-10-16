@@ -3751,6 +3751,82 @@
     }
   }
 
+  function webIssueTaskError(error) {
+    return ({
+      org_member_required: "Only members of this site's organization can create tasks.",
+      invalid_session: "Your sign-in has expired. Sign in again to move this issue.",
+      office_organization_unavailable: "Organization tasks are unavailable right now. Try again later.",
+      payload_too_large: "This issue is too large to move into a task.",
+    })[String(error?.code || "")] || "The task could not be created, so the issue was kept.";
+  }
+
+  function webIssueTaskBody(repo, number, values, body) {
+    const owner = repoPublicOwner(repo) || String(repo.owner || "");
+    const name = String(repo.name || "");
+    const segment = /^[A-Za-z0-9._-]{1,100}$/;
+    const repository = segment.test(owner) && segment.test(name) ? `${owner}/${name}` : "";
+    const source = `Moved from issue ${repository || name}#${number} by ${state.session?.nodeName || "a repository manager"}.`;
+    const text = String(body || "").trim();
+    const room = 4000 - source.length - 2;
+    return {
+      title: String(values.title || `Issue #${number}`).trim().slice(0, 160),
+      details: text ? `${text.length > room ? `${text.slice(0, room - 1)}…` : text}\n\n${source}` : source,
+      repository,
+      department: "general",
+      destination: "department",
+      assigneeKind: "unassigned",
+    };
+  }
+
+  async function moveWebIssueToTask(button = null) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "issues" || !number) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const values = detail.parsed?.values || {};
+    const title = String(values.title || `issue #${number}`);
+    if (!await confirmAccountAction({
+      title: `Move issue #${number} “${title}” to a task?`,
+      body: "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash so nothing is left twice.",
+      confirmLabel: "Move to task",
+    })) return;
+    if (button) button.disabled = true;
+    let task = null;
+    try {
+      const created = await orgApiRequest(
+        "POST", "/api/tasks", webIssueTaskBody(repo, number, values, detail.parsed?.body));
+      task = created.task;
+    } catch (error) {
+      if (button) button.disabled = false;
+      showErrorNotice(webIssueTaskError(error));
+      return;
+    }
+    try {
+      const result = await submitWebIssueEvent(repo, number, "delete", { target: "self" });
+      optimisticWebIssueEvent(result.event);
+    } catch (error) {
+      const undone = await orgApiRequest(
+        "DELETE", `/api/tasks/${encodeURIComponent(task.id)}`,
+        { reason: `Issue #${number} could not be deleted.` },
+      ).then(() => true, () => false);
+      if (button) button.disabled = false;
+      showErrorNotice(`${webIssueActionError(error, "delete-issue")} ${undone
+        ? "The new task was moved to trash, so the issue is unchanged."
+        : "The new task could not be removed; delete it from Tasks."}`);
+      return;
+    }
+    state.issuesView.items = (state.issuesView.items || []).filter(
+      (issue) => Number(issue.number) !== number,
+    );
+    state.repoRecordDetail = null;
+    location.assign(`/dashboard/tasks?task=${encodeURIComponent(task.id)}`);
+  }
+
   async function handleWebIssueTitleSubmit(form) {
     const detail = state.repoRecordDetail;
     const title = String(
@@ -21487,7 +21563,8 @@
             ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${parsed.issueSubscribed ? "You're receiving notifications because you're subscribed to this thread." : "You're not receiving notifications from this thread."}</p>`)}
             ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}`, participantsValue)}
             <div data-repo-issue-sidebar-actions class="grid gap-0.5 py-3">
-              ${canManage ? `<button type="button" data-repo-issue-delete class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-destructive hover:underline"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete issue</button>` : ""}
+              ${canManage ? `<button type="button" data-repo-issue-move-to-task class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-foreground hover:underline"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Move to task</button>` : ""}
+              ${canManage ? `<button type="button" data-repo-issue-deleteclass="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-destructive hover:underline"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete issue</button>` : ""}
             </div>
           </aside>
         </div>
@@ -37680,6 +37757,11 @@
         return;
       }
 
+      if (event.target.closest("[data-repo-issue-move-to-task]")) {
+        void moveWebIssueToTask(event.target.closest("[data-repo-issue-move-to-task]"));
+        return;
+      }
+
       if (event.target.closest("[data-repo-issue-delete]")) {
         void handleWebIssueAction("delete-issue");
         return;
@@ -42751,7 +42833,7 @@
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=0fe24343526e",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=f6bb3d331b24",
+    "tasks": "/dashboard-page-tasks.js?v=64aaa15b9c85",
     "workflows": "/dashboard-page-workflows.js?v=31a4ee1ae76e",
   };
   const dashboardChunkScope = {

@@ -191,7 +191,7 @@ final class AgentLinesTests: XCTestCase {
         session.liveText = "Running the tests\n"
         XCTAssertEqual(AgentLines.dialog(session), "Running the tests")
         session.status = "completed"
-        XCTAssertEqual(AgentLines.dialog(session), "")
+        XCTAssertEqual(AgentLines.dialog(session), "Opened the pull request.")
     }
 
     @MainActor
@@ -220,6 +220,43 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(feed.dialog(entry), "Running the tests.")
         feed.stop()
         XCTAssertEqual(feed.dialog(entry), "")
+    }
+
+    @MainActor
+    func testEagleFeedKeepsTheLastLineOfAStoppedRun() async {
+        var deltas: [String: @MainActor (AgentTranscriptDelta) -> Void] = [:]
+        let feeds = ControlWatchFeeds { row, _, onDelta in
+            deltas[row.id] = onDelta
+            return nil
+        }
+        let live = UnifiedAgentRow(
+            id: "desktop:7", badge: .desktopLan, title: "t", repoOwner: "forkmesh", repoName: "forkmesh", node: "studio",
+            status: "running", statusLabel: "Running", isActive: true, localId: 7)
+        var done = live
+        done.isActive = false
+        done.status = "done"
+        let idle = UnifiedAgentRow(
+            id: "desktop:9", badge: .desktopLan, title: "o", repoOwner: "forkmesh", repoName: "forkmesh", node: "studio",
+            status: "done", statusLabel: "Done", isActive: false, localId: 9)
+        var fetched: [String] = []
+        let feed = AgentEagleFeed()
+        feed.follow([live, idle], feeds: { feeds }) { row in
+            fetched.append(row.id)
+            return "> fix it\n\nShipped the fix.\n\n[Bash swift test]\n"
+        }
+        deltas["desktop:7"]?(AgentTranscriptDelta(text: "Running the tests.\n\n[Bash swift test]\n", next: 38, reset: true, active: true, status: "running"))
+        feed.follow([done, idle], feeds: { feeds })
+        XCTAssertEqual(feed.dialog(AgentLines.line(done)), "Running the tests.")
+        feed.recall(AgentLines.line(done))
+        let entry = AgentLines.line(.desktop(repo, AgentSession(id: 9, status: "done")))
+        XCTAssertEqual(feed.dialog(entry), "")
+        feed.recall(entry)
+        feed.recall(AgentLines.line(idle))
+        for _ in 0..<20 where feed.dialog(entry).isEmpty { await Task.yield() }
+        XCTAssertEqual(feed.dialog(entry), "Shipped the fix.")
+        XCTAssertEqual(feed.dialog(AgentLines.line(idle)), "Shipped the fix.")
+        XCTAssertEqual(fetched, ["desktop:9"])
+        feed.stop()
     }
 
     @MainActor

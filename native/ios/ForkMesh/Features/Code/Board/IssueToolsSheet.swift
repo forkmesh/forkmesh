@@ -14,6 +14,9 @@ struct IssueToolsMenu: View {
     @State private var asking = false
     @State private var linking = false
     @State private var confirmDelete = false
+    @State private var confirmMove = false
+    @State private var canManage = false
+    @State private var moving = false
     @State private var message: String?
     @State private var linkNumber = ""
 
@@ -39,6 +42,11 @@ struct IssueToolsMenu: View {
             } label: {
                 Label("Copy as agent prompt", systemImage: "text.cursor")
             }
+            if canManage {
+                Divider()
+                Button { confirmMove = true } label: { Label("Move to task", systemImage: "checklist") }
+                    .disabled(moving)
+            }
             if let author = CollabEnv.identity?.publicKeyB64url, IssueFields.canDeleteOwn(issue, author: author) {
                 Divider()
                 Button(role: .destructive) { confirmDelete = true } label: { Label("Delete my issue", systemImage: "trash") }
@@ -47,6 +55,11 @@ struct IssueToolsMenu: View {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Issue actions")
+        .task(id: repo) {
+            canManage = await ReviewEnv.api.canManageIssues(
+                repo.owner, repo.name, account: ReviewEnv.accountName,
+                isAdmin: CollabEnv.auth?.session?.isAdmin ?? false)
+        }
         .sheet(isPresented: $editing) {
             IssueEditSheet(repo: repo, issue: issue) { notice in
                 message = notice.message
@@ -66,6 +79,11 @@ struct IssueToolsMenu: View {
         } message: {
             Text("A signed delete hides the issue everywhere once the owner's node applies it. Only you, its author, can do this.")
         }
+        .confirmationDialog("Move issue #\(issue.number) to a task?", isPresented: $confirmMove, titleVisibility: .visible) {
+            Button("Move to task", role: .destructive) { Task { await moveToTask() } }
+        } message: {
+            Text("An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash.")
+        }
         .alert("Issue", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("Copy") { UIPasteboard.general.string = message ?? "" }
             Button("Send to agent") { FmMessageHandoff.send(message ?? "") }
@@ -83,6 +101,26 @@ struct IssueToolsMenu: View {
             try await writer.sendIssue(issue.number, .comment(IssueLinks.linkComment(pull: pull)))
             try await writer.sendPull(pull, ReviewComposer.comment(IssueLinks.closingLine(issue: issue.number)))
             message = "Linked #\(issue.number) and pull request #\(pull)."
+        } catch {
+            message = CollabCopy.runFailure(error)
+        }
+    }
+
+    private func moveToTask() async {
+        guard await IssueToolsAuth.confirm("Move issue #\(issue.number) to a task") else { return }
+        moving = true
+        defer { moving = false }
+        do {
+            let task = try await IssueTaskMove.move(
+                issue, owner: repo.owner, name: repo.name, mover: ReviewEnv.accountName,
+                writer: ReviewEnv.writer(owner: repo.owner, name: repo.name)
+            ) { method, suffix, body in
+                try await ReviewEnv.api.tasksApi(method, suffix, body)
+            }
+            message = "Issue #\(issue.number) moved to the task “\(task.str("title"))”. It leaves the issue list once the owner's node applies the delete."
+            onChanged()
+        } catch let error as IssueTaskMoveError {
+            message = error.message
         } catch {
             message = CollabCopy.runFailure(error)
         }

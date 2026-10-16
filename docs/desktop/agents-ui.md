@@ -248,9 +248,18 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 - **Claude account routing.** Each account is tied to one Claude login
   (`accountUuid`/`organizationUuid`, saved under
   `agents/accountIdentity/claude/<account id>`). Logins run in a fresh folder
-  under `<data>/agent-accounts/claude-login/` and are filed by identity;
-  `reconcileClaudeAccountLogins` moves logins made outside ForkMesh. Files
-  move by copy then remove, never by deleting folders.
+  under `<data>/agent-accounts/claude-login/`. **Log in** on an account always
+  files the login on that account, even as a different Claude identity: it
+  replaces that account's login and rebinds it, and never adds an account.
+  **Add account** reuses the account that already holds the identity and only
+  adds one for an identity no account has. A login made outside ForkMesh in an
+  account's folder (`/login` in its terminal) stays there:
+  `reconcileClaudeAccountLogins` rebinds the account to it. Before 2026-10-16
+  a login as another identity was moved into a new account labelled with the
+  email. Files move by copy then remove, never by deleting folders.
+- Accounts are shown by the Claude display name (`oauthAccount.displayName`
+  in the account's `.claude.json`), never the email; a new account with no
+  typed label is named after it.
 
 ### Usage-limit auto-continue
 

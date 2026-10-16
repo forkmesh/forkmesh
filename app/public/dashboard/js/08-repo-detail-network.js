@@ -3164,6 +3164,11 @@
         return;
       }
 
+      if (event.target.closest("[data-repo-issue-move-to-task]")) {
+        void moveWebIssueToTask(event.target.closest("[data-repo-issue-move-to-task]"));
+        return;
+      }
+
       if (event.target.closest("[data-repo-issue-delete]")) {
         void handleWebIssueAction("delete-issue");
         return;

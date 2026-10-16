@@ -25,7 +25,6 @@ ClaudeLoginIdentity readClaudeLoginIdentity(const QString &stateFile);
 struct AccountBinding {
     QString id;
     QString boundKey;
-    bool signedIn = false;
 };
 
 enum class LoginRouteKind { Existing, Adopt, New };
