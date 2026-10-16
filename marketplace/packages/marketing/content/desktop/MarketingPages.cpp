@@ -618,7 +618,7 @@ QString MarketingFeature::channelLabel(const QString &id) const
     return channelName(id, m_settings, m_channelCatalog);
 }
 
-void MarketingFeature::buildPages(QVBoxLayout *outer)
+void MarketingFeature::buildPages(QVBoxLayout *outer, QVBoxLayout *content)
 {
     m_pages << m_scroll;
     m_pageNav = clearWidget();
@@ -647,11 +647,11 @@ void MarketingFeature::buildPages(QVBoxLayout *outer)
             result->setToolTip(tip);
         return result;
     };
-    const auto addPage = [this, outer](QVBoxLayout *&layout, const char *name) {
+    const auto addPage = [this, content](QVBoxLayout *&layout, const char *name) {
         QScrollArea *scroll = nullptr;
         page(scroll, layout, name);
         scroll->hide();
-        outer->addWidget(scroll, 1);
+        content->addWidget(scroll, 1);
         m_pages << scroll;
     };
 

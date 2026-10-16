@@ -274,14 +274,92 @@ on the outreach team (`POST /api/crm/<org>/outreach/team`, audited).
 recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
 
+## Automated outreach email
+
+**Send AI email** (the Reach out and Follow up cards and the contact detail
+card, on the web and the desktop) writes and sends one email with no editing
+step, the way the spider suggests outreach but sent for you. A confirmation
+dialog names the recipient and the link first.
+`POST /api/crm/<org>/outreach/auto {contactId, mode?, list?, reason?}`:
+
+- **Who may send.** Owners, admins and the outreach team, from the outreach
+  sender (`_outreach_sender`). Each send counts toward the per-sender
+  `OUTREACH_DAILY_LIMIT` and lands in `crm_outreach_log` (template `auto`).
+- **Refused** when the contact has no email (`contact_has_no_email`), sits at
+  an ended stage (`contact_closed`), or got a CRM email in the last three days
+  (`recently_emailed`, `AUTO_EMAIL_GAP_MS`), so a double click or two
+  teammates never send twice.
+- **The link.** Every email carries one trackable link: a contact in an
+  investor pipeline gets their own deck link (the active one, else a new one,
+  as `POST /decks` makes it); everyone else gets the sender's referral link
+  `https://forkmesh.com/r/<account>`, which counts visits and signups.
+- **The model.** `runtime.ai_json` (the host model, `docs/app/package-ai-failures.md`)
+  gets the organization's brief (`messageBrief`, else a short ForkMesh brief
+  for the `forkmesh` organization), the contact's fields and notes, the angle
+  for the list or pipeline (journalists, investors, grants, partners, users),
+  the last six messages with them, the link, and the lessons below. It answers
+  `{subject, body}`. Drafts with `[placeholders]`, under 60 or over 2400
+  characters, or with any link not in the prompt are refused and asked for
+  again once (`AUTO_EMAIL_ATTEMPTS`); a missing tracked link is appended.
+- **Learning from opens and clicks.** The prompt's "What our past emails
+  taught us" reads the organization's last 120 sent Mailtrap emails (manual,
+  automated and outreach) with their open and click results: overall rates,
+  rates for first contacts, follow-ups, deck links and referral links (three
+  or more each), up to three emails that got a click, two opened without a
+  click, and three nobody opened after two days, with their subjects and
+  openings. The model is told to follow what got clicks, avoid what the
+  unopened ones share, and change one small thing each time so the team keeps
+  learning. The response returns the same totals as `learning`.
+- **Without a host model** the worker answers `503 ai_unavailable` (or `422
+  draft_unusable`) with the full `prompt`. The desktop then asks the default
+  agent (Claude Code or Codex) for a `Subject:` line and body and posts them
+  back as `{subject, text, model}`; the same checks apply. The web says the
+  host has no model. `preview: true` returns the draft without sending.
+- **Sent** through `runtime.send_mailtrap` with category `CRM automated
+  outreach` and `forkmesh_crm_send_id`, so Mailtrap's own delivery, open and
+  click events also reach the row. The contact's last-contacted date moves,
+  `contact.emailed` is recorded, and the usual tracked-email celebration and
+  "Automated outreach email sent" team ping go out.
+
+### Open and click tracking
+
+The worker builds the HTML itself (`_tracked_email_html`): each link in the
+body points at `<origin>/api/crm/-/t/c/<send id>.<signature>?u=<url>&s=<url
+signature>`, and a 20 px ForkMesh logo at the end loads
+`<origin>/api/crm/-/t/o/<send id>.<signature>.png` and links to forkmesh.com
+through the same click redirect. Signatures are the host's keyed blind index
+of `crm-track:<send id>` and `crm-click:<send id>:<url>`, so a link cannot be
+pointed anywhere else (`404 link_not_found`) and an open cannot be forged
+for another send. `<origin>` is the `PACKAGE_CRM_TRACK_ORIGIN` package
+secret, else the caller's https origin, else `https://app.forkmesh.com`.
+
+- The routes need no session. An open answers `302` to the logo
+  (`TRACK_LOGO`), a click `302` to the target, with `no-store`.
+- Each hit adds to `crm_email_tracking` (`opens`, `clicks`, first
+  `opened_at`/`clicked_at`, `last_at`) and moves the send's status to `open`
+  or `click` (never backwards, `_advance_send_status`). Hits in the first 30 s
+  after sending (`TRACK_QUIET_MS`) are ignored: mail gateways scan links and
+  images as the message arrives.
+- The first open and the first click ping the sender: "📬 <name> opened your
+  email" and "🔗 <name> clicked the link in your email".
+- Email rows (`GET /emails`, the contact's emails) carry `opens`, `clicks`,
+  `openedAt`, `clickedAt`, `automated` and `linkKind`; the web detail card
+  shows "Sent by AI · 2 opens · 1 click".
+- Opens are a hint, not proof: Apple Mail Privacy Protection loads images for
+  the reader, and clients that block images never report one. Clicks are the
+  stronger signal, and the lessons weigh them first.
+
+Tests: `tests/test_auto_email.py`.
+
 ## Investor deck
 
 Deck links (`POST /decks`) are minted only for contacts in an investor pipeline
 (icon `investors` or flow id `investors`/`investment`); otherwise
 `409 deck_needs_investor_pipeline` (audited). `POST /emails/send` and
 `/outreach/send` refuse a body carrying a `/pitch-deck/` link or the
-`investor` template for a contact outside an investor pipeline. Nothing sends
-the deck automatically. Opens are recorded per visit and page
+`investor` template for a contact outside an investor pipeline. Only **Send AI
+email** sends the deck without a compose step, and only to a contact in an
+investor pipeline. Opens are recorded per visit and page
 (`crm_deck_sessions`, `crm_deck_page_views`), and the first beacon of a visit
 pings whoever minted the link (not the HTML fetch, so link-scanning mail
 gateways do not trigger it). On the desktop, **Write email with Claude Code**

@@ -512,6 +512,11 @@ private:
     void draftInvestorEmail(const QJsonObject &contact);
     void askAgentForEmail(const QString &contactId, const QString &deckUrl);
     void syncDraftButton();
+    void sendAutoEmail(const QString &contactId, const QString &mode = QString(),
+                       const QString &reason = QString(),
+                       const QJsonObject &draft = QJsonObject());
+    void autoEmailWithAgent(const QString &contactId, const QString &mode,
+                            const QString &reason, const QJsonObject &payload);
     QString outreachPrompt(const QJsonObject &contact) const;
     void copyOutreachPrompt(const QJsonObject &contact);
     struct AiDraft
@@ -598,6 +603,7 @@ private:
         m_askAgent;
     QJsonArray m_decks;
     QSet<QString> m_drafting;
+    QSet<QString> m_autoSending;
     QPointer<QPushButton> m_draftButton;
     bool m_usersReading = false;
     QComboBox *m_organization = nullptr;

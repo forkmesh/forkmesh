@@ -157,6 +157,11 @@ toolbar badge shows unread pages. These need the `sidePanel` and `tabs`
 permissions; nothing is injected into channel sites for them, and the tab's
 address never leaves the browser.
 
+`refresh-view.js` flattens the card's parts and drops the empty ones before
+`replaceChildren`: unlike its `h` helper, the DOM call turns an array into the
+text `[object HTMLParagraphElement],…` and a `null` into `null`, which is how
+the popup's page lines (the Reddit desk's notes) showed before 2.22.1.
+
 ### X profile stats
 
 On the tracked X profile (and its Media tab, Mentions and an `@handle`

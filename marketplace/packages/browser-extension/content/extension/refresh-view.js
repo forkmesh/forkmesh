@@ -52,7 +52,7 @@
     const note = typeof status?.text === "string" && status.text ? status.text : lines.length || actions.length ? "" : plan?.hint || "";
     const heading = title || plan?.title || "";
     const count = pages.length > 1 ? `${plan.read}/${plan.total} read` : kind;
-    root.replaceChildren(
+    root.replaceChildren(...[
       h("h2", { class: "refresh-title" }, h("b", { textContent: heading || "Next to update" }), count ? h("span", { textContent: count }) : null),
       suggest ? h("p", { class: "refresh-next", textContent: suggest.current ? `${suggest.label} is next to update: ${updated}.`
         : heading ? `Next to update: ${suggest.label}, ${updated}.` : `${suggest.label}, ${updated}.` }) : null,
@@ -65,7 +65,7 @@
           title: page.current ? "The page in this tab" : page.url,
           textContent: `${page.done ? "✓" : page.current ? "•" : "○"} ${page.label}`,
           on: { click: () => (page.current ? here && run() : go(page.url)) },
-        })))) : null);
+        })))) : null].flat().filter(Boolean));
   }
 
   globalThis.ForkMeshRefreshView = { render, ago };

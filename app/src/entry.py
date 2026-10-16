@@ -11951,9 +11951,10 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
 
     async def send_mailtrap(self, supplied_token, payload):
         token = str(supplied_token or "").strip()
+        payload = dict(payload if isinstance(payload, dict) else {})
+        tracked = bool(payload.pop("tracked", False))
         if not token and smtp_mail.enabled(self.env):
-            return await self._send_package_smtp(
-                dict(payload if isinstance(payload, dict) else {}))
+            return await self._send_package_smtp(payload, footer=not tracked)
         if not token:
             token = str(getattr(self.env, "MAILTRAP_API_TOKEN", "") or "").strip()
             if token and not await _mail_budget_spend(self.env, "package"):
@@ -12016,7 +12017,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
                 outbound, "failed", 0, type(error).__name__, "", via=via)
             return {"accepted": False, "error": "mailtrap_unavailable"}
 
-    async def _send_package_smtp(self, outbound):
+    async def _send_package_smtp(self, outbound, footer=True):
         via = {"via": "postfix", "node": smtp_mail.node(),
                "sender": "no-reply@forkmesh.com"}
         sender = outbound.get("from") if isinstance(
@@ -12032,8 +12033,9 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         html = outbound.get("html") or mail_activity.text_html(
             outbound.get("text"))
         try:
-            html, _unsubscribe = await _mail_tracked_html(
-                self.env, send_id, html, footer=True)
+            if footer:
+                html, _unsubscribe = await _mail_tracked_html(
+                    self.env, send_id, html, footer=True)
         except Exception as error:
             print("package mail tracking skipped: %s" % type(error).__name__)
             html = outbound.get("html")

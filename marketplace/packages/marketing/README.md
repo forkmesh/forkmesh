@@ -503,7 +503,11 @@ money.
 - **Browser activity** (`POST/GET /activity`): lines the extension writes
   (`read`, `sent`, `failed`), private to the writing account, newest 40 kept.
   Every write rings the writer's devices with the payload-free account event
-  `package:marketing`, so open dashboards reload.
+  `package:marketing`, so open dashboards reload. The desktop shows them in a
+  thin **From your browser** column on the right of the Channels page and of
+  every channel page, newest first: every line the overview returns (the newest
+  12), stamped with the time today or the date before today, so reads stream in
+  beside the channels they update instead of above the page.
 - **Special agents on channel pages**: a desktop special agent whose definition
   lists the channel in `marketingChannels` appears on that channel's page with
   Open, Run now and a message line.

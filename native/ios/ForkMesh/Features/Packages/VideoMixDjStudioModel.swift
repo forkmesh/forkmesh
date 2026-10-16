@@ -117,6 +117,8 @@ final class DjStudioModel {
     var history: [DjHistoryItem] = []
     var flashedPad: DjDrumPad?
     var leavingAfterSheet = false
+    var confirmingReset = false
+    var resettingAfterSheet = false
 
     @ObservationIgnored var onLeave: (() -> Void)?
     @ObservationIgnored let host: DjPlayerHost
@@ -159,7 +161,6 @@ final class DjStudioModel {
             deck.level = stored.level
             deck.rate = stored.rate
             deck.bpm = stored.bpm
-            deck.loop = stored.loop
             if !stored.videoId.isEmpty {
                 prepare(deck, id: stored.videoId, title: stored.title, author: stored.author, start: stored.cue, keepSettings: true)
             }
@@ -224,6 +225,64 @@ final class DjStudioModel {
         automixing = false
         for deck in [a, b] where deck.playing { pause(deck) }
         if !active { releaseAudio() }
+    }
+
+    func resetAll() {
+        automixTask?.cancel()
+        automixing = false
+        searchTask?.cancel()
+        for task in sectionTasks.values { task.cancel() }
+        sectionTasks = [:]
+        sampler.scratch(level: 0, speed: 0)
+        sampler.stop()
+        host.reset()
+        let fresh = DjSaved()
+        let now = CACurrentMediaTime()
+        for deck in [a, b] {
+            deck.scratchTask?.cancel()
+            deck.scratchTask = nil
+            deck.rateTask?.cancel()
+            deck.rateTask = nil
+            deck.scratching = false
+            deck.resumeAfterScratch = false
+            deck.scratchSpeed = 0
+            deck.videoId = ""
+            deck.title = ""
+            deck.author = ""
+            deck.artwork = nil
+            deck.waveform = []
+            deck.time = 0
+            deck.duration = 0
+            deck.playing = false
+            deck.advancing = false
+            deck.cue = fresh[deck.side].cue
+            deck.level = fresh[deck.side].level
+            deck.rate = fresh[deck.side].rate
+            deck.bend = 0
+            deck.bpm = fresh[deck.side].bpm
+            deck.loop = false
+            deck.sampling = false
+            deck.showsRemaining = false
+            deck.tapTempo = DjTapTempo()
+            deck.tickDate = now
+            deck.settleUntil = 0
+        }
+        crossfader = fresh.crossfader
+        samplerLevel = fresh.samplerLevel
+        sampler.level = fresh.samplerLevel
+        sections = fresh.sections
+        sectionCursor = 0
+        zoomed = fresh.zoomed
+        recording = false
+        flashedPad = nil
+        searchText = ""
+        searchResults = []
+        searching = false
+        searchProblem = ""
+        sheet = nil
+        save(now: true)
+        if !active { releaseAudio() }
+        show("Studio reset. Load a song on each deck to start fresh.")
     }
 
     private func claimAudio() {
