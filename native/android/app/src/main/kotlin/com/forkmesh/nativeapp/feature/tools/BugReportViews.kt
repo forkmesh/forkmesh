@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.tools
 
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,6 +49,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.api.BugReportAttachment
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFilledButton
 import com.forkmesh.nativeapp.feature.account.AuthService
@@ -77,6 +82,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
 @Composable
@@ -163,18 +169,47 @@ internal fun ReportBugSheet(
     packageName: String? = null,
     onClosed: () -> Unit,
 ) {
+    val context = LocalContext.current
     var draft by remember { mutableStateOf(ReportBugDraft(message = initialMessage)) }
     var sent by remember { mutableStateOf(false) }
+    var attachments by remember { mutableStateOf(emptyList<BugReportAttachment>()) }
     val scope = rememberCoroutineScope()
     val signedIn = Services.get<AuthService>()?.isAuthenticated ?: false
     val c = Fm.colors
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        scope.launch {
+            val picked = withContext(Dispatchers.IO) {
+                uris.take(5 - attachments.size).mapNotNull { uri ->
+                    runCatching {
+                        val resolver = context.contentResolver
+                        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        } ?: uri.lastPathSegment ?: "attachment"
+                        val data = resolver.openInputStream(uri)?.use { input ->
+                            val out = ByteArrayOutputStream()
+                            val chunk = ByteArray(64 * 1024)
+                            while (out.size() <= 4 * 1024 * 1024) {
+                                val count = input.read(chunk)
+                                if (count < 0) break
+                                out.write(chunk, 0, count)
+                            }
+                            out.toByteArray()
+                        } ?: return@runCatching null
+                        if (data.isEmpty() || data.size > 4 * 1024 * 1024) return@runCatching null
+                        BugReportAttachment(name, resolver.getType(uri) ?: "", data)
+                    }.getOrNull()
+                }
+            }
+            attachments = attachments + picked
+        }
+    }
     fun submit() {
         val step = draft.submit(apiAvailable = Services.get<ApiService>() != null)
         draft = step.draft
         if (!step.send) return
         val api = Services.require<ApiService>()
         scope.launch {
-            val result = withContext(Dispatchers.IO) { sendBugReport(api, draft, screen, DiagnosticsRuntime.build, packageId) }
+            val result = withContext(Dispatchers.IO) { sendBugReport(api, draft, screen, DiagnosticsRuntime.build, packageId, attachments) }
             if (!result.ok) draft = draft.refused(result.message) else sent = true
         }
     }
@@ -234,6 +269,15 @@ internal fun ReportBugSheet(
                             hint = ReportBugCopy.contactHint(signedIn),
                             enabled = !draft.busy,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        )
+                    }
+                    Spacer(Modifier.height(FmSpace.x3))
+                    FmToneButton("Add files", onPressed = if (draft.busy || attachments.size >= 5) null else ({ files.launch(arrayOf("*/*")) }), tone = FmTone.Neutral)
+                    if (attachments.isNotEmpty()) {
+                        Spacer(Modifier.height(FmSpace.x2))
+                        Text(
+                            attachments.joinToString(" · ") { it.name },
+                            style = Fm.text.bodySmall.copy(color = c.textTertiary),
                         )
                     }
                     Spacer(Modifier.height(FmSpace.x3))

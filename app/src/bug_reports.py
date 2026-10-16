@@ -1,4 +1,4 @@
-"""In-app bug reports: one bounded write per report, read from the console.
+"""In-app bug reports: bounded private writes, read from the admin console.
 
 The mobile client carries a small always-available report control, so this is
 where a report from a phone lands.  Loaded on demand (entry.py holds a
@@ -32,15 +32,11 @@ Reports are read and triaged only in the platform-admin console's Bug
 reports section (admin_support.py), behind the secret console path, a live
 is_admin check and the console CSRF token.
 
-Every stored report is also filed as an issue in the ForkMesh repository
-(issue #696), through the same ``issue_inbox`` queue the Discord watcher and
-the web composer write to, so it reaches the repository whenever the owner's
-node next syncs.  The issue is public, so it carries the reporter's
-description and the build context but never ``contact``: that stays in the
-encrypted row for the console.  Filing is best effort -- the stored report is
-the durable acceptance, and an inbox hiccup must never turn it into an error.
+Attachments are chunked into encrypted rows in ``bug_report_attachments``.
+They never enter the repository issue inbox or a public API response.
 """
 
+import base64
 import re
 
 
@@ -55,7 +51,7 @@ def _bind_runtime(runtime):
 # One report is a bounded amount of prose plus a short contact string. The body
 # limit is generous enough for a pasted stack trace and small enough that the
 # encrypted row stays far inside D1's row ceiling.
-MAX_BODY_BYTES = 16 * 1024
+MAX_BODY_BYTES = 12 * 1024 * 1024
 MAX_MESSAGE = 4000
 MAX_CONTACT = 200
 MAX_SCREEN = 120
@@ -64,6 +60,10 @@ MAX_PLATFORM = 40
 MAX_DEVICE = 120
 # Below this a "report" is a stray tap, not something an operator can act on.
 MIN_MESSAGE = 4
+MAX_ATTACHMENTS = 5
+MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
+MAX_ATTACHMENT_BYTES_TOTAL = 8 * 1024 * 1024
+ATTACHMENT_CHUNK_BYTES = 256 * 1024
 
 # Per-reporter hourly quota. High enough that somebody genuinely hitting
 # several bugs in one session is never turned away, low enough that a script
@@ -84,14 +84,6 @@ SOURCES = ("mobile", "desktop", "web", "unknown")
 # a hint for triage order, never a promise about response time.
 SEVERITIES = ("low", "normal", "high", "crash")
 
-# The repository reports are filed into. ``BUG_REPORTS_REPO`` overrides it
-# (``off`` disables filing); unset uses the flagship, so no manifest variable
-# is spent on restating the default.
-DEFAULT_ISSUE_REPO = "forkmesh/forkmesh"
-ISSUE_REPO_DISABLED = ("off", "none", "disabled", "false", "0")
-ISSUE_LABELS = ("bug", "in-app-report")
-PLUGIN_LABEL = "plugin"
-MAX_ISSUE_TITLE = 120
 SEGMENT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}")
 
 
@@ -111,6 +103,33 @@ def _choice(value, allowed, fallback):
     return candidate if candidate in allowed else fallback
 
 
+def _attachments(value):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_ATTACHMENTS:
+        raise ValueError("attachment_invalid")
+    result, total = [], 0
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("attachment_invalid")
+        name = _text(item.get("name"), 160) or "attachment"
+        content_type = _text(item.get("contentType"), 120).lower()
+        encoded = item.get("data")
+        if not isinstance(encoded, str):
+            raise ValueError("attachment_invalid")
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise ValueError("attachment_invalid") from error
+        size = len(data)
+        total += size
+        if not data or size > MAX_ATTACHMENT_BYTES or total > MAX_ATTACHMENT_BYTES_TOTAL:
+            raise ValueError("attachment_too_large")
+        result.append({"id": new_report_id(), "name": name,
+                       "contentType": content_type, "size": size, "data": data})
+    return result
+
+
 def normalize_report(data):
     """Return the stored shape for one submitted report, or ``None``.
 
@@ -123,6 +142,7 @@ def normalize_report(data):
     message = _text(data.get("message"), MAX_MESSAGE)
     if len(message) < MIN_MESSAGE:
         return None
+    attachments = _attachments(data.get("attachments"))
     return {
         "message": message,
         "contact": _text(data.get("contact"), MAX_CONTACT),
@@ -136,6 +156,8 @@ def normalize_report(data):
         "osVersion": _text(data.get("osVersion"), MAX_VERSION),
         "device": _text(data.get("device"), MAX_DEVICE),
         "package": _package(data.get("package")),
+        "attachments": [{key: item[key] for key in ("id", "name", "contentType", "size")}
+                        for item in attachments],
     }
 
 
@@ -193,105 +215,23 @@ async def store_report(env, record, reporter_bi, account):
     return report_id, stored
 
 
-def issue_repo(env):
-    """``(owner, repo)`` that reports are filed into, or ``None`` when off."""
-    configured = getattr(env, "BUG_REPORTS_REPO", "") or ""
-    configured = _text(
-        configured if isinstance(configured, str) else "", 161).lower()
-    if configured in ISSUE_REPO_DISABLED:
-        return None
-    repo = configured or DEFAULT_ISSUE_REPO
-    if repo.count("/") != 1:
-        return None
-    owner, name = repo.split("/", 1)
-    if not SEGMENT_RE.fullmatch(owner) or not SEGMENT_RE.fullmatch(name):
-        return None
-    return owner, name
-
-
-def issue_title(record):
-    """A one-line issue title drawn from the reporter's description."""
-    text = re.sub(r"\s+", " ", record.get("message") or "").strip(" .:-")
-    for separator in (". ", "! ", "? "):
-        index = text.find(separator)
-        if 12 <= index <= MAX_ISSUE_TITLE:
-            text = text[:index]
-            break
-    if len(text) > MAX_ISSUE_TITLE:
-        text = text[:MAX_ISSUE_TITLE - 3].rstrip() + "..."
-    prefix = "Crash: " if record.get("severity") == "crash" else ""
-    if record.get("package"):
-        prefix = "[%s] %s" % (record["package"], prefix)
-    return prefix + (text or "In-app bug report")
-
-
-def issue_body(record, account, report_id):
-    """The public issue body: the description, then where it came from.
-
-    ``contact`` is deliberately absent -- it is typically an email address and
-    the issue is public -- so the body only says that one was left.
-    """
-    context = [
-        ("Severity", record.get("severity")),
-        ("Plugin", record.get("package")),
-        ("Screen", record.get("screen")),
-        ("Source", record.get("source")),
-        ("Platform", record.get("platform")),
-        ("App version", record.get("appVersion")),
-        ("OS version", record.get("osVersion")),
-        ("Device", record.get("device")),
-        ("Reporter", account or "signed out"),
-        ("Report id", report_id),
-    ]
-    lines = [record.get("message") or "", "", "---",
-             "_Filed from the in-app bug report button._", ""]
-    lines.extend("- %s: %s" % (label, value)
-                 for label, value in context if value)
-    if record.get("contact"):
-        lines.append("- The reporter left contact details in the private "
-                     "report.")
-    return "\n".join(lines)
-
-
-def issue_labels(record):
-    labels = list(ISSUE_LABELS)
-    if record.get("package"):
-        labels.append(PLUGIN_LABEL)
-    return labels
-
-
-async def file_issue(env, record, account, report_id, target):
-    """Queue the report as an issue; the proposed issue number, or 0."""
-    owner, repo = target
-    try:
-        ok, item = await _forkbot_enqueue_issue(
-            env, owner, repo, issue_title(record),
-            issue_body(record, account, report_id), account,
-            source="app-report", labels=issue_labels(record),
-            authenticated_requester=account)
-    except Exception as exc:
-        ok, item = False, str(exc)
-    if ok:
-        return int((item or {}).get("number") or 0)
-    try:
-        await log_error(
-            env, 500, "POST", "/api/bug-reports",
-            "Bug report %s could not be filed as an issue in %s/%s: %s"
-            % (report_id, owner, repo, clean_string(item, 80)))
-    except Exception:
-        pass
-    return 0
-
-
-async def record_issue_number(env, stored, report_id, target, number):
-    """Remember which issue a report became, for the console."""
-    stored = dict(stored, issueRepo="/".join(target), issueNumber=int(number))
-    try:
-        await d1_run(
-            env, "UPDATE bug_reports SET data=? WHERE report_id=?",
-            await encrypt_row(env, stored), report_id)
-    except Exception:
-        pass
+async def store_attachments(env, report_id, attachments):
+    now = int(Date.now())
+    for item in attachments:
+        attachment_id = item["id"]
+        data = item["data"]
+        for chunk_index, start in enumerate(range(0, len(data), ATTACHMENT_CHUNK_BYTES)):
+            chunk = data[start:start + ATTACHMENT_CHUNK_BYTES]
+            sealed = await encrypt_row(env, {
+                "data": base64.b64encode(chunk).decode("ascii")})
+            await d1_run(
+                env,
+                """INSERT INTO bug_report_attachments
+                       (report_id, attachment_id, chunk_index, name, content_type,
+                        size, data, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                report_id, attachment_id, chunk_index, item["name"],
+                item["contentType"], item["size"], sealed, now)
 
 
 def capability_document(env=None):
@@ -301,7 +241,6 @@ def capability_document(env=None):
     a report without a round trip through the docs site, and an operator
     reading a proxy log should be able to see what this endpoint accepts.
     """
-    target = issue_repo(env)
     return {
         "ok": True,
         "endpoint": "/api/bug-reports",
@@ -319,12 +258,15 @@ def capability_document(env=None):
             "osVersion": "optional operating-system version",
             "device": "optional device model",
             "package": "optional marketplace package id the report is about",
+            "attachments": "optional list of up to %d base64 files" % MAX_ATTACHMENTS,
         },
         "limits": {
             "bodyBytes": MAX_BODY_BYTES,
+            "attachmentBytesEach": MAX_ATTACHMENT_BYTES,
+            "attachmentBytesTotal": MAX_ATTACHMENT_BYTES_TOTAL,
             "perReporterPerHour": RATE_LIMIT_MAX,
         },
-        "filesIssueIn": "/".join(target) if target else "",
+        "private": True,
     }
 
 
@@ -348,7 +290,11 @@ async def bug_reports_handler(env, request):
     except Exception:
         return json_response(
             {"error": "invalid_json"}, status=400, cache_control=no_store)
-    record = normalize_report(data)
+    try:
+        record = normalize_report(data)
+    except ValueError as error:
+        return json_response({"error": str(error)}, status=413 if str(error) == "attachment_too_large" else 400,
+                             cache_control=no_store)
     if record is None:
         return json_response(
             {"error": "empty_report",
@@ -376,15 +322,13 @@ async def bug_reports_handler(env, request):
             status=429, cache_control=no_store,
             extra_headers={
                 "retry-after": str(int(RATE_LIMIT_WINDOW_MS / 1000))})
+    attachments = _attachments(data.get("attachments"))
+    for raw, stored_attachment in zip(attachments, record["attachments"]):
+        raw["id"] = stored_attachment["id"]
     report_id, stored = await store_report(
         env, record, reporter_bi, account)
-    target = issue_repo(env)
-    issue_number = await file_issue(
-        env, record, account, report_id, target) if target else 0
-    if issue_number > 0:
-        await record_issue_number(
-            env, stored, report_id, target, issue_number)
+    await store_attachments(env, report_id, attachments)
     return json_response(
         {"ok": True, "id": report_id, "status": "new",
-         "credited": bool(account), "issueNumber": issue_number},
+         "credited": bool(account), "attachments": len(attachments)},
         status=201, cache_control=no_store)

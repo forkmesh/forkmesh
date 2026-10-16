@@ -102,7 +102,8 @@ extension ApiService {
     /// throwing.
     public func submitBugReport(
         message: String, contact: String = "", screen: String = "", severity: String = "normal",
-        platform: String = "", appVersion: String = "", osVersion: String = "", device: String = "", package: String = ""
+        platform: String = "", appVersion: String = "", osVersion: String = "", device: String = "", package: String = "",
+        attachments: [BugReportAttachment] = []
     ) async -> BugReportResult {
         let trimmed = message.dartTrimmed
         if trimmed.isEmpty { return .failure("Describe the problem first.") }
@@ -116,6 +117,15 @@ extension ApiService {
         if !osVersion.isEmpty { body["osVersion"] = .string(osVersion) }
         if !device.isEmpty { body["device"] = .string(device) }
         if !package.dartTrimmed.isEmpty { body["package"] = .string(package.dartTrimmed) }
+        if !attachments.isEmpty {
+            body["attachments"] = .array(attachments.map { attachment in
+                .object([
+                    "name": .string(attachment.name),
+                    "contentType": .string(attachment.contentType),
+                    "data": .string(attachment.data.base64EncodedString()),
+                ])
+            })
+        }
         let response: HTTPResponse
         do {
             response = try await http.send(HTTPRequest(
@@ -368,5 +378,17 @@ extension ApiService {
         let keyId = await registerOwnerKey(owner)
         // Only memoize a confirmed enrollment: a transient failure is retried on the next change.
         if !keyId.isEmpty { ownerEnrolledFor = token }
+    }
+}
+
+public struct BugReportAttachment: Sendable {
+    public let name: String
+    public let contentType: String
+    public let data: Data
+
+    public init(name: String, contentType: String, data: Data) {
+        self.name = name
+        self.contentType = contentType
+        self.data = data
     }
 }

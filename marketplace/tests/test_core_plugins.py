@@ -22,7 +22,7 @@ import plugin_data  # noqa: E402
 CUTOFF = "2026-10-11"
 NEW_SYNCED = (
     "actions", "activity", "agents", "branches", "bug-reports", "chat", "code", "commits",
-    "coves", "desktops", "discussions", "hosts", "inbox", "issues", "network", "on-device-ai",
+    "coves", "desktops", "discussions", "hosts", "inbox", "issues", "logs", "network", "on-device-ai",
     "organizations", "pull-requests", "releases", "shortcuts", "special-agents", "stats",
     "world")
 CONVERTED_LEGACY = (

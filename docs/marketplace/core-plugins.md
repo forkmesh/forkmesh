@@ -24,7 +24,7 @@ state on the ForkMesh account and follow every device.
   `branches`), `releases`, `actions`, `discussions`, `desktops`, `shortcuts`,
   `hosts`, `network`, `coves`, `on-device-ai`, `activity`, `stats`,
   `organizations`, `world`, `notes`, `tasks`, `calendar`, `ledger`, `tour`,
-  `design-system`, `status-page`, `speech`, `glasses-alert`.
+  `design-system`, `status-page`, `logs`, `speech`, `glasses-alert`.
 - **Installed before 2026-10-14, account-synced:** `workflows` (its
   `workflows-*` packs nest under it).
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
@@ -83,7 +83,9 @@ layout, Standard for everyone else.
 
 Nesting: every Market nests a package under its first `dependencies` entry, so
 Pull requests sits under Branches, Special Agents under Agents, and the
-`status-check-*` packages under Status Page. Installing a child installs its
+`status-check-*` packages under Status Page. `logs-app`, `logs-desktop` and
+`logs-hosts` sit under Logs and independently control the mobile stream types.
+Installing a child installs its
 parent; removing a parent removes its children.
 
 ## The effective-state rule

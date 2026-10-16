@@ -193,15 +193,34 @@ def test_bug_inbox_lists_new_reports_newest_first_and_opens_the_first():
     assert "<script" not in page.lower()
 
 
-def test_a_report_links_the_issue_it_was_filed_as():
+def test_a_report_does_not_link_to_a_repository_issue():
     h = Harness()
     h.report(0, issueRepo="forkmesh/forkmesh", issueNumber=712)
     h.report(1)
-    filed = h.get("view=bugs").body
-    assert ('<dd><a href="/forkmesh/forkmesh/issues/712">'
-            'forkmesh/forkmesh#712</a></dd>') in filed
-    unfiled = h.get("view=bugs&report=%032x" % 2).body
-    assert '<dd><span class="muted">not filed</span></dd>' in unfiled
+    page = h.get("view=bugs").body
+    assert "/forkmesh/forkmesh/issues/712" not in page
+    assert "Attachments" in page
+
+
+def test_an_admin_can_download_a_private_report_attachment():
+    h = Harness()
+    report = h.report(0, attachments=[{
+        "id": "f" * 32, "name": "screen.png", "contentType": "image/png",
+        "size": 6,
+    }])
+    h.db.execute(
+        "INSERT INTO bug_report_attachments "
+        "(report_id,attachment_id,chunk_index,name,content_type,size,data,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (report, "f" * 32, 0, "screen.png", "image/png", 6,
+         json.dumps({"data": "cGl4ZWxz"}), NOW))
+
+    response = h.get("view=bugs&report=%s&attachment=%s" % (report, "f" * 32))
+
+    assert response.status == 200
+    assert response.body == b"pixels"
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_bug_inbox_filters_by_status_severity_and_platform():

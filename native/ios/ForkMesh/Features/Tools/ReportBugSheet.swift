@@ -7,11 +7,13 @@ import FMApi
 import FMBase
 import FMTools
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ReportBugSheet: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.dismiss) private var dismiss
     @State private var model: ReportBugModel
+    @State private var importing = false
     private let onClose: (() -> Void)?
     private let onFinished: ((Bool) -> Void)?
 
@@ -49,6 +51,17 @@ struct ReportBugSheet: View {
         .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(model.busy)
         .accessibilityIdentifier("report-bug-sheet")
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case let .success(urls) = result else { return }
+            let files = urls.prefix(5 - model.attachments.count).compactMap { url -> BugReportAttachment? in
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                guard let data = try? Data(contentsOf: url), !data.isEmpty, data.count <= 4 * 1024 * 1024 else { return nil }
+                let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? ""
+                return BugReportAttachment(name: url.lastPathComponent, contentType: contentType, data: data)
+            }
+            model.attachments += files
+        }
     }
 
     private var header: some View {
@@ -83,6 +96,12 @@ struct ReportBugSheet: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .disabled(model.busy)
+            }
+            FmToneButton(label: "Add files", tone: .neutral, filled: false,
+                         onPressed: model.busy || model.attachments.count >= 5 ? nil : { importing = true })
+            if !model.attachments.isEmpty {
+                Text(model.attachments.map(\.name).joined(separator: " · "))
+                    .fmText(.bodySmall, color: fm.textTertiary)
             }
             attached
             if !model.problem.isEmpty {

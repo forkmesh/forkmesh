@@ -303,7 +303,7 @@ def test_an_oversized_body_is_refused_before_it_reaches_the_database():
     runtime = _Runtime()
     module = runtime.namespace()
 
-    response = _submit(module, {"message": "x" * (32 * 1024)})
+    response = _submit(module, {"message": "x" * (module["MAX_BODY_BYTES"] + 1)})
 
     assert response.status == 413
     assert response.json["error"] == "report_too_large"
@@ -449,68 +449,6 @@ def test_normalize_report_is_pure_and_clamps_every_field():
     assert module["normalize_report"]("not a mapping") is None
 
 
-# --- Filing the report as an issue (issue #696) ----------------------------
-
-def test_a_report_opens_an_issue_in_the_forkmesh_repository():
-    runtime = _Runtime(account="")
-    module = runtime.namespace()
-
-    response = _submit(module, {
-        "message": "Repos tab spins forever after I rotate the phone. "
-                   "It never recovers.",
-        "severity": "high",
-        "screen": "Repos",
-        "source": "mobile",
-        "platform": "android",
-        "appVersion": "1.0.0+2",
-    })
-
-    assert response.status == 201
-    assert response.json["issueNumber"] == 701
-    issue = runtime.issues[0]
-    assert (issue["owner"], issue["repo"]) == ("forkmesh", "forkmesh")
-    assert issue["title"] == "Repos tab spins forever after I rotate the phone"
-    assert issue["labels"] == ["bug", "in-app-report"]
-    assert issue["source"] == "app-report"
-    assert "It never recovers." in issue["body"]
-    assert "- App version: 1.0.0+2" in issue["body"]
-    assert "- Reporter: signed out" in issue["body"]
-    assert "- Report id: %s" % response.json["id"] in issue["body"]
-    # An anonymous report is never opened as somebody's account.
-    assert issue["authenticated_requester"] == ""
-
-
-def test_a_signed_in_report_opens_the_issue_as_the_reporter():
-    runtime = _Runtime(account="octo")
-    module = runtime.namespace()
-
-    _submit(module, {"message": "Crashes on launch.", "severity": "crash"})
-
-    issue = runtime.issues[0]
-    assert issue["requester"] == "octo"
-    assert issue["authenticated_requester"] == "octo"
-    assert issue["title"] == "Crash: Crashes on launch"
-    assert "- Reporter: octo" in issue["body"]
-
-
-def test_a_plugin_report_names_the_plugin_in_title_body_and_labels():
-    runtime = _Runtime(account="")
-    module = runtime.namespace()
-
-    response = _submit(module, {
-        "message": "The feed list never refreshes after I add a source.",
-        "package": "RSS-Reader",
-        "source": "web",
-    })
-
-    assert response.status == 201
-    issue = runtime.issues[0]
-    assert issue["title"] == (
-        "[rss-reader] The feed list never refreshes after I add a source")
-    assert issue["labels"] == ["bug", "in-app-report", "plugin"]
-    assert "- Plugin: rss-reader" in issue["body"]
-
-
 def test_an_invalid_plugin_id_is_dropped_not_rejected():
     runtime = _Runtime()
     module = runtime.namespace()
@@ -519,88 +457,39 @@ def test_an_invalid_plugin_id_is_dropped_not_rejected():
         record = module["normalize_report"](
             {"message": "Something broke.", "package": bad})
         assert record["package"] == ""
-    assert module["issue_labels"]({"package": ""}) == ["bug", "in-app-report"]
+    assert "issue" not in module["capability_document"]()
 
 
-def test_the_issue_never_carries_the_private_contact():
+def test_attachments_are_encrypted_and_never_queued_as_issues():
     runtime = _Runtime()
     module = runtime.namespace()
 
-    _submit(module, {"message": "Login loops back to the start.",
-                     "contact": "reporter@example.com"})
-
-    body = runtime.issues[0]["body"]
-    assert "reporter@example.com" not in body
-    assert "contact details in the private report" in body
-
-
-def test_the_filed_issue_number_is_sealed_into_the_stored_report():
-    runtime = _Runtime()
-    module = runtime.namespace()
-
-    response = _submit(module, {"message": "Diff view is blank."})
-
-    sealed, report_id = runtime.updates[0]
-    assert report_id == response.json["id"]
-    stored = json.loads(sealed[len("sealed:"):])
-    assert stored["issueNumber"] == 701
-    assert stored["issueRepo"] == "forkmesh/forkmesh"
-    assert stored["message"] == "Diff view is blank."
-
-
-def test_a_failed_filing_still_accepts_the_report():
-    # The stored report is the durable acceptance; a full inbox must not turn
-    # it into an error the reporter sees.
-    runtime = _Runtime(enqueue=lambda call: (False, "inbox_full"))
-    module = runtime.namespace()
-
-    response = _submit(module, {"message": "Chat never loads."})
+    response = _submit(module, {
+        "message": "The camera preview is black.",
+        "attachments": [{"name": "screen.png", "contentType": "image/png",
+                         "data": "cGl4ZWxz"}],
+    })
 
     assert response.status == 201
-    assert response.json["issueNumber"] == 0
-    assert len(runtime.rows) == 1
-    assert runtime.updates == []
-    assert "inbox_full" in runtime.errors[0]
+    assert response.json["attachments"] == 1
+    assert runtime.issues == []
+    stored = json.loads(runtime.rows[0]["data"][len("sealed:"):])
+    assert stored["attachments"][0]["name"] == "screen.png"
+    assert stored["attachments"][0]["contentType"] == "image/png"
+    assert stored["attachments"][0]["size"] == 6
+    assert re.fullmatch(r"[0-9a-f]{32}", stored["attachments"][0]["id"])
 
 
-def test_a_raising_filing_still_accepts_the_report():
-    def explode(call):
-        raise RuntimeError("d1 unavailable")
-
-    runtime = _Runtime(enqueue=explode)
-    module = runtime.namespace()
-
-    response = _submit(module, {"message": "Chat never loads."})
-
-    assert response.status == 201
-    assert response.json["issueNumber"] == 0
-
-
-def test_the_target_repository_is_configurable_and_can_be_turned_off():
+def test_invalid_or_oversized_attachments_are_refused():
     runtime = _Runtime()
     module = runtime.namespace()
 
-    _submit(module, {"message": "Wrong repo test."},
-            env=_Env(BUG_REPORTS_REPO="Acme/App"))
-    assert (runtime.issues[0]["owner"], runtime.issues[0]["repo"]) == (
-        "acme", "app")
+    invalid = _submit(module, {"message": "The camera preview is black.", "attachments": [{}]})
+    too_many = _submit(module, {"message": "The camera preview is black.", "attachments": [{}] * 6})
 
-    response = _submit(module, {"message": "Filing is off."},
-                       env=_Env(BUG_REPORTS_REPO="off"))
-    assert response.status == 201
-    assert response.json["issueNumber"] == 0
-    assert len(runtime.issues) == 1
-    assert module["issue_repo"](_Env(BUG_REPORTS_REPO="not a repo")) is None
-
-
-def test_a_long_description_gets_a_bounded_title():
-    runtime = _Runtime()
-    module = runtime.namespace()
-
-    title = module["issue_title"]({"message": "word " * 100})
-
-    assert len(title) == module["MAX_ISSUE_TITLE"]
-    assert title.endswith("...")
+    assert invalid.status == 400
+    assert too_many.status == 400
+    assert runtime.rows == []
 
 
 # --- Wiring ------------------------------------------------------------------

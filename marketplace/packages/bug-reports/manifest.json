@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Support",
-  "version": "1.0.0",
-  "summary": "The Bug button: report a bug in ForkMesh with a screenshot and the app's recent log, from Home or the menu.",
+  "version": "1.1.0",
+  "summary": "Send a private bug report with screenshots, videos or files to ForkMesh administrators from Home or the menu.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -38,7 +38,7 @@
   "permissions": [
     {
       "id": "support.report",
-      "label": "Send your report, a screenshot and the recent app log to ForkMesh",
+      "label": "Send your private report and selected files to ForkMesh administrators",
       "risk": "sensitive"
     }
   ],

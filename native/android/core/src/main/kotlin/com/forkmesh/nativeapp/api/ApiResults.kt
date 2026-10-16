@@ -143,3 +143,5 @@ data class BugReportResult(val ok: Boolean, val id: String, val message: String)
         fun failure(message: String) = BugReportResult(ok = false, id = "", message = message)
     }
 }
+
+data class BugReportAttachment(val name: String, val contentType: String, val data: ByteArray)
