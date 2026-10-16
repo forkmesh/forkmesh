@@ -87,7 +87,10 @@ history:
   Everyone else (to, cc and bcc) is linked through the CRM's
   `POST /api/crm/<org>/emails/link` as an outbound Zoho email: the contact is
   matched by address, or created with source `zoho email` when the CRM does
-  not know them, and its last-contacted date moves forward.
+  not know them, and its last-contacted date moves forward. A contact whose
+  pipeline has a `contacted` stage and who sits before it (`sourced`,
+  `prospect`) moves to `contacted` (CRM 1.33.0; the CRM's Zoho Mail sync does
+  the same for its Sent folder, see `marketplace/packages/crm/README.md`).
 - Each of them joins the **Initiatives** list. The list is created the first
   time it is needed and matched by name (any case) after that.
 - The organization is the one saved with `setup --crm-organization`, else the

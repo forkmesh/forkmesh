@@ -196,10 +196,41 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 - The in-app **Zoho setup guide** covers both paths.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
-for it, and records each sent-folder message as an outbound CRM email unless
-that provider message is already linked. Email cells open a compose window in
-the organization's Zoho data center (`https://<data center>/zm/comp.do?ct=mailto:<address>`)
-or Gmail.
+for it, and records each sent-folder message as an outbound CRM email. Email
+cells open a compose window in the organization's Zoho data center
+(`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
+
+**Sent mail marks its recipients contacted** (1.33.0). Before 1.33.0 a sync
+stored sent mail with no contact, so a lead you had just written to through
+Zoho stayed on the **Reach out** card at its first stage until someone pressed
+**Mark contacted**. Now each address on a sent message's `To` (HTML entities
+decoded, the sender's own mailbox skipped) is matched against every address a
+contact carries (`_contacts_by_address`: the email first, then custom-column
+addresses), and each matched contact gets the message linked through
+`_link_message` (the first contact keeps the Zoho message id, the others get
+`<id>/<address>`), so it shows in the contact's email history and files a
+`contact.emailed` list activity entry. Linking stamps **Last contacted** with
+the send time (forward only) and moves the contact to the `contacted` stage
+when its pipeline has one and the contact sits before it (`sourced`,
+`prospect`, or a stage the pipeline does not know). Contacts at or past
+`contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
+pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
+the date. A recipient who is not a contact is stored unlinked, as before, and
+no contact is created.
+
+The sync is idempotent: a message already linked to a contact is not
+re-linked, it only re-applies the same date and stage rule (a no-op once
+applied), and a message stored unlinked by an earlier sync is linked the first
+time a sync finds a contact for it. So mail imported before 1.33.0, or before
+the contact was added, is backfilled by the next **Sync Zoho Mail**, as far
+back as the sync reads (the newest messages of the Sent folder, half of the
+200-message limit). The response and the `crm.zoho.import` audit carry
+`outboundRecorded` (new send rows) and `contactsAdvanced` (stage moves).
+
+The same stage rule runs for every outbound `POST /emails/link` that does not
+name a flow or stage (the browser extension, and `send_email` logging in
+`tools/forkmesh_mcp_server.py`); its response carries `stageAdvanced`. Inbound
+links never move a stage. Tests: `tests/test_zoho_marks_contacted.py`.
 
 ### Sending and tracking
 
