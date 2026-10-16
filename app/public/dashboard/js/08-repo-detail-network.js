@@ -1048,6 +1048,7 @@
       desktop_ping: "monitor",
       hackathon_squad: "users",
       hackathon_reward: "gift",
+      badge: "award",
       package_review: "star",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";

@@ -94,6 +94,7 @@ inline const QList<KindInfo> &kinds()
         {"hackathon_squad", "rewards", "Hackathon squad progress", false,
          false},
         {"hackathon_reward", "rewards", "Hackathon rewards", false, false},
+        {"badge", "rewards", "Badges earned", false, false},
         {"host_online", "devices", "Host came online", true, false},
         {"host_offline", "devices", "Host went offline", true, false},
         {"device_added", "devices", "New device signed in", false, false},

@@ -1668,3 +1668,76 @@ def test_locked_progress_refresh_runs_on_the_real_schema():
     ).fetchall()
     assert [(row["account_bi"], row["value"]) for row in rows] == [
         ("u_ada", 2)]
+
+
+# --- Badge pings ------------------------------------------------------------------
+
+def _badge_ping_fn():
+    return _load("badge_ping", extra_globals={"badge_catalog": badges})[
+        "badge_ping"]
+
+
+def test_a_badge_ping_celebrates_and_names_the_level():
+    ping = _badge_ping_fn()
+    first = ping("stargazer", 0, False)
+    assert first["title"] == "You earned the Stargazer badge"
+    assert first["href"] == "/dashboard/achievements"
+    assert first["dedupe"] == "badge:stargazer:default"
+    assert first["meta"] == {"celebrate": "badge", "badge": "stargazer",
+                             "badgeName": "Stargazer", "tier": "default"}
+    up = ping("stargazer", 2, True)
+    assert up["title"] == "Your Stargazer badge is now Silver"
+    assert up["dedupe"] == "badge:stargazer:silver"
+    skipped = ping("fan_club", 3, False)
+    assert skipped["title"] == "You earned the Gold Fan Club badge"
+    single = ping("genies_gift", 0, False)
+    assert single["title"] == "You earned the Genie's Gift badge"
+    assert single["dedupe"] == "badge:genies_gift:earned"
+    assert single["meta"]["tier"] == ""
+    assert ping("nope") is None
+
+
+def test_a_new_award_or_level_sends_one_badge_ping():
+    pings = []
+
+    async def ensure_schema(env):
+        return None
+
+    results = []
+
+    async def d1_run(env, sql, *params):
+        return _RunResult(results.pop(0) if results else 0)
+
+    async def send_email(env, name, slug, tier=0, upgraded=False):
+        return True
+
+    async def send_ping(env, name, slug, tier=0, upgraded=False):
+        pings.append((name, slug, tier, upgraded))
+        return True
+
+    ns = _load("_award_badge", "_d1_changed", extra_globals={
+        "badge_catalog": badges, "ensure_schema": ensure_schema,
+        "d1_run": d1_run, "Date": Clock, "_send_badge_email": send_email,
+        "_send_badge_ping": send_ping, "_safe_error_text": str})
+    results[:] = [1]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=1))
+    results[:] = [0, 1]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=2))
+    results[:] = [0, 0]
+    _run(ns["_award_badge"](None, "ada", "ada-bi", "stargazer", tier=2))
+    assert pings == [("ada", "stargazer", 1, False),
+                     ("ada", "stargazer", 2, True)]
+
+
+def test_badge_is_a_ping_kind_with_an_icon_and_a_setting():
+    assert '"badge",' in _entry_literal_source("NOTIFICATION_KINDS")
+    settings = _module("ping_settings")
+    assert ("badge", "rewards", "Badges earned") in settings.PING_KIND_CATALOG
+    icons = _module("push_icons")
+    assert icons.PUSH_KIND_ICONS["badge"] == "\U0001F3C5"
+    sender = _function_source("_send_badge_ping")
+    assert "await enqueue_notification(" in sender and "'badge'" in sender
+
+
+def _entry_literal_source(name):
+    return ast.unparse(_entry_literal(name)).replace("'", '"')

@@ -58,6 +58,7 @@ final class NotificationsViewModelTests: XCTestCase {
             "device_added": "smartphone_outlined",
             "hackathon_squad": "groups_outlined",
             "hackathon_reward": "card_giftcard_outlined",
+            "badge": "emoji_events_outlined",
             "package_review": "rate_review_outlined",
         ]
         for (kind, icon) in expected {

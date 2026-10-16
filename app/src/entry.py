@@ -862,6 +862,7 @@ NOTIFICATION_KINDS = frozenset({
     "error_group",
     # A new node key (mobile/desktop) was bound to the account on login.
     "device_added",
+    "badge",
     # Progress of a long-running marketplace package action (an import that
     # started, finished, or failed); the package writes the title and body.
     "plugin_activity",
@@ -29921,6 +29922,10 @@ async def _award_badge(env, name, name_bi, slug, granted_by="system", tier=0):
             await _send_badge_email(env, name, slug, tier, upgraded)
         except Exception as error:
             print("badge email failed: %s" % _safe_error_text(error)[:160])
+        try:
+            await _send_badge_ping(env, name, slug, tier, upgraded)
+        except Exception as error:
+            print("badge ping failed: %s" % _safe_error_text(error)[:160])
     return inserted or upgraded
 
 
@@ -30618,6 +30623,41 @@ async def run_badge_sweep(env):
                 key, _safe_error_text(error)[:160]))
             out[key] = []
     return out
+
+
+def badge_ping(slug, tier=0, upgraded=False):
+    info = badge_catalog.badge_definition(slug)
+    if not info:
+        return None
+    tiered = bool(badge_catalog.badge_tiers(slug))
+    level = badge_catalog.tier_name(tier) if tiered else ""
+    label = level.capitalize() if tiered and tier else ""
+    if upgraded and label:
+        title = "Your %s badge is now %s" % (info["name"], label)
+    else:
+        title = "You earned the %s badge" % (
+            (label + " " + info["name"]) if label else info["name"])
+    return {
+        "title": title,
+        "body": info["description"],
+        "href": "/dashboard/achievements",
+        "source": "badge:" + badge_catalog.normalize_badge_slug(slug),
+        "dedupe": "badge:%s:%s" % (badge_catalog.normalize_badge_slug(slug),
+                                   level or "earned"),
+        "meta": {"celebrate": "badge",
+                 "badge": badge_catalog.normalize_badge_slug(slug),
+                 "badgeName": info["name"], "tier": level},
+    }
+
+
+async def _send_badge_ping(env, name, slug, tier=0, upgraded=False):
+    ping = badge_ping(slug, tier, upgraded)
+    if not ping:
+        return False
+    return await enqueue_notification(
+        env, name, "badge", ping["title"], body=ping["body"],
+        href=ping["href"], source=ping["source"], dedupe=ping["dedupe"],
+        meta=ping["meta"])
 
 
 async def _send_badge_email(env, name, slug, tier=0, upgraded=False):

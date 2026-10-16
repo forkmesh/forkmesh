@@ -4042,6 +4042,7 @@
       { kind: "tip_sent", label: "Tips", email: true },
       { kind: "hackathon_squad", label: "Hackathon squad progress", email: false },
       { kind: "hackathon_reward", label: "Hackathon rewards", email: false },
+      { kind: "badge", label: "Badges earned", email: false },
     ] },
     { key: "devices", label: "Devices & apps", kinds: [
       { kind: "host_online", label: "Host came online", email: true },
