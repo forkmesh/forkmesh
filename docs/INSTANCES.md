@@ -111,8 +111,10 @@ app does not redirect Git clients to its own origin.
 - **Theme** (`app/src/instance_theme.py`): one `instance_settings` row
   (`k = 'theme'`) holding `{"dark": {...}, "light": {...}}` of known token
   names to `#rrggbb` colours, max 8 KB, no raw CSS. Served as
-  `/instance-theme.css`; set at setup from a preset or with
-  `PUT /api/instance/theme` by an admin.
+  `/instance-theme.css`; set at setup from a preset name or a full colour
+  object (the start page's picker), or later with `PUT /api/instance/theme`
+  by an admin. The installer passes an object to `instance-bootstrap` as
+  JSON and refuses one with other modes, odd token names or non-hex values.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
   pages and others) are off on an instance unless listed in
