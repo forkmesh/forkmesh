@@ -107,8 +107,19 @@ destination, in sections, with counts and activity:
   needs attention, biggest count); categories can be hidden. Settings live in
   `ShellHomeSettingsSheet` and Settings > General > Home screen.
 - Counts come from data already loaded or fetched when Home opens
-  (`ShellNavigatorCounts`, at most once a minute; `ShellCounts`); `nil` means
-  unknown and shows no pill; zero shows no pill. Unread pills and the
+  (`ShellNavigatorCounts`; `ShellCounts`); `nil` means unknown and shows no
+  pill; zero shows no pill. `NavigatorCountPlan` (FMApi) decides the fetch:
+  only destinations on the grid (`HubGroups.current`, so uninstalled plugins
+  and hidden admin pages cost nothing), three at a time, at most once a minute,
+  every five minutes when iOS reports a serious thermal state or Low Power
+  Mode, and not at all when it is critical (the counts already shown stay).
+  A 2026-10-16 phone report (build 262, thermal state critical, 1.6 s of
+  freezes on the Chat tab) showed every launch and Home visit starting about
+  twenty loads at once (calories, steps, water, sleep, sugar break, stretch,
+  notes, tasks, calendar, orgs, admin, CRM, marketing, analytics), each
+  building its full screen model on the main actor; their replies landing
+  together blocked the UI for 450 to 850 ms and kept the radio and CPU busy on
+  a phone that was already throttling. Unread pills and the
   running-agents heartbeat count are solid `fm.accent` (the user's highlight
   colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
   (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
