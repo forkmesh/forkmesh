@@ -63,7 +63,7 @@ struct MessagesConversationView<Drawer: View>: View {
                                 .padding(.horizontal, FmSpace.x4)
                         }
                         MessagesComposer(
-                            hub: hub, colors: palette, draft: $draft, focused: $focused, drawing: $drawing, onSend: onSend)
+                            hub: hub, colors: palette, draft: $draft, focused: $focused, onSend: onSend)
                     }
                 }
                 .background {
@@ -348,6 +348,7 @@ struct MessagesConversationView<Drawer: View>: View {
             .accessibilityIdentifier("chat-room-header")
             Spacer(minLength: 0)
             livePhone(palette)
+            DirectLiveTouchButton(hub: hub, dark: palette.dark, drawing: $drawing, focused: $focused)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
@@ -450,7 +451,6 @@ struct MessagesComposer: View {
     let colors: MessagesColors
     @Binding var draft: String
     @Binding var focused: Bool
-    @Binding var drawing: Bool
     let onSend: () -> Void
     @State private var photos: [PhotosPickerItem] = []
     @State private var choosingPhotos: Bool = false
@@ -535,7 +535,6 @@ struct MessagesComposer: View {
     private var bar: some View {
         HStack(alignment: .bottom, spacing: FmSpace.x2) {
             plusMenu
-            DirectLiveTouchButton(hub: hub, dark: colors.dark, drawing: $drawing, focused: $focused)
             if recorder.recording {
                 recordingField
             } else {

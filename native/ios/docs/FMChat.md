@@ -208,7 +208,7 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   and turns in 3D with the tilt. A short tap anywhere on a direct conversation's transcript sends
   a tap at that spot (`transcriptTapped`); with the keyboard up the first tap only closes it. There
   is no tap button any more, so VoiceOver gets a "Send a tap" action on the phone icon. The pencil
-  in the composer opens the coloured drawing canvas, where a short tap also sends a tap and a drag
+  in the header, beside the phone icon, opens the coloured drawing canvas, where a short tap also sends a tap and a drag
   draws; its toolbar sits at the top under the header, and the ink colour is a drop-down (the
   current swatch and a chevron open a 4 by 2 grid of colours, which closes on a pick or a touch on
   the canvas). Sending and receiving a tap always vibrate (`DirectLiveHaptics.sent` and

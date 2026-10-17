@@ -475,7 +475,7 @@ struct DirectLiveTouchButton: View {
                 Image(systemName: "pencil.tip")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(drawing ? Color.white : (dark ? Color.white : Color.black.opacity(0.7)))
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                     .background(Circle().fill(drawing ? fm.accent : Color.clear))
                     .chatGlass(Circle(), border: fm.border)
             }
