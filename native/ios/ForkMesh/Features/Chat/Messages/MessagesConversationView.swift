@@ -28,6 +28,7 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var drawing: Bool = false
     @State private var viewOnceOpen: ViewOnceEntry?
     @State private var jumpTarget: String?
+    @State private var transcriptSize: CGSize = .zero
 
     private var look: ChatLook { hub.conversationLook }
 
@@ -138,7 +139,8 @@ struct MessagesConversationView<Drawer: View>: View {
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
-            .onTapGesture { focused = false }
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { (size: CGSize) in transcriptSize = size }
+            .onTapGesture(coordinateSpace: .local) { (location: CGPoint) in transcriptTapped(at: location) }
             .onAppear { scrollToEnd(proxy, items, animated: false) }
             .onChange(of: items.last?.id ?? "") { _, _ in scrollToEnd(proxy, items, animated: true) }
             .onChange(of: typing.isEmpty) { _, empty in
@@ -205,6 +207,16 @@ struct MessagesConversationView<Drawer: View>: View {
             onServer: hub.isOnServer(message, receipt: bubble.receipt))
     }
 
+    private func transcriptTapped(at location: CGPoint) {
+        if focused {
+            focused = false
+            return
+        }
+        guard let live = hub.live, hub.inDirect, transcriptSize.width > 0 else { return }
+        live.tap(hub.relay.currentConversation, at: DirectLiveGeometry.point(location, in: transcriptSize))
+        DirectLiveHaptics.sent()
+    }
+
     private func stopSharing(_ conversation: String) {
         guard let live = hub.live else { return }
         live.setSharingMotion(conversation, false)
@@ -268,13 +280,13 @@ struct MessagesConversationView<Drawer: View>: View {
         [hub.conversationSubtitle, hub.serverCopiesLine].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 
-    @ViewBuilder private var headerAvatar: some View {
-        if let live = hub.live, hub.inDirect {
-            MessagesLivePartnerAvatar(engine: live, conversation: hub.relay.currentConversation, size: 38) {
-                MessagesConversationAvatar(hub: hub, size: 38)
+    @ViewBuilder private func livePhone(_ palette: MessagesColors) -> some View {
+        if let live = hub.live, hub.inDirect, !hub.inGroupConversation {
+            MessagesLivePartnerPhone(
+                engine: live, conversation: hub.relay.currentConversation, name: hub.conversationName, dark: palette.dark
+            ) {
+                MessagesConversationAvatar(hub: hub, size: 22)
             }
-        } else {
-            MessagesConversationAvatar(hub: hub, size: 38)
         }
     }
 
@@ -300,7 +312,7 @@ struct MessagesConversationView<Drawer: View>: View {
             }
             Button(action: { details = true }) {
                 HStack(spacing: FmSpace.x2) {
-                    headerAvatar
+                    MessagesConversationAvatar(hub: hub, size: 38)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 3) {
                             Text(hub.conversationName)
@@ -335,6 +347,7 @@ struct MessagesConversationView<Drawer: View>: View {
             .accessibilityHint("Shows details, people, photos and the background")
             .accessibilityIdentifier("chat-room-header")
             Spacer(minLength: 0)
+            livePhone(palette)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
@@ -523,7 +536,6 @@ struct MessagesComposer: View {
         HStack(alignment: .bottom, spacing: FmSpace.x2) {
             plusMenu
             DirectLiveTouchButton(hub: hub, dark: colors.dark, drawing: $drawing, focused: $focused)
-            DirectLiveTapButton(hub: hub, dark: colors.dark)
             if recorder.recording {
                 recordingField
             } else {

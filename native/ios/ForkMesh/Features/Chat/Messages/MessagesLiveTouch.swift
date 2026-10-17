@@ -196,6 +196,7 @@ struct MessagesLiveTouchSurface: View {
     @State private var color: UInt32 = DirectLiveFrames.colors[1]
     @State private var strokeId: String = ""
     @State private var touchStart: CGPoint?
+    @State private var pickingColor: Bool = false
 
     static let tapTravel: CGFloat = 8
 
@@ -217,56 +218,91 @@ struct MessagesLiveTouchSurface: View {
                         DirectLiveHaptics.sent()
                     }
             }
-            VStack {
-                Text("Tap to buzz. Draw on the background.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(fm.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .chatGlass(Capsule(), border: fm.border)
-                    .padding(.top, 70)
-                    .allowsHitTesting(false)
+            VStack(spacing: FmSpace.x2) {
+                VStack(alignment: .leading, spacing: FmSpace.x2) {
+                    toolbar
+                    if pickingColor {
+                        colorDropDown
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .padding(.top, 62)
+                .padding(.horizontal, FmSpace.x3)
+                if !pickingColor {
+                    Text("Tap to buzz. Draw on the background.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(fm.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .chatGlass(Capsule(), border: fm.border)
+                        .allowsHitTesting(false)
+                }
                 Spacer()
-                toolbar
-                    .padding(.horizontal, FmSpace.x3)
-                    .padding(.bottom, FmSpace.x4)
             }
         }
         .accessibilityIdentifier("chat-live-touch")
     }
 
     private var toolbar: some View {
-        return HStack(spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(DirectLiveFrames.colors, id: \.self) { (rgb: UInt32) in
-                        Button(action: {
-                            color = rgb
-                            FmHaptics.selection()
-                        }) {
-                            Circle()
-                                .fill(DirectLiveGeometry.color(rgb))
-                                .frame(width: 24, height: 24)
-                                .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 0.5))
-                                .padding(3)
-                                .overlay(Circle().stroke(fm.textPrimary, lineWidth: color == rgb ? 2 : 0))
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Ink colour \(DirectLiveTouchNames.color(rgb))")
-                        .accessibilityAddTraits(color == rgb ? .isSelected : [])
-                    }
+        return HStack(spacing: 6) {
+            Button(action: {
+                withAnimation(.easeOut(duration: 0.18)) { pickingColor.toggle() }
+                FmHaptics.selection()
+            }) {
+                HStack(spacing: 4) {
+                    swatch(color, selected: false)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(fm.textPrimary)
+                        .rotationEffect(.degrees(pickingColor ? 180 : 0))
                 }
+                .padding(.horizontal, 8)
+                .frame(height: 44)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Ink colour")
+            .accessibilityValue(DirectLiveTouchNames.color(color))
+            .accessibilityHint(pickingColor ? "Hides the colours." : "Shows the colours.")
+            .accessibilityIdentifier("chat-live-color-picker")
             toolButton("trash", label: "Clear drawing", on: false) {
                 engine.clearInk(conversation)
                 FmHaptics.tap()
             }
             toolButton("checkmark", label: "Done", on: false, action: onDone)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .chatGlass(RoundedRectangle(cornerRadius: 26, style: .continuous), border: fm.border)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .chatGlass(Capsule(), border: fm.border)
+    }
+
+    private var colorDropDown: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 4), count: 4), spacing: 4) {
+            ForEach(DirectLiveFrames.colors, id: \.self) { (rgb: UInt32) in
+                Button(action: {
+                    color = rgb
+                    FmHaptics.selection()
+                    withAnimation(.easeOut(duration: 0.18)) { pickingColor = false }
+                }) {
+                    swatch(rgb, selected: color == rgb)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Ink colour \(DirectLiveTouchNames.color(rgb))")
+                .accessibilityAddTraits(color == rgb ? .isSelected : [])
+            }
+        }
+        .padding(6)
+        .chatGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), border: fm.border)
+    }
+
+    private func swatch(_ rgb: UInt32, selected: Bool) -> some View {
+        Circle()
+            .fill(DirectLiveGeometry.color(rgb))
+            .frame(width: 24, height: 24)
+            .overlay(Circle().stroke(Color.gray.opacity(0.5), lineWidth: 0.5))
+            .padding(3)
+            .overlay(Circle().stroke(fm.textPrimary, lineWidth: selected ? 2 : 0))
     }
 
     private func toolButton(_ symbol: String, label: String, on: Bool, action: @escaping () -> Void) -> some View {
@@ -284,6 +320,7 @@ struct MessagesLiveTouchSurface: View {
     private func changed(_ value: DragGesture.Value, size: CGSize) {
         guard let start = touchStart else {
             touchStart = value.startLocation
+            if pickingColor { withAnimation(.easeOut(duration: 0.18)) { pickingColor = false } }
             return
         }
         if strokeId.isEmpty {
@@ -324,77 +361,99 @@ enum DirectLiveTouchNames {
     }
 }
 
-struct MessagesLivePartnerAvatar<Avatar: View>: View {
+enum DirectLivePhone {
+    static let floatingFaceKey: String = "chat/live/floatingFace"
+    static let rim: Color = Color(fmARGB: 0xFFFF375F)
+}
+
+struct MessagesLivePartnerPhone<Avatar: View>: View {
+    @Environment(\.fmPalette) private var fm
+    @AppStorage(DirectLivePhone.floatingFaceKey) private var floatingFace: Bool = false
     let engine: DirectLiveEngine
     let conversation: String
-    let size: CGFloat
+    let name: String
+    let dark: Bool
     @ViewBuilder let avatar: () -> Avatar
 
     var body: some View {
         let sharing: Bool = engine.partnerMotion(conversation) != nil
-        Group {
-            if sharing {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
-                    well(engine.motion[conversation]?.sample(at: context.date.epochMillis))
-                }
-            } else {
-                avatar().frame(width: size, height: size)
+        Menu {
+            Toggle(isOn: $floatingFace) {
+                Label("Floating 3D Face", systemImage: "person.and.background.dotted")
             }
+        } label: {
+            Group {
+                if sharing || floatingFace {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
+                        phone(
+                            sharing ? engine.motion[conversation]?.sample(at: context.date.epochMillis) : nil,
+                            time: context.date.timeIntervalSinceReferenceDate)
+                    }
+                } else {
+                    phone(nil, time: 0)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .chatGlass(Circle(), border: fm.border)
         }
-        .frame(width: size, height: size)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: sharing)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: floatingFace)
+        .accessibilityLabel("\(name)'s phone")
+        .accessibilityValue(
+            [sharing ? "Showing its direction" : "Not sharing its direction", floatingFace ? "floating face on" : ""]
+                .filter { !$0.isEmpty }.joined(separator: ", "))
+        .accessibilityHint("Turns the floating 3D face on or off.")
+        .accessibilityAction(named: "Send a tap") {
+            engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
+            DirectLiveHaptics.sent()
+        }
         .accessibilityIdentifier(sharing ? "chat-live-partner-motion" : "chat-live-partner-still")
     }
 
-    private func well(_ sample: DirectLiveMotionSample?) -> some View {
+    private func phone(_ sample: DirectLiveMotionSample?, time: Double) -> some View {
         let roll: Double = sample?.steadyRoll ?? 0
         let pitch: Double = sample?.pitch ?? 0
-        let depth: Double = min(max(pitch / (.pi / 2), -1), 1)
         let jolt: Double = min(sample?.jolt ?? 0, 2)
-        let inner: CGFloat = size * 0.74
-        let reach: CGFloat = (size - inner) / 2 + size * 0.08
-        let shift: CGSize = CGSize(
-            width: min(max(CGFloat(roll) * reach + CGFloat(sample?.ax ?? 0) * 3, -reach), reach),
-            height: min(max(CGFloat(depth) * reach - CGFloat(sample?.ay ?? 0) * 3, -reach), reach))
+        let ink: Color = dark ? Color.white : Color.black.opacity(0.75)
+        let rim: Color = sample == nil ? ink.opacity(0.6) : DirectLivePhone.rim.opacity(min(1, 0.6 + jolt * 0.4))
+        let bob: CGFloat = CGFloat(sin(time * 2.4))
+        let tilt: CGSize = CGSize(width: CGFloat(sin(roll)) * 7, height: CGFloat(sin(pitch)) * 4)
         return ZStack {
-            Circle().fill(Color.primary.opacity(0.08))
-            avatar()
-                .frame(width: inner, height: inner)
-                .rotation3DEffect(.radians(-pitch * 0.6), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
-                .rotationEffect(.radians(roll))
-                .scaleEffect(1 + CGFloat(depth) * 0.08)
-                .offset(shift)
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(Circle().stroke(Color(fmARGB: 0xFFFF375F).opacity(min(0.9, 0.25 + jolt * 0.6)), lineWidth: 1.5))
-    }
-}
-
-struct DirectLiveTapButton: View {
-    @Environment(\.fmPalette) private var fm
-    let hub: ChatHub
-    let dark: Bool
-    @State private var pulse: Int = 0
-
-    var body: some View {
-        if let engine = hub.live, hub.inDirect {
-            Button(action: {
-                engine.tap(hub.relay.currentConversation, at: DirectLivePoint(x: 0.5, y: 0))
-                DirectLiveHaptics.sent()
-                pulse += 1
-            }) {
-                Image(systemName: "hand.tap.fill")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(dark ? Color.white : Color.black.opacity(0.7))
-                    .symbolEffect(.bounce, value: pulse)
-                    .frame(width: 38, height: 38)
-                    .chatGlass(Circle(), border: fm.border)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.black.opacity(dark ? 0.55 : 0.1))
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .stroke(rim, lineWidth: 1.5)
+            Capsule()
+                .fill(rim)
+                .frame(width: 6, height: 1.6)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 3)
+            if floatingFace {
+                Ellipse()
+                    .fill(Color.black.opacity(0.3))
+                    .frame(width: 12 - bob * 1.5, height: 4)
+                    .blur(radius: 1.2)
+                    .offset(y: 7)
+            } else {
+                avatar().frame(width: 15, height: 15)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Send a tap")
-            .accessibilityHint("Their phone taps back with a vibration.")
-            .accessibilityIdentifier("chat-live-tap-button")
+        }
+        .frame(width: 20, height: 32)
+        .rotation3DEffect(.radians(-pitch * 0.6), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+        .rotationEffect(.radians(roll))
+        .overlay {
+            if floatingFace {
+                avatar()
+                    .frame(width: 22, height: 22)
+                    .shadow(color: Color.black.opacity(0.35), radius: 2.5, y: 3 + bob)
+                    .rotation3DEffect(.radians(roll * 0.6), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+                    .rotation3DEffect(.radians(-pitch * 0.35), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
+                    .scaleEffect(1 + CGFloat(jolt) * 0.08)
+                    .offset(x: tilt.width, y: -5 - bob * 2 + tilt.height)
+                    .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
         }
     }
 }

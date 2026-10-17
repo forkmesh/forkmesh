@@ -171,12 +171,14 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   one sender, sender names in groups, a receipt mark under own messages, large emoji-only
   messages. Bubbles in one run join on the sender's side: `MessagesBubbleShape` takes
   `joinsAbove` and `joinsBelow` and drops those corners to 5 pt, photos use the same corners,
-  rows in a run are 2 pt apart, and only the last bubble has the tail.
+  rows in a run are 2 pt apart, and the last bubble keeps full corners (it also carries the
+  sender's avatar in a group). Bubbles have no tails: the user asked for plain rounded bubbles.
 - **Bubbles** (`MessagesBubbles.swift`): on iOS 26 each bubble is Liquid Glass tinted with the
   bubble colour (`messagesBubbleGlass`, blue for own messages, grey for others); earlier
   systems draw `MessagesBubbleSheen`, a material and gradient with a top highlight and a hairline
   rim. Every bubble ends in `MessagesBubbleMeta`: the send time in 12-hour form ("3:42 PM"), a
-  9 pt ring (`MessagesExpiryRing`) that empties as the message nears the end of its retention
+  11 pt clock (`MessagesExpiryRing`): a circle with a hand that sweeps clockwise from 12 and a
+  faint wedge (`MessagesClockWedge`) for the time left, shrinking as the message nears the end of its retention
   (`ChatHub.expiresAt`, the conversation's retention from `ChatHub.lifetime`; VoiceOver reads
   "Disappears in 5 hours"), and the receipt mark. A small dot before the time marks an own
   direct message the relay still stores: the receipt is Sent, not yet Delivered, and the room's
@@ -197,13 +199,19 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 - **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
   strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
   in `docs/app/chat-private-rooms.md`). While a direct conversation is visible, its motion feed
-  shares phone direction automatically and an impact sends a centred taptic tap. The peer's
-  direction moves only their avatar in the header (`MessagesLivePartnerAvatar`): while they
-  share, the avatar shrinks into its own 38 pt circle and shifts, turns and changes depth inside
-  it like a level, with a pink rim that brightens on a jolt; there is no separate card over the
-  transcript. The composer has two live controls: the hand (`DirectLiveTapButton`) sends a tap
-  straight away, and the pencil opens the coloured drawing canvas, where a short tap also sends a
-  tap and a drag draws. Sending and receiving a tap always vibrate (`DirectLiveHaptics.sent` and
+  shares phone direction automatically and an impact sends a centred taptic tap. The header
+  keeps the peer's normal avatar still and shows their direction on a separate icon
+  (`MessagesLivePartnerPhone`): a small phone with their avatar on its screen that tilts and
+  turns with their phone, with a pink rim that brightens on a jolt (grey while they are not
+  sharing). Tapping it opens a menu with **Floating 3D Face** (stored in
+  `chat/live/floatingFace`): their face then lifts off the screen, bobs above it with a shadow
+  and turns in 3D with the tilt. A short tap anywhere on a direct conversation's transcript sends
+  a tap at that spot (`transcriptTapped`); with the keyboard up the first tap only closes it. There
+  is no tap button any more, so VoiceOver gets a "Send a tap" action on the phone icon. The pencil
+  in the composer opens the coloured drawing canvas, where a short tap also sends a tap and a drag
+  draws; its toolbar sits at the top under the header, and the ink colour is a drop-down (the
+  current swatch and a chevron open a 4 by 2 grid of colours, which closes on a pick or a touch on
+  the canvas). Sending and receiving a tap always vibrate (`DirectLiveHaptics.sent` and
   `tapped`), even with app haptics turned off in Settings, because the tap is the message.
 - **No pings for private conversations**: `ChatHub.filePing` skips every conversation
   `isPrivateConversation` names (relay DMs, server DMs, private office rooms, relay private
