@@ -245,6 +245,7 @@ object RouteParser {
             "face-changer" -> listOf(Route.FaceChanger)
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "rss", "rss-reader" -> listOf(Route.RssReader)
+            "workflows" -> if (first == null) listOf(Route.Workflows) else null
             "docs" -> listOf(Route.Docs)
             "repos" -> listOf(Route.Repos(RepoScope.All))
             "profile" -> if (me.isEmpty()) listOf(Route.Settings("profile")) else listOf(Route.Profile(me))
@@ -296,6 +297,7 @@ object RouteParser {
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "rss", "rss-reader" -> listOf(Route.RssReader)
+        "workflows" -> listOf(Route.Workflows)
         "people" -> listOf(Route.People)
         "docs" -> listOf(Route.Docs)
         "activity" -> listOf(Route.Activity)

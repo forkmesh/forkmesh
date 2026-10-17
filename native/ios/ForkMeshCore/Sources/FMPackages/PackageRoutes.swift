@@ -90,6 +90,7 @@ public enum PackageRoutes {
         case "videoMixDjStudio": return .videoMixDjStudio
         case "appStoreStatus": return .appStoreStatus
         case "rssReader": return .rssReader
+        case "workflows": return .workflows
         case "people": return .people
         case "docs": return .docs
         case "notes": return .notes

@@ -148,6 +148,7 @@ object RouteCatalog {
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.RssReader -> "RSS Reader"
+        Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
         Route.Kind.Stats -> "Stats"
@@ -213,6 +214,7 @@ object RouteCatalog {
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.RssReader -> "feed"
+        Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
         Route.Kind.Stats -> "bar_chart"
@@ -244,7 +246,6 @@ data class HubItem(
         data class Open(val route: Route) : Action()
         data object World : Action()
         data object DesignSystem : Action()
-        data object Workflows : Action()
         data object ReportBug : Action()
         data object SetStatus : Action()
         data object SignIn : Action()
@@ -334,7 +335,7 @@ object HubCatalog {
         add(HubItem.destination(Route.Tour))
         add(HubItem("world", "World", "public", HubItem.Action.World))
         add(HubItem("designSystem", "Design", "palette", HubItem.Action.DesignSystem))
-        add(HubItem("workflows", "Workflows", "account_tree", HubItem.Action.Workflows))
+        add(HubItem.destination(Route.Workflows))
         if (guest) {
             add(HubItem("signIn", "Sign in", "login", HubItem.Action.SignIn))
         } else {
@@ -370,8 +371,7 @@ object HubCatalog {
 
     fun pages(groups: List<HubGroup>): List<HubGroup> = groups.mapNotNull { group ->
         val items = group.items.filter {
-            it.action is HubItem.Action.Open || it.action == HubItem.Action.World || it.action == HubItem.Action.DesignSystem ||
-                it.action == HubItem.Action.Workflows
+            it.action is HubItem.Action.Open || it.action == HubItem.Action.World || it.action == HubItem.Action.DesignSystem
         }
         if (items.isEmpty()) null else group.copy(items = items)
     }

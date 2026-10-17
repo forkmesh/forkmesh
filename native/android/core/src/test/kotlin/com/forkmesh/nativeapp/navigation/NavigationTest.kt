@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.navigation
 
 import com.forkmesh.nativeapp.api.MemoryPrefStore
+import com.forkmesh.nativeapp.market.PackageGate
 import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
@@ -30,7 +31,7 @@ class NavigationTest {
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.GlassesAlert, Route.FaceChanger, Route.AppStoreStatus, Route.RssReader, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.GlassesAlert, Route.FaceChanger, Route.AppStoreStatus, Route.RssReader, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -128,6 +129,8 @@ class NavigationTest {
         assertEq(listOf(Route.RssReader), RouteParser.parse("https://app.forkmesh.com/dashboard/rss")!!.stack)
         assertEq(listOf(Route.RssReader), RouteParser.parse("forkmesh://rss-reader")!!.stack)
         assertEq(listOf(Route.RssReader), RouteParser.parse("forkmesh://dashboard/rss")!!.stack)
+        assertEq(listOf(Route.Workflows), RouteParser.parse("https://app.forkmesh.com/dashboard/workflows")!!.stack)
+        assertEq(listOf(Route.Workflows), RouteParser.parse("forkmesh://workflows")!!.stack)
         assertEq("RSS Reader", RouteCatalog.title(Route.Kind.RssReader))
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://docs")!!.stack)
@@ -241,10 +244,12 @@ class NavigationTest {
         expect("world" in hidden.flatMap { g -> g.items.map { it.id } })
     }
 
-    fun testWorkflowsLinkSitsInTheAppGroupAsAPage() {
+    fun testWorkflowsIsANativePageInTheAppGroup() {
         val item = HubCatalog.app(false).single { it.id == "workflows" }
-        assertEq(HubItem.Action.Workflows, item.action)
+        assertEq(Route.Workflows, item.route)
         assertEq("account_tree", item.icon)
+        assertEq("workflows", PackageGate.ROUTE_KINDS[Route.Kind.Workflows])
+        assertEq(Route.Workflows, RouteCodec.decode(RouteCodec.encode(Route.Workflows)))
         assertEq("/dashboard/workflows", HubItem.WORKFLOWS_PATH)
         val pages = HubCatalog.pages(HubCatalog.groups(guest = false) { true })
         expect("workflows" in pages.single { it.id == "app" }.items.map { it.id })

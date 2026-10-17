@@ -264,3 +264,4 @@ avatar movement but does not silently change that saved feedback preference.
 - [`native/ios/README.md`](../../native/ios/README.md), [`native/ios/docs/`](../../native/ios/docs/), [`native/android/README.md`](../../native/android/README.md).
 - [`www/docs/mobile/`](../../www/docs/mobile/): node contract, agent access, file editing, Git engine spec and threat model.
 - [`www/docs/operations/mobile-push-notifications.md`](../../www/docs/operations/mobile-push-notifications.md).
+- [WORKFLOWS.md](WORKFLOWS.md): the native Workflows screens and the on-phone engine (JavaScriptCore on iPhone, a Kotlin port on Android).

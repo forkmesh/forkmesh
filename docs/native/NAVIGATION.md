@@ -593,7 +593,7 @@ sidebar sections (§7).
 | Business | Market, CRM, Marketing, Analytics, Competitors, Ad review (reviewers only), Ledger |
 | Personal | Vault, Coves, Calories, Steps, Water, Sleep, Sugar Break, Stretch Break, Glasses Alert, Food Guide, On-device AI, Activity |
 | Insights | Stats, Status, Admin (admins only) |
-| App | Settings, Organizations, People, Docs, Design, Report a bug, Tour, World, Workflows, Sign in/out |
+| App | Settings, Organizations, People, Docs, Design, Report a bug, Tour, World, Workflows (native, [WORKFLOWS.md](WORKFLOWS.md)), Sign in/out |
 
 Items follow the package gate (§2.0.2). The hub shows up to five recent
 destinations. On iPhone, where Home and the bar hold the links, the hub keeps
