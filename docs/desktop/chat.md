@@ -1,24 +1,34 @@
-# Desktop: chat encryption (protocol v3)
+# Desktop: chat encryption (protocols v3 and v4)
 
-Part of [the desktop docs](README.md). The protocol itself is
-[../app/chat-protocol-v3.md](../app/chat-protocol-v3.md); this page says how
-the desktop implements it and where it chose between readings of the spec.
+Part of [the desktop docs](README.md). The protocols themselves are
+[../app/chat-protocol-v3.md](../app/chat-protocol-v3.md) and, for direct
+messages, [../app/chat-protocol-v4.md](../app/chat-protocol-v4.md); this page
+says how the desktop implements them and where it chose between readings of
+the spec.
 
 ## Code
 
 | Piece | Where |
 | --- | --- |
 | Primitives, bundles, seal/open, safety numbers, link crypto | `src/RoomSeal.*` (`forkmesh::chatv3`) |
-| Identity, prekeys, trust, counters, seen sets, held frames | `forkmesh::chatv3::ChatDevice` in `src/RoomSeal.*` |
+| v4 KDFs, signed strings, ratchet session JSON | `forkmesh::chatv4` in `src/RoomSeal.*` |
+| v4 seal/open and the ratchet steps | `RoomSeal::sealV4` / `RoomSeal::openV4` in `src/RoomSeal.cpp` |
+| Identity, prekeys, trust, counters, seen sets, held frames, ratchet state | `forkmesh::chatv3::ChatDevice` in `src/RoomSeal.*` |
 | Relay rooms, office rooms, server DMs | `src/ServerNode.*` (one `RoomSeal` per room) |
 | DM rooms, direct delivery, focus, route, approvals | `src/OfficeChannelMirror.*` |
 | Mesh links, `#mesh`, direct frames on the wire | `src/LocalMeshNode.*` |
 | Route label, pending banner, details dialog | `src/MainWindowMessages.cpp`, `src/MainWindowIssues.cpp` |
 
 Tests: `forkmesh-chat-v3-tests` (`tests/test_chat_v3.cpp`, the wire vectors of
-`conformance/chat/v3/vectors.json` plus round trips) and
+`conformance/chat/v3/vectors.json` plus round trips),
+`forkmesh-chat-v4-tests` (`tests/test_chat_v4.cpp`: the `kdf` vectors, the
+vector `sequence` replayed as `app/tests/test_chat_v4_vectors.py` does, state
+import/export, and round trips: shuffled turns, a late message from an old
+chain, simultaneous first messages, reset recovery, `commit = false`,
+`MAX_SKIP`, session limits, v3/v4 room separation, persistence) and
 `forkmesh-chat-transport-tests` (relay rooms, DMs, mesh links,
-`testLocalMeshLinkV3`, `testDirectMessagesOverLocalMesh`).
+`testLocalMeshLinkV3`, `testDirectMessagesOverLocalMesh`,
+`testDirectRoomRatchetRecovery`).
 
 ## Keys and storage
 
@@ -39,6 +49,13 @@ The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
   records. Both drop the least recently seen.
 - An open room with more than 64 devices seals to itself and the 63 most
   recently seen.
+- The v4 ratchet state of a DM room is at `chat/e2ee/ratchetV4/<b64u(room)>`
+  in the spec's canonical JSON (the same shape `exportRatchets` returns and
+  `importRatchets` reads, so the vector states load unchanged). It is kept on
+  `ChatDevice`, per room, so the mirror's direct seal and the room's
+  `ServerNode` share one ratchet. A seal writes it synchronously before the
+  frame is returned (like the counter reservation); an open writes it with
+  the delayed writer, like the seen sets.
 
 ## Identities per room
 
@@ -51,6 +68,47 @@ The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 `ServerNode::setDirectRoom(true)` derives the scope from the room name
 (`chat-direct:<id>:vN` → `direct:<id>`); the mirror passes the account
 (`setChatAccount`) and the DM's two members (`setDirectParticipants`).
+
+## Direct messages: v4
+
+A `RoomSeal` with the strict policy (server DMs and their `direct-sealed`
+mesh copies) seals and opens only v4 frames; open rooms (relay channels,
+office channels, `#mesh`) only v3. A v3 frame in a DM room, or a v4 frame in
+an open room, opens as `invalid` and is dropped. `RoomSeal::setRatchet(false)`
+exists only so the v3 vector tests can open the v3 DM vectors.
+
+- A v4 frame has no entry for its sender. A DM written before any other device
+  is approved is still sent, with no entries, and the outbox re-seals it once a
+  peer key is approved. Outbox completeness ignores this device's own key.
+- `open` returns `Own` for this device's frames coming back from the relay.
+  `ServerNode` ignores them: no `forkmesh-received`, no key advertisement; it
+  only uses the relay's recipient count on the echo for the sent mark of a
+  message it sent this session. Since own frames no longer open, the outbox
+  is filled only when a frame is sent, not from the relay's replay after a
+  restart.
+- There is no history-replay exception: a frame already opened is `replay`.
+- `NoSession` (missing session or prekey, too many skipped keys, a failed
+  unwrap) calls `ServerNode::recoverSession(kid)`: at most once per room and
+  peer every 60 s (the clock is kept on `ChatDevice`, so a reconnect does not
+  restart it), it deletes the sessions with that `kid`, sends a persisted,
+  non-notifying `{"type":"e2ee-reset","senderId":<node>}` sealed to that
+  `kid` alone, and one persisted key advertisement. Recovery is skipped
+  entirely (sessions kept, nothing sent) when the frame's `ctr` is below the
+  highest `ctr` already opened from that `kid` in the room (the seen-set
+  maximum, `RoomSeal::openedLaterThan`): the relay replays an unacknowledged
+  `noSession` frame on every reconnect, and resetting again would break the
+  session that already recovered. The 60 s clock reads `ChatDevice::now()`, so
+  tests can move it. A `direct-sealed`
+  mesh frame that gives `NoSession` asks the room's relay node to do the same
+  when one is connected.
+- An opened `e2ee-reset` is acknowledged but never shown; it re-seals every
+  outbox entry to that device alone (same id, `persist`, `notify` for chat,
+  `resend: true`) and sends no `forkmesh-superseded`, because the original
+  relay copy still serves the other devices. Re-seals for a newly approved
+  device keep the v3 behaviour (re-seal to all, supersede the old ref).
+- Held frames released on approval are opened through the ratchet like any
+  other frame. `open` takes a `commit` flag; with `commit = false` nothing is
+  stored and frames are not held.
 
 ## Relay rooms
 

@@ -57,10 +57,10 @@ final class RoomSealVectorTests: XCTestCase {
         let bob = try device("bob")
         let seal = try RoomSeal(
             room: roomName ?? room, scope: scope, policy: .strict, acct: "bob", node: node("bob"),
-            participants: participants, keyring: bob)
+            participants: participants, keyring: bob, version: ChatV3.version)
         let setup = try RoomSeal(
             room: room, scope: scope, policy: .strict, acct: "bob", node: node("bob"), participants: participants,
-            keyring: bob)
+            keyring: bob, version: ChatV3.version)
         XCTAssertEqual(setup.acceptBundle(bundle("alice"), now: now)?.state, .approved)
         XCTAssertEqual(setup.acceptBundle(bundle("bob"), now: now)?.state, .approved)
         XCTAssertEqual(setup.acceptBundle(bundle("alice2"), now: now)?.state, .pending)
@@ -308,13 +308,14 @@ final class RoomSealRoundTripTests: XCTestCase {
 
         let frame = try alice.seal(["type": "chat", "id": "m1", "senderId": "alice-node", "text": "no setup required"], now: now)
         XCTAssertTrue(RoomSeal.isSealedFrame(frame))
+        XCTAssertEqual(frame["v"], .int(ChatV4.version), "a DM room seals v4")
         XCTAssertFalse(JSON.encode(frame).contains("no setup required"))
-        XCTAssertEqual(RoomSeal.wrappedKeyIds(frame), [alice.keyId, bob.keyId].sorted())
+        XCTAssertEqual(RoomSeal.wrappedKeyIds(frame), [bob.keyId], "a v4 frame has no entry for its sender")
         let opened = bob.open(frame, now: now)
         XCTAssertEqual(opened.plain?["text"], "no setup required")
         XCTAssertEqual(opened.senderAcct, "alice")
         XCTAssertEqual(bob.open(frame, now: now), .replay)
-        XCTAssertEqual(alice.open(frame, now: now).plain?["text"], "no setup required", "the sender reads its own copy")
+        XCTAssertEqual(alice.open(frame, now: now), .own, "the sender keeps its own copy in its history")
 
         let stranger = try seal(InMemorySecureStore(), acct: "eve")
         XCTAssertEqual(stranger.acceptBundle(alice.keyFrame(now: now), now: now)?.state, .approved)
@@ -370,9 +371,9 @@ final class RoomSealRoundTripTests: XCTestCase {
         XCTAssertFalse(sealedTo.contains(kids[0]))
     }
 
-    func testHistoryReplaySkipsOnlyTheSeenCheck() throws {
-        let alice = try seal(InMemorySecureStore(), acct: "alice")
-        let bob = try seal(InMemorySecureStore(), acct: "bob")
+    func testHistoryReplaySkipsOnlyTheSeenCheckInOpenRooms() throws {
+        let alice = try seal(InMemorySecureStore(), acct: "alice", policy: .open)
+        let bob = try seal(InMemorySecureStore(), acct: "bob", policy: .open)
         alice.acceptBundle(bob.keyFrame(now: now), now: now)
         bob.acceptBundle(alice.keyFrame(now: now), now: now)
         let frame = try alice.seal(["type": "chat", "id": "h1", "senderId": "alice-node", "text": "x"], now: now)
@@ -383,6 +384,13 @@ final class RoomSealRoundTripTests: XCTestCase {
         tampered["ts"] = .int(now + 1)
         XCTAssertEqual(bob.open(tampered, now: now, history: true), .invalid, "the signature still applies")
         XCTAssertEqual(bob.open(frame, now: now + ChatV3.prekeyLifeMs + 1, history: true), .invalid, "so does the time")
+        let dmAlice = try seal(InMemorySecureStore(), acct: "alice")
+        let dmBob = try seal(InMemorySecureStore(), acct: "bob")
+        dmAlice.acceptBundle(dmBob.keyFrame(now: now), now: now)
+        dmBob.acceptBundle(dmAlice.keyFrame(now: now), now: now)
+        let dm = try dmAlice.seal(["type": "chat", "id": "h2", "senderId": "alice-node", "text": "x"], now: now)
+        XCTAssertEqual(dmBob.open(dm, now: now).name, "opened")
+        XCTAssertEqual(dmBob.open(dm, now: now, history: true), .replay, "v4 has no history exception: the key is gone")
     }
 
     func testStrictTrustHoldsANewDeviceOfAKnownAccount() throws {
@@ -485,7 +493,7 @@ final class RoomSealRoundTripTests: XCTestCase {
             mutate { $0["ctr"] = .double(1) },
             mutate { $0["ctr"] = 0 },
             mutate { $0["keys"] = .array([]) },
-            mutate { $0["keys"] = .array((frame["keys"]?.arrayValue ?? []).reversed()) },
+            mutate { $0["keys"] = .array((frame["keys"]?.arrayValue ?? []) + (frame["keys"]?.arrayValue ?? [])) },
             mutate { $0["sig"] = "short" },
             mutate { $0["kid"] = .string(bob.keyId) },
         ]

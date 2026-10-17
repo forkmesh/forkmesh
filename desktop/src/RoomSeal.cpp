@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QJsonDocument>
+#include <QMessageAuthenticationCode>
 #include <QMap>
 #include <QMutex>
 #include <QRegularExpression>
@@ -1481,6 +1482,14 @@ bool ChatDevice::isReplay(const QString &room, const QString &kid, qint64 ctr)
     return ctr <= it->max - kReplayWindow || it->set.contains(ctr);
 }
 
+qint64 ChatDevice::seenMax(const QString &room, const QString &kid)
+{
+    Room &state = roomState(room);
+    loadSeen(room, state);
+    const auto it = state.seen.constFind(kid);
+    return it == state.seen.constEnd() ? 0 : it->max;
+}
+
 void ChatDevice::markSeen(const QString &room, const QString &kid, qint64 ctr)
 {
     Room &state = roomState(room);
@@ -1509,6 +1518,158 @@ void ChatDevice::markSeen(const QString &room, const QString &kid, qint64 ctr)
         state.seen.remove(oldest);
     }
     saveSeen(room);
+}
+
+void ChatDevice::clearSeen()
+{
+    for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it) {
+        loadSeen(it.key(), it.value());
+        if (it->seen.isEmpty())
+            continue;
+        it->seen.clear();
+        saveSeen(it.key());
+    }
+}
+
+void ChatDevice::loadRatchets(const QString &room, Room &state)
+{
+    if (state.ratchetsLoaded)
+        return;
+    state.ratchetsLoaded = true;
+    if (!m_persistent)
+        return;
+    const QJsonObject root =
+        QJsonDocument::fromJson(
+            readSetting(settingKey("chat/e2ee/ratchetV4/", room)).toByteArray())
+            .object();
+    if (root.value(QStringLiteral("v")).toInt() != forkmesh::chatv4::kVersion)
+        return;
+    const QJsonObject peers = root.value(QStringLiteral("peers")).toObject();
+    for (auto it = peers.constBegin(); it != peers.constEnd(); ++it) {
+        if (!keyIdPattern().match(it.key()).hasMatch())
+            continue;
+        const QJsonObject entry = it.value().toObject();
+        RatchetPeer peer;
+        peer.current = entry.value(QStringLiteral("current")).toString();
+        for (const QJsonValue &value : entry.value(QStringLiteral("sessions")).toArray()) {
+            RatchetSession session;
+            if (forkmesh::chatv4::sessionFromJson(value.toObject(), &session))
+                peer.sessions.append(session);
+        }
+        if (!peer.sessions.isEmpty())
+            state.ratchets.insert(it.key(), peer);
+    }
+}
+
+QHash<QString, RatchetPeer> ChatDevice::ratchetPeers(const QString &room)
+{
+    Room &state = roomState(room);
+    loadRatchets(room, state);
+    return state.ratchets;
+}
+
+void ChatDevice::storeRatchetPeer(const QString &room, const QString &kid, RatchetPeer peer,
+                                  qint64 now)
+{
+    Room &state = roomState(room);
+    loadRatchets(room, state);
+    std::stable_sort(peer.sessions.begin(), peer.sessions.end(),
+                     [](const RatchetSession &a, const RatchetSession &b) {
+                         return a.used > b.used;
+                     });
+    QList<RatchetSession> kept;
+    for (const RatchetSession &session : std::as_const(peer.sessions))
+        if (session.sid == peer.current) {
+            kept.append(session);
+            break;
+        }
+    for (const RatchetSession &session : std::as_const(peer.sessions)) {
+        if (kept.size() >= forkmesh::chatv4::kSessionsKept)
+            break;
+        if (session.sid != peer.current)
+            kept.append(session);
+    }
+    for (RatchetSession &session : kept) {
+        QList<RatchetSkipped> fresh;
+        for (const RatchetSkipped &skipped : std::as_const(session.skipped))
+            if (skipped.ts >= now - forkmesh::chatv4::kSkippedLifeMs)
+                fresh.append(skipped);
+        session.skipped = fresh.mid(qMax<qsizetype>(0, fresh.size() -
+                                                           forkmesh::chatv4::kSkippedKept));
+    }
+    peer.sessions = kept;
+    state.ratchets.insert(kid, peer);
+}
+
+void ChatDevice::saveRatchets(const QString &room, bool immediately)
+{
+    if (!m_persistent)
+        return;
+    const QString key = settingKey("chat/e2ee/ratchetV4/", room);
+    const QByteArray value =
+        QJsonDocument(exportRatchets(room)).toJson(QJsonDocument::Compact);
+    if (immediately)
+        writeNow(key, value);
+    else
+        writeLater(key, value);
+}
+
+void ChatDevice::resetRatchet(const QString &room, const QString &kid)
+{
+    Room &state = roomState(room);
+    loadRatchets(room, state);
+    if (state.ratchets.remove(kid))
+        saveRatchets(room, true);
+}
+
+bool ChatDevice::claimSessionReset(const QString &room, const QString &kid, qint64 now)
+{
+    const QString key = room + QLatin1Char('\n') + kid;
+    const auto last = m_sessionResets.constFind(key);
+    if (last != m_sessionResets.cend() && now - last.value() < forkmesh::chatv4::kResetEveryMs &&
+        now >= last.value())
+        return false;
+    m_sessionResets.insert(key, now);
+    return true;
+}
+
+QJsonObject ChatDevice::exportRatchets(const QString &room)
+{
+    Room &state = roomState(room);
+    loadRatchets(room, state);
+    QJsonObject peers;
+    for (auto it = state.ratchets.constBegin(); it != state.ratchets.constEnd(); ++it) {
+        QJsonArray sessions;
+        for (const RatchetSession &session : it->sessions)
+            sessions.append(forkmesh::chatv4::sessionJson(session));
+        peers.insert(it.key(),
+                     QJsonObject{{QStringLiteral("current"),
+                                  it->current.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                                        : QJsonValue(it->current)},
+                                 {QStringLiteral("sessions"), sessions}});
+    }
+    return {{QStringLiteral("v"), forkmesh::chatv4::kVersion},
+            {QStringLiteral("peers"), peers}};
+}
+
+void ChatDevice::importRatchets(const QString &room, const QJsonObject &stored)
+{
+    Room &state = roomState(room);
+    state.ratchetsLoaded = true;
+    state.ratchets.clear();
+    const QJsonObject peers = stored.value(QStringLiteral("peers")).toObject();
+    for (auto it = peers.constBegin(); it != peers.constEnd(); ++it) {
+        const QJsonObject entry = it.value().toObject();
+        RatchetPeer peer;
+        peer.current = entry.value(QStringLiteral("current")).toString();
+        for (const QJsonValue &value : entry.value(QStringLiteral("sessions")).toArray()) {
+            RatchetSession session;
+            if (forkmesh::chatv4::sessionFromJson(value.toObject(), &session))
+                peer.sessions.append(session);
+        }
+        state.ratchets.insert(it.key(), peer);
+    }
+    saveRatchets(room, true);
 }
 
 void ChatDevice::hold(const QString &scope, const QString &room,
@@ -1575,6 +1736,306 @@ void ChatDevice::flush()
 
 } // namespace forkmesh::chatv3
 
+namespace forkmesh::chatv4 {
+
+using forkmesh::chatv3::RatchetSession;
+using forkmesh::chatv3::RatchetSkipped;
+
+namespace {
+
+const QRegularExpression &key32Pattern()
+{
+    static const QRegularExpression value(QStringLiteral("\\A[A-Za-z0-9_-]{43}\\z"));
+    return value;
+}
+
+bool count(const QJsonValue &value, qint64 *out)
+{
+    qint64 number = 0;
+    if (!chatv3::jsonInteger(value, &number) || number < 0 || number >= (qint64(1) << 31))
+        return false;
+    if (out)
+        *out = number;
+    return true;
+}
+
+KeyPair split64(const QByteArray &out)
+{
+    if (out.size() != 64)
+        return {};
+    return {out.left(32), out.mid(32)};
+}
+
+QJsonValue nullable(const QString &text)
+{
+    return text.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(text);
+}
+
+QJsonValue nullableB64(const QByteArray &bytes)
+{
+    return bytes.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(chatv3::b64(bytes));
+}
+
+bool optionalB64(const QJsonValue &value, int size, QByteArray *out)
+{
+    if (value.isNull() || value.isUndefined()) {
+        out->clear();
+        return true;
+    }
+    bool ok = false;
+    *out = chatv3::fromB64(value.toString(), &ok);
+    return ok && out->size() == size;
+}
+
+} // namespace
+
+QByteArray hmacSha256(const QByteArray &key, const QByteArray &data)
+{
+    return QMessageAuthenticationCode::hash(data, key, QCryptographicHash::Sha256);
+}
+
+KeyPair kdfInit(const QString &room, const QString &sender, const QString &recipient,
+                const QString &spkId, const QString &sid, const QByteArray &ss1,
+                const QByteArray &ss2)
+{
+    if (ss1.isEmpty() || ss2.isEmpty())
+        return {};
+    const QByteArray salt =
+        chatv3::sha256(QByteArrayLiteral("ForkMesh chat e2ee salt v4:") + room.toUtf8());
+    const QByteArray info = QStringList{QStringLiteral("forkmesh-chat-e2ee-init-v4"), room,
+                                        sender, recipient, spkId, sid}
+                                .join(QLatin1Char('\n'))
+                                .toUtf8();
+    QByteArray ikm = ss1 + ss2;
+    const KeyPair out = split64(chatv3::hkdfSha256(ikm, salt, info, 64));
+    chatv3::wipe(ikm);
+    return out;
+}
+
+KeyPair kdfRk(const QByteArray &rk, const QByteArray &dhOut, const QByteArray &ss)
+{
+    if (rk.isEmpty() || dhOut.isEmpty() || ss.isEmpty())
+        return {};
+    QByteArray ikm = dhOut + ss;
+    const KeyPair out = split64(chatv3::hkdfSha256(
+        ikm, rk, QByteArrayLiteral("forkmesh-chat-e2ee-ratchet-v4"), 64));
+    chatv3::wipe(ikm);
+    return out;
+}
+
+KeyPair kdfCk(const QByteArray &ck)
+{
+    if (ck.isEmpty())
+        return {};
+    return {hmacSha256(ck, QByteArray(1, '\x01')), hmacSha256(ck, QByteArray(1, '\x02'))};
+}
+
+QString sessionId(const QByteArray &dhPub, const QByteArray &ct)
+{
+    return chatv3::id16(dhPub + ct);
+}
+
+QByteArray contentAad(const QString &room, const QString &sender, qint64 ctr, qint64 ts)
+{
+    return QStringList{QStringLiteral("forkmesh-chat-e2ee-content-v4"), room, sender,
+                       QString::number(ctr), QString::number(ts)}
+        .join(QLatin1Char('\n'))
+        .toUtf8();
+}
+
+namespace {
+
+QString ctHash(const QJsonObject &entry)
+{
+    return chatv3::b64u(
+        chatv3::sha256(chatv3::fromB64(entry.value(QStringLiteral("ct")).toString())));
+}
+
+QString integerText(const QJsonObject &entry, const char *key)
+{
+    qint64 value = 0;
+    chatv3::jsonInteger(entry.value(QLatin1String(key)), &value);
+    return QString::number(value);
+}
+
+} // namespace
+
+QByteArray wrapAad(const QString &room, const QString &sender, const QJsonObject &entry,
+                   const QString &bodyNonce, const QString &bodyTag)
+{
+    return QStringList{QStringLiteral("forkmesh-chat-e2ee-wrap-v4"),
+                       room,
+                       sender,
+                       entry.value(QStringLiteral("kid")).toString(),
+                       entry.value(QStringLiteral("sid")).toString(),
+                       entry.value(QStringLiteral("spk")).toString(),
+                       ctHash(entry),
+                       entry.value(QStringLiteral("dh")).toString(),
+                       integerText(entry, "pn"),
+                       integerText(entry, "n"),
+                       bodyNonce,
+                       bodyTag}
+        .join(QLatin1Char('\n'))
+        .toUtf8();
+}
+
+QByteArray sealedMessage(const QString &room, const QJsonObject &frame)
+{
+    bool ok = false;
+    const QByteArray body =
+        chatv3::fromB64(frame.value(QStringLiteral("body")).toString(), &ok);
+    if (!ok)
+        return {};
+    QString text = QStringList{QStringLiteral("forkmesh-chat-e2ee-sealed-v4"),
+                               room,
+                               frame.value(QStringLiteral("kid")).toString(),
+                               frame.value(QStringLiteral("idk")).toString(),
+                               integerText(frame, "ctr"),
+                               integerText(frame, "ts"),
+                               frame.value(QStringLiteral("nonce")).toString(),
+                               frame.value(QStringLiteral("tag")).toString(),
+                               chatv3::b64u(chatv3::sha256(body))}
+                       .join(QLatin1Char('\n'));
+    for (const QJsonValue &value : frame.value(QStringLiteral("keys")).toArray()) {
+        const QJsonObject entry = value.toObject();
+        text += QLatin1Char('\n') +
+                QStringList{entry.value(QStringLiteral("kid")).toString(),
+                            entry.value(QStringLiteral("sid")).toString(),
+                            entry.value(QStringLiteral("spk")).toString(),
+                            ctHash(entry),
+                            entry.value(QStringLiteral("dh")).toString(),
+                            integerText(entry, "pn"),
+                            integerText(entry, "n"),
+                            entry.value(QStringLiteral("nonce")).toString(),
+                            entry.value(QStringLiteral("tag")).toString(),
+                            entry.value(QStringLiteral("key")).toString()}
+                    .join(QLatin1Char('|'));
+    }
+    return text.toUtf8();
+}
+
+bool validEntry(const QJsonObject &entry)
+{
+    for (const char *key : {"kid", "sid", "spk", "ct", "dh", "nonce", "tag", "key"})
+        if (!entry.value(QLatin1String(key)).isString())
+            return false;
+    const auto &id = chatv3::keyIdPattern();
+    if (!id.match(entry.value(QStringLiteral("kid")).toString()).hasMatch() ||
+        !id.match(entry.value(QStringLiteral("sid")).toString()).hasMatch() ||
+        !id.match(entry.value(QStringLiteral("spk")).toString()).hasMatch() ||
+        !key32Pattern().match(entry.value(QStringLiteral("dh")).toString()).hasMatch() ||
+        !count(entry.value(QStringLiteral("pn")), nullptr) ||
+        !count(entry.value(QStringLiteral("n")), nullptr))
+        return false;
+    bool okCt = false;
+    bool okNonce = false;
+    bool okTag = false;
+    bool okKey = false;
+    return chatv3::fromB64(entry.value(QStringLiteral("ct")).toString(), &okCt).size() ==
+               chatv3::kMlkemCiphertextBytes &&
+           chatv3::fromB64(entry.value(QStringLiteral("nonce")).toString(), &okNonce)
+                   .size() == 12 &&
+           chatv3::fromB64(entry.value(QStringLiteral("tag")).toString(), &okTag).size() ==
+               16 &&
+           chatv3::fromB64(entry.value(QStringLiteral("key")).toString(), &okKey).size() ==
+               32 &&
+           okCt && okNonce && okTag && okKey;
+}
+
+QJsonObject sessionJson(const RatchetSession &session)
+{
+    QJsonArray skipped;
+    for (const RatchetSkipped &key : session.skipped)
+        skipped.append(QJsonObject{{QStringLiteral("dh"), key.dh},
+                                   {QStringLiteral("n"), key.n},
+                                   {QStringLiteral("mk"), chatv3::b64(key.mk)},
+                                   {QStringLiteral("ts"), key.ts}});
+    const QJsonValue dhs =
+        session.dhsPriv.isEmpty()
+            ? QJsonValue(QJsonValue::Null)
+            : QJsonValue(QJsonObject{{QStringLiteral("priv"), chatv3::b64(session.dhsPriv)},
+                                     {QStringLiteral("pub"), session.dhsPub}});
+    const QJsonValue sq =
+        session.sqSpk.isEmpty()
+            ? QJsonValue(QJsonValue::Null)
+            : QJsonValue(QJsonObject{{QStringLiteral("spk"), session.sqSpk},
+                                     {QStringLiteral("ct"), chatv3::b64(session.sqCt)}});
+    return {{QStringLiteral("sid"), session.sid},
+            {QStringLiteral("rk"), chatv3::b64(session.rk)},
+            {QStringLiteral("dhs"), dhs},
+            {QStringLiteral("dhr"), nullable(session.dhr)},
+            {QStringLiteral("cks"), nullableB64(session.cks)},
+            {QStringLiteral("ns"), session.ns},
+            {QStringLiteral("pn"), session.pn},
+            {QStringLiteral("sq"), sq},
+            {QStringLiteral("ckr"), nullableB64(session.ckr)},
+            {QStringLiteral("nr"), session.nr},
+            {QStringLiteral("skipped"), skipped},
+            {QStringLiteral("created"), session.created},
+            {QStringLiteral("used"), session.used}};
+}
+
+bool sessionFromJson(const QJsonObject &object, RatchetSession *session)
+{
+    RatchetSession out;
+    out.sid = object.value(QStringLiteral("sid")).toString();
+    bool ok = false;
+    out.rk = chatv3::fromB64(object.value(QStringLiteral("rk")).toString(), &ok);
+    if (!chatv3::keyIdPattern().match(out.sid).hasMatch() || !ok || out.rk.size() != 32)
+        return false;
+    const QJsonValue dhs = object.value(QStringLiteral("dhs"));
+    if (dhs.isObject()) {
+        out.dhsPriv = chatv3::fromB64(dhs.toObject().value(QStringLiteral("priv")).toString(),
+                                      &ok);
+        out.dhsPub = dhs.toObject().value(QStringLiteral("pub")).toString();
+        if (!ok || out.dhsPriv.size() != 32 || !key32Pattern().match(out.dhsPub).hasMatch())
+            return false;
+    }
+    const QJsonValue dhr = object.value(QStringLiteral("dhr"));
+    if (dhr.isString()) {
+        out.dhr = dhr.toString();
+        if (!key32Pattern().match(out.dhr).hasMatch())
+            return false;
+    }
+    if (!optionalB64(object.value(QStringLiteral("cks")), 32, &out.cks) ||
+        !optionalB64(object.value(QStringLiteral("ckr")), 32, &out.ckr))
+        return false;
+    const QJsonValue sq = object.value(QStringLiteral("sq"));
+    if (sq.isObject()) {
+        out.sqSpk = sq.toObject().value(QStringLiteral("spk")).toString();
+        out.sqCt = chatv3::fromB64(sq.toObject().value(QStringLiteral("ct")).toString(), &ok);
+        if (!ok || !chatv3::keyIdPattern().match(out.sqSpk).hasMatch() ||
+            out.sqCt.size() != chatv3::kMlkemCiphertextBytes)
+            return false;
+    }
+    if (!count(object.value(QStringLiteral("ns")), &out.ns) ||
+        !count(object.value(QStringLiteral("pn")), &out.pn) ||
+        !count(object.value(QStringLiteral("nr")), &out.nr))
+        return false;
+    chatv3::jsonInteger(object.value(QStringLiteral("created")), &out.created);
+    chatv3::jsonInteger(object.value(QStringLiteral("used")), &out.used);
+    for (const QJsonValue &value : object.value(QStringLiteral("skipped")).toArray()) {
+        const QJsonObject entry = value.toObject();
+        RatchetSkipped key;
+        key.dh = entry.value(QStringLiteral("dh")).toString();
+        key.mk = chatv3::fromB64(entry.value(QStringLiteral("mk")).toString(), &ok);
+        if (!ok || key.mk.size() != 32 || !key32Pattern().match(key.dh).hasMatch() ||
+            !count(entry.value(QStringLiteral("n")), &key.n))
+            continue;
+        chatv3::jsonInteger(entry.value(QStringLiteral("ts")), &key.ts);
+        out.skipped.append(key);
+    }
+    *session = out;
+    return true;
+}
+
+QString resetType()
+{
+    return QStringLiteral("e2ee-reset");
+}
+
+} // namespace forkmesh::chatv4
+
 using namespace forkmesh::chatv3;
 
 RoomSeal::RoomSeal(const QString &roomName, const QString &trustScope, Policy policy,
@@ -1585,6 +2046,7 @@ RoomSeal::RoomSeal(const QString &roomName, const QString &trustScope, Policy po
       m_acct(acct),
       m_node(node),
       m_policy(policy),
+      m_ratchet(policy == Policy::Strict),
       m_device(std::move(device))
 {
     if (m_room.isEmpty()) {
@@ -1622,18 +2084,21 @@ bool RoomSeal::isKeyFrame(const QJsonObject &frame)
 bool RoomSeal::isSealedFrame(const QJsonObject &frame)
 {
     const QJsonValue keys = frame.value(QStringLiteral("keys"));
+    const int version = frame.value(QStringLiteral("v")).toInt();
     return frame.value(QStringLiteral("type")).toString() == QLatin1String("sealed") &&
-           frame.value(QStringLiteral("v")).toInt() == 3 &&
+           (version == 3 || version == forkmesh::chatv4::kVersion) &&
            keyIdPattern().match(frame.value(QStringLiteral("kid")).toString()).hasMatch() &&
-           keys.isArray() && !keys.toArray().isEmpty() &&
+           keys.isArray() && (version != 3 || !keys.toArray().isEmpty()) &&
            keys.toArray().size() <= kMaxRecipients;
 }
 
 bool RoomSeal::isLegacyFrame(const QJsonObject &frame)
 {
     const QString type = frame.value(QStringLiteral("type")).toString();
-    return (type == QLatin1String("sealed") || type == QLatin1String("e2ee-key")) &&
-           frame.value(QStringLiteral("v")).toInt() != 3;
+    const int version = frame.value(QStringLiteral("v")).toInt();
+    if (type == QLatin1String("sealed"))
+        return version != 3 && version != forkmesh::chatv4::kVersion;
+    return type == QLatin1String("e2ee-key") && version != 3;
 }
 
 QString RoomSeal::frameKeyId(const QJsonObject &frame)
@@ -1699,6 +2164,8 @@ QJsonObject RoomSeal::seal(const QJsonObject &plain, const QStringList *only) co
     if (!isValid())
         return {};
     m_device->maintainPrekeys();
+    if (usesRatchet())
+        return sealV4(plain, only);
     const Prekey *own = m_device->newestPrekey();
     if (!own)
         return {};
@@ -1799,7 +2266,8 @@ QJsonObject RoomSeal::seal(const QJsonObject &plain, const QStringList *only) co
     return frame;
 }
 
-RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay) const
+RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay,
+                                bool commit) const
 {
     Opened result;
     if (!isValid())
@@ -1807,7 +2275,11 @@ RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay) co
     if (frame.value(QStringLiteral("type")).toString() != QLatin1String("sealed"))
         return result;
     qint64 version = 0;
-    if (!jsonInteger(frame.value(QStringLiteral("v")), &version) || version != 3)
+    if (!jsonInteger(frame.value(QStringLiteral("v")), &version))
+        return result;
+    if (usesRatchet())
+        return version == forkmesh::chatv4::kVersion ? openV4(frame, commit) : result;
+    if (version != 3)
         return result;
     const QJsonValue kidValue = frame.value(QStringLiteral("kid"));
     const QJsonValue idkValue = frame.value(QStringLiteral("idk"));
@@ -1882,7 +2354,7 @@ RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay) co
     } else {
         const TrustRecord *record = m_device->record(m_scope, kid);
         if (!record || record->state != TrustState::Approved) {
-            if (!record || record->state == TrustState::Pending)
+            if (commit && (!record || record->state == TrustState::Pending))
                 m_device->hold(m_scope, m_room, frame);
             result.status = Status::Held;
             return result;
@@ -1954,9 +2426,11 @@ RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay) co
     if (!fromSelf && plain.contains(QStringLiteral("senderId")) &&
         plain.value(QStringLiteral("senderId")).toString() != node)
         return result;
-    m_device->markSeen(m_room, kid, ctr);
-    if (!fromSelf)
-        m_device->touch(m_scope, kid);
+    if (commit) {
+        m_device->markSeen(m_room, kid, ctr);
+        if (!fromSelf)
+            m_device->touch(m_scope, kid);
+    }
     result.status = Status::Opened;
     result.plain = plain;
     result.senderAcct = acct;
@@ -1964,6 +2438,466 @@ RoomSeal::Opened RoomSeal::open(const QJsonObject &frame, bool historyReplay) co
     result.ts = ts;
     result.self = fromSelf;
     return result;
+}
+
+namespace {
+
+enum class Step { Ok, NoSession, Replay };
+
+qint64 entryInteger(const QJsonObject &entry, const char *key)
+{
+    return qint64(entry.value(QLatin1String(key)).toDouble());
+}
+
+RatchetSession *findSession(RatchetPeer &peer, const QString &sid)
+{
+    for (RatchetSession &session : peer.sessions)
+        if (session.sid == sid)
+            return &session;
+    return nullptr;
+}
+
+Step skipTo(RatchetSession &session, qint64 until, qint64 now)
+{
+    if (until < session.nr)
+        return Step::Replay;
+    if (until - session.nr > forkmesh::chatv4::kMaxSkip)
+        return Step::NoSession;
+    QByteArray ck = session.ckr;
+    while (session.nr < until) {
+        const forkmesh::chatv4::KeyPair chain = forkmesh::chatv4::kdfCk(ck);
+        if (chain.first.isEmpty())
+            return Step::NoSession;
+        session.skipped.append({session.dhr, session.nr, chain.first, now});
+        ck = chain.second;
+        ++session.nr;
+    }
+    session.ckr = ck;
+    return Step::Ok;
+}
+
+Step receiveStep(const ChatDevice &device, RatchetSession &session, const QJsonObject &entry,
+                 qint64 now, QByteArray *mk)
+{
+    const QString dh = entry.value(QStringLiteral("dh")).toString();
+    const qint64 n = entryInteger(entry, "n");
+    for (qsizetype i = 0; i < session.skipped.size(); ++i) {
+        if (session.skipped.at(i).dh == dh && session.skipped.at(i).n == n) {
+            *mk = session.skipped.at(i).mk;
+            session.skipped.removeAt(i);
+            return Step::Ok;
+        }
+    }
+    if (dh != session.dhr) {
+        if (session.dhsPriv.isEmpty())
+            return Step::NoSession;
+        if (!session.ckr.isEmpty()) {
+            const Step step = skipTo(session, entryInteger(entry, "pn"), now);
+            if (step != Step::Ok)
+                return step;
+        }
+        const Prekey *spk = device.findPrekey(entry.value(QStringLiteral("spk")).toString());
+        if (!spk)
+            return Step::NoSession;
+        QByteArray ss = mlkemDecapsulate(spk->pqSeed,
+                                         fromB64(entry.value(QStringLiteral("ct")).toString()));
+        QByteArray dhOut = x25519Shared(session.dhsPriv, fromB64u(dh));
+        const forkmesh::chatv4::KeyPair root = forkmesh::chatv4::kdfRk(session.rk, dhOut, ss);
+        wipe(ss);
+        wipe(dhOut);
+        if (root.first.isEmpty())
+            return Step::NoSession;
+        session.rk = root.first;
+        session.ckr = root.second;
+        session.nr = 0;
+        session.dhr = dh;
+        session.pn = session.ns;
+        session.ns = 0;
+        session.cks.clear();
+        session.sqSpk.clear();
+        session.sqCt.clear();
+    }
+    if (session.ckr.isEmpty())
+        return Step::NoSession;
+    const Step step = skipTo(session, n, now);
+    if (step != Step::Ok)
+        return step;
+    const forkmesh::chatv4::KeyPair chain = forkmesh::chatv4::kdfCk(session.ckr);
+    session.ckr = chain.second;
+    ++session.nr;
+    *mk = chain.first;
+    return Step::Ok;
+}
+
+Step openEntry(const ChatDevice &device, const QString &room, const QString &sender,
+               const QJsonObject &entry, qint64 now, RatchetPeer &peer, QByteArray *mk)
+{
+    const QString sid = entry.value(QStringLiteral("sid")).toString();
+    RatchetSession *session = findSession(peer, sid);
+    if (!session) {
+        const QByteArray dh = fromB64u(entry.value(QStringLiteral("dh")).toString());
+        const QByteArray ct = fromB64(entry.value(QStringLiteral("ct")).toString());
+        if (sid != forkmesh::chatv4::sessionId(dh, ct) || entryInteger(entry, "pn") != 0)
+            return Step::NoSession;
+        const Prekey *spk = device.findPrekey(entry.value(QStringLiteral("spk")).toString());
+        if (!spk)
+            return Step::NoSession;
+        QByteArray ss1 = x25519Shared(spk->xPriv, dh);
+        QByteArray ss2 = mlkemDecapsulate(spk->pqSeed, ct);
+        const forkmesh::chatv4::KeyPair init =
+            forkmesh::chatv4::kdfInit(room, sender, device.kid(), spk->id, sid, ss1, ss2);
+        wipe(ss1);
+        wipe(ss2);
+        if (init.first.isEmpty())
+            return Step::NoSession;
+        RatchetSession fresh;
+        fresh.sid = sid;
+        fresh.rk = init.first;
+        fresh.dhr = entry.value(QStringLiteral("dh")).toString();
+        fresh.ckr = init.second;
+        fresh.created = now;
+        fresh.used = now;
+        peer.sessions.append(fresh);
+        session = &peer.sessions.last();
+    }
+    const Step step = receiveStep(device, *session, entry, now, mk);
+    if (step != Step::Ok)
+        return step;
+    session->used = now;
+    peer.current = sid;
+    return Step::Ok;
+}
+
+bool sendEntry(const QString &room, const QString &self, const QString &recipient,
+               const QJsonObject &spk, qint64 now, RatchetPeer &peer, QJsonObject *entry,
+               QByteArray *mk)
+{
+    RatchetSession *session = findSession(peer, peer.current);
+    if (session && session->cks.isEmpty() && session->dhr.isEmpty())
+        session = nullptr;
+    const QString spkId = spk.value(QStringLiteral("id")).toString();
+    const QByteArray pq = fromB64u(spk.value(QStringLiteral("pq")).toString());
+    if (!session) {
+        const QByteArray x = fromB64u(spk.value(QStringLiteral("x")).toString());
+        QByteArray ephPriv = randomBytes(kKeyBytes);
+        const QByteArray ephPub = x25519Public(ephPriv);
+        QByteArray ss1 = x25519Shared(ephPriv, x);
+        QByteArray ct;
+        QByteArray ss2;
+        if (ss1.isEmpty() || ephPub.isEmpty() || !mlkemEncapsulate(pq, &ct, &ss2)) {
+            wipe(ephPriv);
+            wipe(ss1);
+            return false;
+        }
+        const QString sid = forkmesh::chatv4::sessionId(ephPub, ct);
+        const forkmesh::chatv4::KeyPair init =
+            forkmesh::chatv4::kdfInit(room, self, recipient, spkId, sid, ss1, ss2);
+        wipe(ss1);
+        wipe(ss2);
+        if (init.first.isEmpty()) {
+            wipe(ephPriv);
+            return false;
+        }
+        RatchetSession fresh;
+        fresh.sid = sid;
+        fresh.rk = init.first;
+        fresh.dhsPriv = ephPriv;
+        fresh.dhsPub = b64u(ephPub);
+        fresh.cks = init.second;
+        fresh.sqSpk = spkId;
+        fresh.sqCt = ct;
+        fresh.created = now;
+        fresh.used = now;
+        wipe(ephPriv);
+        peer.sessions.append(fresh);
+        peer.current = sid;
+        session = &peer.sessions.last();
+    } else if (session->cks.isEmpty()) {
+        QByteArray dhsPriv = randomBytes(kKeyBytes);
+        const QByteArray dhsPub = x25519Public(dhsPriv);
+        QByteArray dhOut = x25519Shared(dhsPriv, fromB64u(session->dhr));
+        QByteArray ct;
+        QByteArray ss;
+        if (dhOut.isEmpty() || dhsPub.isEmpty() || !mlkemEncapsulate(pq, &ct, &ss)) {
+            wipe(dhsPriv);
+            wipe(dhOut);
+            return false;
+        }
+        const forkmesh::chatv4::KeyPair root = forkmesh::chatv4::kdfRk(session->rk, dhOut, ss);
+        wipe(dhOut);
+        wipe(ss);
+        if (root.first.isEmpty()) {
+            wipe(dhsPriv);
+            return false;
+        }
+        session->rk = root.first;
+        session->cks = root.second;
+        session->dhsPriv = dhsPriv;
+        session->dhsPub = b64u(dhsPub);
+        session->sqSpk = spkId;
+        session->sqCt = ct;
+        wipe(dhsPriv);
+    }
+    if (session->sqSpk.isEmpty() || session->dhsPub.isEmpty())
+        return false;
+    const forkmesh::chatv4::KeyPair chain = forkmesh::chatv4::kdfCk(session->cks);
+    *entry = QJsonObject{{QStringLiteral("kid"), recipient},
+                         {QStringLiteral("sid"), session->sid},
+                         {QStringLiteral("spk"), session->sqSpk},
+                         {QStringLiteral("ct"), b64(session->sqCt)},
+                         {QStringLiteral("dh"), session->dhsPub},
+                         {QStringLiteral("pn"), session->pn},
+                         {QStringLiteral("n"), session->ns}};
+    session->cks = chain.second;
+    ++session->ns;
+    session->used = now;
+    *mk = chain.first;
+    return true;
+}
+
+} // namespace
+
+QJsonObject RoomSeal::sealV4(const QJsonObject &plain, const QStringList *only) const
+{
+    const QByteArray input = compactJson(plain);
+    if (input.isEmpty() || input.size() > kMaxPlainBytes)
+        return {};
+    const qint64 now = m_device->now();
+    const QString self = m_device->kid();
+    QList<TrustRecord> candidates;
+    for (const TrustRecord &record : m_device->records(m_scope)) {
+        if (record.state != TrustState::Approved || record.kid == self)
+            continue;
+        if (only && !only->contains(record.kid))
+            continue;
+        if (spkExp(record.spk) <= now)
+            continue;
+        candidates.append(record);
+    }
+    if (candidates.size() > kMaxRecipients) {
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const TrustRecord &a, const TrustRecord &b) {
+                      return a.lastSeen > b.lastSeen;
+                  });
+        candidates = candidates.mid(0, kMaxRecipients);
+    }
+    QMap<QString, QJsonObject> targets;
+    for (const TrustRecord &record : std::as_const(candidates))
+        targets.insert(record.kid, record.spk);
+
+    const qint64 ctr = m_device->nextCounter(m_room);
+    QByteArray contentKey = randomBytes(kKeyBytes);
+    const QByteArray nonce = randomBytes(kNonceBytes);
+    QByteArray body;
+    QByteArray tag;
+    if (contentKey.size() != kKeyBytes || nonce.size() != kNonceBytes ||
+        !aesGcmSeal(contentKey, nonce, input,
+                    forkmesh::chatv4::contentAad(m_room, self, ctr, now), &body, &tag)) {
+        wipe(contentKey);
+        return {};
+    }
+    const QString nonceText = b64(nonce);
+    const QString tagText = b64(tag);
+    const QHash<QString, RatchetPeer> stored = m_device->ratchetPeers(m_room);
+    QHash<QString, RatchetPeer> changed;
+    QJsonArray keys;
+    for (auto it = targets.cbegin(); it != targets.cend(); ++it) {
+        RatchetPeer peer = stored.value(it.key());
+        QJsonObject entry;
+        QByteArray mk;
+        if (!sendEntry(m_room, self, it.key(), it.value(), now, peer, &entry, &mk))
+            continue;
+        const QByteArray wrapNonce = randomBytes(kNonceBytes);
+        QByteArray wrapped;
+        QByteArray wrapTag;
+        const bool ok = aesGcmSeal(
+            mk, wrapNonce, contentKey,
+            forkmesh::chatv4::wrapAad(m_room, self, entry, nonceText, tagText), &wrapped,
+            &wrapTag);
+        wipe(mk);
+        if (!ok)
+            continue;
+        entry.insert(QStringLiteral("nonce"), b64(wrapNonce));
+        entry.insert(QStringLiteral("tag"), b64(wrapTag));
+        entry.insert(QStringLiteral("key"), b64(wrapped));
+        keys.append(entry);
+        changed.insert(it.key(), peer);
+    }
+    wipe(contentKey);
+    for (auto it = changed.cbegin(); it != changed.cend(); ++it)
+        m_device->storeRatchetPeer(m_room, it.key(), it.value(), now);
+    m_device->saveRatchets(m_room, true);
+    QJsonObject frame{{QStringLiteral("type"), QStringLiteral("sealed")},
+                      {QStringLiteral("v"), forkmesh::chatv4::kVersion},
+                      {QStringLiteral("kid"), self},
+                      {QStringLiteral("idk"), m_device->idkText()},
+                      {QStringLiteral("ctr"), ctr},
+                      {QStringLiteral("ts"), now},
+                      {QStringLiteral("nonce"), nonceText},
+                      {QStringLiteral("tag"), tagText},
+                      {QStringLiteral("body"), b64(body)},
+                      {QStringLiteral("keys"), keys}};
+    const QByteArray sig = m_device->sign(forkmesh::chatv4::sealedMessage(m_room, frame));
+    if (sig.isEmpty())
+        return {};
+    frame.insert(QStringLiteral("sig"), b64u(sig));
+    return frame;
+}
+
+RoomSeal::Opened RoomSeal::openV4(const QJsonObject &frame, bool commit) const
+{
+    Opened result;
+    const QJsonValue kidValue = frame.value(QStringLiteral("kid"));
+    const QJsonValue idkValue = frame.value(QStringLiteral("idk"));
+    const QJsonValue keysValue = frame.value(QStringLiteral("keys"));
+    if (!kidValue.isString() || !idkValue.isString() || !keysValue.isArray())
+        return result;
+    const QString kid = kidValue.toString();
+    bool ok = false;
+    const QByteArray idk = fromB64u(idkValue.toString(), &ok);
+    if (!ok || idk.size() != kKeyBytes || kid != id16(idk))
+        return result;
+    const QJsonArray keys = keysValue.toArray();
+    if (keys.size() > kMaxRecipients)
+        return result;
+    QString previous;
+    for (qsizetype i = 0; i < keys.size(); ++i) {
+        if (!keys.at(i).isObject() || !forkmesh::chatv4::validEntry(keys.at(i).toObject()))
+            return result;
+        const QString entryKid = keys.at(i).toObject().value(QStringLiteral("kid")).toString();
+        if ((i > 0 && !(previous < entryKid)) || entryKid == kid)
+            return result;
+        previous = entryKid;
+    }
+    qint64 ctr = 0;
+    qint64 ts = 0;
+    if (!jsonInteger(frame.value(QStringLiteral("ctr")), &ctr) || ctr < 1 ||
+        ctr >= (qint64(1) << 31) || !jsonInteger(frame.value(QStringLiteral("ts")), &ts))
+        return result;
+    bool okNonce = false;
+    bool okTag = false;
+    bool okBody = false;
+    bool okSig = false;
+    const QByteArray nonce = fromB64(frame.value(QStringLiteral("nonce")).toString(), &okNonce);
+    const QByteArray tag = fromB64(frame.value(QStringLiteral("tag")).toString(), &okTag);
+    const QByteArray body = fromB64(frame.value(QStringLiteral("body")).toString(), &okBody);
+    const QByteArray sig = fromB64u(frame.value(QStringLiteral("sig")).toString(), &okSig);
+    if (!okNonce || !okTag || !okBody || !okSig || nonce.size() != kNonceBytes ||
+        tag.size() != kTagBytes || sig.size() != kSignatureBytes ||
+        body.size() > kMaxPlainBytes)
+        return result;
+
+    const QString self = m_device->kid();
+    result.senderKid = kid;
+    result.ctr = ctr;
+    if (kid == self) {
+        result.status = Status::Own;
+        result.self = true;
+        return result;
+    }
+    const TrustRecord *record = m_device->record(m_scope, kid);
+    if (!record || record->state != TrustState::Approved) {
+        if (commit && (!record || record->state == TrustState::Pending))
+            m_device->hold(m_scope, m_room, frame);
+        result.status = Status::Held;
+        return result;
+    }
+    if (record->idk != idkValue.toString())
+        return result;
+    const QString acct = record->acct;
+    const QString node = record->node;
+    if (!ed25519Verify(idk, sig, forkmesh::chatv4::sealedMessage(m_room, frame)))
+        return result;
+    if (m_device->isReplay(m_room, kid, ctr)) {
+        result.status = Status::Replay;
+        return result;
+    }
+    const qint64 now = m_device->now();
+    if (ts < now - kPrekeyLifeMs || ts > now + kDayMs)
+        return result;
+    QJsonObject entry;
+    for (const QJsonValue &value : keys) {
+        if (value.toObject().value(QStringLiteral("kid")).toString() == self) {
+            entry = value.toObject();
+            break;
+        }
+    }
+    if (entry.isEmpty()) {
+        result.status = Status::NotForMe;
+        return result;
+    }
+    RatchetPeer peer = m_device->ratchetPeers(m_room).value(kid);
+    QByteArray mk;
+    const Step step = openEntry(*m_device, m_room, kid, entry, now, peer, &mk);
+    if (step == Step::Replay) {
+        result.status = Status::Replay;
+        return result;
+    }
+    QByteArray contentKey;
+    const bool unwrapped =
+        step == Step::Ok &&
+        aesGcmOpen(mk, fromB64(entry.value(QStringLiteral("nonce")).toString()),
+                   fromB64(entry.value(QStringLiteral("key")).toString()),
+                   fromB64(entry.value(QStringLiteral("tag")).toString()),
+                   forkmesh::chatv4::wrapAad(m_room, kid, entry,
+                                             frame.value(QStringLiteral("nonce")).toString(),
+                                             frame.value(QStringLiteral("tag")).toString()),
+                   &contentKey);
+    wipe(mk);
+    if (!unwrapped || contentKey.size() != kKeyBytes) {
+        wipe(contentKey);
+        result.status = Status::NoSession;
+        return result;
+    }
+    QByteArray clear;
+    const bool decrypted =
+        aesGcmOpen(contentKey, nonce, body, tag,
+                   forkmesh::chatv4::contentAad(m_room, kid, ctr, ts), &clear);
+    wipe(contentKey);
+    if (!decrypted)
+        return result;
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(clear, &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject())
+        return result;
+    const QJsonObject plain = document.object();
+    if (plain.contains(QStringLiteral("senderId")) &&
+        plain.value(QStringLiteral("senderId")).toString() != node)
+        return result;
+    if (commit) {
+        m_device->storeRatchetPeer(m_room, kid, peer, now);
+        m_device->saveRatchets(m_room, false);
+        m_device->markSeen(m_room, kid, ctr);
+        m_device->touch(m_scope, kid);
+    }
+    result.status = Status::Opened;
+    result.plain = plain;
+    result.senderAcct = acct;
+    result.senderNode = node;
+    result.ts = ts;
+    return result;
+}
+
+bool RoomSeal::openedLaterThan(const QString &kid, qint64 ctr) const
+{
+    return isValid() && !kid.isEmpty() && ctr > 0 && ctr < m_device->seenMax(m_room, kid);
+}
+
+bool RoomSeal::claimSessionReset(const QString &kid) const
+{
+    return isValid() && !kid.isEmpty() &&
+           m_device->claimSessionReset(m_room, kid, m_device->now());
+}
+
+void RoomSeal::resetSessions(const QString &kid) const
+{
+    if (isValid() && !kid.isEmpty())
+        m_device->resetRatchet(m_room, kid);
+}
+
+bool RoomSeal::isResetPlain(const QJsonObject &plain)
+{
+    return plain.value(QStringLiteral("type")).toString() == forkmesh::chatv4::resetType();
 }
 
 void RoomSeal::useSignedTime(QJsonObject &plain, const Opened &opened)

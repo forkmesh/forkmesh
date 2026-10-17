@@ -4,6 +4,7 @@ import {
   encryptObject,
 } from "./chat-crypto.js";
 import {
+  E2EE_RESET_TYPE,
   acceptSealKey,
   authenticatedPlain,
   isSealKeyFrame,
@@ -35,6 +36,8 @@ const RECEIVED_REFS_MAX = 64;
 const RECEIVED_FLUSH_MS = 150;
 const OUTBOX_MAX = 64;
 const OUTBOX_RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
+const RESET_INTERVAL_MS = 60 * 1000;
+const resetSentAt = new Map();
 
 export function relayServerCopies(envelope) {
   const value = envelope?.stored;
@@ -404,6 +407,57 @@ export function createChatRoomTransport({
       return resealChain;
     }
 
+    async function resealFor(kid) {
+      if (!direct || !seal || stale() ||
+          roomSocket.readyState !== WebSocketImpl.OPEN) {
+        return;
+      }
+      const cutoff = Date.now() - OUTBOX_RETAIN_MS;
+      for (const entry of [...outbox]) {
+        if (entry.ts < cutoff) continue;
+        const sealed = await sealFrame(entry.plain, seal, access?.roomName, { only: [kid] });
+        if (!sealed.keys.length) continue;
+        const envelope = await encryptObject(sealed, key);
+        envelope.persist = true;
+        if (entry.notify) envelope.notify = true;
+        envelope.resend = true;
+        const text = JSON.stringify(envelope);
+        const ref = await frameRef(text);
+        if (stale() || roomSocket.readyState !== WebSocketImpl.OPEN) return;
+        roomSocket.send(text);
+        if (entry.notify && entry.id) rememberRecipientRef(ref, entry.id);
+      }
+    }
+
+    function scheduleResealFor(kid) {
+      if (!direct) return resealChain;
+      resealChain = resealChain.then(() => resealFor(kid)).catch(() => {});
+      return resealChain;
+    }
+
+    async function resetSession(kid) {
+      if (!direct || !seal || stale() || !kid) return;
+      const tag = `${access?.roomName || ""}\n${kid}`;
+      const now = Date.now();
+      if (now - (resetSentAt.get(tag) || 0) < RESET_INTERVAL_MS) return;
+      for (const [old, at] of resetSentAt) if (now - at >= RESET_INTERVAL_MS) resetSentAt.delete(old);
+      resetSentAt.set(tag, now);
+      await seal.resetPeer(kid);
+      const sealed = await sealFrame(
+        { type: E2EE_RESET_TYPE, senderId: seal.node },
+        seal,
+        access?.roomName,
+        { only: [kid] },
+      );
+      if (sealed.keys.length) {
+        const envelope = await encryptObject(sealed, key);
+        envelope.persist = true;
+        if (stale() || roomSocket.readyState !== WebSocketImpl.OPEN) return;
+        roomSocket.send(JSON.stringify(envelope));
+      }
+      await sendKeyAdvertisement(true);
+    }
+
     function replyWithKeySoon() {
       if (keyReplyPending || stale()) return;
       keyReplyPending = true;
@@ -434,7 +488,11 @@ export function createChatRoomTransport({
       const plains = [];
       for (const result of results) {
         const plain = authenticatedPlain(result);
-        if (plain) plains.push(await moderateChatPlain(plain));
+        if (plain?.type === E2EE_RESET_TYPE) {
+          if (direct) scheduleResealFor(result.kid);
+        } else if (plain) {
+          plains.push(await moderateChatPlain(plain));
+        }
       }
       if (plains.length && !stale()) onHistory(plains, room, access);
     };
@@ -445,11 +503,11 @@ export function createChatRoomTransport({
     };
 
     async function openFrame(envelope, history = false) {
-      const plain = await openFramePlain(envelope, history);
-      if (plain && direct && plain.id && relayFrameRef(envelope) &&
+      const { plain = null, ack = Boolean(plain) } = await openFramePlain(envelope, history) || {};
+      if (plain && ack && direct && plain.id && relayFrameRef(envelope) &&
           holdReceipt(plain, room)) {
         heldReceipts.set(String(plain.id), envelope);
-      } else if (plain) {
+      } else if (ack) {
         noteReceived(envelope);
       }
       if (plain?.id && direct && relayFrameRef(envelope)) {
@@ -476,7 +534,7 @@ export function createChatRoomTransport({
       if (framed.type === "sealed" || framed.type === "e2ee-key") {
         if (!isSealedFrame(framed)) return null;
       } else if (controllerReadable) {
-        return framed;
+        return { plain: framed };
       } else {
         onSealed("", room);
         return null;
@@ -487,6 +545,14 @@ export function createChatRoomTransport({
         : { status: "notForMe" };
       if (result.status === "held") {
         if (result.pending) onTrust({ type: "held", kid: result.kid }, room);
+        return null;
+      }
+      if (result.status === "own") {
+        const own = result.plain ? authenticatedPlain(result) : null;
+        return own ? { plain: own, ack: false } : null;
+      }
+      if (result.status === "noSession") {
+        if (!result.later) resetSession(result.kid).catch(() => {});
         return null;
       }
       if (result.status === "replay" || result.status === "invalid") return null;
@@ -500,6 +566,10 @@ export function createChatRoomTransport({
         }
         return null;
       }
+      if (plain.type === E2EE_RESET_TYPE) {
+        if (direct) scheduleResealFor(result.kid);
+        return { plain: null, ack: true };
+      }
       if (direct) {
         if (framed.kid === seal.keyId && envelope.persist === true) {
           rememberOutbox(
@@ -511,7 +581,7 @@ export function createChatRoomTransport({
         }
         if (seal.trustVersion !== trustBefore) scheduleReseal();
       }
-      return plain;
+      return { plain };
     }
 
     function cancelReplayTimer() {

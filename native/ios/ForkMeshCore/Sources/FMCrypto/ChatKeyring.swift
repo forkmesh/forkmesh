@@ -187,6 +187,8 @@ public final class ChatKeyring: @unchecked Sendable {
     private var counters: [String: Int64] = [:]
     private var replay: [String: [String: ChatReplayEntry]] = [:]
     private var replayOrder: [String: [String]] = [:]
+    private var ratchets: [String: [String: ChatRatchetPeer]] = [:]
+    private let ratchetLock = NSLock()
 
     private init(seed: [UInt8], prekeys: [ChatPrekeySecret], store: SecureStore?) throws {
         guard seed.count == Ed25519.seedBytes else { throw CryptoArgumentError("The chat identity seed must be 32 bytes.") }
@@ -365,6 +367,13 @@ public final class ChatKeyring: @unchecked Sendable {
         }
     }
 
+    func highestSeen(_ room: String, _ sender: String) -> Int64 {
+        locked {
+            loadReplay(room)
+            return replay[room]?[sender]?.max ?? 0
+        }
+    }
+
     func recordSeen(_ room: String, _ sender: String, _ counter: Int64) -> Bool {
         locked {
             loadReplay(room)
@@ -411,6 +420,78 @@ public final class ChatKeyring: @unchecked Sendable {
             root[sender] = .object(["m": .int(entry.max), "s": .array(entry.seen.sorted().map { .int($0) })])
         }
         store.write(ChatKeyring.seenKey(room), JSON.encode(root))
+    }
+
+    func ratchetLocked<R>(_ body: () throws -> R) rethrows -> R {
+        ratchetLock.lock()
+        defer { ratchetLock.unlock() }
+        return try body()
+    }
+
+    public static func ratchetStoreKey(_ room: String) -> String { ChatV4.storeKey(room) }
+
+    private func loadRatchets(_ room: String) -> [String: ChatRatchetPeer] {
+        if let cached = ratchets[room] { return cached }
+        var peers: [String: ChatRatchetPeer] = [:]
+        if let text = store?.read(ChatV4.storeKey(room)), let root = (try? JSON.parse(text))?.objectValue,
+            root["v"]?.numEquals(ChatV4.version) == true
+        {
+            peers = ChatRatchetBook.decode(root)
+        }
+        ratchets[room] = peers
+        return peers
+    }
+
+    private func persistRatchets(_ room: String) {
+        guard let store else { return }
+        let peers = ratchets[room] ?? [:]
+        if peers.isEmpty {
+            store.delete(ChatV4.storeKey(room))
+        } else {
+            store.write(ChatV4.storeKey(room), JSON.encode(ChatRatchetBook.encode(peers)))
+        }
+    }
+
+    public func ratchetPeer(_ room: String, _ kid: String) -> ChatRatchetPeer {
+        locked { loadRatchets(room)[kid] ?? ChatRatchetPeer() }
+    }
+
+    func storeRatchetPeers(_ room: String, _ updates: [String: ChatRatchetPeer], now: Int64) {
+        if updates.isEmpty { return }
+        locked {
+            var peers = loadRatchets(room)
+            for (kid, peer) in updates {
+                var trimmed = peer
+                trimmed.trim(now: now)
+                peers[kid] = trimmed
+            }
+            ratchets[room] = peers
+            persistRatchets(room)
+        }
+    }
+
+    public func resetRatchet(_ room: String, _ kid: String) {
+        ratchetLocked {
+            locked {
+                var peers = loadRatchets(room)
+                guard peers.removeValue(forKey: kid) != nil else { return }
+                ratchets[room] = peers
+                persistRatchets(room)
+            }
+        }
+    }
+
+    public func exportRatchets(_ room: String) -> JSONObject {
+        locked { ChatRatchetBook.encode(loadRatchets(room)) }
+    }
+
+    public func importRatchets(_ room: String, _ stored: JSONObject) {
+        ratchetLocked {
+            locked {
+                ratchets[room] = ChatRatchetBook.decode(stored)
+                persistRatchets(room)
+            }
+        }
     }
 
     private func locked<R>(_ body: () throws -> R) rethrows -> R {

@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.ChatTrust
 import com.forkmesh.nativeapp.crypto.ChatV3
+import com.forkmesh.nativeapp.crypto.ChatV4
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -110,6 +111,10 @@ object DirectMessageFrames {
 
     fun directSealed(channel: String, frame: Map<String, Any?>): Map<String, Any?> =
         linkedMapOf("type" to DIRECT_SEALED, "channel" to channel, "frame" to frame)
+
+    fun resetFrame(senderId: String): Map<String, Any?> = linkedMapOf("type" to ChatV4.RESET_TYPE, "senderId" to senderId)
+
+    fun isReset(plain: Map<String, Any?>): Boolean = plain["type"] == ChatV4.RESET_TYPE
 
     fun directAck(channel: String, id: String): Map<String, Any?> = linkedMapOf("type" to DIRECT_ACK, "channel" to channel, "id" to id)
 
@@ -271,18 +276,24 @@ class DirectMessageService(
         val ts: Long,
     )
 
-    private class RoomSocket(val conversationId: String, val crypto: RoomCrypto, val seal: RoomSeal) {
+    private class RoomSocket(
+        val conversationId: String,
+        val crypto: RoomCrypto,
+        val seal: RoomSeal,
+        val outbox: ArrayList<OutboxEntry> = ArrayList(),
+    ) {
         var socket: OfficeSocket? = null
         var dead = false
         var historyEnded = false
         var resealAsked = false
         val replayRefs = ArrayList<String>()
         val queued = ArrayList<String>()
-        val outbox = ArrayList<OutboxEntry>()
     }
 
     private val lock = Any()
     private val sockets = HashMap<String, RoomSocket>()
+    private val outboxes = HashMap<String, ArrayList<OutboxEntry>>()
+    private val resets = HashMap<String, Long>()
     private val openLocks = HashMap<String, Any>()
     private val retries = HashMap<String, Int>()
     private val timers = HashMap<String, LoopTimer>()
@@ -426,6 +437,7 @@ class DirectMessageService(
                 emptyList()
             }
             for (old in gone) {
+                outboxes.remove(old.id)
                 history.remove(old.conversation)
                 viewOnce.forgetConversation(old.conversation)
             }
@@ -606,7 +618,7 @@ class DirectMessageService(
             val crypto = derive(roomName, passphrase)
             val seal = seal(roomName, record.id)
             synchronized(lock) { roomNames[record.id] = roomName }
-            val holder = RoomSocket(record.id, crypto, seal)
+            val holder = RoomSocket(record.id, crypto, seal, synchronized(lock) { outboxes.getOrPut(record.id) { ArrayList() } })
             val socket = connector.connect(
                 url,
                 onText = { text -> receive(text, holder) },
@@ -689,7 +701,7 @@ class DirectMessageService(
             acceptBundle(record, holder.seal, framed, holder, replay)
             return
         }
-        if (!RoomSeal.isSealedFrame(framed)) return
+        if (!holder.seal.accepts(framed)) return
         val ref = DirectMessageFrames.relayRef(envelope)
         val meta = linkedMapOf<String, Any?>("ref" to ref, "replay" to replay, "notify" to (envelope["notify"] == true))
         processSealed(record, holder, framed, meta)
@@ -730,6 +742,11 @@ class DirectMessageService(
             is SealOpen.Opened -> {
                 val plain = result.plain
                 if (!senderMatches(result, plain)) return
+                if (DirectMessageFrames.isReset(plain)) {
+                    resealTo(record, holder.seal, result.senderKid)
+                    acknowledgeRef(holder, ref, replay)
+                    return
+                }
                 handle(plain, record, !replay, ref)
                 if (replay) noteOwn(holder, plain, ref, kids, meta["notify"] == true)
                 if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) return
@@ -742,7 +759,59 @@ class DirectMessageService(
                 if (holder.seal.keyId !in kids) askForReseal(holder)
                 notifyListeners()
             }
-            is SealOpen.Invalid -> {}
+            is SealOpen.NoSession -> recover(record, holder.seal, result.kid, framed, holder)
+            is SealOpen.Own, is SealOpen.Invalid -> {}
+        }
+    }
+
+    private fun recover(record: DirectConversation, seal: RoomSeal, kid: String, frame: Map<String, Any?>, holder: RoomSocket?, via: String? = null) {
+        val ctr = ChatV3.integer(frame["ctr"]) ?: return
+        if (seal.openedSince(kid, ctr)) return
+        val at = now()
+        val key = "${seal.room}|$kid"
+        synchronized(lock) {
+            val last = resets[key]
+            if (last != null && at - last in 0 until ChatV4.RESET_INTERVAL_MS) return
+            resets[key] = at
+            while (resets.size > DirectMessageFrames.RECEIPTS_MAX) resets.remove(resets.keys.first())
+        }
+        seal.resetSessions(kid)
+        val plain = DirectMessageFrames.resetFrame(selfId())
+        val live = holder ?: synchronized(lock) { sockets[record.id] }
+        if (live != null && live.seal === seal) {
+            runCatching {
+                val envelope = LinkedHashMap(live.crypto.encrypt(seal.seal(plain, now(), only = listOf(kid))))
+                envelope["persist"] = true
+                sendOrQueue(live, Json.stringify(envelope))
+            }
+            advertise(live, persist = true)
+            return
+        }
+        val links = mesh ?: return
+        if (via == null) return
+        runCatching { links.sendDirect(via, DirectMessageFrames.directSealed(record.conversation, seal.seal(plain, now(), only = listOf(kid)))) }
+    }
+
+    private fun resealTo(record: DirectConversation, seal: RoomSeal, kid: String) {
+        val holder = synchronized(lock) { sockets[record.id] } ?: return
+        if (holder.seal !== seal) return
+        synchronized(holder) {
+            val due = synchronized(lock) {
+                pruneOutbox(holder)
+                holder.outbox.toList()
+            }
+            for (entry in due) {
+                val sealed = runCatching { seal.seal(entry.plain, now(), only = listOf(kid)) }.getOrNull() ?: continue
+                if (kid !in RoomSeal.wrappedKeyIds(sealed)) break
+                val text = runCatching {
+                    val envelope = LinkedHashMap(holder.crypto.encrypt(sealed))
+                    envelope["persist"] = true
+                    if (entry.notify) envelope["notify"] = true
+                    envelope["resend"] = true
+                    Json.stringify(envelope)
+                }.getOrNull() ?: continue
+                if (!sendOrQueue(holder, text)) break
+            }
         }
     }
 
@@ -1166,8 +1235,9 @@ class DirectMessageService(
             DirectMessageFrames.DIRECT_SEALED -> {
                 @Suppress("UNCHECKED_CAST")
                 val inner = frame["frame"] as? Map<String, Any?> ?: return
-                if (!RoomSeal.isSealedFrame(inner) || inner["kid"] != linkKid) return
-                openDirectFrame(record, sealFor(record), inner, linkKid, emptyMap(), ackVia = linkKid)
+                val seal = sealFor(record)
+                if (!seal.accepts(inner) || inner["kid"] != linkKid) return
+                openDirectFrame(record, seal, inner, linkKid, emptyMap(), ackVia = linkKid)
             }
             DirectMessageFrames.DIRECT_ACK -> {
                 val id = jsonText(frame["id"])
@@ -1194,12 +1264,21 @@ class DirectMessageService(
         ackVia: String? = null,
     ) {
         val result = seal.open(frame, now(), history = ackVia != null || meta["replay"] == true, meta = meta)
+        if (result is SealOpen.NoSession) {
+            if (result.kid == kid) recover(record, seal, kid, frame, null, ackVia)
+            return
+        }
         if (result !is SealOpen.Opened) {
             if (result is SealOpen.Held && !result.blocked) notifyListeners()
             return
         }
         val plain = result.plain
-        if (result.senderKid != kid || !senderMatches(result, plain) || jsonText(plain["channel"]) != record.conversation) return
+        if (result.senderKid != kid || !senderMatches(result, plain)) return
+        if (DirectMessageFrames.isReset(plain)) {
+            resealTo(record, seal, kid)
+            return
+        }
+        if (jsonText(plain["channel"]) != record.conversation) return
         if (!result.replayed) handle(plain, record, meta["replay"] != true, jsonText(meta["ref"]))
         val id = jsonText(plain["id"])
         val links = mesh

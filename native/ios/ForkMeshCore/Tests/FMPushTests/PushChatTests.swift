@@ -121,6 +121,12 @@ final class PushChatTests: XCTestCase {
             PushPreviewText.preview(opened, request: request, mode: .hidden), PushPreview(title: "ForkMesh", body: "New message"))
         XCTAssertNil(PushPreviewText.preview(nil as PushChatMessage?, request: request, mode: .nameOnly), "the server names no one")
         XCTAssertNil(PushPreviewText.preview(nil as PushChatMessage?, request: request, mode: .nameAndMessage))
+        let sealed = try XCTUnwrap(crypto.decrypt(envelope))
+        XCTAssertEqual(sealed["v"], .int(ChatV4.version), "direct messages are v4 ratchet frames")
+        XCTAssertEqual(keysPair.mine.open(sealed).plain?["text"], "see you at 6", "the app opens what the extension peeked")
+        XCTAssertEqual(
+            PushChatOpener.open(pending, request: request, secureStore: keysPair.store, keys: keys), .unavailable,
+            "once the app used the key, the frame is a replay")
     }
 
     func testAFrameFromAnUnknownDeviceShowsNewMessage() throws {

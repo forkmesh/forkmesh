@@ -1730,8 +1730,10 @@ void LocalMeshNode::handleSealed(Link &link, const QJsonObject &frame)
         return;
     }
     case RoomSeal::Status::Replay:
+    case RoomSeal::Status::Own:
         break;
     case RoomSeal::Status::Invalid:
+    case RoomSeal::Status::NoSession:
         ++m_diag.framesUnsealable;
         break;
     }

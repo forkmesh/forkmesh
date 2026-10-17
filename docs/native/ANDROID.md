@@ -190,8 +190,14 @@ application id `com.forkmesh.nativeapp` installs beside it.
   - one socket to the selected DM and every DM with unread messages; reconnect
     1 s doubling to 5 min; selecting marks read;
   - frames sent before `connect` returns are queued and flushed;
-  - chat protocol v3 ([chat-protocol-v3.md](../app/chat-protocol-v3.md)),
-    strict trust in scope `direct:<id>`: bundle `acct` is the signed-in
+  - chat protocol v4 ([chat-protocol-v4.md](../app/chat-protocol-v4.md)):
+    a per-message ratchet over v3 bundles and trust
+    ([chat-protocol-v3.md](../app/chat-protocol-v3.md)). A DM room seals and
+    opens only v4 frames (a v3 frame there is ignored, and open rooms ignore
+    v4). Each frame has one entry per approved device other than this one;
+    a frame with no entry is still sent and the outbox re-seals it later.
+    Own frames that come back (`own`) are not shown and not acknowledged;
+  - strict trust in scope `direct:<id>`: bundle `acct` is the signed-in
     account (lowercased; a guest uses its node id), `node` the DM self id;
     a bundle whose `acct` is not one of the two participants is dropped;
   - a further device of an account that already has an approved device is
@@ -205,11 +211,25 @@ application id `com.forkmesh.nativeapp` installs beside it.
     device triggers one persisted advertisement;
   - up to 64 own durable frames are kept 7 days and re-sealed with
     `resend: true` when a new device is approved, followed by
-    `forkmesh-superseded`;
-  - the relay's history replay (`historyReplay: true`) skips only the seen
-    check, so a restarted phone (DM history is not kept on disk) still shows
-    the conversation; the seen windows of replayed frames are saved every 32
-    frames instead of one write per frame;
+    `forkmesh-superseded`. The outbox belongs to the conversation, not the
+    socket, so it survives a reconnect: own frames can no longer be reopened
+    from the relay's replay to rebuild it. An entry is complete when it is
+    wrapped for every approved device other than this one;
+  - `noSession(kid)` (no session, prekey gone, more than 256 skipped keys or
+    a failed unwrap): at most once per room and device every 60 s the phone
+    deletes its sessions with that device, sends a persisted, non-notifying
+    `{"type":"e2ee-reset","senderId":<node>}` sealed only to it, and one
+    persisted key advertisement. It skips this when it has already opened a
+    later frame (higher `ctr`) from that device: the frame is a leftover from
+    an older session and a reset would break the working one. An opened
+    `e2ee-reset` is acknowledged, not shown, and re-seals every outbox entry
+    to that device alone (`resend: true`, no `forkmesh-superseded`, because
+    the original still serves the other devices). Over the mesh, with no
+    relay socket, the reset goes back as `direct-sealed`;
+  - there is no history-replay exception in DMs: a frame already opened is
+    `replay` because its message key is gone. DM history is not kept on
+    disk, so after a restart the phone shows only frames still waiting on
+    the relay for it; its own earlier messages are not shown again;
   - Safety number (room menu): 60 digits in 12 groups, the QR string as a
     QR code, "Scan their code" with the camera scanner used for pairing,
     and "Mark as verified"; any change to the approved set clears verified
@@ -227,9 +247,9 @@ application id `com.forkmesh.nativeapp` installs beside it.
   - DM notifications decrypt on the phone: a `direct-messages` frame names
     `conversation` and `ref`; the service reads
     `/api/chat/direct-messages/<id>/pending?ref=<ref>` (side-effect free),
-    decrypts with `RoomCrypto` and opens the v3 frame read-only
-    (`RoomSeal.existing`, no counter recorded and nothing held, so the DM
-    socket can still open the same frame later); a pending or unknown device
+    decrypts with `RoomCrypto` and opens the v4 frame with `commit = false`
+    (`RoomSeal.existing`: no ratchet step, counter or held frame stored, so
+    the DM socket can still open the same frame later); a pending or unknown device
     gives the generic notification. One `MessagingStyle` notification per conversation,
     lock-screen version "New message". The "Notification content" setting
     (`notifications/content`) chooses name and message, name only, or neither.
@@ -266,6 +286,23 @@ application id `com.forkmesh.nativeapp` installs beside it.
   created. Vectors: `core/src/test/.../crypto/ChatV3VectorsTest.kt` reads
   `conformance/chat/v3/vectors.json` (copy in test resources when the repo is
   not reachable).
+- **v4 ratchet** (`C/crypto/ChatV4.kt`, used by `RoomSeal` when the policy is
+  strict): sessions per room and peer `kid`, at most 4 per peer (least
+  recently used dropped, never the current one), 512 skipped keys per
+  session, skipped keys older than 8 days dropped whenever that peer's state
+  is stored, at most 256 keys skipped in one step. The state for a room
+  lives in the secure store at `chat/e2ee/ratchetV4/<b64u(room)>` in the
+  spec's canonical JSON, shared per store and room like the counters. Seal
+  and open run under one lock per room and work on a copy of the peer's
+  state; a seal writes the new state before it returns the frame, an open
+  writes it and then the counter only when the frame opened, and a write
+  failure leaves the stored and in-memory state unchanged. Replaced chain,
+  root and message keys are zeroed. Vectors:
+  `core/src/test/.../crypto/ChatV4VectorsTest.kt` replays
+  `conformance/chat/v4/vectors.json` (copy in test resources) like
+  `app/tests/test_chat_v4_vectors.py`; `ChatV4RatchetTest.kt` covers
+  reordering, old chains, simultaneous starts, reset, `commit = false`,
+  limits and reload from the store.
 - **Local mesh** (`C/chat/LocalMeshRoom.kt`): mesh links v3. Encrypted
   multicast beacon (TTL 1) carrying only `{t, v:3, id: kid, port, ts,
   reply, control, node}`, direct TCP links, local-address checks before any

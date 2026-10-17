@@ -4,7 +4,9 @@ import Foundation
 public enum RoomSealOpen: Equatable, Sendable {
     case opened(plain: JSONObject, senderKid: String, senderAcct: String, senderNode: String)
     case held(String)
+    case own
     case notForMe
+    case noSession(String)
     case replay
     case invalid
 
@@ -12,7 +14,9 @@ public enum RoomSealOpen: Equatable, Sendable {
         switch self {
         case .opened: return "opened"
         case .held: return "held"
+        case .own: return "own"
         case .notForMe: return "notForMe"
+        case .noSession: return "noSession"
         case .replay: return "replay"
         case .invalid: return "invalid"
         }
@@ -54,6 +58,7 @@ public final class RoomSeal: @unchecked Sendable {
     public let participants: Set<String>?
     public let keyring: ChatKeyring
     public let trust: ChatTrustStore
+    public let version: Int64
 
     private let store: SecureStore?
     private let lock = NSLock()
@@ -62,7 +67,7 @@ public final class RoomSeal: @unchecked Sendable {
 
     public init(
         room roomName: String, scope trustScope: String? = nil, policy: ChatTrustPolicy, acct: String?, node: String?,
-        participants: Set<String>? = nil, keyring: ChatKeyring, store: SecureStore? = nil
+        participants: Set<String>? = nil, keyring: ChatKeyring, store: SecureStore? = nil, version: Int64? = nil
     ) throws {
         let trimmed = roomName.dartTrimmed
         if trimmed.isEmpty { throw CryptoArgumentError("A chat room is required.") }
@@ -70,6 +75,7 @@ public final class RoomSeal: @unchecked Sendable {
         self.room = trimmed
         self.scope = scopeName.isEmpty ? trimmed : scopeName
         self.policy = policy
+        self.version = version ?? (policy == .strict ? ChatV4.version : ChatV3.version)
         self.acct = acct.flatMap { ChatV3.isValidAcct($0) ? $0 : nil }
         self.node = node.flatMap { ChatV3.isValidAcct($0) ? $0 : nil }
         self.participants = participants
@@ -114,11 +120,16 @@ public final class RoomSeal: @unchecked Sendable {
     }
 
     public static func isSealedFrame(_ frame: JSONObject) -> Bool {
-        guard frame["type"] == .string(sealedType), frame["v"]?.numEquals(ChatV3.version) == true,
-            let kid = frame["kid"]?.stringValue, ChatV3.isKeyId(kid), let keys = frame["keys"]?.arrayValue,
-            !keys.isEmpty, keys.count <= ChatV3.maxRecipients
+        guard frame["type"] == .string(sealedType), let kid = frame["kid"]?.stringValue, ChatV3.isKeyId(kid),
+            let keys = frame["keys"]?.arrayValue, keys.count <= ChatV3.maxRecipients
         else { return false }
-        return true
+        if frame["v"]?.numEquals(ChatV4.version) == true { return true }
+        return frame["v"]?.numEquals(ChatV3.version) == true && !keys.isEmpty
+    }
+
+    public static func frameVersion(_ frame: JSONObject) -> Int64? {
+        guard isSealedFrame(frame) else { return nil }
+        return frame["v"]?.numEquals(ChatV4.version) == true ? ChatV4.version : ChatV3.version
     }
 
     public static func frameKeyId(_ frame: JSONObject) -> String {
@@ -287,6 +298,7 @@ public final class RoomSeal: @unchecked Sendable {
     }
 
     private func sealTo(_ plain: JSONObject, only: Set<String>?, now: Int64) throws -> JSONObject {
+        if version == ChatV4.version { return try sealV4(plain, only: only, now: now) }
         keyring.rotateIfNeeded(now: now)
         guard let own = keyring.newestPrekey() else { throw CryptoArgumentError("No chat prekey is available.") }
         var candidates: [ChatTrustRecord] = []
@@ -368,12 +380,21 @@ public final class RoomSeal: @unchecked Sendable {
         return true
     }
 
-    public func open(_ frame: JSONObject, now: Int64 = Date().epochMillis, history: Bool = false) -> RoomSealOpen {
-        open(frame, now: now, hold: true, record: true, history: history)
+    public func open(
+        _ frame: JSONObject, now: Int64 = Date().epochMillis, history: Bool = false, commit: Bool = true
+    ) -> RoomSealOpen {
+        if version == ChatV4.version { return openV4(frame, now: now, commit: commit) }
+        return open(frame, now: now, hold: commit, record: commit, history: history || !commit)
     }
 
     public func peek(_ frame: JSONObject, now: Int64 = Date().epochMillis) -> RoomSealOpen {
-        open(frame, now: now, hold: false, record: false, history: true)
+        open(frame, now: now, commit: false)
+    }
+
+    public func highestCounter(from kid: String) -> Int64 { keyring.highestSeen(room, kid) }
+
+    public func resetSessions(with kid: String) {
+        keyring.resetRatchet(room, kid)
     }
 
     private func open(_ frame: JSONObject, now: Int64, hold: Bool, record: Bool, history: Bool) -> RoomSealOpen {
@@ -455,7 +476,9 @@ public final class RoomSeal: @unchecked Sendable {
     public func reopenHeld(now: Int64 = Date().epochMillis) -> [RoomSealOpen] {
         var results: [RoomSealOpen] = []
         for frame in trust.takeHeld(room) {
-            let result = open(frame, now: now, hold: true, record: true, history: true)
+            let result =
+                version == ChatV4.version
+                ? openV4(frame, now: now, commit: true) : open(frame, now: now, hold: true, record: true, history: true)
             if case .held = result { continue }
             results.append(result)
         }

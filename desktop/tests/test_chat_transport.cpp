@@ -1897,8 +1897,9 @@ void testDirectRoomResealsUndeliveredMessages()
     const QString firstRef = QString::fromLatin1(
         QCryptographicHash::hash(firstFrame, QCryptographicHash::Sha256)
             .toHex().left(40));
-    check(inner(firstFrame).value("keys").toArray().size() == 1,
-          "with no peer key the DM is sealed to this device alone");
+    check(inner(firstFrame).value("v").toInt() == 4 &&
+              inner(firstFrame).value("keys").toArray().isEmpty(),
+          "with no peer key the DM is still sent, as a v4 frame with no entries");
 
     TestPeer stranger(room, directScope(room), RoomSeal::Policy::Strict,
                       QStringLiteral("stranger-node"), '\x05');
@@ -1979,6 +1980,205 @@ void testDirectRoomResealsUndeliveredMessages()
     check(node.roomSeal().pendingKeyIds() == QStringList{bobPhone.keyId()} &&
               !node.roomSeal().isApproved(bobPhone.keyId()),
           "a second device of the other person is pending in a strict DM");
+    node.shutdown();
+}
+
+void testDirectRoomRatchetRecovery()
+{
+    WebSocketHarness harness;
+    check(harness.listen(), "ratchet recovery harness listens");
+    if (!harness.server.isListening())
+        return;
+    const QString conversationId(32, QLatin1Char('f'));
+    const QString room = QStringLiteral("chat-direct:%1:v1").arg(conversationId);
+    const QString passphrase = QStringLiteral("ratchet-recovery-passphrase");
+    const QString direct = QStringLiteral("direct:") + conversationId;
+    ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice"),
+                    QStringLiteral("alice"), QStringLiteral("ratchet-node"),
+                    harness.url(), room, QString(), passphrase);
+    node.setDirectRoom(true);
+    node.setTransportLimitsForTests(60, 20, 1 << 20);
+    check(node.start(), "a ratchet recovery node starts");
+    check(waitUntil([&] { return connected(node); }, 3000),
+          "the ratchet recovery node reaches the relay");
+    RoomCrypto relayKey(room, passphrase);
+    const auto inner = [&](const QByteArray &raw) {
+        return relayKey.decryptObject(QJsonDocument::fromJson(raw).object());
+    };
+    const auto outer = [](const QByteArray &raw) {
+        return QJsonDocument::fromJson(raw).object();
+    };
+    QJsonObject nodeKey;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames))
+                  if (RoomSeal::isKeyFrame(inner(raw)))
+                      nodeKey = inner(raw);
+              return !nodeKey.isEmpty();
+          }, 2000),
+          "the ratchet recovery node announces its key");
+    const QString nodeKid = nodeKey.value("kid").toString();
+    const QString nodeId = nodeKey.value("node").toString();
+    TestPeer bob(room, directScope(room), RoomSeal::Policy::Strict,
+                 QStringLiteral("bob-node"), '\x0d');
+    bob.accept(nodeKey);
+    harness.sendText(QJsonDocument(relayKey.encryptObject(bob.keyFrame()))
+                         .toJson(QJsonDocument::Compact));
+    check(waitUntil([&] { return node.roomSealPeerKeyIds().size() >= 1; }, 2000),
+          "the node learns the peer's device key");
+    const auto keyFrames = [&]() {
+        int count = 0;
+        for (const QByteArray &raw : std::as_const(harness.textFrames))
+            if (RoomSeal::isKeyFrame(inner(raw)) && outer(raw).value("persist").toBool())
+                ++count;
+        return count;
+    };
+    const auto acked = [&](const QString &ref) {
+        for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+            const QJsonObject envelope = outer(raw);
+            if (envelope.value("kind").toString() == "forkmesh-received" &&
+                envelope.value("refs").toArray().contains(ref))
+                return true;
+        }
+        return false;
+    };
+
+    harness.textFrames.clear();
+    const QString sentId = node.sendChat(direct, QStringLiteral("ratchet hello"));
+    check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),
+          "the DM reaches the relay");
+    if (harness.textFrames.isEmpty())
+        return;
+    const QByteArray sentRaw = harness.textFrames.constLast();
+    const QJsonObject sentSealed = inner(sentRaw);
+    QStringList sentKids;
+    for (const QJsonValue &value : sentSealed.value("keys").toArray())
+        sentKids.append(value.toObject().value("kid").toString());
+    check(sentSealed.value("v").toInt() == 4 && sentKids == QStringList{bob.keyId()},
+          "a DM is a v4 frame with an entry for the peer and none for this device");
+    check(bob.open(sentSealed).value("id").toString() == sentId,
+          "the peer opens the v4 DM");
+
+    harness.textFrames.clear();
+    QJsonObject echo = outer(sentRaw);
+    const QString echoRef(40, QLatin1Char('1'));
+    echo.insert("ref", echoRef);
+    harness.sendText(QJsonDocument(echo).toJson(QJsonDocument::Compact));
+    waitUntil([] { return false; }, 300);
+    check(!acked(echoRef) && keyFrames() == 0,
+          "an own frame coming back is ignored: no ack and no key advertisement");
+
+    node.roomSeal().resetSessions(bob.keyId());
+    harness.textFrames.clear();
+    QJsonObject broken = relayKey.encryptObject(bob.sealObject(QJsonObject{
+        {"type", "chat"}, {"id", "after-loss"}, {"senderId", "bob-node"},
+        {"channel", direct}, {"text", "lost session"},
+        {"ts", double(QDateTime::currentMSecsSinceEpoch())}}));
+    const QString brokenRef(40, QLatin1Char('2'));
+    broken.insert("ref", brokenRef);
+    broken.insert("persist", true);
+    harness.sendText(QJsonDocument(broken).toJson(QJsonDocument::Compact));
+    QJsonObject resetEnvelope;
+    QJsonObject resetPlain;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+                  const QJsonObject sealed = inner(raw);
+                  if (!RoomSeal::isSealedFrame(sealed))
+                      continue;
+                  const QJsonObject plain = bob.open(sealed);
+                  if (RoomSeal::isResetPlain(plain)) {
+                      resetEnvelope = outer(raw);
+                      resetPlain = plain;
+                  }
+              }
+              return !resetPlain.isEmpty() && keyFrames() == 1;
+          }, 2000),
+          "noSession sends a reset to the peer and one persisted key advertisement");
+    check(resetPlain.value("senderId").toString() == nodeId &&
+              resetEnvelope.value("persist").toBool() &&
+              !resetEnvelope.value("notify").toBool() && !acked(brokenRef),
+          "the reset is persisted, silent, names this node, and the broken frame is not acked");
+    const QJsonObject resetSealed = relayKey.decryptObject(resetEnvelope);
+    check(resetSealed.value("keys").toArray().size() == 1 &&
+              resetSealed.value("keys").toArray().first().toObject().value("kid").toString() ==
+                  bob.keyId(),
+          "the reset is sealed only to the device whose session was lost");
+
+    const QJsonObject fresh = relayKey.encryptObject(bob.sealObject(QJsonObject{
+        {"type", "chat"}, {"id", "after-reset"}, {"senderId", "bob-node"},
+        {"channel", direct}, {"text", "works again"},
+        {"ts", double(QDateTime::currentMSecsSinceEpoch())}}));
+    QList<ChatMessage> arrived;
+    QObject::connect(&node, &ChatBackend::messageArrived, &node,
+                     [&arrived](const ChatMessage &message) { arrived.append(message); });
+    harness.sendText(QJsonDocument(fresh).toJson(QJsonDocument::Compact));
+    check(waitUntil([&] { return !arrived.isEmpty(); }, 2000) &&
+              arrived.first().id == QStringLiteral("after-reset"),
+          "the peer's next message on the new session opens");
+
+    harness.textFrames.clear();
+    bob.seal.resetSessions(nodeKid);
+    QJsonObject peerReset = relayKey.encryptObject(bob.seal.sealObjectFor(
+        QJsonObject{{"type", "e2ee-reset"}, {"senderId", "bob-node"}}, {nodeKid}));
+    peerReset.insert("persist", true);
+    peerReset.insert("ref", QString(40, QLatin1Char('3')));
+    const qsizetype shown = arrived.size();
+    harness.sendText(QJsonDocument(peerReset).toJson(QJsonDocument::Compact));
+    QJsonObject resent;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames))
+                  if (outer(raw).value("resend").toBool())
+                      resent = outer(raw);
+              return !resent.isEmpty();
+          }, 2000),
+          "an opened reset re-seals the outbox to that device");
+    waitUntil([] { return false; }, 300);
+    bool superseded = false;
+    for (const QByteArray &raw : std::as_const(harness.textFrames))
+        superseded = superseded ||
+                     outer(raw).value("kind").toString() == "forkmesh-superseded";
+    const QJsonObject resentSealed = relayKey.decryptObject(resent);
+    check(resentSealed.value("keys").toArray().size() == 1 &&
+              bob.open(resentSealed).value("id").toString() == sentId &&
+              resent.value("persist").toBool() && arrived.size() == shown && !superseded,
+          "the outbox entry is re-sealed to that device alone, the reset is not shown, "
+          "and nothing is superseded");
+
+    node.roomSeal().resetSessions(bob.keyId());
+    harness.textFrames.clear();
+    const QByteArray lostAgain =
+        QJsonDocument(relayKey.encryptObject(bob.sealObject(QJsonObject{
+                          {"type", "chat"}, {"id", "lost-again"}, {"senderId", "bob-node"},
+                          {"channel", direct}, {"text", "lost again"},
+                          {"ts", double(QDateTime::currentMSecsSinceEpoch())}})))
+            .toJson(QJsonDocument::Compact);
+    harness.sendText(lostAgain);
+    waitUntil([] { return false; }, 300);
+    check(harness.textFrames.isEmpty(),
+          "a second noSession from the same device within 60 s sends nothing");
+
+    const auto nodeDevice = node.roomSeal().device();
+    const qint64 later = QDateTime::currentMSecsSinceEpoch() + 61 * 1000;
+    nodeDevice->setClock([later] { return later; });
+    const QJsonObject sessionsBefore = nodeDevice->exportRatchets(room);
+    harness.textFrames.clear();
+    harness.sendText(QJsonDocument(broken).toJson(QJsonDocument::Compact));
+    waitUntil([] { return false; }, 300);
+    check(harness.textFrames.isEmpty() && !acked(brokenRef) &&
+              nodeDevice->exportRatchets(room) == sessionsBefore,
+          "a replayed noSession frame older than a frame already opened from that device "
+          "starts no recovery: sessions kept, no reset, no key advertisement");
+    harness.sendText(lostAgain);
+    resetPlain = QJsonObject();
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+                  const QJsonObject sealed = inner(raw);
+                  if (RoomSeal::isSealedFrame(sealed) && RoomSeal::isResetPlain(bob.open(sealed)))
+                      resetPlain = bob.open(sealed);
+              }
+              return !resetPlain.isEmpty() && keyFrames() == 1;
+          }, 2000),
+          "a noSession frame newer than every opened frame still recovers after 60 s");
+    nodeDevice->setClock({});
     node.shutdown();
 }
 
@@ -4579,6 +4779,7 @@ int main(int argc, char **argv)
         testUserStatusOnPresenceFrames();
         testRecipientCounts();
         testDirectRoomResealsUndeliveredMessages();
+        testDirectRoomRatchetRecovery();
         testReceiptMarkStates();
         testDirectReceiptsAndRoomMutations();
         testOfficeChannelMirror();

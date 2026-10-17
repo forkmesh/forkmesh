@@ -63,10 +63,50 @@ the Swift surface. v2 frames are ignored.
   transcript, per-direction keys and the counter-nonce frames of a mesh link.
 - `OverlaySecureStore`: reads through to a store and keeps every write in memory. The push
   opener wraps the shared keychain in one, so opening a frame in the extension never moves the
-  app's counters or seen windows.
+  app's counters, seen windows or ratchet sessions; the push opener also opens v4 frames with
+  `commit: false`.
+
+## Chat protocol v4 (`ChatRatchet.swift`, `RoomSealV4.swift`)
+
+The wire format is [docs/app/chat-protocol-v4.md](../../../docs/app/chat-protocol-v4.md), a
+per-message Double Ratchet with ML-KEM-768 in every step, for strict rooms only (server DMs and
+their `direct-sealed` mesh copies). `tools/chat_v4_reference.py` is the byte-level reference.
+
+- `RoomSeal.version`: 4 for `policy: .strict`, 3 otherwise; `version:` in the initializer overrides
+  it (the v3 vector tests pin 3). A strict room seals and opens only v4 (a v3 frame is `invalid`);
+  an open room opens only v3 (a v4 frame is `invalid`). `isSealedFrame` accepts both versions (v4
+  with 0 to 64 entries), `frameVersion(frame)` tells them apart.
+- `seal`, `seal(plain, for:)` and `seal(plain, forNodes:)` in a v4 room wrap the content key for
+  each approved device other than this one with that device's ratchet session; no self entry, and
+  a frame with no recipients is legal (it is still sent and resealed later).
+- `open(frame, now:, history:, commit:)` adds two results: `own` (this device sent it) and
+  `noSession(kid)` (no session, a prekey no longer kept, more than 256 skipped, or a wrap that
+  fails). v4 has no history-replay exception. With `commit: false` nothing is stored (no ratchet,
+  seen window, trust or held frame), so the same frame opens again later; `peek` is
+  `open(commit: false)`. `reopenHeld` goes through the ratchet. `resetSessions(with: kid)` drops
+  this room's sessions with that device; `highestCounter(from: kid)` is the highest `ctr` opened
+  from it in this room (the client skips recovery for an older `noSession` frame).
+- `ChatV4`: constants (`maxSkip` 256, `skippedKept` 512, `skippedLifeMs` 8 days, `sessionsKept`
+  4, `resetType` `e2ee-reset`), `kdfInit`, `kdfRk`, `kdfCk`, `sessionId`.
+- State lives in `ChatKeyring`, one entry per room at `chat/e2ee/ratchetV4/<b64u(room)>`
+  (`ChatKeyring.ratchetStoreKey`) in the spec's canonical JSON, next to the prekeys and trust in
+  the shared keychain group. A seal stores it before it returns the frame. Seal and open of v4
+  frames run under one ratchet lock per keyring, so two rooms or tasks never interleave a session
+  update. `ratchetPeer(room, kid)`, `resetRatchet`, `exportRatchets` and `importRatchets` (the
+  vector `states` import as is). Sessions are kept per peer (the current one plus the most
+  recently used, 4 at most); skipped keys older than 8 days or past 512 are dropped whenever the
+  session is stored.
 
 Tests: `Tests/FMCryptoTests/OwnerCryptoTests.swift` (the Qt interop case skips unless
 `desktop/build/forkmesh-tests` is built) and `RoomSealTests.swift`: `RoomSealVectorTests` loads
 `conformance/chat/v3/vectors.json` and checks what `app/tests/test_chat_v3_vectors.py` checks
 (including that ML-KEM keys from the stored seeds and the link frames match byte for byte);
 `RoomSealRoundTripTests` covers sealing, strict trust, persistence and rotation.
+`ChatRatchetTests.swift`: `ChatRatchetVectorTests` loads `conformance/chat/v4/vectors.json` and
+checks the `kdf` vectors, replays the `sequence` as `app/tests/test_chat_v4_vectors.py` does (a
+fresh device from `devices` and the `bundles` per `state` step, `states` imported, `clearSeen` by
+deleting the seen window and reloading), checks `bobAfterM1` and that the `states` export
+unchanged; `ChatRatchetRoundTripTests` covers shuffled multi-turn delivery, a late message from an
+old chain, simultaneous first messages, reset recovery, `commit: false` and the extension overlay,
+`MAX_SKIP`, expired prekeys, bounded sessions, skipped-key expiry, own and zero-entry frames, held
+frames and reload. All of it runs on Linux.

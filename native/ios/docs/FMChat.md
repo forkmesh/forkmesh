@@ -307,18 +307,38 @@ messages"). On iOS they live in `DirectMessageService`:
   person's other devices.
 - **R2.** The first sealed frame with no wrap for this device triggers one persisted key
   advertisement.
+- **Ratchet (chat protocol v4).** DM frames are v4 (`docs/app/chat-protocol-v4.md`): a frame
+  has no entry for its sender, and a frame with no recipients is still sent (the outbox reseals
+  it once a device is approved). Own frames coming back from the relay (`own`) are ignored: no
+  ack, no advertisement, no outbox rebuild; this device's history already holds them (one that
+  comes back with a ref this device tracked still marks the message Sent). v3 frames in a DM room
+  are ignored. A frame with no entry for this device is `notForMe` (R2) without being opened.
+- **Lost sessions.** `noSession(kid)` (from the relay, a held frame reopened on approval, or a
+  `direct-sealed` copy), at most once per DM and device every 60 s
+  (`DirectMessageFrames.resetIntervalMs`), unless this device already opened a later frame from
+  that device (the frame's `ctr` is below `RoomSeal.highestCounter(from:)`, the seen window's
+  maximum: the relay replays an unacknowledged frame on every reconnect, and recovering again
+  would reset the session that works): drop the room's sessions with that device, send a
+  persisted, non-notifying frame `{"type":"e2ee-reset","senderId":<selfId>}` sealed only to it
+  (over the mesh when no socket is open), and one persisted key advertisement. The frame that
+  failed is not acknowledged. An opened `e2ee-reset` is not shown: every outbox entry (7 days) is
+  sealed again for that device alone and sent with the same id, `persist`, its `notify` and
+  `resend: true`, with no `forkmesh-superseded` (the original still serves the other devices).
 - **R3.** Each durable send is kept in a per-DM outbox (64 entries, 7 days) with its relay ref
   (first 40 hex of SHA-256 of the exact text sent) and the key ids it was wrapped for. When a
   new approved device appears (first device of an account, or one the user approved), entries
-  not wrapped for every approved device are resealed and resent (`resend: true`), and the old
-  refs are sent in `forkmesh-superseded` frames. Pending devices get nothing.
-- **Trust (v3, strict).** Scope `direct:<id>`, `acct` = the signed-in account (lowercased,
+  not wrapped for every approved device other than this one are resealed and resent
+  (`resend: true`), and the old refs are sent in `forkmesh-superseded` frames. Pending devices
+  get nothing.
+- **Trust (v3 trust, v4 frames, strict).** Scope `direct:<id>`, `acct` = the signed-in account (lowercased,
   `displayName` unless an `account` closure is given), `node` = `selfId`, participants = this
   account and `otherUser`. A bundle for anyone else is dropped; a second device of an account
-  is pending and its frames are held until `approveDevice`. History-replay frames skip only the
-  seen check. A frame not addressed to this device still asks for one durable advertisement.
+  is pending and its frames are held until `approveDevice`, which reopens them through the
+  ratchet. History-replay frames get no exception: a frame this device already opened is a
+  `replay` (acknowledged, never shown again), since its key is gone. A frame not addressed to
+  this device still asks for one durable advertisement.
 - **Direct over the mesh.** Every DM frame type except calls goes to each linked approved device
-  as `direct-sealed` (sealed to that device and this one); files up to 1 MiB over Wi-Fi and
+  as `direct-sealed` (a v4 frame sealed to that device only, so each copy advances its session); files up to 1 MiB over Wi-Fi and
   256 KiB over Bluetooth. When this device has focus (foreground and `setFocus(conversation,
   true)`) and a linked approved device of the other account reported focus, the frame goes over
   the mesh only and waits 3 s for `direct-ack`; no ack or a dropped link sends the relay copy with
@@ -383,9 +403,11 @@ Logic is in **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBas
 - `PushChatRequest.parse` validates `ref` (40 lowercase hex), `conversation` or `channelId`.
 - `PushChatOpener.open(pending, request:, secureStore:, keys:) -> PushChatOpened`
   (`message`, `unknownSender`, `unavailable`) checks the pending answer names the same
-  conversation, decrypts the `RoomCrypto` envelope and opens the v3 frame with the shared
-  identity, prekeys and trust records (strict for DMs, open for channels) through an
-  `OverlaySecureStore`, so nothing is written back. Only `chat` and `thread-reply` become
+  conversation, decrypts the `RoomCrypto` envelope and opens the frame with the shared
+  identity, prekeys, trust records and ratchet state (strict and v4 for DMs, open and v3 for
+  channels) through an `OverlaySecureStore`, so nothing is written back. DM frames open with
+  `commit: false`: the extension reads the ratchet state in the shared keychain group but never
+  advances it or the seen window, so the app opens the same frame again when it connects. Only `chat` and `thread-reply` become
   messages, and DMs must be sealed. A frame from a pending or unknown device is
   `unknownSender`, shown as "New message".
 - Pushes carry no sender: both "Name and message" and "Name only" open the frame to learn it
@@ -583,7 +605,8 @@ pages, `ChatMoveChannelSheet`, `ChatLinkPreviewCard`. Conversations are drawn by
 
 Core tests (Linux `swift test`) cover the relay, mesh (loopback sockets), local-control vectors,
 history store, direct messages, receipts, view-once media and captions, push decryption, link
-parsing, the v3 UI logic (`DirectTrustUITests`: trust lines and banners, transcript order, safety
+parsing, v4 delivery (`DirectMessagesTests`: own frames ignored, one reset and advertisement per
+lost session, a received reset reseals the outbox to that device only, no superseded), the v3 UI logic (`DirectTrustUITests`: trust lines and banners, transcript order, safety
 rows and scan results, the privacy switches and lock, focus reporting, office channel ids), calls (including the state lines, route notes and the ringback and ring tones in
 `DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and

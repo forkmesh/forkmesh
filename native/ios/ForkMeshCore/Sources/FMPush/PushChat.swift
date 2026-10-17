@@ -211,7 +211,7 @@ public enum PushChatOpener {
                     room: room, scope: request.trustScope ?? room, policy: request.isDirect ? .strict : .open, acct: nil,
                     node: nil, keyring: keyring, store: overlay)
             else { return .unavailable }
-            let result = seal.open(framed, now: now)
+            let result = seal.open(framed, now: now, commit: seal.version != ChatV4.version)
             switch result {
             case .opened:
                 guard let opened = result.authenticatedPlain else { return .unavailable }

@@ -106,10 +106,26 @@ room (`e2ee-key` frames). Every client follows these rules in a DM room:
    advertisement; this tells the sender to re-seal.
 3. Keep an outbox of up to 64 own durable frames. When a new peer key is
    approved (protocol v3: a pending device gets nothing until the user approves
-   it), reseal entries not wrapped for all approved keys, send them with the
-   same message id and `"resend": true`, then send
-   `{"kind":"forkmesh-superseded","v":1,"refs":[...]}` for the old refs.
+   it), reseal entries not wrapped for every approved device other than this
+   one, send them with the same message id and `"resend": true`, then send
+   `{"kind":"forkmesh-superseded","v":1,"refs":[...]}` for the old refs. A DM
+   frame sealed before any other device is approved has no entries (protocol
+   v4 seals nothing to its sender); it is still sent, and this step reseals it.
 4. Receivers drop message ids already shown.
+5. Protocol v4 ([chat-protocol-v4.md](chat-protocol-v4.md)): an own frame that
+   comes back from the relay (`own`) is ignored, never acknowledged and
+   triggers no key advertisement. A frame whose ratchet session is missing
+   (`noSession(kid)`) is not acknowledged, so the relay replays it on every
+   reconnect; when this device has already opened a later frame from that
+   device (a higher `ctr`, reported by the web seal as `later: true`) the
+   client does nothing, because the session already works again. Otherwise
+   the client, at most once per room and device every 60 s, deletes its
+   sessions with that device, sends it a persisted, non-notifying sealed
+   `{"type":"e2ee-reset","senderId":<node>}` (sealed to that device only) and
+   one persisted key advertisement. A client that opens
+   an `e2ee-reset` shows nothing and reseals every outbox entry to that device
+   alone, same id and `"resend": true`, without `forkmesh-superseded`: the
+   original copy still serves the other devices.
 
 `forkmesh-superseded` (`chat_direct_superseded`) deletes only rows the
 sending account stored. "Received" means received by one of the recipient's
@@ -344,17 +360,19 @@ frame is what is stored and replayed, and
 `messages[].recipients` and `messages[].recipientNames`. Device key lists are
 never used as a source, because keys carry no account binding.
 
-## Web client seal (protocol v3)
+## Web client seal (protocol v3 and v4)
 
-The browser speaks only [chat protocol v3](chat-protocol-v3.md); v2 frames are
-ignored and the v2 X25519 key and peer lists are deleted from `localStorage` on
-load.
+The browser speaks [chat protocol v3](chat-protocol-v3.md) in open rooms and
+[v4](chat-protocol-v4.md) in strict rooms (server DMs, `direct:<id>`): a
+strict room seals and opens only v4 frames, an open room only v3, and v2
+frames are ignored everywhere. The v2 X25519 key and peer lists are deleted
+from `localStorage` on load.
 
 | File | Role |
 | --- | --- |
 | `app/public/chat-mlkem.js` | Keccak (SHA3-256/512, SHAKE128/256) and ML-KEM-768, ported from the Android `MlKem768.kt` |
-| `app/public/chat-seal.js` | Identity key, prekeys, bundles, trust store, held frames, counters and replay window, seal/open, safety numbers |
-| `app/public/chat-room-transport.js` | Advertises bundles on every connect and after a prekey rotation, opens frames, reseals DMs after an approval |
+| `app/public/chat-seal.js` | Identity key, prekeys, bundles, trust store, held frames, counters and replay window, v3 and v4 seal/open, the v4 ratchet, safety numbers |
+| `app/public/chat-room-transport.js` | Advertises bundles on every connect and after a prekey rotation, opens frames, reseals DMs after an approval, sends and answers `e2ee-reset` |
 | `app/public/chat.js`, `chat.html` | New-device banner (Approve, Block, Safety number), system lines, the Safety number view in the encryption panel |
 
 - Ed25519, X25519, HKDF, AES-GCM and SHA-2 come from WebCrypto; private keys
@@ -375,9 +393,27 @@ load.
   name the bot in `bot`; `chat.js` and `dashboard-chat.js` render them as the
   bot from that field.
 - The relay replays a room's backlog on every connect and the web keeps no
-  local history, so frames in the history batch skip the "already seen" check
-  (everything else, signature and `ts` window included, still applies). Live
-  frames that were already seen are dropped as replays.
+  local history, so v3 frames in the history batch skip the "already seen"
+  check (everything else, signature and `ts` window included, still applies).
+  Live frames that were already seen are dropped as replays. v4 frames have no
+  such exception: once opened, their message key is gone.
+- v4 ratchet state is stored per room at `forkmesh.chat/e2ee/ratchetV4/`
+  (relay host plus room name, `b64u`), wrapped like the identity seed, in the
+  canonical JSON of the spec; it and the counter are written before a sealed
+  frame is returned.
+- Every tab of a browser is the same device. Each v4 seal and open runs under
+  the Web Lock `forkmesh-chat-ratchet` (`navigator.locks`; without it, as in
+  Node, it runs unlocked) and reads the ratchet, counter and replay window
+  from storage inside the lock, so two tabs never reuse a chain key. A tab
+  that opens or seals a v4 frame keeps its plaintext for 10 minutes in
+  `forkmesh.chat/e2ee/openedV4/` (wrapped, at most 256 entries, entries over
+  16 KB and anything past 256 KB in total are not kept, so a file cannot
+  crowd the ratchet out of `localStorage`), keyed by the SHA-256 of the frame
+  JSON. Another tab that then gets `replay` for that frame, or `own` for a
+  frame this browser sent, shows it from there instead; the tab that handled
+  the frame itself still gets `replay` or `own`. An own frame shown this way
+  is never acknowledged. This also brings back the browser's own last
+  10 minutes of DM messages after a reload.
 - An opened frame without `senderId` gets the sender's `node`; a frame whose
   `reactorId` is not the sender's `node` is dropped. Edits and deletes already
   require the original's `senderId`, which v3 now authenticates.
@@ -386,7 +422,13 @@ load.
   not ring.
 - Tests: `app/tests/chat_v3_web.test.mjs` (run by
   `app/tests/test_chat_v3_web_vectors.py`) checks the OpenSSL ML-KEM answers
-  and every expectation in `conformance/chat/v3/vectors.json`.
+  and every expectation in `conformance/chat/v3/vectors.json` (in a DM room
+  resolved with `version: 3`). `app/tests/chat_v4_web.test.mjs` (run by
+  `app/tests/test_chat_v4_web_vectors.py`) checks the v4 KDF vectors, replays
+  the `sequence` of `conformance/chat/v4/vectors.json`, and runs two and
+  three web devices through shuffled delivery, old-chain messages,
+  simultaneous starts, resets, peeks, `MAX_SKIP`, two tabs under the lock, and
+  the transport's `own`, `noSession` and `e2ee-reset` handling.
 
 ## Legacy mesh rooms
 

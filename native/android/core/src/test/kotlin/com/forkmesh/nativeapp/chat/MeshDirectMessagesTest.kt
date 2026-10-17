@@ -76,7 +76,7 @@ class MeshDirectMessagesTest {
     private fun relayChats(socket: FakeOfficeSocket, from: Int): Int =
         socket.sent.drop(from).count { text ->
             val framed = crypto.decrypt(Json.parseObject(text)) ?: return@count false
-            RoomSeal.isSealedFrame(framed)
+            RoomSeal.isRatchetFrame(framed)
         }
 
     fun testDirectMessagesUseAuthenticatedLinksAndTheFocusRule() {

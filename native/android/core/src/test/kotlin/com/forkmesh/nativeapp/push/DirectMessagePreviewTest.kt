@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.push
 
 import com.forkmesh.nativeapp.chat.FakeAccountApi
 import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
+import com.forkmesh.nativeapp.crypto.ChatV4
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -84,8 +85,12 @@ class DirectMessagePreviewTest {
     fun testAPreviewLeavesTheFrameForTheAppAndSkipsUnapprovedDevices() {
         val store = MemorySecretStore()
         val frame = peerFor(store).seal(chat())
+        assertEq(4L, frame["v"])
+        val before = store.read(ChatV4.storeKey(room))
         expect(DirectMessagePreviews.open(event, pending(wire(frame)), store) != null)
-        expect(mine(store).open(frame) is SealOpen.Opened, "the preview did not use up the frame's counter")
+        assertEq(before, store.read(ChatV4.storeKey(room)), "the preview opens with commit = false and stores no ratchet step")
+        expect(mine(store).open(frame) is SealOpen.Opened, "the preview did not use up the frame's counter or message key")
+        expect(mine(store).open(frame) is SealOpen.Replay)
         val newPhone = device()
         newPhone.acceptKeyFrame(mine(store).keyFrame())
         mine(store).acceptKeyFrame(newPhone.keyFrame())
