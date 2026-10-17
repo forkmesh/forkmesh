@@ -105,7 +105,7 @@ cryptography:
   for the Android app, on the apps' own crypto modules.
 
 `tests/fixtures/interop-from-{js,cpp,dart}.json` hold a small vault made by
-the browser, the desktop and the retired Flutter app, with its test-only
+the browser, the desktop and the previous mobile app, with its test-only
 secrets beside it. Each implementation's test opens them and refuses the same
 tamperings, so a vault written by any client opens in every other. The web
 and desktop clients' logic is likewise tested against one thing: this

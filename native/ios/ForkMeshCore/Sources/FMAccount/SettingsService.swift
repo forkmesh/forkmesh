@@ -64,8 +64,6 @@ public enum AccentChoice: String, CaseIterable, Sendable {
 @MainActor
 @Observable
 public final class SettingsService {
-    // MARK: Keys (identical to the retired Flutter app's)
-
     nonisolated public static let serverUrlKey = "server/url"
     nonisolated public static let localWorkerUrlMigrationKey = "server/localWorkerUrlMigrated"
     nonisolated static let serverUrlEnvKey = "server/urlEnv"

@@ -68,14 +68,14 @@ class ProjectsTest {
         assertEq(setOf(RelayFeature.accounts, RelayFeature.repositories, RelayFeature.repoRead), noCore.missingCore)
     }
 
-    fun testProjectJsonMatchesFlutter() {
-        val flutterRow = Json.parseObject(
+    fun testProjectJsonRoundTripsTheStoredFormat() {
+        val storedRow = Json.parseObject(
             "{\"id\":\"app.forkmesh.com\",\"label\":\"ForkMesh\",\"serverUrl\":\"wss://app.forkmesh.com/x\",\"addedAt\":5," +
                 "\"lastUsedAt\":6,\"verifiedAt\":7,\"verifiedRev\":\"abc\",\"builtIn\":true,\"features\":[\"!ads\"]," +
                 "\"worldUrl\":\"https://world.forkmesh.com/\",\"homepageUrl\":\"https://forkmesh.com/\",\"namespace\":\"\"}",
         )
-        val project = Project.fromJson(flutterRow)
-        assertEq(flutterRow, Json.parseObject(Json.stringify(project.toJson())))
+        val project = Project.fromJson(storedRow)
+        assertEq(storedRow, Json.parseObject(Json.stringify(project.toJson())))
         expect(project.scope.isLegacy)
         val preProjects = Project.fromJson(mapOf("id" to "relay.example.com"))
         assertEq("", preProjects.namespace)
@@ -154,13 +154,13 @@ class ProjectsTest {
         assertEq("p/$next/", withSecond(directory).byId(next)!!.namespace)
     }
 
-    fun testLegacyInstallAndFlutterUpgradeLandOnProduction() {
+    fun testLegacyInstallAndStoredActiveLandOnProduction() {
         assertEq(prod, ProjectDirectory.load(MemoryPrefStore(), legacyInstall = true).activeId)
-        val upgraded = MemoryPrefStore(mapOf(ProjectDirectory.ACTIVE_KEY to prod))
-        assertEq(prod, ProjectDirectory.load(upgraded).activeId)
+        val stored = MemoryPrefStore(mapOf(ProjectDirectory.ACTIVE_KEY to prod))
+        assertEq(prod, ProjectDirectory.load(stored).activeId)
     }
 
-    fun testFlutterListIsKeptAndCustomProjectsFollowBuiltIns() {
+    fun testStoredListIsKeptAndCustomProjectsFollowBuiltIns() {
         val custom = Project.tryParse("relay.example.com", label = "Home", now = 3)!!
         val list = Json.stringify(listOf(custom.toJson(), ProjectDefaults.production(1).copy(label = "Work").toJson()))
         val prefs = MemoryPrefStore(mapOf(ProjectDirectory.LIST_KEY to list, ProjectDirectory.ACTIVE_KEY to "relay.example.com"))

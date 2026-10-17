@@ -1,21 +1,8 @@
-// `ProjectStorage` (erasing a removed project's own namespace), plus stores that route every key
-// to the active project's namespace, because the services take one `SecureStore` and one
-// `KeyValueStore` rather than a per-project view each. The rules are the ones the retired Flutter
-// app's services applied one by one, so the layout it wrote stays readable.
-
 import FMBase
 import Foundation
 
 // MARK: - Which keys belong to a project
 
-/// Which stored keys are per project, as the retired Flutter app laid them out.
-///
-/// * **Secure store:** everything is per project (node key, owner key, vault device copy, room
-///   seal, settings secrets) except the sessions, which `AuthService` keys by project id itself in
-///   the shared store (`auth/session/<projectId>`) so the switcher can say who you are on every
-///   project, and the coding-agent provider keys, which are the user's and not an instance's.
-/// * **Preferences:** everything is shared (appearance, the project list, ads, the UDID) except
-///   the handful of keys the retired Flutter app scoped per project.
 public enum ProjectKeyPolicy {
     /// Secure-store key prefixes kept in the shared store.
     public static let sharedSecurePrefixes: [String] = ["auth/", "agent/credentials"]

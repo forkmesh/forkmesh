@@ -88,10 +88,10 @@ final class AppServices {
         monitor.installStallMonitors(frameSource: frameSource, lifecycleState: .resumed)
 
         monitor.timeSync("startup.freshInstall") {
-            FlutterMigrationRunner.eraseLeftoversOfADeletedApp()
+            StartupMaintenance.eraseLeftoversOfADeletedApp()
         }
-        monitor.timeSync("startup.flutterMigration") {
-            FlutterMigrationRunner.migrateBeforeLaunch()
+        monitor.timeSync("startup.nextRetirement") {
+            StartupMaintenance.retireNextProject()
         }
         let prefs: UserDefaultsStore = UserDefaultsStore()
         let secure: KeychainStore = KeychainStore()
@@ -133,7 +133,6 @@ final class AppServices {
         services.installInsights()
         services.installCoves()
         services.installNavigation()
-        FlutterMigrationRunner.retireWhenVerified(services)
         return services
     }
 

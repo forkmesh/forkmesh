@@ -5,21 +5,6 @@
 import FMBase
 import Foundation
 
-/// Agent sessions, transcripts and steering prompts never cross the relay in the clear. They
-/// travel as `forkmesh.owner-sealed` envelopes: one random AES-256-GCM content key encrypts the
-/// payload, and that key is wrapped once per enrolled owner device under a hybrid
-/// X25519 + ML-KEM-768 KEM.
-///
-/// The wrap key is HKDF-SHA256(ikm: ssX25519 || ssMlKem, salt: "forkmesh-mirror-kem-v1",
-/// info: ephemeralX25519Pub || mlkemCiphertext), so mixing wrap fields between recipients cannot
-/// yield a usable key.
-///
-/// Stored format (identical to the retired Flutter app): secure-store key `seedKey` holds
-/// `{"v":1,"x25519Pub":b64,"x25519Priv":b64,"mlkemPub":b64,"mlkemPriv":b64}` with standard padded
-/// base64; the X25519 private key is stored clamped.
-///
-/// Immutable and thread-safe. ML-KEM and storage are slow-ish (milliseconds); keep `loadOrCreate`,
-/// `seal` and `open` off the main thread when they sit on a hot path.
 public final class OwnerCrypto: OwnerKeys, @unchecked Sendable {
     public static let seedKey = "ownerCrypto/hybridV1"
     public static let envelopeKind = "forkmesh.owner-sealed"

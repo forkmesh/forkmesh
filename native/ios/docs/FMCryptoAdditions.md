@@ -10,7 +10,7 @@ This device's owner-encryption identity (X25519 + ML-KEM-768), byte-compatible w
 MirrorCrypto and the relay's `validate_owner_envelope`. Conforms to `OwnerKeys`
 (SecurityContracts.swift), which is what the rest of the app should depend on.
 
-- `OwnerCrypto.loadOrCreate(secureStore:)` (key `ownerCrypto/hybridV1`, the JSON the retired Flutter app wrote; a corrupt
+- `OwnerCrypto.loadOrCreate(secureStore:)` (key `ownerCrypto/hybridV1`; a corrupt
   blob is replaced by a fresh identity), `OwnerCrypto.forget(secureStore:)`, `OwnerCrypto.generate()`
   (not persisted).
 - `keyId` (base64url SHA-256 of both public keys), `publicBundle: JSONObject` (`{v, x25519,

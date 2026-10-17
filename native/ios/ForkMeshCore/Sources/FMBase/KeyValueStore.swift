@@ -1,7 +1,3 @@
-// Preferences storage behind a protocol the app target implements over
-// UserDefaults (native/android: platform/Prefs.kt). Keys keep the names the
-// retired Flutter app wrote ("server/url", "auth/session", ...).
-
 import Foundation
 
 /// Getters return nil when the key was never set or holds another type.

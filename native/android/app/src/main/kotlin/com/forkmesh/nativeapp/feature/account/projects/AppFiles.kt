@@ -4,7 +4,7 @@ import android.content.Context
 import com.forkmesh.nativeapp.account.projects.ProjectScope
 import java.io.File
 
-object FlutterFiles {
+object AppFiles {
     fun documentsDir(context: Context): File = context.getDir("flutter", Context.MODE_PRIVATE)
 
     fun supportDir(context: Context): File = context.filesDir

@@ -80,7 +80,7 @@ final class OwnerCryptoTests: XCTestCase {
         XCTAssertNil(fresh.open(sealed))
     }
 
-    func testStorageMatchesFlutter() throws {
+    func testStoredFormat() throws {
         let store = InMemorySecureStore()
         let owner = OwnerCrypto.loadOrCreate(secureStore: store)
         let stored = try XCTUnwrap(store.read(OwnerCrypto.seedKey))

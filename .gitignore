@@ -69,9 +69,6 @@ clot.md
 
 # Local planning note for the mobile independent-node work (remove to commit)
 
-# The retired Flutter app. Leftover build output in a checkout must not come back.
-/mobile/
-
 # Local editor/OS scratch, never repository data.
 .DS_Store
 .cursor/

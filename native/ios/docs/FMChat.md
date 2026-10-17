@@ -34,7 +34,7 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
   roster, unread counts, messages, presence. Actions: `connect`, `disconnect`, `sendMessage`
   (shown at once, removed on failure), `deleteMessage`, `switchConversation`, `mark*Read`,
   `markBadgeSeen`, `setOwnStatus`, `resetForRelaySwitch`, `identityChanged`. Wire: frames carry
-  `version: "flutter-1.0"` (a wire value); public channel chat uses the room cipher only;
+  `version: "native-1.0"` (a wire value); public channel chat uses the room cipher only;
   everything else is sealed with chat protocol v3 (open trust, scope = the room name,
   `acct` = the account or the node id for a guest, `node` = `selfId`); an `@peer` `dm` is sealed
   only to the devices whose bundle `node` is the recipient, plus this account's own devices;

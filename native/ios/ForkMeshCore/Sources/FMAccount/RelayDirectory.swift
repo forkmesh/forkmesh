@@ -171,11 +171,6 @@ public final class RelayDirectory {
         ensureFixedProjects()
     }
 
-    /// The production project, as a fresh install (or an upgrade that never had its row) sees it.
-    /// It owns the legacy storage namespace: an install that predates projects was, by
-    /// definition, a production install, and the retired Flutter app kept production's data unprefixed
-    /// (byte-compatible keys for the migration). Its World and homepage are derived from the app
-    /// host (`world.forkmesh.com`, `forkmesh.com`), so no other production host is written down.
     private func production() -> RelayProfile {
         RelayProfile(
             id: AppEnv.prodHost, label: RelayDirectory.productionLabel, serverUrl: AppEnv.prodServerUrl,

@@ -60,9 +60,9 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 
 ## 3. Storage, secrets and identity
 
-- **Preferences** (`A/platform/Prefs.kt`) keep the key names the retired
-  Flutter app wrote, so migrated values need no renaming. A value stored with
-  another type reads as absent. Sign-out writes synchronously.
+- **Preferences** (`A/platform/Prefs.kt`) keep their key names across
+  releases, so stored values need no renaming. A value stored with another
+  type reads as absent. Sign-out writes synchronously.
 - **Secrets** (`A/platform/SecureStore.kt`): AES-256-GCM under an Android
   Keystore key, with the key name as associated data. A value that no longer
   opens reads as absent. Secrets found in plain preferences are moved in once.
@@ -90,37 +90,27 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
   `forkmesh.portable-identity/v1`. Restore validates type, schema, a canonical
   32-byte seed and the matching public key, and signs out the old session.
 
-## 4. Upgrading the Flutter APK in place
+## 4. Store application id and updates
 
-Users of the retired Flutter APK get the native app as an update of the same
-app. The release APK is built with `-Pforkmesh.appId=com.forkmesh.forkmesh`
-and signed with the v3 key (`native/android/README.md`); the default
-application id `com.forkmesh.nativeapp` installs beside it.
+The store release is an update of the app published as `com.forkmesh.forkmesh`.
+The release APK is built with `-Pforkmesh.appId=com.forkmesh.forkmesh` and
+signed with the v3 key (`native/android/README.md`); the default application id
+`com.forkmesh.nativeapp` installs beside it.
 
 - **Same application id and signing key.** Keystore keys and app data survive
-  only because the id and signer stay the same. The launcher label follows the
-  id (`app/build.gradle.kts`).
+  an update only because the id and signer stay the same. The launcher label
+  follows the id (`app/build.gradle.kts`).
 - **Component names.** A launcher alias `com.forkmesh.forkmesh.MainActivity`
   and an autofill service `com.forkmesh.forkmesh.vault.VaultAutofillService`
-  keep Flutter's component names, so pinned icons and the chosen autofill
-  service keep working.
-- **Version.** Above every Flutter version name and versionCode.
-- **Data migration** (`C/migration`, `A/feature/account/projects/FlutterDataMigration.kt`),
-  on first launch before any store is read, and from `MY_PACKAGE_REPLACED`:
-  - `flutter_secure_storage` (RSA-OAEP or PKCS#1 key wrapping, AES-GCM or
-    AES-CBC values, all marker locations), including the
-    EncryptedSharedPreferences layout read without Tink (AES-SIV and CMAC in
-    core, checked against RFC vectors and a Tink fixture);
-  - `shared_preferences` `flutter.<key>` values in both list encodings;
-  - rules: idempotent; defers when the Keystore is unavailable; a Flutter value
-    wins until the migration is done; every copy is read back; Flutter data is
-    deleted only after the relay accepts the migrated session
-    (`GET /api/accounts/devices`) and never while a Flutter secret failed to
-    decrypt;
-  - local repositories stay at `app_flutter/forkmesh/repos` and
-    `projects/<slug>/forkmesh/repos` (`FlutterFiles`, `LocalRepoStore.rootIn`);
-  - vault device keys, autofill Keystore aliases and
-    `noBackupFilesDir/vault-autofill` keep Flutter's names.
+  keep their published names, so pinned icons and the chosen autofill service
+  keep working.
+- **Version.** The version name and versionCode stay above every release
+  already published under the store id.
+- **Stable data paths.** Local repositories stay under `AppFiles.documentsDir`
+  (`forkmesh/repos`) and `projects/<slug>/forkmesh/repos`
+  (`LocalRepoStore.rootIn`); vault device keys, autofill Keystore aliases and
+  `noBackupFilesDir/vault-autofill` keep their names, so an update finds them
+  where the previous release left them.
 - **Retired hosts.** A stored project on a retired `next.*` host folds into the
   current instance at launch; scoped secrets, session, guest flag, background
   switch and ping ledger move when only the old project has a session, and a

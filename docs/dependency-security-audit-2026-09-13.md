@@ -7,15 +7,14 @@ maintained summary is `www/docs/security/dependency-security-audit.md`.
 
 | Ecosystem | Manifest |
 |---|---|
-| Mobile (Flutter/Dart) | `pubspec.yaml`, `pubspec.lock` |
 | npm (browser tests, editor extension) | `package-lock.json` files |
 | Python (CI) | `tools/requirements-ci.txt` |
 | Python app | `app/pyproject.toml` (standard library only) |
 | Go mirror node | `server/go.mod` (standard library only) |
-| Android build plugins, iOS pods | Gradle settings, `Podfile.lock` |
+| Android build plugins | Gradle settings |
 | Vendored browser libraries | `world/public/world/vendor` |
 | Desktop native libraries | `desktop/CMakeLists.txt` (system packages) |
-| Toolchains | Flutter, Dart, Go, Node, wrangler |
+| Toolchains | Go, Node, wrangler |
 
 ## Method
 
@@ -45,12 +44,7 @@ heuristic from public registry signals, not a code review.
 2. The main exposure was the Go toolchain version used to build the mirror
    node: its standard library had open advisories, fixed by building with a
    current Go release.
-3. Many mobile packages were behind their latest releases but none were
-   abandoned; the most valuable upgrades were the secure-storage and
-   file-picker plugins.
-4. Supply-chain concentration is healthy: most Dart packages come from the
-   platform vendors' own publishers.
-5. The Python app and the Go mirror node use only their standard libraries
+3. The Python app and the Go mirror node use only their standard libraries
    at runtime; third-party packages are build- and test-time only.
 
 ## Practice

@@ -1,11 +1,3 @@
-// App-private root for on-device repositories plus a small JSON index.
-// Layout: `<root>/<slug>/` per repository and `<root>/index.json` for
-// metadata. The app passes `LocalRepoStore.root(for: scope, documents:)`, the
-// retired Flutter app's per-project path under the Documents directory.
-// Names are restricted to `[A-Za-z0-9._-]{1,100}` (never `.`/`..`); the store
-// refuses to operate through symlinks at the root or at a repository
-// directory, so nothing can be redirected outside the sandbox.
-
 import FMAccount
 import FMApi
 import FMBase
@@ -216,11 +208,6 @@ public final class LocalRepoStore {
         base.appendingPathComponent("forkmesh", isDirectory: true).appendingPathComponent("repos", isDirectory: true)
     }
 
-    /// The store root: each project keeps its clones apart, the legacy
-    /// project under `<documents>/forkmesh/repos`, any other under
-    /// `<documents>/projects/<slug>/forkmesh/repos`. Pass the app's Documents
-    /// directory, where the retired Flutter app kept them, so an
-    /// update from it finds every repository in place.
     nonisolated public static func root(for scope: LocalRepoScope, documents: URL) -> URL {
         defaultRoot(in: scope.directory(documents))
     }

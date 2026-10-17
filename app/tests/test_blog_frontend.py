@@ -645,7 +645,7 @@ def test_the_week_after_the_move_keeps_its_metadata_art_and_navigation():
         'Your phone, typing into your terminal',
         'An office you can walk around in',
         'The World got fast',
-        'The phone apps: Flutter is gone',
+        'The phone apps: native only',
         'Desktop 1.2.5',
         'Updates that never delete your checkout',
         'Coming next',

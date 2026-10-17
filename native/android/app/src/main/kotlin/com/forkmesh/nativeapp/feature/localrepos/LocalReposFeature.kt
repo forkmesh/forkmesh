@@ -19,7 +19,7 @@ import com.forkmesh.nativeapp.chat.NodeSyncRepositories
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFeature
 import com.forkmesh.nativeapp.feature.account.AuthService
-import com.forkmesh.nativeapp.feature.account.projects.FlutterFiles
+import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.localrepos.GitAuthor
 import com.forkmesh.nativeapp.localrepos.GitWorkspace
 import com.forkmesh.nativeapp.localrepos.LocalRepoNodeSync
@@ -97,7 +97,7 @@ object LocalReposFeature {
         )
     }
 
-    fun documentsDir(context: Context): File = FlutterFiles.documentsDir(context)
+    fun documentsDir(context: Context): File = AppFiles.documentsDir(context)
 
     fun useProject(context: Context, projectId: String?) {
         val store = LocalRepoStore.openInDocuments(documentsDir(context), projectId)

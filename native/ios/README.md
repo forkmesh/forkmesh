@@ -3,16 +3,6 @@
 The ForkMesh iOS app in **Swift + SwiftUI**, the iOS sibling of
 `native/android`. App Store app id `com.forkmesh.forkmesh`.
 
-**Upgrading from the Flutter app.** On the first native launch
-`FlutterMigration` (FMAccount, run by `ForkMesh/App/FlutterMigrationRunner.swift`
-before any service exists) copies the Flutter app's Keychain items (service
-`flutter_secure_storage_service`) and preferences (`flutter.<key>` in
-UserDefaults) into the native stores (service `com.forkmesh.forkmesh.secure`,
-`fm.<key>`). Key names are identical, so the user keeps the session, project
-and node key. It retries while the Keychain is locked, never overwrites once
-done, and deletes the Flutter copies only after the relay accepts the migrated
-session.
-
 ## Layout
 
 ```

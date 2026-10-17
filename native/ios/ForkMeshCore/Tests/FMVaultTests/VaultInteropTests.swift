@@ -1,8 +1,3 @@
-// The fmv1 suite against the browser's, the desktop's and the retired Flutter app's. Opens every
-// fixture in VaultFixtures (and any interop-from-*.json the repository holds now that differs),
-// round-trips its own output, and refuses every tampering they refuse. VAULT_WRITE_INTEROP=1 writes
-// interop-from-swift.json next to them for the browser's test (tests/interop_check.js) to open in
-// turn.
 import FMBase
 import FMCrypto
 import Foundation

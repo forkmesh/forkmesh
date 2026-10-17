@@ -53,7 +53,7 @@ Bool`, `recover(code, newMasterPassword:) -> newCode`, `reload`, `save(fields, i
 `renewRecoveryCode`, `destroy`. Plain: `lock()`, `touch()` (restart the idle timer; call on any
 touch), `appPaused/appResumed`, `setAutoLockMinutes`, `dispose()`. Async non-throwing:
 `setQuickUnlock(Bool) -> Bool`, `setAutofill(Bool)`, `openAutofillSettings`,
-`refreshAutofillStatus`, `signedOut`. Secure-store keys (as the retired Flutter app wrote them):
+`refreshAutofillStatus`, `signedOut`. Secure-store keys:
 `vault/<account>/{autoLockMinutes,quickUnlock,autofill}` (quickUnlock holds the keyset JSON).
 
 ## View models (bind with `@Bindable`; user-facing copy kept verbatim)

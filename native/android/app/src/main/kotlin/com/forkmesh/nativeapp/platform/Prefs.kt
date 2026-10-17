@@ -56,9 +56,6 @@ class Prefs(context: Context, name: String = "forkmesh") {
         prefs.edit().putString(key, LIST_MARKER + com.forkmesh.nativeapp.json.Json.stringify(value)).apply()
     }
 
-    fun putStringListNow(key: String, value: List<String>): Boolean =
-        prefs.edit().putString(key, LIST_MARKER + com.forkmesh.nativeapp.json.Json.stringify(value)).commit()
-
     fun raw(key: String): Any? = prefs.all[key]
 
     fun commitRaw(key: String, value: Any?): Boolean {

@@ -150,7 +150,7 @@ class OwnerCryptoTest {
         assertEq(replaced.keyId, OwnerCrypto.loadOrCreate(store).keyId)
     }
 
-    fun testStorageFormatAndKeyIdMatchFlutter() {
+    fun testStorageFormatAndKeyIdStayStable() {
         val store = MemorySecretStore()
         val owner = OwnerCrypto.loadOrCreate(store)
         val raw = store.read(OwnerCrypto.SEED_KEY)!!
@@ -174,14 +174,14 @@ class OwnerCryptoTest {
         val fixedX = X25519.clampPrivateKey(ByteArray(32) { 42 })
         val fixedM = MlKem768.generateKeyPair(ByteArray(64) { 7 })
         val encoder = Base64.getEncoder()
-        val flutterStore = MemorySecretStore(
+        val storedSeed = MemorySecretStore(
             mapOf(
                 OwnerCrypto.SEED_KEY to """{"v":1,"x25519Pub":"${encoder.encodeToString(X25519.publicKey(fixedX))}",""" +
                     """"x25519Priv":"${encoder.encodeToString(fixedX)}","mlkemPub":"${encoder.encodeToString(fixedM.publicKey)}",""" +
                     """"mlkemPriv":"${encoder.encodeToString(fixedM.secretKey)}"}""",
             ),
         )
-        val restored = OwnerCrypto.loadOrCreate(flutterStore)
+        val restored = OwnerCrypto.loadOrCreate(storedSeed)
         assertEq(url.encodeToString(Sha256.hash(X25519.publicKey(fixedX), fixedM.publicKey)), restored.keyId)
     }
 
