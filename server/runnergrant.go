@@ -22,7 +22,10 @@ const (
 	runnerAgentRefPrefix     = "refs/heads/agent/"
 )
 
-var runnerAgentRefRest = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$`)
+var (
+	runnerAgentRefRest   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$`)
+	runnerActionsRefRest = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+)
 
 type runnerGrant struct {
 	Node, Owner, Repository, Access, Ref, Runner, GrantID string
@@ -35,8 +38,18 @@ func validRunnerAgentRef(ref string) bool {
 	if !strings.HasPrefix(ref, runnerAgentRefPrefix) {
 		return false
 	}
-	rest := ref[len(runnerAgentRefPrefix):]
-	return runnerAgentRefRest.MatchString(rest) &&
+	return safeRunnerRefRest(runnerAgentRefRest, ref[len(runnerAgentRefPrefix):])
+}
+
+func validRunnerActionsRef(ref string) bool {
+	if !strings.HasPrefix(ref, "refs/heads/") {
+		return false
+	}
+	return safeRunnerRefRest(runnerActionsRefRest, ref[len("refs/heads/"):])
+}
+
+func safeRunnerRefRest(pattern *regexp.Regexp, rest string) bool {
+	return pattern.MatchString(rest) &&
 		!strings.Contains(rest, "..") && !strings.Contains(rest, "//") &&
 		!strings.Contains(rest, "@{") && !strings.HasSuffix(rest, "/") &&
 		!strings.HasSuffix(rest, ".lock") && !strings.HasSuffix(rest, ".")
@@ -56,6 +69,10 @@ func runnerGrantMessage(g runnerGrant) string {
 		}
 	case "push":
 		if !validRunnerAgentRef(g.Ref) {
+			return ""
+		}
+	case "actions-push":
+		if !validRunnerActionsRef(g.Ref) {
 			return ""
 		}
 	default:
