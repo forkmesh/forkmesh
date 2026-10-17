@@ -127,6 +127,191 @@ public final class ReportBugModel {
     }
 }
 
+public typealias BugReportInboxLoad = @MainActor (_ status: String, _ offset: Int) async -> BugReportInbox
+public typealias BugReportStatusSet = @MainActor (_ id: String, _ status: String) async -> BugReportStatusChange
+public typealias BugReportAttachmentFetch = @MainActor (_ report: String, _ attachment: String) async -> BugReportFile
+
+public struct BugReportStatusFilter: Equatable, Sendable {
+    public let value: String
+    public let label: String
+
+    public static let all = [
+        BugReportStatusFilter(value: "new", label: "New"),
+        BugReportStatusFilter(value: "triaged", label: "Triaged"),
+        BugReportStatusFilter(value: "closed", label: "Closed"),
+        BugReportStatusFilter(value: "", label: "All"),
+    ]
+}
+
+@MainActor
+@Observable
+public final class BugReportInboxModel {
+    public static let tabReport = "Report"
+    public static let tabReported = "Reported"
+    public static let empty = "No reported bugs here."
+
+    @ObservationIgnored private let loader: BugReportInboxLoad?
+    @ObservationIgnored private let statusSetter: BugReportStatusSet?
+    @ObservationIgnored private let fetcher: BugReportAttachmentFetch?
+    @ObservationIgnored private let folder: URL
+    public var status = "new"
+    public private(set) var reports: [BugReportInboxItem] = []
+    public private(set) var counts: [String: Int] = [:]
+    public private(set) var nextOffset: Int?
+    public private(set) var problem = ""
+    public private(set) var loading = false
+    public private(set) var loaded = false
+    public private(set) var updating: Set<String> = []
+    public private(set) var downloading: Set<String> = []
+
+    public init(
+        load: BugReportInboxLoad?, setStatus: BugReportStatusSet? = nil, attachment: BugReportAttachmentFetch? = nil,
+        folder: URL = FileManager.default.temporaryDirectory.appendingPathComponent("bug-report-attachments", isDirectory: true)
+    ) {
+        loader = load
+        statusSetter = setStatus
+        fetcher = attachment
+        self.folder = folder
+    }
+
+    public convenience init(api: ApiService?) {
+        let load: BugReportInboxLoad? = api.map { api in
+            { status, offset in await api.bugReportInbox(status: status, offset: offset) }
+        }
+        let setStatus: BugReportStatusSet? = api.map { api in
+            { id, status in await api.setBugReportStatus(id: id, status: status) }
+        }
+        let attachment: BugReportAttachmentFetch? = api.map { api in
+            { report, attachment in await api.bugReportAttachment(reportId: report, attachmentId: attachment) }
+        }
+        self.init(load: load, setStatus: setStatus, attachment: attachment)
+    }
+
+    public func setStatus(_ id: String, to value: String) async {
+        guard let statusSetter, !updating.contains(id),
+              let current = reports.first(where: { $0.id == id }), current.status != value else { return }
+        updating.insert(id)
+        let change = await statusSetter(id, value)
+        updating.remove(id)
+        if !change.ok {
+            problem = change.message
+            return
+        }
+        problem = ""
+        counts = change.counts
+        if !status.isEmpty && change.status != status {
+            reports.removeAll { $0.id == id }
+            if let offset = nextOffset { nextOffset = max(offset - 1, 0) }
+        } else if let index = reports.firstIndex(where: { $0.id == id }) {
+            reports[index].status = change.status
+        }
+    }
+
+    public func open(report: String, attachment: BugReportInboxAttachment) async -> URL? {
+        guard !downloading.contains(attachment.id) else { return nil }
+        guard let fetcher else {
+            problem = "Attachments are unavailable in this build."
+            return nil
+        }
+        downloading.insert(attachment.id)
+        let file = await fetcher(report, attachment.id)
+        downloading.remove(attachment.id)
+        if !file.ok {
+            problem = file.message
+            return nil
+        }
+        do {
+            let directory = folder.appendingPathComponent(attachment.id, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let target = directory.appendingPathComponent(BugReportInboxModel.fileName(attachment.name))
+            try file.data.write(to: target, options: .atomic)
+            problem = ""
+            return target
+        } catch {
+            problem = "The attachment could not be saved on this device."
+            return nil
+        }
+    }
+
+    public static func sizeLabel(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1024 * 1024 { return "\(Int((Double(bytes) / 1024).rounded())) KB" }
+        return String(format: "%.1f MB", Double(bytes) / 1024 / 1024)
+    }
+
+    public static func fileName(_ name: String) -> String {
+        let cleaned = name.map { "/\\:\0".contains($0) ? "_" : $0 }
+        let text = String(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty || text == "." || text == ".." ? "attachment" : String(text.prefix(160))
+    }
+
+    public func label(for filter: BugReportStatusFilter) -> String {
+        if filter.value.isEmpty {
+            return counts.isEmpty ? filter.label : "\(filter.label) \(counts.values.reduce(0, +))"
+        }
+        guard let count = counts[filter.value] else { return filter.label }
+        return "\(filter.label) \(count)"
+    }
+
+    public func select(_ value: String) async {
+        if value == status && loaded { return }
+        status = value
+        await reload()
+    }
+
+    public func reload() async {
+        await fetch(offset: 0)
+    }
+
+    public func more() async {
+        guard let offset = nextOffset else { return }
+        await fetch(offset: offset)
+    }
+
+    private func fetch(offset: Int) async {
+        if loading { return }
+        guard let loader else {
+            problem = "Reported bugs are unavailable in this build."
+            loaded = true
+            return
+        }
+        loading = true
+        let requested = status
+        let inbox = await loader(requested, offset)
+        loading = false
+        guard requested == status else {
+            await fetch(offset: 0)
+            return
+        }
+        loaded = true
+        if !inbox.ok {
+            problem = inbox.message
+            if offset == 0 { reports = [] }
+            nextOffset = nil
+            return
+        }
+        problem = ""
+        counts = inbox.counts
+        reports = offset == 0 ? inbox.reports : reports + inbox.reports
+        nextOffset = inbox.nextOffset
+    }
+
+    public static func severityLabel(_ value: String) -> String {
+        BugSeverity.all.first { $0.value == value }?.label ?? value.capitalized
+    }
+
+    public static func details(_ report: BugReportInboxItem) -> String {
+        var parts = [report.account.isEmpty ? "anonymous" : "@\(report.account)"]
+        let platform = [report.platform, report.osVersion].filter { !$0.isEmpty }.joined(separator: " ")
+        if !platform.isEmpty { parts.append(platform) }
+        if !report.appVersion.isEmpty { parts.append(report.appVersion) }
+        if !report.screen.isEmpty { parts.append(report.screen) }
+        if !report.package.isEmpty { parts.append(report.package) }
+        if !report.device.isEmpty { parts.append(report.device) }
+        return parts.joined(separator: " · ")
+    }
+}
+
 /// BugReportOverlay's geometry. The position is kept as a fraction of the vertical travel plus a
 /// side, never as points, so rotation or a split window never strands the control off screen.
 public struct BugButtonGeometry: Equatable, Sendable {

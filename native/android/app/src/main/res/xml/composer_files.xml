@@ -3,4 +3,5 @@
     <cache-path name="composer_camera" path="composer-camera/" />
     <cache-path name="marketing_share" path="marketing-share/" />
     <cache-path name="face-changer-share" path="face-changer-share/" />
+    <cache-path name="bug-report-attachments" path="bug-report-attachments/" />
 </paths>
