@@ -341,6 +341,12 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 
 ### 2.0.3 Other pages
 
+- **Inbox** (`InboxScreen`): one centered bar of small square icons at the
+  top of the list. The filters (All, Pings, Reviews, Assigned, Mentions,
+  Approvals) carry their unread count as a badge; the actions that used to
+  sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
+  changes, ping settings, delete all) are squares in the same bar, so every
+  control is one tap. A phone too narrow for the bar scrolls it sideways.
 - **Market** (`MarketScreen`): search in the navigation bar drawer, sort and
   filter chips as the list's top inset, flat cards with a 16:9 preview, rating,
   installs and users, and one-tap Install/Open (`MarketModel.cardAction`).
