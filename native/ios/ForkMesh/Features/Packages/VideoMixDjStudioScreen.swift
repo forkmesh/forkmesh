@@ -254,7 +254,7 @@ struct DjUtilityRow: View {
         HStack(spacing: 14 * u) {
             DjInfoButton(model: model, size: 28 * u)
             DjPadsButton(model: model, size: 26 * u)
-            DjAutomixTab(model: model, u: u, inset: 16)
+            DjAutomixButton(model: model, u: u)
                 .fixedSize()
             DjReactButton(model: model, size: 26 * u)
             DjResetButton(model: model, size: 28 * u)

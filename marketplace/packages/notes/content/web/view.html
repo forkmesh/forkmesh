@@ -10,6 +10,7 @@
             .notes-icon-btn { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: .375rem; color: var(--nt-muted); }
             .notes-icon-btn:hover { background: var(--nt-hover); color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-icon-btn:disabled { opacity: .45; pointer-events: none; }
+            .notes-icon-btn[aria-pressed="true"] { background: var(--nt-selected); color: var(--nt-accent); }
             .notes-new { background: rgb(var(--dashboard-cta-rgb)); color: rgb(var(--dashboard-cta-foreground-rgb)); }
             .notes-new:hover { background: rgb(var(--dashboard-cta-rgb) / .9); color: rgb(var(--dashboard-cta-foreground-rgb)); }
             .notes-search { position: relative; margin: 0 .85rem .6rem; }
@@ -29,8 +30,11 @@
             .notes-row-vis { align-self: center; color: var(--nt-faint); }
             .notes-row-vis svg.lucide { width: .8rem; height: .8rem; }
             .notes-row-vis[data-visibility="public"] { color: var(--nt-accent); }
-            .notes-row-line { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; color: var(--nt-muted); }
-            .notes-row-meta { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .68rem; color: var(--nt-faint); font-variant-numeric: tabular-nums; }
+            .notes-row-line { display: -webkit-box; grid-column: 1 / -1; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; font-size: .72rem; line-height: 1.35; color: var(--nt-muted); }
+            .notes-row-meta { display: flex; grid-column: 1 / -1; min-width: 0; align-items: center; gap: .6rem; margin-top: 1px; white-space: nowrap; font-size: .68rem; color: var(--nt-faint); font-variant-numeric: tabular-nums; }
+            .notes-row-when { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+            .notes-row-stat { display: inline-flex; align-items: center; gap: .2rem; }
+            [data-view="notes"] .notes-row-stat svg.lucide { width: .7rem; height: .7rem; }
             .notes-main { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; }
             .notes-bar { display: flex; min-height: 3.1rem; flex-wrap: wrap; align-items: center; gap: .6rem; border-bottom: 1px solid var(--nt-soft); padding: .45rem .75rem .45rem 1rem; }
             .notes-crumb { display: flex; min-width: 0; flex: 1; align-items: center; gap: .4rem; font-size: .8rem; color: var(--nt-muted); }
@@ -60,7 +64,8 @@
             .notes-btn-danger:hover { border-color: var(--nt-danger); background: var(--nt-danger); color: #fff; }
             .notes-banner { margin: .75rem 1rem 0; }
             [data-view="notes"] .fm-flash { align-items: center; }
-            .notes-work { display: grid; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
+            .notes-body { position: relative; display: flex; flex: 1; min-height: 0; }
+            .notes-work { display: grid; min-width: 0; flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; }
             .notes-work[data-mode="write"], .notes-work[data-mode="preview"] { grid-template-columns: 1fr; }
             .notes-work[data-mode="write"] [data-note-preview-pane], .notes-work[data-mode="preview"] [data-note-write-pane] { display: none; }
             .notes-pane { min-height: 0; overflow-y: auto; }
@@ -149,6 +154,26 @@
             .notes-version button { align-self: center; font-size: .75rem; font-weight: 500; color: var(--nt-accent); opacity: 0; }
             .notes-version:hover button, .notes-version button:focus-visible { opacity: 1; }
             .notes-version-tag { align-self: center; font-size: .7rem; color: var(--nt-primary); }
+            .notes-activity { display: flex; width: 18rem; flex: none; min-height: 0; flex-direction: column; border-left: 1px solid var(--nt-soft); background: rgb(var(--dashboard-card-rgb)); }
+            .notes-activity-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem .6rem .35rem 1rem; }
+            .notes-activity-head h2 { margin: 0; flex: 1; font-size: 13px; font-weight: 600; }
+            .notes-activity-head button[data-note-activity-all] { font-size: .72rem; color: var(--nt-accent); }
+            .notes-activity-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 0 .75rem .5rem; padding: 2px; border-radius: .45rem; background: var(--nt-hover); }
+            .notes-activity-stat { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; border-radius: .3rem; padding: .3rem .5rem; text-align: left; font-size: .68rem; color: var(--nt-muted); }
+            .notes-activity-stat:hover { color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-activity-stat[aria-pressed="true"] { background: rgb(var(--dashboard-card-rgb)); color: rgb(var(--dashboard-foreground-rgb)); box-shadow: 0 0 0 1px var(--nt-primary); }
+            .notes-activity-num { font-size: 1rem; font-weight: 600; line-height: 1.3; color: rgb(var(--dashboard-foreground-rgb)); font-variant-numeric: tabular-nums; }
+            .notes-activity-link { margin: 0 1rem .35rem; align-self: flex-start; font-size: .72rem; font-weight: 500; color: var(--nt-accent); }
+            .notes-act-list { flex: 1; min-height: 0; margin: 0; overflow-y: auto; padding: .15rem .5rem 1rem; list-style: none; }
+            .notes-act { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: .5rem; border-radius: .375rem; padding: .4rem .5rem; }
+            .notes-act:hover { background: var(--nt-hover); }
+            .notes-act-icon { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--nt-hover); color: var(--nt-muted); }
+            [data-view="notes"] .notes-act-icon svg.lucide { width: .8rem; height: .8rem; }
+            .notes-act-text { overflow-wrap: anywhere; font-size: .76rem; line-height: 1.4; color: rgb(var(--dashboard-foreground-rgb) / .85); }
+            .notes-act-text b { font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+            .notes-act-time { display: block; font-size: .68rem; color: var(--nt-faint); }
+            .notes-act-empty { padding: 1rem .5rem; text-align: center; font-size: .72rem; color: var(--nt-muted); }
+            .notes-act-empty[data-tone="bad"] { color: var(--nt-danger); }
             .notes-empty { display: grid; flex: 1; place-items: center; padding: 2.5rem; text-align: center; }
             .notes-empty h2 { margin: .5rem 0 .25rem; font-size: 16px; font-weight: 600; }
             .notes-empty p { max-width: 34ch; margin: 0 auto 1rem; font-size: 14px; color: var(--nt-muted); }
@@ -164,6 +189,7 @@
             .notes-modal .notes-field input { height: calc(var(--dashboard-control-height) - 2px); font-size: var(--dashboard-control-font); }
             .notes-modal .notes-notice { margin: .5rem 0 0; }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
+            @media (max-width: 1279px) { .notes-activity { position: absolute; z-index: 20; top: 0; right: 0; bottom: 0; width: min(20rem, 100%); border-left-color: var(--nt-border); box-shadow: -8px 0 24px rgb(1 4 9 / .3); } }
             @media (max-width: 767px) {
               .notes-app { grid-template-columns: minmax(0, 1fr); }
               .notes-filters button { padding-inline: .25rem; }
@@ -227,6 +253,7 @@
                     <button type="button" data-note-mode="preview" aria-pressed="false">Preview</button>
                   </div>
                   <button data-note-share-open type="button" class="notes-btn" aria-haspopup="dialog" aria-expanded="false"><i data-lucide="user-plus"></i>Share</button>
+                  <button data-note-activity-toggle type="button" class="notes-icon-btn" title="Activity" aria-label="Show activity" aria-pressed="false" aria-controls="note-activity"><i data-lucide="activity"></i></button>
                   <button data-note-menu-open type="button" class="notes-icon-btn" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
                 </header>
 
@@ -242,6 +269,7 @@
                   </div>
                 </div>
 
+                <div class="notes-body">
                 <div data-note-work class="notes-work" data-mode="split">
                   <div data-note-write-pane class="notes-pane">
                     <div class="notes-doc">
@@ -267,6 +295,17 @@
                       <article data-note-preview class="notes-preview"></article>
                     </div>
                   </div>
+                </div>
+                <aside data-note-activity id="note-activity" class="notes-activity" aria-label="Activity" hidden>
+                  <div class="notes-activity-head">
+                    <h2>Activity</h2>
+                    <button data-note-activity-all data-note-activity-tab="all" type="button" hidden>Show all</button>
+                    <button data-note-activity-close type="button" class="notes-icon-btn" aria-label="Close activity"><i data-lucide="x"></i></button>
+                  </div>
+                  <div data-note-activity-summary class="notes-activity-sum" role="group" aria-label="Filter activity"></div>
+                  <button data-note-activity-history type="button" class="notes-activity-link" hidden>Open version history</button>
+                  <ol data-note-activity-list class="notes-act-list" aria-live="polite"></ol>
+                </aside>
                 </div>
 
                 <footer class="notes-status">

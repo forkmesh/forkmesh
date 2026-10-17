@@ -75,10 +75,12 @@ struct DjLoadSheet: View {
             }
             if model.searchText.isEmpty {
                 recent
+                mostPlayed
                 results
             } else {
                 results
                 recent
+                mostPlayed
             }
         }
         .listStyle(.insetGrouped)
@@ -91,7 +93,7 @@ struct DjLoadSheet: View {
         if !model.searchResults.isEmpty {
             Section("Search Results") {
                 ForEach(model.searchResults) { (result: DjSearchResult) in
-                    row(result)
+                    row(result, plays: model.plays(result.id))
                 }
             }
         }
@@ -99,9 +101,10 @@ struct DjLoadSheet: View {
 
     @ViewBuilder private var recent: some View {
         if !model.history.isEmpty {
+            let counts = Dictionary(model.library.map { ($0.id, $0.plays) }, uniquingKeysWith: max)
             Section {
                 ForEach(model.history) { (item: DjHistoryItem) in
-                    row(DjSearchResult(id: item.id, title: item.title.isEmpty ? "YouTube video" : item.title, author: item.author))
+                    row(DjSearchResult(id: item.id, title: item.title.isEmpty ? "YouTube video" : item.title, author: item.author), plays: counts[item.id] ?? 0)
                 }
                 .onDelete { model.forget($0) }
             } header: {
@@ -116,13 +119,31 @@ struct DjLoadSheet: View {
         }
     }
 
-    private func row(_ result: DjSearchResult) -> some View {
+    @ViewBuilder private var mostPlayed: some View {
+        let top = DjStudio.mostPlayed(model.library)
+        if !top.isEmpty {
+            Section {
+                ForEach(top) { (song: DjPlayedSong) in
+                    row(DjSearchResult(id: song.id, title: song.title.isEmpty ? "YouTube video" : song.title, author: song.author), plays: song.plays)
+                        .swipeActions {
+                            Button("Remove", role: .destructive) { model.forgetPlayed(song.id) }
+                        }
+                }
+            } header: {
+                Text("Most Played")
+            } footer: {
+                Text("With the queue empty, AUTOMIX shuffles every song you have played (\(model.library.count)).")
+            }
+        }
+    }
+
+    private func row(_ result: DjSearchResult, plays: Int = 0) -> some View {
         Button {
             model.place(id: result.id, title: result.title, author: result.author)
             model.sheet = nil
         } label: {
             DjResultRow(result: result, loaded: model.searchTarget.side.map { model.deck($0).videoId == result.id }
-                ?? model.shownQueue.contains { $0.videoId == result.id })
+                ?? model.shownQueue.contains { $0.videoId == result.id }, plays: plays)
         }
         .buttonStyle(.plain)
     }
@@ -131,6 +152,7 @@ struct DjLoadSheet: View {
 struct DjResultRow: View {
     let result: DjSearchResult
     var loaded = false
+    var plays = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -145,7 +167,7 @@ struct DjResultRow: View {
                 Text(result.title)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
-                Text([result.author, result.seconds > 0 ? DjStudio.clock(result.seconds) : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([result.author, result.seconds > 0 ? DjStudio.clock(result.seconds) : "", DjStudio.playsLabel(plays)].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -168,7 +190,7 @@ struct DjDeckSheet: View {
                 if deck.loaded {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(deck.title.isEmpty ? "Loading…" : deck.title).lineLimit(2)
-                        Text(deck.author.isEmpty ? "YouTube" : deck.author).font(.footnote).foregroundStyle(.secondary)
+                        Text([deck.author.isEmpty ? "YouTube" : deck.author, DjStudio.playsLabel(model.plays(deck.videoId))].filter { !$0.isEmpty }.joined(separator: " · ")).font(.footnote).foregroundStyle(.secondary)
                     }
                 } else {
                     Text("No video loaded").foregroundStyle(.secondary)
@@ -313,7 +335,7 @@ struct DjInfoSheet: View {
                     if deck.loaded {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(deck.title.isEmpty ? "Loading…" : deck.title)
-                            Text(deck.author.isEmpty ? "YouTube" : deck.author).font(.footnote).foregroundStyle(.secondary)
+                            Text([deck.author.isEmpty ? "YouTube" : deck.author, DjStudio.playsLabel(model.plays(deck.videoId))].filter { !$0.isEmpty }.joined(separator: " · ")).font(.footnote).foregroundStyle(.secondary)
                         }
                         Link(destination: DjStudio.watchURL(deck.videoId)) {
                             Label("Open on YouTube", systemImage: "arrow.up.right.square")
@@ -325,7 +347,7 @@ struct DjInfoSheet: View {
             }
             Section("How it works") {
                 Label("Search and press return: the top result loads straight onto the deck.", systemImage: "magnifyingglass")
-                Label("Songs you play are kept under Recently Played in the loader for one-tap reloading.", systemImage: "clock.arrow.circlepath")
+                Label("Songs you play are kept under Recently Played and Most Played in the loader with how often each was played. With the queue empty, AUTOMIX shuffles them.", systemImage: "clock.arrow.circlepath")
                 Label("Touch a record to slow it a little; drag it to scratch.", systemImage: "hand.draw")
                 Label("START plays, PAUSE holds, STOP goes back to the beginning, RESTART starts over.", systemImage: "playpause")
                 Label("SAMPLE starts recording, tap again to stop and arm it, and once more to play the sample.", systemImage: "record.circle")
@@ -336,7 +358,7 @@ struct DjInfoSheet: View {
                 Label("Push the tempo fader up to speed a deck up; double-tap it to reset.", systemImage: "slider.vertical.3")
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
-                Label("AUTOMIX on plays the queue one song after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
+                Label("AUTOMIX on plays the queue, then songs you have played, one after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
                 Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
                 Label("Reset All (the circular arrow at the bottom) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
             }

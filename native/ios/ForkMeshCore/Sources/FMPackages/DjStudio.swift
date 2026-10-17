@@ -75,6 +75,7 @@ public enum DjStudio {
     public static let rateBounds: ClosedRange<Double> = 0.25...2
     public static let storageKey = "fm.videoMixDjStudio.v1"
     public static let historyLimit = 40
+    public static let libraryLimit = 500
     public static let queueLimit = 100
     public static let touchBrake: Double = 0.08
     public static let touchBrakeSeconds: Double = 0.35
@@ -232,6 +233,35 @@ public enum DjStudio {
         return Array(([item] + history.filter { $0.id != id }).prefix(limit))
     }
 
+    public static func played(_ library: [DjPlayedSong], id: String, title: String, author: String, at now: Double, limit: Int = libraryLimit) -> [DjPlayedSong] {
+        guard isVideoId(id), limit > 0 else { return library }
+        let known = library.first { $0.id == id }
+        let song = DjPlayedSong(
+            id: id, title: title.isEmpty ? known?.title ?? "" : title, author: author.isEmpty ? known?.author ?? "" : author,
+            plays: (known?.plays ?? 0) + 1, last: now.isFinite ? now : known?.last ?? 0)
+        return Array(([song] + library.filter { $0.id != id }).prefix(limit))
+    }
+
+    public static func retitled(_ library: [DjPlayedSong], id: String, title: String, author: String) -> [DjPlayedSong] {
+        library.map { song in
+            guard song.id == id else { return song }
+            var named = song
+            if !title.isEmpty { named.title = String(title.prefix(300)) }
+            if !author.isEmpty { named.author = String(author.prefix(200)) }
+            return named
+        }
+    }
+
+    public static func playsLabel(_ plays: Int) -> String {
+        plays <= 0 ? "" : plays == 1 ? "1 play" : "\(plays) plays"
+    }
+
+    public static func mostPlayed(_ library: [DjPlayedSong], limit: Int = 25) -> [DjPlayedSong] {
+        Array(library.enumerated().filter { $0.element.plays > 1 }
+            .sorted { $0.element.plays != $1.element.plays ? $0.element.plays > $1.element.plays : $0.offset < $1.offset }
+            .map(\.element).prefix(limit))
+    }
+
     public static func turnDegrees(_ seconds: Double) -> Double {
         (seconds / secondsPerTurn * 360).truncatingRemainder(dividingBy: 360)
     }
@@ -289,6 +319,7 @@ public struct DjSpin: Equatable, Sendable {
     public static let follow = 0.2
     public static let jump = 0.6
     public static let waiting = 0.35
+    public static let gap = 0.1
 
     public private(set) var position: Double = 0
     public private(set) var speed: Double = 0
@@ -312,8 +343,12 @@ public struct DjSpin: Equatable, Sendable {
             if now.isFinite { stamp = now }
             return position
         }
-        let elapsed = now - last > 0.1 ? 0 : max(0, now - last)
         stamp = max(last, now)
+        guard now - last <= Self.gap else {
+            position = target
+            return position
+        }
+        let elapsed = max(0, now - last)
         guard elapsed > 0 else { return position }
         speed += (goal - speed) * (1 - exp(-elapsed / (goal > speed ? Self.spinUp : Self.spinDown)))
         position += speed * elapsed
@@ -392,6 +427,36 @@ public struct DjHistoryItem: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public struct DjPlayedSong: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    public var author: String
+    public var plays: Int
+    public var last: Double
+
+    public init(id: String, title: String, author: String, plays: Int = 1, last: Double = 0) {
+        self.id = id
+        self.title = String(title.prefix(300))
+        self.author = String(author.prefix(200))
+        self.plays = max(0, plays)
+        self.last = last.isFinite ? max(0, last) : 0
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try values.decode(String.self, forKey: .id)
+        guard DjStudio.isVideoId(id) else {
+            throw DecodingError.dataCorruptedError(forKey: .id, in: values, debugDescription: "Not a YouTube video id")
+        }
+        self.init(
+            id: id,
+            title: ((try? values.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "",
+            author: ((try? values.decodeIfPresent(String.self, forKey: .author)) ?? nil) ?? "",
+            plays: min(1_000_000, ((try? values.decodeIfPresent(Int.self, forKey: .plays)) ?? nil) ?? 1),
+            last: ((try? values.decodeIfPresent(Double.self, forKey: .last)) ?? nil) ?? 0)
+    }
+}
+
 public struct DjSection: Codable, Equatable, Sendable {
     public var deck: DjDeckSide
     public var start: Double
@@ -421,6 +486,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var history: [DjHistoryItem] = []
     public var queue: [DjQueueItem] = []
     public var automix: Bool = false
+    public var library: [DjPlayedSong] = []
 
     public init() {}
 
@@ -441,6 +507,13 @@ public struct DjSaved: Codable, Equatable, Sendable {
         var ids = Set<String>()
         queue = Array(queued.compactMap(\.item).filter { ids.insert($0.id).inserted }.prefix(DjStudio.queueLimit))
         automix = ((try? values.decodeIfPresent(Bool.self, forKey: .automix)) ?? nil) ?? false
+        if values.contains(.library) {
+            let played = ((try? values.decodeIfPresent([DjPlayedEntry].self, forKey: .library)) ?? nil) ?? []
+            var known = Set<String>()
+            library = Array(played.compactMap(\.song).filter { known.insert($0.id).inserted }.prefix(DjStudio.libraryLimit))
+        } else {
+            library = history.map { DjPlayedSong(id: $0.id, title: $0.title, author: $0.author) }
+        }
     }
 
     public subscript(side: DjDeckSide) -> DjSavedDeck {
@@ -466,6 +539,14 @@ struct DjHistoryEntry: Decodable {
 
     init(from decoder: Decoder) throws {
         item = try? DjHistoryItem(from: decoder)
+    }
+}
+
+struct DjPlayedEntry: Decodable {
+    let song: DjPlayedSong?
+
+    init(from decoder: Decoder) throws {
+        song = try? DjPlayedSong(from: decoder)
     }
 }
 

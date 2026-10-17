@@ -217,6 +217,40 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjSaved.decode(playing.encoded()), playing)
     }
 
+    func testPlaysAreCountedPerSongAndKept() {
+        var library = DjStudio.played([], id: "dQw4w9WgXcQ", title: "Song", author: "Band", at: 100)
+        library = DjStudio.played(library, id: "9bZkp7q19f0", title: "Other", author: "", at: 200)
+        library = DjStudio.played(library, id: "dQw4w9WgXcQ", title: "", author: "", at: 300)
+        XCTAssertEqual(library, [
+            DjPlayedSong(id: "dQw4w9WgXcQ", title: "Song", author: "Band", plays: 2, last: 300),
+            DjPlayedSong(id: "9bZkp7q19f0", title: "Other", author: "", plays: 1, last: 200),
+        ])
+        XCTAssertEqual(DjStudio.played(library, id: "bad", title: "x", author: "", at: 400), library)
+        XCTAssertEqual(DjStudio.played(library, id: "9bZkp7q19f0", title: "", author: "", at: 400, limit: 1).map(\.plays), [2])
+        XCTAssertEqual(DjStudio.retitled(library, id: "9bZkp7q19f0", title: "Named", author: "Artist")[1].title, "Named")
+        XCTAssertEqual(DjStudio.mostPlayed(library).map(\.id), ["dQw4w9WgXcQ"])
+        XCTAssertEqual(DjStudio.playsLabel(0), "")
+        XCTAssertEqual(DjStudio.playsLabel(1), "1 play")
+        XCTAssertEqual(DjStudio.playsLabel(12), "12 plays")
+        var saved = DjSaved()
+        saved.library = library
+        XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
+        let old = DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ","title":"Song"},{"id":"9bZkp7q19f0"}]}"#.utf8))
+        XCTAssertEqual(old.library.map(\.id), ["dQw4w9WgXcQ", "9bZkp7q19f0"])
+        XCTAssertEqual(old.library.map(\.plays), [1, 1])
+        let stored = DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ"}],"library":[{"id":"9bZkp7q19f0","plays":7,"last":5},{"id":"nope"},{"id":"9bZkp7q19f0","plays":1}]}"#.utf8))
+        XCTAssertEqual(stored.library, [DjPlayedSong(id: "9bZkp7q19f0", title: "", author: "", plays: 7, last: 5)])
+        XCTAssertEqual(DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ"}],"library":[]}"#.utf8)).library, [])
+    }
+
+    func testSpinCatchesUpAfterAStalledFrame() {
+        var spin = DjSpin()
+        spin.hold(10, at: 0)
+        XCTAssertEqual(spin.step(target: 10, speed: 1, at: 0.016), 10, accuracy: 0.01)
+        XCTAssertEqual(spin.step(target: 10.4, speed: 1, at: 0.4), 10.4)
+        XCTAssertGreaterThan(spin.step(target: 10.416, speed: 1, at: 0.416), 10.4)
+    }
+
     func testHistoryKeepsLatestFirstWithoutDuplicates() {
         var history = DjStudio.remember([], id: "dQw4w9WgXcQ", title: "Song", author: "Band")
         history = DjStudio.remember(history, id: "9bZkp7q19f0", title: "Other", author: "")

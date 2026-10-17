@@ -35,9 +35,13 @@ def test_every_row_states_publish_status_shares_and_reads():
     # Publish state is named on every row (as the icon's label) and the meta
     # line carries the read count.
     assert "const status = noteStatusLabel(note);" in row
-    assert "noteViewsLabel(note)" in row
-    # The sharing line is its own line, so it is never truncated away.
+    assert "noteStatsHtml(note)" in row
+    stats = _region(NOTES_JS, "function noteStatsHtml(", "function noteVisibilityIcon(")
+    for counted in ('["eye", note.views, noteViewsLabel(note)', '["history", note.version',
+                    '["activity", note.actions'):
+        assert counted in stats
     assert "noteSharedWithLabel(note)" in row
+    assert 'class="notes-row-line" title="${escapeHtml(access)}"' in row
     # A published note is visually distinct, not just differently worded. The
     # icon is the link blue rather than green: green is the dashboard's
     # primary-action colour and no longer marks state.
@@ -46,6 +50,10 @@ def test_every_row_states_publish_status_shares_and_reads():
     view = (ROOT.parent / "marketplace" / "packages" / "notes" / "content" / "web"
             / "view.html").read_text(encoding="utf-8")
     assert '.notes-row-vis[data-visibility="public"] { color: var(--nt-accent); }' in view
+    line = view[view.index(".notes-row-line {"):]
+    line = line[:line.index("}")]
+    assert "-webkit-line-clamp: 2" in line and "overflow-wrap: anywhere" in line
+    assert "white-space: nowrap" not in line
 
     status = _region(NOTES_JS, "function noteStatusLabel(", "// \"12 views\"")
     assert 'if (note.visibility === "public") return "Public";' in status
@@ -119,3 +127,22 @@ def test_note_menu_turns_a_note_into_a_task_or_an_issue():
 def test_search_matches_note_bodies_on_the_server():
     assert "/api/notes?query=${encodeURIComponent(query)}" in NOTES_JS
     assert "if query and not await _matches(runtime, row, query):" in NOTES_API
+
+
+def test_activity_column_lists_views_history_and_actions():
+    view = (ROOT / "public" / "dashboard" / "partials" / "views" / "notes.html").read_text(
+        encoding="utf-8")
+    for marker in ("data-note-activity-toggle", "data-note-activity ", "data-note-activity-summary",
+                   "data-note-activity-list", "data-note-activity-history"):
+        assert marker in view
+    assert "@media (max-width: 1279px) { .notes-activity { position: absolute;" in view
+    assert '`/api/notes/${note.id}/activity`' in NOTES_JS
+    selecting = _region(NOTES_JS, "async function selectNote(", "async function createNote(")
+    assert 'void recordNoteActivity("view")' in selecting
+    for kind in ('"export"', '"task"', '"issue"', '"copy-link"'):
+        assert f"recordNoteActivity({kind}" in NOTES_JS
+    assert '["note-activity", "note-updated"].includes(frame.type)' in NOTES_JS
+    grouping = _region(NOTES_JS, "function noteActivityEntries(", "function noteActivityText(")
+    assert "NOTE_EDIT_GROUP_MS" in grouping
+    assert '"note-activity"' in (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
+    assert 'CLIENT_EVENTS = frozenset({"view", "copy-link", "export", "task", "issue"})' in NOTES_API

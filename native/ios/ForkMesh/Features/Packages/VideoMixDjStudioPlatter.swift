@@ -105,7 +105,7 @@ struct DjRecord: View {
         let r = d * 0.82
         ZStack {
             DjVinyl(d: r).equatable()
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.moving)) { _ in
+            TimelineView(.animation(paused: !deck.moving)) { _ in
                 let angle = Angle.degrees(DjStudio.turnDegrees(deck.shown()))
                 ZStack {
                     if let artwork = deck.artwork {

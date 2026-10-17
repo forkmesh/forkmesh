@@ -5,6 +5,16 @@
   const NOTE_PRESENCE_MS = 15000;
   const NOTE_MODE_KEY = "forkmesh.notes.mode";
   const NOTE_SEARCH_MS = 250;
+  const NOTE_ACTIVITY_KEY = "forkmesh.notes.activity";
+  const NOTE_ACTIVITY_REFRESH_MS = 1200;
+  const NOTE_EDIT_GROUP_MS = 30 * 60 * 1000;
+  const NOTE_ACTIVITY_OVERLAY = "(max-width: 1279px)";
+  const NOTE_HISTORY_KINDS = ["edit", "create", "restore"];
+  const NOTE_ACTIVITY_ICONS = {
+    view: "eye", web: "globe", edit: "pencil", create: "file-plus", restore: "rotate-ccw",
+    share: "user-plus", role: "user-cog", unshare: "user-minus", publish: "globe", unpublish: "eye-off",
+    link: "link", unlink: "unlink", export: "download", "copy-link": "copy", task: "list-todo", issue: "circle-dot",
+  };
   const NOTE_TASK_DETAILS_MAX = 4000;
   const NOTE_ISSUE_BODY_MAX = 60000;
   const NOTE_TASK_ERRORS = {
@@ -87,6 +97,7 @@
     try {
       await navigator.clipboard.writeText(url);
       noteNotice(place, "Link copied");
+      void recordNoteActivity("copy-link");
     } catch (_) { noteNotice(place, failure, "bad"); }
   }
 
@@ -124,6 +135,19 @@
     return names.length ? `Shared with ${names.join(", ")}` : "Not shared with anyone";
   }
 
+  function notePlural(value, one, many) { return Number(value || 0) === 1 ? one : many; }
+
+  function noteCountLabel(value, one, many) { return `${Number(value || 0)} ${notePlural(value, one, many)}`; }
+
+  function noteStatsHtml(note) {
+    return [
+      ["eye", note.views, noteViewsLabel(note) || "No views yet"],
+      ["history", note.version, noteCountLabel(note.version, "version", "versions")],
+      ["activity", note.actions, noteCountLabel(note.actions, "action", "actions")],
+    ].map(([icon, value, label]) =>
+      `<span class="notes-row-stat" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${noteIcon(icon)}${Number(value || 0)}</span>`).join("");
+  }
+
   function noteVisibilityIcon(note) {
     const status = noteStatusLabel(note);
     return status === "Public" ? "globe" : status === "Shared" ? "users" : "lock";
@@ -144,13 +168,12 @@
     const access = note.role === "owner"
       ? noteSharedWithLabel(note)
       : `You can ${note.role === "editor" ? "edit" : "view"}`;
-    const meta = [relativeTimeLabel(note.updatedAt), noteViewsLabel(note)].filter(Boolean);
     return `
       <button type="button" data-note-id="${escapeHtml(note.id)}" aria-selected="${isSelected ? "true" : "false"}" class="notes-row">
         <span class="notes-row-title">${escapeHtml(note.title || "Untitled note")}</span>
         <span class="notes-row-vis" data-visibility="${note.visibility === "public" ? "public" : "private"}" title="${escapeHtml(status)}" aria-label="${escapeHtml(status)}">${noteIcon(noteVisibilityIcon(note))}</span>
-        <span class="notes-row-line">${escapeHtml(access)}</span>
-        <span class="notes-row-meta">${escapeHtml(meta.join(" · "))}</span>
+        <span class="notes-row-line" title="${escapeHtml(access)}">${escapeHtml(access)}</span>
+        <span class="notes-row-meta"><span class="notes-row-when">${escapeHtml(relativeTimeLabel(note.updatedAt))}</span>${noteStatsHtml(note)}</span>
       </button>`;
   }
 
@@ -360,6 +383,162 @@
     refreshNoteIcons();
   }
 
+  function noteActivityCounts(counts) {
+    return {
+      views: Number(counts.views || 0), readers: Number(counts.readers || 0),
+      actions: Number(counts.actions || 0), webViews: Number(counts.webViews || 0),
+    };
+  }
+
+  function applyNoteActivity(noteId, payload) {
+    const view = state.notesView, counts = payload.counts || {};
+    const fields = noteActivityCounts(counts);
+    view.items = view.items.map((item) => item.id === noteId ? { ...item, ...fields } : item);
+    if (view.selected?.id === noteId) {
+      view.selected = { ...view.selected, ...fields };
+      view.activity = { noteId, counts, events: payload.events || [], error: "" };
+      renderNoteActivity();
+    }
+    renderNoteList();
+  }
+
+  async function fetchNoteActivity(method = "GET", body = null) {
+    const view = state.notesView, note = view.selected;
+    if (!note || note.role === "public") return;
+    clearTimeout(view.activityTimer);
+    const generation = ++view.activityGeneration;
+    try {
+      const payload = await noteRequest(`/api/notes/${note.id}/activity`, method, body);
+      if (generation === view.activityGeneration) applyNoteActivity(note.id, payload);
+    } catch (error) {
+      if (generation !== view.activityGeneration || view.selected?.id !== note.id) return;
+      view.activity = { noteId: note.id, counts: view.activity?.counts || {}, events: view.activity?.events || [], error: error.message };
+      renderNoteActivity();
+    }
+  }
+
+  function recordNoteActivity(kind, detail = null) {
+    return fetchNoteActivity("POST", detail ? { kind, detail } : { kind });
+  }
+
+  function scheduleNoteActivity() {
+    const view = state.notesView;
+    clearTimeout(view.activityTimer);
+    view.activityTimer = setTimeout(() => void fetchNoteActivity(), NOTE_ACTIVITY_REFRESH_MS);
+  }
+
+  function noteActivityEntries(activity, tab) {
+    const counts = activity.counts || {};
+    const events = [...(activity.events || [])];
+    if (Number(counts.webViews || 0) > 0) {
+      events.push({ kind: "web", at: Number(counts.webLastViewedAt || 0), count: Number(counts.webViews), readers: Number(counts.webReaders || 0) });
+      events.sort((a, b) => b.at - a.at);
+    }
+    const shown = events.filter((entry) => tab === "all"
+      || (tab === "views" && ["view", "web"].includes(entry.kind))
+      || (tab === "history" && NOTE_HISTORY_KINDS.includes(entry.kind))
+      || (tab === "actions" && !["view", "web", "edit", "create"].includes(entry.kind)));
+    const grouped = [];
+    for (const entry of shown) {
+      const last = grouped[grouped.length - 1];
+      if (entry.kind === "edit" && last?.kind === "edit" && last.actor === entry.actor
+          && last.oldestAt - entry.at <= NOTE_EDIT_GROUP_MS) {
+        last.from = entry.version; last.count += 1; last.oldestAt = entry.at;
+      } else {
+        grouped.push(entry.kind === "edit" ? { ...entry, from: entry.version, count: 1, oldestAt: entry.at } : entry);
+      }
+    }
+    return grouped;
+  }
+
+  function noteActivityText(entry) {
+    const detail = entry.detail || {};
+    const name = (value) => `<b>${escapeHtml(value || "someone")}</b>`;
+    const ref = `${escapeHtml(`${detail.owner}/${detail.repo}`)}#${Number(detail.number || 0)}`;
+    const role = detail.role === "editor" ? "can edit" : "can view";
+    const count = Number(entry.count || 1);
+    switch (entry.kind) {
+      case "view": return count > 1 ? `viewed it ${count} times` : "viewed it";
+      case "web": return `${noteCountLabel(count, "read", "reads")} of the published page${entry.readers > 1 ? ` by ${entry.readers} readers` : ""}`;
+      case "edit": return count > 1 ? `edited it · v${entry.from}–v${entry.version}, ${count} saves` : `edited it · v${entry.version}`;
+      case "create": return "created the note";
+      case "restore": return `restored version ${Number(detail.version || 0)}${detail.as ? ` as v${Number(detail.as)}` : ""}`;
+      case "share": return `shared it with ${name(detail.name)} · ${role}`;
+      case "role": return `changed ${name(detail.name)} to ${role}`;
+      case "unshare": return `stopped sharing with ${name(detail.name)}`;
+      case "publish": return "published it to the web";
+      case "unpublish": return "unpublished it";
+      case "link": return `linked ${ref}`;
+      case "unlink": return `unlinked ${ref}`;
+      case "export": return "downloaded the Markdown";
+      case "copy-link": return "copied the link";
+      case "task": return "turned it into a task";
+      case "issue": return detail.repo ? `filed issue ${ref} from it` : "filed an issue from it";
+      default: return escapeHtml(entry.kind);
+    }
+  }
+
+  function noteActivityActor(entry) {
+    if (entry.kind === "web") return "";
+    const me = String(state.session?.nodeName || "").toLowerCase();
+    const actor = String(entry.actor || "");
+    return `<b>${escapeHtml(actor && actor === me ? "You" : actor || "Someone")}</b> `;
+  }
+
+  function renderNoteActivity() {
+    const view = state.notesView, list = $("[data-note-activity-list]");
+    if (!list) return;
+    const activity = view.activity?.noteId === view.selected?.id ? view.activity : null;
+    const counts = activity?.counts || {};
+    const tab = view.activityTab;
+    const summary = $("[data-note-activity-summary]");
+    if (summary) {
+      const versions = counts.versions ?? view.selected?.version;
+      summary.innerHTML = [
+        ["views", counts.views, notePlural(counts.views, "view", "views"), Number(counts.readers || 0) > 0 ? `${noteCountLabel(counts.views, "view", "views")} from ${noteCountLabel(counts.readers, "reader", "readers")}` : "Show views"],
+        ["history", versions, notePlural(versions, "version", "versions"), "Show history"],
+        ["actions", counts.actions, notePlural(counts.actions, "action", "actions"), "Show shares, links and other actions"],
+      ].map(([key, value, label, hint]) => `
+        <button type="button" class="notes-activity-stat" data-note-activity-tab="${key}" aria-pressed="${tab === key ? "true" : "false"}" title="${escapeHtml(hint)}">
+          <span class="notes-activity-num">${activity ? Number(value || 0) : "–"}</span><span>${escapeHtml(label)}</span>
+        </button>`).join("");
+    }
+    const all = $("[data-note-activity-all]");
+    if (all) all.hidden = tab === "all";
+    const history = $("[data-note-activity-history]");
+    if (history) history.hidden = tab !== "history";
+    if (!activity) { list.innerHTML = '<li class="notes-act-empty">Loading activity…</li>'; return; }
+    const entries = noteActivityEntries(activity, tab);
+    const error = activity.error ? `<li class="notes-act-empty" data-tone="bad">${escapeHtml(activity.error)}</li>` : "";
+    list.innerHTML = error + (entries.map((entry) => `
+      <li class="notes-act" data-kind="${escapeHtml(entry.kind)}">
+        <span class="notes-act-icon">${noteIcon(NOTE_ACTIVITY_ICONS[entry.kind] || "dot")}</span>
+        <div class="notes-act-body">
+          <div class="notes-act-text">${noteActivityActor(entry)}${noteActivityText(entry)}</div>
+          <time class="notes-act-time" title="${escapeHtml(entry.at ? new Date(entry.at).toLocaleString() : "")}">${escapeHtml(entry.at ? relativeTimeLabel(entry.at) : "")}</time>
+        </div>
+      </li>`).join("") || `<li class="notes-act-empty">${tab === "views" ? "Nobody has opened this note yet." : tab === "actions" ? "No shares, links or other actions yet." : "Nothing yet."}</li>`);
+    refreshNoteIcons();
+  }
+
+  function setNoteActivityOpen(open, remember = true) {
+    const view = state.notesView;
+    view.activityOpen = open;
+    if (remember) { try { localStorage.setItem(NOTE_ACTIVITY_KEY, open ? "open" : "closed"); } catch (_) {} }
+    const panel = $("[data-note-activity]");
+    if (panel) panel.hidden = !open;
+    const toggle = $("[data-note-activity-toggle]");
+    toggle?.setAttribute("aria-pressed", open ? "true" : "false");
+    toggle?.setAttribute("aria-label", open ? "Hide activity" : "Show activity");
+    if (open) renderNoteActivity();
+  }
+
+  function setNoteActivityTab(tab) {
+    const view = state.notesView;
+    view.activityTab = ["views", "history", "actions"].includes(tab) && tab !== view.activityTab ? tab : "all";
+    renderNoteActivity();
+  }
+
   // Fold a server copy of the selected note back into the listing, so the
   // sidebar row's status and "shared with" line stay honest without
   // refetching the whole list.
@@ -397,7 +576,9 @@
       if (!same) { view.conflict = null; $("[data-note-conflict]").hidden = true; }
       storeNote(payload.note);
       rememberNoteInUrl(payload.note);
-      renderNoteEditor(payload.note, { keepDraft: keepDraft && same && view.localDirty });
+      renderNoteEditor(view.selected, { keepDraft: keepDraft && same && view.localDirty });
+      if (same) scheduleNoteActivity();
+      else { view.activity = null; renderNoteActivity(); void recordNoteActivity("view"); }
     } catch (error) {
       if (error.status === 404 && view.selected?.id === id) {
         noteNotice("main", NOTE_ERRORS.note_not_found, "bad");
@@ -415,7 +596,9 @@
       const payload = await noteRequest("/api/notes", "POST", { title: "Untitled note", markdown: "" });
       if (state.notesView.filter !== "all" && state.notesView.filter !== "mine") setNoteFilter("all");
       state.notesView.items.unshift(payload.note); state.notesView.selected = payload.note;
+      state.notesView.activity = null;
       renderNoteEditor(payload.note);
+      void fetchNoteActivity();
       showNoteEditorOnMobile();
       if (state.notesView.mode === "preview") setNoteMode("split");
       $("[data-note-title]")?.select();
@@ -471,7 +654,8 @@
       const changedSince = $("[data-note-title]").value !== title || $("[data-note-markdown]").value !== markdown;
       storeNote(payload.note);
       view.localDirty = changedSince;
-      renderNoteEditor(payload.note, { keepDraft: true });
+      renderNoteEditor(view.selected, { keepDraft: true });
+      scheduleNoteActivity();
       if (changedSince) scheduleNoteSave(); else setNoteSaveState("saved");
     } catch (error) {
       if (error.status === 409 && error.payload?.note) {
@@ -574,6 +758,7 @@
           renderNotePreview();
         }
       }
+      if (["note-activity", "note-updated"].includes(frame.type)) scheduleNoteActivity();
       if (frame.type === "note-updated" && frame.version > (view.selected?.version || 0) && !view.savePromise) {
         // With unsaved local edits the next autosave meets the 409 and asks.
         if (!view.localDirty) void selectNote(note.id);
@@ -658,6 +843,7 @@
     try {
       const payload = await noteRequest(`/api/notes/${note.id}/links`, "POST", link);
       storeNote({ ...state.notesView.selected, links: payload.links || [] });
+      scheduleNoteActivity();
       state.notesView.linking = false;
       renderNoteLinks(state.notesView.selected);
       noteNotice("links", `Linked ${link.repo}#${link.number}`);
@@ -749,6 +935,7 @@
       storeNote({ ...state.notesView.selected, shares: payload.shares || [] });
       renderNoteEditor(state.notesView.selected, { keepDraft: true });
       noteNotice("share", message);
+      scheduleNoteActivity();
       return true;
     } catch (error) { noteNotice("share", error.message, "bad"); return false; }
   }
@@ -815,6 +1002,7 @@
         department: "general", destination: "department", assigneeKind: "unassigned",
       });
       noteNotice("main", "Task created from this note");
+      void recordNoteActivity("task");
     } catch (error) {
       noteNotice("main", NOTE_TASK_ERRORS[error.payload?.error] || "The task was not created.", "bad");
     } finally { setNoteConverting(false); }
@@ -835,9 +1023,11 @@
     if (!state.session?.sessionToken) { noteNotice("main", "Sign in on this device to file issues.", "bad"); return; }
     setNoteConverting(true);
     try {
-      await submitWebIssue(repository, noteConversionTitle(source.title, source.markdown),
+      const filed = await submitWebIssue(repository, noteConversionTitle(source.title, source.markdown),
         noteConversionDetails(source.title, source.markdown, source.link, NOTE_ISSUE_BODY_MAX));
       noteNotice("main", "Issue filed from this note");
+      const number = Number(filed?.number || filed?.event?.number || 0);
+      void recordNoteActivity("issue", number ? { owner: repository.owner, repo: repository.name, number } : null);
     } catch (_) {
       noteNotice("main", "The issue was not filed.", "bad");
     } finally { setNoteConverting(false); }
@@ -856,10 +1046,24 @@
       saveTimer: 0, conflict: null, peers: new Map(), presenceTimer: 0,
       socketNoteId: "", shareOrgs: null, shareSuggestions: [], shareSuggestionIndex: -1,
       shareGeneration: 0, shareTimer: 0, searchMatches: null, searchGeneration: 0,
-      searchTimer: 0, converting: false,
+      searchTimer: 0, converting: false, activity: null, activityTab: "all",
+      activityTimer: 0, activityGeneration: 0, activityOpen: false,
     });
     try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
+    let activityPreference = "";
+    try { activityPreference = localStorage.getItem(NOTE_ACTIVITY_KEY) || ""; } catch (_) {}
+    setNoteActivityOpen(activityPreference ? activityPreference === "open" : !window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches, false);
+    $("[data-note-activity-toggle]")?.addEventListener("click", () => setNoteActivityOpen(!view.activityOpen));
+    $("[data-note-activity-close]")?.addEventListener("click", () => setNoteActivityOpen(false));
+    $("[data-note-activity]")?.addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-note-activity-tab]");
+      if (tab) setNoteActivityTab(tab.dataset.noteActivityTab);
+      if (event.target.closest("[data-note-activity-history]")) {
+        $("[data-note-versions-panel]").hidden = false; void loadNoteVersions();
+        $("[data-note-versions-close]")?.focus();
+      }
+    });
     document.querySelectorAll("[data-note-new]").forEach((button) => button.addEventListener("click", () => void createNote()));
     $("[data-note-search]")?.addEventListener("input", searchNotes);
     $("[data-note-filters]")?.addEventListener("click", (event) => {
@@ -893,6 +1097,7 @@
       if (event.key === "Escape") {
         if (view.linking) { view.linking = false; renderNoteLinks(view.selected); return; }
         closeNotePopovers(); $("[data-note-versions-panel]").hidden = true;
+        if (window.matchMedia(NOTE_ACTIVITY_OVERLAY).matches && view.activityOpen) setNoteActivityOpen(false, false);
       }
     });
     window.addEventListener("beforeunload", (event) => {
@@ -917,8 +1122,9 @@
       try {
         await flushNoteSave();
         const payload = await noteRequest(`/api/notes/${note.id}/versions`, "POST", { version, baseVersion: view.selected.version });
-        storeNote(payload.note); renderNoteEditor(payload.note);
+        storeNote(payload.note); renderNoteEditor(view.selected);
         noteNotice("versions", `Restored version ${version} as a new version`);
+        scheduleNoteActivity();
       } catch (error) { noteNotice("versions", error.message, "bad"); }
     });
 
@@ -1011,6 +1217,7 @@
         const payload = await noteRequest(`/api/notes/${note.id}/links`, "DELETE", JSON.parse(button.dataset.noteUnlink));
         storeNote({ ...view.selected, links: payload.links || [] });
         renderNoteLinks(view.selected);
+        scheduleNoteActivity();
       } catch (error) { noteNotice("links", error.message, "bad"); }
     });
     $("[data-note-links]")?.addEventListener("submit", (event) => {
@@ -1049,6 +1256,7 @@
       link.download = `${title.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "note"}.md`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      void recordNoteActivity("export");
     });
     $("[data-note-delete]")?.addEventListener("click", () => {
       closeNotePopovers();

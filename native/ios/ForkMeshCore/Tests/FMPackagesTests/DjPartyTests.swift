@@ -91,4 +91,33 @@ final class DjPartyTests: XCTestCase {
         XCTAssertEqual(DjAutomix.step(a: spent, b: empty, favoured: .a, queued: false), .wait)
         XCTAssertEqual(DjAutomix.step(a: early, b: ending, favoured: .b, queued: true), .wait)
     }
+
+    func testAutomixReplaysPlayedSongsOnceTheQueueRunsOut() {
+        let library = [
+            DjPlayedSong(id: "aaaaaaaaaaa", title: "Newest", author: "", plays: 3, last: 500),
+            DjPlayedSong(id: "bbbbbbbbbbb", title: "Newer", author: "", plays: 1, last: 400),
+            DjPlayedSong(id: "ccccccccccc", title: "Older", author: "", plays: 2, last: 200),
+            DjPlayedSong(id: "ddddddddddd", title: "Oldest", author: "", plays: 1, last: 100),
+        ]
+        var picked = Set<String>()
+        for seed in 0..<64 as Range<UInt64> {
+            let song = DjAutomix.next(library, loaded: ["aaaaaaaaaaa"], playing: ["aaaaaaaaaaa"], seed: seed)
+            picked.insert(song?.id ?? "")
+        }
+        XCTAssertEqual(picked, ["ccccccccccc", "ddddddddddd"])
+        XCTAssertEqual(DjAutomix.next(library, loaded: [], playing: [], seed: 1), DjAutomix.next(library, loaded: [], playing: [], seed: 1))
+        let one = [library[0]]
+        XCTAssertNil(DjAutomix.next(one, loaded: ["aaaaaaaaaaa"], playing: ["aaaaaaaaaaa"], seed: 3))
+        XCTAssertEqual(DjAutomix.next(one, loaded: ["aaaaaaaaaaa"], playing: [], seed: 3)?.id, "aaaaaaaaaaa")
+        XCTAssertNil(DjAutomix.next([], loaded: [], playing: [], seed: 3))
+        let spent = DjAutomixDeck(loaded: true, position: 199, duration: 200)
+        XCTAssertEqual(DjAutomix.step(a: spent, b: spent, favoured: .b, queued: true), .preload(.b))
+        let early = DjAutomixDeck(loaded: true, playing: true, position: 20, duration: 200)
+        XCTAssertEqual(DjAutomix.step(a: early, b: spent, favoured: .a, queued: true), .preload(.b))
+        let failed = DjAutomixDeck(loaded: false)
+        XCTAssertEqual(DjAutomix.step(a: early, b: failed, favoured: .a, queued: true), .preload(.b))
+        let ending = DjAutomixDeck(loaded: true, playing: true, position: 191, duration: 200)
+        let cued = DjAutomixDeck(loaded: true, duration: 180)
+        XCTAssertEqual(DjAutomix.step(a: ending, b: cued, favoured: .a, queued: true), .mix(from: .a, to: .b, seconds: 8))
+    }
 }

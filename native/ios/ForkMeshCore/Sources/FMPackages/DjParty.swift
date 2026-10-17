@@ -244,7 +244,8 @@ public struct DjAutomixDeck: Equatable, Sendable {
 }
 
 public enum DjAutomix {
-    public static let lead: Double = 1
+    public static let lead: Double = 2
+    public static let audible: Double = 3
 
     public static func step(a: DjAutomixDeck, b: DjAutomixDeck, favoured: DjDeckSide, queued: Bool) -> DjAutomixStep {
         let decks: [DjDeckSide: DjAutomixDeck] = [.a: a, .b: b]
@@ -258,5 +259,17 @@ public enum DjAutomix {
         if !incoming.fresh { return queued ? .preload(other) : .wait }
         guard let remaining = outgoing.remaining, remaining <= DjStudio.automixSeconds + lead else { return .wait }
         return .mix(from: live, to: other, seconds: max(2, min(DjStudio.automixSeconds, remaining)))
+    }
+
+    public static func next(_ library: [DjPlayedSong], loaded: Set<String>, playing: Set<String>, seed: UInt64) -> DjPlayedSong? {
+        var pool = library.filter { !loaded.contains($0.id) && !playing.contains($0.id) }
+        if pool.isEmpty { pool = library.filter { !playing.contains($0.id) } }
+        guard !pool.isEmpty else { return nil }
+        let oldest = pool.enumerated()
+            .sorted { $0.element.last != $1.element.last ? $0.element.last < $1.element.last : $0.offset > $1.offset }
+            .map(\.element)
+        let choices = oldest.prefix(max(1, (oldest.count + 1) / 2))
+        var random = DjRandom(seed)
+        return choices[choices.startIndex + Int(random.next() % UInt64(choices.count))]
     }
 }

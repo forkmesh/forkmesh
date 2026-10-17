@@ -20,6 +20,9 @@ class FakeRuntime:
             (ROOT / "migrations" / "0120_notes.sql").read_text())
         self.db.executescript(
             (ROOT / "migrations" / "0121_note_views.sql").read_text())
+        self.db.execute("CREATE TABLE schema_meta(k TEXT PRIMARY KEY,v TEXT)")
+        self.db.executescript(
+            (ROOT / "migrations" / "0270_note_events.sql").read_text())
         self.db.execute(
             "CREATE TABLE org_members(org_bi TEXT,member_bi TEXT,name TEXT)")
         self.users = {"alice": "user-alice", "bob": "user-bob"}
@@ -289,3 +292,88 @@ def test_share_suggestions_leave_out_owner_and_existing_shares():
                 path)["status"] == 400
     assert call(runtime.use("GET", "bob", query={"query": "a"}),
                 path)["status"] == 404
+
+
+def test_activity_records_views_history_and_actions():
+    runtime = FakeRuntime()
+    note = call(runtime.use("POST", "alice", {
+        "title": "Plan", "markdown": "one"}), "/api/notes")["data"]["note"]
+    note_id = note["id"]
+    path = f"/api/notes/{note_id}/activity"
+    call(runtime.use("POST", "alice", {
+        "type": "user", "name": "bob", "role": "viewer"}), f"/api/notes/{note_id}/shares")
+    call(runtime.use("POST", "alice", {
+        "type": "user", "name": "bob", "role": "editor"}), f"/api/notes/{note_id}/shares")
+    call(runtime.use("POST", "alice", {
+        "type": "user", "name": "bob", "role": "editor"}), f"/api/notes/{note_id}/shares")
+    call(runtime.use("PATCH", "bob", {
+        "baseVersion": 1, "markdown": "two"}), f"/api/notes/{note_id}")
+    call(runtime.use("PATCH", "alice", {
+        "baseVersion": 2, "visibility": "public"}), f"/api/notes/{note_id}")
+    call(runtime.use("POST", "alice", {
+        "version": 1, "baseVersion": 3}), f"/api/notes/{note_id}/versions")
+    call(runtime.use("POST", "alice", {
+        "owner": "alice", "repo": "project", "kind": "issue", "number": 7,
+    }), f"/api/notes/{note_id}/links")
+
+    first = call(runtime.use("POST", "bob", {"kind": "view"}), path)
+    second = call(runtime.use("POST", "bob", {"kind": "view"}), path)
+    assert first["status"] == second["status"] == 200
+    assert runtime.events[-1][1] == {"type": "note-activity"}
+    runtime.clock += notes.VIEW_WINDOW_MS + 1
+    call(runtime.use("POST", "bob", {"kind": "view"}), path)
+    call(runtime.use("POST", "alice", {"kind": "view"}), path)
+    call(runtime.use("POST", "alice", {
+        "kind": "issue", "detail": {"owner": "alice", "repo": "project", "number": 9},
+    }), path)
+
+    payload = call(runtime.use("GET", "bob"), path)["data"]
+    counts = payload["counts"]
+    assert counts["views"] == 4
+    assert counts["readers"] == 2
+    assert counts["versions"] == 4
+    assert counts["actions"] == 6
+    kinds = [event["kind"] for event in payload["events"]]
+    assert kinds[-1] == "create"
+    assert kinds.count("edit") == 3
+    assert {"share", "role", "publish", "restore", "link", "issue"} <= set(kinds)
+    views = [event for event in payload["events"] if event["kind"] == "view"]
+    assert [(event["actor"], event["count"]) for event in views] == [
+        ("alice", 1), ("bob", 1), ("bob", 2)]
+    role = next(event for event in payload["events"] if event["kind"] == "role")
+    assert role["detail"] == {"type": "user", "name": "bob", "role": "editor", "from": "viewer"}
+    restore = next(event for event in payload["events"] if event["kind"] == "restore")
+    assert restore["detail"] == {"version": 1, "as": 4}
+    issue = next(event for event in payload["events"] if event["kind"] == "issue")
+    assert issue["detail"] == {"owner": "alice", "number": 9, "repo": "project"}
+    times = [event["at"] for event in payload["events"]]
+    assert times == sorted(times, reverse=True)
+
+    listing = call(runtime.use("GET", "alice"), "/api/notes")["data"]["notes"][0]
+    assert (listing["views"], listing["actions"], listing["version"]) == (4, 6, 4)
+    single = call(runtime.use("GET", "alice"), f"/api/notes/{note_id}")["data"]["note"]
+    assert (single["views"], single["actions"]) == (4, 6)
+
+    assert call(runtime.use("POST", "bob", {"kind": "delete"}), path)["status"] == 400
+    assert call(runtime.use("GET"), path)["status"] == 401
+    assert call(runtime.use("GET", "carol"), path)["status"] == 401
+    call(runtime.use("DELETE", "alice", {
+        "type": "user", "name": "bob"}), f"/api/notes/{note_id}/shares")
+    assert call(runtime.use("GET", "bob"), path)["status"] == 404
+    unshared = call(runtime.use("GET", "alice"), path)["data"]["events"]
+    assert unshared[0]["kind"] == "unshare"
+
+
+def test_activity_keeps_the_latest_events_per_note():
+    runtime = FakeRuntime()
+    note_id = call(runtime.use("POST", "alice", {"title": "Plan"}),
+                   "/api/notes")["data"]["note"]["id"]
+    for _ in range(notes.MAX_EVENTS + 5):
+        call(runtime.use("POST", "alice", {"kind": "export"}),
+             f"/api/notes/{note_id}/activity")
+    total = runtime.db.execute(
+        "SELECT COUNT(*) FROM note_events WHERE note_id=?", (note_id,)).fetchone()[0]
+    assert total == notes.MAX_EVENTS
+    runtime.db.execute("PRAGMA foreign_keys=ON")
+    call(runtime.use("DELETE", "alice"), f"/api/notes/{note_id}")
+    assert runtime.db.execute("SELECT COUNT(*) FROM note_events").fetchone()[0] == 0

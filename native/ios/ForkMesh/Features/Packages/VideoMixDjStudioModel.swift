@@ -54,6 +54,8 @@ final class DjDeck {
 
     @ObservationIgnored var tickDate = CACurrentMediaTime()
     @ObservationIgnored var keepsPlaying = false
+    @ObservationIgnored var counted = false
+    @ObservationIgnored var failed = false
     @ObservationIgnored var tapTempo = DjTapTempo()
     @ObservationIgnored var resumeAfterScratch = false
     @ObservationIgnored var scratchStamp: CFTimeInterval = 0
@@ -158,6 +160,7 @@ final class DjStudioModel {
     var searching = false
     var searchProblem = ""
     var history: [DjHistoryItem] = []
+    var library: [DjPlayedSong] = []
     var flashedPad: DjDrumPad?
     var leavingAfterSheet = false
     var confirmingReset = false
@@ -190,10 +193,12 @@ final class DjStudioModel {
     @ObservationIgnored var applied: [DjDeckSide: Int64] = [:]
     @ObservationIgnored var applyingRemote = false
     @ObservationIgnored private var analysed: Set<String> = []
+    @ObservationIgnored private var unplayable: Set<String> = []
 
     @ObservationIgnored var onLeave: (() -> Void)?
     @ObservationIgnored let host: DjPlayerHost
     @ObservationIgnored let defaults: UserDefaults
+    @ObservationIgnored private let store: DjStore
     @ObservationIgnored private let sampler = DjSampler()
     @ObservationIgnored private var sectionCursor = 0
     @ObservationIgnored private var searchInstances: [URL] = []
@@ -212,6 +217,7 @@ final class DjStudioModel {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        store = DjStore(defaults)
         let host = DjPlayerHost(origin: DjStudioModel.origin())
         self.host = host
         a = DjDeck(side: .a, host: host)
@@ -223,6 +229,7 @@ final class DjStudioModel {
         sections = saved.sections
         sectionCursor = sections.firstIndex(where: { $0 == nil }) ?? 0
         history = saved.history
+        library = saved.library
         queue = saved.queue
         shareMotion = defaults.object(forKey: Self.motionKey) as? Bool ?? true
         resumeAutomix = saved.automix
@@ -240,12 +247,16 @@ final class DjStudioModel {
             if !stored.videoId.isEmpty {
                 prepare(deck, id: stored.videoId, title: stored.title, author: stored.author, start: stored.position, keepSettings: true)
                 deck.keepsPlaying = stored.playing
+                deck.counted = stored.playing || stored.position > stored.cue + 1
             }
         }
         let center = NotificationCenter.default
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.save(now: true) }
+                MainActor.assumeIsolated {
+                    self?.save(now: true)
+                    self?.store.flush()
+                }
             }
         }
         center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -480,6 +491,8 @@ final class DjStudioModel {
         deck.playing = false
         deck.keepsPlaying = false
         deck.advancing = false
+        deck.counted = false
+        deck.failed = false
         if !keepSettings {
             deck.cue = 0
             deck.bpm = 0
@@ -559,11 +572,16 @@ final class DjStudioModel {
                 if history.contains(where: { $0.id == deck.videoId }) {
                     history = history.map { $0.id == deck.videoId ? DjHistoryItem(id: $0.id, title: title, author: author) : $0 }
                 }
+                if library.contains(where: { $0.id == deck.videoId }) {
+                    library = DjStudio.retitled(library, id: deck.videoId, title: title, author: author)
+                }
                 save()
             }
         case let .failed(code):
             deck.playing = false
             deck.keepsPlaying = false
+            deck.failed = true
+            if deck.loaded { unplayable.insert(deck.videoId) }
             advance(false, deck)
             switch code {
             case 2: show("Deck \(deck.side.label): that YouTube link is not valid.")
@@ -586,7 +604,10 @@ final class DjStudioModel {
         let playing = state == 1 || state == 3
         if deck.playing != playing { deck.playing = playing }
         if state != 1 { advance(false, deck) }
-        if state == 0 { deck.keepsPlaying = false }
+        if state == 0 {
+            deck.keepsPlaying = false
+            deck.counted = false
+        }
         if state == 0, deck.duration > 0 { deck.time = deck.duration }
     }
 
@@ -626,6 +647,7 @@ final class DjStudioModel {
     }
 
     private func rewind(_ deck: DjDeck) {
+        deck.counted = false
         deck.player.seek(0)
         deck.time = 0
         deck.tickDate = CACurrentMediaTime()
@@ -636,11 +658,12 @@ final class DjStudioModel {
     func play(_ deck: DjDeck) {
         host.dock()
         claimAudio()
+        deck.player.play()
         deck.rebase()
         deck.settle()
         deck.playing = true
         deck.keepsPlaying = true
-        deck.player.play()
+        count(deck)
         remember(deck)
         share(deck.side)
         save()
@@ -673,13 +696,32 @@ final class DjStudioModel {
         save()
     }
 
+    private func count(_ deck: DjDeck) {
+        guard deck.loaded, !deck.counted else { return }
+        deck.counted = true
+        library = DjStudio.played(library, id: deck.videoId, title: deck.title, author: deck.author, at: Date().timeIntervalSince1970)
+    }
+
+    func plays(_ id: String) -> Int {
+        library.first { $0.id == id }?.plays ?? 0
+    }
+
     func forget(_ offsets: IndexSet) {
+        let ids = Set(offsets.compactMap { history.indices.contains($0) ? history[$0].id : nil })
         history.remove(atOffsets: offsets)
+        library.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func forgetPlayed(_ id: String) {
+        history.removeAll { $0.id == id }
+        library.removeAll { $0.id == id }
         save()
     }
 
     func clearHistory() {
         history = []
+        library = []
         save()
     }
 
@@ -950,7 +992,9 @@ final class DjStudioModel {
     func automix() {
         setAutomix(!automixOn)
         show(automixOn
-            ? (shownQueue.isEmpty ? "AUTOMIX on: queue songs and they play one after another." : "AUTOMIX on: the queue plays one song after another.")
+            ? (!shownQueue.isEmpty ? "AUTOMIX on: the queue plays one song after another."
+                : library.isEmpty ? "AUTOMIX on: queue songs and they play one after another."
+                : "AUTOMIX on: with the queue empty it shuffles the songs you have played.")
             : "AUTOMIX off.")
     }
 
@@ -980,20 +1024,44 @@ final class DjStudioModel {
     private func automixStep() {
         guard automixOn, !automixing, !a.scratching, !b.scratching else { return }
         let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
-        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty) {
+        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || !library.isEmpty) {
         case .wait:
             break
         case let .preload(side):
-            guard let item = shownQueue.first else { return }
-            playFromQueue(item, on: side)
+            if let item = shownQueue.first {
+                playFromQueue(item, on: side)
+            } else if let song = replay() {
+                load(side, id: song.id, title: song.title, author: song.author)
+            }
         case let .start(side):
             play(deck(side))
             fade(to: side == .a ? -1 : 1, seconds: 0.4, then: nil)
         case let .mix(from, to, seconds):
-            let outgoing = deck(from)
-            automixing = true
-            play(deck(to))
-            fade(to: to == .b ? 1 : -1, seconds: seconds) { [weak self] in
+            mix(from: deck(from), to: deck(to), seconds: seconds)
+        }
+    }
+
+    private func replay() -> DjPlayedSong? {
+        let decks = [a, b].filter(\.loaded)
+        return DjAutomix.next(
+            library.filter { !unplayable.contains($0.id) },
+            loaded: Set(decks.map(\.videoId)),
+            playing: Set(decks.filter(\.playing).map(\.videoId)),
+            seed: UInt64.random(in: .min ... .max))
+    }
+
+    private func mix(from outgoing: DjDeck, to incoming: DjDeck, seconds: Double) {
+        automixing = true
+        play(incoming)
+        automixTask?.cancel()
+        let began = CACurrentMediaTime()
+        automixTask = Task { [weak self] in
+            while !Task.isCancelled, !incoming.advancing, CACurrentMediaTime() - began < DjAutomix.audible {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            guard !Task.isCancelled, let self else { return }
+            let left = self.snapshot(outgoing).remaining ?? seconds
+            self.fade(to: incoming.side == .b ? 1 : -1, seconds: max(2, min(seconds, left))) { [weak self] in
                 guard let self else { return }
                 self.automixing = false
                 if outgoing.playing { self.pause(outgoing) }
@@ -1002,7 +1070,8 @@ final class DjStudioModel {
     }
 
     private func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
-        DjAutomixDeck(loaded: deck.loaded, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate)
+        DjAutomixDeck(
+            loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate)
     }
 
     func mixNow() {
@@ -1205,6 +1274,7 @@ final class DjStudioModel {
         saved.samplerLevel = samplerLevel
         saved.sections = sections
         saved.history = history
+        saved.library = library
         saved.queue = queue
         saved.automix = automixOn
         for deck in [a, b] {
@@ -1221,7 +1291,26 @@ final class DjStudioModel {
             stored.playing = deck.keepsPlaying && deck.loaded
             saved[deck.side] = stored
         }
-        if let data = saved.encoded() { defaults.set(data, forKey: DjStudio.storageKey) }
+        store.write(saved)
+    }
+}
+
+final class DjStore: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let queue = DispatchQueue(label: "fm.videoMixDjStudio.save", qos: .utility)
+
+    init(_ defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    func write(_ saved: DjSaved) {
+        queue.async {
+            if let data = saved.encoded() { self.defaults.set(data, forKey: DjStudio.storageKey) }
+        }
+    }
+
+    func flush() {
+        queue.sync {}
     }
 }
 

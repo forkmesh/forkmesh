@@ -3766,6 +3766,19 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY(note_id, viewer_key))""",
     "CREATE INDEX IF NOT EXISTS idx_note_views_note "
     "ON note_views(note_id, last_at DESC)",
+    # Who opened, shared, published, linked or restored a note. Views by one
+    # account within half an hour fold into one row; at most 500 per note.
+    """CREATE TABLE IF NOT EXISTS note_events (
+        id INTEGER PRIMARY KEY,
+        note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        actor_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        last_at INTEGER NOT NULL CHECK (last_at >= 0),
+        hits INTEGER NOT NULL DEFAULT 1 CHECK (hits >= 1),
+        detail TEXT NOT NULL DEFAULT '{}')""",
+    "CREATE INDEX IF NOT EXISTS idx_note_events_note "
+    "ON note_events(note_id, last_at DESC)",
     # Failed forkmesh/forkmesh content reads per minute (src/api_metrics.py),
     # the /status sampler's visitor-side outage evidence. Written only when a
     # read fails, pruned to a day on that same path. Per-route traffic
