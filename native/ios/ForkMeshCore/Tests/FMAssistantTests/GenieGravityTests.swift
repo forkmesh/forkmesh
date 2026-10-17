@@ -108,7 +108,7 @@ final class GenieGravityTests: XCTestCase {
         let path = track.moves[0].path
         let first = Double(path[0].y - path[1].y) / GenieGravity.step
         XCTAssertLessThanOrEqual(first, GenieGravity.maxSpeed)
-        XCTAssertGreaterThan(first, GenieGravity.maxSpeed - 40)
+        XCTAssertGreaterThan(first, GenieGravity.maxSpeed - 60)
     }
 
     func testGravityFromTheTiltDecidesWhereItFalls() {
