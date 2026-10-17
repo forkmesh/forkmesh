@@ -19,6 +19,20 @@ final class DjStudioTests: XCTestCase {
         }
     }
 
+    func testSharedVideoIdsTakeOnlyYouTubeShares() {
+        let id = "dQw4w9WgXcQ"
+        let other = "9bZkp7q19f0"
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: ["https://youtu.be/\(id)?si=abc"], text: "Never Gonna Give You Up"), [id])
+        XCTAssertEqual(
+            DjStudio.sharedVideoIds(urls: ["https://www.youtube.com/watch?v=\(id)", "https://youtu.be/\(other)", "https://youtu.be/\(id)"], text: ""),
+            [id, other])
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: [], text: " https://youtu.be/\(id)\n"), [id])
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: ["https://youtu.be/\(id)", "https://example.com/page"], text: ""), [])
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: [], text: "Summarize https://youtu.be/\(id)"), [])
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: [], text: id), [])
+        XCTAssertEqual(DjStudio.sharedVideoIds(urls: [], text: ""), [])
+    }
+
     func testEqualPowerCrossfader() {
         let left = DjStudio.gains(crossfader: -1)
         XCTAssertEqual(left.a, 1, accuracy: 1e-9)

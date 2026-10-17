@@ -126,6 +126,7 @@ class DesktopControlHub(
         val loaded = runCatching { loader() }.getOrNull() ?: return accountDesktops
         accountDesktops = loaded
         accountDesktopsLoadedAt = clock()
+        local?.setAccountDesktops(loaded.map { it.key }.toSet())
         val before = reach
         refreshReach()
         if (before != reach) {

@@ -12,10 +12,19 @@ restart the whole operating system after an owner-only confirmation. Its
 acknowledgement immediately opens the same compact terminal view with the
 restart command while the phone waits for the computer to return.
 
-The desktop retains the `loginctl reboot` process until it has accepted or
-rejected the request. It streams the command and status through `update.progress`;
-a launch, authorization, or exit failure reaches the phone as an error instead
-of a false success message.
+The desktop retains the `systemctl --no-ask-password reboot` process until it
+has accepted or rejected the request. It streams the command and status through
+`update.progress`; a launch, authorization, or exit failure reaches the phone as
+an error instead of a false success message.
+
+The command was once `loginctl reboot`, which failed with "Unknown command verb
+'reboot', did you mean 'help'?": `loginctl` has no `reboot` verb (systemd 257
+included). `systemctl reboot` asks logind over D-Bus, which polkit allows for
+the active local session. `--no-ask-password` makes a restart that needs a
+password fail at once with polkit's reason, instead of opening a password
+dialog on a screen nobody is watching. A `update.run` for `computerRestart`
+with a stale or wrong token now reports the token error
+(`confirmation_expired`, `confirmation_mismatch`) rather than `unknown_action`.
 
 The protocol action is named `updateRestart`; on every desktop that has the
 `update.` family it runs the quick rebuild, never a pull. A failed pull must

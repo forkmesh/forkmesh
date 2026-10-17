@@ -130,7 +130,7 @@ public final class DesktopUpdateStore {
 
     public func restartComputer(_ confirmation: RemoteConfirmation) async throws -> String {
         let started = try await family.run(confirmation)
-        lines = ["==> Restarting computer", "$ loginctl reboot"]
+        lines = ["==> Restarting computer", "$ systemctl reboot"]
         state = DesktopUpdateState()
         state.running = true
         state.kind = Self.computerRestartAction

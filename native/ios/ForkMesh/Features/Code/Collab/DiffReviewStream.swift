@@ -613,12 +613,14 @@ struct DiffReviewStream<Header: View>: View {
             ratchet.mute()
             action()
         }) {
-            FmIcon(icon, size: 18, color: active ? fm.accent : (enabled ? fm.textSecondary : fm.textDisabled))
-                .frame(width: 30, height: 30)
+            FmIcon(icon, size: 16, color: active ? fm.accent : (enabled ? fm.textSecondary : fm.textDisabled))
+                .frame(width: 22, height: 22)
                 .background {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 5)
                         .fill(active ? fm.accent.opacity(0.14) : Color.clear)
                 }
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

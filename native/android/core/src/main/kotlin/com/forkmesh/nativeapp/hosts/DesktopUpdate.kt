@@ -135,7 +135,7 @@ class DesktopUpdateStore(
     fun restartComputer(confirmation: RemoteConfirmation): String {
         val started = family.run(confirmation)
         synchronized(lock) {
-            lines = listOf("==> Restarting computer", "\$ loginctl reboot")
+            lines = listOf("==> Restarting computer", "\$ systemctl reboot")
             state = DesktopUpdateState(
                 running = true,
                 kind = COMPUTER_RESTART_ACTION,
