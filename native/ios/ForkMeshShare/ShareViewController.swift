@@ -1,4 +1,5 @@
 import FMApi
+import FMPackages
 import FMSurfaces
 import ImageIO
 import SwiftUI
@@ -7,6 +8,8 @@ import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
     private let model = ShareModel()
+    private var attempt = 0
+    private var settled = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -28,15 +31,42 @@ final class ShareViewController: UIViewController {
         Task { await model.load(items) }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        model.appeared()
+    }
+
     private func done(open route: Route?) {
-        guard let route, let url = SurfaceLink.url(for: route), let context = extensionContext else {
+        guard let route, let url = SurfaceLink.url(for: route), extensionContext != nil else {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             return
         }
-        if openContainingApp(url) {
-            context.completeRequest(returningItems: nil, completionHandler: nil)
+        attempt += 1
+        let current = attempt
+        let started = openContainingApp(url) { [weak self] (opened: Bool) in
+            DispatchQueue.main.async { self?.settle(current, url, opened: opened) }
+        }
+        guard started else {
+            settle(current, url, opened: false)
             return
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.settle(current, url, opened: true)
+        }
+    }
+
+    private func settle(_ current: Int, _ url: URL, opened: Bool) {
+        guard current == attempt, settled < current else { return }
+        settled = current
+        if opened {
+            extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+        } else {
+            openThroughContext(url)
+        }
+    }
+
+    private func openThroughContext(_ url: URL) {
+        guard let context = extensionContext else { return }
         context.open(url) { [weak self] (opened: Bool) in
             DispatchQueue.main.async {
                 if opened {
@@ -48,7 +78,7 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func openContainingApp(_ url: URL) -> Bool {
+    private func openContainingApp(_ url: URL, completion: @escaping @convention(block) (Bool) -> Void) -> Bool {
         typealias OpenURL = @convention(c) (
             AnyObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?
         ) -> Void
@@ -57,7 +87,7 @@ final class ShareViewController: UIViewController {
         while let current = responder {
             if let application = current as? UIApplication, application.responds(to: selector) {
                 let open = unsafeBitCast(application.method(for: selector), to: OpenURL.self)
-                open(application, selector, url as NSURL, NSDictionary(), nil)
+                open(application, selector, url as NSURL, NSDictionary(), completion)
                 return true
             }
             responder = current.next
@@ -76,6 +106,8 @@ final class ShareModel: ObservableObject {
     @Published var saved = false
     @Published var waitingForApp = false
     var finish: ((Route?) -> Void)?
+    private var onScreen = false
+    private var sent: Route?
 
     static let maxImageBytes = ShareHandoffStore.maxImageBytes
     nonisolated static let maxPixels = 2_048
@@ -110,9 +142,21 @@ final class ShareModel: ObservableObject {
         urls = ShareHandoffStore.cleanURLs(links)
         images = pictures
         loading = false
-        if !images.isEmpty {
-            send()
-        }
+        sendAtOnce()
+    }
+
+    func appeared() {
+        onScreen = true
+        sendAtOnce()
+    }
+
+    var djVideos: [String] {
+        images.isEmpty ? DjStudio.sharedVideoIds(urls: urls, text: text) : []
+    }
+
+    private func sendAtOnce() {
+        guard onScreen, !loading, !saved, !images.isEmpty || !djVideos.isEmpty else { return }
+        send()
     }
 
     var isEmpty: Bool {
@@ -122,8 +166,10 @@ final class ShareModel: ObservableObject {
     func send() {
         do {
             let handoff = try ShareKeychainDrop().save(text: text, urls: urls, images: images)
+            let route: Route = djVideos.isEmpty ? handoff.route : .videoMixDjStudio
             saved = true
-            finish?(handoff.route)
+            sent = route
+            finish?(route)
         } catch let failure as ShareHandoffError {
             error = failure.message
         } catch {
@@ -137,6 +183,12 @@ final class ShareModel: ObservableObject {
 
     func close() {
         finish?(nil)
+    }
+
+    func reopen() {
+        guard let sent else { return }
+        waitingForApp = false
+        finish?(sent)
     }
 
     private static func load(_ provider: NSItemProvider, _ type: UTType) async -> NSSecureCoding? {
@@ -207,9 +259,12 @@ struct ShareComposeView: View {
                     Section {
                         Label("Saved for ForkMesh", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                        Text("Open ForkMesh and the composer will have it ready.")
+                        Text(model.djVideos.isEmpty
+                            ? "Open ForkMesh and the composer will have it ready."
+                            : "Open ForkMesh and it will be in the DJ queue.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                        Button("Open ForkMesh") { model.reopen() }
                     }
                 } else {
                     Section("Instructions for the agent") {
