@@ -237,7 +237,7 @@ public enum RouteParser {
         switch page {
         case "chat": return [.chat]
         case "notes":
-            if let id = first { return [.notes, .note(id: id)] }
+            if let id = first ?? nonEmpty(query["note"]) { return [.notes, .note(id: id)] }
             return [.notes]
         case "tasks":
             if let id = first { return [.tasks(filter: nil), .task(id: id)] }

@@ -831,6 +831,7 @@ set(FORKMESH_APP_SOURCES
     src/RailShortcuts.h
     src/ChatVisitorPresence.h
     src/NoteListEntry.h
+    src/NoteTools.h
     src/UserStatus.h
     src/UserStatus.cpp
     src/ServerNode.h
@@ -2318,6 +2319,18 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-settings-write-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-settings-write-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-note-tools-tests
+        tests/test_note_tools.cpp
+        src/NoteTools.h
+    )
+    target_include_directories(forkmesh-note-tools-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-note-tools-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-note-tools-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4047,6 +4060,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-settings-write-tests)
     add_test(NAME forkmesh-note-request-proof-tests
              COMMAND forkmesh-note-request-proof-tests)
+    add_test(NAME forkmesh-note-tools-tests
+             COMMAND forkmesh-note-tools-tests)
     add_test(NAME forkmesh-tip-tests COMMAND forkmesh-tip-tests)
     add_test(NAME forkmesh-window-tests COMMAND forkmesh-window-tests)
     add_test(NAME forkmesh-startup-splash-tests

@@ -91,3 +91,31 @@ def test_only_anonymous_reads_of_a_published_note_are_counted():
     assert "return" in recorder
     # Counting a read must never be able to fail the page it was counting.
     assert "except Exception:" in recorder
+
+
+def test_note_menu_turns_a_note_into_a_task_or_an_issue():
+    convert = _region(NOTES_JS, "function noteConversionTitle(", "function onNoteEdited(")
+    assert 'noteRequest("/api/tasks", "POST"' in convert
+    assert 'department: "general", destination: "department", assigneeKind: "unassigned"' in convert
+    assert 'Converted from the note "${noteConversionTitle(title, markdown)}"' in convert
+    assert "(published at ${publicUrl})" in convert
+    assert "submitWebIssue(repository" in convert
+    assert "NOTE_ISSUE_BODY_MAX" in convert
+    for notice in ("Task created from this note", "The task was not created.",
+                   "Issue filed from this note", "The issue was not filed."):
+        assert notice in convert
+    assert "Choose a repository as owner/name." in NOTES_JS
+    assert "submitWebIssue" in BUNDLE
+    public = ROOT / "public" / "dashboard"
+    view = (public / "partials" / "views" / "notes.html").read_text(encoding="utf-8")
+    package = (ROOT.parent / "marketplace" / "packages" / "notes" / "content" / "web"
+               / "view.html").read_text(encoding="utf-8")
+    page = (public / "notes" / "index.html").read_text(encoding="utf-8")
+    assert view == package
+    for marker in ("data-note-to-task", "data-note-to-issue", "data-note-issue-dialog"):
+        assert marker in view and marker in page
+
+
+def test_search_matches_note_bodies_on_the_server():
+    assert "/api/notes?query=${encodeURIComponent(query)}" in NOTES_JS
+    assert "if query and not await _matches(runtime, row, query):" in NOTES_API

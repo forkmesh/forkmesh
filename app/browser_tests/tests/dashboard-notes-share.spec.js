@@ -18,17 +18,17 @@ function noteFor(id, shares) {
   return {
     id,
     title: id === FIRST_ID ? "Roadmap" : "Retro",
-    markdown: "Hello",
+    markdown: id === FIRST_ID ? "Hello" : "Sprint lessons learned",
     version: 1,
     role: "owner",
-    visibility: "private",
+    visibility: id === FIRST_ID ? "public" : "private",
     updatedAt: new Date().toISOString(),
     shares,
     links: [],
   };
 }
 
-async function openNotes(page, { search = "", userQueries = [], shareRequests = [] } = {}) {
+async function openNotes(page, { search = "", userQueries = [], shareRequests = [], calls = [] } = {}) {
   const shares = { [FIRST_ID]: [], [SECOND_ID]: [{ type: "user", name: "bob", role: "editor" }] };
   await page.addInitScript(() => {
     localStorage.setItem("forkmesh.session", JSON.stringify({
@@ -67,8 +67,16 @@ async function openNotes(page, { search = "", userQueries = [], shareRequests = 
     const url = new URL(request.url());
     const single = url.pathname.match(/^\/api\/notes\/([0-9a-f]{32})(\/shares)?$/);
     let body = { ok: true };
+    calls.push({ method: request.method(), path: url.pathname, query: url.searchParams.get("query"), body: request.postDataJSON() });
     if (url.pathname === "/api/notes") {
-      body = { ok: true, notes: [noteFor(FIRST_ID, shares[FIRST_ID]), noteFor(SECOND_ID, shares[SECOND_ID])] };
+      const query = (url.searchParams.get("query") || "").toLowerCase();
+      body = { ok: true, notes: [noteFor(FIRST_ID, shares[FIRST_ID]), noteFor(SECOND_ID, shares[SECOND_ID])]
+        .filter((note) => `${note.title}\n${note.markdown}`.toLowerCase().includes(query))
+        .map(({ markdown, ...note }) => note) };
+    } else if (url.pathname === "/api/tasks") {
+      body = { ok: true, task: { id: "task-1" } };
+    } else if (url.pathname === "/api/repo/alice/project/issues") {
+      body = { ok: true, number: 7 };
     } else if (single && single[2]) {
       const payload = request.postDataJSON();
       shareRequests.push(payload);
@@ -153,4 +161,63 @@ test("opening the link selects the note it names", async ({ page }) => {
   await page.locator("[data-note-menu-copy-link]").click();
   await expect(page.locator('[data-note-notice="main"]')).toHaveText("Link copied");
   expect(await page.evaluate(() => window.__copied.at(-1))).toMatch(new RegExp(`/dashboard/notes\\?note=${SECOND_ID}$`));
+});
+
+test("searching notes matches the body as well as the title", async ({ page }) => {
+  const calls = [];
+  await openNotes(page, { calls });
+  await expect(page.locator("[data-note-title]")).toHaveValue("Roadmap");
+  await page.locator("[data-note-search]").fill("lessons");
+  await expect(page.locator("[data-note-list] [data-note-id]")).toHaveCount(1);
+  await expect(page.locator("[data-note-list]")).toContainText("Retro");
+  expect(calls.some((call) => call.path === "/api/notes" && call.query === "lessons")).toBe(true);
+  await page.locator("[data-note-search]").fill("nothing like this");
+  await expect(page.locator("[data-note-list]")).toContainText("No notes match");
+});
+
+test("a note turns into a task with its Markdown and published link", async ({ page }) => {
+  const calls = [];
+  await openNotes(page, { calls });
+  await expect(page.locator("[data-note-title]")).toHaveValue("Roadmap");
+  await page.locator("[data-note-menu-open]").click();
+  await expect(page.locator("[data-note-menu-public]")).toBeVisible();
+  await expect(page.locator("[data-note-menu-public]")).toHaveAttribute("href", `/notes/${FIRST_ID}`);
+  await page.locator("[data-note-to-task]").click();
+  await expect(page.locator('[data-note-notice="main"]')).toHaveText("Task created from this note");
+  const origin = new URL(page.url()).origin;
+  const task = calls.find((call) => call.path === "/api/tasks");
+  expect(task.method).toBe("POST");
+  expect(task.body).toEqual({
+    title: "Roadmap",
+    details: `Hello\n\n---\nConverted from the note "Roadmap" (published at ${origin}/notes/${FIRST_ID})`,
+    department: "general",
+    destination: "department",
+    assigneeKind: "unassigned",
+  });
+});
+
+test("a note turns into an issue in the repository the user names", async ({ page }) => {
+  const calls = [];
+  await openNotes(page, { search: `?note=${SECOND_ID}`, calls });
+  await expect(page.locator("[data-note-title]")).toHaveValue("Retro");
+  await page.locator("[data-note-menu-open]").click();
+  await expect(page.locator("[data-note-menu-public]")).toBeHidden();
+  await page.locator("[data-note-to-issue]").click();
+  const dialog = page.locator("[data-note-issue-dialog]");
+  await expect(dialog).toBeVisible();
+  await page.locator("[data-note-issue-repo]").fill("project");
+  await page.locator("[data-note-issue-confirm]").click();
+  await expect(page.locator('[data-note-notice="issue"]')).toHaveText("Choose a repository as owner/name.");
+  await expect(dialog).toBeVisible();
+  await page.locator("[data-note-issue-repo]").fill("alice/project");
+  await page.locator("[data-note-issue-repo]").press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('[data-note-notice="main"]')).toHaveText("Issue filed from this note");
+  const issue = calls.find((call) => call.path === "/api/repo/alice/project/issues");
+  expect(issue.body).toMatchObject({ owner: "alice", repo: "project", number: 0, titleIfNew: "Retro" });
+  expect(issue.body.event).toMatchObject({
+    type: "open",
+    title: "Retro",
+    body: 'Sprint lessons learned\n\n---\nConverted from the note "Retro"',
+  });
 });

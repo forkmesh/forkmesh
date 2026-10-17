@@ -576,6 +576,7 @@ public:
     // Secret-free website handoff. The desktop resolves the public repository
     // through the mesh and asks the user where its local fork should live.
     void openRepositoryForkFromSystemLink(const QString &target);
+    void openNoteFromSystemLink(const QString &target);
     void openFolderFromSystem(const QString &folder);
     // Secret-free website handoff for provider-owned CLI authentication. The
     // URL contains only a bounded node name and provider id; ForkMesh resolves
@@ -4782,7 +4783,8 @@ private:
                          CalendarReplyHandler handler);
     QWidget *buildNotesSection();
     void refreshNotes();
-    void renderNotesList(const QString &selectId = QString());
+    void renderNotesList(const QString &selectId = QString(),
+                         bool reselect = true);
     void selectNote(const QString &id, const QString &storage);
     void createNote();
     void saveNote();
@@ -4790,7 +4792,29 @@ private:
     void updateNotePublishState();
     QJsonObject cloudNoteFor(const QJsonObject &note) const;
     void shareNote();
-    void attachNoteConversation();
+    void showNoteLinks();
+    void renderNoteLinkedItems();
+    void applyNoteShares(const QString &cloudId, const QJsonArray &shares);
+    void applyNoteLinks(const QString &cloudId, const QJsonArray &links);
+    void storeCloudNote(const QJsonObject &cloud);
+    QString selectedNoteRole() const;
+    QString selectedNoteAccessLink() const;
+    QStringList noteRelayHosts() const;
+    void copyNoteLink();
+    void copyNotePublicLink();
+    void exportNote();
+    bool noteAutosaveApplies() const;
+    void scheduleNoteAutosave();
+    void autosaveNote();
+    void markNoteClean(const QString &state = QString());
+    void setNoteSaveState(const QString &text);
+    void showNoteConflict(const QJsonObject &theirs);
+    void clearNoteConflict();
+    void keepMyNoteVersion();
+    void takeTheirNoteVersion();
+    bool openNoteLink(const QString &href);
+    void openNoteByCloudId(const QString &cloudId);
+    void searchCloudNotes();
     // Hand the note on screen to the tracker that actually chases work: an
     // organization task, or an issue on one of this node's repositories. The
     // note is copied, never moved — it stays in the list as the working draft.
@@ -10912,6 +10936,21 @@ private:
     QString m_selectedNoteStorage;
     bool m_notesLoading = false;
     bool m_noteDirty = false;
+    QLineEdit *m_noteSearch = nullptr;
+    QList<QPushButton *> m_noteFilterButtons;
+    QString m_noteFilter = QStringLiteral("all");
+    QLabel *m_noteSaveState = nullptr;
+    QPushButton *m_notePublicCopy = nullptr;
+    QWidget *m_noteConflictBar = nullptr;
+    QLabel *m_noteLinkedItems = nullptr;
+    QTimer *m_noteAutosaveTimer = nullptr;
+    QTimer *m_noteSearchTimer = nullptr;
+    int m_noteSearchSequence = 0;
+    QString m_noteSearchCloudQuery;
+    QSet<QString> m_noteSearchCloudIds;
+    QJsonObject m_noteConflict;
+    bool m_noteSaveInFlight = false;
+    bool m_noteSaveQueued = false;
     QTableWidget *m_organizationTasksTable = nullptr;
     QString m_organizationTasksSearchMirror;
     QTextBrowser *m_organizationTaskDetail = nullptr;

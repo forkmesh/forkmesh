@@ -131,7 +131,8 @@ final class NotesTests: XCTestCase {
         XCTAssertFalse(editor.saveEnabled)
         editor.markdown = "# Launch\n\n- ship it\n- tell people"
         XCTAssertTrue(editor.saveEnabled)
-        XCTAssertTrue(editor.confirmsLeave)
+        XCTAssertFalse(editor.confirmsLeave)
+        XCTAssertEqual(editor.saveState, "Unsaved changes")
         let outcome = await editor.save()
 
         let last = api.last!
@@ -189,7 +190,9 @@ final class NotesTests: XCTestCase {
         XCTAssertFalse(editor.showsSave)
         XCTAssertFalse(editor.canEdit)
         XCTAssertTrue(editor.meta.hasSuffix("read only"))
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export"])
+        XCTAssertEqual(editor.saveState, "View only")
+        XCTAssertEqual(editor.shownMode, .preview)
     }
 
     @MainActor
@@ -214,13 +217,13 @@ final class NotesTests: XCTestCase {
         }
         let editor = NoteEditorModel(noteId: noteId, call: api.call, clock: clock)
         await editor.load()
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "share", "publish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "export", "share", "publish", "delete"])
         editor.title = "Typed but unsaved"
         let visibility = await editor.setVisibility("public")
-        XCTAssertEqual(visibility.notice?.message, "Note published")
+        XCTAssertEqual(visibility.notice?.message, "Published. Anyone with the link can read it.")
         XCTAssertEqual(api.last?.body, ["baseVersion": 3, "visibility": "public"])
         XCTAssertEqual(editor.title, "Typed but unsaved")
-        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "share", "unpublish", "delete"])
+        XCTAssertEqual(editor.menuItems.map(\.value), ["history", "copy_link", "open_public", "export", "share", "unpublish", "delete"])
 
         let history = editor.historyModel()!
         await history.load()
@@ -237,10 +240,12 @@ final class NotesTests: XCTestCase {
         let share = editor.shareModel()!
         share.type = "organization"
         share.name = "@@Acme "
-        let failure = await share.add()
-        XCTAssertNil(failure)
+        let added = await share.add()
+        XCTAssertEqual(added.notice?.message, "Shared with acme. Copy the link below to send it.")
+        XCTAssertEqual(added.notice?.isError, false)
         XCTAssertEqual(api.last?.body, ["type": "organization", "name": "acme", "role": "viewer"])
-        XCTAssertEqual(share.shareSubtitle(share.shares[0]), "Organization · Viewer")
+        XCTAssertEqual(share.shareSubtitle(share.shares[0]), "Organization")
+        XCTAssertEqual(share.shareRole(share.shares[0]), "viewer")
         XCTAssertEqual(share.name, "")
 
         let deleted = await editor.delete()
@@ -254,7 +259,8 @@ final class NotesTests: XCTestCase {
         let share = NoteShareModel(noteId: noteId, initial: [], call: api.call)
         share.name = "ghost"
         let failure = await share.add()
-        XCTAssertEqual(failure, "No user has that name.")
+        XCTAssertEqual(failure.notice?.message, "No user has that name.")
+        XCTAssertEqual(failure.notice?.isError, true)
         XCTAssertEqual(share.name, "ghost")
     }
 
