@@ -14,6 +14,7 @@ VECTORS = json.loads((ROOT / "conformance" / "chat" / "v3" / "vectors.json").rea
 ROOM = VECTORS["room"]
 SCOPE = VECTORS["scope"]
 NOW = VECTORS["now"]
+PARTICIPANTS = VECTORS["participants"]
 
 
 def device(name):
@@ -35,14 +36,14 @@ def bob_with_trust():
     bob = device("bob")
     bundles = VECTORS["bundles"]
     for name in ("alice", "bob"):
-        assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles[name], NOW) == "approved"
-    assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles["alice2"], NOW) == "pending"
+        assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles[name], NOW, PARTICIPANTS) == "approved"
+    assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles["alice2"], NOW, PARTICIPANTS) == "pending"
     return bob
 
 
 def test_bundles_verify():
     bundles = VECTORS["bundles"]
-    for name in ("alice", "alice2", "bob", "bobOld"):
+    for name in ("alice", "alice2", "bob", "bobOld", "injectedOutsider", "injectedAsBob"):
         assert ref.verify_bundle(bundles[name], ROOM, NOW), name
     for name, bundle in bundles["invalid"].items():
         assert not ref.verify_bundle(bundle, ROOM, NOW), name
@@ -52,8 +53,16 @@ def test_bundles_verify():
 def test_bundle_for_known_kid_cannot_change_account():
     bob = bob_with_trust()
     changed = dict(VECTORS["bundles"]["alice"], acct="mallory")
-    assert bob.accept_bundle(SCOPE, "strict", ROOM, changed, NOW) is None
+    assert bob.accept_bundle(SCOPE, "strict", ROOM, changed, NOW, PARTICIPANTS) is None
     assert bob.records(SCOPE)[VECTORS["devices"]["alice"]["kid"]]["acct"] == "alice"
+
+
+def test_server_injected_devices_are_refused_or_held():
+    bob = bob_with_trust()
+    bundles = VECTORS["bundles"]
+    assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles["injectedOutsider"], NOW, PARTICIPANTS) is None
+    assert bob.accept_bundle(SCOPE, "strict", ROOM, bundles["injectedAsBob"], NOW, PARTICIPANTS) == "pending"
+    assert bob.accept_bundle("open-scope", "open", ROOM, bundles["injectedOutsider"], NOW) == "approved"
 
 
 def test_open_relay_sequence():
@@ -64,6 +73,7 @@ def test_open_relay_sequence():
     assert first[1] == sealed["first"]["plain"]
     assert first[2] == sealed["first"]["senderKid"]
     assert first[3] == "alice"
+    assert first[1]["senderId"] == VECTORS["nodes"]["alice"]
     assert bob.open(ROOM, SCOPE, sealed["replay"]["frame"], NOW) == ("replay",)
     second = bob.open(ROOM, SCOPE, sealed["second"]["frame"], NOW + 1000)
     assert second[0] == "opened" and second[1] == sealed["second"]["plain"]

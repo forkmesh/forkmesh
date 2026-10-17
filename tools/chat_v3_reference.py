@@ -133,9 +133,9 @@ def public_prekey(spk):
     return {"id": spk["id"], "x": b64u(spk["x"]), "pq": b64u(spk["pq"]), "ts": spk["ts"], "exp": spk["exp"]}
 
 
-def bundle_message(room, kid, idk, acct, spk):
+def bundle_message(room, kid, idk, acct, node, spk):
     return "\n".join([
-        "forkmesh-chat-e2ee-bundle-v3", room, kid, idk, acct, spk["id"], spk["x"], spk["pq"],
+        "forkmesh-chat-e2ee-bundle-v3", room, kid, idk, acct, node, spk["id"], spk["x"], spk["pq"],
         str(spk["ts"]), str(spk["exp"])]).encode()
 
 
@@ -147,18 +147,18 @@ def verify_bundle(bundle, room, now):
     try:
         if bundle.get("type") != "e2ee-key" or bundle.get("v") != 3:
             return False
-        kid, idk, acct, spk = bundle["kid"], bundle["idk"], bundle["acct"], bundle["spk"]
+        kid, idk, acct, node, spk = bundle["kid"], bundle["idk"], bundle["acct"], bundle["node"], bundle["spk"]
         idk_bytes, x, pq = unb64u(idk), unb64u(spk["x"]), unb64u(spk["pq"])
         if len(idk_bytes) != 32 or len(x) != 32 or len(pq) != MLKEM_PUB_BYTES:
             return False
-        if kid != id16(idk_bytes) or spk["id"] != id16(x + pq) or not valid_acct(acct):
+        if kid != id16(idk_bytes) or spk["id"] != id16(x + pq) or not valid_acct(acct) or not valid_acct(node):
             return False
         ts, exp = spk["ts"], spk["exp"]
         if not (isinstance(ts, int) and isinstance(exp, int)) or not (0 < exp - ts <= 9 * DAY_MS):
             return False
         if ts > now + DAY_MS or exp <= now:
             return False
-        return ed_verify(idk_bytes, unb64u(bundle["sig"]), bundle_message(room, kid, idk, acct, spk))
+        return ed_verify(idk_bytes, unb64u(bundle["sig"]), bundle_message(room, kid, idk, acct, node, spk))
     except (KeyError, TypeError, ValueError):
         return False
 
@@ -219,22 +219,25 @@ class Device:
     def wipe_expired(self, now):
         self.prekeys = [p for p in self.prekeys if now <= p["exp"]]
 
-    def bundle(self, room, acct):
+    def bundle(self, room, acct, node):
         spk = public_prekey(self.newest_prekey())
         idk = b64u(self.idk)
-        sig = ed_sign(self.ik_seed, bundle_message(room, self.kid, idk, acct, spk))
-        return {"type": "e2ee-key", "v": 3, "kid": self.kid, "idk": idk, "acct": acct, "spk": spk, "sig": b64u(sig)}
+        sig = ed_sign(self.ik_seed, bundle_message(room, self.kid, idk, acct, node, spk))
+        return {"type": "e2ee-key", "v": 3, "kid": self.kid, "idk": idk, "acct": acct, "node": node, "spk": spk,
+                "sig": b64u(sig)}
 
     def records(self, scope):
         return self.trust.setdefault(scope, {})
 
-    def accept_bundle(self, scope, policy, room, bundle, now):
+    def accept_bundle(self, scope, policy, room, bundle, now, participants=None):
         if not verify_bundle(bundle, room, now):
+            return None
+        if participants is not None and bundle["acct"] not in participants:
             return None
         records = self.records(scope)
         known = records.get(bundle["kid"])
         if known:
-            if known["idk"] != bundle["idk"] or known["acct"] != bundle["acct"]:
+            if known["idk"] != bundle["idk"] or known["acct"] != bundle["acct"] or known["node"] != bundle["node"]:
                 return None
             if bundle["spk"]["ts"] > known["spk"]["ts"]:
                 known["spk"] = bundle["spk"]
@@ -244,7 +247,8 @@ class Device:
             if any(r["acct"] == bundle["acct"] and r["state"] == "approved" for r in records.values()):
                 state = "pending"
         records[bundle["kid"]] = {"kid": bundle["kid"], "idk": bundle["idk"], "acct": bundle["acct"],
-                                  "spk": bundle["spk"], "state": state, "firstSeen": now, "verified": False}
+                                  "node": bundle["node"], "spk": bundle["spk"], "state": state, "firstSeen": now,
+                                  "verified": False}
         return state
 
     def approve(self, scope, kid):
@@ -306,7 +310,7 @@ class Device:
                 return ("invalid",)
             record = self.records(scope).get(kid)
             if kid == self.kid:
-                record = {"idk": b64u(self.idk), "state": "approved", "acct": None}
+                record = {"idk": b64u(self.idk), "state": "approved", "acct": None, "node": None}
             if record is None or record["state"] != "approved":
                 self.held.setdefault(room, []).append(frame)
                 self.held[room] = self.held[room][-64:]
@@ -340,7 +344,7 @@ class Device:
             plain = json.loads(clear)
             if not isinstance(plain, dict):
                 return ("invalid",)
-            if record["acct"] is not None and "senderId" in plain and plain["senderId"] != record["acct"]:
+            if record["node"] is not None and "senderId" in plain and plain["senderId"] != record["node"]:
                 return ("invalid",)
             seen["set"].add(ctr)
             seen["max"] = max(seen["max"], ctr)
@@ -405,21 +409,27 @@ def build_vectors():
     bob.add_prekey(_seed("bob-spk-old-x"), _mlkem_seed("bob-spk-old"), now - 3 * DAY_MS)
     bob.add_prekey(_seed("bob-spk-x"), _mlkem_seed("bob-spk"), now - DAY_MS // 3)
 
-    alice_bundle = alice.bundle(room, "alice")
-    alice2_bundle = alice2.bundle(room, "alice")
-    bob_bundle = bob.bundle(room, "bob")
+    participants = ["alice", "bob"]
+    nodes = {"alice": "node-alice-phone", "alice2": "node-alice-tablet", "bob": "node-bob-phone"}
+    alice_bundle = alice.bundle(room, "alice", nodes["alice"])
+    alice2_bundle = alice2.bundle(room, "alice", nodes["alice2"])
+    bob_bundle = bob.bundle(room, "bob", nodes["bob"])
+    injected = Device(_seed("server-injected"))
+    injected.add_prekey(_seed("injected-spk-x"), _mlkem_seed("injected-spk"), now - DAY_MS // 5)
+    injected_outsider = injected.bundle(room, "mallory", "node-mallory")
+    injected_as_bob = injected.bundle(room, "bob", "node-bob-new")
     for device in (alice, bob):
         for bundle in (alice_bundle, bob_bundle):
-            device.accept_bundle(scope, "strict", room, bundle, now)
-    pending_state = bob.accept_bundle(scope, "strict", room, alice2_bundle, now)
+            device.accept_bundle(scope, "strict", room, bundle, now, participants)
+    pending_state = bob.accept_bundle(scope, "strict", room, alice2_bundle, now, participants)
 
     old_spk = public_prekey(bob.prekeys[0])
     bob_old_bundle = dict(bob_bundle)
     bob_old_bundle["spk"] = old_spk
-    bob_old_bundle["sig"] = b64u(ed_sign(bob.ik_seed, bundle_message(room, bob.kid, b64u(bob.idk), "bob", old_spk)))
+    bob_old_bundle["sig"] = b64u(ed_sign(bob.ik_seed, bundle_message(room, bob.kid, b64u(bob.idk), "bob", nodes["bob"], old_spk)))
     alice.records(scope)[bob.kid]["spk"] = old_spk
 
-    plain = {"type": "chat", "id": "m1", "senderId": "alice", "channel": scope, "text": "Hello Bob ❤️"}
+    plain = {"type": "chat", "id": "m1", "senderId": nodes["alice"], "channel": scope, "text": "Hello Bob ❤️"}
     sealed = alice.seal(room, scope, plain, now)
     alice.records(scope)[bob.kid]["spk"] = bob_bundle["spk"]
     sealed_new = alice.seal(room, scope, dict(plain, id="m2", text="second"), now + 1000)
@@ -429,16 +439,21 @@ def build_vectors():
     body[0] ^= 1
     tampered["body"] = b64(bytes(body))
 
-    forged = alice.seal(room, scope, dict(plain, id="m3", senderId="bob", text="I am Bob"), now + 2000)
-    alice2.accept_bundle(scope, "strict", room, bob_bundle, now)
-    from_pending = alice2.seal(room, scope, dict(plain, id="m4", text="from the second phone"), now + 3000)
+    forged = alice.seal(room, scope, dict(plain, id="m3", senderId=nodes["bob"], text="I am Bob"), now + 2000)
+    alice2.accept_bundle(scope, "strict", room, bob_bundle, now, participants)
+    from_pending = alice2.seal(room, scope, dict(plain, id="m4", senderId=nodes["alice2"], text="from the second phone"),
+                               now + 3000)
     from_pending_keys = [k["kid"] for k in from_pending["keys"]]
 
     bob_check = Device(bob.ik_seed)
     bob_check.prekeys = [dict(p) for p in bob.prekeys]
     for bundle in (alice_bundle, bob_bundle):
-        bob_check.accept_bundle(scope, "strict", room, bundle, now)
-    bob_check.accept_bundle(scope, "strict", room, alice2_bundle, now)
+        bob_check.accept_bundle(scope, "strict", room, bundle, now, participants)
+    bob_check.accept_bundle(scope, "strict", room, alice2_bundle, now, participants)
+    if bob_check.accept_bundle(scope, "strict", room, injected_outsider, now, participants) is not None:
+        raise AssertionError("an outsider bundle was accepted")
+    if bob_check.accept_bundle(scope, "strict", room, injected_as_bob, now, participants) != "pending":
+        raise AssertionError("a new device for bob was not held")
     results = {
         "first": bob_check.open(room, scope, sealed, now),
         "replay": bob_check.open(room, scope, sealed, now),
@@ -477,21 +492,26 @@ def build_vectors():
     k_i2r, k_r2i = link_keys(i_eph, x25519_pub(r_eph), transcript)
     if (k_i2r, k_r2i) != link_keys(r_eph, x25519_pub(i_eph), transcript):
         raise AssertionError("link keys disagree")
-    link_frame = {"type": "hello", "senderId": "alice"}
+    link_frame = {"type": "hello", "senderId": nodes["alice"]}
 
     return {
         "version": 3,
         "now": now,
         "room": room,
         "scope": scope,
+        "participants": participants,
+        "nodes": nodes,
         "devices": {"alice": _secrets(alice), "alice2": _secrets(alice2), "bob": _secrets(bob)},
         "bundles": {
             "alice": alice_bundle, "alice2": alice2_bundle, "bob": bob_bundle, "bobOld": bob_old_bundle,
             "invalid": {
                 "wrongAcct": dict(alice_bundle, acct="mallory"),
                 "wrongKid": dict(alice_bundle, kid=bob.kid),
-                "wrongRoom": alice.bundle("another-room", "alice"),
+                "wrongRoom": alice.bundle("another-room", "alice", nodes["alice"]),
+                "wrongNode": dict(alice_bundle, node="node-mallory"),
             },
+            "injectedOutsider": injected_outsider,
+            "injectedAsBob": injected_as_bob,
         },
         "bundleChecks": {"expiredAt": alice_bundle["spk"]["exp"] + 1, "pendingStateForAlice2AtBob": pending_state},
         "kek": kek_vector,

@@ -70,24 +70,34 @@ IndexedDB with a non-extractable wrapping key where available):
 A device advertises one bundle per room, signed by its identity key:
 
 ```json
-{"type":"e2ee-key","v":3,"kid":"<16>","idk":"<b64u 32>","acct":"<sender id>",
+{"type":"e2ee-key","v":3,"kid":"<16>","idk":"<b64u 32>","acct":"<account>","node":"<sender id>",
  "spk":{"id":"<16>","x":"<b64u 32>","pq":"<b64u 1184>","ts":0,"exp":0},
  "sig":"<b64u 64>"}
 ```
 
-`acct` is the value this client puts in `senderId` of its plaintext frames in
-that room (the DM self id in `direct:` rooms, the node id in relay and mesh
-rooms). `sig` is Ed25519 by `IK` over:
+- `acct` is the signed-in account name, lowercased, the same on every device
+  of that account (a guest uses its node id). It decides trust.
+- `node` is the value this client puts in `senderId` of its plaintext frames
+  in that room (the relay self id, which differs per device). It is what the
+  forgery check compares.
+
+Both are needed: with only a per-device id, a device the server injected
+would always look like the first device of a new account and be approved.
+
+`sig` is Ed25519 by `IK` over:
 
 ```
-forkmesh-chat-e2ee-bundle-v3\n<room>\n<kid>\n<idk>\n<acct>\n<spk.id>\n<spk.x>\n<spk.pq>\n<spk.ts>\n<spk.exp>
+forkmesh-chat-e2ee-bundle-v3\n<room>\n<kid>\n<idk>\n<acct>\n<node>\n<spk.id>\n<spk.x>\n<spk.pq>\n<spk.ts>\n<spk.exp>
 ```
 
 A receiver accepts a bundle only if `kid == id16(idk)`, the signature
 verifies, `spk.id == id16(x || pq)`, `0 < exp - ts <= 9 days`,
-`ts <= now + 1 day`, `exp > now`, and `acct` is 1 to 128 printable characters
-without `\n`. For a `kid` it already knows, `idk` and `acct` must match the
-stored record (otherwise the bundle is dropped); a newer `spk.ts` replaces the
+`ts <= now + 1 day`, `exp > now`, and `acct` and `node` are each 1 to 128
+printable characters without `\n`. In a DM room `acct` must also be one of the
+conversation's two participants (the lowercased account names of the DM
+record), otherwise the bundle is dropped. For a `kid` it already knows,
+`idk`, `acct` and `node` must match the stored record (otherwise the bundle is
+dropped); a newer `spk.ts` replaces the
 stored prekey. A device re-advertises its bundle when its prekey rotates and
 on every (re)connect, as v2 did.
 
@@ -108,7 +118,7 @@ Each room has a trust policy and a trust scope (where approvals are stored):
   approves them. The user can also block a device. Signal by default keeps
   sending after a safety-number change; v3 asks first.
 - Records are stored per trust scope at `chat/e2ee/trustV3/<b64u(scope)>`:
-  `{kid, idk, acct, spk, state: approved|pending|blocked, firstSeen,
+  `{kid, idk, acct, node, spk, state: approved|pending|blocked, firstSeen,
   verified}`.
 
 Clients show a system line in the conversation for every new pending device
@@ -133,7 +143,9 @@ Sealing `plain` (a JSON object) in `room` by sender `S`:
    `UTF8(JSON(plain))`, aad =
    `forkmesh-chat-e2ee-content-v3\n<room>\n<S>\n<ctr>\n<ts>`).
 3. Recipients = approved devices with an unexpired prekey, plus `S` itself
-   (its own newest prekey), at most 64, sorted by `kid` (ASCII ascending).
+   (its own newest prekey), at most 64, sorted by `kid` (ASCII ascending). In
+   an open room with more devices, the sender keeps itself and the 63 most
+   recently seen.
 4. For each recipient `R` with prekey `P`:
    - `eph` = a fresh X25519 key pair; `ss1` = X25519(`eph.priv`, `P.x`).
    - `ct, ss2` = ML-KEM-768.Encaps(`P.pq`).
@@ -174,7 +186,9 @@ senderAcct)`, `held(kid)`, `notForMe`, `replay`, `invalid`.
 6. Recompute `KEK` (ML-KEM.Decaps, X25519), unwrap `CK`, decrypt `body`. Any
    failure gives `invalid`.
 7. The plaintext `senderId`, when present, must equal the sender record's
-   `acct`, otherwise `invalid` (a forgery).
+   `node`, otherwise `invalid` (a forgery). A frame without `senderId` is
+   treated as sent by that `node`. A bot or agent line posted by a device keeps
+   the device's own `senderId` and names the bot in a separate `bot` field.
 8. Only now record `ctr` as seen and return `opened`.
 
 `ctr` and the seen set are updated only for frames that verify, so a forged
@@ -182,12 +196,18 @@ frame cannot burn a counter. Edits, deletes, reactions and receipts are
 accepted only when their sender's `acct` equals the `acct` of the message they
 change.
 
+Frames the relay sends as its history replay on connect skip only the
+already-seen part of step 4; signature, `ts`, trust and `node` checks still
+apply. A client that keeps no history of its own (the web) would otherwise show
+an empty room after every reload. Clients drop duplicates by message id and
+order messages by the signed `ts`, so a replayed frame cannot appear as new.
+
 The outer `RoomCrypto` layer (server passphrase) stays as transport padding;
 nothing in v3 relies on it.
 
 ## Relay `@peer` DMs
 
-A relay `type:"dm"` frame is sealed only to the devices whose bundle `acct` is
+A relay `type:"dm"` frame is sealed only to the devices whose bundle `node` is
 the recipient's id, plus the sender's own approved devices in that room. Other
 room members can no longer open it.
 
