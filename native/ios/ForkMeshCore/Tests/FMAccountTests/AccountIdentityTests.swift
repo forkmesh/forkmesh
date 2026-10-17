@@ -346,6 +346,12 @@ final class SettingsCatalogTests: XCTestCase {
         XCTAssertEqual(SettingsCatalog.section(named: "installed-apps"), .apps)
         XCTAssertEqual(SettingsCatalog.section(named: "sounds"), .general)
         XCTAssertEqual(SettingsCatalog.visible("slash commands", available: Set(SettingsSectionId.allCases)).map(\.id), [.apps])
+        XCTAssertEqual(SettingsCatalog.section(named: "chat-privacy"), .chatPrivacy)
+        XCTAssertEqual(SettingsCatalog.section(named: "face-id"), .chatPrivacy)
+        for word in ["app switcher", "Face ID", "lock"] {
+            XCTAssertTrue(
+                SettingsCatalog.visible(word, available: Set(SettingsSectionId.allCases)).map(\.id).contains(.chatPrivacy), word)
+        }
         XCTAssertNil(SettingsCatalog.section(named: "nope"))
         XCTAssertNil(SettingsCatalog.section(named: nil))
     }

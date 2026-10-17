@@ -199,7 +199,7 @@ extension ApplePushBridge {
         let content: UNNotificationContent = notification.request.content
         let info: [AnyHashable: Any] = content.userInfo
         var fields: [String: String] = [:]
-        for key in ["topic", "alertId", "href", "origin", "host", "kind", "repo", "sessionId", "alarm", "conversation"] {
+        for key in ["topic", "alertId", "href", "origin", "host", "kind", "repo", "sessionId", "alarm", "conversation", "channelId"] {
             if let value = info[key] as? String, !value.isEmpty {
                 fields[key] = value
             }

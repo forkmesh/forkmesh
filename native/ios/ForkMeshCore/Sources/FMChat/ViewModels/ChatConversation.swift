@@ -20,12 +20,14 @@ public struct ChatBubble: Equatable, Sendable {
 public enum ChatConversationItem: Equatable, Sendable, Identifiable {
     case time(id: String, date: Date)
     case event(ChatLookEvent)
+    case notice(DirectTrustNotice)
     case message(ChatBubble)
 
     public var id: String {
         switch self {
         case .time(let id, _): return "time-\(id)"
         case .event(let event): return "look-\(event.id)"
+        case .notice(let notice): return notice.id
         case .message(let bubble): return bubble.row.id
         }
     }
@@ -39,25 +41,28 @@ public enum ChatConversationLayout {
     private enum Entry {
         case row(ChatRow)
         case event(ChatLookEvent)
+        case notice(DirectTrustNotice)
 
         var timestamp: Date {
             switch self {
             case .row(let row): return row.message.timestamp
             case .event(let event): return event.timestamp
+            case .notice(let notice): return notice.timestamp
             }
         }
     }
 
     public static func items(
-        rows: [ChatRow], events: [ChatLookEvent], group: Bool, timeZone: TimeZone = .current
+        rows: [ChatRow], events: [ChatLookEvent], notices: [DirectTrustNotice] = [], group: Bool,
+        timeZone: TimeZone = .current
     ) -> [ChatConversationItem] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         var entries: [Entry] = rows.map { .row($0) }
-        for event in events {
+        for entry in events.map({ Entry.event($0) }) + notices.map({ Entry.notice($0) }) {
             var at = entries.count
-            while at > 0 && entries[at - 1].timestamp > event.timestamp { at -= 1 }
-            entries.insert(.event(event), at: at)
+            while at > 0 && entries[at - 1].timestamp > entry.timestamp { at -= 1 }
+            entries.insert(entry, at: at)
         }
         var headed: [(entry: Entry, header: Bool)] = []
         var last: Date?
@@ -76,12 +81,15 @@ public enum ChatConversationLayout {
                 switch item.entry {
                 case .row(let row): key = row.id
                 case .event(let event): key = event.id
+                case .notice(let notice): key = notice.id
                 }
                 out.append(.time(id: key, date: item.entry.timestamp))
             }
             switch item.entry {
             case .event(let event):
                 out.append(.event(event))
+            case .notice(let notice):
+                out.append(.notice(notice))
             case .row(let row):
                 let joinsPrevious = index > 0 && !item.header && sameRun(headed[index - 1].entry, row)
                 let joinsNext = index + 1 < headed.count && !headed[index + 1].header && sameRun(headed[index + 1].entry, row)
@@ -170,7 +178,8 @@ extension ChatHub {
 
     public var conversationItems: [ChatConversationItem] {
         ChatConversationLayout.items(
-            rows: rows, events: extras.lookEvents(in: relay.currentConversation), group: inGroupConversation)
+            rows: rows, events: extras.lookEvents(in: relay.currentConversation),
+            notices: trustNotices(relay.currentConversation), group: inGroupConversation)
     }
 
     public func lifetime(_ conversation: String) -> TimeInterval {

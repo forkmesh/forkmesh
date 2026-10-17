@@ -96,6 +96,7 @@ public final class ChatHub: ShellChatBridge {
             direct?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
             direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             direct?.onChange = { [weak self] in self?.persistSoon() }
+            direct?.onTrustEvent = { [weak self] event in self?.trustEvent(event) }
             direct?.attachMesh(mesh)
             restoreDirectHistory()
             direct?.onFrame = { [weak self] frame, conversation in
@@ -145,6 +146,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored private var loadedScope = ""
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore: (messages: [ChatMessage], receipts: [String: ChatReceipt])?
+    @ObservationIgnored var trustChangedAt: [String: Date] = [:]
     public private(set) var replyingTo: ChatReplyQuote?
     @ObservationIgnored private var replyConversation = ""
     /// The last transient notice ("Chat is offline. Reconnecting..."), shown inline above the composer.

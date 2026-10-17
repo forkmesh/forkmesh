@@ -401,6 +401,15 @@ the project prefix comes from the `deviceKeyName` in the shared push credential
 (`RoomSeal.privateKeyStoreKey` is now the v3 identity key; a v2 name still yields the prefix). It
 links only the `ForkMeshPushCore` product.
 
+**Tapping a chat push.** `ApplePushBridge.openFields` copies `conversation` and `channelId` into
+`PushOpen`. Office channel pushes now carry only `channelId` (the server stopped naming the
+room), so `HomeShellModel.routePush(..., channelId:)` asks the chat bridge
+(`ShellChatBridge.officeConversation(channelId:)`, `ChatHub` answers from
+`OfficeChannelService.rooms`) for the room and `pushChatNamed` passes it on as if the push had
+named it. A named conversation still wins, DMs ignore `channelId`, and an unknown id falls back
+to the first unread room as before. `ChatHub.switchConversation` and `revealRequests` are
+unchanged.
+
 ## Voice and video calls
 
 `DirectCallEngine` (`Direct/DirectCalls.swift`) is the signaling state machine for `direct:`
@@ -564,7 +573,9 @@ file under the 12 MiB limit.
 `ChatNewMessageSheet`, `ChatShareMessageSheet`, `ChatSearchSheet`, `ChatChannelSheet` and its
 pages, `ChatMoveChannelSheet`, `ChatLinkPreviewCard`. Conversations are drawn by `Messages/`:
 `MessagesConversationView`, `MessagesBubbles.swift`, `MessagesMedia.swift`,
-`MessagesDetailsScreen`; calls by `Calls/` (`DirectCallViews.swift`, `DirectCallPreview.swift`,
+`MessagesDetailsScreen`, `MessagesTrust.swift` (pending-device banners, trust lines,
+`MessagesSafetyNumberScreen`); `ChatPrivacyViews.swift` holds `ChatLockGate`,
+`ChatPrivacyShield` and the Settings card; calls by `Calls/` (`DirectCallViews.swift`, `DirectCallPreview.swift`,
 `CallRinger.swift`) and `FaceChanger/` (`WebCallPeer.swift`, `CallFaceLandmarks.swift`,
 `CallDepthCamera.swift`).
 
@@ -572,7 +583,8 @@ pages, `ChatMoveChannelSheet`, `ChatLinkPreviewCard`. Conversations are drawn by
 
 Core tests (Linux `swift test`) cover the relay, mesh (loopback sockets), local-control vectors,
 history store, direct messages, receipts, view-once media and captions, push decryption, link
-parsing, calls (including the state lines, route notes and the ringback and ring tones in
+parsing, the v3 UI logic (`DirectTrustUITests`: trust lines and banners, transcript order, safety
+rows and scan results, the privacy switches and lock, focus reporting, office channel ids), calls (including the state lines, route notes and the ringback and ring tones in
 `DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.
@@ -588,6 +600,7 @@ which the methods below touch, to redraw):
 | `pendingDevices(conversation)` | The ones waiting; show the banner with Approve and Block. |
 | `approveDevice(conversation, kid:) async` | Approves, opens its held frames and reseals the outbox to it. |
 | `blockDevice(conversation, kid:) async` | Blocks; its frames are dropped from then on. |
+| `safetyNumberChanged(conversation) -> Bool` | The cheap check for the "changed" line; `safetyNumber` runs the 5,200 SHA-512 rounds each call. |
 | `safetyNumber(conversation) -> ChatSafetyNumber?` | `digits` (60), `groups` (12 of 5), `qr` (`forkmesh-safety:3:<scope>:<b64u>`), `verified`, `changed`. |
 | `markVerified(conversation)` / `verifySafetyCode(conversation, scanned:) -> Bool` | After comparing digits / scanning the other phone's QR. |
 | `acknowledgeSafetyChange(conversation)` | Hides the "changed" notice. |
@@ -599,3 +612,68 @@ which the methods below touch, to redraw):
 `DirectTrustText` has the line and banner strings: `pendingDevice(name)` ("A new device for
 Alex wants to join this chat. Check the safety number, then approve or block."),
 `safetyNumberChanged(name)`, `approve`, `block`.
+
+## Chat protocol v3 in the app
+
+The views call `ChatHub` (`ViewModels/ChatHubTrust.swift`), which forwards to the service:
+`trustBanners`, `trustNotices`, `trustName`, `approveDevice`, `blockDevice`, `safetyNumber`,
+`safetyVerified`, `markSafetyVerified`, `verifySafetyCode -> DirectSafetyScan`,
+`acknowledgeSafetyChange`, `trustRevision`, `conversationRouteLine`, `conversationDetailLine` and
+`officeConversation(channelId:)`. The texts are in `DirectTrustText` and `ChatPrivacy`.
+
+**Route line.** The DM header's detail line is `ChatHub.conversationDetailLine`: presence, then
+`conversationRouteLine` (`DirectRoute.label`: "Direct · Wi-Fi", "Direct · Bluetooth",
+"Direct only"), then the server-copies note. `route` reads `routeRevision` and `trustRevision`,
+so the header redraws when a link comes or goes or the focus rule starts to hold.
+
+**Focus.** `MessagesConversationView` owns a `DirectFocusReporter` and calls `update` on appear,
+disappear, conversation change, `scenePhase` change and `shellTabHidden` change. Focus is on
+only while a `direct:` transcript is on screen, its tab is the visible one, the scene is active
+and the chat is not locked (the lock replaces the transcript, which then disappears). Mounted
+tabs stay alive behind the selected one, so `onDisappear` alone would leave focus on after
+switching tabs; that is why the tab flag is part of it. The reporter turns the old conversation
+off before turning the new one on.
+
+**Pending devices and trust lines.** `ChatHub.trustBanners(conversation)` lists the pending
+devices of a `direct:` conversation (`DirectTrustNotices.pending`), oldest first. Each shows as a
+banner under the header with the `DirectTrustText` line, **Approve** (accent, prominent) and
+**Block** (destructive, asks first) and a link to the safety number. A device of the user's own
+account reads `DirectTrustText.ownDevice` ("A new device was added to your account. ..."). The
+same entries, plus "Your safety number with X changed" while `safetyNumberChanged` holds, join
+the transcript as `ChatConversationItem.notice` lines (`ChatHub.trustNotices`, merged by
+`ChatConversationLayout.items(notices:)`): a pending line sits at the device's `firstSeen`, the
+changed line at the time `onTrustEvent(.safetyNumberChanged)` arrived (the hub keeps it in
+memory; after a relaunch it is the time the line was first drawn). The lines come from the trust
+state rather than from stored events, so they go away once the device is approved or blocked, or
+once the change is acknowledged. Tapping the changed line opens the safety number.
+
+**Safety number.** `MessagesDetailsScreen` has a "Safety number" row for `direct:` conversations
+(verified state on the right, from `ChatHub.safetyVerified`, which reads the device list and not
+the number). `MessagesSafetyNumberScreen` shows the 60 digits as `ChatSafetyNumber.rows` (3 rows
+of 4 groups of 5, monospaced), the QR code of `qr` (`QrCodeImage`, CoreImage
+`qrCodeGenerator`), **Scan their code** (the existing `QrScannerSheet`, AVFoundation, camera
+string already in Info.plist), **Mark as verified** and the Verified badge. A scan returns a
+`DirectSafetyScan` with its message: verified, not a safety code, another conversation's code,
+or a mismatch. Opening the screen while the number is marked changed calls
+`acknowledgeSafetyChange`; the screen keeps showing the changed notice until it closes. The
+number is recomputed only when `trustRevision` moves.
+
+**Privacy.** `ChatPrivacy` (FMChat, registered by `ChatFeature.register`) holds two switches in
+the shared preferences, shown in Settings > Chat privacy (`SettingsSectionId.chatPrivacy`):
+
+- `chat/privacy/app-switcher-cover`, "Hide chats in the app switcher", on by default.
+  `ChatPrivacyShield` puts an opaque window (launch colour and logo) over each scene on
+  `UIScene.willDeactivateNotification` and `didEnterBackgroundNotification`, and removes it on
+  `didActivateNotification`. It is UIKit and synchronous because the app switcher card and
+  snapshot are taken before SwiftUI would draw a state change. The cover also shows while
+  Notification Center, Control Center or a system prompt (Face ID included) is in front.
+- `chat/privacy/lock`, "Lock chats with Face ID" (Touch ID, Optic ID or "your passcode" from
+  `LAContext.biometryType`), off by default. When on, the app starts locked and locks again each
+  time it goes to the background (`AppLifecycleState.paused`). `ChatLockGate` wraps
+  `ChatScreen`: while locked it shows a lock placeholder instead of the chat and, once the Chat
+  tab is visible and the scene active (opening the tab or a chat push tap), asks
+  `LAContext.evaluatePolicy(.deviceOwnerAuthentication)`. A failed or cancelled prompt is not
+  repeated by itself; the placeholder's **Unlock** asks again. A phone with no passcode cannot
+  evaluate the policy, so the switch is disabled there and an existing lock opens. The lock
+  only gates the Chat tab: notification previews follow the "Notification content" setting.
+

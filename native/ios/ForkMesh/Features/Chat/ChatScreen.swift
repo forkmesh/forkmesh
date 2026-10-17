@@ -13,10 +13,11 @@ import UIKit
 
 struct ChatScreen: View {
     @State private var hub: ChatHub? = ChatFeature.hub()
+    @State private var privacy: ChatPrivacy? = Services.get(ChatPrivacy.self)
 
     var body: some View {
         if let hub = hub {
-            ChatScreenBody(hub: hub)
+            ChatLockGate(privacy: privacy) { ChatScreenBody(hub: hub) }
                 .fmQuietSounds()
         } else {
             FmEmptyState(icon: "chat_bubble_outline", title: "Chat is not available")

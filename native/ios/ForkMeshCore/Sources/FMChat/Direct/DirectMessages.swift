@@ -1583,6 +1583,12 @@ extension DirectMessageService {
         return seal.safetyNumber()
     }
 
+    public func safetyNumberChanged(_ conversation: String) -> Bool {
+        _ = trustRevision
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return false }
+        return seal.trust.safetyNumberChanged
+    }
+
     public func markVerified(_ conversation: String) {
         guard let record = record(for: conversation), let seal = loadedSeal(record) else { return }
         seal.trust.markVerified()
