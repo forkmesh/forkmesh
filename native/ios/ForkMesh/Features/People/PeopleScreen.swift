@@ -97,7 +97,7 @@ struct PeopleScreen: View {
             }
             .padding(FmSpace.x4)
         }
-        .searchable(text: Binding(get: { model.query }, set: { model.query = $0 }), prompt: "Find a person")
+        .searchable(text: Binding(get: { model.query }, set: { model.query = $0 }), placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a person")
         .fmRefreshable { await model.load() }
         .accessibilityIdentifier("people-screen")
     }
