@@ -30,12 +30,15 @@ data class ShortcutEntry(
     val lastMs: Long = -1,
     val expectedMs: Long = -1,
     val startedAtMs: Long = 0,
+    val queued: Int = 0,
 ) {
     val id: String get() = "$scope|$file"
 
     val isSkill: Boolean get() = scope != "shortcut"
 
     val isScript: Boolean get() = kind == "script"
+
+    val queueable: Boolean get() = isScript && runnable
 
     companion object {
         fun from(json: Map<String, Any?>, nowMs: Long = System.currentTimeMillis()): ShortcutEntry = ShortcutEntry(
@@ -55,6 +58,7 @@ data class ShortcutEntry(
             lastMs = json.long("lastMs", -1),
             expectedMs = json.long("expectedMs", json.long("lastMs", -1)),
             startedAtMs = startedAt(json, nowMs),
+            queued = json.int("queued"),
         )
     }
 }
@@ -192,8 +196,14 @@ data class ShortcutRowStatus(
 }
 
 object ShortcutAction {
-    fun run(repo: String, scope: String, file: String): Map<String, Any?> =
-        linkedMapOf("action" to "runShortcut", "repo" to repo, "scope" to scope, "file" to file)
+    fun run(repo: String, scope: String, file: String): Map<String, Any?> = named("runShortcut", repo, scope, file)
+
+    fun queue(repo: String, scope: String, file: String): Map<String, Any?> = named("queueShortcut", repo, scope, file)
+
+    fun unqueue(repo: String, scope: String, file: String): Map<String, Any?> = named("unqueueShortcut", repo, scope, file)
+
+    private fun named(action: String, repo: String, scope: String, file: String): Map<String, Any?> =
+        linkedMapOf("action" to action, "repo" to repo, "scope" to scope, "file" to file)
 }
 
 class ShortcutsStore(channel: ControlCalling, private val launch: (() -> Unit) -> Unit = { it() }) : OpsState() {
@@ -328,6 +338,23 @@ class ShortcutsStore(channel: ControlCalling, private val launch: (() -> Unit) -
     }
 
     fun run(confirmation: TeamConfirmation): String = family.call("run", confirmation.runParams, 45_000).str("message")
+
+    fun repoBusy(repo: String): Boolean =
+        catalog?.entries?.any { it.isScript && it.running } == true ||
+            runs.values.any { it.running && it.repo.equals(repo, ignoreCase = true) }
+
+    fun runNow(repo: String, entry: ShortcutEntry): String = perform(ShortcutAction.run(repo, entry.scope, entry.file), repo)
+
+    fun queue(repo: String, entry: ShortcutEntry): String = perform(ShortcutAction.queue(repo, entry.scope, entry.file), repo)
+
+    fun unqueue(repo: String, entry: ShortcutEntry): String = perform(ShortcutAction.unqueue(repo, entry.scope, entry.file), repo)
+
+    private fun perform(params: Map<String, Any?>, repo: String): String {
+        val confirmation = TeamConfirmation.from(family.call("prepare", params), params) ?: throw LocalControlException("bad_answer")
+        val message = run(confirmation)
+        refresh(repo)
+        return message
+    }
 
     fun stop() {
         val token = synchronized(lock) { tap.also { tap = null } } ?: return

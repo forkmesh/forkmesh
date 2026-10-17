@@ -346,7 +346,8 @@ QString lastOutputLine(const QString &output, int maxChars)
 
 QStringList mutatingActions()
 {
-    return {QStringLiteral("toggleFamily"), QStringLiteral("runShortcut")};
+    return {QStringLiteral("toggleFamily"), QStringLiteral("runShortcut"),
+            QStringLiteral("queueShortcut"), QStringLiteral("unqueueShortcut")};
 }
 
 QString subjectFor(const QString &action, const QJsonObject &params, QString *error)
@@ -364,7 +365,8 @@ QString subjectFor(const QString &action, const QJsonObject &params, QString *er
             return failWith("bad_family");
         return family + (enabled.toBool() ? QStringLiteral("|on") : QStringLiteral("|off"));
     }
-    if (action == QLatin1String("runShortcut")) {
+    if (action == QLatin1String("runShortcut") || action == QLatin1String("queueShortcut") ||
+        action == QLatin1String("unqueueShortcut")) {
         const QString repo = params.value(QStringLiteral("repo")).toString().trimmed();
         const QString scope = params.value(QStringLiteral("scope")).toString().trimmed();
         const QString file = params.value(QStringLiteral("file")).toString();
@@ -392,6 +394,15 @@ QString actionSummary(const QString &action, const QString &subject, const QStri
                                    "what they launched with until their next launch or resume.")
                         .arg(name);
     }
+    if (action == QLatin1String("queueShortcut"))
+        return QStringLiteral("Queue the \"%1\" script on the desktop in %2. It starts once the "
+                              "shortcuts running there finish, or now if none are.")
+            .arg(label.isEmpty() ? subject.section(QLatin1Char('|'), 2, 2) : label,
+                 subject.section(QLatin1Char('|'), 0, 0));
+    if (action == QLatin1String("unqueueShortcut"))
+        return QStringLiteral("Take the \"%1\" script out of the desktop's shortcut queue in %2.")
+            .arg(label.isEmpty() ? subject.section(QLatin1Char('|'), 2, 2) : label,
+                 subject.section(QLatin1Char('|'), 0, 0));
     if (action == QLatin1String("runShortcut") && script)
         return QStringLiteral("Run the \"%1\" script on the desktop in %2. Its output streams "
                               "here while it runs.")

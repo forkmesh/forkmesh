@@ -43,6 +43,57 @@ class ShortcutsTest {
         assertEq("t", channel.params("insights.run").str("token"))
     }
 
+    fun testOneTapRunPreparesAndRunsWithoutADialog() {
+        val channel = FakeControlChannel()
+        channel.reply("insights.prepare", mapOf("token" to "t", "action" to "runShortcut", "subject" to "f/r|shortcut|ship.sh"))
+        channel.reply("insights.run", mapOf("started" to true, "message" to "Running Ship on the desktop."))
+        channel.reply("insights.shortcuts", catalogJson)
+        val store = ShortcutsStore(channel)
+        val entry = ShortcutEntry.from(mapOf("file" to "ship.sh", "scope" to "shortcut", "name" to "Ship", "kind" to "script", "runnable" to true))
+        assertEq("Running Ship on the desktop.", store.runNow("f/r", entry))
+        assertEq("runShortcut", channel.params("insights.prepare").str("action"))
+        assertEq("t", channel.params("insights.run").str("token"))
+        assertEq(listOf("insights.prepare", "insights.run", "insights.shortcuts"), channel.methods().take(3))
+    }
+
+    fun testQueueAndUnqueueUseTheirOwnActions() {
+        val channel = FakeControlChannel()
+        channel.reply("insights.prepare", mapOf("token" to "q", "action" to "queueShortcut", "subject" to "f/r|shortcut|ship.sh"))
+        channel.reply("insights.prepare", mapOf("token" to "u", "action" to "unqueueShortcut", "subject" to "f/r|shortcut|ship.sh"))
+        channel.reply("insights.run", mapOf("queued" to 1L, "message" to "Queued Ship: number 1 in line on the desktop."))
+        val store = ShortcutsStore(channel)
+        val entry = ShortcutEntry.from(mapOf("file" to "ship.sh", "scope" to "shortcut", "name" to "Ship", "kind" to "script", "runnable" to true))
+        assertEq(true, entry.queueable)
+        assertEq("Queued Ship: number 1 in line on the desktop.", store.queue("f/r", entry))
+        assertEq("queueShortcut", channel.params("insights.prepare").str("action"))
+        assertEq("ship.sh", channel.params("insights.prepare").str("file"))
+        store.unqueue("f/r", entry)
+        assertEq("unqueueShortcut", channel.params("insights.prepare").str("action"))
+        assertEq("u", channel.params("insights.run").str("token"))
+    }
+
+    fun testQueuedPositionAndBusyRepoComeFromTheCatalog() {
+        val channel = FakeControlChannel()
+        channel.reply(
+            "insights.shortcuts",
+            mapOf(
+                "repo" to "f/r",
+                "repos" to listOf("f/r"),
+                "entries" to listOf(
+                    mapOf("file" to "build.sh", "scope" to "shortcut", "name" to "Build", "kind" to "script", "runnable" to true, "running" to true),
+                    mapOf("file" to "ship.sh", "scope" to "shortcut", "name" to "Ship", "kind" to "script", "runnable" to true, "queued" to 2L),
+                    mapOf("file" to "fix.md", "scope" to "shortcut", "name" to "Fix", "kind" to "prompt", "runnable" to true),
+                ),
+            ),
+        )
+        val store = ShortcutsStore(channel)
+        store.refresh("f/r")
+        val entries = store.catalog!!.entries
+        assertEq(true, store.repoBusy("f/r"))
+        assertEq(2, entries.first { it.file == "ship.sh" }.queued)
+        assertEq(false, entries.first { it.file == "fix.md" }.queueable)
+    }
+
     fun testChangedEventRefreshesTheShownRepo() {
         val channel = FakeControlChannel()
         channel.reply("insights.shortcuts", catalogJson)

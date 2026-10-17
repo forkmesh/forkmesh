@@ -121,6 +121,7 @@ void stampFileTimes(PanelEntry &entry, const QFileInfo &info)
 }
 
 enum ShortcutTableColumn {
+    ShortcutRunButtonColumn,
     ShortcutNameColumn,
     ShortcutTypeColumn,
     ShortcutScopeColumn,
@@ -383,7 +384,8 @@ QWidget *MainWindow::buildShortcutsTab()
         "Shortcuts are scripts and prompts in this repo's .forkmesh/shortcuts/ "
         "folder; skills are reusable instruction packages special agents install "
         "from the Special Agents page. Click a script card to run it (bash, from the "
-        "repo root) — its output streams below. A prompt or skill card fills "
+        "repo root) — its output streams below. While a script runs, a card's queue "
+        "button lines it up to start once the running ones finish. A prompt or skill card fills "
         "the composer with its text, ready to send to an agent; one with "
         "# agent: and # model: starts that dedicated agent in one click.");
     hint->setObjectName("statusLine");
@@ -404,7 +406,7 @@ QWidget *MainWindow::buildShortcutsTab()
     m_shortcutsTable->setObjectName(QStringLiteral("shortcutsTable"));
     enableHoverRowHighlight(m_shortcutsTable);
     m_shortcutsTable->setHorizontalHeaderLabels(
-        {QStringLiteral("Name"), QStringLiteral("Type"), QStringLiteral("Scope"),
+        {QString(), QStringLiteral("Name"), QStringLiteral("Type"), QStringLiteral("Scope"),
          QStringLiteral("Runs"), QStringLiteral("Success"),
          QStringLiteral("Last run"), QStringLiteral("Took"),
          QStringLiteral("Added"),
@@ -422,13 +424,15 @@ QWidget *MainWindow::buildShortcutsTab()
     m_shortcutsTable->setTextElideMode(Qt::ElideRight);
     m_shortcutsTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_shortcutsTable->setToolTip(
-        QStringLiteral("Double-click a row to run or draft it, the same as "
-                       "clicking its card. Right-click to edit or delete. "
-                       "Click a column header to sort."));
+        QStringLiteral("Click a row's play button, or double-click the row, to run or "
+                       "draft it, the same as clicking its card. Right-click to queue, "
+                       "edit or delete. Click a column header to sort."));
     QHeaderView *tableHeader = m_shortcutsTable->horizontalHeader();
     tableHeader->setHighlightSections(false);
     tableHeader->setSectionsClickable(true);
     tableHeader->setSectionResizeMode(QHeaderView::ResizeToContents);
+    tableHeader->setSectionResizeMode(ShortcutRunButtonColumn, QHeaderView::Fixed);
+    m_shortcutsTable->setColumnWidth(ShortcutRunButtonColumn, 34);
     tableHeader->setSectionResizeMode(ShortcutNameColumn, QHeaderView::Interactive);
     m_shortcutsTable->setColumnWidth(ShortcutNameColumn, 240);
     tableHeader->setSectionResizeMode(ShortcutDescriptionColumn,
@@ -469,6 +473,13 @@ QWidget *MainWindow::buildShortcutsTab()
                                    [activateShortcutRow, row] {
                                        activateShortcutRow(row);
                                    });
+                if (action == QLatin1String("run") && shortcutQueuePosition(path) > 0)
+                    menu.addAction(QStringLiteral("Remove from queue"),
+                                   [this, path] { unqueueShortcut(path); });
+                else if (action == QLatin1String("run") &&
+                         shortcutRepoBusy(shortcutRepoKey(m_repoDetailIndex)))
+                    menu.addAction(QStringLiteral("Queue after the running shortcuts"),
+                                   [this, path] { queueShortcut(path); });
                 else if (action == QLatin1String("draft"))
                     menu.addAction(QStringLiteral("Draft in composer"),
                                    [activateShortcutRow, row] {
@@ -533,6 +544,20 @@ QWidget *MainWindow::buildShortcutsTab()
     outputRow->addWidget(m_shortcutRunProgress, 0, Qt::AlignVCenter);
     outputRow->addWidget(m_shortcutRunEta);
     outputRow->addStretch();
+    m_shortcutQueueLabel = new QLabel;
+    m_shortcutQueueLabel->setObjectName(QStringLiteral("shortcutQueueLabel"));
+    m_shortcutQueueLabel->setToolTip(
+        QStringLiteral("Queued shortcuts start one at a time, in this order, once the "
+                       "shortcuts running in their repository finish."));
+    m_shortcutQueueClear = new QPushButton(QStringLiteral("Clear queue"));
+    m_shortcutQueueClear->setObjectName(QStringLiteral("ghostButton"));
+    m_shortcutQueueClear->setProperty("buttonSize", "sm");
+    m_shortcutQueueClear->setCursor(Qt::PointingHandCursor);
+    setOcticon(m_shortcutQueueClear, QStringLiteral("x"), 14);
+    connect(m_shortcutQueueClear, &QPushButton::clicked, this, &MainWindow::clearShortcutQueue);
+    outputRow->addWidget(m_shortcutQueueLabel);
+    outputRow->addWidget(m_shortcutQueueClear);
+    refreshShortcutQueueLabel();
     outputRow->addWidget(m_shortcutStopButton);
     outer->addLayout(outputRow);
 
@@ -1031,6 +1056,14 @@ void MainWindow::loadShortcutsPanel()
         m_shortcutsSummary->setText(summary);
     }
 
+    const auto runEntryLater = [this](const QString &path, const QString &scope, bool script) {
+        QTimer::singleShot(0, this, [this, path, scope, script] {
+            if (script)
+                runShortcut(path);
+            else
+                draftShortcutPrompt(path, scope);
+        });
+    };
     const bool tableView =
         m_shortcutsView &&
         m_shortcutsView->currentData().toString() == QLatin1String("table");
@@ -1074,6 +1107,25 @@ void MainWindow::loadShortcutsPanel()
                                    : QStringLiteral("edit"));
             name->setToolTip(entry.title);
             m_shortcutsTable->setItem(row, ShortcutNameColumn, name);
+            if (script || prompt) {
+                auto *runButton = new QPushButton;
+                runButton->setObjectName(QStringLiteral("ghostButton"));
+                runButton->setProperty("buttonSize", "sm");
+                runButton->setProperty("shortcutRowRun", entry.path);
+                runButton->setCursor(Qt::PointingHandCursor);
+                setOcticon(runButton, QStringLiteral("play"), 14);
+                runButton->setToolTip(script ? QStringLiteral("Run %1").arg(entry.title)
+                                      : dedicated
+                                          ? QStringLiteral("Start a new %1 agent with %2")
+                                                .arg(entry.meta.agent, entry.title)
+                                          : QStringLiteral("Draft %1 in the composer")
+                                                .arg(entry.title));
+                connect(runButton, &QPushButton::clicked, this,
+                        [runEntryLater, path = entry.path, scope = entry.scope, script] {
+                            runEntryLater(path, scope, script);
+                        });
+                m_shortcutsTable->setCellWidget(row, ShortcutRunButtonColumn, runButton);
+            }
 
             m_shortcutsTable->setItem(
                 row, ShortcutTypeColumn,
@@ -1132,6 +1184,10 @@ void MainWindow::loadShortcutsPanel()
                                                            true)) {
                 took->setText(QString());
                 m_shortcutsTable->setCellWidget(row, ShortcutTookColumn, progress);
+            } else if (const int position = script ? shortcutQueuePosition(entry.path) : 0) {
+                took->setText(QStringLiteral("queued #%1").arg(position));
+                took->setToolTip(QStringLiteral("Starts once the shortcuts running ahead of it "
+                                                "finish"));
             }
 
             QTableWidgetItem *added = shortcutTimeItem(entry.added);
@@ -1157,6 +1213,7 @@ void MainWindow::loadShortcutsPanel()
         m_shortcutsTable->setSortingEnabled(true);
     if (tableView)
         return;
+    const bool repoBusy = shortcutRepoBusy(shortcutRepoKey(m_repoDetailIndex));
 
     for (const PanelEntry &entry : std::as_const(entries)) {
         const QString path = entry.path;
@@ -1249,6 +1306,29 @@ void MainWindow::loadShortcutsPanel()
                     else
                         deleteShortcut(path);
                 });
+        const int queuePosition = script ? shortcutQueuePosition(path) : 0;
+        card->setProperty("shortcutQueuePosition", queuePosition);
+        if (script && (repoBusy || queuePosition > 0)) {
+            auto *queueButton = new QPushButton;
+            queueButton->setObjectName("ghostButton");
+            queueButton->setProperty("buttonSize", "sm");
+            queueButton->setProperty("shortcutQueueButton", true);
+            queueButton->setCursor(Qt::PointingHandCursor);
+            setOcticon(queueButton, queuePosition > 0 ? "x" : "list-unordered", 14);
+            queueButton->setToolTip(
+                queuePosition > 0
+                    ? QStringLiteral("Remove from the queue")
+                    : QStringLiteral("Queue this to run once the running shortcuts finish"));
+            connect(queueButton, &QPushButton::clicked, this, [this, path, queuePosition] {
+                QTimer::singleShot(0, this, [this, path, queuePosition] {
+                    if (queuePosition > 0)
+                        unqueueShortcut(path);
+                    else
+                        queueShortcut(path);
+                });
+            });
+            titleRow->addWidget(queueButton);
+        }
         titleRow->addWidget(editButton);
         titleRow->addWidget(deleteButton);
         cardLayout->addLayout(titleRow);
@@ -1271,6 +1351,14 @@ void MainWindow::loadShortcutsPanel()
                                                       : QStringLiteral("s")));
             runs->setAttribute(Qt::WA_TransparentForMouseEvents);
             metaRow->addWidget(runs);
+        }
+        if (queuePosition > 0) {
+            auto *queued = new QLabel(QStringLiteral("queued #%1").arg(queuePosition));
+            queued->setObjectName(QStringLiteral("shortcutRunPill"));
+            queued->setToolTip(
+                QStringLiteral("Starts once the shortcuts running ahead of it finish"));
+            queued->setAttribute(Qt::WA_TransparentForMouseEvents);
+            metaRow->addWidget(queued);
         }
         if (entry.isSkill) {
             auto *scopeLabel = new QLabel(
@@ -1592,6 +1680,8 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
         if (m_shortcutRestarts.contains(filePath)) {
             const int againRepo = m_shortcutRestarts.take(filePath);
             QTimer::singleShot(0, this, [this, filePath, againRepo] { runShortcut(filePath, againRepo); });
+        } else if (!m_shortcutQueue.isEmpty()) {
+            QTimer::singleShot(0, this, [this] { startNextQueuedShortcuts(); });
         }
     };
     connect(process, &QProcess::finished, this,
@@ -1791,6 +1881,126 @@ void MainWindow::stopShortcutRun(int runId)
         if (process && process->state() != QProcess::NotRunning)
             process->kill();
     });
+}
+
+QString MainWindow::shortcutRepoKey(int repoIndex) const
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return {};
+    const RepositoryRecord &record = m_repositories.at(repoIndex);
+    return record.owner + QLatin1Char('/') + record.name;
+}
+
+bool MainWindow::shortcutRepoBusy(const QString &repo) const
+{
+    for (const auto &run : m_shortcutRuns)
+        if (run.running && run.repo.compare(repo, Qt::CaseInsensitive) == 0)
+            return true;
+    return false;
+}
+
+int MainWindow::shortcutQueuePosition(const QString &filePath) const
+{
+    const QString path = QFileInfo(filePath).absoluteFilePath();
+    for (qsizetype i = 0; i < m_shortcutQueue.size(); ++i) {
+        if (m_shortcutQueue.at(i).path != path)
+            continue;
+        int position = 0;
+        for (qsizetype j = 0; j <= i; ++j)
+            position += m_shortcutQueue.at(j).repo.compare(m_shortcutQueue.at(i).repo,
+                                                           Qt::CaseInsensitive) == 0
+                            ? 1
+                            : 0;
+        return position;
+    }
+    return 0;
+}
+
+int MainWindow::queueShortcut(QString filePath, int repoIndex)
+{
+    if (repoIndex < 0)
+        repoIndex = m_repoDetailIndex;
+    const QString repo = shortcutRepoKey(repoIndex);
+    const QFileInfo info(filePath);
+    if (repo.isEmpty() || !info.isFile() || !shortcutIsScript(filePath))
+        return -1;
+    const QString path = info.absoluteFilePath();
+    if (const int position = shortcutQueuePosition(path))
+        return position;
+    if (!shortcutRepoBusy(repo))
+        return runShortcut(path, repoIndex) ? 0 : -1;
+    m_shortcutQueue.append({path, repo, info.fileName(), shortcutMeta(path).name});
+    setRepoDetailNotice(QStringLiteral("%1 runs once the shortcuts running in %2 finish.")
+                            .arg(info.fileName(), repo));
+    refreshShortcutQueueLabel();
+    loadShortcutsPanel();
+    if (m_localControl)
+        m_localControl->broadcast(QStringLiteral("insights.changed"));
+    return shortcutQueuePosition(path);
+}
+
+bool MainWindow::unqueueShortcut(const QString &filePath)
+{
+    const QString path = QFileInfo(filePath).absoluteFilePath();
+    const qsizetype removed = m_shortcutQueue.removeIf(
+        [&path](const QueuedShortcut &queued) { return queued.path == path; });
+    if (removed == 0)
+        return false;
+    refreshShortcutQueueLabel();
+    loadShortcutsPanel();
+    if (m_localControl)
+        m_localControl->broadcast(QStringLiteral("insights.changed"));
+    return true;
+}
+
+void MainWindow::clearShortcutQueue()
+{
+    if (m_shortcutQueue.isEmpty())
+        return;
+    m_shortcutQueue.clear();
+    refreshShortcutQueueLabel();
+    loadShortcutsPanel();
+    if (m_localControl)
+        m_localControl->broadcast(QStringLiteral("insights.changed"));
+}
+
+void MainWindow::startNextQueuedShortcuts()
+{
+    QSet<QString> started;
+    for (qsizetype i = 0; i < m_shortcutQueue.size();) {
+        const QueuedShortcut queued = m_shortcutQueue.at(i);
+        const QString repo = queued.repo.toLower();
+        if (started.contains(repo) || shortcutRepoBusy(queued.repo)) {
+            ++i;
+            continue;
+        }
+        m_shortcutQueue.removeAt(i);
+        int repoIndex = -1;
+        for (int r = 0; r < m_repositories.size() && repoIndex < 0; ++r)
+            if (shortcutRepoKey(r).compare(queued.repo, Qt::CaseInsensitive) == 0)
+                repoIndex = r;
+        if (repoIndex < 0 || !QFileInfo(queued.path).isFile())
+            continue;
+        if (runShortcut(queued.path, repoIndex))
+            started.insert(repo);
+        i = 0;
+    }
+    refreshShortcutQueueLabel();
+}
+
+void MainWindow::refreshShortcutQueueLabel()
+{
+    if (!m_shortcutQueueLabel)
+        return;
+    QStringList names;
+    for (const QueuedShortcut &queued : std::as_const(m_shortcutQueue))
+        names << queued.file;
+    m_shortcutQueueLabel->setText(
+        names.isEmpty() ? QString()
+                        : QStringLiteral("Up next: %1").arg(names.join(QStringLiteral(", "))));
+    m_shortcutQueueLabel->setVisible(!names.isEmpty());
+    if (m_shortcutQueueClear)
+        m_shortcutQueueClear->setVisible(!names.isEmpty());
 }
 
 void MainWindow::openShortcutEditor(const QString &filePath)

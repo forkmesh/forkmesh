@@ -58,9 +58,8 @@ import kotlinx.coroutines.launch
 internal class ShortcutsScreen(private val opened: String) : Screen() {
     override val title: String get() = "Shortcuts"
     private var repo by mutableStateOf(opened)
-    private var pending by mutableStateOf<PendingTeamConfirmation?>(null)
-    private var pendingScript by mutableStateOf(false)
     private var jumpToOutput by mutableStateOf(0)
+    private var working by mutableStateOf(emptySet<String>())
     private var banner by mutableStateOf("")
     private var error by mutableStateOf("")
     private var shown by mutableStateOf<Pair<ShortcutEntry, String>?>(null)
@@ -95,19 +94,28 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
                 }
             }
         }
-        fun prepare(entry: ShortcutEntry) {
+        fun act(entry: ShortcutEntry, jump: Boolean, perform: () -> String) {
+            working = working + entry.id
             scope.launch {
                 try {
-                    pending = PendingTeamConfirmation("Run ${entry.name}", opsIo { store.prepare(repo, entry) })
-                    pendingScript = entry.isScript
+                    banner = opsIo { perform() }.ifEmpty { "Done." }
                     error = ""
+                    if (jump) jumpToOutput++
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
+                    banner = ""
                     error = TeamErrorText.describe(failure)
+                } finally {
+                    working = working - entry.id
                 }
             }
         }
+        val actions = ShortcutRowActions(
+            run = { entry -> act(entry, entry.isScript) { store.runNow(repo, entry) } },
+            queue = { entry -> act(entry, false) { store.queue(repo, entry) } },
+            unqueue = { entry -> act(entry, false) { store.unqueue(repo, entry) } },
+        )
         DetailScaffold(title, navigator, actions = {
             FmIconButton("refresh", "Refresh", onPressed = { scope.launch { load(repo) } }, color = c.textPrimary)
         }) {
@@ -153,11 +161,12 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
                 if (catalog != null) {
                     if (catalog.shortcuts.isNotEmpty()) {
                         item { FmSectionHeader("Shortcuts", count = catalog.shortcuts.size) }
-                        items(catalog.shortcuts, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), ::open, ::prepare) }
+                        val busy = store.repoBusy(repo)
+                        items(catalog.shortcuts, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), busy, entry.id in working, ::open, actions) }
                     }
                     if (catalog.skills.isNotEmpty()) {
                         item { FmSectionHeader("Skills", count = catalog.skills.size) }
-                        items(catalog.skills, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), ::open, ::prepare) }
+                        items(catalog.skills, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), false, entry.id in working, ::open, actions) }
                     }
                     if (catalog.entries.isEmpty() && !store.loading) {
                         item { Text("No shortcuts or skills here yet.", style = Fm.text.bodyMedium.copy(color = c.textSecondary)) }
@@ -176,24 +185,25 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
                     item { FmCard(Modifier.fillMaxWidth()) { SelectionContainer { Text(text, style = Fm.text.bodySmall.copy(color = c.textPrimary)) } } }
                 }
             }
-            pending?.let { confirm ->
-                TeamConfirmDialog(
-                    confirm,
-                    perform = { store.run(it) },
-                    onDone = {
-                        banner = it.ifEmpty { "Done." }
-                        if (pendingScript) jumpToOutput++
-                    },
-                    onError = { error = it },
-                    onDismiss = { pending = null },
-                )
-            }
         }
     }
 }
 
+private class ShortcutRowActions(
+    val run: (ShortcutEntry) -> Unit,
+    val queue: (ShortcutEntry) -> Unit,
+    val unqueue: (ShortcutEntry) -> Unit,
+)
+
 @Composable
-private fun ShortcutRow(entry: ShortcutEntry, status: ShortcutRowStatus, onOpen: (ShortcutEntry) -> Unit, onRun: (ShortcutEntry) -> Unit) {
+private fun ShortcutRow(
+    entry: ShortcutEntry,
+    status: ShortcutRowStatus,
+    repoBusy: Boolean,
+    working: Boolean,
+    onOpen: (ShortcutEntry) -> Unit,
+    actions: ShortcutRowActions,
+) {
     val c = Fm.colors
     FmCard(Modifier.fillMaxWidth(), onTap = { onOpen(entry) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -220,8 +230,16 @@ private fun ShortcutRow(entry: ShortcutEntry, status: ShortcutRowStatus, onOpen:
                     }
                 }
                 ShortcutTiming(status)
+                if (entry.queued > 0) {
+                    Text("Queued #${entry.queued}", style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                }
             }
-            if (entry.runnable) FmOutlinedButton("Run", onClick = { onRun(entry) }, icon = "play_arrow")
+            if (entry.queued > 0) {
+                FmIconButton("close", "Remove from the queue", onPressed = if (working) null else ({ actions.unqueue(entry) }), color = c.textSecondary)
+            } else if (entry.queueable && repoBusy) {
+                FmIconButton("playlist_add", "Queue after the running shortcuts", onPressed = if (working) null else ({ actions.queue(entry) }), color = c.textSecondary)
+            }
+            if (entry.runnable) FmOutlinedButton("Run", onClick = if (working) null else ({ actions.run(entry) }), icon = "play_arrow")
         }
     }
 }
