@@ -871,7 +871,7 @@ def test_opening_a_different_repo_resets_the_issue_view_state():
         'filter: "open"',
         'items: []',
         'query: ""',
-        'author: "", label: "", milestone: "", assignee: ""',
+        'author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: ""',
         'type: "", sort: "recently_updated"',
     ):
         assert marker in reset
