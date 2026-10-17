@@ -127,6 +127,7 @@ enum NavigationRoutes {
         fallback(routes, .foodGuide) { _ in AnyView(FoodGuideScreen()) }
         fallback(routes, .speech) { _ in AnyView(SpeechScreen()) }
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
+        fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }

@@ -145,6 +145,7 @@ object RouteCatalog {
         Route.Kind.Cove -> "Cove"
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
+        Route.Kind.PhoneSecurity -> "Phone Security"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.RssReader -> "RSS Reader"
@@ -210,6 +211,7 @@ object RouteCatalog {
         Route.Kind.Coves, Route.Kind.Cove -> "shield"
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
+        Route.Kind.PhoneSecurity -> "security"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.RssReader -> "feed"
@@ -310,6 +312,7 @@ object HubCatalog {
         HubItem.destination(Route.Coves(null), needsRegistration = true, guestAction = "open your coves"),
         HubItem.destination(Route.Calories, guestAction = "use the calorie counter"),
         HubItem.destination(Route.GlassesAlert),
+        HubItem.destination(Route.PhoneSecurity),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
         HubItem.destination(Route.LocalAI, needsRegistration = true),

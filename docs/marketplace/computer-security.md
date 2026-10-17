@@ -6,6 +6,9 @@ result, shows whether the thing it found is actually in use, and offers a
 confirmed one-click fix where a safe one exists. It is off by default and
 appears in the desktop rail when installed.
 
+Phones have their own checkup, the
+[Phone Security package](phone-security.md) (`phone-security`).
+
 ## Name and icon
 
 The package is shown as **Security** in the desktop rail, the page heading, the
