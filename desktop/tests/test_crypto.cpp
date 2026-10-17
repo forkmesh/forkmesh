@@ -9963,6 +9963,12 @@ int main(int argc, char *argv[])
                   !forkmesh::autoBackupDefault(QStringLiteral("   ")),
               "hourly backups require an explicit opt-in on every node");
 
+        check(forkmesh::backupLeavesFreeReserve(forkmesh::kBackupFreeReserveBytes) &&
+                  !forkmesh::backupLeavesFreeReserve(forkmesh::kBackupFreeReserveBytes - 1) &&
+                  !forkmesh::backupLeavesFreeReserve(0) &&
+                  forkmesh::backupLeavesFreeReserve(-1),
+              "a backup needs the free-space reserve and runs when free space is unknown");
+
         const QDateTime now =
             QDateTime::fromString(QStringLiteral("2026-07-28T10:00:00"),
                                   Qt::ISODate);

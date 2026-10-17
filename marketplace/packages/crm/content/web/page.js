@@ -3972,6 +3972,49 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const empty = $(`[data-crm-contact-empty]`);
     if (empty) empty.textContent = shared && !state.crmView.sharedCache[state.crmView.activeShared]
       ? "Loading the shared sheet…" : "No contacts match this view.";
+    renderCrmGrantsLoad();
+  }
+
+  let crmGrantsBusy = false;
+
+  function crmGrantsTarget() {
+    const view = crmActiveView();
+    if (!view?.flow || crmActiveShared() || crmPeople.open || crmFlow(view.flow).icon !== "grants") return null;
+    return state.crmView.contacts.some((contact) => contact.flow === view.flow) ? null : view;
+  }
+
+  function renderCrmGrantsLoad() {
+    const box = $(`[data-crm-grants-empty]`); if (!box) return;
+    const view = crmGrantsTarget();
+    box.classList.toggle("hidden", !view);
+    if (!view) return;
+    $(`[data-crm-contact-empty]`)?.classList.add("hidden");
+    const manages = Boolean(state.crmView.canManageSettings);
+    const button = $(`[data-crm-grants-load]`);
+    button.disabled = !manages || crmGrantsBusy;
+    button.title = manages
+      ? `Add the 100 grants, funds and credit programs that best fit ForkMesh to ${crmFlowName(view.flow)}, ranked, with the award, deadline and application details of each`
+      : "Only organization owners and admins can load the grants list";
+    $(`[data-crm-grants-load-label]`).textContent = crmGrantsBusy ? "Loading the ranked grants…" : "Load the 100 ranked grants";
+  }
+
+  async function loadCrmGrants() {
+    const view = crmGrantsTarget();
+    if (!view || crmGrantsBusy || !state.crmView.canManageSettings) return;
+    crmGrantsBusy = true;
+    renderCrmGrantsLoad();
+    crmMessage("error"); crmMessage("notice");
+    try {
+      const payload = await crmRequest(crmOrganizationPath("/contacts/grants"), "POST", {
+        flow: view.flow, viewId: view.virtual ? "" : view.id,
+      });
+      if (payload.viewId) { state.crmView.activeView = payload.viewId; crmSetListParam(payload.viewId); }
+      crmMessage("notice", payload.created
+        ? `${payload.view?.name || "Grants"}: ${payload.created} grants loaded.`
+        : "Every ranked grant is already on this pipeline.");
+      await loadCrm();
+    } catch (error) { crmMessage("error", `Could not load the grants: ${error.message}`); }
+    finally { crmGrantsBusy = false; renderCrmGrantsLoad(); }
   }
 
   // --- board layout --------------------------------------------------------
@@ -6416,6 +6459,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-github-import]`)?.addEventListener("click", openCrmGithubDialog);
     $(`[data-crm-github-form]`)?.addEventListener("submit", (event) => void submitCrmGithub(event));
     $(`[data-crm-users-import]`)?.addEventListener("click", () => void importCrmForkMeshUsers());
+    $(`[data-crm-grants-load]`)?.addEventListener("click", () => void loadCrmGrants());
     document.addEventListener("error", (event) => {
       if (event.target?.matches?.(".crm-pic img")) event.target.remove();
     }, true);

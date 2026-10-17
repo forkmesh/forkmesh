@@ -38,7 +38,16 @@ struct RepoPullsTab: View {
         }
         .task {
             await model.start()
+            adoptOpenCount()
         }
+    }
+
+    private func adoptOpenCount() {
+        guard model.state.value != nil else { return }
+        let counts: ShellCounts = ShellCounts.shared
+        let ref: RepoRef = RepoRef(owner: model.repo.owner, name: model.repo.name)
+        guard counts.knowsCounts(of: ref) else { return }
+        counts.adopt(ref, counts: [.pulls: model.count(.open)])
     }
 
     @ViewBuilder private var content: some View {

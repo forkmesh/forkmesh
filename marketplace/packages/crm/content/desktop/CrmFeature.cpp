@@ -5536,6 +5536,17 @@ void CrmFeature::showSheetTabMenu(const QString &id, const QPoint &globalPositio
         menu.addAction(QStringLiteral("Refresh ForkMesh users"), this,
                        [this] { importForkMeshUsers(); })
             ->setEnabled(!importBusy());
+    if (!flowId.isEmpty() && flowIconId(flowId) == QLatin1String("grants") &&
+        flowContactCount(flowId) == 0) {
+        QAction *grants = menu.addAction(QStringLiteral("Load the 100 ranked grants"), this,
+                                         [this, id] { loadRankedGrants(id); });
+        grants->setEnabled(m_canManageSettings && !importBusy());
+        grants->setToolTip(m_canManageSettings
+            ? QStringLiteral("Add the grants, funds and credit programs that best fit "
+                             "ForkMesh, ranked, with the award, deadline and application "
+                             "details of each")
+            : QStringLiteral("Only organization owners and admins can load the grants list"));
+    }
     if (stored) {
         menu.addAction(QStringLiteral("Move up"), this, [this, id] { moveSheet(id, -1); })
             ->setEnabled(at > 0);
@@ -7442,6 +7453,41 @@ void CrmFeature::setSheetFlow(const QString &sheetId, const QString &flowId)
             : QString::fromUtf8("\xE2\x80\x9C%1\xE2\x80\x9D now shows the "
                                 "\xE2\x80\x9C%2\xE2\x80\x9D pipeline.")
                   .arg(name, flowLabel(flowId)));
+        loadOrganization();
+    });
+}
+
+void CrmFeature::loadRankedGrants(const QString &sheetId)
+{
+    const QJsonObject sheet = sheetById(sheetId);
+    const QString flowId = text(sheet, "flow");
+    if (flowId.isEmpty() || importBusy())
+        return;
+    m_grantsLoading = true;
+    setImportButtonsEnabled(false);
+    setStatus(QString::fromUtf8("Loading the ranked grants\xE2\x80\xA6"));
+    request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/contacts/grants")),
+            QJsonObject{{QStringLiteral("flow"), flowId},
+                        {QStringLiteral("viewId"),
+                         storedSheet(sheet) ? sheetId : QString()}},
+            [this](bool ok, const QJsonObject &payload, const QString &error) {
+        m_grantsLoading = false;
+        setImportButtonsEnabled(true);
+        if (!ok) {
+            setStatus(QStringLiteral("The grants were not loaded: %1").arg(error), true);
+            loadOrganization();
+            return;
+        }
+        const int created = payload.value(QStringLiteral("created")).toInt();
+        const QJsonObject view = payload.value(QStringLiteral("view")).toObject();
+        if (!text(view, "id").isEmpty())
+            m_pendingSheet = text(view, "id");
+        setStatus(created
+            ? QStringLiteral("%1: %2 grants loaded.")
+                  .arg(text(view, "name").isEmpty() ? QStringLiteral("Grants")
+                                                    : text(view, "name"))
+                  .arg(created)
+            : QStringLiteral("Every ranked grant is already on this pipeline."));
         loadOrganization();
     });
 }
@@ -12402,7 +12448,7 @@ QString CrmFeature::forkMeshUsersSheetId(const QJsonArray &views)
 bool CrmFeature::importBusy() const
 {
     return m_import.active || m_followers.active || m_contributors.active ||
-           m_usersReading;
+           m_usersReading || m_grantsLoading;
 }
 
 void CrmFeature::setImportButtonsEnabled(bool enabled)

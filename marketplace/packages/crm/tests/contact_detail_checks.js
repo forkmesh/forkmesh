@@ -22,7 +22,7 @@ const exported = [
   "crmAccountChip", "crmAccountProof",
   "crmNextContact", "crmNextChannels", "crmZohoComposeUrl",
   "crmQueueReachMastodon", "crmMastodonLatest", "crmNextCardHtml", "CRM_NEXT_MODES", "refreshCrmMastodonNow",
-  "crmRetryAfterMs",
+  "crmRetryAfterMs", "crmGrantsTarget",
   "crmAiPrompt", "crmAiAngle", "crmAiTargetUrl", "crmAiMessageText", "crmAiDefaultFormat", "crmAiMode", "crmAiBrief",
 ];
 const page = new Function(
@@ -474,6 +474,28 @@ same(page.crmTableViewId(), "default", "a deleted view falls back to Default");
     view.contacts = saved.contacts; view.emails = saved.emails;
     globalThis.fetch = saved.fetch; globalThis.DOMParser = saved.parser;
     page.crmMastodonLatest.latest.clear(); page.crmMastodonLatest.ids.clear(); page.crmMastodonLatest.backoff.clear();
+  }
+
+  {
+    const view = page.state.crmView;
+    const saved = { settings: view.settings, views: view.views, contacts: view.contacts, active: view.activeView, shared: view.activeShared };
+    view.activeShared = "";
+    view.settings = { flows: [
+      { id: "customers", name: "Customers", icon: "customers", stages: ["lead"] },
+      { id: "funding", name: "Funding", icon: "grants", stages: ["researching"] },
+    ] };
+    view.views = [];
+    view.contacts = [{ id: "c1", flow: "customers", stage: "lead", views: [] }];
+    view.activeView = "pipeline:funding";
+    same(page.crmGrantsTarget()?.flow, "funding", "an empty grants-type pipeline offers the ranked grants");
+    view.activeView = "pipeline:customers";
+    same(page.crmGrantsTarget(), null, "another kind of pipeline never offers them");
+    view.views = [{ id: "list", name: "Funders", flow: "funding", columns: [] }];
+    view.activeView = "list";
+    same(page.crmGrantsTarget()?.id, "list", "a list bound to the empty grants pipeline offers them into itself");
+    view.contacts.push({ id: "g1", flow: "funding", stage: "researching", views: ["list"] });
+    same(page.crmGrantsTarget(), null, "a grants pipeline with a row in it does not");
+    Object.assign(view, { settings: saved.settings, views: saved.views, contacts: saved.contacts, activeView: saved.active, activeShared: saved.shared });
   }
 
   if (failures) {
