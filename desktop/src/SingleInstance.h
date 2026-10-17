@@ -17,10 +17,16 @@ bool singleInstanceHeld();
 
 bool askBackgroundInstanceToQuit();
 
+bool askWindowToHandOver();
+
+qint64 singleInstanceHolderPid();
+
 bool isBackgroundInstance();
 bool tookOverFromBackgroundInstance();
 
 void onSingleInstanceYield(std::function<void()> handler);
+
+void onSingleInstanceHandOver(std::function<void()> handler);
 
 void requestBackgroundQuit();
 

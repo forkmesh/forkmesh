@@ -342,6 +342,14 @@ int runStopBackground(int argc, char *argv[])
     return 1;
 }
 
+int runHandOverAtLogout(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    configureApplicationIdentity(app, launchArguments(argc, argv));
+    std::printf("%s\n", qPrintable(forkmesh::background::handOverAtLogout()));
+    return 0;
+}
+
 // forkmesh --migrate-layout [--dry-run] [--project <name>]
 // Prints where every root resolves and moves the legacy locations into the
 // projects layout. The desktop does the same on its own at startup; this mode
@@ -630,6 +638,8 @@ int main(int argc, char *argv[])
             return forkmesh::tray::run(argc, argv);
         if (qstrcmp(argv[i], "--stop-background") == 0)
             return runStopBackground(argc, argv);
+        if (qstrcmp(argv[i], "--hand-over-at-logout") == 0)
+            return runHandOverAtLogout(argc, argv);
         if (qstrcmp(argv[i], "--headless") == 0) {
             qputenv("QT_QPA_PLATFORM", "offscreen");
             qputenv("FORKMESH_NO_SPLASH", "1");
@@ -1023,7 +1033,10 @@ int main(int argc, char *argv[])
     forkmesh::sonify::UiSounds::instance();
     forkmesh::activity::UserActivityLog::instance();
     QTimer::singleShot(5000, window, [] {
-        QThreadPool::globalInstance()->start([] { forkmesh::background::migrateLegacyEngine(); });
+        QThreadPool::globalInstance()->start([] {
+            forkmesh::background::migrateLegacyEngine();
+            forkmesh::background::syncLogoutHandOver();
+        });
     });
     if (!localActionLink.isEmpty()) {
         // A deep link may build a heavy destination. Let the already-built
@@ -1062,6 +1075,13 @@ int main(int argc, char *argv[])
     forkmesh::onSingleInstanceYield([&app, window]() {
         qInfo().noquote() << QStringLiteral(
             "ForkMesh without a window is handing over to a window: shutting down.");
+        window->close();
+        app.quit();
+    });
+    forkmesh::onSingleInstanceHandOver([&app, window]() {
+        forkmesh::background::noteSessionEnding();
+        qInfo().noquote() << QStringLiteral(
+            "The desktop session is ending: ForkMesh closes its window and keeps running without one.");
         window->close();
         app.quit();
     });

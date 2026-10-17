@@ -25,8 +25,9 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     layout->setContentsMargins(0, 0, 0, 0);
     m_keepRunning = new QCheckBox(QStringLiteral("Keep ForkMesh running without a window after I close it"));
     m_keepRunning->setToolTip(QStringLiteral(
-        "When you close the window, ForkMesh starts again without one, so your phone can "
-        "list, start and prompt agents and use everything else the desktop does. A tray icon "
+        "When you close the window or log out, ForkMesh starts again without one, so your "
+        "phone can list, start and prompt agents and use everything else the desktop does. "
+        "Turns on lingering for your user so it keeps running after you log out. A tray icon "
         "shows while it runs. Opening ForkMesh takes over from it."));
     m_startAtBoot = new QCheckBox(QStringLiteral("Start ForkMesh without a window when the computer starts"));
     m_startAtBoot->setToolTip(QStringLiteral(
@@ -54,8 +55,7 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     }
 
     m_keepRunning->setChecked(forkmesh::background::keepRunning());
-    connect(m_keepRunning, &QCheckBox::toggled, this,
-            [](bool on) { forkmesh::background::setKeepRunning(on); });
+    connect(m_keepRunning, &QCheckBox::toggled, this, [this](bool on) { setKeepRunning(on); });
     connect(m_startAtBoot, &QCheckBox::toggled, this, [this](bool on) { setStartAtBoot(on); });
     refresh();
 }
@@ -73,6 +73,28 @@ void BackgroundSettings::refresh()
     });
     watcher->setFuture(QtConcurrent::run([project] {
         return Outcome{forkmesh::background::StartManager::system().status(project), QString()};
+    }));
+}
+
+void BackgroundSettings::setKeepRunning(bool on)
+{
+    forkmesh::background::setKeepRunning(on);
+    const QString project = forkmesh::paths::projectSlug();
+    const QString binary = forkmesh::background::desktopBinaryPath();
+    auto *watcher = new QFutureWatcher<Outcome>(this);
+    connect(watcher, &QFutureWatcher<Outcome>::finished, this, [this, watcher] {
+        const Outcome outcome = watcher->result();
+        watcher->deleteLater();
+        if (!m_busy)
+            applyStatus(outcome.status, outcome.error);
+    });
+    watcher->setFuture(QtConcurrent::run([project, binary, on] {
+        const forkmesh::background::StartManager manager =
+            forkmesh::background::StartManager::system();
+        Outcome outcome;
+        manager.syncLogoutHandOver(on, binary, project, &outcome.error);
+        outcome.status = manager.status(project);
+        return outcome;
     }));
 }
 
@@ -134,6 +156,11 @@ void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &st
         lines << QStringLiteral("Not registered. Would be added as a %1 at %2.")
                      .arg(status.mechanism, status.location);
     }
+    if (m_keepRunning->isChecked())
+        lines << (status.afterLogout
+                      ? QStringLiteral("Keeps running after you log out.")
+                      : QStringLiteral("Stops when you log out. To keep it running, run: "
+                                       "loginctl enable-linger"));
     if (!error.isEmpty())
         lines << QStringLiteral("Failed: %1").arg(error);
     m_status->setText(lines.join(QLatin1Char('\n')));

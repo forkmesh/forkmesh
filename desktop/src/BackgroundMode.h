@@ -10,6 +10,7 @@ namespace forkmesh::background {
 
 inline constexpr char kKeepRunningSetting[] = "background/keepRunning";
 inline constexpr int kLockWaitMs = 60000;
+inline constexpr int kLogoutWaitMs = 45000;
 
 struct CommandResult {
     bool ok = false;
@@ -25,6 +26,7 @@ struct StartStatus {
     QString location;
     QString binary;
     bool atBoot = false;
+    bool afterLogout = false;
 };
 
 struct LegacyEngine {
@@ -47,9 +49,16 @@ public:
     bool enable(const QString &binary, const QString &project, QString *error = nullptr) const;
     bool disable(const QString &project, QString *error = nullptr) const;
     bool unitInstalled(const QString &project) const;
+    bool keepAcrossLogout(const QString &binary, const QString &project,
+                          QString *error = nullptr) const;
+    void dropLogoutHandOver(const QString &project) const;
+    bool syncLogoutHandOver(bool keep, const QString &binary, const QString &project,
+                            QString *error = nullptr) const;
+    bool shuttingDown() const;
     bool hasSystemd() const;
     bool lingering() const;
     QString systemdUnitPath(const QString &project) const;
+    QString logoutUnitPath(const QString &project) const;
     QString headlessEntryPath(const QString &project) const;
     QString trayEntryPath(const QString &project) const;
     QString lingerMarkerPath() const;
@@ -66,13 +75,17 @@ QString unitName(const QString &project);
 QString trayLabel(const QString &project);
 QStringList headlessArguments(const QString &project);
 QStringList trayArguments(const QString &project);
+QString logoutUnitName(const QString &project);
+QStringList logoutArguments(const QString &project);
 QStringList serviceVariables();
 QString desktopBinaryPath();
 
 QString systemdUnit(const QString &binary, const QString &project);
 QString headlessDesktopEntry(const QString &binary, const QString &project);
 QString trayDesktopEntry(const QString &binary, const QString &project);
+QString logoutUnit(const QString &binary, const QString &project);
 QString execStartBinary(const QString &unit);
+QString execStopBinary(const QString &unit);
 QString desktopExecBinary(const QString &entry);
 
 bool supported();
@@ -80,9 +93,13 @@ bool keepRunning();
 void setKeepRunning(bool on);
 
 void noteStopSignal();
+void noteSessionEnding();
+bool sessionEnding();
 bool handOverAfterWindowClose(bool restarting);
 bool startHeadless();
 bool launchTray();
 void migrateLegacyEngine();
+void syncLogoutHandOver();
+QString handOverAtLogout();
 
 } // namespace forkmesh::background
