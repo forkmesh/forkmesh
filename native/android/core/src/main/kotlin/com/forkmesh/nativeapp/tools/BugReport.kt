@@ -4,6 +4,7 @@ import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.BugReportAttachment
 import com.forkmesh.nativeapp.api.BugReportInbox
 import com.forkmesh.nativeapp.api.BugReportInboxItem
+import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.api.BugReportResult
 import kotlin.math.max
 
@@ -150,6 +151,23 @@ object BugReportInboxCopy {
     const val EMPTY = "No reported bugs here."
     const val LOAD_MORE = "Load more"
     const val UNAVAILABLE = "Reported bugs are unavailable in this build."
+    const val OPENING = "Opening…"
+    const val ATTACHMENTS_UNAVAILABLE = "Attachments are unavailable in this build."
+    const val SAVE_FAILED = "The attachment could not be saved on this device."
+    const val NO_VIEWER = "No app on this phone can open that attachment."
+
+    val STATUSES = FILTERS.filter { it.value.isNotEmpty() }
+
+    fun sizeLabel(bytes: Long): String = when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${Math.round(bytes / 1024.0)} KB"
+        else -> String.format(java.util.Locale.ROOT, "%.1f MB", bytes / 1024.0 / 1024.0)
+    }
+
+    fun fileName(name: String): String {
+        val text = name.map { if (it in "/\\:\u0000") '_' else it }.joinToString("").trim()
+        return if (text.isEmpty() || text == "." || text == "..") "attachment" else text.take(160)
+    }
 
     fun severityLabel(value: String): String =
         ReportBugCopy.SEVERITIES.firstOrNull { it.value == value }?.label ?: value.replaceFirstChar { it.uppercase() }
@@ -172,7 +190,37 @@ data class BugReportInboxState(
     val problem: String = "",
     val loading: Boolean = false,
     val loaded: Boolean = false,
+    val updating: Set<String> = emptySet(),
+    val downloading: Set<String> = emptySet(),
 ) {
+    fun canSet(id: String, value: String): Boolean =
+        id !in updating && reports.any { it.id == id && it.status != value }
+
+    fun updatingStarted(id: String): BugReportInboxState = copy(updating = updating + id)
+
+    fun statusChanged(id: String, change: BugReportStatusChange): BugReportInboxState {
+        val done = copy(updating = updating - id)
+        if (!change.ok) return done.copy(problem = change.message)
+        if (status.isNotEmpty() && change.status != status) {
+            return done.copy(
+                problem = "",
+                counts = change.counts,
+                reports = reports.filterNot { it.id == id },
+                nextOffset = nextOffset?.let { maxOf(it - 1, 0) },
+            )
+        }
+        return done.copy(
+            problem = "",
+            counts = change.counts,
+            reports = reports.map { if (it.id == id) it.copy(status = change.status) else it },
+        )
+    }
+
+    fun downloadStarted(id: String): BugReportInboxState = copy(downloading = downloading + id)
+
+    fun downloadFinished(id: String, problem: String = ""): BugReportInboxState =
+        copy(downloading = downloading - id, problem = problem)
+
     fun label(filter: BugReportStatusFilter): String {
         if (filter.value.isEmpty()) return if (counts.isEmpty()) filter.label else "${filter.label} ${counts.values.sum()}"
         val count = counts[filter.value] ?: return filter.label

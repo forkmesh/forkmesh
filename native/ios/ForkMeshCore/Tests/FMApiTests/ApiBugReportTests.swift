@@ -239,4 +239,50 @@ final class ApiBugReportTests: XCTestCase {
         XCTAssertTrue(inbox.reports.isEmpty)
         XCTAssertTrue(inbox.message.contains("administrators"), inbox.message)
     }
+
+    func testAnAdministratorSetsAReportStatus() async throws {
+        let relay = FakeBugRelay(status: 200, body: portEncode([
+            "ok": true, "id": "r1", "status": "closed", "previous": "new", "counts": ["new": 0, "closed": 1],
+        ]))
+        let api = wire(relay)
+        api.sessionTokenProvider = { "session-token" }
+
+        let change = await api.setBugReportStatus(id: "r1", status: "closed")
+
+        XCTAssertTrue(change.ok)
+        XCTAssertEqual(change.status, "closed")
+        XCTAssertEqual(change.counts["closed"], 1)
+        let request = try XCTUnwrap(relay.http.requests.first)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/inbox")
+        XCTAssertEqual(relay.submitted.first?["report"], "r1")
+        XCTAssertEqual(relay.submitted.first?["status"], "closed")
+
+        let refused = await wire(FakeBugRelay(status: 403, body: portEncode(["error": "admin_required"])))
+            .setBugReportStatus(id: "r1", status: "closed")
+        XCTAssertFalse(refused.ok)
+        XCTAssertTrue(refused.message.contains("administrators"), refused.message)
+    }
+
+    func testAnAdministratorDownloadsAnAttachment() async throws {
+        let http = FakeHTTPClient { _ in
+            HTTPResponse(status: 200, headers: ["content-type": "image/png"], body: Data("pixels".utf8))
+        }
+        let api = ApiPortFixture.api(http, token: "")
+        api.sessionTokenProvider = { "session-token" }
+
+        let file = await api.bugReportAttachment(reportId: "r1", attachmentId: "a1")
+
+        XCTAssertTrue(file.ok)
+        XCTAssertEqual(file.data, Data("pixels".utf8))
+        XCTAssertEqual(file.contentType, "image/png")
+        let request = try XCTUnwrap(http.requests.first)
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/inbox/attachment")
+        XCTAssertEqual(request.url.query, "report=r1&attachment=a1")
+
+        let gone = await wire(FakeBugRelay(status: 410, body: portEncode(["error": "attachment_unavailable"])))
+            .bugReportAttachment(reportId: "r1", attachmentId: "a1")
+        XCTAssertFalse(gone.ok)
+        XCTAssertTrue(gone.message.contains("no longer available"), gone.message)
+    }
 }

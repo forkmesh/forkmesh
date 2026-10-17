@@ -128,6 +128,8 @@ public final class ReportBugModel {
 }
 
 public typealias BugReportInboxLoad = @MainActor (_ status: String, _ offset: Int) async -> BugReportInbox
+public typealias BugReportStatusSet = @MainActor (_ id: String, _ status: String) async -> BugReportStatusChange
+public typealias BugReportAttachmentFetch = @MainActor (_ report: String, _ attachment: String) async -> BugReportFile
 
 public struct BugReportStatusFilter: Equatable, Sendable {
     public let value: String
@@ -149,6 +151,9 @@ public final class BugReportInboxModel {
     public static let empty = "No reported bugs here."
 
     @ObservationIgnored private let loader: BugReportInboxLoad?
+    @ObservationIgnored private let statusSetter: BugReportStatusSet?
+    @ObservationIgnored private let fetcher: BugReportAttachmentFetch?
+    @ObservationIgnored private let folder: URL
     public var status = "new"
     public private(set) var reports: [BugReportInboxItem] = []
     public private(set) var counts: [String: Int] = [:]
@@ -156,16 +161,88 @@ public final class BugReportInboxModel {
     public private(set) var problem = ""
     public private(set) var loading = false
     public private(set) var loaded = false
+    public private(set) var updating: Set<String> = []
+    public private(set) var downloading: Set<String> = []
 
-    public init(load: BugReportInboxLoad?) {
+    public init(
+        load: BugReportInboxLoad?, setStatus: BugReportStatusSet? = nil, attachment: BugReportAttachmentFetch? = nil,
+        folder: URL = FileManager.default.temporaryDirectory.appendingPathComponent("bug-report-attachments", isDirectory: true)
+    ) {
         loader = load
+        statusSetter = setStatus
+        fetcher = attachment
+        self.folder = folder
     }
 
     public convenience init(api: ApiService?) {
         let load: BugReportInboxLoad? = api.map { api in
             { status, offset in await api.bugReportInbox(status: status, offset: offset) }
         }
-        self.init(load: load)
+        let setStatus: BugReportStatusSet? = api.map { api in
+            { id, status in await api.setBugReportStatus(id: id, status: status) }
+        }
+        let attachment: BugReportAttachmentFetch? = api.map { api in
+            { report, attachment in await api.bugReportAttachment(reportId: report, attachmentId: attachment) }
+        }
+        self.init(load: load, setStatus: setStatus, attachment: attachment)
+    }
+
+    public func setStatus(_ id: String, to value: String) async {
+        guard let statusSetter, !updating.contains(id),
+              let current = reports.first(where: { $0.id == id }), current.status != value else { return }
+        updating.insert(id)
+        let change = await statusSetter(id, value)
+        updating.remove(id)
+        if !change.ok {
+            problem = change.message
+            return
+        }
+        problem = ""
+        counts = change.counts
+        if !status.isEmpty && change.status != status {
+            reports.removeAll { $0.id == id }
+            if let offset = nextOffset { nextOffset = max(offset - 1, 0) }
+        } else if let index = reports.firstIndex(where: { $0.id == id }) {
+            reports[index].status = change.status
+        }
+    }
+
+    public func open(report: String, attachment: BugReportInboxAttachment) async -> URL? {
+        guard !downloading.contains(attachment.id) else { return nil }
+        guard let fetcher else {
+            problem = "Attachments are unavailable in this build."
+            return nil
+        }
+        downloading.insert(attachment.id)
+        let file = await fetcher(report, attachment.id)
+        downloading.remove(attachment.id)
+        if !file.ok {
+            problem = file.message
+            return nil
+        }
+        do {
+            let directory = folder.appendingPathComponent(attachment.id, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let target = directory.appendingPathComponent(BugReportInboxModel.fileName(attachment.name))
+            try file.data.write(to: target, options: .atomic)
+            problem = ""
+            return target
+        } catch {
+            problem = "The attachment could not be saved on this device."
+            return nil
+        }
+    }
+
+    public static func sizeLabel(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1024 * 1024 { return "\(Int((Double(bytes) / 1024).rounded())) KB" }
+        return String(format: "%.1f MB", Double(bytes) / 1024 / 1024)
+    }
+
+    public static func fileName(_ name: String) -> String {
+        let cleaned = name.map { "/\\:\0".contains($0) ? "_" : $0 }
+        let text = String(cleaned).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty || text == "." || text == ".." ? "attachment" : String(text.prefix(160))
     }
 
     public func label(for filter: BugReportStatusFilter) -> String {

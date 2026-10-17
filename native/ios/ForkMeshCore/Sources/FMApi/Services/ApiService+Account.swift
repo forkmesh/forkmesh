@@ -171,6 +171,49 @@ extension ApiService {
         return BugReportInbox(json: map)
     }
 
+    public func setBugReportStatus(id: String, status: String) async -> BugReportStatusChange {
+        let response: HTTPResponse
+        do {
+            response = try await http.send(HTTPRequest(
+                method: "POST", url: url("/api/bug-reports/inbox"),
+                headers: withAuth(["Accept": "application/json", "Content-Type": "application/json"]),
+                body: JSON.encodeData(.object(["report": .string(id), "status": .string(status)])), timeout: 20))
+        } catch {
+            return .failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        switch response.status {
+        case 401, 403: return .failure("Only ForkMesh administrators can triage reported bugs.")
+        case 404: return .failure("That report no longer exists.")
+        default: break
+        }
+        guard response.ok, let decoded = try? JSON.parse(response.body), let map = decoded.objectValue else {
+            return .failure("The status could not be saved. Try again in a moment.")
+        }
+        let counts = map.obj("counts")
+        return BugReportStatusChange(
+            ok: true, status: map.str("status", status),
+            counts: Dictionary(uniqueKeysWithValues: counts.keys.map { ($0, counts.int($0)) }))
+    }
+
+    public func bugReportAttachment(reportId: String, attachmentId: String) async -> BugReportFile {
+        let response: HTTPResponse
+        do {
+            response = try await http.send(HTTPRequest(
+                method: "GET",
+                url: url("/api/bug-reports/inbox/attachment", [("report", reportId), ("attachment", attachmentId)]),
+                headers: withAuth(["Accept": "*/*"]), timeout: 60))
+        } catch {
+            return .failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        switch response.status {
+        case 200..<300:
+            return BugReportFile(ok: true, data: response.body, contentType: response.headers["content-type"] ?? "")
+        case 401, 403: return .failure("Only ForkMesh administrators can open report attachments.")
+        case 404, 410: return .failure("That attachment is no longer available.")
+        default: return .failure("The attachment could not be downloaded. Try again in a moment.")
+        }
+    }
+
     // MARK: Profiles and user status
 
     /// `GET /api/accounts/<name>` for a user account, or nil when `key` is not one. A miss is

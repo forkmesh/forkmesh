@@ -72,6 +72,8 @@ class _Runtime:
         self.random = bytes(range(16))
         self.admins = set()
         self.queries = []
+        self.attachments = []
+        self.audits = []
 
     def namespace(self):
         source = MODULE.read_text(encoding="utf-8")
@@ -145,6 +147,11 @@ class _Runtime:
             return None
 
         async def d1_first(env, sql, *args):
+            if "SELECT status FROM bug_reports" in sql:
+                for row in runtime.rows:
+                    if row["report_id"] == args[0]:
+                        return {"status": row.get("status", "new")}
+                return None
             if "COUNT(*) AS n FROM bug_reports" in sql:
                 reporter_bi, since = args
                 return {"n": sum(
@@ -162,6 +169,13 @@ class _Runtime:
                     counts[status] = counts.get(status, 0) + 1
                 return [{"status": key, "n": value}
                         for key, value in counts.items()]
+            if "FROM bug_report_attachments" in sql:
+                report_id, attachment_id = args
+                return sorted(
+                    (row for row in runtime.attachments
+                     if row["report_id"] == report_id
+                     and row["attachment_id"] == attachment_id),
+                    key=lambda row: row["chunk_index"])
             if "FROM bug_reports" in sql:
                 *filters, limit, offset = args
                 rows = [dict(row, status=row.get("status", "new"))
@@ -184,6 +198,16 @@ class _Runtime:
                         "platform", "app_version", "severity", "data",
                         "created_at")
                 runtime.rows.append(dict(zip(keys, args)))
+            elif "INTO bug_report_attachments" in sql:
+                keys = ("report_id", "attachment_id", "chunk_index", "name",
+                        "content_type", "size", "data", "created_at")
+                runtime.attachments.append(dict(zip(keys, args)))
+            elif "UPDATE bug_reports SET status" in sql:
+                status, report_id = args
+                for row in runtime.rows:
+                    if row["report_id"] == report_id:
+                        row["status"] = status
+                runtime.updates.append(args)
             elif "UPDATE bug_reports" in sql:
                 runtime.updates.append(args)
             return None
@@ -199,6 +223,12 @@ class _Runtime:
 
         async def log_error(env, status, method, path, message, **kwargs):
             runtime.errors.append(message)
+
+        async def _audit_sensitive_action(env, actor, action, target_type="",
+                                          target="", outcome="success",
+                                          details=None):
+            runtime.audits.append(
+                (actor, action, target, outcome, details or {}))
 
         async def _authed_account_name(env, request, data=None):
             return runtime.account
@@ -224,6 +254,8 @@ class _Runtime:
             "d1_run": d1_run,
             "decrypt_row": decrypt_row,
             "_is_admin": _is_admin,
+            "_audit_sensitive_action": _audit_sensitive_action,
+            "Response": _Response,
             "_authed_account_name": _authed_account_name,
             "_transient_client_address": _transient_client_address,
             "_forkbot_enqueue_issue": _forkbot_enqueue_issue,
@@ -526,11 +558,12 @@ def test_invalid_or_oversized_attachments_are_refused():
 
 # --- The administrators' inbox ----------------------------------------------
 
-def _inbox(module, query="", headers=None, method="GET"):
+def _inbox(module, query="", headers=None, method="GET", body=None,
+           path="/api/bug-reports/inbox"):
     return asyncio.run(module["bug_reports_inbox_handler"](
         object(), _Request(
-            method, None, headers,
-            url="https://app.forkmesh.test/api/bug-reports/inbox" + query)))
+            method, body, headers,
+            url="https://app.forkmesh.test" + path + query)))
 
 
 def _file_two_reports(runtime, module):
@@ -544,6 +577,8 @@ def _file_two_reports(runtime, module):
     _submit(module, {"message": "Newer: the Repos tab spins forever."})
     runtime.rows[0]["report_id"] = "a" * 32
     runtime.rows[1]["report_id"] = "b" * 32
+    for row in runtime.attachments:
+        row["report_id"] = "a" * 32
 
 
 def test_admin_lists_reports_newest_first_with_the_sealed_fields():
@@ -598,14 +633,91 @@ def test_inbox_refuses_anyone_who_is_not_an_administrator():
     no_bearer = _inbox(module)
     runtime.admins.add("alice")
     cookie_only = _inbox(module, headers={"cookie": "session=x"})
-    posted = _inbox(module, headers={"authorization": "Bearer token"},
-                    method="POST")
+    deleted = _inbox(module, headers={"authorization": "Bearer token"},
+                     method="DELETE")
 
     assert signed_in.status == 403
     assert no_bearer.status == 403
     assert cookie_only.status == 403
-    assert posted.status == 405
+    assert deleted.status == 405
     assert "reports" not in signed_in.json
+
+
+def test_non_admins_cannot_triage_or_download():
+    runtime = _Runtime(account="alice")
+    module = runtime.namespace()
+    _file_two_reports(runtime, module)
+    headers = {"authorization": "Bearer token"}
+    attachment_id = runtime.attachments[0]["attachment_id"]
+
+    triage = _inbox(module, headers=headers, method="POST",
+                    body={"report": "a" * 32, "status": "closed"})
+    download = _inbox(module, "?report=%s&attachment=%s" % (
+        "a" * 32, attachment_id), headers,
+        path="/api/bug-reports/inbox/attachment")
+
+    assert triage.status == 403
+    assert download.status == 403
+    assert runtime.rows[0].get("status", "new") == "new"
+    assert runtime.audits == []
+
+
+def test_admin_sets_a_report_status_and_it_is_audited():
+    runtime = _Runtime(account="root")
+    runtime.admins.add("root")
+    module = runtime.namespace()
+    _file_two_reports(runtime, module)
+    headers = {"authorization": "Bearer token"}
+
+    response = _inbox(module, headers=headers, method="POST",
+                      body={"report": "a" * 32, "status": "triaged"})
+    unchanged = _inbox(module, headers=headers, method="POST",
+                       body={"report": "a" * 32, "status": "triaged"})
+    invalid = _inbox(module, headers=headers, method="POST",
+                     body={"report": "a" * 32, "status": "deleted"})
+    missing = _inbox(module, headers=headers, method="POST",
+                     body={"report": "c" * 32, "status": "closed"})
+
+    assert response.status == 200
+    assert response.json["status"] == "triaged"
+    assert response.json["previous"] == "new"
+    assert response.json["counts"] == {"new": 1, "triaged": 1, "closed": 0}
+    assert runtime.rows[0]["status"] == "triaged"
+    assert unchanged.json["previous"] == "triaged"
+    assert invalid.status == 400
+    assert missing.status == 404
+    assert runtime.audits == [
+        ("root", "admin.app_set_bug_status", "a" * 32, "success",
+         {"from": "new", "to": "triaged"}),
+        ("root", "admin.app_set_bug_status", "c" * 32, "failed",
+         {"reason": "report_missing"}),
+    ]
+
+
+def test_admin_downloads_an_attachment_as_a_private_file():
+    runtime = _Runtime(account="root")
+    runtime.admins.add("root")
+    module = runtime.namespace()
+    _file_two_reports(runtime, module)
+    headers = {"authorization": "Bearer token"}
+    attachment_id = runtime.attachments[0]["attachment_id"]
+    path = "/api/bug-reports/inbox/attachment"
+
+    response = _inbox(module, "?report=%s&attachment=%s" % (
+        "a" * 32, attachment_id), headers, path=path)
+    wrong_report = _inbox(module, "?report=%s&attachment=%s" % (
+        "b" * 32, attachment_id), headers, path=path)
+    posted = _inbox(module, headers=headers, method="POST", path=path)
+
+    assert response.status == 200
+    assert response.body == b"pixels"
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-security-policy"] == "sandbox"
+    assert response.headers["cache-control"].startswith("no-store")
+    assert 'filename="screen.png"' in response.headers["content-disposition"]
+    assert wrong_report.status == 404
+    assert posted.status == 405
 
 
 # --- Wiring ------------------------------------------------------------------

@@ -59,6 +59,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.BugReportAttachment
+import com.forkmesh.nativeapp.api.BugReportInboxAttachment
+import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFilledButton
 import com.forkmesh.nativeapp.feature.account.AuthService
@@ -193,6 +195,22 @@ internal fun ReportBugSheet(
         }
     }
     LaunchedEffect(admin) { if (admin) loadInbox(inbox.status) }
+    fun setInboxStatus(id: String, value: String) {
+        if (!inbox.canSet(id, value)) return
+        inbox = inbox.updatingStarted(id)
+        scope.launch {
+            val change = withContext(Dispatchers.IO) {
+                Services.get<ApiService>()?.setBugReportStatus(id, value)
+                    ?: BugReportStatusChange.failure(BugReportInboxCopy.UNAVAILABLE)
+            }
+            inbox = inbox.statusChanged(id, change)
+        }
+    }
+    fun openInboxAttachment(reportId: String, attachment: BugReportInboxAttachment) {
+        if (attachment.id in inbox.downloading) return
+        inbox = inbox.downloadStarted(attachment.id)
+        scope.launch { inbox = inbox.downloadFinished(attachment.id, openBugReportAttachment(context, reportId, attachment)) }
+    }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         scope.launch {
             val picked = withContext(Dispatchers.IO) {
@@ -255,6 +273,8 @@ internal fun ReportBugSheet(
                     inbox,
                     onStatus = { if (it != inbox.status || !inbox.loaded) loadInbox(it) },
                     onMore = { inbox.nextOffset?.let { offset -> if (!inbox.loading) loadInbox(inbox.status, offset) } },
+                    onSetStatus = ::setInboxStatus,
+                    onOpen = ::openInboxAttachment,
                     modifier = Modifier.weight(1f, fill = false),
                 )
             } else if (sent) {

@@ -2835,7 +2835,9 @@ class Default:
         # lists them back to platform administrators only.
         if url.path in ("/api/bug-reports", "/api/bug-reports/"):
             return await bug_reports_handler(self.env, request)
-        if url.path in ("/api/bug-reports/inbox", "/api/bug-reports/inbox/"):
+        if url.path in ("/api/bug-reports/inbox", "/api/bug-reports/inbox/",
+                        "/api/bug-reports/inbox/attachment",
+                        "/api/bug-reports/inbox/attachment/"):
             return await bug_reports_inbox_handler(self.env, request)
 
         if url.path in ("/api/forkbot/chat", "/api/forkbot/chat/"):

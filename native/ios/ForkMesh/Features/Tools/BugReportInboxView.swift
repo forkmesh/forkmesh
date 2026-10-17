@@ -1,11 +1,13 @@
 import FMApi
 import FMBase
 import FMTools
+import QuickLook
 import SwiftUI
 
 struct BugReportInboxView: View {
     @Environment(\.fmPalette) private var fm
     let model: BugReportInboxModel
+    @State private var preview: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +26,7 @@ struct BugReportInboxView: View {
                         FmEmptyState(icon: "bug_report_outlined", title: BugReportInboxModel.empty)
                     }
                     ForEach(model.reports) { (report: BugReportInboxItem) in
-                        BugReportInboxRow(report: report)
+                        BugReportInboxRow(report: report, model: model, onOpen: { url in preview = url })
                     }
                     if model.nextOffset != nil {
                         FmToneButton(label: "Load more", tone: .neutral, filled: false,
@@ -37,6 +39,7 @@ struct BugReportInboxView: View {
             .refreshable { await model.reload() }
         }
         .task { if !model.loaded { await model.reload() } }
+        .quickLookPreview($preview)
         .accessibilityIdentifier("bug-inbox")
     }
 
@@ -61,6 +64,8 @@ struct BugReportInboxView: View {
 private struct BugReportInboxRow: View {
     @Environment(\.fmPalette) private var fm
     let report: BugReportInboxItem
+    let model: BugReportInboxModel
+    let onOpen: (URL) -> Void
 
     var body: some View {
         FmCard {
@@ -69,8 +74,6 @@ private struct BugReportInboxRow: View {
                     Text(BugReportInboxModel.severityLabel(report.severity))
                         .fmText(.labelMedium, color: report.severity == "crash" || report.severity == "high"
                             ? fm.danger : fm.textSecondary)
-                    Text(report.status.capitalized)
-                        .fmText(.labelMedium, color: report.status == "new" ? fm.accent : fm.textTertiary)
                     Spacer(minLength: 0)
                     Text(Format.relativeTimeFrom(report.createdAt))
                         .fmText(.bodySmall, color: fm.textTertiary)
@@ -86,11 +89,45 @@ private struct BugReportInboxRow: View {
                         .textSelection(.enabled)
                 }
                 if !report.attachments.isEmpty {
-                    Text(report.attachments.map(\.name).joined(separator: " · "))
-                        .fmText(.bodySmall, color: fm.textTertiary)
+                    attachments
                 }
+                statusRow
             }
         }
         .accessibilityIdentifier("bug-inbox-report-\(report.id)")
+    }
+
+    private var attachments: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: FmSpace.x2) {
+                ForEach(report.attachments, id: \.id) { (attachment: BugReportInboxAttachment) in
+                    FmToneButton(
+                        label: model.downloading.contains(attachment.id)
+                            ? "Opening…" : "\(attachment.name) · \(BugReportInboxModel.sizeLabel(attachment.size))",
+                        tone: .neutral, filled: false,
+                        onPressed: model.downloading.contains(attachment.id) ? nil : {
+                            Task {
+                                if let url = await model.open(report: report.id, attachment: attachment) { onOpen(url) }
+                            }
+                        })
+                        .accessibilityIdentifier("bug-inbox-attachment-\(attachment.id)")
+                }
+            }
+        }
+    }
+
+    private var statusRow: some View {
+        HStack(spacing: FmSpace.x2) {
+            ForEach(BugReportStatusFilter.all.filter { !$0.value.isEmpty }, id: \.value) { (choice: BugReportStatusFilter) in
+                FmToneButton(
+                    label: choice.label,
+                    tone: choice.value == report.status ? .accent : .neutral,
+                    filled: choice.value == report.status,
+                    onPressed: model.updating.contains(report.id) ? nil : {
+                        Task { await model.setStatus(report.id, to: choice.value) }
+                    })
+                    .accessibilityIdentifier("bug-inbox-set-\(choice.value)-\(report.id)")
+            }
+        }
     }
 }

@@ -228,7 +228,7 @@ public struct BugReportInboxAttachment: Equatable, Sendable {
 
 public struct BugReportInboxItem: Equatable, Sendable, Identifiable {
     public let id: String
-    public let status: String
+    public var status: String
     public let severity: String
     public let source: String
     public let platform: String
@@ -287,6 +287,40 @@ public struct BugReportInbox: Equatable, Sendable {
     }
 
     public static func failure(_ message: String) -> BugReportInbox { BugReportInbox(ok: false, message: message) }
+}
+
+public struct BugReportStatusChange: Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let counts: [String: Int]
+    public let message: String
+
+    public init(ok: Bool, status: String = "", counts: [String: Int] = [:], message: String = "") {
+        self.ok = ok
+        self.status = status
+        self.counts = counts
+        self.message = message
+    }
+
+    public static func failure(_ message: String) -> BugReportStatusChange {
+        BugReportStatusChange(ok: false, message: message)
+    }
+}
+
+public struct BugReportFile: Equatable, Sendable {
+    public let ok: Bool
+    public let data: Data
+    public let contentType: String
+    public let message: String
+
+    public init(ok: Bool, data: Data = Data(), contentType: String = "", message: String = "") {
+        self.ok = ok
+        self.data = data
+        self.contentType = contentType
+        self.message = message
+    }
+
+    public static func failure(_ message: String) -> BugReportFile { BugReportFile(ok: false, message: message) }
 }
 
 /// A refused or failed `POST /api/accounts/user-status`, with the server's error code and a

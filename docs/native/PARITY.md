@@ -94,7 +94,7 @@ desktop-only; on-device models run through MLX on iOS).
 | 70 | Settings: profile, avatar, payout address, this device, serve as node, room passphrase, import tokens, orgs, membership, ads, appearance, legal |
 | 71 | Telemetry screen and strip, log categories |
 | 72 | Performance monitor, debug overlay, stall log |
-| 73 | Bug report button and sheet (`POST /api/bug-reports`); admins' Reported tab (`GET /api/bug-reports/inbox`) |
+| 73 | Bug report button and sheet (`POST /api/bug-reports`); admins' Reported tab with triage and attachments (`/api/bug-reports/inbox`) |
 | 74 | Trust lists v1 resolver (core library) |
 | 75 | Accessibility labels |
 | 76 | Privacy manifest |

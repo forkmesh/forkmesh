@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.tools
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.BugReportInbox
 import com.forkmesh.nativeapp.api.BugReportInboxItem
+import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.api.FakeTransport
 import com.forkmesh.nativeapp.api.TestSettings
 import com.forkmesh.nativeapp.api.bodyJson
@@ -204,5 +205,36 @@ class BugReportTest {
         assertEq("@alice · android", BugReportInboxCopy.details(item("a")))
         assertEq("Crash", BugReportInboxCopy.severityLabel("crash"))
         expect(!loadBugReportInbox(null, "new").ok)
+    }
+
+    fun testTriageMovesAReportOutOfAFilteredQueue() {
+        fun item(id: String) = BugReportInboxItem.from(mapOf("id" to id, "status" to "new"))
+        val queue = BugReportInboxState().received(BugReportInbox(ok = true, reports = listOf(item("a"), item("b")), nextOffset = 2), 0)
+        expect(queue.canSet("a", "triaged"))
+        expect(!queue.canSet("a", "new"))
+        val busy = queue.updatingStarted("a")
+        expect(!busy.canSet("a", "closed"))
+        val moved = busy.statusChanged("a", BugReportStatusChange(ok = true, status = "triaged", counts = mapOf("new" to 1, "triaged" to 1)))
+        assertEq(listOf("b"), moved.reports.map { it.id })
+        assertEq(1, moved.nextOffset)
+        assertEq(1, moved.counts["triaged"])
+        expect(moved.updating.isEmpty())
+        val all = BugReportInboxState(status = "").received(BugReportInbox(ok = true, reports = listOf(item("a"))), 0)
+        assertEq("closed", all.statusChanged("a", BugReportStatusChange(ok = true, status = "closed")).reports.single().status)
+        val refused = all.updatingStarted("a").statusChanged("a", BugReportStatusChange.failure("That report no longer exists."))
+        assertEq("new", refused.reports.single().status)
+        assertEq("That report no longer exists.", refused.problem)
+    }
+
+    fun testAttachmentNamesAndSizesAreSafeToShowAndSave() {
+        assertEq(".._screen.png", BugReportInboxCopy.fileName("../screen.png"))
+        assertEq("attachment", BugReportInboxCopy.fileName(" .. "))
+        assertEq("6 B", BugReportInboxCopy.sizeLabel(6))
+        assertEq("2.5 MB", BugReportInboxCopy.sizeLabel(2_621_440))
+        val state = BugReportInboxState().downloadStarted("f1")
+        expect("f1" in state.downloading)
+        val done = state.downloadFinished("f1", "No app on this phone can open that attachment.")
+        expect(done.downloading.isEmpty())
+        assertEq("No app on this phone can open that attachment.", done.problem)
     }
 }

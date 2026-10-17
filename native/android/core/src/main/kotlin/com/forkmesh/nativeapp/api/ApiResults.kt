@@ -217,3 +217,20 @@ data class BugReportInbox(
         fun failure(message: String) = BugReportInbox(ok = false, message = message)
     }
 }
+
+data class BugReportStatusChange(
+    val ok: Boolean,
+    val status: String = "",
+    val counts: Map<String, Int> = emptyMap(),
+    val message: String = "",
+) {
+    companion object {
+        fun failure(message: String) = BugReportStatusChange(ok = false, message = message)
+    }
+}
+
+class BugReportFile(val ok: Boolean, val data: ByteArray = ByteArray(0), val contentType: String = "", val message: String = "") {
+    companion object {
+        fun failure(message: String) = BugReportFile(ok = false, message = message)
+    }
+}
