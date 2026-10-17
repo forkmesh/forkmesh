@@ -256,7 +256,7 @@ extension ApiService: AccountEndpointCalling {
         let payload: Data? = method == "GET" ? nil : JSON.encodeData(.object(body ?? JSONObject()))
         let response: HTTPResponse
         do {
-            response = try await rawRequest(method, url(path), headers: headers, body: payload)
+            response = try await rawRequest(method, pathWithQueryURL(path), headers: headers, body: payload)
         } catch {
             throw AccountEndpointError("offline")
         }

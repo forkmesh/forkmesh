@@ -69,6 +69,12 @@ All four apps call the same routes:
   Android `Route.Dm`, the desktop's `startDirectMessageWith`, the web's
   `/chat?dm=<name>`. People adds no server code.
 
+The iPhone's `accountCall` builds its URL with `pathWithQueryURL`, so
+`?view=world` and `?viewer=` stay a query. Built with `url(path)` the `?` was
+escaped into the path, the server answered `/api/accounts/users%3Fview=world`
+as a lookup of an account by that name (`{"ok":true,"exists":false}`), and
+the page showed every ring empty with no error.
+
 ## Where the code lives
 
 | Platform | Logic | Screen |
@@ -84,6 +90,9 @@ a "+N" chip when a ring overflows), a legend of ring chips that filters to
 one ring, and one card per ring listing everyone in it (empty rings still
 show their card). A search box filters by name; on the desktop the top search
 box does the same (`setHostSearchQuery`, `searchHits`).
+On the iPhone the search box sits in the navigation bar drawer
+(`.navigationBarDrawer(displayMode: .always)`): with the default placement
+iOS 26 docks it at the bottom of the screen, where the app's tab bar covers it.
 
 The profile card shows the ring, last activity, Follow / Following and
 Message, follower counts, join month, status, bio and location, and "View
