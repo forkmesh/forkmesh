@@ -23,11 +23,17 @@ Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
   (`syncOrganizationTaskPageSearch()`), matching title, details, assignee,
   repository, department, status, how-to-test and id.
 - **Rows** (`OrganizationTaskRowDelegate`). Full view: a progress rail, the
-  creator's picture with an assignee badge, priority and title, a line of
-  fixed-width field columns (status, department, repository, branch, QA, age),
-  and up to three attachment thumbnails taken from `attachments[].thumbnail`
-  (no extra requests). Compact view: one line with title and right-aligned
-  status, assignee and age. Zen view: title only. The view is stored in
+  creator's 40 px picture with an assignee or agent badge, priority and title,
+  a line of field columns (status icon, department, repository, branch, QA,
+  age), and up to three attachment thumbnails taken from
+  `attachments[].thumbnail` (no extra requests). Compact view: one line with
+  the assignee's 24 px picture on the left (the agent's model avatar for a
+  task with an agent, a dashed placeholder when unassigned), the title, then
+  the branch, the status icon and the age. The age is the bare short form
+  (`19m`, `taskCreatedAge()`), without a clock or "ago"; status is an icon
+  only, its word lives in the hover card. The branch is the first work item,
+  else the branch of the local agent session linked to the task. Zen view:
+  title only. The view is stored in
   `tasks/listView` (`compact`, `zen`, `full`) via the shared
   `desktop/src/ListViewMode.{h,cpp}`, written only when it changes.
 - **Continuous scroll.** The catalog is loaded whole; rows are added 100 at a
@@ -44,8 +50,22 @@ Part of [the desktop docs](README.md). Code: `desktop/src/MainWindowTasks.cpp`
   the badge.
 - **Detail pane.** Icon action buttons (Edit, Start/Stop, Complete or Mark
   undone, Assign Bot, Start agent, Add to prompt, Send to QA, Follow up, Move
-  to issue, Comment, Check in, Delete) above the text, with fields in a fixed
-  300 px right column.
+  to issue, Comment, Check in, Delete) above the text, a quick comment box
+  under the text, and a fixed 300 px right column.
+- **Right column.** An editable form (`organizationTaskProperties`): Status,
+  Priority, Progress, Assignee, Department, Team, Repository and Follows task.
+  A change saves at once with the same optimistic PATCH as Edit
+  (`commitOrganizationTaskProperty()` → `patchOrganizationTask()`); Status
+  posts start, stop, complete or undo instead. Spin boxes use keyboard
+  tracking off, so typing saves on Enter or focus loss and each arrow click
+  saves, with no debounce timer (the no-timer rule below). A field the relay
+  would refuse is disabled with the reason as its tooltip. The editors are drawn
+  borderless until hovered or focused (a stylesheet on
+  `organizationTaskProperties`, so it holds in both the Classic and Next
+  designs), so the column reads as a list. A text field that
+  has focus is not overwritten by a refresh, and switching tasks saves any
+  edit still in a text field. Read-only facts (destination, creator, agent
+  session, QA, last reminder, work items, id) follow underneath.
 - **From an issue.** The issue view's **Move to task** goes the other way
   ([issue-to-task](../app/issue-to-task.md)).
 
@@ -167,6 +187,10 @@ shown as a notice and the list re-renders. Trash semantics:
 
 ## Comments and activity
 
+Comments are written in the quick comment box under the detail text
+(`organizationTaskQuickComment`); Ctrl+Enter or Comment posts it, and the
+Comment action button focuses it. An unposted draft is kept per task while
+you move through the list, and a failed post puts the text back.
 A posted comment appears at once ("Sending…") and is replaced by the reply's
 `task.history` and `task.replies`; a failure restores the previous timeline.
 Activity shows full comment bodies and read receipts (`readBy`) recorded by the

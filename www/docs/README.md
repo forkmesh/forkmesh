@@ -56,6 +56,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Clearnet, Tor, I2P, overlay and LAN transports | [Transports and anonymity postures](transports.md) |
 | Recovery from origin, DNS, key, region and backup loss | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |
 | Sync with GitHub | [Connecting to GitHub](github-sync.md) |
+| Mirror a GitHub repository and deploy its Cloudflare Worker, from desktop or phone | [Mirror and deploy a Cloudflare Worker](cloudflare-workers.md) |
 | Two-way issue sync with GitHub, Gitea or Forgejo | [Two-way forge sync](forge-sync.md) |
 
 ## Identity, trust and social

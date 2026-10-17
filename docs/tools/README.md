@@ -69,7 +69,9 @@ security scan runners.
 outputs are listed in [../conformance/README.md](../conformance/README.md).
 
 **Other**: forge sync and imports (`forge_sync.py`, `forge_providers.py`,
-`github_*`, `hosted_repository_sync.py`), legacy reward and custody tools,
+`github_*`, `hosted_repository_sync.py`), Cloudflare Worker deploys from
+Actions (`cloudflare_worker_deploy.py`, [cloudflare-worker-deploy.md](cloudflare-worker-deploy.md)),
+legacy reward and custody tools,
 `ecosystem_seed.py` (signed `POST /api/ecosystem/import`,
 [../app/ecosystem.md](../app/ecosystem.md)).
 

@@ -106,6 +106,16 @@
             .task-prop > dd { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; min-width: 0; margin: 0; color: var(--task-fg); overflow-wrap: anywhere; }
             .task-props-note { color: var(--task-fg2); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
             .task-props-note strong { color: var(--task-fg); font-weight: 600; }
+            .task-prop-input { min-width: 0; flex: 1 1 7rem; height: 1.75rem; border: 1px solid transparent; border-radius: .375rem; background: transparent; padding: 0 .375rem; color: var(--task-fg); font-size: .8125rem; line-height: 1.25rem; text-overflow: ellipsis; }
+            .task-prop > dd > .task-prop-input:first-child { margin-left: -.375rem; }
+            .task-prop-input:hover:not(:disabled) { border-color: var(--task-line); background: rgb(var(--dashboard-background-rgb)); }
+            .task-prop-input:focus { outline: none; border-color: var(--task-accent); box-shadow: inset 0 0 0 1px var(--task-accent); background: rgb(var(--dashboard-background-rgb)); }
+            .task-prop-input:disabled { cursor: default; opacity: 1; }
+            select.task-prop-input:disabled { appearance: none; }
+            .task-prop-input option { background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); }
+            .task-prop-input.task-prop-number { flex: 0 0 3.75rem; }
+            .task-quick-comment { padding-top: .25rem; }
+            .task-quick-comment .task-comment-footer { margin-top: .375rem; }
             .task-avatar { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; overflow: hidden; border: 1px solid var(--task-line); border-radius: 999px; background: rgb(var(--dashboard-secondary-rgb)); color: var(--task-fg2); font-size: .625rem; font-weight: 600; }
             .task-avatar[data-kind="agent"] { color: var(--task-accent); }
             .task-avatar[data-kind="unassigned"] { border-style: dashed; background: transparent; color: var(--task-muted); }
