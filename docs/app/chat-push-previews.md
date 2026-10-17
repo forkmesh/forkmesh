@@ -30,19 +30,22 @@ Why the sender and channel left the payload (2026-10-16, chat protocol v3,
 text and custom keys reach Apple in the clear, so "Direct message from X",
 "New message in #design" and `"sender":"x"` told Apple who wrote to whom and
 where, even with previews hidden on the phone. The push for a newly started
-conversation now says "New direct conversation" for the same reason. The
-`conversation` routing field is unchanged, so an office channel push still
-carries `#office/<name>` (and the same `thread-id`) for the tap to open. The
-payload also carries `channelId`, so once every client routes by it the name
-can go too.
+conversation now says "New direct conversation" for the same reason. A
+channel push carries `channelId` and no `conversation`; its `thread-id` is
+`channel:<id>`. Until 2026-10-16 an office channel push also carried
+`conversation: "#office/<name>"` and used it as the `thread-id`, which named
+the room to Apple; clients now route an office push by `channelId`. Direct
+messages keep `conversation: "direct:<id>"` (an opaque id) and the mesh wake
+keeps `#mesh`.
 
 A v3 frame no longer fits: a DM frame is sealed to at least two devices and
 each carries a 1088-byte ML-KEM ciphertext, so the outer envelope is about
 6 KB for two devices. `_sealed_frame` skips a frame string longer than the
 4 KB payload without parsing it, and the phone always takes the pending
-route. If a recipient's desktop or browser acknowledges the frame before the
-phone's fetch, the row is gone and the banner stays "New message" (see the
-2026-10-15 note below; v2 frames fitted).
+route. The recipient's desktop or browser usually acknowledges the frame
+before the phone's fetch (the 2026-10-15 note below), so an acknowledged row
+is kept for a preview grace instead of being deleted at once; see "Preview
+grace" below.
 
 Why the frame rides in the push (2026-10-15): the recipient's desktop or
 browser is usually connected to the conversation, receives the message within
@@ -54,6 +57,36 @@ ciphertext sealed to device keys, so Apple sees nothing more than before.
 Android has no push transport; the account event socket frame for
 `direct-messages` carries the same fields. Direct-message pushes are never
 collapsed or coalesced; channel pushes are coalesced per room.
+
+## Preview grace
+
+`forkmesh-received` no longer deletes the matching DM rows: `chat_direct_received`
+sets `chat_history.acked_at` (migration 0269) on them. For
+`CHAT_DIRECT_ACKED_GRACE_MS` (120 s) such a row is readable only through
+`GET /api/chat/direct-messages/<id>/pending?ref=` (`PENDING_ACKED_GRACE_MS`
+in `chat_direct_messages_api.py`, kept equal by a test), and only while it is
+also inside the 7-day retention window. Everything else treats it as gone:
+history replay (`chat_history_recent`), HTTP polling (`chat_history_since`),
+the "N messages on the server" count (`chat_direct_server_copies`), the
+unread reminder email (`direct_reminders.py`), the per-room count and byte
+budget (`_chat_history_prune_bounds`) and the delivery receipt route.
+
+The row is then deleted:
+
+- on the next receipt in that room (`chat_direct_acked_prune`);
+- by the room's Durable Object alarm, set to 121 s after the first pending
+  acknowledgement (`ForkMeshRoom._schedule_acked_prune`, `alarm`);
+- by the `chat-prune` cron phase (`chat_history_prune_expired`), as a
+  backstop if the alarm was lost with its process.
+
+`forkmesh-superseded`, the 7-day expiry and the account and repository
+deletions still delete at once, acknowledged or not. A view-once frame's
+media parts are deleted by `consume` as before; the grace only keeps the
+ciphertext frame (whose media key then opens nothing). Channels have no
+receipts, so the channel pending route is unchanged.
+`app/tests/test_chat_pending_routes.py`,
+`app/tests/test_chat_history_byte_budget.py` and
+`app/tests/test_chat_recipient_count.py` cover it.
 
 ## Pending-frame routes
 

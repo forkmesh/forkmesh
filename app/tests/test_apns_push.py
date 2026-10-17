@@ -250,12 +250,12 @@ def test_sealed_conversations_name_neither_sender_nor_channel(apns):
     assert "encrypted" not in json.dumps(dm).lower()
     assert apns.direct_message_alert(started=True)["title"] == (
         "\U0001F44B New direct conversation")
-    room = apns.chat_message_alert(
-        apns.office_conversation("design"), channel_id=_CHANNEL_ID)
+    room = apns.chat_message_alert(channel_id=_CHANNEL_ID)
     assert room["title"] == "\U0001F4AC New message"
     assert apns.chat_message_alert()["title"] == "\U0001F4AC New message"
     payload = json.loads(apns.alert_payload(room, "chat"))
-    assert "design" not in json.dumps(payload["aps"]["alert"])
+    assert "conversation" not in payload
+    assert payload["aps"]["thread-id"] == "channel:" + _CHANNEL_ID
     for alert in (dm, room, apns.APNS_TEST_ALERT):
         assert "activity" not in json.dumps(alert).lower()
 
@@ -285,12 +285,10 @@ def test_a_tap_on_a_sealed_conversation_knows_which_one_to_open(apns):
         assert "conversation" not in apns.direct_message_alert(
             conversation_id=bad), bad
 
-    assert apns.office_conversation(" design ") == "#office/design"
-    assert apns.office_conversation("x" * 40) == "#office/" + "x" * 32
-    assert apns.office_conversation("  ") == ""
-    room = apns.chat_message_alert(apns.office_conversation("design"))
-    assert json.loads(apns.alert_payload(room, "chat"))["conversation"] == (
-        "#office/design")
+    assert not hasattr(apns, "office_conversation")
+    mesh = apns.chat_message_alert(apns.APNS_MESH_CONVERSATION)
+    assert json.loads(apns.alert_payload(mesh, "chat"))["conversation"] == (
+        "#mesh")
     assert "conversation" not in json.loads(apns.alert_payload(
         apns.chat_message_alert(), "chat"))
 
@@ -476,14 +474,13 @@ def test_a_push_never_carries_a_malformed_fetch_handle(apns):
 
 def test_a_channel_push_routes_to_the_channel_and_ciphertext(apns):
     alert = apns.chat_message_alert(
-        apns.office_conversation("design"),
         channel_id=_CHANNEL_ID, ref=_REF, key_version=2)
     payload = json.loads(apns.alert_payload(alert, "chat"))
     assert payload["channelId"] == _CHANNEL_ID
     assert payload["ref"] == _REF
     assert payload["keyVersion"] == 2
-    assert payload["conversation"] == "#office/design"
-    assert payload["aps"]["thread-id"] == "#office/design"
+    assert "conversation" not in payload
+    assert payload["aps"]["thread-id"] == "channel:" + _CHANNEL_ID
     world = json.loads(apns.alert_payload(
         apns.chat_message_alert(ref=_REF), "chat"))
     assert not {"channelId", "ref", "keyVersion"} & set(world)
@@ -1225,7 +1222,6 @@ def _chat_push_runtime(*, configured=True, channel=None, members=(),
         "_apns_module": lambda: types.SimpleNamespace(
             apns_configured=lambda env: configured,
             APNS_CHAT_TOPIC="chat", APNS_MAX_DEVICES_PER_BROADCAST=32,
-            office_conversation=lambda name: "#office/" + name,
             chat_message_alert=lambda conversation="", **fetch: {
                 "title": "New message",
                 "conversation": conversation, "fetch": fetch}),
@@ -1274,9 +1270,8 @@ def test_a_private_channel_wakes_its_members_and_never_the_sender():
     runtime.push("chat-channel:c1:v1", channel_id="c1", sender_bi="bi-bob")
     # Carol is not in the channel; Bob sent it.
     assert runtime.sent == [(["t-alice"], "chat")]
-    # The banner does not name the channel; only the routing field does.
     assert runtime.titles == ["New message"]
-    assert runtime.conversations == ["#office/design"]
+    assert runtime.conversations == [""]
     assert runtime.alerts[0]["fetch"] == {
         "channel_id": "c1", "ref": "", "key_version": 0}
 

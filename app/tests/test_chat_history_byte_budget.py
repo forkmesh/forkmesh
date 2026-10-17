@@ -161,7 +161,8 @@ def test_store_prunes_oldest_frames_by_count_and_total_bytes():
     db.execute(
         "CREATE TABLE chat_history ("
         "room_key TEXT NOT NULL,msg_id TEXT NOT NULL,ts INTEGER NOT NULL,"
-        "body TEXT NOT NULL,PRIMARY KEY(room_key,msg_id))"
+        "body TEXT NOT NULL,acked_at INTEGER NOT NULL DEFAULT 0,"
+        "PRIMARY KEY(room_key,msg_id))"
     )
     namespace = _history_helpers(db)
     store = namespace["chat_history_store"]
@@ -310,3 +311,109 @@ def test_replayed_cipher_is_transport_marked_and_terminated():
     assert "envelope.pop('historyReplay', None)" in source
     assert source.index("envelope.pop('historyReplay', None)") < source.index(
         "peer.send(message)")
+
+
+def _direct_history(db, clock):
+    names = {
+        "chat_history_recent", "chat_history_since",
+        "chat_direct_server_copies", "chat_direct_refs",
+        "chat_direct_received", "chat_direct_acked_prune",
+        "chat_history_prune_expired", "chat_history_store",
+        "_chat_history_prune_bounds",
+    }
+    tree = ast.parse(SOURCE, filename=str(ENTRY))
+    selected = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in names
+    ]
+    assert {node.name for node in selected} == names
+
+    async def d1_run(_env, sql, *args):
+        db.execute(sql, args)
+        db.commit()
+
+    async def d1_all(_env, sql, *args):
+        return [dict(row) for row in db.execute(sql, args).fetchall()]
+
+    async def d1_first(_env, sql, *args):
+        row = db.execute(sql, args).fetchone()
+        return dict(row) if row is not None else None
+
+    class _Date:
+        @staticmethod
+        def now():
+            return clock[0]
+
+    namespace = dict(_entry_constants({
+        "CHAT_HISTORY_RETAIN_MS", "CHAT_HISTORY_REPLAY_MAX_MESSAGES",
+        "CHAT_HISTORY_REPLAY_MAX_BYTES", "CHAT_HISTORY_MAX_PER_ROOM",
+        "CHAT_DIRECT_RECEIVED_REFS_MAX", "CHAT_DIRECT_ACKED_GRACE_MS",
+    }))
+    namespace.update({
+        "CHAT_HISTORY_MAX_BYTES_PER_ROOM": 64,
+        "Date": _Date, "re": __import__("re"),
+        "d1_run": d1_run, "d1_all": d1_all, "d1_first": d1_first,
+        "ensure_schema": lambda _env: asyncio.sleep(0),
+    })
+    module = ast.fix_missing_locations(
+        ast.Module(body=selected, type_ignores=[]))
+    exec(compile(module, str(ENTRY), "exec"), namespace)
+    return namespace
+
+
+def test_an_acknowledged_direct_copy_leaves_replay_counts_and_budget():
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT)")
+    db.executescript(
+        (ENTRY.parents[1] / "migrations" / "0008_chat_history.sql").read_text()
+        + (ENTRY.parents[1] / "migrations"
+           / "0269_chat_history_acked_grace.sql").read_text())
+    clock = [1_800_000_000_000]
+    ns = _direct_history(db, clock)
+    room = "chat-direct:" + "2" * 32 + ":v1"
+    alice, bob = "a" * 64, "b" * 64
+    acked_ref, waiting_ref = "1" * 40, "2" * 40
+    for ref, body in ((acked_ref, "x" * 40), (waiting_ref, "y" * 20)):
+        asyncio.run(ns["chat_history_store"](
+            object(), room, ref + ":" + alice[:16] + ":n", clock[0], body))
+
+    assert asyncio.run(ns["chat_direct_server_copies"](object(), room)) == 2
+    assert asyncio.run(ns["chat_direct_received"](
+        object(), room, bob, [acked_ref])) is True
+
+    acked = db.execute(
+        "SELECT acked_at FROM chat_history WHERE msg_id LIKE ?",
+        (acked_ref + "%",)).fetchone()[0]
+    assert acked == clock[0]
+    assert asyncio.run(ns["chat_direct_server_copies"](object(), room)) == 1
+    assert asyncio.run(ns["chat_history_recent"](object(), room)) == [
+        "y" * 20]
+    assert [row["body"] for row in asyncio.run(ns["chat_history_since"](
+        object(), room, 0))] == ["y" * 20]
+
+    asyncio.run(ns["chat_history_store"](
+        object(), room, "3" * 40 + ":" + alice[:16] + ":n", clock[0] + 1,
+        "z" * 40))
+    bodies = sorted(row[0] for row in db.execute(
+        "SELECT body FROM chat_history WHERE room_key=?", (room,)))
+    assert bodies == ["x" * 40, "y" * 20, "z" * 40]
+
+    clock[0] += ns["CHAT_DIRECT_ACKED_GRACE_MS"] - 1
+    assert asyncio.run(ns["chat_direct_acked_prune"](
+        object(), room, clock[0])) == clock[0] - (
+            ns["CHAT_DIRECT_ACKED_GRACE_MS"] - 1)
+    asyncio.run(ns["chat_history_prune_expired"](object()))
+    assert db.execute("SELECT COUNT(*) FROM chat_history").fetchone()[0] == 3
+
+    clock[0] += 1
+    asyncio.run(ns["chat_history_prune_expired"](object()))
+    assert sorted(row[0] for row in db.execute(
+        "SELECT body FROM chat_history")) == ["y" * 20, "z" * 40]
+    assert asyncio.run(ns["chat_direct_acked_prune"](
+        object(), room, clock[0])) == 0
+
+    asyncio.run(ns["chat_direct_received"](object(), room, alice, ["3" * 40]))
+    assert db.execute(
+        "SELECT COUNT(*) FROM chat_history WHERE acked_at>0").fetchone()[0] == 0

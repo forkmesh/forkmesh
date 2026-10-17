@@ -67,8 +67,6 @@ APNS_REF_RE = re.compile(r"[0-9a-f]{40}")
 APNS_KEY_VERSION_MAX = 1_000_000_000
 APNS_FRAME_RELAY_KEYS = frozenset({
     "ref", "recipients", "recipientNames", "historyReplay"})
-APNS_OFFICE_CONVERSATION_PREFIX = "#office/"
-APNS_OFFICE_NAME_MAX_CHARS = 32
 APNS_MESH_CONVERSATION = "#mesh"
 APNS_MESH_COLLAPSE_ID = "mesh-room"
 APNS_CONVERSATION_MAX_CHARS = 120
@@ -363,11 +361,6 @@ def chat_message_alert(conversation="", channel_id="", ref="",
         alert["channelId"] = channel_id
         _fetch_fields(alert, ref, key_version)
     return alert
-
-
-def office_conversation(channel_name):
-    name = str(channel_name or "").strip()[:APNS_OFFICE_NAME_MAX_CHARS]
-    return (APNS_OFFICE_CONVERSATION_PREFIX + name) if name else ""
 
 
 def apns_origin(env):

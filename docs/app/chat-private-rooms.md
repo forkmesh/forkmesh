@@ -72,9 +72,13 @@ it. Clients show "N messages on the server" or "Not stored on the server".
   before fan-out. `chat_history.msg_id` is `<ref>:<sender account_bi[:16]>`,
   plus `:n` when the sender marked the frame `notify` (a real message).
 - A recipient client sends `{"kind":"forkmesh-received","v":1,"refs":[...]}`
-  (at most 64 refs) after opening a frame; `chat_direct_received` deletes the
-  matching rows not sent by the acknowledging account. A frame the device
-  cannot open is not acknowledged.
+  (at most 64 refs) after opening a frame; `chat_direct_received` marks the
+  matching rows not sent by the acknowledging account as acknowledged
+  (`acked_at`). From then on only the push preview route can read them, for
+  120 s, and they are deleted after that
+  ([chat-push-previews.md](chat-push-previews.md#preview-grace)); replay,
+  polling, the server-copies count and reminders ignore them at once. A frame
+  the device cannot open is not acknowledged.
 - `forkmesh-received` and `forkmesh-superseded` on a DM socket have their own
   budget (`ROOM_RECEIPT_MAX_PER_WINDOW`, 40 per 10 s, frames up to 8 KiB,
   `chat_direct_receipt_envelope`) and are handled before the 20-frame message
@@ -101,7 +105,8 @@ room (`e2ee-key` frames). Every client follows these rules in a DM room:
 2. When a sealed frame is not wrapped for this device, send one persisted key
    advertisement; this tells the sender to re-seal.
 3. Keep an outbox of up to 64 own durable frames. When a new peer key is
-   learned, reseal entries not wrapped for all known keys, send them with the
+   approved (protocol v3: a pending device gets nothing until the user approves
+   it), reseal entries not wrapped for all approved keys, send them with the
    same message id and `"resend": true`, then send
    `{"kind":"forkmesh-superseded","v":1,"refs":[...]}` for the old refs.
 4. Receivers drop message ids already shown.
@@ -338,6 +343,44 @@ frame is what is stored and replayed, and
 `GET /api/chat/channels/<id>/history` lifts the fields to
 `messages[].recipients` and `messages[].recipientNames`. Device key lists are
 never used as a source, because keys carry no account binding.
+
+## Web client seal (protocol v3)
+
+The browser speaks only [chat protocol v3](chat-protocol-v3.md); v2 frames are
+ignored and the v2 X25519 key and peer lists are deleted from `localStorage` on
+load.
+
+| File | Role |
+| --- | --- |
+| `app/public/chat-mlkem.js` | Keccak (SHA3-256/512, SHAKE128/256) and ML-KEM-768, ported from the Android `MlKem768.kt` |
+| `app/public/chat-seal.js` | Identity key, prekeys, bundles, trust store, held frames, counters and replay window, seal/open, safety numbers |
+| `app/public/chat-room-transport.js` | Advertises bundles on every connect and after a prekey rotation, opens frames, reseals DMs after an approval |
+| `app/public/chat.js`, `chat.html` | New-device banner (Approve, Block, Safety number), system lines, the Safety number view in the encryption panel |
+
+- Ed25519, X25519, HKDF, AES-GCM and SHA-2 come from WebCrypto; private keys
+  are imported non-extractable. The identity seed and prekeys sit in
+  `localStorage` under `forkmesh.chat/e2ee/`, wrapped with a non-extractable
+  AES-GCM key kept in IndexedDB (`forkmesh-chat-e2ee`) when the browser has
+  one, plain otherwise. Trust records, counters, the replay window (a 1024-bit
+  map per sender) and up to 64 held frames per room are stored next to them,
+  keyed by relay host plus trust scope or room.
+- `acct` is the browser's `forkmesh.chat.selfId`, the `senderId` it already
+  writes; `createRoomSealStore({ acct })` takes it from `chat.js`,
+  `dashboard-chat.js` and the Office chat. `direct:<id>` rooms are strict with
+  that trust scope; every other room is open, scoped by room name.
+- The relay replays a room's backlog on every connect and the web keeps no
+  local history, so frames in the history batch skip the "already seen" check
+  (everything else, signature and `ts` window included, still applies). Live
+  frames that were already seen are dropped as replays.
+- An opened frame without `senderId` gets the sender's `acct`; a frame whose
+  `reactorId` is not the sender's `acct` is dropped. Edits and deletes already
+  require the original's `senderId`, which v3 now authenticates.
+- Frames held for a pending or unknown device are opened when its bundle
+  arrives or the user approves it, and go to the page as history, so they do
+  not ring.
+- Tests: `app/tests/chat_v3_web.test.mjs` (run by
+  `app/tests/test_chat_v3_web_vectors.py`) checks the OpenSSL ML-KEM answers
+  and every expectation in `conformance/chat/v3/vectors.json`.
 
 ## Legacy mesh rooms
 
