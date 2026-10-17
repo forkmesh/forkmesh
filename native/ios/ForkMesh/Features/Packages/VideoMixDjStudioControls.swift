@@ -69,57 +69,6 @@ struct DjPressStyle: ButtonStyle {
     }
 }
 
-struct DjRecordButton: View {
-    let model: DjStudioModel
-    let size: CGFloat
-
-    var body: some View {
-        Button {
-            DjTheme.tick()
-            model.capture()
-        } label: {
-            ZStack {
-                Circle().fill(LinearGradient(colors: [DjTheme.rgb(0x18191C), DjTheme.rgb(0x2E3035)], startPoint: .top, endPoint: .bottom))
-                Circle().strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                Circle()
-                    .fill(RadialGradient(colors: [DjTheme.rgb(0xFF3B3B), DjTheme.record, DjTheme.rgb(0x7A0A0F)], center: .init(x: 0.4, y: 0.35), startRadius: 0, endRadius: size * 0.36))
-                    .frame(width: size * 0.56, height: size * 0.56)
-                    .shadow(color: DjTheme.record.opacity(model.recording ? 0.95 : 0.35), radius: model.recording ? size * 0.3 : size * 0.08)
-            }
-            .frame(width: size, height: size)
-            .animation(.easeOut(duration: 0.25), value: model.recording)
-        }
-        .buttonStyle(DjPressStyle())
-        .accessibilityLabel("Capture an 8-second section")
-    }
-}
-
-struct DjGearMenu: View {
-    let model: DjStudioModel
-    let size: CGFloat
-
-    var body: some View {
-        Menu {
-            Button("Leave Studio", systemImage: "xmark.circle") { model.leave() }
-            Divider()
-            Button("Load Deck A", systemImage: "music.note") { model.openLoad(.a) }
-            Button("Load Deck B", systemImage: "music.note") { model.openLoad(.b) }
-            Button("Deck A Settings", systemImage: "slider.horizontal.3") { model.sheet = .deck(.a) }
-            Button("Deck B Settings", systemImage: "slider.horizontal.3") { model.sheet = .deck(.b) }
-            Button("Sampler Pads", systemImage: "square.grid.3x3") { model.sheet = .pads }
-            Divider()
-            Button("Reset All", systemImage: "arrow.counterclockwise", role: .destructive) { model.confirmingReset = true }
-        } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: size * 0.62, weight: .regular))
-                .foregroundStyle(DjTheme.muted)
-                .frame(width: size, height: size)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel("Studio menu")
-    }
-}
-
 struct DjInfoButton: View {
     let model: DjStudioModel
     let size: CGFloat
@@ -260,33 +209,20 @@ struct DjWaveform: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            let zoomed = model.zoomed && deck.duration > 0
-            ZStack {
-                if !zoomed {
-                    DjWaveOverview(id: deck.videoId, bars: deck.waveform, width: size.width, height: size.height)
-                        .equatable()
-                }
-                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.playing || deck.scratching)) { _ in
-                    let time = deck.position()
-                    let bars = deck.waveform
-                    let duration = deck.duration
-                    if zoomed {
-                        Canvas(rendersAsynchronously: false) { context, area in
-                            DjWaveDrawing.zoomed(context, area, bars: bars, time: time, duration: duration)
-                        }
-                    } else {
-                        let fraction = deck.duration > 0 ? time / deck.duration : 0
-                        DjWaveDrawing.playhead(height: size.height)
-                            .offset(x: (dragX ?? CGFloat(fraction) * size.width) - size.width / 2)
-                    }
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.playing || deck.scratching)) { _ in
+                let time = deck.position() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
+                let bars = deck.waveform
+                let duration = deck.duration
+                Canvas(rendersAsynchronously: false) { context, area in
+                    DjWaveDrawing.zoomed(context, area, bars: bars, time: time, duration: duration)
                 }
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        guard deck.duration > 0, !zoomed else { return }
-                        dragX = min(size.width, max(0, value.location.x))
+                        guard deck.duration > 0 else { return }
+                        dragX = value.translation.width
                     }
                     .onEnded { value in
                         defer { dragX = nil }
@@ -294,35 +230,13 @@ struct DjWaveform: View {
                             if !deck.loaded { model.openLoad(deck.side) }
                             return
                         }
-                        if zoomed {
-                            model.seek(deck.side, to: deck.position() - Double(value.translation.width / size.width) * DjWaveDrawing.window)
-                        } else {
-                            model.seek(deck.side, to: Double(min(size.width, max(0, value.location.x)) / size.width) * deck.duration)
-                        }
+                        model.seek(deck.side, to: deck.position() - Double(value.translation.width / size.width) * DjWaveDrawing.window)
                     })
         }
         .clipped()
         .accessibilityElement()
         .accessibilityLabel("Deck \(deck.side.label) waveform")
         .accessibilityValue(DjStudio.clock(deck.time))
-    }
-}
-
-struct DjWaveOverview: View, Equatable {
-    let id: String
-    let bars: [DjWaveBar]
-    let width: CGFloat
-    let height: CGFloat
-
-    nonisolated static func == (left: DjWaveOverview, right: DjWaveOverview) -> Bool {
-        left.id == right.id && left.width == right.width && left.height == right.height && left.bars.count == right.bars.count
-    }
-
-    var body: some View {
-        Canvas { context, area in
-            DjWaveDrawing.overview(context, area, bars: bars)
-        }
-        .frame(width: width, height: height)
     }
 }
 
@@ -333,22 +247,9 @@ enum DjWaveDrawing {
         context.fill(Path(CGRect(x: 0, y: size.height / 2 - 0.5, width: size.width, height: 1)), with: .color(.white.opacity(0.22)))
     }
 
-    static func overview(_ context: GraphicsContext, _ size: CGSize, bars: [DjWaveBar]) {
-        centreLine(context, size)
-        guard !bars.isEmpty, size.width > 0 else { return }
-        var paths = [Path](repeating: Path(), count: DjTheme.waveColors.count)
-        let step: CGFloat = 2
-        var x: CGFloat = 0
-        while x < size.width {
-            let bar = bars[min(bars.count - 1, Int(x / size.width * CGFloat(bars.count)))]
-            add(&paths, bar, x: x, width: step * 0.75, size: size)
-            x += step
-        }
-        fill(context, paths)
-    }
-
     static func zoomed(_ context: GraphicsContext, _ size: CGSize, bars: [DjWaveBar], time: Double, duration: Double) {
         centreLine(context, size)
+        defer { context.fill(Path(CGRect(x: size.width / 2 - 0.75, y: 0, width: 1.5, height: size.height)), with: .color(DjTheme.playhead)) }
         guard !bars.isEmpty, duration > 0, size.width > 0 else { return }
         var paths = [Path](repeating: Path(), count: DjTheme.waveColors.count)
         let step: CGFloat = 3
@@ -365,7 +266,6 @@ enum DjWaveDrawing {
             x += step
         }
         fill(context, paths)
-        context.fill(Path(CGRect(x: size.width / 2 - 0.75, y: 0, width: 1.5, height: size.height)), with: .color(DjTheme.playhead))
     }
 
     static func mini(_ context: GraphicsContext, _ size: CGSize, bars: [DjWaveBar]) {
@@ -377,10 +277,6 @@ enum DjWaveDrawing {
             let bucket = min(DjTheme.waveColors.count - 1, max(0, Int(bar.hue * Double(DjTheme.waveColors.count))))
             context.fill(Path(roundedRect: rect, cornerRadius: slot * 0.3), with: .color(DjTheme.waveColors[bucket]))
         }
-    }
-
-    @MainActor static func playhead(height: CGFloat) -> some View {
-        Rectangle().fill(DjTheme.playhead).frame(width: 1.5, height: height)
     }
 
     private static func add(_ paths: inout [Path], _ bar: DjWaveBar, x: CGFloat, width: CGFloat, size: CGSize) {
@@ -507,30 +403,38 @@ struct DjCueButtons: View {
             divider
             Button {
                 DjTheme.tick()
-                model.capture(deck.side)
+                model.sample(deck.side)
             } label: {
+                let look = sampleLook
                 HStack(spacing: 3 * u) {
                     Circle()
-                        .fill(DjTheme.record)
+                        .fill(look.tint.opacity(look.lit ? 1 : 0.35))
                         .frame(width: 7 * u, height: 7 * u)
-                        .shadow(color: DjTheme.record.opacity(deck.sampling ? 1 : 0), radius: 4 * u)
-                    Text("SAMPLE").font(.system(size: 10 * u, weight: .bold))
+                        .shadow(color: look.tint.opacity(look.lit ? 1 : 0), radius: 4 * u)
+                    Text(look.title).font(.system(size: 10 * u, weight: .bold))
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(width: segment * u, height: 34 * u)
-                .background(DjTheme.record.opacity(deck.sampling ? 0.3 : 0))
+                .background(look.tint.opacity(look.lit ? 0.3 : 0))
                 .contentShape(Rectangle())
             }
-            .animation(.easeOut(duration: 0.25), value: deck.sampling)
-            .accessibilityLabel("Sample 8 seconds of Deck \(deck.side.label)")
-            .accessibilityHint("Saves the next 8 seconds to a sampler pad")
+            .animation(.easeOut(duration: 0.2), value: deck.sample)
+            .accessibilityLabel(sampleLook.label)
         }
         .buttonStyle(DjPressStyle())
         .foregroundStyle(deck.loaded ? DjTheme.ink : DjTheme.muted)
         .background(DjTheme.control, in: RoundedRectangle(cornerRadius: 4 * u, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 4 * u, style: .continuous).strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+    }
+
+    private var sampleLook: (title: String, tint: Color, lit: Bool, label: String) {
+        switch deck.sample {
+        case .idle: return ("SAMPLE", DjTheme.muted, false, "Start sampling Deck \(deck.side.label)")
+        case .recording: return ("REC", DjTheme.record, true, "Stop sampling Deck \(deck.side.label)")
+        case .armed: return ("ARMED", DjTheme.active, true, "Play Deck \(deck.side.label)’s sample")
+        }
     }
 
     private var divider: some View {
@@ -581,10 +485,6 @@ struct DjPitchStrip: View {
                 .buttonStyle(DjPressStyle())
                 DjPitchFader(model: model, deck: deck, u: u)
                     .frame(maxHeight: .infinity)
-                DjRoundButton(size: 28 * u, lit: deck.loop, action: { model.toggleLoop(deck.side) }) {
-                    Image(systemName: "music.note")
-                }
-                .accessibilityLabel(deck.loop ? "Stop Deck \(deck.side.label) loop" : "Loop Deck \(deck.side.label)")
             }
             .padding(6 * u)
             .background(DjTheme.panel, in: RoundedRectangle(cornerRadius: 5 * u, style: .continuous))
@@ -636,7 +536,7 @@ struct DjPitchFader: View {
             let knob = CGSize(width: 40 * u, height: 22 * u)
             let travel = max(1, height - knob.height)
             let fraction = (deck.rate - (1 - DjStudio.pitchRange)) / (2 * DjStudio.pitchRange)
-            let y = knob.height / 2 + CGFloat(fraction) * travel
+            let y = knob.height / 2 + CGFloat(1 - fraction) * travel
             ZStack(alignment: .top) {
                 ForEach(0..<9, id: \.self) { index in
                     Rectangle()
@@ -662,7 +562,7 @@ struct DjPitchFader: View {
                     .onChanged { value in
                         let start = startRate ?? deck.rate
                         if startRate == nil { startRate = start }
-                        model.setRate(deck.side, start + Double(value.translation.height / travel) * 2 * DjStudio.pitchRange)
+                        model.setRate(deck.side, start - Double(value.translation.height / travel) * 2 * DjStudio.pitchRange)
                     }
                     .onEnded { _ in startRate = nil })
             .onChange(of: dragging) { _, now in if !now { startRate = nil } }
@@ -769,6 +669,7 @@ struct DjCrossfader: View {
 struct DjAutomixTab: View {
     let model: DjStudioModel
     let u: CGFloat
+    var inset: CGFloat = 26
 
     var body: some View {
         Button {
@@ -785,7 +686,7 @@ struct DjAutomixTab: View {
                     .font(.system(size: 12 * u, weight: .bold))
                     .foregroundStyle(model.automixing ? DjTheme.active : DjTheme.ink)
             }
-            .padding(.horizontal, 26 * u)
+            .padding(.horizontal, inset * u)
             .frame(height: 30 * u)
             .background(DjTabShape().fill(DjTheme.rgb(0x2A2C31)))
             .overlay(DjTabShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
@@ -811,25 +712,6 @@ struct DjTabShape: Shape {
             control2: CGPoint(x: rect.maxX - slant * 0.5, y: rect.maxY))
         path.closeSubpath()
         return path
-    }
-}
-
-struct DjLogoTab: View {
-    let u: CGFloat
-
-    var body: some View {
-        HStack(spacing: 4 * u) {
-            Text("\(Text("fork").font(.system(size: 13 * u, weight: .regular)))\(Text("mesh").font(.system(size: 13 * u, weight: .heavy)))")
-                .foregroundStyle(DjTheme.ink.opacity(0.9))
-            Image(systemName: "square.grid.3x3.fill")
-                .font(.system(size: 10 * u))
-                .foregroundStyle(DjTheme.ink.opacity(0.7))
-        }
-        .padding(.horizontal, 24 * u)
-        .frame(height: 28 * u)
-        .background(DjTabShape().fill(DjTheme.rgb(0x2C2E33)).rotationEffect(.degrees(180)))
-        .overlay(DjTabShape().stroke(Color.white.opacity(0.07), lineWidth: 1).rotationEffect(.degrees(180)))
-        .accessibilityHidden(true)
     }
 }
 

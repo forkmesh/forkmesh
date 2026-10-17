@@ -48,7 +48,7 @@
     { "id": "browser-extension", "version": "2.24.0", "manifest": "packages/browser-extension/manifest.json" },
     { "id": "voice-changer", "version": "1.1.0", "manifest": "packages/voice-changer/manifest.json" },
     { "id": "face-changer", "version": "1.2.0", "manifest": "packages/face-changer/manifest.json" },
-    { "id": "video-mix-dj-studio", "version": "1.0.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },
+    { "id": "video-mix-dj-studio", "version": "1.1.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },
     { "id": "agent-watch", "version": "1.0.0", "manifest": "packages/agent-watch/manifest.json" },
     { "id": "tour", "version": "1.1.0", "manifest": "packages/tour/manifest.json" },
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
@@ -126,6 +126,11 @@
     { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
     { "id": "feed", "version": "1.0.0", "manifest": "packages/feed/manifest.json" },
     { "id": "mastodon", "version": "1.0.0", "manifest": "packages/mastodon/manifest.json" },
-    { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" }
+    { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" },
+    { "id": "code-map", "version": "1.0.0", "manifest": "packages/code-map/manifest.json" },
+    { "id": "size-map", "version": "1.0.0", "manifest": "packages/size-map/manifest.json" },
+    { "id": "strata", "version": "1.0.0", "manifest": "packages/strata/manifest.json" },
+    { "id": "ember", "version": "1.0.0", "manifest": "packages/ember/manifest.json" },
+    { "id": "synapse", "version": "1.0.0", "manifest": "packages/synapse/manifest.json" }
   ]
 }

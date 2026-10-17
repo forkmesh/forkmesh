@@ -3601,8 +3601,6 @@ SCHEMA_STATEMENTS = [
         used_at INTEGER NOT NULL CHECK (used_at >= 0))""",
     "CREATE INDEX IF NOT EXISTS idx_org_bot_token_usage_org_time "
     "ON org_bot_token_usage(org_bi, used_at DESC, id DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_org_bot_token_usage_token_time "
-    "ON org_bot_token_usage(token_id, used_at DESC, id DESC)",
     # Retention is account-wide, so neither org/token-leading index can serve
     # its timestamp-only DELETE. Keep that hourly sweep from scanning the full
     # append-only table (migration 0172).

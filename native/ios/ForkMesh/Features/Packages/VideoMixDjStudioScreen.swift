@@ -90,10 +90,12 @@ struct DjLandscape: View {
         let u = min(1.7, max(0.78, min(size.height / 380, size.width / 800)))
         let top = 76 * u
         let bottom = 64 * u
-        let middle = max(120, size.height - top - bottom)
+        let footer = 34 * u
+        let middle = max(120, size.height - top - bottom - footer)
         let strip = 58 * u
-        let centre = 46 * u
-        let d = max(100, min(middle - 10 * u, (size.width - 2 * strip - centre - 40 * u) / 2))
+        let narrowest = 96 * u
+        let d = max(100, min(middle - 10 * u, (size.width - 2 * strip - narrowest - 40 * u) / 2))
+        let centre = max(narrowest, min(230 * u, size.width - 2 * strip - 2 * d - 40 * u))
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8 * u) {
                 DjBackButton(model: model, size: 34 * u)
@@ -102,20 +104,12 @@ struct DjLandscape: View {
                 VStack(spacing: 4 * u) {
                     HStack(spacing: 8 * u) {
                         DjDeckInfo(model: model, deck: model.a, mirrored: false, u: u)
-                        Spacer(minLength: 4 * u)
-                        HStack(spacing: 12 * u) {
-                            DjGearMenu(model: model, size: 30 * u)
-                            DjRecordButton(model: model, size: 44 * u)
-                            DjInfoButton(model: model, size: 30 * u)
-                            DjResetButton(model: model, size: 30 * u)
-                        }
-                        Spacer(minLength: 4 * u)
+                        Spacer(minLength: 12 * u)
                         DjDeckInfo(model: model, deck: model.b, mirrored: true, u: u)
                     }
                     .frame(height: 42 * u)
                     HStack(spacing: 10 * u) {
                         DjWaveform(model: model, deck: model.a)
-                        DjZoomButton(model: model, u: u)
                         DjWaveform(model: model, deck: model.b)
                     }
                     .frame(height: 24 * u)
@@ -132,14 +126,8 @@ struct DjLandscape: View {
                     .frame(height: middle - 12 * u)
                 Spacer(minLength: 4 * u)
                 DjPlatter(model: model, deck: model.a, d: d)
-                ZStack {
-                    Rectangle().fill(Color.black.opacity(0.35)).frame(width: 1)
-                    DjPadsButton(model: model, size: 32 * u)
-                        .offset(y: middle * 0.18)
-                }
-                .frame(width: centre, height: middle)
-                .overlay(alignment: .top) { DjLogoTab(u: u).fixedSize() }
-                .overlay(alignment: .bottom) { DjAutomixTab(model: model, u: u).fixedSize() }
+                DjQueueView(model: model, u: u, vertical: true)
+                    .frame(width: centre, height: middle - 8 * u)
                 DjPlatter(model: model, deck: model.b, d: d)
                 Spacer(minLength: 4 * u)
                 DjPitchStrip(model: model, deck: model.b, u: u)
@@ -147,20 +135,24 @@ struct DjLandscape: View {
             }
             .padding(.horizontal, 8 * u)
             .frame(height: middle)
-            HStack(spacing: 0) {
-                DjTransport(model: model, deck: model.a, u: u, cell: CGSize(width: 40, height: 40))
-                Spacer(minLength: 6 * u)
-                DjCueButtons(model: model, deck: model.a, u: u, segment: 42)
-                Spacer(minLength: 6 * u)
-                DjCrossfader(model: model, u: u)
-                    .frame(width: max(120 * u, min(300 * u, size.width - 636 * u)), height: bottom - 8 * u)
-                Spacer(minLength: 6 * u)
-                DjCueButtons(model: model, deck: model.b, u: u, segment: 42)
-                Spacer(minLength: 6 * u)
-                DjTransport(model: model, deck: model.b, u: u, cell: CGSize(width: 40, height: 40))
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    DjTransport(model: model, deck: model.a, u: u, cell: CGSize(width: 40, height: 40))
+                    Spacer(minLength: 6 * u)
+                    DjCueButtons(model: model, deck: model.a, u: u, segment: 42)
+                    Spacer(minLength: 6 * u)
+                    DjCrossfader(model: model, u: u)
+                        .frame(width: max(120 * u, min(300 * u, size.width - 636 * u)), height: bottom - 8 * u)
+                    Spacer(minLength: 6 * u)
+                    DjCueButtons(model: model, deck: model.b, u: u, segment: 42)
+                    Spacer(minLength: 6 * u)
+                    DjTransport(model: model, deck: model.b, u: u, cell: CGSize(width: 40, height: 40))
+                }
+                .frame(height: bottom)
+                DjUtilityRow(model: model, u: u)
+                    .frame(height: footer)
             }
             .padding(.horizontal, 10 * u)
-            .frame(height: bottom)
             .background(DjTheme.bar.ignoresSafeArea(edges: [.bottom, .horizontal]))
             .overlay(alignment: .top) { Rectangle().fill(Color.black.opacity(0.6)).frame(height: 1) }
         }
@@ -176,39 +168,32 @@ struct DjPortrait: View {
         let u = min(1.6, max(0.74, min(size.width / 390, size.height / 780)))
         let header = 40 * u
         let wave = 24 * u
-        let mixer = 110 * u
-        let deckBody = max(120, (size.height - mixer - 2 * (header + wave) - 32 * u) / 2)
+        let mixer = 122 * u
+        let footer = 42 * u
+        let deckBody = max(110, (size.height - mixer - footer - 2 * (header + wave) - 32 * u) / 2)
         let d = max(100, min(deckBody - 6 * u, size.width - 166 * u))
         VStack(spacing: 0) {
             deck(model.a, deckBody: deckBody, d: d, header: header, wave: wave, u: u)
-            VStack(spacing: 6 * u) {
-                HStack(spacing: 14 * u) {
-                    DjGearMenu(model: model, size: 30 * u)
-                    DjRecordButton(model: model, size: 40 * u)
-                    DjInfoButton(model: model, size: 30 * u)
-                    DjResetButton(model: model, size: 30 * u)
-                    Spacer(minLength: 0)
-                    DjZoomButton(model: model, u: u)
-                    DjPadsButton(model: model, size: 30 * u)
-                }
-                .padding(.horizontal, 12 * u)
-                ZStack(alignment: .top) {
-                    DjCrossfader(model: model, u: u)
-                        .frame(height: 46 * u)
-                        .padding(.top, 14 * u)
-                        .padding(.horizontal, 24 * u)
-                    DjAutomixTab(model: model, u: u)
-                        .fixedSize()
-                        .scaleEffect(0.85)
-                        .offset(y: -10 * u)
-                }
+            VStack(spacing: 4 * u) {
+                DjQueueView(model: model, u: u, vertical: false)
+                    .frame(height: 58 * u)
+                    .padding(.horizontal, 10 * u)
+                DjCrossfader(model: model, u: u)
+                    .frame(height: 46 * u)
+                    .padding(.horizontal, 24 * u)
             }
+            .padding(.vertical, 4 * u)
             .frame(height: mixer)
             .frame(maxWidth: .infinity)
             .background(DjTheme.bar.ignoresSafeArea(edges: .horizontal))
             .overlay(alignment: .top) { Rectangle().fill(Color.black.opacity(0.6)).frame(height: 1) }
             .overlay(alignment: .bottom) { Rectangle().fill(Color.black.opacity(0.6)).frame(height: 1) }
             deck(model.b, deckBody: deckBody, d: d, header: header, wave: wave, u: u)
+            DjUtilityRow(model: model, u: u)
+                .frame(height: footer)
+                .frame(maxWidth: .infinity)
+                .background(DjTheme.bar.ignoresSafeArea(edges: [.bottom, .horizontal]))
+                .overlay(alignment: .top) { Rectangle().fill(Color.black.opacity(0.6)).frame(height: 1) }
         }
         .frame(width: size.width, height: size.height)
     }
@@ -245,23 +230,19 @@ struct DjPortrait: View {
     }
 }
 
-struct DjZoomButton: View {
+struct DjUtilityRow: View {
     let model: DjStudioModel
     let u: CGFloat
 
     var body: some View {
-        Button {
-            DjTheme.tick()
-            model.toggleZoom()
-        } label: {
-            Image(systemName: "waveform")
-                .font(.system(size: 18 * u, weight: .semibold))
-                .foregroundStyle(model.zoomed ? DjTheme.active : DjTheme.muted)
-                .frame(width: 30 * u, height: 24 * u)
-                .contentShape(Rectangle())
+        HStack(spacing: 14 * u) {
+            DjInfoButton(model: model, size: 28 * u)
+            DjPadsButton(model: model, size: 26 * u)
+            DjAutomixTab(model: model, u: u, inset: 16)
+                .fixedSize()
+            DjResetButton(model: model, size: 28 * u)
         }
-        .buttonStyle(DjPressStyle())
-        .accessibilityLabel(model.zoomed ? "Show whole tracks" : "Zoom waveforms")
+        .frame(maxWidth: .infinity)
     }
 }
 

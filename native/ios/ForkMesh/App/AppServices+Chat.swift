@@ -176,6 +176,7 @@ struct ChatInstaller: AppServicesInstaller {
         }
         hub.calls = calls
         Services.put(calls)
+        CallRinger.shared.attach(calls)
     }
 
     private func installLive(hub: ChatHub, direct: DirectMessageService) -> DirectLiveEngine {

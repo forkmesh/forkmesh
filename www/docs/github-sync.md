@@ -20,4 +20,5 @@ Rules: imported events are signed by the bridge key with `authorName`
 GitHub ids so reruns are idempotent; ForkMesh-side edits survive; pull request
 code is fetched as data and never executed (payloads over 8 MiB skipped).
 Subcommands `git-sync`, `export` and `run --dry-run` run pieces by hand; tests
-are `app/tests/test_github_forkmesh_bridge.py`.
+are `app/tests/test_github_forkmesh_bridge.py`. To also deploy a Cloudflare
+Worker from the mirror, see [Mirror and deploy a Cloudflare Worker](cloudflare-workers.md).

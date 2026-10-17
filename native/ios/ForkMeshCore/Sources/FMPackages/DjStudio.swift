@@ -18,6 +18,29 @@ public struct DjWaveBar: Equatable, Sendable {
     }
 }
 
+public enum DjSampleStep: Equatable, Sendable {
+    case idle
+    case recording(start: Double)
+    case armed(slot: Int)
+}
+
+public enum DjLoadTarget: String, CaseIterable, Hashable, Sendable, Identifiable {
+    case a, b, queue
+
+    public init(_ side: DjDeckSide) { self = side == .a ? .a : .b }
+
+    public var id: String { rawValue }
+    public var side: DjDeckSide? {
+        switch self {
+        case .a: return .a
+        case .b: return .b
+        case .queue: return nil
+        }
+    }
+
+    public var label: String { side.map { "Deck \($0.label)" } ?? "Queue" }
+}
+
 public struct DjSearchResult: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
@@ -52,6 +75,11 @@ public enum DjStudio {
     public static let rateBounds: ClosedRange<Double> = 0.25...2
     public static let storageKey = "fm.videoMixDjStudio.v1"
     public static let historyLimit = 40
+    public static let queueLimit = 100
+    public static let touchBrake: Double = 0.08
+    public static let touchBrakeSeconds: Double = 0.35
+    public static let scratchThreshold: Double = 14
+    public static let shortestSample: Double = 0.25
 
     public static func isVideoId(_ value: String) -> Bool {
         value.utf8.count == 11 && value.unicodeScalars.allSatisfy { scalar in
@@ -154,6 +182,16 @@ public enum DjStudio {
     public static func scratchLevel(_ speed: Double) -> Double {
         guard speed.isFinite else { return 0 }
         return min(1, abs(speed) / 2.5) * (speed < 0 ? 1 : 0.5)
+    }
+
+    public static func isScratch(dx: Double, dy: Double, threshold: Double = scratchThreshold) -> Bool {
+        guard dx.isFinite, dy.isFinite else { return false }
+        return (dx * dx + dy * dy).squareRoot() >= threshold
+    }
+
+    public static func sampleSection(_ deck: DjDeckSide, start: Double, end: Double) -> DjSection? {
+        guard start.isFinite, end.isFinite, end - start >= shortestSample else { return nil }
+        return DjSection(deck: deck, start: start, duration: end - start)
     }
 
     public static func trackedPosition(predicted: Double, reported: Double, continuous: Bool) -> Double {
@@ -354,8 +392,8 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var crossfader: Double = 0
     public var samplerLevel: Double = 0.8
     public var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
-    public var zoomed = false
     public var history: [DjHistoryItem] = []
+    public var queue: [DjQueueItem] = []
 
     public init() {}
 
@@ -367,10 +405,12 @@ public struct DjSaved: Codable, Equatable, Sendable {
         samplerLevel = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .samplerLevel)) ?? nil, 0.8, 0...1)
         let stored = ((try? values.decodeIfPresent([DjSection?].self, forKey: .sections)) ?? nil) ?? []
         sections = (0..<DjStudio.sectionCount).map { $0 < stored.count ? stored[$0] : nil }
-        zoomed = ((try? values.decodeIfPresent(Bool.self, forKey: .zoomed)) ?? nil) ?? false
         let entries = ((try? values.decodeIfPresent([DjHistoryEntry].self, forKey: .history)) ?? nil) ?? []
         var seen = Set<String>()
         history = Array(entries.compactMap(\.item).filter { seen.insert($0.id).inserted }.prefix(DjStudio.historyLimit))
+        let queued = ((try? values.decodeIfPresent([DjQueueEntry].self, forKey: .queue)) ?? nil) ?? []
+        var ids = Set<String>()
+        queue = Array(queued.compactMap(\.item).filter { ids.insert($0.id).inserted }.prefix(DjStudio.queueLimit))
     }
 
     public subscript(side: DjDeckSide) -> DjSavedDeck {

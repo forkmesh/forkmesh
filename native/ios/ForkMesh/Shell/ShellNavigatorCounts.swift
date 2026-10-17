@@ -17,8 +17,6 @@ import Observation
 final class ShellNavigatorCounts {
     static let shared = ShellNavigatorCounts()
 
-    static let freshFor: TimeInterval = 60
-
     private(set) var fetched: [Route.Kind: Int] = [:]
     @ObservationIgnored private var loadedAt: Date?
     private(set) var loading = false
@@ -78,52 +76,68 @@ final class ShellNavigatorCounts {
         }
     }
 
-    func refresh(force: Bool = false) async {
+    static let fetchable: [Route.Kind] = [
+        .repos, .notes, .tasks, .calendar, .orgs, .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .admin,
+        .crm, .marketing, .analytics,
+    ]
+
+    static var heat: DeviceHeat {
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default: return .serious
+        }
+    }
+
+    func refresh(guest: Bool, force: Bool = false) async {
         if loading { return }
-        if !force, let at = loadedAt, Date().timeIntervalSince(at) < ShellNavigatorCounts.freshFor { return }
+        let lowPower: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
+        guard NavigatorCountPlan.due(
+            loadedAt: loadedAt, now: Date(), heat: ShellNavigatorCounts.heat, lowPower: lowPower, force: force)
+        else { return }
         guard let api = Services.get(ApiService.self) else { return }
         let packages: PackagesClient? = PackagesFeature.client
+        let shown: Set<Route.Kind> = NavigatorCountPlan.shownKinds(HubGroups.current(guest: guest))
+        let kinds: [Route.Kind] = NavigatorCountPlan.wanted(ShellNavigatorCounts.fetchable, shown: shown)
         loading = true
         defer { loading = false }
-        async let repos: Int? = try? await api.repositories().count
-        async let notes: Int? = ShellNavigatorCounts.notes(api)
-        async let tasks: Int? = ShellNavigatorCounts.tasks(api)
-        async let events: Int? = ShellNavigatorCounts.eventsToday(api)
-        async let orgs: Int? = try? await api.myOrgs().count
-        async let calories: Int? = ShellNavigatorCounts.calories(api)
-        async let steps: Int? = ShellNavigatorCounts.steps(api)
-        async let water: Int? = ShellNavigatorCounts.water(api)
-        async let sleep: Int? = ShellNavigatorCounts.sleepHours(api)
-        async let sugarBreak: Int? = ShellNavigatorCounts.sugarFreeDays(api)
-        async let stretch: Int? = ShellNavigatorCounts.stretchSessionsToday(api)
-        async let admin: Int? = ShellNavigatorCounts.adminUsers(api)
-        async let crm: Int? = ShellNavigatorCounts.crmContacts(packages)
-        async let marketing: Int? = ShellNavigatorCounts.marketingContent(packages)
-        async let analytics: Int? = ShellNavigatorCounts.analyticsProjects(packages)
-        async let shortcuts: Void = ShellNavigatorCounts.loadShortcuts()
-        async let coves: Void = ShellNavigatorCounts.loadCoves()
-        var next: [Route.Kind: Int] = fetched
-        next[.repos] = await repos ?? next[.repos]
-        next[.notes] = await notes ?? next[.notes]
-        next[.tasks] = await tasks ?? next[.tasks]
-        next[.calendar] = await events ?? next[.calendar]
-        next[.orgs] = await orgs ?? next[.orgs]
-        next[.ledger] = PackagesFeature.personalLedger?.load().count ?? next[.ledger]
-        next[.calories] = await calories ?? next[.calories]
-        next[.steps] = await steps ?? next[.steps]
-        next[.water] = await water ?? next[.water]
-        next[.sleep] = await sleep ?? next[.sleep]
-        next[.sugarBreak] = await sugarBreak ?? next[.sugarBreak]
-        next[.stretch] = await stretch ?? next[.stretch]
-        next[.admin] = await admin ?? next[.admin]
-        next[.crm] = await crm ?? next[.crm]
-        next[.marketing] = await marketing ?? next[.marketing]
-        next[.analytics] = await analytics ?? next[.analytics]
-        next[.stats] = InsightsFeature.statsLayoutStore()?.load().layout.count ?? next[.stats]
-        _ = await shortcuts
-        _ = await coves
+        let counts: [Route.Kind: Int] = await NavigatorCountPlan.run(kinds) { (kind: Route.Kind) -> Int? in
+            await ShellNavigatorCounts.load(kind, api: api, packages: packages)
+        }
+        var next: [Route.Kind: Int] = fetched.merging(counts) { _, new in new }
+        if shown.contains(.ledger) {
+            next[.ledger] = PackagesFeature.personalLedger?.load().count ?? next[.ledger]
+        }
+        if shown.contains(.stats) {
+            next[.stats] = InsightsFeature.statsLayoutStore()?.load().layout.count ?? next[.stats]
+        }
+        if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
+        if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
         fetched = next
-        loadedAt = Date()
+        if !Task.isCancelled { loadedAt = Date() }
+    }
+
+    private static func load(_ kind: Route.Kind, api: ApiService, packages: PackagesClient?) async -> Int? {
+        switch kind {
+        case .repos: return try? await api.repositories().count
+        case .notes: return await notes(api)
+        case .tasks: return await tasks(api)
+        case .calendar: return await eventsToday(api)
+        case .orgs: return try? await api.myOrgs().count
+        case .calories: return await calories(api)
+        case .steps: return await steps(api)
+        case .water: return await water(api)
+        case .sleep: return await sleepHours(api)
+        case .sugarBreak: return await sugarFreeDays(api)
+        case .stretch: return await stretchSessionsToday(api)
+        case .admin: return await adminUsers(api)
+        case .crm: return await crmContacts(packages)
+        case .marketing: return await marketingContent(packages)
+        case .analytics: return await analyticsProjects(packages)
+        default: return nil
+        }
     }
 
     private static func coves() -> CovesModel? {

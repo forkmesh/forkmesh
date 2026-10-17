@@ -54,6 +54,17 @@ opened batches with a per-query row cap and mark results `truncated`. Tables:
 `analytics_recording_chunks`, `analytics_objects`, `analytics_usage`,
 `analytics_pages`, `analytics_page_visitors`.
 
+Loading the batches for a query (`_load_events`) is shared per project inside
+one app process: one load at a time, and an untruncated result is reused for
+15 s (`EVENT_CACHE_MS`) by any query whose window it covers, trimmed to that
+window. A capture, an erasure, a project purge, an organization purge and
+retention clear the project's entry; rows written on another core can be up to
+15 s late. Why (2026-10-16): the Analytics page sends one `/query` per tile at
+once and the Marketing performance report loads the same range again, so n3
+ran 6 to 12 reads of the same 1,043 batch rows together. Its local rqlite hit
+the 220 MB unit limit, was OOM-killed while leading, and the reads during the
+restart opened a 500 error group (`store not open`).
+
 The package is default-on (`install.default: true`): it is listed for every
 organization member, and owners and admins are offered the install. The
 `campaigns` query and `campaign_report` (with a `term` grouping) feed the

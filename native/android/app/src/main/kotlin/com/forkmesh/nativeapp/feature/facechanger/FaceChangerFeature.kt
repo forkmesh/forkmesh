@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.feature.facechanger
 
 import android.content.Context
 import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.facechanger.FaceChangerLook
 import com.forkmesh.nativeapp.facechanger.FaceChangerPart
@@ -66,14 +67,18 @@ object FaceChangerFeature {
 
     private fun changed(part: FaceChangerPart) {
         bump()
-        val peer = peers?.previewed() ?: return
+        val factory = peers ?: return
+        val peer = factory.previewed() ?: return
+        val video = factory.previewMedia != DirectCallKind.AUDIO
         runCatching {
             when (part) {
                 FaceChangerPart.FACE -> {
-                    if (look.face == FaceChangerLook.CUSTOM_FACE) peer.setFace(look.face, look.faceImage) else peer.setFace(look.face)
+                    if (video) {
+                        if (look.face == FaceChangerLook.CUSTOM_FACE) peer.setFace(look.face, look.faceImage) else peer.setFace(look.face)
+                    }
                     peer.setVoice(look.effectiveVoice)
                 }
-                FaceChangerPart.BACKGROUND -> peer.setBackground(look.background, look.customBackgroundImage)
+                FaceChangerPart.BACKGROUND -> if (video) peer.setBackground(look.background, look.customBackgroundImage)
                 FaceChangerPart.VOICE -> peer.setVoice(look.effectiveVoice)
             }
         }

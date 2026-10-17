@@ -121,6 +121,7 @@ object Features {
     }
 
     fun onIntent(navigator: Navigator, intent: Intent?) {
+        if (com.forkmesh.nativeapp.feature.chat.DirectCallFeature.onIntent(intent)) return
         if (PushFeature.onIntent(navigator, intent)) return
         if (InboxFeature.onIntent(intent)) return
         if (NavigationFeature.onIntent(navigator, intent)) return

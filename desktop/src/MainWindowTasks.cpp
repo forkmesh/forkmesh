@@ -8,6 +8,7 @@
 #include <QActionGroup>
 #include <QBuffer>
 #include <QButtonGroup>
+#include <QComboBox>
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -22,6 +23,7 @@
 #include <QLabel>
 #include <QInputDialog>
 #include <QJsonDocument>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QMenu>
 #include <QNetworkReply>
@@ -32,6 +34,8 @@
 #include <QSplitter>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QShortcut>
+#include <QStandardItemModel>
 #include <QStyledItemDelegate>
 #include <QTextBrowser>
 #include <QTextOption>
@@ -262,6 +266,12 @@ QString taskCreatedAgo(qint64 milliseconds)
                                         : age + QStringLiteral(" ago");
 }
 
+QString taskCreatedAge(qint64 milliseconds)
+{
+    const QString age = formatShortRelativeTime(milliseconds / 1000);
+    return age.isEmpty() ? QString::fromUtf8("\xE2\x80\x94") : age;
+}
+
 QString taskAssigneeLabel(const QJsonObject &task)
 {
     const QString kind = taskText(task, QStringLiteral("assigneeKind"));
@@ -309,13 +319,16 @@ constexpr int kTaskCompactRowHeight = 32;
 constexpr int kTaskMetaGlyphSize = 14;
 constexpr int kTaskPriorityWidth = 26;
 constexpr int kTaskMetaGap = 14;
-constexpr int kTaskAssigneeBadge = 13;
+constexpr int kTaskAssigneeBadge = 17;
 constexpr int kTaskAssigneeOverhang = 2;
-constexpr int kTaskAgentBadge = 16;
+constexpr int kTaskAgentBadge = 20;
+constexpr int kTaskAgentFaceSource = 48;
+constexpr int kTaskFullAvatar = 40;
+constexpr int kTaskCompactAvatar = 24;
 constexpr int kTaskRowThumbSide = 34;
 constexpr int kTaskRowThumbGap = 4;
 constexpr int kTaskRowThumbMax = 3;
-constexpr int kTaskAgentOrbit = 30;
+constexpr int kTaskAgentOrbit = 34;
 constexpr int kTaskAgentSpinTickMs = 110;
 constexpr qreal kTaskAgentSpinStepDegrees = 20.0;
 
@@ -923,8 +936,8 @@ public:
         const QString assignee = index.data(kTaskAssigneeRole).toString();
         const QString qa = index.data(kTaskQaRole).toString();
         const bool qaRequested = index.data(kTaskQaRequestedRole).toBool();
-        const QString createdAgo =
-            taskCreatedAgo(index.data(kTaskCreatedAtRole).toLongLong());
+        const QString createdAge =
+            taskCreatedAge(index.data(kTaskCreatedAtRole).toLongLong());
         const bool done = statusKey == QLatin1String("done");
 
         const QColor muted(selected ? Theme::nextOr(Theme::Role::FgSecondary,
@@ -1031,7 +1044,8 @@ public:
                               rail.center().x(), rail.bottom());
         }
 
-        const int avatarD = qMax(24, qMin(32, option.rect.height() - 18));
+        const int avatarD =
+            qMax(24, qMin(kTaskFullAvatar, option.rect.height() - 12));
         const QRect avatar(rail.right() + 8,
                            option.rect.top() +
                                (option.rect.height() - avatarD) / 2,
@@ -1100,7 +1114,7 @@ public:
         QFont smallFont = option.font;
         smallFont.setPointSizeF(qMax(7.0, option.font.pointSizeF() - 1.5));
 
-        const int left = avatar.right() + 6;
+        const int left = avatar.right() + 4;
         painter->setPen(muted);
         painter->setFont(smallFont);
         painter->drawText(QRect(left, titleLine.top(), kTaskPriorityWidth,
@@ -1172,8 +1186,10 @@ public:
             x = columnRight + kTaskMetaGap;
         };
 
-        drawColumn(taskStatusGlyph(statusKey, dark),
-                   taskStatusLabel(statusKey), 11);
+        if (x < right) {
+            drawGlyph(taskStatusGlyph(statusKey, dark));
+            x += kTaskMetaGlyphSize + kTaskMetaGap;
+        }
         drawColumn(taskDepartmentGlyph(department), department, 12);
         drawColumn(taskRepositoryGlyph(repository), repository, 18);
         drawColumn({QStringLiteral("git-branch"), muted, {}, 0.5},
@@ -1187,7 +1203,12 @@ public:
                    : qa == QLatin1String("failed") ? QStringLiteral("QA failed")
                                                    : QStringLiteral("In QA"),
                    9);
-        drawColumn(taskTimeGlyph(dark), createdAgo, 0);
+        if (x < right) {
+            painter->setPen(muted);
+            painter->drawText(QRect(x, metaLine.top(), right - x,
+                                    metaLine.height()),
+                              Qt::AlignVCenter | Qt::AlignLeft, createdAge);
+        }
         painter->restore();
     }
 
@@ -1206,6 +1227,58 @@ private:
             painter->fontMetrics().elidedText(
                 index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
                 qMax(0, titleRect.width())));
+    }
+
+    static void paintCompactAvatar(QPainter *painter, const QModelIndex &index,
+                                   const QRect &avatar, const QColor &muted,
+                                   const QColor &rowBg, bool selected)
+    {
+        const QString assigneeKind =
+            index.data(kTaskAssigneeKindRole).toString();
+        const QString assignee = index.data(kTaskAssigneeRole).toString();
+        const QPixmap agentFace =
+            index.data(kTaskAgentFaceRole).value<QPixmap>();
+        if (!agentFace.isNull()) {
+            painter->drawPixmap(avatar, agentFace);
+            if (index.data(kTaskAgentWorkingRole).toBool()) {
+                const int orbit = avatar.width() + 10;
+                painter->drawPixmap(
+                    QPoint(avatar.center().x() - orbit / 2,
+                           avatar.center().y() - orbit / 2),
+                    agentRunningFireballPixmap(
+                        orbit, index.data(kTaskAgentAngleRole).toReal()));
+            }
+            return;
+        }
+        if (assigneeKind == QLatin1String("agent")) {
+            const int glyph = avatar.width() - 6;
+            painter->drawPixmap(
+                avatar.topLeft() + QPoint(3, 3),
+                tintedOcticonPixmap(
+                    QStringLiteral("sparkle"),
+                    selected ? QColor("#ffffff")
+                             : Theme::nextOr(Theme::Role::FgSecondary,
+                                             QColor(Theme::kGenie)),
+                    glyph));
+            return;
+        }
+        if (!assignee.isEmpty() &&
+            assigneeKind != QLatin1String("unassigned")) {
+            const QPixmap face =
+                taskPersonFace(index.data(kTaskAssigneePictureRole), assignee,
+                               avatar.width(), 0.5);
+            if (!face.isNull()) {
+                painter->drawPixmap(avatar, face);
+                return;
+            }
+        }
+        painter->setBrush(rowBg);
+        painter->setPen(QPen(muted, 1, Qt::DashLine));
+        painter->drawEllipse(QRectF(avatar).adjusted(0.5, 0.5, -0.5, -0.5));
+        const int glyph = avatar.width() - 10;
+        painter->drawPixmap(
+            avatar.topLeft() + QPoint(5, 5),
+            tintedOcticonPixmap(QStringLiteral("person"), muted, glyph));
     }
 
     static void paintCompact(QPainter *painter,
@@ -1242,108 +1315,80 @@ private:
                                 rect.height()),
                           Qt::AlignVCenter | Qt::AlignRight,
                           index.data(kTaskPriorityRole).toString());
-        const int x0 = priorityLeft + kTaskPriorityWidth + 10;
+
+        const QColor rowBg =
+            selected ? Theme::nextOr(Theme::Role::SurfaceActive,
+                                     QColor(dark ? "#1f6feb" : "#0969da"))
+            : option.state.testFlag(QStyle::State_MouseOver)
+                ? Theme::remapColor(QColor(dark ? "#161b22" : "#f6f8fa"))
+                : option.palette.base().color();
+        const int avatarD = qMin(kTaskCompactAvatar, rect.height() - 6);
+        const QRect avatar(priorityLeft + kTaskPriorityWidth + 8,
+                           rect.top() + (rect.height() - avatarD) / 2, avatarD,
+                           avatarD);
+        paintCompactAvatar(painter, index, avatar, muted, rowBg, selected);
+
+        const int x0 = avatar.right() + 10;
         const int glyphTop =
             rect.top() + (rect.height() - kTaskMetaGlyphSize) / 2;
-        const QString statusKey = index.data(kTaskStatusRole).toString();
-        const QString assigneeKind =
-            index.data(kTaskAssigneeKindRole).toString();
-        const QString assignee = index.data(kTaskAssigneeRole).toString();
-        const QPixmap agentFace =
-            index.data(kTaskAgentFaceRole).value<QPixmap>();
-        const bool agentAssigned =
-            assigneeKind == QLatin1String("agent") || !agentFace.isNull();
-        const QString assigneeLabel =
-            agentAssigned ? QStringLiteral("Bot")
-            : assigneeKind == QLatin1String("unassigned") ? QString()
-                                                          : assignee;
-
-        struct CompactColumn {
-            TaskGlyph glyph;
-            QString text;
-            int chars;
-            bool agent;
-            bool person;
-        };
-        const QList<CompactColumn> columns{
-            {taskStatusGlyph(statusKey, dark), taskStatusLabel(statusKey), 11,
-             false, false},
-            {taskAssigneeGlyph(assigneeKind, assignee, dark), assigneeLabel, 12,
-             agentAssigned, !agentAssigned},
-            {taskTimeGlyph(dark),
-             taskCreatedAgo(index.data(kTaskCreatedAtRole).toLongLong()), 7,
-             false, false},
-        };
         const int minTitle = 120;
+        const auto fits = [&](int right, int width) {
+            return right - width >= x0 + minTitle;
+        };
+        const auto drawMark = [&](const TaskGlyph &glyph, int x) {
+            if (glyph.icon.isEmpty())
+                return;
+            painter->drawPixmap(
+                x, glyphTop,
+                tintedOcticonPixmap(glyph.icon,
+                                    selected ? QColor("#ffffff") : glyph.color,
+                                    kTaskMetaGlyphSize));
+        };
+
         int right = rect.right() - 8;
         if (index.data(kTaskAttachmentCountRole).toInt() > 0 &&
-            right - kTaskMetaGlyphSize - kTaskMetaGap >= x0 + minTitle) {
-            painter->drawPixmap(right - kTaskMetaGlyphSize, glyphTop,
-                                tintedOcticonPixmap(
-                                    QStringLiteral("paperclip"),
-                                    selected ? QColor("#ffffff") : muted,
-                                    kTaskMetaGlyphSize));
+            fits(right, kTaskMetaGlyphSize + kTaskMetaGap)) {
+            drawMark({QStringLiteral("paperclip"), muted, {}, 0.5},
+                     right - kTaskMetaGlyphSize);
             right -= kTaskMetaGlyphSize + kTaskMetaGap;
         }
-        int columnsLeft = right;
-        int shown = 0;
-        for (int i = columns.size() - 1; i >= 0; --i) {
-            const int width =
-                kTaskMetaGlyphSize + 4 + columns.at(i).chars * charW;
-            if (columnsLeft - width - kTaskMetaGap < x0 + minTitle)
-                break;
-            columnsLeft -= width + kTaskMetaGap;
-            ++shown;
+        const int ageWidth = metrics.horizontalAdvance(QStringLiteral("00mo"));
+        if (fits(right, ageWidth)) {
+            painter->setPen(muted);
+            painter->drawText(
+                QRect(right - ageWidth, rect.top(), ageWidth, rect.height()),
+                Qt::AlignVCenter | Qt::AlignRight,
+                taskCreatedAge(index.data(kTaskCreatedAtRole).toLongLong()));
+            right -= ageWidth + 10;
         }
-        int x = columnsLeft + kTaskMetaGap;
-        for (int i = columns.size() - shown; i < columns.size(); ++i) {
-            const CompactColumn &column = columns.at(i);
-            const int width = kTaskMetaGlyphSize + 4 + column.chars * charW;
-            if (!column.text.isEmpty()) {
-                if (column.agent && !agentFace.isNull()) {
-                    const QRect face(x, glyphTop, kTaskMetaGlyphSize,
-                                     kTaskMetaGlyphSize);
-                    painter->drawPixmap(face, agentFace);
-                    if (index.data(kTaskAgentWorkingRole).toBool()) {
-                        const int orbit = kTaskMetaGlyphSize + 8;
-                        painter->drawPixmap(
-                            QPoint(face.center().x() - orbit / 2,
-                                   face.center().y() - orbit / 2),
-                            agentRunningFireballPixmap(
-                                orbit,
-                                index.data(kTaskAgentAngleRole).toReal()));
-                    }
-                } else {
-                    const TaskGlyph &glyph = column.glyph;
-                    QPixmap mark = taskRepositoryLogoPixmap(
-                        glyph.logo, kTaskMetaGlyphSize, glyph.avatarRadius);
-                    if (mark.isNull() && !glyph.avatarSeed.isEmpty())
-                        mark = taskPersonFace(
-                            column.person ? index.data(kTaskAssigneePictureRole)
-                                          : QVariant(),
-                            glyph.avatarSeed, kTaskMetaGlyphSize,
-                            glyph.avatarRadius);
-                    if (mark.isNull() && !glyph.icon.isEmpty())
-                        mark = tintedOcticonPixmap(
-                            glyph.icon,
-                            selected ? QColor("#ffffff") : glyph.color,
-                            kTaskMetaGlyphSize);
-                    if (!mark.isNull())
-                        painter->drawPixmap(x, glyphTop, mark);
-                }
+        const QString statusKey = index.data(kTaskStatusRole).toString();
+        if (fits(right, kTaskMetaGlyphSize)) {
+            drawMark(taskStatusGlyph(statusKey, dark),
+                     right - kTaskMetaGlyphSize);
+            right -= kTaskMetaGlyphSize + kTaskMetaGap;
+        }
+        const QString branch = index.data(kTaskBranchRole).toString();
+        if (!branch.isEmpty()) {
+            const int full = kTaskMetaGlyphSize + 4 + 18 * charW;
+            const int width = fits(right, full) ? full : kTaskMetaGlyphSize;
+            if (fits(right, width)) {
+                const int x = right - width;
+                drawMark({QStringLiteral("git-branch"), muted, {}, 0.5}, x);
                 const int textX = x + kTaskMetaGlyphSize + 4;
-                const int room = x + width - textX;
-                painter->setPen(muted);
-                painter->drawText(
-                    QRect(textX, rect.top(), room, rect.height()),
-                    Qt::AlignVCenter | Qt::AlignLeft,
-                    metrics.elidedText(column.text, Qt::ElideRight, room));
+                if (right > textX) {
+                    painter->setPen(muted);
+                    painter->drawText(
+                        QRect(textX, rect.top(), right - textX, rect.height()),
+                        Qt::AlignVCenter | Qt::AlignLeft,
+                        metrics.elidedText(branch, Qt::ElideMiddle,
+                                           right - textX));
+                }
+                right -= width + kTaskMetaGap;
             }
-            x += width + kTaskMetaGap;
         }
 
-        const QRect titleRect(x0, rect.top(),
-                              qMax(0, columnsLeft - x0), rect.height());
+        const QRect titleRect(x0, rect.top(), qMax(0, right - x0),
+                              rect.height());
         QFont titleFont = option.font;
         titleFont.setStrikeOut(done);
         painter->setFont(titleFont);
@@ -1837,32 +1882,12 @@ QString taskFieldsHtml(const QJsonObject &task, const QString &localAgentRun,
             .arg(taskGlyphMarkup(glyph, 14), label.toHtmlEscaped(), shown);
     };
     QString html = QStringLiteral("<table cellspacing='0'>");
-    html += row(taskStatusGlyph(taskStatusKey(task), dark),
-                QStringLiteral("Status"),
-                taskText(task, QStringLiteral("status")));
-    html += row(taskPriorityGlyph(dark), QStringLiteral("Priority"),
-                QString::number(task.value(QStringLiteral("priority")).toInt()));
-    const QString department = taskText(task, QStringLiteral("department"));
-    html += row(taskDepartmentGlyph(department), QStringLiteral("Department"),
-                department);
-    html += row({QStringLiteral("people"), taskMutedColor(dark), {}, 0.5},
-                QStringLiteral("Team"), taskText(task, QStringLiteral("team")));
     const QString destination = taskText(task, QStringLiteral("destination"));
     html += row(taskDestinationGlyph(destination, dark),
                 QStringLiteral("Destination"), destination);
-    const QString repository = taskText(task, QStringLiteral("repository"));
-    html += row(taskRepositoryGlyph(repository), QStringLiteral("Repository"),
-                repository);
-    html += row(taskAssigneeGlyph(taskText(task, QStringLiteral("assigneeKind")),
-                                  taskText(task, QStringLiteral("assignee")),
-                                  dark),
-                QStringLiteral("Assignee"), taskAssigneeLabel(task));
     const QString createdBy = taskText(task, QStringLiteral("createdBy"));
     html += row(taskPersonGlyph(createdBy, dark), QStringLiteral("Created by"),
                 createdBy);
-    html += row({QStringLiteral("link"), taskMutedColor(dark), {}, 0.5},
-                QStringLiteral("Follows task"),
-                taskText(task, QStringLiteral("parentTaskId")));
     QString agentSession =
         taskText(task, QStringLiteral("agentSessionId")).toHtmlEscaped();
     if (!localAgentRun.isEmpty()) {
@@ -2442,7 +2467,6 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     m_organizationTaskFields->setOpenLinks(false);
     m_organizationTaskFields->setWordWrapMode(
         QTextOption::WrapAtWordBoundaryOrAnywhere);
-    m_organizationTaskFields->setFixedWidth(300);
     const auto openDetailLink = [this](const QUrl &url) {
         const QString href = url.toString();
         if (forkmesh::taskmarkdown::isSafeLink(href))
@@ -2628,8 +2652,151 @@ QWidget *MainWindow::buildOrganizationTasksSection()
     auto *detailBody = new QHBoxLayout;
     detailBody->setContentsMargins(0, 0, 0, 0);
     detailBody->setSpacing(12);
-    detailBody->addWidget(m_organizationTaskDetail, 1);
-    detailBody->addWidget(m_organizationTaskFields);
+    auto *mainColumn = new QVBoxLayout;
+    mainColumn->setContentsMargins(0, 0, 0, 0);
+    mainColumn->setSpacing(6);
+    mainColumn->addWidget(m_organizationTaskDetail, 1);
+
+    auto *commentRow = new QHBoxLayout;
+    commentRow->setContentsMargins(0, 0, 0, 0);
+    commentRow->setSpacing(6);
+    m_organizationTaskQuickComment = new QPlainTextEdit;
+    m_organizationTaskQuickComment->setObjectName(
+        QStringLiteral("organizationTaskQuickComment"));
+    m_organizationTaskQuickComment->setAccessibleName(
+        QStringLiteral("Comment on this task"));
+    m_organizationTaskQuickComment->setPlaceholderText(QStringLiteral(
+        "Leave a comment \u2014 @name pings someone. Ctrl+Enter posts."));
+    m_organizationTaskQuickComment->setTabChangesFocus(true);
+    m_organizationTaskQuickComment->setFixedHeight(
+        m_organizationTaskQuickComment->fontMetrics().lineSpacing() * 3 + 14);
+    m_organizationTaskQuickCommentSend =
+        new QPushButton(QStringLiteral("Comment"));
+    m_organizationTaskQuickCommentSend->setObjectName(
+        QStringLiteral("organizationTaskQuickCommentSend"));
+    m_organizationTaskQuickCommentSend->setToolTip(
+        QStringLiteral("Post the comment (Ctrl+Enter). Everyone the task "
+                       "routes through is pinged, and so is every @name"));
+    setOcticon(m_organizationTaskQuickCommentSend, QStringLiteral("comment"),
+               14);
+    commentRow->addWidget(m_organizationTaskQuickComment, 1);
+    commentRow->addWidget(m_organizationTaskQuickCommentSend, 0,
+                          Qt::AlignBottom);
+    mainColumn->addLayout(commentRow);
+    connect(m_organizationTaskQuickCommentSend, &QPushButton::clicked, this,
+            &MainWindow::submitOrganizationTaskQuickComment);
+    for (const QKeySequence &keys :
+         {QKeySequence(Qt::CTRL | Qt::Key_Return),
+          QKeySequence(Qt::CTRL | Qt::Key_Enter)}) {
+        auto *shortcut = new QShortcut(keys, m_organizationTaskQuickComment);
+        shortcut->setContext(Qt::WidgetShortcut);
+        connect(shortcut, &QShortcut::activated, this,
+                &MainWindow::submitOrganizationTaskQuickComment);
+    }
+    detailBody->addLayout(mainColumn, 1);
+
+    m_organizationTaskSide = new QWidget;
+    m_organizationTaskSide->setObjectName(
+        QStringLiteral("organizationTaskSide"));
+    m_organizationTaskSide->setFixedWidth(300);
+    auto *sideLayout = new QVBoxLayout(m_organizationTaskSide);
+    sideLayout->setContentsMargins(0, 0, 0, 0);
+    sideLayout->setSpacing(8);
+    m_organizationTaskProperties = new QWidget;
+    m_organizationTaskProperties->setObjectName(
+        QStringLiteral("organizationTaskProperties"));
+    m_organizationTaskProperties->setStyleSheet(QStringLiteral(
+        "QLineEdit, QSpinBox, QComboBox { padding: 2px 6px; min-height: 18px;"
+        " border: 1px solid transparent; border-radius: 4px;"
+        " background: transparent; }"
+        "QLineEdit:hover, QSpinBox:hover, QComboBox:hover {"
+        " border-color: rgba(127, 127, 127, 90); }"
+        "QLineEdit:focus, QSpinBox:focus, QComboBox:focus {"
+        " border-color: #2f81f7; }"));
+    auto *propertiesForm = new QFormLayout(m_organizationTaskProperties);
+    propertiesForm->setContentsMargins(0, 0, 0, 0);
+    propertiesForm->setHorizontalSpacing(10);
+    propertiesForm->setVerticalSpacing(4);
+    propertiesForm->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    propertiesForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    const bool darkTheme = currentThemeIsDark();
+    m_organizationTaskStatusEdit = new QComboBox;
+    for (const auto &[key, label] :
+         {std::pair{QStringLiteral("ready"), QStringLiteral("Ready")},
+          std::pair{QStringLiteral("active"), QStringLiteral("In progress")},
+          std::pair{QStringLiteral("done"), QStringLiteral("Done")}})
+        m_organizationTaskStatusEdit->addItem(
+            QIcon(tintedOcticonPixmap(taskStatusIcon(key),
+                                      taskStatusColor(key, darkTheme), 14)),
+            label, key);
+    m_organizationTaskPriorityEdit = new QSpinBox;
+    m_organizationTaskPriorityEdit->setRange(1, 99);
+    m_organizationTaskPriorityEdit->setPrefix(QStringLiteral("P"));
+    m_organizationTaskProgressEdit = new QSpinBox;
+    m_organizationTaskProgressEdit->setRange(0, 100);
+    m_organizationTaskProgressEdit->setSingleStep(10);
+    m_organizationTaskProgressEdit->setSuffix(QStringLiteral("%"));
+    m_organizationTaskAssigneeEdit = new QComboBox;
+    m_organizationTaskDepartmentEdit = new QComboBox;
+    m_organizationTaskTeamEdit = new QLineEdit;
+    m_organizationTaskTeamEdit->setPlaceholderText(
+        QStringLiteral("No specific team"));
+    m_organizationTaskRepositoryEdit = new QLineEdit;
+    m_organizationTaskRepositoryEdit->setPlaceholderText(
+        QStringLiteral("owner/repository"));
+    m_organizationTaskParentEdit = new QLineEdit;
+    m_organizationTaskParentEdit->setPlaceholderText(
+        QStringLiteral("Parent task ID"));
+    const QList<std::pair<QString, QWidget *>> properties{
+        {QStringLiteral("Status"), m_organizationTaskStatusEdit},
+        {QStringLiteral("Priority"), m_organizationTaskPriorityEdit},
+        {QStringLiteral("Progress"), m_organizationTaskProgressEdit},
+        {QStringLiteral("Assignee"), m_organizationTaskAssigneeEdit},
+        {QStringLiteral("Department"), m_organizationTaskDepartmentEdit},
+        {QStringLiteral("Team"), m_organizationTaskTeamEdit},
+        {QStringLiteral("Repository"), m_organizationTaskRepositoryEdit},
+        {QStringLiteral("Follows task"), m_organizationTaskParentEdit},
+    };
+    for (const auto &[label, editor] : properties) {
+        editor->setObjectName(QStringLiteral("organizationTaskPropertyEdit"));
+        editor->setAccessibleName(label);
+        auto *name = new QLabel(label);
+        name->setObjectName(QStringLiteral("mutedLabel"));
+        propertiesForm->addRow(name, editor);
+    }
+    m_organizationTaskPriorityEdit->setKeyboardTracking(false);
+    m_organizationTaskProgressEdit->setKeyboardTracking(false);
+    connect(m_organizationTaskStatusEdit, &QComboBox::activated, this,
+            [this] { commitOrganizationTaskProperty(QStringLiteral("status")); });
+    connect(m_organizationTaskAssigneeEdit, &QComboBox::activated, this,
+            [this] {
+                commitOrganizationTaskProperty(QStringLiteral("assignee"));
+            });
+    connect(m_organizationTaskDepartmentEdit, &QComboBox::activated, this,
+            [this] {
+                commitOrganizationTaskProperty(QStringLiteral("department"));
+            });
+    connect(m_organizationTaskPriorityEdit, &QSpinBox::valueChanged, this,
+            [this] {
+                commitOrganizationTaskProperty(QStringLiteral("priority"));
+            });
+    connect(m_organizationTaskProgressEdit, &QSpinBox::valueChanged, this,
+            [this] {
+                commitOrganizationTaskProperty(QStringLiteral("progress"));
+            });
+    connect(m_organizationTaskTeamEdit, &QLineEdit::editingFinished, this,
+            [this] { commitOrganizationTaskProperty(QStringLiteral("team")); });
+    connect(m_organizationTaskRepositoryEdit, &QLineEdit::editingFinished,
+            this, [this] {
+                commitOrganizationTaskProperty(QStringLiteral("repository"));
+            });
+    connect(m_organizationTaskParentEdit, &QLineEdit::editingFinished, this,
+            [this] {
+                commitOrganizationTaskProperty(QStringLiteral("parent"));
+            });
+    sideLayout->addWidget(m_organizationTaskProperties);
+    sideLayout->addWidget(m_organizationTaskFields, 1);
+    detailBody->addWidget(m_organizationTaskSide);
     detailLayout->addLayout(detailBody, 1);
     splitter->addWidget(detailHost);
     splitter->setStretchFactor(0, 3);
@@ -3393,6 +3560,16 @@ void MainWindow::appendOrganizationTaskRows(int count)
                                              : workItems.constFirst().branch;
         if (workItems.size() > 1)
             branch += QStringLiteral(" +%1").arg(workItems.size() - 1);
+        if (branch.isEmpty()) {
+            const int sessionId =
+                localAgentSessionIdForTask(taskText(task, QStringLiteral("id")));
+            for (const AgentSession &session : std::as_const(m_agentSessions)) {
+                if (sessionId > 0 && session.id == sessionId) {
+                    branch = session.branchName;
+                    break;
+                }
+            }
+        }
         item->setData(kTaskBranchRole, branch);
         item->setData(kTaskThumbnailsRole,
                       taskRowThumbnails(task, m_organizationTaskImageData));
@@ -3456,8 +3633,8 @@ bool MainWindow::organizationTaskAgentFace(const QJsonObject &task,
         known = true;
     }
     if (face)
-        *face = known ? agentStatusModelIcon(identity).pixmap(kTaskAgentBadge,
-                                                              kTaskAgentBadge)
+        *face = known ? agentStatusModelIcon(identity).pixmap(
+                            kTaskAgentFaceSource, kTaskAgentFaceSource)
                       : QPixmap();
     if (working)
         *working = known && !identity.merged &&
@@ -3994,7 +4171,24 @@ void MainWindow::renderOrganizationTaskDetail()
     if (m_organizationTaskFields) {
         m_organizationTaskFields->setHtml(taskFieldsHtml(
             task, localAgentRunLabelForTask(taskId), sessionId));
-        m_organizationTaskFields->setVisible(!task.isEmpty());
+        if (m_organizationTaskSide)
+            m_organizationTaskSide->setVisible(!task.isEmpty());
+    }
+    syncOrganizationTaskProperties(task);
+    if (m_organizationTaskQuickComment &&
+        taskId != m_organizationTaskQuickCommentTaskId) {
+        const QString draft = m_organizationTaskQuickComment->toPlainText();
+        if (!m_organizationTaskQuickCommentTaskId.isEmpty()) {
+            if (draft.trimmed().isEmpty())
+                m_organizationTaskCommentDrafts.remove(
+                    m_organizationTaskQuickCommentTaskId);
+            else
+                m_organizationTaskCommentDrafts.insert(
+                    m_organizationTaskQuickCommentTaskId, draft);
+        }
+        m_organizationTaskQuickCommentTaskId = taskId;
+        m_organizationTaskQuickComment->setPlainText(
+            m_organizationTaskCommentDrafts.value(taskId));
     }
     if (!taskId.isEmpty() &&
         (!m_organizationTaskHistory.contains(taskId) ||
@@ -4291,6 +4485,10 @@ void MainWindow::updateOrganizationTaskActions()
     // that is already done — that is where the QA conversation happens.
     if (m_organizationTaskCommentButton)
         m_organizationTaskCommentButton->setEnabled(selected);
+    if (m_organizationTaskQuickComment)
+        m_organizationTaskQuickComment->setEnabled(selected);
+    if (m_organizationTaskQuickCommentSend)
+        m_organizationTaskQuickCommentSend->setEnabled(selected);
     // Checking in is the assignee saying how their running work is going, so
     // it is offered exactly when the relay would accept one.
     if (m_organizationTaskCheckinButton)
@@ -4918,21 +5116,31 @@ void MainWindow::editOrganizationTask()
     if (dialog.exec() != QDialog::Accepted || title->text().trimmed().isEmpty())
         return;
     const QString assignment = assignee->currentData().toString();
-    const bool assignAgent = assignment == QLatin1String("agent");
     QJsonObject body{
         {QStringLiteral("title"), title->text().trimmed()},
         {QStringLiteral("details"), details->toPlainText().trimmed()},
         {QStringLiteral("repository"), repository->text().trimmed()},
         {QStringLiteral("priority"), priority->value()},
         {QStringLiteral("assigneeKind"),
-         assignAgent ? QStringLiteral("agent")
+         assignment == QLatin1String("agent") ? QStringLiteral("agent")
                      : assignment == QLatin1String("unassigned")
                          ? QStringLiteral("unassigned")
                          : QStringLiteral("user")},
     };
     if (assignment.startsWith(QLatin1String("user:")))
         body.insert(QStringLiteral("assignee"), assignment.mid(5));
+    patchOrganizationTask(task, body);
+}
+
+void MainWindow::patchOrganizationTask(const QJsonObject &task,
+                                       const QJsonObject &body)
+{
     const QString taskId = taskText(task, QStringLiteral("id"));
+    if (taskId.isEmpty() || body.isEmpty())
+        return;
+    const bool assignAgent =
+        body.value(QStringLiteral("assigneeKind")).toString() ==
+        QLatin1String("agent");
     const QString path = QStringLiteral("/api/tasks/") + taskId;
 
     // Show the edit the moment Save is pressed. The PATCH shares a serialized
@@ -4941,7 +5149,8 @@ void MainWindow::editOrganizationTask()
     QJsonObject optimistic = task;
     for (auto it = body.constBegin(); it != body.constEnd(); ++it)
         optimistic.insert(it.key(), it.value());
-    if (!assignment.startsWith(QLatin1String("user:")))
+    if (body.contains(QStringLiteral("assigneeKind")) &&
+        !body.contains(QStringLiteral("assignee")))
         optimistic.insert(QStringLiteral("assignee"), QString());
     ++m_organizationTaskEditsInFlight[taskId];
     m_organizationTaskLocalEdits.insert(taskId, optimistic);
@@ -4965,6 +5174,230 @@ void MainWindow::editOrganizationTask()
             else if (!updated)
                 refreshOrganizationTasks();
         });
+}
+
+void MainWindow::syncOrganizationTaskProperties(const QJsonObject &task)
+{
+    if (!m_organizationTaskProperties)
+        return;
+    const QString taskId = taskText(task, QStringLiteral("id"));
+    const bool sameTask = taskId == m_organizationTaskPropertiesTaskId;
+    if (!sameTask && !m_organizationTaskPropertiesTaskId.isEmpty()) {
+        for (const QString &field :
+             {QStringLiteral("team"), QStringLiteral("repository"),
+              QStringLiteral("parent")})
+            commitOrganizationTaskProperty(field);
+    }
+    m_organizationTaskPropertiesTaskId = taskId;
+    if (task.isEmpty())
+        return;
+    const QString statusKey = taskStatusKey(task);
+    const bool done = statusKey == QLatin1String("done");
+    const bool active = statusKey == QLatin1String("active");
+    const QString actor = m_organizationTaskActor;
+    const QString createdBy = taskText(task, QStringLiteral("createdBy"));
+    const bool mine = organizationTaskAssignedTo(task, actor);
+    const bool creator =
+        !actor.isEmpty() && createdBy.compare(actor, Qt::CaseInsensitive) == 0;
+    const bool reviewer =
+        !actor.isEmpty() &&
+        taskText(task.value(QStringLiteral("qa")).toObject(),
+                 QStringLiteral("reviewer"))
+                .compare(actor, Qt::CaseInsensitive) == 0;
+    const bool manage = m_organizationTasksCanManage;
+    const bool editable = manage && !active && !done;
+    const QString locked =
+        !manage ? QStringLiteral("Only task managers can change this")
+        : active ? QStringLiteral("Stop the task to change this")
+        : done   ? QStringLiteral("Mark the task undone to change this")
+                 : QString();
+
+    {
+        const QSignalBlocker blocker(m_organizationTaskStatusEdit);
+        const QString shown = done ? QStringLiteral("done")
+                              : active ? QStringLiteral("active")
+                                       : QStringLiteral("ready");
+        m_organizationTaskStatusEdit->setCurrentIndex(
+            qMax(0, m_organizationTaskStatusEdit->findData(shown)));
+        auto *model = qobject_cast<QStandardItemModel *>(
+            m_organizationTaskStatusEdit->model());
+        const bool canUndo = done && (manage || mine || creator || reviewer);
+        const bool canStart = !done && mine;
+        const bool canComplete = !done && (mine || manage);
+        if (model) {
+            model->item(0)->setEnabled(shown == QLatin1String("ready") ||
+                                       canUndo || (active && canStart));
+            model->item(1)->setEnabled(shown == QLatin1String("active") ||
+                                       canStart);
+            model->item(2)->setEnabled(done || canComplete);
+        }
+        m_organizationTaskStatusEdit->setEnabled(canUndo || canStart ||
+                                                 canComplete);
+        m_organizationTaskStatusEdit->setToolTip(
+            QStringLiteral("Start, stop, complete or reopen the task"));
+    }
+    if (!sameTask || !m_organizationTaskPriorityEdit->hasFocus()) {
+        const QSignalBlocker blocker(m_organizationTaskPriorityEdit);
+        m_organizationTaskPriorityEdit->setValue(
+            task.value(QStringLiteral("priority")).toInt(50));
+    }
+    m_organizationTaskPriorityEdit->setEnabled(manage);
+    if (!sameTask || !m_organizationTaskProgressEdit->hasFocus()) {
+        const QSignalBlocker blocker(m_organizationTaskProgressEdit);
+        m_organizationTaskProgressEdit->setValue(
+            done ? 100 : qBound(0, task.value(QStringLiteral("progress")).toInt(),
+                                100));
+    }
+    m_organizationTaskProgressEdit->setEnabled(!done &&
+                                               (manage || mine || creator));
+
+    {
+        const QSignalBlocker blocker(m_organizationTaskAssigneeEdit);
+        m_organizationTaskAssigneeEdit->clear();
+        m_organizationTaskAssigneeEdit->addItem(QStringLiteral("Unassigned"),
+                                                QStringLiteral("unassigned"));
+        m_organizationTaskAssigneeEdit->addItem(QStringLiteral("Bot"),
+                                                QStringLiteral("agent"));
+        QStringList members = m_organizationTaskMembers;
+        const QString assignee =
+            taskText(task, QStringLiteral("assignee")).toLower();
+        const QString kind = taskText(task, QStringLiteral("assigneeKind"));
+        if (kind == QLatin1String("user") && !assignee.isEmpty() &&
+            !members.contains(assignee))
+            members.append(assignee);
+        for (const QString &member : std::as_const(members))
+            m_organizationTaskAssigneeEdit->addItem(
+                QStringLiteral("@") + member, QStringLiteral("user:") + member);
+        const QString current =
+            kind == QLatin1String("agent") ? QStringLiteral("agent")
+            : kind == QLatin1String("user") && !assignee.isEmpty()
+                ? QStringLiteral("user:") + assignee
+                : QStringLiteral("unassigned");
+        m_organizationTaskAssigneeEdit->setCurrentIndex(
+            qMax(0, m_organizationTaskAssigneeEdit->findData(current)));
+    }
+    {
+        const QSignalBlocker blocker(m_organizationTaskDepartmentEdit);
+        m_organizationTaskDepartmentEdit->clear();
+        QStringList departments =
+            m_organizationTaskDepartments.isEmpty()
+                ? QStringList{QStringLiteral("general"),
+                              QStringLiteral("engineering")}
+                : m_organizationTaskDepartments;
+        const QString department =
+            taskText(task, QStringLiteral("department")).toLower();
+        if (!department.isEmpty() && !departments.contains(department))
+            departments.append(department);
+        m_organizationTaskDepartmentEdit->addItems(departments);
+        m_organizationTaskDepartmentEdit->setCurrentIndex(qMax(
+            0, m_organizationTaskDepartmentEdit->findText(
+                   department.isEmpty() ? QStringLiteral("general")
+                                        : department)));
+    }
+    const auto syncText = [sameTask](QLineEdit *edit, const QString &value) {
+        if (sameTask && edit->hasFocus())
+            return;
+        edit->setText(value);
+    };
+    syncText(m_organizationTaskTeamEdit, taskText(task, QStringLiteral("team")));
+    syncText(m_organizationTaskRepositoryEdit,
+             taskText(task, QStringLiteral("repository")));
+    syncText(m_organizationTaskParentEdit,
+             taskText(task, QStringLiteral("parentTaskId")));
+    for (QWidget *editor :
+         {static_cast<QWidget *>(m_organizationTaskAssigneeEdit),
+          static_cast<QWidget *>(m_organizationTaskDepartmentEdit),
+          static_cast<QWidget *>(m_organizationTaskTeamEdit),
+          static_cast<QWidget *>(m_organizationTaskRepositoryEdit),
+          static_cast<QWidget *>(m_organizationTaskParentEdit)}) {
+        editor->setEnabled(editable);
+        editor->setToolTip(locked);
+    }
+}
+
+void MainWindow::commitOrganizationTaskProperty(const QString &field)
+{
+    if (field.isEmpty() || m_organizationTaskPropertiesTaskId.isEmpty() ||
+        !m_organizationTaskProperties)
+        return;
+    QJsonObject task;
+    for (const QJsonValue &value : std::as_const(m_organizationTasks)) {
+        if (taskText(value.toObject(), QStringLiteral("id")) ==
+            m_organizationTaskPropertiesTaskId) {
+            task = value.toObject();
+            break;
+        }
+    }
+    if (task.isEmpty())
+        return;
+    const QString id = m_organizationTaskPropertiesTaskId;
+    if (field == QLatin1String("status")) {
+        const QString key = taskStatusKey(task);
+        const QString current =
+            key == QLatin1String("done") || key == QLatin1String("active")
+                ? key
+                : QStringLiteral("ready");
+        const QString target =
+            m_organizationTaskStatusEdit->currentData().toString();
+        if (target == current)
+            return;
+        sendOrganizationTaskAction(
+            id,
+            target == QLatin1String("done")     ? QStringLiteral("complete")
+            : current == QLatin1String("done")  ? QStringLiteral("undo")
+            : target == QLatin1String("active") ? QStringLiteral("start")
+                                                : QStringLiteral("stop"),
+            {});
+        return;
+    }
+    QJsonObject body;
+    const auto changeText = [&](const QString &key, QString value) {
+        value = value.trimmed();
+        if (value != taskText(task, key))
+            body.insert(key, value);
+    };
+    if (field == QLatin1String("priority")) {
+        const int value = m_organizationTaskPriorityEdit->value();
+        if (value != task.value(QStringLiteral("priority")).toInt(50))
+            body.insert(QStringLiteral("priority"), value);
+    } else if (field == QLatin1String("progress")) {
+        const int value = m_organizationTaskProgressEdit->value();
+        if (!organizationTaskIsClosed(task) &&
+            value != task.value(QStringLiteral("progress")).toInt())
+            body.insert(QStringLiteral("progress"), value);
+    } else if (field == QLatin1String("assignee")) {
+        const QString assignment =
+            m_organizationTaskAssigneeEdit->currentData().toString();
+        const QString kind = taskText(task, QStringLiteral("assigneeKind"));
+        const QString assignee =
+            taskText(task, QStringLiteral("assignee")).toLower();
+        const QString current =
+            kind == QLatin1String("agent") ? QStringLiteral("agent")
+            : kind == QLatin1String("user") && !assignee.isEmpty()
+                ? QStringLiteral("user:") + assignee
+                : QStringLiteral("unassigned");
+        if (!assignment.isEmpty() && assignment != current) {
+            body.insert(QStringLiteral("assigneeKind"),
+                        assignment.startsWith(QLatin1String("user:"))
+                            ? QStringLiteral("user")
+                            : assignment);
+            if (assignment.startsWith(QLatin1String("user:")))
+                body.insert(QStringLiteral("assignee"), assignment.mid(5));
+        }
+    } else if (field == QLatin1String("department")) {
+        changeText(QStringLiteral("department"),
+                   m_organizationTaskDepartmentEdit->currentText());
+    } else if (field == QLatin1String("team")) {
+        changeText(QStringLiteral("team"),
+                   m_organizationTaskTeamEdit->text().toLower());
+    } else if (field == QLatin1String("repository")) {
+        changeText(QStringLiteral("repository"),
+                   m_organizationTaskRepositoryEdit->text());
+    } else if (field == QLatin1String("parent")) {
+        changeText(QStringLiteral("parentTaskId"),
+                   m_organizationTaskParentEdit->text().toLower());
+    }
+    patchOrganizationTask(task, body);
 }
 
 bool MainWindow::settleOrganizationTaskEdit(const QString &taskId,
@@ -5174,6 +5607,15 @@ void MainWindow::runOrganizationTaskAction(const QString &action)
             return;
         body.insert(QStringLiteral("howToTest"), howToTest.trimmed());
     }
+    sendOrganizationTaskAction(id, action, body);
+}
+
+void MainWindow::sendOrganizationTaskAction(const QString &id,
+                                            const QString &action,
+                                            const QJsonObject &body)
+{
+    if (id.isEmpty())
+        return;
     requestOrganizationTasks(
         QByteArrayLiteral("POST"),
         QStringLiteral("/api/tasks/%1/%2").arg(id, action), body,
@@ -5183,26 +5625,37 @@ void MainWindow::runOrganizationTaskAction(const QString &action)
                    : QStringLiteral("Task action failed: %1").arg(error));
             if (ok)
                 refreshOrganizationTasks();
+            else
+                renderOrganizationTaskDetail();
         });
 }
 
 void MainWindow::commentOnOrganizationTask()
 {
+    if (m_organizationTaskQuickComment)
+        m_organizationTaskQuickComment->setFocus();
+}
+
+void MainWindow::submitOrganizationTaskQuickComment()
+{
+    if (!m_organizationTaskQuickComment)
+        return;
+    const QString body = m_organizationTaskQuickComment->toPlainText().trimmed();
+    const QJsonObject task = selectedOrganizationTask(
+        m_organizationTasksTable, m_organizationTasks);
+    if (body.isEmpty() || task.isEmpty())
+        return;
+    m_organizationTaskQuickComment->clear();
+    m_organizationTaskCommentDrafts.remove(taskText(task, QStringLiteral("id")));
+    postOrganizationTaskComment(body);
+}
+
+void MainWindow::postOrganizationTaskComment(const QString &body)
+{
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
     const QString id = taskText(task, QStringLiteral("id"));
-    if (id.isEmpty())
-        return;
-    bool accepted = false;
-    const QString body =
-        QInputDialog::getMultiLineText(
-            this, QStringLiteral("Comment on organization task"),
-            QStringLiteral(
-                "Comment on \u201C%1\u201D. Type @name to ping someone.")
-                .arg(taskText(task, QStringLiteral("title"))),
-            QString(), &accepted)
-            .trimmed();
-    if (!accepted || body.isEmpty())
+    if (id.isEmpty() || body.trimmed().isEmpty())
         return;
     QJsonObject payload;
     payload.insert(QStringLiteral("body"), body);
@@ -5244,6 +5697,12 @@ void MainWindow::commentOnOrganizationTask()
                 }
                 m_organizationTasksStatus->setText(
                     QStringLiteral("Comment failed: %1").arg(error));
+                if (m_organizationTaskQuickComment &&
+                    m_organizationTaskQuickCommentTaskId == id &&
+                    m_organizationTaskQuickComment->toPlainText()
+                        .trimmed()
+                        .isEmpty())
+                    m_organizationTaskQuickComment->setPlainText(body);
                 return;
             }
             const QJsonObject task =

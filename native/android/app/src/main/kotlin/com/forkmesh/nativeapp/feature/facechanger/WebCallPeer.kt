@@ -44,6 +44,7 @@ class WebCallPeers(
     private val facesState = MutableStateFlow(false)
     private val backgroundsState = MutableStateFlow<Map<String, String>?>(null)
     private val previewState = MutableStateFlow(false)
+    private val routeState = MutableStateFlow("")
 
     @Volatile
     private var previewPeer: WebCallPeer? = null
@@ -51,10 +52,18 @@ class WebCallPeers(
     @Volatile
     private var livePeer: WebCallPeer? = null
 
+    @Volatile
+    private var previewOwner: String = ""
+
+    @Volatile
+    var previewMedia: DirectCallKind? = null
+        private set
+
     val view: StateFlow<WebView?> = viewState.asStateFlow()
     val facesSupported: StateFlow<Boolean> = facesState.asStateFlow()
     val backgrounds: StateFlow<Map<String, String>?> = backgroundsState.asStateFlow()
     val previewing: StateFlow<Boolean> = previewState.asStateFlow()
+    val route: StateFlow<String> = routeState.asStateFlow()
 
     val busy: Boolean get() = livePeer != null
 
@@ -64,14 +73,25 @@ class WebCallPeers(
         var made: WebCallPeer? = null
         val peer = WebCallPeer(context, callbacks) { gone ->
             viewState.compareAndSet(gone, null)
-            if (livePeer === made) livePeer = null
+            if (livePeer === made) {
+                livePeer = null
+                routeState.value = ""
+            }
         }
         made = peer
         return peer
     }
 
-    fun preview(face: String, background: String, image: String, faceImage: String = ""): WebCallPeer {
+    fun preview(
+        face: String,
+        background: String,
+        image: String,
+        faceImage: String = "",
+        media: DirectCallKind = DirectCallKind.VIDEO,
+        owner: String = "",
+    ): WebCallPeer {
         check(livePeer == null) { "A call is using the camera." }
+        if (previewPeer != null && previewMedia != media) endPreview()
         val peer = previewPeer ?: open().also { made ->
             try {
                 viewState.value = made.load()
@@ -81,22 +101,35 @@ class WebCallPeers(
             }
             previewPeer = made
         }
+        previewMedia = media
+        previewOwner = owner
+        previewState.value = true
         try {
-            peer.preview(DirectCallKind.VIDEO, voice(), face, background, image, faceImage)
-            learn(peer, true)
+            peer.preview(media, voice(), face, background, image, faceImage)
+            learn(peer, media == DirectCallKind.VIDEO)
         } catch (error: Exception) {
             endPreview()
             throw error
         }
-        previewState.value = true
         return peer
     }
 
     fun endPreview() {
         val peer = previewPeer ?: return
         previewPeer = null
+        previewMedia = null
+        previewOwner = ""
         previewState.value = false
         peer.close()
+    }
+
+    fun endPreview(owner: String) {
+        if (previewPeer != null && previewOwner == owner) endPreview()
+    }
+
+    private fun watchRoute(peer: WebCallPeer) {
+        routeState.value = ""
+        peer.onRoute = { next -> if (livePeer === peer) routeState.value = next }
     }
 
     private fun learn(peer: WebCallPeer, video: Boolean) {
@@ -107,22 +140,28 @@ class WebCallPeers(
     override fun makePeer(media: DirectCallKind, iceServers: List<String>): DirectCallPeer {
         val video = media == DirectCallKind.VIDEO
         val previewed = previewPeer
-        if (previewed != null && video) {
+        if (previewed != null && previewMedia == media) {
             previewPeer = null
+            previewMedia = null
+            previewOwner = ""
             previewState.value = false
+            livePeer = previewed
+            watchRoute(previewed)
             try {
                 previewed.dropRecording()
                 previewed.request("setup", listOf(media.wire, iceServers, "", voice()))
+                if (!video) learn(previewed, false)
             } catch (error: Exception) {
+                if (livePeer === previewed) livePeer = null
                 previewed.close()
                 throw error
             }
-            livePeer = previewed
             return previewed
         }
         endPreview()
         val peer = open()
         livePeer = peer
+        watchRoute(peer)
         try {
             viewState.value = peer.load()
             peer.request("setup", listOf(media.wire, iceServers, if (video) face() else "", voice()))
@@ -165,6 +204,9 @@ class WebCallPeer internal constructor(
 
     @Volatile
     private var voiceObserver: ((String) -> Unit)? = null
+
+    @Volatile
+    var onRoute: ((String) -> Unit)? = null
 
     private val ready = CountDownLatch(1)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<Any?>>()
@@ -235,6 +277,10 @@ class WebCallPeer internal constructor(
             "voice" -> {
                 val applied = jsonText(message["id"])
                 deliver { voiceObserver?.invoke(applied) }
+            }
+            "route" -> {
+                val route = jsonText(message["route"])
+                if (route == "direct" || route == "relay") deliver { onRoute?.invoke(route) }
             }
             "live" -> deliver { onLive?.invoke() }
             "closed" -> deliver { onClosed?.invoke() }
@@ -373,7 +419,7 @@ class WebCallPeer internal constructor(
             check(written == size) { "recording_read" }
             val mime = jsonText(summary["mime"]).substringBefore(';').trim().lowercase()
             return WebCallRecording(
-                mime = if (mime.startsWith("video/")) mime else "video/mp4",
+                mime = if (mime.startsWith("video/") || mime.startsWith("audio/")) mime else "video/mp4",
                 durationMs = (summary["durationMs"] as? Number)?.toLong() ?: 0L,
             )
         } finally {

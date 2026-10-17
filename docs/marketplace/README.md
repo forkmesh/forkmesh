@@ -75,7 +75,10 @@ account names), `accountName`, `openDirectMessage(name)`,
 `openUserProfile(name)`, administrator-only `userRecords(done)`,
 `askAgent(prompt, done)` (one read-only, low-effort run of the default agent
 CLI, never listed in Agents) and, for packages declaring `desktop.agents.run`,
-`specialAgents()` / `specialAgentAction(...)`. `request` waits out the
+`specialAgents()` / `specialAgentAction(...)`, and for packages declaring
+`repository.read`, `repositories()`, `currentRepository()` and
+`openRepositoryFile(repository, path, line)`
+([codebase-analysis.md](codebase-analysis.md#host-contract)). `request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
@@ -85,7 +88,8 @@ no timers), `navigationBadge()` / `prepareNavigationBadge()`,
 `setHostSearchQuery()`, `searchHits()` / `activateSearchHit()` /
 `prepareSearch()` (answered from memory on the GUI thread), `exportData()`
 (offered on removal), `hostPromptTarget()` / `submitHostPrompt()` (the page
-takes over the footer prompt box while visible), and `userDirectoryChanged()`.
+takes over the footer prompt box while visible), `userDirectoryChanged()`
+and `repositoryChanged()` (the user opened another repository).
 
 **Own window.** "Open in new window" on a rail button (or dragging it out)
 moves the page widget into a top-level window
@@ -196,6 +200,11 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   [rss-reader.md](rss-reader.md)),
   `docs` (the `www/docs` library on desktop and phones), `workflows` with its
   nested `workflows-*` packs ([../app/workflows.md](../app/workflows.md)).
+- **Code analysis:** `code-map`, `size-map` (built-in features as
+  switches), `strata` (architecture and complexity), `ember` (file-level
+  hotspots) and `synapse` (the import graph as a 3D brain), sharing the
+  engine in `desktop/src/RepoInsight`; see
+  [codebase-analysis.md](codebase-analysis.md).
 - **Health:** `calories`, `steps`, `water`, `sleep`, `sugar-break`,
   `stretch`, `food-guide` (account-scoped, sealed per account).
 - **Operations:** `analytics`, `marketing`, `status-page` and its
