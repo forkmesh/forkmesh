@@ -364,6 +364,11 @@ QString ActionStore::sandboxDir() const
     return path;
 }
 
+QString ActionStore::cacheRoot() const
+{
+    return m_root + QStringLiteral("/cache");
+}
+
 QString ActionStore::buildCacheDir(const ActionRun &run) const
 {
     const QString root =
