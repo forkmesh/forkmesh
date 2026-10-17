@@ -424,6 +424,27 @@ final class LocalControlServiceTests: XCTestCase {
             paired)
     }
 
+    func testADesktopTheAccountListsIsDialledOnTheLANWithoutAnOwnerMatch() {
+        func desk(_ id: String, owner: String) -> MeshControlHost {
+            MeshControlHost(nodeId: id, address: .loopbackIPv4, port: 1, ownerUser: owner)
+        }
+        let owned = desk("owned", owner: "")
+        let paired = desk("paired", owner: "")
+        let stranger = desk("stranger", owner: "")
+
+        XCTAssertEqual(
+            LocalControlService.automaticTarget(
+                [stranger, owned], paired: [], accountDesktops: ["owned"], account: "", tried: ["owned"]),
+            owned)
+        XCTAssertEqual(
+            LocalControlService.automaticTarget(
+                [owned, paired], paired: ["paired"], accountDesktops: ["owned"], account: "alice", tried: []),
+            paired)
+        XCTAssertNil(
+            LocalControlService.automaticTarget(
+                [stranger], paired: [], accountDesktops: ["owned"], account: "alice", tried: []))
+    }
+
     func testForgettingADesktopDropsItsApproval() async {
         await pairedAndConnected()
         XCTAssertTrue(control.isPaired(desktop.publicKey))

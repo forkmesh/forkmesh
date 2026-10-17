@@ -461,6 +461,29 @@ application id `com.forkmesh.nativeapp` installs beside it.
   the device grid (`GlassesCensus`); `GlassesHoming` and `GlassesCompass` drive
   closeness and direction; `GlassesRadarChip` sits in the top bar. Device kinds
   match iOS (`native/ios/docs/FMTools.md`).
+- **Phone Security** (`feature/phonesecurity/`, core `phonesecurity/`) is the
+  local checkup described in
+  [`docs/marketplace/phone-security.md`](../marketplace/phone-security.md).
+  `PhoneSecurityProbe` fills `PhoneSecurityFacts` on `Dispatchers.IO` when the
+  page opens, on **Run again** and when the app returns from Settings; every
+  read is wrapped so a refused one leaves its field `null` and the check reports
+  Unavailable. The core scanner, `/proc` parsers, filters and summaries run on
+  the host JVM (`./gradlew :core:coreTest -Pfilter=PhoneSecurity`). Root and
+  Xposed manager packages are declared in the manifest's `<queries>` (no new
+  permission); `PhoneSecurityCatalogTest` fails if one is missing. A fix starts
+  its `android.settings.*` action (ForkMesh's own app details use a `package:`
+  URI) and falls back to `Settings.ACTION_SETTINGS` when the phone has no such
+  page. Android limits met: `lock_screen_allow_private_notifications`,
+  `enabled_notification_listeners`, `private_dns_mode` and
+  `/sys/fs/selinux/enforce` are hidden from apps on many builds, so those
+  checks report Unavailable (Private DNS falls back to
+  `LinkProperties.isPrivateDnsActive`); the hardware-keystore feature flags
+  exist only from API 28 (StrongBox) and 31, so older phones are judged from an
+  existing Keystore key's `KeyInfo`; Nearby devices is Unavailable before
+  Android 12, which has no such permission; `/data/adb` is unreadable to apps,
+  so the Magisk, KernelSU and APatch folder probe only catches what SELinux
+  lets through. The relay rule also treats `10.0.2.2`, the emulator's alias for
+  the host, as loopback, matching `AppEnv.isLoopbackHost`.
 - **Notifications** need `POST_NOTIFICATIONS` on 13+; asked after sign-in and
   when a timer starts.
 - **Crash reports** come from `ApplicationExitInfo`. **Stall log** is

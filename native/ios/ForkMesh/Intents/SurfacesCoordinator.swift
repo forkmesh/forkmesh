@@ -4,6 +4,7 @@ import FMAgents
 import FMApi
 import FMBase
 import FMControl
+import FMPackages
 import FMPlanning
 import FMSurfaces
 import FMTeammates
@@ -361,6 +362,16 @@ final class SurfacesCoordinator {
         pickingUpShare = true
         defer { pickingUpShare = false }
         guard let drop = ShareKeychainDrop().take() else { return }
+        let videos: [String] = drop.images.isEmpty
+            ? DjStudio.sharedVideoIds(urls: drop.handoff.urls, text: drop.handoff.text) : []
+        if !videos.isEmpty, PackageGate.allows("video-mix-dj-studio") {
+            let studio: DjStudioModel = DjStudioHub.shared.studio()
+            for id in videos {
+                studio.enqueue(id: id, title: "", author: "")
+            }
+            SurfaceRouter.open(.videoMixDjStudio)
+            return
+        }
         var attachments: [PromptAttachment] = []
         for (index, data) in drop.images.enumerated() {
             if let attachment = try? await PromptPhotoPreparer.prepare(data, name: "shared-\(index + 1)") {

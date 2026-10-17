@@ -64,7 +64,17 @@ eight swatches (red first), undo, Discard and "Add to prompt" (or "Done").
 - When the share includes an image, `ShareModel.load` saves it at once and
   opens `forkmesh://surface/open?route=...` (the compose route) through the
   responder chain's `UIApplication`; text or links alone show the sheet. If the
-  app cannot be opened the sheet shows "Saved for ForkMesh".
+  app cannot be opened the sheet shows "Saved for ForkMesh" with an
+  **Open ForkMesh** button that tries again.
+- The automatic send waits for `viewDidAppear` as well as the load
+  (2026-10-17). Sending from `viewDidLoad`'s task could run before the sheet
+  was in a window, so the responder chain had no `UIApplication`, the app did
+  not open and the image had to be shared a second time. The extension now
+  closes when `openURL:options:completionHandler:` reports success (or after
+  1.5 s with no answer) and falls back to the sheet when it reports failure.
+- YouTube video links with no images are sent at once too, with the DJ studio
+  route instead of the compose route; the app adds them to the DJ queue
+  (`docs/marketplace/video-mix-dj-studio.md`).
 - The app picks the share up on every resume and on sign-in
   (`SurfacesCoordinator.pickUpShare`). Signing out deletes an unclaimed share.
 - `ForkMeshShare/PrivacyInfo.xcprivacy` declares `CA92.1`; `push_check` in

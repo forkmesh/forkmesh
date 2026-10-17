@@ -392,7 +392,9 @@ public final class LocalControlService {
     // Set by an explicit disconnect: the paired desktop stays unreconnected until the person
     // connects again.
     @ObservationIgnored private var autoConnectHeld = false
+    @ObservationIgnored private var dialQueued = false
     @ObservationIgnored private var accountDesktopsTried: Set<String> = []
+    @ObservationIgnored private var accountDesktopKeys: Set<String> = []
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var failures = 0
     @ObservationIgnored private var disposed = false
@@ -447,6 +449,14 @@ public final class LocalControlService {
 
     public func isPaired(_ key: String) -> Bool { paired.contains { $0.key == key } }
 
+    private func isKnown(_ key: String) -> Bool { isPaired(key) || accountDesktopKeys.contains(key) }
+
+    public func setAccountDesktops(_ keys: Set<String>) {
+        if keys == accountDesktopKeys { return }
+        accountDesktopKeys = keys
+        onMeshChanged()
+    }
+
     /// Desktops on this network offering control right now.
     public var hosts: [MeshControlHost] { mesh.controlHosts() }
 
@@ -485,22 +495,28 @@ public final class LocalControlService {
     private func onMeshChanged() {
         if disposed { return }
         notifyListeners()
-        if autoConnectHeld || connection != nil { return }
+        if autoConnectHeld || dialQueued || connection != nil { return }
         if status == .connecting { return }
         if retryTask != nil { return }
-        let pairedKeys = Set(paired.map(\.key))
         guard
             let candidate = LocalControlService.automaticTarget(
-                mesh.controlHosts(), paired: pairedKeys, account: userName(), tried: accountDesktopsTried)
+                mesh.controlHosts(), paired: Set(paired.map(\.key)), accountDesktops: accountDesktopKeys,
+                account: userName(), tried: accountDesktopsTried)
         else { return }
-        if !pairedKeys.contains(candidate.nodeId) { accountDesktopsTried.insert(candidate.nodeId) }
-        Task { await self.connect(candidate, automatic: true) }
+        if !isKnown(candidate.nodeId) { accountDesktopsTried.insert(candidate.nodeId) }
+        dialQueued = true
+        Task {
+            self.dialQueued = false
+            await self.connect(candidate, automatic: true)
+        }
     }
 
     public nonisolated static func automaticTarget(
-        _ hosts: [MeshControlHost], paired: Set<String>, account: String, tried: Set<String>
+        _ hosts: [MeshControlHost], paired: Set<String>, accountDesktops: Set<String> = [], account: String,
+        tried: Set<String>
     ) -> MeshControlHost? {
         if let known = hosts.first(where: { paired.contains($0.nodeId) }) { return known }
+        if let owned = hosts.first(where: { accountDesktops.contains($0.nodeId) }) { return owned }
         let account = account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if account.isEmpty { return nil }
         return hosts.first {
@@ -564,7 +580,7 @@ public final class LocalControlService {
         setStatus(.failed, error: message)
         // A paired desktop is tried again a little later, backing off, for as long as the mesh
         // still hears it.
-        if isPaired(target.nodeId) && !autoConnectHeld {
+        if isKnown(target.nodeId) && !autoConnectHeld {
             scheduleRetry(TimeInterval(min(max(5 * failures, 5), 60)))
         }
     }
@@ -605,7 +621,7 @@ public final class LocalControlService {
         if status == .failed { return }
         let wasConnected = status == .connected
         setStatus(wasConnected ? .idle : .failed, error: wasConnected ? "" : "The desktop closed the connection.")
-        if !autoConnectHeld, let host, isPaired(host.nodeId) { scheduleRetry(3) }
+        if !autoConnectHeld, let host, isKnown(host.nodeId) { scheduleRetry(3) }
     }
 
     /// Every `{event, data}` frame the desktop sends, for features beyond agents and files (the
@@ -716,6 +732,7 @@ public final class LocalControlService {
         pairingCode = ""
         autoConnectHeld = false
         accountDesktopsTried = []
+        accountDesktopKeys = []
         failures = 0
         host = nil
         desktopKey = ""

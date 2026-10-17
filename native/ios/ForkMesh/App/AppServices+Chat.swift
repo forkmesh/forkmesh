@@ -217,7 +217,7 @@ struct ChatInstaller: AppServicesInstaller {
         }
         services.routes.register(.dm, by: "WS13") { route in
             guard case let .dm(user) = route else { return AnyView(RoutePlaceholderView(route: route)) }
-            return AnyView(ChatConversationDestination(conversation: user.hasPrefix("@") ? user : "@\(user)"))
+            return AnyView(ChatConversationDestination(conversation: user.hasPrefix("@") || DirectMessageFrames.isDirect(user) ? user : "@\(user)"))
         }
         services.routes.register(.thread, by: "WS13") { route in
             guard case let .thread(channel, id) = route, !id.isEmpty else { return AnyView(RoutePlaceholderView(route: route)) }

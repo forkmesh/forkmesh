@@ -173,6 +173,7 @@ object RouteCodec {
             Route.Kind.Cove -> req("id")?.let(Route::Cove)
             Route.Kind.Calories -> Route.Calories
             Route.Kind.GlassesAlert -> Route.GlassesAlert
+            Route.Kind.PhoneSecurity -> Route.PhoneSecurity
             Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.RssReader -> Route.RssReader

@@ -58,8 +58,10 @@ fun automaticControlTarget(
     paired: Set<String>,
     account: String,
     tried: Set<String>,
+    accountDesktops: Set<String> = emptySet(),
 ): MeshControlHost? {
     hosts.firstOrNull { it.nodeId in paired }?.let { return it }
+    hosts.firstOrNull { it.nodeId in accountDesktops }?.let { return it }
     val me = account.trim().lowercase()
     if (me.isEmpty()) return null
     return hosts.firstOrNull { it.nodeId !in tried && it.ownerUser.trim().lowercase() == me }
@@ -446,7 +448,11 @@ class LocalControlService(
     private var connection: LocalControlConnection? = null
     private var connectionTap: Any? = null
     private var autoConnectHeld = false
+    private var dialQueued = false
     private val accountDesktopsTried = HashSet<String>()
+
+    @Volatile
+    private var accountDesktopKeys: Set<String> = emptySet()
     private var retryTask: TimerTask? = null
     private var failures = 0
     private var disposed = false
@@ -464,6 +470,14 @@ class LocalControlService(
     val currentConnection: LocalControlConnection? get() = synchronized(lock) { connection }
 
     fun isPaired(key: String): Boolean = paired.any { it.key == key }
+
+    private fun isKnown(key: String): Boolean = isPaired(key) || key in accountDesktopKeys
+
+    fun setAccountDesktops(keys: Set<String>) {
+        if (keys == accountDesktopKeys) return
+        accountDesktopKeys = keys
+        onMeshChanged()
+    }
 
     init {
         paired = try {
@@ -509,9 +523,10 @@ class LocalControlService(
         notifyListeners()
         val pairedKeys = paired.map { it.key }.toSet()
         val candidate = synchronized(lock) {
-            if (autoConnectHeld || connection != null || status == LocalControlStatus.Connecting || retryTask != null) return
-            val target = automaticControlTarget(hosts, pairedKeys, userName(), accountDesktopsTried) ?: return
-            if (target.nodeId !in pairedKeys) accountDesktopsTried.add(target.nodeId)
+            if (autoConnectHeld || dialQueued || connection != null || status == LocalControlStatus.Connecting || retryTask != null) return
+            val target = automaticControlTarget(hosts, pairedKeys, userName(), accountDesktopsTried, accountDesktopKeys) ?: return
+            if (!isKnown(target.nodeId)) accountDesktopsTried.add(target.nodeId)
+            dialQueued = true
             target
         }
         worker.execute { connectNow(candidate, automatic = true) }
@@ -523,7 +538,7 @@ class LocalControlService(
 
     private fun connectNow(target: MeshControlHost, automatic: Boolean) {
         synchronized(lock) {
-            if (!automatic) autoConnectHeld = false
+            if (automatic) dialQueued = false else autoConnectHeld = false
             retryTask?.cancel()
             retryTask = null
         }
@@ -561,7 +576,7 @@ class LocalControlService(
             failures++
         }
         setStatus(LocalControlStatus.Failed, message)
-        if (isPaired(target.nodeId) && !autoConnectHeld) {
+        if (isKnown(target.nodeId) && !autoConnectHeld) {
             val seconds = (5 * failures).coerceIn(5, 60)
             scheduleRetry(seconds * 1000L)
         }
@@ -569,6 +584,7 @@ class LocalControlService(
 
     private fun scheduleRetry(delayMs: Long) {
         synchronized(lock) {
+            if (disposed) return
             retryTask?.cancel()
             val task = object : TimerTask() {
                 override fun run() {
@@ -594,7 +610,7 @@ class LocalControlService(
             if (wasConnected) "" else "The desktop closed the connection.",
         )
         val current = host
-        if (!autoConnectHeld && current != null && isPaired(current.nodeId)) scheduleRetry(3000)
+        if (!autoConnectHeld && current != null && isKnown(current.nodeId)) scheduleRetry(3000)
     }
 
     private fun onEvent(source: LocalControlConnection, event: ControlEvent) {
@@ -815,10 +831,12 @@ class LocalControlService(
     }
 
     fun dispose() {
-        disposed = true
+        synchronized(lock) {
+            disposed = true
+            retryTask?.cancel()
+            timer.cancel()
+        }
         mesh?.removeListener(meshListener)
-        retryTask?.cancel()
-        timer.cancel()
         currentConnection?.close()
         worker.shutdown()
     }

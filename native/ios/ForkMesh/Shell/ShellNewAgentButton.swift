@@ -224,13 +224,16 @@ struct ShellNewAgentButton: View {
     @ScaledMetric(relativeTo: .body) private var diameter: CGFloat = 44
     let onNewAgent: () -> Void
     let onPalette: () -> Void
+    var onVoice: ((CGRect) -> Void)? = nil
     var tint: Color? = nil
     let paletteTip = PaletteTip()
+    let voiceTip = VoiceTip()
 
     @Environment(\.shellTabHidden) private var tabHidden
     @State private var tilt: ShellSparkleTilt = ShellSparkleTilt.shared
     @State private var feeling: Bool = false
     @State private var bornAt: Double = 0
+    @State private var place: CGRect = .zero
     private var running: Int { ShellCounts.shared.agents }
 
     var body: some View {
@@ -240,24 +243,38 @@ struct ShellNewAgentButton: View {
                 onNewAgent()
             }
             .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 10) {
-                FmHaptics.palette()
-                onPalette()
+                hold()
+            }
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { (next: CGRect) in
+                place = next
             }
             .hoverEffect(.lift)
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(Text("New agent"))
             .accessibilityValue(Text(ShellNewAgentButton.runningLabel(running)))
-            .accessibilityHint(Text("Opens the composer to start an agent. Each star is an agent running. Touch and hold for the command palette."))
+            .accessibilityHint(Text(onVoice == nil
+                ? "Opens the composer to start an agent. Each star is an agent running. Touch and hold for the command palette."
+                : "Opens the composer to start an agent. Each star is an agent running. Touch and hold to speak a prompt."))
             .accessibilityAction { onNewAgent() }
-            .accessibilityAction(named: Text("Command palette")) { onPalette() }
+            .accessibilityActions {
+                if let onVoice = onVoice {
+                    Button("Speak a prompt") { onVoice(place) }
+                }
+                Button("Command palette") { onPalette() }
+            }
             .accessibilityShowsLargeContentViewer {
                 SwiftUI.Label("New agent", systemImage: "plus")
             }
             .accessibilityIdentifier("shell-new-agent-button")
-            .popoverTip(paletteTip)
+            .popoverTip(onVoice == nil ? (paletteTip as any Tip) : (voiceTip as any Tip))
             .genieKeepsClear()
-            .onAppear { feel(!tabHidden) }
+            .onAppear {
+                feel(!tabHidden)
+                if onVoice != nil {
+                    VoiceLaunchSounds.shared.load()
+                }
+            }
             .onDisappear { feel(false) }
             .onChange(of: scenePhase) { _, phase in feel(phase == .active && !tabHidden) }
             .onChange(of: tabHidden) { _, hidden in feel(!hidden && scenePhase == .active) }
@@ -281,6 +298,16 @@ struct ShellNewAgentButton: View {
     }
 
     private var accent: Color { tint ?? fm.accent }
+
+    private func hold() {
+        guard let onVoice = onVoice else {
+            FmHaptics.palette()
+            onPalette()
+            return
+        }
+        voiceTip.invalidate(reason: .actionPerformed)
+        onVoice(place)
+    }
 
     private var still: Bool { reduceMotion || !feeling }
 

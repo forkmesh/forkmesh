@@ -128,6 +128,21 @@ public enum DjStudio {
         return String(raw[range])
     }
 
+    public static func sharedVideoIds(urls: [String], text: String) -> [String] {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var links = urls
+        if links.isEmpty, !typed.isEmpty, !isVideoId(typed), typed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
+            links = [typed]
+        }
+        var ids: [String] = []
+        for link in links {
+            let id = videoId(link)
+            guard !id.isEmpty else { return [] }
+            if !ids.contains(id) { ids.append(id) }
+        }
+        return ids
+    }
+
     public static func watchURL(_ id: String) -> URL {
         var components = URLComponents(string: "https://www.youtube.com/watch")!
         components.queryItems = [URLQueryItem(name: "v", value: id)]

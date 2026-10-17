@@ -24,7 +24,7 @@ public enum PluginMenu {
     public static let homeKinds: Set<Route.Kind> = [
         .teammates, .shortcuts, .notes, .tasks, .calendar, .timers, .desktops, .hosts, .network,
         .crm, .crmOrg, .marketing, .analytics, .competitors, .ledger, .vault, .coves,
-        .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert,
+        .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity,
         .faceChanger, .videoMixDjStudio, .appStoreStatus, .rssReader, .localAI, .activity, .logs, .diagnostics, .people, .docs, .stats, .status, .orgs,
     ]
 

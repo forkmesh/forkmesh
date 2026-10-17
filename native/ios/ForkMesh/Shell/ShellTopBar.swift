@@ -50,6 +50,7 @@ struct ShellTopBar: View {
     let onSignIn: () -> Void
     var onNewAgent: (() -> Void)? = nil
     var onPalette: () -> Void = {}
+    var onVoice: ((CGRect) -> Void)? = nil
     var showsSearch: Bool = true
     var showsSignIn: Bool = true
 
@@ -70,7 +71,7 @@ struct ShellTopBar: View {
                 .accessibilityIdentifier("top-search-button")
             }
             if let onNewAgent = onNewAgent {
-                ShellNewAgentButton(onNewAgent: onNewAgent, onPalette: onPalette)
+                ShellNewAgentButton(onNewAgent: onNewAgent, onPalette: onPalette, onVoice: onVoice)
                     .padding(.leading, FmSpace.x1)
             }
             if state.guest {
