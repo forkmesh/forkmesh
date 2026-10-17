@@ -86,6 +86,8 @@ public:
     void approveSealDevice(const QString &kid);
     void blockSealDevice(const QString &kid);
     void reopenHeldFrames();
+    void recoverSession(const QString &kid, qint64 ctr = 0);
+    void resealOutboxTo(const QString &kid);
     void sendBotChat(const QString &channel, const QString &text) override;
     void sendBotThreadReply(const QString &channel,
                             const QString &rootMessageId,
@@ -210,6 +212,8 @@ private:
     void rememberOutbox(const QString &ref, const QJsonObject &plain,
                         const QJsonObject &sealed);
     void resealOutbox();
+    bool sendSealedTo(const QJsonObject &plain, const QString &kid, bool resend);
+    void noteOwnEcho(const QJsonObject &envelope);
     void sendKeyAdvertisement(bool persist);
     void scheduleKeyAdvertisement();
     void sendHello(bool force = false, bool showActivity = false);

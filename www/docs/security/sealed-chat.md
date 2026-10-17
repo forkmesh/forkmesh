@@ -15,10 +15,11 @@ cannot read or post device-sealed messages. Making a channel public affects
 only new messages; making it private rotates the room key and revokes its
 incoming webhooks.
 
-Device-to-device encryption uses chat protocol v3 (October 2026). Every
-client (web, desktop, iOS, Android) speaks only v3; older v2 frames are
-ignored. The full specification is `docs/app/chat-protocol-v3.md` in the
-ForkMesh repository.
+Device-to-device encryption uses chat protocol v3 (October 2026), and direct
+messages use v4, which adds a per-message ratchet. Every client (web, desktop,
+iOS, Android) speaks only these; older v2 frames are ignored. The full
+specifications are `docs/app/chat-protocol-v3.md` and
+`docs/app/chat-protocol-v4.md` in the ForkMesh repository.
 
 ## Device keys
 
@@ -68,6 +69,24 @@ Relay-held copies are kept for up to 7 days; prekeys live 8, so a message can
 still be opened while it is waiting. After a prekey is deleted, nothing sealed
 to it can be opened again, even with the device in hand.
 
+## Direct messages: a key for every message
+
+In a direct message each pair of devices runs a ratchet, like Signal's Double
+Ratchet. The first message starts it with the same X25519 + ML-KEM-768 exchange
+against the other device's prekey; after that every message has its own key,
+derived from a chain that only moves forward, and the key is deleted as soon as
+the message is opened. Each time the conversation changes direction, both
+devices mix in a fresh X25519 exchange and a fresh ML-KEM-768 encapsulation.
+
+- A device stolen today cannot open direct messages it had already received:
+  their keys are gone.
+- A device that was compromised recovers once the other person replies; against
+  a quantum-capable attacker, once its prekey rotates (24 hours).
+- A device never encrypts to itself; your own messages stay in your device's
+  history, not in a copy the server holds for you.
+- If a device loses its ratchet state, it asks the sender to start over and
+  the sender re-sends what it still holds.
+
 ## Safety numbers
 
 In a direct message, the encryption panel shows a 60-digit safety number and a
@@ -82,9 +101,13 @@ is cleared and the conversation says so.
   drop or delay frames.
 - Channels approve every device that presents a valid bundle; only direct
   messages hold new devices.
-- Forward secrecy is per prekey, not per message: a device compromised today
-  exposes the messages sealed to the prekeys it still holds (up to 8 days).
-  Recovery after a compromise comes with the next prekey rotation (24 hours).
+- In channels and Office rooms, forward secrecy is per prekey, not per
+  message: a device compromised today exposes the channel messages sealed to
+  the prekeys it still holds (up to 8 days). Channels keep this because the web
+  reopens their history from the relay on every load.
+- In direct messages, the messages sent before the other device first replies
+  still rest on its prekey (up to 8 days); Signal adds one-time prekeys for
+  these.
 - A new device cannot read messages sent before it was approved.
 - A modified web client served by a compromised host can read what it shows
   you, as with any web app.
@@ -92,19 +115,21 @@ is cleared and the conversation says so.
 
 ## Compared with Signal
 
-Signal is ahead in two ways: its Double Ratchet gives forward secrecy for every
-single message, and sealed sender hides who sent a message from Signal's own
-server. ForkMesh v3 adds post-quantum key agreement on every message, a
-signature on every frame, holds a new device of a contact until you approve it
-(Signal warns and keeps sending), and lets nearby devices chat directly over
-Wi-Fi or Bluetooth without a server. A ratchet and sealed-sender delivery are
-the next steps.
+Direct messages now have per-message forward secrecy, as Signal does. Signal
+is still ahead in one way: sealed sender hides who sent a message from Signal's
+own server, while the ForkMesh server still knows which two accounts are in a
+direct message. That is the next step. ForkMesh adds post-quantum key agreement
+at the start of every session and on every ratchet step, a signature on every
+frame, holds a new device of a contact until you approve it (Signal warns and
+keeps sending), and lets nearby devices chat directly over Wi-Fi or Bluetooth
+without a server.
 
 ## Implementations
 
 Browser (`app/public/chat-seal.js`, `app/public/chat-mlkem.js`,
 `app/public/chat-room-transport.js`), desktop (`desktop/src/RoomSeal.{h,cpp}`),
 iOS (`FMCrypto/RoomSeal.swift`) and Android (`crypto/RoomSeal.kt`) all open the
-shared wire vectors in `conformance/chat/v3/vectors.json`, so a change to key
+shared wire vectors in `conformance/chat/v3/vectors.json` and
+`conformance/chat/v4/vectors.json`, so a change to key
 derivation, signed strings, encoding or frame shape fails the cross-client
 tests.

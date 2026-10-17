@@ -51,6 +51,7 @@ public enum DirectMessageFrames {
     public static let ackTimeout: TimeInterval = 5
     public static let ackRetries = 3
     public static let directAckTimeout: TimeInterval = 3
+    public static let resetIntervalMs: Int64 = 60_000
     public static let replyField = "replyTo"
 
     public static func frameRef(_ text: String) -> String {
@@ -347,6 +348,7 @@ public final class DirectMessageService {
     @ObservationIgnored public let viewOnce: ViewOnceStore
     @ObservationIgnored var heldReceipts: [String: (conversationId: String, refs: [String])] = [:]
     @ObservationIgnored var heldOrder: [String] = []
+    @ObservationIgnored var resetTimes: [String: Int64] = [:]
 
     public private(set) var records: [DirectConversation] = []
     public private(set) var nextCursor = ""
@@ -773,10 +775,15 @@ public final class DirectMessageService {
         }
         guard RoomSeal.isSealedFrame(frame) else { return false }
         let kids = RoomSeal.wrappedKeyIds(frame)
-        let result = kids.contains(seal.keyId) ? seal.open(frame, now: clock.nowMillis, history: !live) : .notForMe
+        let addressed = kids.contains(seal.keyId) || RoomSeal.frameKeyId(frame) == seal.keyId
+        let result = addressed ? seal.open(frame, now: clock.nowMillis, history: !live) : .notForMe
         switch result {
-        case .opened:
+        case .opened(_, let senderKid, _, _):
             guard let plain = result.authenticatedPlain else { return false }
+            if isReset(plain) {
+                resealForReset(record, seal: seal, kid: senderKid)
+                return true
+            }
             return handleOpened(plain, kids: kids, envelope: envelope, record: record, live: live)
         case .notForMe:
             if !socket.persistedAdvert {
@@ -784,13 +791,83 @@ public final class DirectMessageService {
                 advertise(socket, persist: true)
             }
             return false
+        case .noSession(let kid):
+            recoverSession(record, seal: seal, kid: kid, counter: frame["ctr"]?.int64Value)
+            return false
         case .held:
             trustChanged()
             return false
         case .replay:
             return true
+        case .own:
+            if let id = refBooks[record.id]?.ids[DirectMessageFrames.relayRef(envelope)] { setReceipt(.sent, id) }
+            return false
         case .invalid:
             return false
+        }
+    }
+
+    func isReset(_ plain: JSONObject) -> Bool { plain["type"]?.text == ChatV4.resetType }
+
+    func recoverSession(_ record: DirectConversation, seal: RoomSeal, kid: String, counter: Int64? = nil) {
+        if let counter, counter < seal.highestCounter(from: kid) { return }
+        let key = "\(record.id)|\(kid)"
+        let now = clock.nowMillis
+        if let last = resetTimes[key], now - last < DirectMessageFrames.resetIntervalMs, now >= last { return }
+        resetTimes[key] = now
+        seal.resetSessions(with: kid)
+        let plain: JSONObject = ["type": .string(ChatV4.resetType), "senderId": .string(selfId())]
+        let sealed = try? seal.seal(plain, for: [kid], now: now)
+        let socket = sockets[record.id]
+        if let socket {
+            if let sealed, !RoomSeal.wrappedKeyIds(sealed).isEmpty, var envelope = try? socket.crypto.encrypt(sealed) {
+                envelope["persist"] = true
+                let text = JSON.encode(envelope)
+                let connection = socket.connection
+                Task { try? await connection.send(text: text) }
+            }
+            advertise(socket, persist: true)
+        } else if let sealed, !RoomSeal.wrappedKeyIds(sealed).isEmpty, let mesh {
+            let conversation = record.conversation
+            Task { _ = await mesh.sendDirectSealed(sealed, channel: conversation, to: kid) }
+        }
+    }
+
+    func resealForReset(_ record: DirectConversation, seal: RoomSeal, kid: String) {
+        let now = clock.nowMillis
+        let entries = (outbox[record.id] ?? []).filter { now - $0.ts < DirectMessageFrames.outboxMaxAgeMs }
+        if entries.isEmpty { return }
+        let socket = sockets[record.id]
+        var texts: [String] = []
+        var direct: [JSONObject] = []
+        for entry in entries {
+            guard let sealed = try? seal.seal(entry.plain, for: [kid], now: clock.nowMillis),
+                !RoomSeal.wrappedKeyIds(sealed).isEmpty
+            else { continue }
+            guard let socket else {
+                direct.append(sealed)
+                continue
+            }
+            guard var envelope = try? socket.crypto.encrypt(sealed) else { continue }
+            envelope["persist"] = true
+            if entry.notify { envelope["notify"] = true }
+            envelope["resend"] = true
+            let text = JSON.encode(envelope)
+            if DirectMessageFrames.carriesReceipt(entry.plain) {
+                refBooks[record.id, default: DirectRefBook()].track(DirectMessageFrames.frameRef(text), id: entry.messageId)
+            }
+            texts.append(text)
+        }
+        if let socket, !texts.isEmpty {
+            let connection = socket.connection
+            Task {
+                for text in texts { try? await connection.send(text: text) }
+            }
+        } else if let mesh, !direct.isEmpty {
+            let conversation = record.conversation
+            Task {
+                for sealed in direct { _ = await mesh.sendDirectSealed(sealed, channel: conversation, to: kid) }
+            }
         }
     }
 
@@ -811,8 +888,19 @@ public final class DirectMessageService {
 
     private func processHeld(_ seal: RoomSeal, record: DirectConversation) {
         for result in seal.reopenHeld(now: clock.nowMillis) {
-            guard let plain = result.authenticatedPlain else { continue }
-            _ = handleOpened(plain, kids: [], envelope: [:], record: record, live: true)
+            switch result {
+            case .opened(_, let senderKid, _, _):
+                guard let plain = result.authenticatedPlain else { continue }
+                if isReset(plain) {
+                    resealForReset(record, seal: seal, kid: senderKid)
+                } else {
+                    _ = handleOpened(plain, kids: [], envelope: [:], record: record, live: true)
+                }
+            case .noSession(let kid):
+                recoverSession(record, seal: seal, kid: kid)
+            default:
+                continue
+            }
         }
     }
 
@@ -1342,6 +1430,7 @@ public final class DirectMessageService {
         focusedConversation = nil
         publishedFocus = nil
         safetyFlags = [:]
+        resetTimes = [:]
         roomNames = [:]
         seals.removeAll()
         trustChanged()
@@ -1418,6 +1507,10 @@ extension DirectMessageService {
         switch result {
         case .opened:
             guard let plain = result.authenticatedPlain else { return }
+            if isReset(plain) {
+                resealForReset(record, seal: seal, kid: kid)
+                return
+            }
             _ = handleOpened(plain, kids: [], envelope: [:], record: record, live: true)
             let id = plain["id"]?.text ?? ""
             let type = plain["type"]?.text ?? ""
@@ -1426,6 +1519,8 @@ extension DirectMessageService {
             }
         case .held:
             trustChanged()
+        case .noSession(let sender):
+            recoverSession(record, seal: seal, kid: sender, counter: frame["ctr"]?.int64Value)
         default:
             break
         }

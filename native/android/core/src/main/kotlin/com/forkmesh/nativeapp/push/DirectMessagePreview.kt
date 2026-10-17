@@ -92,7 +92,7 @@ object DirectMessagePreviews {
             return null
         }
         val framed = RoomCrypto.withPassphrase(room, passphrase).decrypt(envelope) ?: return null
-        if (!RoomSeal.isSealedFrame(framed)) return null
+        if (!RoomSeal.isRatchetFrame(framed)) return null
         val seal = RoomSeal.existing(
             room,
             scope = DirectMessageFrames.trustScope(event.conversationId),

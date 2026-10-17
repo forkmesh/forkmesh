@@ -97,6 +97,7 @@ BobView bobWithTrust()
     view.bob = device(QStringLiteral("bob"));
     view.seal = RoomSeal(room, scope, Policy::Strict, QStringLiteral("bob"), nodeFor("bob"),
                          view.bob);
+    view.seal.setRatchet(false);
     view.seal.setParticipants(participants);
     check(view.seal.acceptKeyFrame(bundle("alice")) == RoomSeal::BundleResult::Approved,
           "the first device of an account is approved on first use");
@@ -245,6 +246,7 @@ void testOtherRoom()
     BobView view = bobWithTrust();
     RoomSeal other(QStringLiteral("another-room"), scope, Policy::Strict,
                    QStringLiteral("bob"), nodeFor("bob"), view.bob);
+    other.setRatchet(false);
     check(other.open(sealedFrame("first")).status == RoomSeal::Status::Invalid,
           "a frame signed for one room is invalid in another");
 }
@@ -406,6 +408,8 @@ void testRoundTrips()
                        QStringLiteral("carol-desk"), carol);
     aliceSeal.setParticipants({QStringLiteral("Alice"), QStringLiteral("bob")});
     bobSeal.setParticipants({QStringLiteral("alice"), QStringLiteral("bob")});
+    for (RoomSeal *v3Seal : {&aliceSeal, &bobSeal, &carolSeal})
+        v3Seal->setRatchet(false);
     check(aliceSeal.isValid() && alice->newestPrekey() != nullptr,
           "a new device makes its first prekey on start");
     check(RoomSeal::isKeyFrame(aliceSeal.keyFrame()) &&

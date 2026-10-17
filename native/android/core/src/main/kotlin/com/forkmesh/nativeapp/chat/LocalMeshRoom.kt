@@ -1544,7 +1544,7 @@ class LocalMeshRoom(
             is SealOpen.NotForMe -> relayForeign(link, frame)
             is SealOpen.Held -> if (!result.blocked) relayForeign(link, frame)
             is SealOpen.Invalid -> diag.framesBad++
-            is SealOpen.Replay -> {}
+            is SealOpen.Replay, is SealOpen.Own, is SealOpen.NoSession -> {}
         }
     }
 

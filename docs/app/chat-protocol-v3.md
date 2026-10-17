@@ -7,6 +7,10 @@ Android `crypto/RoomSeal.kt`, desktop `desktop/src/RoomSeal.cpp`, web
 ignores v2 frames, so nothing can be downgraded. Every client and the server
 are deployed together.
 
+DM rooms (strict policy) now use v4 sealed frames with a per-message ratchet:
+[chat-protocol-v4.md](chat-protocol-v4.md). Everything else on this page still
+applies to them.
+
 Reference implementation: `tools/chat_v3_reference.py`. Wire vectors that
 every client must open: `conformance/chat/v3/vectors.json` (checked by
 `app/tests/test_chat_v3_vectors.py` and each client's own vector test).
@@ -350,24 +354,22 @@ shows "New message".
 
 ## Compared with Signal
 
-| | Signal | ForkMesh v3 |
-| --- | --- | --- |
-| Post-quantum key agreement | PQXDH at session start | ML-KEM-768 hybrid on every message |
-| Forward secrecy | Per message (Double Ratchet) | Per prekey: 8-day window, then wiped |
-| Post-compromise recovery | Next ratchet step | Next prekey rotation (24 h) |
-| Sender authentication | Implicit (session MAC) | Ed25519 signature on every frame |
-| New device of a contact | Warns, keeps sending | Holds until the user approves |
-| Server key injection | Shown as a safety-number change | Held, plus safety-number change |
-| Safety numbers / QR | Yes | Yes |
-| Replay protection | Ratchet counters | Signed counters with a 1024 window |
-| Nearby chats without a server | No | Direct-only over LAN/Bluetooth |
-| Sender hidden from the push service | Yes | Yes |
-| Metadata at the server | Sealed sender hides sender | Server still knows the two accounts of a DM |
+| | Signal | ForkMesh v3 channels | ForkMesh v4 DMs |
+| --- | --- | --- | --- |
+| Post-quantum key agreement | PQXDH, plus SPQR in the ratchet | ML-KEM-768 hybrid on every message | ML-KEM-768 at session start and on every ratchet step |
+| Forward secrecy | Per message (Double Ratchet) | Per prekey: 8-day window, then wiped | Per message (ratchet) |
+| Post-compromise recovery | Next ratchet step | Next prekey rotation (24 h) | Next reply |
+| Sender authentication | Implicit (session MAC) | Ed25519 signature on every frame | Ed25519 signature on every frame |
+| New device of a contact | Warns, keeps sending | Holds until the user approves | Holds until the user approves |
+| Server key injection | Shown as a safety-number change | Held, plus safety-number change | Held, plus safety-number change |
+| Safety numbers / QR | Yes | Yes | Yes |
+| Replay protection | Ratchet counters | Signed counters with a 1024 window | Signed counters and ratchet keys |
+| Nearby chats without a server | No | Direct-only over LAN/Bluetooth | Direct-only over LAN/Bluetooth |
+| Sender hidden from the push service | Yes | Yes | Yes |
+| Metadata at the server | Sealed sender hides sender | Server knows the members | Server still knows the two accounts of a DM |
 
-Signal is ahead on per-message forward secrecy (the ratchet) and on hiding the
-sender from its own server. v3 is ahead on post-quantum coverage, sender
-signatures, new-device approval and server-free nearby chat. A Double Ratchet
-on top of v3 bundles, and sealed-sender delivery, are the next steps; v3 keeps
-the frame shape so a ratchet header can be added as `v:4`. None of this has had
-an outside audit yet; that should come before it is described publicly as
-stronger than Signal.
+Signal is still ahead on hiding the sender from its own server; the plan is
+[chat-sealed-sender.md](chat-sealed-sender.md). Channels keep the per-prekey
+window because the web reopens their relay history on every load. None of this
+has had an outside audit yet; that should come before it is described publicly
+as stronger than Signal.

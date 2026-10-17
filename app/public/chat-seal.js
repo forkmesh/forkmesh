@@ -15,8 +15,20 @@ import {
 const SEAL_TYPE = "sealed";
 const KEY_TYPE = "e2ee-key";
 const SEAL_VERSION = 3;
+const SEAL_V4 = 4;
+const MAX_SKIP = 256;
+const SKIPPED_KEPT = 512;
+const SESSIONS_KEPT = 4;
+const OPENED_LIFE_MS = 10 * 60 * 1000;
+const OPENED_KEPT = 256;
+const OPENED_ENTRY_BYTES = 16384;
+const OPENED_TOTAL_BYTES = 262144;
+const OPENED_HERE_KEPT = 1024;
+const RATCHET_LOCK = "forkmesh-chat-ratchet";
+export const E2EE_RESET_TYPE = "e2ee-reset";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PREKEY_LIFE_MS = 8 * DAY_MS;
+const SKIPPED_LIFE_MS = 8 * DAY_MS;
 const PREKEY_ROTATE_MS = DAY_MS;
 const PREKEYS_KEPT = 10;
 const MAX_RECIPIENTS = 64;
@@ -328,8 +340,102 @@ export async function deriveKek(room, sender, recipient, spkId, ephPub, ct, ss1,
   ));
 }
 
-function contentAad(room, sender, ctr, ts) {
-  return utf8(["forkmesh-chat-e2ee-content-v3", room, sender, String(ctr), String(ts)].join("\n"));
+function contentAad(room, sender, ctr, ts, version = SEAL_VERSION) {
+  return utf8(["forkmesh-chat-e2ee-content-v" + version, room, sender, String(ctr), String(ts)].join("\n"));
+}
+
+async function hashB64(text) {
+  return bytesToB64Url(await sha256(b64ToBytes(text)));
+}
+
+async function wrapAad4(room, sender, entry, nonce, tag) {
+  return utf8([
+    "forkmesh-chat-e2ee-wrap-v4", room, sender, entry.kid, entry.sid, entry.spk, await hashB64(entry.ct),
+    entry.dh, String(entry.pn), String(entry.n), nonce, tag,
+  ].join("\n"));
+}
+
+async function hkdf64(ikm, salt, info) {
+  const material = await subtle().importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  const out = new Uint8Array(await subtle().deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt, info },
+    material,
+    512,
+  ));
+  return [out.slice(0, 32), out.slice(32)];
+}
+
+async function hmacByte(key, byte) {
+  const hmacKey = await subtle().importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await subtle().sign("HMAC", hmacKey, Uint8Array.of(byte)));
+}
+
+export async function kdfInit(room, sender, recipient, spkId, sid, ss1, ss2) {
+  return hkdf64(
+    concatBytes(ss1, ss2),
+    await sha256(utf8("ForkMesh chat e2ee salt v4:" + room)),
+    utf8(["forkmesh-chat-e2ee-init-v4", room, sender, recipient, spkId, sid].join("\n")),
+  );
+}
+
+export async function kdfRk(rk, dhOut, ss) {
+  return hkdf64(concatBytes(dhOut, ss), rk, utf8("forkmesh-chat-e2ee-ratchet-v4"));
+}
+
+export async function kdfCk(ck) {
+  return [await hmacByte(ck, 1), await hmacByte(ck, 2)];
+}
+
+export async function sessionId(dhPub, ct) {
+  return id16(concatBytes(dhPub, ct));
+}
+
+async function newX25519() {
+  const priv = randomBytes(32);
+  const { publicBytes } = await xKeysFromPrivate(priv);
+  const pair = { priv: bytesToB64(priv), pub: bytesToB64Url(publicBytes) };
+  priv.fill(0);
+  return pair;
+}
+
+function ratchetFail(status) {
+  return Object.assign(new Error(status), { ratchet: status });
+}
+
+async function skipTo(session, until, now) {
+  if (until < session.nr) throw ratchetFail("replay");
+  if (until - session.nr > MAX_SKIP) throw ratchetFail("noSession");
+  let ck = b64ToBytes(session.ckr);
+  while (session.nr < until) {
+    const [mk, next] = await kdfCk(ck);
+    session.skipped.push({ dh: session.dhr, n: session.nr, mk: bytesToB64(mk), ts: now });
+    ck = next;
+    session.nr += 1;
+  }
+  session.ckr = bytesToB64(ck);
+}
+
+function prunePeer(peer, now) {
+  const sessions = [...peer.sessions].sort((a, b) => b.used - a.used);
+  const current = sessions.find((session) => session.sid === peer.current);
+  const kept = current ? [current] : [];
+  for (const session of sessions) {
+    if (session !== current && kept.length < SESSIONS_KEPT) kept.push(session);
+  }
+  for (const session of kept) {
+    session.skipped = session.skipped.filter((key) => key.ts >= now - SKIPPED_LIFE_MS).slice(-SKIPPED_KEPT);
+  }
+  return { current: peer.current, sessions: kept };
+}
+
+function withRatchetLock(task) {
+  const locks = globalThis.navigator?.locks;
+  if (locks && typeof locks.request === "function") return locks.request(RATCHET_LOCK, task);
+  return task();
+}
+
+async function frameDigest(frame) {
+  return bytesToB64Url(await sha256(utf8(JSON.stringify(frame))));
 }
 
 function wrapAad(room, sender, recipient, nonce, tag) {
@@ -344,16 +450,20 @@ export function bundleMessage(room, kid, idk, acct, node, spk) {
 }
 
 export async function sealedMessage(room, frame) {
+  const v4 = frame.v === SEAL_V4;
   const head = [
-    "forkmesh-chat-e2ee-sealed-v3", room, frame.kid, frame.idk, String(frame.ctr), String(frame.ts),
+    "forkmesh-chat-e2ee-sealed-v" + (v4 ? SEAL_V4 : SEAL_VERSION), room, frame.kid, frame.idk, String(frame.ctr), String(frame.ts),
     frame.nonce, frame.tag, bytesToB64Url(await sha256(b64ToBytes(frame.body))),
   ].join("\n");
   let tail = "";
   for (const entry of frame.keys) {
-    tail += "\n" + [
-      entry.kid, entry.spk, entry.eph, bytesToB64Url(await sha256(b64ToBytes(entry.ct))),
-      entry.nonce, entry.tag, entry.key,
-    ].join("|");
+    tail += "\n" + (v4
+      ? [
+        entry.kid, entry.sid, entry.spk, await hashB64(entry.ct), entry.dh, String(entry.pn), String(entry.n),
+        entry.nonce, entry.tag, entry.key,
+      ]
+      : [entry.kid, entry.spk, entry.eph, await hashB64(entry.ct), entry.nonce, entry.tag, entry.key]
+    ).join("|");
   }
   return utf8(head + tail);
 }
@@ -545,9 +655,10 @@ export function isSealKeyFrame(frame) {
 
 export function isSealedFrame(frame) {
   return Boolean(
-    frame && typeof frame === "object" && frame.type === SEAL_TYPE && frame.v === SEAL_VERSION &&
+    frame && typeof frame === "object" && frame.type === SEAL_TYPE &&
+      (frame.v === SEAL_VERSION || frame.v === SEAL_V4) &&
       KID_RE.test(frame.kid || "") && Array.isArray(frame.keys) &&
-      frame.keys.length > 0 && frame.keys.length <= MAX_RECIPIENTS,
+      frame.keys.length >= (frame.v === SEAL_V4 ? 0 : 1) && frame.keys.length <= MAX_RECIPIENTS,
   );
 }
 
@@ -555,11 +666,22 @@ export function frameKeyId(frame) {
   return isSealedFrame(frame) ? frame.kid : "";
 }
 
-function checkEntryShape(entry) {
-  if (!entry || typeof entry !== "object" || !KID_RE.test(entry.kid || "") || !KID_RE.test(entry.spk || "")) {
+function isKid(value) {
+  return typeof value === "string" && KID_RE.test(value);
+}
+
+function isCount(value) {
+  return Number.isInteger(value) && value >= 0 && value < 2 ** 31;
+}
+
+function checkEntryShape(entry, v4) {
+  if (!entry || typeof entry !== "object" || !isKid(entry.kid) || !isKid(entry.spk)) return false;
+  if (v4) {
+    if (!isKid(entry.sid) || typeof entry.dh !== "string" || !KEY32_RE.test(entry.dh)) return false;
+    if (!isCount(entry.pn) || !isCount(entry.n)) return false;
+  } else if (!KEY32_RE.test(entry.eph || "")) {
     return false;
   }
-  if (!KEY32_RE.test(entry.eph || "")) return false;
   strictB64(entry.ct, MLKEM_CIPHERTEXT_BYTES);
   strictB64(entry.nonce, 12);
   strictB64(entry.tag, 16);
@@ -569,7 +691,9 @@ function checkEntryShape(entry) {
 
 function sealedShape(frame) {
   try {
-    if (!frame || typeof frame !== "object" || frame.type !== SEAL_TYPE || frame.v !== SEAL_VERSION) return false;
+    if (!frame || typeof frame !== "object" || frame.type !== SEAL_TYPE) return false;
+    const v4 = frame.v === SEAL_V4;
+    if (!v4 && frame.v !== SEAL_VERSION) return false;
     if (!KID_RE.test(frame.kid || "") || !KEY32_RE.test(frame.idk || "") || !SIG_RE.test(frame.sig || "")) {
       return false;
     }
@@ -578,10 +702,11 @@ function sealedShape(frame) {
     strictB64(frame.tag, 16);
     if (!strictB64(frame.body).length) return false;
     const keys = frame.keys;
-    if (!Array.isArray(keys) || keys.length < 1 || keys.length > MAX_RECIPIENTS) return false;
+    if (!Array.isArray(keys) || keys.length < (v4 ? 0 : 1) || keys.length > MAX_RECIPIENTS) return false;
     for (let i = 0; i < keys.length; i += 1) {
-      if (!checkEntryShape(keys[i])) return false;
+      if (!checkEntryShape(keys[i], v4)) return false;
       if (i > 0 && !(keys[i - 1].kid < keys[i].kid)) return false;
+      if (v4 && keys[i].kid === frame.kid) return false;
     }
     return true;
   } catch (_) {
@@ -601,6 +726,7 @@ function createContext({ storage, acct, node, now, wrappingKey }) {
     prekeys: [],
     rotation: 0,
     trusts: new Map(),
+    openedHere: new Set(),
     listeners: new Set(),
     wrapKey() {
       if (!wrapPromise) {
@@ -734,7 +860,7 @@ function persistTrust(ctx, trust) {
 }
 
 class RoomSeal {
-  constructor(ctx, { scope, roomName, controllerScope, acct, participants }) {
+  constructor(ctx, { scope, roomName, controllerScope, acct, participants, version }) {
     this.ctx = ctx;
     this.acct = acct;
     this.node = ctx.node;
@@ -744,6 +870,9 @@ class RoomSeal {
     this.channelScope = scope;
     this.policy = /^direct:/.test(scope) ? "strict" : "open";
     this.trustScope = this.policy === "strict" ? scope : roomName;
+    this.version = version === SEAL_VERSION || version === SEAL_V4
+      ? version
+      : this.policy === "strict" ? SEAL_V4 : SEAL_VERSION;
     this.scope = `${controllerScope}\n${scope}`;
     this.localTrust = `${controllerScope}\n${this.trustScope}`;
     this.localRoom = `${controllerScope}\n${roomName}`;
@@ -1030,16 +1159,315 @@ class RoomSeal {
     return ctr;
   }
 
-  async seal(plain, { to = "" } = {}) {
+  ratchetKey() {
+    return storageKey("ratchetV4", this.localRoom);
+  }
+
+  async readRatchet() {
+    const parsed = safeJson(await readSecret(this.ctx, this.ratchetKey()));
+    const peers = parsed && parsed.v === SEAL_V4 && parsed.peers && typeof parsed.peers === "object" &&
+      !Array.isArray(parsed.peers) ? parsed.peers : {};
+    return { v: SEAL_V4, peers };
+  }
+
+  async writeRatchet(state) {
+    if (!await writeSecret(this.ctx, this.ratchetKey(), JSON.stringify({ v: SEAL_V4, peers: state.peers }))) {
+      throw new Error("The chat ratchet could not be stored.");
+    }
+  }
+
+  async exportRatchets() {
+    return this.ctx.exclusive(() => withRatchetLock(() => this.readRatchet()));
+  }
+
+  async importRatchets(state) {
+    return this.ctx.exclusive(() => withRatchetLock(() => this.writeRatchet({ peers: state?.peers || {} })));
+  }
+
+  async resetPeer(kid) {
+    return this.ctx.exclusive(() => withRatchetLock(async () => {
+      const state = await this.readRatchet();
+      if (!Object.hasOwn(state.peers, kid)) return;
+      delete state.peers[kid];
+      await this.writeRatchet(state);
+    }));
+  }
+
+  openedKey() {
+    return storageKey("openedV4", this.localRoom);
+  }
+
+  async readOpened(now) {
+    const list = safeJson(await readSecret(this.ctx, this.openedKey()));
+    return Array.isArray(list)
+      ? list.filter((item) => item && typeof item.d === "string" && item.ts > now - OPENED_LIFE_MS && item.ts <= now + DAY_MS)
+      : [];
+  }
+
+  async rememberOpened(digest, result, now) {
+    this.noteOpenedHere(digest);
+    const item = {
+      d: digest, ts: now, own: Boolean(result.own), kid: result.kid, acct: result.acct, node: result.node, plain: result.plain,
+    };
+    if (JSON.stringify(item).length > OPENED_ENTRY_BYTES) return;
+    const list = (await this.readOpened(now)).filter((entry) => entry.d !== digest);
+    list.push(item);
+    let total = 0;
+    const kept = [];
+    for (const entry of list.reverse()) {
+      total += JSON.stringify(entry).length;
+      if (kept.length >= OPENED_KEPT || total > OPENED_TOTAL_BYTES) break;
+      kept.push(entry);
+    }
+    await writeSecret(this.ctx, this.openedKey(), JSON.stringify(kept.reverse()));
+  }
+
+  noteOpenedHere(digest) {
+    const here = this.ctx.openedHere;
+    here.delete(digest);
+    here.add(digest);
+    while (here.size > OPENED_HERE_KEPT) here.delete(here.values().next().value);
+  }
+
+  async openedElsewhere(frame, own) {
+    const digest = await frameDigest(frame);
+    if (this.ctx.openedHere.has(digest)) return null;
+    const item = (await this.readOpened(this.ctx.now())).find((entry) => entry.d === digest && entry.own === own);
+    if (!item || !item.plain || typeof item.plain !== "object") return null;
+    this.noteOpenedHere(digest);
+    return { plain: item.plain, kid: item.kid, acct: item.acct, node: item.node };
+  }
+
+  async prekeyFor(id, now) {
+    let spk = this.ctx.prekeys.find((candidate) => candidate.id === id);
+    if (!spk) {
+      await syncPrekeys(this.ctx);
+      spk = this.ctx.prekeys.find((candidate) => candidate.id === id);
+    }
+    return spk && spk.xKey && now <= spk.exp ? spk : null;
+  }
+
+  async sendEntry(peers, recipient, spk, now) {
+    const peer = peers[recipient] || { current: null, sessions: [] };
+    peers[recipient] = peer;
+    let session = peer.sessions.find((candidate) => candidate.sid === peer.current) || null;
+    if (session && session.cks === null && session.dhr === null) session = null;
+    if (!session) {
+      const eph = await newX25519();
+      const ss1 = await x25519Shared(b64ToBytes(eph.priv), b64UrlToBytes(spk.x));
+      const { ciphertext, sharedSecret } = mlkemEncapsulate(b64UrlToBytes(spk.pq));
+      const sid = await sessionId(b64UrlToBytes(eph.pub), ciphertext);
+      const [rk, ck] = await kdfInit(this.roomName, this.keyId, recipient, spk.id, sid, ss1, sharedSecret);
+      ss1.fill(0);
+      sharedSecret.fill(0);
+      session = {
+        sid, rk: bytesToB64(rk), dhs: eph, dhr: null, cks: bytesToB64(ck), ns: 0, pn: 0,
+        sq: { spk: spk.id, ct: bytesToB64(ciphertext) }, ckr: null, nr: 0, skipped: [], created: now, used: now,
+      };
+      peer.sessions.push(session);
+      peer.current = sid;
+    } else if (session.cks === null) {
+      const dhs = await newX25519();
+      const { ciphertext, sharedSecret } = mlkemEncapsulate(b64UrlToBytes(spk.pq));
+      const dhOut = await x25519Shared(b64ToBytes(dhs.priv), b64UrlToBytes(session.dhr));
+      const [rk, cks] = await kdfRk(b64ToBytes(session.rk), dhOut, sharedSecret);
+      dhOut.fill(0);
+      sharedSecret.fill(0);
+      Object.assign(session, {
+        rk: bytesToB64(rk), cks: bytesToB64(cks), dhs, sq: { spk: spk.id, ct: bytesToB64(ciphertext) },
+      });
+    }
+    const [mk, cks] = await kdfCk(b64ToBytes(session.cks));
+    const entry = {
+      kid: recipient, sid: session.sid, spk: session.sq.spk, ct: session.sq.ct, dh: session.dhs.pub,
+      pn: session.pn, n: session.ns,
+    };
+    session.cks = bytesToB64(cks);
+    session.ns += 1;
+    session.used = now;
+    return { entry, mk };
+  }
+
+  async receive(session, entry, now) {
+    const index = session.skipped.findIndex((key) => key.dh === entry.dh && key.n === entry.n);
+    if (index >= 0) return b64ToBytes(session.skipped.splice(index, 1)[0].mk);
+    if (entry.dh !== session.dhr) {
+      if (!session.dhs) throw ratchetFail("noSession");
+      if (session.ckr !== null) await skipTo(session, entry.pn, now);
+      const spk = await this.prekeyFor(entry.spk, now);
+      if (!spk) throw ratchetFail("noSession");
+      const ss = mlkemDecapsulate(spk.pqSecret, b64ToBytes(entry.ct));
+      const dhOut = await x25519Shared(b64ToBytes(session.dhs.priv), b64UrlToBytes(entry.dh));
+      const [rk, ckr] = await kdfRk(b64ToBytes(session.rk), dhOut, ss);
+      ss.fill(0);
+      dhOut.fill(0);
+      Object.assign(session, {
+        rk: bytesToB64(rk), ckr: bytesToB64(ckr), nr: 0, dhr: entry.dh, pn: session.ns, ns: 0, cks: null, sq: null,
+      });
+    }
+    if (session.ckr === null) throw ratchetFail("noSession");
+    await skipTo(session, entry.n, now);
+    const [mk, ckr] = await kdfCk(b64ToBytes(session.ckr));
+    session.ckr = bytesToB64(ckr);
+    session.nr += 1;
+    return mk;
+  }
+
+  async openEntry(state, sender, entry, now) {
+    const peer = JSON.parse(JSON.stringify(state.peers[sender] || { current: null, sessions: [] }));
+    let session = peer.sessions.find((candidate) => candidate.sid === entry.sid);
+    if (!session) {
+      const dh = b64UrlToBytes(entry.dh);
+      const ct = b64ToBytes(entry.ct);
+      if (entry.sid !== await sessionId(dh, ct) || entry.pn !== 0) throw ratchetFail("noSession");
+      const spk = await this.prekeyFor(entry.spk, now);
+      if (!spk) throw ratchetFail("noSession");
+      const ss1 = await x25519(spk.xKey, dh);
+      const ss2 = mlkemDecapsulate(spk.pqSecret, ct);
+      const [rk, ck] = await kdfInit(this.roomName, sender, this.keyId, spk.id, entry.sid, ss1, ss2);
+      ss1.fill(0);
+      ss2.fill(0);
+      session = {
+        sid: entry.sid, rk: bytesToB64(rk), dhs: null, dhr: entry.dh, cks: null, ns: 0, pn: 0, sq: null,
+        ckr: bytesToB64(ck), nr: 0, skipped: [], created: now, used: now,
+      };
+      peer.sessions.push(session);
+    }
+    const mk = await this.receive(session, entry, now);
+    session.used = now;
+    peer.current = session.sid;
+    return { mk, peer };
+  }
+
+  sealTargets(identity, now, to, only) {
+    return this.records()
+      .filter((record) => record.state === "approved" && record.kid !== identity.kid && record.spk.exp > now)
+      .filter((record) => !to || record.node === to || record.acct === this.acct)
+      .filter((record) => !only || only.includes(record.kid))
+      .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  }
+
+  async seal4(plain, identity, now, to, only) {
+    const targets = new Map(
+      this.sealTargets(identity, now, to, only).slice(0, MAX_RECIPIENTS).map((record) => [record.kid, record.spk]),
+    );
+    return withRatchetLock(async () => {
+      const state = await this.readRatchet();
+      const ctr = this.nextCounter();
+      const contentBytes = randomBytes(32);
+      const content = await aesSeal(
+        await aesKey(contentBytes, ["encrypt"]),
+        utf8(JSON.stringify(plain)),
+        contentAad(this.roomName, identity.kid, ctr, now, SEAL_V4),
+      );
+      const frame = {
+        type: SEAL_TYPE,
+        v: SEAL_V4,
+        kid: identity.kid,
+        idk: identity.idk,
+        ctr,
+        ts: now,
+        nonce: bytesToB64(content.nonce),
+        tag: bytesToB64(content.tag),
+        body: bytesToB64(content.body),
+        keys: [],
+      };
+      const touched = new Set();
+      for (const recipient of [...targets.keys()].sort()) {
+        const { entry, mk } = await this.sendEntry(state.peers, recipient, targets.get(recipient), now);
+        touched.add(recipient);
+        const wrapped = await aesSeal(
+          await aesKey(mk, ["encrypt"]),
+          contentBytes,
+          await wrapAad4(this.roomName, identity.kid, entry, frame.nonce, frame.tag),
+        );
+        mk.fill(0);
+        frame.keys.push({
+          ...entry, nonce: bytesToB64(wrapped.nonce), tag: bytesToB64(wrapped.tag), key: bytesToB64(wrapped.body),
+        });
+      }
+      contentBytes.fill(0);
+      for (const kid of touched) state.peers[kid] = prunePeer(state.peers[kid], now);
+      await this.writeRatchet(state);
+      frame.sig = bytesToB64Url(new Uint8Array(await subtle().sign(
+        { name: "Ed25519" },
+        identity.privateKey,
+        await sealedMessage(this.roomName, frame),
+      )));
+      await this.rememberOpened(await frameDigest(frame), {
+        own: true, kid: identity.kid, acct: this.acct, node: this.node, plain,
+      }, now).catch(() => {});
+      return frame;
+    });
+  }
+
+  async open4(frame, identity, record, commit) {
+    const seenKey = storageKey("seenV3", this.localRoom);
+    const seenAll = seenFromJson(safeJson(readItem(this.ctx.storage, seenKey)));
+    const seen = seenAll.get(frame.kid) || { max: 0, set: new Set() };
+    const opened = (found) => ({ status: "opened", ...found, self: false, replayed: true });
+    const replay = async () => {
+      const found = await this.openedElsewhere(frame, false);
+      return found ? opened(found) : { status: "replay" };
+    };
+    if (frame.ctr <= seen.max - REPLAY_WINDOW || seen.set.has(frame.ctr)) return replay();
+    const now = this.ctx.now();
+    if (!(now - PREKEY_LIFE_MS <= frame.ts && frame.ts <= now + DAY_MS)) return { status: "invalid" };
+    const entry = frame.keys.find((key) => key.kid === identity.kid);
+    if (!entry) return { status: "notForMe", kid: frame.kid };
+    const state = await this.readRatchet();
+    let peer;
+    let contentBytes;
+    try {
+      const result = await this.openEntry(state, frame.kid, entry, now);
+      peer = result.peer;
+      contentBytes = await aesOpen(
+        await aesKey(result.mk, ["decrypt"]),
+        b64ToBytes(entry.nonce),
+        b64ToBytes(entry.key),
+        b64ToBytes(entry.tag),
+        await wrapAad4(this.roomName, frame.kid, entry, frame.nonce, frame.tag),
+      );
+      result.mk.fill(0);
+    } catch (error) {
+      if (error?.ratchet === "replay") return replay();
+      return { status: "noSession", kid: frame.kid, later: frame.ctr < seen.max };
+    }
+    if (contentBytes.length !== 32) return { status: "invalid" };
+    const contentKey = await aesKey(contentBytes, ["decrypt"]);
+    contentBytes.fill(0);
+    const clear = await aesOpen(
+      contentKey,
+      b64ToBytes(frame.nonce),
+      b64ToBytes(frame.body),
+      b64ToBytes(frame.tag),
+      contentAad(this.roomName, frame.kid, frame.ctr, frame.ts, SEAL_V4),
+    );
+    const plain = JSON.parse(decoder.decode(clear));
+    if (!plain || typeof plain !== "object" || Array.isArray(plain)) return { status: "invalid" };
+    if (Object.hasOwn(plain, "senderId") && plain.senderId !== record.node) return { status: "invalid" };
+    const result = { kid: frame.kid, acct: record.acct, node: record.node, plain };
+    if (commit) {
+      state.peers[frame.kid] = prunePeer(peer, now);
+      await this.writeRatchet(state);
+      seen.set.add(frame.ctr);
+      seen.max = Math.max(seen.max, frame.ctr);
+      for (const ctr of seen.set) if (ctr <= seen.max - REPLAY_WINDOW) seen.set.delete(ctr);
+      seenAll.set(frame.kid, seen);
+      writeItem(this.ctx.storage, seenKey, seenToJson(seenAll));
+      await this.rememberOpened(await frameDigest(frame), result, now).catch(() => {});
+    }
+    return { status: "opened", ...result, self: false, replayed: false };
+  }
+
+  async seal(plain, { to = "", only = null } = {}) {
     return this.ctx.exclusive(async () => {
       const identity = await loadIdentity(this.ctx);
       const own = await ensurePrekey(this.ctx);
       const now = this.ctx.now();
+      if (this.version === SEAL_V4) return this.seal4(plain, identity, now, to, Array.isArray(only) ? only : null);
       const targets = new Map([[identity.kid, publicPrekey(own)]]);
-      const candidates = this.records()
-        .filter((record) => record.state === "approved" && record.kid !== identity.kid && record.spk.exp > now)
-        .filter((record) => !to || record.node === to || record.acct === this.acct)
-        .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+      const candidates = this.sealTargets(identity, now, to, Array.isArray(only) ? only : null);
       for (const record of candidates.slice(0, MAX_RECIPIENTS - 1)) targets.set(record.kid, record.spk);
       const ctr = this.nextCounter();
       const contentBytes = randomBytes(32);
@@ -1101,25 +1529,30 @@ class RoomSeal {
     return this.ctx.exclusive(() => this.openLocked(frame, options));
   }
 
-  async openLocked(frame, { history = false } = {}) {
+  async openLocked(frame, { history = false, commit = true } = {}) {
     try {
-      if (!sealedShape(frame)) return { status: "invalid" };
+      if (!sealedShape(frame) || frame.v !== this.version) return { status: "invalid" };
       const identity = await loadIdentity(this.ctx);
       const idkBytes = b64UrlToBytes(frame.idk);
       if (frame.kid !== await id16(idkBytes)) return { status: "invalid" };
       const self = frame.kid === identity.kid;
+      if (self && frame.v === SEAL_V4) {
+        const found = await this.openedElsewhere(frame, true);
+        return found ? { status: "own", ...found, self: true } : { status: "own" };
+      }
       let record = self
         ? { kid: identity.kid, idk: identity.idk, state: "approved", acct: null, node: null }
         : this.trust().data.records[frame.kid];
       if (!record || record.state !== "approved") {
         const blocked = record?.state === "blocked";
-        if (!blocked) this.hold(frame);
+        if (!blocked && commit) this.hold(frame);
         return { status: "held", kid: frame.kid, blocked, pending: record?.state === "pending" };
       }
       if (record.idk !== frame.idk) return { status: "invalid" };
       if (!await edVerify(idkBytes, b64UrlToBytes(frame.sig), await sealedMessage(this.roomName, frame))) {
         return { status: "invalid" };
       }
+      if (frame.v === SEAL_V4) return await withRatchetLock(() => this.open4(frame, identity, record, commit));
       const seenKey = storageKey("seenV3", this.localRoom);
       const seenAll = seenFromJson(safeJson(readItem(this.ctx.storage, seenKey)));
       const seen = seenAll.get(frame.kid) || { max: 0, set: new Set() };
@@ -1166,7 +1599,7 @@ class RoomSeal {
       if (record.node !== null && Object.hasOwn(plain, "senderId") && plain.senderId !== record.node) {
         return { status: "invalid" };
       }
-      if (!replayed) {
+      if (!replayed && commit) {
         seen.set.add(frame.ctr);
         seen.max = Math.max(seen.max, frame.ctr);
         for (const ctr of seen.set) if (ctr <= seen.max - REPLAY_WINDOW) seen.set.delete(ctr);
@@ -1277,7 +1710,7 @@ export function createRoomSealStore({
         await persistPrekeys(ctx);
       });
     },
-    async resolve(scope, roomName, controllerScope = "", { participants = null } = {}) {
+    async resolve(scope, roomName, controllerScope = "", { participants = null, version = 0 } = {}) {
       const room = String(roomName || "").trim();
       const channel = String(scope || "").trim();
       if (!channel || !room) throw new TypeError("A chat room is required.");
@@ -1288,14 +1721,14 @@ export function createRoomSealStore({
       const members = Array.isArray(participants)
         ? [...new Set(participants.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean))].sort()
         : null;
-      const cacheKey = `${controller}\n${channel}\n${room}\n${acct}\n${members ? members.join(",") : ""}`;
+      const cacheKey = `${controller}\n${channel}\n${room}\n${acct}\n${members ? members.join(",") : ""}\n${version}`;
       if (rooms.has(cacheKey)) return rooms.get(cacheKey);
       await ctx.exclusive(async () => {
         await loadIdentity(ctx);
         await ensurePrekey(ctx);
       });
       const seal = new RoomSeal(ctx, {
-        scope: channel, roomName: room, controllerScope: controller, acct, participants: members,
+        scope: channel, roomName: room, controllerScope: controller, acct, participants: members, version,
       });
       rooms.set(cacheKey, seal);
       return seal;

@@ -287,7 +287,7 @@ class ViewOnceMediaTest {
         val mediaId = server.items.keys.single()
         assertEq("ready", server.items[mediaId]!!.state)
         val frame = socket.sent.mapNotNull { crypto.decrypt(Json.parseObject(it)) }
-            .filter { RoomSeal.isSealedFrame(it) }
+            .filter { RoomSeal.isRatchetFrame(it) }
             .mapNotNull { peer.unseal(it) }
             .single { it["type"] == "chat" }
         assertEq("🎥 Video message", frame["text"])

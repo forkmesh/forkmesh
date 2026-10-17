@@ -362,7 +362,9 @@ proximity mesh recomputed every 250 ms.
 The script budget is 140 KB gzip since chat protocol v3 (2026-10-16): the
 Office chat bundles `app/public/chat-seal.js` and the ML-KEM-768 port
 `app/public/chat-mlkem.js`, about 8 KB gzip more than the v2 seal, which took
-the bundle from just under 130 KB to about 137 KB.
+the bundle from just under 130 KB to about 137 KB. Chat protocol v4
+(2026-10-16, the per-message ratchet for DMs, its Web Lock and the opened-frame
+cache) adds about 3 KB gzip, so the budget is 144 KB.
 
 ## Operations
 

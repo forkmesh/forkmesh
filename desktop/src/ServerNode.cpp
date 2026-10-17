@@ -1143,6 +1143,21 @@ void ServerNode::handleSealedFrame(const QJsonObject &sealed,
     case RoomSeal::Status::Invalid:
         m_lastRxType = QStringLiteral("invalid");
         return;
+    case RoomSeal::Status::Own:
+        m_lastRxType = QStringLiteral("own");
+        noteOwnEcho(envelope);
+        return;
+    case RoomSeal::Status::NoSession:
+        m_lastRxType = QStringLiteral("no-session");
+        recoverSession(opened.senderKid, opened.ctr);
+        return;
+    }
+    if (m_seal.usesRatchet() && RoomSeal::isResetPlain(opened.plain)) {
+        m_lastRxType = QStringLiteral("e2ee-reset");
+        if (!envelope.isEmpty())
+            noteReceived(envelope);
+        resealOutboxTo(opened.senderKid);
+        return;
     }
     QJsonObject plain = opened.plain;
     if (!plain.contains(QStringLiteral("senderId")) && !opened.senderNode.isEmpty())
@@ -1544,6 +1559,67 @@ void ServerNode::resealOutbox()
         sendTextFrame(forkmesh::recipients::supersededFrame(superseded.mid(
                           start, forkmesh::recipients::kReceivedRefsPerFrame)),
                       QStringLiteral("superseded"), QString(), QString());
+}
+
+void ServerNode::recoverSession(const QString &kid, qint64 ctr)
+{
+    if (!m_directRoom || !m_wsReady || kid.isEmpty() || !m_seal.usesRatchet() ||
+        kid == m_seal.keyId() || m_seal.openedLaterThan(kid, ctr))
+        return;
+    if (!m_seal.claimSessionReset(kid))
+        return;
+    m_seal.resetSessions(kid);
+    sendSealedTo(QJsonObject{{QStringLiteral("type"), forkmesh::chatv4::resetType()},
+                             {QStringLiteral("senderId"), m_nodeId}},
+                 kid, false);
+    sendKeyAdvertisement(true);
+}
+
+void ServerNode::resealOutboxTo(const QString &kid)
+{
+    if (!m_wsReady || kid.isEmpty() || kid == m_seal.keyId())
+        return;
+    const qint64 cutoff = QDateTime::currentMSecsSinceEpoch() - kOutboxRetainMs;
+    const QList<OutboxEntry> entries = m_outbox;
+    for (const OutboxEntry &entry : entries)
+        if (entry.ts >= cutoff)
+            sendSealedTo(entry.plain, kid, true);
+}
+
+bool ServerNode::sendSealedTo(const QJsonObject &plain, const QString &kid, bool resend)
+{
+    if (!m_wsReady)
+        return false;
+    const QJsonObject framed = m_seal.sealObjectFor(plain, {kid});
+    if (framed.isEmpty())
+        return false;
+    QJsonObject envelope = m_crypto.encryptObject(framed);
+    if (envelope.isEmpty())
+        return false;
+    envelope.insert(QStringLiteral("persist"), true);
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    const bool message =
+        type == QLatin1String("chat") || type == QLatin1String("thread-reply");
+    if (message)
+        envelope.insert(QStringLiteral("notify"), true);
+    if (resend)
+        envelope.insert(QStringLiteral("resend"), true);
+    const QByteArray payload = QJsonDocument(envelope).toJson(QJsonDocument::Compact);
+    if (message)
+        rememberSentRef(forkmesh::recipients::frameRef(payload),
+                        plain.value(QStringLiteral("id")).toString().left(96));
+    sendTextFrame(payload, type, mainnodeScopeFor(plain, true),
+                  plain.value(QStringLiteral("to")).toString());
+    return true;
+}
+
+void ServerNode::noteOwnEcho(const QJsonObject &envelope)
+{
+    const QString id = m_sentRefs.value(forkmesh::recipients::relayRef(envelope));
+    const int recipients = forkmesh::recipients::countFromEnvelope(envelope);
+    if (!id.isEmpty() && recipients >= 0)
+        emit messageRecipientsKnown(id, recipients,
+                                    forkmesh::recipients::namesFromEnvelope(envelope));
 }
 
 void ServerNode::sendEncrypted(const QJsonObject &plain, bool showActivity,

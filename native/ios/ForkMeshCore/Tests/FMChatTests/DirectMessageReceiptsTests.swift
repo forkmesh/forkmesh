@@ -152,21 +152,31 @@ final class DirectMessageReceiptsTests: XCTestCase {
         await room.service.closeAll()
     }
 
-    @MainActor func testOwnFramesReplayedFromHistoryShowAsSent() async throws {
+    @MainActor func testOwnFramesComingBackMarkSentButAreNotOpened() async throws {
         let room = try await openRoom()
-        var own = chat("me-node-1-1", "from my laptop", conversation: room.conversation, sender: "me-node")
+        var own = chat("me-node-1-1", "from history", conversation: room.conversation, sender: "me-node")
         own["sender"] = "Me"
         let laptop = try await laptop(room)
         var envelope = try room.crypto.encrypt(try laptop.seal(own))
         envelope["historyReplay"] = true
         envelope["ref"] = .string(String(repeating: "b", count: 40))
         room.connection.receive(text: JSON.encode(envelope))
-        let shown = await waitUntil { room.service.messages(room.conversation).count == 1 }
-        XCTAssertTrue(shown)
-        XCTAssertEqual(room.service.receipt("me-node-1-1"), .sent)
-        room.connection.receive(text: relayFrame(["kind": "forkmesh-delivered", "v": 1, "refs": [.string(String(repeating: "b", count: 40))]]))
-        let delivered = await waitUntil { room.service.receipt("me-node-1-1") == .delivered }
-        XCTAssertTrue(delivered)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(room.service.messages(room.conversation).isEmpty, "a v4 frame has no entry for its sender")
+        XCTAssertNil(room.service.receipt("me-node-1-1"))
+        let sent = await room.service.send(room.conversation, text: "live")
+        XCTAssertTrue(sent)
+        let message = try XCTUnwrap(room.service.messages(room.conversation).first)
+        let echoed = try XCTUnwrap(room.connection.sentTexts.first { DirectMessageFrames.frameRef($0) == room.service.ref(of: message.id, in: room.conversation) })
+        var echo = JSON.parseObject(echoed)
+        echo["ref"] = .string(DirectMessageFrames.frameRef(echoed))
+        room.connection.receive(text: JSON.encode(echo))
+        let marked = await waitUntil { room.service.receipt(message.id) == .sent }
+        XCTAssertTrue(marked, "the frame came back relayed")
+        XCTAssertEqual(room.service.messages(room.conversation).map(\.text), ["live"])
+        XCTAssertTrue(
+            room.connection.sentJSON.filter { $0["kind"]?.text == DirectMessageFrames.receivedKind }.isEmpty,
+            "own frames are never acknowledged")
         await room.service.closeAll()
     }
 
@@ -406,19 +416,15 @@ final class DirectMessageReceiptsTests: XCTestCase {
 
         let own: JSONObject = [
             "type": "thread-reply", "id": "me-node-r0", "senderId": "me-node", "sender": "Me", "ts": .int(now - 40_000),
-            "rootId": "pat-1", "channel": .string(room.conversation), "text": "from my laptop",
+            "rootId": "pat-1", "channel": .string(room.conversation), "text": "from history",
         ]
         let laptop = try await laptop(room)
         var envelope = try room.crypto.encrypt(try laptop.seal(own))
         envelope["historyReplay"] = true
         envelope["ref"] = .string(String(repeating: "c", count: 40))
         room.connection.receive(text: JSON.encode(envelope))
-        let replayed = await waitUntil { hub.threadRows("pat-1").count == 2 }
-        XCTAssertTrue(replayed)
-        let fromLaptop = try XCTUnwrap(hub.threadRows("pat-1").last)
-        XCTAssertTrue(fromLaptop.message.isSelf)
-        XCTAssertTrue(fromLaptop.deletable)
-        XCTAssertEqual(fromLaptop.receipt, .sent)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(hub.threadRows("pat-1").count, 1, "this device's own v4 frames are not opened again")
 
         let replied = await hub.replyInThread(channel: room.conversation, rootId: "pat-1", text: "noon then")
         XCTAssertTrue(replied)
@@ -435,7 +441,7 @@ final class DirectMessageReceiptsTests: XCTestCase {
                 return plain["type"]?.text == "thread-reply" && plain["id"]?.text == mine.id
             })
         XCTAssertEqual(notified["notify"], .bool(true))
-        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 3)
+        XCTAssertEqual(hub.rows.first?.thread?.replyCount, 2)
         XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
 
         _ = await hub.deliver("see you", to: room.conversation)
@@ -445,7 +451,7 @@ final class DirectMessageReceiptsTests: XCTestCase {
         XCTAssertEqual(hub.listPreview(room.conversation)?.text, "lunch?")
 
         let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
-        XCTAssertEqual(Set(restored.replies.map(\.id)), ["pat-r1", "me-node-r0", mine.id])
+        XCTAssertEqual(Set(restored.replies.map(\.id)), ["pat-r1", mine.id])
         XCTAssertTrue(restored.replies.allSatisfy { $0.conversation == room.conversation })
         await service.closeAll()
         await h.close()

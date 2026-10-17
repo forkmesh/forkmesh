@@ -40,7 +40,7 @@ const SCOPE = VECTORS.scope;
 const NOW = VECTORS.now;
 const PARTICIPANTS = VECTORS.participants;
 const NODES = VECTORS.nodes;
-const DM = { participants: PARTICIPANTS };
+const DM = { participants: PARTICIPANTS, version: 3 };
 const PREFIX = "forkmesh.chat/e2ee/";
 
 const hex = (text) => Uint8Array.from(Buffer.from(text, "hex"));

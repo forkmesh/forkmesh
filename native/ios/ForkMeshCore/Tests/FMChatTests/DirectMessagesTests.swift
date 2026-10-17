@@ -351,7 +351,7 @@ final class DirectMessagesTests: XCTestCase {
         await service.closeAll()
     }
 
-    @MainActor func testOwnFramesInTheReplayAreResealedAfterHistoryEnd() async throws {
+    @MainActor func testOwnFramesComingBackAreIgnored() async throws {
         let store = InMemorySecureStore()
         let api = preparedApi()
         let ws = FakeWebSocketConnector()
@@ -365,35 +365,201 @@ final class DirectMessagesTests: XCTestCase {
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await roomCrypto()
         let peer = try peerSeal("peer")
+        let taught = await teach(peer, from: connection, crypto)
+        XCTAssertTrue(taught)
+        connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [peer.keyId] }
+        XCTAssertTrue(known)
+        let durableBefore = keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count
+        let sentBefore = connection.sentTexts.count
         let plain: JSONObject = [
             "type": "chat", "id": "me-node-1-1", "senderId": "me-node", "sender": "Me",
             "channel": .string(conversation), "text": "sent yesterday", "ts": .int(Date().epochMillis - 60_000),
         ]
-        let oldRef = String(repeating: "c", count: 40)
-        var own = try crypto.encrypt(try earlier.seal(plain))
+        let sealed = try earlier.seal(plain)
+        XCTAssertFalse(RoomSeal.wrappedKeyIds(sealed).contains(earlier.keyId), "a v4 frame has no entry for its sender")
+        var own = try crypto.encrypt(sealed)
         own["persist"] = true
         own["notify"] = true
-        own["ref"] = .string(oldRef)
+        own["ref"] = .string(String(repeating: "c", count: 40))
         own["historyReplay"] = true
-        var key = try crypto.encrypt(peer.keyFrame())
-        key["ref"] = .string(String(repeating: "d", count: 40))
-        key["historyReplay"] = true
         connection.receive(text: JSON.encode(own))
-        connection.receive(text: JSON.encode(key))
-        try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertTrue(sentOfKind(connection, DirectMessageFrames.supersededKind).isEmpty)
+        var live = own
+        live["ref"] = .string(String(repeating: "e", count: 40))
+        live.removeValue(forKey: "historyReplay")
+        connection.receive(text: JSON.encode(live))
         connection.receive(text: #"{"kind":"forkmesh-history-end"}"#)
-        let superseded = await waitUntil { !self.sentOfKind(connection, DirectMessageFrames.supersededKind).isEmpty }
-        XCTAssertTrue(superseded)
-        XCTAssertEqual(sentOfKind(connection, DirectMessageFrames.supersededKind)[0]["refs"], .array([.string(oldRef)]))
-        let resend = try XCTUnwrap(connection.sentJSON.first { $0["resend"] == .bool(true) })
-        XCTAssertEqual(resend["notify"], .bool(true))
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(sentOfKind(connection, DirectMessageFrames.receivedKind).isEmpty, "own frames are never acknowledged")
+        XCTAssertTrue(sentOfKind(connection, DirectMessageFrames.supersededKind).isEmpty)
+        XCTAssertEqual(
+            keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count, durableBefore,
+            "and ask for no advertisement")
+        XCTAssertFalse(
+            connection.sentJSON.dropFirst(sentBefore).contains { RoomSeal.isSealedFrame(crypto.decrypt($0) ?? [:]) },
+            "nothing is resealed from them")
+        XCTAssertTrue(service.messages(conversation).isEmpty, "the device's own history already holds them")
+        await service.closeAll()
+    }
+
+    @MainActor func testALostSessionSendsOneResetAndOneAdvertisement() async throws {
+        let store = InMemorySecureStore()
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws, store: store)
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let peer = try peerSeal("peer")
         let taught = await teach(peer, from: connection, crypto)
         XCTAssertTrue(taught)
-        let opened = try XCTUnwrap(peer.unseal(try XCTUnwrap(crypto.decrypt(resend))))
-        XCTAssertEqual(opened["id"]?.text, "me-node-1-1")
-        XCTAssertEqual(opened["text"]?.text, "sent yesterday")
-        XCTAssertEqual(service.messages(conversation).map(\.text), ["sent yesterday"])
+        connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [peer.keyId] }
+        XCTAssertTrue(known)
+        func chat(_ id: String, _ text: String) -> JSONObject {
+            [
+                "type": "chat", "id": .string(id), "senderId": "pat-node", "sender": "pat",
+                "channel": .string(conversation), "text": .string(text), "ts": .int(Date().epochMillis),
+            ]
+        }
+        connection.receive(text: JSON.encode(try crypto.encrypt(try peer.seal(chat("pat-1", "one")))))
+        let first = await waitUntil { service.messages(conversation).map(\.text) == ["one"] }
+        XCTAssertTrue(first)
+        let sent = await service.send(conversation, text: "reply")
+        XCTAssertTrue(sent)
+        let reply = try XCTUnwrap(
+            connection.sentJSON.compactMap { crypto.decrypt($0) }.last { RoomSeal.isSealedFrame($0) })
+        XCTAssertEqual(peer.open(reply).plain?["text"], "reply")
+        let keyring = try ChatKeyring.shared(store)
+        keyring.resetRatchet(DirectMessagesTests.room, peer.keyId)
+        let durableBefore = keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count
+        var broken = try crypto.encrypt(try peer.seal(chat("pat-2", "two")))
+        broken["ref"] = .string(String(repeating: "a", count: 40))
+        connection.receive(text: JSON.encode(broken))
+        let resets: () -> [JSONObject] = {
+            connection.sentJSON.filter { envelope in
+                guard let frame = crypto.decrypt(envelope), RoomSeal.isSealedFrame(frame) else { return false }
+                return RoomSeal.wrappedKeyIds(frame) == [peer.keyId] && envelope["persist"] == .bool(true)
+                    && envelope["notify"] == nil
+            }
+        }
+        let asked = await waitUntil {
+            resets().count == 1
+                && self.keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count == durableBefore + 1
+        }
+        XCTAssertTrue(asked, "one persisted reset sealed to that device and one persisted advertisement")
+        var again = try crypto.encrypt(try peer.seal(chat("pat-3", "three")))
+        again["ref"] = .string(String(repeating: "b", count: 40))
+        connection.receive(text: JSON.encode(again))
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(resets().count, 1, "at most once a minute per device")
+        XCTAssertTrue(sentOfKind(connection, DirectMessageFrames.receivedKind).isEmpty, "an unopened frame is not acked")
+        let resetFrame = try XCTUnwrap(crypto.decrypt(try XCTUnwrap(resets().first)))
+        let opened = peer.open(resetFrame)
+        XCTAssertEqual(opened.plain?["type"], .string(ChatV4.resetType))
+        XCTAssertEqual(opened.plain?["senderId"], "me-node")
+        connection.receive(text: JSON.encode(try crypto.encrypt(try peer.seal(chat("pat-4", "four")))))
+        let recovered = await waitUntil { service.messages(conversation).map(\.text).contains("four") }
+        XCTAssertTrue(recovered, "the new session opens")
+        XCTAssertFalse(service.messages(conversation).contains { $0.text.isEmpty })
+        await service.closeAll()
+    }
+
+    @MainActor func testAnOldBrokenFrameReplayedAfterALaterOneOpenedStartsNoRecovery() async throws {
+        let store = InMemorySecureStore()
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws, store: store)
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let peer = try peerSeal("peer")
+        let taught = await teach(peer, from: connection, crypto)
+        XCTAssertTrue(taught)
+        connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [peer.keyId] }
+        XCTAssertTrue(known)
+        let me = try ChatKeyring.shared(store).kid
+        func chat(_ id: String, _ text: String) -> JSONObject {
+            [
+                "type": "chat", "id": .string(id), "senderId": "pat-node", "sender": "pat",
+                "channel": .string(conversation), "text": .string(text), "ts": .int(Date().epochMillis),
+            ]
+        }
+        connection.receive(text: JSON.encode(try crypto.encrypt(try peer.seal(chat("pat-1", "one")))))
+        let first = await waitUntil { service.messages(conversation).map(\.text) == ["one"] }
+        XCTAssertTrue(first)
+        _ = await service.send(conversation, text: "reply")
+        let reply = try XCTUnwrap(connection.sentJSON.compactMap { crypto.decrypt($0) }.last { RoomSeal.isSealedFrame($0) })
+        XCTAssertEqual(peer.open(reply).plain?["text"], "reply")
+        try ChatKeyring.shared(store).resetRatchet(DirectMessagesTests.room, peer.keyId)
+        let broken = try peer.seal(chat("pat-2", "two"))
+        peer.resetSessions(with: me)
+        connection.receive(text: JSON.encode(try crypto.encrypt(try peer.seal(chat("pat-3", "three")))))
+        let later = await waitUntil { service.messages(conversation).map(\.text).contains("three") }
+        XCTAssertTrue(later, "a later frame on a new session opened")
+        let durableBefore = keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count
+        let sentBefore = connection.sentTexts.count
+        var replayed = try crypto.encrypt(broken)
+        replayed["ref"] = .string(String(repeating: "a", count: 40))
+        replayed["historyReplay"] = true
+        connection.receive(text: JSON.encode(replayed))
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(
+            keyAdverts(connection, crypto).filter { $0["persist"] == .bool(true) }.count, durableBefore,
+            "no advertisement")
+        XCTAssertFalse(
+            connection.sentJSON.dropFirst(sentBefore).contains { RoomSeal.isSealedFrame(crypto.decrypt($0) ?? [:]) },
+            "no reset frame")
+        XCTAssertFalse(service.messages(conversation).contains { $0.text == "two" })
+        connection.receive(text: JSON.encode(try crypto.encrypt(try peer.seal(chat("pat-4", "four")))))
+        let still = await waitUntil { service.messages(conversation).map(\.text).contains("four") }
+        XCTAssertTrue(still, "the working session was not reset")
+        await service.closeAll()
+    }
+
+    @MainActor func testAResetResealsTheOutboxToThatDeviceOnly() async throws {
+        let store = InMemorySecureStore()
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws, store: store)
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let peer = try peerSeal("peer")
+        let taught = await teach(peer, from: connection, crypto)
+        XCTAssertTrue(taught)
+        connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [peer.keyId] }
+        XCTAssertTrue(known)
+        let sent = await service.send(conversation, text: "lost on the way")
+        XCTAssertTrue(sent)
+        let messageId = try XCTUnwrap(service.messages(conversation).first?.id)
+        let before = connection.sentTexts.count
+        let reset = try peer.seal(["type": .string(ChatV4.resetType), "senderId": "pat-node"], for: [try ChatKeyring.shared(store).kid])
+        var envelope = try crypto.encrypt(reset)
+        envelope["ref"] = .string(String(repeating: "f", count: 40))
+        connection.receive(text: JSON.encode(envelope))
+        let resent = await waitUntil { connection.sentJSON.contains { $0["resend"] == .bool(true) } }
+        XCTAssertTrue(resent)
+        let resend = try XCTUnwrap(connection.sentJSON.first { $0["resend"] == .bool(true) })
+        XCTAssertEqual(resend["persist"], .bool(true))
+        XCTAssertEqual(resend["notify"], .bool(true))
+        let frame = try XCTUnwrap(crypto.decrypt(resend))
+        XCTAssertEqual(RoomSeal.wrappedKeyIds(frame), [peer.keyId])
+        XCTAssertEqual(peer.open(frame).plain?["id"]?.text, messageId, "the same message id")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(
+            sentOfKind(connection, DirectMessageFrames.supersededKind).isEmpty,
+            "the original still serves the other devices, so nothing is superseded")
+        XCTAssertGreaterThan(connection.sentTexts.count, before)
+        XCTAssertEqual(service.messages(conversation).map(\.text), ["lost on the way"], "the reset is not shown")
         await service.closeAll()
     }
 

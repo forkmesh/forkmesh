@@ -1281,8 +1281,15 @@ QString OfficeChannelMirror::acceptMeshDirect(const QString &linkKid,
     Room &room = it.value();
     const RoomSeal &seal = directSealFor(room);
     const RoomSeal::Opened opened = seal.open(frame);
+    if (opened.status == RoomSeal::Status::NoSession && room.sender)
+        room.sender->recoverSession(opened.senderKid, opened.ctr);
     if (opened.status != RoomSeal::Status::Opened || opened.self)
         return QString();
+    if (RoomSeal::isResetPlain(opened.plain)) {
+        if (room.sender)
+            room.sender->resealOutboxTo(opened.senderKid);
+        return QString();
+    }
     QJsonObject plain = opened.plain;
     if (!plain.contains(QStringLiteral("senderId")))
         plain.insert(QStringLiteral("senderId"), opened.senderNode);
@@ -1334,7 +1341,8 @@ void OfficeChannelMirror::processHeldDirect(Room &room)
     const QList<QJsonObject> released = seal.takeReleasedHeld();
     for (const QJsonObject &frame : released) {
         const RoomSeal::Opened opened = seal.open(frame);
-        if (opened.status != RoomSeal::Status::Opened || opened.self)
+        if (opened.status != RoomSeal::Status::Opened || opened.self ||
+            RoomSeal::isResetPlain(opened.plain))
             continue;
         QJsonObject plain = opened.plain;
         if (!plain.contains(QStringLiteral("senderId")))

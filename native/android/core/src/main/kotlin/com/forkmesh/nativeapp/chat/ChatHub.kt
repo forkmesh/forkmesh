@@ -178,7 +178,9 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         const val PRIVATE_SEAL_SUMMARY =
             "Encryption is automatic. This device keeps a signing key and daily prekeys (X25519 and ML-KEM-768) that never leave it. " +
                 "Every message is signed and gets a fresh key wrapped for each approved device, so the server can forward and " +
-                "store it but cannot read or forge it. Prekeys are wiped after 8 days.\n\nIn direct messages a new device of " +
+                "store it but cannot read or forge it. Prekeys are wiped after 8 days.\n\nDirect messages also use a ratchet " +
+                "(X25519 and ML-KEM-768): every message has its own key, deleted once used, so a stolen phone cannot open " +
+                "messages it already received. In direct messages a new device of " +
                 "either person waits until you approve it; compare the safety number to check. A new device cannot open " +
                 "older history. ForkBot runs on the relay and is unavailable in end-to-end encrypted rooms."
         const val SERVER_VISIBLE_SEAL_SUMMARY =

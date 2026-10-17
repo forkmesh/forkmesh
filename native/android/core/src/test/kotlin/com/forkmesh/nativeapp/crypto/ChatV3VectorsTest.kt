@@ -51,7 +51,7 @@ class ChatV3VectorsTest {
     }
 
     private fun seal(name: String, acct: String, keys: ChatDeviceKeys = keysFor(name), at: Long = now, node: String = acct): RoomSeal =
-        RoomSeal.create(room, scope, SealPolicy.STRICT, acct, keys, clock = { at }, node = node).also { it.participants = participants }
+        RoomSeal.create(room, scope, SealPolicy.STRICT, acct, keys, clock = { at }, version = ChatV3.VERSION, node = node).also { it.participants = participants }
 
     private fun vectorSeal(name: String, acct: String): RoomSeal = seal(name, acct, node = node(name))
 
@@ -156,7 +156,7 @@ class ChatV3VectorsTest {
 
     fun testOtherRoomCannotOpen() {
         val bob = bobWithTrust()
-        val other = RoomSeal.create("another-room", scope, SealPolicy.STRICT, "bob", bob.keys, trust = bob.trust, clock = { now }, node = node("bob"))
+        val other = RoomSeal.create("another-room", scope, SealPolicy.STRICT, "bob", bob.keys, trust = bob.trust, clock = { now }, version = ChatV3.VERSION, node = node("bob"))
         expect(other.open(frame("first"), now) is SealOpen.Invalid)
     }
 
@@ -287,8 +287,8 @@ class ChatV3VectorsTest {
     fun testStrictScopeTrustsAccountsNotDevices() {
         val bob = seal("bob", "bob", node = "bob-phone")
         val alice = seal("alice", "alice", node = "alice-phone")
-        val stranger = RoomSeal.create(room, scope, SealPolicy.STRICT, "mallory", ChatDeviceKeys.fromSeed(ByteArray(32) { 7 }), clock = { now }, node = "mallory-node")
-        val bobTablet = RoomSeal.create(room, scope, SealPolicy.STRICT, "bob", ChatDeviceKeys.fromSeed(ByteArray(32) { 8 }), clock = { now }, node = "bob-tablet")
+        val stranger = RoomSeal.create(room, scope, SealPolicy.STRICT, "mallory", ChatDeviceKeys.fromSeed(ByteArray(32) { 7 }), clock = { now }, version = ChatV3.VERSION, node = "mallory-node")
+        val bobTablet = RoomSeal.create(room, scope, SealPolicy.STRICT, "bob", ChatDeviceKeys.fromSeed(ByteArray(32) { 8 }), clock = { now }, version = ChatV3.VERSION, node = "bob-tablet")
         bob.keyFrame(now)
         assertEq(TrustState.APPROVED, bob.acceptKeyFrame(alice.keyFrame(now), now)?.state)
         assertEq(null, bob.acceptKeyFrame(stranger.keyFrame(now), now))
@@ -316,7 +316,7 @@ class ChatV3VectorsTest {
     fun testStateSurvivesARestart() {
         val store = MemorySecretStore()
         val first = RoomSeal.loadOrCreate(room, scope, SealPolicy.STRICT, "bob", store, clock = { now })
-        val peer = seal("alice", "alice")
+        val peer = RoomSeal.create(room, scope, SealPolicy.STRICT, "alice", keysFor("alice"), clock = { now })
         first.acceptKeyFrame(peer.keyFrame(now), now)
         peer.acceptKeyFrame(first.keyFrame(now), now)
         val sent = first.seal(mapOf("type" to "chat"), now)
@@ -325,6 +325,7 @@ class ChatV3VectorsTest {
         expect(store.read(ChatDeviceKeys.IDENTITY_STORE_KEY) != null)
         expect(store.read(ChatDeviceKeys.PREKEYS_STORE_KEY) != null)
         expect(store.read(first.trust.storeKey) != null)
+        expect(store.read(ChatV4.storeKey(room)) != null)
         val copy = MemorySecretStore(store.snapshot())
         val restarted = RoomSeal.loadOrCreate(room, scope, SealPolicy.STRICT, "bob", copy, clock = { now })
         assertEq(first.keyId, restarted.keyId)

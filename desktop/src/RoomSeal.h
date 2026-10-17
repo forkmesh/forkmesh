@@ -118,6 +118,36 @@ struct TrustRecord {
     bool verified = false;
 };
 
+struct RatchetSkipped {
+    QString dh;
+    qint64 n = 0;
+    QByteArray mk;
+    qint64 ts = 0;
+};
+
+struct RatchetSession {
+    QString sid;
+    QByteArray rk;
+    QByteArray dhsPriv;
+    QString dhsPub;
+    QString dhr;
+    QByteArray cks;
+    qint64 ns = 0;
+    qint64 pn = 0;
+    QString sqSpk;
+    QByteArray sqCt;
+    QByteArray ckr;
+    qint64 nr = 0;
+    QList<RatchetSkipped> skipped;
+    qint64 created = 0;
+    qint64 used = 0;
+};
+
+struct RatchetPeer {
+    QString current;
+    QList<RatchetSession> sessions;
+};
+
 struct MeshLinkedDevice {
     QString kid;
     bool bluetooth = false;
@@ -173,7 +203,18 @@ public:
 
     qint64 nextCounter(const QString &room);
     bool isReplay(const QString &room, const QString &kid, qint64 ctr);
+    qint64 seenMax(const QString &room, const QString &kid);
     void markSeen(const QString &room, const QString &kid, qint64 ctr);
+    void clearSeen();
+
+    QHash<QString, RatchetPeer> ratchetPeers(const QString &room);
+    void storeRatchetPeer(const QString &room, const QString &kid, RatchetPeer peer,
+                          qint64 now);
+    void saveRatchets(const QString &room, bool immediately);
+    void resetRatchet(const QString &room, const QString &kid);
+    bool claimSessionReset(const QString &room, const QString &kid, qint64 now);
+    QJsonObject exportRatchets(const QString &room);
+    void importRatchets(const QString &room, const QJsonObject &stored);
 
     void hold(const QString &scope, const QString &room, const QJsonObject &frame);
     QList<QJsonObject> held(const QString &scope, const QString &room);
@@ -205,6 +246,8 @@ private:
         qint64 reserved = 0;
         bool seenLoaded = false;
         QHash<QString, Seen> seen;
+        bool ratchetsLoaded = false;
+        QHash<QString, RatchetPeer> ratchets;
     };
 
     explicit ChatDevice(bool persistent);
@@ -215,6 +258,7 @@ private:
     Scope &scopeState(const QString &scope);
     Room &roomState(const QString &room);
     void loadSeen(const QString &room, Room &state);
+    void loadRatchets(const QString &room, Room &state);
     void saveScope(const QString &scope, bool now);
     void saveSeen(const QString &room);
     void refreshSafety(const QString &scope);
@@ -228,17 +272,50 @@ private:
     std::function<qint64()> m_clock;
     QHash<QString, Scope> m_scopes;
     QHash<QString, Room> m_rooms;
+    QHash<QString, qint64> m_sessionResets;
     QHash<int, Listener> m_listeners;
     int m_nextToken = 1;
 };
 
 } // namespace forkmesh::chatv3
 
+namespace forkmesh::chatv4 {
+
+constexpr int kVersion = 4;
+constexpr int kMaxSkip = 256;
+constexpr int kSkippedKept = 512;
+constexpr qint64 kSkippedLifeMs = 8 * forkmesh::chatv3::kDayMs;
+constexpr int kSessionsKept = 4;
+constexpr qint64 kResetEveryMs = 60 * 1000;
+
+struct KeyPair {
+    QByteArray first;
+    QByteArray second;
+};
+
+QByteArray hmacSha256(const QByteArray &key, const QByteArray &data);
+KeyPair kdfInit(const QString &room, const QString &sender, const QString &recipient,
+                const QString &spkId, const QString &sid, const QByteArray &ss1,
+                const QByteArray &ss2);
+KeyPair kdfRk(const QByteArray &rk, const QByteArray &dhOut, const QByteArray &ss);
+KeyPair kdfCk(const QByteArray &ck);
+QString sessionId(const QByteArray &dhPub, const QByteArray &ct);
+QByteArray contentAad(const QString &room, const QString &sender, qint64 ctr, qint64 ts);
+QByteArray wrapAad(const QString &room, const QString &sender, const QJsonObject &entry,
+                   const QString &bodyNonce, const QString &bodyTag);
+QByteArray sealedMessage(const QString &room, const QJsonObject &frame);
+bool validEntry(const QJsonObject &entry);
+QJsonObject sessionJson(const forkmesh::chatv3::RatchetSession &session);
+bool sessionFromJson(const QJsonObject &object, forkmesh::chatv3::RatchetSession *session);
+QString resetType();
+
+} // namespace forkmesh::chatv4
+
 class RoomSeal
 {
 public:
     using Policy = forkmesh::chatv3::Policy;
-    enum class Status { Opened, Held, NotForMe, Replay, Invalid };
+    enum class Status { Opened, Held, NotForMe, Replay, Invalid, Own, NoSession };
     struct Opened {
         Status status = Status::Invalid;
         QJsonObject plain;
@@ -246,6 +323,7 @@ public:
         QString senderAcct;
         QString senderNode;
         qint64 ts = 0;
+        qint64 ctr = 0;
         bool self = false;
     };
     static void useSignedTime(QJsonObject &plain, const Opened &opened);
@@ -279,7 +357,14 @@ public:
 
     QJsonObject sealObject(const QJsonObject &plain) const;
     QJsonObject sealObjectFor(const QJsonObject &plain, const QStringList &keyIds) const;
-    Opened open(const QJsonObject &frame, bool historyReplay = false) const;
+    Opened open(const QJsonObject &frame, bool historyReplay = false,
+                bool commit = true) const;
+    bool usesRatchet() const { return m_ratchet; }
+    void setRatchet(bool enabled) { m_ratchet = enabled; }
+    void resetSessions(const QString &kid) const;
+    bool claimSessionReset(const QString &kid) const;
+    bool openedLaterThan(const QString &kid, qint64 ctr) const;
+    static bool isResetPlain(const QJsonObject &plain);
     QJsonObject unsealObject(const QJsonObject &frame) const;
     QList<QJsonObject> takeReleasedHeld() const;
 
@@ -302,6 +387,8 @@ public:
 
 private:
     QJsonObject seal(const QJsonObject &plain, const QStringList *only) const;
+    QJsonObject sealV4(const QJsonObject &plain, const QStringList *only) const;
+    Opened openV4(const QJsonObject &frame, bool commit) const;
 
     QString m_room;
     QString m_scope;
@@ -309,6 +396,7 @@ private:
     QString m_node;
     QStringList m_participants;
     Policy m_policy = Policy::Open;
+    bool m_ratchet = false;
     QString m_error;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
 };

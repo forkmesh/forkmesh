@@ -301,7 +301,7 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
         firstRef, keyAcked, resentAgain,
       }}));
     """)
-    assert result["firstKeys"] == 2
+    assert result["firstKeys"] == 1
     assert result["persistedAfter"] == result["persistedBefore"] + 1
     assert result["resent"] is True
     assert result["resentPersist"] is True and result["resentNotify"] is True
