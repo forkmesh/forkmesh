@@ -24,6 +24,7 @@
 		F00000000000000000000084 /* ForkMeshCore in Frameworks */ = {isa = PBXBuildFile; productRef = F00000000000000000000083 /* ForkMeshCore */; };
 		F00000000000000000000087 /* ForkMeshAutoFill.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F0000000000000000000007E /* ForkMeshAutoFill.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F00000000000000000000089 /* ForkMeshPushCore in Frameworks */ = {isa = PBXBuildFile; productRef = F00000000000000000000088 /* ForkMeshPushCore */; };
+		F0000000000000000000008C /* NexusUI in Frameworks */ = {isa = PBXBuildFile; productRef = F0000000000000000000008B /* NexusUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -213,6 +214,7 @@
 				F0000000000000000000002E /* MLXLMCommon in Frameworks */,
 				F00000000000000000000031 /* MLX in Frameworks */,
 				F00000000000000000000034 /* Tokenizers in Frameworks */,
+				F0000000000000000000008C /* NexusUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -365,6 +367,7 @@
 				F0000000000000000000002D /* MLXLMCommon */,
 				F00000000000000000000030 /* MLX */,
 				F00000000000000000000033 /* Tokenizers */,
+				F0000000000000000000008B /* NexusUI */,
 			);
 			productName = ForkMesh;
 			productReference = F00000000000000000000015 /* ForkMesh.app */;
@@ -537,6 +540,7 @@
 				F0000000000000000000002A /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				F0000000000000000000002F /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				F00000000000000000000032 /* XCRemoteSwiftPackageReference "swift-transformers" */,
+				F0000000000000000000008A /* XCLocalSwiftPackageReference "Nexus" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F00000000000000000000003 /* Products */;
@@ -1210,6 +1214,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ForkMeshCore;
 		};
+		F0000000000000000000008A /* XCLocalSwiftPackageReference "Nexus" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Nexus;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1287,6 +1295,10 @@
 		F00000000000000000000088 /* ForkMeshPushCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ForkMeshPushCore;
+		};
+		F0000000000000000000008B /* NexusUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NexusUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -80,7 +80,18 @@
 	<key>NSMotionUsageDescription</key>
 	<string>Pedometer counts your steps with the motion sensor while you watch today's total, and notices when you start a walk to show its steps on the Lock Screen and in the Dynamic Island. Sleep works out how long you slept from when your phone lay still by your bed.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>ForkMesh finds other ForkMesh devices on this Wi-Fi so the #mesh room can chat without the internet.</string>
+	<string>ForkMesh finds other ForkMesh devices on this Wi-Fi so the #mesh room can chat without the internet, and NEXUS can discover services on networks you are authorized to inspect.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+		<string>_https._tcp</string>
+		<string>_ssh._tcp</string>
+		<string>_smb._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+		<string>_ipp._tcp</string>
+		<string>_homekit._tcp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
