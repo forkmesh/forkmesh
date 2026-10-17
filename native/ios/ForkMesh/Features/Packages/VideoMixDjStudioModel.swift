@@ -60,6 +60,9 @@ final class DjDeck {
     @ObservationIgnored var scratchSent: CFTimeInterval = 0
     @ObservationIgnored var scratchSpeed: Double = 0
     @ObservationIgnored var scratchTask: Task<Void, Never>?
+    @ObservationIgnored var scratchAudio: DjScratchAudio?
+    @ObservationIgnored var audioFor = ""
+    @ObservationIgnored var vinyl = false
     @ObservationIgnored var settleUntil: CFTimeInterval = 0
     @ObservationIgnored var rateTask: Task<Void, Never>?
     @ObservationIgnored var brakeTask: Task<Void, Never>?
@@ -369,6 +372,8 @@ final class DjStudioModel {
             deck.author = ""
             deck.artwork = nil
             deck.waveform = []
+            deck.scratchAudio = nil
+            deck.audioFor = ""
             deck.reading = false
             deck.time = 0
             deck.duration = 0
@@ -461,6 +466,8 @@ final class DjStudioModel {
         deck.author = author
         deck.artwork = nil
         deck.reading = false
+        deck.scratchAudio = nil
+        deck.audioFor = ""
         if let measured = DjWaveSource.cached(id) {
             deck.waveform = measured
             analysed.insert(id)
@@ -496,6 +503,8 @@ final class DjStudioModel {
         deck.author = ""
         deck.artwork = nil
         deck.waveform = []
+        deck.scratchAudio = nil
+        deck.audioFor = ""
         deck.reading = false
         deck.time = 0
         deck.duration = 0
@@ -638,15 +647,21 @@ final class DjStudioModel {
     }
 
     private func analyse(_ deck: DjDeck, id: String, source: URL) {
-        guard deck.videoId == id, !analysed.contains(id) else { return }
-        analysed.insert(id)
-        deck.reading = true
+        guard deck.videoId == id, deck.audioFor != id else { return }
+        deck.audioFor = id
+        let wantsBars = !analysed.contains(id)
+        if wantsBars {
+            analysed.insert(id)
+            deck.reading = true
+        }
         Task { [weak self, weak deck] in
-            let bars = await DjWaveSource.bars(for: id, source: source)
-            if bars == nil { self?.analysed.remove(id) }
+            let read = await DjWaveSource.read(for: id, source: source, bars: wantsBars)
+            if wantsBars, read.bars == nil { self?.analysed.remove(id) }
             guard let deck, deck.videoId == id else { return }
-            deck.reading = false
-            if let bars { deck.waveform = bars }
+            if wantsBars { deck.reading = false }
+            if let bars = read.bars { deck.waveform = bars }
+            deck.scratchAudio = read.audio
+            if read.bars == nil, read.audio == nil { deck.audioFor = "" }
         }
     }
 
@@ -839,8 +854,15 @@ final class DjStudioModel {
         deck.scratchSent = now
         deck.scratchSpeed = 0
         deck.player.scratch(0, at: deck.time)
-        sampler.beginScratch()
         deck.scratchTask?.cancel()
+        deck.scratchTask = nil
+        if let audio = deck.scratchAudio, abs(audio.duration - deck.duration) < 2 {
+            deck.vinyl = true
+            sampler.beginScratch(side, audio: audio, at: deck.time, gain: DjStudio.gain(side, crossfader: crossfader) * deck.level)
+            return
+        }
+        deck.vinyl = false
+        sampler.beginScratch()
         deck.scratchTask = Task { [weak self, weak deck] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(45))
@@ -865,6 +887,14 @@ final class DjStudioModel {
 
     private func sendScratch(_ deck: DjDeck, force: Bool) {
         let gain = DjStudio.gain(deck.side, crossfader: crossfader) * deck.level
+        if deck.vinyl {
+            sampler.scratch(deck.side, to: deck.time, gain: gain)
+            let now = CACurrentMediaTime()
+            guard now - deck.scratchSent >= 0.25 else { return }
+            deck.scratchSent = now
+            deck.player.scratch(0, at: deck.time)
+            return
+        }
         sampler.scratch(level: DjStudio.scratchLevel(deck.scratchSpeed) * gain, speed: abs(deck.scratchSpeed))
         let now = CACurrentMediaTime()
         guard force || now - deck.scratchSent >= 0.04 else { return }
@@ -878,7 +908,8 @@ final class DjStudioModel {
         deck.scratchTask?.cancel()
         deck.scratchTask = nil
         deck.scratchSpeed = 0
-        sampler.scratch(level: 0, speed: 0)
+        if deck.vinyl { sampler.endScratch(side) } else { sampler.scratch(level: 0, speed: 0) }
+        deck.vinyl = false
         deck.player.scratch(nil, at: deck.time)
         deck.player.seek(deck.time)
         deck.scratching = false
