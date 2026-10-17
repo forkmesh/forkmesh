@@ -80,6 +80,11 @@ QList<BackupSnapshot> backupsToPrune(const QList<BackupSnapshot> &snapshots,
     return snapshots.mid(floor);
 }
 
+bool backupLeavesFreeReserve(qint64 bytesAvailable, qint64 reserve)
+{
+    return bytesAvailable < 0 || bytesAvailable >= reserve;
+}
+
 bool backupIsDue(const QDateTime &last, const QDateTime &now, qint64 intervalMs)
 {
     if (!last.isValid())

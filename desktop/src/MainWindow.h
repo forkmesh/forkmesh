@@ -5096,6 +5096,8 @@ private:
     void takeBackupNow(bool automatic);
     void refreshBackupTable();
     void pruneOldBackups();
+    void removePartialBackups();
+    QStringList backupExcludeRoots() const;
     void restoreConfigArchive(const QString &archivePath);
     // Second half of an import, resumed once the unpacking `tar` has exited.
     // Split out so the unpack itself can run asynchronously: it is a multi-

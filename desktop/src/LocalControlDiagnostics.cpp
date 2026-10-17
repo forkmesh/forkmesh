@@ -387,7 +387,7 @@ QString backupFailureCode(const QString &failure)
 {
     static const QStringList known{QStringLiteral("tar_missing"), QStringLiteral("tar_failed"),
                                    QStringLiteral("nothing_to_back_up"),
-                                   QStringLiteral("rename_failed")};
+                                   QStringLiteral("rename_failed"), QStringLiteral("low_disk")};
     if (failure.isEmpty())
         return {};
     return known.contains(failure) ? failure : QStringLiteral("failed");
