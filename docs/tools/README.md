@@ -61,7 +61,7 @@ security scan runners.
 `sync_*_header.py` scripts; edit the Python, then regenerate),
 `forkmesh_mcp_server.py` ([../agents/tools.md](../agents/tools.md#forkmesh-mcp-server)),
 `branch_pr_review.py` (loopback-only diff viewer),
-`pull_ledger.py` (comment on, close and reopen a native pull from the terminal, [pull-ledger.md](pull-ledger.md)),
+`pull_ledger.py` (comment on, close, reopen and record merges of a native pull from the terminal, [pull-ledger.md](pull-ledger.md)),
 `zoho_mail.py` (send email from a Zoho Mail mailbox with no prompts, the `send_email` MCP tool, [zoho-mail.md](zoho-mail.md)), `code_health.py`,
 `measure_startup.py`, `run_critical_tests.py`, `quality_gate.py`.
 

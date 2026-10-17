@@ -58,6 +58,28 @@
 
   function noteCanEdit(note) { return ["owner", "editor"].includes(note?.role); }
 
+  function noteAccessUrl(note) { return `${location.origin}/dashboard/notes?note=${encodeURIComponent(note.id)}`; }
+
+  function noteLinkedId() {
+    const id = new URLSearchParams(location.search).get("note") || "";
+    return /^[0-9a-f]{32}$/.test(id) ? id : "";
+  }
+
+  function rememberNoteInUrl(note) {
+    if (!location.pathname.startsWith("/dashboard/notes")) return;
+    const url = new URL(location.href);
+    if (url.searchParams.get("note") === note.id) return;
+    url.searchParams.set("note", note.id);
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  }
+
+  async function copyNoteLink(url, place, failure) {
+    try {
+      await navigator.clipboard.writeText(url);
+      noteNotice(place, "Link copied");
+    } catch (_) { noteNotice(place, failure, "bad"); }
+  }
+
   function noteInitials(name) {
     const parts = String(name || "?").replace(/[^\p{L}\p{N}\s_-]/gu, "").split(/[\s_-]+/).filter(Boolean);
     return ((parts[0]?.[0] || "?") + (parts[1]?.[0] || "")).slice(0, 2);
@@ -220,6 +242,13 @@
         </div>`;
       }).join("");
     }
+    const accessRow = $("[data-note-access-row]");
+    if (accessRow) accessRow.hidden = !(note.shares || []).length;
+    const accessLink = $("[data-note-access-link]");
+    if (accessLink) {
+      accessLink.href = noteAccessUrl(note);
+      accessLink.textContent = noteAccessUrl(note).replace(/^https?:\/\//, "");
+    }
     const isPublic = note.visibility === "public";
     const url = `${location.origin}/notes/${note.id}`;
     const toggle = $("[data-note-public]");
@@ -314,7 +343,9 @@
       view.items = payload.notes || []; view.loading = false; notesError(""); renderNoteList();
       const id = selectId || (view.items.some((item) => item.id === view.selected?.id) ? view.selected.id : view.items[0]?.id);
       if (id) await selectNote(id);
-      else { view.selected = null; renderNoteEditor(null); }
+      else view.selected = null;
+      if (!view.selected && view.items[0] && view.items[0].id !== id) await selectNote(view.items[0].id);
+      if (!view.selected) renderNoteEditor(null);
     } catch (error) {
       view.loading = false; renderNoteList();
       notesError(`Notes are unavailable: ${error.message}`);
@@ -329,6 +360,7 @@
       const same = view.selected?.id === payload.note.id;
       if (!same) { view.conflict = null; $("[data-note-conflict]").hidden = true; }
       storeNote(payload.note);
+      rememberNoteInUrl(payload.note);
       renderNoteEditor(payload.note, { keepDraft: keepDraft && same && view.localDirty });
     } catch (error) {
       if (error.status === 404 && view.selected?.id === id) {
@@ -604,6 +636,76 @@
     $("[data-note-link-input]")?.focus();
   }
 
+  function noteShareQuery() {
+    return ($("[data-note-share-name]")?.value || "").trim().replace(/^@/, "").toLowerCase();
+  }
+
+  function loadNoteShareOrgs() {
+    const view = state.notesView;
+    if (!view.shareOrgs) {
+      view.shareOrgs = noteRequest("/api/orgs")
+        .then((payload) => (payload.orgs || []).map((org) => String(org?.name || "").trim().toLowerCase()).filter(Boolean))
+        .catch(() => { view.shareOrgs = null; return []; });
+    }
+    return view.shareOrgs;
+  }
+
+  function renderNoteShareSuggestions(items, index = items.length ? 0 : -1) {
+    const view = state.notesView;
+    const list = $("[data-note-share-suggestions]"), input = $("[data-note-share-name]");
+    if (!list || !input) return;
+    view.shareSuggestions = items; view.shareSuggestionIndex = index;
+    const open = items.length > 0 && document.activeElement === input;
+    list.innerHTML = open ? items.map((item, position) => `
+      <button type="button" role="option" id="note-share-option-${position}" tabindex="-1" data-note-share-option="${position}" aria-selected="${position === index ? "true" : "false"}">
+        <span class="notes-avatar" data-type="${escapeHtml(item.type)}" style="background:${noteAvatarColor(item.name)}">${escapeHtml(noteInitials(item.name))}</span>
+        <span class="notes-person-name">${escapeHtml(item.name)}</span>
+        <span class="notes-person-hint">${item.type === "organization" ? "Organization" : "User"}</span>
+      </button>`).join("") : "";
+    list.hidden = !open;
+    input.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open && index >= 0) {
+      input.setAttribute("aria-activedescendant", `note-share-option-${index}`);
+      list.querySelector(`#note-share-option-${index}`)?.scrollIntoView({ block: "nearest" });
+    } else input.removeAttribute("aria-activedescendant");
+  }
+
+  function searchNoteShareCandidates() {
+    const view = state.notesView, query = noteShareQuery();
+    const generation = ++view.shareGeneration;
+    clearTimeout(view.shareTimer);
+    if (!query) { renderNoteShareSuggestions([]); return; }
+    view.shareTimer = setTimeout(async () => {
+      const [users, orgs] = await Promise.all([
+        noteRequest(`/api/chat/direct-messages/users?query=${encodeURIComponent(query)}`)
+          .then((payload) => (payload.users || []).map((user) => String(user?.name || "").trim().toLowerCase()))
+          .catch(() => []),
+        loadNoteShareOrgs(),
+      ]);
+      if (generation !== view.shareGeneration) return;
+      const owner = String(state.session?.nodeName || "").toLowerCase();
+      const taken = new Set((view.selected?.shares || []).map((share) => `${share.type}:${String(share.name).toLowerCase()}`));
+      const items = [
+        ...users.filter((name) => name && name !== owner).map((name) => ({ type: "user", name })),
+        ...orgs.filter((name) => name.includes(query)).map((name) => ({ type: "organization", name })),
+      ].filter((item, position, all) => !taken.has(`${item.type}:${item.name}`)
+        && all.findIndex((other) => other.type === item.type && other.name === item.name) === position)
+        .sort((left, right) => Number(right.name.startsWith(query)) - Number(left.name.startsWith(query)))
+        .slice(0, 8);
+      renderNoteShareSuggestions(items);
+    }, 150);
+  }
+
+  function chooseNoteShareCandidate(item) {
+    const input = $("[data-note-share-name]"); if (!input || !item) return;
+    input.value = item.name;
+    $("[data-note-share-type]").value = item.type;
+    state.notesView.shareGeneration++;
+    clearTimeout(state.notesView.shareTimer);
+    renderNoteShareSuggestions([]);
+    input.focus();
+  }
+
   async function updateNoteShare(body, method, message) {
     const note = state.notesView.selected; if (!note) return false;
     try {
@@ -648,7 +750,8 @@
     Object.assign(view, {
       filter: "all", linking: false, localDirty: false, savePromise: null,
       saveTimer: 0, conflict: null, peers: new Map(), presenceTimer: 0,
-      socketNoteId: "",
+      socketNoteId: "", shareOrgs: null, shareSuggestions: [], shareSuggestionIndex: -1,
+      shareGeneration: 0, shareTimer: 0,
     });
     try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
@@ -729,13 +832,39 @@
     });
 
     // Sharing and publishing.
+    const shareName = $("[data-note-share-name]");
+    shareName?.addEventListener("input", searchNoteShareCandidates);
+    shareName?.addEventListener("focus", () => { if (noteShareQuery()) searchNoteShareCandidates(); });
+    shareName?.addEventListener("blur", () => { view.shareGeneration++; renderNoteShareSuggestions([]); });
+    shareName?.addEventListener("keydown", (event) => {
+      const items = view.shareSuggestions || [];
+      if ($("[data-note-share-suggestions]").hidden || !items.length) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        renderNoteShareSuggestions(items, (view.shareSuggestionIndex + step + items.length) % items.length);
+      } else if (event.key === "Escape") {
+        event.stopPropagation(); view.shareGeneration++; renderNoteShareSuggestions([]);
+      } else if ((event.key === "Enter" || event.key === "Tab") && view.shareSuggestionIndex >= 0) {
+        const item = items[view.shareSuggestionIndex];
+        const exact = item.name === noteShareQuery() && item.type === $("[data-note-share-type]").value;
+        if (event.key === "Tab" || !exact) event.preventDefault();
+        chooseNoteShareCandidate(item);
+      }
+    });
+    $("[data-note-share-suggestions]")?.addEventListener("mousedown", (event) => event.preventDefault());
+    $("[data-note-share-suggestions]")?.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-note-share-option]"); if (!option) return;
+      chooseNoteShareCandidate(view.shareSuggestions[Number(option.dataset.noteShareOption)]);
+    });
     $("[data-note-share-form]")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const input = $("[data-note-share-name]"), name = input.value.trim().replace(/^@/, "");
       if (!name) { input.focus(); return; }
+      view.shareGeneration++; clearTimeout(view.shareTimer); renderNoteShareSuggestions([]);
       const added = await updateNoteShare({
         type: $("[data-note-share-type]").value, name, role: $("[data-note-share-role]").value,
-      }, "POST", `Shared with ${name}`);
+      }, "POST", `Shared with ${name}. Copy the link below to send it.`);
       if (added) { input.value = ""; $("[data-note-share-panel]").hidden = false; input.focus(); }
     });
     $("[data-note-shares]")?.addEventListener("change", (event) => {
@@ -757,11 +886,14 @@
         noteNotice("share", publish ? "Published — anyone with the link can read it" : "Unpublished");
       }
     });
-    $("[data-note-copy-link]")?.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(`${location.origin}/notes/${view.selected.id}`);
-        noteNotice("share", "Link copied");
-      } catch (_) { noteNotice("share", "Couldn't copy — select the link and copy it manually.", "bad"); }
+    $("[data-note-copy-link]")?.addEventListener("click", () =>
+      void copyNoteLink(`${location.origin}/notes/${view.selected.id}`, "share", "Couldn't copy — select the link and copy it manually."));
+    $("[data-note-copy-access-link]")?.addEventListener("click", () =>
+      void copyNoteLink(noteAccessUrl(view.selected), "share", "Couldn't copy — select the link and copy it manually."));
+    $("[data-note-menu-copy-link]")?.addEventListener("click", () => {
+      closeNotePopovers();
+      const note = view.selected; if (!note) return;
+      void copyNoteLink(noteAccessUrl(note), "main", `Couldn't copy the link: ${noteAccessUrl(note)}`);
     });
 
     // Linked conversations.
@@ -819,5 +951,5 @@
     });
 
     renderNoteList();
-    void loadNotes();
+    void loadNotes(noteLinkedId());
   }
