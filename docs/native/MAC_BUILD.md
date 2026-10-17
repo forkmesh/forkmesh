@@ -181,7 +181,14 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   A failure prints a `✗ FAILED in "<phase>"` box with those lines (compiler
   errors first; else the failing `mac.run`'s `fatal:`/`ERROR:` lines) and a
   `Fix:` hint from `FAILURE_HINTS` (Swift error, fetch from the cores, cores
-  behind, Mac away, lock held, no IPA).
+  behind, Mac away, lock held, no IPA, CoreSimulator wedged).
+- After days of uptime the Mac's CoreSimulatorService can wedge, and actool
+  then fails the watch asset catalog with `Failed to launch
+  AssetCatalogSimulatorAgent via CoreSimulator spawn` (the 2026-10-16 ad hoc
+  build of `ad97f78c7fd4`, Mac up 6 days). The archive step greps its log for
+  that line, shuts the simulators down, kills the service (launchd starts it
+  again on the next `simctl` call) and archives once more. A second failure
+  stops the build with a `Fix:` to run again or reboot the Mac.
 - The same text goes to the admins as an operator Ping (`notify_failure`, key
   `mac-adhoc-failure`, `POST /api/accounts/admin-operator-alert` on the
   `MAC_BUILD_GIT_URL` host, signed with this desktop's node identity like
