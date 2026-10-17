@@ -354,6 +354,24 @@ final class AccountPackagesTests: XCTestCase {
         XCTAssertFalse(alone.isInstalled(MarketPackage(id: "status-check-extra", name: "E", defaultOn: false, accountSync: true)))
     }
 
+    @MainActor func testANeverOpenedPackageIsMarkedOnAFreshInstall() {
+        let store = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: InMemoryKeyValueStore(), signedIn: { false })
+        store.adoptCatalog([
+            MarketPackage(id: "calories", name: "Calories", version: "2.5.1"),
+            MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
+            MarketPackage(id: "tasks", name: "Tasks"),
+        ])
+        XCTAssertEqual(store.updated, ["calories", "notes"])
+        store.markViewed("notes")
+        XCTAssertEqual(store.updated, ["calories"])
+        store.adoptCatalog([
+            MarketPackage(id: "calories", name: "Calories", version: "2.5.1"),
+            MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
+        ])
+        XCTAssertEqual(store.updated, ["calories"])
+    }
+
     @MainActor func testAnUpdatedPackageIsMarkedUntilItIsViewed() {
         let prefs = InMemoryKeyValueStore()
         let store = AccountPackagesStore(
@@ -363,6 +381,7 @@ final class AccountPackagesTests: XCTestCase {
             MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
             MarketPackage(id: "tasks", name: "Tasks"),
         ])
+        for id in ["calories", "notes"] { store.markViewed(id) }
         XCTAssertTrue(store.updated.isEmpty)
 
         store.adoptCatalog([
@@ -370,7 +389,8 @@ final class AccountPackagesTests: XCTestCase {
             MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
             MarketPackage(id: "tasks", name: "Tasks", version: "1.0.0"),
         ])
-        XCTAssertEqual(store.updated, ["calories"])
+        XCTAssertEqual(store.updated, ["calories", "tasks"])
+        store.markViewed("tasks")
         XCTAssertTrue(store.isUpdated(hubItem: "calories"))
         XCTAssertFalse(store.isUpdated(hubItem: "notes"))
         XCTAssertFalse(store.isUpdated(hubItem: "tasks"))
@@ -393,6 +413,8 @@ final class AccountPackagesTests: XCTestCase {
             MarketPackage(id: "sugar-break", name: "Sugar break", version: "1.0.0"),
             MarketPackage(id: "agents", name: "Agents", version: "1.0.0"),
         ])
+        for id in ["sugar-break", "agents"] { store.markViewed(id) }
+        XCTAssertFalse(store.isUpdated(hubItem: "Agents"))
         store.adoptCatalog([
             MarketPackage(id: "sugar-break", name: "Sugar break", version: "1.1.0"),
             MarketPackage(id: "agents", name: "Agents", version: "1.2.0"),
