@@ -21,6 +21,7 @@ connections; each step runs once per item it receives.
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
 | Tests | `app/tests/test_workflows.py`, `test_workflow_formats.py`, `test_workflow_files.py` |
+| Phone engine and bundle | `marketplace/packages/workflows/content/mobile/workflow-engine.js`, `marketplace/tools/workflows_mobile_bundle.py` |
 
 ## Building a workflow
 
@@ -89,6 +90,14 @@ Workflows is the `workflows` marketplace package (`builtin:workflows`,
 Uninstalled, `/api/workflows` answers 403 `plugin_not_installed`, webhooks 409
 and schedules skip; data is kept. Nested packages add integration categories,
 examples and the Repository view.
+
+On iPhone and Android the plugin is a native screen, and a phone can run a
+workflow itself: the package's `content/mobile/workflow-engine.js` runs in
+JavaScriptCore on iPhone, Android runs a Kotlin port, and both replay cases
+produced by this engine. After changing `workflows.py`,
+`workflow_integrations.py` or the run limits, run
+`python3 marketplace/tools/workflows_mobile_bundle.py` and keep the phone
+engines passing; see [native/WORKFLOWS.md](../native/WORKFLOWS.md).
 
 ## Security
 

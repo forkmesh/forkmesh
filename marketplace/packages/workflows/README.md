@@ -2,7 +2,7 @@
 
 A visual automation builder in the style of n8n. Connect a trigger (the Run button, a secret webhook URL or a schedule), logic steps (HTTP request, Set fields, If, Filter, Merge, Limit, Split out) and integrations on one canvas, run it, and read every step's output. Workflows download and upload as n8n-compatible JSON and import from n8n template links.
 
-It works on the web, on phones (the page is touch-friendly and the phone Market and Hub open it), and from the desktop rail.
+It works on the web, from the desktop rail, and natively on iPhone and Android: the phones list, edit and run workflows on their own screens. A phone can run a workflow itself: the iPhone runs `content/mobile/workflow-engine.js` in Apple's JavaScriptCore, Android runs a Kotlin port of the same engine, and both are checked against the server's results. Phone runs use only credentials saved on that phone.
 
 Workflows is a plugin like the Home tiles: off in projects and accounts created from 2026-10-14 (`install.installedBefore`), kept where it was already there. Its packs depend on it, so they come and go with it. See [core-plugins.md](../../../docs/marketplace/core-plugins.md).
 
