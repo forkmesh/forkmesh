@@ -15,6 +15,7 @@ GRANTS_DIR = REPO / "docs" / "finance" / "grants"
 SOURCE = GRANTS_DIR / "grants.json"
 CSV_OUT = GRANTS_DIR / "forkmesh-grants.csv"
 RANKED_OUT = GRANTS_DIR / "ranked.md"
+CRM_OUT = REPO / "marketplace" / "packages" / "crm" / "content" / "worker" / "crm_grants.csv"
 CHATGPT_URL = "https://chatgpt.com/"
 URL_LIMIT = 8000
 NOTES_LIMIT = 2500
@@ -250,7 +251,8 @@ def steps(process: str) -> list[str]:
 
 def build() -> dict[Path, str]:
     grants = load()
-    return {CSV_OUT: csv_text(grants), RANKED_OUT: ranked_text(grants)}
+    rows = csv_text(grants)
+    return {CSV_OUT: rows, CRM_OUT: rows, RANKED_OUT: ranked_text(grants)}
 
 
 def main(argv: list[str] | None = None) -> int:
