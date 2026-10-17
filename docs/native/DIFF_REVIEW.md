@@ -60,6 +60,11 @@ One sideways-scrolling row of small buttons:
 
 All settings are saved under `diff/*` in app preferences.
 
+On iOS each switch is a 16 pt icon on a 22 pt square, tinted with the accent
+when on, inside a 30 pt tap target (2026-10-17). The tint used to fill the
+whole 30 pt button, so the switches that were on read as large blocks across
+the bar.
+
 The **health strip** shows `+A −D` and six pills (Merge, Complexity, Quality,
 Security, Network, Practices), each an icon and score tinted green, orange or
 red. Screen readers hear the name; tapping a pill shows the desktop's tooltip
