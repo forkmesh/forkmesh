@@ -43076,7 +43076,7 @@
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=0fe24343526e",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=64aaa15b9c85",
+    "tasks": "/dashboard-page-tasks.js?v=d19aedd4b98f",
     "workflows": "/dashboard-page-workflows.js?v=31a4ee1ae76e",
   };
   const dashboardChunkScope = {

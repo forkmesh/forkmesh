@@ -4881,10 +4881,19 @@ private:
     void assignOrganizationTaskToAgent();
     void queueOrganizationTaskAgent(const QJsonObject &task);
     void runOrganizationTaskAction(const QString &action);
+    void sendOrganizationTaskAction(const QString &taskId,
+                                    const QString &action,
+                                    const QJsonObject &body);
+    void patchOrganizationTask(const QJsonObject &task,
+                               const QJsonObject &body);
+    void syncOrganizationTaskProperties(const QJsonObject &task);
+    void commitOrganizationTaskProperty(const QString &field);
     // Comment on the selected task, and check in on it. Both are ordinary
     // task writes that also ping: a comment pings the task's floor plus every
     // @name it uses, a check-in tells the same people how the work is going.
     void commentOnOrganizationTask();
+    void postOrganizationTaskComment(const QString &body);
+    void submitOrganizationTaskQuickComment();
     void checkInOnOrganizationTask();
     void remindOrganizationTaskAssignee();
     // The task's own timeline. Fetched per selected task rather than with the
@@ -10879,6 +10888,21 @@ private:
     QString m_organizationTasksSearchMirror;
     QTextBrowser *m_organizationTaskDetail = nullptr;
     QTextBrowser *m_organizationTaskFields = nullptr;
+    QWidget *m_organizationTaskSide = nullptr;
+    QWidget *m_organizationTaskProperties = nullptr;
+    QComboBox *m_organizationTaskStatusEdit = nullptr;
+    QSpinBox *m_organizationTaskPriorityEdit = nullptr;
+    QSpinBox *m_organizationTaskProgressEdit = nullptr;
+    QComboBox *m_organizationTaskAssigneeEdit = nullptr;
+    QComboBox *m_organizationTaskDepartmentEdit = nullptr;
+    QLineEdit *m_organizationTaskTeamEdit = nullptr;
+    QLineEdit *m_organizationTaskRepositoryEdit = nullptr;
+    QLineEdit *m_organizationTaskParentEdit = nullptr;
+    QString m_organizationTaskPropertiesTaskId;
+    QPlainTextEdit *m_organizationTaskQuickComment = nullptr;
+    QPushButton *m_organizationTaskQuickCommentSend = nullptr;
+    QString m_organizationTaskQuickCommentTaskId;
+    QHash<QString, QString> m_organizationTaskCommentDrafts;
     QPushButton *m_organizationTaskRefreshButton = nullptr;
     QLabel *m_organizationTasksStatus = nullptr;
     QLabel *m_organizationTasksSummary = nullptr;

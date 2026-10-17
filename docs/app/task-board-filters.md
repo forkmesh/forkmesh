@@ -41,11 +41,20 @@ gave status, priority and progress no shape to scan by.
   one solid button for the likely next step (Start, Complete, Remind, Mark
   undone or Restore, `taskActionLayoutHtml`), up to three other actions that
   apply now, and a More menu holding the rest. Actions that do not apply stay
-  in the menu, greyed out, so nothing disappears. Below come the check-in and
+  in the menu, greyed out, so nothing disappears. Under the action bar is the
+  quick comment box (`taskQuickCommentHtml`, Ctrl+Enter posts), so a comment
+  never needs a scroll past a long timeline. Below come the check-in and
   remind panels (boxed, `data-panel`), Description, completion note, work
-  items, images, completion history and Activity.
+  items, images, completion history and Activity (timeline only).
 - Detail side panel (`.task-detail-aside`): Status, Priority, Assignee, Created
-  by, Follows, Repository and Routing; Progress with its slider; the persistent
+  by, Repository, Department, Team, Follows and Routed to
+  (`taskEditablePropsHtml`). Each field is edited in place and saved on
+  change (`submitTaskProperty`): Status runs start, stop, complete or undo;
+  the rest send a one-field PATCH. A field is a control only when the server
+  would accept the write (`taskPropertyAccess`: managers edit a task that is
+  not active or done, priority at any time; status follows the action rules);
+  otherwise it is plain text with the reason as its tooltip. Then Progress
+  with its slider; the persistent
   reminder switch and interval; Timing; Quality assurance with How to test;
   Agent run, Bounty request, Latest check-in and Last reminder when present. It
   moves under the body when the detail pane is narrower than 44rem (container
