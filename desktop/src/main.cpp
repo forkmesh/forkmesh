@@ -1,5 +1,6 @@
 #include "CrashHandler.h"
 #include "BackgroundMode.h"
+#include "KeepAwake.h"
 #include "PackageModules.h"
 #include "ProcessReaper.h"
 #include "AgentCliLocator.h"
@@ -1036,8 +1037,10 @@ int main(int argc, char *argv[])
         QThreadPool::globalInstance()->start([] {
             forkmesh::background::migrateLegacyEngine();
             forkmesh::background::syncLogoutHandOver();
+            forkmesh::background::refreshStartUnit();
         });
     });
+    forkmesh::keepawake::holdWhileRunning(window);
     if (!localActionLink.isEmpty()) {
         // A deep link may build a heavy destination. Let the already-built
         // shell paint once before constructing that page-specific surface.

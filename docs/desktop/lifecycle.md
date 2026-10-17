@@ -267,11 +267,20 @@ log-out hand-over at all.
 
 - `~/.config/systemd/user/forkmesh-headless-<project>.service`:
   `ExecStart` quoted for systemd, `Environment=QT_QPA_PLATFORM=offscreen`,
-  `Restart=on-failure` (at most 5 starts in 10 minutes), `KillMode=mixed` so
+  `Restart=on-failure` with no start limit (`StartLimitIntervalSec=0`): the
+  first restart comes after 10 s and the delay grows over 5 steps to at most
+  5 minutes (`RestartSteps=5`, `RestartMaxDelaySec=300`). It used to give up
+  for good after 5 starts in 10 minutes, so a bad minute at boot left the
+  computer without ForkMesh until the next reboot. `KillMode=mixed` so
   the desktop shuts down its own agents before systemd kills what is left,
   `WantedBy=default.target`, the ForkMesh path variables unset. Opening a
   window makes it exit 0, so the unit stays stopped until the next close or
   boot.
+- The unit is written when start at boot is turned on, and rewritten 5 s
+  after any instance starts (`refreshStartUnit`, on a pool thread, next to
+  `syncLogoutHandOver`) when its text differs from what this build writes, so
+  an install from before a change to the unit picks it up. Like the log-out
+  unit, it keeps its binary while that binary is still an executable file.
 - A user unit only starts at boot when the user lingers. Enabling runs
   `loginctl --no-ask-password enable-linger <uid>` when lingering is off and
   leaves `forkmesh-headless.linger` beside the units; disabling the last
@@ -286,6 +295,61 @@ log-out hand-over at all.
   because a unit started at boot has no display for a tray.
 - Unit names carry `headless` so a project called `source` cannot collide with
   `forkmesh-source.service`.
+
+### Keeping the computer awake
+
+Reported on 2026-10-17: after a reboot, ForkMesh without a window stopped
+answering after 15 minutes. The machine had gone to sleep. Nobody was logged
+in, so the GDM login screen was the only session, and GNOME's default for it
+is to suspend after 900 s idle on AC power
+(`org.gnome.settings-daemon.plugins.power sleep-inactive-ac-timeout`). The
+user's own session had sleep set to `nothing`, but that setting is per user
+and the login screen runs as `Debian-gdm`. The journal showed it: boot at
+03:07:59, every ForkMesh line stops at 03:23:02, the next at 12:54 when
+someone woke the machine, and `/sys/power/suspend_stats/success` was 1.
+
+Two parts, code `desktop/src/KeepAwake.{h,cpp}` and
+`BackgroundMode.cpp`:
+
+- **A sleep inhibitor.** Every instance runs a `SleepInhibitor`
+  (`holdWhileRunning` in `main.cpp`). A windowless instance always wants it, a
+  window wants it while **Keep ForkMesh running without a window** is on. It
+  calls logind's `Inhibit("sleep", "ForkMesh", …, "block")` on the system bus
+  and keeps the returned descriptor (close-on-exec, so no child holds it after
+  ForkMesh exits); it checks again every 60 s, so it takes the lock once it
+  is allowed and drops it when the setting goes off. A block inhibitor held by
+  another user stops the login screen from suspending: logind lets a caller
+  past someone else's block only with `suspend-ignore-inhibit`, which needs an
+  administrator. The limit is polkit: `inhibit-block-sleep` is `yes` for a
+  process in an active session (or a user service of a user who has one) but
+  `auth_admin_keep` with no session at all, which is exactly the state right
+  after a reboot. So the inhibitor protects a log-out (it was taken while the
+  user was logged in and survives the log-out) and any later log-in, but not
+  the first boot on its own. Refusals are logged once per distinct message.
+  Only `sleep` is inhibited: not `idle`, so screen locking keeps working, and
+  not the lid switch, which polkit refuses without a session and would make
+  the whole request fail.
+- **Never let this computer go to sleep** (Settings → General → STARTUP).
+  Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
+  hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A
+  masked target cannot be started, so nothing can suspend the machine: not the
+  login screen, a user session, the power key or the lid. This is the part
+  that covers the first boot. The box shows checked when `systemctl
+  is-enabled` reports every target `masked`. Without pkexec, or when the
+  password prompt is dismissed, the status line gives the command to run with
+  `sudo`. While the box is off and ForkMesh is set to keep running or to start
+  at boot, the status line warns that the login screen can still put the
+  computer to sleep.
+
+By hand, the same thing:
+
+```sh
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+```
+
+Or, to keep suspend available from your own session and stop only the login
+screen's timer, set `sleep-inactive-ac-type='nothing'` (and
+`sleep-inactive-battery-type`) for the `gdm` dconf profile.
 
 ### The tray
 

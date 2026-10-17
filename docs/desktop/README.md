@@ -23,7 +23,7 @@ Topic pages in this folder:
 - [windows.md](windows.md): Windows-only behaviour, installer, registry settings, Actions lock
 - [git-locking.md](git-locking.md): per-repository queue for index-writing Git commands, `index.lock` recovery, merge timeout
 - [package-modules.md](package-modules.md): optional packages built as shared modules, loaded only when installed
-- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window
+- [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
@@ -44,7 +44,7 @@ Everything is in `desktop/`.
 | `src/MainWindowInternal.h`, `src/MainWindowInternal1-4.cpp` | Shared helper widgets and functions (namespace `forkmesh::ui`) |
 | `src/MainWindowNavigation.cpp`, `src/Rail*.h` | The left rail: sections, folders, groups, sorting, shortcuts |
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
-| `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/TrayMode.*` | Running without a window (`--headless`), start at boot, the tray ([lifecycle](lifecycle.md#running-without-a-window)) |
+| `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
