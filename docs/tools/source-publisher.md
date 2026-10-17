@@ -98,8 +98,21 @@ and wakes the other cores.
 
 - A push that reports no ref and fails with a transport error (RPC failed,
   hung up, HTTP 502/503/504, refused, timed out) is retried once after 10 s,
-  then logged `unreachable after a retry`. A push with rejected refs is never
-  retried.
+  then logged `unreachable after a retry`. A push with rejected refs is not
+  retried, except for two races on the cores, each retried once after 10 s:
+  `main` refused with `failed to update ref` or `cannot lock ref` (a core job
+  holds the ref lock), and a push that updates nothing because of an `unpacker
+  error` (`unpack_race`).
+- **Unpack race.** Each HTTP request of a push (the `info/refs` advertisement
+  and the `git-receive-pack` POST) is routed to a core on its own. Two quick
+  passes can leave a fresh object on one core only: on 2026-10-16 a pass
+  pushed branch tip `4c238df8`, then pushed `main` (which merges it) to a core
+  that did not have it yet. Git left the object out of the pack because the
+  advertisement listed it, and the core refused the pack with `remote: fatal:
+  did not receive expected object …` / `remote unpack failed: index-pack
+  abnormal exit`, which marks every ref `[remote rejected] (unpacker error)`.
+  The cores catch up within seconds (the next pass, 30 s later, went through),
+  so the publisher retries the push once.
 - **Outrun passes.** If the cores refuse a protected ref the checkout already
   contains and the cores hold what this pass pushed (`cores_hold`,
   `cores_ref_contained`), the pass was outrun by a newer one and counts as ok

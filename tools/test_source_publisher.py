@@ -443,6 +443,48 @@ def test_main_refused_while_a_core_job_holds_its_ref_lock_is_retried_once(box):
     assert result["ok"] and result["updated"] == ["refs/heads/main"]
 
 
+UNPACK_RACE = (
+    "To x\n!\trefs/heads/main:refs/heads/main\t[remote rejected] (unpacker error)\n"
+    "!\trefs/heads/old:refs/heads/old\t[rejected] (non-fast-forward)\nDone\n",
+    "remote: fatal: did not receive expected object 4c238df84bfecc1f927905eef138d86a48db52e9\n"
+    "error: remote unpack failed: index-pack abnormal exit\n")
+
+
+def test_a_push_unpacked_by_a_core_missing_an_advertised_object_is_retried_once(box):
+    write_key(box.identity_key)
+    calls, slept = [], []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 1, *UNPACK_RACE)
+        return subprocess.CompletedProcess(
+            command, 0, "To x\n \trefs/heads/main:refs/heads/main\t1..2\nDone\n", "")
+
+    result = sp.push_gateway(box.bare_mirror, {
+        "name": "cores", "url": "http://127.0.0.1:9/forkmesh/forkmesh.git",
+        "key": box.identity_key}, run=run, sleep=slept.append,
+        probe=lambda port: True)
+    assert len(calls) == 2 and slept == [sp.GATEWAY_RETRY_SECONDS]
+    assert result["ok"] and result["updated"] == ["refs/heads/main"]
+
+
+def test_an_unpacker_error_after_the_retry_still_fails(box):
+    write_key(box.identity_key)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, *UNPACK_RACE)
+
+    result = sp.push_gateway(box.bare_mirror, {
+        "name": "cores", "url": "http://127.0.0.1:9/forkmesh/forkmesh.git",
+        "key": box.identity_key}, run=run, sleep=lambda seconds: None,
+        probe=lambda port: True)
+    assert len(calls) == 2
+    assert not result["ok"] and result["diverged"] == ["refs/heads/main"]
+
+
 def test_a_gateway_still_down_after_the_retry_is_unreachable_not_failed(box):
     write_key(box.identity_key)
     calls = []
