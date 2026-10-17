@@ -834,7 +834,7 @@ struct HomeShell: View {
                     return
                 }
                 if let accountPackages = accountPackages {
-                    Task { await accountPackages.refresh() }
+                    Task { await accountPackages.refreshIfStale() }
                 }
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }

@@ -106,6 +106,15 @@ destination, in sections, with counts and activity:
   5 (default) or 6 per row; sorting (custom, name, most or least used, recent,
   needs attention, biggest count); categories can be hidden. Settings live in
   `ShellHomeSettingsSheet` and Settings > General > Home screen.
+- **Hide icons in the bottom bar** (on by default). Icons already in the
+  bottom bar, folder members included, leave Home so each destination shows
+  once; a Home search still finds them. iOS: `ShellHomeStyle.hideBarIcons`
+  (saves without the key get it on), applied in `ShellHomeStyle.arranged`
+  with the ids from `ShellBarPrefs.barIds`; the toggle sits above the Bottom
+  bar link in Home screen settings. Android: `DeviceSettings.homeHidesBarIcons`
+  (`home/hideBarIcons`), toggled in Settings > General > Home screen, drops
+  the bar's tabs (Agents, Inbox, Repos, Code, Chat) from Home's Go to section
+  (`HomeShell.homeEntries`). The operator asked for it on 2026-10-17.
 - Counts come from data already loaded or fetched when Home opens
   (`ShellNavigatorCounts`; `ShellCounts`); `nil` means unknown and shows no
   pill; zero shows no pill. `NavigatorCountPlan` (FMApi) decides the fetch:

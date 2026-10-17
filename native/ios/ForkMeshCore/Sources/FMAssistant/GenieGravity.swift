@@ -403,7 +403,7 @@ public enum GenieGravity {
             beforeX *= maxSpeed / launchSpeed
             beforeY *= maxSpeed / launchSpeed
         }
-        var vx: Double = beforeX
+        var vx: Double = beforeX + Double(g.width) * pull * dt
         var vy: Double = beforeY + Double(g.height) * pull * dt
         let slow: (Double) -> Double = { velocity in velocity / (1 + drag * abs(velocity) * dt) }
         vx = slow(vx)

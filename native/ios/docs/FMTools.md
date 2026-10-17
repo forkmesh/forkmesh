@@ -41,10 +41,14 @@ The Logs Home package opens TelemetryScreen's Logs tab; the Diagnostics package 
 - Presentation helpers: `TelemetryFormat`, `telemetryDownsample`, `TelemetryChartGeometry`,
   `MetricCardState`, `TelemetryScreenModel`, `PerformanceLogText`.
 - `PerformanceReport.text(...)`: the "Send diagnostics" text for an agent task, clamped to
-  1,000–4,000 Unicode scalars. Sections in priority order: metric summaries, slow events, stall
-  culprits, HTTP endpoints (digit runs folded to `#`), MetricKit reports, recent events, busy log
+  1,000–4,000 Unicode scalars. Sections in priority order: metric summaries, stalls by name (with
+  the clock time of the newest), slow operations by name, stall culprits, HTTP endpoints (digit runs folded to `#`), MetricKit reports, recent events, busy log
   lines, a per-minute series, the stall log tail and the last app log lines. Over budget, the
-  lowest-ranked sections are trimmed first and marked "... N lines trimmed to fit".
+  lowest-ranked sections are trimmed first and marked "... N lines trimmed to fit". Stalls have
+  their own section so slow network operations cannot push them out of the report.
+- `DiagnosticsBundle.lead`: the prompt sends the agent to `DiagnosticsBundle.playbook`
+  ([docs/native/PERFORMANCE_CHECKS.md](../../../docs/native/PERFORMANCE_CHECKS.md)) first and asks
+  it to add its check there, so each check starts from the earlier ones.
 
 ## Screens
 

@@ -133,11 +133,12 @@ public struct ShellHomeStyle: Equatable, Codable, Sendable {
     public var across: Int = 5
     public var showCounts: Bool = true
     public var highlightFrequent: Bool = true
+    public var hideBarIcons: Bool = true
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case sort, grouped, showTitles, groupOrder, hidden, icons, across, showCounts, highlightFrequent
+        case sort, grouped, showTitles, groupOrder, hidden, icons, across, showCounts, highlightFrequent, hideBarIcons
     }
 
     public init(from decoder: Decoder) throws {
@@ -153,6 +154,7 @@ public struct ShellHomeStyle: Equatable, Codable, Sendable {
         showCounts = (try? values.decodeIfPresent(Bool.self, forKey: .showCounts)) ?? base.showCounts
         highlightFrequent =
             (try? values.decodeIfPresent(Bool.self, forKey: .highlightFrequent)) ?? base.highlightFrequent
+        hideBarIcons = (try? values.decodeIfPresent(Bool.self, forKey: .hideBarIcons)) ?? base.hideBarIcons
     }
 
     public static func clampedAcross(_ value: Int) -> Int {
@@ -194,9 +196,10 @@ public struct ShellHomeStyle: Equatable, Codable, Sendable {
     }
 
     public func arranged(
-        _ sections: [ShellHomeSection], uses: [String: Int], recent: [String], searching: Bool = false
+        _ sections: [ShellHomeSection], uses: [String: Int], recent: [String], docked: Set<String> = [],
+        searching: Bool = false
     ) -> [ShellHomeArranged] {
-        let shown: [ShellHomeSection] = searching ? sections : sections.filter { shows($0.id) }
+        let shown: [ShellHomeSection] = searching ? sections : undocked(sections.filter { shows($0.id) }, docked)
         guard grouped else {
             let entries: [ShellHomeEntry] = ShellHomeStyle.ordered(shown, groupOrder, uses: uses).flatMap(\.entries)
             let ids: [String] = ShellHomeStyle.sorted(entries, sort, uses: uses, recent: recent).map(\.id)
@@ -206,6 +209,13 @@ public struct ShellHomeStyle: Equatable, Codable, Sendable {
             (section: ShellHomeSection) -> ShellHomeArranged? in
             let ids: [String] = ShellHomeStyle.sorted(section.entries, sort, uses: uses, recent: recent).map(\.id)
             return ids.isEmpty ? nil : ShellHomeArranged(id: section.id, title: section.title, ids: ids)
+        }
+    }
+
+    private func undocked(_ sections: [ShellHomeSection], _ docked: Set<String>) -> [ShellHomeSection] {
+        guard hideBarIcons, !docked.isEmpty else { return sections }
+        return sections.map {
+            ShellHomeSection(id: $0.id, title: $0.title, entries: $0.entries.filter { !docked.contains($0.id) })
         }
     }
 

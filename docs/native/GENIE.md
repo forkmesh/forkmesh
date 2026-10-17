@@ -83,8 +83,10 @@ prompt. Its centre stands 0.42 of its size off the surface
 (`GenieGravity.stand`) and it rotates so its feet hold the surface.
 
 - **Falling.** Let go or flicked, it flies (`GenieGravity.fly`) with the
-  finger's velocity: 2,200 pt/s² gravity with quadratic drag (terminal about
-  2,000 pt/s), throws capped at 4,200 pt/s. It bounces off the floor (30%
+  finger's velocity: 2,200 pt/s² gravity along the measured tilt, both
+  across and down the screen, with quadratic drag (terminal about
+  2,000 pt/s), throws capped at 4,200 pt/s (drag takes about 50 pt/s off
+  the first 120 Hz step of a capped throw). It bounces off the floor (30%
   kept) until slower than 240 pt/s; it grabs a wall or ceiling below
   1,500 pt/s and bounces (42%) above; 78% of tangential speed is kept per
   bounce. The flight is simulated at 120 Hz on release and stored as a track,

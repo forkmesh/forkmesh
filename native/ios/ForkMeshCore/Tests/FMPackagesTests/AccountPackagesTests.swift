@@ -1,4 +1,6 @@
 import FMBase
+import Foundation
+import Observation
 import XCTest
 
 @testable import FMPackages
@@ -133,6 +135,70 @@ final class AccountPackagesTests: XCTestCase {
         XCTAssertEqual(again.monitors, store.monitors)
         XCTAssertTrue(again.onlyProblems)
         XCTAssertEqual(again.monitorRules, store.monitorRules)
+    }
+
+    @MainActor func testAnUnchangedAccountRedrawsNothingAndAQuickReturnReadsNothing() async {
+        let transport = FakePackagesTransport()
+        transport.on("GET", "/api/market/packages", Self.catalog)
+        transport.on("GET", "/api/plugins/@account", Self.accountState)
+        transport.on("GET", "/api/status-monitors", Self.monitorList)
+        let prefs = InMemoryKeyValueStore()
+        let store = AccountPackagesStore(client: PackagesClient(transport: transport), prefs: prefs, signedIn: { true })
+        var changes = 0
+        store.onChange = { changes += 1 }
+        await store.refresh()
+        let settled = changes
+        XCTAssertGreaterThan(settled, 0)
+        let redrawn = PackagesObservedFlag()
+        withObservationTracking {
+            _ = store.state
+            _ = store.monitors
+            _ = store.monitorLimit
+        } onChange: {
+            redrawn.raise()
+        }
+        await store.refresh()
+        XCTAssertFalse(redrawn.raised)
+        XCTAssertEqual(changes, settled)
+
+        let reads = { transport.paths.filter { $0 == "GET /api/plugins/@account" }.count }
+        let before = reads()
+        await store.refreshIfStale()
+        XCTAssertEqual(reads(), before)
+        await store.refreshIfStale(now: Date().addingTimeInterval(AccountPackagesStore.resumeFreshFor + 1))
+        XCTAssertEqual(reads(), before + 1)
+
+        var moved = Self.accountState
+        moved["packages"] = [Self.entry("status-page", true, ["onlyProblems": false, "refreshMinutes": "5"])]
+        transport.routes["GET /api/plugins/@account"] = [PackagesReply(status: 200, json: moved)]
+        await store.refresh()
+        XCTAssertTrue(redrawn.raised)
+        XCTAssertEqual(changes, settled + 1)
+        XCTAssertFalse(store.onlyProblems)
+        let reopened = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        XCTAssertEqual(reopened.state, store.state)
+    }
+
+    @MainActor func testASavedSettingIsKeptAfterTheOptimisticWrite() async {
+        let transport = FakePackagesTransport()
+        transport.on("GET", "/api/market/packages", Self.catalog)
+        transport.on("GET", "/api/plugins/@account", Self.accountState)
+        transport.on("GET", "/api/status-monitors", Self.monitorList)
+        let prefs = InMemoryKeyValueStore()
+        let store = AccountPackagesStore(client: PackagesClient(transport: transport), prefs: prefs, signedIn: { true })
+        await store.refresh()
+        var saved = Self.accountState
+        saved["packages"] = [
+            Self.entry("status-page", true, ["onlyProblems": false, "refreshMinutes": "5"]), Self.entry("status-check-api", true),
+            Self.entry("status-check-website", false), Self.entry("status-check-cores", true), Self.entry("status-check-extra", false),
+        ]
+        transport.routes["POST /api/plugins/@account/status-page/settings"] = [PackagesReply(status: 200, json: saved)]
+        let ok = await store.setSetting("status-page", key: "onlyProblems", value: false)
+        XCTAssertTrue(ok)
+        let reopened = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        XCTAssertFalse(reopened.onlyProblems)
     }
 
     @MainActor func testSignedOutOrAFailedRequestKeepsTheLastState() async {
@@ -425,4 +491,13 @@ final class AccountPackagesTests: XCTestCase {
         XCTAssertFalse(store.isUpdated(hubItem: "Agents"))
         XCTAssertTrue(store.isUpdated(hubItem: "sugarBreak"))
     }
+}
+
+private final class PackagesObservedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var raised: Bool { lock.withLock { value } }
+
+    func raise() { lock.withLock { value = true } }
 }
