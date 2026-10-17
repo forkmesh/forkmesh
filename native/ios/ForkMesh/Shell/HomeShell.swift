@@ -72,6 +72,7 @@ struct HomeShell: View {
     @State var stackResets: [AppTab: Int] = [:]
     @State var mountedTabs: Set<AppTab> = []
     @State var genie: GenieHub = GenieHub.shared
+    @State var voice: ShellVoiceLaunch = ShellVoiceLaunch.shared
     @State var genieLater: [PaletteCommand] = []
     @State var genieDevice: AgentDeviceRun?
     @State var live: ThrottledSnapshot<ShellLiveCounts>?
@@ -142,12 +143,17 @@ struct HomeShell: View {
             onSignIn: { AccountFeature.openSignIn() },
             onNewAgent: newAgentAction,
             onPalette: { openPalette() },
+            onVoice: voiceAction,
             showsSearch: usesSplit,
             showsSignIn: PackageGateSync.isInstalled(PhonePackages.signIn))
     }
 
     private var newAgentAction: (() -> Void)? {
         agentsOn ? { () -> Void in openComposer(nil) } : nil
+    }
+
+    private var voiceAction: ((CGRect) -> Void)? {
+        agentsOn ? { (origin: CGRect) -> Void in openVoice(from: origin) } : nil
     }
 
     private var badges: [AppTab: Int] {
@@ -468,6 +474,7 @@ struct HomeShell: View {
                         onHub: { openHub() },
                         onNewAgent: newAgentAction,
                         onPalette: { openPalette() },
+                        onVoice: voiceAction,
                         name: barState.name, avatarPng: auth?.session?.avatarPng ?? ""))
         case .inbox:
             RouteDestinationView(route: .inbox(.all))
@@ -692,11 +699,15 @@ struct HomeShell: View {
                     onSettings: { openFromHub(.settings(section: nil)) },
                     onEscape: { escape() })
             }
+            .overlay {
+                ShellVoiceLaunchOverlay(
+                    voice: voice, onType: { voiceToComposer(voice.heard) }, onCommands: { voiceToPalette() })
+            }
             .overlay { ShellLaunchSparkles(flight: ShellLaunchFlight.shared) }
-            .overlay { AquariumLayer(hidden: composer.isOpen || keyboardUp, floor: genieFloor) }
+            .overlay { AquariumLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor) }
             .overlay {
                 if !genie.spiderHidden {
-                    GenieSpiderLayer(hidden: composer.isOpen || keyboardUp, floor: genieFloor)
+                    GenieSpiderLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor)
                 }
             }
             .overlay { hubDropdown }
@@ -819,6 +830,7 @@ struct HomeShell: View {
             .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
                 if phase != .active {
                     savedNavigation = router.archiveData()
+                    voice.cancel()
                     return
                 }
                 if let accountPackages = accountPackages {
@@ -1326,7 +1338,8 @@ struct HomeShell: View {
 
     private func attachGenie() {
         let composer: ShellComposer = self.composer
-        genie.blocked = { composer.isOpen }
+        let voice: ShellVoiceLaunch = self.voice
+        genie.blocked = { composer.isOpen || voice.isOpen }
         genie.attach {
             let bridge: GenieShellBridge = GenieShellBridge(
                 context: { paletteContext },
@@ -1406,6 +1419,69 @@ struct HomeShell: View {
             return message
         case .ignored:
             return "There was nothing to send."
+        }
+    }
+
+    private func openVoice(from origin: CGRect) {
+        guard !composer.isOpen, !voice.isOpen else { return }
+        ShellKeyboard.dismiss()
+        showHub = false
+        voice.open(from: origin) { (text: String) in voiceSend(text) }
+    }
+
+    private func voiceToComposer(_ heard: String) {
+        voice.dismiss()
+        if !heard.isEmpty {
+            model.prompt = model.prompt.isEmpty ? heard : model.prompt + " " + heard
+        }
+        openComposer(nil)
+    }
+
+    private func voiceToPalette() {
+        voice.dismiss()
+        openPalette()
+    }
+
+    private func voiceSend(_ text: String) {
+        let flight: ShellLaunchFlight = ShellLaunchFlight.shared
+        let source: CGRect = flight.source
+        let card: CGRect = flight.card
+        if !usesSplit {
+            flight.source = voice.orb
+            flight.card = voice.orb
+            flight.charge(reduceMotion: reduceMotion)
+        }
+        Task { @MainActor in
+            let outcome: QuickLaunchOutcome = await composer.launcher.send(prompt: text, images: [])
+            switch outcome {
+            case .queued(let repo, let session, _):
+                voice.sent()
+                agentStarted()
+                if let session = session {
+                    router.setPath([LaunchedSessions.remember(repo, session)], for: .agents)
+                }
+            case .queuedWithoutSession(let message), .desktop(_, _, let message):
+                voice.sent()
+                agentStarted(message)
+            case .device(let record, let prompt, let images, let credentials):
+                voice.sent()
+                Services.get(AgentPromptHandoff.self)?.offer(images: images, credentials: credentials)
+                deviceRun = AgentDeviceRun(record: record, prompt: prompt)
+            case .needsFix(let fix, let message):
+                FmHaptics.error()
+                voiceToComposer(text)
+                composer.fix = fix
+                composer.message = message
+            case .failed(let message):
+                FmHaptics.error()
+                voiceToComposer(text)
+                composer.message = message
+            case .ignored:
+                voice.dismiss()
+            }
+            flight.discharge()
+            flight.source = source
+            flight.card = card
         }
     }
 
