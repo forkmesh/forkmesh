@@ -22,7 +22,7 @@ class FakeRuntime:
             (ROOT / "migrations" / "0121_note_views.sql").read_text())
         self.db.execute("CREATE TABLE schema_meta(k TEXT PRIMARY KEY,v TEXT)")
         self.db.executescript(
-            (ROOT / "migrations" / "0270_note_events.sql").read_text())
+            (ROOT / "migrations" / "0271_note_events.sql").read_text())
         self.db.execute(
             "CREATE TABLE org_members(org_bi TEXT,member_bi TEXT,name TEXT)")
         self.users = {"alice": "user-alice", "bob": "user-bob"}

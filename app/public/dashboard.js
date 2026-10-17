@@ -1793,9 +1793,21 @@
   // route prefix (e.g. /dashboard/owner/repo/issues -> ["owner","repo","issues"])
   // so repo-route parsing sees the same clean owner/repo/tab shape regardless
   // of whether the browser landed here directly or via the 404.html bounce.
+  function repoShortRoute() {
+    const name = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
+    const owner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+    return name && owner ? { name, owner } : null;
+  }
+
   function repoRouteParts() {
     let parts = location.pathname.split("/").filter(Boolean);
     if (parts[0] === "dashboard") parts = parts.slice(1);
+    const short = repoShortRoute();
+    if (short && parts.length && decodeURIComponent(parts[0]) === short.name) {
+      const rest = parts.slice(1);
+      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
+      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+    }
     return parts;
   }
 
@@ -25223,6 +25235,19 @@
     probe.src = url;
   }
 
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+
+  function applyRepoFeatures(features) {
+    if (!features || typeof features !== "object") return;
+    REPO_FEATURE_TABS.forEach((key) => {
+      if (!(key in features)) return;
+      const on = Boolean(features[key]);
+      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      const box = $(`[data-repo-feature="${key}"]`);
+      if (box) box.checked = on;
+    });
+  }
+
   async function loadRepoFediverse(repo) {
     // Public branding + follower count from the relay (GET /about). Fills the
     // Watch button count, the popover, and the social badge header.
@@ -25272,6 +25297,7 @@
       // of silently showing zeros.
       $("[data-repo-watch-disabled]")?.classList.toggle(
         "hidden", body.fediverse?.enabled !== false);
+      applyRepoFeatures(body.features);
       // Seed the gear form's federation switches with the stored settings so
       // an untouched save round-trips them unchanged.
       const apSettings = body.fediverse?.settings;
@@ -34959,6 +34985,12 @@
           </div>
           <form data-repo-settings-form class="grid gap-4 p-4">
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
+              <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">Features</legend>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+            </fieldset>
+            <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
               <label class="inline-flex items-start gap-2"><input data-repo-ap-federate type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Federate this repository (fediverse actor and handle)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-ap-broadcast type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Include meaningful public updates in one automated digest at most every 24 hours</label>
@@ -38409,13 +38441,17 @@
       if (submit) submit.disabled = true;
       setRepoSettingsStatus("Saving…");
       try {
-        await saveRepoSettingsFromWeb(state.selectedRepo, {
+        const saved = await saveRepoSettingsFromWeb(state.selectedRepo, {
           fediverse: {
             federate: Boolean(settingsForm.querySelector("[data-repo-ap-federate]")?.checked),
             broadcastEvents: Boolean(settingsForm.querySelector("[data-repo-ap-broadcast]")?.checked),
             acceptComments: Boolean(settingsForm.querySelector("[data-repo-ap-comments]")?.checked),
           },
+          features: Object.fromEntries(REPO_FEATURE_TABS.map((key) => [
+            key, Boolean(settingsForm.querySelector(`[data-repo-feature="${key}"]`)?.checked),
+          ])),
         });
+        applyRepoFeatures(saved?.features);
         setRepoSettingsStatus("Settings saved.", "good");
         loadRepoFediverse(state.selectedRepo);
         loadRepoDigestPreview(state.selectedRepo);

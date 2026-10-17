@@ -6,7 +6,7 @@ column on the right, and the counts on every row of the note list on the left.
 
 ## What is recorded
 
-`note_events` (migration `0270_note_events.sql`, `app/src/schema.py`) holds one
+`note_events` (migration `0271_note_events.sql`, `app/src/schema.py`) holds one
 row per event: the note, the kind, the actor's account index (`actor_bi`, never
 a name), when it happened and a small JSON `detail`. Rows go when the note is
 deleted (`ON DELETE CASCADE`), and each note keeps its latest 500

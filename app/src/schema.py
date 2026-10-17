@@ -1314,6 +1314,9 @@ SCHEMA_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS repo_alert_settings (
         repo_bi TEXT PRIMARY KEY, data TEXT NOT NULL,
         updated_at INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS repo_feature_settings (
+        repo_bi TEXT PRIMARY KEY, data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL)""",
     # Encrypted, bounded automatic-update queues (migration 0046). Human
     # repository/org names and event metadata live only inside `data`;
     # scope_bi is a blind index. next_ts/last_published_at are operational

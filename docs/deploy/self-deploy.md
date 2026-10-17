@@ -41,3 +41,29 @@ Differences from `next_fleet.py roll`: no DNS drain (the DNS token stays on
 the operator box), no config re-render, and runners are not rolled (the next
 operator auto-deploy rolls them). The rolled revision is recorded in
 `/var/lib/fmnext-self-deploy/daemon-rev`.
+
+## Updates from the admin console
+
+With `[self_deploy] admin_updates = true` (and `enabled = true`) the agent
+also runs on cores without an enrolled phone key, the app gets
+`FORKMESH_VAR_CORE_ADMIN_UPDATES=1`, and an admin's **Update ForkMesh**
+button ([../app/server-update.md](../app/server-update.md)) inserts a
+`deploy_approvals` row with `kind = 'admin'` and no commits. Such a row is
+not signed; instead:
+
+- a core with `admin_updates` off marks it `skipped`;
+- it expires after two hours like an approval;
+- the first core to see it pins `base_before`, `head` and `base_after` to its
+  own `main` head with a conditional update (`WHERE base_after=''`), and every
+  core then uses the pinned commit;
+- the pinned commit must reach the core within 15 minutes and be on `main`.
+
+From there it follows the same order, build, migrate-once, activate and
+daemon roll as a phone-approved merge, and the outcome is announced to the
+admins. Only commits already on `main` can be deployed this way, so an admin
+account can bring the cores up to `main` but cannot ship anything that was
+not merged. The setting is off in `deploy/fleet.toml`.
+
+Each agent also writes the `core_upstream` row of `instance_settings`
+(commit, date, subject, version of `main`) whenever `main` moves, which the
+admin page shows as "Latest available".

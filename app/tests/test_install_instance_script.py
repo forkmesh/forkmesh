@@ -470,3 +470,52 @@ def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
             input=stdin, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["theme"] == expected
+
+
+def test_the_admin_console_can_ask_for_an_update():
+    updater = TEXT.split("write_updater() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'install -m 0700 "$SRC/tools/instance-update.sh"' in updater
+    assert 'mv -f "$UPDATE_LIB/instance-update.sh.new" "$UPDATE_LIB/instance-update.sh"' in updater
+    assert 'install -d -m 2750 -o root -g "$APP_USER" "$UPDATE_STATE"' in updater
+    assert 'install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$UPDATE_REQUEST_DIR"' in updater
+    assert "PathExists=$UPDATE_REQUEST_DIR/request" in updater
+    assert "ExecStart=/bin/bash $UPDATE_LIB/instance-update.sh" in updater
+    start = TEXT.split("start_app() {", 1)[1].split("\n}\n", 1)[0]
+    assert start.index("write_updater") < start.index("write_app_unit")
+    settings_writer = TEXT.split("write_settings() {", 1)[1].split("\n}\n", 1)[0]
+    for line in ('INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request',
+                 'INSTANCE_UPDATE_STATUS=$UPDATE_STATE/status.json',
+                 'BUILD_INFO_FILE=$BUILD_INFO', 'APP_VERSION=$(release_version)'):
+        assert 'echo "%s"' % line in settings_writer
+    assert 'UPDATE_REQUEST_DIR="$VAR/update"' in TEXT
+    assert 'UPDATE_STATE="/var/lib/forkmesh-instance-update"' in TEXT
+    cleanup = TEXT.split("write_first_login_cleanup() {", 1)[1].split("\n}\n", 1)[0]
+    assert "/etc/systemd/system/forkmesh-instance-update.path" in cleanup
+    assert "fm_safe_rm_tree /usr/local/lib /usr/local/lib/forkmesh-instance-update" in cleanup
+
+
+def test_the_build_records_its_version_and_commit(tmp_path):
+    src = tmp_path / "src"
+    (src / "desktop").mkdir(parents=True)
+    (src / "desktop" / "CMakeLists.txt").write_text(
+        "project(ForkMesh VERSION 1.4.2 LANGUAGES CXX)\n")
+    env = sandbox_env(tmp_path)
+    env.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_AUTHOR_NAME="t",
+               GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@example.com")
+    for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", 'Ship "notes"']):
+        subprocess.run(["git", "-C", str(src), *args], env=env, check=True)
+    info = tmp_path / "build-info.json"
+    body = ('SRC=%s\nBUILD_INFO=%s\nCFG_sourceUrl=https://example.com/f\n'
+            'CFG_sourceRef=main\nwrite_build_info\n' % (shlex.quote(str(src)),
+                                                       shlex.quote(str(info))))
+    script = tmp_path / "harness.sh"
+    script.write_text("set -euo pipefail\n" + function("release_version")
+                      + function("write_build_info") + body)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True,
+                            text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    value = json.loads(info.read_text())
+    assert value["version"] == "1.4.2" and value["subject"] == 'Ship "notes"'
+    assert len(value["commit"]) == 40 and value["ref"] == "main"
+    assert oct(info.stat().st_mode & 0o777) == "0o644"

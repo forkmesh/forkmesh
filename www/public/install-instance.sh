@@ -37,6 +37,12 @@ SETUP_UNIT="forkmesh-instance-setup"
 SETUP_RUN_DIR="/run/forkmesh-instance-setup"
 SETUP_LOG="/var/log/forkmesh-instance-setup.log"
 BUILD_STAMP="$OPT/build.stamp"
+BUILD_INFO="$OPT/build-info.json"
+UPDATE_LIB="/usr/local/lib/forkmesh-instance-update"
+UPDATE_STATE="/var/lib/forkmesh-instance-update"
+UPDATE_REQUEST_DIR="$VAR/update"
+UPDATE_UNIT="/etc/systemd/system/forkmesh-instance-update.service"
+UPDATE_PATH_UNIT="/etc/systemd/system/forkmesh-instance-update.path"
 PACKAGES=(ca-certificates curl git openssl python3 python3-venv python3-pip nodejs npm caddy sqlite3 iproute2 age)
 CERT_WAIT_SECONDS="${FORKMESH_CERT_WAIT_SECONDS:-300}"
 PROXY_WAIT_SECONDS="${FORKMESH_PROXY_WAIT_SECONDS:-60}"
@@ -578,12 +584,30 @@ build_stamp() {
     "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")"
 }
 
+release_version() {
+  sed -n 's/^project(ForkMesh VERSION \([0-9][0-9.]*\).*/\1/p' "$SRC/desktop/CMakeLists.txt" 2>/dev/null | head -n1 || true
+}
+
+write_build_info() {
+  git -C "$SRC" log -1 --format='%H%n%ct%n%s' | python3 -c '
+import json, sys
+commit, stamp, subject = (sys.stdin.read().split("\n", 2) + ["", "", ""])[:3]
+print(json.dumps({"version": sys.argv[1], "commit": commit.strip(),
+                  "commitTime": int(stamp.strip() or 0), "subject": subject.strip()[:500],
+                  "source": sys.argv[2], "ref": sys.argv[3], "builtAt": int(sys.argv[4])},
+                 sort_keys=True))
+' "$(release_version)" "$CFG_sourceUrl" "$CFG_sourceRef" "$(date +%s)" > "$BUILD_INFO.new"
+  chmod 0644 "$BUILD_INFO.new"
+  mv -f "$BUILD_INFO.new" "$BUILD_INFO"
+}
+
 build_app() {
   begin build "Building the app (this is the longest step)"
   save_logo
   if [ -x "$VENV/bin/python" ] && [ -d "$SRC/app/dist" ] && [ -s "$BUILD_STAMP" ] &&
       [ "$(cat "$BUILD_STAMP")" = "$(build_stamp)" ]; then
     say "The app is already built from $(git -C "$SRC" rev-parse --short HEAD) for $CFG_projectName."
+    [ -s "$BUILD_INFO" ] || write_build_info
     return 0
   fi
   rm -f "$BUILD_STAMP"
@@ -604,6 +628,7 @@ build_app() {
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
   "$VENV/bin/python" "$SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$SRC" "$VENV"
+  write_build_info
   build_stamp > "$BUILD_STAMP"
 }
 
@@ -659,6 +684,11 @@ print(encode(seed), encode(public))
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
+    echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
+    echo "INSTANCE_UPDATE_STATUS=$UPDATE_STATE/status.json"
+    echo "BUILD_INFO_FILE=$BUILD_INFO"
+    echo "BUILD_REV=$(git -C "$SRC" rev-parse HEAD)"
+    echo "APP_VERSION=$(release_version)"
     if [ -n "$(logo_file)" ]; then echo "INSTANCE_LOGO=/instance-logo.$(logo_file | sed 's/.*\.//')"; fi
     echo "PUBLIC_BASE_URL=$ORIGIN"
     echo "API_ORIGIN=$ORIGIN"
@@ -771,10 +801,43 @@ WantedBy=multi-user.target
 EOF
 }
 
+write_updater() {
+  [ -f "$SRC/tools/instance-update.sh" ] || return 0
+  install -d -m 0755 "$UPDATE_LIB"
+  install -m 0700 "$SRC/tools/instance-update.sh" "$UPDATE_LIB/instance-update.sh.new"
+  mv -f "$UPDATE_LIB/instance-update.sh.new" "$UPDATE_LIB/instance-update.sh"
+  install -d -m 2750 -o root -g "$APP_USER" "$UPDATE_STATE"
+  install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$UPDATE_REQUEST_DIR"
+  cat > "$UPDATE_UNIT" <<EOF
+[Unit]
+Description=Update ForkMesh when an admin asks from the admin console
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $UPDATE_LIB/instance-update.sh
+TimeoutStartSec=90min
+EOF
+  cat > "$UPDATE_PATH_UNIT" <<EOF
+[Unit]
+Description=Watch for update requests from the ForkMesh admin console
+
+[Path]
+PathExists=$UPDATE_REQUEST_DIR/request
+Unit=forkmesh-instance-update.service
+
+[Install]
+WantedBy=paths.target
+EOF
+  systemctl daemon-reload
+  systemctl enable forkmesh-instance-update.path >/dev/null 2>&1 || true
+  systemctl start forkmesh-instance-update.path >/dev/null 2>&1 || true
+}
+
 start_app() {
   begin services "Starting the services"
   local unit_before
   unit_before="$(files_digest "$APP_UNIT")"
+  write_updater
   write_app_unit
   if [ "$APP_CHANGED" = "0" ] && [ "$(files_digest "$APP_UNIT")" = "$unit_before" ] &&
       systemctl is-active --quiet forkmesh-instance.service &&
@@ -1287,7 +1350,7 @@ if [ -e "$MARKER" ]; then
   systemctl restart forkmesh-instance.service
   exit 0
 fi
-systemctl disable --now forkmesh-instance.service forkmesh-mirror-node.service >/dev/null 2>&1 || true
+systemctl disable --now forkmesh-instance.service forkmesh-mirror-node.service forkmesh-instance-update.path >/dev/null 2>&1 || true
 if [ -e "$CLEANUP_DIR/caddyfile.before" ]; then
   install -m 0644 "$CLEANUP_DIR/caddyfile.before" /etc/caddy/Caddyfile
 elif [ -e "$CLEANUP_DIR/caddyfile.absent" ]; then
@@ -1295,11 +1358,14 @@ elif [ -e "$CLEANUP_DIR/caddyfile.absent" ]; then
 fi
 fm_safe_rm_tree /opt /opt/forkmesh-instance
 fm_safe_rm_tree /etc /etc/forkmesh-instance /etc/forkmesh
-fm_safe_rm_tree /var/lib /var/lib/forkmesh-instance /var/lib/forkmesh
+fm_safe_rm_tree /var/lib /var/lib/forkmesh-instance /var/lib/forkmesh /var/lib/forkmesh-instance-update
 fm_safe_rm_tree /usr/local/share/forkmesh /usr/local/share/forkmesh/tools
+fm_safe_rm_tree /usr/local/lib /usr/local/lib/forkmesh-instance-update
 rm -f /usr/local/bin/forkmesh-mirror-node \
   /etc/systemd/system/forkmesh-instance.service \
   /etc/systemd/system/forkmesh-mirror-node.service \
+  /etc/systemd/system/forkmesh-instance-update.service \
+  /etc/systemd/system/forkmesh-instance-update.path \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.service \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.timer
 if [ -e "$CLEANUP_DIR/ufw-80" ]; then ufw delete allow 80/tcp >/dev/null 2>&1 || true; fi

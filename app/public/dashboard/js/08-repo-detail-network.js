@@ -123,6 +123,12 @@
           </div>
           <form data-repo-settings-form class="grid gap-4 p-4">
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
+              <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">Features</legend>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+            </fieldset>
+            <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
               <label class="inline-flex items-start gap-2"><input data-repo-ap-federate type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Federate this repository (fediverse actor and handle)</label>
               <label class="inline-flex items-start gap-2"><input data-repo-ap-broadcast type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Include meaningful public updates in one automated digest at most every 24 hours</label>
@@ -3573,13 +3579,17 @@
       if (submit) submit.disabled = true;
       setRepoSettingsStatus("Saving…");
       try {
-        await saveRepoSettingsFromWeb(state.selectedRepo, {
+        const saved = await saveRepoSettingsFromWeb(state.selectedRepo, {
           fediverse: {
             federate: Boolean(settingsForm.querySelector("[data-repo-ap-federate]")?.checked),
             broadcastEvents: Boolean(settingsForm.querySelector("[data-repo-ap-broadcast]")?.checked),
             acceptComments: Boolean(settingsForm.querySelector("[data-repo-ap-comments]")?.checked),
           },
+          features: Object.fromEntries(REPO_FEATURE_TABS.map((key) => [
+            key, Boolean(settingsForm.querySelector(`[data-repo-feature="${key}"]`)?.checked),
+          ])),
         });
+        applyRepoFeatures(saved?.features);
         setRepoSettingsStatus("Settings saved.", "good");
         loadRepoFediverse(state.selectedRepo);
         loadRepoDigestPreview(state.selectedRepo);

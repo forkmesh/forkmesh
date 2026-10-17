@@ -13,6 +13,6 @@ CREATE INDEX IF NOT EXISTS idx_note_events_note
     ON note_events(note_id, last_at DESC);
 
 INSERT INTO schema_meta (k, v) VALUES (
-  'schema_fingerprint:1376a9e04476130360fe7ebf9fcb641b8288b2e5010ee038a255437fff2df918',
+  'schema_fingerprint:10fa5453dc8a96ce2e6ddaaf856cad1eb790120ee6e9218b92c067248b100bf0',
   'applied'
 ) ON CONFLICT(k) DO UPDATE SET v='applied';
