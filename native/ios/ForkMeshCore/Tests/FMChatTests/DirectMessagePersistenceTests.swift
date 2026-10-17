@@ -71,8 +71,14 @@ extension DirectMessageReceiptsTests {
         let delivered = await waitUntil { room.service.receipt(first.id) == .delivered }
         XCTAssertTrue(delivered)
 
-        let laptop = try base.peerSeal("laptop")
+        let laptop = try base.peerSeal("laptop", node: "pat-laptop")
         room.connection.receive(text: JSON.encode(try room.crypto.encrypt(laptop.keyFrame())))
+        let pending = await waitUntil { room.service.pendingDevices(room.conversation).map(\.kid) == [laptop.keyId] }
+        XCTAssertTrue(pending, "pat's new laptop waits for approval")
+        XCTAssertTrue(room.connection.sentJSON.filter { $0["resend"] == .bool(true) }.isEmpty)
+        await room.service.approveDevice(room.conversation, kid: laptop.keyId)
+        let taught = await base.teach(laptop, from: room.connection, room.crypto)
+        XCTAssertTrue(taught)
         let resent: () -> [String] = {
             room.connection.sentJSON.filter { $0["resend"] == .bool(true) }.compactMap { envelope in
                 guard let framed = room.crypto.decrypt(envelope), let plain = laptop.unseal(framed) else { return nil }

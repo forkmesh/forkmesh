@@ -2,12 +2,16 @@ import FMPackages
 import SwiftUI
 import UIKit
 
+final class DjTouchTrack {
+    var lastAngle: Double?
+    var pressed = false
+}
+
 struct DjPlatter: View {
     let model: DjStudioModel
     let deck: DjDeck
     let d: CGFloat
-    @State private var lastAngle: Double?
-    @State private var pressed = false
+    @State private var track = DjTouchTrack()
     @GestureState private var touching = false
 
     var body: some View {
@@ -18,17 +22,17 @@ struct DjPlatter: View {
                 .gesture(scratch)
                 .onChange(of: touching) { _, now in
                     guard !now else { return }
-                    if lastAngle != nil {
-                        lastAngle = nil
+                    if track.lastAngle != nil {
+                        track.lastAngle = nil
                         model.scratchEnded(deck.side)
-                    } else if pressed {
+                    } else if track.pressed {
                         model.touchEnded(deck.side)
                     }
-                    pressed = false
+                    track.pressed = false
                 }
                 .accessibilityElement()
                 .accessibilityLabel("Deck \(deck.side.label) turntable")
-                .accessibilityValue(deck.loaded ? "\(DjStudio.clock(deck.time)) of \(DjStudio.clock(deck.duration))" : "Empty")
+                .accessibilityValue(deck.loaded ? (deck.playing ? "Playing" : "Paused") : "Empty")
                 .accessibilityHint(deck.loaded ? "Touch the record to slow it briefly; drag around it to scratch" : "Double-tap to load a video")
                 .accessibilityAction { if !deck.loaded { model.openLoad(deck.side) } }
             DjTonearm(deck: deck, d: d)
@@ -45,38 +49,42 @@ struct DjPlatter: View {
             .position(x: d * 0.13, y: d * 0.13)
             DjCueLight(model: model, deck: deck, d: d)
                 .position(x: d * 0.12, y: d * 0.88)
+            DjDropRing(model: model, side: deck.side, d: d)
         }
         .frame(width: d, height: d)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(DjStudioView.space)) }) { frame in
+            model.deckFrames[deck.side] = frame
+        }
     }
 
     private var scratch: some Gesture {
         DragGesture(minimumDistance: 0)
             .updating($touching) { _, state, _ in state = true }
             .onChanged { value in
-                if !pressed {
-                    pressed = true
+                if !track.pressed {
+                    track.pressed = true
                     model.touchBegan(deck.side)
                 }
                 let dx = Double(value.location.x - d / 2)
                 let dy = Double(value.location.y - d / 2)
                 let angle = atan2(dy, dx)
-                guard let last = lastAngle else {
+                guard let last = track.lastAngle else {
                     let threshold = max(DjStudio.scratchThreshold, Double(d) * 0.05)
                     guard deck.loaded, DjStudio.isScratch(dx: Double(value.translation.width), dy: Double(value.translation.height), threshold: threshold) else { return }
-                    lastAngle = angle
+                    track.lastAngle = angle
                     model.scratchBegan(deck.side)
                     return
                 }
-                lastAngle = angle
+                track.lastAngle = angle
                 guard (dx * dx + dy * dy).squareRoot() > Double(d) * 0.07 else { return }
                 var change = angle - last
                 if change > Double.pi { change -= 2 * Double.pi } else if change < -Double.pi { change += 2 * Double.pi }
                 model.scratchMoved(deck.side, radians: change)
             }
             .onEnded { value in
-                let scratched = lastAngle != nil
-                lastAngle = nil
-                pressed = false
+                let scratched = track.lastAngle != nil
+                track.lastAngle = nil
+                track.pressed = false
                 if scratched {
                     model.scratchEnded(deck.side)
                 } else if deck.loaded {
@@ -105,7 +113,6 @@ struct DjRecord: View {
                             .resizable()
                             .interpolation(.medium)
                             .frame(width: r, height: r)
-                            .clipShape(Circle())
                             .modifier(DjGainOpacity(model: model, side: deck.side))
                             .rotationEffect(angle)
                     }
@@ -115,6 +122,25 @@ struct DjRecord: View {
             }
         }
         .frame(width: d, height: d)
+    }
+}
+
+struct DjDropRing: View {
+    let model: DjStudioModel
+    let side: DjDeckSide
+    let d: CGFloat
+
+    var body: some View {
+        let dragging = model.draggedId != nil
+        let target = model.dropSide == side
+        Circle()
+            .strokeBorder(DjTheme.active.opacity(target ? 1 : dragging ? 0.35 : 0), style: StrokeStyle(lineWidth: target ? 4 : 2, dash: target ? [] : [6, 5]))
+            .background(Circle().fill(DjTheme.active.opacity(target ? 0.18 : 0)))
+            .frame(width: d * 0.92, height: d * 0.92)
+            .animation(.easeOut(duration: 0.15), value: target)
+            .animation(.easeOut(duration: 0.15), value: dragging)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

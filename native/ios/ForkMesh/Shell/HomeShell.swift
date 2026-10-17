@@ -1606,7 +1606,7 @@ struct HomeShell: View {
         }
         let route: ShellPushRoute? = await model.routePush(
             isChat: open.isChat, isDirectMessage: open.isDirectMessage, alertId: open.alertId, href: open.href,
-            agent: open.agent, ping: open.ping, conversation: open.conversation)
+            agent: open.agent, ping: open.ping, conversation: open.conversation, channelId: open.channelId)
         switch route {
         case .some(.chat):
             router.popToRoot(.chat)

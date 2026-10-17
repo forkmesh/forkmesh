@@ -387,11 +387,12 @@ public final class ChatExtras {
         if room == nil && !channel.hasPrefix("#") { return }
         if replyRoot[id] != nil { return }
         let millis = frame["ts"]?.doubleValue.map { Int64($0) } ?? clock.nowMillis
+        let shown = ChatFrameText.shownSender(frame).isEmpty ? senderId : ChatFrameText.shownSender(frame)
         let message = ChatMessage(
-            id: id, conversation: channel, senderId: senderId,
+            id: id, conversation: channel, senderId: shown,
             senderName: ChatFrameText.bounded(frame["sender"], ChatLimits.maxDisplayNameChars),
             text: ChatFrameText.bounded(frame["text"], ChatLimits.maxTextChars), timestamp: Date(epochMillis: millis),
-            isSelf: !senderId.isEmpty && senderId == me,
+            isSelf: !shown.isEmpty && shown == me,
             fileName: ChatFrameText.bounded(frame["fileName"], ChatLimits.maxFileNameChars))
         if isExpired?(channel, message.timestamp) == true { return }
         var list = replies[rootId] ?? []
@@ -657,7 +658,8 @@ public final class ChatExtras {
         var frame: JSONObject = [
             "type": .string(root.isEmpty ? "chat" : "thread-reply"),
             "id": .string(UUID().uuidString.lowercased()),
-            "senderId": "forkbot",
+            "senderId": .string(sink.selfId),
+            ChatFrameText.botField: "forkbot",
             "sender": "forkbot",
             "accountKind": "user",
             "ts": .int(clock.nowMillis),

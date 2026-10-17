@@ -167,7 +167,7 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
       const received = [];
       const timers = [];
       let authorizations = 0;
-      const sealStore = createRoomSealStore();
+      const sealStore = createRoomSealStore({{ acct: "self", node: "self" }});
       let activeSeal = null;
       const transport = createChatRoomTransport({{
         authorize: async (room) => {{
@@ -199,7 +199,7 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
 
       const key = await derivePassphraseKey("room secret", "channel-alpha");
       const incoming = await encryptObject(
-        await sealFrame({{ type: "chat", text: "replayed" }}, activeSeal), key);
+        await sealFrame({{ type: "chat", senderId: "self", text: "replayed" }}, activeSeal), key);
       socket.emit("message", {{ data: JSON.stringify(incoming) }});
       for (let attempt = 0; attempt < 20 && !received.length; attempt += 1) {{
         await new Promise((resolve) => setTimeout(resolve, 5));
@@ -231,7 +231,7 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
     assert result["sentEnvelope"]["persist"] is True
     assert result["received"] == [
         {
-            "plain": {"type": "chat", "text": "replayed"},
+            "plain": {"type": "chat", "senderId": "self", "text": "replayed"},
             "scope": "channel-alpha",
         }
     ]
@@ -283,7 +283,7 @@ def test_room_transport_delivers_a_replayed_backlog_as_one_batch():
       }}
 
       const key = await derivePassphraseKey("room secret", "channel-alpha");
-      const seal = await createRoomSealStore().resolve(
+      const seal = await createRoomSealStore({{ acct: "self", node: "self" }}).resolve(
         "channel-alpha", "channel-alpha");
       const replay = async (text) => {{
         const envelope = await encryptObject(
@@ -399,7 +399,7 @@ def test_room_transport_flushes_a_backlog_a_relay_never_terminates():
       }};
 
       const key = await derivePassphraseKey("room secret", "channel-alpha");
-      const seal = await createRoomSealStore().resolve(
+      const seal = await createRoomSealStore({{ acct: "self", node: "self" }}).resolve(
         "channel-alpha", "channel-alpha");
       const settle = async () => {{
         for (let attempt = 0; attempt < 40; attempt += 1) {{

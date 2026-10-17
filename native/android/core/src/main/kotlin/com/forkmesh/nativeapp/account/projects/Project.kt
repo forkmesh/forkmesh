@@ -167,7 +167,7 @@ class ScopedPrefStore(private val base: PrefStore, private val prefix: String) :
     override fun remove(key: String) = base.remove(prefix + key)
 }
 
-class ScopedSecretStore(private val base: SecretStore, private val prefix: String) : SecretStore {
+class ScopedSecretStore(val base: SecretStore, val prefix: String) : SecretStore {
     override fun read(key: String): String? = base.read(prefix + key)
 
     override fun write(key: String, value: String) = base.write(prefix + key, value)

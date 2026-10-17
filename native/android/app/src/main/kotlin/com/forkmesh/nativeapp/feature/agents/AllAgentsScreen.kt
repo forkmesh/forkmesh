@@ -501,10 +501,15 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     onRefresh = {
                         refreshing = true
                         scope.launch {
+                            val live = liveStream
+                            var followed = false
                             try {
-                                withContext(Dispatchers.IO) { runCatching { center.refresh() } }
+                                withContext(Dispatchers.IO) {
+                                    runCatching { center.refresh() }
+                                    followed = live?.refollow() == true
+                                }
                             } finally {
-                                pulls++
+                                if (followed) refreshing = false else pulls++
                             }
                         }
                     },

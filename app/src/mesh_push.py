@@ -19,7 +19,6 @@ MESH_WAKE_MINT_PROOF = "forkmesh-mesh-wake-mint-v1"
 MESH_WAKE_SEND_PROOF = "forkmesh-mesh-wake-v1"
 MESH_WAKE_PATH_RE = re.compile(r"^/api/push/mesh/?$")
 MESH_WAKE_MINT_PATH_RE = re.compile(r"^/api/push/mesh-wake/?$")
-MESH_WAKE_CHANNEL = "mesh"
 MESH_WAKE_COALESCE_MS = 5000
 _MESH_WAKE_MEMO = {}
 _MESH_WAKE_MEMO_MAX = 512
@@ -181,8 +180,7 @@ async def mesh_wake_handler(env, request):
         if account_bi and account_bi != sender_bi and account_bi not in recipients:
             recipients.append(account_bi)
     await ensure_schema(env)
-    alert = apns.chat_message_alert(
-        MESH_WAKE_CHANNEL, apns.APNS_MESH_CONVERSATION)
+    alert = apns.chat_message_alert(apns.APNS_MESH_CONVERSATION)
     woken = 0
     for account_bi in recipients:
         if not _mesh_wake_due(account_bi, now):

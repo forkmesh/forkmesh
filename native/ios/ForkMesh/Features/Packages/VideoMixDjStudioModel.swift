@@ -109,6 +109,7 @@ final class DjStudioModel {
     var samplerLevel: Double = 0.8
     var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
     var automixing = false
+    var automixOn = false
     var onScreen = false
     var notice: String?
     var sheet: DjSheet?
@@ -129,6 +130,20 @@ final class DjStudioModel {
     var jamProblem = ""
     var inviteText = ""
     var inviteSuggestions: [String] = []
+    var crowd: [DjJamPresence] = []
+    var effects: [DjEffect] = []
+    var reacting = false
+    var shareMotion = true
+    var queueDrag: DjQueueDrag?
+    var draggedId: String?
+    var dropSide: DjDeckSide?
+
+    @ObservationIgnored var crowdDate = Date()
+    @ObservationIgnored var deckFrames: [DjDeckSide: CGRect] = [:]
+    @ObservationIgnored var seenReactions: [String] = []
+    @ObservationIgnored var sentReactions: [CFTimeInterval] = []
+    @ObservationIgnored let motion = DjMotionFeed()
+    @ObservationIgnored var automixLoop: Task<Void, Never>?
 
     @ObservationIgnored var jamTask: Task<Void, Never>?
     @ObservationIgnored var shareTasks: [DjDeckSide: Task<Void, Never>] = [:]
@@ -168,6 +183,7 @@ final class DjStudioModel {
         sectionCursor = sections.firstIndex(where: { $0 == nil }) ?? 0
         history = saved.history
         queue = saved.queue
+        shareMotion = defaults.object(forKey: Self.motionKey) as? Bool ?? true
         host.onEvent = { [weak self] side, event in
             guard let self else { return }
             self.handle(event, self.deck(side))
@@ -230,8 +246,7 @@ final class DjStudioModel {
         UIApplication.shared.isIdleTimerDisabled = previousIdle
         FmOrientationLock.allowLandscape(false)
         if !a.playing, !b.playing {
-            automixTask?.cancel()
-            automixing = false
+            setAutomix(false)
             releaseAudio()
         }
     }
@@ -242,15 +257,13 @@ final class DjStudioModel {
     }
 
     func stopAll() {
-        automixTask?.cancel()
-        automixing = false
+        setAutomix(false)
         for deck in [a, b] where deck.playing { pause(deck) }
         if !active { releaseAudio() }
     }
 
     func resetAll() {
-        automixTask?.cancel()
-        automixing = false
+        setAutomix(false)
         searchTask?.cancel()
         for task in sectionTasks.values { task.cancel() }
         sectionTasks = [:]
@@ -490,6 +503,7 @@ final class DjStudioModel {
     func pauseDeck(_ side: DjDeckSide) {
         let deck = deck(side)
         if deck.playing { pause(deck) }
+        holdAutomix()
     }
 
     func stop(_ side: DjDeckSide) {
@@ -498,6 +512,7 @@ final class DjStudioModel {
         sectionTasks[side]?.cancel()
         if deck.playing { pause(deck) }
         rewind(deck)
+        holdAutomix()
     }
 
     func restart(_ side: DjDeckSide) {
@@ -593,6 +608,7 @@ final class DjStudioModel {
         guard deck.loaded else { return }
         if deck.playing { pause(deck) }
         jumpToCue(side)
+        holdAutomix()
     }
 
     func seek(_ side: DjDeckSide, to seconds: Double) {
@@ -781,7 +797,7 @@ final class DjStudioModel {
     }
 
     func setCrossfader(_ value: Double, cancelAutomix: Bool = true) {
-        if cancelAutomix {
+        if cancelAutomix, automixing {
             automixTask?.cancel()
             automixing = false
         }
@@ -807,6 +823,64 @@ final class DjStudioModel {
     }
 
     func automix() {
+        setAutomix(!automixOn)
+        show(automixOn
+            ? (shownQueue.isEmpty ? "AUTOMIX on: queue songs and they play one after another." : "AUTOMIX on: the queue plays one song after another.")
+            : "AUTOMIX off.")
+    }
+
+    func setAutomix(_ on: Bool) {
+        automixLoop?.cancel()
+        automixLoop = nil
+        if !on {
+            automixTask?.cancel()
+            automixing = false
+        }
+        automixOn = on
+        guard on else { return }
+        automixLoop = Task { [weak self] in
+            while !Task.isCancelled, self != nil {
+                self?.automixStep()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    func holdAutomix() {
+        guard automixOn, !a.playing, !b.playing else { return }
+        setAutomix(false)
+        show("AUTOMIX off.")
+    }
+
+    private func automixStep() {
+        guard automixOn, !automixing, !a.scratching, !b.scratching else { return }
+        let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
+        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty) {
+        case .wait:
+            break
+        case let .preload(side):
+            guard let item = shownQueue.first else { return }
+            playFromQueue(item, on: side)
+        case let .start(side):
+            play(deck(side))
+            fade(to: side == .a ? -1 : 1, seconds: 0.4, then: nil)
+        case let .mix(from, to, seconds):
+            let outgoing = deck(from)
+            automixing = true
+            play(deck(to))
+            fade(to: to == .b ? 1 : -1, seconds: seconds) { [weak self] in
+                guard let self else { return }
+                self.automixing = false
+                if outgoing.playing { self.pause(outgoing) }
+            }
+        }
+    }
+
+    private func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
+        DjAutomixDeck(loaded: deck.loaded, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate)
+    }
+
+    func mixNow() {
         if automixing {
             automixTask?.cancel()
             automixing = false
@@ -816,7 +890,7 @@ final class DjStudioModel {
         let incoming = deck(target)
         let outgoing = deck(target.other)
         guard incoming.loaded else {
-            show("Load Deck \(target.label) to automix into it.")
+            show("Load Deck \(target.label) to mix into it.")
             openLoad(target)
             return
         }
@@ -1041,8 +1115,9 @@ enum DjArtwork {
         let target = min(edge, 640)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        format.opaque = true
+        format.opaque = false
         return UIGraphicsImageRenderer(size: CGSize(width: target, height: target), format: format).image { _ in
+            UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: target, height: target)).addClip()
             let scale = target / edge
             image.draw(in: CGRect(x: -crop.minX * scale, y: -crop.minY * scale, width: size.width * scale, height: size.height * scale))
         }

@@ -41,8 +41,8 @@ class _Apns:
         return self.configured
 
     @staticmethod
-    def chat_message_alert(channel_name="", conversation=""):
-        return {"title": "New message in #" + channel_name, "body": "sealed",
+    def chat_message_alert(conversation=""):
+        return {"title": "New message", "body": "sealed",
                 "conversation": conversation}
 
 
@@ -197,7 +197,7 @@ def test_wake_pushes_each_token_owner_once_and_never_the_sender():
                  {"tokens": tokens})
     assert woke == {"status": 200, "payload": {"ok": True, "woken": 2}}
     assert calls["reads"] == [_bi("blue"), _bi("fungi")]
-    alert = {"title": "New message in #mesh", "body": "sealed",
+    alert = {"title": "New message", "body": "sealed",
              "conversation": "#mesh"}
     assert calls["sent"] == [(("aa",), "chat", alert), (("cc",), "chat", alert)]
 

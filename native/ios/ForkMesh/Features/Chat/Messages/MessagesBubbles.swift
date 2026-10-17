@@ -9,7 +9,6 @@ struct MessagesBubbleShape: Shape {
     static let joinedRadius: CGFloat = 5
 
     let fromSelf: Bool
-    let tail: Bool
     var joinsAbove: Bool = false
     var joinsBelow: Bool = false
 
@@ -19,7 +18,7 @@ struct MessagesBubbleShape: Shape {
         let radius: CGFloat = min(18, height / 2, (width - 5) / 2)
         let joined: CGFloat = min(MessagesBubbleShape.joinedRadius, radius)
         let top: CGFloat = joinsAbove ? joined : radius
-        let bottom: CGFloat = joinsBelow && !tail ? joined : radius
+        let bottom: CGFloat = joinsBelow ? joined : radius
         let control: CGFloat = 0.45
         var path: Path = Path()
         path.move(to: CGPoint(x: 5 + bottom, y: height))
@@ -35,21 +34,10 @@ struct MessagesBubbleShape: Shape {
         path.addCurve(
             to: CGPoint(x: 5, y: top), control1: CGPoint(x: 5 + top * control, y: 0),
             control2: CGPoint(x: 5, y: top * control))
-        if tail {
-            path.addLine(to: CGPoint(x: 5, y: max(top, height - 10)))
-            path.addCurve(to: CGPoint(x: 0, y: height), control1: CGPoint(x: 5, y: height - 1), control2: CGPoint(x: 0, y: height))
-            path.addLine(to: CGPoint(x: -1, y: height))
-            path.addCurve(
-                to: CGPoint(x: 12, y: height - 4), control1: CGPoint(x: 4, y: height + 1), control2: CGPoint(x: 8, y: height - 1))
-            path.addCurve(
-                to: CGPoint(x: 5 + bottom, y: height), control1: CGPoint(x: 15, y: height),
-                control2: CGPoint(x: 5 + bottom, y: height))
-        } else {
-            path.addLine(to: CGPoint(x: 5, y: height - bottom))
-            path.addCurve(
-                to: CGPoint(x: 5 + bottom, y: height), control1: CGPoint(x: 5, y: height - bottom * control),
-                control2: CGPoint(x: 5 + bottom * control, y: height))
-        }
+        path.addLine(to: CGPoint(x: 5, y: height - bottom))
+        path.addCurve(
+            to: CGPoint(x: 5 + bottom, y: height), control1: CGPoint(x: 5, y: height - bottom * control),
+            control2: CGPoint(x: 5 + bottom * control, y: height))
         path.closeSubpath()
         guard fromSelf else { return path.offsetBy(dx: rect.minX, dy: rect.minY) }
         let mirror: CGAffineTransform = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -width, y: 0)
@@ -165,13 +153,16 @@ struct MessagesExpiryRing: View {
             let left: TimeInterval = max(0, expiresAt.timeIntervalSince(context.date))
             let share: Double = lifetime > 0 ? min(1, left / lifetime) : 0
             ZStack {
-                Circle().stroke(tint.opacity(0.28), lineWidth: 1.4)
-                Circle()
-                    .trim(from: 0, to: share)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                MessagesClockWedge(elapsed: 1 - share).fill(tint.opacity(0.3)).padding(1.6)
+                Circle().stroke(tint, lineWidth: 1.2)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 1.3, height: 3.6)
+                    .offset(y: -1.6)
+                    .rotationEffect(.degrees((1 - share) * 360))
+                Circle().fill(tint).frame(width: 2, height: 2)
             }
-            .frame(width: 9, height: 9)
+            .frame(width: 11, height: 11)
             .accessibilityElement()
             .accessibilityLabel("Disappears in \(MessagesExpiryRing.remaining(left))")
         }
@@ -184,6 +175,22 @@ struct MessagesExpiryRing: View {
         if hours < 48 { return hours == 1 ? "1 hour" : "\(hours) hours" }
         let days: Int = Int((Double(hours) / 24).rounded())
         return "\(days) days"
+    }
+}
+
+struct MessagesClockWedge: Shape {
+    let elapsed: Double
+
+    func path(in rect: CGRect) -> Path {
+        let center: CGPoint = CGPoint(x: rect.midX, y: rect.midY)
+        var path: Path = Path()
+        guard elapsed < 1 else { return path }
+        path.move(to: center)
+        path.addArc(
+            center: center, radius: min(rect.width, rect.height) / 2, startAngle: .degrees(-90 + max(0, elapsed) * 360),
+            endAngle: .degrees(270), clockwise: false)
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -457,7 +464,7 @@ struct MessagesBubbleRow: View {
     }
 
     private var shellShape: MessagesBubbleShape {
-        MessagesBubbleShape(fromSelf: mine, tail: bubble.position.hasTail, joinsAbove: joinsAbove, joinsBelow: joinsBelow)
+        MessagesBubbleShape(fromSelf: mine, joinsAbove: joinsAbove, joinsBelow: joinsBelow)
     }
 
     private var photoShape: UnevenRoundedRectangle {
@@ -655,7 +662,7 @@ struct MessagesTypingBubble: View {
                 .padding(.leading, 18)
                 .padding(.trailing, 14)
                 .messagesBubbleGlass(
-                    MessagesBubbleShape(fromSelf: false, tail: true), fill: colors.receivedFill, mine: false,
+                    MessagesBubbleShape(fromSelf: false), fill: colors.receivedFill, mine: false,
                     dark: colors.dark)
             }
             Text(ChatExtras.typingLabel(names))

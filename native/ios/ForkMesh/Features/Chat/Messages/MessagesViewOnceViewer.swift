@@ -104,9 +104,9 @@ struct MessagesViewOnceRow: View {
         .padding(.leading, mine ? 12 : 17)
         .padding(.trailing, mine ? 17 : 14)
         .background(
-            MessagesBubbleShape(fromSelf: mine, tail: bubble.position.hasTail)
+            MessagesBubbleShape(fromSelf: mine)
                 .fill(mine ? colors.sentFill : colors.receivedFill))
-        .contentShape(MessagesBubbleShape(fromSelf: mine, tail: bubble.position.hasTail))
+        .contentShape(MessagesBubbleShape(fromSelf: mine))
     }
 }
 

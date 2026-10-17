@@ -3,9 +3,11 @@ import FMBase
 import FMPackages
 import Foundation
 import QuartzCore
+import UIKit
 
 extension DjStudioModel {
     static let jamKey = "fm.videoMixDjStudio.jam"
+    static let motionKey = "fm.videoMixDjStudio.shareMotion"
 
     var shownQueue: [DjQueueItem] {
         if let jam, jam.joined { return jam.queue }
@@ -176,10 +178,10 @@ extension DjStudioModel {
         }
     }
 
-    func receive(_ reply: JSONObject?) {
+    func receive(_ reply: JSONObject?, latency: Double = 0) {
         guard let reply else { return }
         if let fresh = DjJam.parse(reply) {
-            adopt(fresh)
+            adopt(fresh, latency: latency)
         } else if reply["jam"] == .null {
             clearJam()
         }
@@ -192,17 +194,80 @@ extension DjStudioModel {
         shareTasks = [:]
         applied = [:]
         jam = nil
+        crowd = []
+        seenReactions = []
+        motion.stop()
         defaults.removeObject(forKey: Self.jamKey)
     }
 
-    private func adopt(_ fresh: DjJam) {
+    private func adopt(_ fresh: DjJam, latency: Double) {
         let continuing = jam?.id == fresh.id && jam?.joined == true
-        if !continuing { applied = [:] }
-        jam = fresh
+        if !continuing {
+            applied = [:]
+            seenReactions = fresh.reactions.map(\.id)
+        }
+        if jam?.shared != fresh.shared { jam = fresh }
+        if crowd != fresh.presence {
+            crowd = fresh.presence
+            crowdDate = Date()
+        }
         defaults.set(fresh.id, forKey: Self.jamKey)
         guard fresh.joined else { return }
-        for side in DjDeckSide.allCases { follow(side, fresh) }
+        if continuing { hear(fresh.reactions, me: fresh.me) }
+        var timed = fresh
+        timed.now += Int64((latency * 1000).rounded())
+        let wasPlaying = a.playing || b.playing
+        for side in DjDeckSide.allCases { follow(side, timed) }
+        if wasPlaying { holdAutomix() }
         startPolling()
+    }
+
+    private func hear(_ reactions: [DjJamReaction], me: String) {
+        for reaction in reactions where !seenReactions.contains(reaction.id) {
+            seenReactions.append(reaction.id)
+            guard reaction.name != me, reaction.ago < 8000, onScreen, let kind = DjReaction.find(reaction.kind) else { continue }
+            spawn(kind, from: reaction.name)
+        }
+        if seenReactions.count > 160 { seenReactions.removeFirst(seenReactions.count - 160) }
+    }
+
+    func react(_ reaction: DjReaction) {
+        spawn(reaction, from: jam?.joined == true ? jam?.me ?? "" : "")
+        guard let current = jam, current.joined else { return }
+        let now = CACurrentMediaTime()
+        sentReactions.removeAll { now - $0 > 12 }
+        guard sentReactions.count < 8 else { return }
+        sentReactions.append(now)
+        Task { receive(await jamRequest("POST", "/jams/\(current.id)/reactions", ["kind": .string(reaction.id)])) }
+    }
+
+    func spawn(_ reaction: DjReaction, from name: String) {
+        if effects.count >= 10 { effects.removeFirst(effects.count - 9) }
+        let effect = DjEffect(reaction: reaction, sender: name)
+        effects.append(effect)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(reaction.seconds))
+            self?.effects.removeAll { $0.id == effect.id }
+        }
+    }
+
+    func setShareMotion(_ on: Bool) {
+        shareMotion = on
+        defaults.set(on, forKey: Self.motionKey)
+        if !on { motion.stop() }
+    }
+
+    func status(of member: DjJamMember) -> DjPersonStatus {
+        guard member.name == jam?.me else { return DjJam.status(of: member, seen: crowd.first { $0.name == member.name }) }
+        if onScreen, UIApplication.shared.applicationState != .background { return .studio }
+        return a.playing || b.playing ? .listening : .idle
+    }
+
+    private var presenceBody: JSONObject {
+        let playing = a.playing || b.playing
+        let visible = onScreen && UIApplication.shared.applicationState != .background
+        let state: DjPresenceState = visible ? .studio : playing ? .listening : .idle
+        return DjJamPresence.body(state: state, playing: playing, motion: shareMotion ? motion.drain() : [])
     }
 
     private func follow(_ side: DjDeckSide, _ jam: DjJam) {
@@ -239,16 +304,23 @@ extension DjStudioModel {
         guard jamTask == nil else { return }
         jamTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2.5))
+                let pause = self?.onScreen == true ? 1.5 : 2.5
+                try? await Task.sleep(for: .seconds(pause))
                 guard !Task.isCancelled, let self else { return }
                 guard let current = self.jam, current.joined else {
+                    self.motion.stop()
                     self.jamTask = nil
                     return
                 }
-                guard self.onScreen || self.a.playing || self.b.playing else { continue }
-                let reply = await self.jamRequest("GET", "/jams/\(current.id)")
+                guard self.onScreen || self.a.playing || self.b.playing else {
+                    self.motion.stop()
+                    continue
+                }
+                if self.shareMotion { self.motion.start() }
+                let began = CACurrentMediaTime()
+                let reply = await self.jamRequest("POST", "/jams/\(current.id)/presence", self.presenceBody)
                 guard !Task.isCancelled else { return }
-                self.receive(reply)
+                self.receive(reply, latency: (CACurrentMediaTime() - began) / 2)
             }
         }
     }
@@ -272,6 +344,7 @@ extension DjStudioModel {
                 jamProblem = "That jam has ended or you were removed from it."
             case "too_many_jams": jamProblem = "You already have 20 jams. End one first."
             case "queue_full": jamProblem = "The jam queue is full."
+            case "too_many_reactions": jamProblem = "Slow down a little: reactions are limited to eight every 12 seconds."
             case "jam_not_joined": jamProblem = "Join the jam first."
             default: jamProblem = error.message
             }

@@ -35,6 +35,7 @@ public:
                const QString &solanaAddress,
                const QString &roomPassphrase = QString(),
                QObject *parent = nullptr);
+    ~ServerNode() override;
 
     bool start();
 
@@ -61,10 +62,12 @@ public:
                                   const QString &text,
                                   const QString &messageId);
     void sendRoomReaction(const QString &conversation, const QString &messageId,
-                          const QString &emoji, bool added);
+                          const QString &emoji, bool added,
+                          const QString &frameId = QString());
     void sendRoomEdit(const QString &conversation, const QString &messageId,
-                      const QString &newText);
-    void sendRoomDelete(const QString &conversation, const QString &messageId);
+                      const QString &newText, const QString &frameId = QString());
+    void sendRoomDelete(const QString &conversation, const QString &messageId,
+                        const QString &frameId = QString());
     QString relayRefForMessage(const QString &messageId) const
     {
         return m_sentRefIds.value(messageId);
@@ -76,6 +79,13 @@ public:
     void setRoomPassphrase(const QString &passphrase) override;
     QString roomSealKeyId() const override;
     QStringList roomSealPeerKeyIds() const { return m_seal.peerKeyIds(); }
+    const RoomSeal &roomSeal() const { return m_seal; }
+    void setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device);
+    void setChatAccount(const QString &account);
+    void setDirectParticipants(const QStringList &participants);
+    void approveSealDevice(const QString &kid);
+    void blockSealDevice(const QString &kid);
+    void reopenHeldFrames();
     void sendBotChat(const QString &channel, const QString &text) override;
     void sendBotThreadReply(const QString &channel,
                             const QString &rootMessageId,
@@ -174,6 +184,13 @@ private:
     void onSocketReadyRead();
     void onConnectedTransport();
     void processFrame(const QByteArray &payload);
+    void handleSealedFrame(const QJsonObject &sealed, const QJsonObject &envelope);
+    void dispatchPlain(QJsonObject plain, const QJsonObject &envelope,
+                       const QJsonObject &sealed, const QString &senderAcct);
+    QJsonObject sealForRoom(const QJsonObject &plain) const;
+    void rebuildSeal();
+    void onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event,
+                       const QString &scope);
     void sendTextFrame(const QByteArray &payload, const QString &type = QString(),
                        const QString &scope = QString(),
                        const QString &peer = QString());
@@ -205,9 +222,7 @@ private:
     QString hiddenChannelsSettingKey() const;
     void loadHiddenChannels();
     void saveHiddenChannels();
-    // Report, once per sender key, that a retained frame was not addressed to
-    // this device (or that an unencrypted frame was refused).
-    void noteSealMismatch(const QString &keyId);
+    void noteSealMismatch(const QString &keyId, bool unknownSender = false);
     void handlePlain(const QJsonObject &message, int envelopeRecipients = -1,
                      const QStringList &envelopeRecipientNames = {});
     void emitChat(const QJsonObject &message, int recipients = -1,
@@ -273,10 +288,13 @@ private:
     QString m_nodeId;
     QString m_rosterStorageKey;
     RoomCrypto m_crypto;
-    // Always initialized from a device-local X25519 private key. It seals
-    // private channels, DMs, and control traffic before the relay-derived room
-    // key sees them; explicitly public #channels use the room layer directly.
     RoomSeal m_seal;
+    int m_deviceToken = 0;
+    QString m_chatAccount;
+    QStringList m_directParticipants;
+    bool m_historyEnded = false;
+    bool m_trustRefreshQueued = false;
+    bool m_rotationAdvertQueued = false;
     // Sender ids already reported through roomSealMismatch, so old history not
     // addressed to this device costs the UI one notice per sender.
     QSet<QString> m_reportedSealKeyIds;

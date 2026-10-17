@@ -342,7 +342,8 @@ def test_chat_replay_bounds_the_window_scan_to_the_replay_ceiling():
         ENTRY_TEXT.index("async def chat_history_recent("):
         ENTRY_TEXT.index("def chat_history_replay_body(")]
     assert ("FROM (SELECT body,ts,msg_id FROM chat_history "
-            "WHERE room_key=? AND ts>=? ORDER BY ts DESC,msg_id DESC LIMIT ?)"
+            "WHERE room_key=? AND ts>=? AND acked_at=0 "
+            "ORDER BY ts DESC,msg_id DESC LIMIT ?)"
             in recent.replace('"\n        "', ""))
 
 

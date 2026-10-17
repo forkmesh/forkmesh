@@ -72,7 +72,7 @@ import { installViewOnceFilters, viewOnceFilterChoices } from "./chat-view-once-
 // the public encrypted rooms and talk to connected clients. Frames are
 // ciphertext on the wire, but the relay derives the default shared passphrase.
 // Public channels intentionally stop at that controller-readable layer.
-// chat-seal.js automatically adds a second layer with device-local X25519 keys
+// chat-seal.js automatically adds a second layer with signed, post-quantum device keys
 // for private channels and DMs; participants never configure a phrase.
 //
 // Layout: rooms on the left, conversation in the middle (ts-ordered, newest at
@@ -296,6 +296,17 @@ const sealLabel = document.querySelector("#chat-seal-label");
 const sealPanel = document.querySelector("#chat-seal-panel");
 const sealPanelClose = document.querySelector("#chat-seal-close");
 const sealStateEl = document.querySelector("#chat-seal-state");
+const safetySection = document.querySelector("#chat-safety");
+const safetyLead = document.querySelector("#chat-safety-lead");
+const safetyDigits = document.querySelector("#chat-safety-digits");
+const safetyQr = document.querySelector("#chat-safety-qr");
+const safetyState = document.querySelector("#chat-safety-state");
+const safetyVerifyBtn = document.querySelector("#chat-safety-verify");
+const trustBanner = document.querySelector("#chat-trust-banner");
+const trustBannerCopy = document.querySelector("#chat-trust-banner-copy");
+const trustSafetyBtn = document.querySelector("#chat-trust-safety");
+const trustApproveBtn = document.querySelector("#chat-trust-approve");
+const trustBlockBtn = document.querySelector("#chat-trust-block");
 const officeManageLink = document.querySelector("#chat-office-manage");
 const officeAlert = document.querySelector("#chat-office-alert");
 const officeAlertCopy = document.querySelector("#chat-office-alert-copy");
@@ -349,8 +360,14 @@ const selfId = (() => {
 const roomPassphrases = new Map();
 const roomKeys = new Map();
 // One automatically generated device key plus public keys learned per room.
-// Private key material stays in this browser; only X25519 public keys travel.
-const roomSeals = createRoomSealStore();
+// Private key material stays in this browser; only signed public bundles travel.
+const roomSeals = createRoomSealStore({
+  acct: () => userSession()?.nodeName || "",
+  node: selfId,
+});
+const trustNotices = new Map();
+const trustNoticeKeys = new Set();
+roomSeals.subscribe((event) => handleSealEvent(event));
 // Per scope, why frames were dropped: sender ids whose content key was not
 // wrapped for this browser, and whether an unsealed frame was refused. Both
 // leave a reader staring at what looks like a broken relay.
@@ -5166,6 +5183,9 @@ function renderActiveChannel() {
           "Guests can chat only in World."
         );
     logEl.append(empty);
+    for (const notice of trustNotices.get(activeChannel) || []) {
+      logEl.append(buildTrustNotice(notice));
+    }
     return;
   }
   // Build the whole timeline detached and attach it once. A full channel is
@@ -5174,7 +5194,12 @@ function renderActiveChannel() {
   const fragment = document.createDocumentFragment();
   let prev = null;
   let previousDateKey = "";
+  const notices = [...(trustNotices.get(activeChannel) || [])];
   for (const record of list) {
+    while (notices.length && notices[0].ts <= Number(record.ts)) {
+      fragment.append(buildTrustNotice(notices.shift()));
+      prev = null;
+    }
     const dateKey = localDateKey(record.ts);
     if (dateKey !== previousDateKey) {
       fragment.append(buildDateDivider(record.ts));
@@ -5185,6 +5210,7 @@ function renderActiveChannel() {
     renderReactions(record.id);
     prev = record;
   }
+  for (const notice of notices) fragment.append(buildTrustNotice(notice));
   logEl.append(fragment);
   scrollLogToBottom();
 }
@@ -5636,6 +5662,7 @@ function targetMatchesScope(targetId, scope) {
 }
 
 function handlePlain(plain, scope = roomScopeForChannel()) {
+  plain = botLine(plain);
   const type = plain.type;
   if (!frameMatchesScope(plain, scope)) return;
   if (type !== "history" && !allowedChatAccountKind(plain.accountKind, scope)) {
@@ -6115,9 +6142,16 @@ function makeForkbotPlain(text) {
     channel: channelWireLabel(activeChannel),
     text: String(text || "").slice(0, MAX_TEXT),
     sender: "forkbot",
-    senderId: FORKBOT_SENDER_ID,
+    senderId: selfId,
+    bot: FORKBOT_SENDER_ID,
     accountKind: "user",
   });
+}
+
+function botLine(plain) {
+  const bot = String(plain?.bot || "").trim().toLowerCase();
+  if (!["forkbot", "claude", "codex"].includes(bot)) return plain;
+  return { ...plain, sender: bot, senderId: bot, postedBy: plain.senderId };
 }
 
 async function broadcastForkbotMessage(text) {
@@ -6125,7 +6159,7 @@ async function broadcastForkbotMessage(text) {
   const plain = makeForkbotPlain(moderated.text);
   send(plain);
   seen.add(plain.id);
-  appendMessage("peer", plain.sender, plain.text, plain.id, plain.senderId, plain.ts, activeChannel);
+  appendMessage("peer", plain.sender, plain.text, plain.id, plain.bot, plain.ts, activeChannel);
 }
 
 function forkbotModel() {
@@ -6299,6 +6333,8 @@ function handleTransportState(state, detail) {
       channels: [channelWireLabel(activeChannel)],
     }));
     noteSelfRoster();
+    renderTrustBanner();
+    if (sealPanel && !sealPanel.hidden) renderSafetyNumber();
     const callbacks = openCallbacks;
     openCallbacks = [];
     callbacks.forEach((callback) => callback());
@@ -6326,7 +6362,7 @@ function handleTransportState(state, detail) {
 // ── Channel encryption policy ────────────────────────────────────────────
 // The relay derives every default room key from its own DATA_KEY, so the room
 // layer stops eavesdroppers on the wire but not the person running the relay.
-// Private channels and DMs add the automatic X25519 device layer. Public
+// Private channels and DMs add the automatic device seal. Public
 // channels deliberately stop at the room layer so controller integrations can
 // read and post there.
 
@@ -6352,6 +6388,7 @@ function renderSealControl() {
       ? "Server-visible"
       : controllerReadable ? "Public" : "End-to-end";
   }
+  renderTrustBanner();
   sealBtn.title = serverNotices
     ? "Server notices written by ForkMesh itself; not end-to-end encrypted"
     : controllerReadable
@@ -6402,12 +6439,199 @@ function noteSealMismatch(keyId, scope) {
   if (scope === roomScopeForChannel()) renderSealControl();
 }
 
+function buildTrustNotice(notice) {
+  const row = document.createElement("div");
+  row.className = "chat-system chat-trust-notice";
+  row.textContent = notice.text;
+  return row;
+}
+
+function sealOptionsFor(scope) {
+  const direct = directMessageForKey(scope);
+  const own = String(userSession()?.nodeName || "");
+  return direct && own ? { participants: [own, direct.otherUser] } : {};
+}
+
+function trustDeviceOwner(acct, channel) {
+  const own = String(userSession()?.nodeName || "").toLowerCase();
+  if (acct && acct === own) return "you";
+  if (acct) return acct;
+  return directPeerName(channel);
+}
+
+function directPeerName(channel) {
+  return directMessageForKey(channel)?.otherUser || "this person";
+}
+
+function addTrustNotice(channel, key, text) {
+  if (!channel || trustNoticeKeys.has(key)) return;
+  trustNoticeKeys.add(key);
+  const notice = { ts: Date.now(), text };
+  const list = trustNotices.get(channel) || [];
+  list.push(notice);
+  trustNotices.set(channel, list.slice(-20));
+  if (channel !== activeChannel) return;
+  if (historyBatchChannels) {
+    historyBatchChannels.add(channel);
+    return;
+  }
+  clearEmpty();
+  logEl.append(buildTrustNotice(notice));
+  if (logNearBottom()) scrollLogToBottom();
+}
+
+function notePendingDevice(channel, kid, acct) {
+  addTrustNotice(
+    channel,
+    `pending\n${channel}\n${kid}`,
+    `A new device for ${trustDeviceOwner(acct, channel)} wants to join this chat. ` +
+      "Check the safety number, then approve or block.",
+  );
+}
+
+function handleSealEvent(event) {
+  const channel = String(event?.channelScope || "");
+  if (!isDirectMessageKey(channel) || event.controllerScope !== RELAY_HOST) return;
+  if (event.type === "pending") notePendingDevice(channel, event.kid, event.acct);
+  if (event.type === "safety-changed") {
+    addTrustNotice(
+      channel,
+      `safety\n${channel}\n${Date.now()}`,
+      `Your safety number with ${directPeerName(channel)} changed.`,
+    );
+  }
+  if (channel === activeChannel) {
+    renderTrustBanner();
+    if (sealPanel && !sealPanel.hidden) renderSafetyNumber();
+  }
+}
+
+function activeTrustTransport() {
+  const scope = roomScopeForChannel();
+  if (!isDirectMessageKey(scope) || roomTransport?.room?.scope !== scope) return null;
+  return roomTransport.trustPolicy === "strict" ? roomTransport : null;
+}
+
+function renderTrustBanner() {
+  if (!trustBanner) return;
+  const transport = activeTrustTransport();
+  const pending = transport ? transport.pendingDevices() : [];
+  if (!pending.length) {
+    trustBanner.hidden = true;
+    delete trustBanner.dataset.kid;
+    return;
+  }
+  const device = pending[0];
+  for (const record of pending) notePendingDevice(activeChannel, record.kid, record.acct);
+  trustBanner.dataset.kid = device.kid;
+  if (trustBannerCopy) {
+    const more = pending.length > 1 ? ` (${pending.length} devices are waiting)` : "";
+    trustBannerCopy.textContent =
+      `A new device for ${trustDeviceOwner(device.acct, activeChannel)} wants to join this chat${more}. ` +
+      "Check the safety number, then approve or block.";
+  }
+  trustBanner.hidden = false;
+}
+
+async function decideTrustBanner(approve) {
+  const kid = trustBanner?.dataset.kid;
+  const transport = activeTrustTransport();
+  if (!kid || !transport) return;
+  if (trustApproveBtn) trustApproveBtn.disabled = true;
+  if (trustBlockBtn) trustBlockBtn.disabled = true;
+  try {
+    if (approve) await transport.approveDevice(kid);
+    else await transport.blockDevice(kid);
+  } finally {
+    if (trustApproveBtn) trustApproveBtn.disabled = false;
+    if (trustBlockBtn) trustBlockBtn.disabled = false;
+    renderTrustBanner();
+    if (sealPanel && !sealPanel.hidden) renderSafetyNumber();
+  }
+}
+
+function loadSafetyQr() {
+  if (window.ForkMeshQR) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "/qr.js";
+    script.onload = () => resolve(Boolean(window.ForkMeshQR));
+    script.onerror = () => resolve(false);
+    document.head.append(script);
+  });
+}
+
+let safetyRender = 0;
+
+async function renderSafetyNumber() {
+  if (!safetySection) return;
+  const transport = activeTrustTransport();
+  if (!transport) {
+    safetySection.hidden = true;
+    return;
+  }
+  const generation = ++safetyRender;
+  const number = await transport.safetyNumber().catch(() => null);
+  if (generation !== safetyRender) return;
+  if (!number) {
+    safetySection.hidden = true;
+    return;
+  }
+  safetySection.hidden = false;
+  const peer = directPeerName(activeChannel);
+  if (safetyLead) {
+    safetyLead.textContent =
+      `Compare these numbers with ${peer}, or scan the code on their device. ` +
+      "They cover every approved device in this conversation.";
+  }
+  if (safetyDigits) {
+    safetyDigits.replaceChildren(...number.groups.map((group) => {
+      const cell = document.createElement("span");
+      cell.textContent = group;
+      return cell;
+    }));
+  }
+  if (safetyQr) {
+    safetyQr.replaceChildren();
+    safetyQr.dataset.value = number.qr;
+    loadSafetyQr().then((ok) => {
+      if (generation !== safetyRender || safetyQr.dataset.value !== number.qr) return;
+      if (ok) {
+        try {
+          safetyQr.replaceChildren(window.ForkMeshQR.toCanvas(number.qr, 168));
+          return;
+        } catch (_) {}
+      }
+      const text = document.createElement("code");
+      text.textContent = number.qr;
+      safetyQr.replaceChildren(text);
+    });
+  }
+  if (safetyState) {
+    safetyState.textContent = number.verified
+      ? `Verified. You checked this safety number with ${peer}.`
+      : "Not verified yet.";
+  }
+  if (safetyVerifyBtn) {
+    safetyVerifyBtn.disabled = number.verified;
+    safetyVerifyBtn.textContent = number.verified ? "Verified" : "Mark as verified";
+  }
+}
+
+async function markSafetyVerified() {
+  const transport = activeTrustTransport();
+  if (!transport) return;
+  await transport.markVerified();
+  renderSafetyNumber();
+}
+
 function openSealPanel() {
   if (!sealPanel || !sealSupportedHere()) return;
   closeChannelSettings();
   sealPanel.hidden = false;
   sealBtn?.setAttribute("aria-expanded", "true");
   renderSealState();
+  renderSafetyNumber();
 }
 
 function closeSealPanel(options = {}) {
@@ -6431,8 +6655,11 @@ function newRoomTransport() {
     // Separate from authorize() on purpose: private E2EE identity material may
     // never come from the relay, so it is resolved from this browser only.
     resolveSeal: (room, roomName) =>
-      roomSeals.resolve(room.scope, roomName, RELAY_HOST),
+      roomSeals.resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope)),
     onSealed: (keyId, room) => noteSealMismatch(keyId, room.scope),
+    onTrust: (event, room) => {
+      if (room.scope === roomScopeForChannel()) renderTrustBanner();
+    },
     onPlain: (plain, room) => handlePlain(plain, room.scope),
     onHistory: (plains, room) => handleHistory(plains, room),
     onRecipients: (id, count, _room, names) =>
@@ -7318,6 +7545,10 @@ async function initChat() {
   channelManageBtn?.addEventListener("click", () => toggleChannelSettings());
   sealBtn?.addEventListener("click", () => toggleSealPanel());
   sealPanelClose?.addEventListener("click", () => closeSealPanel({ restoreFocus: true }));
+  safetyVerifyBtn?.addEventListener("click", () => { void markSafetyVerified(); });
+  trustApproveBtn?.addEventListener("click", () => { void decideTrustBanner(true); });
+  trustBlockBtn?.addEventListener("click", () => { void decideTrustBanner(false); });
+  trustSafetyBtn?.addEventListener("click", () => openSealPanel());
   channelSettingsClose?.addEventListener("click", () => {
     closeChannelSettings({ restoreFocus: true });
   });
@@ -7348,6 +7579,7 @@ async function initChat() {
     if (sealPanel?.hidden !== false) return;
     if (sealPanel.contains(event.target)) return;
     if (sealBtn?.contains(event.target)) return;
+    if (trustSafetyBtn?.contains(event.target)) return;
     closeSealPanel();
   });
   channelDialogClose?.addEventListener("click", () => channelDialog?.close());

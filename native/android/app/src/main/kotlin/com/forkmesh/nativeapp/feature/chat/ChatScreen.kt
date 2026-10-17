@@ -154,9 +154,24 @@ class ChatScreen : Screen() {
             ChatDepth.hub?.extras?.clearInviteNotice()
             status.show(notice)
         }
+        val lockOn by ChatPrivacy.lockEnabled.collectAsState()
+        val locked by ChatPrivacy.chatLocked.collectAsState()
+        if (lockOn && locked) {
+            ChatLockGate {}
+            return
+        }
         if (snapshot == null) {
             FmEmptyState(icon = "chat_bubble_outline", title = "Chat is starting", message = "Connecting to the relay room.")
             return
+        }
+        val focusedConversation = if (foreground && !channelsOpen && DirectMessageFrames.isDirect(snapshot.currentConversation)) {
+            snapshot.currentConversation
+        } else {
+            ""
+        }
+        LaunchedEffect(focusedConversation) { withContext(Dispatchers.IO) { ChatDepth.direct?.screenFocus(focusedConversation) } }
+        DisposableEffect(Unit) {
+            onDispose { AppLifecycle.scope.launch(Dispatchers.IO) { ChatDepth.direct?.screenFocus("") } }
         }
         val wide = LocalConfiguration.current.screenWidthDp >= 720
         val inMesh = snapshot.currentConversation == MESH_CONVERSATION
@@ -233,6 +248,10 @@ class ChatScreen : Screen() {
         val conversation = relay.currentConversation
         val inMesh = conversation == MESH_CONVERSATION
         val inOffice = OfficeFrames.isOffice(conversation)
+        val inDirect = DirectMessageFrames.isDirect(conversation)
+        val route by produceState("", conversation, revision) {
+            value = if (!inDirect) "" else withContext(Dispatchers.IO) { ChatDepth.direct?.routeLabel(conversation).orEmpty() }
+        }
         val rows: List<ChatRow> = remember(conversation, relay, mesh?.messages, revision) {
             if (inMesh) {
                 val list = mesh?.messages.orEmpty()
@@ -294,7 +313,8 @@ class ChatScreen : Screen() {
                 }
             }
             val detail = listOfNotNull(
-                if (!inMesh && relay.onlineCount > 0) "${relay.onlineCount} online" else null,
+                route.ifEmpty { null },
+                if (!inMesh && !inDirect && relay.onlineCount > 0) "${relay.onlineCount} online" else null,
                 badgeLabel,
                 ChatDepth.hub?.serverCopiesLine(conversation)?.ifEmpty { null },
             ).joinToString(" \u2022 ")
@@ -321,6 +341,12 @@ class ChatScreen : Screen() {
                             FmDropdownMenuItem(if (privateRoom) "Encryption" else "About this channel", icon = "lock_outline", onClick = {
                                 roomMenu = false
                                 showSeal()
+                            })
+                        }
+                        if (inDirect) {
+                            FmDropdownMenuItem("Safety number", icon = "verified_user_outlined", onClick = {
+                                roomMenu = false
+                                navigator.push(SafetyNumberScreen(conversation))
                             })
                         }
                         FmDropdownMenuItem("Messages disappear after", icon = "timer_outlined", onClick = {
@@ -383,6 +409,7 @@ class ChatScreen : Screen() {
                         )
                     }
                     if (inMesh) MeshDebugBar()
+                    if (inDirect) PendingDeviceBanner(conversation, revision)
                     if (!inMesh && relay.totalUnread > 0) {
                         UnreadBanner(relay.totalUnread) {
                             scope.launch {
@@ -416,6 +443,10 @@ class ChatScreen : Screen() {
                             ) {
                                 itemsIndexed(rows, key = { _, r -> r.message.id }) { index, row ->
                                     val message = row.message
+                                    if (message.senderId == DirectMessageFrames.SYSTEM_SENDER && message.ephemeral) {
+                                        ChatSystemLine(message.text)
+                                        return@itemsIndexed
+                                    }
                                     Column {
                                         if (startsNewDay(rows.getOrNull(index - 1)?.message, message)) {
                                             ChatDayDivider(message.timestamp)

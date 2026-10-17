@@ -80,6 +80,13 @@ public protocol ChatFrameSink: AnyObject {
 extension RelayService: ChatFrameSink {}
 
 public enum ChatFrameText {
+    public static let botField = "bot"
+
+    public static func shownSender(_ frame: JSONObject) -> String {
+        let bot = (frame[botField]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !bot.isEmpty { return String(bot.prefix(64)) }
+        return frame["senderId"]?.text ?? ""
+    }
     public static func bounded(_ value: JSONValue?, _ max: Int) -> String {
         String((value?.text ?? "").prefix(max))
     }

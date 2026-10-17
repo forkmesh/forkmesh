@@ -318,7 +318,8 @@ object ChatFeature {
         val historyFile = filesDir?.let { dir -> File(dir, "local_mesh_history.json") }
         val local = LocalMeshRoom(settings.core, identity, secrets, native = native, platform = "android", historyFile = { historyFile })
         local.accountProvider = account
-        local.onDirect = { channel, keyId, plain -> ChatDepth.direct?.acceptMeshDirect(channel, keyId, plain) }
+        local.onDirect = { kid, frame -> ChatDepth.direct?.acceptMeshFrame(kid, frame) }
+        local.onLinksChanged = { ChatDepth.direct?.meshLinksChanged() }
         local.addListener { publishMesh(local) }
         Services.put(local)
         return local

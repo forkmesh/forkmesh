@@ -270,6 +270,20 @@ final class ChatNewMessageTests: XCTestCase {
         await h3.close()
     }
 
+    func testANotificationOpenAsksTheScreenToRevealTheConversation() async throws {
+        let (hub, h) = try await hub()
+        XCTAssertEqual(hub.revealRequests, 0)
+        hub.select("#random")
+        hub.open("#ops")
+        XCTAssertEqual(hub.revealRequests, 0, "picking a room inside Chat reveals nothing")
+        hub.switchConversation("#ops")
+        XCTAssertEqual(hub.revealRequests, 1, "the same room tapped from a notification still closes what covers it")
+        hub.switchConversation("@peer-9")
+        XCTAssertEqual(hub.revealRequests, 2)
+        XCTAssertEqual(hub.currentConversation, "@peer-9")
+        await h.close()
+    }
+
     func testWithoutAnAccountAnOnlinePeerGetsARelayDirectMessage() async throws {
         let (hub, h) = try await hub()
         try await h.sendProtected([

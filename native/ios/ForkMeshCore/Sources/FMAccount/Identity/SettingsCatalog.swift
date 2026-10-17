@@ -18,6 +18,7 @@ public enum SettingsSectionId: String, CaseIterable, Sendable, Hashable {
     case nodes
     case sessions
     case notifications
+    case chatPrivacy
     case relay
     case imports
     case data
@@ -53,6 +54,7 @@ public enum SettingsCatalog {
         .init(id: .nodes, title: "Nodes on this account", icon: "dns_outlined", keywords: ["node", "link", "link node", "scan", "qr", "devices"]),
         .init(id: .sessions, title: "Where you're signed in", icon: "devices_other", keywords: ["sessions", "sign out", "revoke"]),
         .init(id: .notifications, title: "Notifications", icon: "notifications_none_rounded", keywords: ["push", "pings", "email", "quiet hours"]),
+        .init(id: .chatPrivacy, title: "Chat privacy", icon: "lock_outline", keywords: ["app switcher", "privacy screen", "screenshot", "face id", "touch id", "passcode", "lock", "chat lock", "hide chats"]),
         .init(id: .relay, title: "Relay", icon: "cloud_outlined", keywords: ["server", "relay", "room", "passphrase", "network"]),
         .init(id: .imports, title: "Import tokens", icon: "download_outlined", keywords: ["github", "gitlab", "import"]),
         .init(id: .data, title: "Data", icon: "storage_outlined", keywords: ["export", "download", "cache", "clear", "backup"]),
@@ -91,7 +93,7 @@ public enum SettingsCatalog {
             "ssh": .sshKeys, "keys": .sshKeys, "appearance": .general, "theme": .general, "sounds": .general, "haptics": .general, "genie": .general, "spider": .general,
             "recovery": .identity, "backup": .identity, "export": .data, "vulnerability": .security, "phone": .desktops,
             "devices": .nodes, "linknode": .nodes, "apitoken": .mcp, "token": .mcp, "orgs": .organizations, "installedapps": .apps, "integrations": .apps,
-            "pings": .notifications, "push": .notifications, "setup": .quickSetup, "quicksetup": .quickSetup,
+            "pings": .notifications, "push": .notifications, "chatlock": .chatPrivacy, "privacy": .chatPrivacy, "faceid": .chatPrivacy, "setup": .quickSetup, "quicksetup": .quickSetup,
         ]
         return aliases[folded]
     }
