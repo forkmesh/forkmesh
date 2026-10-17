@@ -2,6 +2,7 @@ import secrets
 from urllib.parse import parse_qs, quote, urlparse
 
 import deploy_approvals
+import repo_projects
 import repo_short_urls
 import server_update
 
@@ -16,7 +17,7 @@ def _bind_runtime(runtime):
 VIEW = "update"
 ADDRESS_VIEW = "repo-addresses"
 VIEWS = (VIEW, ADDRESS_VIEW)
-MAX_FORM_BYTES = 2048
+MAX_FORM_BYTES = 96 * 1024
 RECENT_CORE_UPDATES = 5
 NOTICES = {
     "update_started": ("Update requested. This page refreshes while it runs.",
@@ -30,13 +31,17 @@ NOTICES = {
     "write_failed": ("The update request could not be saved on this server.",
                      "bad"),
     "addresses_saved": ("Repository addresses saved.", "ok"),
+    "projects_saved": ("Project addresses saved.", "ok"),
+    "projects_invalid": ("Check the repository name, the project table and "
+                         "the old owners.", "bad"),
     "owner_unknown": ("No account or organization has that name.", "bad"),
     "owner_invalid": ("Choose the account or organization that owns the "
                       "short addresses.", "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
-ACTIONS = ("check_update", "start_update", "save_repo_paths")
+ACTIONS = ("check_update", "start_update", "save_repo_paths",
+           "save_repo_projects")
 
 
 def _first(params, key):
@@ -330,6 +335,55 @@ async def render_addresses(env, request, csrf_field, admin_query):
         description="When on, /<repository> and /<repository>/<folder> open "
         "that owner's repository. Names of accounts, organizations and "
         "site pages keep their own addresses.",
+        body=form, table=examples) + await render_projects(
+            env, request, csrf_field, admin_query)
+
+
+async def render_projects(env, request, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    setting = repo_projects.parse(
+        await _settings_doc(env, repo_projects.SETTING_KEY))
+    host = _esc(urlparse(request.url).netloc or "example.com")
+    repo = _esc(setting["repo"] or "<repository>")
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_repo_projects">'
+        '<label class="form-row"><span>Repository</span>'
+        '<input type="text" name="repo" value="%s" class="grow" '
+        'placeholder="repository with one folder per project" '
+        'autocomplete="off" aria-label="Repository"></label>'
+        '<label class="stack"><span>Projects: one line per folder, '
+        'tab-separated: folder, address name, old names separated by '
+        'commas. A folder of - sends its names to the repository.</span>'
+        '<textarea name="table" rows="12" class="mono" spellcheck="false" '
+        'aria-label="Project table">%s</textarea></label>'
+        '<label class="form-row"><span>Old owners</span>'
+        '<input type="text" name="legacy" value="%s" class="grow" '
+        'placeholder="owners whose old repository addresses redirect" '
+        'autocomplete="off" aria-label="Old owners"></label>'
+        '<div><button type="submit" class="btn btn-primary">Save</button>'
+        '</div></form>' % (
+            _admin_href(admin_query, view=ADDRESS_VIEW),  # noqa: F821
+            csrf_field, _esc(setting["repo"]), _esc(setting["table"]),
+            _esc(", ".join(setting["legacy"]))))
+    examples = (
+        '<dl class="kv">'
+        "<dt>Project</dt><dd class=\"mono\">https://%s/%s/&lt;Project&gt;</dd>"
+        "<dt>File</dt><dd class=\"mono\">https://%s/%s/&lt;Project&gt;/blob/"
+        "&lt;branch&gt;/&lt;path&gt;</dd>"
+        "<dt>History</dt><dd class=\"mono\">https://%s/%s/&lt;Project&gt;/"
+        "commits</dd>"
+        "<dt>Issues</dt><dd class=\"mono\">https://%s/%s/&lt;Project&gt;/"
+        "issues (label &lt;folder&gt;)</dd>"
+        "<dt>Old address</dt><dd class=\"mono\">https://%s/&lt;old owner&gt;/"
+        "&lt;old name&gt; redirects to the project</dd></dl>" % (
+            host, repo, host, repo, host, repo, host, repo, host))
+    return shell.card(
+        title="Project addresses",
+        description="For a repository that keeps one project per folder: "
+        "give each folder its own address under the short repository "
+        "address, and send old repository addresses to it. Needs short "
+        "addresses on.",
         body=form, table=examples)
 
 
@@ -403,6 +457,26 @@ async def _save_addresses(env, form):
     return "addresses_saved", setting
 
 
+async def _save_projects(env, form, short):
+    try:
+        setting = repo_projects.clean(_first(form, "repo"),
+                                      _first(form, "table"),
+                                      _first(form, "legacy"))
+    except repo_projects.SettingError:
+        return "projects_invalid", None
+    if setting["repo"] and not short["owner"]:
+        return "owner_invalid", None
+    await d1_run(  # noqa: F821
+        env,
+        "INSERT INTO instance_settings (k, doc, updated_at) VALUES (?,?,?) "
+        "ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, "
+        "updated_at=excluded.updated_at",
+        repo_projects.SETTING_KEY, repo_projects.dump(setting), _now())
+    repo_projects.forget()
+    return "projects_saved", {"repo": setting["repo"],
+                              "legacy": setting["legacy"]}
+
+
 async def _handle_post(env, request, view, admin_query, account):
     try:
         raw = await request.text()
@@ -425,6 +499,12 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, setting = await _save_addresses(env, form)
         if setting is not None:
             details = setting
+    elif action == "save_repo_projects":
+        short = repo_short_urls.parse(
+            await _settings_doc(env, repo_short_urls.SETTING_KEY))
+        notice, saved = await _save_projects(env, form, short)
+        if saved is not None:
+            details = saved
     elif action == "start_update" and _first(form, "confirm") != "yes":
         return _redirect(location("unconfirmed"))
     else:
