@@ -100,6 +100,7 @@ class MarketingWorkspaceTest {
                 mapOf("name" to "git", "url" to "https://www.reddit.com/r/git/new/", "rulesRead" to true, "rules" to listOf(mapOf("title" to "No spam"))),
             ),
             "queries" to listOf(mapOf("query" to "git mirror", "url" to "https://www.reddit.com/search/?q=git+mirror&sort=new")),
+            "accounts" to listOf(mapOf("name" to "forkmesh", "url" to "https://www.reddit.com/user/forkmesh/submitted/")),
             "summary" to mapOf("open" to 1L),
         ),
         "posts" to listOf(mapOf("id" to hexA, "channel" to "x", "url" to "https://x.com/acme/status/2", "views" to 1200L, "likes" to 30L)),
@@ -239,10 +240,75 @@ class MarketingWorkspaceTest {
         assertFails<MarketingFormException> { targets.with("activationRate", "300").body(overview, 0, utc) }
 
         val watch = MarketingForms.settingsDraft(MarketingKind.REDDIT_WATCH, overview, utc)
-        assertEq(mapOf("subreddits" to listOf("git"), "queries" to listOf("git mirror")), watch.body(overview, 0, utc).obj("reddit"))
+        assertEq(
+            mapOf("subreddits" to listOf("git"), "queries" to listOf("git mirror"), "accounts" to listOf("forkmesh")),
+            watch.body(overview, 0, utc).obj("reddit"),
+        )
         val attribution = MarketingForms.settingsDraft(MarketingKind.ATTRIBUTION, overview, utc)
         assertEq("x, reddit", attribution["sources"])
         assertEq(listOf("x", "reddit"), attribution.body(overview, 0, utc).obj("attribution").strings("sources"))
+    }
+
+    fun testRedditAccountsRoundTripThroughTheWatchForm() {
+        val overview = overview()
+        assertEq(listOf("forkmesh"), overview.redditAccounts.map { it.name })
+        assertEq("https://www.reddit.com/user/forkmesh/submitted/", overview.redditAccounts.first().url)
+        assertEq("forkmesh", overview.redditAccountsText)
+        val watch = MarketingForms.settingsDraft(MarketingKind.REDDIT_WATCH, overview, utc)
+        val field = watch.fields.first { it.key == "accounts" }
+        assertEq("Accounts", field.label)
+        assertEq("Up to 10, without u/", field.hint)
+        assertEq("forkmesh", watch["accounts"])
+        val edited = watch.with("accounts", "forkmesh\n  u/helper \n\nhttps://www.reddit.com/user/other/").body(overview, 0, utc).obj("reddit")
+        assertEq(listOf("forkmesh", "u/helper", "https://www.reddit.com/user/other/"), edited.strings("accounts"))
+        assertEq(listOf("git"), edited.strings("subreddits"))
+        assertEq(emptyList<String>(), watch.with("accounts", "").body(overview, 0, utc).obj("reddit").strings("accounts"))
+        val empty = MarketingOverview.fromJson(overviewJson() + ("redditDesk" to mapOf("accounts" to listOf(mapOf("name" to "", "url" to "")))))
+        assertEq(emptyList<String>(), empty.redditAccounts.map { it.name })
+        assertEq("", MarketingForms.settingsDraft(MarketingKind.REDDIT_WATCH, empty, utc)["accounts"])
+        assertEq("That is not a Reddit username.", PackagesException("invalid_reddit_account").message)
+        assertEq("Up to 10 Reddit accounts.", PackagesException("too_many_reddit_accounts").message)
+    }
+
+    fun testRedditThreadActivityLine() {
+        val now = 10L * 86_400_000L
+        fun thread(vararg pairs: Pair<String, Any?>) = MarketingRecord(MarketingKind.REDDIT_THREAD, mapOf("id" to hexA, "subreddit" to "git", *pairs))
+        assertEq("not read yet", thread().redditActivity(now))
+        assertEq(
+            "4 comments · 12 points · 1 view · read 2h ago",
+            thread("comments" to 4L, "score" to 12L, "views" to 1L, "checkedAt" to now - 2 * 3_600_000L).redditActivity(now),
+        )
+        assertEq(
+            "1 comment · 3 points · 250 views · your comment: 40 views, 5 points · read 3d ago as u/forkmesh",
+            thread(
+                "comments" to 1L, "score" to 3L, "views" to 250L, "monitorCommentUrl" to "https://www.reddit.com/r/git/comments/abc/x/def/",
+                "commentViews" to 40L, "commentScore" to 5L, "readAs" to "forkmesh", "checkedAt" to now - 3 * 86_400_000L,
+            ).redditActivity(now),
+        )
+        val commentOnly = thread(
+            "comments" to 2L, "score" to null, "views" to null, "monitorCommentUrl" to "https://www.reddit.com/r/git/comments/abc/x/def/",
+            "commentViews" to 7L, "commentScore" to null, "commentAuthor" to "forkmesh", "author" to "someone", "checkedAt" to now - 60_000L,
+        ).redditActivity(now)
+        expect("7 views" in commentOnly, commentOnly)
+        assertEq("2 comments · your comment: 7 views · read 1m ago", commentOnly)
+        assertEq(
+            "8 comments · 2 points · views show only to u/forkmesh · read 5m ago as u/helper",
+            thread(
+                "comments" to 8L, "score" to 2L, "views" to null, "monitorCommentUrl" to "https://www.reddit.com/r/git/comments/abc/x/def/",
+                "commentAuthor" to "forkmesh", "author" to "someone", "readAs" to "helper", "checkedAt" to now - 5 * 60_000L,
+            ).redditActivity(now),
+        )
+        assertEq(
+            "views show only to u/someone · read 1h ago",
+            thread("author" to "someone", "commentAuthor" to "", "checkedAt" to now - 3_600_000L).redditActivity(now),
+        )
+        assertEq("12 points · not read yet", thread("score" to 12L, "author" to "someone").redditActivity(now))
+        assertEq(
+            "read 1h ago",
+            thread("commentViews" to 9L, "checkedAt" to now - 3_600_000L).redditActivity(now),
+        )
+        assertEq(listOf("r/git", "To Review"), overview().redditThreads.first().facts(overview()))
+        assertEq("", overview().posts.first().redditActivity(now))
     }
 
     fun testRecordDraftsShapeTheirBodies() {

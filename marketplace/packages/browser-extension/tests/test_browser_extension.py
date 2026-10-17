@@ -496,7 +496,15 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
         'only "Send to Reddit desk" and the end of a walk send the desk anything')
     assert "redditSync(state)" in BACKGROUND.split("const redditSyncNow =", 1)[1]
     assert "redditSync(state)" in BACKGROUND.split("async function redditWalkRun(", 1)[1]
-    assert BACKGROUND.count("await redditFetchWatch(state)") == 10
+    assert BACKGROUND.count("await redditFetchWatch(state)") == 15
+    for key in ("fm-reddit-auto-update", "fm-reddit-accounts-change"):
+        assert f'"{key}"' in POPUP and f'"{key}"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
+    auto = BACKGROUND.split("async function redditAutoUpdate(", 1)[1].split("\n}\n", 1)[0]
+    assert "redditReadEntries(entries, update)" in auto and "redditSync(" not in auto
+    assert "REDDIT_AUTO_MIN_MS" in auto and "state.autoUpdate" in auto
+    assert "chrome.runtime.onStartup.addListener(() => void redditAutoStart()" in BACKGROUND
+    assert "chrome.runtime.onInstalled.addListener(() => void redditAutoStart()" in BACKGROUND
+    assert "redditAutoUpdate(" not in BACKGROUND.split("const redditStatsNow =", 1)[1].split("\n});\n", 1)[0]
     assert "await redditFetchWatch(current)" in BACKGROUND.split("async function redditWalkStart(", 1)[1]
     for caller in ("const redditStatsNow =", "const redditRefresh =",
                    "async function redditSync(state)", "const redditMonitorAdd =",
@@ -507,9 +515,11 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
     threads = BACKGROUND.split("async function redditThreadsUpdate(", 1)[1].split("\n}\n", 1)[0]
     assert '"fm-reddit-threads-update"' in BACKGROUND.split("const REDDIT_WALK_SENDERS = new Set(", 1)[1].split(");", 1)[0]
     assert '!== await xOrganization()) throw new ApiError("reddit_organization_mismatch"' in threads
-    assert "redditReadTab(entry)" in threads and "redditKeepReading(state, monitor, true)" in threads
-    assert "redditSendReadings(state, await redditBase(), result)" in threads
-    assert "redditSync(" not in threads
+    reads = BACKGROUND.split("async function redditReadEntries(", 1)[1].split("\n}\n", 1)[0]
+    assert "redditReadEntries(entries, update)" in threads
+    assert "redditReadTab(entry)" in reads and "redditKeepReading(state, monitor, true)" in reads
+    assert "redditSendReadings(state, await redditBase(), result)" in reads
+    assert "redditSync(" not in threads and "redditSync(" not in reads
     assert "if (read) redditSendSoon();" in observe
     send_soon = BACKGROUND.split("function redditSendSoon()", 1)[1].split("\n}\n", 1)[0]
     assert "redditSendReadings(" in send_soon and "redditSync(" not in send_soon

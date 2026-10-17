@@ -251,6 +251,7 @@ public struct MarketingOverview: Equatable, Sendable {
     public var redditThreads: [MarketingRecord] = []
     public var redditSubreddits: [MarketingRedditSubreddit] = []
     public var redditQueries: [MarketingNamedLink] = []
+    public var redditAccounts: [MarketingNamedLink] = []
     public var redditSummary: JSONObject = [:]
     public var posts: [MarketingRecord] = []
     public var adTotals: [MarketingAdTotals] = []
@@ -299,6 +300,8 @@ public struct MarketingOverview: Equatable, Sendable {
         let desk = json.obj("redditDesk")
         redditSubreddits = desk.maps("subreddits").map(MarketingRedditSubreddit.init(json:))
         redditQueries = desk.maps("queries").map { MarketingNamedLink(id: $0.str("query"), name: $0.str("query"), url: $0.str("url")) }
+        redditAccounts = desk.maps("accounts").map { MarketingNamedLink(id: $0.str("name"), name: $0.str("name"), url: $0.str("url")) }
+            .filter { !$0.name.isEmpty }
         redditSummary = desk.obj("summary")
         posts = records("posts", .post)
         let adsSummary = json.obj("adsSummary")
@@ -315,7 +318,7 @@ public struct MarketingOverview: Equatable, Sendable {
             && lhs.channels == rhs.channels && lhs.settings == rhs.settings && lhs.campaigns == rhs.campaigns
             && lhs.experiments == rhs.experiments && lhs.funnel == rhs.funnel && lhs.keywords == rhs.keywords
             && lhs.redditThreads == rhs.redditThreads && lhs.posts == rhs.posts && lhs.suggestions == rhs.suggestions
-            && lhs.readyX == rhs.readyX
+            && lhs.redditAccounts == rhs.redditAccounts && lhs.readyX == rhs.readyX
     }
 
     public var canCloseReadyPost: Bool { ["owner", "admin", "maintainer", "member"].contains(role) }

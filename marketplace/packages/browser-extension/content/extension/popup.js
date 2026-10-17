@@ -58,6 +58,9 @@ function humanError(result) {
   if (code === "x_profile_not_read") return "Open the X profile first so there is something to record.";
   if (code === "marketing_not_installed") return "Install the Marketing package for one of your organizations first.";
   if (code === "not_signed_in") return "Sign in to ForkMesh first.";
+  if (code === "invalid_reddit_account") return "Enter a Reddit username, like forkmesh.";
+  if (code === "too_many_reddit_accounts") return "The Reddit desk keeps up to 10 accounts.";
+  if (code === "organization_admin_required") return "Only organization owners and admins can change the Reddit desk's accounts.";
   if (code === "invalid_reddit_thread_url") return "Paste a Reddit thread or comment link, like https://www.reddit.com/r/devops/comments/….";
   if (code === "reddit_check_running") return "A check is already running.";
   if (code === "reddit_walk_running") return "A walk is already running.";
@@ -418,8 +421,13 @@ async function renderReddit(result) {
       : `Last send ${ago(sync.at)}: ${sync.threads} new thread${sync.threads === 1 ? "" : "s"}, ${sync.already} already logged, ${sync.rules} rule set${sync.rules === 1 ? "" : "s"}${sync.failed ? `, ${sync.failed} refused` : ""}.`);
   }
   if (stats.readingsWaiting) lines.push(`${stats.readingsWaiting} monitored reading${stats.readingsWaiting === 1 ? "" : "s"} to send.`);
-  if ((stats.accounts || []).length) {
-    lines.push(`Your accounts: ${stats.accounts.map((name) => `u/${name}`).join(", ")}. Press Update on one's profile page to record its posts and their views in Marketing.`);
+  if (stats.signedIn) lines.push(`Signed in to Reddit as u/${stats.signedIn} (seen ${ago(stats.signedInAt)}).`);
+  const auto = stats.lastAuto || {};
+  if (stats.updating) lines.push("Updating the thread log in background tabs…");
+  else if (auto.at) {
+    lines.push(auto.error
+      ? `Automatic update ${ago(auto.at)} stopped: ${auto.error.replaceAll("_", " ")}.`
+      : `Automatic update ${ago(auto.at)}${auto.account ? ` as u/${auto.account}` : ""}: read ${auto.read} of ${auto.total} thread${auto.total === 1 ? "" : "s"}.`);
   }
   if (stats.mineWaiting) lines.push(`${stats.mineWaiting} of your post${stats.mineWaiting === 1 ? "" : "s"} to send.`);
   const mine = stats.mineCheck || {};
@@ -467,6 +475,13 @@ function renderRedditMonitored(stats) {
     return `<li><span><a href="${escapeHtml(item.commentUrl || item.url)}" data-reddit-monitor-open target="_blank" rel="noopener">${escapeHtml(item.title || `r/${item.subreddit} thread`)}</a><small>${escapeHtml([...parts, when].join(" · "))}</small></span><button data-reddit-monitor-remove="${escapeHtml(item.deskId)}" class="link" type="button">Stop</button></li>`;
   }).join("");
   $("[data-reddit-auto-check]").checked = Boolean(stats.autoCheck);
+  $("[data-reddit-auto-update]").checked = stats.autoUpdate !== false;
+  const signedIn = String(stats.signedIn || "").toLowerCase();
+  const accounts = stats.accounts || [];
+  $("[data-reddit-accounts]").innerHTML = accounts.map((name) => `<li><span><a href="https://www.reddit.com/user/${encodeURIComponent(name)}/" target="_blank" rel="noopener">u/${escapeHtml(name)}</a><small>${
+    name.toLowerCase() === signedIn ? "signed in now" : "sign in as this account to read its views"}</small></span><button data-reddit-account-remove="${escapeHtml(name)}" class="link" type="button">Remove</button></li>`).join("")
+    || `<li class="muted">No accounts yet. Sign in to Reddit and open your profile, or add a username.</li>`;
+  $("[data-reddit-account-add]").disabled = !stats.connected || accounts.length >= 10;
   $("[data-reddit-check]").disabled = !stats.connected || (!monitored.length && !stats.mine) || Boolean(stats.checking);
   $("[data-reddit-monitor-add]").disabled = !stats.connected;
 }
@@ -1013,6 +1028,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const deskId = event.target.closest("[data-reddit-monitor-remove]")?.dataset.redditMonitorRemove;
     if (!deskId) return;
     const result = await send({ type: "fm-reddit-monitor-remove", deskId });
+    if (!result.ok) note("[data-reddit-status]", humanError(result));
+    else await renderReddit(result);
+  });
+  $("[data-reddit-auto-update]").addEventListener("change", async (event) => {
+    const result = await send({ type: "fm-reddit-auto-update", on: event.target.checked });
+    if (!result.ok) note("[data-reddit-status]", humanError(result));
+    else await renderReddit(result);
+  });
+  $("[data-reddit-account-add]").addEventListener("click", async () => {
+    const input = $("[data-reddit-account-name]");
+    const result = await send({ type: "fm-reddit-accounts-change", add: input.value.trim() });
+    if (!result.ok) note("[data-reddit-status]", humanError(result));
+    else {
+      input.value = "";
+      await renderReddit(result);
+    }
+  });
+  $("[data-reddit-accounts]").addEventListener("click", async (event) => {
+    const name = event.target.closest("[data-reddit-account-remove]")?.dataset.redditAccountRemove;
+    if (!name) return;
+    const result = await send({ type: "fm-reddit-accounts-change", remove: name });
     if (!result.ok) note("[data-reddit-status]", humanError(result));
     else await renderReddit(result);
   });

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.market
 
+import com.forkmesh.nativeapp.format.relativeTimeFrom
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.bool
 import com.forkmesh.nativeapp.json.double
@@ -74,6 +75,8 @@ object MarketingText {
     }
 
     fun plural(count: Int, one: String, many: String): String = "$count " + if (count == 1) one else many
+
+    fun counted(value: Long, one: String, many: String): String = count(value) + " " + if (value == 1L) one else many
 }
 
 private fun JsonMap.optLong(key: String): Long? = (this[key] as? Number)?.toLong()
@@ -142,8 +145,6 @@ data class MarketingRecord(val kind: MarketingKind, val json: JsonMap) {
         }
         MarketingKind.REDDIT_THREAD -> {
             val parts = mutableListOf("r/" + json.str("subreddit"), MarketingText.title(json.str("status")))
-            json.optLong("score")?.let { parts.add("${MarketingText.count(it)} points") }
-            json.optLong("comments")?.let { parts.add("${MarketingText.count(it)} comments") }
             if (json.bool("monitored")) parts.add("Monitored")
             parts
         }
@@ -188,6 +189,32 @@ data class MarketingRecord(val kind: MarketingKind, val json: JsonMap) {
             MarketingKind.REDDIT_THREAD -> status in setOf("to_review", "drafting")
             else -> false
         }
+
+    fun redditActivity(now: Long): String {
+        if (kind != MarketingKind.REDDIT_THREAD) return ""
+        val parts = mutableListOf<String>()
+        json.optLong("comments")?.let { parts.add(MarketingText.counted(it, "comment", "comments")) }
+        json.optLong("score")?.let { parts.add(MarketingText.counted(it, "point", "points")) }
+        val views = json.optLong("views")
+        views?.let { parts.add(MarketingText.counted(it, "view", "views")) }
+        val watching = json.str("monitorCommentUrl").isNotEmpty()
+        val commentViews = if (watching) json.optLong("commentViews") else null
+        if (watching) {
+            val comment = listOfNotNull(
+                commentViews?.let { MarketingText.counted(it, "view", "views") },
+                json.optLong("commentScore")?.let { MarketingText.counted(it, "point", "points") },
+            )
+            if (comment.isNotEmpty()) parts.add("your comment: " + comment.joinToString(", "))
+        }
+        val checkedAt = json.long("checkedAt")
+        if (views == null && commentViews == null && checkedAt > 0) {
+            val viewer = json.str("commentAuthor").ifEmpty { json.str("author") }
+            if (viewer.isNotEmpty()) parts.add("views show only to u/$viewer")
+        }
+        val readAs = json.str("readAs").let { if (it.isEmpty()) "" else " as u/$it" }
+        parts.add(if (checkedAt > 0) "read " + relativeTimeFrom(checkedAt, now) + readAs else "not read yet")
+        return parts.joinToString(" · ")
+    }
 
     val redditReplyPrompt: String
         get() {

@@ -71,6 +71,7 @@ final class MarketingWorkspaceTests: XCTestCase {
                 "subreddits": [["name": "git", "url": "https://www.reddit.com/r/git/new/", "rulesRead": true,
                                 "rules": [["title": "No spam"]]]],
                 "queries": [["query": "git mirror", "url": "https://www.reddit.com/search/?q=git+mirror&sort=new"]],
+                "accounts": [["name": "forkmesh", "url": "https://www.reddit.com/user/forkmesh/submitted/"]],
                 "summary": ["open": 1],
             ],
             "posts": [["id": .string(hexA), "channel": "x", "url": "https://x.com/acme/status/2", "views": 1200, "likes": 30]],
@@ -244,7 +245,7 @@ final class MarketingWorkspaceTests: XCTestCase {
 
         let watch = MarketingForms.settingsDraft(.redditWatch, overview: overview, zone: utc)
         XCTAssertEqual(try watch.body(overview: overview, now: 0, zone: utc).obj("reddit"),
-                       ["subreddits": ["git"], "queries": ["git mirror"]])
+                       ["subreddits": ["git"], "queries": ["git mirror"], "accounts": ["forkmesh"]])
         let attribution = MarketingForms.settingsDraft(.attribution, overview: overview, zone: utc)
         XCTAssertEqual(attribution["sources"], "x, reddit")
         XCTAssertEqual(try attribution.body(overview: overview, now: 0, zone: utc).obj("attribution").strings("sources"), ["x", "reddit"])
@@ -444,6 +445,66 @@ final class MarketingWorkspaceTests: XCTestCase {
 }
 
 extension MarketingWorkspaceTests {
+    @MainActor func testRedditAccountsRoundTripThroughTheWatchSettings() async throws {
+        let overview = MarketingOverview(json: overviewJSON())
+        XCTAssertEqual(overview.redditAccounts, [MarketingNamedLink(id: "forkmesh", name: "forkmesh",
+                                                                    url: "https://www.reddit.com/user/forkmesh/submitted/")])
+        XCTAssertTrue(MarketingOverview(json: [:]).redditAccounts.isEmpty)
+
+        var watch = MarketingForms.settingsDraft(.redditWatch, overview: overview, zone: utc)
+        let field = try XCTUnwrap(watch.fields.first { $0.key == "accounts" })
+        XCTAssertEqual(field.label, "Accounts")
+        XCTAssertEqual(field.hint, "Up to 10, without u/")
+        XCTAssertEqual(watch["accounts"], "forkmesh")
+        watch["accounts"] = "forkmesh\n u/acme_team \n\nhttps://www.reddit.com/user/helper/"
+
+        let transport = FakePackagesTransport()
+        let client = PackagesClient(transport: transport)
+        transport.on("PUT", "/api/marketing/acme/settings", ["settings": [:]])
+        try await client.saveMarketing(watch, organization: "acme", overview: overview, now: 0, zone: utc)
+        XCTAssertEqual(transport.last("PUT", "/api/marketing/acme/settings")?.body?.obj("reddit"), [
+            "subreddits": ["git"], "queries": ["git mirror"],
+            "accounts": ["forkmesh", "u/acme_team", "https://www.reddit.com/user/helper/"],
+        ])
+
+        watch["accounts"] = (1...11).map { "user\($0)" }.joined(separator: "\n")
+        XCTAssertThrowsError(try watch.body(overview: overview, now: 0, zone: utc))
+        XCTAssertEqual(PackagesError("invalid_reddit_account").message, "That is not a Reddit username.")
+        XCTAssertEqual(PackagesError("too_many_reddit_accounts").message, "Up to 10 Reddit accounts.")
+    }
+
+    func testRedditThreadActivityLine() {
+        let now: Int64 = 1_800_000_000_000
+        func thread(_ json: JSONObject) -> MarketingRecord {
+            var base: JSONObject = ["id": .string(hexA), "status": "replied", "subreddit": "git"]
+            base.merge(json)
+            return MarketingRecord(kind: .redditThread, json: base)
+        }
+        XCTAssertEqual(thread([:]).redditActivity(now: now), "not read yet")
+        XCTAssertEqual(thread(["comments": 4, "score": 1, "views": 1200, "readAs": "forkmesh", "checkedAt": .int(now - 7_200_000)])
+            .redditActivity(now: now), "4 comments · 1 point · 1200 views · read 2h ago as u/forkmesh")
+        XCTAssertEqual(thread(["comments": 3, "score": 5, "views": .null, "author": "op_user", "checkedAt": .int(now - 120_000)])
+            .redditActivity(now: now), "3 comments · 5 points · views show only to u/op_user · read 2m ago")
+
+        let onlyComment = thread([
+            "comments": 2, "score": .null, "views": .null, "monitorCommentUrl": "https://www.reddit.com/r/git/comments/abc/x/def/",
+            "commentViews": 7, "commentScore": .null, "commentAuthor": "forkmesh", "author": "op_user",
+            "checkedAt": .int(now - 3 * 86_400_000),
+        ]).redditActivity(now: now)
+        XCTAssertTrue(onlyComment.contains("7 views"))
+        XCTAssertEqual(onlyComment, "2 comments · your comment: 7 views · read 3d ago")
+
+        let hiddenComment = thread([
+            "score": 9, "monitorCommentUrl": "https://www.reddit.com/r/git/comments/abc/x/def/", "commentScore": 3,
+            "commentAuthor": "forkmesh", "author": "op_user", "checkedAt": .int(now - 120_000),
+        ]).redditActivity(now: now)
+        XCTAssertEqual(hiddenComment, "9 points · your comment: 3 points · views show only to u/forkmesh · read 2m ago")
+
+        let unwatched = thread(["commentViews": 7, "commentScore": 2, "checkedAt": .int(now - 120_000)]).redditActivity(now: now)
+        XCTAssertEqual(unwatched, "read 2m ago")
+        XCTAssertEqual(MarketingRecord(kind: .post, json: [:]).redditActivity(now: now), "")
+    }
+
     @MainActor func testModelSavesReloadsAndReportsErrors() async throws {
         let transport = FakePackagesTransport()
         transport.on("GET", "/api/marketing", ["organizations": [["name": "acme", "installed": true]]])

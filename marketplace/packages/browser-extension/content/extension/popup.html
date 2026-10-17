@@ -209,7 +209,13 @@
         </div>
         <ul data-reddit-monitored class="reddit-monitored"></ul>
         <p data-reddit-walk-status class="muted" hidden></p>
-        <p class="muted"><b>Your accounts</b>: open one of your Reddit profiles and press <b>Update</b> to record each of its posts and comments, with its link, score and views, in Marketing posts. Add more accounts on the Reddit desk's watch list.</p>
+        <p class="muted"><b>Your accounts</b>: Reddit shows views only to the account that posted, so sign in to Reddit as each one in turn. The extension notices which account is signed in, adds it here, and reads that account's threads, posts and comments. Open a profile and press <b>Update</b> to record all of its posts and comments in Marketing posts.</p>
+        <ul data-reddit-accounts class="reddit-monitored"></ul>
+        <div class="inline">
+          <input data-reddit-account-name placeholder="Reddit username" autocapitalize="off" autocomplete="off" spellcheck="false" />
+          <button data-reddit-account-add class="secondary" type="button">Add account</button>
+        </div>
+        <label class="check"><input data-reddit-auto-update type="checkbox" /> Update the thread log when the browser starts and every hour</label>
         <label class="check"><input data-reddit-auto-check type="checkbox" /> Check monitored threads and your posts every 6 hours</label>
         <div class="actions">
           <button data-reddit-walk class="secondary" type="button">Walk the watch list</button>

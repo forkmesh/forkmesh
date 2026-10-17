@@ -293,11 +293,19 @@ internal fun MarketingNote(text: String) {
 }
 
 @Composable
-internal fun MarketingRecordRow(record: MarketingRecord, overview: MarketingOverview, working: Boolean = false, onTap: () -> Unit, onLongPress: (() -> Unit)? = null) {
-    val facts = record.facts(overview) + record.dates.map { "${it.label} ${shortDate(it.ms)}" }
+internal fun MarketingRecordRow(
+    record: MarketingRecord, overview: MarketingOverview, working: Boolean = false, onTap: () -> Unit, onLongPress: (() -> Unit)? = null, activity: String = "",
+) {
+    val facts = (record.facts(overview) + record.dates.map { "${it.label} ${shortDate(it.ms)}" }).joinToString(" · ")
     FmListRow(
         record.title.ifEmpty { "Untitled" },
-        subtitle = facts.joinToString(" · ").ifEmpty { null },
+        subtitle = if (activity.isEmpty()) facts.ifEmpty { null } else null,
+        subtitleContent = if (activity.isEmpty()) null else ({
+            Column {
+                if (facts.isNotEmpty()) Text(facts, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+                Text(activity, style = Fm.text.labelSmall, color = Fm.colors.textTertiary)
+            }
+        }),
         trailing = when {
             working -> ({ FmCircularProgressIndicator() })
             record.needsAttention -> ({ FmStatusBadge("Due", MarketingTint.orange) })
@@ -787,8 +795,16 @@ private fun LazyListScope.redditSection(model: MarketingModel, overview: Marketi
             )
         }
         overview.redditQueries.forEach { query -> FmListRow(query.name, leading = { FmIcon("search") }, onTap = { crmOpen(context, query.url) }) }
+        MarketingHeader("Your accounts", overview.redditAccounts.size)
+        if (overview.redditAccounts.isEmpty()) MarketingNote("No Reddit accounts yet.")
+        overview.redditAccounts.forEach { account ->
+            FmListRow(
+                "u/" + account.name, leading = { FmIcon("account_circle") },
+                onTap = { crmOpen(context, account.url.ifEmpty { "https://www.reddit.com/user/${account.name}/submitted/" }) },
+            )
+        }
         if (overview.canManageSettings) model.newDraft(MarketingKind.REDDIT_WATCH)?.let { draft ->
-            FmToneButton("Edit the watch list", onPressed = { navigator.push(MarketingFormScreen(model, draft)) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), icon = "edit")
+            FmToneButton("Edit the watch list and accounts", onPressed = { navigator.push(MarketingFormScreen(model, draft)) }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), icon = "edit")
         }
     }
     MarketingKind.REDDIT_THREAD.statuses.forEach { status ->
@@ -802,7 +818,7 @@ private fun LazyListScope.redditSection(model: MarketingModel, overview: Marketi
                     Box {
                         MarketingRecordRow(thread, overview, model.isWorking(thread.id), onTap = {
                             navigator.push(MarketingFormScreen(model, MarketingDraft.of(MarketingKind.REDDIT_THREAD, overview, thread.json, thread.id, model.zone)))
-                        }, onLongPress = { menu = true })
+                        }, onLongPress = { menu = true }, activity = thread.redditActivity(System.currentTimeMillis()))
                         MarketingStatusMenu(MarketingKind.REDDIT_THREAD, thread.status, menu, { menu = false }, { next -> runner.run({ setStatus(MarketingKind.REDDIT_THREAD, thread.id, next) }) }) {
                             FmDropdownMenuItem("Open thread", onClick = { menu = false; crmOpen(context, thread.json.str("url")) }, icon = "open_in_new")
                             if (thread.json.str("taggedLink").isNotEmpty()) FmDropdownMenuItem("Copy tagged link", onClick = { menu = false; crmCopy(context, thread.json.str("taggedLink")) }, icon = "content_copy")

@@ -295,10 +295,31 @@ QString redditViewsChange(const QJsonObject &item)
                                          day ? QStringLiteral("in the last day") : QStringLiteral("since the first read"));
 }
 
+QStringList redditCommentActivity(const QJsonObject &item)
+{
+    QStringList parts;
+    const bool comment = !text(item, "monitorCommentUrl").isEmpty();
+    if (comment && (present(item.value(QStringLiteral("commentViews"))) || present(item.value(QStringLiteral("commentScore"))))) {
+        QStringList numbers;
+        if (present(item.value(QStringLiteral("commentViews"))))
+            numbers << plural(qint64(number(item, "commentViews")), QStringLiteral("view"), QStringLiteral("views"));
+        if (present(item.value(QStringLiteral("commentScore"))))
+            numbers << plural(qint64(number(item, "commentScore")), QStringLiteral("point"), QStringLiteral("points"));
+        parts << (text(item, "commentAuthor").isEmpty() ? QStringLiteral("your comment: ")
+                                                        : QStringLiteral("u/%1's comment: ").arg(text(item, "commentAuthor")))
+                     + numbers.join(QStringLiteral(", "));
+    }
+    const QString owner = comment ? text(item, "commentAuthor") : text(item, "author");
+    const bool shown = present(item.value(comment ? QStringLiteral("commentViews") : QStringLiteral("views")));
+    if (number(item, "checkedAt") > 0 && !shown && !owner.isEmpty())
+        parts << QStringLiteral("views show only to u/%1").arg(owner);
+    return parts;
+}
+
 QString redditMonitorSummary(const QJsonObject &item)
 {
     if (number(item, "checkedAt") <= 0)
-        return QStringLiteral("Not read yet: open the thread in the browser with the ForkMesh extension, or press Check now in its popup.");
+        return QStringLiteral("Not read yet: the ForkMesh browser extension reads it when the browser starts and every hour, or press Update.");
     QStringList parts;
     if (present(item.value(QStringLiteral("views")))) {
         const QString change = redditViewsChange(item);
@@ -2518,8 +2539,11 @@ void MarketingFeature::renderReddit()
             activity << plural(qint64(number(item, "views")), QStringLiteral("view"), QStringLiteral("views"))
                             + (change.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(change));
         }
+        activity << redditCommentActivity(item);
         const qint64 readAt = qint64(number(item, "checkedAt"));
-        activity << (readAt > 0 ? QStringLiteral("read ") + relativeLabel(readAt) : QStringLiteral("not read yet"));
+        activity << (readAt > 0 ? QStringLiteral("read ") + relativeLabel(readAt)
+                                      + (text(item, "readAs").isEmpty() ? QString() : QStringLiteral(" as u/") + text(item, "readAs"))
+                                : QStringLiteral("not read yet"));
         const QString threadId = text(item, "id");
         addRow(m_redditTable,
                {text(item, "title").isEmpty() ? text(item, "url") : text(item, "title"),
@@ -3647,7 +3671,7 @@ void MarketingFeature::monitorRedditThread()
     request(QByteArrayLiteral("POST"), organizationPath(QStringLiteral("/reddit")), body,
             [this, link](bool ok, const QJsonObject &payload, const QString &error) {
         if (ok) {
-            setStatus(QStringLiteral("Thread logged and monitored. Open it in your browser with the ForkMesh extension, or press Check now in its popup, to read its views."));
+            setStatus(QStringLiteral("Thread logged and monitored. The ForkMesh browser extension reads its views within the hour, or press Update to read them now."));
             return loadOrganization();
         }
         const QString threadId = text(payload, "threadId");
@@ -3696,16 +3720,22 @@ void MarketingFeature::editRedditWatch()
     dialog.resize(520, 520);
     auto *layout = new QVBoxLayout(&dialog);
     layout->addWidget(dialogIntro(QStringLiteral(
-        "Up to 40 subreddits and 40 searches. Each one becomes a link that opens Reddit's newest posts in your own browser.")));
+        "Up to 40 subreddits and 40 searches. Each one becomes a link that opens Reddit's newest posts in your own browser. "
+        "Reddit shows view counts only to the account that posted, so list each of your accounts: the browser extension reads "
+        "an account's threads, posts and comments whenever you are signed in to Reddit as it.")));
     auto *form = new QFormLayout;
     auto *subreddits = new QPlainTextEdit(words(watch.value(QStringLiteral("subreddits"))).join(QLatin1Char('\n')));
     subreddits->setPlaceholderText(QStringLiteral("selfhosted\ngit"));
     auto *queries = new QPlainTextEdit(words(watch.value(QStringLiteral("queries"))).join(QLatin1Char('\n')));
     queries->setPlaceholderText(QStringLiteral("git mirror"));
+    auto *accounts = new QPlainTextEdit(words(watch.value(QStringLiteral("accounts"))).join(QLatin1Char('\n')));
+    accounts->setPlaceholderText(QStringLiteral("forkmesh"));
     subreddits->setEnabled(m_canManageSettings);
     queries->setEnabled(m_canManageSettings);
+    accounts->setEnabled(m_canManageSettings);
     form->addRow(QStringLiteral("Subreddits, one per line"), subreddits);
     form->addRow(QStringLiteral("Searches, one per line"), queries);
+    form->addRow(QStringLiteral("Your Reddit accounts, up to 10"), accounts);
     layout->addLayout(form, 1);
     if (!m_canManageSettings)
         layout->addWidget(dialogIntro(QStringLiteral("Only organization owners and admins can change the watch list.")));
@@ -3726,7 +3756,8 @@ void MarketingFeature::editRedditWatch()
         return result;
     };
     saveSettings(QJsonObject{{QStringLiteral("reddit"), QJsonObject{{QStringLiteral("subreddits"), lines(subreddits)},
-                                                                     {QStringLiteral("queries"), lines(queries)}}}},
+                                                                     {QStringLiteral("queries"), lines(queries)},
+                                                                     {QStringLiteral("accounts"), lines(accounts)}}}},
                  QStringLiteral("Watch list saved."));
 }
 

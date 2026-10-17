@@ -193,8 +193,6 @@ public struct MarketingRecord: Equatable, Sendable, Identifiable {
             return parts
         case .redditThread:
             var parts = ["r/" + json.str("subreddit"), MarketingText.title(json.str("status"))]
-            if let score = json["score"]?.int64Value { parts.append("\(MarketingText.count(score)) points") }
-            if let comments = json["comments"]?.int64Value { parts.append("\(MarketingText.count(comments)) comments") }
             if json.bool("monitored") { parts.append("Monitored") }
             return parts
         case .post:
@@ -243,6 +241,31 @@ public struct MarketingRecord: Equatable, Sendable, Identifiable {
         case .redditThread: return ["to_review", "drafting"].contains(status)
         default: return false
         }
+    }
+
+    public func redditActivity(now: Int64 = SystemClock().nowMillis) -> String {
+        guard kind == .redditThread else { return "" }
+        func counted(_ key: String, _ one: String, _ many: String) -> String? {
+            guard let value = json[key]?.int64Value else { return nil }
+            return MarketingText.count(value) + " " + (value == 1 ? one : many)
+        }
+        var parts = [counted("comments", "comment", "comments"), counted("score", "point", "points"), counted("views", "view", "views")]
+            .compactMap { $0 }
+        let watching = !json.str("monitorCommentUrl").isEmpty
+        var commentViews: Int64?
+        if watching {
+            commentViews = json["commentViews"]?.int64Value
+            let comment = [counted("commentViews", "view", "views"), counted("commentScore", "point", "points")].compactMap { $0 }
+            if !comment.isEmpty { parts.append("your comment: " + comment.joined(separator: ", ")) }
+        }
+        let checkedAt = json.int64("checkedAt")
+        if json["views"]?.int64Value == nil && commentViews == nil && checkedAt > 0 {
+            let author = json.str("commentAuthor").isEmpty ? json.str("author") : json.str("commentAuthor")
+            if !author.isEmpty { parts.append("views show only to u/" + author) }
+        }
+        let readAs = json.str("readAs").isEmpty ? "" : " as u/" + json.str("readAs")
+        parts.append(checkedAt > 0 ? "read " + Format.relativeTimeFrom(checkedAt, nowMillis: now) + readAs : "not read yet")
+        return parts.joined(separator: " · ")
     }
 
     public var redditReplyPrompt: String {

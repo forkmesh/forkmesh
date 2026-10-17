@@ -103,6 +103,8 @@ public struct PackagesError: Error, Equatable, Sendable {
         case "invalid_subreddit": return "That is not a subreddit name."
         case "too_many_reddit_watch": return "Up to 40 subreddits and 40 searches."
         case "invalid_reddit_query": return "Searches are up to 120 characters."
+        case "invalid_reddit_account": return "That is not a Reddit username."
+        case "too_many_reddit_accounts": return "Up to 10 Reddit accounts."
         case "invalid_post_url": return "Paste the https link of the post."
         case "post_exists": return "That link is already tracked."
         case "post_channel_required": return "Pick the channel the link was posted on."

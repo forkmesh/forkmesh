@@ -558,6 +558,16 @@ default in new projects except the chosen starter pack
   when one of the user's organizations installed them (`/api/plugins/<org>`,
   refreshed at most every ten minutes, cached in
   `packages/organization/installed`).
+- **Marketing Reddit desk.** `A/feature/market/MarketingScreens.kt`
+  (`redditSection`) lists the team's Reddit accounts under "Your accounts"
+  (`redditDesk.accounts`, each opening u/name's posts), edited in the
+  REDDIT_WATCH form's Accounts field (one per line, up to 10; a name, `u/name`
+  or a profile link), sent as `reddit.accounts` in the same settings PUT as
+  subreddits and searches. Each thread row has a second line from
+  `MarketingRecord.redditActivity` in `C/market/MarketingWorkspace.kt`
+  (kept in core so it is unit tested): comments, points and views, the
+  watched comment's views and points, "views show only to u/…" when Reddit
+  hid them, the account the extension read as, and when it last read.
 - **Sign in** is per phone (`packages/sign-in/on`, on until removed, whatever
   the pack); Settings always keeps Sign out and Log in so nobody is locked out.
 - **Market.** `A/feature/market/MarketScreens.kt` and `C/market/MarketModels.kt`

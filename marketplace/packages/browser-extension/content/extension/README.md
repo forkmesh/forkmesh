@@ -304,6 +304,38 @@ so the log stays current without pressing anything.
   `https://www.reddit.com/*` and `https://old.reddit.com/*` are in
   `host_permissions`.
 
+**Automatic thread updates and several Reddit accounts** (2.25.0). Before
+2.25.0 a thread logged from Marketing stayed at "not read yet" until someone
+pressed **Update**, and a logged comment's views were often missed. Now:
+
+- **Update the thread log when the browser starts and every hour** (popup,
+  on by default, `fm-reddit-auto-update`): when the extension is installed,
+  updated or Chrome starts (`onInstalled`/`onStartup`), and on an hourly
+  `fm-reddit-auto-update` alarm, the extension refreshes the log and reads up
+  to 10 logged threads never read or not read for 12 hours, one background
+  tab at a time, at the comment's own link when one is logged. Runs are at
+  least 20 minutes apart. Opening the popup never starts one. Marketing's web
+  page also asks for a thread right after it is logged there.
+- **Comment views**: Reddit shows a view count only to the account that
+  posted, and new Reddit draws it in several ways. The reader takes a number
+  from a views-like attribute, an `aria-label`/`title`, a short label split
+  across elements ("7" + " views"), or a bare number next to a views, eye or
+  insights icon (never the score beside the vote arrows). Nested replies are
+  skipped. A comment is found by `thingid`, then by `permalink`, then on old
+  Reddit by `data-fullname`. Each reading also carries the post's `author`,
+  the comment's `commentAuthor` and `readAs`, the Reddit account it was read
+  as. That account comes from old Reddit's header, or from the author of an
+  item whose views were shown, since only the author sees them.
+- **Several Reddit accounts**: one browser is signed in to one Reddit account
+  at a time. When a page shows the extension that a different account is
+  signed in, it adds that account to the desk's accounts (owners and admins;
+  a member gets an error in the popup, retried after a day), then reads again
+  the logged threads that account posted or commented in and its posts' views.
+  So signing in to Reddit as each account in turn pulls in every account's
+  numbers. The popup lists the accounts, marks the one signed in now, and
+  adds or removes one (`fm-reddit-accounts-change`, the settings `PUT` the
+  watch list uses).
+
 ### Browser activity
 
 When a reader makes its first read of a page after it loads, or a refresh,
