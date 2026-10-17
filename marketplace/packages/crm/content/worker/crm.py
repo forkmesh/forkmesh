@@ -934,7 +934,8 @@ ZOHO_REGIONS = {
     "ca": ("https://accounts.zohocloud.ca", "https://mail.zohocloud.ca"),
 }
 ZOHO_CONNECTION_KEYS = ("accountId", "clientId", "clientSecret", "refreshToken")
-ZOHO_SCOPES = "ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoMail.accounts.READ"
+ZOHO_SCOPES = ("ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,"
+               "ZohoMail.accounts.READ")
 ZOHO_CALLBACK_PATH = "/api/crm/-/zoho/callback"
 ZOHO_STATE_TTL_MS = 10 * 60 * 1000
 ZOHO_SENT_FOLDERS = frozenset({"sent", "sent items", "sent mail", "sent messages"})
@@ -1389,13 +1390,8 @@ def _similar_mail_signal(message):
     return "similar:" + subject + "\n" + "\n".join(addresses)
 
 
-async def _zoho_mail_import(runtime, connection, limit):
-    """Own the complete Zoho OAuth and Mail API protocol inside the plugin."""
+async def _zoho_access_token(runtime, connection):
     accounts_server = str(connection.get("accountsServer") or "").rstrip("/")
-    mail_server = str(connection.get("mailServer") or "").rstrip("/")
-    account_id = _clean(connection.get("accountId"), 80)
-    if not accounts_server or not mail_server or not account_id:
-        return {"ok": False, "error": "zoho_connection_incomplete"}
     token = await runtime.outbound_json(
         accounts_server + "/oauth/v2/token", "POST",
         {"content-type": "application/x-www-form-urlencoded"},
@@ -1410,6 +1406,32 @@ async def _zoho_mail_import(runtime, connection, limit):
     access_token = str(token_data.get("access_token") or "")
     if (not (token or {}).get("ok") or not 200 <= _integer(
             (token or {}).get("status")) < 300 or not access_token):
+        return ""
+    return access_token
+
+
+def _zoho_connection(runtime, settings):
+    zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
+    if not _zoho_connected(zoho):
+        return None, "zoho_not_connected"
+    connection = dict(zoho)
+    if zoho.get("managed"):
+        client = _zoho_client(runtime)
+        if not client:
+            return None, "zoho_one_click_unavailable"
+        connection.update(clientId=client["clientId"], clientSecret=client["clientSecret"])
+    return connection, ""
+
+
+async def _zoho_mail_import(runtime, connection, limit):
+    """Own the complete Zoho OAuth and Mail API protocol inside the plugin."""
+    accounts_server = str(connection.get("accountsServer") or "").rstrip("/")
+    mail_server = str(connection.get("mailServer") or "").rstrip("/")
+    account_id = _clean(connection.get("accountId"), 80)
+    if not accounts_server or not mail_server or not account_id:
+        return {"ok": False, "error": "zoho_connection_incomplete"}
+    access_token = await _zoho_access_token(runtime, connection)
+    if not access_token:
         return {"ok": False, "error": "zoho_token_rejected"}
     headers = {"accept": "application/json",
                "authorization": "Zoho-oauthtoken " + access_token}
@@ -1479,6 +1501,52 @@ async def _zoho_mail_import(runtime, connection, limit):
     return {"ok": True, "messages": messages}
 
 
+def _zoho_sender_addresses(account):
+    account = account if isinstance(account, dict) else {}
+    found = [_email(account.get("primaryEmailAddress")),
+             _email(account.get("mailboxAddress"))]
+    for item in account.get("sendMailDetails") or []:
+        found.append(_email((item or {}).get("fromAddress")) if isinstance(item, dict) else "")
+    for item in account.get("emailAddress") or []:
+        found.append(_email((item or {}).get("mailId")) if isinstance(item, dict) else "")
+    return [address for address in dict.fromkeys(found) if address]
+
+
+async def _zoho_send(runtime, connection, from_email, recipient, subject, html):
+    mail_server = str(connection.get("mailServer") or "").rstrip("/")
+    account_id = _clean(connection.get("accountId"), 80)
+    if not connection.get("accountsServer") or not mail_server or not account_id:
+        return {"ok": False, "error": "zoho_connection_incomplete"}
+    access_token = await _zoho_access_token(runtime, connection)
+    if not access_token:
+        return {"ok": False, "error": "zoho_token_rejected"}
+    headers = {"accept": "application/json",
+               "authorization": "Zoho-oauthtoken " + access_token}
+    account_url = mail_server + "/api/accounts/" + quote(account_id, safe="")
+    account = await runtime.outbound_json(account_url, "GET", headers)
+    account_data = ((account or {}).get("data") or {}) if (account or {}).get("ok") else {}
+    addresses = _zoho_sender_addresses(
+        account_data.get("data") if isinstance(account_data, dict) else {})
+    sender = from_email if from_email in addresses or not addresses else addresses[0]
+    result = await runtime.outbound_json(
+        account_url + "/messages", "POST",
+        dict(headers, **{"content-type": "application/json"}),
+        json.dumps({"fromAddress": sender, "toAddress": recipient, "subject": subject,
+                    "content": html, "mailFormat": "html", "askReceipt": "no"}))
+    payload = (result or {}).get("data")
+    payload = payload if isinstance(payload, dict) else {}
+    message = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    status = _integer((result or {}).get("status"))
+    if (result or {}).get("ok") and 200 <= status < 300:
+        return {"ok": True, "fromAddress": sender,
+                "messageId": _clean(message.get("messageId"), 120)}
+    code = _clean(message.get("errorCode") or (result or {}).get("error"), 80)
+    if status in (401, 403) or "OAUTHSCOPE" in code.upper():
+        return {"ok": False, "error": "zoho_send_not_allowed", "fromAddress": sender}
+    return {"ok": False, "fromAddress": sender,
+            "error": code or "zoho_send_rejected_%d" % status}
+
+
 async def _contacts_by_address(runtime, org_bi):
     rows = await runtime.d1_all(
         "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? "
@@ -1535,14 +1603,9 @@ async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
 async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _opened_settings(runtime, org_bi)
     zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
-    if not _zoho_connected(zoho):
-        return _response(runtime, {"error": "zoho_not_connected"}, 409)
-    connection = dict(zoho)
-    if zoho.get("managed"):
-        client = _zoho_client(runtime)
-        if not client:
-            return _response(runtime, {"error": "zoho_one_click_unavailable"}, 409)
-        connection.update(clientId=client["clientId"], clientSecret=client["clientSecret"])
+    connection, refused = _zoho_connection(runtime, settings)
+    if not connection:
+        return _response(runtime, {"error": refused}, 409)
     limit = max(1, min(MAX_ZOHO_IMPORT, _integer(data.get("limit"), 100)))
     result = await _zoho_mail_import(runtime, connection, limit)
     if not (result or {}).get("ok"):
@@ -5558,8 +5621,8 @@ async def _auto_email_conversation(runtime, org_bi, contact_id):
 
 async def _auto_email_history(runtime, org_bi, now):
     rows = await runtime.d1_all(
-        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.transport='mailtrap' "
-        "AND s.sent_at>0 ORDER BY s.sent_at DESC LIMIT ?",
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND (s.transport='mailtrap' "
+        "OR s.status<>'external') AND s.sent_at>0 ORDER BY s.sent_at DESC LIMIT ?",
         org_bi, AUTO_EMAIL_HISTORY)
     sends = []
     for row in rows or []:
@@ -5568,6 +5631,8 @@ async def _auto_email_history(runtime, org_bi, now):
             continue
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
+        if row.get("transport") != "mailtrap" and not data.get("tracked"):
+            continue
         clicked = _integer(row.get("clicks")) > 0 or status == "click"
         sends.append({
             "subject": _clean(data.get("subject"), 200),
@@ -5792,7 +5857,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     now = runtime.now()
     recent = await runtime.d1_first(
         "SELECT created_at FROM crm_email_sends WHERE org_bi=? AND contact_id=? "
-        "AND transport='mailtrap' AND created_at>=? "
+        "AND (transport='mailtrap' OR status<>'external') AND created_at>=? "
         "AND status NOT IN ('draft','failed','reject') ORDER BY created_at DESC LIMIT 1",
         org_bi, contact_id, now - AUTO_EMAIL_GAP_MS)
     if recent:
@@ -5849,6 +5914,13 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, dict(
             fallback, ok=True, preview=True, subject=subject, text=text, to=recipient,
             fromEmail=from_email, fromName=from_name, model=model))
+    zoho, refused = _zoho_connection(runtime, await _opened_settings(runtime, org_bi))
+    if refused == "zoho_one_click_unavailable":
+        return _response(runtime, dict(
+            fallback, error="send_failed", via="zoho",
+            detail="Zoho Mail is connected through ForkMesh's Zoho app, which this "
+                   "server no longer has, so nothing was sent."), 409)
+    via = "zoho" if zoho else "mailtrap"
     send_id = runtime.new_id()
     html = await _tracked_email_html(runtime, send_id, text, _track_origin(runtime))
     envelope = {
@@ -5857,28 +5929,37 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         "direction": "outbound", "auto": True, "mode": mode, "linkKind": link_kind,
         "link": link, "model": model,
     }
+    if zoho:
+        envelope.update(provider="zoho", tracked=True, sentVia="zoho")
     await runtime.d1_run(
         "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
         "sender_bi,sender_name,transport,status,external_id,created_at,sent_at,"
         "status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        send_id, org_bi, org_name, contact_id, account_bi, actor, "mailtrap",
-        "sending", "", now, 0, now, await runtime.seal(envelope),
+        send_id, org_bi, org_name, contact_id, account_bi, actor,
+        "external" if zoho else "mailtrap", "sending", "", now, 0, now,
+        await runtime.seal(envelope),
     )
-    result = await runtime.send_mailtrap("", {
-        "from": {"email": from_email, "name": from_name},
-        "to": [{"email": recipient}],
-        "subject": subject,
-        "text": text,
-        "html": html,
-        "tracked": True,
-        "category": "CRM automated outreach",
-        "custom_variables": {
-            "forkmesh_crm_send_id": send_id,
-            "forkmesh_crm_org_bi": org_bi,
-            "forkmesh_crm_outreach_template": AUTO_EMAIL_TEMPLATE,
-            "forkmesh_sender": actor,
-        },
-    })
+    if zoho:
+        result = await _zoho_send(runtime, zoho, from_email, recipient, subject, html)
+        envelope["fromEmail"] = _email(result.get("fromAddress")) or from_email
+        envelope["mailbox"] = envelope["fromEmail"]
+        result["accepted"] = bool(result.get("ok"))
+    else:
+        result = await runtime.send_mailtrap("", {
+            "from": {"email": from_email, "name": from_name},
+            "to": [{"email": recipient}],
+            "subject": subject,
+            "text": text,
+            "html": html,
+            "tracked": True,
+            "category": "CRM automated outreach",
+            "custom_variables": {
+                "forkmesh_crm_send_id": send_id,
+                "forkmesh_crm_org_bi": org_bi,
+                "forkmesh_crm_outreach_template": AUTO_EMAIL_TEMPLATE,
+                "forkmesh_sender": actor,
+            },
+        })
     accepted = bool((result or {}).get("accepted"))
     envelope["error"] = _clean((result or {}).get("error"), 500)
     sent_at = runtime.now()
@@ -5899,13 +5980,19 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     await runtime.audit(
         actor, "crm.outreach.auto", "crm_email_send", send_id,
         outcome="success" if accepted else "failed",
-        details={"transport": "mailtrap", "accepted": accepted, "linkKind": link_kind,
+        details={"transport": via, "accepted": accepted, "linkKind": link_kind,
                  "mode": mode},
     )
+    if not accepted and envelope["error"] == "zoho_send_not_allowed":
+        return _response(runtime, dict(
+            fallback, error="zoho_send_not_allowed", via=via,
+            detail="Zoho Mail did not let ForkMesh send from your mailbox. Reconnect "
+                   "Zoho Mail in the CRM settings so it may send as well as read."),
+            409)
     if not accepted:
         return _response(runtime, dict(
-            fallback, error="send_failed",
-            detail="The email provider rejected the send"
+            fallback, error="send_failed", via=via,
+            detail=("Zoho Mail" if zoho else "The email provider") + " rejected the send"
                    + (" (" + envelope["error"] + ")" if envelope["error"] else "") + "."),
             502)
     contact["lastContactedAt"] = sent_at
@@ -5918,7 +6005,8 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
                                 "contact.emailed", {"subject": subject})
     await _celebrate_tracked_email(runtime, actor, send_id, subject, contact)
     return _response(runtime, {
-        "ok": True, "subject": subject, "text": text, "link": link,
+        "ok": True, "subject": subject, "text": text, "link": link, "via": via,
+        "fromEmail": envelope["fromEmail"],
         "linkKind": link_kind, "mode": mode, "model": model, "learning": learning,
         "sentToday": sent_today + 1, "dailyLimit": OUTREACH_DAILY_LIMIT,
         "email": await _email_project(runtime, await _email_row(runtime, org_bi, send_id)),

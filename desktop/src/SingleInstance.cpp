@@ -38,6 +38,7 @@ QLockFile *g_lockFile = nullptr;
 QLocalServer *g_server = nullptr;
 std::function<void(const QString &)> g_activationHandler;
 std::function<void()> g_yieldHandler;
+std::function<void()> g_handOverHandler;
 bool g_background = false;
 bool g_tookOverFromBackground = false;
 int g_backgroundLockWaitMs = 0;
@@ -57,6 +58,21 @@ bool askRunningInstance(const QString &activationTarget)
     while (reply.size() < kYieldReply.size() && socket.waitForReadyRead(1500))
         reply += socket.readAll();
     reply += socket.readAll();
+    socket.disconnectFromServer();
+    return reply.startsWith(kYieldReply);
+}
+
+bool askInstance(const QByteArray &message)
+{
+    QLocalSocket socket;
+    socket.connectToServer(serverName());
+    if (!socket.waitForConnected(500))
+        return false;
+    socket.write(message);
+    socket.waitForBytesWritten(500);
+    QByteArray reply;
+    while (reply.size() < kYieldReply.size() && socket.waitForReadyRead(1500))
+        reply += socket.readAll();
     socket.disconnectFromServer();
     return reply.startsWith(kYieldReply);
 }
@@ -102,17 +118,21 @@ bool singleInstanceHeld()
 
 bool askBackgroundInstanceToQuit()
 {
-    QLocalSocket socket;
-    socket.connectToServer(serverName());
-    if (!socket.waitForConnected(500))
-        return false;
-    socket.write("quit");
-    socket.waitForBytesWritten(500);
-    QByteArray reply;
-    while (reply.size() < kYieldReply.size() && socket.waitForReadyRead(1500))
-        reply += socket.readAll();
-    socket.disconnectFromServer();
-    return reply.startsWith(kYieldReply);
+    return askInstance("quit");
+}
+
+bool askWindowToHandOver()
+{
+    return askInstance("hand-over");
+}
+
+qint64 singleInstanceHolderPid()
+{
+    QLockFile lock(singleInstanceLockPath());
+    qint64 pid = 0;
+    QString host;
+    QString application;
+    return lock.getLockInfo(&pid, &host, &application) ? pid : 0;
 }
 
 bool isBackgroundInstance()
@@ -130,6 +150,11 @@ void onSingleInstanceYield(std::function<void()> handler)
     g_yieldHandler = std::move(handler);
     if (g_quitRequested && g_yieldHandler)
         QTimer::singleShot(0, g_yieldHandler);
+}
+
+void onSingleInstanceHandOver(std::function<void()> handler)
+{
+    g_handOverHandler = std::move(handler);
 }
 
 void requestBackgroundQuit()
@@ -191,6 +216,15 @@ bool acquireSingleInstance(const QString &activationTarget,
                     socket->write(kYieldReply);
                     socket->waitForBytesWritten(500);
                     requestBackgroundQuit();
+                }
+                socket->deleteLater();
+                continue;
+            }
+            if (message.startsWith("hand-over")) {
+                if (g_handOverHandler) {
+                    socket->write(kYieldReply);
+                    socket->waitForBytesWritten(500);
+                    QTimer::singleShot(0, g_handOverHandler);
                 }
                 socket->deleteLater();
                 continue;

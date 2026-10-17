@@ -337,10 +337,12 @@ struct HomeShell: View {
         case .home:
             ShellHome(
                 groups: groups, prefs: ShellBarPrefs.shared, onPackage: { (id: String) in openPackage(id) },
+                isUpdated: { (id: String) in accountPackages?.isUpdated(hubItem: id) ?? false },
                 onSearch: { (query: String) in
                     leavePage { openSearch(query) }
                 }
             ) { (item: ShellBarItem) in
+                accountPackages?.markViewed(hubItem: item.id)
                 ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)
             }
             .fmLoading(
@@ -353,7 +355,7 @@ struct HomeShell: View {
                 }
             }
             .task {
-                await ShellNavigatorCounts.shared.refresh()
+                await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false)
             }
         case .reportBug:
             ReportBugSheet(
@@ -751,6 +753,7 @@ struct HomeShell: View {
                     page = nil
                 }
                 model.select(tab: tab)
+                if let package = PackageGate.packageId(for: tab) { accountPackages?.markViewed(package) }
                 GenieCues.shared.tabChanged(to: AppTab.barOrder.firstIndex(of: tab) ?? 0, of: AppTab.barOrder.count)
                 GenieScreenScan.shared.invalidate()
                 genie.record(tab: tab)
@@ -760,6 +763,9 @@ struct HomeShell: View {
                     page = nil
                 }
                 returnToPage(path: path)
+                if let route = path.last, let package = PackageGate.packageId(for: route) {
+                    accountPackages?.markViewed(package)
+                }
                 GenieScreenScan.shared.invalidate()
                 if path.count > old.count {
                     GenieCues.shared.play(.nod)
@@ -1019,7 +1025,7 @@ struct HomeShell: View {
             }
         }
         Task { await HubPackageState.shared.refresh() }
-        Task { await ShellNavigatorCounts.shared.refresh() }
+        Task { await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false) }
         notifications?.start()
         if let auth = auth {
             Task { await auth.refreshAvatar() }
@@ -1124,6 +1130,7 @@ struct HomeShell: View {
     }
 
     private func openPackage(_ id: String) {
+        accountPackages?.markViewed(id)
         var transaction: Transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {

@@ -90,6 +90,13 @@ QList<ProcessRow> parseProcessTable(const QByteArray &psOutput, int maxRows,
                                     QHash<qint64, qint64> *parents);
 QString commandSummary(const QString &command, int maxChars = 160);
 
+inline constexpr int kMaxProcessDetailChars = 65536;
+qint64 processPid(const QJsonObject &params);
+QString processSubject(qint64 pid, const QString &identity);
+bool processStoppable(qint64 pid, qint64 selfPid);
+bool sudoPasswordUsable(const QString &password);
+QString processDetailText(const QString &text);
+
 QStringList mutatingActions();
 QString subjectFor(const QString &action, const QJsonObject &params,
                    QString *error = nullptr);

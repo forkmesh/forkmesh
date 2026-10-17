@@ -1,4 +1,5 @@
 import html
+import json
 import re
 import sys
 from pathlib import Path
@@ -205,3 +206,99 @@ def test_a_missing_link_is_appended_and_preview_sends_nothing():
     assert preview["data"]["text"].endswith("\n\nhttps://forkmesh.com/r/alice")
     assert runtime.mailtrap_calls == []
     assert runtime.db.execute("SELECT COUNT(*) FROM crm_email_sends").fetchone()[0] == 0
+
+
+class ZohoSendRuntime(AiRuntime):
+    def __init__(self, drafts=None, send_status=200, send_error=""):
+        super().__init__(drafts)
+        self.send_status = send_status
+        self.send_error = send_error
+        self.zoho_sends = []
+
+    async def outbound_json(self, url, method="GET", headers=None, body=""):
+        if url.endswith("/api/accounts/1") and method == "GET":
+            self.outbound_calls.append((url, method, dict(headers or {}), body))
+            return {"ok": True, "status": 200, "data": {"data": {
+                "accountId": "1", "primaryEmailAddress": "me@acme.example",
+                "sendMailDetails": [{"fromAddress": "founders@acme.example"}]}}}
+        if url.endswith("/api/accounts/1/messages") and method == "POST":
+            self.zoho_sends.append((dict(headers or {}), json.loads(body)))
+            if self.send_status != 200:
+                return {"ok": True, "status": self.send_status, "data": {
+                    "data": {"errorCode": self.send_error},
+                    "status": {"code": self.send_status}}}
+            return {"ok": True, "status": 200, "data": {
+                "status": {"code": 200}, "data": {"messageId": "zoho-out-1"}}}
+        return await super().outbound_json(url, method, headers, body)
+
+
+def _zoho_connected(runtime, from_email=""):
+    body = {"zoho": {"region": "com", "accountId": "1", "clientId": "c",
+                     "clientSecret": "s", "refreshToken": "r"}}
+    if from_email:
+        body["fromEmail"] = from_email
+    assert call(runtime.use("PUT", body=body), "/api/crm/acme/settings")["status"] == 200
+    return runtime
+
+
+def test_with_zoho_connected_the_email_goes_out_from_the_zoho_mailbox():
+    runtime = _zoho_connected(ZohoSendRuntime([_draft("Through Zoho")]),
+                              "founders@acme.example")
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    sent = _send(runtime, sam)
+    assert sent["status"] == 201, sent
+    assert runtime.mailtrap_calls == []
+    headers, payload = runtime.zoho_sends[-1]
+    assert headers["authorization"] == "Zoho-oauthtoken request-local-token"
+    assert payload["fromAddress"] == "founders@acme.example"
+    assert payload["toAddress"] == "sam@example.com"
+    assert payload["subject"] == "Through Zoho" and payload["mailFormat"] == "html"
+    assert "/api/crm/-/t/o/" in payload["content"]
+    assert sent["data"]["via"] == "zoho"
+    email = sent["data"]["email"]
+    assert email["provider"] == "zoho" and email["externalId"] == "zoho-out-1"
+    assert email["status"] == "accepted" and email["automated"] is True
+    again = _send(runtime, sam)
+    assert again["status"] == 409 and again["data"]["error"] == "recently_emailed"
+
+    runtime.zoho_messages = [{
+        "providerMessageId": "zoho-out-1", "subject": "Through Zoho",
+        "sourceFolder": "Sent", "from": "founders@acme.example", "sender": "Acme",
+        "to": "sam@example.com", "receivedAt": runtime.now()}]
+    synced = call(runtime.use("POST", body={"limit": 20}), "/api/crm/acme/mail/import")
+    assert synced["status"] == 200 and synced["data"]["outboundRecorded"] == 0
+    assert runtime.db.execute("SELECT COUNT(*) FROM crm_email_sends").fetchone()[0] == 1
+
+
+def test_an_outreach_sender_zoho_does_not_own_falls_back_to_the_mailbox_address():
+    runtime = _zoho_connected(ZohoSendRuntime([_draft("Hello")]))
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    sent = _send(runtime, sam)
+    assert sent["status"] == 201, sent
+    assert runtime.zoho_sends[-1][1]["fromAddress"] == "me@acme.example"
+    assert sent["data"]["fromEmail"] == "me@acme.example"
+
+
+def test_a_read_only_zoho_connection_asks_for_a_reconnect_and_never_uses_mailtrap():
+    runtime = _zoho_connected(ZohoSendRuntime(
+        [_draft("Hello")], send_status=404, send_error="INVALID_OAUTHSCOPE"))
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    refused = _send(runtime, sam)
+    assert refused["status"] == 409
+    assert refused["data"]["error"] == "zoho_send_not_allowed"
+    assert "Reconnect" in refused["data"]["detail"]
+    assert runtime.mailtrap_calls == []
+    status = runtime.db.execute("SELECT status FROM crm_email_sends").fetchone()[0]
+    assert status == "failed"
+    contact = call(runtime.use("GET"), f"/api/crm/acme/contacts/{sam}")["data"]["contact"]
+    assert not contact.get("lastContactedAt")
+
+
+def test_zoho_sends_teach_the_next_email_like_mailtrap_ones():
+    runtime = _zoho_connected(ZohoSendRuntime([_draft("First"), _draft("Second")]))
+    first = _contact(runtime, name="Ann", email="ann@example.com", flow="customers")
+    second = _contact(runtime, name="Bo", email="bo@example.com", flow="customers")
+    _send(runtime, first)
+    sent = _send(runtime, second)
+    assert sent["status"] == 201
+    assert sent["data"]["learning"]["sent"] == 1

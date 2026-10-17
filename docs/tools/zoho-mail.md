@@ -10,8 +10,10 @@ Every email it sends is also logged in the CRM (see
 
 It is unrelated to platform mail (Mailtrap and the cores' Postfix,
 [../MAIL_LOG.md](../MAIL_LOG.md)) and to the CRM's Zoho connection, which
-only reads mail (`ZohoMail.messages.READ`). It sends as one person's mailbox
-from their own machine.
+reads mail and, since CRM 1.36.0, sends the CRM's automated emails through
+the Zoho Mail API (`ZohoMail.messages.CREATE`,
+`marketplace/packages/crm/README.md`, "Automated outreach email"). This tool
+sends as one person's mailbox from their own machine.
 
 ## Code map
 

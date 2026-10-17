@@ -6,6 +6,7 @@
 #include "ActionStore.h"
 #include "AppPaths.h"
 #include "DesktopPowerAlert.h"
+#include "DesktopProcesses.h"
 #include "LocalControl.h"
 #include "LocalBackupStore.h"
 #include "LocalControlDiagnostics.h"
@@ -14,6 +15,7 @@
 #include "SystemPressure.h"
 #include "SystemStats.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -21,6 +23,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QSharedPointer>
+#include <QStandardPaths>
 #include <QTimer>
 
 #include <utility>
@@ -255,8 +258,16 @@ void MainWindow::answerLocalControlProcesses(int connectionId, int requestId)
                                             title.left(120)});
                 }
                 QJsonArray out;
+                const qint64 selfPid = QCoreApplication::applicationPid();
                 for (const diagctl::ProcessRow &row : rows) {
-                    QJsonObject item{{QStringLiteral("pid"), double(row.pid)},
+                    forkmesh::desktopprocs::Process described;
+                    described.name = row.name;
+                    described.command = row.command;
+                    described.self = row.pid == selfPid;
+                    described.forkmesh = described.self;
+                    QJsonObject item{{QStringLiteral("description"),
+                                      forkmesh::desktopprocs::descriptionFor(described)},
+                                     {QStringLiteral("pid"), double(row.pid)},
                                      {QStringLiteral("name"), row.name},
                                      {QStringLiteral("user"), row.user},
                                      {QStringLiteral("rssBytes"), double(row.rssKb) * 1024.0},
@@ -379,6 +390,11 @@ void MainWindow::handleLocalControlDiagnosticsRequest(int connectionId, int requ
         answerLocalControlProcesses(connectionId, requestId);
         return;
     }
+    if (method == QLatin1String("diag.process") || method == QLatin1String("diag.processStop")) {
+        answerLocalControlProcess(connectionId, requestId, method == QLatin1String("diag.processStop"),
+                                  params);
+        return;
+    }
     if (method == QLatin1String("diag.prepare")) {
         const QString action = params.value(QStringLiteral("action")).toString();
         QString error;
@@ -444,6 +460,161 @@ void MainWindow::handleLocalControlDiagnosticsRequest(int connectionId, int requ
         return;
     }
     server->respondError(connectionId, requestId, QStringLiteral("unsupported"));
+}
+
+void MainWindow::answerLocalControlProcess(int connectionId, int requestId, bool stop,
+                                           const QJsonObject &params)
+{
+    LocalControlServer *server = m_localControl;
+    if (!server)
+        return;
+#if !defined(Q_OS_LINUX)
+    Q_UNUSED(stop);
+    Q_UNUSED(params);
+    server->respondError(connectionId, requestId, QStringLiteral("process_details_unavailable"));
+#else
+    const qint64 pid = diagctl::processPid(params);
+    if (pid <= 0) {
+        server->respondError(connectionId, requestId, QStringLiteral("bad_pid"));
+        return;
+    }
+    forkmesh::desktopprocs::Sampler sampler;
+    forkmesh::desktopprocs::Process process = sampler.readOne(pid);
+    if (process.pid != pid) {
+        server->respondError(connectionId, requestId, QStringLiteral("process_exited"));
+        return;
+    }
+    const QString identity = QString::number(process.startTicks);
+    const QString asked = params.value(QStringLiteral("identity")).toString();
+    if (!asked.isEmpty() && asked != identity) {
+        server->respondError(connectionId, requestId, QStringLiteral("process_changed"));
+        return;
+    }
+    const QString deviceKey = server->deviceFor(connectionId).key;
+    const QString subject = diagctl::processSubject(pid, identity);
+    const bool stoppable = diagctl::processStoppable(pid, QCoreApplication::applicationPid());
+    const auto issue = [this, deviceKey, subject] {
+        return m_diagControlConfirmations.issue(deviceKey, QStringLiteral("stopProcess"), subject,
+                                                QDateTime::currentMSecsSinceEpoch());
+    };
+    if (!stop) {
+        process.command = diagctl::commandSummary(process.command, 32768);
+        server->respond(connectionId, requestId,
+                        {{QStringLiteral("pid"), double(pid)},
+                         {QStringLiteral("name"), process.name},
+                         {QStringLiteral("identity"), identity},
+                         {QStringLiteral("description"),
+                          forkmesh::desktopprocs::descriptionFor(process)},
+                         {QStringLiteral("details"),
+                          diagctl::processDetailText(
+                              forkmesh::desktopprocs::detailTextFor(process))},
+                         {QStringLiteral("stoppable"), stoppable},
+                         {QStringLiteral("token"), stoppable ? issue() : QString()}});
+        return;
+    }
+    if (!stoppable) {
+        server->respondError(connectionId, requestId, QStringLiteral("protected_process"));
+        return;
+    }
+    const hostctl::ConfirmationStore::Result verdict = m_diagControlConfirmations.consume(
+        params.value(QStringLiteral("token")).toString(), deviceKey, QStringLiteral("stopProcess"),
+        subject, QDateTime::currentMSecsSinceEpoch());
+    if (verdict != hostctl::ConfirmationStore::Result::Ok) {
+        server->respondError(connectionId, requestId, hostctl::confirmationError(verdict));
+        return;
+    }
+    const QString who = localControlDeviceLabel(connectionId);
+    const QJsonObject askPassword{
+        {QStringLiteral("passwordRequired"), true},
+        {QStringLiteral("message"),
+         QStringLiteral("Enter the computer's sudo password to stop this process.")}};
+    const auto stopped = [this, server, connectionId, requestId, process, who] {
+        logSystem(QStringLiteral("%1 (PID %2) stopped from the memory panel by %3.")
+                      .arg(process.name)
+                      .arg(process.pid)
+                      .arg(who));
+        server->respond(connectionId, requestId,
+                        {{QStringLiteral("stopped"), true},
+                         {QStringLiteral("message"), QStringLiteral("Termination requested.")}});
+        server->broadcast(QStringLiteral("diag.changed"));
+    };
+    QString password = params.value(QStringLiteral("password")).toString();
+    if (password.isEmpty()) {
+        QString failure;
+        switch (SystemStats::requestTermination(pid, &failure)) {
+        case SystemStats::Termination::Requested:
+            stopped();
+            return;
+        case SystemStats::Termination::AlreadyExited:
+            server->respondError(connectionId, requestId, QStringLiteral("process_exited"));
+            return;
+        case SystemStats::Termination::PermissionDenied: {
+            QJsonObject reply = askPassword;
+            reply.insert(QStringLiteral("token"), issue());
+            server->respond(connectionId, requestId, reply);
+            return;
+        }
+        case SystemStats::Termination::Unsupported:
+            server->respondError(connectionId, requestId,
+                                 QStringLiteral("process_details_unavailable"));
+            return;
+        case SystemStats::Termination::Failed:
+            break;
+        }
+        server->respondError(connectionId, requestId, QStringLiteral("process_stop_failed"));
+        return;
+    }
+    if (!diagctl::sudoPasswordUsable(password)) {
+        password.fill(QChar::Null);
+        server->respondError(connectionId, requestId, QStringLiteral("bad_password"));
+        return;
+    }
+    const QString kill = QStandardPaths::findExecutable(QStringLiteral("kill"));
+    QByteArray secret = password.toUtf8();
+    secret.append('\n');
+    password.fill(QChar::Null);
+    QPointer<LocalControlServer> guard(server);
+    auto *elevated = new QProcess(this);
+    auto answered = QSharedPointer<bool>::create(false);
+    const QString token = issue();
+    const auto finish = [guard, elevated, answered, connectionId, requestId, askPassword, token,
+                         stopped](bool ok) {
+        if (*answered)
+            return;
+        *answered = true;
+        elevated->deleteLater();
+        if (!guard)
+            return;
+        if (ok) {
+            stopped();
+            return;
+        }
+        QJsonObject reply = askPassword;
+        reply.insert(QStringLiteral("token"), token);
+        guard->respond(connectionId, requestId, reply);
+    };
+    connect(elevated, &QProcess::finished, this,
+            [finish](int exitCode, QProcess::ExitStatus status) {
+                finish(status == QProcess::NormalExit && exitCode == 0);
+            });
+    connect(elevated, &QProcess::errorOccurred, this, [finish](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            finish(false);
+    });
+    elevated->start(QStringLiteral("sudo"),
+                    {QStringLiteral("-k"), QStringLiteral("-S"), QStringLiteral("-p"), QString(),
+                     QStringLiteral("--"), kill.isEmpty() ? QStringLiteral("/bin/kill") : kill,
+                     QStringLiteral("-TERM"), QString::number(pid)});
+    elevated->write(secret);
+    secret.fill('\0');
+    elevated->closeWriteChannel();
+    QTimer::singleShot(15000, elevated, [elevated, finish] {
+        if (elevated->state() == QProcess::NotRunning)
+            return;
+        elevated->kill();
+        finish(false);
+    });
+#endif
 }
 
 void MainWindow::runLocalControlDiagnosticsAction(int connectionId, int requestId,

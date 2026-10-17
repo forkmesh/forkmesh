@@ -353,4 +353,54 @@ final class AccountPackagesTests: XCTestCase {
         XCTAssertTrue(alone.isInstalled(MarketPackage(id: "status-check-api", name: "A", defaultOn: true, accountSync: true)))
         XCTAssertFalse(alone.isInstalled(MarketPackage(id: "status-check-extra", name: "E", defaultOn: false, accountSync: true)))
     }
+
+    @MainActor func testAnUpdatedPackageIsMarkedUntilItIsViewed() {
+        let prefs = InMemoryKeyValueStore()
+        let store = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        store.adoptCatalog([
+            MarketPackage(id: "calories", name: "Calories", version: "2.5.1"),
+            MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
+            MarketPackage(id: "tasks", name: "Tasks"),
+        ])
+        XCTAssertTrue(store.updated.isEmpty)
+
+        store.adoptCatalog([
+            MarketPackage(id: "calories", name: "Calories", version: "2.6.0"),
+            MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
+            MarketPackage(id: "tasks", name: "Tasks", version: "1.0.0"),
+        ])
+        XCTAssertEqual(store.updated, ["calories"])
+        XCTAssertTrue(store.isUpdated(hubItem: "calories"))
+        XCTAssertFalse(store.isUpdated(hubItem: "notes"))
+        XCTAssertFalse(store.isUpdated(hubItem: "tasks"))
+
+        let again = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        XCTAssertEqual(again.updated, ["calories"])
+
+        store.markViewed(hubItem: "calories")
+        XCTAssertTrue(store.updated.isEmpty)
+        let viewed = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        XCTAssertTrue(viewed.updated.isEmpty)
+    }
+
+    @MainActor func testHubItemsMapToTheirPackage() {
+        let store = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: InMemoryKeyValueStore(), signedIn: { false })
+        store.adoptCatalog([
+            MarketPackage(id: "sugar-break", name: "Sugar break", version: "1.0.0"),
+            MarketPackage(id: "agents", name: "Agents", version: "1.0.0"),
+        ])
+        store.adoptCatalog([
+            MarketPackage(id: "sugar-break", name: "Sugar break", version: "1.1.0"),
+            MarketPackage(id: "agents", name: "Agents", version: "1.2.0"),
+        ])
+        XCTAssertTrue(store.isUpdated(hubItem: "sugarBreak"))
+        XCTAssertTrue(store.isUpdated(hubItem: "Agents"))
+        store.markViewed("agents")
+        XCTAssertFalse(store.isUpdated(hubItem: "Agents"))
+        XCTAssertTrue(store.isUpdated(hubItem: "sugarBreak"))
+    }
 }

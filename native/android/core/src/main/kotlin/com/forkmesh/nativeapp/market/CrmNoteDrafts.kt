@@ -66,6 +66,6 @@ data class CrmZohoCode(val clientId: String = "", val clientSecret: String = "",
     companion object {
         val REGIONS = listOf("com", "eu", "in", "com.au", "jp", "ca")
         const val CONSOLE_URL = "https://api-console.zoho.com/"
-        const val SCOPES = "ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoMail.accounts.READ"
+        const val SCOPES = "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ"
     }
 }

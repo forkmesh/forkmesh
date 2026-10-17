@@ -369,6 +369,11 @@ moves files, without relaying content in clear.
 - New request methods go in `MainWindow::handleLocalControlRequest`; agent
   changes push `agents.changed`, transcripts stream via `agents.follow` /
   `agents.output` ([../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
+- Deleting an agent (`deleteStoredAgentSession`) and restoring one from the
+  recycle bin call `scheduleAgentSessionsPush()`, which rings `agents.changed`
+  and re-posts the relay snapshot, so the phone drops or re-adds the row
+  without a manual refresh. Before this, an idle agent deleted on the desktop
+  stayed in the phone's list until the user pulled to refresh.
 - Test vectors are pinned in `desktop/tests/test_local_control.cpp` and
   `native/ios/ForkMeshCore/Tests/FMChatTests/LocalControlTests.swift`; change
   both together. Tests: `forkmesh-local-control-tests`.

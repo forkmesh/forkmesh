@@ -894,6 +894,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     draft_unusable: "The model's draft had placeholders or links we could not check, so nothing was sent. Try again.",
     rate_limited: "The AI model is busy. Try again in a minute.",
     send_failed: "The email provider refused the send.",
+    zoho_send_not_allowed: "Zoho Mail did not let ForkMesh send from your mailbox. Reconnect Zoho Mail in Settings so it may send as well as read.",
   };
 
   function crmEmailAddress(contact) {
@@ -905,7 +906,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (!contact || !crmEmailAddress(contact)) return;
     const investor = crmFlow(contact.flow)?.icon === "investors" || ["investors", "investment"].includes(contact.flow);
     const kind = investor ? "their tracked deck link" : "your referral link";
-    if (!window.confirm(`Write and send an email to ${crmContactLabel(contact)} <${contact.email}> now?\n\nA model writes it from their record and what our past emails got opened or clicked for, with ${kind}. It goes out straight away from the outreach sender.`)) return;
+    const from = state.crmView.settings?.zoho?.connected ? "your connected Zoho Mail mailbox, so it lands in its Sent folder" : "the outreach sender";
+    if (!window.confirm(`Write and send an email to ${crmContactLabel(contact)} <${contact.email}> now?\n\nA model writes it from their record and what our past emails got opened or clicked for, with ${kind}. It goes out straight away from ${from}.`)) return;
     if (button) { button.disabled = true; button.textContent = "Sending…"; }
     crmMessage("notice", `Writing an email to ${crmContactLabel(contact)}…`);
     try {
@@ -913,7 +915,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
         contactId, mode, reason, list: crmActiveView()?.name || "",
       });
       const learned = sent.learning?.sent ? ` Learned from ${sent.learning.sent} past emails (${sent.learning.openRate}% opened, ${sent.learning.clickRate}% clicked).` : "";
-      crmMessage("notice", `Sent “${sent.subject}” to ${crmContactLabel(contact)}. You get a ping when they open it or click.${learned}`);
+      const via = sent.via === "zoho" ? ` from ${sent.fromEmail || "your mailbox"} through Zoho Mail` : "";
+      crmMessage("notice", `Sent “${sent.subject}” to ${crmContactLabel(contact)}${via}. You get a ping when they open it or click.${learned}`);
     } catch (error) {
       const known = CRM_AUTO_EMAIL_ERRORS[error.payload?.error || ""];
       crmMessage("error", `Nothing was sent: ${known || error.message}`);
@@ -4717,8 +4720,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-zoho-status]`).textContent = zoho.connected
       ? `Connected to account ${zoho.accountId}${zoho.managed ? " through ForkMesh's Zoho app" : ""}${zoho.lastSyncAt ? ` · last synced ${relativeTimeLabel(zoho.lastSyncAt)}` : " · not synced yet"}.${zoho.managed ? "" : " Leave secrets blank to keep them unchanged."}`
       : zoho.oneClick
-      ? "Not connected. Connect with Zoho signs you in to Zoho and asks for read access to mail, folders, and the account. Or enter your own OAuth client below."
-      : "Not connected. Use a Zoho OAuth client with ZohoMail.messages.READ, ZohoMail.folders.READ, and ZohoMail.accounts.READ scopes.";
+      ? "Not connected. Connect with Zoho signs you in to Zoho and asks to read mail, folders, and the account and to send the CRM's emails. Or enter your own OAuth client below."
+      : "Not connected. Use a Zoho OAuth client with ZohoMail.messages.READ, ZohoMail.messages.CREATE, ZohoMail.folders.READ, and ZohoMail.accounts.READ scopes.";
     $(`[data-crm-zoho-disconnect]`).classList.toggle("hidden", !zoho.connected);
     const mastodon = settings.mastodon || {};
     $(`[data-crm-mastodon-account]`).value = mastodon.account ? `@${mastodon.account}` : "";

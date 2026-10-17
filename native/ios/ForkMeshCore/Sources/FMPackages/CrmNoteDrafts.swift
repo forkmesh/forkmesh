@@ -87,7 +87,7 @@ public struct CrmZohoCode: Equatable, Sendable {
 
     public static let regions = ["com", "eu", "in", "com.au", "jp", "ca"]
     public static let consoleURL = URL(string: "https://api-console.zoho.com/")!
-    public static let scopes = "ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoMail.accounts.READ"
+    public static let scopes = "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ"
 
     public var isComplete: Bool {
         ![clientId, clientSecret, code].contains { $0.trimmingCharacters(in: .whitespaces).isEmpty }

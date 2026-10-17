@@ -298,6 +298,22 @@ static void testInsights()
                                   QStringLiteral("f/r|shortcut|fix.md"), QString())
               .startsWith(QStringLiteral("Start an agent")),
           "prompt summary starts an agent");
+    for (const QString &action : {QStringLiteral("queueShortcut"), QStringLiteral("unqueueShortcut")}) {
+        check(insights::mutatingActions().contains(action), "queue actions need a confirmation");
+        check(insights::subjectFor(action, {{QStringLiteral("repo"), QStringLiteral("f/r")},
+                                            {QStringLiteral("scope"), QStringLiteral("shortcut")},
+                                            {QStringLiteral("file"), QStringLiteral("ship.sh")}}) ==
+                  QStringLiteral("f/r|shortcut|ship.sh"),
+              "queue subject names the script");
+    }
+    check(insights::actionSummary(QStringLiteral("queueShortcut"),
+                                  QStringLiteral("f/r|shortcut|ship.sh"), QString(), true)
+              .startsWith(QStringLiteral("Queue the \"ship.sh\" script")),
+          "queue summary says it queues the script");
+    check(insights::actionSummary(QStringLiteral("unqueueShortcut"),
+                                  QStringLiteral("f/r|shortcut|ship.sh"), QString(), true)
+              .startsWith(QStringLiteral("Take the \"ship.sh\" script out")),
+          "unqueue summary says it takes the script out");
     check(insights::appendShortcutOutput(QStringLiteral("a\n"), QStringLiteral("b\n"), 100) ==
               QStringLiteral("a\nb\n"),
           "output appends");

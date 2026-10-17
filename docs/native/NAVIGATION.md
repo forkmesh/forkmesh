@@ -107,8 +107,19 @@ destination, in sections, with counts and activity:
   needs attention, biggest count); categories can be hidden. Settings live in
   `ShellHomeSettingsSheet` and Settings > General > Home screen.
 - Counts come from data already loaded or fetched when Home opens
-  (`ShellNavigatorCounts`, at most once a minute; `ShellCounts`); `nil` means
-  unknown and shows no pill; zero shows no pill. Unread pills and the
+  (`ShellNavigatorCounts`; `ShellCounts`); `nil` means unknown and shows no
+  pill; zero shows no pill. `NavigatorCountPlan` (FMApi) decides the fetch:
+  only destinations on the grid (`HubGroups.current`, so uninstalled plugins
+  and hidden admin pages cost nothing), three at a time, at most once a minute,
+  every five minutes when iOS reports a serious thermal state or Low Power
+  Mode, and not at all when it is critical (the counts already shown stay).
+  A 2026-10-16 phone report (build 262, thermal state critical, 1.6 s of
+  freezes on the Chat tab) showed every launch and Home visit starting about
+  twenty loads at once (calories, steps, water, sleep, sugar break, stretch,
+  notes, tasks, calendar, orgs, admin, CRM, marketing, analytics), each
+  building its full screen model on the main actor; their replies landing
+  together blocked the UI for 450 to 850 ms and kept the radio and CPU busy on
+  a phone that was already throttling. Unread pills and the
   running-agents heartbeat count are solid `fm.accent` (the user's highlight
   colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
   (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
@@ -122,6 +133,15 @@ destination, in sections, with counts and activity:
   `TimelineView`s. The operator asked for the accent pills and the synced
   pulse on 2026-10-15.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
+- **Update dot.** A plugin tile whose Market package changed version since
+  the user last opened it shows a small accent dot at the icon's bottom right
+  (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
+  keeps the catalog version and the last viewed version of each package under
+  `packages/versions` on the device; the first catalog seen for a package is
+  its baseline, so installs and first launches show no dot. Opening the plugin
+  clears it: a Home pick (`markViewed(hubItem:)`), any route or tab
+  that belongs to the package (`PackageGate.packageId(for:)`), its Market page,
+  or installing it. The operator asked for the dot on 2026-10-16.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.

@@ -4505,8 +4505,10 @@ void MainWindow::showAgentRecycleBinDialog()
                     if (m_agentStore->restoreRecycledSession(id))
                         restored += 1;
                 }
-                if (restored > 0)
+                if (restored > 0) {
                     reloadAgents();
+                    scheduleAgentSessionsPush();
+                }
                 if (restored < ids.size()) {
                     showLocalNotice(
                         status,

@@ -1905,8 +1905,10 @@ void MainWindow::restoreAllRecycledAgentsInOpenRepo()
         if (m_agentStore->restoreRecycledSession(session.id))
             restored += 1;
     reloadAgentRecycleBin();
-    if (restored > 0)
+    if (restored > 0) {
         reloadAgents();
+        scheduleAgentSessionsPush();
+    }
     if (restored < binned.size()) {
         flashMessage(QStringLiteral("Could not restore %1 agent session(s); a "
                                     "live session may already use that id.")

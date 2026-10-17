@@ -1988,6 +1988,7 @@ bool MainWindow::deleteStoredAgentSession(int sessionId, bool cleanupWorktree,
         }
         m_selectedAgentSessionId = neighborId;
     }
+    scheduleAgentSessionsPush();
     return true;
 }
 

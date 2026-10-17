@@ -21,6 +21,7 @@ public struct ShortcutEntry: Equatable, Sendable, Identifiable {
     public var lastMs: Int64 = -1
     public var expectedMs: Int64 = -1
     public var startedAtMs: Int64 = 0
+    public var queued = 0
     public var onPhone = false
 
     public var id: String { scope + "|" + file }
@@ -58,6 +59,7 @@ public struct ShortcutEntry: Equatable, Sendable, Identifiable {
         lastOutput = json.str("lastOutput")
         lastOk = json.bool("lastOk")
         finished = json.int("finished")
+        queued = json.int("queued")
         lastMs = json.int64("lastMs", -1)
         expectedMs = json.int64("expectedMs", lastMs)
         let elapsed = json.int64("elapsedMs", -1)
@@ -66,6 +68,8 @@ public struct ShortcutEntry: Equatable, Sendable, Identifiable {
 
     public var isSkill: Bool { scope != "shortcut" }
     public var isScript: Bool { kind == "script" }
+
+    public var queueable: Bool { isScript && runnable && !onPhone }
 }
 
 public struct ShortcutCatalog: Equatable, Sendable {
@@ -88,6 +92,8 @@ public struct ShortcutCatalog: Equatable, Sendable {
     }
 
     public var shortcuts: [ShortcutEntry] { entries.filter { !$0.isSkill }.sorted { $0.uses > $1.uses } }
+
+    public var scriptRunning: Bool { !onPhone && entries.contains { $0.isScript && $0.running } }
 
     public var skills: [ShortcutEntry] { entries.filter(\.isSkill).sorted { $0.uses > $1.uses } }
 
@@ -229,7 +235,19 @@ public protocol ShortcutMirror: AnyObject {
 
 public enum ShortcutAction {
     public static func run(repo: String, scope: String, file: String) -> JSONObject {
-        ["action": "runShortcut", "repo": .string(repo), "scope": .string(scope), "file": .string(file)]
+        named("runShortcut", repo: repo, scope: scope, file: file)
+    }
+
+    public static func queue(repo: String, scope: String, file: String) -> JSONObject {
+        named("queueShortcut", repo: repo, scope: scope, file: file)
+    }
+
+    public static func unqueue(repo: String, scope: String, file: String) -> JSONObject {
+        named("unqueueShortcut", repo: repo, scope: scope, file: file)
+    }
+
+    static func named(_ action: String, repo: String, scope: String, file: String) -> JSONObject {
+        ["action": .string(action), "repo": .string(repo), "scope": .string(scope), "file": .string(file)]
     }
 }
 
@@ -408,6 +426,34 @@ public final class ShortcutsStore {
     @discardableResult
     public func run(_ confirmation: TeamConfirmation) async throws -> String {
         try await family.call("run", confirmation.runParams, timeout: 45).str("message")
+    }
+
+    public func repoBusy(repo: String) -> Bool {
+        catalog?.scriptRunning == true || runs.values.contains { $0.running && $0.repo.caseInsensitiveCompare(repo) == .orderedSame }
+    }
+
+    @discardableResult
+    public func runNow(repo: String, entry: ShortcutEntry) async throws -> String {
+        try await perform(ShortcutAction.run(repo: repo, scope: entry.scope, file: entry.file), repo: repo)
+    }
+
+    @discardableResult
+    public func queue(repo: String, entry: ShortcutEntry) async throws -> String {
+        try await perform(ShortcutAction.queue(repo: repo, scope: entry.scope, file: entry.file), repo: repo)
+    }
+
+    @discardableResult
+    public func unqueue(repo: String, entry: ShortcutEntry) async throws -> String {
+        try await perform(ShortcutAction.unqueue(repo: repo, scope: entry.scope, file: entry.file), repo: repo)
+    }
+
+    private func perform(_ params: JSONObject, repo: String) async throws -> String {
+        guard let confirmation = TeamConfirmation(json: try await family.call("prepare", params), params: params) else {
+            throw LocalControlException("bad_answer")
+        }
+        let message = try await run(confirmation)
+        await refresh(repo: repo)
+        return message
     }
 
     public func stop() {

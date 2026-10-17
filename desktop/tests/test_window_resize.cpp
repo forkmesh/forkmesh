@@ -17456,6 +17456,56 @@ else:
             waited.restart();
             while (anyRunning() && waited.elapsed() < 20000)
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+            const int alphaQueued = window.testQueueShortcut(alpha);
+            const int betaQueued = window.testQueueShortcut(beta);
+            const int betaAgain = window.testQueueShortcut(beta);
+            const int statusQueued = window.testQueueShortcut(status);
+            const bool statusRemoved = window.testUnqueueShortcut(status) &&
+                                       window.testShortcutQueuePosition(status) == 0;
+            const QPushButton *queuedCard = shortcutCardNamed(QStringLiteral("zz-beta.sh"));
+            const int queuedCardPosition =
+                queuedCard ? queuedCard->property("shortcutQueuePosition").toInt() : -1;
+            const auto *queueLabel = window.findChild<QLabel *>(QStringLiteral("shortcutQueueLabel"));
+            const QString queueText = queueLabel ? queueLabel->text() : QString();
+            int mostAtOnce = 0;
+            waited.restart();
+            while ((anyRunning() || window.testShortcutQueuePosition(beta) > 0) &&
+                   waited.elapsed() < 20000) {
+                int runningNow = 0;
+                for (const auto &run : window.testShortcutRuns())
+                    runningNow += run.running ? 1 : 0;
+                mostAtOnce = qMax(mostAtOnce, runningNow);
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            }
+            using QueueRun = forkmesh::localcontrol::insights::ShortcutRun;
+            const QueueRun *lastAlpha = nullptr;
+            const QueueRun *lastBeta = nullptr;
+            int statusRuns = 0;
+            const QList<QueueRun> queueRuns = window.testShortcutRuns();
+            for (const auto &run : queueRuns) {
+                if (run.file == QLatin1String("zz-alpha.sh"))
+                    lastAlpha = &run;
+                else if (run.file == QLatin1String("zz-beta.sh"))
+                    lastBeta = &run;
+                else if (run.file == QLatin1String("zz-app-store-status.sh"))
+                    ++statusRuns;
+            }
+            check(alphaQueued == 0 && betaQueued == 1 && betaAgain == 1 && statusQueued == 2 &&
+                      statusRemoved && queuedCardPosition == 1 &&
+                      queueText.contains(QLatin1String("zz-beta.sh")) && mostAtOnce == 1 &&
+                      lastAlpha && lastBeta && lastBeta->id > lastAlpha->id &&
+                      lastBeta->ok && lastBeta->startedAtMs - lastAlpha->startedAtMs >= 900 &&
+                      statusRuns == 1,
+                  QString("a queued shortcut waits for the running one, then starts on its own "
+                          "(alpha=%1, beta=%2/%3, status=%4, card=%5, label=%6, at once=%7)")
+                      .arg(alphaQueued)
+                      .arg(betaQueued)
+                      .arg(betaAgain)
+                      .arg(statusQueued)
+                      .arg(queuedCardPosition)
+                      .arg(queueText)
+                      .arg(mostAtOnce));
             QFile::remove(alpha);
             QFile::remove(beta);
             QFile::remove(status);

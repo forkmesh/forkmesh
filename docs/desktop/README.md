@@ -26,6 +26,7 @@ Topic pages in this folder:
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
+- [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
 ## Code map

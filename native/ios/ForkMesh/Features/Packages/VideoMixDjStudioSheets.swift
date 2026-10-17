@@ -14,6 +14,7 @@ struct DjSheetView: View {
                 case let .deck(side): DjDeckSheet(model: model, deck: model.deck(side))
                 case .pads: DjPadsSheet(model: model)
                 case .info: DjInfoSheet(model: model)
+                case .jam: DjJamSheet(model: model)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -37,9 +38,10 @@ struct DjLoadSheet: View {
     var body: some View {
         List {
             Section {
-                Picker("Deck", selection: $model.searchTarget) {
-                    Text("Deck A").tag(DjDeckSide.a)
-                    Text("Deck B").tag(DjDeckSide.b)
+                Picker("Load onto", selection: $model.searchTarget) {
+                    ForEach(DjLoadTarget.allCases) { (target: DjLoadTarget) in
+                        Text(target.label).tag(target)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
@@ -81,7 +83,7 @@ struct DjLoadSheet: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Load Deck \(model.searchTarget.label)")
+        .navigationTitle(model.searchTarget == .queue ? "Add to Queue" : "Load \(model.searchTarget.label)")
         .onAppear { focused = true }
     }
 
@@ -116,10 +118,11 @@ struct DjLoadSheet: View {
 
     private func row(_ result: DjSearchResult) -> some View {
         Button {
-            model.load(model.searchTarget, id: result.id, title: result.title, author: result.author)
+            model.place(id: result.id, title: result.title, author: result.author)
             model.sheet = nil
         } label: {
-            DjResultRow(result: result, loaded: model.deck(model.searchTarget).videoId == result.id)
+            DjResultRow(result: result, loaded: model.searchTarget.side.map { model.deck($0).videoId == result.id }
+                ?? model.shownQueue.contains { $0.videoId == result.id })
         }
         .buttonStyle(.plain)
     }
@@ -234,14 +237,14 @@ struct DjPadsSheet: View {
                         }
                     }
                 }
-                Text("Captured sections")
+                Text("Samples")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(0..<DjStudio.sectionCount, id: \.self) { index in
                         let section = model.sections[index]
                         DjPad(
-                            title: "Section \(index + 1)",
+                            title: "Sample \(index + 1)",
                             detail: section.map { "\($0.deck.label) · \(DjStudio.clock($0.start))" } ?? "Empty",
                             lit: false, enabled: section != nil
                         ) {
@@ -249,7 +252,7 @@ struct DjPadsSheet: View {
                         }
                         .contextMenu {
                             if section != nil {
-                                Button("Clear Section \(index + 1)", systemImage: "trash", role: .destructive) { model.clearSection(index) }
+                                Button("Clear Sample \(index + 1)", systemImage: "trash", role: .destructive) { model.clearSection(index) }
                             }
                         }
                     }
@@ -323,14 +326,17 @@ struct DjInfoSheet: View {
             Section("How it works") {
                 Label("Search and press return: the top result loads straight onto the deck.", systemImage: "magnifyingglass")
                 Label("Songs you play are kept under Recently Played in the loader for one-tap reloading.", systemImage: "clock.arrow.circlepath")
-                Label("Drag a record to scratch it.", systemImage: "hand.draw")
-                Label("START plays, PAUSE holds, STOP goes back to the beginning, RESTART starts over; SAMPLE saves 8 seconds to a pad.", systemImage: "playpause")
+                Label("Touch a record to slow it a little; drag it to scratch.", systemImage: "hand.draw")
+                Label("START plays, PAUSE holds, STOP goes back to the beginning, RESTART starts over.", systemImage: "playpause")
+                Label("SAMPLE starts recording, tap again to stop and arm it, and once more to play the sample.", systemImage: "record.circle")
+                Label("The middle shows the queue: + adds a video, tap a thumbnail to load it on a deck.", systemImage: "rectangle.stack")
+                Label("Jam (the people button) invites other ForkMesh users to share the decks and the queue.", systemImage: "person.2")
+                Label("Push the tempo fader up to speed a deck up; double-tap it to reset.", systemImage: "slider.vertical.3")
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
                 Label("AUTOMIX fades to the other deck over 8 seconds.", systemImage: "arrow.left.arrow.right")
-                Label("The record button captures 8 seconds for the sampler.", systemImage: "record.circle")
                 Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
-                Label("Reset All (the circular arrow) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
+                Label("Reset All (the circular arrow at the bottom) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
             }
             .font(.footnote)
             Section {

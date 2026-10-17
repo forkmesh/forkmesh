@@ -82,6 +82,8 @@ final class FmCuePlayer {
         }
     }
 
+    var isQuiet: Bool { quiet > 0 }
+
     func quieten(_ on: Bool) {
         quiet = max(0, quiet + (on ? 1 : -1))
     }

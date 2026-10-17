@@ -249,6 +249,39 @@ QString Sampler::commandLine(qint64 pid)
     return command;
 }
 
+Process Sampler::readOne(qint64 pid)
+{
+#if defined(Q_OS_LINUX)
+    if (pid <= 0)
+        return Process();
+    const qint64 pageBytes = qMax(1L, sysconf(_SC_PAGESIZE));
+    const QString base = QStringLiteral("/proc/%1").arg(pid);
+    Process process = parseStatLine(readSmall(base + QStringLiteral("/stat")), pageBytes);
+    if (process.pid != pid)
+        return Process();
+    struct stat info;
+    if (::stat(base.toLocal8Bit().constData(), &info) == 0) {
+        process.uid = info.st_uid;
+        process.user = userName(info.st_uid);
+    }
+    const long ticksPerSecond = qMax(1L, sysconf(_SC_CLK_TCK));
+    bool ok = false;
+    const double uptime =
+        readSmall(QStringLiteral("/proc/uptime")).simplified().split(' ').value(0).toDouble(&ok);
+    if (ok)
+        process.ageSeconds =
+            qMax<qint64>(0, qint64(uptime - double(process.startTicks) / ticksPerSecond));
+    m_commands.remove(pid);
+    process.command = commandLine(pid);
+    process.self = pid == QCoreApplication::applicationPid();
+    process.forkmesh = process.self;
+    return process;
+#else
+    Q_UNUSED(pid);
+    return Process();
+#endif
+}
+
 Snapshot Sampler::sample(qint64 nowMs)
 {
     Snapshot snapshot;
