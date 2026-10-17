@@ -2,13 +2,23 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, state } = core;
+  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, state, submitWebIssue } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
   const NOTE_AUTOSAVE_MS = 1500;
   const NOTE_PRESENCE_MS = 15000;
   const NOTE_MODE_KEY = "forkmesh.notes.mode";
+  const NOTE_SEARCH_MS = 250;
+  const NOTE_TASK_DETAILS_MAX = 4000;
+  const NOTE_ISSUE_BODY_MAX = 60000;
+  const NOTE_TASK_ERRORS = {
+    not_found: "That was not found. It may have been deleted.",
+    forbidden: "You do not have access to that.",
+    org_member_required: "You do not have access to that.",
+    unauthorized: "Sign in again to continue.",
+    invalid_session: "Sign in again to continue.",
+  };
   const NOTE_AVATAR_COLORS = ["#2f81f7", "#bf4b8a", "#1a7f37", "#9a6700", "#6e40c9", "#cf222e", "#0969da", "#8250df"];
   const NOTE_ERRORS = {
     principal_not_found: "No user or organization has that name.",
@@ -152,11 +162,15 @@
   function renderNoteList() {
     const list = $("[data-note-list]"); if (!list) return;
     const view = state.notesView;
-    const query = String($("[data-note-search]")?.value || "").trim().toLowerCase();
+    const query = noteSearchQuery();
+    const matches = view.searchMatches?.query === query ? view.searchMatches.ids : null;
     const notes = view.items.filter((note) => noteMatchesFilter(note, view.filter)
-      && String(note.title || "").toLowerCase().includes(query));
+      && (String(note.title || "").toLowerCase().includes(query)
+        || String(note.markdown || "").toLowerCase().includes(query)
+        || Boolean(matches?.has(note.id))));
     if (!notes.length) {
-      const empty = query ? `No notes match “${escapeHtml(query)}”.`
+      const empty = query && !matches ? "Searching notes…"
+        : query ? `No notes match “${escapeHtml(query)}”.`
         : view.loading ? "Loading notes…"
         : view.filter === "shared" ? "Nobody has shared a note with you yet."
         : view.filter === "public" ? "You haven't published any notes."
@@ -176,6 +190,28 @@
         + rows.map(renderNoteRow).join("")).join("");
     }
     refreshNoteIcons();
+  }
+
+  function noteSearchQuery() {
+    return String($("[data-note-search]")?.value || "").trim().toLowerCase().slice(0, 200);
+  }
+
+  function searchNotes() {
+    const view = state.notesView, query = noteSearchQuery();
+    const generation = ++view.searchGeneration;
+    clearTimeout(view.searchTimer);
+    if (!query) { view.searchMatches = null; renderNoteList(); return; }
+    renderNoteList();
+    view.searchTimer = setTimeout(async () => {
+      let ids = new Set();
+      try {
+        const payload = await noteRequest(`/api/notes?query=${encodeURIComponent(query)}`);
+        ids = new Set((payload.notes || []).map((note) => note.id));
+      } catch (_) {}
+      if (generation !== view.searchGeneration) return;
+      view.searchMatches = { query, ids };
+      renderNoteList();
+    }, NOTE_SEARCH_MS);
   }
 
   function setNoteSaveState(kind, detail = "") {
@@ -744,6 +780,74 @@
     area.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
+  function noteConversionTitle(title, markdown) {
+    const trimmed = String(title || "").trim();
+    if (trimmed) return trimmed.slice(0, 160);
+    const line = String(markdown || "").split("\n").map((text) => text.trim()).find(Boolean) || "";
+    return (line.replace(/^#+/, "").trim() || "Untitled note").slice(0, 160);
+  }
+
+  function noteConversionDetails(title, markdown, publicUrl, limit = NOTE_TASK_DETAILS_MAX) {
+    let footer = `\n\n---\nConverted from the note "${noteConversionTitle(title, markdown)}"`;
+    if (publicUrl) footer += ` (published at ${publicUrl})`;
+    const text = String(markdown || ""), room = Math.max(0, limit - footer.length);
+    return (text.length > room ? `${text.slice(0, Math.max(0, room - 1))}…` : text) + footer;
+  }
+
+  function noteConversionSource() {
+    const note = state.notesView.selected; if (!note) return null;
+    return {
+      title: $("[data-note-title]").value,
+      markdown: $("[data-note-markdown]").value,
+      link: note.visibility === "public" ? `${location.origin}/notes/${note.id}` : "",
+    };
+  }
+
+  function setNoteConverting(busy) {
+    state.notesView.converting = busy;
+    document.querySelectorAll("[data-note-to-task], [data-note-to-issue]").forEach((item) => { item.disabled = busy; });
+  }
+
+  async function convertNoteToTask() {
+    closeNotePopovers();
+    const source = noteConversionSource(); if (!source || state.notesView.converting) return;
+    noteNotice("");
+    setNoteConverting(true);
+    try {
+      await noteRequest("/api/tasks", "POST", {
+        title: noteConversionTitle(source.title, source.markdown),
+        details: noteConversionDetails(source.title, source.markdown, source.link),
+        department: "general", destination: "department", assigneeKind: "unassigned",
+      });
+      noteNotice("main", "Task created from this note");
+    } catch (error) {
+      noteNotice("main", NOTE_TASK_ERRORS[error.payload?.error] || "The task was not created.", "bad");
+    } finally { setNoteConverting(false); }
+  }
+
+  function askNoteIssueRepository() {
+    closeNotePopovers();
+    if (!state.notesView.selected || state.notesView.converting) return;
+    const input = $("[data-note-issue-repo]");
+    input.value = "";
+    noteNotice("");
+    $("[data-note-issue-dialog]").showModal();
+    input.focus();
+  }
+
+  async function convertNoteToIssue(repository) {
+    const source = noteConversionSource(); if (!source || state.notesView.converting) return;
+    if (!state.session?.sessionToken) { noteNotice("main", "Sign in on this device to file issues.", "bad"); return; }
+    setNoteConverting(true);
+    try {
+      await submitWebIssue(repository, noteConversionTitle(source.title, source.markdown),
+        noteConversionDetails(source.title, source.markdown, source.link, NOTE_ISSUE_BODY_MAX));
+      noteNotice("main", "Issue filed from this note");
+    } catch (_) {
+      noteNotice("main", "The issue was not filed.", "bad");
+    } finally { setNoteConverting(false); }
+  }
+
   function onNoteEdited() {
     renderNotePreview();
     scheduleNoteSave();
@@ -756,12 +860,13 @@
       filter: "all", linking: false, localDirty: false, savePromise: null,
       saveTimer: 0, conflict: null, peers: new Map(), presenceTimer: 0,
       socketNoteId: "", shareOrgs: null, shareSuggestions: [], shareSuggestionIndex: -1,
-      shareGeneration: 0, shareTimer: 0,
+      shareGeneration: 0, shareTimer: 0, searchMatches: null, searchGeneration: 0,
+      searchTimer: 0, converting: false,
     });
     try { view.mode = ["write", "split", "preview"].includes(localStorage.getItem(NOTE_MODE_KEY)) ? localStorage.getItem(NOTE_MODE_KEY) : "split"; } catch (_) { view.mode = "split"; }
 
     document.querySelectorAll("[data-note-new]").forEach((button) => button.addEventListener("click", () => void createNote()));
-    $("[data-note-search]")?.addEventListener("input", renderNoteList);
+    $("[data-note-search]")?.addEventListener("input", searchNotes);
     $("[data-note-filters]")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-note-filter]"); if (button) setNoteFilter(button.dataset.noteFilter);
     });
@@ -921,6 +1026,21 @@
       if (event.target.matches("[data-note-link-input]") && event.key === "Enter") {
         event.preventDefault(); void addNoteLink(event.target.closest("form"));
       }
+    });
+
+    $("[data-note-to-task]")?.addEventListener("click", () => void convertNoteToTask());
+    $("[data-note-to-issue]")?.addEventListener("click", askNoteIssueRepository);
+    document.querySelectorAll("[data-note-issue-cancel]").forEach((button) =>
+      button.addEventListener("click", () => $("[data-note-issue-dialog]").close()));
+    $("[data-note-issue-form]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = $("[data-note-issue-repo]");
+      const parts = input.value.trim().split("/");
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        noteNotice("issue", "Choose a repository as owner/name.", "bad"); input.focus(); return;
+      }
+      $("[data-note-issue-dialog]").close();
+      void convertNoteToIssue({ owner: parts[0], name: parts[1] });
     });
 
     // Export and delete.

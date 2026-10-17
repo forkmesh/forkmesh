@@ -56,8 +56,11 @@ Models take a `ToolsApiCall` closure (tests) or an `ApiService` (convenience ini
 
 - **Activity**: `ActivityScreenModel` loads stats and leaderboards, shows recent log lines and the
   node-sync activity reported by Chat (`NodeActivitySnapshot`).
-- **Notes**: `NotesListModel`, `NoteEditorModel` (actions return `ToolsOutcome{notice, close}`),
-  `NoteHistoryModel`, `NoteShareModel`.
+- **Notes**: `NotesListModel` (`NotesFilter` with counts), `NoteEditorModel` (actions return
+  `ToolsOutcome{notice, close}`; autosave, conflicts, `NoteFormatting`, `NoteLinkRef`, export),
+  `NoteHistoryModel`, `NoteShareModel` (suggestions, roles, access link), `NotePresence` and
+  `NoteRoomModel` (the note socket). Behaviour and reasons:
+  [`docs/native/notes.md`](../../../docs/native/notes.md).
 - **Tasks**: `TasksListModel` (Mine/Open/Done with icons and counts, `loadMore`),
   `TaskDetailModel`, `TaskFormModel`, `TaskCheckinModel`. People filter: Everyone, each member
   (you first, then A to Z), Bot (agent assignees) and Unassigned, each with its open count; same

@@ -236,7 +236,10 @@ object RouteParser {
         val first = rest.getOrNull(1)?.takeIf { it.isNotEmpty() }
         return when (page) {
             "chat" -> listOf(Route.Chat)
-            "notes" -> if (first != null) listOf(Route.Notes, Route.Note(first)) else listOf(Route.Notes)
+            "notes" -> {
+                val id = first ?: query["note"]?.trim()?.takeIf { it.isNotEmpty() }
+                if (id != null) listOf(Route.Notes, Route.Note(id)) else listOf(Route.Notes)
+            }
             "tasks" -> if (first != null) listOf(Route.Tasks(null), Route.Task(first)) else listOf(Route.Tasks(query["filter"]))
             "calendar" -> listOf(Route.Calendar(query["date"], CalendarMode.of(query["mode"]) ?: CalendarMode.Month))
             "settings" -> listOf(Route.Settings(first))

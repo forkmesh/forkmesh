@@ -20,6 +20,9 @@ NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 LINK_KINDS = frozenset({"issue", "pull", "discussion"})
 ROLES = frozenset({"viewer", "editor"})
+MAX_SUGGESTIONS = 8
+MAX_QUERY = 63
+MAX_SEARCH = 200
 
 
 def _response(runtime, payload, status=200, allow=""):
@@ -237,7 +240,14 @@ async def _project(runtime, row, role, full=True, counts=None):
     return result
 
 
-async def _list(runtime, account_bi):
+async def _matches(runtime, row, query):
+    data = await runtime.open(row.get("data"))
+    data = data if isinstance(data, dict) else {}
+    title = _title(data.get("title")) or "Untitled note"
+    return query in title.lower() or query in _markdown(data.get("markdown")).lower()
+
+
+async def _list(runtime, account_bi, query=""):
     rows = await runtime.d1_all(
         "SELECT DISTINCT n.note_id,n.owner_bi,n.visibility,n.version,"
         "n.created_at,n.updated_at,n.published_at,n.data FROM notes n "
@@ -258,6 +268,8 @@ async def _list(runtime, account_bi):
     for row in rows:
         role = await _role(runtime, row, account_bi)
         if not role:
+            continue
+        if query and not await _matches(runtime, row, query):
             continue
         note = await _project(runtime, row, role, full=False,
                               counts=views.get(row["note_id"], _counts(None)))
@@ -401,11 +413,37 @@ async def _versions(runtime, row, account_bi, actor, method, data):
     })
 
 
-async def _share(runtime, row, account_bi, method, data):
+async def _suggestions(runtime, account_bi, actor, shares, query):
+    users = await runtime.search_accounts(query, MAX_SUGGESTIONS * 2)
+    organizations = await runtime.member_organizations(account_bi)
+    taken = {(share["type"], share["name"].lower()) for share in shares}
+    found = []
+    for kind, names in (("user", users), ("organization", organizations)):
+        for value in names or []:
+            name = str(value or "").strip().lower()
+            if (not name or (kind == "user" and name == actor)
+                    or (kind == "organization" and query not in name)
+                    or (kind, name) in taken):
+                continue
+            taken.add((kind, name))
+            found.append({"type": kind, "name": name})
+    found.sort(key=lambda item: not item["name"].startswith(query))
+    return found[:MAX_SUGGESTIONS]
+
+
+async def _share(runtime, row, account_bi, actor, method, data):
     if await _role(runtime, row, account_bi) != "owner":
         return _response(runtime, {"error": "note_not_found"}, status=404)
     if method == "GET":
-        return _response(runtime, {"ok": True, "shares": await _shares(runtime, row["note_id"])})
+        shares = await _shares(runtime, row["note_id"])
+        payload = {"ok": True, "shares": shares}
+        if "query" in runtime.query_params():
+            query = str(runtime.query_params().get("query") or "").strip().lstrip("@").lower()
+            if len(query) > MAX_QUERY:
+                return _response(runtime, {"error": "invalid_query"}, status=400)
+            payload["suggestions"] = (await _suggestions(
+                runtime, account_bi, actor, shares, query) if query else [])
+        return _response(runtime, payload)
     kind = str(data.get("type") or "").strip().lower()
     name = str(data.get("name") or "").strip().lower()
     role = str(data.get("role") or "viewer").strip().lower()
@@ -488,8 +526,12 @@ async def handle(runtime, path):
     if not note_id:
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)
-        return await (_list(runtime, account_bi) if method == "GET" else
-                      _create(runtime, account_bi, actor, data))
+        if method == "GET":
+            query = str(runtime.query_params().get("query") or "").strip().lower()
+            if len(query) > MAX_SEARCH:
+                return _response(runtime, {"error": "invalid_query"}, status=400)
+            return await _list(runtime, account_bi, query)
+        return await _create(runtime, account_bi, actor, data)
     row = await _row(runtime, note_id)
     role = await _role(runtime, row, account_bi)
     if not row or not role:
@@ -505,7 +547,7 @@ async def handle(runtime, path):
     if action == "shares":
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)
-        return await _share(runtime, row, account_bi, method, data)
+        return await _share(runtime, row, account_bi, actor, method, data)
     if action == "links":
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)

@@ -33,6 +33,7 @@ Topic pages:
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
+| [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
 | [NEXUS.md](NEXUS.md) | NEXUS package, permissions, safety policy, host integration and verification |
 
 Siri user guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md).

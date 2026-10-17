@@ -10693,6 +10693,51 @@ class _WorldCommunityRuntime:
     def method(self):
         return method_name(self.request) if self.request is not None else "GET"
 
+    async def search_accounts(self, query, limit):
+        value = clean_string(query or "", MAX_NODE_NAME).strip().lower()
+        if not value:
+            return []
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        prefix = escaped + "%"
+        contains = "%" + escaped + "%"
+        rows = await d1_all(
+            self.env,
+            "SELECT data,username FROM users "
+            "WHERE username LIKE ? ESCAPE '\\' "
+            "ORDER BY CASE WHEN username=? THEN 0 "
+            "WHEN username LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END,"
+            "username COLLATE NOCASE LIMIT ?",
+            contains,
+            value,
+            prefix,
+            max(int(limit) * 5, int(limit)),
+        )
+        names = []
+        for row in rows or []:
+            try:
+                record = await decrypt_row(self.env, row.get("data"))
+            except Exception:
+                record = None
+            name = clean_string(
+                (record or {}).get("name") or row.get("username") or "",
+                MAX_NODE_NAME,
+            ).strip().lower()
+            if (
+                record
+                and record.get("status") == "active"
+                and _account_kind(record) == "user"
+                and valid_node_name(name)
+                and name not in names
+            ):
+                names.append(name)
+                if len(names) >= int(limit):
+                    break
+        return names
+
     def same_origin(self):
         return bool(
             self.request is not None
@@ -11120,51 +11165,6 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
         return await _chat_direct_signed_session(
             self.env, self.request, data if isinstance(data, dict) else None)
 
-    async def search_accounts(self, query, limit):
-        value = clean_string(query or "", MAX_NODE_NAME).strip().lower()
-        if not value:
-            return []
-        escaped = (
-            value.replace("\\", "\\\\")
-            .replace("%", "\\%")
-            .replace("_", "\\_")
-        )
-        prefix = escaped + "%"
-        contains = "%" + escaped + "%"
-        rows = await d1_all(
-            self.env,
-            "SELECT data,username FROM users "
-            "WHERE username LIKE ? ESCAPE '\\' "
-            "ORDER BY CASE WHEN username=? THEN 0 "
-            "WHEN username LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END,"
-            "username COLLATE NOCASE LIMIT ?",
-            contains,
-            value,
-            prefix,
-            max(int(limit) * 5, int(limit)),
-        )
-        names = []
-        for row in rows or []:
-            try:
-                record = await decrypt_row(self.env, row.get("data"))
-            except Exception:
-                record = None
-            name = clean_string(
-                (record or {}).get("name") or row.get("username") or "",
-                MAX_NODE_NAME,
-            ).strip().lower()
-            if (
-                record
-                and record.get("status") == "active"
-                and _account_kind(record) == "user"
-                and valid_node_name(name)
-                and name not in names
-            ):
-                names.append(name)
-                if len(names) >= int(limit):
-                    break
-        return names
-
     async def room_access(
             self, conversation_id, key_version, account_bi):
         room = (
@@ -11297,6 +11297,17 @@ class _NotesRuntime(_WorldCommunityRuntime):
         return ((str(org_bi), clean_string(
             (record or {}).get("name") or name, MAX_NODE_NAME).lower())
                 if org_bi and record else ("", ""))
+
+    async def member_organizations(self, account_bi):
+        rows = await d1_all(
+            self.env,
+            "SELECT o.name AS name FROM org_members m "
+            "JOIN orgs o ON o.org_bi=m.org_bi "
+            "WHERE m.member_bi=? ORDER BY o.name LIMIT ?",
+            str(account_bi or ""), 200,
+        )
+        return [clean_string(row.get("name"), MAX_NODE_NAME).strip().lower()
+                for row in rows or []]
 
     async def repository_access(self, owner, repo, actor):
         return bool(await _repository_access_context(

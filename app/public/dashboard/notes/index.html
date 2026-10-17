@@ -3027,6 +3027,7 @@
             .notes-menu button, .notes-menu a { display: flex; width: 100%; height: var(--dashboard-menu-row-height); align-items: center; gap: 8px; border-radius: var(--dashboard-control-radius); padding: 0 8px; text-align: left; font-size: var(--dashboard-control-font); color: rgb(var(--dashboard-popover-foreground-rgb)); }
             .notes-menu button:hover, .notes-menu a:hover, .notes-menu button:focus-visible, .notes-menu a:focus-visible { background: var(--nt-selected); outline: none; }
             .notes-menu svg.lucide { color: var(--nt-muted); }
+            .notes-menu button:disabled { opacity: .45; pointer-events: none; }
             .notes-menu hr { margin: 4px 0; border: 0; border-top: 1px solid var(--nt-soft); }
             .notes-menu [data-note-delete], .notes-menu [data-note-delete]:hover, .notes-menu [data-note-delete] svg.lucide { color: var(--nt-danger); }
             .notes-drawer { position: absolute; z-index: 25; top: 0; right: 0; bottom: 0; display: flex; width: min(22rem, 100%); flex-direction: column; border-left: 1px solid var(--nt-border); background: rgb(var(--dashboard-popover-rgb)); box-shadow: -8px 0 24px rgb(1 4 9 / .3); }
@@ -3056,6 +3057,8 @@
             .notes-drawer .notes-notice { margin: 0; padding: .6rem 1.1rem 0; }
             .notes-modal { width: min(26rem, calc(100vw - 2rem)); border: 0; background: transparent; padding: 0; color: rgb(var(--dashboard-foreground-rgb)); }
             .notes-modal::backdrop { background: rgb(1 4 9 / .6); }
+            .notes-modal .notes-field input { height: calc(var(--dashboard-control-height) - 2px); font-size: var(--dashboard-control-font); }
+            .notes-modal .notes-notice { margin: .5rem 0 0; }
             @media (max-width: 1100px) { .notes-bar [data-note-mode-group] { display: none; } }
             @media (max-width: 767px) {
               .notes-app { grid-template-columns: minmax(0, 1fr); }
@@ -3208,6 +3211,10 @@
                   <button data-note-link-start type="button" role="menuitem"><i data-lucide="link"></i>Link issue or PR</button>
                   <button data-note-menu-copy-link type="button" role="menuitem"><i data-lucide="copy"></i>Copy link</button>
                   <a data-note-menu-public target="_blank" rel="noopener" role="menuitem" hidden><i data-lucide="external-link"></i>Open published page</a>
+                  <hr />
+                  <button data-note-to-task type="button" role="menuitem"><i data-lucide="list-todo"></i>Turn into a task</button>
+                  <button data-note-to-issue type="button" role="menuitem"><i data-lucide="circle-dot"></i>Turn into an issue</button>
+                  <hr />
                   <button data-note-export type="button" role="menuitem"><i data-lucide="download"></i>Download Markdown</button>
                   <hr data-note-delete-sep />
                   <button data-note-delete type="button" role="menuitem"><i data-lucide="trash-2"></i>Delete note</button>
@@ -3237,6 +3244,26 @@
               <div class="fm-dialog-footer">
                 <button value="cancel" class="fm-btn fm-btn-sm">Cancel</button>
                 <button value="delete" data-note-delete-confirm class="fm-btn fm-btn-sm fm-btn-danger">Delete note</button>
+              </div>
+            </form>
+          </dialog>
+
+          <dialog data-note-issue-dialog class="notes-modal" aria-labelledby="note-issue-title">
+            <form data-note-issue-form class="fm-dialog">
+              <div class="fm-dialog-header">
+                <h2 id="note-issue-title" class="fm-dialog-title">Issue in which repository?</h2>
+                <button data-note-issue-cancel type="button" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon" aria-label="Close"><i data-lucide="x"></i></button>
+              </div>
+              <div class="fm-dialog-body">
+                <p class="text-sm text-muted-foreground">The note's Markdown becomes the issue description. The note itself is unchanged.</p>
+                <div class="notes-field mt-3">
+                  <input data-note-issue-repo autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repository" aria-label="Repository" />
+                </div>
+                <p data-note-notice="issue" class="notes-notice" role="status" hidden></p>
+              </div>
+              <div class="fm-dialog-footer">
+                <button data-note-issue-cancel type="button" class="fm-btn fm-btn-sm">Cancel</button>
+                <button data-note-issue-confirm type="submit" class="fm-btn fm-btn-sm">File issue</button>
               </div>
             </form>
           </dialog>

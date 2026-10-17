@@ -103,6 +103,9 @@ class NavigationTest {
 
     fun testParsesDashboardAndCustomSchemeLinks() {
         assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes/n1")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n2")), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=n2")!!.stack)
+        assertEq(listOf(Route.Notes, Route.Note("n1")), RouteParser.parse("https://forkmesh.com/dashboard/notes/n1?note=n2")!!.stack)
+        assertEq(listOf(Route.Notes), RouteParser.parse("https://app.forkmesh.com/dashboard/notes?note=")!!.stack)
         assertEq(Route.Calendar("2026-09-01", CalendarMode.Week), RouteParser.parse("https://app.forkmesh.com/dashboard/calendar?mode=week&date=2026-09-01")!!.destination)
         assertEq(Route.Profile("me"), RouteParser.parse("https://app.forkmesh.com/dashboard/profile", me = "me")!!.destination)
         assertEq(Route.Settings("profile"), RouteParser.parse("https://app.forkmesh.com/dashboard/profile")!!.destination)

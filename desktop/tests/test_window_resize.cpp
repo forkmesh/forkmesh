@@ -2805,8 +2805,12 @@ void checkNoteSaveAlert(MainWindow &window)
                 save = button;
         }
     }
-    QLineEdit *title = page ? page->findChild<QLineEdit *>() : nullptr;
-    QComboBox *storage = page ? page->findChild<QComboBox *>() : nullptr;
+    QLineEdit *title =
+        page ? page->findChild<QLineEdit *>(QStringLiteral("noteTitleEdit"))
+             : nullptr;
+    QComboBox *storage =
+        page ? page->findChild<QComboBox *>(QStringLiteral("noteStorageMode"))
+             : nullptr;
     if (!create || !save || !title || !storage) {
         check(false, QStringLiteral("saving a note raises an alert naming "
                                     "where it was saved"));

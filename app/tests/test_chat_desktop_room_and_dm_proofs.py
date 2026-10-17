@@ -222,7 +222,7 @@ def test_desktop_direct_message_proofs_are_resource_bound():
 
 def test_direct_message_runtime_accepts_desktop_proofs_after_sessions():
     start = ENTRY.index("class _ChatDirectMessagesRuntime(")
-    body = ENTRY[start:ENTRY.index("async def search_accounts", start)]
+    body = ENTRY[start:ENTRY.index("async def room_access", start)]
     assert "await super().session(data)" in body
     assert "_chat_direct_signed_session(" in body
 

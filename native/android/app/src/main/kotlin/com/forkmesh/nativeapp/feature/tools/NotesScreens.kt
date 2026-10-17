@@ -1,7 +1,14 @@
 package com.forkmesh.nativeapp.feature.tools
 
-import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +18,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,17 +41,42 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.docs.DocsMarkdown
+import com.forkmesh.nativeapp.feature.account.openExternalUrl
+import com.forkmesh.nativeapp.feature.docs.DocsBlockView
+import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.format.relativeTime
+import com.forkmesh.nativeapp.net.WebSocketClient
 import com.forkmesh.nativeapp.notes.JsonObject
+import com.forkmesh.nativeapp.notes.NoteConflictException
+import com.forkmesh.nativeapp.notes.NoteFilter
+import com.forkmesh.nativeapp.notes.NoteLink
+import com.forkmesh.nativeapp.notes.NotePeer
+import com.forkmesh.nativeapp.notes.NotePresence
+import com.forkmesh.nativeapp.notes.NoteRoomEvent
+import com.forkmesh.nativeapp.notes.NoteSaveState
+import com.forkmesh.nativeapp.notes.NoteSearch
+import com.forkmesh.nativeapp.notes.NoteShareSuggestion
 import com.forkmesh.nativeapp.notes.NotesApi
 import com.forkmesh.nativeapp.notes.NotesLogic
 import com.forkmesh.nativeapp.notes.apiErrorText
 import com.forkmesh.nativeapp.notes.jsonInt
 import com.forkmesh.nativeapp.notes.jsonObjects
 import com.forkmesh.nativeapp.notes.jsonString
+import com.forkmesh.nativeapp.platform.AppLifecycle
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
@@ -47,26 +85,46 @@ import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmExtendedFloatingActionButton
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmIconTile
+import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
+import com.forkmesh.nativeapp.ui.kit.FmNavBar
 import com.forkmesh.nativeapp.ui.kit.FmPanelHeader
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
+import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
 import com.forkmesh.nativeapp.ui.kit.FmTextField
 import com.forkmesh.nativeapp.ui.kit.FmTone
 import com.forkmesh.nativeapp.ui.kit.FmToneButton
-import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.ui.theme.FmRadius
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal fun notesApi(): NotesApi? = Services.get<ApiService>()?.let(::NotesApi)
+
+private fun notesOrigin(): String = Services.get<ApiService>()?.gitOrigin.orEmpty()
+
+private fun shareNoteText(context: Context, subject: String, text: String, type: String = "text/plain") {
+    val send = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_SUBJECT, subject).putExtra(Intent.EXTRA_TEXT, text)
+    runCatching { context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
 
 class NotesScreen : Screen() {
     override val title: String get() = "Notes"
@@ -75,6 +133,8 @@ class NotesScreen : Screen() {
     private var loading by mutableStateOf(true)
     private var error by mutableStateOf("")
     private var query by mutableStateOf("")
+    private var filter by mutableStateOf(NoteFilter.All)
+    private var answer by mutableStateOf<NoteSearch?>(null)
     private var generation by mutableIntStateOf(0)
 
     @Composable
@@ -89,6 +149,23 @@ class NotesScreen : Screen() {
                 error = apiErrorText(thrown, "Notes are unavailable right now.")
             }
             loading = false
+        }
+        LaunchedEffect(NotesLogic.searchQuery(query), notes) {
+            val wanted = NotesLogic.searchQuery(query)
+            if (wanted.isEmpty()) {
+                answer = null
+                return@LaunchedEffect
+            }
+            val api = notesApi() ?: return@LaunchedEffect
+            delay(NotesLogic.SEARCH_MS)
+            val found = try {
+                withContext(Dispatchers.IO) { api.search(wanted) }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            }
+            if (found != null && NotesLogic.searchQuery(query) == wanted) answer = NoteSearch(wanted, found)
         }
         val top = navigator.top
         LaunchedEffect(top) { if (top === this@NotesScreen) generation++ }
@@ -105,24 +182,43 @@ class NotesScreen : Screen() {
                         "No notes yet",
                         message = "Notes are private markdown documents that follow your account across web, desktop, and mobile.",
                     )
-                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
-                        item {
-                            FmTextField(
-                                value = query,
-                                onValueChange = { query = it },
-                                hint = "Search notes",
-                                leading = { FmIcon("search", size = 20.dp, tint = Fm.colors.textTertiary) },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            )
-                        }
-                        items(NotesLogic.filter(notes, query), key = { jsonString(it["id"]) }) { note ->
-                            FmListRow(
-                                title = jsonString(note["title"], "Untitled note"),
-                                subtitle = NotesLogic.rowSubtitle(note),
-                                leading = { FmIconTile(if (note["visibility"] == "public") "public" else "sticky_note_2_outlined") },
-                                onTap = { navigator.push(NoteEditorScreen(jsonString(note["id"]))) },
-                            )
-                            FmRowDivider()
+                    else -> {
+                        val results = NotesLogic.searchResults(notes, query, answer)
+                        val counts = NotesLogic.counts(results)
+                        val shown = NotesLogic.filter(results, "", filter)
+                        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+                            item {
+                                FmTextField(
+                                    value = query,
+                                    onValueChange = { query = it },
+                                    hint = "Search titles and text",
+                                    leading = { FmIcon("search", size = 20.dp, tint = Fm.colors.textTertiary) },
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                                FmSegmentTabBar(
+                                    NoteFilter.entries.map { FmSegmentTab(it.label, counts[it] ?: 0) },
+                                    NoteFilter.entries.indexOf(filter),
+                                    onChanged = { filter = NoteFilter.entries[it] },
+                                )
+                            }
+                            if (shown.isEmpty()) {
+                                item {
+                                    Text(
+                                        NotesLogic.emptyListText(query, filter, NotesLogic.searchPending(query, answer)),
+                                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                        style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
+                                    )
+                                }
+                            }
+                            items(shown, key = { jsonString(it["id"]) }) { note ->
+                                FmListRow(
+                                    title = jsonString(note["title"], "Untitled note").ifEmpty { "Untitled note" },
+                                    subtitle = NotesLogic.rowSubtitle(note),
+                                    leading = { FmIconTile(if (note["visibility"] == "public") "public" else "sticky_note_2_outlined") },
+                                    onTap = { navigator.push(NoteEditorScreen(jsonString(note["id"]))) },
+                                )
+                                FmRowDivider()
+                            }
                         }
                     }
                 }
@@ -140,22 +236,38 @@ class NotesScreen : Screen() {
 class NoteEditorScreen(private val noteId: String?) : Screen() {
     override val title: String get() = "Note"
 
+    private val api: NotesApi? = notesApi()
+    private val status = FmStatus()
+    private val saveLock = Mutex()
     private var note by mutableStateOf<JsonObject?>(null)
     private var loading by mutableStateOf(noteId != null)
-    private var saving by mutableStateOf(false)
     private var error by mutableStateOf("")
     private var titleText by mutableStateOf("")
-    private var markdown by mutableStateOf("")
-    private var savedTitle = ""
-    private var savedMarkdown = ""
+    private var body by mutableStateOf(TextFieldValue(""))
+    private var savedTitle by mutableStateOf("")
+    private var savedMarkdown by mutableStateOf("")
+    private var saveState by mutableStateOf(NoteSaveState.Saved)
+    private var saveDetail by mutableStateOf("")
+    private var saving by mutableStateOf(false)
+    private var conflict by mutableStateOf<JsonObject?>(null)
+    private var preview by mutableStateOf(false)
+    private var leaving by mutableStateOf(false)
+    private var discarded = false
     private var confirmDiscard by mutableStateOf(false)
     private var confirmDelete by mutableStateOf(false)
     private var showHistory by mutableStateOf(false)
     private var showShare by mutableStateOf(false)
+    private var showLinks by mutableStateOf(false)
     private var menu by mutableStateOf(false)
-    private var navigatorRef: Navigator? = null
+    private var roomGeneration by mutableIntStateOf(0)
+    private var room: WebSocketClient? = null
+    private var presence: NotePresence? = null
+    private var presenceLabel by mutableStateOf("")
+    private var peers by mutableStateOf<List<NotePeer>>(emptyList())
 
+    private val markdown: String get() = body.text
     private val id: String? get() = note?.let { jsonString(it["id"]) } ?: noteId
+    private val version: Long get() = jsonInt(note?.get("version"))
     private val canEdit: Boolean get() = NotesLogic.canEdit(note)
     private val dirty: Boolean get() = titleText != savedTitle || markdown != savedMarkdown
 
@@ -165,88 +277,177 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         savedMarkdown = jsonString(value["markdown"])
         if (!keepText) {
             titleText = savedTitle
-            markdown = savedMarkdown
+            setBody(savedMarkdown)
         }
     }
 
-    override fun onBack(): Boolean {
-        if (dirty && canEdit) {
-            confirmDiscard = true
-            return true
+    private fun setBody(text: String) {
+        body = TextFieldValue(text, TextRange(text.length))
+    }
+
+    private suspend fun persist(): Boolean = saveLock.withLock {
+        val notes = api ?: return@withLock false
+        if (!canEdit || conflict != null || discarded) return@withLock conflict == null
+        val current = id
+        val title = titleText
+        val text = markdown
+        if (current != null && title == savedTitle && text == savedMarkdown) return@withLock true
+        if (current == null && title.isBlank() && text.isBlank()) return@withLock true
+        saving = true
+        saveState = NoteSaveState.Saving
+        val ok = try {
+            val saved = withContext(Dispatchers.IO) {
+                if (current == null) notes.create(title, text) else notes.save(current, version, title, text)
+            }
+            note = saved
+            savedTitle = title
+            savedMarkdown = text
+            saveState = if (dirty) NoteSaveState.Dirty else NoteSaveState.Saved
+            true
+        } catch (clash: NoteConflictException) {
+            conflict = clash.latest
+            saveState = NoteSaveState.Conflict
+            false
+        } catch (thrown: Exception) {
+            saveDetail = NotesLogic.saveError(thrown)
+            saveState = NoteSaveState.Failed
+            false
         }
-        return false
+        saving = false
+        ok
+    }
+
+    private fun saveSoon() {
+        AppLifecycle.scope.launch { persist() }
+    }
+
+    override fun onBack(): Boolean {
+        if (!canEdit || discarded || (!dirty && !saving)) return false
+        if (conflict != null) confirmDiscard = true else leaving = true
+        return true
+    }
+
+    override fun onDisposed() {
+        if (canEdit && dirty && conflict == null && !discarded) saveSoon()
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content(navigator: Navigator) {
-        navigatorRef = navigator
+        val notes = api ?: return
         val scope = rememberCoroutineScope()
-        val status = rememberFmStatus()
-        val api = notesApi() ?: return
+        val context = LocalContext.current
+        val origin = notesOrigin()
         LaunchedEffect(Unit) {
-            if (noteId == null) return@LaunchedEffect
+            if (noteId == null || note != null) {
+                loading = false
+                return@LaunchedEffect
+            }
             try {
-                apply(withContext(Dispatchers.IO) { api.get(noteId) })
+                apply(withContext(Dispatchers.IO) { notes.get(noteId) })
             } catch (thrown: Exception) {
                 error = apiErrorText(thrown, "This note could not be opened.")
             }
             loading = false
         }
-        fun save() {
-            if (saving || !canEdit) return
-            saving = true
+        LaunchedEffect(titleText, markdown, version, conflict) {
+            if (loading || error.isNotEmpty() || !canEdit || conflict != null || !dirty) return@LaunchedEffect
+            if (id == null && titleText.isBlank() && markdown.isBlank()) return@LaunchedEffect
+            if (!saving) saveState = NoteSaveState.Dirty
+            delay(NotesLogic.AUTOSAVE_MS)
+            saveSoon()
+        }
+        LaunchedEffect(leaving) {
+            if (!leaving) return@LaunchedEffect
+            val ok = AppLifecycle.scope.async { persist() }.await()
+            leaving = false
+            if (ok && !dirty) navigator.pop() else confirmDiscard = true
+        }
+        NoteRoom(notes, scope)
+        LaunchedEffect(titleText, markdown) {
+            val socket = room ?: return@LaunchedEffect
+            val live = presence ?: return@LaunchedEffect
+            if (!canEdit || !dirty) return@LaunchedEffect
+            delay(NotePresence.DRAFT_MS)
+            val frame = live.draftFrame(titleText, markdown, version)
+            withContext(Dispatchers.IO) { socket.sendText(frame) }
+        }
+        val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri: Uri? ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val text = NotesLogic.exportMarkdown(titleText, markdown)
             scope.launch {
-                try {
-                    val current = id
-                    val saved = withContext(Dispatchers.IO) {
-                        if (current == null) api.create(titleText, markdown) else api.save(current, jsonInt(note?.get("version")), titleText, markdown)
-                    }
-                    apply(saved)
-                    status.show("Note saved")
-                } catch (thrown: Exception) {
-                    status.error(NotesLogic.saveError(thrown))
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null }.getOrDefault(false)
                 }
-                saving = false
+                if (ok) status.show("Markdown exported") else status.error("The file could not be written.")
             }
         }
         fun setVisibility(visibility: String) {
             val current = id ?: return
             scope.launch {
                 try {
-                    apply(withContext(Dispatchers.IO) { api.setVisibility(current, jsonInt(note?.get("version")), visibility) }, keepText = true)
-                    status.show(if (visibility == "public") "Note published" else "Note is private again")
+                    apply(withContext(Dispatchers.IO) { notes.setVisibility(current, version, visibility) }, keepText = true)
+                    status.show(if (visibility == "public") "Published — anyone with the link can read it" else "Note is private again")
                 } catch (thrown: Exception) {
                     status.error(apiErrorText(thrown, "Visibility was not changed."))
                 }
             }
         }
+        fun copy(label: String, url: String) {
+            copyToClipboard(context, url)
+            status.show("$label copied")
+        }
         val existing = id != null
+        val owner = NotesLogic.role(note) == "owner"
+        val public = note?.get("visibility") == "public"
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase).imePadding()) {
             val plugin = rememberScreenPluginMenu()
-            ToolsAppBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", navigator, pluginMenu = false) {
-                if (canEdit && !loading && error.isEmpty()) {
-                    FmTextButton(onClick = { save() }, enabled = !saving && (!existing || dirty)) { Text(if (saving) "Saving…" else "Save") }
+            FmNavBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", onBack = { navigator.handleBack() }) {
+                if (!loading && error.isEmpty()) {
+                    val label = if (canEdit) NotesLogic.saveStateLabel(saveState, saveDetail) else NotesLogic.saveStateLabel(NoteSaveState.ReadOnly)
+                    FmTextButton(onClick = { saveSoon() }, enabled = canEdit && dirty && !saving && conflict == null) {
+                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
+                    }
                 }
-                val owned = existing && note != null
-                if (owned || plugin != null) {
+                val opened = existing && note != null
+                if (opened || plugin != null) {
                     Box {
                         FmIconButton("more_vert", "More", onPressed = { menu = true }, color = Fm.colors.textPrimary)
                         FmDropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            if (owned) {
+                            val current = id
+                            if (opened && current != null) {
+                                FmDropdownMenuItem(text = "Copy link", icon = "link", onClick = {
+                                    menu = false
+                                    copy("Link", NotesLogic.accessUrl(origin, current))
+                                })
+                                if (public) {
+                                    FmDropdownMenuItem(text = "Copy public link", icon = "public", onClick = {
+                                        menu = false
+                                        copy("Public link", NotesLogic.publicUrl(origin, current))
+                                    })
+                                    FmDropdownMenuItem(text = "Open published page", icon = "open_in_new", onClick = {
+                                        menu = false
+                                        openExternalUrl(context, NotesLogic.publicUrl(origin, current))
+                                    })
+                                }
                                 FmDropdownMenuItem(text = "History", onClick = { menu = false; showHistory = true })
+                                if (canEdit) FmDropdownMenuItem(text = "Linked issues and PRs", onClick = { menu = false; showLinks = true })
+                                FmDropdownMenuItem(text = "Export Markdown", onClick = {
+                                    menu = false
+                                    exporter.launch(NotesLogic.exportFileName(titleText))
+                                })
                                 com.forkmesh.nativeapp.feature.planning.NoteConvertItems(note, id, { titleText }, { markdown }, status, scope) { menu = false }
-                                if (NotesLogic.role(note) == "owner") {
+                                if (owner) {
                                     FmDropdownMenuItem(text = "Share", onClick = { menu = false; showShare = true })
-                                    if (note?.get("visibility") == "public") {
+                                    if (public) {
                                         FmDropdownMenuItem(text = "Make private", onClick = { menu = false; setVisibility("private") })
                                     } else {
-                                        FmDropdownMenuItem(text = "Publish", onClick = { menu = false; setVisibility("public") })
+                                        FmDropdownMenuItem(text = "Publish to the web", onClick = { menu = false; setVisibility("public") })
                                     }
                                     FmDropdownMenuItem(text = "Delete", onClick = { menu = false; confirmDelete = true })
                                 }
                             }
-                            plugin?.Items(close = { menu = false }, divided = owned)
+                            plugin?.Items(close = { menu = false }, divided = opened)
                         }
                     }
                     plugin?.Host()
@@ -264,30 +465,74 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
                         textStyle = Fm.text.titleLarge,
                     )
                     Text(NotesLogic.editorMeta(note), style = Fm.text.bodySmall.copy(color = Fm.colors.textTertiary))
+                    if (presenceLabel.isNotEmpty()) PresenceLine(presenceLabel, peers)
+                    val publicUrl = id?.takeIf { public }?.let { NotesLogic.publicUrl(origin, it) }
+                    if (publicUrl != null) {
+                        Text(
+                            publicUrl,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodySmall.copy(color = Fm.colors.accent),
+                            modifier = Modifier.clickable { copy("Public link", publicUrl) }.padding(vertical = 2.dp),
+                        )
+                    }
+                    val links = NoteLink.list(note?.get("links"))
+                    if (links.isNotEmpty()) {
+                        Text(
+                            "Linked: " + links.joinToString(", ") { it.label },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodySmall.copy(color = Fm.colors.accent),
+                            modifier = Modifier.clickable { showLinks = true }.padding(vertical = 2.dp),
+                        )
+                    }
                     FmInlineStatus(status, Modifier.padding(top = 4.dp))
+                    val clash = conflict
+                    if (clash != null) {
+                        ConflictBanner(
+                            clash,
+                            onKeepMine = {
+                                conflict = null
+                                note = clash
+                                savedTitle = jsonString(clash["title"])
+                                savedMarkdown = jsonString(clash["markdown"])
+                                saveSoon()
+                            },
+                            onTakeTheirs = {
+                                conflict = null
+                                apply(clash)
+                                saveState = NoteSaveState.Saved
+                            },
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
-                    FmTextField(
-                        value = markdown,
-                        onValueChange = { markdown = it },
-                        readOnly = !canEdit,
-                        hint = "Write in markdown…",
-                        minLines = 12,
-                        maxLines = Int.MAX_VALUE,
-                        textStyle = Fm.mono(size = Fm.text.bodyMedium.fontSize),
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FmToneButton("Write", onPressed = { preview = false }, tone = if (!preview) FmTone.Accent else FmTone.Neutral, filled = !preview, height = 30.dp)
+                        FmToneButton("Preview", onPressed = { preview = true }, tone = if (preview) FmTone.Accent else FmTone.Neutral, filled = preview, height = 30.dp)
+                    }
+                    if (!preview && canEdit) {
+                        FormatToolbar { kind ->
+                            val edit = NotesLogic.format(markdown, body.selection.min, body.selection.max, kind)
+                            body = TextFieldValue(edit.text, TextRange(edit.start, edit.end))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    if (preview) {
+                        MarkdownPreview(markdown, Modifier.weight(1f).fillMaxWidth()) { url -> NavigationFeature.openUri(context, url) }
+                    } else {
+                        MarkdownField(body, { body = it }, !canEdit, Modifier.weight(1f).fillMaxWidth())
+                    }
                 }
             }
         }
         if (confirmDiscard) {
             FmConfirmDialog(
                 title = "Discard changes?",
-                body = "Your edits to this note have not been saved.",
+                body = if (conflict != null) "Someone else saved this note first. Leaving now drops your edits." else "Your edits to this note have not been saved.",
                 confirmLabel = "Discard",
                 onConfirm = {
                     confirmDiscard = false
-                    savedTitle = titleText
-                    savedMarkdown = markdown
+                    discarded = true
                     navigator.pop()
                 },
                 onDismissRequest = { confirmDiscard = false },
@@ -296,7 +541,7 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         if (confirmDelete) {
             FmConfirmDialog(
                 title = "Delete note?",
-                body = "This removes the note and its history for everyone it is shared with.",
+                body = "“${titleText.ifBlank { "Untitled note" }}” and its version history will be removed for everyone it's shared with. This can't be undone.",
                 confirmLabel = "Delete",
                 destructive = true,
                 onConfirm = {
@@ -304,9 +549,8 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
                     val current = id ?: return@FmConfirmDialog
                     scope.launch {
                         try {
-                            withContext(Dispatchers.IO) { api.delete(current) }
-                            savedTitle = titleText
-                            savedMarkdown = markdown
+                            withContext(Dispatchers.IO) { notes.delete(current) }
+                            discarded = true
                             navigator.pop()
                         } catch (thrown: Exception) {
                             status.error(apiErrorText(thrown, "The note was not deleted."))
@@ -319,8 +563,9 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         if (showHistory) {
             val current = id
             if (current != null) {
-                NoteHistorySheet(api, current, jsonInt(note?.get("version")), canEdit, onDismiss = { showHistory = false }) { restored ->
+                NoteHistorySheet(notes, current, version, canEdit, onDismiss = { showHistory = false }) { restored ->
                     showHistory = false
+                    conflict = null
                     apply(restored)
                     status.show("Version restored")
                 }
@@ -329,17 +574,197 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         if (showShare) {
             val current = id
             if (current != null) {
-                NoteShareSheet(api, current, jsonObjects(note?.get("shares"))) {
+                NoteShareSheet(notes, current, origin, jsonString(note?.get("title")), jsonObjects(note?.get("shares")), onChanged = { shares ->
+                    note = (note ?: emptyMap()) + ("shares" to shares)
+                }) {
                     showShare = false
                     scope.launch {
                         try {
-                            apply(withContext(Dispatchers.IO) { api.get(current) }, keepText = true)
+                            apply(withContext(Dispatchers.IO) { notes.get(current) }, keepText = true)
                         } catch (_: Exception) {
                         }
                     }
                 }
             }
         }
+        if (showLinks) {
+            val current = id
+            if (current != null) {
+                NoteLinksSheet(
+                    notes,
+                    current,
+                    NoteLink.list(note?.get("links")),
+                    canEdit,
+                    onChanged = { links -> note = (note ?: emptyMap()) + ("links" to links.map { it.body() }) },
+                    onOpen = { link -> NavigationFeature.openUri(context, NotesLogic.linkUrl(origin, link)) },
+                    onDismiss = { showLinks = false },
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun NoteRoom(notes: NotesApi, scope: kotlinx.coroutines.CoroutineScope) {
+        val current = id
+        LaunchedEffect(current, roomGeneration) {
+            if (current == null) return@LaunchedEffect
+            val service = Services.get<ApiService>() ?: return@LaunchedEffect
+            val token = service.sessionTokenProvider?.invoke().orEmpty()
+            if (token.isEmpty()) return@LaunchedEffect
+            val live = NotePresence(UUID.randomUUID().toString())
+            val frames = Channel<String>(Channel.UNLIMITED)
+            val listener = object : WebSocketClient.Listener {
+                override fun onText(socket: WebSocketClient, text: String) {
+                    frames.trySend(text)
+                }
+
+                override fun onClosed(socket: WebSocketClient, code: Int, reason: String, error: Throwable?) {
+                    frames.close()
+                }
+            }
+            val options = WebSocketClient.Options().header("Authorization", "Bearer $token").header("Origin", service.gitOrigin)
+            val socket = withContext(Dispatchers.IO) {
+                runCatching { WebSocketClient.connect(NotePresence.roomUrl(service.gitOrigin, current), listener, options) }.getOrNull()
+            }
+            if (socket == null) {
+                presenceLabel = ""
+                return@LaunchedEffect
+            }
+            room = socket
+            presence = live
+            suspend fun send(text: String) {
+                withContext(Dispatchers.IO) { socket.sendText(text) }
+            }
+            fun refresh() {
+                val now = System.currentTimeMillis()
+                peers = live.peers(now)
+                presenceLabel = live.label(socket.isOpen, now)
+            }
+            val ticker = launch {
+                while (true) {
+                    send(live.presenceFrame())
+                    refresh()
+                    delay(NotePresence.PRESENCE_MS)
+                }
+            }
+            var accessChanged = false
+            try {
+                for (text in frames) {
+                    val frame = live.receive(text, System.currentTimeMillis())
+                    if (frame.newcomer) send(live.presenceFrame())
+                    when (val event = frame.event) {
+                        is NoteRoomEvent.Draft -> if (event.baseVersion == version && !dirty && !saving) {
+                            titleText = event.title
+                            savedTitle = event.title
+                            savedMarkdown = event.markdown
+                            body = TextFieldValue(event.markdown, body.selection.let { TextRange(it.min.coerceAtMost(event.markdown.length)) })
+                        }
+                        is NoteRoomEvent.Updated -> if (event.version > version && !dirty && !saving) {
+                            scope.launch { runCatching { apply(withContext(Dispatchers.IO) { notes.get(current) }) } }
+                        }
+                        NoteRoomEvent.Deleted -> {
+                            discarded = true
+                            status.error("This note was deleted.")
+                        }
+                        NoteRoomEvent.AccessChanged -> accessChanged = true
+                        null -> Unit
+                    }
+                    refresh()
+                }
+            } finally {
+                ticker.cancel()
+                room = null
+                presence = null
+                withContext(NonCancellable + Dispatchers.IO) { socket.cancel() }
+                live.clear()
+                peers = emptyList()
+                presenceLabel = live.label(false, System.currentTimeMillis())
+            }
+            if (!discarded) {
+                delay(if (accessChanged) 400L else NotePresence.PRESENCE_MS)
+                runCatching { apply(withContext(Dispatchers.IO) { notes.get(current) }, keepText = true) }
+                    .onFailure { thrown -> if (thrown is CancellationException) throw thrown }
+                roomGeneration++
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresenceLine(label: String, peers: List<NotePeer>) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
+        for (peer in peers.take(4)) FmAvatar(peer.name, 18.dp, textStyle = Fm.text.labelSmall)
+        Text(label, style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary))
+    }
+}
+
+@Composable
+private fun ConflictBanner(latest: JsonObject, onKeepMine: () -> Unit, onTakeTheirs: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(FmRadius.md))
+            .border(1.dp, Fm.colors.warning, RoundedCornerShape(FmRadius.md))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(NotesLogic.conflictText(latest), style = Fm.text.bodyMedium.copy(color = Fm.colors.textPrimary))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FmToneButton("Keep mine", onPressed = onKeepMine, tone = FmTone.Accent, filled = true)
+            FmToneButton("Take theirs", onPressed = onTakeTheirs)
+        }
+    }
+}
+
+@Composable
+private fun FormatToolbar(onFormat: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        FmIconButton("title", "Heading", onPressed = { onFormat("heading") }, color = Fm.colors.textSecondary)
+        FmIconButton("Bold", onPressed = { onFormat("bold") }, color = Fm.colors.textSecondary) {
+            Text("B", style = Fm.text.titleMedium.copy(fontWeight = FontWeight.Bold))
+        }
+        FmIconButton("Italic", onPressed = { onFormat("italic") }, color = Fm.colors.textSecondary) {
+            Text("I", style = Fm.text.titleMedium.copy(fontStyle = FontStyle.Italic))
+        }
+        FmIconButton("format_list_bulleted", "List", onPressed = { onFormat("list") }, color = Fm.colors.textSecondary)
+        FmIconButton("checklist", "Task", onPressed = { onFormat("task") }, color = Fm.colors.textSecondary)
+        FmIconButton("link", "Link", onPressed = { onFormat("link") }, color = Fm.colors.textSecondary)
+        FmIconButton("code", "Code", onPressed = { onFormat("code") }, color = Fm.colors.textSecondary)
+    }
+}
+
+@Composable
+private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, readOnly: Boolean, modifier: Modifier) {
+    val c = Fm.colors
+    val style = Fm.mono(size = Fm.text.bodyMedium.fontSize).copy(color = c.textPrimary)
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        readOnly = readOnly,
+        textStyle = style,
+        cursorBrush = SolidColor(c.accent),
+        modifier = modifier
+            .clip(RoundedCornerShape(FmRadius.md))
+            .border(1.dp, c.border, RoundedCornerShape(FmRadius.md))
+            .padding(12.dp),
+        decorationBox = { inner ->
+            Box {
+                if (value.text.isEmpty()) Text("Write in markdown…", style = style.copy(color = c.textTertiary))
+                inner()
+            }
+        },
+    )
+}
+
+@Composable
+private fun MarkdownPreview(markdown: String, modifier: Modifier, onLink: (String) -> Unit) {
+    val parsed = remember(markdown) { DocsMarkdown.parse(markdown) }
+    Column(modifier.verticalScroll(rememberScrollState())) {
+        if (parsed.blocks.isEmpty()) {
+            Text("Nothing to preview yet.", style = Fm.text.bodyMedium.copy(color = Fm.colors.textTertiary))
+        }
+        for (block in parsed.blocks) DocsBlockView(block, parsed.references, onLink)
     }
 }
 
@@ -368,9 +793,10 @@ private fun NoteHistorySheet(api: NotesApi, noteId: String, currentVersion: Long
             else -> LazyColumn(Modifier.fillMaxWidth().height(360.dp)) {
                 items(list) { entry ->
                     val version = jsonInt(entry["version"])
+                    val author = jsonString(entry["author"])
                     FmListRow(
                         title = "Version $version",
-                        subtitle = relativeTime(jsonInt(entry["createdAt"])),
+                        subtitle = listOf(relativeTime(jsonInt(entry["createdAt"])), author).filter { it.isNotEmpty() }.joinToString(" · "),
                         showChevron = false,
                         trailing = when {
                             version == currentVersion -> ({ FmStatusBadge("Current", Fm.colors.accent) })
@@ -399,21 +825,54 @@ private fun NoteHistorySheet(api: NotesApi, noteId: String, currentVersion: Long
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteShareSheet(api: NotesApi, noteId: String, initial: List<JsonObject>, onDismiss: () -> Unit) {
+private fun NoteShareSheet(
+    api: NotesApi,
+    noteId: String,
+    origin: String,
+    noteTitle: String,
+    initial: List<JsonObject>,
+    onChanged: (List<JsonObject>) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var shares by remember { mutableStateOf(initial) }
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("user") }
     var role by remember { mutableStateOf("viewer") }
     var busy by remember { mutableStateOf(false) }
+    var suggestions by remember { mutableStateOf<List<NoteShareSuggestion>>(emptyList()) }
+    var picked by remember { mutableStateOf("") }
+    var roleMenu by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val status = rememberFmStatus()
-    fun send(block: () -> List<JsonObject>, clear: Boolean) {
+    val context = LocalContext.current
+    LaunchedEffect(name) {
+        val query = NotesLogic.suggestionQuery(name)
+        if (query.isEmpty() || query == picked) {
+            suggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(NotesLogic.SUGGEST_MS)
+        val found = try {
+            withContext(Dispatchers.IO) { api.shareSuggestions(noteId, query) }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (NotesLogic.suggestionQuery(name) == query) suggestions = found
+    }
+    fun send(block: () -> List<JsonObject>, notice: String, clear: Boolean) {
         busy = true
         scope.launch {
             try {
                 shares = withContext(Dispatchers.IO) { block() }
-                if (clear) name = ""
-                status.clear()
+                onChanged(shares)
+                if (clear) {
+                    name = ""
+                    picked = ""
+                    suggestions = emptyList()
+                }
+                status.show(notice)
             } catch (thrown: Exception) {
                 status.error(NotesLogic.shareError(thrown, type))
             }
@@ -421,21 +880,40 @@ private fun NoteShareSheet(api: NotesApi, noteId: String, initial: List<JsonObje
         }
     }
     FmModalBottomSheet(onDismissRequest = onDismiss, isScrollControlled = true) {
-        Column(Modifier.imePadding()) {
-            FmPanelHeader(title = "Share", subtitle = "Viewers can read; editors can change the text.")
+        Column(Modifier.imePadding().verticalScroll(rememberScrollState())) {
+            FmPanelHeader(title = "Share", subtitle = "People with access can open this note in ForkMesh.")
             if (shares.isEmpty()) {
                 Text("Not shared with anyone yet.", modifier = Modifier.padding(16.dp), style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary))
             }
             for (share in shares) {
                 val shareType = jsonString(share["type"])
                 val shareName = jsonString(share["name"])
+                val shareRole = jsonString(share["role"], "viewer")
+                val key = "$shareType:$shareName"
                 FmListRow(
                     title = shareName,
-                    subtitle = "${if (shareType == "organization") "Organization" else "User"} · ${if (share["role"] == "editor") "Editor" else "Viewer"}",
+                    subtitle = if (shareType == "organization") "Organization" else "User",
                     showChevron = false,
                     leading = { FmIconTile(if (shareType == "organization") "groups_outlined" else "person_outline") },
                     trailing = {
-                        FmIconButton("close", "Stop sharing", onPressed = if (busy) null else ({ send({ api.removeShare(noteId, shareType, shareName) }, false) }))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                FmTextButton(enabled = !busy, onClick = { roleMenu = key }) { Text(NotesLogic.roleLabel(shareRole)) }
+                                FmDropdownMenu(expanded = roleMenu == key, onDismissRequest = { roleMenu = "" }) {
+                                    for (option in listOf("editor", "viewer")) {
+                                        FmDropdownMenuItem(text = NotesLogic.roleLabel(option), onClick = {
+                                            roleMenu = ""
+                                            if (option != shareRole) {
+                                                send({ api.addShare(noteId, shareType, shareName, option) }, NotesLogic.roleNotice(shareName, option), false)
+                                            }
+                                        })
+                                    }
+                                }
+                            }
+                            FmIconButton("close", "Stop sharing with $shareName", onPressed = if (busy) null else ({
+                                send({ api.removeShare(noteId, shareType, shareName) }, "Removed $shareName", false)
+                            }))
+                        }
                     },
                 )
             }
@@ -444,17 +922,146 @@ private fun NoteShareSheet(api: NotesApi, noteId: String, initial: List<JsonObje
                     FmToneButton("User", onPressed = { type = "user" }, tone = if (type == "user") FmTone.Accent else FmTone.Neutral, filled = type == "user")
                     FmToneButton("Org", onPressed = { type = "organization" }, tone = if (type == "organization") FmTone.Accent else FmTone.Neutral, filled = type == "organization")
                     Spacer(Modifier.width(8.dp))
-                    FmToneButton("Viewer", onPressed = { role = "viewer" }, tone = if (role == "viewer") FmTone.Accent else FmTone.Neutral, filled = role == "viewer")
-                    FmToneButton("Editor", onPressed = { role = "editor" }, tone = if (role == "editor") FmTone.Accent else FmTone.Neutral, filled = role == "editor")
+                    FmToneButton("Can view", onPressed = { role = "viewer" }, tone = if (role == "viewer") FmTone.Accent else FmTone.Neutral, filled = role == "viewer")
+                    FmToneButton("Can edit", onPressed = { role = "editor" }, tone = if (role == "editor") FmTone.Accent else FmTone.Neutral, filled = role == "editor")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FmTextField(value = name, onValueChange = { name = it }, hint = if (type == "user") "Username" else "Organization", modifier = Modifier.weight(1f))
                     FmTextButton(enabled = !busy && NotesLogic.shareName(name).isNotEmpty(), onClick = {
-                        send({ api.addShare(noteId, type, name, role) }, true)
+                        val chosen = NotesLogic.shareName(name)
+                        send({ api.addShare(noteId, type, chosen, role) }, NotesLogic.sharedNotice(chosen), true)
                     }) { Text("Share") }
                 }
+                if (suggestions.isNotEmpty()) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                            .clip(RoundedCornerShape(FmRadius.md))
+                            .border(1.dp, Fm.colors.border, RoundedCornerShape(FmRadius.md))
+                            .background(Fm.colors.bgRaised)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        for (item in suggestions) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        picked = item.name
+                                        name = item.name
+                                        type = item.type
+                                        suggestions = emptyList()
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                FmAvatar(item.name, 24.dp, textStyle = Fm.text.labelSmall)
+                                Text(item.name, style = Fm.text.bodyMedium.copy(color = Fm.colors.textPrimary), modifier = Modifier.weight(1f))
+                                Text(item.typeLabel, style = Fm.text.bodySmall.copy(color = Fm.colors.textTertiary))
+                            }
+                        }
+                    }
+                }
                 FmInlineStatus(status)
+                if (shares.isNotEmpty()) {
+                    val url = NotesLogic.accessUrl(origin, noteId)
+                    Text("Link for people with access", style = Fm.text.titleSmall.copy(color = Fm.colors.textPrimary), modifier = Modifier.padding(top = 8.dp))
+                    Text(url, maxLines = 2, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FmToneButton("Copy link", icon = "content_copy", onPressed = {
+                            copyToClipboard(context, url)
+                            status.show("Link copied")
+                        })
+                        FmToneButton("Send", icon = "share", onPressed = { shareNoteText(context, noteTitle.ifBlank { "Untitled note" }, url) })
+                    }
+                }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteLinksSheet(
+    api: NotesApi,
+    noteId: String,
+    initial: List<NoteLink>,
+    canEdit: Boolean,
+    onChanged: (List<NoteLink>) -> Unit,
+    onOpen: (NoteLink) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var links by remember { mutableStateOf(initial) }
+    var input by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf("issue") }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val status = rememberFmStatus()
+    LaunchedEffect(noteId) {
+        try {
+            links = withContext(Dispatchers.IO) { api.links(noteId) }
+            onChanged(links)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+        }
+    }
+    fun send(block: () -> List<NoteLink>, notice: String, clear: Boolean) {
+        busy = true
+        scope.launch {
+            try {
+                links = withContext(Dispatchers.IO) { block() }
+                onChanged(links)
+                if (clear) input = ""
+                status.show(notice)
+            } catch (thrown: Exception) {
+                status.error(NotesLogic.linkError(thrown))
+            }
+            busy = false
+        }
+    }
+    FmModalBottomSheet(onDismissRequest = onDismiss, isScrollControlled = true) {
+        Column(Modifier.imePadding().verticalScroll(rememberScrollState())) {
+            FmPanelHeader(title = "Linked issues and PRs")
+            if (links.isEmpty()) {
+                Text("Nothing linked yet.", modifier = Modifier.padding(16.dp), style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary))
+            }
+            for (link in links) {
+                FmListRow(
+                    title = "${link.owner}/${link.repo}#${link.number}",
+                    subtitle = link.kindLabel,
+                    leading = { FmIconTile(if (link.kind == "pull") "call_merge" else if (link.kind == "discussion") "forum_outlined" else "adjust") },
+                    showChevron = false,
+                    onTap = { onOpen(link) },
+                    trailing = if (canEdit) ({
+                        FmIconButton("close", "Unlink ${link.label}", onPressed = if (busy) null else ({
+                            send({ api.removeLink(noteId, link) }, "Unlinked ${link.label}", false)
+                        }))
+                    }) else null,
+                )
+            }
+            if (canEdit) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for ((value, label) in listOf("issue" to "Issue", "pull" to "PR", "discussion" to "Discussion")) {
+                            FmToneButton(label, onPressed = { kind = value }, tone = if (kind == value) FmTone.Accent else FmTone.Neutral, filled = kind == value)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FmTextField(value = input, onValueChange = { input = it }, hint = "Paste a URL or owner/repo#123", modifier = Modifier.weight(1f))
+                        FmTextButton(enabled = !busy && input.isNotBlank(), onClick = {
+                            val link = NoteLink.parse(input, kind)
+                            if (link == null) {
+                                status.error("Paste an issue or pull request URL, or type owner/repo#123.")
+                            } else {
+                                send({ api.addLink(noteId, link) }, "Linked ${link.label}", true)
+                            }
+                        }) { Text("Link") }
+                    }
+                }
+            }
+            FmInlineStatus(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
     }
 }

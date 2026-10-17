@@ -10615,6 +10615,8 @@ void MainWindow::openCommitHashReference(const QString &hash)
 
 void MainWindow::openReferenceLink(const QString &href)
 {
+    if (openNoteLink(href))
+        return;
     if (href.startsWith(QStringLiteral("fm-issue:"))) {
         openIssueReference(href.mid(9).toInt());
         return;
@@ -10701,6 +10703,8 @@ QString MainWindow::autolinkReferences(
 
 void MainWindow::openBodyReference(const QString &href)
 {
+    if (openNoteLink(href))
+        return;
     if (href.startsWith(QStringLiteral("forkmesh-issue:"))) {
         openIssueReference(href.mid(15).toInt());
         return;

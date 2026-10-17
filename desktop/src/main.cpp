@@ -15,6 +15,7 @@
 #include "ForkMeshIdentity.h"
 #include "MainWindow.h"
 #include "MirrorActionsConfiguration.h"
+#include "NoteTools.h"
 #include "PlatformLogFilter.h"
 #include "PublicMirrorRuntime.h"
 #include "QtRuntimeDiagnostics.h"
@@ -278,7 +279,8 @@ bool agentLoginLinkParts(const QString &value, QString *node = nullptr,
 bool isLocalActionLink(const QString &value)
 {
     return isCloudflareSetupLink(value) || repositoryForkLinkParts(value) ||
-           agentLoginLinkParts(value);
+           agentLoginLinkParts(value) ||
+           !forkmesh::notes::parseNoteLink(value).id.isEmpty();
 }
 
 QStringList launchArguments(int argc, char *argv[])
@@ -996,6 +998,8 @@ int main(int argc, char *argv[])
             window->openCloudflareSetupFromSystemLink(target);
         else if (repositoryForkLinkParts(target))
             window->openRepositoryForkFromSystemLink(target);
+        else if (!forkmesh::notes::parseNoteLink(target).id.isEmpty())
+            window->openNoteFromSystemLink(target);
         else {
             QString node, provider;
             if (agentLoginLinkParts(target, &node, &provider))

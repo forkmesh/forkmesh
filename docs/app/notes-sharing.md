@@ -27,6 +27,23 @@ it. When the highlighted suggestion is exactly what is typed, the first Enter
 shares straight away. A typed name that matches nothing still works: the
 server resolves it and answers `principal_not_found` if it does not exist.
 
+### The notes-scoped suggestion endpoint
+
+The desktop, iOS and Android apps ask one endpoint instead:
+`GET /api/notes/<id>/shares?query=…` (owner only, `app/src/notes.py`
+`_suggestions`). It answers the usual `shares` plus `suggestions`, a list of
+`{type, name}` built by the same rules as above: active accounts from the
+shared `search_accounts` (on `_WorldCommunityRuntime` in `entry.py`), the
+caller's own organizations containing the text, the caller and principals
+already shared left out, prefix matches first, at most 8. An empty query
+answers no suggestions without searching; a query over 63 characters is
+`invalid_query`.
+
+It lives under `/api/notes` because the desktop without a password session
+signs each request with the account key, and that signature is scoped to
+`/api/notes` (`docs/desktop/notes.md`); the chat user search would refuse it.
+Filtering on the server also means every client leaves out the same people.
+
 ## The access link
 
 A shared note is private: the published `/notes/<id>` page only reads public
@@ -47,7 +64,34 @@ appear under **Publish to the web**.
 
 ## Tests
 
+`app/tests/test_notes.py` covers the suggestion endpoint: matching users and
+organizations, the owner and already-shared people left out, prefix order,
+empty and over-long queries, and non-owners refused.
+
 `app/browser_tests/tests/dashboard-notes-share.spec.js` drives the built page
 with mocked APIs: suggestions for users and organizations, keyboard picking,
 already-shared principals left out, the access link row and copy, and opening
 `?note=<id>`.
+
+## The same features on every platform
+
+The web page, the desktop (`docs/desktop/notes.md`), iOS and Android
+(`docs/native/notes.md`) offer the same Notes features: filters with counts
+and title-and-body search (`GET /api/notes?query=`, `docs/app/notes-convert.md`),
+autosave, write and preview with a format bar, Keep mine / Take theirs on a
+save conflict, the share panel with suggestions and role changes, the link for
+people with access, opening `/dashboard/notes?note=<id>`, publishing with a
+copyable public link, version history, linked issues and pull requests,
+Markdown export, delete, and turning a note into a task or an issue.
+
+Known differences:
+
+- Live presence runs on the web, iOS and Android. The desktop does not link
+  QtWebSockets, so it shows changes on Refresh instead.
+- The desktop editor has Write and Preview tabs but no split view; phones
+  have no room for one.
+- The desktop autosaves Cloud-only notes. Local and Local + cloud notes save
+  with the Save button, because each local save adds an on-disk snapshot.
+- On iOS the format bar adds text at the end of the note: the text editor
+  cannot report the selection before iOS 18.
+- Local (on-disk) notes are a desktop feature.

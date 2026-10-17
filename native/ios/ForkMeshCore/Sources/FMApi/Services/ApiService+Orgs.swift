@@ -69,6 +69,17 @@ extension ApiService {
         try await accountApiCall(method, "/api/notes\(suffix)", body)
     }
 
+    public func noteSocketURL(_ noteId: String) -> URL {
+        let path = "/api/notes/\(noteId)/ws"
+        return URL(string: ServerURL.parse(settings.serverUrl).webSocket(path)) ?? url(path)
+    }
+
+    public func noteSocket(_ noteId: String, connector: WebSocketConnector) async throws -> WebSocketConnection {
+        try await connector.connect(
+            url: noteSocketURL(noteId), headers: withAuth([:]), protocols: [],
+            options: WebSocketOptions(connectTimeout: 15, pingInterval: 30))
+    }
+
     public func workflowsApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
         try await accountApiCall(method, "/api/workflows\(suffix)", body)
     }

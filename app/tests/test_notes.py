@@ -31,14 +31,18 @@ class FakeRuntime:
         self.clock = 2_100_000_000_000
         self.ids = 0
         self.events = []
+        self.query = {}
+        self.searches = []
 
-    def use(self, method, actor="", body=None):
+    def use(self, method, actor="", body=None, query=None):
         self.method_value = method
         self.actor = actor
         self.body = body or {}
+        self.query = query or {}
         return self
 
     def method(self): return self.method_value
+    def query_params(self): return self.query
     def same_origin(self): return True
     def now(self):
         self.clock += 1
@@ -81,6 +85,14 @@ class FakeRuntime:
     async def realtime(self, *_args):
         return self.response({"ok": True, "websocket": True})
     async def audit(self, *_args): pass
+    async def search_accounts(self, query, limit):
+        self.searches.append(query)
+        return sorted(name for name in self.users if query in name)[:limit]
+    async def member_organizations(self, account_bi):
+        rows = self.db.execute(
+            "SELECT name FROM org_members WHERE member_bi=? ORDER BY name",
+            (account_bi,)).fetchall()
+        return [row["name"] for row in rows]
 
 
 def call(runtime, path):
@@ -189,6 +201,32 @@ def test_listing_carries_sidebar_status_shares_and_view_counts():
     assert shared_view[0]["views"] == 3
 
 
+def test_listing_search_matches_title_and_body():
+    runtime = FakeRuntime()
+    plan = call(runtime.use("POST", "alice", {
+        "title": "Launch plan", "markdown": "Ship the beta",
+    }), "/api/notes")["data"]["note"]
+    retro = call(runtime.use("POST", "alice", {
+        "title": "Retro", "markdown": "The LAUNCH went well",
+    }), "/api/notes")["data"]["note"]
+    call(runtime.use("POST", "alice", {
+        "title": "Groceries", "markdown": "milk",
+    }), "/api/notes")
+
+    def search(text, actor="alice"):
+        found = call(runtime.use("GET", actor, query={"query": text}), "/api/notes")
+        return found["status"], [note["id"] for note in found["data"].get("notes", [])]
+
+    assert search("launch") == (200, [retro["id"], plan["id"]])
+    assert search(" BETA ") == (200, [plan["id"]])
+    assert search("nothing here") == (200, [])
+    assert len(search("")[1]) == 3
+    assert "markdown" not in call(runtime.use("GET", "alice", query={"query": "beta"}),
+                                  "/api/notes")["data"]["notes"][0]
+    assert search("x" * 201)[0] == 400
+    assert search("launch", actor="bob") == (200, [])
+
+
 def test_private_note_is_hidden_and_organization_share_grants_read():
     runtime = FakeRuntime()
     created = call(runtime.use("POST", "alice", {
@@ -211,3 +249,43 @@ def test_private_note_is_hidden_and_organization_share_grants_read():
         "baseVersion": 1, "markdown": "nope",
     }), f"/api/notes/{note_id}")
     assert denied["status"] == 404
+
+
+def test_share_suggestions_leave_out_owner_and_existing_shares():
+    runtime = FakeRuntime()
+    runtime.users.update({"albert": "user-albert", "carla": "user-carla"})
+    runtime.orgs.update({"alpaca": "org-alpaca", "beta": "org-beta"})
+    for org_bi, name in (("org-alpaca", "alpaca"), ("org-beta", "beta")):
+        runtime.db.execute(
+            "INSERT INTO org_members(org_bi,member_bi,name) VALUES(?,?,?)",
+            (org_bi, "user-alice", name))
+    runtime.db.commit()
+    note_id = call(runtime.use("POST", "alice", {"title": "Plan"}),
+                   "/api/notes")["data"]["note"]["id"]
+    path = f"/api/notes/{note_id}/shares"
+
+    found = call(runtime.use("GET", "alice", query={"query": "@AL"}), path)
+    assert found["status"] == 200
+    assert found["data"]["suggestions"] == [
+        {"type": "user", "name": "albert"},
+        {"type": "organization", "name": "alpaca"},
+    ]
+
+    call(runtime.use("POST", "alice", {
+        "type": "user", "name": "albert", "role": "editor",
+    }), path)
+    found = call(runtime.use("GET", "alice", query={"query": "a"}), path)
+    names = [(item["type"], item["name"]) for item in found["data"]["suggestions"]]
+    assert names == [
+        ("organization", "alpaca"), ("user", "carla"), ("organization", "beta")]
+    assert found["data"]["shares"][0]["name"] == "albert"
+
+    searches = len(runtime.searches)
+    empty = call(runtime.use("GET", "alice", query={"query": " "}), path)
+    assert empty["data"]["suggestions"] == [] and len(runtime.searches) == searches
+    plain = call(runtime.use("GET", "alice"), path)
+    assert "suggestions" not in plain["data"]
+    assert call(runtime.use("GET", "alice", query={"query": "a" * 64}),
+                path)["status"] == 400
+    assert call(runtime.use("GET", "bob", query={"query": "a"}),
+                path)["status"] == 404
