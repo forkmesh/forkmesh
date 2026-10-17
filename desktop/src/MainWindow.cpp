@@ -96,7 +96,8 @@ void stopSupervisingUserServiceAfterWindowClose()
     const QStringList arguments = systemdUserServiceCloseArguments(unit, restart);
     if (arguments.isEmpty())
         return;
-    if (closeHoldsSourceGuard(
+    if (!forkmesh::background::sessionEnding() &&
+        closeHoldsSourceGuard(
             unit, restart,
             QSettings().value(kReopenAfterCloseSetting, false).toBool()) &&
         !writeDesktopCloseHold(sourceGuardHoldPath(),
