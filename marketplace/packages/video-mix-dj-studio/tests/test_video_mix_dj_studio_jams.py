@@ -174,3 +174,65 @@ def test_manifest_declares_the_jam_worker_and_the_player_reports_audio_sources()
     player = (PACKAGE.parents[2] / "native" / "ios" / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
     assert 'if(cors)parent.postMessage({fmdjFrame:"source",src:src},"*")' in player
     assert 'post({type:"source",deck:k,id:d.id,src:m.src})' in player
+
+
+def test_presence_shares_status_and_motion_and_doubles_as_the_poll():
+    runtime = Runtime()
+    jam_id = api(runtime, "POST", "/jams", body={"members": ["bob", "cara"]})["data"]["jam"]["id"]
+    api(runtime, "POST", "/jams/" + jam_id + "/join", actor="bob")
+    assert api(runtime, "POST", "/jams/" + jam_id + "/presence", actor="cara", body={})["status"] == 403
+    motion = [[0.5, -0.25], [9, -9], ["x", None], [1], *[[0.1, 0.1]] * 20]
+    seen = api(runtime, "POST", "/jams/" + jam_id + "/presence", actor="bob", body={
+        "state": "listening", "playing": True, "energy": 4, "motion": motion})["data"]["jam"]
+    [bob] = seen["presence"]
+    assert bob["name"] == "bob" and bob["state"] == "listening" and bob["playing"] is True
+    assert bob["energy"] == 1.0 and bob["ago"] >= 0
+    assert bob["motion"][:3] == [[0.5, -0.25], [2.0, -2.0], [0.0, 0.0]]
+    assert len(bob["motion"]) == jam.MAX_MOTION
+    other = api(runtime, "POST", "/jams/" + jam_id + "/presence", body={"state": "dancing"})["data"]["jam"]
+    assert [(p["name"], p["state"]) for p in other["presence"]] == [("alice", "studio"), ("bob", "listening")]
+    stored = runtime.db.execute("SELECT data FROM vmdj_jam_presence WHERE account_name='bob'").fetchone()[0]
+    assert stored.startswith("sealed:")
+    runtime.clock += (jam.PRESENCE_SECONDS + 1) * 1000
+    assert api(runtime, "GET", "/jams/" + jam_id, actor="bob")["data"]["jam"]["presence"] == []
+    peek = api(runtime, "GET", "/jams/" + jam_id, actor="cara")["data"]["jam"]
+    assert peek["presence"] == [] and peek["reactions"] == []
+    api(runtime, "POST", "/jams/" + jam_id + "/presence", actor="bob", body={})
+    api(runtime, "POST", "/jams/" + jam_id + "/leave", actor="bob")
+    assert runtime.db.execute("SELECT COUNT(*) FROM vmdj_jam_presence WHERE account_name='bob'").fetchone()[0] == 0
+
+
+def test_reactions_are_short_lived_and_rate_limited():
+    runtime = Runtime()
+    jam_id = api(runtime, "POST", "/jams", body={"members": ["bob"]})["data"]["jam"]["id"]
+    api(runtime, "POST", "/jams/" + jam_id + "/join", actor="bob")
+    assert api(runtime, "POST", "/jams/" + jam_id + "/reactions", body={"kind": "Bad Kind!"})["data"]["error"] == "invalid_reaction"
+    sent = api(runtime, "POST", "/jams/" + jam_id + "/reactions", body={"kind": "hearts"})["data"]["jam"]
+    [heart] = sent["reactions"]
+    assert heart["name"] == "alice" and heart["kind"] == "hearts" and heart["id"] and heart["ago"] >= 0
+    seen = api(runtime, "GET", "/jams/" + jam_id, actor="bob")["data"]["jam"]["reactions"]
+    assert [r["id"] for r in seen] == [heart["id"]]
+    for _ in range(jam.MAX_REACTIONS_PER_MEMBER - 1):
+        assert api(runtime, "POST", "/jams/" + jam_id + "/reactions", body={"kind": "fire"})["status"] == 200
+    assert api(runtime, "POST", "/jams/" + jam_id + "/reactions", body={"kind": "fire"})["status"] == 429
+    assert api(runtime, "POST", "/jams/" + jam_id + "/reactions", actor="bob", body={"kind": "fire"})["status"] == 200
+    runtime.clock += (jam.REACTION_SECONDS + 1) * 1000
+    assert api(runtime, "GET", "/jams/" + jam_id, actor="bob")["data"]["jam"]["reactions"] == []
+    again = api(runtime, "POST", "/jams/" + jam_id + "/reactions", body={"kind": "confetti"})["data"]["jam"]["reactions"]
+    assert [r["kind"] for r in again] == ["confetti"]
+    assert runtime.db.execute("SELECT COUNT(*) FROM vmdj_jam_reactions").fetchone()[0] == 1
+    api(runtime, "DELETE", "/jams/" + jam_id)
+    for table in ("vmdj_jam_presence", "vmdj_jam_reactions"):
+        assert runtime.db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] == 0
+
+
+def test_purge_drops_presence_and_reactions():
+    runtime = Runtime()
+    theirs = api(runtime, "POST", "/jams", actor="bob", body={"members": ["alice"]})["data"]["jam"]["id"]
+    api(runtime, "POST", "/jams/" + theirs + "/join")
+    api(runtime, "POST", "/jams/" + theirs + "/presence", body={"energy": 0.5})
+    api(runtime, "POST", "/jams/" + theirs + "/reactions", body={"kind": "fire"})
+    api(runtime, "POST", "/jams/" + theirs + "/presence", actor="bob", body={})
+    asyncio.run(jam.purge_account_data(runtime, "bi:alice", "alice"))
+    assert [row[0] for row in runtime.db.execute("SELECT account_name FROM vmdj_jam_presence")] == ["bob"]
+    assert runtime.db.execute("SELECT COUNT(*) FROM vmdj_jam_reactions").fetchone()[0] == 0

@@ -1672,114 +1672,36 @@ int main(int argc, char *argv[])
     check(RoomCrypto("random").decryptObject(sharedEnv).isEmpty(),
           "a different room name does not decrypt the envelope");
 
-    // --- Automatic device-to-device room seal ----------------------------
-    // Every default RoomCrypto key is derived by the relay from DATA_KEY, so
-    // that layer alone never hides a message from its operator. RoomSeal keeps
-    // a device X25519 key locally and wraps each fresh message key only for the
-    // public keys of known room devices. No phrase or setup is involved.
     {
         const QString sealRoom = QStringLiteral("world-general");
-        const QByteArray senderPrivate = QByteArray::fromBase64(
-            QByteArrayLiteral("UE5ZIyTdbSCtuDSqkI3g5TnXBMw1nx4Oz1BfmvE6CGc"),
-            QByteArray::Base64UrlEncoding);
-        const QByteArray receiverPrivate = QByteArray::fromBase64(
-            QByteArrayLiteral("cJMcO0LKgE1B6DRDn8z2mCcgt-cKyuWEtafYL2hFjHk"),
-            QByteArray::Base64UrlEncoding);
-        RoomSeal sender(sealRoom, senderPrivate);
-        RoomSeal receiver(sealRoom, receiverPrivate);
-        check(sender.isValid() && receiver.isValid(),
-              "automatic room seal identities derive from device keys");
-        check(sender.keyId() == QStringLiteral("SQAm1SbhWWBxNiSt") &&
-                  receiver.keyId() == QStringLiteral("PA22MdT_F-KVxa5L"),
-              "the Qt node derives the browser and mobile public key ids");
-        const auto storedPeerLists = [] {
-            QSettings settings;
-            QMap<QString, QVariant> lists;
-            for (const QString &key : settings.allKeys())
-                if (key.contains(QLatin1String("peersV2")))
-                    lists.insert(key, settings.value(key));
-            return lists;
-        };
-        {
-            QSettings settings;
-            for (const QString &key : settings.allKeys())
-                if (key.contains(QLatin1String("peersV2")))
-                    settings.remove(key);
-        }
-        const QMap<QString, QVariant> peerListsBefore = storedPeerLists();
-        check(RoomSeal::isKeyFrame(sender.keyFrame()) &&
-                  receiver.acceptKeyFrame(sender.keyFrame()) &&
-                  sender.acceptKeyFrame(receiver.keyFrame()),
-              "devices discover one another using public-key-only frames");
-        check(storedPeerLists() == peerListsBefore,
-              "a newly discovered peer key does not rewrite the settings file "
-              "on the spot");
-
+        auto senderDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x41'));
+        auto receiverDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x42'));
+        RoomSeal sender(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("ada"),
+                        QStringLiteral("ada-node"), senderDevice);
+        RoomSeal receiver(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("bob"),
+                          QStringLiteral("bob-node"), receiverDevice);
+        check(sender.isValid() && receiver.isValid() &&
+                  RoomSeal::isKeyFrame(sender.keyFrame()),
+              "v3 room seals sign a bundle with the device identity");
+        receiver.acceptKeyFrame(sender.keyFrame());
+        sender.acceptKeyFrame(receiver.keyFrame());
         const QJsonObject sealPlain{{"type", QStringLiteral("chat")},
                                     {"id", QStringLiteral("m1")},
+                                    {"senderId", QStringLiteral("ada-node")},
                                     {"text", QStringLiteral("no setup required")}};
         const QJsonObject sealed = sender.sealObject(sealPlain);
-        check(RoomSeal::isSealedFrame(sealed) &&
-                  sealed.value("v").toInt() == 2 &&
-                  sealed.value("keys").toArray().size() == 2,
-              "a sealed frame wraps its content key for both known devices");
-        check(!QJsonDocument(sealed).toJson(QJsonDocument::Compact)
-                   .contains("no setup required"),
-              "a sealed frame carries no plaintext");
+        check(RoomSeal::isSealedFrame(sealed) && sealed.value("v").toInt() == 3 &&
+                  sealed.value("keys").toArray().size() == 2 &&
+                  !QJsonDocument(sealed).toJson().contains("no setup required"),
+              "a v3 frame wraps its content key for both devices and hides the text");
         check(receiver.unsealObject(sealed).value("text").toString() ==
                   QStringLiteral("no setup required"),
-              "a discovered device opens the recipient-wrapped frame");
-
-        RoomSeal stranger(sealRoom, QByteArray(32, '\x01'));
-        check(stranger.unsealObject(sealed).isEmpty(),
-              "an unknown device has no wrapped content key");
-        RoomSeal otherRoom(QStringLiteral("chat-channel:42:v1"), receiverPrivate);
-        check(otherRoom.unsealObject(sealed).isEmpty(),
-              "the same device key in another room does not open the frame");
-        QJsonObject relabelled = sealed;
-        relabelled["kid"] = receiver.keyId();
-        check(receiver.unsealObject(relabelled).isEmpty(),
-              "relabelling the sender key id fails authentication");
-        check(!RoomSeal::isSealedFrame(QJsonObject{{"type", QStringLiteral("chat")}}) &&
-                  !RoomSeal::isSealedFrame(
-                      QJsonObject{{"type", QStringLiteral("sealed")},
-                                  {"v", 2},
-                                  {"kid", QStringLiteral("short")}}),
-              "only a well-formed sealed envelope counts as sealed");
-
-        // One fixed frame written by app/public/chat-seal.js. The browser, Qt,
-        // and Dart tests all pin this exact recipient envelope.
-        const QJsonObject browserFrame{
-            {"type", QStringLiteral("sealed")},
-            {"v", 2},
-            {"kid", QStringLiteral("SQAm1SbhWWBxNiSt")},
-            {"pub", QStringLiteral(
-                 "SJXRaOihp8_2nTX69yDoRqkDhapmBc30VI8lARlbQTw")},
-            {"nonce", QStringLiteral("43+zI9tUg9t5SdVG")},
-            {"tag", QStringLiteral("D9qgU0oVQpoOY05RaI3xDg==")},
-            {"body", QStringLiteral(
-                 "Jn79ws7IdrSi5kFmmLHAB7yUUuARxKFeLZKdzMQBoHbghdPyQgEq8OZanyL0"
-                 "hTh/TYbavVieT2DhVLLZq2F0kH1yeAP7JdwPDqPysTZCETMtZYDTKBLr")},
-            {"keys", QJsonArray{
-                 QJsonObject{
-                     {"kid", QStringLiteral("PA22MdT_F-KVxa5L")},
-                     {"nonce", QStringLiteral("dIYd3AXET2IQhRjH")},
-                     {"tag", QStringLiteral("wga2/Tmek1r/0u9oXq4ckw==")},
-                     {"key", QStringLiteral(
-                          "pNMivvZuaR6ZEu3V/GkZOVYDlSP4Lr4MtsG0mIwtOMs=")}},
-                 QJsonObject{
-                     {"kid", QStringLiteral("SQAm1SbhWWBxNiSt")},
-                     {"nonce", QStringLiteral("5vZE4C5wbgSbNENA")},
-                     {"tag", QStringLiteral("eiRSoFEo1m5rBwQ0jSgiEw==")},
-                     {"key", QStringLiteral(
-                          "K7BObyf/R3vByKsOWMJQWiRDBb02WFDP3fy4cGaJ5O8=")}}}}};
-        const QJsonObject fromBrowser = receiver.unsealObject(browserFrame);
-        check(fromBrowser.value("text").toString() ==
-                      QStringLiteral("automatic beyond the relay") &&
-                  fromBrowser.value("sender").toString() == QStringLiteral("ada") &&
-                  fromBrowser.value("id").toString() ==
-                      QStringLiteral("seal-vector-2"),
-              "the Qt node opens the browser's fixed recipient frame");
+              "the other device opens the signed frame");
+        QJsonObject legacy = sealed;
+        legacy["v"] = 2;
+        check(RoomSeal::isLegacyFrame(legacy) && !RoomSeal::isSealedFrame(legacy) &&
+                  receiver.unsealObject(legacy).isEmpty(),
+              "v2 frames are ignored, so nothing can be downgraded");
     }
 
     // --- Cove vault crypto (password + per-cove salt) --------------------

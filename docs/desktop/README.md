@@ -120,7 +120,8 @@ Everything is in `desktop/`.
 - **Chat.** Relay rooms, server office channels and direct messages share one
   sidebar. Read marks, retention preferences and formatting sync with the
   account; see [../app/chat-read-sync.md](../app/chat-read-sync.md) and
-  [../app/chat-formatting.md](../app/chat-formatting.md).
+  [../app/chat-formatting.md](../app/chat-formatting.md). Encryption, device
+  approval, safety numbers and direct delivery: [chat.md](chat.md).
 - **Notices.** There are no floating toasts. A message is shown inline on the
   page it was raised on, or in the open dialog's status line; unsolicited
   events are filed on the Pings page ([diagnostics.md](diagnostics.md)).

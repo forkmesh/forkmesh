@@ -14,7 +14,9 @@ import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.chat.ChatHub
 import com.forkmesh.nativeapp.chat.ChatReadMarks
 import com.forkmesh.nativeapp.chat.ChatWelcomeAnnouncer
+import com.forkmesh.nativeapp.chat.DirectMeshLinks
 import com.forkmesh.nativeapp.chat.DirectMessageService
+import com.forkmesh.nativeapp.chat.MeshRoute
 import com.forkmesh.nativeapp.chat.DiscordBridge
 import com.forkmesh.nativeapp.chat.FamilyDiscordControl
 import com.forkmesh.nativeapp.chat.LocalMeshRoom
@@ -179,6 +181,7 @@ object ChatDepth {
                 origin = { ServerUrl.parse(settings.core.serverUrl).httpOrigin },
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
+                account = { room.persona.ownerUser },
             )
             service.addListener { bump() }
             office = service
@@ -190,9 +193,22 @@ object ChatDepth {
                 origin = { ServerUrl.parse(settings.core.serverUrl).httpOrigin },
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
+                account = { room.persona.ownerUser },
             )
             directService.addListener { bump() }
-            directService.meshSender = { plain, keys -> Services.get<LocalMeshRoom>()?.sendDirect(plain, keys) ?: 0 }
+            directService.mesh = object : DirectMeshLinks {
+                private fun room(): LocalMeshRoom? = Services.get<LocalMeshRoom>()
+
+                override fun linkedKids(): Map<String, MeshRoute> = room()?.linkedKids() ?: emptyMap()
+
+                override fun peerFocused(kid: String, channel: String): Boolean = room()?.peerFocused(kid, channel) == true
+
+                override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = room()?.sendDirect(kid, frame) == true
+
+                override fun setFocus(channel: String, on: Boolean) {
+                    room()?.setFocus(channel, on)
+                }
+            }
             direct = directService
             chat.direct = directService
             chat.calls = DirectCallFeature.install(

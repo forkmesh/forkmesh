@@ -135,7 +135,7 @@ public enum OfficeFrames {
         if id.isEmpty || id.count > 64 { return nil }
         let rawText = plain["text"]?.text ?? ""
         if rawText.count > ChatLimits.maxTextChars { return nil }
-        let senderId = String((plain["senderId"]?.text ?? "").prefix(64))
+        let senderId = String(ChatFrameText.shownSender(plain).prefix(64))
         var sender = String((plain["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
         if sender.isEmpty { sender = "Office visitor" }
         let fileName = String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
@@ -318,7 +318,8 @@ public final class OfficeChannelService {
     }
 
     private func seal(for room: String) async throws -> RoomSeal {
-        try await seals.seal(room, storageScope: "office|\(origin()?.host ?? "")")
+        let named = displayName().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return try await seals.seal(room, scope: room, policy: .open, acct: named.isEmpty ? selfId() : named, node: selfId())
     }
 
     public func loadHistory(_ conversation: String) async {
@@ -337,25 +338,36 @@ public final class OfficeChannelService {
                 guard let envelope = JSON.parseObject(entry["body"]?.text ?? "") as JSONObject?, !envelope.isEmpty,
                     let plain = crypto.decrypt(envelope)
                 else { continue }
-                accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope))
+                accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true)
             }
         } catch {
             lastError = "\(error)"
         }
     }
 
-    private func accept(_ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil) {
+    private func accept(
+        _ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil, history: Bool = false
+    ) {
         var plain = frame
         if RoomSeal.isKeyFrame(plain) {
-            if seal.acceptKeyFrame(plain), live, let socket = sockets[room.id] { advertise(socket) }
+            guard let result = seal.acceptBundle(plain, now: clock.nowMillis), result.isNew || result.updated else { return }
+            if live, let socket = sockets[room.id] { advertise(socket) }
+            for reopened in seal.reopenHeld(now: clock.nowMillis) {
+                guard let opened = reopened.authenticatedPlain else { continue }
+                acceptPlain(opened, room: room, live: live, recipients: nil)
+            }
             return
         }
         if RoomSeal.isSealedFrame(plain) {
-            guard let opened = seal.unseal(plain) else { return }
+            guard let opened = seal.open(plain, now: clock.nowMillis, history: history).authenticatedPlain else { return }
             plain = opened
         } else if room.isPrivate && !room.serverVisible {
             return
         }
+        acceptPlain(plain, room: room, live: live, recipients: recipients)
+    }
+
+    private func acceptPlain(_ plain: JSONObject, room: OfficeRoom, live: Bool, recipients: Int?) {
         let type = plain["type"]?.text ?? ""
         let id = plain["id"]?.text ?? ""
         if type == "chat" || type == "thread-reply" {
@@ -554,7 +566,8 @@ public final class OfficeChannelService {
     }
 
     private func advertise(_ socket: OfficeRoomSocket) {
-        guard let envelope = try? socket.crypto.encrypt(socket.seal.keyFrame()) else { return }
+        let bundle = socket.seal.keyFrame(now: clock.nowMillis)
+        guard !bundle.isEmpty, let envelope = try? socket.crypto.encrypt(bundle) else { return }
         let connection = socket.connection
         Task { try? await connection.send(text: JSON.encode(envelope)) }
     }
@@ -572,7 +585,7 @@ public final class OfficeChannelService {
 
     func frame(_ room: OfficeRoom, text: String, bot: Bool) -> JSONObject {
         sequence += 1
-        let me = bot ? "forkbot" : selfId()
+        let me = selfId()
         var plain: JSONObject = [
             "type": "chat",
             "id": .string(bot ? UUID().uuidString.lowercased() : "\(me)-\(clock.nowMillis)-\(sequence)"),
@@ -584,7 +597,10 @@ public final class OfficeChannelService {
             "channel": .string("#\(room.name)"),
             "text": .string(String(text.prefix(ChatLimits.maxTextChars))),
         ]
-        if bot { plain["accountKind"] = "user" }
+        if bot {
+            plain["accountKind"] = "user"
+            plain[ChatFrameText.botField] = "forkbot"
+        }
         if room.isPrivate { plain["private"] = true }
         return plain
     }
@@ -602,7 +618,7 @@ public final class OfficeChannelService {
         guard let socket = sockets[room.id] else { return nil }
         let plain = frame(room, text: body, bot: asBot)
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain) : plain
+            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             envelope["notify"] = true
@@ -614,6 +630,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
+                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error
@@ -636,7 +653,7 @@ public final class OfficeChannelService {
         plain.removeValue(forKey: "text")
         for (key, value) in fields { plain[key] = value }
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain) : plain
+            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             if type == "chat" || type == "thread-reply" { envelope["notify"] = true }
@@ -648,6 +665,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
+                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error

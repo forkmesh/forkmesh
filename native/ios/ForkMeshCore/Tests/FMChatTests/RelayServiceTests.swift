@@ -18,7 +18,7 @@ final class RelayHarness {
     let relay: RelayService
     let crypto: RoomCrypto
     let server: FakeWebSocketConnection
-    private var peerSeal: RoomSeal?
+    private var peerSeals: [String: RoomSeal] = [:]
 
     static func start() async throws -> RelayHarness {
         let device = ChatDevice(name: "Mobile Tester")
@@ -48,9 +48,11 @@ final class RelayHarness {
     }
 
     /// Sealed to this device, as a real peer's protected frames are.
-    func sendProtected(_ plain: JSONObject) async throws {
-        if peerSeal == nil {
-            let peer = try RoomSeal.fromPrivateKey(SettingsService.defaultRoom, (1...32).map { UInt8($0) })
+    func peer(_ node: String) async throws -> RoomSeal {
+        if let known = peerSeals[node] { return known }
+        let peer = try RoomSeal.loadOrCreate(
+            device.settings.room, policy: .open, acct: node, node: node, secureStore: InMemorySecureStore())
+        do {
             var mobileKey: JSONObject?
             for _ in 0..<200 where mobileKey == nil {
                 mobileKey = server.sentTexts.lazy.compactMap { text -> JSONObject? in
@@ -64,9 +66,15 @@ final class RelayHarness {
             let key = try XCTUnwrap(mobileKey, "mobile seal key was not advertised")
             XCTAssertTrue(peer.acceptKeyFrame(key))
             try sendPlain(peer.keyFrame())
-            peerSeal = peer
+            peerSeals[node] = peer
         }
-        try sendPlain(try peerSeal!.seal(plain))
+        return peer
+    }
+
+    func sendProtected(_ plain: JSONObject) async throws {
+        let sender = plain["senderId"]?.stringValue ?? ""
+        let peer = try await peer(sender.isEmpty ? "remote-node" : sender)
+        try sendPlain(try peer.seal(plain))
     }
 
     /// Every frame the device sent that this harness can read.
@@ -76,7 +84,10 @@ final class RelayHarness {
                 !RoomSeal.isKeyFrame(frame)
             else { return nil }
             if !RoomSeal.isSealedFrame(frame) { return frame }
-            return peerSeal?.unseal(frame)
+            for peer in peerSeals.values {
+                if let plain = peer.unseal(frame) { return plain }
+            }
+            return nil
         }
     }
 

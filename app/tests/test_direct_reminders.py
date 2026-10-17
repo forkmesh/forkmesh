@@ -34,7 +34,8 @@ class Env:
             (ROOT / "migrations" / name).read_text(encoding="utf-8")
             for name in ("0079_chat_direct_messages.sql",
                          "0084_chat_direct_message_limits.sql",
-                         "0260_chat_direct_unread_reminders.sql")))
+                         "0260_chat_direct_unread_reminders.sql",
+                         "0269_chat_history_acked_grace.sql")))
         self.clock = NOW
         self.sent = []
         self.saved = []
@@ -69,9 +70,9 @@ class Env:
 
     def receive(self, conversation_id, ref):
         self.db.execute(
-            "DELETE FROM chat_history WHERE room_key=? "
+            "UPDATE chat_history SET acked_at=? WHERE room_key=? "
             "AND substr(msg_id,1,40)=?",
-            ("chat-direct:%s:v1" % conversation_id, ref))
+            (self.clock, "chat-direct:%s:v1" % conversation_id, ref))
 
 
 def _load(env):
@@ -199,6 +200,8 @@ def test_fresh_received_and_own_copies_send_nothing():
     env.store(AB, ALICE, NOW - 23 * HOUR)
     received = env.store(AB, BOB, NOW - 30 * HOUR)
     env.receive(AB, received)
+    acked = env.store(AB, ALICE, NOW - 30 * HOUR)
+    env.receive(AB, acked)
     env.store(AB, ALICE, NOW - RETAIN - HOUR)
 
     assert _run(module.send_reminders(env)) == 0

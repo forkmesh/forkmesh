@@ -601,9 +601,11 @@ SCHEMA_STATEMENTS = [
     # key used to address the room Durable Object.
     """CREATE TABLE IF NOT EXISTS chat_history (
         room_key TEXT NOT NULL, msg_id TEXT NOT NULL, ts INTEGER NOT NULL,
-        body TEXT NOT NULL, PRIMARY KEY (room_key, msg_id))""",
+        body TEXT NOT NULL, acked_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (room_key, msg_id))""",
     "CREATE INDEX IF NOT EXISTS idx_chat_history_room_ts ON chat_history(room_key, ts)",
     "CREATE INDEX IF NOT EXISTS idx_chat_history_ts ON chat_history(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_history_acked ON chat_history(acked_at) WHERE acked_at>0",
     # Per-requester throttle for the unauthenticated AI guestbook. The key is a
     # DATA_KEY-blinded edge address; public notes themselves use the existing
     # encrypted #general history and are never duplicated into this table

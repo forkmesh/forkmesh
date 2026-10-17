@@ -166,6 +166,11 @@ public final class RelayService: OwnStatusAnnouncer {
 
     private var nodeId: String { identity.nodeId }
 
+    private var sealAccount: String {
+        let named = (accountProvider?() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return named.isEmpty ? nodeId : named
+    }
+
     /// This device's node id, as it appears in `senderId`.
     public var selfId: String { identity.nodeId }
 
@@ -422,9 +427,10 @@ public final class RelayService: OwnStatusAnnouncer {
             // No prompt or shared phrase: the private half is generated locally once and loaded
             // from secure storage on later connections.
             let store = secureStore
-            let scopeUrl = settings.serverUrl
+            let account = sealAccount
+            let node = nodeId
             let loaded = try await Task.detached(priority: .userInitiated) {
-                try RoomSeal.loadOrCreate(room, storageScope: scopeUrl, secureStore: store)
+                try RoomSeal.loadOrCreate(room, scope: room, policy: .open, acct: account, node: node, secureStore: store)
             }.value
             seal = loaded
             if generation != openGeneration { return }
@@ -631,7 +637,15 @@ public final class RelayService: OwnStatusAnnouncer {
             var payload = plain
             if persist { payload.removeValue(forKey: "persist") }
             guard let seal else { throw RelayError("End-to-end encryption unavailable.") }
-            let framed = RelayService.isControllerReadableFrame(payload) ? payload : try seal.seal(payload)
+            let framed: JSONObject
+            if RelayService.isControllerReadableFrame(payload) {
+                framed = payload
+            } else if let to = RelayService.directRecipient(payload) {
+                framed = try seal.seal(payload, forNodes: [to], now: clock.nowMillis)
+            } else {
+                framed = try seal.seal(payload, now: clock.nowMillis)
+            }
+            if seal.needsAdvertisement(now: clock.nowMillis) { replyWithKeySoon() }
             var env = try crypto.encrypt(framed)
             if persist {
                 env["persist"] = true
@@ -688,7 +702,8 @@ public final class RelayService: OwnStatusAnnouncer {
 
     private func sendKeyAdvertisement(persist: Bool) {
         guard let crypto, let seal, socket != nil, state == .connected else { return }
-        guard var envelope = try? crypto.encrypt(seal.keyFrame()) else { return }
+        let bundle = seal.keyFrame(now: clock.nowMillis)
+        guard !bundle.isEmpty, var envelope = try? crypto.encrypt(bundle) else { return }
         if persist { envelope["persist"] = true }
         enqueue(JSON.encode(.object(envelope)))
     }
@@ -876,6 +891,12 @@ public final class RelayService: OwnStatusAnnouncer {
         handle(plain)
     }
 
+    nonisolated static func directRecipient(_ frame: JSONObject) -> String? {
+        guard (frame["type"]?.text ?? "") == "dm" else { return nil }
+        let to = frame["to"]?.text ?? ""
+        return to.isEmpty ? nil : to
+    }
+
     nonisolated static func isControllerReadableFrame(_ frame: JSONObject) -> Bool {
         if (frame["type"]?.text ?? "") != "chat" || frame["private"]?.boolValue == true { return false }
         return (frame["channel"]?.text ?? "").hasPrefix("#")
@@ -884,8 +905,15 @@ public final class RelayService: OwnStatusAnnouncer {
     /// Public #channel chat accepts controller-readable application frames for integrations. DMs
     /// and all other traffic remain recipient-sealed.
     private func openSealedFrame(_ frame: JSONObject) -> JSONObject? {
+        guard let seal else { return nil }
         if RoomSeal.isKeyFrame(frame) {
-            if let seal, seal.acceptKeyFrame(frame) { replyWithKeySoon() }
+            guard let result = seal.acceptBundle(frame, now: clock.nowMillis), result.isNew || result.updated else {
+                return nil
+            }
+            if result.isNew { replyWithKeySoon() }
+            for reopened in seal.reopenHeld(now: clock.nowMillis) {
+                if let plain = reopened.authenticatedPlain { handle(plain) }
+            }
             return nil
         }
         if !RoomSeal.isSealedFrame(frame) {
@@ -893,9 +921,9 @@ public final class RelayService: OwnStatusAnnouncer {
             noteSealMismatch("")
             return nil
         }
-        let opened = seal?.unseal(frame)
-        if opened == nil { noteSealMismatch(RoomSeal.frameKeyId(frame)) }
-        return opened
+        let result = seal.open(frame, now: clock.nowMillis)
+        if case .notForMe = result { noteSealMismatch(RoomSeal.frameKeyId(frame)) }
+        return result.authenticatedPlain
     }
 
     /// Empty means an unsealed frame was refused in a protected conversation. A key id means old
@@ -971,7 +999,7 @@ public final class RelayService: OwnStatusAnnouncer {
     }
 
     private func toMessage(_ m: JSONObject, _ conversation: String) -> ChatMessage {
-        let senderId = m["senderId"]?.text ?? ""
+        let senderId = ChatFrameText.shownSender(m)
         let ts: Date
         if let raw = m["ts"], let millis = raw.doubleValue {
             ts = Date(epochMillis: Int64(millis))

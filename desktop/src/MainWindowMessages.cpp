@@ -13,12 +13,17 @@
 #include "ChatRecipients.h"
 #include "ChatVisitorPresence.h"
 #include "AppPaths.h"
+#include "QrCode.h"
+#include "RoomSeal.h"
 
 #include <QApplication>
 #include <QClipboard>
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QFontDatabase>
+#include <QUuid>
 #include <QDir>
 #include <QLabel>
 #include <QPlainTextEdit>
@@ -3880,6 +3885,9 @@ void MainWindow::switchConversation(const QString &conversation)
     refreshChatComposerAccess();
     refreshChannelSettingsButton();
     refreshRoomSealButton();
+    refreshDirectFocus();
+    refreshDirectRoute();
+    refreshDevicePendingBanner();
     rebuildConversationView();
     if (isDiscordConversation(conversation) && m_discordClient)
         m_discordClient->openConversation(conversation);
@@ -4217,8 +4225,12 @@ void MainWindow::refreshChannelSettingsButton()
         return;
     m_channelSettingsButton->setVisible(
         !m_currentConversation.isEmpty() &&
-        !isDirectConversation(m_currentConversation) &&
-        !forkmesh::office::isDirectOfficeConversation(m_currentConversation));
+        !isDirectConversation(m_currentConversation));
+    m_channelSettingsButton->setToolTip(
+        forkmesh::office::isDirectOfficeConversation(m_currentConversation)
+            ? QStringLiteral("This conversation's details: devices and safety number")
+            : QStringLiteral("This channel's details and settings: name, topic, "
+                             "visibility, webhooks"));
     const bool directCall =
         forkmesh::office::isDirectOfficeConversation(m_currentConversation) &&
         !forkmesh::office::directPeerForConversation(m_currentConversation)
@@ -4347,16 +4359,295 @@ void MainWindow::promptRoomSeal()
                 "device-to-device encryption beyond the controller key."));
         return;
     }
+    if (forkmesh::office::isDirectOfficeConversation(m_currentConversation)) {
+        showDirectDetails(m_currentConversation);
+        return;
+    }
     QMessageBox::information(
         this, QStringLiteral("End-to-end encryption"),
         QStringLiteral(
-            "Encryption is automatic. This device created a private X25519 key "
-            "locally and sends only its public key. Each message uses a fresh "
-            "key wrapped for known room devices, so the controller's room key "
-            "alone can forward and retain it but cannot decrypt it.\n\n"
-            "A new device can read messages addressed after its first visit; "
-            "it cannot retroactively open older history. ForkBot runs on the "
-            "relay and is unavailable in end-to-end encrypted rooms."));
+            "Encryption is automatic. Each device has its own Ed25519 identity "
+            "and short-lived X25519 and ML-KEM-768 prekeys, and signs every "
+            "message. Each message uses a fresh key wrapped for the room's "
+            "devices, so the relay can forward and retain it but cannot read or "
+            "forge it.\n\n"
+            "In a direct message a new device of either person is held until "
+            "you approve it, and the safety number in the conversation details "
+            "lets you check the devices in person. ForkBot runs on the relay and "
+            "is unavailable in end-to-end encrypted rooms."));
+}
+
+QString MainWindow::chatTrustAccount() const
+{
+    const QString account = m_accountName.isEmpty()
+                                ? QSettings().value(kAccountNameSetting).toString()
+                                : m_accountName;
+    return account.trimmed().toLower();
+}
+
+QString MainWindow::directPeerLabel(const QString &conversation) const
+{
+    const QString peer = forkmesh::office::directPeerForConversation(conversation);
+    return peer.isEmpty() ? QStringLiteral("this person") : QStringLiteral("@") + peer;
+}
+
+void MainWindow::wireDirectMesh()
+{
+    if (!m_officeChannelMirror || !m_localMesh)
+        return;
+    if (!m_directMeshWired) {
+        m_directMeshWired = true;
+        OfficeChannelMirror::MeshTransport transport;
+        transport.linkedDevices = [this] {
+            return m_localMesh && m_localMesh->isRunning()
+                       ? m_localMesh->linkedDevices()
+                       : QList<forkmesh::chatv3::MeshLinkedDevice>();
+        };
+        transport.sendDirect = [this](const QString &kid, const QString &channel,
+                                      const QJsonObject &frame) {
+            return m_localMesh && m_localMesh->sendDirectSealed(kid, channel, frame);
+        };
+        transport.sendFocus = [this](const QString &channel, bool on) {
+            if (m_localMesh)
+                m_localMesh->setDirectFocus(channel, on);
+        };
+        m_officeChannelMirror->setMeshTransport(transport);
+    }
+    if (m_localMesh->property("directMeshWired").toBool())
+        return;
+    m_localMesh->setProperty("directMeshWired", true);
+    m_localMesh->setDirectHandler([this](const QString &kid, const QString &channel,
+                                         const QJsonObject &frame) {
+        return m_officeChannelMirror
+                   ? m_officeChannelMirror->acceptMeshDirect(kid, channel, frame)
+                   : QString();
+    });
+    connect(m_localMesh, &LocalMeshNode::directAcked, this,
+            [this](const QString &kid, const QString &channel, const QString &id) {
+                if (m_officeChannelMirror)
+                    m_officeChannelMirror->meshDirectAcked(kid, channel, id);
+            });
+    connect(m_localMesh, &LocalMeshNode::linkedDevicesChanged, this, [this] {
+        if (m_officeChannelMirror)
+            m_officeChannelMirror->meshLinksChanged();
+    });
+    connect(m_localMesh, &LocalMeshNode::peerFocusChanged, this,
+            [this](const QString &kid, const QString &channel, bool on) {
+                if (m_officeChannelMirror)
+                    m_officeChannelMirror->meshPeerFocusChanged(kid, channel, on);
+            });
+}
+
+void MainWindow::refreshDirectFocus()
+{
+    if (!m_officeChannelMirror)
+        return;
+    const bool focused =
+        isChatViewVisible() &&
+        forkmesh::office::isDirectOfficeConversation(m_currentConversation);
+    m_officeChannelMirror->setFocusedConversation(focused ? m_currentConversation
+                                                          : QString());
+}
+
+void MainWindow::refreshDirectRoute()
+{
+    if (!m_directRouteLabel)
+        return;
+    const QString route =
+        m_officeChannelMirror &&
+                forkmesh::office::isDirectOfficeConversation(m_currentConversation)
+            ? m_officeChannelMirror->directRouteLabel(m_currentConversation)
+            : QString();
+    m_directRouteLabel->setText(route);
+    m_directRouteLabel->setVisible(!route.isEmpty());
+}
+
+void MainWindow::refreshDevicePendingBanner()
+{
+    if (!m_devicePendingBanner)
+        return;
+    m_devicePendingKid.clear();
+    QString owner;
+    if (m_officeChannelMirror &&
+        forkmesh::office::isDirectOfficeConversation(m_currentConversation)) {
+        for (const OfficeChannelMirror::DirectDevice &device :
+             m_officeChannelMirror->directDevices(m_currentConversation)) {
+            if (device.state != forkmesh::chatv3::TrustState::Pending)
+                continue;
+            m_devicePendingKid = device.kid;
+            owner = device.own ? QStringLiteral("your account")
+                               : directPeerLabel(m_currentConversation);
+            break;
+        }
+    }
+    if (m_devicePendingKid.isEmpty()) {
+        m_devicePendingBanner->hide();
+        return;
+    }
+    m_devicePendingLabel->setText(
+        QStringLiteral("A new device for %1 wants to join this chat (device %2). "
+                       "Check the safety number, then approve or block.")
+            .arg(owner, m_devicePendingKid));
+    m_devicePendingBanner->show();
+}
+
+void MainWindow::addChatSecurityLine(const QString &conversation, const QString &text)
+{
+    if (conversation.isEmpty() || text.isEmpty())
+        return;
+    ChatMessage line;
+    line.id = QStringLiteral("chat-security-") +
+              QUuid::createUuid().toString(QUuid::WithoutBraces);
+    line.conversation = conversation;
+    line.senderId = QStringLiteral("chat-security");
+    line.senderName = QStringLiteral("ForkMesh");
+    line.text = text;
+    line.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    line.historical = true;
+    onMessage(line);
+}
+
+void MainWindow::noteDirectDevicePending(const QString &conversation, const QString &kid)
+{
+    QString owner = directPeerLabel(conversation);
+    if (m_officeChannelMirror)
+        for (const OfficeChannelMirror::DirectDevice &device :
+             m_officeChannelMirror->directDevices(conversation))
+            if (device.kid == kid && device.own)
+                owner = QStringLiteral("your account");
+    addChatSecurityLine(
+        conversation,
+        QStringLiteral("A new device for %1 wants to join this chat. Check the "
+                       "safety number, then approve or block.")
+            .arg(owner));
+    if (conversation == m_currentConversation)
+        refreshDevicePendingBanner();
+}
+
+void MainWindow::noteDirectSafetyChanged(const QString &conversation)
+{
+    addChatSecurityLine(conversation,
+                        QStringLiteral("Your safety number with %1 changed.")
+                            .arg(directPeerLabel(conversation)));
+    if (conversation == m_currentConversation)
+        refreshDevicePendingBanner();
+}
+
+void MainWindow::showDirectDetails(const QString &conversation)
+{
+    if (!m_officeChannelMirror ||
+        !forkmesh::office::isDirectOfficeConversation(conversation))
+        return;
+    auto *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("Conversation details"));
+    auto *layout = new QVBoxLayout(dialog);
+    const QString peer = directPeerLabel(conversation);
+    auto *heading = new QLabel(QStringLiteral("Safety number with %1").arg(peer));
+    heading->setStyleSheet(QStringLiteral("font-weight: 600;"));
+    layout->addWidget(heading);
+    auto *digits = new QLabel;
+    digits->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    digits->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    layout->addWidget(digits);
+    auto *qrImage = new QLabel;
+    qrImage->setAlignment(Qt::AlignCenter);
+    layout->addWidget(qrImage);
+    auto *qrText = new QLabel;
+    qrText->setWordWrap(true);
+    qrText->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    qrText->setStyleSheet(QStringLiteral("color: #8b949e; font-size: 11px;"));
+    layout->addWidget(qrText);
+    auto *status = new QLabel;
+    layout->addWidget(status);
+    auto *devicesBox = new QWidget;
+    auto *devicesLayout = new QVBoxLayout(devicesBox);
+    devicesLayout->setContentsMargins(0, 8, 0, 0);
+    layout->addWidget(devicesBox);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto *verify = buttons->addButton(QStringLiteral("Mark as verified"),
+                                      QDialogButtonBox::ActionRole);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+
+    auto refresh = std::make_shared<std::function<void()>>();
+    *refresh = [this, conversation, digits, qrImage, qrText, status, devicesLayout,
+                verify, refresh, dialog] {
+        if (!m_officeChannelMirror)
+            return;
+        const forkmesh::chatv3::SafetyNumber number =
+            m_officeChannelMirror->directSafetyNumber(conversation);
+        const QStringList groups = forkmesh::chatv3::safetyGroups(number.digits);
+        QStringList rows;
+        for (qsizetype i = 0; i < groups.size(); i += 4)
+            rows.append(groups.mid(i, 4).join(QLatin1Char(' ')));
+        digits->setText(rows.join(QLatin1Char('\n')));
+        const QImage qr = QrCode::encodeToImage(number.qr, 4, 4);
+        qrImage->setPixmap(QPixmap::fromImage(qr));
+        qrImage->setVisible(!qr.isNull());
+        qrText->setText(number.qr);
+        const bool verified = m_officeChannelMirror->isDirectVerified(conversation);
+        status->setText(verified
+                            ? QStringLiteral("Verified: these devices match the ones "
+                                             "you compared.")
+                            : QStringLiteral("Not verified. Compare the number or scan "
+                                             "the code with the other person, then "
+                                             "mark it verified."));
+        verify->setEnabled(!verified && m_officeChannelMirror->hasDirectSeal(conversation));
+        while (QLayoutItem *item = devicesLayout->takeAt(0)) {
+            if (QWidget *widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+        for (const OfficeChannelMirror::DirectDevice &device :
+             m_officeChannelMirror->directDevices(conversation)) {
+            auto *row = new QWidget;
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 0, 0, 0);
+            const QString state =
+                device.state == forkmesh::chatv3::TrustState::Approved
+                    ? (device.verified ? QStringLiteral("approved, verified")
+                                       : QStringLiteral("approved"))
+                    : device.state == forkmesh::chatv3::TrustState::Blocked
+                          ? QStringLiteral("blocked")
+                          : QStringLiteral("waiting for approval");
+            auto *label = new QLabel(QStringLiteral("%1 device %2: %3")
+                                         .arg(device.own ? QStringLiteral("Your")
+                                                         : device.acct,
+                                              device.kid, state));
+            rowLayout->addWidget(label, 1);
+            if (device.state == forkmesh::chatv3::TrustState::Pending) {
+                auto *approve = new QPushButton(QStringLiteral("Approve"));
+                approve->setObjectName(QStringLiteral("primaryButton"));
+                auto *block = new QPushButton(QStringLiteral("Block"));
+                block->setObjectName(QStringLiteral("ghostButton"));
+                const QString kid = device.kid;
+                connect(approve, &QPushButton::clicked, dialog, [this, conversation, kid, refresh] {
+                    if (m_officeChannelMirror)
+                        m_officeChannelMirror->approveDirectDevice(conversation, kid);
+                    refreshDevicePendingBanner();
+                    (*refresh)();
+                });
+                connect(block, &QPushButton::clicked, dialog, [this, conversation, kid, refresh] {
+                    if (m_officeChannelMirror)
+                        m_officeChannelMirror->blockDirectDevice(conversation, kid);
+                    refreshDevicePendingBanner();
+                    (*refresh)();
+                });
+                rowLayout->addWidget(block);
+                rowLayout->addWidget(approve);
+            }
+            devicesLayout->addWidget(row);
+        }
+    };
+    connect(verify, &QPushButton::clicked, dialog, [this, conversation, refresh] {
+        if (m_officeChannelMirror)
+            m_officeChannelMirror->markDirectVerified(conversation);
+        (*refresh)();
+    });
+    connect(dialog, &QDialog::finished, dialog, [refresh] { *refresh = nullptr; });
+    (*refresh)();
+    dialog->show();
 }
 
 // A rename keeps the room, so everything this window filed under the old name
@@ -4408,6 +4699,10 @@ void MainWindow::openChannelSettingsFor(const QString &target)
 {
     if (target.isEmpty() || isDirectConversation(target))
         return;
+    if (forkmesh::office::isDirectOfficeConversation(target)) {
+        showDirectDetails(target);
+        return;
+    }
     if (isDiscordConversation(target)) {
         showDiscordConnectionDialog();
         return;

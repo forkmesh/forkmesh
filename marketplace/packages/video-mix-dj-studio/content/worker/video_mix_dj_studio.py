@@ -17,6 +17,14 @@ VISIBLE = ("owner", "joined", "invited")
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62})$")
 VIDEO_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+REACTION_RE = re.compile(r"^[a-z0-9-]{1,24}$")
+STATES = ("studio", "listening", "idle")
+MAX_MOTION = 16
+MOTION_LIMIT = 2.0
+PRESENCE_SECONDS = 30
+REACTION_SECONDS = 12
+MAX_REACTIONS = 60
+MAX_REACTIONS_PER_MEMBER = 8
 
 DATA_SCHEMA_UP = [
     """CREATE TABLE IF NOT EXISTS vmdj_jams (
@@ -50,9 +58,25 @@ DATA_SCHEMA_UP = [
         updated_by TEXT NOT NULL,
         data TEXT NOT NULL,
         PRIMARY KEY(jam_id,side))""",
+    """CREATE TABLE IF NOT EXISTS vmdj_jam_presence (
+        jam_id TEXT NOT NULL,
+        account_name TEXT NOT NULL,
+        seen_at INTEGER NOT NULL CHECK(seen_at >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY(jam_id,account_name))""",
+    """CREATE TABLE IF NOT EXISTS vmdj_jam_reactions (
+        reaction_id TEXT PRIMARY KEY,
+        jam_id TEXT NOT NULL,
+        account_name TEXT NOT NULL,
+        at INTEGER NOT NULL CHECK(at >= 0),
+        kind TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_vmdj_jam_reactions_jam ON vmdj_jam_reactions(jam_id,at)",
 ]
 
 DATA_SCHEMA_DOWN = [
+    "DROP INDEX IF EXISTS idx_vmdj_jam_reactions_jam",
+    "DROP TABLE IF EXISTS vmdj_jam_reactions",
+    "DROP TABLE IF EXISTS vmdj_jam_presence",
     "DROP TABLE IF EXISTS vmdj_jam_decks",
     "DROP INDEX IF EXISTS idx_vmdj_jam_queue_jam",
     "DROP TABLE IF EXISTS vmdj_jam_queue",
@@ -193,6 +217,83 @@ async def _decks(runtime, jam_id):
     return decks
 
 
+def _motion(value):
+    samples = []
+    for item in value if isinstance(value, list) else []:
+        if len(samples) >= MAX_MOTION:
+            break
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        samples.append([round(_number(part, 0.0, -MOTION_LIMIT, MOTION_LIMIT), 2) for part in item])
+    return samples
+
+
+def _presence_data(data):
+    state = str(data.get("state") or "")
+    return {
+        "state": state if state in STATES else "studio",
+        "playing": data.get("playing") is True,
+        "energy": round(_number(data.get("energy"), 0.0, 0.0, 1.0), 3),
+        "motion": _motion(data.get("motion")),
+    }
+
+
+async def _presence(runtime, jam_id, now):
+    rows = await runtime.d1_all(
+        "SELECT account_name,seen_at,data FROM vmdj_jam_presence WHERE jam_id=? AND seen_at>=? "
+        "ORDER BY account_name LIMIT ?",
+        jam_id, now - PRESENCE_SECONDS * 1000, MAX_MEMBERS + 1,
+    ) or []
+    people = []
+    for row in rows:
+        data = _presence_data(await _opened(runtime, row.get("data")))
+        people.append(dict(data, name=str(row.get("account_name") or ""),
+                           ago=max(0, now - int(row.get("seen_at") or 0))))
+    return people
+
+
+async def _reactions(runtime, jam_id, now):
+    rows = await runtime.d1_all(
+        "SELECT reaction_id,account_name,at,kind FROM vmdj_jam_reactions WHERE jam_id=? AND at>=? "
+        "ORDER BY at,reaction_id LIMIT ?",
+        jam_id, now - REACTION_SECONDS * 1000, MAX_REACTIONS,
+    ) or []
+    return [{"id": str(row.get("reaction_id") or ""), "name": str(row.get("account_name") or ""),
+             "kind": str(row.get("kind") or ""), "ago": max(0, now - int(row.get("at") or 0))}
+            for row in rows]
+
+
+async def _save_presence(runtime, jam_id, actor, data):
+    await runtime.d1_run(
+        "INSERT INTO vmdj_jam_presence(jam_id,account_name,seen_at,data) VALUES(?,?,?,?) "
+        "ON CONFLICT(jam_id,account_name) DO UPDATE SET seen_at=excluded.seen_at,data=excluded.data",
+        jam_id, actor, runtime.now(), await runtime.seal(_presence_data(data)),
+    )
+
+
+async def _react(runtime, jam_id, actor, data):
+    kind = str(data.get("kind") or "").strip()
+    if not REACTION_RE.fullmatch(kind):
+        return _error(runtime, "invalid_reaction")
+    now = runtime.now()
+    await runtime.d1_run(
+        "DELETE FROM vmdj_jam_reactions WHERE jam_id=? AND at<?", jam_id, now - REACTION_SECONDS * 1000)
+    recent = await runtime.d1_first(
+        "SELECT COUNT(*) AS total FROM vmdj_jam_reactions WHERE jam_id=? AND account_name=?", jam_id, actor)
+    if int((recent or {}).get("total") or 0) >= MAX_REACTIONS_PER_MEMBER:
+        return _error(runtime, "too_many_reactions", 429)
+    await runtime.d1_run(
+        "INSERT INTO vmdj_jam_reactions(reaction_id,jam_id,account_name,at,kind) VALUES(?,?,?,?,?)",
+        runtime.new_id(), jam_id, actor, now, kind,
+    )
+    return None
+
+
+async def _forget_member(runtime, jam_id, name):
+    for table in ("vmdj_jam_members", "vmdj_jam_presence"):
+        await runtime.d1_run("DELETE FROM " + table + " WHERE jam_id=? AND account_name=?", jam_id, name)
+
+
 def _deck(data):
     return {
         "videoId": _video(data.get("videoId")),
@@ -210,17 +311,21 @@ async def _project(runtime, row, actor):
     members = await _members(runtime, jam_id)
     status = next((str(item.get("status")) for item in members
                    if str(item.get("account_name")) == actor), "")
+    now = runtime.now()
+    active = status in ACTIVE
     return {
         "id": jam_id,
         "title": _clean(data.get("title"), 80),
         "owner": str(row.get("owner_name") or ""),
         "me": actor,
         "myStatus": status,
-        "now": runtime.now(),
+        "now": now,
         "members": [{"name": str(item.get("account_name") or ""),
                      "status": str(item.get("status") or "")} for item in members],
         "queue": await _queue(runtime, jam_id) if status in ACTIVE else [],
         "decks": await _decks(runtime, jam_id) if status in ACTIVE else {},
+        "presence": await _presence(runtime, jam_id, now) if active else [],
+        "reactions": await _reactions(runtime, jam_id, now) if active else [],
     }
 
 
@@ -335,7 +440,8 @@ async def _save_deck(runtime, jam_id, side, actor, data):
 
 
 async def _delete_jam(runtime, jam_id):
-    for table in ("vmdj_jam_decks", "vmdj_jam_queue", "vmdj_jam_members", "vmdj_jams"):
+    for table in ("vmdj_jam_reactions", "vmdj_jam_presence", "vmdj_jam_decks", "vmdj_jam_queue",
+                  "vmdj_jam_members", "vmdj_jams"):
         await runtime.d1_run("DELETE FROM " + table + " WHERE jam_id=?", jam_id)
 
 
@@ -369,7 +475,7 @@ def _allowed_methods(parts):
         return ("GET", "DELETE")
     if len(parts) == 3 and parts[2] in ("join", "leave"):
         return ("POST",)
-    if len(parts) == 3 and parts[2] in ("members", "queue"):
+    if len(parts) == 3 and parts[2] in ("members", "queue", "presence", "reactions"):
         return ("POST",)
     if len(parts) == 4 and parts[2] in ("members", "queue"):
         return ("DELETE",)
@@ -420,8 +526,7 @@ async def handle(runtime, path):
             await _delete_jam(runtime, jam_id)
             await runtime.audit(actor, "video_mix_dj.jam_end", "jam", jam_id)
             return _response(runtime, {"ok": True, "ended": True})
-        await runtime.d1_run(
-            "DELETE FROM vmdj_jam_members WHERE jam_id=? AND account_name=?", jam_id, actor)
+        await _forget_member(runtime, jam_id, actor)
         return _response(runtime, {"ok": True, "left": True})
     if action == "join":
         if status == "invited":
@@ -434,8 +539,7 @@ async def handle(runtime, path):
     if action == "leave":
         if owner:
             return _error(runtime, "owner_cannot_leave", 409)
-        await runtime.d1_run(
-            "DELETE FROM vmdj_jam_members WHERE jam_id=? AND account_name=?", jam_id, actor)
+        await _forget_member(runtime, jam_id, actor)
         return _response(runtime, {"ok": True, "left": True})
     if status not in ACTIVE:
         return _error(runtime, "jam_not_joined", 403)
@@ -452,9 +556,16 @@ async def handle(runtime, path):
             return _error(runtime, "jam_forbidden", 403)
         if name == str(row.get("owner_name") or ""):
             return _error(runtime, "owner_cannot_leave", 409)
-        await runtime.d1_run(
-            "DELETE FROM vmdj_jam_members WHERE jam_id=? AND account_name=?", jam_id, name)
+        await _forget_member(runtime, jam_id, name)
         await _touch(runtime, jam_id)
+        return await _jam_response(runtime, jam_id, account_bi, actor)
+    if action == "presence":
+        await _save_presence(runtime, jam_id, actor, data)
+        return await _jam_response(runtime, jam_id, account_bi, actor)
+    if action == "reactions":
+        problem = await _react(runtime, jam_id, actor, data)
+        if problem is not None:
+            return problem
         return await _jam_response(runtime, jam_id, account_bi, actor)
     if action == "queue" and method == "POST":
         problem = await _add_to_queue(runtime, jam_id, actor, data)
@@ -491,6 +602,12 @@ async def purge_account_data(runtime, account_bi, account_name=""):
         "SELECT jam_id FROM vmdj_jams WHERE owner_bi=?", account_bi) or []
     for row in rows:
         await _delete_jam(runtime, str(row.get("jam_id") or ""))
+    joined = await runtime.d1_all(
+        "SELECT jam_id,account_name FROM vmdj_jam_members WHERE account_bi=?", account_bi) or []
+    for row in joined:
+        for table in ("vmdj_jam_presence", "vmdj_jam_reactions"):
+            await runtime.d1_run("DELETE FROM " + table + " WHERE jam_id=? AND account_name=?",
+                                 str(row.get("jam_id") or ""), str(row.get("account_name") or ""))
     await runtime.d1_run("DELETE FROM vmdj_jam_members WHERE account_bi=?", account_bi)
     name = _name(account_name)
     if name:

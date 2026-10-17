@@ -121,7 +121,7 @@ internal fun CodeTab(state: CodeTabState, navigator: Navigator) {
     val c = Fm.colors
     val messenger = LocalFmMessenger.current
     val scope = rememberCoroutineScope()
-    val openFile: (String, String) -> Unit = { path, sha -> navigator.push(RepoFileScreen(state.repo, path, state.selectedRef, sha)) }
+    val openFile: (String, String) -> Unit = { path, _ -> navigator.push(RepoFileScreen(state.repo, path, state.selectedRef)) }
     Column(
         Modifier
             .fillMaxSize()

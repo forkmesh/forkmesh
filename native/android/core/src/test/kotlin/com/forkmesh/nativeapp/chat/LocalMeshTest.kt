@@ -153,26 +153,25 @@ class LocalMeshTest {
         assertFails<MeshFrameException> { takeFrame(buffer) }
     }
 
-    fun testABeaconRoundTripsEveryFieldTheRosterNeeds() {
-        val beacon = MeshBeacon(
-            nodeId = "node-ada-1",
-            port = 4242,
-            name = "ada",
-            nodeName = "workshop",
-            platform = "android",
-            version = "flutter-1.0",
-            timestampMs = 1750000000000,
-        )
-        val parsed = MeshBeacon.parse(Json.parse(Json.stringify(beacon.toJson())) as Map<String, Any?>)!!
-        assertEq("node-ada-1", parsed.nodeId)
+    fun testABeaconCarriesOnlyTheDeviceKeyAndHowToReachIt() {
+        val beacon = MeshBeacon(kid = "Wd2zKq0p_x7rB3aQ", port = 4242, timestampMs = 1750000000000)
+        val json = beacon.toJson()
+        assertEq(setOf("t", "v", "id", "port", "ts"), json.keys)
+        assertEq(3L, json["v"])
+        @Suppress("UNCHECKED_CAST")
+        val parsed = MeshBeacon.parse(Json.parse(Json.stringify(json)) as Map<String, Any?>)!!
+        assertEq("Wd2zKq0p_x7rB3aQ", parsed.kid)
         assertEq(4242, parsed.port)
-        assertEq("ada", parsed.name)
-        assertEq("workshop", parsed.nodeName)
-        assertEq("android", parsed.platform)
+        assertEq(1750000000000, parsed.timestampMs)
+        val control = MeshBeacon(kid = "desk-kid", port = 48800, control = true, node = "desk-node").toJson()
+        assertEq("desk-node", control["node"])
+        assertEq("desk-node", MeshBeacon.parse(control)!!.node)
+        expect(!MeshBeacon(kid = "a", port = 1, node = "ignored").toJson().containsKey("node"), "node travels only with control")
+        assertEq(null, MeshBeacon.parse(json + ("v" to 1L)), "v1 beacons are ignored")
     }
 
     fun testAnythingThatIsNotABeaconWeSpeakIsDropped() {
-        val good = MeshBeacon(nodeId = "a", port = 1).toJson()
+        val good = MeshBeacon(kid = "a", port = 1).toJson()
         assertEq(null, MeshBeacon.parse(good + ("t" to "other")))
         assertEq(null, MeshBeacon.parse(good + ("v" to 99L)))
         assertEq(null, MeshBeacon.parse(good + ("port" to 0L)))
@@ -180,15 +179,14 @@ class LocalMeshTest {
     }
 
     fun testTheBeaconOnTheWireIsCiphertextNotAnAdvertisement() {
-        val beacon = MeshBeacon(nodeId = "node-ada-1", port = 4242, name = "ada", nodeName = "workshop")
+        val beacon = MeshBeacon(kid = "Wd2zKq0p_x7rB3aQ", port = 4242)
         val crypto = RoomCrypto.shared(MESH_ROOM_NAME)
         val envelope = crypto.encrypt(beacon.toJson())
         val datagram = Json.stringify(envelope)
-        expect(!datagram.contains("node-ada-1"))
-        expect(!datagram.contains("workshop"))
+        expect(!datagram.contains("Wd2zKq0p_x7rB3aQ"))
         expect(!datagram.contains(MESH_BEACON_TAG))
         val back = crypto.decrypt(envelope)!!
-        assertEq("node-ada-1", MeshBeacon.parse(back)!!.nodeId)
+        assertEq("Wd2zKq0p_x7rB3aQ", MeshBeacon.parse(back)!!.kid)
     }
 
     fun testTwoDevicesOnThisNetworkTalkWithNoRelay() {

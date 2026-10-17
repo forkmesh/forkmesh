@@ -5,6 +5,7 @@ import {
 } from "./chat-crypto.js";
 import {
   acceptSealKey,
+  authenticatedPlain,
   isSealKeyFrame,
   isSealedFrame,
   sealFrame,
@@ -124,6 +125,7 @@ export function createChatRoomTransport({
   // consumer can say why a sealed room looks empty instead of dropping it in
   // silence.
   onSealed = () => {},
+  onTrust = () => {},
   onRecipients = () => {},
   onServerCopies = () => {},
   onDelivered = () => {},
@@ -158,6 +160,8 @@ export function createChatRoomTransport({
   let outbox = [];
   let outboxRoom = null;
   let releaseHeldReceipt = () => false;
+  let deliverReleased = async () => {};
+  let afterTrustChange = () => {};
 
   function rememberOutbox(ref, plain, sealed, notify) {
     if (!ref || !plain || !Array.isArray(sealed?.keys)) return;
@@ -343,8 +347,10 @@ export function createChatRoomTransport({
       if (!seal || stale() || roomSocket.readyState !== WebSocketImpl.OPEN) {
         return false;
       }
-      const envelope = await encryptObject(sealKeyFrame(seal), key);
-      if (persist) envelope.persist = true;
+      const rotationBefore = seal.rotation;
+      const bundle = await sealKeyFrame(seal);
+      const envelope = await encryptObject(bundle, key);
+      if (persist || seal.rotation !== rotationBefore) envelope.persist = true;
       if (stale() || roomSocket.readyState !== WebSocketImpl.OPEN) return false;
       roomSocket.send(JSON.stringify(envelope));
       return true;
@@ -356,7 +362,7 @@ export function createChatRoomTransport({
         return;
       }
       const cutoff = Date.now() - OUTBOX_RETAIN_MS;
-      const known = [...seal.peers.keys()];
+      const known = seal.recipientKeyIds();
       const pending = [];
       const kept = [];
       for (const entry of outbox) {
@@ -423,8 +429,23 @@ export function createChatRoomTransport({
       return true;
     };
 
-    async function openFrame(envelope) {
-      const plain = await openFramePlain(envelope);
+    deliverReleased = async (results) => {
+      if (stale() || !results?.length) return;
+      const plains = [];
+      for (const result of results) {
+        const plain = authenticatedPlain(result);
+        if (plain) plains.push(await moderateChatPlain(plain));
+      }
+      if (plains.length && !stale()) onHistory(plains, room, access);
+    };
+
+    afterTrustChange = () => {
+      if (stale()) return;
+      scheduleReseal();
+    };
+
+    async function openFrame(envelope, history = false) {
+      const plain = await openFramePlain(envelope, history);
       if (plain && direct && plain.id && relayFrameRef(envelope) &&
           holdReceipt(plain, room)) {
         heldReceipts.set(String(plain.id), envelope);
@@ -437,26 +458,41 @@ export function createChatRoomTransport({
       return withRelayRecipients(plain, envelope);
     }
 
-    async function openFramePlain(envelope) {
+    async function openFramePlain(envelope, history = false) {
       const framed = await decryptObject(envelope, key);
       if (!framed) return null;
       if (isSealKeyFrame(framed)) {
-        if (seal && await acceptSealKey(framed, seal)) {
-          replyWithKeySoon();
+        const accepted = seal ? await acceptSealKey(framed, seal) : null;
+        if (accepted?.isNew) replyWithKeySoon();
+        if (accepted?.state === "pending") {
+          onTrust({ type: "pending", kid: accepted.kid, acct: accepted.acct }, room);
+        }
+        if (accepted && (accepted.isNew || accepted.refreshed) && accepted.state === "approved") {
           scheduleReseal();
         }
+        if (accepted?.released?.length) await deliverReleased(accepted.released);
         return null;
       }
-      if (!isSealedFrame(framed)) {
-        if (controllerReadable) return framed;
+      if (framed.type === "sealed" || framed.type === "e2ee-key") {
+        if (!isSealedFrame(framed)) return null;
+      } else if (controllerReadable) {
+        return framed;
+      } else {
         onSealed("", room);
         return null;
       }
-      const peersBefore = seal ? seal.peers.size : 0;
-      const plain = seal
-        ? await unsealFrame(framed, seal, access?.roomName)
-        : null;
+      const trustBefore = seal ? seal.trustVersion : 0;
+      const result = seal
+        ? await unsealFrame(framed, seal, access?.roomName, { history })
+        : { status: "notForMe" };
+      if (result.status === "held") {
+        if (result.pending) onTrust({ type: "held", kid: result.kid }, room);
+        return null;
+      }
+      if (result.status === "replay" || result.status === "invalid") return null;
+      const plain = result.status === "opened" ? authenticatedPlain(result) : null;
       if (!plain) {
+        if (result.status !== "notForMe") return null;
         onSealed(framed.kid, room);
         if (direct && seal && !mismatchAdvertised) {
           mismatchAdvertised = true;
@@ -465,7 +501,7 @@ export function createChatRoomTransport({
         return null;
       }
       if (direct) {
-        if (framed.kid === seal.identity.keyId && envelope.persist === true) {
+        if (framed.kid === seal.keyId && envelope.persist === true) {
           rememberOutbox(
             relayFrameRef(envelope),
             plain,
@@ -473,7 +509,7 @@ export function createChatRoomTransport({
             envelope.notify === true,
           );
         }
-        if (seal.peers.size !== peersBefore) scheduleReseal();
+        if (seal.trustVersion !== trustBefore) scheduleReseal();
       }
       return plain;
     }
@@ -490,7 +526,9 @@ export function createChatRoomTransport({
       replayDelivered = true;
       const envelopes = replayEnvelopes;
       replayEnvelopes = [];
-      const frames = await Promise.all(envelopes.map(openFrame));
+      const frames = await Promise.all(
+        envelopes.map((envelope) => openFrame(envelope, true)),
+      );
       if (stale()) return;
       const plains = [];
       for (const frame of frames) {
@@ -651,6 +689,40 @@ export function createChatRoomTransport({
     get sealKeyId() {
       return currentSeal?.keyId || "";
     },
+    get trustPolicy() {
+      return currentSeal?.policy || "";
+    },
+    pendingDevices() {
+      return currentSeal ? currentSeal.pendingDevices() : [];
+    },
+    devices() {
+      return currentSeal ? currentSeal.devices() : [];
+    },
+    async approveDevice(kid) {
+      const seal = currentSeal;
+      if (!seal) return false;
+      const released = await seal.approve(String(kid || ""));
+      if (seal !== currentSeal) return true;
+      await deliverReleased(released);
+      afterTrustChange();
+      return true;
+    },
+    async blockDevice(kid) {
+      const seal = currentSeal;
+      if (!seal) return false;
+      await seal.block(String(kid || ""));
+      return true;
+    },
+    async safetyNumber() {
+      return currentSeal && currentSeal.policy === "strict"
+        ? currentSeal.safetyNumber()
+        : null;
+    },
+    async markVerified() {
+      if (!currentSeal) return false;
+      await currentSeal.markVerified();
+      return true;
+    },
     releaseReceipt(id) {
       return releaseHeldReceipt(id);
     },
@@ -670,9 +742,20 @@ export function createChatRoomTransport({
       const seal = currentSeal;
       const room = currentRoom;
       const moderated = await moderateChatPlain(plain);
+      const rotationBefore = seal ? seal.rotation : 0;
       const sealed = currentControllerReadable
         ? null
         : await sealFrame(moderated, seal, currentAccess?.roomName);
+      if (sealed && seal.rotation !== rotationBefore) {
+        const advertiseKey = currentKey;
+        const advertiseSocket = socket;
+        encryptObject(await sealKeyFrame(seal), advertiseKey).then((advert) => {
+          advert.persist = true;
+          if (advertiseSocket === socket && advertiseSocket?.readyState === WebSocketImpl.OPEN) {
+            advertiseSocket.send(JSON.stringify(advert));
+          }
+        }).catch(() => {});
+      }
       // persist is decided from the frame the caller wrote, not the sealed
       // wrapper, so retention keeps working in a room whose types the relay
       // can no longer read.

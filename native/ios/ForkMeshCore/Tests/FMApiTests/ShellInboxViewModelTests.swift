@@ -20,8 +20,10 @@ private final class FakeChat: ShellChatBridge {
     var markedBadgeSeen = 0
     var switched: [String] = []
     var connects = 0
+    var officeRooms: [String: String] = [:]
 
     func connect() { connects += 1 }
+    func officeConversation(channelId: String) -> String? { officeRooms[channelId] }
     func markBadgeSeen() { markedBadgeSeen += 1 }
     func switchConversation(_ conversation: String) { switched.append(conversation) }
 }
@@ -167,6 +169,32 @@ final class ShellInboxViewModelTests: XCTestCase {
             isChat: true, isDirectMessage: false, alertId: "", href: "", conversation: "#office/design")
         XCTAssertEqual(room, .chat)
         XCTAssertEqual(chat.switched, [direct, "#office/design"])
+    }
+
+    @MainActor
+    func testAnOfficePushWithOnlyAChannelIdOpensThatRoom() async {
+        let chat = FakeChat()
+        let channel = String(repeating: "ab", count: 16)
+        chat.officeRooms = [channel: "#office/design"]
+        chat.unreadConversations = ["#dev"]
+        let shell = HomeShellModel(chat: chat, notifications: nil)
+        let open = PushOpen(arguments: ["topic": "chat", "channelId": channel])
+        XCTAssertEqual(open.channelId, channel)
+        XCTAssertEqual(open.conversation, "")
+        let route = await shell.routePush(
+            isChat: open.isChat, isDirectMessage: open.isDirectMessage, alertId: open.alertId, href: open.href,
+            conversation: open.conversation, channelId: open.channelId)
+        XCTAssertEqual(route, .chat)
+        XCTAssertEqual(chat.switched, ["#office/design"])
+        _ = await shell.routePush(
+            isChat: true, isDirectMessage: false, alertId: "", href: "", channelId: String(repeating: "cd", count: 16))
+        XCTAssertEqual(chat.switched, ["#office/design", "#dev"])
+        chat.unreadConversations = ["@bob"]
+        _ = await shell.routePush(isChat: false, isDirectMessage: true, alertId: "", href: "", channelId: channel)
+        XCTAssertEqual(chat.switched, ["#office/design", "#dev", "@bob"])
+        _ = await shell.routePush(
+            isChat: true, isDirectMessage: false, alertId: "", href: "", conversation: "#mesh", channelId: channel)
+        XCTAssertEqual(chat.switched, ["#office/design", "#dev", "@bob", "#mesh"])
     }
 
     @MainActor

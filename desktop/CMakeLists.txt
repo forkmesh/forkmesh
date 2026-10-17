@@ -1803,6 +1803,21 @@ if(FORKMESH_BUILD_TESTS)
         set_target_properties(forkmesh-trust-list-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-chat-v3-tests
+        tests/test_chat_v3.cpp
+        src/RoomSeal.h
+        src/RoomSeal.cpp
+    )
+    target_include_directories(forkmesh-chat-v3-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-chat-v3-tests PRIVATE
+        Qt6::Core OpenSSL::Crypto)
+    target_compile_definitions(forkmesh-chat-v3-tests PRIVATE
+        FORKMESH_CHAT_V3_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../conformance/chat/v3/vectors.json")
+    if(APPLE)
+        set_target_properties(forkmesh-chat-v3-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     # Desktop/public-World chat convergence: saved settings migrate only the
     # retired shared-room route, blackholed upgrades have a deadline, and every
     # failure/network transition yields one bounded reconnect.
@@ -3636,6 +3651,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
         forkmesh-control-tests forkmesh-chat-transport-tests
+        forkmesh-chat-v3-tests
         forkmesh-action-security-tests
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests
@@ -3951,6 +3967,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-trust-list-tests COMMAND forkmesh-trust-list-tests)
     add_test(NAME forkmesh-chat-transport-tests
              COMMAND forkmesh-chat-transport-tests)
+    add_test(NAME forkmesh-chat-v3-tests COMMAND forkmesh-chat-v3-tests)
     add_test(NAME forkmesh-discord-tests
              COMMAND forkmesh-chat-transport-tests --discord-only)
     add_test(NAME forkmesh-action-security-tests
@@ -4157,6 +4174,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
         forkmesh-control-tests forkmesh-chat-transport-tests
+        forkmesh-chat-v3-tests
         forkmesh-action-security-tests
         forkmesh-private-mirror-tests
         forkmesh-public-mirror-tests

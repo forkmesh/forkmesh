@@ -33,6 +33,11 @@ class DesktopTranscriptStreamTest {
     fun testTheDesktopPushesOutputAsItIsWritten() {
         val desktop = LocalControlTest.FakeDesktop()
         desktop.followAnswer = output(7, "abc", from = 3) + ("streaming" to true)
+        var read = -1
+        desktop.handlers["agents.transcript"] = { params ->
+            read = (params["since"] as Number).toInt()
+            output(7, "x".repeat(32), from = 8)
+        }
         val channels = ArrayList<LocalControlTest.LoopChannel>()
         val hub = hub(desktop, channels)
         val deltas = Collections.synchronizedList(ArrayList<AgentTranscriptDelta>())
@@ -50,9 +55,10 @@ class DesktopTranscriptStreamTest {
         channel.push("agents.output", output(7, "stale", from = 2))
         channel.push("agents.output", output(7, "tail", from = 40))
         channel.push("agents.output", output(7, "", from = 44, status = "completed"))
-        expect(waitUntil { deltas.size == 4 })
-        assertEq(listOf("abc", "de", "tail", ""), deltas.map { it.text })
-        assertEq(listOf(false, false, true, false), deltas.map { it.reset })
+        expect(waitUntil { deltas.size == 5 })
+        assertEq(8, read)
+        assertEq(listOf("abc", "de", "x".repeat(32), "tail", ""), deltas.map { it.text })
+        assertEq(listOf(false, false, false, false, false), deltas.map { it.reset })
         assertEq("completed", deltas.last().status)
         assertEq(44, stream.next)
 
@@ -60,6 +66,58 @@ class DesktopTranscriptStreamTest {
         expect(waitUntil { ended == "unknown_session" })
         expect(!stream.isStreaming)
         expect(waitUntil { desktop.requests.any { it["method"] == "agents.unfollow" } })
+        hub.disconnectRelay()
+    }
+
+    fun testAStreamThatStopsLeavesTheDesktopFollowToTheOthers() {
+        val desktop = LocalControlTest.FakeDesktop()
+        desktop.followAnswer = output(7, "abc", from = 0) + ("streaming" to true)
+        val channels = ArrayList<LocalControlTest.LoopChannel>()
+        val hub = hub(desktop, channels)
+        val page = Collections.synchronizedList(ArrayList<AgentTranscriptDelta>())
+        val list = DesktopTranscriptStream(hub, 7) {}
+        val run = DesktopTranscriptStream(hub, 7) { page.add(it) }
+        val other = DesktopTranscriptStream(hub, 8) {}
+        expect(list.start())
+        expect(run.start())
+        expect(other.start())
+        fun unfollowed(id: Int) = synchronized(desktop.requests) {
+            desktop.requests.any { it["method"] == "agents.unfollow" && ((it["params"] as Map<*, *>)["id"] as Number).toInt() == id }
+        }
+        list.stop()
+        other.stop()
+        expect(waitUntil { unfollowed(8) })
+        expect(!unfollowed(7))
+
+        channels.single().push("agents.output", output(7, "de", from = 3))
+        expect(waitUntil { page.size == 2 })
+        assertEq(listOf("abc", "de"), page.map { it.text })
+
+        run.stop()
+        expect(waitUntil { unfollowed(7) })
+        hub.disconnectRelay()
+    }
+
+    fun testAStreamAheadOfTheDesktopKeepsOnlyWhatIsNew() {
+        val desktop = LocalControlTest.FakeDesktop()
+        desktop.followAnswer = output(7, "abcdefgh", from = 0) + ("streaming" to true)
+        val channels = ArrayList<LocalControlTest.LoopChannel>()
+        val hub = hub(desktop, channels)
+        val deltas = Collections.synchronizedList(ArrayList<AgentTranscriptDelta>())
+        val stream = DesktopTranscriptStream(hub, 7) { deltas.add(it) }
+        expect(stream.start())
+        assertEq(8, stream.next)
+
+        val channel = channels.single()
+        channel.push("agents.output", output(7, "ghij", from = 6))
+        channel.push("agents.output", output(7, "j", from = 9))
+        channel.push("agents.output", output(7, "k", from = 10))
+        expect(waitUntil { deltas.size == 3 })
+        assertEq(listOf("abcdefgh", "ij", "k"), deltas.map { it.text })
+        assertEq(listOf(0, 8, 10), deltas.map { it.from })
+        assertEq(11, stream.next)
+        expect(desktop.requests.none { it["method"] == "agents.transcript" })
+        stream.stop()
         hub.disconnectRelay()
     }
 

@@ -3,7 +3,7 @@
 // the production chat from app/public/chat.js.
 const chatModerationPromise = import("./chat-moderation.js").catch(() => null);
 // The room key below is derived by the relay from its own DATA_KEY. Authenticated
-// rooms add automatic device-to-device X25519 encryption; public World #general
+// rooms add automatic device-to-device encryption; public World #general
 // remains controller-readable so ForkBot and MCP can participate.
 const chatSealPromise = import("./chat-seal.js").catch(() => null);
 const chatRetentionPromise = import("./chat-retention.js").catch(() => null);
@@ -733,7 +733,10 @@ function mountForkMeshDashboardChat(options = {}) {
     }
     sealUnavailable = false;
     try {
-      sealStore = sealStore || sealModule.createRoomSealStore();
+      sealStore = sealStore || sealModule.createRoomSealStore({
+        acct: () => userSession()?.nodeName || "",
+        node: selfId,
+      });
       roomSeal = await sealStore.resolve(SEAL_SCOPE, ACTIVE_ROOM, RELAY_HOST);
     } catch (error) {
       roomSeal = null;
@@ -768,9 +771,10 @@ function mountForkMeshDashboardChat(options = {}) {
     if (!roomSeal || !sealModule) {
       throw new Error("End-to-end chat encryption is unavailable.");
     }
-    return encryptRoomObject(
-      await sealModule.sealFrame(obj, roomSeal, ACTIVE_ROOM),
-    );
+    const rotation = roomSeal.rotation;
+    const sealed = await sealModule.sealFrame(obj, roomSeal, ACTIVE_ROOM);
+    if (roomSeal.rotation !== rotation) void sendSealAdvertisement(true);
+    return encryptRoomObject(sealed);
   }
 
   let keyReplyTimer = 0;
@@ -779,7 +783,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (!roomSeal || !sealModule ||
         !socket || socket.readyState !== WebSocket.OPEN) return;
     const envelope = await encryptRoomObject(
-      sealModule.sealKeyFrame(roomSeal),
+      await sealModule.sealKeyFrame(roomSeal),
     );
     if (persist) envelope.persist = true;
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -795,7 +799,16 @@ function mountForkMeshDashboardChat(options = {}) {
     }, 25);
   }
 
-  async function decryptObject(envelope) {
+  async function deliverReleasedSealFrames(results) {
+    for (const result of results || []) {
+      const plain = sealModule.authenticatedPlain(result);
+      const moderated = plain ? await moderateDashboardPlain(plain) : null;
+      if (moderated) handlePlain(moderated, true);
+    }
+    if (results?.length) finishHistoryReplay();
+  }
+
+  async function decryptObject(envelope, history = false) {
     if (!envelope || envelope.kind !== "cipher") return null;
     try {
       const nonce = b64ToBytes(envelope.nonce);
@@ -811,22 +824,30 @@ function mountForkMeshDashboardChat(options = {}) {
       );
       const framed = JSON.parse(dec.decode(plain));
       if (sealModule?.isSealKeyFrame(framed)) {
-        if (roomSeal && await sealModule.acceptSealKey(framed, roomSeal)) {
-          replyWithSealKeySoon();
+        const accepted = roomSeal
+          ? await sealModule.acceptSealKey(framed, roomSeal)
+          : null;
+        if (accepted?.isNew) replyWithSealKeySoon();
+        if (accepted?.released?.length) {
+          void deliverReleasedSealFrames(accepted.released);
         }
         return null;
       }
-      if (!sealModule?.isSealedFrame(framed)) {
+      if (framed?.type === "sealed" || framed?.type === "e2ee-key") {
+        if (!sealModule?.isSealedFrame(framed)) return null;
+      } else {
         if (PUBLIC_WORLD_GENERAL) return framed;
         // A protected room accepts no controller-authored application frame.
         noteUnreadableSealedFrame("");
         return null;
       }
-      const unsealed = roomSeal
-        ? await sealModule.unsealFrame(framed, roomSeal, ACTIVE_ROOM)
+      const result = roomSeal
+        ? await sealModule.unsealFrame(framed, roomSeal, ACTIVE_ROOM, { history })
+        : { status: "notForMe" };
+      if (result.status === "notForMe") noteUnreadableSealedFrame(framed.kid);
+      return result.status === "opened"
+        ? sealModule.authenticatedPlain(result)
         : null;
-      if (!unsealed) noteUnreadableSealedFrame(framed.kid);
-      return unsealed;
     } catch (_) {
       return null;
     }
@@ -3516,7 +3537,7 @@ function mountForkMeshDashboardChat(options = {}) {
 
   function renderChatEntry(entry, kind, live = false) {
     if (!entry || !allowedChatAccountKind(entry.accountKind)) return;
-    entry = normalizedPublicWorldFrame(entry);
+    entry = normalizedPublicWorldFrame(botLine(entry));
     if (
       orgAgentIdentity(entry.sender, entry.senderId) &&
       !orgAgentConversationAccess
@@ -3589,6 +3610,7 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function handlePlain(plain, historyReplay = false) {
+    plain = botLine(plain);
     const type = plain.type;
     // Mirror-mesh signals ride the same encrypted room as chat: a source node
     // broadcasts "mirror-update" the instant its repo advances from the source
@@ -3703,7 +3725,9 @@ function mountForkMeshDashboardChat(options = {}) {
       finishHistoryReplay();
       return;
     }
-    const frames = await Promise.all(envelopes.map(decryptObject));
+    const frames = await Promise.all(
+      envelopes.map((envelope) => decryptObject(envelope, true)),
+    );
     const decoded = frames.filter(Boolean);
     // D1 ties frames stored in the same millisecond by opaque cipher hash, so
     // an edit/delete can replay before its original chat. Register every chat
@@ -4120,9 +4144,18 @@ function mountForkMeshDashboardChat(options = {}) {
       channel: CHANNEL,
       text: String(text || "").slice(0, MAX_TEXT),
       sender: botName,
-      senderId: botName,
+      senderId: selfId,
+      bot: botName,
       accountKind: "user",
     });
+  }
+
+  function botLine(entry) {
+    const bot = String(entry?.bot || "").trim().toLowerCase();
+    if (![FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID].includes(bot)) {
+      return entry;
+    }
+    return { ...entry, sender: bot, senderId: bot, postedBy: entry.senderId };
   }
 
   async function broadcastBotMessage(text, sender = FORKBOT_SENDER_ID) {
@@ -4132,12 +4165,12 @@ function mountForkMeshDashboardChat(options = {}) {
     // Claude/Codex prompts and replies are intentionally absent from the
     // shared room. The Engineering-only session endpoint remains the durable
     // transcript; this local line is merely immediate feedback to its author.
-    if (!orgAgentIdentity(plain.sender, plain.senderId)) send(plain);
+    if (!orgAgentIdentity(plain.sender, plain.bot)) send(plain);
     seen.add(plain.id);
-    appendMessage("peer", plain.sender, plain.text, plain.id, plain.senderId, plain.ts);
+    appendMessage("peer", plain.bot, plain.text, plain.id, plain.bot, plain.ts);
     // The asking client appends directly (not via renderChatEntry), so mirror
     // the reply to the World embed here too.
-    emitWorldChatBubble(plain.sender, plain.senderId, plain.text);
+    emitWorldChatBubble(plain.bot, plain.bot, plain.text);
   }
 
   async function maybeAskForkbot(text) {

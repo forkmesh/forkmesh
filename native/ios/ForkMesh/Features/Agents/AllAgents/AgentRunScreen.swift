@@ -408,7 +408,7 @@ struct AgentRunScreen: View {
             stream?.stop()
             stream = nil
         }
-        .fmRefreshable { await load() }
+        .fmRefreshable { await reread() }
     }
 
     private var followsCloudLive: Bool { isRunnerRun && active && !liveRefused }
@@ -673,6 +673,14 @@ struct AgentRunScreen: View {
     private func refollow() async {
         guard let stream else { return await follow() }
         if !(await stream.refollow()) { await load() }
+    }
+
+    private func reread() async {
+        if streaming {
+            await refollow()
+        } else {
+            await load()
+        }
     }
 
     private func load() async {

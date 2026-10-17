@@ -2206,13 +2206,15 @@ def test_web_chats_forward_mentions_and_broadcast_bot_replies():
         assert "FORKBOT_SENDER_ID" in script
         assert (
             'sender: "forkbot"' in script and
-            "senderId: FORKBOT_SENDER_ID" in script and
+            "bot: FORKBOT_SENDER_ID" in script and
             "broadcastForkbotMessage(data.botMessage)" in script
         ) or (
             "sender = FORKBOT_SENDER_ID" in script and
-            "senderId: botName" in script and
+            "bot: botName" in script and
             "broadcastBotMessage(data.botMessage)" in script
         )
+        assert "senderId: selfId," in script
+        assert "function botLine(" in script
         assert script.count("maybeAskForkbot(") >= 2
         # Recent conversation is buffered and forwarded so ForkBot has context.
         assert "rememberContext(" in script

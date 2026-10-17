@@ -21,6 +21,8 @@ DELIVERED_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/delivered/?$")
 CURSOR_RE = re.compile(r"^([0-9]{1,20})\.([0-9a-f]{32})$")
 REF_RE = re.compile(r"^[0-9a-f]{40}$")
+PENDING_ACKED_GRACE_MS = 120 * 1000
+PENDING_RETAIN_MS = 7 * 24 * 60 * 60 * 1000
 
 
 def _response(runtime, data, status=200, allow="", retry_after_ms=0):
@@ -357,12 +359,16 @@ async def _pending(runtime, account_bi, conversation_id):
         return _response(runtime, {"error": "not_found"}, status=404)
     key_version = int(row.get("key_version") or 1)
     room = "chat-direct:" + conversation_id + ":v" + str(key_version)
+    now = int(runtime.now())
     stored = await runtime.d1_first(
         "SELECT body FROM chat_history "
-        "WHERE room_key=? AND msg_id>=? AND msg_id<? LIMIT 1",
+        "WHERE room_key=? AND msg_id>=? AND msg_id<? "
+        "AND (acked_at=0 OR (acked_at>? AND ts>=?)) LIMIT 1",
         room,
         ref + ":",
         ref + ";",
+        now - PENDING_ACKED_GRACE_MS,
+        now - PENDING_RETAIN_MS,
     )
     frame = str((stored or {}).get("body") or "")
     return _response(
@@ -389,7 +395,7 @@ async def _delivered(runtime, account_bi, conversation_id):
     key_version = int(row.get("key_version") or 1)
     stored = await runtime.d1_first(
         "SELECT msg_id FROM chat_history "
-        "WHERE room_key=? AND msg_id>=? AND msg_id<? "
+        "WHERE room_key=? AND msg_id>=? AND msg_id<? AND acked_at=0 "
         "AND substr(msg_id,42,16)<>? LIMIT 1",
         "chat-direct:" + conversation_id + ":v" + str(key_version),
         ref + ":",
