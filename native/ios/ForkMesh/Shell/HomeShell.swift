@@ -347,13 +347,6 @@ struct HomeShell: View {
             }
             .fmLoading(
                 loadingRepoCounts || ShellNavigatorCounts.shared.loading || HubPackageState.shared.refreshing)
-            .task(id: ShellCounts.shared.currentRepo) {
-                loadingRepoCounts = true
-                await loadRepoCounts()
-                if !Task.isCancelled {
-                    loadingRepoCounts = false
-                }
-            }
             .task {
                 await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false)
             }
@@ -721,6 +714,13 @@ struct HomeShell: View {
                 }
             }
             .task { await start() }
+            .task(id: ShellCounts.shared.currentRepo) {
+                loadingRepoCounts = true
+                await loadRepoCounts()
+                if !Task.isCancelled {
+                    loadingRepoCounts = false
+                }
+            }
             .task { await ShellSuggestions.shared.run() }
             .task {
                 try? await Task.sleep(for: .seconds(2))

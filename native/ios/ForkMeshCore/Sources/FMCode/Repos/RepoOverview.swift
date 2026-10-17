@@ -93,7 +93,7 @@ public final class RepoOverviewModel {
         async let releases = try? client.releases(owner, name)
         async let commits = try? client.commits(owner, name)
         if let list = await issues { counts[.issues] = list.filter(\.isOpen).count }
-        if let list = await pulls { counts[.pulls] = list.filter { $0.status == "open" }.count }
+        if let list = await pulls { counts[.pulls] = list.filter(PullStatusFilter.open.matches).count }
         if let list = await branches { counts[.branches] = list.count }
         if let list = await releases { counts[.releases] = list.count }
         if let list = await commits { counts[.commits] = list.count }
