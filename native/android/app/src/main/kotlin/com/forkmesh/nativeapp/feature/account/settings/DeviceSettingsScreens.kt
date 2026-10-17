@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,8 +30,16 @@ class GeneralSettingsScreen : Screen() {
         val prefs = SettingsArea.prefs
         var haptics by remember { mutableStateOf(prefs?.let(DeviceSettings::hapticsEnabled) ?: true) }
         var sounds by remember { mutableStateOf(SoundCuePrefs.enabled(prefs)) }
+        val hideBarIcons by SettingsArea.homeHidesBarIcons.collectAsState()
         SettingsPage("General", navigator) {
             item { SettingsCard("Appearance") { AppearanceCard() } }
+            item {
+                SettingsCard("Home screen") {
+                    SettingsSwitch("Hide icons in the bottom bar", "Icons already in the bottom bar leave Home so each one shows once.", hideBarIcons) {
+                        SettingsArea.setHomeHidesBarIcons(it)
+                    }
+                }
+            }
             item { SettingsCard("Chat privacy") { com.forkmesh.nativeapp.feature.chat.ChatPrivacySettings() } }
             item {
                 SettingsCard("Feedback") {
