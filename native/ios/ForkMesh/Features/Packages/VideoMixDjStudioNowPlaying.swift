@@ -31,8 +31,9 @@ struct DjMiniRecord: View {
     let size: CGFloat
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !deck.playing)) { _ in
-            let time = deck.position()
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !deck.moving)) { _ in
+            let time = deck.shown()
+            let beat = DjStudio.amplitude(deck.waveform, time: time, duration: deck.duration)
             ZStack {
                 ZStack {
                     Circle().fill(DjTheme.rgb(0x111214))
@@ -46,16 +47,34 @@ struct DjMiniRecord: View {
                     DjMiniGrooves(size: size).equatable()
                 }
                 .rotationEffect(.degrees(DjStudio.turnDegrees(time)))
-                Canvas { context, area in
-                    DjWaveDrawing.mini(context, area, bars: DjStudio.miniBars(deck.waveform, time: time, duration: deck.duration))
-                }
-                .frame(width: size * 0.52, height: size * 0.52)
-                .background(Circle().fill(Color.black.opacity(0.8)))
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 0.5))
+                DjMiniPulse(level: deck.playing ? beat.level : 0, hue: beat.hue, size: size * 0.3)
             }
             .frame(width: size, height: size)
         }
+    }
+}
+
+struct DjMiniPulse: View {
+    let level: Double
+    let hue: Double
+    let size: CGFloat
+
+    var body: some View {
+        let colour = DjTheme.waveColors[min(DjTheme.waveColors.count - 1, max(0, Int(hue * Double(DjTheme.waveColors.count))))]
+        let amount = CGFloat(pow(min(1, max(0, level)), 2))
+        ZStack {
+            Circle().fill(Color.black.opacity(0.8))
+            Circle()
+                .fill(colour.opacity(0.35))
+                .frame(width: size * (0.3 + 0.7 * amount), height: size * (0.3 + 0.7 * amount))
+                .blur(radius: size * 0.08)
+            Circle()
+                .fill(colour)
+                .frame(width: size * (0.18 + 0.5 * amount), height: size * (0.18 + 0.5 * amount))
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 0.5))
     }
 }
 

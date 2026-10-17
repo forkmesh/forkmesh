@@ -139,6 +139,15 @@ deletes the checkout, whose `.git` holds every local branch and agent worktree.
   `src/main.cpp` and `src/MainWindowHostInstall.cpp`; `FORKMESH_VERSION` is not a
   cache variable or compile definition.
 - Install `ccache` (with room, e.g. `ccache -M 30G`), `ninja` and `mold`.
+- The generated `marketplace.qrc` embeds every package (about 47 MB of C++
+  through AUTORCC by October 2026). Compiling that one file took 1.3 GiB, and
+  the app library and `forkmesh-package-tests` each compiled their own copy, so
+  on the 4 GiB CI runner the compiler was killed once CRM 1.37.0 added its
+  grants CSV. It goes through `qt_add_big_resources` now: rcc writes the data
+  straight into an object file, built once by `forkmesh-marketplace-resources`
+  and linked by the app, the window and perf tests (through
+  `forkmesh-resources`) and `forkmesh-package-tests`. Bundle other large
+  resource sets the same way.
 
 ## Manual CMake and ctest
 

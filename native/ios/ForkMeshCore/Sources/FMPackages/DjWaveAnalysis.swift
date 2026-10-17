@@ -2,6 +2,13 @@ import Foundation
 
 public struct DjWaveAccumulator: Sendable {
     public static let barCount = 1200
+    public static let barsPerSecond = 20.0
+    public static let mostBars = 12_000
+
+    public static func bars(seconds: Double) -> Int {
+        guard seconds.isFinite, seconds > 0 else { return barCount }
+        return min(mostBars, max(barCount, Int(seconds * barsPerSecond)))
+    }
 
     private let lowAlpha: Float
     private let highAlpha: Float
@@ -67,6 +74,33 @@ public struct DjWaveAccumulator: Sendable {
         lowEnergy = 0
         midEnergy = 0
         highEnergy = 0
+    }
+}
+
+public enum DjWaveRanges {
+    public static let chunk: Int64 = 2 * 1024 * 1024
+
+    public static func declaredLength(_ url: URL) -> Int64? {
+        guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "clen" })?.value,
+            let length = Int64(value), length > 0
+        else { return nil }
+        return length
+    }
+
+    public static func total(contentRange: String?) -> Int64? {
+        guard let contentRange, let slash = contentRange.lastIndex(of: "/"),
+            let total = Int64(contentRange[contentRange.index(after: slash)...].trimmingCharacters(in: .whitespaces)), total > 0
+        else { return nil }
+        return total
+    }
+
+    public static func spans(total: Int64, from start: Int64 = 0, size: Int64 = chunk) -> [ClosedRange<Int64>] {
+        guard start >= 0, total > start, size > 0 else { return [] }
+        return stride(from: start, to: total, by: Int(size)).map { $0...(min(total, $0 + size) - 1) }
+    }
+
+    public static func header(_ span: ClosedRange<Int64>) -> String {
+        "bytes=\(span.lowerBound)-\(span.upperBound)"
     }
 }
 

@@ -105,7 +105,9 @@ manage the plugin they are looking at:
 - **Rate** opens the package's reviews (`docs/MARKETPLACE_RATINGS.md`).
 - **Send feedback or report a bug** posts to `/api/bug-reports` with
   `package: <id>`. The private report and any attachments are visible only to
-  platform administrators in the Support inbox and are labelled `plugin`.
+  platform administrators in the Support inbox and in the Bug sheet's
+  Reported tab on the phones (`GET /api/bug-reports/inbox`), and are
+  labelled `plugin`.
   It does not depend on the `bug-reports` package being
   installed.
 - **Uninstall** uses the surface's normal removal flow, including its

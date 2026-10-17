@@ -286,6 +286,7 @@ data class DesktopBackupStatus(
             "tar_missing" -> "The desktop has no tar tool to write backups with."
             "nothing_to_back_up" -> "There was nothing to back up yet."
             "rename_failed" -> "The backup was written but could not be saved in place."
+            "low_disk" -> "The backup was skipped to keep free space on the desktop's disk."
             else -> "The backup could not be written. Open Settings, Data on the desktop for details."
         }
 

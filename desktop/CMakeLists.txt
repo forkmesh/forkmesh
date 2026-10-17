@@ -601,11 +601,17 @@ if(NOT FORKMESH_THEME_QRC_OLD STREQUAL FORKMESH_THEME_QRC_TEXT)
     file(WRITE "${FORKMESH_THEME_QRC}" "${FORKMESH_THEME_QRC_TEXT}")
 endif()
 
+qt_add_big_resources(FORKMESH_MARKETPLACE_RESOURCE_OBJECTS
+    ${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc)
+add_custom_target(forkmesh-marketplace-resources
+    DEPENDS ${FORKMESH_MARKETPLACE_RESOURCE_OBJECTS})
+
 add_library(forkmesh-resources OBJECT
     resources/icons.qrc
     ${FORKMESH_THEME_QRC}
-    ${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc
 )
+target_sources(forkmesh-resources INTERFACE ${FORKMESH_MARKETPLACE_RESOURCE_OBJECTS})
+add_dependencies(forkmesh-resources forkmesh-marketplace-resources)
 target_link_libraries(forkmesh-resources PRIVATE Qt6::Core)
 set_target_properties(forkmesh-resources PROPERTIES
     AUTOMOC OFF
@@ -2972,10 +2978,11 @@ forkmesh_link_opengl(forkmesh-window-tests)
 
     qt_add_executable(forkmesh-package-tests
         tests/test_package_registry.cpp
-        ${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc
+        ${FORKMESH_MARKETPLACE_RESOURCE_OBJECTS}
         src/ForkMeshPackageRegistry.h
         src/ForkMeshPackageRegistry.cpp
     )
+    add_dependencies(forkmesh-package-tests forkmesh-marketplace-resources)
     target_link_libraries(forkmesh-package-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-package-tests PRIVATE src)
 

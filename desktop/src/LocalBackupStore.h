@@ -19,6 +19,7 @@ constexpr qint64 kBackupIntervalMs = 60 * 60 * 1000;
 constexpr int kBackupKeepDefault = 24;
 constexpr int kBackupKeepMin = 1;
 constexpr int kBackupKeepMax = 240;
+constexpr qint64 kBackupFreeReserveBytes = qint64(5) * 1024 * 1024 * 1024;
 
 // The default for backup/hourlyEnabled when the user has never chosen is off
 // everywhere. A rolling day of multi-gigabyte control-node snapshots can fill
@@ -36,6 +37,9 @@ QList<BackupSnapshot> listBackups(const QString &root);
 
 QList<BackupSnapshot> backupsToPrune(const QList<BackupSnapshot> &snapshots,
                                      int keep);
+
+bool backupLeavesFreeReserve(qint64 bytesAvailable,
+                             qint64 reserve = kBackupFreeReserveBytes);
 
 bool backupIsDue(const QDateTime &last, const QDateTime &now,
                  qint64 intervalMs = kBackupIntervalMs);

@@ -203,10 +203,10 @@ final class CollabModelsTests: XCTestCase {
     }
 
     /// `authenticatePreview()`: the preview node, bound to this device's key.
-    @MainActor private var previewAccount: CollabAccount { CollabAccount(nodeName: "preview-node", pubkey: identity.publicKeyB64url) }
+    @MainActor private var previewAccount: CollabAccount { CollabAccount(nodeName: "preview-node", pubkey: identity.publicKeyB64url, canOwnerSign: true) }
 
     /// `_ownerAuth`: the repo owner, bound to this device's key.
-    @MainActor private var ownerAccount: CollabAccount { CollabAccount(nodeName: "owner", pubkey: identity.publicKeyB64url) }
+    @MainActor private var ownerAccount: CollabAccount { CollabAccount(nodeName: "owner", pubkey: identity.publicKeyB64url, canOwnerSign: true) }
 
     // MARK: Issues tab
 

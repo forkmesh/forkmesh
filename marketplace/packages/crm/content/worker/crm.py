@@ -14,6 +14,7 @@ import json
 import re
 from datetime import datetime, timezone
 from html import escape, unescape
+from pathlib import Path
 from urllib.parse import quote, urlencode
 
 
@@ -109,6 +110,9 @@ CONTACTED_STAGE = "contacted"
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
               "sales", "support", "projects", "events", "grants")
+GRANTS_FLOW = "grants"
+GRANTS_CSV = "crm_grants.csv"
+GRANTS_FILE_NAME = "forkmesh-grants.csv"
 DEFAULT_MAIL_BOXES = ("Inbox", "Follow-up", "Important", "Archive")
 # The contact columns every surface shows, in their canonical order, with the
 # CSV header spellings that land on each one. A header outside this table is
@@ -1033,7 +1037,7 @@ def _route(path):
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
-        r"(?:/([0-9a-f]{32}|import|export|send|auto|lookup|link|copy|order|team|bulk|merge"
+        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|lookup|link|copy|order|team|bulk|merge"
         r"|toots|toot"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
@@ -3958,6 +3962,47 @@ async def _import_contacts(runtime, org_bi, org_name, account_bi, actor, data,
     })
 
 
+def _grants_csv():
+    try:
+        return Path(__file__).with_name(GRANTS_CSV).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+async def _load_grants(runtime, org_bi, org_name, account_bi, actor, role, data):
+    if role not in MANAGER_ROLES:
+        return _response(runtime, {"error": "organization_admin_required"}, 403)
+    raw = _grants_csv()
+    if not raw:
+        return _response(runtime, {"error": "grants_unavailable"}, 404)
+    wanted = _slug(data.get("flow"), GRANTS_FLOW)
+    flow = next((flow for flow in await _org_flows(runtime, org_bi)
+                 if flow["id"] == wanted and flow.get("icon") == GRANTS_FLOW), None)
+    flow_id = flow["id"] if flow else GRANTS_FLOW
+    known = {_clean(contact.get("name"), 160).lower()
+             for contact in await _contacts(runtime, org_bi)
+             if contact.get("flow") == flow_id}
+    reader = csv.DictReader(io.StringIO(raw))
+    out = io.StringIO()
+    writer = csv.DictWriter(out, reader.fieldnames, lineterminator="\n")
+    writer.writeheader()
+    count = 0
+    for row in reader:
+        if _clean(row.get("Name"), 160).lower() in known:
+            continue
+        writer.writerow(dict(row, Pipeline=flow_id))
+        count += 1
+    if not count:
+        return _response(runtime, {
+            "ok": True, "created": 0, "updated": 0, "skipped": 0, "errors": [],
+            "view": None, "viewId": "", "flow": flow_id})
+    return await _import_contacts(runtime, org_bi, org_name, account_bi, actor, {
+        "fileName": GRANTS_FILE_NAME, "csv": out.getvalue(),
+        "sheetName": flow["name"] if flow else "Grants",
+        "viewId": _clean(data.get("viewId"), 32),
+    }, True)
+
+
 async def _contact_handle_index(runtime, org_bi):
     """Every fediverse handle the organization's contacts carry, mapped to the
     most recently updated contact that names it."""
@@ -6533,13 +6578,14 @@ ACTIVITY_BURST_MS = 10 * 60 * 1000
 ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
-    "import", "lookup", "bulk", "merge", "delete-column", "evidence", "send", "link",
-    "note",
+    "import", "grants", "lookup", "bulk", "merge", "delete-column", "evidence",
+    "send", "link", "note",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
     "auto"})
 ACTIVITY_PINGS = {
     ("contacts", "", "POST"): ("New CRM contact", "team", False),
     ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
+    ("contacts", "grants", "POST"): ("CRM grants loaded", "others", True),
     ("contacts", "bulk", "POST"): ("CRM contacts updated", "team", True),
     ("contacts", "merge", "POST"): ("CRM contacts merged", "team", False),
     ("contacts", "delete-column", "POST"): ("CRM column removed", "team", False),
@@ -6685,8 +6731,9 @@ async def handle(runtime, path):
         allowed = ("GET",)
     elif route[0] == "shared-contacts":
         allowed = ("PATCH",) if item else ("POST",)
-    elif resource == "contacts" and item in ("import", "lookup", "bulk", "merge",
-                                             "delete-column", "evidence", "note"):
+    elif resource == "contacts" and item in ("import", "grants", "lookup", "bulk",
+                                             "merge", "delete-column", "evidence",
+                                             "note"):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
@@ -6902,6 +6949,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         if item == "import":
             return await _import_contacts(runtime, org_bi, org_name, account_bi, actor, data,
                                           role in MANAGER_ROLES)
+        if item == "grants":
+            return await _load_grants(runtime, org_bi, org_name, account_bi, actor,
+                                      role, data)
         if item == "export":
             return await _export_contacts(runtime, org_bi, org_name)
         if item == "duplicates":

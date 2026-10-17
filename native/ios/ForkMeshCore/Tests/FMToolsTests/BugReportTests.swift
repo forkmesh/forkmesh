@@ -205,4 +205,107 @@ final class BugReportTests: XCTestCase {
         let released = tiny.release(x: 0, y: 1000)
         XCTAssertTrue(released.anchor.isFinite)
     }
+
+    @MainActor
+    func testTheInboxLoadsFiltersAndPages() async {
+        var asked: [(String, Int)] = []
+        func item(_ id: String) -> BugReportInboxItem {
+            BugReportInboxItem(json: ["id": .string(id), "message": "Broken.", "account": "alice", "platform": "ios"])
+        }
+        let model = BugReportInboxModel(load: { status, offset in
+            asked.append((status, offset))
+            if offset == 0 {
+                return BugReportInbox(ok: true, reports: [item("a")], counts: ["new": 2, "closed": 1], nextOffset: 1)
+            }
+            return BugReportInbox(ok: true, reports: [item("b")], counts: ["new": 2, "closed": 1])
+        })
+        await model.reload()
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+        XCTAssertEqual(model.label(for: BugReportStatusFilter.all[0]), "New 2")
+        XCTAssertEqual(model.label(for: BugReportStatusFilter.all[3]), "All 3")
+        await model.more()
+        XCTAssertEqual(model.reports.map(\.id), ["a", "b"])
+        XCTAssertNil(model.nextOffset)
+        await model.select("closed")
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+        XCTAssertEqual(asked.map(\.0), ["new", "new", "closed"])
+        XCTAssertEqual(asked.map(\.1), [0, 1, 0])
+        XCTAssertEqual(BugReportInboxModel.details(model.reports[0]), "@alice · ios")
+    }
+
+    @MainActor
+    func testTheInboxShowsARefusal() async {
+        let model = BugReportInboxModel(load: { _, _ in .failure("Only ForkMesh administrators can read reported bugs.") })
+        await model.reload()
+        XCTAssertTrue(model.loaded)
+        XCTAssertTrue(model.reports.isEmpty)
+        XCTAssertEqual(model.problem, "Only ForkMesh administrators can read reported bugs.")
+        let missing = BugReportInboxModel(load: nil)
+        await missing.reload()
+        XCTAssertFalse(missing.problem.isEmpty)
+    }
+
+    @MainActor
+    func testTriageMovesAReportOutOfAFilteredQueue() async {
+        var changes: [(String, String)] = []
+        let model = BugReportInboxModel(
+            load: { _, _ in
+                BugReportInbox(ok: true, reports: [
+                    BugReportInboxItem(json: ["id": "a", "status": "new"]),
+                    BugReportInboxItem(json: ["id": "b", "status": "new"]),
+                ], counts: ["new": 2])
+            },
+            setStatus: { id, status in
+                changes.append((id, status))
+                return BugReportStatusChange(ok: true, status: status, counts: ["new": 1, "triaged": 1])
+            })
+        await model.reload()
+        await model.setStatus("a", to: "triaged")
+        XCTAssertEqual(changes.map(\.0), ["a"])
+        XCTAssertEqual(model.reports.map(\.id), ["b"])
+        XCTAssertEqual(model.counts["triaged"], 1)
+        await model.setStatus("b", to: "new")
+        XCTAssertEqual(changes.count, 1)
+        await model.select("")
+        await model.setStatus("b", to: "closed")
+        XCTAssertEqual(model.reports.map(\.status), ["new", "closed"])
+    }
+
+    @MainActor
+    func testATriageRefusalIsShown() async {
+        let model = BugReportInboxModel(
+            load: { _, _ in BugReportInbox(ok: true, reports: [BugReportInboxItem(json: ["id": "a"])]) },
+            setStatus: { _, _ in .failure("That report no longer exists.") })
+        await model.reload()
+        await model.setStatus("a", to: "closed")
+        XCTAssertEqual(model.problem, "That report no longer exists.")
+        XCTAssertEqual(model.reports.first?.status, "new")
+    }
+
+    @MainActor
+    func testAnAttachmentIsSavedUnderItsNameForPreview() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        var asked: [(String, String)] = []
+        let model = BugReportInboxModel(
+            load: { _, _ in BugReportInbox(ok: true) },
+            attachment: { report, attachment in
+                asked.append((report, attachment))
+                return attachment == "bad" ? .failure("That attachment is no longer available.")
+                    : BugReportFile(ok: true, data: Data("pixels".utf8), contentType: "image/png")
+            },
+            folder: folder)
+        let attachment = BugReportInboxAttachment(json: ["id": "f1", "name": "../screen.png", "size": 6])
+        let opened = await model.open(report: "r1", attachment: attachment)
+        let url = try XCTUnwrap(opened)
+        XCTAssertEqual(url.lastPathComponent, ".._screen.png")
+        XCTAssertTrue(url.path.hasPrefix(folder.path))
+        XCTAssertEqual(try Data(contentsOf: url), Data("pixels".utf8))
+        XCTAssertEqual(asked.first?.0, "r1")
+        XCTAssertTrue(model.downloading.isEmpty)
+        let missing = await model.open(report: "r1", attachment: BugReportInboxAttachment(json: ["id": "bad"]))
+        XCTAssertNil(missing)
+        XCTAssertEqual(model.problem, "That attachment is no longer available.")
+        XCTAssertEqual(BugReportInboxModel.sizeLabel(6), "6 B")
+        XCTAssertEqual(BugReportInboxModel.sizeLabel(2_621_440), "2.5 MB")
+    }
 }

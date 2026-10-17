@@ -9,7 +9,7 @@ application asks for, and a one-click ChatGPT draft for each. Researched on
 | --- | --- |
 | [ranked.md](ranked.md) | The ranked list: a summary table, then one section per grant |
 | [forkmesh-grants.csv](forkmesh-grants.csv) | The same list as a CRM import for the **Grants** pipeline |
-| `grants.json` | The source both are built from (`tools/grants_build.py`) |
+| `grants.json` | The source they are built from (`tools/grants_build.py`), with the CRM's bundled copy of the CSV |
 
 ## Apply in three clicks
 
@@ -29,7 +29,14 @@ The CRM has a **Grants** pipeline type (`grants`) with the stages
 (`marketplace/packages/crm/README.md`). New organizations get it as a starter
 pipeline.
 
-To put this list into the organization's CRM, an owner or admin opens
+The CRM ships this list (`marketplace/packages/crm/content/worker/crm_grants.csv`,
+written by the same build). An empty Grants pipeline shows **Load the 100
+ranked grants**: an owner or admin clicks it (on the desktop, right-click the
+pipeline tab) and every grant lands on that pipeline at its first stage, in the
+open list or a new list named after the pipeline. Loading again only adds
+grants whose name is not on the pipeline yet.
+
+To import it by hand instead, an owner or admin opens
 **CRM → Import CSV** and imports `forkmesh-grants.csv`. Every row names the
 `grants` pipeline, so the import adds the Grants pipeline if the organization
 does not have it yet and opens a **forkmesh grants** list bound to it (rename

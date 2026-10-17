@@ -201,15 +201,13 @@ public enum DjStudio {
         return abs(error) > 0.3 ? reported : predicted + error * 0.35
     }
 
-    public static func miniBars(_ bars: [DjWaveBar], time: Double, duration: Double, count: Int = 7, spacing: Double = 0.18) -> [DjWaveBar] {
-        guard count > 0, !bars.isEmpty, duration > 0, time.isFinite else {
-            return Array(repeating: DjWaveBar(level: 0.08, hue: 0), count: max(0, count))
-        }
-        return (0..<count).map { index in
-            let moment = time + (Double(index) - Double(count - 1) / 2) * spacing
-            guard moment >= 0, moment <= duration else { return DjWaveBar(level: 0.08, hue: 0) }
-            return bars[min(bars.count - 1, max(0, Int(moment / duration * Double(bars.count))))]
-        }
+    public static func amplitude(_ bars: [DjWaveBar], time: Double, duration: Double) -> DjWaveBar {
+        guard !bars.isEmpty, duration > 0, time.isFinite, time >= 0, time <= duration else { return DjWaveBar(level: 0, hue: 0) }
+        let place = time / duration * Double(bars.count) - 0.5
+        let lower = min(bars.count - 1, max(0, Int(place.rounded(.down))))
+        let upper = min(bars.count - 1, lower + 1)
+        let blend = min(1, max(0, place - Double(lower)))
+        return DjWaveBar(level: bars[lower].level * (1 - blend) + bars[upper].level * blend, hue: (blend < 0.5 ? bars[lower] : bars[upper]).hue)
     }
 
     public static func remember(_ history: [DjHistoryItem], id: String, title: String, author: String, limit: Int = historyLimit) -> [DjHistoryItem] {
@@ -221,36 +219,6 @@ public enum DjStudio {
 
     public static func turnDegrees(_ seconds: Double) -> Double {
         (seconds / secondsPerTurn * 360).truncatingRemainder(dividingBy: 360)
-    }
-
-    public static func waveform(_ id: String, count: Int = 360) -> [DjWaveBar] {
-        guard count > 0, !id.isEmpty else { return [] }
-        var seed: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in id.utf8 { seed = (seed ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
-        var random = DjRandom(seed)
-        let sectionCount = 5 + Int(random.next() % 4)
-        let bounds = ((1..<sectionCount).map { _ in Int(random.unit() * Double(count)) } + [count]).sorted()
-        var levels: [Double] = []
-        var hues: [Double] = []
-        levels.reserveCapacity(count)
-        hues.reserveCapacity(count)
-        var start = 0
-        for (index, end) in bounds.enumerated() {
-            let edge = index == 0 || index == bounds.count - 1
-            let energy = (0.35 + random.unit() * 0.65) * (edge ? 0.55 : 1)
-            let hue = random.unit()
-            for bar in start..<max(start, end) {
-                let pulse = bar % 4 == 0 ? 1 : 0.5 + 0.3 * random.unit()
-                levels.append(min(1, max(0.06, energy * pulse * (0.55 + 0.45 * random.unit()))))
-                hues.append((hue + 0.08 * sin(Double(bar) * 0.23) + 1).truncatingRemainder(dividingBy: 1))
-            }
-            start = max(start, end)
-        }
-        return (0..<count).map { index in
-            let previous = levels[max(0, index - 1)]
-            let next = levels[min(count - 1, index + 1)]
-            return DjWaveBar(level: levels[index] * 0.6 + (previous + next) * 0.2, hue: hues[index])
-        }
     }
 
     public static func searchInstances(_ data: Data, limit: Int = 3) -> [URL] {
@@ -300,6 +268,45 @@ public struct DjTapTempo: Sendable {
     }
 }
 
+public struct DjSpin: Equatable, Sendable {
+    public static let spinUp = 0.09
+    public static let spinDown = 0.18
+    public static let follow = 0.2
+    public static let jump = 0.6
+    public static let waiting = 0.35
+
+    public private(set) var position: Double = 0
+    public private(set) var speed: Double = 0
+    private var stamp: Double?
+
+    public init() {}
+
+    public mutating func hold(_ target: Double, at now: Double) {
+        guard target.isFinite else { return }
+        position = target
+        speed = 0
+        stamp = now.isFinite ? now : stamp
+    }
+
+    public mutating func step(target: Double, speed goal: Double, at now: Double) -> Double {
+        guard target.isFinite else { return position }
+        let goal = goal.isFinite ? goal : 0
+        guard now.isFinite, let last = stamp, abs(target - position) <= Self.jump else {
+            position = target
+            speed = goal
+            if now.isFinite { stamp = now }
+            return position
+        }
+        let elapsed = now - last > 0.1 ? 0 : max(0, now - last)
+        stamp = max(last, now)
+        guard elapsed > 0 else { return position }
+        speed += (goal - speed) * (1 - exp(-elapsed / (goal > speed ? Self.spinUp : Self.spinDown)))
+        position += speed * elapsed
+        position += (target - position) * (1 - exp(-elapsed / Self.follow))
+        return position
+    }
+}
+
 struct DjRandom {
     private var state: UInt64
 
@@ -325,6 +332,8 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
     public var rate: Double = 1
     public var bpm: Double = 0
     public var loop: Bool = false
+    public var position: Double = 0
+    public var playing: Bool = false
 
     public init() {}
 
@@ -339,6 +348,8 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
         rate = DjStudio.clampRate(DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .rate)) ?? nil, 1, DjStudio.rateBounds))
         bpm = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .bpm)) ?? nil, 0, 0...250)
         loop = ((try? values.decodeIfPresent(Bool.self, forKey: .loop)) ?? nil) ?? false
+        position = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .position)) ?? nil, cue, 0...864_000)
+        playing = !videoId.isEmpty && (((try? values.decodeIfPresent(Bool.self, forKey: .playing)) ?? nil) ?? false)
     }
 }
 
@@ -394,8 +405,11 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
     public var history: [DjHistoryItem] = []
     public var queue: [DjQueueItem] = []
+    public var automix: Bool = false
 
     public init() {}
+
+    public var playing: Bool { a.playing || b.playing }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -411,6 +425,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
         let queued = ((try? values.decodeIfPresent([DjQueueEntry].self, forKey: .queue)) ?? nil) ?? []
         var ids = Set<String>()
         queue = Array(queued.compactMap(\.item).filter { ids.insert($0.id).inserted }.prefix(DjStudio.queueLimit))
+        automix = ((try? values.decodeIfPresent(Bool.self, forKey: .automix)) ?? nil) ?? false
     }
 
     public subscript(side: DjDeckSide) -> DjSavedDeck {

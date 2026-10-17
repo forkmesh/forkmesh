@@ -677,7 +677,7 @@ void MainWindow::exportConfigData()
     const QStringList args = forkmesh::configArchiveTarArgs(
         out, forkmesh::paths::dataRoot(),
         QSettings().fileName(),
-        {repositoryMirrorRoot(), repositoryPreviewRoot(), backupRoot()});
+        backupExcludeRoots());
     if (args.isEmpty()) {
         setDataStatus("There's no configuration to export yet.", true);
         return;
@@ -1006,15 +1006,29 @@ void MainWindow::takeBackupNow(bool automatic)
     }
 
     QDir().mkpath(backupRoot());
-    const QString finalPath = QDir(backupRoot())
-                                  .filePath(forkmesh::backupFileName(
-                                      QDateTime::currentDateTime()));
+    removePartialBackups();
+    const QString root = backupRoot();
+    const qint64 freeBytes = QStorageInfo(root).bytesAvailable();
+    if (!forkmesh::backupLeavesFreeReserve(freeBytes)) {
+        const QString why =
+            QStringLiteral("only %1 is free on the backup disk and ForkMesh "
+                           "leaves at least %2 free")
+                .arg(QLocale().formattedDataSize(freeBytes),
+                     QLocale().formattedDataSize(
+                         forkmesh::kBackupFreeReserveBytes));
+        setBackupStatus("Backup skipped: " + why + ".", true);
+        noteBackupResult(QStringLiteral("low_disk"));
+        logSystem(QStringLiteral("Backup: skipped (%1).").arg(why));
+        return;
+    }
+    const QString finalPath = QDir(root).filePath(
+        forkmesh::backupFileName(QDateTime::currentDateTime()));
     const QString partPath = finalPath + QStringLiteral(".part");
     const QStringList args = forkmesh::configArchiveTarArgs(
         partPath,
         forkmesh::paths::dataRoot(),
         QSettings().fileName(),
-        {repositoryMirrorRoot(), repositoryPreviewRoot(), backupRoot()});
+        backupExcludeRoots());
     if (args.isEmpty()) {
         setBackupStatus("There's nothing to back up yet.", true);
         noteBackupResult(QStringLiteral("nothing_to_back_up"));
@@ -1023,12 +1037,23 @@ void MainWindow::takeBackupNow(bool automatic)
 
     auto *tar = new QProcess(this);
     m_backupProcess = tar;
+    auto lowDisk = std::make_shared<bool>(false);
+    auto *diskWatch = new QTimer(tar);
+    diskWatch->setInterval(5000);
+    connect(diskWatch, &QTimer::timeout, tar, [tar, root, lowDisk] {
+        if (*lowDisk || forkmesh::backupLeavesFreeReserve(
+                            QStorageInfo(root).bytesAvailable()))
+            return;
+        *lowDisk = true;
+        tar->kill();
+    });
+    diskWatch->start();
     if (m_backupNowButton)
         m_backupNowButton->setEnabled(false);
     if (!automatic)
         setBackupStatus("Backing up\xE2\x80\xA6");
     connect(tar, &QProcess::finished, this,
-            [this, tar, partPath, finalPath, automatic](
+            [this, tar, partPath, finalPath, automatic, lowDisk](
                 int code, QProcess::ExitStatus status) {
                 m_backupProcess = nullptr;
                 if (m_backupNowButton)
@@ -1054,12 +1079,18 @@ void MainWindow::takeBackupNow(bool automatic)
                             .trimmed()
                             .left(300);
                     const QString why =
-                        err.isEmpty()
+                        *lowDisk
+                            ? QStringLiteral(
+                                  "stopped before the disk fell below %1 free")
+                                  .arg(QLocale().formattedDataSize(
+                                      forkmesh::kBackupFreeReserveBytes))
+                        : err.isEmpty()
                             ? QStringLiteral("tar exited with %1").arg(code)
                             : err;
                     setBackupStatus("Backup failed: " + why, true);
-                    noteBackupResult(ok ? QStringLiteral("rename_failed")
-                                        : QStringLiteral("tar_failed"));
+                    noteBackupResult(*lowDisk ? QStringLiteral("low_disk")
+                                     : ok     ? QStringLiteral("rename_failed")
+                                              : QStringLiteral("tar_failed"));
                     logSystem(QStringLiteral("Backup: failed (%1).").arg(why));
                 }
                 tar->deleteLater();
@@ -1073,14 +1104,28 @@ void MainWindow::pruneOldBackups()
         forkmesh::listBackups(backupRoot()), backupKeepCount());
     for (const forkmesh::BackupSnapshot &snapshot : stale)
         QFile::remove(snapshot.path);
+    removePartialBackups();
+}
+
+void MainWindow::removePartialBackups()
+{
     if (m_backupProcess)
-        return; // an in-flight tar owns the current .part
+        return;
     const QFileInfoList partials =
         QDir(backupRoot())
             .entryInfoList({QStringLiteral("forkmesh-backup-*.tar.gz.part")},
                            QDir::Files);
     for (const QFileInfo &fi : partials)
         QFile::remove(fi.absoluteFilePath());
+}
+
+QStringList MainWindow::backupExcludeRoots() const
+{
+    QStringList roots{repositoryMirrorRoot(), repositoryPreviewRoot(),
+                      backupRoot()};
+    if (m_actionStore)
+        roots << m_actionStore->cacheRoot() << m_actionStore->sandboxDir();
+    return roots;
 }
 
 void MainWindow::refreshBackupTable()

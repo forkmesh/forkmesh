@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,19 +59,26 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.BugReportAttachment
+import com.forkmesh.nativeapp.api.BugReportInboxAttachment
+import com.forkmesh.nativeapp.api.BugReportStatusChange
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFilledButton
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.SettingsService
 import com.forkmesh.nativeapp.tools.BugButtonGeometry
 import com.forkmesh.nativeapp.tools.BugButtonPoint
+import com.forkmesh.nativeapp.tools.BugReportInboxCopy
+import com.forkmesh.nativeapp.tools.BugReportInboxState
 import com.forkmesh.nativeapp.tools.ReportBugCopy
 import com.forkmesh.nativeapp.tools.ReportBugDraft
+import com.forkmesh.nativeapp.tools.loadBugReportInbox
 import com.forkmesh.nativeapp.tools.sendBugReport
 import com.forkmesh.nativeapp.ui.kit.FmField
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
 import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
+import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
 import com.forkmesh.nativeapp.ui.kit.FmTextField
 import com.forkmesh.nativeapp.ui.kit.FmTone
 import com.forkmesh.nativeapp.ui.kit.FmToneButton
@@ -175,7 +183,34 @@ internal fun ReportBugSheet(
     var attachments by remember { mutableStateOf(emptyList<BugReportAttachment>()) }
     val scope = rememberCoroutineScope()
     val signedIn = Services.get<AuthService>()?.isAuthenticated ?: false
+    val admin = packageId == null && Services.get<AuthService>()?.session?.value?.isAdmin == true
+    var tab by remember { mutableStateOf(0) }
+    var inbox by remember { mutableStateOf(BugReportInboxState()) }
     val c = Fm.colors
+    fun loadInbox(status: String, offset: Int = 0) {
+        inbox = inbox.requesting(status)
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { loadBugReportInbox(Services.get<ApiService>(), status, offset) }
+            if (inbox.status == status) inbox = inbox.received(result, offset)
+        }
+    }
+    LaunchedEffect(admin) { if (admin) loadInbox(inbox.status) }
+    fun setInboxStatus(id: String, value: String) {
+        if (!inbox.canSet(id, value)) return
+        inbox = inbox.updatingStarted(id)
+        scope.launch {
+            val change = withContext(Dispatchers.IO) {
+                Services.get<ApiService>()?.setBugReportStatus(id, value)
+                    ?: BugReportStatusChange.failure(BugReportInboxCopy.UNAVAILABLE)
+            }
+            inbox = inbox.statusChanged(id, change)
+        }
+    }
+    fun openInboxAttachment(reportId: String, attachment: BugReportInboxAttachment) {
+        if (attachment.id in inbox.downloading) return
+        inbox = inbox.downloadStarted(attachment.id)
+        scope.launch { inbox = inbox.downloadFinished(attachment.id, openBugReportAttachment(context, reportId, attachment)) }
+    }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         scope.launch {
             val picked = withContext(Dispatchers.IO) {
@@ -223,7 +258,26 @@ internal fun ReportBugSheet(
                 }
                 FmIconButton("close", ReportBugCopy.CLOSE, onPressed = if (draft.busy) null else onClosed, color = c.textPrimary)
             }
-            if (sent) {
+            if (admin) {
+                FmSegmentTabBar(
+                    tabs = listOf(
+                        FmSegmentTab(BugReportInboxCopy.TAB_REPORT),
+                        FmSegmentTab(BugReportInboxCopy.TAB_REPORTED, count = inbox.counts["new"]),
+                    ),
+                    index = tab,
+                    onChanged = { tab = it },
+                )
+            }
+            if (admin && tab == 1) {
+                BugReportInboxList(
+                    inbox,
+                    onStatus = { if (it != inbox.status || !inbox.loaded) loadInbox(it) },
+                    onMore = { inbox.nextOffset?.let { offset -> if (!inbox.loading) loadInbox(inbox.status, offset) } },
+                    onSetStatus = ::setInboxStatus,
+                    onOpen = ::openInboxAttachment,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            } else if (sent) {
                 FmInlineStatusLine(ReportBugCopy.THANKS, isError = false, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x3))
                 AccountFilledButton(
                     "Done",

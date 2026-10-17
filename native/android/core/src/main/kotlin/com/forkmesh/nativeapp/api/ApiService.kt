@@ -603,6 +603,78 @@ open class ApiService(
         return BugReportResult.failure("ForkMesh could not accept the report. Try again in a moment.")
     }
 
+    open fun bugReportInbox(status: String = "", offset: Int = 0): BugReportInbox {
+        val query = LinkedHashMap<String, String>()
+        if (status.isNotEmpty()) query["status"] = status
+        if (offset > 0) query["offset"] = offset.toString()
+        val response = try {
+            exchange(
+                "GET",
+                base("/api/bug-reports/inbox", query),
+                withAuth(mapOf("Accept" to "application/json")),
+                timeoutMs = 20_000,
+            )
+        } catch (_: Exception) {
+            return BugReportInbox.failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        if (response.status == 401 || response.status == 403) {
+            return BugReportInbox.failure("Only ForkMesh administrators can read reported bugs.")
+        }
+        val decoded = if (response.status in 200..299) runCatching { Json.parse(response.text()) }.getOrNull() else null
+        @Suppress("UNCHECKED_CAST")
+        val map = decoded as? Map<String, Any?>
+            ?: return BugReportInbox.failure("Reported bugs could not be loaded. Try again in a moment.")
+        return BugReportInbox.from(map)
+    }
+
+    open fun setBugReportStatus(id: String, status: String): BugReportStatusChange {
+        val response = try {
+            exchange(
+                "POST",
+                base("/api/bug-reports/inbox"),
+                withAuth(mapOf("Accept" to "application/json", "Content-Type" to "application/json")),
+                encode(linkedMapOf("report" to id, "status" to status)),
+                timeoutMs = 20_000,
+            )
+        } catch (_: Exception) {
+            return BugReportStatusChange.failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        when (response.status) {
+            401, 403 -> return BugReportStatusChange.failure("Only ForkMesh administrators can triage reported bugs.")
+            404 -> return BugReportStatusChange.failure("That report no longer exists.")
+        }
+        val decoded = if (response.ok) runCatching { Json.parse(response.text()) }.getOrNull() else null
+        @Suppress("UNCHECKED_CAST")
+        val map = decoded as? Map<String, Any?>
+            ?: return BugReportStatusChange.failure("The status could not be saved. Try again in a moment.")
+        @Suppress("UNCHECKED_CAST")
+        val counts = map["counts"] as? Map<String, Any?> ?: emptyMap()
+        return BugReportStatusChange(
+            ok = true,
+            status = jsonText(map["status"]).ifEmpty { status },
+            counts = counts.mapValues { (it.value as? Number)?.toInt() ?: 0 },
+        )
+    }
+
+    open fun bugReportAttachment(reportId: String, attachmentId: String): BugReportFile {
+        val response = try {
+            exchange(
+                "GET",
+                base("/api/bug-reports/inbox/attachment", linkedMapOf("report" to reportId, "attachment" to attachmentId)),
+                withAuth(mapOf("Accept" to "*/*")),
+                timeoutMs = 60_000,
+            )
+        } catch (_: Exception) {
+            return BugReportFile.failure("Could not reach ForkMesh. Check your connection and try again.")
+        }
+        return when (response.status) {
+            in 200..299 -> BugReportFile(ok = true, data = response.body, contentType = response.header("content-type") ?: "")
+            401, 403 -> BugReportFile.failure("Only ForkMesh administrators can open report attachments.")
+            404, 410 -> BugReportFile.failure("That attachment is no longer available.")
+            else -> BugReportFile.failure("The attachment could not be downloaded. Try again in a moment.")
+        }
+    }
+
     open fun unreadDirectMessage(): com.forkmesh.nativeapp.push.UnreadDirectMessage {
         val data = asMap(getJson(base("/api/chat/direct-messages", linkedMapOf("limit" to "10"))))
             ?: return com.forkmesh.nativeapp.push.UnreadDirectMessage()
