@@ -106,59 +106,55 @@ struct InboxToolbarMenu: View {
     let onDeleteAll: () -> Void
 
     var body: some View {
-        HStack(spacing: FmSpace.x2) {
-            deleteAllButton
-            menu
-        }
-    }
-
-    private var deleteAllButton: some View {
-        Button(action: onDeleteAll) {
-            Image(systemName: "trash")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(model.canDeleteAllPings ? fm.danger : fm.textDisabled)
-                .frame(width: 32, height: 32)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!model.canDeleteAllPings)
-        .inboxGlass(Circle(), tint: nil, fallback: fm.bgRaised)
-        .accessibilityLabel("Delete all pings")
-        .accessibilityIdentifier("inbox-delete-all")
-    }
-
-    private var menu: some View {
-        Menu {
-            Button("Mark all read") { Task { await model.markAllRead() } }
-            Toggle("Unread only", isOn: Binding(get: { model.unreadOnly }, set: { model.unreadOnly = $0 }))
-            Menu("Pause pings") {
-                ForEach(PingPauseChoice.allCases, id: \.self) { (choice: PingPauseChoice) in
-                    Button(choice.label) { pause(choice) }
-                }
-                if model.isPaused {
-                    Button("Resume pings") { pause(nil) }
-                }
+        HStack(spacing: InboxSquare.spacing) {
+            square("envelope.open", color: fm.textPrimary, label: "Mark all read") {
+                Task { await model.markAllRead() }
             }
+            square(
+                "line.3.horizontal.decrease", color: model.unreadOnly ? fm.accent : fm.textPrimary,
+                tint: model.unreadOnly ? fm.accent : nil, label: "Unread only"
+            ) {
+                model.unreadOnly.toggle()
+            }
+            .accessibilityAddTraits(model.unreadOnly ? .isSelected : [])
+            pauseMenu
             if model.syncQueue.operations.contains(where: { $0.attempts >= PingSyncQueue.maxAttempts }) {
-                Button("Discard changes that could not sync", role: .destructive) {
+                square("exclamationmark.arrow.triangle.2.circlepath", color: fm.danger, label: "Discard changes that could not sync") {
                     model.syncQueue.discardFailed()
                     Task { await model.load() }
                 }
             }
-            Button {
-                onOpenSettings()
-            } label: {
-                Label("Ping settings", systemImage: "gearshape")
+            square("gearshape", color: fm.textPrimary, label: "Ping settings", action: onOpenSettings)
+            square("trash", color: model.canDeleteAllPings ? fm.danger : fm.textDisabled, label: "Delete all pings", action: onDeleteAll)
+                .disabled(!model.canDeleteAllPings)
+                .accessibilityIdentifier("inbox-delete-all")
+        }
+    }
+
+    private func square(
+        _ icon: String, color: Color, tint: Color? = nil, label: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            InboxSquare(icon: icon, color: color)
+        }
+        .buttonStyle(.plain)
+        .inboxGlass(InboxSquare.shape, tint: tint, fallback: tint == nil ? fm.bgRaised : fm.accentSubtle)
+        .accessibilityLabel(label)
+    }
+
+    private var pauseMenu: some View {
+        Menu {
+            ForEach(PingPauseChoice.allCases, id: \.self) { (choice: PingPauseChoice) in
+                Button(choice.label) { pause(choice) }
+            }
+            if model.isPaused {
+                Button("Resume pings") { pause(nil) }
             }
         } label: {
-            Image(systemName: model.isPaused ? "bell.slash" : "ellipsis")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(model.isPaused ? fm.warning : fm.textPrimary)
-                .frame(width: 32, height: 32)
-                .contentShape(Circle())
+            InboxSquare(icon: model.isPaused ? "bell.slash" : "moon.zzz", color: model.isPaused ? fm.warning : fm.textPrimary)
         }
-        .inboxGlass(Circle(), tint: nil, fallback: fm.bgRaised)
-        .accessibilityLabel("Inbox options")
+        .inboxGlass(InboxSquare.shape, tint: nil, fallback: fm.bgRaised)
+        .accessibilityLabel(model.isPaused ? "Pings paused" : "Pause pings")
     }
 
     private func pause(_ choice: PingPauseChoice?) {
@@ -250,22 +246,26 @@ struct InboxFilterBar: View {
     let menu: InboxToolbarMenu
 
     var body: some View {
-        let counts: [InboxFilter: Int] = model.unreadCounts
-        HStack(spacing: FmSpace.x2) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                InboxGlassGroup {
-                    HStack(spacing: 6) {
-                        ForEach(InboxFilter.allCases, id: \.self) { (filter: InboxFilter) in
-                            chip(filter, count: counts[filter] ?? 0)
-                        }
-                    }
-                    .padding(.horizontal, FmSpace.x1)
-                    .padding(.vertical, 2)
-                }
-            }
-            menu
+        ViewThatFits(in: .horizontal) {
+            row.frame(maxWidth: .infinity)
+            ScrollView(.horizontal, showsIndicators: false) { row }
         }
-        .padding(.trailing, FmSpace.x1)
+    }
+
+    private var row: some View {
+        let counts: [InboxFilter: Int] = model.unreadCounts
+        return InboxGlassGroup {
+            HStack(spacing: FmSpace.x2) {
+                HStack(spacing: InboxSquare.spacing) {
+                    ForEach(InboxFilter.allCases, id: \.self) { (filter: InboxFilter) in
+                        chip(filter, count: counts[filter] ?? 0)
+                    }
+                }
+                menu
+            }
+            .padding(.horizontal, FmSpace.x2)
+            .padding(.vertical, FmSpace.x1 + 2)
+        }
     }
 
     private func chip(_ filter: InboxFilter, count: Int) -> some View {
@@ -273,21 +273,54 @@ struct InboxFilterBar: View {
         return Button {
             model.filter = filter
         } label: {
-            HStack(spacing: 3) {
-                Text(filter.label)
-                if count > 0 {
-                    Text("\(count)").font(.caption2.monospacedDigit()).foregroundStyle(selected ? fm.accent : fm.textSecondary)
-                }
-            }
-            .font(.subheadline.weight(selected ? .semibold : .regular))
-            .foregroundStyle(fm.textPrimary)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .contentShape(Capsule())
+            InboxSquare(icon: filter.icon, color: selected ? fm.accent : fm.textPrimary)
         }
         .buttonStyle(.plain)
-        .inboxGlass(Capsule(), tint: selected ? fm.accent : nil, fallback: selected ? fm.accentSubtle : fm.bgRaised)
+        .inboxGlass(InboxSquare.shape, tint: selected ? fm.accent : nil, fallback: selected ? fm.accentSubtle : fm.bgRaised)
+        .overlay(alignment: .topTrailing) {
+            if count > 0 {
+                Text(count > 99 ? "99+" : "\(count)")
+                    .font(.system(size: 9, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 3)
+                    .frame(minWidth: 14, minHeight: 14)
+                    .background(fm.count, in: Capsule())
+                    .offset(x: 5, y: -5)
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityLabel(filter.label)
+        .accessibilityValue(count > 0 ? "\(count) unread" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+struct InboxSquare: View {
+    static let side: CGFloat = 28
+    static let spacing: CGFloat = 4
+    static var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(color)
+            .frame(width: Self.side, height: Self.side)
+            .contentShape(Self.shape)
+    }
+}
+
+extension InboxFilter {
+    var icon: String {
+        switch self {
+        case .all: return "tray.full"
+        case .pings: return "bell"
+        case .reviews: return "arrow.triangle.pull"
+        case .assigned: return "person.crop.circle.badge.checkmark"
+        case .mentions: return "at"
+        case .approvals: return "checkmark.shield"
+        }
     }
 }
 

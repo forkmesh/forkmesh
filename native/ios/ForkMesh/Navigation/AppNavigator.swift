@@ -135,7 +135,7 @@ final class AppNavigator {
             case let .channel(id) where !services.routes.isRegistered(.channel):
                 conversation = id
             case let .dm(user) where !services.routes.isRegistered(.dm):
-                conversation = user.hasPrefix("@") ? user : "@\(user)"
+                conversation = user.hasPrefix("@") || DirectMessageFrames.isDirect(user) ? user : "@\(user)"
             default:
                 return false
             }

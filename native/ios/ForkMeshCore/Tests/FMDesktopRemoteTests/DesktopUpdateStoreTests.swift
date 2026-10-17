@@ -77,11 +77,11 @@ final class DesktopUpdateStoreTests: XCTestCase {
         XCTAssertEqual(message, "The computer is restarting.")
         XCTAssertEqual(channel.last("update.run")?.str("action"), "computerRestart")
         XCTAssertEqual(store.stage, .restarting)
-        XCTAssertEqual(store.lines, ["==> Restarting computer", "$ loginctl reboot"])
+        XCTAssertEqual(store.lines, ["==> Restarting computer", "$ systemctl reboot"])
         XCTAssertEqual(store.state.kind, "computerRestart")
         channel.emit("update.progress", [
             "run": 2, "running": true, "kind": "computerRestart",
-            "lines": ["==> Restarting computer", "$ loginctl reboot"],
+            "lines": ["==> Restarting computer", "$ systemctl reboot"],
         ])
         XCTAssertEqual(store.stage, .restarting)
     }

@@ -31,6 +31,20 @@ ten minutes.
 - `keepWarm` (set while the app is in the foreground) opens the relay link at
   once and reopens it after a drop (2 s doubling to 60 s).
 - `DesktopReach.notPaired` means the account has no desktop at all.
+- **Back on the LAN.** Every load of the account's desktops is handed to
+  `LocalControlService.setAccountDesktops`. A mesh control host whose `node`
+  key is on that list is dialled over the LAN like a LAN-paired desktop, and
+  retried the same way after a failed dial or a drop. Once that channel is
+  `connected`, the hub's `localChanged` lets the relay go. Before this, a phone
+  that had only ever reached its desktop through the relay dialled the LAN only
+  when the mesh `hello`'s `ownerUser` matched its account name. It tried that
+  once per launch and never retried, so a phone at home often stayed on the
+  relay.
+- `onMeshChanged` sets `dialQueued` when it queues an automatic dial and
+  ignores further calls until the dial starts. Before that, the status read
+  `connecting` only once the queued dial ran, so a second trigger in between (a
+  beacon, a retry, the account list) queued another dial, and that dial closed
+  the first one. Android also drops a retry scheduled after `dispose()`.
 
 ## What is running on the desktop, on the Agents tab
 

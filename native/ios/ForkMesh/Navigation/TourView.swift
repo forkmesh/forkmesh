@@ -120,6 +120,12 @@ struct HubTip: Tip {
     var image: Image? { Image(systemName: "person.crop.circle") }
 }
 
+struct VoiceTip: Tip {
+    var title: Text { Text("Hold to talk") }
+    var message: Text? { Text("Hold the new agent button and say what the agent should do. It starts as soon as you pause.") }
+    var image: Image? { Image(systemName: "waveform") }
+}
+
 struct PaletteTip: Tip {
     var title: Text { Text("Hold for commands") }
     var message: Text? { Text("Hold the new agent button to open the command palette.") }

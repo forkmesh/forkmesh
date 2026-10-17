@@ -471,7 +471,6 @@ public final class AccountPackagesStore {
     private func adoptVersions(_ packages: [MarketPackage]) {
         for package in packages where !package.version.isEmpty {
             latestVersions[package.id] = package.version
-            if seenVersions[package.id] == nil { seenVersions[package.id] = package.version }
         }
         saveVersions()
     }
@@ -500,8 +499,7 @@ public final class AccountPackagesStore {
 
     nonisolated static func changed(seen: [String: String], latest: [String: String]) -> Set<String> {
         Set(latest.compactMap { (id: String, version: String) -> String? in
-            guard let viewed = seen[id], viewed != version else { return nil }
-            return id
+            seen[id] == version ? nil : id
         })
     }
 

@@ -38,8 +38,8 @@ returns to the repository in use, remembered across launches
 (`CurrentRepoMemory`, key `code/current-repo`); with none yet it shows the list
 and says so inline. Android follows `CodeButton.plan`.
 
-The **new agent button** opens the composer (tap) or the command palette (long
-press). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
+The **new agent button** opens the composer (tap) or the voice prompt (long
+press, §2.3; Android still opens the command palette). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
 chat room header (`ShellNewAgentButton`); the DM and group conversation header
 leaves it and the avatar out to make room for the name, and opening the channel
 list brings the top bar back. It shows one
@@ -144,11 +144,14 @@ destination, in sections, with counts and activity:
   the user last opened it shows a small accent dot at the icon's bottom right
   (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
   keeps the catalog version and the last viewed version of each package under
-  `packages/versions` on the device; the first catalog seen for a package is
-  its baseline, so installs and first launches show no dot. Opening the plugin
-  clears it: a Home pick (`markViewed(hubItem:)`), any route or tab
-  that belongs to the package (`PackageGate.packageId(for:)`), its Market page,
-  or installing it. The operator asked for the dot on 2026-10-16.
+  `packages/versions` on the device. A package never opened on this device
+  counts as unseen, so on a new install every plugin tile has a dot until it is
+  first opened; after that the dot comes back only when a new version is
+  published. Opening the plugin clears it: a Home pick
+  (`markViewed(hubItem:)`), any route or tab that belongs to the package
+  (`PackageGate.packageId(for:)`), its Market page, or installing it. The
+  operator asked for the dot on 2026-10-16, and on 2026-10-17 for it to show
+  on every unopened plugin after a new install.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
@@ -267,6 +270,13 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
   their sheets and alerts. Before this, a tap switched the conversation
   underneath, so a phone left on the channel list or a details sheet stayed
   there instead of showing the chat the banner named.
+- `.dm(user)` (the People sheet's Message button) names an
+  account. On iOS `ChatHub.switchConversation("@user")` opens that account's
+  direct message, or starts one (`ChatHub.accountRecipient` then `openPerson`),
+  as the chat person sheet does; only an exact relay peer id stays a peer room.
+  Before this it only matched people online right now, so anyone else opened an
+  empty room titled "@direct message". A `direct:` id is opened as is, not
+  wrapped as `@direct:…`.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
   `chatKeepsEndInView`.
@@ -331,6 +341,12 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 
 ### 2.0.3 Other pages
 
+- **Inbox** (`InboxScreen`): one centered bar of small square icons at the
+  top of the list. The filters (All, Pings, Reviews, Assigned, Mentions,
+  Approvals) carry their unread count as a badge; the actions that used to
+  sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
+  changes, ping settings, delete all) are squares in the same bar, so every
+  control is one tap. A phone too narrow for the bar scrolls it sideways.
 - **Market** (`MarketScreen`): search in the navigation bar drawer, sort and
   filter chips as the list's top inset, flat cards with a 16:9 preview, rating,
   installs and users, and one-tap Install/Open (`MarketModel.cardAction`).
@@ -440,7 +456,7 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 | Gesture | Result |
 |---|---|
 | Tap | The composer opens at once with the keyboard up, aimed at the current context |
-| Long press | The command palette (§5.2) |
+| Long press | The voice prompt (§2.3) on iOS; the command palette (§5.2) on Android |
 
 Context rules, most specific first: an open agent session steers it; an open
 PR or issue starts an agent on that repository with the item attached; an open
@@ -451,6 +467,42 @@ button; agent composers carry a **Fix** button (`Please fix: <text>`,
 `FMAgents/PromptFix.swift`, `ComposerRules.fixPrompt`), a mode chip and a model
 chip; the shell composer shows **YOLO** and **No worktree** toggles when the run
 goes to the desktop ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md)).
+
+### 2.3 The voice prompt (iOS)
+
+Holding the new agent button starts an agent by voice, without the keyboard.
+`ShellVoiceLaunch` (`Shell/ShellVoiceLaunch.swift`) runs it and
+`ShellVoiceLaunchOverlay` draws it over the whole shell.
+
+- **Open.** The button's sparkle circle springs out of the top bar into a large
+  orb in the upper middle of a dimmed, blurred screen, with the
+  `VoiceLaunchChime.summon` chime (`FMAgentWatch/VoiceLaunchChimes.swift`) and
+  a medium haptic. The microphone opens when the chime ends (0.4 to 0.8 s),
+  because the chime and the recording cannot share the audio session.
+- **Listen.** `PromptDictation` listens as the composer's dictation does (on the
+  device when it can, nothing kept). Spokes around the orb follow
+  `DictationMeter`, ripples speed up with the voice, and the words appear
+  under the orb as they are recognized. When the voice stops, a white arc
+  fills around the orb over the pause.
+- **Send.** After 3 s of quiet (`ShellVoiceLaunch.pause`), or a tap on the orb,
+  the words go to `QuickAgentLauncher.send(prompt:images:)`: the same
+  launcher as the composer, so the run uses the repository, destination,
+  agent and model last used there. The screen does not switch the repository
+  to the page's own, unlike opening the composer. On success the orb bursts
+  into a shock ring and stars, `VoiceLaunchChime.launch` plays, and a
+  snapshot of the orb flies into the Agents cell (`ShellLaunchFlight`, with
+  the orb as source and card).
+- **Problems.** Nothing heard: a falling `fizzle` chime, a line, and the
+  screen closes after 2.2 s. Dictation refused or failing: the line stays
+  until dismissed. A send that needs a fix or fails hands the words to the
+  composer with its usual message and Fix button.
+- **Way out.** Tapping outside the orb or **Cancel** flies the orb back into
+  the button. **Type** moves the words into the composer with the keyboard
+  up. **Commands** opens the command palette, so the palette is still one
+  touch from the button; VoiceOver offers both as actions on the button.
+- Reduce Motion fades instead of flying and stops the ripples and burst;
+  Reduce Transparency uses a solid backdrop. Sounds follow the interface
+  sounds setting (§6.5).
 
 ## 3. Navigation inside a tab
 
@@ -591,7 +643,8 @@ the header, recents and an Account group (Settings, Sign in or Sign out).
 
 ### 5.2 The command palette
 
-A long press on the prompt button opens a sheet with the field focused:
+The prompt button's **Commands** action (in the voice prompt, §2.3, and for
+VoiceOver; a long press on Android) opens a sheet with the field focused:
 suggested actions for the context (each an App Intent, §6), recent
 destinations, then results (actions, destinations by title, content hits). ⌘K
 opens it with a keyboard.
