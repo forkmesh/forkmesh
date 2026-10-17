@@ -107,6 +107,37 @@ platform's normal termination request. If the kernel denies that request, the
 detail dialog requests administrator permission through PolicyKit or a masked
 sudo password prompt and passes it to the privileged termination command.
 
+#### From a phone (`diag.process`, `diag.processStop`)
+
+The phone's **Memory** list (`diag.processes`) carries the same role
+description, and tapping a row opens that process's details on the phone.
+`answerLocalControlProcess()` (`src/MainWindowLocalControlDiagnostics.cpp`)
+answers both methods on Linux; elsewhere they answer
+`process_details_unavailable` (not `unsupported`, which the phone reads as
+"update the desktop").
+
+- `diag.process {pid}` reads `/proc/<pid>` (`desktopprocs::Sampler::readOne`)
+  and replies `{pid, name, identity, description, details, stoppable, token}`.
+  `identity` is the process start time in clock ticks, so a reused PID is
+  told apart. `details` is `detailTextFor()` with the command redacted and the
+  text capped at 64 KB. `stoppable` is false for PID 1 and the desktop itself;
+  a stoppable process gets a one-use `stopProcess` confirmation bound to the
+  device and to `<pid>:<identity>`.
+- `diag.processStop {pid, identity, token, password?}` consumes that token and
+  sends SIGTERM. When the kernel refuses (another user's process, such as
+  `dockerd`), it replies `{passwordRequired, token, message}` and the phone
+  asks for the computer's password; the retry runs
+  `sudo -k -S -- kill -TERM <pid>` off the GUI thread with a 15 s limit. A
+  wrong password asks again. Errors: `bad_pid`, `process_exited`,
+  `process_changed`, `protected_process`, `process_stop_failed`,
+  `bad_password`, `process_details_unavailable`.
+
+These two methods were first answered by the Go background engine
+(2026-10-15). When that engine was removed on 2026-10-16 (`0f25cb619c`) they
+had no Qt handler, so the phone's process sheet showed "This desktop's
+ForkMesh is too old for that" on an up-to-date desktop. They now live in the
+Qt desktop.
+
 ### Diagnostic report
 
 The Report tool copies a Markdown report meant for a coding agent.

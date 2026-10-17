@@ -443,6 +443,27 @@ static void testDiagnostics()
               .isEmpty(),
           "bad session refused");
     check(diag::subjectFor(QStringLiteral("kill"), {}).isEmpty(), "unknown diag action");
+
+    check(diag::processPid({{QStringLiteral("pid"), 4242}}) == 4242, "process pid read");
+    check(diag::processPid({{QStringLiteral("pid"), 0}}) == 0 &&
+              diag::processPid({{QStringLiteral("pid"), 1.5}}) == 0 &&
+              diag::processPid({{QStringLiteral("pid"), 4294967296.0}}) == 0 &&
+              diag::processPid({{QStringLiteral("pid"), QStringLiteral("12")}}) == 0 &&
+              diag::processPid({}) == 0,
+          "bad process pid refused");
+    check(diag::processSubject(42, QStringLiteral("9001")) == QStringLiteral("42:9001"),
+          "process subject binds pid and start time");
+    check(diag::processStoppable(42, 7) && !diag::processStoppable(1, 7) &&
+              !diag::processStoppable(7, 7),
+          "init and the desktop are protected");
+    check(diag::sudoPasswordUsable(QStringLiteral("hunter2")) &&
+              !diag::sudoPasswordUsable(QString()) &&
+              !diag::sudoPasswordUsable(QStringLiteral("a\nb")) &&
+              !diag::sudoPasswordUsable(QString(1025, QLatin1Char('x'))),
+          "sudo password checked");
+    const QString processDetail =
+        diag::processDetailText(QString(diag::kMaxProcessDetailChars + 10, QLatin1Char('x')));
+    check(processDetail.endsWith(QStringLiteral("[truncated]")), "process detail bounded");
 }
 
 static void testBackupStatus()

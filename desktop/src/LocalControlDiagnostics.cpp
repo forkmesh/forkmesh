@@ -289,6 +289,39 @@ QString commandSummary(const QString &command, int maxChars)
     return text;
 }
 
+qint64 processPid(const QJsonObject &params)
+{
+    const double pid = params.value(QStringLiteral("pid")).toDouble(0);
+    if (pid < 1 || pid > 2147483647.0 || pid != double(qint64(pid)))
+        return 0;
+    return qint64(pid);
+}
+
+QString processSubject(qint64 pid, const QString &identity)
+{
+    return QStringLiteral("%1:%2").arg(pid).arg(identity);
+}
+
+bool processStoppable(qint64 pid, qint64 selfPid)
+{
+    return pid > 1 && pid != selfPid;
+}
+
+bool sudoPasswordUsable(const QString &password)
+{
+    return !password.isEmpty() && password.size() <= 1024 &&
+           !password.contains(QLatin1Char('\r')) && !password.contains(QLatin1Char('\n')) &&
+           !password.contains(QChar(0));
+}
+
+QString processDetailText(const QString &text)
+{
+    QString clean = fleet::redactSecrets(text);
+    if (clean.size() > kMaxProcessDetailChars)
+        clean = clean.left(kMaxProcessDetailChars) + QStringLiteral("\n[truncated]");
+    return clean;
+}
+
 QStringList mutatingActions()
 {
     return {QStringLiteral("stopAgent"), QStringLiteral("sendStalls"),

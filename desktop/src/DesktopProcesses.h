@@ -55,6 +55,7 @@ class Sampler
 public:
     Snapshot sample(qint64 nowMs);
     QString commandLine(qint64 pid);
+    Process readOne(qint64 pid);
 
 private:
     QString userName(uint uid);

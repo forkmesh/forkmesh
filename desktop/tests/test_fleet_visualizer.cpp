@@ -283,6 +283,12 @@ void testDesktopProcesses()
           "sampling this machine finds its processes and this test among them");
     check(!sampler.commandLine(QCoreApplication::applicationPid()).isEmpty(),
           "a process's command line can be read");
+    const procs::Process one = sampler.readOne(QCoreApplication::applicationPid());
+    check(one.pid == QCoreApplication::applicationPid() && one.self && !one.name.isEmpty() &&
+              one.startTicks > 0 && !one.command.isEmpty() && !one.user.isEmpty(),
+          "one process is read by PID with its start time, owner and command");
+    check(sampler.readOne(0).pid == 0 && sampler.readOne(2147483646).pid == 0,
+          "a missing process reads as none");
 #endif
 
     procs::Snapshot fake;
