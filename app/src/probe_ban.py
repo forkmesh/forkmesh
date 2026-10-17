@@ -17,7 +17,7 @@ MODES = ("ban", "observe", "off")
 HOUR_MS = 60 * 60 * 1000
 DAY_MS = 24 * HOUR_MS
 WINDOW_MS = HOUR_MS
-BAN_SCORE = 6
+BAN_SCORE = 4
 FIRST_BAN_MS = DAY_MS
 REPEAT_BAN_MS = 7 * DAY_MS
 REPEAT_WITHIN_MS = 30 * DAY_MS
@@ -71,13 +71,48 @@ _SECRET_FILE_RE = re.compile(
     r"service[-_]?account|aws-exports|claude.*\.json|opencode\.json|"
     r"vault\.json|filezilla\.xml|winscp\.rnd|"
     r"(?:^|[._-])mcp(?:[._-]|$)|"
-    r"(?:^|[._-])(?:api[-_]?)?(?:keys?|keyfile|token|sa|aws)\.json$|"
+    r"(?:^|[._-])(?:api[-_]?)?(?:keys?|keyfile|tokens?|creds?|sa|aws)"
+    r"\.(?:json|txt|ya?ml)$|"
+    r"^(?:aws-ses|aws-smtp|ses|smtp|gcp|vertex|neon|turso|planetscale|"
+    r"supabase|writer|ai21|openai|anthropic|gemini|cohere|mistral|groq|"
+    r"nextauth|workos|stytch|clerk|auth0|authorizenet|mercadopago|stripe|"
+    r"paypal|braintree|razorpay|twilio|activecampaign|getresponse|omnisend|"
+    r"mailgun|sendgrid|mailchimp|mailjet|mandrill|brevo|sendinblue|"
+    r"sparkpost|postmark|resend|mailersend|datasources)\.(?:json|txt|ya?ml)$|"
     r"\.(?:pem|key|p12|pfx|jks|keystore)$")
+_SECRET_NAME_RE = re.compile(
+    r"^(?:[a-z0-9]+_)+(?:api_?)?(?:keys?|secret(?:_key)?|token|password|"
+    r"passwd|access_key(?:_id)?|private_key)$|"
+    r"^(?:api|access|aws|gcp|ssh|secret|private)[-_]keys?$|"
+    r"^(?:[a-z0-9]+[-_])*(?:credentials?|creds)$|^service[-_]accounts?$")
 _ENV_TOKEN_RE = re.compile(r"(?:^|[._-])env(?:ironment)?(?:$|[._~-]|\d)")
 _SCRIPT_RE = re.compile(
     r"\.(?:php\d?|phtml|phar|phps|inc|asp|aspx|ashx|asmx|axd|jsp|jspx|"
-    r"action|cgi|cfm|cfc|xgi)$")
-_SCRIPT_NAMES = frozenset({"phpinfo", "cgi-bin", "phpunit", "eval-stdin"})
+    r"action|cgi|cfm|cfc|xgi|rsp)$")
+_SCRIPT_NAMES = frozenset({
+    "phpinfo", "cgi-bin", "phpunit", "eval-stdin", "system32", "win.ini",
+    "boot.ini"})
+_PATH_SIGNATURES = (
+    (re.compile(
+        r"^(?:latest/(?:meta-data|user-data|dynamic|api/token)|"
+        r"computemetadata/v1|metadata/(?:identity|instance|v1)|opc/v[12]/|"
+        r"v1/sys/|v1/auth/token|etc/(?:passwd|shadow)|proc/self/|"
+        r"app/etc/(?:local\.xml|env\.php)|"
+        r"config/(?:environments|initializers)/[^/]+\.rb$)"), "secret"),
+    (re.compile(r"^api/[^/]+\.php"), "script"),
+    (re.compile(
+        r"^(?:(?:api/)?actuator(?:/|$)|debug/(?:pprof|vars|default)|"
+        r"v1/(?:agent|catalog|status|health)/|v[23]/kv/|v1\.\d+/|"
+        r"_(?:all|alias|aliases|analyze|cat|cluster|component_template|count|"
+        r"data_stream|explain|index_template|license|mapping|ml|monitoring|"
+        r"nodes|rank_eval|rollup|scripts|search|security|snapshot|sql|stats|"
+        r"tasks|template|termvectors|transform|watcher|xpack)(?:/|$)|"
+        r"(?:rabbitmq|grafana|kibana|jenkins|airflow|horizon)/(?:api|app)/|"
+        r"(?:computer|job)/api/|(?:spark|hdfs|yarn|mapreduce)/"
+        r"(?:master|worker|cluster)|api/0/|api/v4/ci/|rails/|"
+        r"sites/default/|app/etc/|app/rest/server)"), "cms"),
+    (re.compile(r"^var/log/"), "backup"),
+)
 _CMS_NAMES = frozenset({
     "wordpress", "wlwmanifest.xml", "xmlrpc", "joomla", "typo3", "magento",
     "drupal", "adminer", "myadmin", "mysqladmin", "boaform", "hnap1",
@@ -85,11 +120,21 @@ _CMS_NAMES = frozenset({
     "jmx-console", "web-console", "telescope", "_ignition", "_profiler",
     "owa", "ecp", "+cscoe+", "cpanel", "webmail", "roundcube", "elfinder",
     "fckeditor", "ckfinder", "kcfinder", "umbraco", "sftp-config.json",
-    "laravel-filemanager", "logonpoint", "cfide"})
-_CMS_PREFIXES = ("wp-", "phpmyadmin", "pma", "axis2")
+    "laravel-filemanager", "logonpoint", "cfide", "vropspluginui",
+    "helpdesk.woa", "functionrouter", "programexport", "cruise_config",
+    "simzysh", "scripttext", "administrativemonitor"})
+_CMS_ROOTS = frozenset({
+    "administrator", "_debugbar", "__debug__", "_wdt", "silk", "fpm-status",
+    "fpm-ping", "fpm-status.html", "awstats", "phpmailer", "jolokia",
+    "webinterface", "fortisandbox", "xwiki", "resin-doc", "brightmail",
+    "jenkins", "grafana", "kibana", "rabbitmq", "airflow", "jupyter",
+    "pgadmin", "phppgadmin"})
+_CMS_PREFIXES = ("wp-", "phpmyadmin", "pma", "axis2", "adminer", "cpanel",
+                 "___proxy_subdomain")
 _BACKUP_RE = re.compile(
     r"(?:\.(?:sql|sqlite3?|db|mdb|dump|bak|backup|bkp|old|orig|save|swp|swo|"
-    r"tar|tgz|gz|zip|rar|7z|bz2|xz|log)|~|^error_log)$")
+    r"swn|tar|tgz|gz|zip|rar|7z|bz2|xz|log(?:\.\d+)?)|~|^error_log|"
+    r"^(?:db|database|dump|backup|users)\.(?:csv|json|xml))$")
 _CONFIG_EXT_RE = re.compile(
     r"\.(?:ya?ml|ini|conf|cfg|cnf|toml|properties|config|dist|settings)$")
 _CONFIG_STEM_RE = re.compile(
@@ -101,7 +146,15 @@ _CONFIG_NAMES = frozenset({
     "auth.json", "db.json", "database.json", "firebase.json", "gemfile",
     "gemfile.lock", "dockerfile", "web.config", ".dockerenv", ".gitmodules",
     ".gitignore", ".gitattributes", ".circleci", ".github", ".gitlab",
-    "agents.md", "claude.md", ".cursorrules"})
+    "agents.md", "claude.md", ".cursorrules", "go.mod", "go.sum",
+    "cargo.toml", "cargo.lock", "pipfile", "pipfile.lock", "requirements.txt",
+    "makefile", "gnumakefile", "rakefile", "procfile", "gruntfile.js",
+    "gulpfile.js", "build.gradle", "build.gradle.kts", "pom.xml", "bun.lock",
+    "bun.lockb", "npm-shrinkwrap.json", "manage.py", "setup.py", "wsgi.py",
+    "asgi.py", "application.py", "settings.py", "node_modules", "venv",
+    "virtualenv", "__pycache__", "htmlcov", "flask_session", "flask_sessions",
+    "swagger", "swagger.json", "swagger-ui", "swagger-ui.html",
+    "swagger-resources", "api-docs", "openapi.json", "graphiql"})
 _ALLOW_CACHE = {"key": None, "networks": ()}
 
 
@@ -109,18 +162,23 @@ def _now():
     return int(Date.now())
 
 
-def _file_kinds(segment, last):
+def _file_kinds(segment, first, last):
     if _SECRET_RE.match(segment):
         return {"secret"}
     dotted = "." in segment.strip(".")
     if dotted and (_SECRET_FILE_RE.search(segment)
                    or _ENV_TOKEN_RE.search(segment)):
         return {"secret"}
+    if last and not dotted and _SECRET_NAME_RE.match(segment):
+        return {"secret"}
     found = set()
     if (_SCRIPT_RE.search(segment) or segment in _SCRIPT_NAMES
-            or segment in ("..", ".") or "..;" in segment):
+            or segment.startswith(("phpinfo", "php_info"))
+            or segment in ("..", ".") or "..;" in segment
+            or "\ufffd" in segment or re.match(r"^[a-z]:$", segment)):
         found.add("script")
-    if segment in _CMS_NAMES or segment.startswith(_CMS_PREFIXES):
+    if (segment in _CMS_NAMES or segment.startswith(_CMS_PREFIXES)
+            or (first and segment in _CMS_ROOTS)):
         found.add("cms")
     if last and _BACKUP_RE.search(segment):
         found.add("backup")
@@ -134,21 +192,27 @@ def _file_kinds(segment, last):
 
 def classify(path):
     path = unquote(str(path or ""))
+    if "%" in path:
+        path = unquote(path)
     if not path.startswith("/"):
         return ""
     segments = [segment.strip() for segment in path.lower().split("/")
                 if segment.strip()]
     if not segments or segments[0] in _SKIP_FIRST:
         return ""
-    if segments[0] == "api":
-        if len(segments) > 3 or (len(segments) > 1
-                                 and segments[1] in _API_SKIP):
-            return ""
-    elif len(segments) >= 3 and segments[2] in _REPO_FAMILIES:
+    if segments[0] != "api" and len(segments) >= 3 and (
+            segments[2] in _REPO_FAMILIES):
         return ""
-    found = set()
+    joined = "/".join(segments)
+    found = {kind for pattern, kind in _PATH_SIGNATURES
+             if pattern.search(joined)}
+    if segments[0] == "api" and (len(segments) > 3 or (
+            len(segments) > 1 and segments[1] in _API_SKIP)):
+        segments = []
+    if "secret" in found:
+        return "secret"
     for index, segment in enumerate(segments):
-        found |= _file_kinds(segment, index == len(segments) - 1)
+        found |= _file_kinds(segment, index == 0, index == len(segments) - 1)
         if "secret" in found:
             return "secret"
     if not found:
