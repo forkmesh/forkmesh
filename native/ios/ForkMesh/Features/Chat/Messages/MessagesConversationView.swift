@@ -85,6 +85,12 @@ struct MessagesConversationView<Drawer: View>: View {
             stopSharing(previous)
             startSharing(conversation)
         }
+        .onChange(of: hub.revealRequests) { _, _ in
+            details = false
+            tapbackTarget = nil
+            viewing = nil
+            viewOnceOpen = nil
+        }
         .onAppear { startSharing(conversation) }
         .onDisappear { stopSharing(conversation) }
         .onChange(of: scenePhase) { _, phase in

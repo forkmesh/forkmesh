@@ -69,6 +69,7 @@ public final class ChatHub: ShellChatBridge {
     public var workspace: ChatWorkspace
     public var pendingSearch: String?
     public var pendingSaved = false
+    public private(set) var revealRequests = 0
     public var office: OfficeChannelService? {
         didSet {
             office?.isExpired = expiry
@@ -360,6 +361,7 @@ public final class ChatHub: ShellChatBridge {
         let target = (try? ChatReplyTarget.resolve(
             conversation, channels: relay.channels, roster: relay.roster(), offices: officeChannels)) ?? conversation
         select(target)
+        revealRequests += 1
     }
 
     /// `sendChatText`: the mesh room over the local transports, anything else through the relay.

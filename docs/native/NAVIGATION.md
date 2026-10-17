@@ -222,6 +222,12 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
 - The Chat tab reopens the last conversation per project
   (`ChatWorkspace.lastConversation`, Android `chat/lastConversation`) unless a
   notification or link chose one.
+- A notification or link that opens a conversation (`ChatHub.switchConversation`)
+  bumps `ChatHub.revealRequests`. The chat screens then close what was left
+  covering the transcript: the channel drawer, a page pushed inside Chat, and
+  their sheets and alerts. Before this, a tap switched the conversation
+  underneath, so a phone left on the channel list or a details sheet stayed
+  there instead of showing the chat the banner named.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
   `chatKeepsEndInView`.
