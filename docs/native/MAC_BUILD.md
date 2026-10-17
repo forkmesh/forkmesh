@@ -182,13 +182,30 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   errors first; else the failing `mac.run`'s `fatal:`/`ERROR:` lines) and a
   `Fix:` hint from `FAILURE_HINTS` (Swift error, fetch from the cores, cores
   behind, Mac away, lock held, no IPA, CoreSimulator wedged).
-- After days of uptime the Mac's CoreSimulatorService can wedge, and actool
-  then fails the watch asset catalog with `Failed to launch
+- actool can fail the watch asset catalog with `Failed to launch
   AssetCatalogSimulatorAgent via CoreSimulator spawn` (the 2026-10-16 ad hoc
-  build of `ad97f78c7fd4`, Mac up 6 days). The archive step greps its log for
-  that line, shuts the simulators down, kills the service (launchd starts it
-  again on the next `simctl` call) and archives once more. A second failure
-  stops the build with a `Fix:` to run again or reboot the Mac.
+  builds of `ad97f78c7fd4` and `665987101809`, Mac up 6 days; the 19:40 build
+  that day had passed). The cause was not the service: dyld could not load
+  `UIKitCore` from the mounted watchOS 26.5 runtime
+  (`F_ADDFILESIGS_RETURN) failed with errno=94`), and `dd` of that file from
+  `/Library/Developer/CoreSimulator/Volumes/watchOS_23T570` stopped at 61 MiB
+  with `Bad message`, the sealed volume's hash check. The backing
+  `WatchOSSimulatorRuntime_Cryptex.dmg` under `/System/Library/AssetsV2` read
+  cleanly, and `xcrun simctl runtime unmount <id>` followed by a
+  CoreSimulatorService restart and `xcrun simctl runtime scan-and-mount`
+  mounted it again with the file whole: the damage lived in the mount, not
+  the image. Restarting the service alone, as the first retry did, left the
+  bad mount in place. An unmounted runtime is not remounted by `simctl list`
+  or `runtime verify` (verify then fails with -67068); actool reports `No
+  available simulator runtimes for platform watchsimulator` until
+  `scan-and-mount` runs.
+- The archive step greps its log for that line, prints the
+  `F_ADDFILESIGS_RETURN` file if there is one, shuts the simulators down,
+  unmounts every runtime disk image (`simctl runtime list` ids), kills the
+  service, runs `scan-and-mount`, waits up to a minute for as many
+  `CoreSimulator/Volumes` mounts as before (about 7 s on the office Mac) and
+  archives once more. A second failure stops the build with a `Fix:` to run
+  again or reboot the Mac.
 - The same text goes to the admins as an operator Ping (`notify_failure`, key
   `mac-adhoc-failure`, `POST /api/accounts/admin-operator-alert` on the
   `MAC_BUILD_GIT_URL` host, signed with this desktop's node identity like
