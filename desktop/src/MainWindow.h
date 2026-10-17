@@ -3870,6 +3870,8 @@ private:
     QList<forkmesh::localcontrol::diag::VitalsSample> m_hostVitals;
     QSet<int> m_hostVitalsWatchers;
     void answerLocalControlProcesses(int connectionId, int requestId);
+    void answerLocalControlProcess(int connectionId, int requestId, bool stop,
+                                   const QJsonObject &params);
     void runLocalControlDiagnosticsAction(int connectionId, int requestId,
                                           const QString &action, const QString &subject);
     forkmesh::localcontrol::hosts::ConfirmationStore m_diagControlConfirmations;
