@@ -35,6 +35,7 @@ Topic pages:
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
+| [NEXUS.md](NEXUS.md) | NEXUS package, permissions, safety policy, host integration and verification |
 
 Siri user guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md).
 
@@ -43,6 +44,7 @@ Siri user guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md).
 | Path | Responsibility |
 | --- | --- |
 | `native/ios/ForkMeshCore/` | Swift package with everything that is not a view; builds and tests on Linux. Modules include FMBase, FMCrypto, FMNet, FMGit, FMDiff, FMVault, FMAccount, FMApi, FMChat, FMCode, FMLocalAI, FMAgents, FMTools, FMAssistant, FMPush, FMControl and the per-area modules listed in DESKTOP_PARITY.md. |
+| `native/ios/Nexus/` | Standalone Swift 6 network-intelligence package. `NexusKit` is its host API; `NexusUI` is its embeddable SwiftUI interface. |
 | `native/ios/ForkMesh/` | The app target: SwiftUI views and iOS glue (`App/`, `Platform/`, `Theme/`, `Kit/`, `Shell/`, `Features/`). |
 | `native/ios/NotificationService/`, `native/ios/Shared/` | Notification service extension (links `ForkMeshPushCore`: FMBase, FMCrypto, FMPush); code compiled into several targets. |
 | `native/ios/ForkMeshWidgets/`, `ForkMeshShare/`, `ForkMeshAutoFill/`, `ForkMeshWatch/`, `ForkMeshWatchWidgets/` | Extensions and the watch app. |
