@@ -53,6 +53,25 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjStudio.scratchLevel(.nan), 0)
     }
 
+    func testOnlyADeliberateDragScratches() {
+        XCTAssertFalse(DjStudio.isScratch(dx: 3, dy: 4))
+        XCTAssertFalse(DjStudio.isScratch(dx: 8, dy: -8))
+        XCTAssertTrue(DjStudio.isScratch(dx: 0, dy: DjStudio.scratchThreshold))
+        XCTAssertTrue(DjStudio.isScratch(dx: -12, dy: 9))
+        XCTAssertFalse(DjStudio.isScratch(dx: .nan, dy: 40))
+    }
+
+    func testSampleSectionRunsFromStartToStop() {
+        XCTAssertEqual(DjStudio.sampleSection(.a, start: 10, end: 14.5), DjSection(deck: .a, start: 10, duration: 4.5))
+        XCTAssertEqual(DjStudio.sampleSection(.b, start: 10, end: 10.6), DjSection(deck: .b, start: 10, duration: 1))
+        XCTAssertEqual(DjStudio.sampleSection(.b, start: 0, end: 90)?.duration, 30)
+        XCTAssertNil(DjStudio.sampleSection(.a, start: 10, end: 10.1))
+        XCTAssertNil(DjStudio.sampleSection(.a, start: 10, end: 4))
+        XCTAssertNil(DjStudio.sampleSection(.a, start: .nan, end: 4))
+        XCTAssertEqual(DjLoadTarget(.b).side, .b)
+        XCTAssertNil(DjLoadTarget.queue.side)
+    }
+
     func testTrackedPositionSmoothsSmallDriftAndSnapsLargeJumps() {
         XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: 10.1, continuous: true), 10.035, accuracy: 1e-9)
         XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: 12, continuous: true), 12)
@@ -103,7 +122,7 @@ final class DjStudioTests: XCTestCase {
     }
 
     func testSavedStateIsSanitised() throws {
-        let data = Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true},"b":{"videoId":"nope"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}],"zoomed":true}"#.utf8)
+        let data = Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":-4,"level":7,"rate":9,"bpm":"x","loop":true},"b":{"videoId":"nope"},"crossfader":3,"samplerLevel":-1,"sections":[{"deck":"b","start":12,"duration":90},null,null,null,{"deck":"a","start":1,"duration":2}]}"#.utf8)
         let saved = DjSaved.decode(data)
         XCTAssertEqual(saved.a.videoId, "dQw4w9WgXcQ")
         XCTAssertEqual(saved.a.cue, 0)
@@ -116,7 +135,6 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(saved.samplerLevel, 0)
         XCTAssertEqual(saved.sections.count, DjStudio.sectionCount)
         XCTAssertEqual(saved.sections[0], DjSection(deck: .b, start: 12, duration: 30))
-        XCTAssertTrue(saved.zoomed)
         XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
         XCTAssertEqual(DjSaved.decode(Data("nonsense".utf8)), DjSaved())
     }
@@ -133,6 +151,9 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjStudio.remember(history, id: "9bZkp7q19f0", title: "New", author: "", limit: 1), [DjHistoryItem(id: "9bZkp7q19f0", title: "New", author: "")])
         let saved = DjSaved.decode(Data(#"{"history":[{"id":"dQw4w9WgXcQ","title":"Song"},{"id":"nope"},{"id":"dQw4w9WgXcQ","title":"Again"},{"title":"x"}]}"#.utf8))
         XCTAssertEqual(saved.history, [DjHistoryItem(id: "dQw4w9WgXcQ", title: "Song", author: "")])
+        let queued = DjSaved.decode(Data(#"{"queue":[{"id":"q1","videoId":"dQw4w9WgXcQ"},{"id":"q1","videoId":"9bZkp7q19f0"},{"id":"q2","videoId":"x"}]}"#.utf8))
+        XCTAssertEqual(queued.queue.map(\.videoId), ["dQw4w9WgXcQ"])
+        XCTAssertEqual(DjSaved.decode(queued.encoded()), queued)
         XCTAssertEqual(DjSaved.decode(saved.encoded()), saved)
     }
 
