@@ -128,14 +128,48 @@ services see the reading device's IP address and the account asked about; see
 desktop pictures are cached on disk for a week, including negative results.
 Nothing is stored server-side.
 
+### Notes
+
+**Add a note** on the card saves a dated note to the contact and pings the
+people connected to its lists. Notes are separate from the free-text
+**Notes** field and never overwrite it.
+
+- **API**: `POST /api/crm/<org>/contacts/note` with `{"contact": "<id>",
+  "text": "..."}` (any organization member; up to 4000 characters, else
+  `413 note_too_long`; blank is `400 note_required`; an unknown contact is
+  `404 contact_not_found`). It answers `201` with the note, the saved contact
+  and `pinged`, the number of people pinged.
+- **Stored**: in the sealed contact as `noteLog`, `[{"id", "at", "by",
+  "text"}]`, oldest first, the newest 100 kept (`CONTACT_NOTE_KEEP`). Other
+  edits keep it; merging two contacts keeps both logs. Shared sheets never
+  carry it. Saving a note does not change the record's "last edited".
+- **Logged**: the card's **Activity** lists each note ("Note · <author>"); the
+  history of every list the contact is on gets a `contact.noted` entry ("added
+  a note on Grace: “...”", the first 140 characters, sealed); the audit log
+  gets `crm.contact.note`.
+- **Pinged** (`plugin_activity`, title "Note on <contact>", body "By <author>
+  in <org> · <list>: <first 140 characters>", one ping per note via
+  `dedupe = crm-note:<note id>`), never the author, at most 50 people:
+  - a list visible to the organization: every member;
+  - a private list: its owner, the organization's owners and admins, and the
+    members it is shared with;
+  - everyone a list is shared with outside the organization (for example a
+    partner sheet shared for editing). Their ping opens the list
+    (`/dashboard/crm?list=<id>`) and carries the note text only when the list
+    shows its Notes column;
+  - a contact on no list: every member.
+  Members' pings open the card (`/dashboard/crm?contact=<id>`).
+
 ## Reach out and follow up
 
 The top of the CRM shows two cards (desktop and web) or two sections (phones):
 
 - **Reach out**: the best never-contacted, reachable lead outside a won or
-  ended stage, ordered by next step, deal value, a `rank`/`*_rank` column
-  (lowest first), a `score`/`*_score` column (highest first), having an email,
-  and age on the CRM.
+  ended stage, ordered by their newest public Mastodon post (newest first;
+  contacts without a handle or a post follow), then next step, deal value, a
+  `rank`/`*_rank` column (lowest first), a `score`/`*_score` column (highest
+  first), having an email, and age on the CRM. The card shows that post's
+  date, excerpt and link, and lists the next five in line with theirs.
 - **Follow up**: an unanswered reply first (newest first, any stage), then
   contacts last contacted 14 or more days ago with nothing back (longest
   silence first, open stages only); a next step goes first in each group.
@@ -150,6 +184,31 @@ open list; the web ranks the whole organization. Code:
 `CrmNextContact.pick` (iOS and Android). Tests:
 `tests/test_qt_plugin_contracts.py`, `tests/test_web_layout.py`,
 `tests/contact_detail_checks.js`, `CrmParityTests.swift`, `CrmParityTest.kt`.
+
+### Newest Mastodon post on Reach out
+
+Rendering the cards queues the Mastodon handles of the first 40 reach-out
+candidates (in the order above) for the same read the **Mastodon last update**
+column uses: `GET /api/v1/accounts/lookup?acct=<user>` on the contact's own
+instance, then `GET /api/v1/accounts/<id>/statuses?limit=1&exclude_replies=true&exclude_reblogs=true`.
+The reads are public and unauthenticated, made by the browser or desktop app
+(not the worker), and kept in memory for the session:
+
+- a read is fresh for 15 minutes, a handle shared by several contacts is read
+  once, and the account id is remembered so a refresh asks only for statuses;
+- at most four reads run at once, and at most two against one instance;
+- a `429` holds that instance back for `Retry-After` or five minutes, whichever
+  is longer, and every handle on it shows why until then;
+- a missing account (`404`/`406`/`410`), a timeout or an unreachable instance
+  shows as "Mastodon post unavailable" and the contact keeps its place among
+  those without a post; a failed re-read keeps the post already shown.
+
+Finished reads re-rank the cards (at most every 400 ms), so the order settles
+as posts arrive. The iOS and Android pick does not read Mastodon. Code:
+`crmQueueReachMastodon`, `crmPumpMastodonLatest`, `crmNextPostHtml` (web);
+`CrmFeature::queueReachMastodon`, `refreshMastodonUpdates`, `nextPostLabel`
+(desktop). Tests: `tests/contact_detail_checks.js` (mocked instances),
+`tests/test_qt_plugin_contracts.py`.
 
 ### Write with AI
 
@@ -196,10 +255,41 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
 - The in-app **Zoho setup guide** covers both paths.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
-for it, and records each sent-folder message as an outbound CRM email unless
-that provider message is already linked. Email cells open a compose window in
-the organization's Zoho data center (`https://<data center>/zm/comp.do?ct=mailto:<address>`)
-or Gmail.
+for it, and records each sent-folder message as an outbound CRM email. Email
+cells open a compose window in the organization's Zoho data center
+(`https://<data center>/zm/comp.do?ct=mailto:<address>`) or Gmail.
+
+**Sent mail marks its recipients contacted** (1.33.0). Before 1.33.0 a sync
+stored sent mail with no contact, so a lead you had just written to through
+Zoho stayed on the **Reach out** card at its first stage until someone pressed
+**Mark contacted**. Now each address on a sent message's `To` (HTML entities
+decoded, the sender's own mailbox skipped) is matched against every address a
+contact carries (`_contacts_by_address`: the email first, then custom-column
+addresses), and each matched contact gets the message linked through
+`_link_message` (the first contact keeps the Zoho message id, the others get
+`<id>/<address>`), so it shows in the contact's email history and files a
+`contact.emailed` list activity entry. Linking stamps **Last contacted** with
+the send time (forward only) and moves the contact to the `contacted` stage
+when its pipeline has one and the contact sits before it (`sourced`,
+`prospect`, or a stage the pipeline does not know). Contacts at or past
+`contacted` (`meeting`, `passed`, `customer`, ...) keep their stage; a
+pipeline without a `contacted` stage (Customers, Applicants, Grants) only gets
+the date. A recipient who is not a contact is stored unlinked, as before, and
+no contact is created.
+
+The sync is idempotent: a message already linked to a contact is not
+re-linked, it only re-applies the same date and stage rule (a no-op once
+applied), and a message stored unlinked by an earlier sync is linked the first
+time a sync finds a contact for it. So mail imported before 1.33.0, or before
+the contact was added, is backfilled by the next **Sync Zoho Mail**, as far
+back as the sync reads (the newest messages of the Sent folder, half of the
+200-message limit). The response and the `crm.zoho.import` audit carry
+`outboundRecorded` (new send rows) and `contactsAdvanced` (stage moves).
+
+The same stage rule runs for every outbound `POST /emails/link` that does not
+name a flow or stage (the browser extension, and `send_email` logging in
+`tools/forkmesh_mcp_server.py`); its response carries `stageAdvanced`. Inbound
+links never move a stage. Tests: `tests/test_zoho_marks_contacted.py`.
 
 ### Sending and tracking
 
@@ -393,7 +483,8 @@ outreach. Without the capability the list is empty.
   `GET /api/crm/<org>`, days cut in the caller's `?tz=` offset).
 - **List activity history** (`crm_list_activity`): opens (at most one per
   person per list every 30 minutes), list changes, contact changes (field
-  names only, never values) and imports. Actor and action are stored in the
+  names only, never values), notes (their first 140 characters) and
+  imports. Actor and action are stored in the
   clear; names, field names and subjects are sealed. Rows older than 90 days
   are dropped. `GET /views/activity?view=<id>` returns up to 200 entries, only
   for lists the caller can open.
@@ -420,6 +511,8 @@ changes, settings and a Zoho connection.
 - **Bursts fold**: contact, email and list edits, bulk updates, settings and
   mailbox refreshes share one ping per member, action and item for 10
   minutes. The first rings the phone; later ones update it silently.
+- **Notes** ping everyone connected to the contact's lists instead (see
+  [Notes](#notes)), each note once.
 
 ## Leads from the platform
 

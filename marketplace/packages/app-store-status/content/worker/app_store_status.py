@@ -1,3 +1,4 @@
+import base64
 import re
 
 
@@ -6,6 +7,11 @@ PLUGIN_ID = "app-store-status"
 REQUEST_PROOF = "forkmesh-app-store-status-request-v1"
 FORMAT = "forkmesh-app-store-status-v1"
 MAX_BODY_BYTES = 256 * 1024
+MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024
+MAX_SCREENSHOT_BODY_BYTES = MAX_SCREENSHOT_BYTES * 4 // 3 + 64 * 1024
+MAX_SCREENSHOTS = 4
+SCREENSHOT_MIMES = {"image/jpeg": b"\xff\xd8\xff", "image/png": b"\x89PNG\r\n\x1a\n"}
+SCREENSHOT_ID_RE = re.compile(r"^[0-9a-f]{24}$")
 TONES = frozenset({"action", "pending", "good", "neutral"})
 SECTIONS = ("versions", "submissions", "downloads", "builds", "groups", "feedback", "reviews")
 COUNT_KINDS = ("downloads", "redownloads", "updates")
@@ -24,9 +30,16 @@ DATA_SCHEMA_UP = [
         account_name TEXT NOT NULL,
         published_at INTEGER NOT NULL CHECK(published_at >= 0),
         data TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS app_store_status_screenshots (
+        account_bi TEXT NOT NULL,
+        id TEXT NOT NULL,
+        stored_at INTEGER NOT NULL CHECK(stored_at >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY(account_bi, id))""",
 ]
 
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS app_store_status_screenshots",
     "DROP TABLE IF EXISTS app_store_status_snapshots",
 ]
 
@@ -165,16 +178,67 @@ def _group(row):
     }
 
 
+def _screenshot(row):
+    row = _dict(row)
+    shot_id = _text(row.get("id"), 24)
+    if not SCREENSHOT_ID_RE.fullmatch(shot_id):
+        return None
+    return {
+        "id": shot_id,
+        "width": _integer(row.get("width"), 0, 20000),
+        "height": _integer(row.get("height"), 0, 20000),
+    }
+
+
 def _feedback(row):
     row = _dict(row)
     kind = _text(row.get("kind"), 16)
+    shots = [shot for shot in (_screenshot(item) for item in
+                               _list(row.get("screenshots"), MAX_SCREENSHOTS)) if shot]
     return {
         "kind": kind if kind in ("crash", "screenshot") else "screenshot",
         "createdAt": _stamp(row.get("createdAt")),
         "from": _text(row.get("from"), 120) or "anonymous",
         "device": _text(row.get("device"), 80),
         "comment": _text(row.get("comment"), 300),
+        "screenshots": shots,
     }
+
+
+def screenshot_ids(snapshot):
+    found = []
+    for row in _dict(snapshot).get("feedback") or []:
+        for shot in _dict(row).get("screenshots") or []:
+            shot_id = _dict(shot).get("id")
+            if shot_id and shot_id not in found:
+                found.append(shot_id)
+    return found
+
+
+def clean_screenshot(data):
+    data = _dict(data)
+    mime = _text(data.get("mime"), 32).lower()
+    if mime not in SCREENSHOT_MIMES:
+        return None, "unsupported_image"
+    encoded = data.get("data")
+    if not isinstance(encoded, str) or not encoded:
+        return None, "invalid_image"
+    if len(encoded) > MAX_SCREENSHOT_BYTES * 4 // 3 + 4:
+        return None, "image_too_large"
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError):
+        return None, "invalid_image"
+    if not raw.startswith(SCREENSHOT_MIMES[mime]):
+        return None, "invalid_image"
+    if len(raw) > MAX_SCREENSHOT_BYTES:
+        return None, "image_too_large"
+    return {
+        "mime": mime,
+        "width": _integer(data.get("width"), 0, 20000),
+        "height": _integer(data.get("height"), 0, 20000),
+        "data": base64.b64encode(raw).decode("ascii"),
+    }, ""
 
 
 def _review(row):
@@ -230,6 +294,8 @@ def _allowed_methods(parts):
         return ("PUT", "DELETE")
     if parts == ("export",):
         return ("GET",)
+    if len(parts) == 2 and parts[0] == "screenshots" and SCREENSHOT_ID_RE.fullmatch(parts[1]):
+        return ("GET", "PUT")
     return ()
 
 
@@ -273,8 +339,50 @@ async def _publish(runtime, account_bi, actor, data):
         "data=excluded.data",
         account_bi, actor, now, await runtime.seal(snapshot),
     )
+    wanted = screenshot_ids(snapshot)
+    stored = await runtime.d1_all(
+        "SELECT id FROM app_store_status_screenshots WHERE account_bi=?", account_bi)
+    have = {str(row.get("id") or "") for row in stored or []}
+    for old in sorted(have - set(wanted)):
+        await runtime.d1_run(
+            "DELETE FROM app_store_status_screenshots WHERE account_bi=? AND id=?",
+            account_bi, old)
     await runtime.audit(actor, "app-store-status.publish", "app_store_status", actor)
-    return _response(runtime, {"ok": True, "publishedAt": now})
+    return _response(runtime, {
+        "ok": True, "publishedAt": now,
+        "missingScreenshots": [shot for shot in wanted if shot not in have],
+    })
+
+
+async def _store_screenshot(runtime, account_bi, actor, shot_id, data):
+    snapshot, _published_at = await _stored(runtime, account_bi)
+    if shot_id not in screenshot_ids(snapshot):
+        return _response(runtime, {"error": "screenshot_not_in_snapshot"}, 409)
+    image, error = clean_screenshot(data)
+    if error:
+        return _response(runtime, {"error": error}, 413 if error == "image_too_large" else 400)
+    now = runtime.now()
+    await runtime.d1_run(
+        "INSERT INTO app_store_status_screenshots(account_bi,id,stored_at,data) "
+        "VALUES(?,?,?,?) ON CONFLICT(account_bi,id) DO UPDATE SET "
+        "stored_at=excluded.stored_at,data=excluded.data",
+        account_bi, shot_id, now, await runtime.seal(image),
+    )
+    await runtime.audit(actor, "app-store-status.screenshot", "app_store_status", actor)
+    return _response(runtime, {"ok": True, "id": shot_id, "storedAt": now})
+
+
+async def _read_screenshot(runtime, account_bi, shot_id):
+    row = await runtime.d1_first(
+        "SELECT data FROM app_store_status_screenshots WHERE account_bi=? AND id=?",
+        account_bi, shot_id)
+    image = await runtime.open(row.get("data")) if row else None
+    if not isinstance(image, dict):
+        return _response(runtime, {"error": "screenshot_not_found"}, 404)
+    image, error = clean_screenshot(image)
+    if error:
+        return _response(runtime, {"error": "screenshot_not_found"}, 404)
+    return _response(runtime, {"ok": True, "id": shot_id, **image})
 
 
 async def account_installed(runtime, account_bi):
@@ -300,6 +408,8 @@ async def export_account_data(runtime, account_bi, actor):
 async def purge_account_data(runtime, account_bi, account_name=""):
     await runtime.d1_run(
         "DELETE FROM app_store_status_snapshots WHERE account_bi=?", account_bi)
+    await runtime.d1_run(
+        "DELETE FROM app_store_status_screenshots WHERE account_bi=?", account_bi)
 
 
 async def handle(runtime, path):
@@ -316,7 +426,8 @@ async def handle(runtime, path):
         return _response(runtime, {"error": "origin_not_allowed"}, 403)
     data = {}
     if method == "PUT":
-        data, error = await runtime.json_body(MAX_BODY_BYTES)
+        limit = MAX_SCREENSHOT_BODY_BYTES if parts[:1] == ("screenshots",) else MAX_BODY_BYTES
+        data, error = await runtime.json_body(limit)
         if error:
             return _response(runtime, {"error": error},
                              413 if error == "payload_too_large" else 400)
@@ -325,6 +436,10 @@ async def handle(runtime, path):
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)
     await _ensure_tables(runtime)
+    if parts[:1] == ("screenshots",):
+        if method == "PUT":
+            return await _store_screenshot(runtime, account_bi, actor, parts[1], data)
+        return await _read_screenshot(runtime, account_bi, parts[1])
     if parts == ("snapshot",):
         if method == "DELETE":
             await purge_account_data(runtime, account_bi, actor)

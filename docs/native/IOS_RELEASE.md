@@ -152,6 +152,8 @@ desktop's Actions variables, or the office Mac; the private key at
 The shortcut also publishes the same data (`asc_store_report.py --publish`) to
 the **App Store Status** package page, so the web, desktop, iPhone and Android
 show it laid out as a page. `--json` prints that snapshot instead of the text.
+It then uploads the screenshots attached to that feedback, shrunk to a JPEG
+of at most 3 MB with Pillow, so every client can show them full size.
 It also sends daily downloads (with countries and devices), the versions and
 the reviews to the Marketing package's App Store channel, which charts
 downloads over time; `--marketing ORG` (or `FORKMESH_MARKETING_ORG`) names the
@@ -279,6 +281,19 @@ size at its own pixel size, with no alpha channel (required for the 1024 px
 icon). Run it after changing `logo.svg` (needs pycairo and Pillow);
 `--preview out.png` renders one icon. The PNGs are committed. The in-app
 `Logo.imageset` holds `logo.svg` with `preserves-vector-representation`.
+
+The same run writes the Android launcher icons (`mipmap-*/ic_launcher.png`,
+`drawable-nodpi/fm_logo.png`). To check the committed icons are current, run
+the script and confirm `git status` shows no change. The phone and watch
+targets are the only app icon sets (`ASSETCATALOG_COMPILER_APPICON_NAME =
+AppIcon`); widgets, extensions and `codemagic.yaml` set no icon of their own,
+and there are no alternate icons.
+
+The white-ringed hexagon icon replaced the grey cube on 2026-10-04 (commit
+`a038e73b1c`). A phone that still shows the cube is running a build archived
+before that date: ship a new `ios-native-release` build. If the new build is
+installed and the home screen still shows the cube, iOS is showing its cached
+icon; restarting the phone clears it.
 
 ## Flutter-to-native migration
 

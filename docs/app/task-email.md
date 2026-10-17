@@ -18,6 +18,20 @@ emails per address per hour (`HOURLY_CAP`). Only active, verified accounts with
 pixel and tracked links. A failed send never fails the task change. Task
 descriptions are never copied.
 
+## Deleted tasks
+
+A delete does not use the per-change activity email. `_delete` and
+`_delete_batch` collect the deleted tasks and call
+`notify_organization_task_deletions` (`world/src/world_office_routes.py`) once
+per request; it picks the creator and the person assignee of each task (members
+only, never the deleter), groups the tasks per recipient, and
+`send_deleted` (`world/src/world_task_email.py`) sends each recipient one email:
+`Task deleted: <title>` or `N tasks deleted`, a line per task naming who deleted
+it, the reason when given, a note that a deleted task counts as done and stays
+restorable for 30 days, and a link to the Tasks list (no view token). The same
+opt-outs, verification check and hourly cap apply, and each task's timeline gets
+an `emailed` entry. Commenters and owners still get the delete Ping.
+
 ## Tracking
 
 | Event | Source | Timeline kind |

@@ -181,7 +181,7 @@ class DirectCallEngine(
         get() = when (phase) {
             DirectCallPhase.RINGING -> "Calling @$partner…"
             DirectCallPhase.CONNECTING -> "Connecting…"
-            DirectCallPhase.LIVE -> "Connected · encrypted peer-to-peer"
+            DirectCallPhase.LIVE -> "Connected · end-to-end encrypted"
             null -> ""
         }
 

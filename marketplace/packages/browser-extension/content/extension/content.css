@@ -13,9 +13,9 @@
   top: 0;
   z-index: 3;
   order: -1;
-  height: 28px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.25);
 }
 [data-fm-sort="root"] { display: flex !important; flex-direction: column !important; }
 [data-fm-sort="flat"] { display: contents !important; }
 [data-fm-sort="hide"] { display: none !important; }
+[data-fm-filter="out"] { display: none !important; }

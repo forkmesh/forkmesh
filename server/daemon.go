@@ -783,6 +783,8 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 	}
 	convergenceDelay := time.Duration(0)
 	convergenceArmed := false
+	releasePrune := time.NewTimer(releasePruneFirstDelay)
+	defer releasePrune.Stop()
 	// Re-armed after every cycle, but only when it is not already pending: any
 	// other cycle — a push, the four-minute heartbeat — must not push the retry
 	// back, or a backoff at the ceiling would be reset before it ever fired.
@@ -862,6 +864,9 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 		case <-convergence.C:
 			convergenceArmed = false
 			d.syncOnce(ctx)
+		case <-releasePrune.C:
+			d.pruneReleaseStores(ctx)
+			releasePrune.Reset(d.config.releasePruneInterval())
 		}
 		armBootstrap()
 		armConvergence()

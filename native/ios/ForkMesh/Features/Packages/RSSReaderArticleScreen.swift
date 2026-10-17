@@ -36,13 +36,9 @@ struct RSSReaderArticleScreen: View {
     var body: some View {
         content
             .bareShellTop()
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 30).onEnded { value in
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                    move(value.translation.width < 0 ? 1 : -1)
-                })
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .modifier(RSSUnreadCountToolbar(count: model.unread(scope)))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 0) {
@@ -108,7 +104,8 @@ struct RSSReaderArticleScreen: View {
             if let article {
                 RSSArticleWebView(
                     html: model.page(for: article, reader: reader), articleKey: "\(article.id)|\(reader)",
-                    onLink: { (url: URL) in openLink(url) })
+                    onLink: { (url: URL) in openLink(url) },
+                    onSwipe: { (step: Int) in move(step) })
                     .ignoresSafeArea(edges: .bottom)
                     .accessibilityIdentifier("rss-article-body")
                     .id(article.id)
@@ -117,6 +114,12 @@ struct RSSReaderArticleScreen: View {
                 Text("This article is no longer on this iPhone.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 30).onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            move(value.translation.width < 0 ? 1 : -1)
+                        })
             }
         }
         .clipped()
@@ -268,6 +271,36 @@ struct RSSReaderArticleScreen: View {
     }
 }
 
+private struct RSSUnreadCountToolbar: ViewModifier {
+    let count: Int
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.toolbar {
+                countItem.sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                countItem
+            }
+        }
+        #else
+        content.toolbar {
+            countItem
+        }
+        #endif
+    }
+
+    private var countItem: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            RSSCountLabel(count: count)
+                .accessibilityLabel("\(count.formatted()) unread")
+                .accessibilityIdentifier("rss-article-unread-count")
+        }
+    }
+}
+
 struct RSSBrowserLink: Identifiable {
     let url: URL
 
@@ -290,8 +323,9 @@ struct RSSArticleWebView: UIViewRepresentable {
     let html: String
     let articleKey: String
     let onLink: (URL) -> Void
+    let onSwipe: (Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink) }
+    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink, onSwipe: onSwipe) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -308,22 +342,42 @@ struct RSSArticleWebView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.scrollView.backgroundColor = .clear
         view.scrollView.contentInsetAdjustmentBehavior = .automatic
+        let swipe = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swiped(_:)))
+        swipe.delegate = context.coordinator
+        view.addGestureRecognizer(swipe)
+        view.scrollView.panGestureRecognizer.require(toFail: swipe)
         context.coordinator.load(html, key: articleKey, into: view)
         return view
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.onLink = onLink
+        context.coordinator.onSwipe = onSwipe
         context.coordinator.load(html, key: articleKey, into: view)
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
         var onLink: (URL) -> Void
+        var onSwipe: (Int) -> Void
         private var html = ""
         private var key = ""
 
-        init(onLink: @escaping (URL) -> Void) {
+        init(onLink: @escaping (URL) -> Void, onSwipe: @escaping (Int) -> Void) {
             self.onLink = onLink
+            self.onSwipe = onSwipe
+        }
+
+        func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+            guard let pan = gesture as? UIPanGestureRecognizer, let view = pan.view else { return true }
+            let speed: CGPoint = pan.velocity(in: view)
+            return abs(speed.x) > abs(speed.y)
+        }
+
+        @objc func swiped(_ pan: UIPanGestureRecognizer) {
+            guard pan.state == .ended, let view = pan.view else { return }
+            let moved: CGFloat = pan.translation(in: view).x
+            guard abs(moved) > 30 else { return }
+            onSwipe(moved < 0 ? 1 : -1)
         }
 
         func load(_ html: String, key: String, into view: WKWebView) {

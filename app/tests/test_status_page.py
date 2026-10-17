@@ -4401,6 +4401,7 @@ def _release_platform_probe(
     async def routed_read(_env, url, operation, **kwargs):
         issued.append(url)
         if operation == "release-blob":
+            assert kwargs.get("method") == "HEAD"
             response = _Response(blob_status)
             if cancelled is not None:
                 response.body = _TrackedBody(url, cancelled)

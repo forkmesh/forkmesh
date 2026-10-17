@@ -345,12 +345,12 @@ func startPtyCommand(name string, args, env []string, dir string, cols, rows int
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true, Setctty: true, Ctty: 0, Credential: credential,
 	}
+	process := &ptyProcess{master: master, cmd: cmd}
+	_ = process.Resize(cols, rows)
 	if err := cmd.Start(); err != nil {
 		master.Close()
 		return nil, err
 	}
-	process := &ptyProcess{master: master, cmd: cmd}
-	_ = process.Resize(cols, rows)
 	return process, nil
 }
 

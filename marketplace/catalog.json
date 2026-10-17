@@ -18,7 +18,7 @@
     { "id": "ledger", "version": "1.4.0", "manifest": "packages/ledger/manifest.json" },
     { "id": "x-banner-board", "version": "1.0.0", "manifest": "packages/x-banner-board/manifest.json" },
     { "id": "reddit-banner-board", "version": "1.0.0", "manifest": "packages/reddit-banner-board/manifest.json" },
-    { "id": "crm", "version": "1.32.0", "manifest": "packages/crm/manifest.json" },
+    { "id": "crm", "version": "1.35.0", "manifest": "packages/crm/manifest.json" },
     { "id": "marketing", "version": "1.42.0", "manifest": "packages/marketing/manifest.json" },
     { "id": "competitor", "version": "1.0.0", "manifest": "packages/competitor/manifest.json" },
     { "id": "analytics", "version": "1.7.0", "manifest": "packages/analytics/manifest.json" },
@@ -33,7 +33,7 @@
     { "id": "winamp", "version": "1.0.0", "manifest": "packages/winamp/manifest.json" },
     { "id": "forkmesh-ide", "version": "0.1.1", "manifest": "packages/forkmesh-ide/manifest.json" },
     { "id": "sentry", "version": "1.0.1", "manifest": "packages/sentry/manifest.json" },
-    { "id": "app-store-status", "version": "1.0.0", "manifest": "packages/app-store-status/manifest.json" },
+    { "id": "app-store-status", "version": "1.1.0", "manifest": "packages/app-store-status/manifest.json" },
     { "id": "timers", "version": "1.1.0", "manifest": "packages/timers/manifest.json" },
     { "id": "forkmesh-sky-office", "version": "1.0.0", "manifest": "packages/forkmesh-sky-office/manifest.json" },
     { "id": "calories", "version": "2.5.1", "manifest": "packages/calories/manifest.json" },
@@ -45,7 +45,7 @@
     { "id": "sugar-break", "version": "1.1.0", "manifest": "packages/sugar-break/manifest.json" },
     { "id": "stretch", "version": "1.1.0", "manifest": "packages/stretch/manifest.json" },
     { "id": "food-guide", "version": "2.1.0", "manifest": "packages/food-guide/manifest.json" },
-    { "id": "browser-extension", "version": "2.23.0", "manifest": "packages/browser-extension/manifest.json" },
+    { "id": "browser-extension", "version": "2.24.0", "manifest": "packages/browser-extension/manifest.json" },
     { "id": "voice-changer", "version": "1.1.0", "manifest": "packages/voice-changer/manifest.json" },
     { "id": "face-changer", "version": "1.2.0", "manifest": "packages/face-changer/manifest.json" },
     { "id": "video-mix-dj-studio", "version": "1.0.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },
@@ -126,6 +126,11 @@
     { "id": "people", "version": "1.0.0", "manifest": "packages/people/manifest.json" },
     { "id": "feed", "version": "1.0.0", "manifest": "packages/feed/manifest.json" },
     { "id": "mastodon", "version": "1.0.0", "manifest": "packages/mastodon/manifest.json" },
-    { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" }
+    { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" },
+    { "id": "code-map", "version": "1.0.0", "manifest": "packages/code-map/manifest.json" },
+    { "id": "size-map", "version": "1.0.0", "manifest": "packages/size-map/manifest.json" },
+    { "id": "strata", "version": "1.0.0", "manifest": "packages/strata/manifest.json" },
+    { "id": "ember", "version": "1.0.0", "manifest": "packages/ember/manifest.json" },
+    { "id": "synapse", "version": "1.0.0", "manifest": "packages/synapse/manifest.json" }
   ]
 }

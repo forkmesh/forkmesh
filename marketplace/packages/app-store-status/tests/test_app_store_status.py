@@ -55,6 +55,8 @@ class Runtime:
         return dict(row) if row else None
     async def d1_run(self, sql, *args):
         cursor = self.db.execute(sql, args); self.db.commit(); return cursor
+    async def d1_all(self, sql, *args):
+        return [dict(row) for row in self.db.execute(sql, args).fetchall()]
     async def audit(self, *args, **kwargs): self.audits.append(args)
 
 
@@ -133,9 +135,12 @@ def test_export_forget_and_purge():
     forgot = call(runtime.use("DELETE"), "/api/app-store-status/snapshot")["data"]
     assert forgot == {"ok": True, "published": False}
     assert asyncio.run(app_store_status.account_has_data(runtime, "bi:alice")) is False
+    call(runtime.use("PUT", actor="bob", body=picture()), f"/api/app-store-status/screenshots/{SHOT}")
     asyncio.run(app_store_status.purge_account_data(runtime, "bi:bob", "bob"))
     count = runtime.db.execute("SELECT COUNT(*) FROM app_store_status_snapshots").fetchone()[0]
     assert count == 0
+    shots = runtime.db.execute("SELECT COUNT(*) FROM app_store_status_screenshots").fetchone()[0]
+    assert shots == 0
 
 
 def test_manifest_matches_the_worker():
@@ -151,3 +156,61 @@ def test_manifest_matches_the_worker():
     assert app_store_status.PREFIX in page
     report = (REPO / "native" / "ios" / "tools" / "asc_store_report.py").read_text(encoding="utf-8")
     assert app_store_status.REQUEST_PROOF in report and app_store_status.FORMAT in report
+
+
+SHOT = "3f1c2a9b8d7e6f5a4b3c2d1e"
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+
+def picture(raw=JPEG, mime="image/jpeg"):
+    return {"mime": mime, "width": 1179, "height": 2556,
+            "data": app_store_status.base64.b64encode(raw).decode("ascii")}
+
+
+def test_screenshots_upload_only_for_the_published_snapshot_and_stay_private():
+    runtime = Runtime()
+    path = f"/api/app-store-status/screenshots/{SHOT}"
+    assert call(runtime.use("PUT", body=picture()), path)["data"] == {
+        "error": "screenshot_not_in_snapshot"}
+    stored = call(runtime.use("PUT", body=doc_example()), "/api/app-store-status/snapshot")
+    assert stored["data"]["missingScreenshots"] == [SHOT]
+    assert call(runtime.use("GET"), path)["status"] == 404
+    saved = call(runtime.use("PUT", body=picture()), path)
+    assert saved["status"] == 200 and saved["data"]["id"] == SHOT
+    raw = runtime.db.execute("SELECT data FROM app_store_status_screenshots").fetchone()[0]
+    assert raw.startswith("sealed:")
+    shown = call(runtime.use("GET"), path)["data"]
+    assert shown == {"ok": True, "id": SHOT, **picture()}
+    assert call(runtime.use("GET", actor="bob"), path)["status"] == 404
+    again = call(runtime.use("PUT", body=doc_example()), "/api/app-store-status/snapshot")
+    assert again["data"]["missingScreenshots"] == []
+    assert runtime.audits[-2][1] == "app-store-status.screenshot"
+
+
+def test_screenshots_must_be_real_pictures_under_the_cap():
+    runtime = Runtime()
+    call(runtime.use("PUT", body=doc_example()), "/api/app-store-status/snapshot")
+    path = f"/api/app-store-status/screenshots/{SHOT}"
+    assert call(runtime.use("PUT", body=picture(mime="image/gif")), path)["data"]["error"] == (
+        "unsupported_image")
+    assert call(runtime.use("PUT", body=picture(raw=b"<svg>")), path)["data"]["error"] == (
+        "invalid_image")
+    assert call(runtime.use("PUT", body={**picture(), "data": "%%%"}), path)["status"] == 400
+    big = JPEG + b"\x00" * app_store_status.MAX_SCREENSHOT_BYTES
+    assert call(runtime.use("PUT", body=picture(raw=big)), path)["status"] == 413
+    assert call(runtime.use("GET"), "/api/app-store-status/screenshots/NOT-HEX")["status"] == 404
+    assert call(runtime.use("DELETE"), path)["status"] == 405
+
+
+def test_a_new_snapshot_drops_screenshots_it_no_longer_lists():
+    runtime = Runtime()
+    call(runtime.use("PUT", body=doc_example()), "/api/app-store-status/snapshot")
+    call(runtime.use("PUT", body=picture()), f"/api/app-store-status/screenshots/{SHOT}")
+    newer = doc_example()
+    newer["feedback"][0]["screenshots"] = [{"id": "a" * 24, "width": 1, "height": 1},
+                                           {"id": "../etc", "width": 1, "height": 1}]
+    stored = call(runtime.use("PUT", body=newer), "/api/app-store-status/snapshot")
+    assert stored["data"]["missingScreenshots"] == ["a" * 24]
+    assert runtime.db.execute("SELECT COUNT(*) FROM app_store_status_screenshots").fetchone()[0] == 0
+    snapshot = call(runtime.use("GET"), "/api/app-store-status")["data"]["snapshot"]
+    assert snapshot["feedback"][0]["screenshots"] == [{"id": "a" * 24, "width": 1, "height": 1}]

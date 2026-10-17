@@ -449,6 +449,15 @@ class LocalPingLog(
     }
 
     @Synchronized
+    fun removeChats(where: (String) -> Boolean): Boolean {
+        val kept = pings.filterNot { it.kind == CHAT_KIND && where(it.conversation) }
+        if (kept.size == pings.size) return false
+        pings = kept
+        save()
+        return true
+    }
+
+    @Synchronized
     fun markConversationRead(conversation: String): Boolean {
         if (pings.none { !it.read && it.conversation == conversation }) return false
         pings = pings.map { if (it.conversation == conversation) it.copy(read = true) else it }

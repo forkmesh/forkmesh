@@ -25,11 +25,16 @@ struct FaceChangerScreen: View {
 
     private var look: FaceChangerLook { studio.look }
 
+    private var opening: WebCallPeer? {
+        guard let current = studio.factory.current, current.previewing else { return nil }
+        return current
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea(edges: .bottom)
-            if let peer, !failed {
-                WebCallSurface(webView: peer.webView).ignoresSafeArea(edges: .bottom)
+            if let surface = peer ?? opening, !failed {
+                WebCallSurface(webView: surface.webView).ignoresSafeArea(edges: .bottom)
             }
             if case .review(let url, _) = record {
                 MessagesViewOnceReviewVideo(url: url)
@@ -273,7 +278,7 @@ struct FaceChangerScreen: View {
         if hearing { hearing = await peer.setMonitor(false) }
         do {
             let made = try await peer.finishRecording()
-            guard let url = MessagesViewOnceFiles.write(made.data, ext: made.mime == "video/mp4" ? "mp4" : "webm") else {
+            guard let url = MessagesViewOnceFiles.write(made.data, ext: made.fileExtension) else {
                 throw WebCallError.failed("recording_write")
             }
             record = .review(url, made.mime)

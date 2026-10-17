@@ -1,0 +1,69 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "strata",
+  "name": "Strata",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Developer tools",
+  "version": "1.0.0",
+  "summary": "Architecture and complexity for any repository you open: module dependency graph and matrix, cycles, abstractness and instability, code rules, technical debt with an A to E rating and quality gates.",
+  "screenshots": [
+    {
+      "path": "preview/market.webp",
+      "alt": "Strata showing a repository's modules as a layered dependency graph with a cycle drawn in red"
+    },
+    {
+      "path": "preview/dashboard.webp",
+      "alt": "Strata's dashboard: debt rating B, quality gates, rule violations by severity and the modules and files with the most debt"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:strata",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "repository.read",
+      "label": "Read the source files and git history of the repository you pick, on this computer",
+      "risk": "low"
+    },
+    {
+      "id": "chrome.rail.button",
+      "label": "Add a Strata button to the desktop rail",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

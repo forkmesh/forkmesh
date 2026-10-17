@@ -195,6 +195,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     var office: OfficeChannelService? = null
         set(value) {
             value?.retention = retention
+            value?.addListener { purgePrivatePings() }
             value?.onMessage = {
                 filePing(it)
                 if (relay.currentConversation == it.conversation) queueReadMark(it.conversation)
@@ -229,6 +230,10 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     @Volatile
     var pings: LocalPingLog? = null
+        set(value) {
+            field = value
+            purgePrivatePings()
+        }
 
     @Volatile
     var onPingsChanged: (() -> Unit)? = null
@@ -254,7 +259,10 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     init {
         extras.sink = relay
         extras.authorOf = { conversation, id -> messages(conversation).firstOrNull { it.id == id }?.senderId }
-        extras.onChannelJoined = { relay.addChannel(it) }
+        extras.onChannelJoined = {
+            relay.addChannel(it)
+            purgePrivatePings()
+        }
         extras.onChannelRemoved = { relay.removeChannel(it) }
         relay.observeMessages {
             filePing(it)
@@ -267,6 +275,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         val log = pings ?: return
         if (message.self || message.id.isEmpty() || nowMs - message.timestamp >= PING_FRESH_MS) return
         val conversation = message.conversation
+        if (isPrivateRoom(conversation)) return
         val name = message.senderName.trim()
         val who = name.ifEmpty { "Someone" }
         val text = message.text.trim()
@@ -276,11 +285,15 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                 body = if (name.isEmpty()) "Someone new said hello in #welcome" else "$name said hello in #welcome"
                 "New user joined"
             }
-            conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation) -> "$who sent you a message"
             else -> "$who in ${office?.room(conversation)?.name ?: conversation}"
         }
         log.recordChat(message.id, name, title, body, conversation, message.timestamp, relay.currentConversation == conversation) ?: return
         onPingsChanged?.invoke()
+    }
+
+    fun purgePrivatePings() {
+        val log = pings ?: return
+        if (log.removeChats { it.isNotEmpty() && isPrivateRoom(it) }) onPingsChanged?.invoke()
     }
 
     private fun notice(text: String) {

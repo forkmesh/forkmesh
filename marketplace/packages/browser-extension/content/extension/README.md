@@ -88,6 +88,16 @@ LinkedIn/GitHub/X profile, phone, or name when the address or company
 supports it. A name that contradicts the record's or fits two records never
 matches on its own, and the panel says how a record was found.
 
+**Zoho Mail header with names only**: Zoho often shows the sender as a name
+with no address in the open message (a Gmail reaction such as "Ada a réagi
+depuis Gmail" is one), which before 2.23.1 left the header at "No contact
+address found on this email". The reader now looks for the address in three
+more places, in order: any attribute of the message header (tooltips,
+`aria-label`, avatar URLs, URL-encoded `%40` included), the header's text, and
+the open message's row in the list (found by the message id from the URL,
+else the selected row). The list row gives the sender of received mail and
+the recipient of sent mail.
+
 **Mastodon**: add each instance in the popup (**Mastodon instances**), or
 press **Record this toot in the CRM** on an instance not added yet; Chrome asks
 for that host once. Conversations are linked by `@name@instance`.
@@ -122,6 +132,38 @@ redone as Zoho loads more while you scroll; the choice lasts until the tab is
 reloaded. Keyboard navigation and shift-click selection still follow Zoho's
 order. Nothing is read from or sent to ForkMesh, and it needs no sign-in
 (`zoho-sort.js`).
+
+**Inbox zero in Zoho Mail** (2.24.0): a second strip under the sort header
+holds the bulk tools. They work on the rows Zoho has loaded, like the sort, and
+the count beside them says how many are shown (`12 of 340 loaded`).
+
+- **Search** filters the list as you type. Every word must match the subject
+  or the sender; `from:acme` looks only in the sender, `subject:invoice` only
+  in the subject, and `"two words"` keeps a phrase together. Case, accents and
+  `Re:`/`Fwd:` prefixes are ignored. Escape clears it.
+- **Group by sender** orders the list by sender, largest group first, Zoho's
+  order (or the chosen sort) inside each group, and opens a list of senders
+  with their counts. Picking one shows only that sender's messages, marked by
+  a `From:` chip; its × shows every sender again.
+- **Select N**, **Mark read N**, **Archive N** and **Delete N** act on exactly
+  the messages shown, or every loaded message when nothing filters the list.
+  The extension ticks those rows with Zoho's own checkboxes (and unticks any
+  other), checks that Zoho now selects exactly that set, then presses Zoho's
+  own toolbar button with that name, the one nearest the list. If Zoho
+  selected a different set, nothing else is done; if the button is not on
+  screen (for example inside a More menu), the messages stay selected for
+  Zoho's toolbar. **Delete** first asks `Delete N messages? Zoho Mail moves
+  them to Trash.`, and is refused if the shown count changed before you
+  confirmed. Zoho's permanent delete is never pressed.
+
+Nothing is read from or sent to ForkMesh, there is no request to Zoho's API,
+and the search, group and filter last until the tab is reloaded. Keys typed in
+the search box are kept from Zoho's keyboard shortcuts. The matching, grouping
+and button-name logic is `zoho-tidy.js`, tested by
+`tests/zoho_tidy_harness.js`; `zoho-sort.js` reads the rows and drives Zoho's
+page. Zoho's markup is not documented, so the checkbox, selection and toolbar
+lookups go by role, ARIA state and labels (`Delete`, `Move to Trash`,
+`Archive`, `Mark as read`) rather than Zoho class names.
 
 **Save this page to a contact** appends a dated line with the current page's
 title and address to a contact's notes; only the address bar is read.
@@ -306,7 +348,8 @@ extension's storage with the host permission Chrome granted.
 | `popup-vault.js`   | The popup's Password Vault section.                           |
 | `panel.js`         | The CRM panel and header, shared by every page and the popup. |
 | `content.js`       | Reads the open email in Gmail and Zoho Mail; tracks sends.    |
-| `zoho-sort.js`     | The Sender, Subject and Date sort header above a Zoho Mail list. |
+| `zoho-sort.js`     | The sort header and inbox-zero tools above a Zoho Mail list. |
+| `zoho-tidy.js`     | Search, sender grouping and Zoho button matching for `zoho-sort.js`. |
 | `mastodon.js`      | Reads the open conversation on a Mastodon instance.           |
 | `x.js`             | Reads the tracked X profile's counts for Marketing.           |
 | `x-developer.js`   | Guides Connect X through X's developer console and reads the keys. |

@@ -12,6 +12,7 @@ import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.util.Base64
 
 enum class AppStoreTone(val wire: String) {
     ACTION("action"), PENDING("pending"), GOOD("good"), NEUTRAL("neutral");
@@ -130,12 +131,30 @@ data class AppStoreGroup(
     }
 }
 
+data class AppStoreScreenshot(val id: String = "", val width: Int = 0, val height: Int = 0) {
+    val aspectRatio: Float? get() = if (width > 0 && height > 0) width.toFloat() / height else null
+
+    companion object {
+        const val MAX_PER_FEEDBACK = 4
+        private val ID = Regex("^[0-9a-f]{24}$")
+
+        fun isValidId(id: String): Boolean = ID.matches(id)
+
+        fun fromJson(json: JsonMap): AppStoreScreenshot? {
+            val id = json.str("id").trim()
+            if (!isValidId(id)) return null
+            return AppStoreScreenshot(id, json.int("width").coerceIn(0, 20000), json.int("height").coerceIn(0, 20000))
+        }
+    }
+}
+
 data class AppStoreFeedback(
     val kind: String = "screenshot",
     val createdAt: String = "",
     val from: String = "",
     val device: String = "",
     val comment: String = "",
+    val screenshots: List<AppStoreScreenshot> = emptyList(),
 ) {
     val crash: Boolean get() = kind == "crash"
 
@@ -143,6 +162,7 @@ data class AppStoreFeedback(
         fun fromJson(json: JsonMap) = AppStoreFeedback(
             json.str("kind").ifEmpty { "screenshot" }, json.str("createdAt"), json.str("from").ifEmpty { "anonymous" },
             json.str("device"), json.str("comment"),
+            json.maps("screenshots").mapNotNull(AppStoreScreenshot::fromJson).take(AppStoreScreenshot.MAX_PER_FEEDBACK),
         )
     }
 }
@@ -231,6 +251,39 @@ object AppStoreStatus {
     const val REVIEWS = "reviews"
 
     fun load(client: PackagesClient): AppStoreStatusReply = AppStoreStatusReply.fromJson(client.call("GET", API))
+
+    const val SCREENSHOT_MISSING = "This screenshot has not been uploaded yet. Run the iOS App Store status shortcut on your desktop again."
+    private val MISSING_CODES = setOf("screenshot_not_found", "screenshot_not_in_snapshot", "not_found", "http_404")
+    private val JPEG = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+    private val PNG = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+
+    fun screenshotPath(id: String): String = "$API/screenshots/$id"
+
+    fun screenshotTitle(index: Int, count: Int): String = if (count > 1) "Screenshot ${index + 1} of $count" else "Screenshot"
+
+    fun screenshotBytes(json: JsonMap): ByteArray? {
+        val bytes = runCatching { Base64.getDecoder().decode(json.str("data")) }.getOrNull() ?: return null
+        val magic = when (json.str("mime")) {
+            "image/jpeg" -> JPEG
+            "image/png" -> PNG
+            else -> return null
+        }
+        if (bytes.size < magic.size || !magic.indices.all { bytes[it] == magic[it] }) return null
+        return bytes
+    }
+
+    fun loadScreenshot(client: PackagesClient, shot: AppStoreScreenshot): ByteArray {
+        if (!AppStoreScreenshot.isValidId(shot.id)) throw PackagesException("not_found", 404)
+        val reply = try {
+            client.call("GET", screenshotPath(shot.id))
+        } catch (error: PackagesException) {
+            if (error.code in MISSING_CODES) throw ScreenshotMissingException()
+            throw error
+        }
+        return screenshotBytes(reply) ?: throw PackagesException("invalid_image")
+    }
+
+    class ScreenshotMissingException : RuntimeException(SCREENSHOT_MISSING)
 
     fun epochMs(stamp: String?): Long? {
         val text = stamp?.trim().orEmpty()

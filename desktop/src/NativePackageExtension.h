@@ -26,6 +26,13 @@ using NativePackageRequest =
     std::function<void(const QByteArray &, const QString &, const QJsonObject &,
                        NativePackageReplyHandler)>;
 
+struct NativePackageRepository {
+    QString key;
+    QString title;
+    QString path;
+    QString ref;
+};
+
 struct NativePackageHost {
     // Manifest metadata is supplied by the generic host. A package can adapt
     // its own UI without reaching into MainWindow or assuming its catalog id.
@@ -57,6 +64,10 @@ struct NativePackageHost {
     std::function<QString()> accountName;
     std::function<void(const QString &)> openDirectMessage;
     std::function<void(const QString &)> openUserProfile;
+    std::function<QList<NativePackageRepository>()> repositories;
+    std::function<NativePackageRepository()> currentRepository;
+    std::function<void(const NativePackageRepository &, const QString &, int)>
+        openRepositoryFile;
 };
 
 struct NativePackagePromptTarget {
@@ -135,6 +146,7 @@ public:
     virtual void activateRailStep(const QString &, const QString &) {}
     virtual void openRailTile(const QString &) {}
     virtual void packageChanged() {}
+    virtual void repositoryChanged() {}
 };
 
 using NativePackageFactory =

@@ -2,7 +2,11 @@
 #include "AppStoreStatusModel.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QDateTime>
+#include <QDialog>
+#include <QImage>
+#include <QToolButton>
 #include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -296,6 +300,98 @@ void testPage()
 
 }
 
+namespace {
+
+QByteArray pngBytes()
+{
+    QImage image(40, 80, QImage::Format_RGB32);
+    image.fill(QColor(40, 90, 200));
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return bytes;
+}
+
+void testScreenshots()
+{
+    const QString first = QStringLiteral("3f1c2a9b8d7e6f5a4b3c2d1e");
+    const QString second = QStringLiteral("aaaaaaaaaaaaaaaaaaaaaaaa");
+    const QJsonObject feedback{
+        {QStringLiteral("kind"), QStringLiteral("screenshot")},
+        {QStringLiteral("from"), QStringLiteral("t@example.com")},
+        {QStringLiteral("comment"), QStringLiteral("Show time as 5:45pm")},
+        {QStringLiteral("screenshots"),
+         QJsonArray{QJsonObject{{QStringLiteral("id"), first}, {QStringLiteral("width"), 1179},
+                                {QStringLiteral("height"), 2556}},
+                    QJsonObject{{QStringLiteral("id"), QStringLiteral("../etc/passwd")}},
+                    QJsonObject{{QStringLiteral("id"), second}, {QStringLiteral("width"), -4}}}}};
+    const QList<Screenshot> shots = screenshotsOf(feedback);
+    check(shots.size() == 2 && shots[0].id == first && shots[0].width == 1179 && shots[0].height == 2556 &&
+              shots[1].id == second && shots[1].width == 0,
+          "screenshotsOf keeps well-formed ids and clamps sizes");
+    check(screenshotPath(first) == QLatin1String("/api/app-store-status/screenshots/3f1c2a9b8d7e6f5a4b3c2d1e"),
+          "a screenshot is read from the package API");
+    const QByteArray png = pngBytes();
+    const QJsonObject good{{QStringLiteral("mime"), QStringLiteral("image/png")},
+                           {QStringLiteral("data"), QString::fromLatin1(png.toBase64())}};
+    check(screenshotBytes(good) == png, "screenshotBytes decodes a PNG");
+    QJsonObject lying = good;
+    lying.insert(QStringLiteral("mime"), QStringLiteral("image/jpeg"));
+    check(screenshotBytes(lying).isEmpty(), "screenshotBytes refuses bytes that do not match the type");
+    check(screenshotBytes(QJsonObject{{QStringLiteral("mime"), QStringLiteral("image/png")},
+                                      {QStringLiteral("data"), QStringLiteral("%%%")}})
+              .isEmpty(),
+          "screenshotBytes refuses broken base64");
+
+    QJsonObject snapshot = QJsonDocument::fromJson(R"({"format": "forkmesh-app-store-status-v1",
+        "app": {"bundleId": "com.forkmesh.app"}})").object();
+    snapshot.insert(QStringLiteral("feedback"), QJsonArray{feedback});
+    const QJsonObject payload{{QStringLiteral("ok"), true},
+                              {QStringLiteral("published"), true},
+                              {QStringLiteral("publishedAt"), double(QDateTime::currentMSecsSinceEpoch())},
+                              {QStringLiteral("snapshot"), snapshot}};
+    QStringList calls;
+    forkmesh::market::NativePackageHost host;
+    host.request = [&](const QByteArray &method, const QString &path, const QJsonObject &,
+                       forkmesh::market::NativePackageReplyHandler done) {
+        calls.append(QString::fromLatin1(method) + QLatin1Char(' ') + path);
+        if (path == screenshotPath(first))
+            done(true, good, QString());
+        else if (path.startsWith(QLatin1String("/api/app-store-status/screenshots/")))
+            done(false, QJsonObject{{QStringLiteral("error"), QStringLiteral("screenshot_not_found")}},
+                 QStringLiteral("HTTP 404"));
+        else
+            done(true, payload, QString());
+    };
+    AppStoreStatusFeature page(host);
+    page.resize(900, 700);
+    page.refresh();
+    const QList<QToolButton *> buttons = page.findChildren<QToolButton *>(QStringLiteral("appStoreScreenshot"));
+    check(buttons.size() == 2, "each screenshot gets a thumbnail button");
+    check(buttons.size() == 2 && buttons[0]->property("loaded").toBool() && !buttons[0]->icon().isNull() &&
+              !buttons[1]->property("loaded").toBool() && buttons[1]->text() == QLatin1String("Not uploaded"),
+          "thumbnails show the picture, or say it is not uploaded yet");
+    check(calls.count(QStringLiteral("GET ") + screenshotPath(first)) == 1,
+          "each screenshot is fetched once", calls.join(QStringLiteral(", ")));
+    page.refresh();
+    check(calls.count(QStringLiteral("GET ") + screenshotPath(first)) == 1,
+          "a refresh reuses screenshots already fetched", calls.join(QStringLiteral(", ")));
+    QToolButton *opened = page.findChildren<QToolButton *>(QStringLiteral("appStoreScreenshot")).value(0);
+    if (opened)
+        opened->click();
+    auto *dialog = page.findChild<QDialog *>(QStringLiteral("appStoreScreenshotDialog"));
+    auto *image = dialog ? dialog->findChild<QLabel *>(QStringLiteral("appStoreScreenshotImage")) : nullptr;
+    check(dialog && image && !image->pixmap().isNull() && image->pixmap().height() == 80,
+          "clicking a thumbnail opens the full-size picture");
+    check(dialog && hasLabel(dialog, QStringLiteral("Screenshot 1 of 2")),
+          "the viewer says which screenshot it shows");
+    if (dialog)
+        dialog->close();
+}
+
+}
+
 int main(int argc, char **argv)
 {
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
@@ -304,6 +400,7 @@ int main(int argc, char **argv)
     testTimes();
     testSnapshotParts();
     testPage();
+    testScreenshots();
     std::printf("%s: %d failure(s)\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
 }

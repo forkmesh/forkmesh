@@ -334,6 +334,7 @@ final class DirectCallsTests: XCTestCase {
         XCTAssertTrue(started)
         XCTAssertEqual(engine.phase, .ringing)
         XCTAssertEqual(engine.partner, "pat")
+        XCTAssertEqual(engine.stateLine, "Calling @pat…")
         XCTAssertEqual(signalTypes(), ["call-invite"])
         XCTAssertEqual(signals[0].2["media"]?.text, "video")
         let callId = signals[0].2["call"]?.text ?? ""
@@ -359,16 +360,64 @@ final class DirectCallsTests: XCTestCase {
             frame("call-ice", call: callId, extra: ["to": "me-node", "ice": ["candidate": "late"]]),
             conversation: DirectCallsTests.conversation)
         XCTAssertEqual(peer.added.map { $0["candidate"]?.text ?? "" }, ["late"])
+        XCTAssertEqual(engine.stateLine, "Connecting…")
         peer.onLive?()
         XCTAssertEqual(engine.phase, .live)
+        XCTAssertEqual(engine.stateLine, "Connected · end-to-end encrypted")
         engine.toggleMute()
         XCTAssertEqual(peer.muted, [true])
         engine.toggleCamera()
         XCTAssertEqual(peer.cameraOff, [true])
         await engine.hangUp()
         XCTAssertNil(engine.phase)
+        XCTAssertEqual(engine.stateLine, "")
         XCTAssertTrue(peer.closed)
         XCTAssertEqual(signalTypes().last, "call-bye")
+    }
+
+    @MainActor func testThePreCallScreenNamesThePartnerBeforeRinging() {
+        let engine = makeEngine()
+        XCTAssertEqual(engine.partnerName(for: DirectCallsTests.conversation), "pat")
+        XCTAssertEqual(engine.partnerName(for: ""), "")
+        XCTAssertNil(engine.phase)
+        XCTAssertTrue(signals.isEmpty)
+    }
+
+    func testRouteNotesSayWhetherAServerSitsInBetween() {
+        XCTAssertEqual(DirectCallRoute(rawValue: "direct")?.note, "Direct · peer-to-peer, no server in between")
+        XCTAssertEqual(DirectCallRoute(rawValue: "relay")?.note, "Relayed · through a TURN relay server (third party)")
+        XCTAssertNil(DirectCallRoute(rawValue: "srflx"))
+        XCTAssertEqual(DirectCallRoute.hint, "Calls go directly between your devices when possible.")
+    }
+
+    func testRingbackIsTwoSecondsOfFourFortyAndFourEightyThenFourSilent() {
+        let rate = 8000
+        let pcm = DirectCallTones.ringback(rate: rate)
+        XCTAssertEqual(pcm.count, 6 * rate)
+        let on = pcm[0..<(2 * rate)].map { abs(Int($0)) }.max() ?? 0
+        XCTAssertGreaterThan(on, 8000)
+        XCTAssertLessThan(on, 32767)
+        XCTAssertTrue(pcm[(2 * rate)...].allSatisfy { $0 == 0 })
+        XCTAssertEqual(pcm.first, 0)
+        XCTAssertEqual(DirectCallTones.ringbackHz, [440, 480])
+    }
+
+    func testIncomingRingIsADoubleBurstEveryThreeSeconds() {
+        let rate = 8000
+        let pcm = DirectCallTones.ring(rate: rate)
+        XCTAssertEqual(pcm.count, 3 * rate)
+        func loud(_ from: Double, _ to: Double) -> Bool {
+            pcm[Int(from * Double(rate))..<Int(to * Double(rate))].contains { abs(Int($0)) > 4000 }
+        }
+        func quiet(_ from: Double, _ to: Double) -> Bool {
+            pcm[Int(from * Double(rate))..<Int(to * Double(rate))].allSatisfy { $0 == 0 }
+        }
+        XCTAssertTrue(loud(0.05, 0.35))
+        XCTAssertTrue(quiet(0.41, 0.59))
+        XCTAssertTrue(loud(0.65, 0.95))
+        XCTAssertTrue(quiet(1.01, 3))
+        XCTAssertTrue(DirectCallTones.render(frequencies: [], bursts: DirectCallTones.ringBursts, cycle: 1, rate: rate)
+            .allSatisfy { $0 == 0 })
     }
 
     @MainActor func testCalleeFlowAcceptsAndAnswers() async throws {

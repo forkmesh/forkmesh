@@ -3956,6 +3956,8 @@
     if (ev.type === "thread-reply") return { label: "reply", tone: neutral };
     if (ev.type === "thread-state") return { label: `thread ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
+    if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
     return { label: "comment", tone: neutral };
   }
 
@@ -4050,7 +4052,9 @@
     if (!body) {
       const icon = ev.type === "agent" ? "bot"
         : ev.type === "review" && ev.state === "approved" ? "check"
-          : ev.type === "review" && ev.state === "changes_requested" ? "file-diff" : "eye";
+          : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
+            : ev.type === "status" ? "git-pull-request-closed"
+              : ev.type === "delete" ? "trash-2" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -4725,7 +4729,24 @@
       </form>`;
   }
 
-  function renderPullReviewForm(number) {
+  function pullLifecycleAllowed(repo, parsed) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !parsed) return false;
+    const values = parsed.values || {};
+    const status = String(values.status || "open").trim().toLowerCase();
+    if (status !== "open" && status !== "closed") return false;
+    if (parsed.pullMergeAuthorized === true || isRepoOwner(repo) || state.session?.isAdmin) return true;
+    return String(values.authorName || "").trim().toLowerCase() === me;
+  }
+
+  function renderPullLifecycleButtons(repo, parsed) {
+    if (!pullLifecycleAllowed(repo, parsed)) return "";
+    const open = String(parsed.values?.status || "open").trim().toLowerCase() === "open";
+    const button = "inline-flex h-control items-center gap-2 rounded-md border border-border bg-secondary px-3 text-control font-medium transition-colors hover:bg-secondary/70 disabled:opacity-50";
+    return `${open ? `<button type="submit" data-repo-pull-review-action="close" class="${button} text-foreground"><i data-lucide="git-pull-request-closed" class="h-4 w-4 text-muted-foreground"></i>Close pull request</button>` : ""}<button type="submit" data-repo-pull-review-action="delete" class="${button} text-destructive"><i data-lucide="trash-2" class="h-4 w-4 text-muted-foreground"></i>Delete pull request</button>`;
+  }
+
+  function renderPullReviewForm(repo, number, parsed) {
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
@@ -4739,6 +4760,7 @@
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
             <div class="flex flex-wrap items-center gap-2">
+              ${renderPullLifecycleButtons(repo, parsed)}
               <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
               <button type="submit" data-repo-pull-review-action="approved" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="check" class="h-4 w-4 text-muted-foreground"></i>Approve</button>
               <button type="submit" data-repo-pull-review-action="comment" class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50">Comment</button>
@@ -4748,8 +4770,65 @@
       </form>`;
   }
 
+  async function handlePullLifecycle(repo, form, action) {
+    const number = Number(form.dataset.repoPullReviewNumber || 0);
+    const hint = form.querySelector("[data-repo-pull-review-hint]");
+    const buttons = form.querySelectorAll("[data-repo-pull-review-action]");
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!number) {
+      setHint("This pull request hasn't finished loading yet.", true);
+      return;
+    }
+    const deleting = action === "delete";
+    const prompt = deleting
+      ? `Delete pull request #${number}? Its changes are removed and it leaves the pull request list.`
+      : `Close pull request #${number} without merging it?`;
+    if (!window.confirm(prompt)) return;
+    buttons.forEach((button) => { button.disabled = true; });
+    setHint("Signing and sending…");
+    try {
+      if (deleting) await submitWebPullDelete(repo, number);
+      else await submitWebPullClose(repo, number);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "pulls" && String(detail.number) === String(number)) {
+        detail.parsed.values = { ...(detail.parsed.values || {}), status: deleting ? "deleted" : "closed" };
+        const container = $("[data-repo-pulls]");
+        if (container) {
+          container.innerHTML = renderRepoRecordDetail(repo, "pulls", number, detail.parsed);
+          window.lucide?.createIcons();
+        }
+      }
+      const notice = $("[data-repo-pull-review-hint]");
+      if (notice) {
+        notice.className = "text-[11px] text-muted-foreground";
+        notice.textContent = deleting
+          ? `Delete of pull request #${number} sent. It leaves the list once the mirror applies it.`
+          : `Pull request #${number} is closing. The mirror applies it shortly.`;
+      }
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      const code = String(error?.message || "");
+      setHint(
+        code === "not_authorized" ? "Only the pull request's author or a maintainer can do this."
+          : code === "pull_final" ? "This pull request is already merged or deleted."
+          : code === "pull_unavailable" ? "The pull request record could not be read. Try again in a moment."
+          : code === "bad_signature" ? "Could not verify the request's signature."
+          : deleting ? "Could not delete the pull request. Please try again."
+          : "Could not close the pull request. Please try again.",
+        true);
+    }
+  }
+
   async function handlePullReviewSubmit(repo, form, action) {
     if (!repo || !form) return;
+    if (action === "close" || action === "delete") {
+      await handlePullLifecycle(repo, form, action);
+      return;
+    }
     const number = Number(form.dataset.repoPullReviewNumber || 0);
     const bodyInput = form.querySelector("[data-repo-pull-review-body]");
     const buttons = form.querySelectorAll("[data-repo-pull-review-action]");
@@ -6098,7 +6177,7 @@
     const pullConversationSection = isPulls ? `
           <section class="grid min-w-0 gap-3">
             <div data-repo-pull-conversation data-empty="${pullTimeline.length ? "false" : "true"}" class="grid min-w-0 gap-2">${renderRepoPullConversation(pullTimeline)}</div>
-            ${renderPullReviewForm(number)}
+            ${renderPullReviewForm(repo, number, parsed)}
           </section>` : "";
     const pullFilesSection = isPulls
       ? renderRepoPullFilesSection(pullPatch, pullViewed)
@@ -8946,6 +9025,7 @@
   }
 
   function pullMatchesQueryFilters(pull, filters = pullQueryFilters()) {
+    if (String(pull?.state || "").trim().toLowerCase() === "deleted") return false;
     if (filters.author && String(pull.author || "").toLowerCase() !== filters.author.toLowerCase()
         && String(pull.authorKey || "").toLowerCase() !== filters.author.toLowerCase()) return false;
     if (filters.base && String(pull.base || "").toLowerCase() !== filters.base.toLowerCase()) return false;

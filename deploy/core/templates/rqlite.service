@@ -28,7 +28,8 @@ Restart=always
 RestartSec=2s
 TimeoutStopSec=30s
 OOMScoreAdjust=-800
-MemoryMax=220M
+MemoryHigh=260M
+MemoryMax=320M
 LimitNOFILE=65536
 # Database pages never reach the swapfile or zram.
 MemorySwapMax=0

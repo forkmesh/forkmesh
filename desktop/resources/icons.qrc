@@ -98,6 +98,10 @@
         <file alias="fish.svg">icons/forkmesh/fish.svg</file>
         <file alias="palette.svg">icons/forkmesh/palette.svg</file>
         <file alias="person-standing.svg">icons/forkmesh/person-standing.svg</file>
+        <file alias="layers.svg">icons/forkmesh/layers.svg</file>
+        <file alias="flame.svg">icons/forkmesh/flame.svg</file>
+        <file alias="brain.svg">icons/forkmesh/brain.svg</file>
+        <file alias="shield.svg">icons/forkmesh/shield.svg</file>
     </qresource>
     <!-- VS Code codicons (CC BY 4.0, see icons/LICENSE-codicons.txt), used where
          octicons has no equivalent glyph. tintedOcticonPixmap falls back to this

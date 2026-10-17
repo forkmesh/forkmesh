@@ -2860,6 +2860,7 @@ async def _apply_agent_status(
     # report anything. The gates above are unchanged: this is still only
     # reachable for agent work, by its creator or a manager.
     agent = dict(current.get("agent") or {})
+    previous_status = str(agent.get("status") or "").lower()
     if isinstance(agent_run, dict):
         agent.update({
             field: value
@@ -2874,13 +2875,14 @@ async def _apply_agent_status(
         "WHERE org_bi=? AND task_id=?",
         await runtime.seal(current), now, org_bi, task_id,
     )
-    await runtime.audit(
-        actor,
-        "organization.task_agent_status",
-        "organization_task",
-        task_id,
-        details={"status": status},
-    )
+    if previous_status != status:
+        await runtime.audit(
+            actor,
+            "organization.task_agent_status",
+            "organization_task",
+            task_id,
+            details={"status": status},
+        )
     return ""
 
 
@@ -3747,13 +3749,14 @@ async def _refuse_delete(
 
 async def _apply_trash(
         runtime, org_bi, account_bi, actor, row, data, blockers, force,
-        reason, now, batch=False):
+        reason, now, batch=False, deletions=None):
     task_id = str(row.get("task_id") or "")
     participants = await _participants(runtime, org_bi, task_id)
     items = _work_items(data.get("workItems"))[0]
+    completes = max(0, _integer(row.get("completed_at"))) <= 0
     sealed = dict(data)
     sealed["trash"] = {"by": _text(actor, 64).lower(), "reason": reason,
-                       "at": int(now)}
+                       "at": int(now), "completed": completes}
     elapsed_ms = max(0, _integer(row.get("elapsed_ms")))
     started_at = max(0, _integer(row.get("started_at")))
     if str(row.get("status") or "") == "active" and started_at:
@@ -3763,10 +3766,12 @@ async def _apply_trash(
         "UPDATE organization_tasks SET deleted_at=?,deleted_by_bi=?,"
         "status=CASE WHEN status='active' THEN 'idle' ELSE status END,"
         "active_assignee_bi='',started_at=0,next_checkin_at=0,"
+        "completed_at=CASE WHEN completed_at>0 THEN completed_at ELSE ? END,"
         "elapsed_ms=?,data=?,updated_at=? "
         "WHERE org_bi=? AND task_id=? AND deleted_at=0",
         int(now),
         str(account_bi or ""),
+        int(now),
         elapsed_ms,
         await runtime.seal(sealed),
         int(now),
@@ -3795,16 +3800,23 @@ async def _apply_trash(
             "overrode": overridden,
             "batch": bool(batch),
             "hasReason": bool(reason),
+            "completed": completes,
             "workItems": len(items),
         },
     )
     await _record_event(
         runtime, org_bi, task_id, account_bi, actor, "deleted", now,
         {"summary": reason or "moved to trash"})
+    try:
+        projected = await _project_task(runtime, row, now)
+    except Exception:
+        projected = None
     await _notify_activity(
-        runtime, org_bi, actor, task_id, row, now, "deleted",
+        runtime, org_bi, actor, task_id, projected or row, now, "deleted",
         participants=participants,
     )
+    if projected and deletions is not None:
+        deletions.append(projected)
     deleted_at = _integer(trashed.get("deleted_at"), int(now))
     return {
         "id": task_id,
@@ -3812,6 +3824,16 @@ async def _apply_trash(
         "purgeAt": deleted_at + TRASH_RETENTION_MS,
         "workItems": items,
     }
+
+
+async def _notify_deletions(runtime, org_bi, actor, tasks, reason):
+    notifier = getattr(runtime, "notify_organization_task_deletions", None)
+    if not callable(notifier) or not tasks:
+        return
+    try:
+        await notifier(org_bi, actor, list(tasks), reason)
+    except Exception:
+        pass
 
 
 async def _delete(
@@ -3826,11 +3848,13 @@ async def _delete(
         return await _refuse_delete(
             runtime, actor, {**refusal, "forced": force}, status,
             "DELETE", "/api/tasks/" + task_id, now)
+    deletions = []
     result = await _apply_trash(
         runtime, org_bi, account_bi, actor, row, current, blockers, force,
-        reason, now)
+        reason, now, deletions=deletions)
     if result is None:
         return _response(runtime, {"error": "task_not_found"}, status=404)
+    await _notify_deletions(runtime, org_bi, actor, deletions, reason)
     return _response(runtime, {
         "ok": True,
         "deleted": True,
@@ -3890,14 +3914,16 @@ async def _delete_batch(
         }, status, "POST", "/api/tasks/delete", now)
     deleted = []
     work_items = {}
+    deletions = []
     for row, current, blockers in prepared:
         result = await _apply_trash(
             runtime, org_bi, account_bi, actor, row, current, blockers,
-            force, reason, now, batch=True)
+            force, reason, now, batch=True, deletions=deletions)
         if result is not None:
             deleted.append(result["id"])
             if result["workItems"]:
                 work_items[result["id"]] = result["workItems"]
+    await _notify_deletions(runtime, org_bi, actor, deletions, reason)
     return _response(runtime, {
         "ok": True,
         "deleted": deleted,
@@ -3927,10 +3953,13 @@ async def _restore(runtime, org_bi, account_bi, actor, task_id, principal,
         current = None
     if not isinstance(current, dict):
         return _response(runtime, {"error": "task_unavailable"}, status=500)
-    current.pop("trash", None)
+    trash = current.pop("trash", None)
+    reopen = bool(isinstance(trash, dict) and trash.get("completed"))
     await runtime.d1_run(
         "UPDATE organization_tasks SET deleted_at=0,deleted_by_bi='',"
+        "completed_at=CASE WHEN ? THEN 0 ELSE completed_at END,"
         "data=?,updated_at=? WHERE org_bi=? AND task_id=? AND deleted_at>0",
+        1 if reopen else 0,
         await runtime.seal(current),
         int(now),
         org_bi,

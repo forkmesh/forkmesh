@@ -2035,6 +2035,10 @@ QString PullStore::contentForSigning(const PullEvent &ev)
         return ev.threadId + nul + ev.state + nul + ev.body;
     if (ev.type == "suggestion-state")
         return ev.threadId + nul + ev.state + nul + ev.appliedCommit + nul + ev.body;
+    if (ev.type == "status")
+        return ev.state + nul + ev.body;
+    if (ev.type == "delete")
+        return ev.body;
     return QString();
 }
 
@@ -2166,7 +2170,8 @@ bool writeEventFileIn(const QString &dir, int index, const PullEvent &ev,
         lines << "patchset: " + ev.patchset;
     if (!ev.anchorLines.isEmpty())
         lines << "anchorLinesB64: " + encodeFrontMatterBlob(ev.anchorLines);
-    if ((ev.type == "thread-state" || ev.type == "suggestion-state") &&
+    if ((ev.type == "thread-state" || ev.type == "suggestion-state" ||
+         ev.type == "status") &&
         !ev.state.isEmpty())
         lines << "state: " + ev.state;
     lines << "sig: " + ev.sig;
@@ -6002,4 +6007,32 @@ QList<PullRequest> PullStore::loadFromMirror(QString *error, bool strict,
     std::sort(pulls.begin(), pulls.end(),
               [](const PullRequest &a, const PullRequest &b) { return a.number < b.number; });
     return pulls;
+}
+
+bool PullStore::isLifecycleEvent(const PullEvent &ev)
+{
+    return ev.type == QLatin1String("status") || ev.type == QLatin1String("delete");
+}
+
+bool PullStore::applyRemoteLifecycleEvent(int number, const PullEvent &ev, QString *error)
+{
+    if (!canWrite() || !isLifecycleEvent(ev))
+        return false;
+    PullRequest pr;
+    if (!readPull(number, pr))
+        return true;
+    const QString status = pr.status.trimmed().toLower();
+    if (status == QLatin1String("merged") || status == QLatin1String("closed-merged"))
+        return true;
+    if (ev.type == QLatin1String("delete"))
+        return deletePull(number, /*rewriteHistory=*/false, error);
+    if (ev.state != QLatin1String("closed") || status == QLatin1String("closed"))
+        return true;
+    const QString who = ev.authorName.isEmpty() ? ev.author.left(8) : ev.authorName;
+    pr.status = QStringLiteral("closed");
+    if (!writePull(pr, error))
+        return false;
+    return appendEvent(number, ev,
+                       QStringLiteral("pull #%1: closed (from %2)").arg(number).arg(who),
+                       error);
 }

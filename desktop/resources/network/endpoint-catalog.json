@@ -1978,12 +1978,13 @@
       "pattern": "app.forkmesh.com/api/app-store-status/*",
       "method": "GET",
       "importance": 3,
-      "description": "Exports the App Store Connect snapshot saved for your account",
-      "trigger": "Removing App Store Status from the rail",
-      "modestPerHour": 2,
+      "description": "Reads the tester feedback screenshots your desktop uploaded, and exports the App Store Connect snapshot saved for your account",
+      "trigger": "Opening the App Store Status page (one read per screenshot, kept for the session) and removing App Store Status from the rail",
+      "modestPerHour": 20,
       "alternative": "none: on-demand",
       "requestNeeded": 100,
       "source": [
+        "marketplace/packages/app-store-status/content/desktop/AppStoreStatusFeature.cpp: AppStoreStatusFeature::loadScreenshot",
         "marketplace/packages/app-store-status/content/desktop/AppStoreStatusFeature.cpp: AppStoreStatusFeature::exportData"
       ]
     },

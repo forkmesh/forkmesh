@@ -44,7 +44,8 @@ class AppStoreStatusTest {
           ],
           "feedback": [
             {"kind": "screenshot", "createdAt": "2026-09-01T03:06:00Z", "from": "t@example.com",
-             "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm"}
+             "device": "iPhone16_2 27.0", "comment": "Show time as 5:45pm",
+             "screenshots": [{"id": "3f1c2a9b8d7e6f5a4b3c2d1e", "width": 1179, "height": 2556}]}
           ],
           "reviews": [
             {"createdAt": "2026-10-01T10:00:00Z", "rating": 5, "title": "Great", "territory": "USA",
@@ -101,7 +102,13 @@ class AppStoreStatusTest {
         assertEq(AppStoreGroup("outside", false, 1, false, true, "https://testflight.apple.com/join/x", 0, true), group)
         assertEq("https://testflight.apple.com/join/x", group.openableLink)
 
-        assertEq(AppStoreFeedback("screenshot", "2026-09-01T03:06:00Z", "t@example.com", "iPhone16_2 27.0", "Show time as 5:45pm"), snap.feedback.single())
+        assertEq(
+            AppStoreFeedback(
+                "screenshot", "2026-09-01T03:06:00Z", "t@example.com", "iPhone16_2 27.0", "Show time as 5:45pm",
+                listOf(AppStoreScreenshot("3f1c2a9b8d7e6f5a4b3c2d1e", 1179, 2556)),
+            ),
+            snap.feedback.single(),
+        )
         assertEq(AppStoreReview("2026-10-01T10:00:00Z", 5, "Great", "USA", "Works well"), snap.reviews.single())
         assertEq("ERROR: App Store Connect GET answered 404", snap.unavailable(AppStoreStatus.FEEDBACK))
         assertEq("", snap.unavailable(AppStoreStatus.REVIEWS))
@@ -176,5 +183,54 @@ class AppStoreStatusTest {
         val failing = PackagesClient { _, _, _, _ -> ApiJsonResult(401, mapOf("error" to "invalid_session")) }
         val error = runCatching { AppStoreStatus.load(failing) }.exceptionOrNull()
         assertEq("Sign in again to continue.", error?.message)
+    }
+
+    fun testFeedbackScreenshotsKeepValidIdsOnly() {
+        val snap = AppStoreStatusReply.fromJson(
+            reply(
+                """{"feedback": [{"screenshots": [
+                     {"id": "3f1c2a9b8d7e6f5a4b3c2d1e", "width": 1179, "height": -3},
+                     {"id": "../../etc/passwd"}, {"id": "AAAAAAAAAAAAAAAAAAAAAAAA"}, "junk",
+                     {"id": "aaaaaaaaaaaaaaaaaaaaaaaa"}, {"id": "bbbbbbbbbbbbbbbbbbbbbbbb"},
+                     {"id": "cccccccccccccccccccccccc"}, {"id": "dddddddddddddddddddddddd"}]}, {}]}""",
+            ),
+        ).snapshot!!
+        val shots = snap.feedback[0].screenshots
+        assertEq(
+            listOf("3f1c2a9b8d7e6f5a4b3c2d1e", "aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccc"),
+            shots.map { it.id },
+        )
+        assertEq(AppStoreScreenshot("3f1c2a9b8d7e6f5a4b3c2d1e", 1179, 0), shots[0])
+        assertEq(null, shots[0].aspectRatio)
+        assertEq(0.5f, AppStoreScreenshot("aaaaaaaaaaaaaaaaaaaaaaaa", 100, 200).aspectRatio)
+        assertEq(emptyList<AppStoreScreenshot>(), snap.feedback[1].screenshots)
+    }
+
+    fun testScreenshotsComeFromThePackageApi() {
+        val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13)
+        val encoded = java.util.Base64.getEncoder().encodeToString(png)
+        val asked = mutableListOf<String>()
+        val client = PackagesClient { method, path, _, _ ->
+            asked += "$method $path"
+            when {
+                path.endsWith("/3f1c2a9b8d7e6f5a4b3c2d1e") ->
+                    ApiJsonResult(200, mapOf("ok" to true, "mime" to "image/png", "data" to encoded))
+                path.endsWith("/bbbbbbbbbbbbbbbbbbbbbbbb") ->
+                    ApiJsonResult(200, mapOf("ok" to true, "mime" to "image/jpeg", "data" to encoded))
+                else -> ApiJsonResult(404, mapOf("error" to "screenshot_not_found"))
+            }
+        }
+        assertEq("/api/app-store-status/screenshots/3f1c2a9b8d7e6f5a4b3c2d1e", AppStoreStatus.screenshotPath("3f1c2a9b8d7e6f5a4b3c2d1e"))
+        expect(png.contentEquals(AppStoreStatus.loadScreenshot(client, AppStoreScreenshot("3f1c2a9b8d7e6f5a4b3c2d1e"))))
+        assertEq(listOf("GET /api/app-store-status/screenshots/3f1c2a9b8d7e6f5a4b3c2d1e"), asked)
+        val missing = runCatching { AppStoreStatus.loadScreenshot(client, AppStoreScreenshot("aaaaaaaaaaaaaaaaaaaaaaaa")) }.exceptionOrNull()
+        expect(missing is AppStoreStatus.ScreenshotMissingException)
+        assertEq(AppStoreStatus.SCREENSHOT_MISSING, missing?.message)
+        val lying = runCatching { AppStoreStatus.loadScreenshot(client, AppStoreScreenshot("bbbbbbbbbbbbbbbbbbbbbbbb")) }.exceptionOrNull()
+        expect(lying is PackagesException)
+        assertEq(null, AppStoreStatus.screenshotBytes(mapOf("mime" to "image/png", "data" to "%%%")))
+        assertEq(null, AppStoreStatus.screenshotBytes(mapOf("mime" to "image/gif", "data" to encoded)))
+        assertEq("Screenshot", AppStoreStatus.screenshotTitle(0, 1))
+        assertEq("Screenshot 2 of 3", AppStoreStatus.screenshotTitle(1, 3))
     }
 }

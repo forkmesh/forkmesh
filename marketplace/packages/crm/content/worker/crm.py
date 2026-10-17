@@ -35,6 +35,10 @@ LIST_ACTIVITY_LIMIT = 200
 LIST_ACTIVITY_KEEP_MS = 90 * DAY_MS
 LIST_VIEW_GAP_MS = 30 * 60 * 1000
 LIST_ACTIVITY_NAMES = 5
+CONTACT_NOTE_LIMIT = 4000
+CONTACT_NOTE_KEEP = 100
+NOTE_PING_RECIPIENTS = 50
+NOTE_PING_EXCERPT = 140
 ACTIVITY_QUERIES = (
     ("emails",
      "SELECT sender_name AS name,(created_at+?)/? AS day,COUNT(*) AS n "
@@ -100,6 +104,7 @@ DEFAULT_FLOWS = (
     {"id": "grants", "name": "Grants", "icon": "grants", "stages": (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
+CONTACTED_STAGE = "contacted"
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -809,6 +814,16 @@ def _flow_placement(contact, flows):
                 stage=stage if stage in flow["stages"] else flow["stages"][0])
 
 
+def _contacted_stage(contact, flows):
+    flow = next((item for item in flows if item["id"] == contact.get("flow")), None)
+    stages = list(flow["stages"]) if flow else []
+    if CONTACTED_STAGE not in stages:
+        return ""
+    stage = contact.get("stage")
+    position = stages.index(stage) if stage in stages else 0
+    return CONTACTED_STAGE if position < stages.index(CONTACTED_STAGE) else ""
+
+
 def _pipeline_moved(data):
     return isinstance(data, dict) and ("flow" in data or "stage" in data)
 
@@ -1019,7 +1034,7 @@ def _route(path):
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
         r"(?:/([0-9a-f]{32}|import|export|send|auto|lookup|link|copy|order|team|bulk|merge"
         r"|toots|toot"
-        r"|duplicates|evidence|activity"
+        r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
         r"|delete-column"
         r"|[a-z0-9]{10,40}))?)?",
@@ -1197,6 +1212,7 @@ def _contact_fields(row, data):
         "owner": str(data.get("owner") or ""),
         "source": str(data.get("source") or ""),
         "notes": str(data.get("notes") or ""),
+        "noteLog": _note_log(data.get("noteLog")),
         "lastContactedAt": _integer(data.get("lastContactedAt")),
         "fields": _custom_fields(data.get("fields")),
         "views": _view_ids(data.get("views")),
@@ -1463,6 +1479,59 @@ async def _zoho_mail_import(runtime, connection, limit):
     return {"ok": True, "messages": messages}
 
 
+async def _contacts_by_address(runtime, org_bi):
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? "
+        "ORDER BY updated_at DESC,contact_id LIMIT ?", org_bi, MAX_CONTACTS)
+    primary, other = {}, {}
+    for row in rows or []:
+        data = await runtime.open(row.get("data"))
+        data = data if isinstance(data, dict) else {}
+        contact_id = str(row.get("contact_id") or "")
+        email = _email(data.get("email"))
+        if email:
+            primary.setdefault(email, contact_id)
+        for address in _box_emails(data):
+            other.setdefault(address, contact_id)
+    return {**other, **primary}
+
+
+def _sent_mail_contacts(recipients, mailbox, addresses):
+    matched, seen = [], set()
+    for match in BOX_EMAIL_ANY_RE.finditer(unescape(_text(recipients, 4000))):
+        address = _email(match.group(0))
+        contact_id = addresses.get(address)
+        if address and address != mailbox and contact_id and contact_id not in seen:
+            seen.add(contact_id)
+            matched.append((address, contact_id))
+    return matched
+
+
+async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
+                          sent_at):
+    row = await _contact_row(runtime, org_bi, contact_id)
+    before = await runtime.open(row.get("data")) if row else None
+    if not isinstance(before, dict):
+        return 0
+    contact = dict(before)
+    if sent_at > _integer(contact.get("lastContactedAt")):
+        contact["lastContactedAt"] = sent_at
+    advanced = _contacted_stage(contact, flows)
+    if advanced:
+        contact["stage"] = advanced
+    if contact == before:
+        return 0
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
+        "data=? WHERE org_bi=? AND contact_id=?",
+        account_bi, actor, runtime.now(), await runtime.seal(contact), org_bi,
+        contact_id)
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact)])
+    return 1 if advanced else 0
+
+
 async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     settings = await _opened_settings(runtime, org_bi)
     zoho = settings.get("zoho") if isinstance(settings.get("zoho"), dict) else {}
@@ -1483,6 +1552,9 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     created = 0
     updated = 0
     outbound_recorded = 0
+    contacts_advanced = 0
+    addresses = None
+    flows = await _org_flows(runtime, org_bi)
     now = runtime.now()
     for source in list((result or {}).get("messages") or [])[:limit]:
         source = source if isinstance(source, dict) else {}
@@ -1524,30 +1596,64 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
         )
         updated += 1 if existing else 0
         created += 0 if existing else 1
-        if source.get("sent"):
-            linked, _ = await _linked_email_row(runtime, org_bi, "zoho", provider_id)
-            if not linked:
-                sent_at = received_at or now
-                await runtime.d1_run(
-                    "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
-                    "sender_bi,sender_name,transport,status,external_id,created_at,"
-                    "sent_at,status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    runtime.new_id(), org_bi, org_name, None, account_bi, actor,
-                    "external", "external", provider_id, sent_at, sent_at, now,
-                    await runtime.seal({
-                        "to": _clean(source.get("to"), 1000),
-                        "fromEmail": _email(source.get("from")),
-                        "fromName": _clean(source.get("sender"), 160),
-                        "subject": _clean(source.get("subject"), 300),
-                        "text": "", "html": "",
-                        "providerUrl": _https(source.get("providerUrl")),
-                        "provider": "zoho", "direction": "outbound",
-                        "threadId": _clean(source.get("threadId"), 200),
-                        "mailbox": _email(source.get("from")),
-                        "handle": "", "account": "", "error": "",
-                    }),
-                )
-                outbound_recorded += 1
+        if not source.get("sent"):
+            continue
+        sent_at = received_at or now
+        mailbox = _email(source.get("from"))
+        if addresses is None:
+            addresses = await _contacts_by_address(runtime, org_bi)
+        matched = _sent_mail_contacts(source.get("to"), mailbox, addresses)
+        linked, _ = await _linked_email_row(runtime, org_bi, "zoho", provider_id)
+        if not matched and not linked:
+            await runtime.d1_run(
+                "INSERT INTO crm_email_sends(send_id,org_bi,org_name,contact_id,"
+                "sender_bi,sender_name,transport,status,external_id,created_at,"
+                "sent_at,status_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                runtime.new_id(), org_bi, org_name, None, account_bi, actor,
+                "external", "external", provider_id, sent_at, sent_at, now,
+                await runtime.seal({
+                    "to": _clean(source.get("to"), 1000),
+                    "fromEmail": mailbox,
+                    "fromName": _clean(source.get("sender"), 160),
+                    "subject": _clean(source.get("subject"), 300),
+                    "text": "", "html": "",
+                    "providerUrl": _https(source.get("providerUrl")),
+                    "provider": "zoho", "direction": "outbound",
+                    "threadId": _clean(source.get("threadId"), 200),
+                    "mailbox": mailbox,
+                    "handle": "", "account": "", "error": "",
+                }),
+            )
+            outbound_recorded += 1
+        for index, (address, contact_id) in enumerate(matched):
+            link_id = provider_id if index == 0 else provider_id + "/" + address
+            row = linked if index == 0 else (
+                await _linked_email_row(runtime, org_bi, "zoho", link_id))[0]
+            if str((row or {}).get("contact_id") or ""):
+                contacts_advanced += await _mark_contacted(
+                    runtime, org_bi, account_bi, actor, flows,
+                    str(row.get("contact_id")), sent_at)
+                continue
+            payload, code = await _link_message(
+                runtime, org_bi, org_name, account_bi, actor, {
+                    "provider": "zoho", "direction": "outbound",
+                    "messageId": link_id, "contactId": contact_id,
+                    "contactEmail": address, "mailbox": mailbox,
+                    "fromName": source.get("sender"),
+                    "subject": source.get("subject"),
+                    "threadId": source.get("threadId"),
+                    "providerUrl": _https(source.get("providerUrl")),
+                    "sentAt": sent_at, "createContact": False,
+                }, quiet=True)
+            if code not in (200, 201):
+                continue
+            outbound_recorded += 1 if code == 201 else 0
+            contacts_advanced += 1 if payload.get("stageAdvanced") else 0
+            contact_row = await _contact_row(runtime, org_bi, contact_id)
+            await _record_contact_event(
+                runtime, org_bi, account_bi, actor,
+                await runtime.open(contact_row.get("data")) if contact_row else {},
+                "contact.emailed", {"subject": _clean(source.get("subject"), 200)})
     zoho["lastSyncAt"] = now
     settings["zoho"] = zoho
     await runtime.d1_run(
@@ -1558,7 +1664,8 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     await runtime.audit(
         actor, "crm.zoho.import", "organization", org_name,
         details={"created": created, "updated": updated,
-                 "outboundRecorded": outbound_recorded},
+                 "outboundRecorded": outbound_recorded,
+                 "contactsAdvanced": contacts_advanced},
     )
     if created:
         await _activity_notify(
@@ -1567,6 +1674,7 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     return _response(runtime, {
         "ok": True, "created": created, "updated": updated,
         "outboundRecorded": outbound_recorded,
+        "contactsAdvanced": contacts_advanced,
         "mail": await _mail_messages(runtime, org_bi),
         "settings": await _settings(runtime, org_bi),
     })
@@ -2311,6 +2419,8 @@ def _merged_contact_data(kept, duplicate):
     result["notes"] = _text("\n\n".join(
         note for index, note in enumerate(notes)
         if note and note not in notes[:index]), 20000)
+    result["noteLog"] = _note_log(
+        _note_log(kept.get("noteLog")) + _note_log(duplicate.get("noteLog")))
     result["tags"] = _tags(_tags(kept.get("tags")) + _tags(duplicate.get("tags")))
     if not isinstance(kept.get("account"), dict) and isinstance(duplicate.get("account"), dict):
         result["account"] = duplicate["account"]
@@ -2328,6 +2438,128 @@ def _merged_contact_data(kept, duplicate):
         fields["other_emails"] = f"{known}, {other}" if known else other
     result["fields"] = _custom_fields(fields)
     return result
+
+
+def _note_log(value):
+    entries = {}
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        note_id = str(item.get("id") or "")
+        text = _text(item.get("text"), CONTACT_NOTE_LIMIT).strip()
+        if not text or not CONTACT_ID_RE.fullmatch(note_id):
+            continue
+        entries[note_id] = {"id": note_id, "at": max(0, _integer(item.get("at"))),
+                            "by": _clean(item.get("by"), 64).lower(), "text": text}
+    ordered = sorted(entries.values(), key=lambda entry: (entry["at"], entry["id"]))
+    return ordered[-CONTACT_NOTE_KEEP:]
+
+
+def _note_excerpt(text):
+    clean = _clean(text, NOTE_PING_EXCERPT + 1)
+    if len(clean) <= NOTE_PING_EXCERPT:
+        return clean
+    return clean[:NOTE_PING_EXCERPT - 1].rstrip() + "\u2026"
+
+
+async def _note_recipients(runtime, org_bi, actor, lists):
+    rows = await runtime.d1_all(
+        "SELECT name,role FROM org_members WHERE org_bi=? "
+        "ORDER BY created_at,name LIMIT 500", org_bi)
+    members = {}
+    for row in rows or []:
+        name = _clean(row.get("name"), 64).lower()
+        if name and name not in members:
+            members[name] = str(row.get("role") or "")
+    recipients = {}
+
+    def add(name, view, member):
+        if name and name != actor and name not in recipients:
+            recipients[name] = (view, member)
+
+    if not lists:
+        for name in members:
+            add(name, None, True)
+    for view in lists:
+        owner = _clean(view.get("owner"), 64).lower()
+        for name, role in members.items():
+            if (view.get("visibility") == "organization" or name == owner
+                    or role in MANAGER_ROLES or name in view.get("sharedWith", [])):
+                add(name, view, True)
+        for name in view.get("sharedWith", []):
+            add(name, view, name in members)
+    return list(recipients.items())[:NOTE_PING_RECIPIENTS]
+
+
+def _note_shows_text(view, member):
+    if member or view is None:
+        return True
+    return any(column.get("field") == "notes" and not column.get("hidden")
+               for column in view.get("columns") or [])
+
+
+async def _note_ping(runtime, org_bi, org_name, actor, contact_id, contact, note,
+                     lists):
+    notify = getattr(runtime, "notify", None)
+    if notify is None or not actor:
+        return 0
+    try:
+        recipients = await _note_recipients(runtime, org_bi, actor, lists)
+    except Exception:
+        return 0
+    title = "Note on " + _contact_label(contact)
+    excerpt = _note_excerpt(note["text"])
+    sent = 0
+    for recipient, (view, member) in recipients:
+        where = org_name + (" \u00b7 " + view["name"] if view else "")
+        body = "By %s in %s" % (actor, where)
+        if _note_shows_text(view, member):
+            body += ": " + excerpt
+        href = (ACTIVITY_HREF + "?contact=" + contact_id if member
+                else ACTIVITY_HREF + "?list=" + view["id"])
+        try:
+            await notify(recipient, "plugin_activity", title, body=body, href=href,
+                         dedupe="crm-note:" + note["id"])
+            sent += 1
+        except Exception:
+            pass
+    return sent
+
+
+async def _add_contact_note(runtime, org_bi, org_name, account_bi, actor, data):
+    contact_id = _clean(data.get("contact"), 32).lower()
+    row = (await _contact_row(runtime, org_bi, contact_id)
+           if CONTACT_ID_RE.fullmatch(contact_id) else None)
+    if not row:
+        return _response(runtime, {"error": "contact_not_found"}, 404)
+    text = _text(data.get("text"), CONTACT_NOTE_LIMIT + 1).strip()
+    if not text:
+        return _response(runtime, {"error": "note_required"}, 400)
+    if len(text) > CONTACT_NOTE_LIMIT:
+        return _response(runtime, {"error": "note_too_long"}, 413)
+    existing = await runtime.open(row.get("data"))
+    existing = existing if isinstance(existing, dict) else {}
+    note = {"id": runtime.new_id(), "at": runtime.now(), "by": actor, "text": text}
+    contact = dict(existing, noteLog=_note_log(
+        _note_log(existing.get("noteLog")) + [note]))
+    await runtime.d1_run(
+        "UPDATE crm_contacts SET data=? WHERE org_bi=? AND contact_id=?",
+        await runtime.seal(contact), org_bi, contact_id)
+    await runtime.audit(actor, "crm.contact.note", "crm_contact", contact_id)
+    views = await _org_list_views(runtime, org_bi)
+    list_ids = _contact_lists(contact, views, _pipeline_lists(views))
+    await _record_list_activity(
+        runtime, org_bi, list_ids, account_bi, actor, "contact.noted",
+        {"count": 1, "contacts": [_contact_label(contact)],
+         "note": _note_excerpt(text)})
+    lists = [view for view in views if view["id"] in list_ids]
+    pinged = await _note_ping(runtime, org_bi, org_name, actor, contact_id,
+                              contact, note, lists)
+    return _response(runtime, {
+        "ok": True, "note": note, "pinged": pinged,
+        "contact": await _contact_project(
+            runtime, await _contact_row(runtime, org_bi, contact_id)),
+    }, 201)
 
 
 async def _merge_contacts(runtime, org_bi, account_bi, actor, data):
@@ -2839,6 +3071,10 @@ def _list_activity_text(action, details):
     if action == "contact.merged":
         return "merged %s into %s" % (_clean(details.get("merged"), 160) or "a contact",
                                       _names_phrase(details))
+    if action == "contact.noted":
+        note = _clean(details.get("note"), NOTE_PING_EXCERPT)
+        return "added a note on " + _names_phrase(details) + (
+            ": \u201c" + note + "\u201d" if note else "")
     if action == "contact.emailed":
         subject = _clean(details.get("subject"), 200)
         return "emailed " + _names_phrase(details) + (
@@ -4342,8 +4578,8 @@ async def _lookup_contact(runtime, org_bi, data):
 async def _linked_email_row(runtime, org_bi, provider, message_id):
     """The send row already holding this provider message, if any."""
     rows = await runtime.d1_all(
-        "SELECT send_id,data FROM crm_email_sends WHERE org_bi=? AND external_id=? "
-        "ORDER BY created_at DESC,send_id LIMIT 20", org_bi, message_id)
+        "SELECT send_id,contact_id,data FROM crm_email_sends WHERE org_bi=? AND "
+        "external_id=? ORDER BY created_at DESC,send_id LIMIT 20", org_bi, message_id)
     for row in rows or []:
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
@@ -4465,6 +4701,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     contact_id = str(row.get("contact_id") or "")
     contact_data = await runtime.open(row.get("data"))
     contact_data = contact_data if isinstance(contact_data, dict) else {}
+    before = dict(contact_data)
     # An address the box does not carry yet joins it, so the next message
     # from it matches straight away: as its email when it has none, else
     # beside the others. One another box already holds stays there.
@@ -4534,6 +4771,10 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
     if flow_id and (contact_data.get("flow"), contact_data.get("stage")) != (flow_id, stage):
         contact_data["flow"], contact_data["stage"] = flow_id, stage
         changed = True
+    advanced = "" if flow_id or link["direction"] != "outbound" else _contacted_stage(
+        contact_data, flows)
+    if advanced:
+        contact_data["stage"], changed = advanced, True
     if changed:
         await runtime.d1_run(
             "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,"
@@ -4545,10 +4786,14 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         await runtime.d1_run(
             "UPDATE crm_contacts SET email_bi=? WHERE org_bi=? AND contact_id=?",
             await _unique_email_bi(runtime, org_bi, counterpart), org_bi, contact_id)
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
     await runtime.audit(
         actor, "crm.email.link", "crm_email_send", send_id,
         details={"provider": provider, "contactCreated": contact_created,
-                 "relinked": bool(existing), "pipeline": bool(flow_id)},
+                 "relinked": bool(existing), "pipeline": bool(flow_id),
+                 "stageAdvanced": bool(advanced)},
     )
     if not existing and not quiet:
         await _celebrate_tracked_email(runtime, actor, send_id,
@@ -4559,6 +4804,7 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
         "contactCreated": contact_created,
         "matchedBy": "" if contact_created else matched_by,
         "relinked": bool(existing),
+        "stageAdvanced": bool(advanced),
         "flows": flows,
         "email": await _email_project(
             runtime, await _email_row(runtime, org_bi, send_id)),
@@ -6200,6 +6446,7 @@ ACTIVITY_RECIPIENTS = 10
 ACTIVITY_SEEN_MAX = 512
 ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "lookup", "bulk", "merge", "delete-column", "evidence", "send", "link",
+    "note",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
     "auto"})
 ACTIVITY_PINGS = {
@@ -6351,7 +6598,7 @@ async def handle(runtime, path):
     elif route[0] == "shared-contacts":
         allowed = ("PATCH",) if item else ("POST",)
     elif resource == "contacts" and item in ("import", "lookup", "bulk", "merge",
-                                             "delete-column", "evidence"):
+                                             "delete-column", "evidence", "note"):
         allowed = ("POST",)
     elif resource == "contacts" and item in ("export", "duplicates"):
         allowed = ("GET",)
@@ -6577,6 +6824,9 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
                 runtime, org_bi, org_name, account_bi, actor, role, data)
         if item == "lookup":
             return await _lookup_contact(runtime, org_bi, data)
+        if item == "note":
+            return await _add_contact_note(
+                runtime, org_bi, org_name, account_bi, actor, data)
         if item == "bulk":
             return await _bulk_update_contacts(
                 runtime, org_bi, org_name, account_bi, actor, data)

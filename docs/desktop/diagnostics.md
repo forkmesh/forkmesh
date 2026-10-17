@@ -67,6 +67,14 @@ The desktop has no toasts or floating cards; information is shown inline.
   `alertOnLoggedError`) only file a Pings row, play the cue and pulse the
   window border. Must-acknowledge pings (`dismissOnly`) keep the rail badge
   until the Pings page is seen (`markLocalPingsSeen`).
+- Chat pings (`MainWindow::onMessage`, kind `chat`) are filed only for public
+  channels such as `#general` and `#welcome`. Messages in private
+  conversations (relay DMs, office DMs, relay private channels, private office
+  rooms: `isPrivateChatConversation`) file no row and no `desktop` copy from
+  their OS notification, because the ping journal (`pings.json`) is plain text
+  and would keep the decrypted message after expiry, deletion and sign-out.
+  `purgePrivateChatPings` drops such rows already in the journal when it loads
+  and again when a private channel or office room becomes known.
 - Per-kind switches live on each Pings row's gear (`pings::pingKindEnabled`,
   settings `notifications/mutedDesktopKinds`). A muted kind is filed silently
   and not forwarded to phones.

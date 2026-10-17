@@ -58,6 +58,7 @@ TRANSIENT_PUSH_ERROR = re.compile(
     r"|Connection refused|Failed to connect|Could not resolve host|timed out",
     re.IGNORECASE)
 REF_LOCK_RACE = re.compile(r"failed to update ref|cannot lock ref", re.IGNORECASE)
+UNPACK_RACE = re.compile(r"unpacker error", re.IGNORECASE)
 LOOPBACK_PROBE_SECONDS = 3
 LOOPBACK_BLOCKED = (
     "the signing proxy could not connect over loopback (127.0.0.1, ::1, "
@@ -722,6 +723,11 @@ def ref_lock_race(result: dict) -> bool:
                for item in result["rejected"])
 
 
+def unpack_race(result: dict) -> bool:
+    return not result["updated"] and any(
+        UNPACK_RACE.search(item["reason"]) for item in result["rejected"])
+
+
 def push_gateway(bare: Path, gateway: dict, run=subprocess.run, opener=None,
                  sleep=time.sleep, probe=loopback_accepts) -> dict:
     parsed = urlsplit(gateway["url"])
@@ -756,7 +762,8 @@ def push_gateway(bare: Path, gateway: dict, run=subprocess.run, opener=None,
         blocked = LOOPBACK_CONNECT_FAILED.search(completed.stderr or "")
         if blocked and int(blocked.group(1)) == proxy.port and not result["updated"]:
             return loopback_blocked_result(gateway, proxy.port, signer)
-        if transient_push_failure(completed, result) or ref_lock_race(result):
+        if (transient_push_failure(completed, result) or ref_lock_race(result)
+                or unpack_race(result)):
             sleep(GATEWAY_RETRY_SECONDS)
             completed = _gateway_push(bare, proxy.url, GATEWAY_REFSPECS, run)
             result = parse_push_porcelain(completed.stdout)

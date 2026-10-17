@@ -3469,8 +3469,30 @@
 .chat-call-actions button:hover { background: var(--surface3); }
 .chat-call-actions .chat-call-hangup { color: var(--danger); }
 .chat-call-actions .chat-call-hangup:hover { border-color: var(--danger); background: var(--danger); color: #fff; }
-.chat-call-incoming { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 61; padding: 10px 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface2); color: var(--fg); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); display: grid; gap: 8px; }
-.chat-call-incoming p { margin: 0; font-size: 13px; }
+.chat-call-incoming { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.72); backdrop-filter: blur(6px); color: var(--fg); }
+.chat-call-incoming-card { display: grid; justify-items: center; gap: 10px; width: min(360px, 100%); padding: 28px 24px 24px; border: 1px solid var(--border-strong); border-radius: 18px; background: var(--surface2); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6); text-align: center; animation: chat-call-incoming-pulse 1.6s ease-in-out infinite; }
+.chat-call-incoming p { margin: 0; }
+.chat-call-incoming-kind { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.chat-call-incoming-name { font-size: 24px; font-weight: 700; overflow-wrap: anywhere; }
+.chat-call-incoming-actions { display: flex; gap: 16px; margin-top: 12px; }
+.chat-call-incoming-actions button { min-width: 120px; min-height: 48px; padding: 0 18px; border: 0; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: #fff; cursor: pointer; }
+.chat-call-incoming-accept { background: var(--cta); }
+.chat-call-incoming-accept:hover { background: var(--cta-hover); }
+.chat-call-incoming-decline { background: var(--danger); }
+.chat-call-incoming-decline:hover { filter: brightness(1.1); }
+@keyframes chat-call-incoming-pulse { 0%, 100% { box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 0 color-mix(in srgb, var(--cta) 45%, transparent); } 50% { box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 14px transparent; } }
+@media (prefers-reduced-motion: reduce) { .chat-call-incoming-card { animation: none; } }
+.chat-call-head { flex-wrap: wrap; }
+.chat-call-route { flex-basis: 100%; font-size: 11px; color: var(--muted); }
+.chat-call-route[data-route="direct"]::before { content: "● "; color: var(--online); }
+.chat-call-route[data-route="relay"]::before { content: "● "; color: var(--attention); }
+.chat-call-test { display: grid; gap: 6px; }
+.chat-call-test button { justify-self: start; font: inherit; font-size: 12px; font-weight: 500; min-height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--fg); cursor: pointer; }
+.chat-call-test button[aria-pressed="true"] { border-color: var(--danger); color: var(--danger); }
+.chat-call-test-player { width: 100%; max-height: 32vh; border-radius: 8px; background: #000; }
+.chat-call-test-player.is-audio { height: 40px; background: transparent; }
+.chat-call-actions .chat-call-start { border-color: var(--cta); background: var(--cta); color: var(--cta-fg); }
+.chat-call-actions .chat-call-start:hover { background: var(--cta-hover); }
 
       .chat-view-once-button {
         flex-shrink: 0;

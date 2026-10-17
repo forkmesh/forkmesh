@@ -52,6 +52,7 @@ class Runtime:
         self.audits = []
         analytics._PROJECT_CACHE.clear()
         analytics._DECIDE_CACHE.clear()
+        analytics._EVENT_CACHE.clear()
 
     def use(self, method, actor="alice", body=None, params=None, origin=""):
         self.method_value, self.actor, self.body = method, actor, body or {}
@@ -223,6 +224,44 @@ def test_trends_breakdown_maths_and_person_filters():
     big = query(runtime, item, "trends", series=[{"event": "purchase", "properties": [
         {"property": "amount", "operator": "gte", "value": 10}]}])
     assert big["series"][0]["total"] == 2
+
+
+def test_concurrent_insights_share_one_batch_read_and_see_new_captures():
+    runtime = Runtime()
+    item = project(runtime)
+    key = item["writeKey"]
+    capture(runtime, key, [event("purchase", "u1", 2 * HOUR)])
+    reads = []
+    plain = runtime.d1_all
+
+    async def counted(sql, *args):
+        if "FROM analytics_batches WHERE project_id=? AND day>=?" in sql:
+            reads.append(args)
+            await asyncio.sleep(0.01)
+        return await plain(sql, *args)
+
+    runtime.d1_all = counted
+
+    async def burst():
+        return await asyncio.gather(*[
+            analytics._load_events(runtime, item["id"], NOW - days * DAY, NOW + HOUR)
+            for days in (7, 7, 3, 1, 7, 2)])
+
+    loaded = asyncio.run(burst())
+    assert len(reads) == 1
+    assert [len(events) for events, _ in loaded] == [1] * 6
+    assert all(truncated is False for _, truncated in loaded)
+    loaded[0][0].clear()
+    assert len(asyncio.run(analytics._load_events(
+        runtime, item["id"], NOW - DAY, NOW + HOUR))[0]) == 1
+    assert len(reads) == 1
+    capture(runtime, key, [event("purchase", "u2", HOUR)])
+    assert query(runtime, item, "trends", series=[
+        {"event": "purchase"}])["series"][0]["total"] == 2
+    assert len(reads) == 2
+    assert len(asyncio.run(analytics._load_events(
+        runtime, item["id"], NOW - 30 * DAY, NOW + HOUR))[0]) == 2
+    assert len(reads) == 3
 
 
 def test_funnel_orders_steps_inside_the_conversion_window():
