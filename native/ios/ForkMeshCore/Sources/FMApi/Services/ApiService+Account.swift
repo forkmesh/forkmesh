@@ -150,6 +150,12 @@ extension ApiService {
         }
     }
 
+    static let bugReportInboxMissing = "This relay cannot list reported bugs yet. Update the relay and try again."
+
+    static func wasCancelled(_ error: Error) -> Bool {
+        error is CancellationError || (error as? HTTPError) == .cancelled
+    }
+
     public func bugReportInbox(status: String = "", offset: Int = 0) async -> BugReportInbox {
         var query: [(String, String)] = []
         if !status.isEmpty { query.append(("status", status)) }
@@ -160,10 +166,14 @@ extension ApiService {
                 method: "GET", url: url("/api/bug-reports/inbox", query),
                 headers: withAuth(["Accept": "application/json"]), timeout: 20))
         } catch {
+            if ApiService.wasCancelled(error) { return .cancelledLoad }
             return .failure("Could not reach ForkMesh. Check your connection and try again.")
         }
         if response.status == 401 || response.status == 403 {
             return .failure("Only ForkMesh administrators can read reported bugs.")
+        }
+        if response.status == 404 || response.status == 405 {
+            return .failure(ApiService.bugReportInboxMissing)
         }
         guard response.ok, let decoded = try? JSON.parse(response.body), let map = decoded.objectValue else {
             return .failure("Reported bugs could not be loaded. Try again in a moment.")
@@ -183,7 +193,9 @@ extension ApiService {
         }
         switch response.status {
         case 401, 403: return .failure("Only ForkMesh administrators can triage reported bugs.")
-        case 404: return .failure("That report no longer exists.")
+        case 404 where ApiParse.errorCode(response.body) == "report_missing":
+            return .failure("That report no longer exists.")
+        case 404, 405: return .failure(ApiService.bugReportInboxMissing)
         default: break
         }
         guard response.ok, let decoded = try? JSON.parse(response.body), let map = decoded.objectValue else {
@@ -209,7 +221,9 @@ extension ApiService {
         case 200..<300:
             return BugReportFile(ok: true, data: response.body, contentType: response.headers["content-type"] ?? "")
         case 401, 403: return .failure("Only ForkMesh administrators can open report attachments.")
-        case 404, 410: return .failure("That attachment is no longer available.")
+        case 404 where ApiParse.errorCode(response.body) == "attachment_missing", 410:
+            return .failure("That attachment is no longer available.")
+        case 404, 405: return .failure(ApiService.bugReportInboxMissing)
         default: return .failure("The attachment could not be downloaded. Try again in a moment.")
         }
     }

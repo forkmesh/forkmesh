@@ -285,4 +285,37 @@ final class ApiBugReportTests: XCTestCase {
         XCTAssertFalse(gone.ok)
         XCTAssertTrue(gone.message.contains("no longer available"), gone.message)
     }
+
+    func testACancelledInboxLoadIsNotReportedAsUnreachable() async {
+        for error in [HTTPError.cancelled as Error, CancellationError()] {
+            let relay = FakeBugRelay()
+            relay.offline.value = error
+            let inbox = await wire(relay).bugReportInbox(status: "new")
+            XCTAssertTrue(inbox.cancelled)
+            XCTAssertFalse(inbox.ok)
+            XCTAssertEqual(inbox.message, "")
+        }
+        let relay = FakeBugRelay()
+        relay.offline.value = HTTPError.transport("no route to host")
+        let offline = await wire(relay).bugReportInbox()
+        XCTAssertFalse(offline.cancelled)
+        XCTAssertTrue(offline.message.contains("Could not reach ForkMesh"), offline.message)
+    }
+
+    func testARelayWithoutTheInboxSaysToUpdateTheRelay() async {
+        let notFound = portEncode(["error": "not_found"])
+        let inbox = await wire(FakeBugRelay(status: 404, body: notFound)).bugReportInbox()
+        XCTAssertTrue(inbox.message.contains("Update the relay"), inbox.message)
+        let change = await wire(FakeBugRelay(status: 404, body: notFound)).setBugReportStatus(id: "r1", status: "closed")
+        XCTAssertTrue(change.message.contains("Update the relay"), change.message)
+        let file = await wire(FakeBugRelay(status: 404, body: notFound)).bugReportAttachment(reportId: "r1", attachmentId: "a1")
+        XCTAssertTrue(file.message.contains("Update the relay"), file.message)
+
+        let gone = await wire(FakeBugRelay(status: 404, body: portEncode(["error": "report_missing"])))
+            .setBugReportStatus(id: "r1", status: "closed")
+        XCTAssertTrue(gone.message.contains("no longer exists"), gone.message)
+        let missing = await wire(FakeBugRelay(status: 404, body: portEncode(["error": "attachment_missing"])))
+            .bugReportAttachment(reportId: "r1", attachmentId: "a1")
+        XCTAssertTrue(missing.message.contains("no longer available"), missing.message)
+    }
 }

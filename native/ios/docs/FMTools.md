@@ -59,6 +59,15 @@ Models take a `ToolsApiCall` closure (tests) or an `ApiService` (convenience ini
   (you first, then A to Z), Bot (agent assignees) and Unassigned, each with its open count; same
   rules as the web board (`docs/app/task-board-filters.md`).
 - **Bug reports**: `ReportBugModel(screen:build:signedIn:api:)` (`submit()`), `BugSeverity.all`.
+  The admins' Reported tab is `BugReportInboxModel`. A cancelled list load is not an error:
+  SwiftUI cancels the view's `.task` when the tab or sheet goes away, and a `.refreshable` when
+  the list redraws under it (the loading bar appearing is enough). `ApiService.bugReportInbox`
+  answers `BugReportInbox.cancelledLoad`, the model keeps its state and stays unloaded so the
+  next appearance loads again, and pull-to-refresh runs the load in its own `Task`. Before this
+  the cancelled request read "Could not reach ForkMesh. Check your connection and try again.",
+  was marked loaded, and never retried (2026-10-17: the relay had no inbox route yet, answered
+  404, and the phone then cancelled its next request). A 404 without `report_missing` or
+  `attachment_missing` means the relay has no inbox route, and the sheet says to update it.
 
 ### Health and wellbeing
 

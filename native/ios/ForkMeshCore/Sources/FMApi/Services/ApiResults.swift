@@ -268,14 +268,16 @@ public struct BugReportInbox: Equatable, Sendable {
     public let counts: [String: Int]
     public let nextOffset: Int?
     public let message: String
+    public let cancelled: Bool
 
     public init(ok: Bool, reports: [BugReportInboxItem] = [], counts: [String: Int] = [:], nextOffset: Int? = nil,
-                message: String = "") {
+                message: String = "", cancelled: Bool = false) {
         self.ok = ok
         self.reports = reports
         self.counts = counts
         self.nextOffset = nextOffset
         self.message = message
+        self.cancelled = cancelled
     }
 
     public init(json: JSONObject) {
@@ -287,6 +289,8 @@ public struct BugReportInbox: Equatable, Sendable {
     }
 
     public static func failure(_ message: String) -> BugReportInbox { BugReportInbox(ok: false, message: message) }
+
+    public static let cancelledLoad = BugReportInbox(ok: false, cancelled: true)
 }
 
 public struct BugReportStatusChange: Equatable, Sendable {
