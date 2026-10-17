@@ -361,6 +361,15 @@ public final class ChatHub: ShellChatBridge {
     }
     public func markBadgeSeen() { relay.markBadgeSeen() }
     public func switchConversation(_ conversation: String) {
+        if let person = accountRecipient(conversation), let direct {
+            revealRequests += 1
+            if let record = direct.records.first(where: { $0.otherUser == person.handle.lowercased() }) {
+                select(record.conversation)
+            } else {
+                Task { @MainActor in _ = await openPerson(person) }
+            }
+            return
+        }
         let target = (try? ChatReplyTarget.resolve(
             conversation, channels: relay.channels, roster: relay.roster(), offices: officeChannels)) ?? conversation
         select(target)

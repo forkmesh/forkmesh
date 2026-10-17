@@ -117,6 +117,22 @@ extension ChatHub {
         return nil
     }
 
+    func accountRecipient(_ conversation: String) -> ChatRecipient? {
+        guard conversation.hasPrefix("@") else { return nil }
+        let name = String(conversation.dropFirst()).trimmingCharacters(in: .whitespaces)
+        if name.isEmpty { return nil }
+        let others = relay.roster().filter { !$0.isSelf }
+        if others.contains(where: { $0.id == name }) { return nil }
+        let folded = name.lowercased()
+        let matches = others.filter {
+            $0.owner.lowercased() == folded || $0.name.lowercased() == folded || $0.nodeName.lowercased() == folded
+        }
+        let peer = matches.first(where: \.online) ?? matches.first
+        let account = peer.map { $0.owner.isEmpty ? folded : $0.owner.lowercased() } ?? folded
+        return ChatRecipient(
+            kind: .person, name: peer?.name ?? name, account: account, peerId: peer?.id ?? "", online: peer?.online ?? false)
+    }
+
     func groupConversation(with people: [ChatRecipient]) async -> String? {
         guard let office, !isGuest() else {
             if isGuest() { onGuestBlocked?("message several people at once") } else {
