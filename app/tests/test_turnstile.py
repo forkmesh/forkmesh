@@ -282,7 +282,7 @@ def test_signup_page_renders_the_widget_and_loads_turnstile_only_there():
     assert 'data-sitekey="__FORKMESH_TURNSTILE_SITE_KEY__"' in SIGNUP_HTML
     assert 'data-cdata="__FORKMESH_TURNSTILE_CDATA__"' in SIGNUP_HTML
     assert 'data-action="signup"' in SIGNUP_HTML
-    assert "turnstileToken: challengeToken" in SIGNUP_JS
+    assert 'turnstileToken: backupReason ? "" : challengeToken' in SIGNUP_JS
     assert "turnstile.reset" in SIGNUP_JS
     assert "data-callback" not in SIGNUP_HTML
     assert "callback: challengeDone" in SIGNUP_JS
@@ -309,7 +309,8 @@ def test_signup_page_waits_out_turnstile_retries_before_reporting():
     retry = retry[:retry.index("return true;")]
     assert "reportProblem" not in retry
     assert '"bad"' not in retry
-    assert "if (!challengeErrorReported)" in handler
+    assert 'useBackupCheck("e" + challengeErrorCode)' in handler
+    assert "reportProblem" not in handler
     assert 'reportProblem("challenge_token_missing", challengeErrorCode)' in (
         SIGNUP_JS)
     assert "retry" not in SIGNUP_JS[SIGNUP_JS.index("turnstile.render("):
@@ -416,6 +417,6 @@ def test_signup_page_refreshes_a_stale_token_before_submitting():
     submit = SIGNUP_JS[SIGNUP_JS.index("async function createAccount"):]
     assert submit.index("challengeStale()") < submit.index("!widgetToken()")
     assert "await refreshChallenge()" in submit
-    assert 'reportProblem("challenge_stale"' in submit
+    assert 'if (!fresh) useBackupCheck("stale");' in submit
     assert "challengeAt = challengeToken ? Date.now() : 0;" in SIGNUP_JS
     assert '"visibilitychange"' in SIGNUP_JS

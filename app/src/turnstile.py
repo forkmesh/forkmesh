@@ -73,6 +73,10 @@ TOKEN_MAX_LENGTH = 2048
 ACTION_SIGNUP = "signup"
 ACTION_PASSWORD_RESET = "password-reset"
 TOKEN_FIELD = "turnstileToken"
+BACKUP_FIELD = "backupProof"
+BACKUP_PREFIX = "forkmesh-signup-backup-v1:"
+BACKUP_BITS = 18
+_BACKUP_NONCE_RE = re.compile(r"[0-9]{1,16}")
 
 _TEST_SECRET_RE = re.compile(r"[123]x0{31}A[AB]")
 _TEST_SITE_KEY_RE = re.compile(r"[123]x0{20}[AB][ABF]")
@@ -294,6 +298,42 @@ async def verify(env, token, action, remoteip="", cdata="", fetcher=None,
         return EXPIRED, "challenge_stale"
     if issued - now > TOKEN_FUTURE_SKEW_MS:
         return FAILED, "challenge_in_future"
+    return "", ""
+
+
+def backup_enabled(env):
+    return _var(env, "SIGNUP_BACKUP_CHECK").lower() not in (
+        "0", "off", "false", "no")
+
+
+def backup_reason(proof):
+    reason = proof.get("reason", "") if isinstance(proof, dict) else ""
+    return re.sub(r"[^a-z0-9_]", "", str(reason or "").lower())[:24]
+
+
+def _leading_zero_bits(digest):
+    bits = 0
+    for byte in digest:
+        if byte:
+            return bits + 8 - byte.bit_length()
+        bits += 8
+    return bits
+
+
+def verify_backup(env, proof, cdata):
+    if not backup_enabled(env):
+        return REQUIRED, "backup_disabled"
+    if not isinstance(proof, dict):
+        return REQUIRED, "backup_missing"
+    nonce = proof.get("nonce", "")
+    if not isinstance(nonce, str) or not _BACKUP_NONCE_RE.fullmatch(nonce):
+        return FAILED, "backup_nonce_invalid"
+    if not cdata or not _CDATA_RE.fullmatch(cdata):
+        return FAILED, "cdata_invalid"
+    digest = hashlib.sha256(
+        (BACKUP_PREFIX + cdata + ":" + nonce).encode()).digest()
+    if _leading_zero_bits(digest) < BACKUP_BITS:
+        return FAILED, "backup_proof_short"
     return "", ""
 
 

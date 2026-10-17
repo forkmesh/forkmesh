@@ -16,14 +16,56 @@ address.
 - Tokens expire after 300 s and background tabs pause the widget. A token
   older than 240 s is reset on submit, waiting up to 30 s for a fresh one;
   a tab becoming visible with a stale token resets the widget.
-- Turnstile `3xxxxx`/`6xxxxx` errors are retried by the widget; the page
-  reports `challenge_error` only after `CHALLENGE_RETRY_ERRORS` (3) errors or
-  for a non-retryable code.
+- Turnstile `3xxxxx`/`6xxxxx` errors are retried by the widget; after
+  `CHALLENGE_RETRY_ERRORS` (3) errors, or on a non-retryable code, the page
+  switches to the backup check below instead of stopping.
 - When the page cannot submit, or a request fails before the server answers,
-  it reports to `POST /api/accounts/signup/problem`: `challenge_unavailable`,
-  `challenge_not_rendered`, `challenge_render_failed`,
-  `challenge_token_missing`, `challenge_stale`, `challenge_error`,
+  it reports to `POST /api/accounts/signup/problem`: `challenge_token_missing`
+  (first submit without a token), `challenge_backup_failed`,
   `network_error`, `signup_page_renew_failed`, or `unexpected_response`.
+  The server still accepts `challenge_unavailable`, `challenge_not_rendered`,
+  `challenge_render_failed`, `challenge_stale` and `challenge_error` from
+  pages loaded before the backup check shipped.
+
+## Backup check
+
+A visitor whose browser cannot produce a Turnstile token used to be stuck.
+The Ping of 2026-10-17 was `challenge_error [200100:1]`: Turnstile's "the
+visitor's clock is incorrect" code, which no retry or reload fixes. Blocked
+`api.js` (ad blockers, corporate filters), iframe load errors and a
+Cloudflare outage stopped visitors the same way.
+
+- The page switches to the backup check when the widget reports a
+  non-retryable error or exhausts its retries, `render` throws, `api.js` has
+  not loaded after `CHALLENGE_LOAD_WAIT_MS` (10 s) or at submit, a stale
+  token cannot be refreshed, a second submit still has no token, or the
+  server answers `turnstile_unavailable` (one resubmit).
+- It removes and hides the widget and finds a nonce such that
+  `sha256("forkmesh-signup-backup-v1:" + cdata + ":" + nonce)` starts with
+  `BACKUP_BITS` (18) zero bits: about 260,000 hashes, under a second on a
+  laptop and a few seconds on a slow phone, run in 20,000-hash slices in the
+  background. The cdata is the page's Turnstile cdata, so a proof is bound
+  to one one-use signup claim; a renewed claim gets a fresh proof and no new
+  widget.
+- The signup body carries `backupProof: {nonce, reason}` with an empty
+  `turnstileToken`. `reason` is `e<code>` for a widget error, or
+  `unavailable`, `render_<error>`, `stale`, `not_rendered`, `token_missing`,
+  `server_unavailable`.
+- `_signup_backup_gate` (instead of `_turnstile_gate`) checks the proof with
+  `turnstile.verify_backup`, then spends two `signup_rate` budgets per hour:
+  `SIGNUP_BACKUP_MAX_PER_IP` (10) per address and
+  `SIGNUP_BACKUP_MAX_PER_WINDOW` (60) for the whole platform. Attempts count,
+  not only creations, because one proof can be replayed on its claim until
+  the claim is used. An exhausted budget is a `rate_limited` refusal with
+  detail `backup_check`, so a bot spending the platform budget pings the
+  administrators; Turnstile signups are unaffected.
+- A backup signup stores `signup.challenge = "backup:<reason>"` in the
+  encrypted account record.
+- The proof is a speed bump, not a human check: the honeypot field, the
+  randomized email field, the one-use claim, the per-IP creation limit and
+  email verification still apply. `SIGNUP_BACKUP_CHECK=off` (also `0`,
+  `false`, `no`) turns it off; the server then answers a proof with
+  `turnstile_required`.
 
 ## Claim renewal
 
@@ -76,5 +118,6 @@ losing what they had typed (Ping of 2026-10-14).
 | Path | Role |
 | --- | --- |
 | `app/public/signup.js`, `app/public/signup.html` | Explicit render, `widgetToken()`, `reportProblem()` |
-| `app/src/entry.py` | `ping_signup_failure`, `_signup_refused`, `_account_signup_problem` |
-| `app/tests/test_signup_failure_pings.py`, `app/tests/test_turnstile.py`, `app/tests/test_signup_page_renewal.py` | Tests |
+| `app/src/entry.py` | `ping_signup_failure`, `_signup_refused`, `_account_signup_problem`, `_signup_backup_gate` |
+| `app/src/turnstile.py` | `verify_backup`, `BACKUP_BITS`, `BACKUP_PREFIX` |
+| `app/tests/test_signup_failure_pings.py`, `app/tests/test_turnstile.py`, `app/tests/test_signup_page_renewal.py`, `app/tests/test_signup_backup_check.py` | Tests |
