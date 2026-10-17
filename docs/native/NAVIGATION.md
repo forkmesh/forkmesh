@@ -144,11 +144,14 @@ destination, in sections, with counts and activity:
   the user last opened it shows a small accent dot at the icon's bottom right
   (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
   keeps the catalog version and the last viewed version of each package under
-  `packages/versions` on the device; the first catalog seen for a package is
-  its baseline, so installs and first launches show no dot. Opening the plugin
-  clears it: a Home pick (`markViewed(hubItem:)`), any route or tab
-  that belongs to the package (`PackageGate.packageId(for:)`), its Market page,
-  or installing it. The operator asked for the dot on 2026-10-16.
+  `packages/versions` on the device. A package never opened on this device
+  counts as unseen, so on a new install every plugin tile has a dot until it is
+  first opened; after that the dot comes back only when a new version is
+  published. Opening the plugin clears it: a Home pick
+  (`markViewed(hubItem:)`), any route or tab that belongs to the package
+  (`PackageGate.packageId(for:)`), its Market page, or installing it. The
+  operator asked for the dot on 2026-10-16, and on 2026-10-17 for it to show
+  on every unopened plugin after a new install.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
