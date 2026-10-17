@@ -14,6 +14,8 @@ struct ReportBugSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: ReportBugModel
     @State private var importing = false
+    @State private var inbox: BugReportInboxModel?
+    @State private var tab = 0
     private let onClose: (() -> Void)?
     private let onFinished: ((Bool) -> Void)?
 
@@ -29,6 +31,8 @@ struct ReportBugSheet: View {
         _model = State(initialValue: ReportBugModel(
             screen: screen, package: package, packageName: packageName, build: build, signedIn: signedIn,
             api: Services.get(ApiService.self)))
+        let admin = package.isEmpty && (Services.get(AuthService.self)?.session?.isAdmin ?? false)
+        _inbox = State(initialValue: admin ? BugReportInboxModel(api: Services.get(ApiService.self)) : nil)
         self.onClose = onClose
         self.onFinished = onFinished
     }
@@ -36,14 +40,26 @@ struct ReportBugSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            ScrollView {
-                form
-                    .padding(.horizontal, FmSpace.x4)
-                    .padding(.bottom, FmSpace.x4)
+            if let inbox {
+                FmSegmentTabBar(
+                    tabs: [FmSegmentTab(label: BugReportInboxModel.tabReport),
+                           FmSegmentTab(label: BugReportInboxModel.tabReported, count: inbox.counts["new"])],
+                    index: tab, onChanged: { tab = $0 })
+                    .accessibilityIdentifier("report-bug-tabs")
             }
-            .scrollDismissesKeyboard(.interactively)
-            FmBottomActionBar(padding: EdgeInsets.fmSymmetric(horizontal: FmSpace.x4, vertical: FmSpace.x3)) {
-                sendButton
+            if let inbox, tab == 1 {
+                BugReportInboxView(model: inbox)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView {
+                    form
+                        .padding(.horizontal, FmSpace.x4)
+                        .padding(.bottom, FmSpace.x4)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                FmBottomActionBar(padding: EdgeInsets.fmSymmetric(horizontal: FmSpace.x4, vertical: FmSpace.x3)) {
+                    sendButton
+                }
             }
         }
         .fmPreGlassBackground(fm.wallpaper ? fm.canvas : fm.bgRaised)
@@ -51,6 +67,7 @@ struct ReportBugSheet: View {
         .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(model.busy)
         .accessibilityIdentifier("report-bug-sheet")
+        .task { if let inbox, !inbox.loaded { await inbox.reload() } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case let .success(urls) = result else { return }
             let files = urls.prefix(5 - model.attachments.count).compactMap { url -> BugReportAttachment? in

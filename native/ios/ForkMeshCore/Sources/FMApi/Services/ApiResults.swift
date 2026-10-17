@@ -212,6 +212,83 @@ public struct BugReportResult: Equatable, Sendable {
     }
 }
 
+public struct BugReportInboxAttachment: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let contentType: String
+    public let size: Int
+
+    public init(json: JSONObject) {
+        id = json.str("id")
+        name = json.str("name", "attachment")
+        contentType = json.str("contentType")
+        size = json.int("size")
+    }
+}
+
+public struct BugReportInboxItem: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let status: String
+    public let severity: String
+    public let source: String
+    public let platform: String
+    public let appVersion: String
+    public let osVersion: String
+    public let device: String
+    public let createdAt: Int64
+    public let account: String
+    public let message: String
+    public let contact: String
+    public let screen: String
+    public let package: String
+    public let attachments: [BugReportInboxAttachment]
+
+    public init(json: JSONObject) {
+        id = json.str("id")
+        status = json.str("status", "new")
+        severity = json.str("severity", "normal")
+        source = json.str("source")
+        platform = json.str("platform")
+        appVersion = json.str("appVersion")
+        osVersion = json.str("osVersion")
+        device = json.str("device")
+        createdAt = json.int64("createdAt")
+        account = json.str("account")
+        message = json.str("message")
+        contact = json.str("contact")
+        screen = json.str("screen")
+        package = json.str("package")
+        attachments = json.maps("attachments").map(BugReportInboxAttachment.init(json:))
+    }
+}
+
+public struct BugReportInbox: Equatable, Sendable {
+    public let ok: Bool
+    public let reports: [BugReportInboxItem]
+    public let counts: [String: Int]
+    public let nextOffset: Int?
+    public let message: String
+
+    public init(ok: Bool, reports: [BugReportInboxItem] = [], counts: [String: Int] = [:], nextOffset: Int? = nil,
+                message: String = "") {
+        self.ok = ok
+        self.reports = reports
+        self.counts = counts
+        self.nextOffset = nextOffset
+        self.message = message
+    }
+
+    public init(json: JSONObject) {
+        let counts = json.obj("counts")
+        self.init(
+            ok: true, reports: json.maps("reports").map(BugReportInboxItem.init(json:)),
+            counts: Dictionary(uniqueKeysWithValues: counts.keys.map { ($0, counts.int($0)) }),
+            nextOffset: json["nextOffset"]?.isNull == false ? json.int("nextOffset") : nil)
+    }
+
+    public static func failure(_ message: String) -> BugReportInbox { BugReportInbox(ok: false, message: message) }
+}
+
 /// A refused or failed `POST /api/accounts/user-status`, with the server's error code and a
 /// message ready for an inline notice.
 public struct UserStatusException: Error, Equatable, Sendable, CustomStringConvertible {

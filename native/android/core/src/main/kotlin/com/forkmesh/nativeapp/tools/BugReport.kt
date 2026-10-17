@@ -1,8 +1,10 @@
 package com.forkmesh.nativeapp.tools
 
 import com.forkmesh.nativeapp.api.ApiService
-import com.forkmesh.nativeapp.api.BugReportResult
 import com.forkmesh.nativeapp.api.BugReportAttachment
+import com.forkmesh.nativeapp.api.BugReportInbox
+import com.forkmesh.nativeapp.api.BugReportInboxItem
+import com.forkmesh.nativeapp.api.BugReportResult
 import kotlin.math.max
 
 data class BugButtonPoint(val x: Float, val y: Float)
@@ -132,3 +134,68 @@ fun sendBugReport(api: ApiService, draft: ReportBugDraft, screen: String, build:
         packageId = packageId,
         attachments = attachments,
     )
+
+data class BugReportStatusFilter(val value: String, val label: String)
+
+object BugReportInboxCopy {
+    val FILTERS = listOf(
+        BugReportStatusFilter("new", "New"),
+        BugReportStatusFilter("triaged", "Triaged"),
+        BugReportStatusFilter("closed", "Closed"),
+        BugReportStatusFilter("", "All"),
+    )
+
+    const val TAB_REPORT = "Report"
+    const val TAB_REPORTED = "Reported"
+    const val EMPTY = "No reported bugs here."
+    const val LOAD_MORE = "Load more"
+    const val UNAVAILABLE = "Reported bugs are unavailable in this build."
+
+    fun severityLabel(value: String): String =
+        ReportBugCopy.SEVERITIES.firstOrNull { it.value == value }?.label ?: value.replaceFirstChar { it.uppercase() }
+
+    fun details(report: BugReportInboxItem): String {
+        val parts = mutableListOf(if (report.account.isEmpty()) "anonymous" else "@${report.account}")
+        listOf(report.platform, report.osVersion).filter { it.isNotEmpty() }.joinToString(" ").takeIf { it.isNotEmpty() }?.let(parts::add)
+        for (value in listOf(report.appVersion, report.screen, report.packageId, report.device)) {
+            if (value.isNotEmpty()) parts.add(value)
+        }
+        return parts.joinToString(" · ")
+    }
+}
+
+data class BugReportInboxState(
+    val status: String = "new",
+    val reports: List<BugReportInboxItem> = emptyList(),
+    val counts: Map<String, Int> = emptyMap(),
+    val nextOffset: Int? = null,
+    val problem: String = "",
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+) {
+    fun label(filter: BugReportStatusFilter): String {
+        if (filter.value.isEmpty()) return if (counts.isEmpty()) filter.label else "${filter.label} ${counts.values.sum()}"
+        val count = counts[filter.value] ?: return filter.label
+        return "${filter.label} $count"
+    }
+
+    fun requesting(status: String = this.status): BugReportInboxState = copy(status = status, loading = true)
+
+    fun received(inbox: BugReportInbox, offset: Int): BugReportInboxState {
+        if (!inbox.ok) {
+            return copy(loading = false, loaded = true, problem = inbox.message,
+                reports = if (offset == 0) emptyList() else reports, nextOffset = null)
+        }
+        return copy(
+            loading = false,
+            loaded = true,
+            problem = "",
+            counts = inbox.counts,
+            reports = if (offset == 0) inbox.reports else reports + inbox.reports,
+            nextOffset = inbox.nextOffset,
+        )
+    }
+}
+
+fun loadBugReportInbox(api: ApiService?, status: String, offset: Int = 0): BugReportInbox =
+    api?.bugReportInbox(status, offset) ?: BugReportInbox.failure(BugReportInboxCopy.UNAVAILABLE)

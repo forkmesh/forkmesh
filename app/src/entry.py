@@ -1378,6 +1378,7 @@ watch_discord_bug_reports = discord_bugs.export("watch_discord_bug_reports")
 # the separate operator console Worker (monitoring/), never from this origin.
 _bug_reports = _LazyModule("bug_reports")
 bug_reports_handler = _bug_reports.export("bug_reports_handler")
+bug_reports_inbox_handler = _bug_reports.export("bug_reports_inbox_handler")
 # Reading those reports back (and the docs / World feedback) happens only in
 # the is_admin console, through its Support sections.
 _admin_support = _LazyModule("admin_support")

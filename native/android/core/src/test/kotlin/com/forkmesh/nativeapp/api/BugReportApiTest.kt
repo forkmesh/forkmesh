@@ -125,4 +125,46 @@ class BugReportApiTest {
             expect(!signedOut, "status $status")
         }
     }
+
+    fun testTheInboxListsReportsForAnAdministrator() {
+        val wired = Wired(
+            status = 200,
+            body = mapOf(
+                "ok" to true, "status" to "new", "nextOffset" to 50,
+                "counts" to mapOf("new" to 2, "triaged" to 1, "closed" to 0),
+                "reports" to listOf(
+                    mapOf(
+                        "id" to "r1", "status" to "new", "severity" to "crash", "platform" to "android",
+                        "createdAt" to 1_783_463_371_000, "account" to "alice", "message" to "Repos tab spins.",
+                        "contact" to "reply@example.test", "package" to "notes",
+                        "attachments" to listOf(mapOf("id" to "a1", "name" to "screen.png", "contentType" to "image/png", "size" to 6)),
+                    ),
+                ),
+            ),
+        )
+        wired.api.sessionTokenProvider = { "session-token" }
+        val inbox = wired.api.bugReportInbox(status = "new", offset = 50)
+        expect(inbox.ok)
+        assertEq(2, inbox.counts["new"])
+        assertEq(50, inbox.nextOffset)
+        val report = inbox.reports.single()
+        assertEq("Repos tab spins.", report.message)
+        assertEq("reply@example.test", report.contact)
+        assertEq("notes", report.packageId)
+        assertEq(1_783_463_371_000L, report.createdAt)
+        assertEq("screen.png", report.attachments.single().name)
+        val request = wired.transport.requests.single()
+        assertEq("GET", request.method)
+        assertEq("/api/bug-reports/inbox", request.path())
+        assertEq(mapOf("status" to "new", "offset" to "50"), request.query())
+        assertEq("Bearer session-token", request.headers["Authorization"])
+    }
+
+    fun testTheInboxRefusalSaysItIsForAdministrators() {
+        val wired = Wired(status = 403, body = mapOf("error" to "admin_required"))
+        val inbox = wired.api.bugReportInbox()
+        expect(!inbox.ok)
+        expect(inbox.reports.isEmpty())
+        expect(inbox.message.contains("administrators"), inbox.message)
+    }
 }

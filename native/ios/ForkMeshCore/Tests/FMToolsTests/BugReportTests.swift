@@ -205,4 +205,43 @@ final class BugReportTests: XCTestCase {
         let released = tiny.release(x: 0, y: 1000)
         XCTAssertTrue(released.anchor.isFinite)
     }
+
+    @MainActor
+    func testTheInboxLoadsFiltersAndPages() async {
+        var asked: [(String, Int)] = []
+        func item(_ id: String) -> BugReportInboxItem {
+            BugReportInboxItem(json: ["id": .string(id), "message": "Broken.", "account": "alice", "platform": "ios"])
+        }
+        let model = BugReportInboxModel(load: { status, offset in
+            asked.append((status, offset))
+            if offset == 0 {
+                return BugReportInbox(ok: true, reports: [item("a")], counts: ["new": 2, "closed": 1], nextOffset: 1)
+            }
+            return BugReportInbox(ok: true, reports: [item("b")], counts: ["new": 2, "closed": 1])
+        })
+        await model.reload()
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+        XCTAssertEqual(model.label(for: BugReportStatusFilter.all[0]), "New 2")
+        XCTAssertEqual(model.label(for: BugReportStatusFilter.all[3]), "All 3")
+        await model.more()
+        XCTAssertEqual(model.reports.map(\.id), ["a", "b"])
+        XCTAssertNil(model.nextOffset)
+        await model.select("closed")
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+        XCTAssertEqual(asked.map(\.0), ["new", "new", "closed"])
+        XCTAssertEqual(asked.map(\.1), [0, 1, 0])
+        XCTAssertEqual(BugReportInboxModel.details(model.reports[0]), "@alice · ios")
+    }
+
+    @MainActor
+    func testTheInboxShowsARefusal() async {
+        let model = BugReportInboxModel(load: { _, _ in .failure("Only ForkMesh administrators can read reported bugs.") })
+        await model.reload()
+        XCTAssertTrue(model.loaded)
+        XCTAssertTrue(model.reports.isEmpty)
+        XCTAssertEqual(model.problem, "Only ForkMesh administrators can read reported bugs.")
+        let missing = BugReportInboxModel(load: nil)
+        await missing.reload()
+        XCTAssertFalse(missing.problem.isEmpty)
+    }
 }

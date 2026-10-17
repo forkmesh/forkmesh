@@ -127,6 +127,114 @@ public final class ReportBugModel {
     }
 }
 
+public typealias BugReportInboxLoad = @MainActor (_ status: String, _ offset: Int) async -> BugReportInbox
+
+public struct BugReportStatusFilter: Equatable, Sendable {
+    public let value: String
+    public let label: String
+
+    public static let all = [
+        BugReportStatusFilter(value: "new", label: "New"),
+        BugReportStatusFilter(value: "triaged", label: "Triaged"),
+        BugReportStatusFilter(value: "closed", label: "Closed"),
+        BugReportStatusFilter(value: "", label: "All"),
+    ]
+}
+
+@MainActor
+@Observable
+public final class BugReportInboxModel {
+    public static let tabReport = "Report"
+    public static let tabReported = "Reported"
+    public static let empty = "No reported bugs here."
+
+    @ObservationIgnored private let loader: BugReportInboxLoad?
+    public var status = "new"
+    public private(set) var reports: [BugReportInboxItem] = []
+    public private(set) var counts: [String: Int] = [:]
+    public private(set) var nextOffset: Int?
+    public private(set) var problem = ""
+    public private(set) var loading = false
+    public private(set) var loaded = false
+
+    public init(load: BugReportInboxLoad?) {
+        loader = load
+    }
+
+    public convenience init(api: ApiService?) {
+        let load: BugReportInboxLoad? = api.map { api in
+            { status, offset in await api.bugReportInbox(status: status, offset: offset) }
+        }
+        self.init(load: load)
+    }
+
+    public func label(for filter: BugReportStatusFilter) -> String {
+        if filter.value.isEmpty {
+            return counts.isEmpty ? filter.label : "\(filter.label) \(counts.values.reduce(0, +))"
+        }
+        guard let count = counts[filter.value] else { return filter.label }
+        return "\(filter.label) \(count)"
+    }
+
+    public func select(_ value: String) async {
+        if value == status && loaded { return }
+        status = value
+        await reload()
+    }
+
+    public func reload() async {
+        await fetch(offset: 0)
+    }
+
+    public func more() async {
+        guard let offset = nextOffset else { return }
+        await fetch(offset: offset)
+    }
+
+    private func fetch(offset: Int) async {
+        if loading { return }
+        guard let loader else {
+            problem = "Reported bugs are unavailable in this build."
+            loaded = true
+            return
+        }
+        loading = true
+        let requested = status
+        let inbox = await loader(requested, offset)
+        loading = false
+        guard requested == status else {
+            await fetch(offset: 0)
+            return
+        }
+        loaded = true
+        if !inbox.ok {
+            problem = inbox.message
+            if offset == 0 { reports = [] }
+            nextOffset = nil
+            return
+        }
+        problem = ""
+        counts = inbox.counts
+        reports = offset == 0 ? inbox.reports : reports + inbox.reports
+        nextOffset = inbox.nextOffset
+    }
+
+    public static func severityLabel(_ value: String) -> String {
+        BugSeverity.all.first { $0.value == value }?.label ?? value.capitalized
+    }
+
+    public static func details(_ report: BugReportInboxItem) -> String {
+        var parts = [report.account.isEmpty ? "anonymous" : "@\(report.account)"]
+        let platform = [report.platform, report.osVersion].filter { !$0.isEmpty }.joined(separator: " ")
+        if !platform.isEmpty { parts.append(platform) }
+        if !report.appVersion.isEmpty { parts.append(report.appVersion) }
+        if !report.screen.isEmpty { parts.append(report.screen) }
+        if !report.package.isEmpty { parts.append(report.package) }
+        if !report.device.isEmpty { parts.append(report.device) }
+        return parts.joined(separator: " · ")
+    }
+}
+
 /// BugReportOverlay's geometry. The position is kept as a fraction of the vertical travel plus a
 /// side, never as points, so rotation or a split window never strands the control off screen.
 public struct BugButtonGeometry: Equatable, Sendable {

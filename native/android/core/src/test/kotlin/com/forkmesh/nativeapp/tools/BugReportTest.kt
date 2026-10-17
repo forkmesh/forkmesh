@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.tools
 
 import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.api.BugReportInbox
+import com.forkmesh.nativeapp.api.BugReportInboxItem
 import com.forkmesh.nativeapp.api.FakeTransport
 import com.forkmesh.nativeapp.api.TestSettings
 import com.forkmesh.nativeapp.api.bodyJson
@@ -181,5 +183,26 @@ class BugReportTest {
         assertEq("Android 16 (API 36)", AppBuild.androidOsVersion("16", 36))
         assertEq("debug", AppBuild.mode(debuggable = true))
         assertEq("release", AppBuild.mode(debuggable = false))
+    }
+
+    fun testTheInboxStateFiltersPagesAndShowsRefusals() {
+        fun item(id: String) = BugReportInboxItem.from(mapOf("id" to id, "message" to "Broken.", "account" to "alice", "platform" to "android"))
+        val first = BugReportInboxState().requesting().received(
+            BugReportInbox(ok = true, reports = listOf(item("a")), counts = mapOf("new" to 2, "closed" to 1), nextOffset = 1),
+            offset = 0,
+        )
+        expect(first.loaded && !first.loading)
+        assertEq("New 2", first.label(BugReportInboxCopy.FILTERS[0]))
+        assertEq("All 3", first.label(BugReportInboxCopy.FILTERS[3]))
+        val more = first.requesting().received(BugReportInbox(ok = true, reports = listOf(item("b"))), offset = 1)
+        assertEq(listOf("a", "b"), more.reports.map { it.id })
+        assertEq(null, more.nextOffset)
+        val refused = more.requesting("closed").received(BugReportInbox.failure("Only ForkMesh administrators can read reported bugs."), offset = 0)
+        assertEq("closed", refused.status)
+        expect(refused.reports.isEmpty())
+        assertEq("Only ForkMesh administrators can read reported bugs.", refused.problem)
+        assertEq("@alice · android", BugReportInboxCopy.details(item("a")))
+        assertEq("Crash", BugReportInboxCopy.severityLabel("crash"))
+        expect(!loadBugReportInbox(null, "new").ok)
     }
 }

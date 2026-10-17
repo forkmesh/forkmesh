@@ -1,6 +1,10 @@
 package com.forkmesh.nativeapp.api
 
+import com.forkmesh.nativeapp.json.int
 import com.forkmesh.nativeapp.json.jsonMaps
+import com.forkmesh.nativeapp.json.long
+import com.forkmesh.nativeapp.json.maps
+import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 
 enum class EventTicketStatus { OK, SIGNED_OUT, UNAVAILABLE }
@@ -145,3 +149,71 @@ data class BugReportResult(val ok: Boolean, val id: String, val message: String)
 }
 
 data class BugReportAttachment(val name: String, val contentType: String, val data: ByteArray)
+
+data class BugReportInboxAttachment(val id: String, val name: String, val contentType: String, val size: Long) {
+    companion object {
+        fun from(json: Map<String, Any?>) = BugReportInboxAttachment(
+            json.str("id"), json.str("name", "attachment"), json.str("contentType"), json.long("size"),
+        )
+    }
+}
+
+data class BugReportInboxItem(
+    val id: String,
+    val status: String,
+    val severity: String,
+    val source: String,
+    val platform: String,
+    val appVersion: String,
+    val osVersion: String,
+    val device: String,
+    val createdAt: Long,
+    val account: String,
+    val message: String,
+    val contact: String,
+    val screen: String,
+    val packageId: String,
+    val attachments: List<BugReportInboxAttachment>,
+) {
+    companion object {
+        fun from(json: Map<String, Any?>) = BugReportInboxItem(
+            id = json.str("id"),
+            status = json.str("status", "new"),
+            severity = json.str("severity", "normal"),
+            source = json.str("source"),
+            platform = json.str("platform"),
+            appVersion = json.str("appVersion"),
+            osVersion = json.str("osVersion"),
+            device = json.str("device"),
+            createdAt = json.long("createdAt"),
+            account = json.str("account"),
+            message = json.str("message"),
+            contact = json.str("contact"),
+            screen = json.str("screen"),
+            packageId = json.str("package"),
+            attachments = json.maps("attachments").map(BugReportInboxAttachment::from),
+        )
+    }
+}
+
+data class BugReportInbox(
+    val ok: Boolean,
+    val reports: List<BugReportInboxItem> = emptyList(),
+    val counts: Map<String, Int> = emptyMap(),
+    val nextOffset: Int? = null,
+    val message: String = "",
+) {
+    companion object {
+        fun from(json: Map<String, Any?>): BugReportInbox {
+            val counts = json.obj("counts")
+            return BugReportInbox(
+                ok = true,
+                reports = json.maps("reports").map(BugReportInboxItem::from),
+                counts = counts.keys.associateWith { counts.int(it) },
+                nextOffset = if (json["nextOffset"] == null) null else json.int("nextOffset"),
+            )
+        }
+
+        fun failure(message: String) = BugReportInbox(ok = false, message = message)
+    }
+}

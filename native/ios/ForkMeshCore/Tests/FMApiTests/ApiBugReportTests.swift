@@ -197,4 +197,46 @@ final class ApiBugReportTests: XCTestCase {
             XCTAssertFalse(signedOut, "status \(status)")
         }
     }
+
+    func testTheInboxListsReportsForAnAdministrator() async throws {
+        let body = portEncode([
+            "ok": true, "status": "new", "nextOffset": 50,
+            "counts": ["new": 2, "triaged": 1, "closed": 0],
+            "reports": [[
+                "id": "r1", "status": "new", "severity": "crash", "platform": "ios", "appVersion": "1.0.0+2",
+                "createdAt": 1_783_463_371_000, "account": "alice", "message": "Repos tab spins.",
+                "contact": "reply@example.test",
+                "attachments": [["id": "a1", "name": "screen.png", "contentType": "image/png", "size": 6]],
+            ]],
+        ])
+        let relay = FakeBugRelay(status: 200, body: body)
+        let api = wire(relay)
+        api.sessionTokenProvider = { "session-token" }
+
+        let inbox = await api.bugReportInbox(status: "new", offset: 50)
+
+        XCTAssertTrue(inbox.ok)
+        XCTAssertEqual(inbox.counts["new"], 2)
+        XCTAssertEqual(inbox.nextOffset, 50)
+        let report = try XCTUnwrap(inbox.reports.first)
+        XCTAssertEqual(report.message, "Repos tab spins.")
+        XCTAssertEqual(report.contact, "reply@example.test")
+        XCTAssertEqual(report.createdAt, 1_783_463_371_000)
+        XCTAssertEqual(report.attachments.first?.name, "screen.png")
+        let request = try XCTUnwrap(relay.http.requests.first)
+        XCTAssertEqual(request.method, "GET")
+        XCTAssertEqual(portRawPath(request), "/api/bug-reports/inbox")
+        XCTAssertEqual(request.url.query, "status=new&offset=50")
+    }
+
+    func testTheInboxRefusalSaysItIsForAdministrators() async {
+        let relay = FakeBugRelay(status: 403, body: portEncode(["error": "admin_required"]))
+        let api = wire(relay)
+
+        let inbox = await api.bugReportInbox()
+
+        XCTAssertFalse(inbox.ok)
+        XCTAssertTrue(inbox.reports.isEmpty)
+        XCTAssertTrue(inbox.message.contains("administrators"), inbox.message)
+    }
 }

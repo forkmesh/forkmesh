@@ -26,11 +26,10 @@ Three properties matter more here than on the rest of the API:
   app version, source, status, timestamp -- stay in plaintext, so the report
   list sorts and paginates without decrypting anything.
 
-Nothing here reads reports back, so the public API surface stays write-only
-and no public route can be coaxed into listing what other people reported.
-Reports are read and triaged only in the platform-admin console's Bug
-reports section (admin_support.py), behind the secret console path, a live
-is_admin check and the console CSRF token.
+Reports are read back only by platform administrators: the Report a bug
+plugin lists them from ``GET /api/bug-reports/inbox`` behind a bearer session
+and a live is_admin check, and they are triaged in the platform-admin
+console's Bug reports section (admin_support.py).
 
 Attachments are chunked into encrypted rows in ``bug_report_attachments``.
 They never enter the repository issue inbox or a public API response.
@@ -38,6 +37,7 @@ They never enter the repository issue inbox or a public API response.
 
 import base64
 import re
+from urllib.parse import parse_qs, urlparse
 
 
 def _bind_runtime(runtime):
@@ -74,6 +74,8 @@ RATE_LIMIT_MAX = 10
 # Reports the console has not been shown yet are what the badge counts, so the
 # statuses are deliberately few and mean exactly one thing each.
 STATUSES = ("new", "triaged", "closed")
+
+INBOX_PAGE_LIMIT = 50
 
 # Where the report came from. An unknown value is normalized rather than
 # rejected: a future client should not have its reports dropped by an older
@@ -332,3 +334,102 @@ async def bug_reports_handler(env, request):
         {"ok": True, "id": report_id, "status": "new",
          "credited": bool(account), "attachments": len(attachments)},
         status=201, cache_control=no_store)
+
+
+async def _inbox_admin(env, request):
+    try:
+        authorization = str(request.headers.get("authorization") or "")
+    except Exception:
+        return ""
+    if not authorization.lower().startswith("bearer "):
+        return ""
+    try:
+        actor = safe_segment(await _authed_account_name(env, request)) or ""
+    except Exception:
+        return ""
+    return actor if actor and await _is_admin(env, actor) else ""
+
+
+async def _sealed_record(env, value):
+    if not value:
+        return {}
+    try:
+        record = await decrypt_row(env, value)
+    except Exception:
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+async def inbox_report(env, row):
+    record = await _sealed_record(env, row.get("data"))
+    attachments = [
+        {"id": str(item.get("id") or ""), "name": str(item.get("name") or "attachment"),
+         "contentType": str(item.get("contentType") or ""),
+         "size": int(item.get("size") or 0)}
+        for item in (record.get("attachments") or []) if isinstance(item, dict)]
+    return {
+        "id": str(row.get("report_id") or ""),
+        "status": str(row.get("status") or "new"),
+        "severity": str(row.get("severity") or "normal"),
+        "source": str(row.get("source") or ""),
+        "platform": str(row.get("platform") or ""),
+        "appVersion": str(row.get("app_version") or ""),
+        "createdAt": int(row.get("created_at") or 0),
+        "account": str(row.get("account") or record.get("account") or ""),
+        "message": str(record.get("message") or ""),
+        "contact": str(record.get("contact") or ""),
+        "screen": str(record.get("screen") or ""),
+        "package": str(record.get("package") or ""),
+        "osVersion": str(record.get("osVersion") or ""),
+        "device": str(record.get("device") or ""),
+        "attachments": attachments,
+    }
+
+
+async def bug_reports_inbox_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "GET"})
+    if not await _inbox_admin(env, request):
+        return json_response(
+            {"error": "admin_required"}, status=403, cache_control=no_store)
+    params = parse_qs(urlparse(str(request.url or "")).query)
+
+    def param(name):
+        return _text((params.get(name) or [""])[0], 40).lower()
+
+    status = param("status")
+    status = status if status in STATUSES else ""
+    try:
+        limit = max(1, min(int(param("limit") or INBOX_PAGE_LIMIT),
+                           INBOX_PAGE_LIMIT))
+    except ValueError:
+        limit = INBOX_PAGE_LIMIT
+    try:
+        offset = max(0, int(param("offset") or 0))
+    except ValueError:
+        offset = 0
+    await ensure_schema(env)
+    counts = {name: 0 for name in STATUSES}
+    for row in await d1_all(
+            env, "SELECT status, COUNT(*) AS n FROM bug_reports "
+            "GROUP BY status") or []:
+        row = dict(row)
+        name = str(row.get("status") or "")
+        if name in counts:
+            counts[name] = int(row.get("n") or 0)
+    clause, args = (" WHERE status=?", [status]) if status else ("", [])
+    rows = await d1_all(
+        env,
+        "SELECT report_id, account, source, platform, app_version, severity, "
+        "status, data, created_at FROM bug_reports" + clause
+        + " ORDER BY created_at DESC, report_id DESC LIMIT ? OFFSET ?",
+        *args, limit + 1, offset) or []
+    reports = [await inbox_report(env, dict(row)) for row in rows[:limit]]
+    return json_response(
+        {"ok": True, "status": status or "all", "counts": counts,
+         "reports": reports, "offset": offset,
+         "nextOffset": offset + limit if len(rows) > limit else None},
+        cache_control=no_store)
