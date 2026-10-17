@@ -870,7 +870,7 @@ Motion motionForCommand(const QString &command, bool background)
     const auto has = [&c](const char *needle) { return c.contains(QLatin1String(needle)); };
     if (has("pytest") || has("ctest") || has("cargo test") || has("go test")
         || has("npm test") || has("npm run test") || has("yarn test") || has("pnpm test")
-        || has("dart test") || has("jest") || has("vitest")
+        || has("flutter test") || has("dart test") || has("jest") || has("vitest")
         || has("playwright") || has("gradlew test") || has("-tests") || has("unittest"))
         return Motion::Test;
     if (has("npm install") || has("npm i ") || has("npm ci") || has("pip install")
@@ -883,7 +883,7 @@ Motion motionForCommand(const QString &command, bool background)
     static const QRegularExpression tsc(QStringLiteral("\\btsc\\b"));
     if (has("ninja") || has("cmake") || has("make ") || c.trimmed() == QLatin1String("make")
         || has("cargo build") || has("go build") || has("npm run build") || c.contains(tsc)
-        || has("gradlew") || has("xcodebuild") || has("webpack")
+        || has("gradlew") || has("flutter build") || has("xcodebuild") || has("webpack")
         || has("vite build") || has("g++ ") || has("gcc ") || has("clang"))
         return Motion::Build;
     // git or gh at the start of any piece of the line.

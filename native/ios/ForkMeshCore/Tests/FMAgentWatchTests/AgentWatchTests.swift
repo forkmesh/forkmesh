@@ -25,7 +25,7 @@ let sampleTranscript = """
     print(p)
     EOF]
     [Edit /src/sync.dart]
-    [Bash dart test test/sync_test.dart]
+    [Bash flutter test test/sync_test.dart]
     [TodoWrite {"todos":[]}]
     [mcp__forkmesh__search_issues {"query":"flaky"}]
     [Bash {"command":"sleep 30","run_in_background":true}]

@@ -445,6 +445,7 @@ def _repository_shape(extras):
         "Angular": ("angular.json",),
         "Vite": ("vite.config.js", "vite.config.ts", "vite.config.mjs"),
         "Django": ("manage.py",),
+        "Flutter": ("pubspec.yaml", "lib/main.dart"),
         "Qt": ("cmakelists.txt", ".pro"),
         "Rust": ("cargo.toml",),
         "Go": ("go.mod",),
@@ -477,7 +478,8 @@ def _repository_shape(extras):
     category = "library"
     if any(path.startswith((".github/workflows/", ".gitlab-ci")) for path in lowered):
         category = "developer tooling"
-    if any(path.startswith(("ios/", "android/")) for path in lowered):
+    if any(path.startswith(("ios/", "android/")) for path in lowered) or \
+            "pubspec.yaml" in basenames:
         category = "mobile application"
     if any(name in basenames for name in (
             "next.config.js", "next.config.mjs", "angular.json",

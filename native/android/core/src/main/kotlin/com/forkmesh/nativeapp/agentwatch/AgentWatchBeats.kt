@@ -54,7 +54,7 @@ fun motionForTool(rawName: String, command: String = ""): AgentMotion {
 
 private val testCommands = listOf(
     "pytest", "ctest", "cargo test", "go test", "npm test", "npm run test", "yarn test", "pnpm test",
-    "dart test", "jest", "vitest", "playwright", "gradlew test", "-tests", "unittest",
+    "flutter test", "dart test", "jest", "vitest", "playwright", "gradlew test", "-tests", "unittest",
 )
 private val installCommands = listOf(
     "npm install", "npm i ", "npm ci", "pip install", "pip3 install", "uv add", "uv pip", "uv sync",
@@ -63,7 +63,7 @@ private val installCommands = listOf(
     "poetry install",
 )
 private val buildCommands = listOf(
-    "ninja", "cmake", "make ", "cargo build", "go build", "npm run build", "gradlew",
+    "ninja", "cmake", "make ", "cargo build", "go build", "npm run build", "gradlew", "flutter build",
     "xcodebuild", "webpack", "vite build", "g++ ", "gcc ", "clang",
 )
 private val gitCommand = Regex("""(^|[;&|(]\s*)(git|gh)\s""")

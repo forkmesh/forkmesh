@@ -3558,6 +3558,8 @@ flip_camera_ios_sharp e996
 flip_to_back_baseline e29d
 flip_to_back_outlined f08a
 flip_to_front_rounded f778
+flutter_dash_baseline e2a0
+flutter_dash_outlined f08d
 folder_delete_rounded f031f
 folder_shared_rounded f77f
 font_download_rounded f783
@@ -3605,6 +3607,7 @@ flourescent_baseline f0865
 flourescent_outlined f08a7
 fluorescent_baseline f0865
 fluorescent_outlined f08a7
+flutter_dash_rounded f77a
 folder_copy_baseline f0506
 folder_copy_outlined f05ff
 folder_open_baseline e2a4
@@ -3700,6 +3703,7 @@ flash_off_baseline e292
 flash_off_outlined f07f
 flight_class_sharp f0410
 flip_to_back_sharp e998
+flutter_dash_sharp e99b
 folder_off_rounded f0320
 folder_zip_rounded f0321
 food_bank_baseline e2aa

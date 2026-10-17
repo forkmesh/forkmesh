@@ -33,7 +33,7 @@ p = 'x'
 print(p)
 EOF]
 [Edit /src/sync.dart]
-[Bash dart test test/sync_test.dart]
+[Bash flutter test test/sync_test.dart]
 [TodoWrite {"todos":[]}]
 [mcp__forkmesh__search_issues {"query":"flaky"}]
 [Bash {"command":"sleep 30","run_in_background":true}]
@@ -148,7 +148,7 @@ class AgentWatchBeatsTest {
         val beats = beatsFromAgentEvents(
             listOf(
                 AgentUserMessage("fix it"),
-                AgentToolCallEvent(AgentToolCall("1", "run_command", mapOf("command" to "dart test"))),
+                AgentToolCallEvent(AgentToolCall("1", "run_command", mapOf("command" to "flutter test"))),
                 AgentToolResultEvent(AgentToolResult("1", "run_command", "Permission denied", isError = true)),
                 AgentAssistantMessage("Done **now**."),
                 AgentDone(AgentStopReason.TurnLimit, 1, 0, 0),
@@ -158,7 +158,7 @@ class AgentWatchBeatsTest {
             listOf(AgentMotion.prompt, AgentMotion.test, AgentMotion.denied, AgentMotion.speak, AgentMotion.finish),
             beats.map { it.motion },
         )
-        assertEq("run_command dart test", beats[1].text)
+        assertEq("run_command flutter test", beats[1].text)
         assertEq("Done now.", beats[3].said)
         assertEq("turnLimit after 1 turn", beats[4].text)
     }

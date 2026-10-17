@@ -419,7 +419,7 @@ final class ApiAgentsTests: XCTestCase {
 
     func testAPlainTranscriptIsReadAsIs() async throws {
         let http = FakeHTTPClient { _ in
-            portJSON(["status": "done", "transcript": "Running tests\ndart test passed\nOpened PR #7"])
+            portJSON(["status": "done", "transcript": "Running tests\nflutter test passed\nOpened PR #7"])
         }
         let api = ApiPortFixture.api(http)
 
@@ -427,7 +427,7 @@ final class ApiAgentsTests: XCTestCase {
 
         XCTAssertEqual(http.lastRequest.map(portMethodPath), "POST /api/repo/owner/repo/agents/42/transcript")
         XCTAssertEqual(transcript.status, "done")
-        XCTAssertTrue(transcript.transcript.contains("dart test passed"))
+        XCTAssertTrue(transcript.transcript.contains("flutter test passed"))
         XCTAssertFalse(transcript.sealedForOtherDevice)
     }
 
@@ -436,7 +436,7 @@ final class ApiAgentsTests: XCTestCase {
     func testActionReadsCarryTheSignedOwnerFields() async throws {
         let http = FakeHTTPClient { request in
             if portRawPath(request).hasSuffix("/log") {
-                return portJSON(["id": "7", "status": "success", "log": "checkout\ndart test passed"])
+                return portJSON(["id": "7", "status": "success", "log": "checkout\nflutter test passed"])
             }
             return portJSON([
                 "workflows": [["path": ".forkmesh/test.yml", "name": "Test suite", "on": ["push", "workflow_dispatch"]]],

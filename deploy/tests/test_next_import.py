@@ -42,7 +42,7 @@ def init(path):
 def repos(tmp_path):
     prod = init(tmp_path / "prod")
     write(prod, "app/entry.py", "one\n")
-    write(prod, "mobile/app.txt", "mobile\n")
+    write(prod, "mobile/app.dart", "flutter\n")
     write(prod, "native/ios.swift", "old swift\n")
     write(prod, ".github/ci.yml", "ci\n")
     base = commit(prod, "production base", "2026-09-23T10:00:00-0400")
@@ -79,7 +79,7 @@ def test_replays_history_onto_the_base_with_omitted_paths_restored(repos):
     assert result["updated"] and result["commits"] == 4
     assert sh(prod, "rev-parse", "next-import") == tip
     assert sh(prod, "merge-base", "--is-ancestor", base, tip) == ""
-    assert show(prod, tip, "mobile/app.txt") == "mobile"
+    assert show(prod, tip, "mobile/app.dart") == "flutter"
     assert show(prod, tip, ".github/ci.yml") == "ci"
     assert show(prod, tip, "native/ios.swift") == "new swift"
     assert show(prod, tip, "deploy/fleet.toml") == "fleet"
@@ -115,7 +115,7 @@ def test_new_next_commits_fast_forward_the_branch(repos):
     second = run(prod, nxt, base, seed)
     assert second["previous"] == first and second["updated"]
     assert sh(prod, "rev-list", "--count", f"{first}..{second['tip']}") == "1"
-    assert show(prod, second["tip"], "mobile/app.txt") == "mobile"
+    assert show(prod, second["tip"], "mobile/app.dart") == "flutter"
 
 
 def test_refuses_to_rewind_a_diverged_branch(repos):

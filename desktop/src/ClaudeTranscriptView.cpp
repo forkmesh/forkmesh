@@ -1652,6 +1652,7 @@ const CommandIconSpec &commandIconSpec(const QString &key)
         add("python", brand("python"), Blue, oct("code"));
         add("node", brand("node"), Green, oct("code"));
         add("npm", brand("npm"), Red, oct("package"));
+        add("flutter", brand("flutter"), Blue, oct("device-mobile"));
         add("dart", brand("dartlang"), Blue, oct("code"));
         add("swift", brand("swift"), Orange, oct("code"));
         add("xcode", brand("xcode"), Blue, own("build"));

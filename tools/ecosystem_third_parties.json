@@ -1299,11 +1299,11 @@
   {
     "slug": "pub-dev",
     "name": "pub.dev",
-    "tagline": "Dart package repository",
+    "tagline": "Dart and Flutter package repository",
     "url": "https://pub.dev",
     "category": "packages",
-    "summary": "pub.dev hosts packages for Dart.",
-    "watching": "The security scan reads Pub lockfiles as the Pub ecosystem for OSV lookups. The desktop's agent network gate maps dart pub commands to pub.dev so the agent firewall can ask first.",
+    "summary": "pub.dev hosts packages for Dart and Flutter.",
+    "watching": "The security scan reads Pub lockfiles as the Pub ecosystem for OSV lookups. The desktop's agent network gate maps dart and flutter pub commands to pub.dev so the agent firewall can ask first.",
     "tags": [
       "registry",
       "dart"

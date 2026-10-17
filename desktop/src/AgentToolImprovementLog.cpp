@@ -334,7 +334,7 @@ QString commandShape(const QString &command)
     static const QStringList multiVerb = {
         QStringLiteral("git"),   QStringLiteral("go"),      QStringLiteral("cargo"),
         QStringLiteral("npm"),   QStringLiteral("npx"),     QStringLiteral("pip"),
-        QStringLiteral("pip3"),  QStringLiteral("gh"),
+        QStringLiteral("pip3"),  QStringLiteral("flutter"), QStringLiteral("gh"),
         QStringLiteral("docker"), QStringLiteral("systemctl"), QStringLiteral("cmake"),
         QStringLiteral("wrangler"), QStringLiteral("gradle"), QStringLiteral("gradlew"),
         QStringLiteral("ctest"), QStringLiteral("make"),   QStringLiteral("ninja")};
@@ -354,7 +354,7 @@ bool testRunnerCommand(const QString &command)
         "go\\s+(?:test|build|vet)|cargo\\s+(?:test|build|check)|ctest|"
         "cmake\\s+--build|ninja|swift\\s+(?:test|build)|npm\\s+test|npm\\s+run\\s+test|"
         "npx\\s+playwright\\s+test|npx\\s+jest|jest|vitest|node\\s+--test|"
-        "gradlew?\\s+test|make\\s+(?:test|check))(?:\\s|$)"));
+        "flutter\\s+test|gradlew?\\s+test|make\\s+(?:test|check))(?:\\s|$)"));
     return runner.match(command).hasMatch();
 }
 
