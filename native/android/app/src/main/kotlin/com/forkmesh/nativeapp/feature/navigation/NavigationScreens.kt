@@ -669,17 +669,6 @@ fun rememberHubItemRunner(scope: CoroutineScope, status: FmStatus): (HubItem) ->
                     status.error("Could not open the design system at $url")
                 }
             }
-            HubItem.Action.Workflows -> {
-                val origin = Services.get<ApiService>()?.gitOrigin
-                if (origin == null) {
-                    status.error("Sign in to a ForkMesh project to open Workflows")
-                } else {
-                    val url = origin + HubItem.WORKFLOWS_PATH
-                    if (!NavigationFeature.openInBrowser(context, url, report = false)) {
-                        status.error("Could not open Workflows at $url")
-                    }
-                }
-            }
             HubItem.Action.ReportBug -> ToolsFeature.onSharedText(AppNavigation.navigator, "")
             HubItem.Action.SetStatus -> if (auth != null) scope.launch { showUserStatusSheet(messenger, auth) }
             HubItem.Action.SignIn -> AccountFeature.openSignIn()

@@ -45,6 +45,7 @@ data class PerformanceAlert(val reason: String) {
 
 object DiagnosticsBundle {
     const val REPOSITORY = "forkmesh/forkmesh"
+    const val PLAYBOOK = "docs/native/PERFORMANCE_CHECKS.md"
     const val MAX_PROMPT_CHARS = 8000
     const val LOG_LINES = 15
     const val SLOW_EVENTS = 8
@@ -76,7 +77,10 @@ object DiagnosticsBundle {
         val why = if (reason.isEmpty()) "The user asked for a performance check" else "The app detected a performance issue: $reason"
         return "$why. Diagnose what makes the ForkMesh native Android app (native/android in $REPOSITORY) slow on this phone, " +
             "using the diagnostics bundle below. Fix the cause on a branch with tests, and explain what you found. " +
-            "The bundle was scrubbed of tokens, emails and message contents on the phone."
+            "The bundle was scrubbed of tokens, emails and message contents on the phone. " +
+            "First read $PLAYBOOK: how to read each section, and what earlier checks fixed and ruled out. " +
+            "Before committing, add this check to it (evidence, cause, fix, ruled out) and correct what it got wrong; " +
+            "if the bundle lacked evidence you needed, make the app collect it."
     }
 
     fun report(

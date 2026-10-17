@@ -46,7 +46,7 @@ public enum PackageGate {
         .competitors: "competitor", .ledger: "ledger",
         .vault: "vault", .coves: "coves", .cove: "coves", .calories: "calories", .steps: "steps", .water: "water",
         .sleep: "sleep", .sugarBreak: "sugar-break", .stretch: "stretch", .foodGuide: "food-guide", .speech: "speech",
-        .glassesAlert: "glasses-alert", .phoneSecurity: "phone-security", .faceChanger: "face-changer", .videoMixDjStudio: "video-mix-dj-studio", .appStoreStatus: "app-store-status", .rssReader: "rss-reader", .localAI: "on-device-ai", .activity: "activity", .logs: "logs", .diagnostics: "diagnostics", .people: "people", .docs: "docs",
+        .glassesAlert: "glasses-alert", .phoneSecurity: "phone-security", .faceChanger: "face-changer", .videoMixDjStudio: "video-mix-dj-studio", .appStoreStatus: "app-store-status", .rssReader: "rss-reader", .workflows: "workflows", .localAI: "on-device-ai", .activity: "activity", .logs: "logs", .diagnostics: "diagnostics", .people: "people", .docs: "docs",
         .stats: "stats", .status: "status-page", .orgs: "organizations", .org: "organizations", .tour: "tour",
     ]
 

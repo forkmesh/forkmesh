@@ -2,6 +2,7 @@ import Foundation
 
 public enum DiagnosticsBundle {
     public static let repository: String = "forkmesh/forkmesh"
+    public static let playbook: String = "docs/native/PERFORMANCE_CHECKS.md"
     public static let logSections: [String] = ["## App log", "## Busiest log lines", "## stalls.log tail"]
 
     static let rules: [(NSRegularExpression, String)] = [
@@ -44,7 +45,10 @@ public enum DiagnosticsBundle {
         return """
             \(why). Diagnose what makes the ForkMesh native iOS app (native/ios in \(repository)) slow on this iPhone, \
             using the diagnostics bundle below. Fix the cause on a branch with tests, and explain what you found. \
-            The bundle was scrubbed of tokens, emails and message contents on the phone.
+            The bundle was scrubbed of tokens, emails and message contents on the phone. \
+            First read \(playbook): how to read each section, and what earlier checks fixed and ruled out. \
+            Before committing, add this check to it (evidence, cause, fix, ruled out) and correct what it got wrong; \
+            if the bundle lacked evidence you needed, make the app collect it.
             """
     }
 

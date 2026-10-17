@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Automation",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "summary": "Build automations on a visual canvas with 100 integrations, and edit your repositories' actions, shortcuts, skills and special agents as connected steps. Each integration group is its own package.",
   "screenshots": [
     {
@@ -34,6 +34,7 @@
     "worker": "builtin:workflows",
     "dashboard-view": "content/web/view.html",
     "dashboard-script": "content/web/page.js",
+    "mobile-engine": "content/mobile/workflow-engine.js",
     "agent-builder": "content/teammates/workflow-builder.json",
     "shortcut-build": "content/shortcuts/build-a-workflow.md",
     "shortcut-check": "content/shortcuts/check-forkmesh-files.sh",
@@ -42,6 +43,15 @@
     "settings": "builtin:package"
   },
   "contributions": [
+    {
+      "id": "phone-engine",
+      "socket": "mobile.engine",
+      "entrypoint": "mobile-engine",
+      "config": {
+        "runtime": "javascriptcore",
+        "bundle": "marketplace/tools/workflows_mobile_bundle.py"
+      }
+    },
     {
       "socket": "dashboard.page",
       "entrypoint": "dashboard-view",
@@ -125,6 +135,16 @@
     {
       "id": "network.workflows.webhook",
       "label": "Give each active webhook workflow a secret URL that anyone with it can call",
+      "risk": "sensitive"
+    },
+    {
+      "id": "network.workflows.device",
+      "label": "Call the public HTTPS APIs your workflow steps name from your phone when you run a workflow there",
+      "risk": "high"
+    },
+    {
+      "id": "device.workflows.credentials",
+      "label": "Keep copies of the credentials you choose in your phone's secure storage for phone runs",
       "risk": "sensitive"
     }
   ],

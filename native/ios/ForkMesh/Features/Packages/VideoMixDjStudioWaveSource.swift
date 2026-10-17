@@ -14,13 +14,14 @@ enum DjWaveSource {
         return bars.isEmpty ? nil : bars
     }
 
-    static func bars(for id: String, source: URL) async -> [DjWaveBar]? {
-        await Task.detached(priority: .utility) { () -> [DjWaveBar]? in
-            guard let file = await download(source) else { return nil }
+    static func read(for id: String, source: URL, bars wantsBars: Bool) async -> (bars: [DjWaveBar]?, audio: DjScratchAudio?) {
+        await Task.detached(priority: .utility) { () -> ([DjWaveBar]?, DjScratchAudio?) in
+            guard let file = await download(source) else { return (nil, nil) }
             defer { try? FileManager.default.removeItem(at: file) }
-            guard let bars = await decode(file), !bars.isEmpty else { return nil }
-            if let url = cacheURL(id) { try? DjWaveCache.encode(bars).write(to: url, options: .atomic) }
-            return bars
+            guard let decoded = await decode(file, bars: wantsBars) else { return (nil, nil) }
+            let bars = decoded.bars.flatMap { $0.isEmpty ? nil : $0 }
+            if let bars, let url = cacheURL(id) { try? DjWaveCache.encode(bars).write(to: url, options: .atomic) }
+            return (bars, decoded.audio)
         }.value
     }
 
@@ -92,7 +93,7 @@ enum DjWaveSource {
         return nil
     }
 
-    private static func decode(_ file: URL) async -> [DjWaveBar]? {
+    private static func decode(_ file: URL, bars wantsBars: Bool) async -> (bars: [DjWaveBar]?, audio: DjScratchAudio?)? {
         let asset = AVURLAsset(url: file)
         guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
             let duration = try? await asset.load(.duration).seconds, duration.isFinite, duration > 1,
@@ -110,9 +111,13 @@ enum DjWaveSource {
         guard reader.canAdd(output) else { return nil }
         reader.add(output)
         guard reader.startReading() else { return nil }
+        let keepsAudio = DjScratchAudio.fits(seconds: duration)
+        guard wantsBars || keepsAudio else { return nil }
         let count = DjWaveAccumulator.bars(seconds: duration)
         var accumulator = DjWaveAccumulator(sampleRate: sampleRate, totalSamples: Int(duration * sampleRate), bars: count)
         var samples: [Float] = []
+        var pcm: [Int16] = []
+        if keepsAudio { pcm.reserveCapacity(Int(duration * sampleRate) + Int(sampleRate)) }
         while let buffer = output.copyNextSampleBuffer() {
             if Task.isCancelled {
                 reader.cancelReading()
@@ -127,9 +132,11 @@ enum DjWaveSource {
                 return CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: count * MemoryLayout<Float>.size, destination: base)
             }
             guard status == kCMBlockBufferNoErr else { continue }
-            accumulator.add(samples)
+            if wantsBars { accumulator.add(samples) }
+            if keepsAudio { pcm.append(contentsOf: samples.lazy.map(DjScratchAudio.pcm)) }
         }
         guard reader.status == .completed else { return nil }
-        return accumulator.finish(bars: count)
+        let audio = keepsAudio && pcm.count > Int(sampleRate) ? DjScratchAudio(samples: pcm, rate: sampleRate) : nil
+        return (wantsBars ? accumulator.finish(bars: count) : nil, audio)
     }
 }

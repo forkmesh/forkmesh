@@ -1,0 +1,7491 @@
+{
+ "schema": "forkmesh-workflows-mobile-v1",
+ "packPrefix": "workflows-pack-",
+ "limits": {
+  "maxNodes": 60,
+  "maxConnections": 120,
+  "maxName": 80,
+  "maxNodeName": 60,
+  "maxValueChars": 20000,
+  "maxItems": 100,
+  "maxResponseChars": 262144,
+  "maxRunItems": 5,
+  "maxRunItemChars": 4000,
+  "positionLimit": 20000,
+  "scheduleMinMinutes": 5,
+  "scheduleMaxMinutes": 10080,
+  "requestTimeoutSeconds": 30
+ },
+ "runLimits": {
+  "manual": [
+   25,
+   45000
+  ],
+  "webhook": [
+   15,
+   25000
+  ],
+  "schedule": [
+   6,
+   40000
+  ]
+ },
+ "userAgent": "ForkMesh-Workflows/1.0 (+https://forkmesh.com)",
+ "blockedHostSuffixes": [
+  "forkmesh.com",
+  "localhost",
+  ".local",
+  ".internal"
+ ],
+ "operators": [
+  [
+   "equals",
+   "is equal to"
+  ],
+  [
+   "notEquals",
+   "is not equal to"
+  ],
+  [
+   "contains",
+   "contains"
+  ],
+  [
+   "notContains",
+   "does not contain"
+  ],
+  [
+   "startsWith",
+   "starts with"
+  ],
+  [
+   "endsWith",
+   "ends with"
+  ],
+  [
+   "gt",
+   "is greater than"
+  ],
+  [
+   "gte",
+   "is greater than or equal to"
+  ],
+  [
+   "lt",
+   "is less than"
+  ],
+  [
+   "lte",
+   "is less than or equal to"
+  ],
+  [
+   "isEmpty",
+   "is empty"
+  ],
+  [
+   "isNotEmpty",
+   "is not empty"
+  ],
+  [
+   "isTrue",
+   "is true"
+  ],
+  [
+   "isFalse",
+   "is false"
+  ]
+ ],
+ "coreNodes": {
+  "core.manual": {
+   "name": "Manual trigger",
+   "group": "Triggers",
+   "icon": "mouse-pointer-click",
+   "color": "#64748b",
+   "trigger": true,
+   "outputs": [
+    "main"
+   ],
+   "description": "Start the workflow with the Run button.",
+   "fields": [
+    {
+     "key": "payload",
+     "label": "Test data (JSON)",
+     "type": "json",
+     "placeholder": "{\"name\": \"Ada\"}"
+    }
+   ]
+  },
+  "core.webhook": {
+   "name": "Webhook",
+   "group": "Triggers",
+   "icon": "webhook",
+   "color": "#7c3aed",
+   "trigger": true,
+   "outputs": [
+    "main"
+   ],
+   "description": "Start the workflow when its secret URL is called.",
+   "fields": []
+  },
+  "core.schedule": {
+   "name": "Schedule",
+   "group": "Triggers",
+   "icon": "clock",
+   "color": "#0891b2",
+   "trigger": true,
+   "outputs": [
+    "main"
+   ],
+   "description": "Start the workflow every few minutes, hours or days.",
+   "fields": [
+    {
+     "key": "every",
+     "label": "Every (minutes)",
+     "type": "number",
+     "required": true,
+     "default": "60",
+     "placeholder": "60"
+    }
+   ]
+  },
+  "core.http": {
+   "name": "HTTP request",
+   "group": "Core",
+   "icon": "globe",
+   "color": "#2563eb",
+   "outputs": [
+    "main"
+   ],
+   "description": "Call any HTTPS API.",
+   "fields": [
+    {
+     "key": "method",
+     "label": "Method",
+     "type": "select",
+     "required": true,
+     "default": "GET",
+     "options": [
+      {
+       "value": "GET",
+       "label": "GET"
+      },
+      {
+       "value": "POST",
+       "label": "POST"
+      },
+      {
+       "value": "PUT",
+       "label": "PUT"
+      },
+      {
+       "value": "PATCH",
+       "label": "PATCH"
+      },
+      {
+       "value": "DELETE",
+       "label": "DELETE"
+      }
+     ]
+    },
+    {
+     "key": "url",
+     "label": "URL",
+     "type": "string",
+     "required": true,
+     "placeholder": "https://api.example.com/items"
+    },
+    {
+     "key": "headers",
+     "label": "Headers (JSON)",
+     "type": "json",
+     "placeholder": "{\"Authorization\": \"Bearer ...\"}"
+    },
+    {
+     "key": "query",
+     "label": "Query parameters (JSON)",
+     "type": "json"
+    },
+    {
+     "key": "bodyType",
+     "label": "Body",
+     "type": "select",
+     "default": "json",
+     "options": [
+      {
+       "value": "json",
+       "label": "JSON"
+      },
+      {
+       "value": "form",
+       "label": "Form"
+      },
+      {
+       "value": "text",
+       "label": "Text"
+      }
+     ]
+    },
+    {
+     "key": "body",
+     "label": "Body content",
+     "type": "text",
+     "placeholder": "{\"text\": \"{{ $json.message }}\"}"
+    }
+   ]
+  },
+  "core.set": {
+   "name": "Set fields",
+   "group": "Core",
+   "icon": "pencil",
+   "color": "#16a34a",
+   "outputs": [
+    "main"
+   ],
+   "description": "Add or change fields on every item.",
+   "fields": [
+    {
+     "key": "values",
+     "label": "Fields (JSON)",
+     "type": "json",
+     "required": true,
+     "placeholder": "{\"fullName\": \"{{ $json.first }} {{ $json.last }}\"}"
+    },
+    {
+     "key": "keep",
+     "label": "Keep the other fields",
+     "type": "boolean",
+     "default": "true"
+    }
+   ]
+  },
+  "core.if": {
+   "name": "If",
+   "group": "Flow",
+   "icon": "split",
+   "color": "#ea580c",
+   "outputs": [
+    "true",
+    "false"
+   ],
+   "description": "Send each item down the true or false branch.",
+   "fields": [
+    {
+     "key": "left",
+     "label": "Value",
+     "type": "string",
+     "placeholder": "{{ $json.status }}"
+    },
+    {
+     "key": "operator",
+     "label": "Operator",
+     "type": "select",
+     "required": true,
+     "default": "equals",
+     "options": [
+      {
+       "value": "equals",
+       "label": "is equal to"
+      },
+      {
+       "value": "notEquals",
+       "label": "is not equal to"
+      },
+      {
+       "value": "contains",
+       "label": "contains"
+      },
+      {
+       "value": "notContains",
+       "label": "does not contain"
+      },
+      {
+       "value": "startsWith",
+       "label": "starts with"
+      },
+      {
+       "value": "endsWith",
+       "label": "ends with"
+      },
+      {
+       "value": "gt",
+       "label": "is greater than"
+      },
+      {
+       "value": "gte",
+       "label": "is greater than or equal to"
+      },
+      {
+       "value": "lt",
+       "label": "is less than"
+      },
+      {
+       "value": "lte",
+       "label": "is less than or equal to"
+      },
+      {
+       "value": "isEmpty",
+       "label": "is empty"
+      },
+      {
+       "value": "isNotEmpty",
+       "label": "is not empty"
+      },
+      {
+       "value": "isTrue",
+       "label": "is true"
+      },
+      {
+       "value": "isFalse",
+       "label": "is false"
+      }
+     ]
+    },
+    {
+     "key": "right",
+     "label": "Compare with",
+     "type": "string",
+     "placeholder": "active"
+    }
+   ]
+  },
+  "core.filter": {
+   "name": "Filter",
+   "group": "Flow",
+   "icon": "filter",
+   "color": "#ea580c",
+   "outputs": [
+    "main"
+   ],
+   "description": "Keep only the items that match a condition.",
+   "fields": [
+    {
+     "key": "left",
+     "label": "Value",
+     "type": "string",
+     "placeholder": "{{ $json.status }}"
+    },
+    {
+     "key": "operator",
+     "label": "Operator",
+     "type": "select",
+     "required": true,
+     "default": "equals",
+     "options": [
+      {
+       "value": "equals",
+       "label": "is equal to"
+      },
+      {
+       "value": "notEquals",
+       "label": "is not equal to"
+      },
+      {
+       "value": "contains",
+       "label": "contains"
+      },
+      {
+       "value": "notContains",
+       "label": "does not contain"
+      },
+      {
+       "value": "startsWith",
+       "label": "starts with"
+      },
+      {
+       "value": "endsWith",
+       "label": "ends with"
+      },
+      {
+       "value": "gt",
+       "label": "is greater than"
+      },
+      {
+       "value": "gte",
+       "label": "is greater than or equal to"
+      },
+      {
+       "value": "lt",
+       "label": "is less than"
+      },
+      {
+       "value": "lte",
+       "label": "is less than or equal to"
+      },
+      {
+       "value": "isEmpty",
+       "label": "is empty"
+      },
+      {
+       "value": "isNotEmpty",
+       "label": "is not empty"
+      },
+      {
+       "value": "isTrue",
+       "label": "is true"
+      },
+      {
+       "value": "isFalse",
+       "label": "is false"
+      }
+     ]
+    },
+    {
+     "key": "right",
+     "label": "Compare with",
+     "type": "string",
+     "placeholder": "active"
+    }
+   ]
+  },
+  "core.merge": {
+   "name": "Merge",
+   "group": "Flow",
+   "icon": "merge",
+   "color": "#ea580c",
+   "outputs": [
+    "main"
+   ],
+   "description": "Combine the items of every incoming branch.",
+   "fields": []
+  },
+  "core.limit": {
+   "name": "Limit",
+   "group": "Flow",
+   "icon": "list-end",
+   "color": "#ea580c",
+   "outputs": [
+    "main"
+   ],
+   "description": "Keep the first items only.",
+   "fields": [
+    {
+     "key": "max",
+     "label": "Items to keep",
+     "type": "number",
+     "required": true,
+     "default": "10"
+    }
+   ]
+  },
+  "core.split": {
+   "name": "Split out",
+   "group": "Flow",
+   "icon": "list-tree",
+   "color": "#ea580c",
+   "outputs": [
+    "main"
+   ],
+   "description": "Turn a list inside an item into separate items.",
+   "fields": [
+    {
+     "key": "field",
+     "label": "List field",
+     "type": "string",
+     "required": true,
+     "placeholder": "data.items"
+    }
+   ]
+  },
+  "core.noop": {
+   "name": "No operation",
+   "group": "Flow",
+   "icon": "circle-dot",
+   "color": "#64748b",
+   "outputs": [
+    "main"
+   ],
+   "description": "Pass items through unchanged.",
+   "fields": []
+  }
+ },
+ "integrations": {
+  "slack": {
+   "name": "Slack",
+   "category": "Communication",
+   "color": "#4A154B",
+   "description": "Post messages and manage channels in a Slack workspace.",
+   "base": "https://slack.com/api",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Bot token (xoxb-...)",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "postMessage": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "/chat.postMessage",
+     "fields": [
+      {
+       "key": "channel",
+       "label": "Channel",
+       "type": "string",
+       "required": true,
+       "placeholder": "#general or C0123456"
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "thread_ts",
+       "label": "Reply in thread (ts)",
+       "type": "string"
+      }
+     ]
+    },
+    "createChannel": {
+     "name": "Create a channel",
+     "method": "POST",
+     "path": "/conversations.create",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "is_private",
+       "label": "Private",
+       "type": "boolean"
+      }
+     ]
+    },
+    "listChannels": {
+     "name": "List channels",
+     "method": "GET",
+     "path": "/conversations.list",
+     "fields": [
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "100"
+      }
+     ]
+    }
+   },
+   "headers": {
+    "Content-Type": "application/json; charset=utf-8"
+   }
+  },
+  "discord": {
+   "name": "Discord",
+   "category": "Communication",
+   "color": "#5865F2",
+   "description": "Send messages as a Discord bot.",
+   "base": "https://discord.com/api/v10",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "Bot token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bot {apiKey}"
+    }
+   },
+   "operations": {
+    "sendMessage": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "/channels/{channelId}/messages",
+     "fields": [
+      {
+       "key": "channelId",
+       "label": "Channel ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "content",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      }
+     ]
+    },
+    "listChannels": {
+     "name": "List server channels",
+     "method": "GET",
+     "path": "/guilds/{guildId}/channels",
+     "fields": [
+      {
+       "key": "guildId",
+       "label": "Server ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "discordWebhook": {
+   "name": "Discord Webhook",
+   "category": "Communication",
+   "color": "#5865F2",
+   "description": "Post to a Discord channel through an incoming webhook.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Discord webhook URL",
+      "secret": true,
+      "url": true,
+      "placeholder": "https://discord.com/api/webhooks/..."
+     }
+    ]
+   },
+   "operations": {
+    "send": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "content",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "username",
+       "label": "Username",
+       "type": "string"
+      },
+      {
+       "key": "avatar_url",
+       "label": "Avatar URL",
+       "type": "string"
+      }
+     ]
+    }
+   }
+  },
+  "teams": {
+   "name": "Microsoft Teams",
+   "category": "Communication",
+   "color": "#4B53BC",
+   "description": "Post to a Teams channel through an incoming webhook.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Teams webhook URL",
+      "secret": true,
+      "url": true,
+      "placeholder": "https://"
+     }
+    ]
+   },
+   "operations": {
+    "send": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string"
+      },
+      {
+       "key": "text",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "telegram": {
+   "name": "Telegram",
+   "category": "Communication",
+   "color": "#26A5E4",
+   "description": "Send messages and photos with a Telegram bot.",
+   "base": "https://api.telegram.org/bot{token}",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Bot token",
+      "secret": true,
+      "placeholder": "123456:ABC-..."
+     }
+    ]
+   },
+   "operations": {
+    "sendMessage": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "/sendMessage",
+     "fields": [
+      {
+       "key": "chat_id",
+       "label": "Chat ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "parse_mode",
+       "label": "Formatting",
+       "type": "select",
+       "options": [
+        {
+         "value": "",
+         "label": "(none)"
+        },
+        {
+         "value": "Markdown",
+         "label": "Markdown"
+        },
+        {
+         "value": "MarkdownV2",
+         "label": "MarkdownV2"
+        },
+        {
+         "value": "HTML",
+         "label": "HTML"
+        }
+       ]
+      }
+     ]
+    },
+    "sendPhoto": {
+     "name": "Send a photo",
+     "method": "POST",
+     "path": "/sendPhoto",
+     "fields": [
+      {
+       "key": "chat_id",
+       "label": "Chat ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "photo",
+       "label": "Photo URL",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "caption",
+       "label": "Caption",
+       "type": "text"
+      }
+     ]
+    },
+    "getUpdates": {
+     "name": "Get updates",
+     "method": "GET",
+     "path": "/getUpdates",
+     "fields": [
+      {
+       "key": "offset",
+       "label": "Offset",
+       "type": "number"
+      }
+     ]
+    }
+   }
+  },
+  "mattermost": {
+   "name": "Mattermost",
+   "category": "Communication",
+   "color": "#0058CC",
+   "description": "Post to Mattermost through an incoming webhook.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Mattermost webhook URL",
+      "secret": true,
+      "url": true,
+      "placeholder": "https://"
+     }
+    ]
+   },
+   "operations": {
+    "send": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "text",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "channel",
+       "label": "Channel override",
+       "type": "string"
+      },
+      {
+       "key": "username",
+       "label": "Username",
+       "type": "string"
+      }
+     ]
+    }
+   }
+  },
+  "googleChat": {
+   "name": "Google Chat",
+   "category": "Communication",
+   "color": "#00AC47",
+   "description": "Post to a Google Chat space through a webhook.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Google Chat webhook URL",
+      "secret": true,
+      "url": true,
+      "placeholder": "https://"
+     }
+    ]
+   },
+   "operations": {
+    "send": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "text",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "pushover": {
+   "name": "Pushover",
+   "category": "Communication",
+   "color": "#249DF1",
+   "description": "Send push notifications to phones and desktops.",
+   "base": "https://api.pushover.net/1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Application token",
+      "secret": true,
+      "placeholder": ""
+     },
+     {
+      "key": "user",
+      "label": "User key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "body": {
+     "token": "{token}",
+     "user": "{user}"
+    }
+   },
+   "operations": {
+    "notify": {
+     "name": "Send a notification",
+     "method": "POST",
+     "path": "/messages.json",
+     "fields": [
+      {
+       "key": "message",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string"
+      },
+      {
+       "key": "url",
+       "label": "URL",
+       "type": "string"
+      },
+      {
+       "key": "priority",
+       "label": "Priority (-2 to 2)",
+       "type": "number"
+      }
+     ]
+    }
+   }
+  },
+  "ntfy": {
+   "name": "ntfy",
+   "category": "Communication",
+   "color": "#317F6F",
+   "description": "Publish push notifications to an ntfy topic.",
+   "base": "{server}",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Server URL",
+      "placeholder": "https://ntfy.sh",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": "",
+      "optional": true
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "publish": {
+     "name": "Publish a message",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "topic",
+       "label": "Topic",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "message",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string"
+      },
+      {
+       "key": "priority",
+       "label": "Priority (1 to 5)",
+       "type": "number"
+      },
+      {
+       "key": "tags",
+       "label": "Tags (JSON list)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "matrix": {
+   "name": "Matrix",
+   "category": "Communication",
+   "color": "#0DBD8B",
+   "description": "Send messages to a Matrix room.",
+   "base": "{server}/_matrix/client/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Homeserver URL",
+      "placeholder": "https://matrix.org",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "sendMessage": {
+     "name": "Send a message",
+     "method": "PUT",
+     "path": "/rooms/{roomId}/send/m.room.message/{txnId}",
+     "fields": [
+      {
+       "key": "roomId",
+       "label": "Room ID",
+       "type": "string",
+       "required": true,
+       "placeholder": "!abc:matrix.org"
+      },
+      {
+       "key": "body",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "txnId",
+       "label": "Transaction ID",
+       "type": "string",
+       "required": true,
+       "default": "{{ $now }}-{{ $item.index }}"
+      }
+     ],
+     "body": {
+      "msgtype": "m.text",
+      "body": "{body}"
+     }
+    }
+   }
+  },
+  "twilio": {
+   "name": "Twilio",
+   "category": "Communication",
+   "color": "#F22F46",
+   "description": "Send SMS and WhatsApp messages and start calls.",
+   "base": "https://api.twilio.com/2010-04-01/Accounts/{accountSid}",
+   "auth": {
+    "fields": [
+     {
+      "key": "accountSid",
+      "label": "Account SID",
+      "placeholder": ""
+     },
+     {
+      "key": "authToken",
+      "label": "Auth token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{accountSid}",
+     "{authToken}"
+    ]
+   },
+   "operations": {
+    "sendSms": {
+     "name": "Send an SMS",
+     "method": "POST",
+     "path": "/Messages.json",
+     "fields": [
+      {
+       "key": "To",
+       "label": "To",
+       "type": "string",
+       "required": true,
+       "placeholder": "+15551234567"
+      },
+      {
+       "key": "From",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "Body",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      }
+     ]
+    },
+    "call": {
+     "name": "Start a call",
+     "method": "POST",
+     "path": "/Calls.json",
+     "fields": [
+      {
+       "key": "To",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "From",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "Url",
+       "label": "TwiML URL",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   },
+   "encoding": "form"
+  },
+  "whatsapp": {
+   "name": "WhatsApp Business",
+   "category": "Communication",
+   "color": "#25D366",
+   "description": "Send WhatsApp messages through the Cloud API.",
+   "base": "https://graph.facebook.com/v19.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "sendText": {
+     "name": "Send a text message",
+     "method": "POST",
+     "path": "/{phoneNumberId}/messages",
+     "fields": [
+      {
+       "key": "phoneNumberId",
+       "label": "Phone number ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true,
+       "placeholder": "15551234567"
+      },
+      {
+       "key": "text",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "messaging_product": "whatsapp",
+      "to": "{to}",
+      "type": "text",
+      "text": {
+       "body": "{text}"
+      }
+     }
+    }
+   }
+  },
+  "sendgrid": {
+   "name": "SendGrid",
+   "category": "Email",
+   "color": "#1A82E2",
+   "description": "Send email and manage marketing contacts.",
+   "base": "https://api.sendgrid.com/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "sendEmail": {
+     "name": "Send an email",
+     "method": "POST",
+     "path": "/mail/send",
+     "fields": [
+      {
+       "key": "from",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "personalizations": [
+       {
+        "to": [
+         {
+          "email": "{to}"
+         }
+        ]
+       }
+      ],
+      "from": {
+       "email": "{from}"
+      },
+      "subject": "{subject}",
+      "content": [
+       {
+        "type": "text/plain",
+        "value": "{text}"
+       }
+      ]
+     }
+    },
+    "addContact": {
+     "name": "Add or update a contact",
+     "method": "PUT",
+     "path": "/marketing/contacts",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "firstName",
+       "label": "First name",
+       "type": "string"
+      },
+      {
+       "key": "lastName",
+       "label": "Last name",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "contacts": [
+       {
+        "email": "{email}",
+        "first_name": "{firstName}",
+        "last_name": "{lastName}"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "mailgun": {
+   "name": "Mailgun",
+   "category": "Email",
+   "color": "#F06B66",
+   "description": "Send email through a Mailgun domain.",
+   "base": "https://api.mailgun.net/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "api",
+     "{apiKey}"
+    ]
+   },
+   "operations": {
+    "sendEmail": {
+     "name": "Send an email",
+     "method": "POST",
+     "path": "/{domain}/messages",
+     "fields": [
+      {
+       "key": "domain",
+       "label": "Sending domain",
+       "type": "string",
+       "required": true,
+       "placeholder": "mg.example.com"
+      },
+      {
+       "key": "from",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "html",
+       "label": "HTML",
+       "type": "text"
+      }
+     ]
+    }
+   },
+   "encoding": "form"
+  },
+  "postmark": {
+   "name": "Postmark",
+   "category": "Email",
+   "color": "#FFDE00",
+   "description": "Send transactional email.",
+   "base": "https://api.postmarkapp.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "Server token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "X-Postmark-Server-Token": "{apiKey}"
+    }
+   },
+   "operations": {
+    "sendEmail": {
+     "name": "Send an email",
+     "method": "POST",
+     "path": "/email",
+     "fields": [
+      {
+       "key": "From",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "To",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "Subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "TextBody",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "HtmlBody",
+       "label": "HTML",
+       "type": "text"
+      }
+     ]
+    }
+   }
+  },
+  "resend": {
+   "name": "Resend",
+   "category": "Email",
+   "color": "#000000",
+   "description": "Send email with Resend.",
+   "base": "https://api.resend.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "sendEmail": {
+     "name": "Send an email",
+     "method": "POST",
+     "path": "/emails",
+     "fields": [
+      {
+       "key": "from",
+       "label": "From",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "html",
+       "label": "HTML",
+       "type": "text"
+      }
+     ]
+    }
+   }
+  },
+  "mailchimp": {
+   "name": "Mailchimp",
+   "category": "Email",
+   "color": "#FFE01B",
+   "description": "Add subscribers to Mailchimp audiences.",
+   "base": "https://{dc}.api.mailchimp.com/3.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "dc",
+      "label": "Data center",
+      "placeholder": "us21"
+     },
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "forkmesh",
+     "{apiKey}"
+    ]
+   },
+   "operations": {
+    "addMember": {
+     "name": "Add a subscriber",
+     "method": "POST",
+     "path": "/lists/{listId}/members",
+     "fields": [
+      {
+       "key": "listId",
+       "label": "Audience ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "email_address",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "default": "subscribed",
+       "options": [
+        {
+         "value": "subscribed",
+         "label": "subscribed"
+        },
+        {
+         "value": "pending",
+         "label": "pending"
+        },
+        {
+         "value": "unsubscribed",
+         "label": "unsubscribed"
+        }
+       ]
+      },
+      {
+       "key": "merge_fields",
+       "label": "Merge fields (JSON)",
+       "type": "json"
+      }
+     ]
+    },
+    "listAudiences": {
+     "name": "List audiences",
+     "method": "GET",
+     "path": "/lists",
+     "fields": []
+    }
+   }
+  },
+  "brevo": {
+   "name": "Brevo",
+   "category": "Email",
+   "color": "#0B996E",
+   "description": "Send transactional email and manage contacts.",
+   "base": "https://api.brevo.com/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "api-key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "sendEmail": {
+     "name": "Send an email",
+     "method": "POST",
+     "path": "/smtp/email",
+     "fields": [
+      {
+       "key": "from",
+       "label": "From email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fromName",
+       "label": "From name",
+       "type": "string"
+      },
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "sender": {
+       "email": "{from}",
+       "name": "{fromName}"
+      },
+      "to": [
+       {
+        "email": "{to}"
+       }
+      ],
+      "subject": "{subject}",
+      "textContent": "{text}"
+     }
+    },
+    "createContact": {
+     "name": "Create a contact",
+     "method": "POST",
+     "path": "/contacts",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "attributes",
+       "label": "Attributes (JSON)",
+       "type": "json"
+      },
+      {
+       "key": "listIds",
+       "label": "List IDs (JSON list)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "kit": {
+   "name": "Kit (ConvertKit)",
+   "category": "Email",
+   "color": "#FB6970",
+   "description": "Add subscribers and tags in Kit.",
+   "base": "https://api.kit.com/v4",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "X-Kit-Api-Key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createSubscriber": {
+     "name": "Create a subscriber",
+     "method": "POST",
+     "path": "/subscribers",
+     "fields": [
+      {
+       "key": "email_address",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "first_name",
+       "label": "First name",
+       "type": "string"
+      }
+     ]
+    },
+    "tagSubscriber": {
+     "name": "Tag a subscriber",
+     "method": "POST",
+     "path": "/tags/{tagId}/subscribers",
+     "fields": [
+      {
+       "key": "tagId",
+       "label": "Tag ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "email_address",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "mailerlite": {
+   "name": "MailerLite",
+   "category": "Email",
+   "color": "#09C269",
+   "description": "Create or update subscribers.",
+   "base": "https://connect.mailerlite.com/api",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "upsertSubscriber": {
+     "name": "Create or update a subscriber",
+     "method": "POST",
+     "path": "/subscribers",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fields",
+       "label": "Fields (JSON)",
+       "type": "json"
+      },
+      {
+       "key": "groups",
+       "label": "Group IDs (JSON list)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "notion": {
+   "name": "Notion",
+   "category": "Productivity",
+   "color": "#000000",
+   "description": "Create pages and query databases in Notion.",
+   "base": "https://api.notion.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Integration secret",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createPage": {
+     "name": "Create a database page",
+     "method": "POST",
+     "path": "/pages",
+     "fields": [
+      {
+       "key": "databaseId",
+       "label": "Database ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "properties",
+       "label": "Properties (JSON)",
+       "type": "json",
+       "required": true,
+       "placeholder": "{\"Name\": {\"title\": [{\"text\": {\"content\": \"Hello\"}}]}}"
+      }
+     ],
+     "body": {
+      "parent": {
+       "database_id": "{databaseId}"
+      },
+      "properties": "{properties}"
+     }
+    },
+    "queryDatabase": {
+     "name": "Query a database",
+     "method": "POST",
+     "path": "/databases/{databaseId}/query",
+     "fields": [
+      {
+       "key": "databaseId",
+       "label": "Database ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "filter",
+       "label": "Filter (JSON)",
+       "type": "json"
+      }
+     ]
+    },
+    "appendText": {
+     "name": "Append a paragraph",
+     "method": "PATCH",
+     "path": "/blocks/{blockId}/children",
+     "fields": [
+      {
+       "key": "blockId",
+       "label": "Page or block ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "children": [
+       {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {
+         "rich_text": [
+          {
+           "type": "text",
+           "text": {
+            "content": "{text}"
+           }
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   },
+   "headers": {
+    "Notion-Version": "2022-06-28"
+   }
+  },
+  "airtable": {
+   "name": "Airtable",
+   "category": "Productivity",
+   "color": "#18BFFF",
+   "description": "Create, list and update Airtable records.",
+   "base": "https://api.airtable.com/v0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createRecord": {
+     "name": "Create a record",
+     "method": "POST",
+     "path": "/{baseId}/{table}",
+     "fields": [
+      {
+       "key": "baseId",
+       "label": "Base ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "table",
+       "label": "Table",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fields",
+       "label": "Fields (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": {
+      "fields": "{fields}",
+      "typecast": true
+     }
+    },
+    "listRecords": {
+     "name": "List records",
+     "method": "GET",
+     "path": "/{baseId}/{table}",
+     "fields": [
+      {
+       "key": "baseId",
+       "label": "Base ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "table",
+       "label": "Table",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "filterByFormula",
+       "label": "Formula filter",
+       "type": "string"
+      },
+      {
+       "key": "maxRecords",
+       "label": "Max records",
+       "type": "number",
+       "default": "100"
+      }
+     ]
+    },
+    "updateRecord": {
+     "name": "Update a record",
+     "method": "PATCH",
+     "path": "/{baseId}/{table}/{recordId}",
+     "fields": [
+      {
+       "key": "baseId",
+       "label": "Base ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "table",
+       "label": "Table",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "recordId",
+       "label": "Record ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fields",
+       "label": "Fields (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": {
+      "fields": "{fields}",
+      "typecast": true
+     }
+    }
+   }
+  },
+  "googleSheets": {
+   "name": "Google Sheets",
+   "category": "Productivity",
+   "color": "#0F9D58",
+   "description": "Append and read spreadsheet rows.",
+   "base": "https://sheets.googleapis.com/v4/spreadsheets",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "appendRow": {
+     "name": "Append rows",
+     "method": "POST",
+     "path": "/{spreadsheetId}/values/{range}:append",
+     "fields": [
+      {
+       "key": "spreadsheetId",
+       "label": "Spreadsheet ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "range",
+       "label": "Range",
+       "type": "string",
+       "required": true,
+       "default": "Sheet1!A1"
+      },
+      {
+       "key": "values",
+       "label": "Rows (JSON list of lists)",
+       "type": "json",
+       "required": true,
+       "placeholder": "[[\"{{ $json.name }}\", \"{{ $json.email }}\"]]"
+      }
+     ],
+     "body": {
+      "values": "{values}"
+     },
+     "query": {
+      "valueInputOption": "USER_ENTERED"
+     }
+    },
+    "readRange": {
+     "name": "Read a range",
+     "method": "GET",
+     "path": "/{spreadsheetId}/values/{range}",
+     "fields": [
+      {
+       "key": "spreadsheetId",
+       "label": "Spreadsheet ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "range",
+       "label": "Range",
+       "type": "string",
+       "required": true,
+       "default": "Sheet1!A1:Z100"
+      }
+     ]
+    }
+   }
+  },
+  "googleCalendar": {
+   "name": "Google Calendar",
+   "category": "Productivity",
+   "color": "#4285F4",
+   "description": "Create and list calendar events.",
+   "base": "https://www.googleapis.com/calendar/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createEvent": {
+     "name": "Create an event",
+     "method": "POST",
+     "path": "/calendars/{calendarId}/events",
+     "fields": [
+      {
+       "key": "calendarId",
+       "label": "Calendar ID",
+       "type": "string",
+       "required": true,
+       "default": "primary"
+      },
+      {
+       "key": "summary",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "start",
+       "label": "Start (RFC 3339)",
+       "type": "string",
+       "required": true,
+       "placeholder": "2026-10-09T10:00:00Z"
+      },
+      {
+       "key": "end",
+       "label": "End (RFC 3339)",
+       "type": "string",
+       "required": true,
+       "placeholder": "2026-10-09T11:00:00Z"
+      }
+     ],
+     "body": {
+      "summary": "{summary}",
+      "description": "{description}",
+      "start": {
+       "dateTime": "{start}"
+      },
+      "end": {
+       "dateTime": "{end}"
+      }
+     }
+    },
+    "listEvents": {
+     "name": "List events",
+     "method": "GET",
+     "path": "/calendars/{calendarId}/events",
+     "fields": [
+      {
+       "key": "calendarId",
+       "label": "Calendar ID",
+       "type": "string",
+       "required": true,
+       "default": "primary"
+      },
+      {
+       "key": "timeMin",
+       "label": "From (RFC 3339)",
+       "type": "string"
+      },
+      {
+       "key": "maxResults",
+       "label": "Max results",
+       "type": "number",
+       "default": "25"
+      }
+     ]
+    }
+   }
+  },
+  "googleDrive": {
+   "name": "Google Drive",
+   "category": "Productivity",
+   "color": "#1FA463",
+   "description": "List files and create folders in Google Drive.",
+   "base": "https://www.googleapis.com/drive/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listFiles": {
+     "name": "List files",
+     "method": "GET",
+     "path": "/files",
+     "fields": [
+      {
+       "key": "q",
+       "label": "Search query",
+       "type": "string",
+       "placeholder": "name contains 'report'"
+      },
+      {
+       "key": "pageSize",
+       "label": "Page size",
+       "type": "number",
+       "default": "50"
+      }
+     ]
+    },
+    "createFolder": {
+     "name": "Create a folder",
+     "method": "POST",
+     "path": "/files",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "parents",
+       "label": "Parent IDs (JSON list)",
+       "type": "json"
+      }
+     ],
+     "body": {
+      "name": "{name}",
+      "mimeType": "application/vnd.google-apps.folder",
+      "parents": "{parents}"
+     }
+    }
+   }
+  },
+  "gmail": {
+   "name": "Gmail",
+   "category": "Productivity",
+   "color": "#EA4335",
+   "description": "Search and read Gmail messages.",
+   "base": "https://gmail.googleapis.com/gmail/v1/users/me",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listMessages": {
+     "name": "Search messages",
+     "method": "GET",
+     "path": "/messages",
+     "fields": [
+      {
+       "key": "q",
+       "label": "Query",
+       "type": "string",
+       "placeholder": "from:alerts@example.com is:unread"
+      },
+      {
+       "key": "maxResults",
+       "label": "Max results",
+       "type": "number",
+       "default": "10"
+      }
+     ]
+    },
+    "getMessage": {
+     "name": "Get a message",
+     "method": "GET",
+     "path": "/messages/{id}",
+     "fields": [
+      {
+       "key": "id",
+       "label": "Message ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "microsoft365": {
+   "name": "Microsoft 365",
+   "category": "Productivity",
+   "color": "#0078D4",
+   "description": "Send Outlook mail and add To Do tasks through Microsoft Graph.",
+   "base": "https://graph.microsoft.com/v1.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "sendMail": {
+     "name": "Send an Outlook email",
+     "method": "POST",
+     "path": "/me/sendMail",
+     "fields": [
+      {
+       "key": "to",
+       "label": "To",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "message": {
+       "subject": "{subject}",
+       "body": {
+        "contentType": "Text",
+        "content": "{text}"
+       },
+       "toRecipients": [
+        {
+         "emailAddress": {
+          "address": "{to}"
+         }
+        }
+       ]
+      }
+     }
+    },
+    "createTodo": {
+     "name": "Create a To Do task",
+     "method": "POST",
+     "path": "/me/todo/lists/{listId}/tasks",
+     "fields": [
+      {
+       "key": "listId",
+       "label": "List ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "todoist": {
+   "name": "Todoist",
+   "category": "Productivity",
+   "color": "#E44332",
+   "description": "Create, list and close Todoist tasks.",
+   "base": "https://api.todoist.com/rest/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createTask": {
+     "name": "Create a task",
+     "method": "POST",
+     "path": "/tasks",
+     "fields": [
+      {
+       "key": "content",
+       "label": "Task",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "due_string",
+       "label": "Due",
+       "type": "string",
+       "placeholder": "tomorrow at 9am"
+      },
+      {
+       "key": "priority",
+       "label": "Priority (1 to 4)",
+       "type": "number"
+      },
+      {
+       "key": "project_id",
+       "label": "Project ID",
+       "type": "string"
+      }
+     ]
+    },
+    "listTasks": {
+     "name": "List tasks",
+     "method": "GET",
+     "path": "/tasks",
+     "fields": [
+      {
+       "key": "filter",
+       "label": "Filter",
+       "type": "string",
+       "placeholder": "today | overdue"
+      }
+     ]
+    },
+    "closeTask": {
+     "name": "Complete a task",
+     "method": "POST",
+     "path": "/tasks/{taskId}/close",
+     "fields": [
+      {
+       "key": "taskId",
+       "label": "Task ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "trello": {
+   "name": "Trello",
+   "category": "Productivity",
+   "color": "#0079BF",
+   "description": "Create cards and comments on Trello boards.",
+   "base": "https://api.trello.com/1",
+   "auth": {
+    "fields": [
+     {
+      "key": "key",
+      "label": "API key",
+      "placeholder": ""
+     },
+     {
+      "key": "token",
+      "label": "Token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "key": "{key}",
+     "token": "{token}"
+    }
+   },
+   "operations": {
+    "createCard": {
+     "name": "Create a card",
+     "method": "POST",
+     "path": "/cards",
+     "fields": [
+      {
+       "key": "idList",
+       "label": "List ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "desc",
+       "label": "Description",
+       "type": "text"
+      }
+     ]
+    },
+    "listCards": {
+     "name": "List cards",
+     "method": "GET",
+     "path": "/lists/{listId}/cards",
+     "fields": [
+      {
+       "key": "listId",
+       "label": "List ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    },
+    "addComment": {
+     "name": "Comment on a card",
+     "method": "POST",
+     "path": "/cards/{cardId}/actions/comments",
+     "fields": [
+      {
+       "key": "cardId",
+       "label": "Card ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "text",
+       "label": "Comment",
+       "type": "text",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "asana": {
+   "name": "Asana",
+   "category": "Productivity",
+   "color": "#F06A6A",
+   "description": "Create and list Asana tasks.",
+   "base": "https://app.asana.com/api/1.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createTask": {
+     "name": "Create a task",
+     "method": "POST",
+     "path": "/tasks",
+     "fields": [
+      {
+       "key": "workspace",
+       "label": "Workspace ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "project",
+       "label": "Project ID",
+       "type": "string"
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "notes",
+       "label": "Notes",
+       "type": "text"
+      },
+      {
+       "key": "dueOn",
+       "label": "Due date",
+       "type": "string",
+       "placeholder": "2026-10-31"
+      }
+     ],
+     "body": {
+      "data": {
+       "workspace": "{workspace}",
+       "projects": [
+        "{project}"
+       ],
+       "name": "{name}",
+       "notes": "{notes}",
+       "due_on": "{dueOn}"
+      }
+     }
+    },
+    "listTasks": {
+     "name": "List project tasks",
+     "method": "GET",
+     "path": "/tasks",
+     "fields": [
+      {
+       "key": "project",
+       "label": "Project ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "clickup": {
+   "name": "ClickUp",
+   "category": "Productivity",
+   "color": "#7B68EE",
+   "description": "Create and list ClickUp tasks.",
+   "base": "https://api.clickup.com/api/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createTask": {
+     "name": "Create a task",
+     "method": "POST",
+     "path": "/list/{listId}/task",
+     "fields": [
+      {
+       "key": "listId",
+       "label": "List ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "string"
+      },
+      {
+       "key": "priority",
+       "label": "Priority (1 to 4)",
+       "type": "number"
+      }
+     ]
+    },
+    "listTasks": {
+     "name": "List tasks",
+     "method": "GET",
+     "path": "/list/{listId}/task",
+     "fields": [
+      {
+       "key": "listId",
+       "label": "List ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "monday": {
+   "name": "monday.com",
+   "category": "Productivity",
+   "color": "#FF3D57",
+   "description": "Create items and run GraphQL queries on monday.com boards.",
+   "base": "https://api.monday.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createItem": {
+     "name": "Create an item",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "boardId",
+       "label": "Board ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Item name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "columnValues",
+       "label": "Column values (JSON text)",
+       "type": "string",
+       "placeholder": "{\"status\": \"Done\"}"
+      }
+     ],
+     "body": {
+      "query": "mutation ($board: ID!, $name: String!, $values: JSON) { create_item (board_id: $board, item_name: $name, column_values: $values) { id } }",
+      "variables": {
+       "board": "{boardId}",
+       "name": "{name}",
+       "values": "{columnValues}"
+      }
+     }
+    },
+    "query": {
+     "name": "Run a GraphQL query",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "query",
+       "label": "Query",
+       "type": "text",
+       "required": true,
+       "placeholder": "query { boards (limit: 5) { id name } }"
+      },
+      {
+       "key": "variables",
+       "label": "Variables (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "baserow": {
+   "name": "Baserow",
+   "category": "Productivity",
+   "color": "#4891EC",
+   "description": "Create and list rows in Baserow tables.",
+   "base": "{server}/api",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Server URL",
+      "placeholder": "https://api.baserow.io",
+      "url": true
+     },
+     {
+      "key": "apiKey",
+      "label": "Database token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Token {apiKey}"
+    }
+   },
+   "operations": {
+    "createRow": {
+     "name": "Create a row",
+     "method": "POST",
+     "path": "/database/rows/table/{tableId}/",
+     "fields": [
+      {
+       "key": "tableId",
+       "label": "Table ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fields",
+       "label": "Fields (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": "{fields}",
+     "query": {
+      "user_field_names": "true"
+     }
+    },
+    "listRows": {
+     "name": "List rows",
+     "method": "GET",
+     "path": "/database/rows/table/{tableId}/",
+     "fields": [
+      {
+       "key": "tableId",
+       "label": "Table ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "search",
+       "label": "Search",
+       "type": "string"
+      }
+     ],
+     "query": {
+      "user_field_names": "true"
+     }
+    }
+   }
+  },
+  "calendly": {
+   "name": "Calendly",
+   "category": "Forms and meetings",
+   "color": "#006BFF",
+   "description": "Read scheduled Calendly events.",
+   "base": "https://api.calendly.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listEvents": {
+     "name": "List scheduled events",
+     "method": "GET",
+     "path": "/scheduled_events",
+     "fields": [
+      {
+       "key": "user",
+       "label": "User URI",
+       "type": "string",
+       "required": true,
+       "placeholder": "https://api.calendly.com/users/..."
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "options": [
+        {
+         "value": "",
+         "label": "(none)"
+        },
+        {
+         "value": "active",
+         "label": "active"
+        },
+        {
+         "value": "canceled",
+         "label": "canceled"
+        }
+       ]
+      },
+      {
+       "key": "min_start_time",
+       "label": "Starting after",
+       "type": "string"
+      }
+     ]
+    },
+    "me": {
+     "name": "Get the current user",
+     "method": "GET",
+     "path": "/users/me",
+     "fields": []
+    }
+   }
+  },
+  "typeform": {
+   "name": "Typeform",
+   "category": "Forms and meetings",
+   "color": "#262627",
+   "description": "Read Typeform forms and responses.",
+   "base": "https://api.typeform.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listResponses": {
+     "name": "List responses",
+     "method": "GET",
+     "path": "/forms/{formId}/responses",
+     "fields": [
+      {
+       "key": "formId",
+       "label": "Form ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "page_size",
+       "label": "Page size",
+       "type": "number",
+       "default": "25"
+      },
+      {
+       "key": "since",
+       "label": "Since",
+       "type": "string"
+      }
+     ]
+    },
+    "listForms": {
+     "name": "List forms",
+     "method": "GET",
+     "path": "/forms",
+     "fields": []
+    }
+   }
+  },
+  "jotform": {
+   "name": "Jotform",
+   "category": "Forms and meetings",
+   "color": "#FF6100",
+   "description": "Read Jotform submissions.",
+   "base": "https://api.jotform.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "APIKEY": "{apiKey}"
+    }
+   },
+   "operations": {
+    "listSubmissions": {
+     "name": "List submissions",
+     "method": "GET",
+     "path": "/form/{formId}/submissions",
+     "fields": [
+      {
+       "key": "formId",
+       "label": "Form ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "20"
+      }
+     ]
+    }
+   }
+  },
+  "zoom": {
+   "name": "Zoom",
+   "category": "Forms and meetings",
+   "color": "#0B5CFF",
+   "description": "Create and list Zoom meetings.",
+   "base": "https://api.zoom.us/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createMeeting": {
+     "name": "Create a meeting",
+     "method": "POST",
+     "path": "/users/me/meetings",
+     "fields": [
+      {
+       "key": "topic",
+       "label": "Topic",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "start_time",
+       "label": "Start (ISO 8601)",
+       "type": "string"
+      },
+      {
+       "key": "duration",
+       "label": "Duration (minutes)",
+       "type": "number",
+       "default": "30"
+      },
+      {
+       "key": "type",
+       "label": "Type",
+       "type": "number",
+       "default": "2"
+      }
+     ]
+    },
+    "listMeetings": {
+     "name": "List meetings",
+     "method": "GET",
+     "path": "/users/me/meetings",
+     "fields": []
+    }
+   }
+  },
+  "github": {
+   "name": "GitHub",
+   "category": "Developer tools",
+   "color": "#181717",
+   "description": "Issues, comments, releases and Actions on GitHub.",
+   "base": "https://api.github.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createIssue": {
+     "name": "Create an issue",
+     "method": "POST",
+     "path": "/repos/{owner}/{repo}/issues",
+     "fields": [
+      {
+       "key": "owner",
+       "label": "Owner",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "body",
+       "label": "Body",
+       "type": "text"
+      },
+      {
+       "key": "labels",
+       "label": "Labels (JSON list)",
+       "type": "json"
+      }
+     ]
+    },
+    "comment": {
+     "name": "Comment on an issue or pull request",
+     "method": "POST",
+     "path": "/repos/{owner}/{repo}/issues/{number}/comments",
+     "fields": [
+      {
+       "key": "owner",
+       "label": "Owner",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "number",
+       "label": "Number",
+       "type": "number",
+       "required": true
+      },
+      {
+       "key": "body",
+       "label": "Comment",
+       "type": "text",
+       "required": true
+      }
+     ]
+    },
+    "listIssues": {
+     "name": "List issues",
+     "method": "GET",
+     "path": "/repos/{owner}/{repo}/issues",
+     "fields": [
+      {
+       "key": "owner",
+       "label": "Owner",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "state",
+       "label": "State",
+       "type": "select",
+       "default": "open",
+       "options": [
+        {
+         "value": "open",
+         "label": "open"
+        },
+        {
+         "value": "closed",
+         "label": "closed"
+        },
+        {
+         "value": "all",
+         "label": "all"
+        }
+       ]
+      }
+     ]
+    },
+    "createRelease": {
+     "name": "Create a release",
+     "method": "POST",
+     "path": "/repos/{owner}/{repo}/releases",
+     "fields": [
+      {
+       "key": "owner",
+       "label": "Owner",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "tag_name",
+       "label": "Tag",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string"
+      },
+      {
+       "key": "body",
+       "label": "Notes",
+       "type": "text"
+      }
+     ]
+    },
+    "dispatchWorkflow": {
+     "name": "Run an Actions workflow",
+     "method": "POST",
+     "path": "/repos/{owner}/{repo}/actions/workflows/{workflowId}/dispatches",
+     "fields": [
+      {
+       "key": "owner",
+       "label": "Owner",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "workflowId",
+       "label": "Workflow file or ID",
+       "type": "string",
+       "required": true,
+       "placeholder": "ci.yml"
+      },
+      {
+       "key": "ref",
+       "label": "Branch",
+       "type": "string",
+       "required": true,
+       "default": "main"
+      },
+      {
+       "key": "inputs",
+       "label": "Inputs (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   },
+   "headers": {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+   }
+  },
+  "gitlab": {
+   "name": "GitLab",
+   "category": "Developer tools",
+   "color": "#FC6D26",
+   "description": "Issues and notes on GitLab projects.",
+   "base": "{server}/api/v4",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Server URL",
+      "placeholder": "https://gitlab.com",
+      "url": true
+     },
+     {
+      "key": "apiKey",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "PRIVATE-TOKEN": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createIssue": {
+     "name": "Create an issue",
+     "method": "POST",
+     "path": "/projects/{projectId}/issues",
+     "fields": [
+      {
+       "key": "projectId",
+       "label": "Project ID or path",
+       "type": "string",
+       "required": true,
+       "placeholder": "group/project"
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "labels",
+       "label": "Labels",
+       "type": "string",
+       "placeholder": "bug,urgent"
+      }
+     ]
+    },
+    "listIssues": {
+     "name": "List issues",
+     "method": "GET",
+     "path": "/projects/{projectId}/issues",
+     "fields": [
+      {
+       "key": "projectId",
+       "label": "Project ID or path",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "state",
+       "label": "State",
+       "type": "select",
+       "options": [
+        {
+         "value": "",
+         "label": "(none)"
+        },
+        {
+         "value": "opened",
+         "label": "opened"
+        },
+        {
+         "value": "closed",
+         "label": "closed"
+        }
+       ]
+      }
+     ]
+    },
+    "addNote": {
+     "name": "Comment on an issue",
+     "method": "POST",
+     "path": "/projects/{projectId}/issues/{issueIid}/notes",
+     "fields": [
+      {
+       "key": "projectId",
+       "label": "Project ID or path",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "issueIid",
+       "label": "Issue number",
+       "type": "number",
+       "required": true
+      },
+      {
+       "key": "body",
+       "label": "Comment",
+       "type": "text",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "bitbucket": {
+   "name": "Bitbucket",
+   "category": "Developer tools",
+   "color": "#0052CC",
+   "description": "Issues and pull requests on Bitbucket Cloud.",
+   "base": "https://api.bitbucket.org/2.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "username",
+      "label": "Username",
+      "placeholder": ""
+     },
+     {
+      "key": "password",
+      "label": "App password",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{username}",
+     "{password}"
+    ]
+   },
+   "operations": {
+    "createIssue": {
+     "name": "Create an issue",
+     "method": "POST",
+     "path": "/repositories/{workspace}/{repo}/issues",
+     "fields": [
+      {
+       "key": "workspace",
+       "label": "Workspace",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "content",
+       "label": "Description",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "title": "{title}",
+      "content": {
+       "raw": "{content}"
+      }
+     }
+    },
+    "listPullRequests": {
+     "name": "List pull requests",
+     "method": "GET",
+     "path": "/repositories/{workspace}/{repo}/pullrequests",
+     "fields": [
+      {
+       "key": "workspace",
+       "label": "Workspace",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "repo",
+       "label": "Repository",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "jira": {
+   "name": "Jira",
+   "category": "Developer tools",
+   "color": "#0052CC",
+   "description": "Create, search and comment on Jira issues.",
+   "base": "{site}/rest/api/3",
+   "auth": {
+    "fields": [
+     {
+      "key": "site",
+      "label": "Site URL",
+      "placeholder": "https://your-team.atlassian.net",
+      "url": true
+     },
+     {
+      "key": "email",
+      "label": "Email",
+      "placeholder": ""
+     },
+     {
+      "key": "apiToken",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{email}",
+     "{apiToken}"
+    ]
+   },
+   "operations": {
+    "createIssue": {
+     "name": "Create an issue",
+     "method": "POST",
+     "path": "/issue",
+     "fields": [
+      {
+       "key": "projectKey",
+       "label": "Project key",
+       "type": "string",
+       "required": true,
+       "placeholder": "ENG"
+      },
+      {
+       "key": "issueType",
+       "label": "Issue type",
+       "type": "string",
+       "required": true,
+       "default": "Task"
+      },
+      {
+       "key": "summary",
+       "label": "Summary",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {
+      "fields": {
+       "project": {
+        "key": "{projectKey}"
+       },
+       "issuetype": {
+        "name": "{issueType}"
+       },
+       "summary": "{summary}"
+      }
+     }
+    },
+    "search": {
+     "name": "Search with JQL",
+     "method": "GET",
+     "path": "/search",
+     "fields": [
+      {
+       "key": "jql",
+       "label": "JQL",
+       "type": "string",
+       "required": true,
+       "placeholder": "project = ENG AND status = \"To Do\""
+      },
+      {
+       "key": "maxResults",
+       "label": "Max results",
+       "type": "number",
+       "default": "25"
+      }
+     ]
+    },
+    "comment": {
+     "name": "Comment on an issue",
+     "method": "POST",
+     "path": "/issue/{issueKey}/comment",
+     "fields": [
+      {
+       "key": "issueKey",
+       "label": "Issue key",
+       "type": "string",
+       "required": true,
+       "placeholder": "ENG-42"
+      },
+      {
+       "key": "comment",
+       "label": "Comment",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "body": {
+       "type": "doc",
+       "version": 1,
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "{comment}"
+          }
+         ]
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  "linear": {
+   "name": "Linear",
+   "category": "Developer tools",
+   "color": "#5E6AD2",
+   "description": "Create Linear issues and run GraphQL queries.",
+   "base": "https://api.linear.app/graphql",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createIssue": {
+     "name": "Create an issue",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "teamId",
+       "label": "Team ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "query": "mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }",
+      "variables": {
+       "input": {
+        "teamId": "{teamId}",
+        "title": "{title}",
+        "description": "{description}"
+       }
+      }
+     }
+    },
+    "query": {
+     "name": "Run a GraphQL query",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "query",
+       "label": "Query",
+       "type": "text",
+       "required": true,
+       "placeholder": "query { teams { nodes { id name } } }"
+      },
+      {
+       "key": "variables",
+       "label": "Variables (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "sentry": {
+   "name": "Sentry",
+   "category": "Developer tools",
+   "color": "#362D59",
+   "description": "List and resolve Sentry issues.",
+   "base": "https://sentry.io/api/0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Auth token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listIssues": {
+     "name": "List project issues",
+     "method": "GET",
+     "path": "/projects/{org}/{project}/issues/",
+     "fields": [
+      {
+       "key": "org",
+       "label": "Organization slug",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "project",
+       "label": "Project slug",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "query",
+       "label": "Query",
+       "type": "string",
+       "default": "is:unresolved"
+      }
+     ]
+    },
+    "resolveIssue": {
+     "name": "Resolve an issue",
+     "method": "PUT",
+     "path": "/organizations/{org}/issues/{issueId}/",
+     "fields": [
+      {
+       "key": "org",
+       "label": "Organization slug",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "issueId",
+       "label": "Issue ID",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {
+      "status": "resolved"
+     }
+    }
+   }
+  },
+  "pagerduty": {
+   "name": "PagerDuty",
+   "category": "Developer tools",
+   "color": "#06AC38",
+   "description": "Trigger and resolve PagerDuty incidents.",
+   "base": "https://events.pagerduty.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "routingKey",
+      "label": "Integration (routing) key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "body": {
+     "routing_key": "{routingKey}"
+    }
+   },
+   "operations": {
+    "trigger": {
+     "name": "Trigger an incident",
+     "method": "POST",
+     "path": "/enqueue",
+     "fields": [
+      {
+       "key": "summary",
+       "label": "Summary",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "source",
+       "label": "Source",
+       "type": "string",
+       "required": true,
+       "default": "forkmesh"
+      },
+      {
+       "key": "severity",
+       "label": "Severity",
+       "type": "select",
+       "default": "error",
+       "options": [
+        {
+         "value": "critical",
+         "label": "critical"
+        },
+        {
+         "value": "error",
+         "label": "error"
+        },
+        {
+         "value": "warning",
+         "label": "warning"
+        },
+        {
+         "value": "info",
+         "label": "info"
+        }
+       ]
+      },
+      {
+       "key": "dedupKey",
+       "label": "Dedup key",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "event_action": "trigger",
+      "dedup_key": "{dedupKey}",
+      "payload": {
+       "summary": "{summary}",
+       "source": "{source}",
+       "severity": "{severity}"
+      }
+     }
+    },
+    "resolve": {
+     "name": "Resolve an incident",
+     "method": "POST",
+     "path": "/enqueue",
+     "fields": [
+      {
+       "key": "dedupKey",
+       "label": "Dedup key",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {
+      "event_action": "resolve",
+      "dedup_key": "{dedupKey}"
+     }
+    }
+   }
+  },
+  "opsgenie": {
+   "name": "Opsgenie",
+   "category": "Developer tools",
+   "color": "#2684FF",
+   "description": "Create and close Opsgenie alerts.",
+   "base": "https://api.opsgenie.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "GenieKey {apiKey}"
+    }
+   },
+   "operations": {
+    "createAlert": {
+     "name": "Create an alert",
+     "method": "POST",
+     "path": "/alerts",
+     "fields": [
+      {
+       "key": "message",
+       "label": "Message",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "priority",
+       "label": "Priority",
+       "type": "select",
+       "default": "P3",
+       "options": [
+        {
+         "value": "P1",
+         "label": "P1"
+        },
+        {
+         "value": "P2",
+         "label": "P2"
+        },
+        {
+         "value": "P3",
+         "label": "P3"
+        },
+        {
+         "value": "P4",
+         "label": "P4"
+        },
+        {
+         "value": "P5",
+         "label": "P5"
+        }
+       ]
+      },
+      {
+       "key": "alias",
+       "label": "Alias",
+       "type": "string"
+      }
+     ]
+    },
+    "closeAlert": {
+     "name": "Close an alert",
+     "method": "POST",
+     "path": "/alerts/{alertId}/close",
+     "fields": [
+      {
+       "key": "alertId",
+       "label": "Alert ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "note",
+       "label": "Note",
+       "type": "text"
+      }
+     ]
+    }
+   }
+  },
+  "circleci": {
+   "name": "CircleCI",
+   "category": "Developer tools",
+   "color": "#343434",
+   "description": "Trigger CircleCI pipelines.",
+   "base": "https://circleci.com/api/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Circle-Token": "{apiKey}"
+    }
+   },
+   "operations": {
+    "triggerPipeline": {
+     "name": "Trigger a pipeline",
+     "method": "POST",
+     "path": "/project/{projectSlug}/pipeline",
+     "fields": [
+      {
+       "key": "projectSlug",
+       "label": "Project slug",
+       "type": "string",
+       "required": true,
+       "placeholder": "gh/org/repo",
+       "slashes": true
+      },
+      {
+       "key": "branch",
+       "label": "Branch",
+       "type": "string",
+       "default": "main"
+      },
+      {
+       "key": "parameters",
+       "label": "Parameters (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "netlify": {
+   "name": "Netlify",
+   "category": "Developer tools",
+   "color": "#00C7B7",
+   "description": "List sites and start Netlify builds.",
+   "base": "https://api.netlify.com/api/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Personal access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listSites": {
+     "name": "List sites",
+     "method": "GET",
+     "path": "/sites",
+     "fields": []
+    },
+    "build": {
+     "name": "Start a build",
+     "method": "POST",
+     "path": "/sites/{siteId}/builds",
+     "fields": [
+      {
+       "key": "siteId",
+       "label": "Site ID",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {}
+    }
+   }
+  },
+  "vercel": {
+   "name": "Vercel",
+   "category": "Developer tools",
+   "color": "#000000",
+   "description": "List Vercel projects and deployments.",
+   "base": "https://api.vercel.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listDeployments": {
+     "name": "List deployments",
+     "method": "GET",
+     "path": "/v6/deployments",
+     "fields": [
+      {
+       "key": "projectId",
+       "label": "Project ID",
+       "type": "string"
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "20"
+      }
+     ]
+    },
+    "listProjects": {
+     "name": "List projects",
+     "method": "GET",
+     "path": "/v9/projects",
+     "fields": []
+    }
+   }
+  },
+  "cloudflare": {
+   "name": "Cloudflare",
+   "category": "Developer tools",
+   "color": "#F38020",
+   "description": "Purge cache and manage DNS records.",
+   "base": "https://api.cloudflare.com/client/v4",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "purgeCache": {
+     "name": "Purge everything",
+     "method": "POST",
+     "path": "/zones/{zoneId}/purge_cache",
+     "fields": [
+      {
+       "key": "zoneId",
+       "label": "Zone ID",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {
+      "purge_everything": true
+     }
+    },
+    "listDns": {
+     "name": "List DNS records",
+     "method": "GET",
+     "path": "/zones/{zoneId}/dns_records",
+     "fields": [
+      {
+       "key": "zoneId",
+       "label": "Zone ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string"
+      }
+     ]
+    },
+    "createDns": {
+     "name": "Create a DNS record",
+     "method": "POST",
+     "path": "/zones/{zoneId}/dns_records",
+     "fields": [
+      {
+       "key": "zoneId",
+       "label": "Zone ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "type",
+       "label": "Type",
+       "type": "select",
+       "required": true,
+       "default": "A",
+       "options": [
+        {
+         "value": "A",
+         "label": "A"
+        },
+        {
+         "value": "AAAA",
+         "label": "AAAA"
+        },
+        {
+         "value": "CNAME",
+         "label": "CNAME"
+        },
+        {
+         "value": "TXT",
+         "label": "TXT"
+        },
+        {
+         "value": "MX",
+         "label": "MX"
+        }
+       ]
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "content",
+       "label": "Content",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "ttl",
+       "label": "TTL",
+       "type": "number",
+       "default": "1"
+      },
+      {
+       "key": "proxied",
+       "label": "Proxied",
+       "type": "boolean"
+      }
+     ]
+    }
+   }
+  },
+  "digitalocean": {
+   "name": "DigitalOcean",
+   "category": "Developer tools",
+   "color": "#0080FF",
+   "description": "List and reboot droplets.",
+   "base": "https://api.digitalocean.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listDroplets": {
+     "name": "List droplets",
+     "method": "GET",
+     "path": "/droplets",
+     "fields": []
+    },
+    "reboot": {
+     "name": "Reboot a droplet",
+     "method": "POST",
+     "path": "/droplets/{dropletId}/actions",
+     "fields": [
+      {
+       "key": "dropletId",
+       "label": "Droplet ID",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": {
+      "type": "reboot"
+     }
+    }
+   }
+  },
+  "hubspot": {
+   "name": "HubSpot",
+   "category": "CRM and support",
+   "color": "#FF7A59",
+   "description": "Create and search HubSpot contacts and deals.",
+   "base": "https://api.hubapi.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Private app token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createContact": {
+     "name": "Create a contact",
+     "method": "POST",
+     "path": "/crm/v3/objects/contacts",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "firstName",
+       "label": "First name",
+       "type": "string"
+      },
+      {
+       "key": "lastName",
+       "label": "Last name",
+       "type": "string"
+      },
+      {
+       "key": "phone",
+       "label": "Phone",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "properties": {
+       "email": "{email}",
+       "firstname": "{firstName}",
+       "lastname": "{lastName}",
+       "phone": "{phone}"
+      }
+     }
+    },
+    "searchContacts": {
+     "name": "Search contacts",
+     "method": "POST",
+     "path": "/crm/v3/objects/contacts/search",
+     "fields": [
+      {
+       "key": "query",
+       "label": "Search text",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "10"
+      }
+     ],
+     "body": {
+      "query": "{query}",
+      "limit": "{limit}"
+     }
+    },
+    "createDeal": {
+     "name": "Create a deal",
+     "method": "POST",
+     "path": "/crm/v3/objects/deals",
+     "fields": [
+      {
+       "key": "properties",
+       "label": "Properties (JSON)",
+       "type": "json",
+       "required": true,
+       "placeholder": "{\"dealname\": \"New deal\", \"amount\": \"1000\"}"
+      }
+     ],
+     "body": {
+      "properties": "{properties}"
+     }
+    }
+   }
+  },
+  "salesforce": {
+   "name": "Salesforce",
+   "category": "CRM and support",
+   "color": "#00A1E0",
+   "description": "Create records and run SOQL queries.",
+   "base": "{instance}/services/data/v60.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "instance",
+      "label": "Instance URL",
+      "placeholder": "https://your-org.my.salesforce.com",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createRecord": {
+     "name": "Create a record",
+     "method": "POST",
+     "path": "/sobjects/{object}",
+     "fields": [
+      {
+       "key": "object",
+       "label": "Object",
+       "type": "string",
+       "required": true,
+       "default": "Lead"
+      },
+      {
+       "key": "fields",
+       "label": "Fields (JSON)",
+       "type": "json",
+       "required": true,
+       "placeholder": "{\"LastName\": \"Lovelace\", \"Company\": \"Acme\"}"
+      }
+     ],
+     "body": "{fields}"
+    },
+    "query": {
+     "name": "Run a SOQL query",
+     "method": "GET",
+     "path": "/query",
+     "fields": [
+      {
+       "key": "q",
+       "label": "SOQL",
+       "type": "string",
+       "required": true,
+       "placeholder": "SELECT Id, Name FROM Account LIMIT 10"
+      }
+     ]
+    }
+   }
+  },
+  "pipedrive": {
+   "name": "Pipedrive",
+   "category": "CRM and support",
+   "color": "#1A1A1A",
+   "description": "Create deals and people in Pipedrive.",
+   "base": "https://api.pipedrive.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "api_token": "{apiKey}"
+    }
+   },
+   "operations": {
+    "createDeal": {
+     "name": "Create a deal",
+     "method": "POST",
+     "path": "/deals",
+     "fields": [
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "value",
+       "label": "Value",
+       "type": "number"
+      },
+      {
+       "key": "currency",
+       "label": "Currency",
+       "type": "string",
+       "placeholder": "USD"
+      },
+      {
+       "key": "person_id",
+       "label": "Person ID",
+       "type": "number"
+      }
+     ]
+    },
+    "createPerson": {
+     "name": "Create a person",
+     "method": "POST",
+     "path": "/persons",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string"
+      }
+     ]
+    },
+    "listDeals": {
+     "name": "List deals",
+     "method": "GET",
+     "path": "/deals",
+     "fields": [
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "options": [
+        {
+         "value": "",
+         "label": "(none)"
+        },
+        {
+         "value": "open",
+         "label": "open"
+        },
+        {
+         "value": "won",
+         "label": "won"
+        },
+        {
+         "value": "lost",
+         "label": "lost"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "zohoCrm": {
+   "name": "Zoho CRM",
+   "category": "CRM and support",
+   "color": "#E42527",
+   "description": "Create leads in Zoho CRM.",
+   "base": "{domain}/crm/v5",
+   "auth": {
+    "fields": [
+     {
+      "key": "domain",
+      "label": "API domain",
+      "placeholder": "https://www.zohoapis.com",
+      "url": true
+     },
+     {
+      "key": "apiKey",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Zoho-oauthtoken {apiKey}"
+    }
+   },
+   "operations": {
+    "createLead": {
+     "name": "Create a lead",
+     "method": "POST",
+     "path": "/Leads",
+     "fields": [
+      {
+       "key": "lastName",
+       "label": "Last name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "firstName",
+       "label": "First name",
+       "type": "string"
+      },
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string"
+      },
+      {
+       "key": "company",
+       "label": "Company",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "data": [
+       {
+        "Last_Name": "{lastName}",
+        "First_Name": "{firstName}",
+        "Email": "{email}",
+        "Company": "{company}"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "freshdesk": {
+   "name": "Freshdesk",
+   "category": "CRM and support",
+   "color": "#25C16F",
+   "description": "Create and list support tickets.",
+   "base": "https://{domain}.freshdesk.com/api/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "domain",
+      "label": "Subdomain",
+      "placeholder": "yourcompany"
+     },
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{apiKey}",
+     "X"
+    ]
+   },
+   "operations": {
+    "createTicket": {
+     "name": "Create a ticket",
+     "method": "POST",
+     "path": "/tickets",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Requester email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "priority",
+       "label": "Priority (1 to 4)",
+       "type": "number",
+       "default": "1"
+      },
+      {
+       "key": "status",
+       "label": "Status (2 open)",
+       "type": "number",
+       "default": "2"
+      }
+     ]
+    },
+    "listTickets": {
+     "name": "List tickets",
+     "method": "GET",
+     "path": "/tickets",
+     "fields": []
+    }
+   }
+  },
+  "zendesk": {
+   "name": "Zendesk",
+   "category": "CRM and support",
+   "color": "#03363D",
+   "description": "Create and list Zendesk tickets.",
+   "base": "https://{subdomain}.zendesk.com/api/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "subdomain",
+      "label": "Subdomain",
+      "placeholder": "yourcompany"
+     },
+     {
+      "key": "email",
+      "label": "Agent email",
+      "placeholder": ""
+     },
+     {
+      "key": "apiToken",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{email}/token",
+     "{apiToken}"
+    ]
+   },
+   "operations": {
+    "createTicket": {
+     "name": "Create a ticket",
+     "method": "POST",
+     "path": "/tickets",
+     "fields": [
+      {
+       "key": "subject",
+       "label": "Subject",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "body",
+       "label": "Description",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "priority",
+       "label": "Priority",
+       "type": "select",
+       "options": [
+        {
+         "value": "",
+         "label": "(none)"
+        },
+        {
+         "value": "low",
+         "label": "low"
+        },
+        {
+         "value": "normal",
+         "label": "normal"
+        },
+        {
+         "value": "high",
+         "label": "high"
+        },
+        {
+         "value": "urgent",
+         "label": "urgent"
+        }
+       ]
+      }
+     ],
+     "body": {
+      "ticket": {
+       "subject": "{subject}",
+       "comment": {
+        "body": "{body}"
+       },
+       "priority": "{priority}"
+      }
+     }
+    },
+    "listTickets": {
+     "name": "List tickets",
+     "method": "GET",
+     "path": "/tickets",
+     "fields": []
+    }
+   }
+  },
+  "intercom": {
+   "name": "Intercom",
+   "category": "CRM and support",
+   "color": "#1F8DED",
+   "description": "Create Intercom contacts and notes.",
+   "base": "https://api.intercom.io",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createContact": {
+     "name": "Create a contact",
+     "method": "POST",
+     "path": "/contacts",
+     "fields": [
+      {
+       "key": "role",
+       "label": "Role",
+       "type": "select",
+       "default": "user",
+       "options": [
+        {
+         "value": "user",
+         "label": "user"
+        },
+        {
+         "value": "lead",
+         "label": "lead"
+        }
+       ]
+      },
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string"
+      }
+     ]
+    },
+    "addNote": {
+     "name": "Add a note to a contact",
+     "method": "POST",
+     "path": "/contacts/{contactId}/notes",
+     "fields": [
+      {
+       "key": "contactId",
+       "label": "Contact ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "body",
+       "label": "Note",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "admin_id",
+       "label": "Admin ID",
+       "type": "string"
+      }
+     ]
+    }
+   },
+   "headers": {
+    "Intercom-Version": "2.11"
+   }
+  },
+  "helpscout": {
+   "name": "Help Scout",
+   "category": "CRM and support",
+   "color": "#1292EE",
+   "description": "List Help Scout conversations.",
+   "base": "https://api.helpscout.net/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listConversations": {
+     "name": "List conversations",
+     "method": "GET",
+     "path": "/conversations",
+     "fields": [
+      {
+       "key": "mailbox",
+       "label": "Mailbox ID",
+       "type": "string"
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "default": "active",
+       "options": [
+        {
+         "value": "active",
+         "label": "active"
+        },
+        {
+         "value": "pending",
+         "label": "pending"
+        },
+        {
+         "value": "closed",
+         "label": "closed"
+        },
+        {
+         "value": "all",
+         "label": "all"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "attio": {
+   "name": "Attio",
+   "category": "CRM and support",
+   "color": "#000000",
+   "description": "Create records in Attio.",
+   "base": "https://api.attio.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createRecord": {
+     "name": "Create a record",
+     "method": "POST",
+     "path": "/objects/{object}/records",
+     "fields": [
+      {
+       "key": "object",
+       "label": "Object",
+       "type": "string",
+       "required": true,
+       "default": "people"
+      },
+      {
+       "key": "values",
+       "label": "Values (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": {
+      "data": {
+       "values": "{values}"
+      }
+     }
+    }
+   }
+  },
+  "stripe": {
+   "name": "Stripe",
+   "category": "Commerce and finance",
+   "color": "#635BFF",
+   "description": "Customers, products and charges in Stripe.",
+   "base": "https://api.stripe.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Secret key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createCustomer": {
+     "name": "Create a customer",
+     "method": "POST",
+     "path": "/customers",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string"
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      }
+     ]
+    },
+    "listCustomers": {
+     "name": "List customers",
+     "method": "GET",
+     "path": "/customers",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string"
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "10"
+      }
+     ]
+    },
+    "createProduct": {
+     "name": "Create a product",
+     "method": "POST",
+     "path": "/products",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      }
+     ]
+    },
+    "listCharges": {
+     "name": "List charges",
+     "method": "GET",
+     "path": "/charges",
+     "fields": [
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "10"
+      }
+     ]
+    }
+   },
+   "encoding": "form"
+  },
+  "paypal": {
+   "name": "PayPal",
+   "category": "Commerce and finance",
+   "color": "#003087",
+   "description": "Read PayPal orders and invoices.",
+   "base": "https://api-m.paypal.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "getOrder": {
+     "name": "Get an order",
+     "method": "GET",
+     "path": "/v2/checkout/orders/{orderId}",
+     "fields": [
+      {
+       "key": "orderId",
+       "label": "Order ID",
+       "type": "string",
+       "required": true
+      }
+     ]
+    },
+    "listInvoices": {
+     "name": "List invoices",
+     "method": "GET",
+     "path": "/v2/invoicing/invoices",
+     "fields": []
+    }
+   }
+  },
+  "shopify": {
+   "name": "Shopify",
+   "category": "Commerce and finance",
+   "color": "#95BF47",
+   "description": "Orders and products in a Shopify store.",
+   "base": "https://{shop}.myshopify.com/admin/api/2024-07",
+   "auth": {
+    "fields": [
+     {
+      "key": "shop",
+      "label": "Store subdomain",
+      "placeholder": "your-store"
+     },
+     {
+      "key": "apiKey",
+      "label": "Admin API access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "X-Shopify-Access-Token": "{apiKey}"
+    }
+   },
+   "operations": {
+    "listOrders": {
+     "name": "List orders",
+     "method": "GET",
+     "path": "/orders.json",
+     "fields": [
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "default": "any",
+       "options": [
+        {
+         "value": "any",
+         "label": "any"
+        },
+        {
+         "value": "open",
+         "label": "open"
+        },
+        {
+         "value": "closed",
+         "label": "closed"
+        },
+        {
+         "value": "cancelled",
+         "label": "cancelled"
+        }
+       ]
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "50"
+      }
+     ]
+    },
+    "listProducts": {
+     "name": "List products",
+     "method": "GET",
+     "path": "/products.json",
+     "fields": []
+    },
+    "createProduct": {
+     "name": "Create a product",
+     "method": "POST",
+     "path": "/products.json",
+     "fields": [
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      },
+      {
+       "key": "vendor",
+       "label": "Vendor",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "product": {
+       "title": "{title}",
+       "body_html": "{description}",
+       "vendor": "{vendor}"
+      }
+     }
+    }
+   }
+  },
+  "woocommerce": {
+   "name": "WooCommerce",
+   "category": "Commerce and finance",
+   "color": "#96588A",
+   "description": "Orders and products in a WooCommerce store.",
+   "base": "{store}/wp-json/wc/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "store",
+      "label": "Store URL",
+      "placeholder": "https://shop.example.com",
+      "url": true
+     },
+     {
+      "key": "consumerKey",
+      "label": "Consumer key",
+      "placeholder": ""
+     },
+     {
+      "key": "consumerSecret",
+      "label": "Consumer secret",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{consumerKey}",
+     "{consumerSecret}"
+    ]
+   },
+   "operations": {
+    "listOrders": {
+     "name": "List orders",
+     "method": "GET",
+     "path": "/orders",
+     "fields": [
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "string"
+      }
+     ]
+    },
+    "updateOrder": {
+     "name": "Update an order status",
+     "method": "PUT",
+     "path": "/orders/{orderId}",
+     "fields": [
+      {
+       "key": "orderId",
+       "label": "Order ID",
+       "type": "number",
+       "required": true
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "required": true,
+       "default": "completed",
+       "options": [
+        {
+         "value": "pending",
+         "label": "pending"
+        },
+        {
+         "value": "processing",
+         "label": "processing"
+        },
+        {
+         "value": "on-hold",
+         "label": "on-hold"
+        },
+        {
+         "value": "completed",
+         "label": "completed"
+        },
+        {
+         "value": "cancelled",
+         "label": "cancelled"
+        },
+        {
+         "value": "refunded",
+         "label": "refunded"
+        }
+       ]
+      }
+     ]
+    },
+    "createProduct": {
+     "name": "Create a product",
+     "method": "POST",
+     "path": "/products",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "regular_price",
+       "label": "Price",
+       "type": "string"
+      },
+      {
+       "key": "description",
+       "label": "Description",
+       "type": "text"
+      }
+     ]
+    }
+   }
+  },
+  "square": {
+   "name": "Square",
+   "category": "Commerce and finance",
+   "color": "#3E4348",
+   "description": "Payments and customers in Square.",
+   "base": "https://connect.squareup.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listPayments": {
+     "name": "List payments",
+     "method": "GET",
+     "path": "/payments",
+     "fields": []
+    },
+    "createCustomer": {
+     "name": "Create a customer",
+     "method": "POST",
+     "path": "/customers",
+     "fields": [
+      {
+       "key": "given_name",
+       "label": "First name",
+       "type": "string"
+      },
+      {
+       "key": "family_name",
+       "label": "Last name",
+       "type": "string"
+      },
+      {
+       "key": "email_address",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   },
+   "headers": {
+    "Square-Version": "2024-07-17"
+   }
+  },
+  "paddle": {
+   "name": "Paddle",
+   "category": "Commerce and finance",
+   "color": "#3B82F6",
+   "description": "Transactions and customers in Paddle Billing.",
+   "base": "https://api.paddle.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listTransactions": {
+     "name": "List transactions",
+     "method": "GET",
+     "path": "/transactions",
+     "fields": []
+    },
+    "createCustomer": {
+     "name": "Create a customer",
+     "method": "POST",
+     "path": "/customers",
+     "fields": [
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string"
+      }
+     ]
+    }
+   }
+  },
+  "lemonsqueezy": {
+   "name": "Lemon Squeezy",
+   "category": "Commerce and finance",
+   "color": "#FFC233",
+   "description": "Orders and subscriptions in Lemon Squeezy.",
+   "base": "https://api.lemonsqueezy.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listOrders": {
+     "name": "List orders",
+     "method": "GET",
+     "path": "/orders",
+     "fields": []
+    },
+    "listSubscriptions": {
+     "name": "List subscriptions",
+     "method": "GET",
+     "path": "/subscriptions",
+     "fields": []
+    }
+   },
+   "headers": {
+    "Accept": "application/vnd.api+json"
+   }
+  },
+  "quickbooks": {
+   "name": "QuickBooks Online",
+   "category": "Commerce and finance",
+   "color": "#2CA01C",
+   "description": "Query and create QuickBooks records.",
+   "base": "https://quickbooks.api.intuit.com/v3/company/{realmId}",
+   "auth": {
+    "fields": [
+     {
+      "key": "realmId",
+      "label": "Company (realm) ID",
+      "placeholder": ""
+     },
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "query": {
+     "name": "Run a query",
+     "method": "GET",
+     "path": "/query",
+     "fields": [
+      {
+       "key": "query",
+       "label": "Query",
+       "type": "string",
+       "required": true,
+       "placeholder": "select * from Customer maxresults 10"
+      }
+     ]
+    },
+    "createCustomer": {
+     "name": "Create a customer",
+     "method": "POST",
+     "path": "/customer",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Display name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "email",
+       "label": "Email",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "DisplayName": "{name}",
+      "PrimaryEmailAddr": {
+       "Address": "{email}"
+      }
+     }
+    }
+   }
+  },
+  "x": {
+   "name": "X (Twitter)",
+   "category": "Social and content",
+   "color": "#000000",
+   "description": "Post on X.",
+   "base": "https://api.x.com/2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth 2.0 user access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "post": {
+     "name": "Create a post",
+     "method": "POST",
+     "path": "/tweets",
+     "fields": [
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "mastodon": {
+   "name": "Mastodon",
+   "category": "Social and content",
+   "color": "#6364FF",
+   "description": "Post statuses on a Mastodon server.",
+   "base": "{server}/api/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Server URL",
+      "placeholder": "https://mastodon.social",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "post": {
+     "name": "Post a status",
+     "method": "POST",
+     "path": "/statuses",
+     "fields": [
+      {
+       "key": "status",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "visibility",
+       "label": "Visibility",
+       "type": "select",
+       "default": "public",
+       "options": [
+        {
+         "value": "public",
+         "label": "public"
+        },
+        {
+         "value": "unlisted",
+         "label": "unlisted"
+        },
+        {
+         "value": "private",
+         "label": "private"
+        },
+        {
+         "value": "direct",
+         "label": "direct"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "linkedin": {
+   "name": "LinkedIn",
+   "category": "Social and content",
+   "color": "#0A66C2",
+   "description": "Share posts on LinkedIn.",
+   "base": "https://api.linkedin.com/rest",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "post": {
+     "name": "Share a post",
+     "method": "POST",
+     "path": "/posts",
+     "fields": [
+      {
+       "key": "author",
+       "label": "Author URN",
+       "type": "string",
+       "required": true,
+       "placeholder": "urn:li:person:abc123"
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "author": "{author}",
+      "commentary": "{text}",
+      "visibility": "PUBLIC",
+      "distribution": {
+       "feedDistribution": "MAIN_FEED",
+       "targetEntities": [],
+       "thirdPartyDistributionChannels": []
+      },
+      "lifecycleState": "PUBLISHED",
+      "isReshareDisabledByAuthor": false
+     }
+    }
+   },
+   "headers": {
+    "LinkedIn-Version": "202406",
+    "X-Restli-Protocol-Version": "2.0.0"
+   }
+  },
+  "facebookPages": {
+   "name": "Facebook Pages",
+   "category": "Social and content",
+   "color": "#1877F2",
+   "description": "Publish posts to a Facebook Page.",
+   "base": "https://graph.facebook.com/v19.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "Page access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "access_token": "{apiKey}"
+    }
+   },
+   "operations": {
+    "post": {
+     "name": "Publish a post",
+     "method": "POST",
+     "path": "/{pageId}/feed",
+     "fields": [
+      {
+       "key": "pageId",
+       "label": "Page ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "message",
+       "label": "Message",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "link",
+       "label": "Link",
+       "type": "string"
+      }
+     ]
+    }
+   }
+  },
+  "youtube": {
+   "name": "YouTube",
+   "category": "Social and content",
+   "color": "#FF0000",
+   "description": "Search videos and read channel statistics.",
+   "base": "https://www.googleapis.com/youtube/v3",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "search": {
+     "name": "Search",
+     "method": "GET",
+     "path": "/search",
+     "fields": [
+      {
+       "key": "q",
+       "label": "Query",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "part",
+       "label": "Part",
+       "type": "string",
+       "default": "snippet"
+      },
+      {
+       "key": "type",
+       "label": "Type",
+       "type": "select",
+       "default": "video",
+       "options": [
+        {
+         "value": "video",
+         "label": "video"
+        },
+        {
+         "value": "channel",
+         "label": "channel"
+        },
+        {
+         "value": "playlist",
+         "label": "playlist"
+        }
+       ]
+      },
+      {
+       "key": "maxResults",
+       "label": "Max results",
+       "type": "number",
+       "default": "10"
+      }
+     ]
+    },
+    "channel": {
+     "name": "Channel statistics",
+     "method": "GET",
+     "path": "/channels",
+     "fields": [
+      {
+       "key": "id",
+       "label": "Channel ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "part",
+       "label": "Part",
+       "type": "string",
+       "default": "snippet,statistics"
+      }
+     ]
+    }
+   }
+  },
+  "reddit": {
+   "name": "Reddit",
+   "category": "Social and content",
+   "color": "#FF4500",
+   "description": "Submit posts to a subreddit.",
+   "base": "https://oauth.reddit.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "OAuth access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "submit": {
+     "name": "Submit a post",
+     "method": "POST",
+     "path": "/api/submit",
+     "fields": [
+      {
+       "key": "sr",
+       "label": "Subreddit",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "kind",
+       "label": "Kind",
+       "type": "select",
+       "default": "self",
+       "options": [
+        {
+         "value": "self",
+         "label": "self"
+        },
+        {
+         "value": "link",
+         "label": "link"
+        }
+       ]
+      },
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text"
+      },
+      {
+       "key": "url",
+       "label": "Link URL",
+       "type": "string"
+      }
+     ]
+    }
+   },
+   "encoding": "form"
+  },
+  "wordpress": {
+   "name": "WordPress",
+   "category": "Social and content",
+   "color": "#21759B",
+   "description": "Create and list WordPress posts.",
+   "base": "{site}/wp-json/wp/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "site",
+      "label": "Site URL",
+      "placeholder": "https://blog.example.com",
+      "url": true
+     },
+     {
+      "key": "username",
+      "label": "Username",
+      "placeholder": ""
+     },
+     {
+      "key": "appPassword",
+      "label": "Application password",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{username}",
+     "{appPassword}"
+    ]
+   },
+   "operations": {
+    "createPost": {
+     "name": "Create a post",
+     "method": "POST",
+     "path": "/posts",
+     "fields": [
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "content",
+       "label": "Content",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "status",
+       "label": "Status",
+       "type": "select",
+       "default": "draft",
+       "options": [
+        {
+         "value": "draft",
+         "label": "draft"
+        },
+        {
+         "value": "publish",
+         "label": "publish"
+        },
+        {
+         "value": "pending",
+         "label": "pending"
+        },
+        {
+         "value": "private",
+         "label": "private"
+        }
+       ]
+      }
+     ]
+    },
+    "listPosts": {
+     "name": "List posts",
+     "method": "GET",
+     "path": "/posts",
+     "fields": [
+      {
+       "key": "per_page",
+       "label": "Per page",
+       "type": "number",
+       "default": "10"
+      }
+     ]
+    }
+   }
+  },
+  "webflow": {
+   "name": "Webflow",
+   "category": "Social and content",
+   "color": "#4353FF",
+   "description": "Create CMS collection items in Webflow.",
+   "base": "https://api.webflow.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "createItem": {
+     "name": "Create a CMS item",
+     "method": "POST",
+     "path": "/collections/{collectionId}/items",
+     "fields": [
+      {
+       "key": "collectionId",
+       "label": "Collection ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "fieldData",
+       "label": "Field data (JSON)",
+       "type": "json",
+       "required": true,
+       "placeholder": "{\"name\": \"Hello\", \"slug\": \"hello\"}"
+      },
+      {
+       "key": "isDraft",
+       "label": "Draft",
+       "type": "boolean",
+       "default": "true"
+      }
+     ],
+     "body": {
+      "fieldData": "{fieldData}",
+      "isDraft": "{isDraft}"
+     }
+    }
+   }
+  },
+  "mixpanel": {
+   "name": "Mixpanel",
+   "category": "Analytics",
+   "color": "#7856FF",
+   "description": "Track events in Mixpanel.",
+   "base": "https://api.mixpanel.com",
+   "auth": {
+    "fields": []
+   },
+   "operations": {
+    "track": {
+     "name": "Track an event",
+     "method": "POST",
+     "path": "/track",
+     "fields": [
+      {
+       "key": "token",
+       "label": "Project token",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "event",
+       "label": "Event",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "distinctId",
+       "label": "Distinct ID",
+       "type": "string",
+       "required": true
+      }
+     ],
+     "body": [
+      {
+       "event": "{event}",
+       "properties": {
+        "token": "{token}",
+        "distinct_id": "{distinctId}"
+       }
+      }
+     ]
+    }
+   }
+  },
+  "segment": {
+   "name": "Segment",
+   "category": "Analytics",
+   "color": "#52BD94",
+   "description": "Send track and identify calls to Segment.",
+   "base": "https://api.segment.io/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "writeKey",
+      "label": "Write key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "basic": [
+     "{writeKey}",
+     ""
+    ]
+   },
+   "operations": {
+    "track": {
+     "name": "Track an event",
+     "method": "POST",
+     "path": "/track",
+     "fields": [
+      {
+       "key": "userId",
+       "label": "User ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "event",
+       "label": "Event",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "properties",
+       "label": "Properties (JSON)",
+       "type": "json"
+      }
+     ]
+    },
+    "identify": {
+     "name": "Identify a user",
+     "method": "POST",
+     "path": "/identify",
+     "fields": [
+      {
+       "key": "userId",
+       "label": "User ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "traits",
+       "label": "Traits (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "amplitude": {
+   "name": "Amplitude",
+   "category": "Analytics",
+   "color": "#1E61F0",
+   "description": "Send events to Amplitude.",
+   "base": "https://api2.amplitude.com",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "Project API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "body": {
+     "api_key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "event": {
+     "name": "Send an event",
+     "method": "POST",
+     "path": "/2/httpapi",
+     "fields": [
+      {
+       "key": "userId",
+       "label": "User ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "eventType",
+       "label": "Event",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "properties",
+       "label": "Event properties (JSON)",
+       "type": "json"
+      }
+     ],
+     "body": {
+      "events": [
+       {
+        "user_id": "{userId}",
+        "event_type": "{eventType}",
+        "event_properties": "{properties}"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "plausible": {
+   "name": "Plausible",
+   "category": "Analytics",
+   "color": "#5850EC",
+   "description": "Read aggregate stats from Plausible.",
+   "base": "https://plausible.io/api/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "aggregate": {
+     "name": "Aggregate stats",
+     "method": "GET",
+     "path": "/stats/aggregate",
+     "fields": [
+      {
+       "key": "site_id",
+       "label": "Site",
+       "type": "string",
+       "required": true,
+       "placeholder": "example.com"
+      },
+      {
+       "key": "period",
+       "label": "Period",
+       "type": "select",
+       "default": "30d",
+       "options": [
+        {
+         "value": "day",
+         "label": "day"
+        },
+        {
+         "value": "7d",
+         "label": "7d"
+        },
+        {
+         "value": "30d",
+         "label": "30d"
+        },
+        {
+         "value": "month",
+         "label": "month"
+        },
+        {
+         "value": "6mo",
+         "label": "6mo"
+        },
+        {
+         "value": "12mo",
+         "label": "12mo"
+        }
+       ]
+      },
+      {
+       "key": "metrics",
+       "label": "Metrics",
+       "type": "string",
+       "default": "visitors,pageviews"
+      }
+     ]
+    }
+   }
+  },
+  "googleAnalytics": {
+   "name": "Google Analytics",
+   "category": "Analytics",
+   "color": "#E37400",
+   "description": "Send events to GA4 with the Measurement Protocol.",
+   "base": "https://www.google-analytics.com/mp",
+   "auth": {
+    "fields": [
+     {
+      "key": "measurementId",
+      "label": "Measurement ID",
+      "placeholder": "G-XXXXXXX"
+     },
+     {
+      "key": "apiSecret",
+      "label": "API secret",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "measurement_id": "{measurementId}",
+     "api_secret": "{apiSecret}"
+    }
+   },
+   "operations": {
+    "event": {
+     "name": "Send an event",
+     "method": "POST",
+     "path": "/collect",
+     "fields": [
+      {
+       "key": "clientId",
+       "label": "Client ID",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "eventName",
+       "label": "Event name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "params",
+       "label": "Parameters (JSON)",
+       "type": "json"
+      }
+     ],
+     "body": {
+      "client_id": "{clientId}",
+      "events": [
+       {
+        "name": "{eventName}",
+        "params": "{params}"
+       }
+      ]
+     }
+    }
+   }
+  },
+  "openai": {
+   "name": "OpenAI",
+   "category": "AI",
+   "color": "#10A37F",
+   "description": "Chat completions, embeddings and images with OpenAI.",
+   "base": "https://api.openai.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "chat": {
+     "name": "Chat completion",
+     "method": "POST",
+     "path": "/chat/completions",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "gpt-4.1-mini"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true,
+       "placeholder": "Summarize: {{ $json.text }}"
+      },
+      {
+       "key": "system",
+       "label": "System prompt",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "messages": [
+       {
+        "role": "system",
+        "content": "{system}"
+       },
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ]
+     },
+     "output": "openai"
+    },
+    "embed": {
+     "name": "Create embeddings",
+     "method": "POST",
+     "path": "/embeddings",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "text-embedding-3-small"
+      },
+      {
+       "key": "input",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      }
+     ]
+    },
+    "image": {
+     "name": "Generate an image",
+     "method": "POST",
+     "path": "/images/generations",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "gpt-image-1"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "size",
+       "label": "Size",
+       "type": "select",
+       "default": "1024x1024",
+       "options": [
+        {
+         "value": "1024x1024",
+         "label": "1024x1024"
+        },
+        {
+         "value": "1024x1536",
+         "label": "1024x1536"
+        },
+        {
+         "value": "1536x1024",
+         "label": "1536x1024"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "anthropic": {
+   "name": "Anthropic Claude",
+   "category": "AI",
+   "color": "#D97757",
+   "description": "Send a prompt to Claude with the Messages API.",
+   "base": "https://api.anthropic.com/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "x-api-key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "message": {
+     "name": "Send a message",
+     "method": "POST",
+     "path": "/messages",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "claude-opus-5-5"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true,
+       "placeholder": "Summarize: {{ $json.text }}"
+      },
+      {
+       "key": "system",
+       "label": "System prompt",
+       "type": "text"
+      },
+      {
+       "key": "maxTokens",
+       "label": "Max tokens",
+       "type": "number",
+       "required": true,
+       "default": "4096"
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "max_tokens": "{maxTokens}",
+      "system": "{system}",
+      "messages": [
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ],
+      "fallbacks": "default"
+     },
+     "headers": {
+      "anthropic-beta": "server-side-fallback-2026-07-01"
+     },
+     "output": "anthropic"
+    }
+   },
+   "headers": {
+    "anthropic-version": "2023-06-01"
+   }
+  },
+  "mistral": {
+   "name": "Mistral AI",
+   "category": "AI",
+   "color": "#FA520F",
+   "description": "Chat completions with Mistral models.",
+   "base": "https://api.mistral.ai/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "chat": {
+     "name": "Chat completion",
+     "method": "POST",
+     "path": "/chat/completions",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "mistral-large-latest"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true,
+       "placeholder": "Summarize: {{ $json.text }}"
+      },
+      {
+       "key": "system",
+       "label": "System prompt",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "messages": [
+       {
+        "role": "system",
+        "content": "{system}"
+       },
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ]
+     },
+     "output": "openai"
+    }
+   }
+  },
+  "groq": {
+   "name": "Groq",
+   "category": "AI",
+   "color": "#F55036",
+   "description": "Fast chat completions on Groq.",
+   "base": "https://api.groq.com/openai/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "chat": {
+     "name": "Chat completion",
+     "method": "POST",
+     "path": "/chat/completions",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "llama-3.3-70b-versatile"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true,
+       "placeholder": "Summarize: {{ $json.text }}"
+      },
+      {
+       "key": "system",
+       "label": "System prompt",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "messages": [
+       {
+        "role": "system",
+        "content": "{system}"
+       },
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ]
+     },
+     "output": "openai"
+    }
+   }
+  },
+  "perplexity": {
+   "name": "Perplexity",
+   "category": "AI",
+   "color": "#20808D",
+   "description": "Answers with web search from Perplexity.",
+   "base": "https://api.perplexity.ai",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "chat": {
+     "name": "Chat completion",
+     "method": "POST",
+     "path": "/chat/completions",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "sonar"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true,
+       "placeholder": "Summarize: {{ $json.text }}"
+      },
+      {
+       "key": "system",
+       "label": "System prompt",
+       "type": "text"
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "messages": [
+       {
+        "role": "system",
+        "content": "{system}"
+       },
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ]
+     },
+     "output": "openai"
+    }
+   }
+  },
+  "gemini": {
+   "name": "Google Gemini",
+   "category": "AI",
+   "color": "#8E75B2",
+   "description": "Generate text with Gemini models.",
+   "base": "https://generativelanguage.googleapis.com/v1beta",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "x-goog-api-key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "generate": {
+     "name": "Generate content",
+     "method": "POST",
+     "path": "/models/{model}:generateContent",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "gemini-2.5-flash"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "contents": [
+       {
+        "parts": [
+         {
+          "text": "{prompt}"
+         }
+        ]
+       }
+      ]
+     },
+     "output": "gemini"
+    }
+   }
+  },
+  "cohere": {
+   "name": "Cohere",
+   "category": "AI",
+   "color": "#39594D",
+   "description": "Chat with Cohere Command models.",
+   "base": "https://api.cohere.com/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "chat": {
+     "name": "Chat",
+     "method": "POST",
+     "path": "/chat",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "default": "command-r-plus"
+      },
+      {
+       "key": "prompt",
+       "label": "Prompt",
+       "type": "text",
+       "required": true
+      }
+     ],
+     "body": {
+      "model": "{model}",
+      "messages": [
+       {
+        "role": "user",
+        "content": "{prompt}"
+       }
+      ]
+     },
+     "output": "cohere"
+    }
+   }
+  },
+  "huggingface": {
+   "name": "Hugging Face",
+   "category": "AI",
+   "color": "#FFD21E",
+   "description": "Run models on the Hugging Face Inference API.",
+   "base": "https://api-inference.huggingface.co",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "run": {
+     "name": "Run a model",
+     "method": "POST",
+     "path": "/models/{model}",
+     "fields": [
+      {
+       "key": "model",
+       "label": "Model",
+       "type": "string",
+       "required": true,
+       "placeholder": "distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+       "slashes": true
+      },
+      {
+       "key": "inputs",
+       "label": "Inputs",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "parameters",
+       "label": "Parameters (JSON)",
+       "type": "json"
+      }
+     ]
+    }
+   }
+  },
+  "deepl": {
+   "name": "DeepL",
+   "category": "AI",
+   "color": "#0F2B46",
+   "description": "Translate text with DeepL.",
+   "base": "{server}/v2",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "API URL",
+      "placeholder": "https://api-free.deepl.com",
+      "url": true
+     },
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "DeepL-Auth-Key {apiKey}"
+    }
+   },
+   "operations": {
+    "translate": {
+     "name": "Translate",
+     "method": "POST",
+     "path": "/translate",
+     "fields": [
+      {
+       "key": "text",
+       "label": "Text",
+       "type": "text",
+       "required": true
+      },
+      {
+       "key": "targetLang",
+       "label": "Target language",
+       "type": "string",
+       "required": true,
+       "placeholder": "DE"
+      },
+      {
+       "key": "sourceLang",
+       "label": "Source language",
+       "type": "string"
+      }
+     ],
+     "body": {
+      "text": [
+       "{text}"
+      ],
+      "target_lang": "{targetLang}",
+      "source_lang": "{sourceLang}"
+     }
+    }
+   }
+  },
+  "dropbox": {
+   "name": "Dropbox",
+   "category": "Data and storage",
+   "color": "#0061FF",
+   "description": "List and create Dropbox folders.",
+   "base": "https://api.dropboxapi.com/2",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listFolder": {
+     "name": "List a folder",
+     "method": "POST",
+     "path": "/files/list_folder",
+     "fields": [
+      {
+       "key": "path",
+       "label": "Path",
+       "type": "string",
+       "required": true,
+       "placeholder": "/Documents"
+      }
+     ]
+    },
+    "createFolder": {
+     "name": "Create a folder",
+     "method": "POST",
+     "path": "/files/create_folder_v2",
+     "fields": [
+      {
+       "key": "path",
+       "label": "Path",
+       "type": "string",
+       "required": true
+      }
+     ]
+    }
+   }
+  },
+  "box": {
+   "name": "Box",
+   "category": "Data and storage",
+   "color": "#0061D5",
+   "description": "List and create Box folders.",
+   "base": "https://api.box.com/2.0",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "listFolder": {
+     "name": "List folder items",
+     "method": "GET",
+     "path": "/folders/{folderId}/items",
+     "fields": [
+      {
+       "key": "folderId",
+       "label": "Folder ID",
+       "type": "string",
+       "required": true,
+       "default": "0"
+      }
+     ]
+    },
+    "createFolder": {
+     "name": "Create a folder",
+     "method": "POST",
+     "path": "/folders",
+     "fields": [
+      {
+       "key": "name",
+       "label": "Name",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "parentId",
+       "label": "Parent folder ID",
+       "type": "string",
+       "required": true,
+       "default": "0"
+      }
+     ],
+     "body": {
+      "name": "{name}",
+      "parent": {
+       "id": "{parentId}"
+      }
+     }
+    }
+   }
+  },
+  "supabase": {
+   "name": "Supabase",
+   "category": "Data and storage",
+   "color": "#3ECF8E",
+   "description": "Insert and select rows through the Supabase REST API.",
+   "base": "{url}/rest/v1",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Project URL",
+      "placeholder": "https://abc.supabase.co",
+      "url": true
+     },
+     {
+      "key": "apiKey",
+      "label": "Service role or anon key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "apikey": "{apiKey}",
+     "Authorization": "Bearer {apiKey}"
+    }
+   },
+   "operations": {
+    "insert": {
+     "name": "Insert rows",
+     "method": "POST",
+     "path": "/{table}",
+     "fields": [
+      {
+       "key": "table",
+       "label": "Table",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "row",
+       "label": "Row (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": "{row}",
+     "headers": {
+      "Prefer": "return=representation"
+     }
+    },
+    "select": {
+     "name": "Select rows",
+     "method": "GET",
+     "path": "/{table}",
+     "fields": [
+      {
+       "key": "table",
+       "label": "Table",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "select",
+       "label": "Columns",
+       "type": "string",
+       "default": "*"
+      },
+      {
+       "key": "filters",
+       "label": "Filters (JSON)",
+       "type": "json",
+       "placeholder": "{\"id\": \"eq.1\"}",
+       "in": "query_object"
+      },
+      {
+       "key": "limit",
+       "label": "Limit",
+       "type": "number",
+       "default": "100"
+      }
+     ]
+    }
+   }
+  },
+  "firebase": {
+   "name": "Firebase Realtime Database",
+   "category": "Data and storage",
+   "color": "#FFCA28",
+   "description": "Read and write Firebase Realtime Database paths.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Database URL",
+      "placeholder": "https://project-default-rtdb.firebaseio.com",
+      "url": true
+     },
+     {
+      "key": "secret",
+      "label": "Database secret or ID token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "auth": "{secret}"
+    }
+   },
+   "operations": {
+    "get": {
+     "name": "Read a path",
+     "method": "GET",
+     "path": "/{path}.json",
+     "fields": [
+      {
+       "key": "path",
+       "label": "Path",
+       "type": "string",
+       "required": true,
+       "placeholder": "users/ada",
+       "slashes": true
+      }
+     ]
+    },
+    "set": {
+     "name": "Write a path",
+     "method": "PUT",
+     "path": "/{path}.json",
+     "fields": [
+      {
+       "key": "path",
+       "label": "Path",
+       "type": "string",
+       "required": true,
+       "slashes": true
+      },
+      {
+       "key": "value",
+       "label": "Value (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": "{value}"
+    },
+    "push": {
+     "name": "Push to a list",
+     "method": "POST",
+     "path": "/{path}.json",
+     "fields": [
+      {
+       "key": "path",
+       "label": "Path",
+       "type": "string",
+       "required": true,
+       "slashes": true
+      },
+      {
+       "key": "value",
+       "label": "Value (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": "{value}"
+    }
+   }
+  },
+  "algolia": {
+   "name": "Algolia",
+   "category": "Data and storage",
+   "color": "#003DFF",
+   "description": "Search and index records in Algolia.",
+   "base": "https://{appId}-dsn.algolia.net/1",
+   "auth": {
+    "fields": [
+     {
+      "key": "appId",
+      "label": "Application ID",
+      "placeholder": ""
+     },
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "X-Algolia-Application-Id": "{appId}",
+     "X-Algolia-API-Key": "{apiKey}"
+    }
+   },
+   "operations": {
+    "search": {
+     "name": "Search an index",
+     "method": "POST",
+     "path": "/indexes/{index}/query",
+     "fields": [
+      {
+       "key": "index",
+       "label": "Index",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "query",
+       "label": "Query",
+       "type": "string",
+       "required": true
+      }
+     ]
+    },
+    "addObject": {
+     "name": "Add a record",
+     "method": "POST",
+     "path": "/indexes/{index}",
+     "fields": [
+      {
+       "key": "index",
+       "label": "Index",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "object",
+       "label": "Record (JSON)",
+       "type": "json",
+       "required": true
+      }
+     ],
+     "body": "{object}"
+    }
+   }
+  },
+  "upstash": {
+   "name": "Upstash Redis",
+   "category": "Data and storage",
+   "color": "#00E9A3",
+   "description": "Run Redis commands over the Upstash REST API.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "REST URL",
+      "placeholder": "https://abc.upstash.io",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "REST token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "command": {
+     "name": "Run a command",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "command",
+       "label": "Command (JSON list)",
+       "type": "json",
+       "required": true,
+       "placeholder": "[\"SET\", \"greeting\", \"hello\"]"
+      }
+     ],
+     "body": "{command}"
+    }
+   }
+  },
+  "bitly": {
+   "name": "Bitly",
+   "category": "Utilities",
+   "color": "#EE6123",
+   "description": "Shorten links with Bitly.",
+   "base": "https://api-ssl.bitly.com/v4",
+   "auth": {
+    "fields": [
+     {
+      "key": "token",
+      "label": "Access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "shorten": {
+     "name": "Shorten a link",
+     "method": "POST",
+     "path": "/shorten",
+     "fields": [
+      {
+       "key": "long_url",
+       "label": "URL",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "domain",
+       "label": "Domain",
+       "type": "string",
+       "default": "bit.ly"
+      }
+     ]
+    }
+   }
+  },
+  "openweathermap": {
+   "name": "OpenWeatherMap",
+   "category": "Utilities",
+   "color": "#EB6E4B",
+   "description": "Current weather and forecasts.",
+   "base": "https://api.openweathermap.org/data/2.5",
+   "auth": {
+    "fields": [
+     {
+      "key": "apiKey",
+      "label": "API key",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "query": {
+     "appid": "{apiKey}"
+    }
+   },
+   "operations": {
+    "current": {
+     "name": "Current weather",
+     "method": "GET",
+     "path": "/weather",
+     "fields": [
+      {
+       "key": "q",
+       "label": "City",
+       "type": "string",
+       "required": true,
+       "placeholder": "Berlin,DE"
+      },
+      {
+       "key": "units",
+       "label": "Units",
+       "type": "select",
+       "default": "metric",
+       "options": [
+        {
+         "value": "metric",
+         "label": "metric"
+        },
+        {
+         "value": "imperial",
+         "label": "imperial"
+        },
+        {
+         "value": "standard",
+         "label": "standard"
+        }
+       ]
+      }
+     ]
+    },
+    "forecast": {
+     "name": "Five-day forecast",
+     "method": "GET",
+     "path": "/forecast",
+     "fields": [
+      {
+       "key": "q",
+       "label": "City",
+       "type": "string",
+       "required": true
+      },
+      {
+       "key": "units",
+       "label": "Units",
+       "type": "select",
+       "default": "metric",
+       "options": [
+        {
+         "value": "metric",
+         "label": "metric"
+        },
+        {
+         "value": "imperial",
+         "label": "imperial"
+        },
+        {
+         "value": "standard",
+         "label": "standard"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "wikipedia": {
+   "name": "Wikipedia",
+   "category": "Utilities",
+   "color": "#636466",
+   "description": "Read article summaries from Wikipedia.",
+   "base": "https://en.wikipedia.org/api/rest_v1",
+   "auth": {
+    "fields": []
+   },
+   "operations": {
+    "summary": {
+     "name": "Article summary",
+     "method": "GET",
+     "path": "/page/summary/{title}",
+     "fields": [
+      {
+       "key": "title",
+       "label": "Title",
+       "type": "string",
+       "required": true,
+       "placeholder": "Ada_Lovelace"
+      }
+     ]
+    }
+   }
+  },
+  "homeAssistant": {
+   "name": "Home Assistant",
+   "category": "Utilities",
+   "color": "#18BCF2",
+   "description": "Call services and read states in Home Assistant.",
+   "base": "{server}/api",
+   "auth": {
+    "fields": [
+     {
+      "key": "server",
+      "label": "Public URL",
+      "placeholder": "https://home.example.com",
+      "url": true
+     },
+     {
+      "key": "token",
+      "label": "Long-lived access token",
+      "secret": true,
+      "placeholder": ""
+     }
+    ],
+    "headers": {
+     "Authorization": "Bearer {token}"
+    }
+   },
+   "operations": {
+    "callService": {
+     "name": "Call a service",
+     "method": "POST",
+     "path": "/services/{domain}/{service}",
+     "fields": [
+      {
+       "key": "domain",
+       "label": "Domain",
+       "type": "string",
+       "required": true,
+       "placeholder": "light"
+      },
+      {
+       "key": "service",
+       "label": "Service",
+       "type": "string",
+       "required": true,
+       "placeholder": "turn_on"
+      },
+      {
+       "key": "data",
+       "label": "Service data (JSON)",
+       "type": "json",
+       "placeholder": "{\"entity_id\": \"light.kitchen\"}"
+      }
+     ],
+     "body": "{data}"
+    },
+    "getState": {
+     "name": "Get an entity state",
+     "method": "GET",
+     "path": "/states/{entityId}",
+     "fields": [
+      {
+       "key": "entityId",
+       "label": "Entity ID",
+       "type": "string",
+       "required": true,
+       "placeholder": "sensor.temperature"
+      }
+     ]
+    }
+   }
+  },
+  "zapier": {
+   "name": "Zapier",
+   "category": "Utilities",
+   "color": "#FF4F00",
+   "description": "Send data to a Zapier catch hook.",
+   "base": "{url}",
+   "auth": {
+    "fields": [
+     {
+      "key": "url",
+      "label": "Catch hook URL",
+      "secret": true,
+      "url": true,
+      "placeholder": "https://hooks.zapier.com/hooks/catch/..."
+     }
+    ]
+   },
+   "operations": {
+    "send": {
+     "name": "Send data",
+     "method": "POST",
+     "path": "",
+     "fields": [
+      {
+       "key": "data",
+       "label": "Data (JSON)",
+       "type": "json",
+       "required": true,
+       "placeholder": "{\"name\": \"{{ $json.name }}\"}"
+      }
+     ],
+     "body": "{data}"
+    }
+   }
+  }
+ },
+ "version": "5795659946f26af1"
+}

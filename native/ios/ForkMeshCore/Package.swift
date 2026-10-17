@@ -11,6 +11,7 @@ struct Module {
     let name: String
     let deps: [String]
     var resources: Bool = false
+    var assets: Bool = false
 }
 
 let modules: [Module] = [
@@ -77,6 +78,7 @@ let modules: [Module] = [
     // Coves (encrypted file vaults) and secrets (WS21).
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
+    Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi"], resources: true, assets: true),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]
 
@@ -112,7 +114,8 @@ for module in selected {
     targets.append(.target(
         name: module.name,
         dependencies: module.deps.map { .byName(name: $0) },
-        path: "Sources/\(module.name)"
+        path: "Sources/\(module.name)",
+        resources: module.assets ? [.copy("Resources")] : []
     ))
     if tested.contains(module.name) {
         targets.append(.testTarget(

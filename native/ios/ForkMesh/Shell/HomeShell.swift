@@ -285,7 +285,7 @@ struct HomeShell: View {
 
     nonisolated static func movesToBar(_ action: HubItem.Action) -> Bool {
         switch action {
-        case .route, .world, .designSystem, .workflows: return true
+        case .route, .world, .designSystem: return true
         case .reportBug, .setStatus, .signIn, .signOut: return false
         }
     }
@@ -834,7 +834,7 @@ struct HomeShell: View {
                     return
                 }
                 if let accountPackages = accountPackages {
-                    Task { await accountPackages.refresh() }
+                    Task { await accountPackages.refreshIfStale() }
                 }
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }
@@ -1230,8 +1230,6 @@ struct HomeShell: View {
             openWorld()
         case .designSystem:
             openDesignSystem()
-        case .workflows:
-            openWorkflows()
         case .signIn:
             AccountFeature.openSignIn()
         case .signOut:
@@ -1268,18 +1266,6 @@ struct HomeShell: View {
         openURL(uri) { (accepted: Bool) in
             if !accepted {
                 notice = FmNotice.error("Could not open ForkMesh World at \(uri.absoluteString)")
-            }
-        }
-    }
-
-    private func openWorkflows() {
-        guard let uri: URL = Services.get(ApiService.self)?.url(HubItem.workflowsPath) else {
-            notice = FmNotice.error("Sign in to a ForkMesh project to open Workflows")
-            return
-        }
-        openURL(uri) { (accepted: Bool) in
-            if !accepted {
-                notice = FmNotice.error("Could not open Workflows at \(uri.absoluteString)")
             }
         }
     }

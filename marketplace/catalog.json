@@ -85,7 +85,7 @@
     { "id": "status-check-cores", "version": "1.0.0", "manifest": "packages/status-check-cores/manifest.json" },
     { "id": "status-check-runners", "version": "1.0.0", "manifest": "packages/status-check-runners/manifest.json" },
     { "id": "status-check-mirrors", "version": "1.0.0", "manifest": "packages/status-check-mirrors/manifest.json" },
-    { "id": "workflows", "version": "1.1.0", "manifest": "packages/workflows/manifest.json" },
+    { "id": "workflows", "version": "1.2.0", "manifest": "packages/workflows/manifest.json" },
     { "id": "workflows-pack-communication", "version": "1.0.0", "manifest": "packages/workflows-pack-communication/manifest.json" },
     { "id": "workflows-pack-email", "version": "1.0.0", "manifest": "packages/workflows-pack-email/manifest.json" },
     { "id": "workflows-pack-productivity", "version": "1.0.0", "manifest": "packages/workflows-pack-productivity/manifest.json" },

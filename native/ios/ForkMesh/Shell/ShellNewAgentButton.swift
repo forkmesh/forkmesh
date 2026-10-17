@@ -237,37 +237,8 @@ struct ShellNewAgentButton: View {
     private var running: Int { ShellCounts.shared.agents }
 
     var body: some View {
-        face
-            .onTapGesture {
-                FmHaptics.tap()
-                onNewAgent()
-            }
-            .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 10) {
-                hold()
-            }
-            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { (next: CGRect) in
-                place = next
-            }
-            .hoverEffect(.lift)
-            .accessibilityElement()
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel(Text("New agent"))
-            .accessibilityValue(Text(ShellNewAgentButton.runningLabel(running)))
-            .accessibilityHint(Text(onVoice == nil
-                ? "Opens the composer to start an agent. Each star is an agent running. Touch and hold for the command palette."
-                : "Opens the composer to start an agent. Each star is an agent running. Touch and hold to speak a prompt."))
-            .accessibilityAction { onNewAgent() }
-            .accessibilityActions {
-                if let onVoice = onVoice {
-                    Button("Speak a prompt") { onVoice(place) }
-                }
-                Button("Command palette") { onPalette() }
-            }
-            .accessibilityShowsLargeContentViewer {
-                SwiftUI.Label("New agent", systemImage: "plus")
-            }
-            .accessibilityIdentifier("shell-new-agent-button")
-            .popoverTip(onVoice == nil ? (paletteTip as any Tip) : (voiceTip as any Tip))
+        described
+            .popoverTip(tip)
             .genieKeepsClear()
             .onAppear {
                 feel(!tabHidden)
@@ -287,6 +258,55 @@ struct ShellNewAgentButton: View {
                     bornAt = Date().timeIntervalSinceReferenceDate
                 }
             }
+    }
+
+    private var pressable: some View {
+        face
+            .onTapGesture {
+                FmHaptics.tap()
+                onNewAgent()
+            }
+            .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 10) {
+                hold()
+            }
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { (next: CGRect) in
+                place = next
+            }
+            .hoverEffect(.lift)
+    }
+
+    private var described: some View {
+        pressable
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(Text("New agent"))
+            .accessibilityValue(Text(ShellNewAgentButton.runningLabel(running)))
+            .accessibilityHint(Text(hint))
+            .accessibilityAction { onNewAgent() }
+            .accessibilityActions {
+                if let onVoice = onVoice {
+                    Button("Speak a prompt") { onVoice(place) }
+                }
+                Button("Command palette") { onPalette() }
+            }
+            .accessibilityShowsLargeContentViewer {
+                SwiftUI.Label("New agent", systemImage: "plus")
+            }
+            .accessibilityIdentifier("shell-new-agent-button")
+    }
+
+    private var hint: String {
+        if onVoice == nil {
+            return "Opens the composer to start an agent. Each star is an agent running. Touch and hold for the command palette."
+        }
+        return "Opens the composer to start an agent. Each star is an agent running. Touch and hold to speak a prompt."
+    }
+
+    private var tip: any Tip {
+        if onVoice == nil {
+            return paletteTip
+        }
+        return voiceTip
     }
 
     static func runningLabel(_ count: Int) -> String {

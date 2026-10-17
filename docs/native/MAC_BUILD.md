@@ -418,7 +418,10 @@ compile. Keep to these:
   async `currentConfigurations()`).
 - Keep SwiftUI modifier chains under roughly fifteen; split large `body`s into
   typed pieces (as `HomeShell` and `GenieSpiderLayer` do) to stay inside the
-  type checker's budget.
+  type checker's budget. The 2026-10-17 ad hoc build failed on
+  `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
+  `any Tip` ternary; it now builds in `pressable`, `described` and `body`,
+  with the hint and tip as plain computed properties.
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
 - Main-actor APIs called from static helpers or from a plain struct's `init`
@@ -437,3 +440,17 @@ compile. Keep to these:
   `@State var error`; assign the property as `self.error = …` inside the
   `catch` (the 2026-10-15 ad hoc build failed on `ProcessDetailScreen` in
   `DiagnosticsScreens.swift`).
+- Linux never compiles the `#if canImport(Network)` or `canImport(Security)`
+  code or the Apple-only targets in `native/ios/Nexus`, so check them on the
+  Mac for iOS (`xcodebuild -scheme Nexus-Package -destination
+  generic/platform=iOS build CODE_SIGNING_ALLOWED=NO` in the package;
+  `NexusUI` is iOS-only and does not build for macOS). Call `withTimeout(_:operation:)` without a label, give a
+  `Void` `withCheckedThrowingContinuation` an explicit
+  `CheckedContinuation<Void, Error>`, and describe an `NWError` with
+  `error.debugDescription` (its POSIX, DNS and TLS codes have none). Every
+  `testTarget` path must exist, or SwiftPM rejects the package.
+  `SecCertificateCopyValues` is macOS-only; read certificate dates with
+  `SecCertificateCopyNotValidBeforeDate`/`AfterDate` behind
+  `#available(iOS 18, …)`. The 2026-10-17 ad hoc build at `6f4d8e7d60`
+  failed on `NetworkTransport.swift` for these reasons; the same check then
+  found the missing `Tests/NexusStoreTests` and `WebInspector.swift`.

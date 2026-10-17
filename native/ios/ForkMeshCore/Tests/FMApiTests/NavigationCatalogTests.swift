@@ -32,8 +32,10 @@ final class NavigationCatalogTests: XCTestCase {
             groups.last?.items.first { $0.action == .designSystem }?.id, "designSystem",
             "the App group carries the design system link")
         XCTAssertEqual(
-            groups.last?.items.first { $0.action == .workflows }?.id, "workflows",
-            "the App group opens Workflows on the web")
+            groups.last?.items.first { $0.id == "workflows" }?.route, .workflows,
+            "the App group opens the native Workflows screen")
+        XCTAssertEqual(PackageGate.packageId(for: Route.workflows), "workflows")
+        XCTAssertEqual(RouteParser.routes(segments: ["dashboard", "workflows"]), [.workflows])
         XCTAssertEqual(HubItem.workflowsPath, "/dashboard/workflows")
         let app = groups.last?.items.map(\.id) ?? []
         XCTAssertEqual(app.firstIndex(of: "docs"), app.firstIndex(of: "people").map { $0 + 1 }, "Docs sits next to People")

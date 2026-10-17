@@ -231,6 +231,7 @@ public final class AccountPackagesStore {
     nonisolated public static let versionsKey = "packages/versions"
     nonisolated public static let defaultMonitorLimit = 20
     nonisolated public static let defaultRefreshMinutes = 15
+    nonisolated public static let resumeFreshFor: TimeInterval = 60
 
     public private(set) var state: AccountPackagesState?
     public private(set) var catalog: [AccountPackageInfo]
@@ -254,6 +255,8 @@ public final class AccountPackagesStore {
     @ObservationIgnored private var seenVersions: [String: String] = [:]
     @ObservationIgnored private var latestVersions: [String: String] = [:]
     @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var refreshedAt: Date?
+    @ObservationIgnored private var savedPackages: [AccountPackageEntry]?
     @ObservationIgnored public var onChange: (() -> Void)?
 
     public init(
@@ -268,7 +271,9 @@ public final class AccountPackagesStore {
         self.projectNamespace = projectNamespace
         self.starterPack = starterPack
         let cachedState = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.stateKey) ?? "")
-        state = cachedState.contains("packages") ? AccountPackagesState(json: cachedState) : nil
+        let cached = cachedState.contains("packages") ? AccountPackagesState(json: cachedState) : nil
+        state = cached
+        savedPackages = cached?.packages
         catalog = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.catalogKey) ?? "").maps("packages")
             .compactMap(AccountPackageInfo.init(json:))
         monitors = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.monitorsKey) ?? "").maps("monitors")
@@ -527,6 +532,12 @@ public final class AccountPackagesStore {
             return
         }
         await syncMonitors()
+        refreshedAt = Date()
+    }
+
+    public func refreshIfStale(now: Date = Date()) async {
+        if let refreshedAt, now >= refreshedAt, now.timeIntervalSince(refreshedAt) < AccountPackagesStore.resumeFreshFor { return }
+        await refresh()
     }
 
     @discardableResult
@@ -626,9 +637,14 @@ public final class AccountPackagesStore {
     }
 
     private func adopt(_ next: AccountPackagesState) {
-        state = AccountPackagesState(packages: next.packages)
-        prefs.set(JSON.encode(next.json), forKey: AccountPackagesStore.stateKey)
-        onChange?()
+        let shown = state?.packages != next.packages
+        let unsaved = savedPackages != next.packages
+        if shown { state = AccountPackagesState(packages: next.packages) }
+        if unsaved {
+            prefs.set(JSON.encode(next.json), forKey: AccountPackagesStore.stateKey)
+            savedPackages = next.packages
+        }
+        if shown || unsaved { onChange?() }
     }
 
     private func syncMonitors() async {
@@ -693,7 +709,9 @@ public final class AccountPackagesStore {
     }
 
     private func setMonitors(_ list: StatusMonitorList) {
-        monitors = list.installed ? list.monitors : []
+        let next = list.installed ? list.monitors : []
+        if next == monitors && list.max == monitorLimit { return }
+        monitors = next
         monitorLimit = list.max
         let saved: JSONObject = ["monitors": .array(monitors.map { .object($0.json) })]
         prefs.set(JSON.encode(saved), forKey: AccountPackagesStore.monitorsKey)
