@@ -418,7 +418,10 @@ compile. Keep to these:
   async `currentConfigurations()`).
 - Keep SwiftUI modifier chains under roughly fifteen; split large `body`s into
   typed pieces (as `HomeShell` and `GenieSpiderLayer` do) to stay inside the
-  type checker's budget.
+  type checker's budget. The 2026-10-17 ad hoc build failed on
+  `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
+  `any Tip` ternary; it now builds in `pressable`, `described` and `body`,
+  with the hint and tip as plain computed properties.
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
 - Main-actor APIs called from static helpers or from a plain struct's `init`
