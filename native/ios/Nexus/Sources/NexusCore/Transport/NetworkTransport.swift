@@ -26,6 +26,32 @@ public struct NetworkFrameworkDatagramConnector: DatagramConnector {
     }
 }
 
+func startConnection(_ connection: NWConnection, timeout: Duration) async throws {
+    try await withTimeout(timeout) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                connection.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready:
+                        connection.stateUpdateHandler = nil
+                        continuation.resume()
+                    case .failed(let error):
+                        connection.stateUpdateHandler = nil
+                        continuation.resume(throwing: NetworkByteStream.failure(error))
+                    case .cancelled:
+                        connection.stateUpdateHandler = nil
+                        continuation.resume(throwing: ConnectionFailure.cancelled)
+                    default: break
+                    }
+                }
+                connection.start(queue: .global(qos: .userInitiated))
+            }
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+}
+
 final class NetworkByteStream: ByteStream, @unchecked Sendable {
     private let connection: NWConnection
     private let started = OnceFlag()
@@ -36,39 +62,35 @@ final class NetworkByteStream: ByteStream, @unchecked Sendable {
 
     func start(timeout: Duration) async throws {
         guard started.claim() else { return }
-        try await withTimeout(timeout: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
-                self.connection.stateUpdateHandler = { state in
-                    switch state {
-                    case .ready: continuation.resume()
-                    case .failed(let error): continuation.resume(throwing: Self.failure(error))
-                    case .cancelled: continuation.resume(throwing: ConnectionFailure.cancelled)
-                    default: break
-                    }
-                }
-                self.connection.start(queue: .global(qos: .userInitiated))
-            }
-        }
+        try await startConnection(connection, timeout: timeout)
     }
 
     func send(_ data: Data, timeout: Duration) async throws {
-        try await withTimeout(timeout: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
-                self.connection.send(content: data, completion: .contentProcessed { error in
-                    if let error { continuation.resume(throwing: Self.failure(error)) } else { continuation.resume() }
-                })
+        try await withTimeout(timeout) {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    self.connection.send(content: data, completion: .contentProcessed { error in
+                        if let error { continuation.resume(throwing: Self.failure(error)) } else { continuation.resume() }
+                    })
+                }
+            } onCancel: {
+                self.connection.cancel()
             }
         }
     }
 
     func receive(maximumLength: Int, timeout: Duration) async throws -> Data {
-        try await withTimeout(timeout: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
-                self.connection.receive(minimumIncompleteLength: 1, maximumLength: maximumLength) { data, _, complete, error in
-                    if let error { continuation.resume(throwing: Self.failure(error)); return }
-                    continuation.resume(returning: data ?? Data())
-                    if complete { self.connection.cancel() }
+        try await withTimeout(timeout) {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+                    self.connection.receive(minimumIncompleteLength: 1, maximumLength: maximumLength) { data, _, complete, error in
+                        if let error { continuation.resume(throwing: Self.failure(error)); return }
+                        continuation.resume(returning: data ?? Data())
+                        if complete { self.connection.cancel() }
+                    }
                 }
+            } onCancel: {
+                self.connection.cancel()
             }
         }
     }
@@ -84,10 +106,11 @@ final class NetworkByteStream: ByteStream, @unchecked Sendable {
             case .EHOSTUNREACH: return .hostUnreachable
             case .ENETUNREACH: return .networkUnreachable
             case .ECONNRESET: return .resetByPeer
-            default: return .system(code: Int32(code.rawValue), message: code.debugDescription)
+            case .ECANCELED: return .cancelled
+            default: return .system(code: code.rawValue, message: error.debugDescription)
             }
-        case .dns(let code): return .nameResolution(code.debugDescription)
-        case .tls(let code): return .tls(code.debugDescription)
+        case .dns: return .nameResolution(error.debugDescription)
+        case .tls: return .tls(error.debugDescription)
         @unknown default: return .system(code: 0, message: error.debugDescription)
         }
     }
@@ -101,23 +124,11 @@ final class NetworkDatagramSocket: DatagramSocket, @unchecked Sendable {
 
     func start(timeout: Duration) async throws {
         guard started.claim() else { return }
-        try await withTimeout(timeout: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
-                self.connection.stateUpdateHandler = { state in
-                    switch state {
-                    case .ready: continuation.resume()
-                    case .failed(let error): continuation.resume(throwing: NetworkByteStream.failure(error))
-                    case .cancelled: continuation.resume(throwing: ConnectionFailure.cancelled)
-                    default: break
-                    }
-                }
-                self.connection.start(queue: .global(qos: .userInitiated))
-            }
-        }
+        try await startConnection(connection, timeout: timeout)
     }
 
     func send(_ data: Data) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
                 if let error { continuation.resume(throwing: NetworkByteStream.failure(error)) } else { continuation.resume() }
             })
@@ -125,11 +136,15 @@ final class NetworkDatagramSocket: DatagramSocket, @unchecked Sendable {
     }
 
     func receive(timeout: Duration) async throws -> Data {
-        try await withTimeout(timeout: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
-                self.connection.receiveMessage { data, _, _, error in
-                    if let error { continuation.resume(throwing: NetworkByteStream.failure(error)) } else { continuation.resume(returning: data ?? Data()) }
+        try await withTimeout(timeout) {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+                    self.connection.receiveMessage { data, _, _, error in
+                        if let error { continuation.resume(throwing: NetworkByteStream.failure(error)) } else { continuation.resume(returning: data ?? Data()) }
+                    }
                 }
+            } onCancel: {
+                self.connection.cancel()
             }
         }
     }
