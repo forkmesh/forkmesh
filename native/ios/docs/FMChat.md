@@ -379,9 +379,70 @@ Missed calls post the same "Missed audio/video call" line as the web.
 - **Preview and recording.** The pre-call preview shows the WebView immediately (WebKit holds
   capture until the view is visible), with a 30 s watchdog. "Record message" records the page's
   outgoing tracks (`record`, `recordStop`, `recordChunk` of up to 768 KiB, `recordDrop`), up to
-  60 s, then sends it as a view-once video.
-- **Limits.** Ringing reaches the phone only while the DM's socket is open (foreground); there is
-  no CallKit or VoIP push.
+  60 s, then sends it as a view-once video. `finishRecording()` keeps `audio/*` mimes (an
+  audio-only preview records the microphone through the changed voice) and
+  `WebCallRecording.fileExtension` names the file `mp4`, `m4a` or `webm`.
+- **Pre-call check** (`Calls/DirectCallPreview.swift`). Video call and Voice call in the
+  conversation header no longer ring at once. `DirectCallActions.open` asks for camera and
+  microphone access, refuses while a call is active, an invite is pending or the factory is busy,
+  and sets `DirectCallPrecheck.shared.request`. `DirectCallPreviewScreen` ("Call @name") then runs
+  `WebCallPeerFactory.preview(media:)`: video previews the camera with the look's face, background
+  and voice and offers the Face, Background, Voice and Hear myself controls; voice runs an
+  audio-only preview (`media: .audio`, page class `audio preview`) with the avatar, Voice and Hear
+  myself. The page's WebView is on screen from the first frame (opacity 0.01 for voice) because
+  WebKit does not start `getUserMedia` for an off-screen WebView; a 30 s watchdog ends a stuck
+  preview and Try again reopens it. "Record test clip" records up to 10 s with a countdown, stops
+  itself, and plays the clip back at once (`MessagesViewOnceReviewVideo` for video,
+  `CallClipAudioPlayer` with play, pause and replay for audio) with Re-record and Discard. The
+  player never changes the audio session category (WebKit's capture owns `.playAndRecord`); without
+  headphones it overrides the output to the speaker and undoes that override when the clip is
+  discarded or the call starts. Temporary clip files are deleted on discard, re-record, call and
+  close. Call turns Hear myself off and calls `DirectCallActions.start` (access check, then
+  `engine.start`). The preview is handed to the call: `makePeer` adopts a previewing peer for every
+  video call (as before) and for a voice call when the preview is audio (`previewMedia`), running
+  `setup` on the page, which keeps the open stream. Closing the screen ends the preview only while
+  no call is active; if the call ends before `makePeer` adopted it, `DirectCallLayer` ends that
+  preview. A Face Changer look change reaches an audio preview as a voice change only.
+- **Call layer at the root.** `.directCallsRoot()` is attached once, on `HomeShell` in
+  `App/ForkMeshApp.swift`, so calls show over every screen, not only Chat. One `fullScreenCover`
+  shows, in order, the call (`engine.active`), the incoming call (`engine.invite`) or the pre-call
+  check, so the WebView moves between screens without a second presentation. `WebCallSurface`
+  hosts the WebView in a holder view and only takes it back when it has no superview, so two
+  surfaces never fight over it.
+- **Incoming call.** `DirectCallIncomingScreen` replaces the old top banner: caller, "Video call"
+  or "Voice call", and large red Decline and green Accept buttons.
+- **Ringing** (`Calls/CallRinger.swift`). `CallRinger.shared` is attached to the engine in
+  `installCalls` and watches `phase` and `invite` with `withObservationTracking`, so it works with
+  no view on screen. While the caller's phase is `ringing` it loops a ringback (440 + 480 Hz, 2 s
+  on, 4 s off); while an invite is pending it loops a two-burst ring (400 + 450 Hz, 0.4 s on, 0.2 s
+  off, 0.4 s on, 2 s off) and vibrates every 2 s. Accept silences it at once (`hush()`), so the
+  ring does not play over the permission prompt; connecting, live, decline, missed, hang-up or a
+  cleared invite stop it. Both tones are synthesized by `DirectCallTones` (FMChat) and written as
+  WAV with `wavData`. The ringer leaves the session alone when it is already `.playAndRecord`
+  (a preview or call is capturing) and otherwise uses `.playback` with `.mixWithOthers`, like
+  `GenieSounds`. While the app is not in the foreground, a pending invite also posts a local
+  notification (`direct-call-<call id>`, title "Incoming video call" or "Incoming voice call",
+  body "@name is calling you", default sound, `interruptionLevel = .timeSensitive`) with
+  `topic: direct-messages` and the conversation, so a tap opens that DM where the full-screen
+  incoming view waits. It is removed when the invite ends or the app returns to the foreground.
+  There are no Accept and Decline notification actions: the categories come from the shared
+  `NotificationCategoryId` list in FMApi, and a call category there needs matching server and
+  Android work.
+- **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
+  connects and when the selected candidate pair changes. `WebCallPeer` passes it to
+  `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
+  closes), and `DirectCallScreen` shows, under the state line once live, "Direct · peer-to-peer,
+  no server in between" or "Relayed · through a TURN relay server (third party)". The live state
+  line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
+  screen shows the hint "Calls go directly between your devices when possible."
+- **Limits.** Ringing reaches the phone only while the app is running and the DM's socket is open
+  (foreground, or background while the `audio` mode keeps it alive). A killed or suspended app
+  does not ring: that needs VoIP push (PushKit) and CallKit, which need server work to send VoIP
+  pushes and are not part of this app. The time-sensitive level only breaks through Focus when the
+  app has the Time Sensitive Notifications capability; without it the notification arrives as a
+  normal alert. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
+  showing a sheet or cover; the call then appears when that sheet closes. The ringback plays on
+  whatever route WebKit's `.playAndRecord` session uses (often the earpiece).
 
 ## View-once video and voice messages
 
@@ -440,12 +501,14 @@ file under the 12 MiB limit.
 pages, `ChatMoveChannelSheet`, `ChatLinkPreviewCard`. Conversations are drawn by `Messages/`:
 `MessagesConversationView`, `MessagesBubbles.swift`, `MessagesMedia.swift`,
 `MessagesDetailsScreen`; calls by `Calls/` (`DirectCallViews.swift`, `DirectCallPreview.swift`,
-`WebCallPeer.swift`, `CallFaceLandmarks.swift`, `CallDepthCamera.swift`).
+`CallRinger.swift`) and `FaceChanger/` (`WebCallPeer.swift`, `CallFaceLandmarks.swift`,
+`CallDepthCamera.swift`).
 
 ## Tests and verification
 
 Core tests (Linux `swift test`) cover the relay, mesh (loopback sockets), local-control vectors,
 history store, direct messages, receipts, view-once media and captions, push decryption, link
-parsing, calls and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
+parsing, calls (including the state lines, route notes and the ringback and ring tones in
+`DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.

@@ -107,6 +107,7 @@ struct AppHomeView: View {
                     .relaySwitchScope()
                     .overlay { DevPerformanceOverlay() }
                     .overlay { PingCelebrationOverlay() }
+                    .directCallsRoot()
             } else {
                 AuthFlowView()
             }

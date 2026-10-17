@@ -7969,6 +7969,19 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     "video/webm;codecs=vp8,opus",
     "video/webm",
   ];
+  const RECORD_AUDIO_MIMES = [
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+  ];
+  const RECORD_VIDEO_BPS = 2500000;
+  const RECORD_AUDIO_BPS = 128000;
+  const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 48000 };
+  const VIDEO_CONSTRAINTS = { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+  const VIDEO_MAX_BITRATE = 2500000;
+  const AUDIO_MAX_BITRATE = 96000;
+  const ROUTE_CHECK_MS = 4000;
   const remote = document.getElementById("remote");
   const local = document.getElementById("local");
   let pc = null;
@@ -7996,6 +8009,8 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   let frameWaiter = null;
   let cameraSeq = 0;
   const cameraWaiters = new Map();
+  let routeTimer = null;
+  let route = null;
 
   const post = (message) => {
     const text = JSON.stringify(message);
@@ -8232,7 +8247,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     depthRefused = true;
     await stopPushed();
     if (!owner || stream !== owner) return;
-    const camera = await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null);
+    const camera = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS }).catch(() => null);
     const fresh = camera ? camera.getVideoTracks() : [];
     if (stream !== owner || pushed) {
       for (const track of fresh) track.stop();
@@ -8245,8 +8260,10 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     refreshStage();
   };
   const openStream = async (media) => {
-    if (media !== "video" || !depthCamera()) return navigator.mediaDevices.getUserMedia({ audio: true, video: media === "video" });
-    const opened = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    if (media !== "video" || !depthCamera()) {
+      return navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: media === "video" ? VIDEO_CONSTRAINTS : false });
+    }
+    const opened = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: false });
     stream = opened;
     if (await startPushed()) return opened;
     depthRefused = true;
@@ -8259,7 +8276,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       throw new Error("call closed");
     }
     try {
-      const camera = await navigator.mediaDevices.getUserMedia({ video: true });
+      const camera = await navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS });
       for (const track of camera.getVideoTracks()) opened.addTrack(track);
     } catch (error) {
       release();
@@ -8269,9 +8286,105 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const recordMime = () => window.MediaRecorder && typeof MediaRecorder.isTypeSupported === "function"
-    ? RECORD_MIMES.find((type) => MediaRecorder.isTypeSupported(type)) || ""
+  const recordMime = (video) => window.MediaRecorder && typeof MediaRecorder.isTypeSupported === "function"
+    ? (video ? RECORD_MIMES : RECORD_AUDIO_MIMES).find((type) => MediaRecorder.isTypeSupported(type)) || ""
     : "";
+  const tuneSender = async (sender, kind) => {
+    if (!sender || typeof sender.getParameters !== "function" || typeof sender.setParameters !== "function") return;
+    const apply = async (full) => {
+      const params = sender.getParameters();
+      if (!params || !params.encodings || !params.encodings.length) return;
+      for (const encoding of params.encodings) {
+        encoding.maxBitrate = kind === "video" ? VIDEO_MAX_BITRATE : AUDIO_MAX_BITRATE;
+        if (kind === "video") encoding.maxFramerate = 30;
+        if (full) {
+          encoding.priority = "high";
+          encoding.networkPriority = "high";
+        }
+      }
+      if (full && kind === "video") params.degradationPreference = "balanced";
+      await sender.setParameters(params);
+    };
+    try {
+      await apply(true);
+    } catch (_) {
+      await apply(false).catch(() => {});
+    }
+  };
+  const tuneSenders = async () => {
+    await tuneSender(audioSender, "audio");
+    await tuneSender(videoSender, "video");
+  };
+  const OPUS_FMTP = [["useinbandfec", "1"], ["usedtx", "0"], ["stereo", "0"], ["maxplaybackrate", "48000"], ["maxaveragebitrate", String(AUDIO_MAX_BITRATE)]];
+  const tuneSdp = (description) => {
+    if (!description || typeof description.sdp !== "string") return description;
+    const lines = description.sdp.split("\r\n");
+    const rtpmap = lines.find((line) => /^a=rtpmap:\d+ opus\/48000/i.test(line));
+    if (!rtpmap) return description;
+    const payload = rtpmap.slice("a=rtpmap:".length).split(" ")[0];
+    const prefix = "a=fmtp:" + payload + " ";
+    const at = lines.findIndex((line) => line.startsWith(prefix));
+    const params = new Map();
+    if (at >= 0) {
+      for (const part of lines[at].slice(prefix.length).split(";")) {
+        const [key, ...rest] = part.trim().split("=");
+        if (key) params.set(key, rest.join("="));
+      }
+    }
+    for (const [key, value] of OPUS_FMTP) params.set(key, value);
+    const line = prefix + [...params].map(([key, value]) => key + "=" + value).join(";");
+    if (at >= 0) lines[at] = line;
+    else lines.splice(lines.indexOf(rtpmap) + 1, 0, line);
+    return { type: description.type, sdp: lines.join("\r\n") };
+  };
+  const readRoute = async (connection) => {
+    const stats = await connection.getStats();
+    const byId = new Map();
+    stats.forEach((report) => byId.set(report.id, report));
+    let pair = null;
+    stats.forEach((report) => {
+      if (report.type === "transport" && report.selectedCandidatePairId) pair = byId.get(report.selectedCandidatePairId) || pair;
+    });
+    if (!pair) {
+      stats.forEach((report) => {
+        if (!pair && report.type === "candidate-pair" && report.state === "succeeded" && (report.selected || report.nominated)) pair = report;
+      });
+    }
+    if (!pair) return null;
+    const near = byId.get(pair.localCandidateId) || {};
+    const far = byId.get(pair.remoteCandidateId) || {};
+    const local = String(near.candidateType || "");
+    const remote = String(far.candidateType || "");
+    return {
+      route: local === "relay" || remote === "relay" ? "relay" : "direct",
+      local,
+      remote,
+      protocol: String(near.protocol || ""),
+    };
+  };
+  const stopRoute = () => {
+    if (routeTimer) clearInterval(routeTimer);
+    routeTimer = null;
+    route = null;
+  };
+  const watchRoute = (connection) => {
+    const check = () => {
+      if (pc !== connection) {
+        stopRoute();
+        return;
+      }
+      readRoute(connection)
+        .then((found) => {
+          if (!found || pc !== connection) return;
+          const changed = !route || route.route !== found.route || route.local !== found.local || route.remote !== found.remote;
+          route = found;
+          if (changed) post({ event: "route", ...found });
+        })
+        .catch(() => {});
+    };
+    if (!routeTimer) routeTimer = setInterval(check, ROUTE_CHECK_MS);
+    check();
+  };
   const dropRecording = () => {
     const current = recording;
     recording = null;
@@ -8346,8 +8459,11 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
         if (pc !== current) return;
         const state = current.connectionState;
         if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
-        if (state === "connected") post({ event: "live" });
-        else if (state === "failed" || state === "closed") post({ event: "closed" });
+        if (state === "connected") {
+          post({ event: "live" });
+          watchRoute(current);
+          tuneSenders().catch(() => {});
+        } else if (state === "failed" || state === "closed") post({ event: "closed" });
         else if (state === "disconnected") {
           graceTimer = setTimeout(() => {
             if (pc === current && current.connectionState === "disconnected") post({ event: "closed" });
@@ -8359,13 +8475,18 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     async offer() {
       await voiceReady();
       await pc.setLocalDescription(await pc.createOffer());
-      return plain(pc.localDescription);
+      await tuneSenders();
+      return tuneSdp(plain(pc.localDescription));
     },
     async answer(offer) {
       await voiceReady();
       await pc.setRemoteDescription(offer);
       await pc.setLocalDescription(await pc.createAnswer());
-      return plain(pc.localDescription);
+      await tuneSenders();
+      return tuneSdp(plain(pc.localDescription));
+    },
+    async route() {
+      return route;
     },
     async accept(answer) {
       await pc.setRemoteDescription(answer);
@@ -8394,6 +8515,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       if (faceImage !== undefined && faceImage !== null) faceImageWanted = String(faceImage);
       if (pc) return false;
       if (!stream) stream = await openStream(media);
+      if (media !== "video") document.body.className = "audio preview";
       if (media === "video") {
         document.body.className = "video preview";
         if (face !== undefined && face !== null) useFace(String(face));
@@ -8444,16 +8566,18 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       return true;
     },
     async record(face, background, voice) {
-      if (pc || !hasVideo()) throw new Error("not_previewing");
+      if (pc || !stream) throw new Error("not_previewing");
       if (!window.MediaRecorder) throw new Error("recording_unsupported");
       dropRecording();
-      await filtersReady(String(face || ""), String(background || ""), String(voice || ""));
-      const recorded = [outgoingVideo(), outgoingAudio()].filter(Boolean);
-      const mimeType = recordMime();
-      const options = { videoBitsPerSecond: 900000, audioBitsPerSecond: 64000 };
+      const video = hasVideo();
+      await filtersReady(video ? String(face || "") : "", video ? String(background || "") : "", String(voice || ""));
+      const recorded = [video ? outgoingVideo() : null, outgoingAudio()].filter(Boolean);
+      if (!recorded.length) throw new Error("not_previewing");
+      const mimeType = recordMime(video);
+      const options = video ? { videoBitsPerSecond: RECORD_VIDEO_BPS, audioBitsPerSecond: RECORD_AUDIO_BPS } : { audioBitsPerSecond: RECORD_AUDIO_BPS };
       if (mimeType) options.mimeType = mimeType;
       const recorder = new MediaRecorder(new MediaStream(recorded), options);
-      const current = { recorder, chunks: [], bytes: null, mime: mimeType, startedAt: 0, durationMs: 0, finished: null };
+      const current = { recorder, chunks: [], bytes: null, mime: mimeType || (video ? "video/mp4" : "audio/mp4"), startedAt: 0, durationMs: 0, finished: null };
       current.finished = new Promise((resolve, reject) => {
         recorder.addEventListener("stop", () => resolve());
         recorder.addEventListener("error", (event) => reject((event && event.error) || new Error("recording_failed")));
@@ -8476,7 +8600,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       }
       await current.finished;
       if (recording !== current) throw new Error("not_recording");
-      const type = (current.recorder.mimeType || current.mime || "video/mp4").toLowerCase();
+      const type = (current.recorder.mimeType || current.mime).toLowerCase();
       current.bytes = new Uint8Array(await new Blob(current.chunks, { type }).arrayBuffer());
       current.chunks.length = 0;
       return { mime: type, durationMs: Math.round(current.durationMs), size: current.bytes.length };
@@ -8499,6 +8623,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     async close() {
       dropRecording();
       if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
+      stopRoute();
       const closing = pc;
       pc = null;
       videoSender = null;
