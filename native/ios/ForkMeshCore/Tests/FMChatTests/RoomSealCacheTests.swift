@@ -47,30 +47,30 @@ final class RoomSealCacheTests: XCTestCase {
         let store = WatchedSecureStore()
         let cache = RoomSealCache(secureStore: store)
         XCTAssertNil(cache["room-a"])
-        let seal = try await cache.seal("room-a", storageScope: "direct|example.test")
+        let seal = try await cache.seal("room-a", policy: .strict, acct: "me", node: "me-node")
         XCTAssertEqual(store.onMain, 0)
         XCTAssertGreaterThan(store.writeCount, 0)
         XCTAssertTrue(cache["room-a"] === seal)
-        let again = try await cache.seal("room-a", storageScope: "direct|example.test")
+        let again = try await cache.seal("room-a", policy: .strict, acct: "me", node: "me-node")
         XCTAssertTrue(again === seal)
     }
 
     func testConcurrentFirstLoadsShareOneKey() async throws {
         let store = WatchedSecureStore()
         let cache = RoomSealCache(secureStore: store)
-        async let first = cache.seal("room-b", storageScope: "office|example.test")
-        async let second = cache.seal("room-b", storageScope: "office|example.test")
+        async let first = cache.seal("room-b", policy: .open, acct: "me", node: "me-node")
+        async let second = cache.seal("room-b", policy: .open, acct: "me", node: "me-node")
         let (a, b) = try await (first, second)
         XCTAssertTrue(a === b)
         let single = WatchedSecureStore()
-        _ = try await RoomSealCache(secureStore: single).seal("room-b", storageScope: "office|example.test")
+        _ = try await RoomSealCache(secureStore: single).seal("room-b", policy: .open, acct: "me", node: "me-node")
         XCTAssertEqual(store.writeCount, single.writeCount)
     }
 
     func testAnEmptyRoomFailsWithoutCaching() async {
         let cache = RoomSealCache(secureStore: WatchedSecureStore())
         do {
-            _ = try await cache.seal(" ", storageScope: "direct|example.test")
+            _ = try await cache.seal(" ", policy: .strict, acct: "me", node: "me-node")
             XCTFail("expected the error")
         } catch {}
         XCTAssertNil(cache[" "])

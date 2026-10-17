@@ -334,7 +334,9 @@ final class ViewOnceMediaTests: XCTestCase {
         _ = await service.open(conversation)
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await Task.detached { RoomCrypto.withPassphrase(ViewOnceMediaTests.room, "direct-pass") }.value
-        let peer = try RoomSeal.loadOrCreate(ViewOnceMediaTests.room, storageScope: "peer", secureStore: InMemorySecureStore())
+        let peer = try RoomSeal.loadOrCreate(
+            ViewOnceMediaTests.room, scope: "direct:\(ViewOnceMediaTests.conversationId)", policy: .strict, acct: "pat",
+            node: "pat-node", secureStore: InMemorySecureStore())
         connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
         let learned = await waitUntil { service.deviceKeys(conversation).contains(peer.keyId) }
         XCTAssertTrue(learned)

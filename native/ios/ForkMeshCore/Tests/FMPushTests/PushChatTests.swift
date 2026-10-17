@@ -16,7 +16,7 @@ final class PushChatTests: XCTestCase {
     func directPayload(_ overrides: JSONObject = [:]) -> JSONObject {
         var payload: JSONObject = [
             "topic": "direct-messages", "conversation": .string("direct:\(PushChatTests.directId)"),
-            "ref": .string(PushChatTests.ref), "keyVersion": 2, "sender": "pat",
+            "ref": .string(PushChatTests.ref), "keyVersion": 2,
         ]
         for (key, value) in overrides { payload[key] = value }
         return payload
@@ -26,7 +26,7 @@ final class PushChatTests: XCTestCase {
         let direct = try XCTUnwrap(PushChatRequest.parse(directPayload()))
         XCTAssertEqual(direct.kind, .direct(PushChatTests.directId))
         XCTAssertEqual(direct.keyVersion, 2)
-        XCTAssertEqual(direct.sender, "pat")
+        XCTAssertEqual(direct.trustScope, "direct:\(PushChatTests.directId)")
         XCTAssertEqual(
             direct.pendingPath, "/api/chat/direct-messages/\(PushChatTests.directId)/pending?ref=\(PushChatTests.ref)")
         XCTAssertEqual(
@@ -54,18 +54,35 @@ final class PushChatTests: XCTestCase {
         XCTAssertEqual(PushPreviewMode.allCases.map(\.title), ["Name and message", "Name only", "No name or message"])
     }
 
-    func testASealedDirectMessageOpensOnlyWithThisDevicesKey() throws {
-        let me = X25519.generatePrivateKey()
-        let mine = try RoomSeal.fromPrivateKey(PushChatTests.room, me)
-        let peer = try RoomSeal.fromPrivateKey(PushChatTests.room, X25519.generatePrivateKey())
-        XCTAssertTrue(peer.acceptKeyFrame(mine.keyFrame()))
+    static var scope: String { "direct:\(directId)" }
+
+    struct Pair {
+        let mine: RoomSeal
+        let peer: RoomSeal
+        let store: InMemorySecureStore
+    }
+
+    func pair(introduced: Bool = true) throws -> Pair {
+        let store = InMemorySecureStore()
+        let mine = try RoomSeal.loadOrCreate(
+            PushChatTests.room, scope: PushChatTests.scope, policy: .strict, acct: "me", node: "me-node", secureStore: store)
+        let peer = try RoomSeal.loadOrCreate(
+            PushChatTests.room, scope: PushChatTests.scope, policy: .strict, acct: "pat", node: "pat-node",
+            secureStore: InMemorySecureStore())
+        peer.acceptBundle(mine.keyFrame())
+        if introduced { mine.acceptBundle(peer.keyFrame()) }
+        return Pair(mine: mine, peer: peer, store: store)
+    }
+
+    func testASealedDirectMessageOpensOnlyWithThisDevicesKeys() throws {
+        let keysPair = try pair()
         let plain: JSONObject = [
             "type": "chat", "id": "pat-1", "senderId": "pat-node", "sender": "Pat",
             "channel": .string("direct:\(PushChatTests.directId)"), "text": "see you at 6", "ts": 1,
         ]
         let key = RoomCrypto.derivedKey(PushChatTests.room, passphrase: PushChatTests.passphrase)
         let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
-        let envelope = try crypto.encrypt(try peer.seal(plain))
+        let envelope = try crypto.encrypt(try keysPair.peer.seal(plain))
         let pending: JSONObject = [
             "conversation": .string("direct:\(PushChatTests.directId)"), "room": .string(PushChatTests.room), "keyVersion": 2,
             "passphrase": .string(PushChatTests.passphrase), "frame": .string(JSON.encode(envelope)),
@@ -74,42 +91,71 @@ final class PushChatTests: XCTestCase {
         let keys = PushRoomKeys(store: store)
         keys.remember(key, room: PushChatTests.room, passphrase: PushChatTests.passphrase)
         let request = try XCTUnwrap(PushChatRequest.parse(directPayload()))
-        let opened = try XCTUnwrap(PushChatOpener.open(pending, request: request, privateKey: me, keys: keys))
+        let before = keysPair.store.readAll()
+        let opened = try XCTUnwrap(PushChatOpener.open(pending, request: request, secureStore: keysPair.store, keys: keys).message)
         XCTAssertEqual(opened.id, "pat-1")
         XCTAssertEqual(opened.sender, "Pat")
+        XCTAssertEqual(opened.senderId, "pat-node")
         XCTAssertEqual(opened.text, "see you at 6")
         XCTAssertFalse(opened.isReply)
-        XCTAssertNil(PushChatOpener.open(pending, request: request, privateKey: X25519.generatePrivateKey(), keys: keys))
-        XCTAssertNil(PushChatOpener.open(pending, request: request, privateKey: nil, keys: keys))
+        XCTAssertEqual(keysPair.store.readAll(), before, "the extension never writes the shared keychain")
+        XCTAssertNotNil(
+            PushChatOpener.open(pending, request: request, secureStore: keysPair.store, keys: keys).message,
+            "so the app still opens the same frame afterwards")
+        XCTAssertEqual(
+            PushChatOpener.open(pending, request: request, secureStore: InMemorySecureStore(), keys: keys), .unavailable)
+        XCTAssertEqual(PushChatOpener.open(pending, request: request, secureStore: nil, keys: keys), .unavailable)
         var wrongRoom = pending
         wrongRoom["conversation"] = .string("direct:" + String(repeating: "e", count: 32))
-        XCTAssertNil(PushChatOpener.open(wrongRoom, request: request, privateKey: me, keys: keys))
+        XCTAssertEqual(PushChatOpener.open(wrongRoom, request: request, secureStore: keysPair.store, keys: keys), .unavailable)
         var unsealed = pending
         unsealed["frame"] = .string(JSON.encode(try crypto.encrypt(plain)))
-        XCTAssertNil(PushChatOpener.open(unsealed, request: request, privateKey: me, keys: keys), "a direct message must be sealed")
+        XCTAssertEqual(
+            PushChatOpener.open(unsealed, request: request, secureStore: keysPair.store, keys: keys), .unavailable,
+            "a direct message must be sealed")
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "Pat", body: "see you at 6"))
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .nameOnly), PushPreview(title: "Pat", body: "New message"))
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .hidden), PushPreview(title: "ForkMesh", body: "New message"))
+        XCTAssertNil(PushPreviewText.preview(nil as PushChatMessage?, request: request, mode: .nameOnly), "the server names no one")
+        XCTAssertNil(PushPreviewText.preview(nil as PushChatMessage?, request: request, mode: .nameAndMessage))
+    }
+
+    func testAFrameFromAnUnknownDeviceShowsNewMessage() throws {
+        let keysPair = try pair(introduced: false)
+        let key = RoomCrypto.derivedKey(PushChatTests.room, passphrase: PushChatTests.passphrase)
+        let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
+        let plain: JSONObject = [
+            "type": "chat", "id": "x-1", "senderId": "pat-node", "sender": "Pat",
+            "channel": .string("direct:\(PushChatTests.directId)"), "text": "who am I", "ts": 1,
+        ]
+        let pending: JSONObject = [
+            "conversation": .string("direct:\(PushChatTests.directId)"), "room": .string(PushChatTests.room),
+            "passphrase": .string(PushChatTests.passphrase),
+            "frame": .object(try crypto.encrypt(try keysPair.peer.seal(plain))),
+        ]
+        let request = try XCTUnwrap(PushChatRequest.parse(directPayload()))
+        let opened = PushChatOpener.open(
+            pending, request: request, secureStore: keysPair.store, keys: PushRoomKeys(store: InMemorySharedItemStore()))
+        XCTAssertEqual(opened, .unknownSender)
+        XCTAssertEqual(PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "New message", body: ""))
+        XCTAssertEqual(PushPreviewText.preview(opened, request: request, mode: .nameOnly), PushPreviewText.unknownSender)
         XCTAssertEqual(
-            PushPreviewText.preview(nil, request: request, mode: .nameOnly), PushPreview(title: "pat", body: "New message"))
-        XCTAssertNil(PushPreviewText.preview(nil, request: request, mode: .nameAndMessage))
+            PushPreviewText.preview(opened, request: request, mode: .hidden), PushPreview(title: "ForkMesh", body: "New message"))
+        XCTAssertNil(PushPreviewText.preview(PushChatOpened.unavailable, request: request, mode: .nameAndMessage))
     }
 
     func testADirectMessageOpensFromThePushedFrameOnceTheRelayCopyIsGone() throws {
-        let me = X25519.generatePrivateKey()
-        let mine = try RoomSeal.fromPrivateKey(PushChatTests.room, me)
-        let peer = try RoomSeal.fromPrivateKey(PushChatTests.room, X25519.generatePrivateKey())
-        XCTAssertTrue(peer.acceptKeyFrame(mine.keyFrame()))
+        let keysPair = try pair()
         let plain: JSONObject = [
-            "type": "chat", "id": "pat-2", "sender": "Pat",
+            "type": "chat", "id": "pat-2", "senderId": "pat-node", "sender": "Pat",
             "channel": .string("direct:\(PushChatTests.directId)"), "text": "running late", "ts": 2,
         ]
         let key = RoomCrypto.derivedKey(PushChatTests.room, passphrase: PushChatTests.passphrase)
         let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
-        let envelope = try crypto.encrypt(try peer.seal(plain))
+        let envelope = try crypto.encrypt(try keysPair.peer.seal(plain))
         let gone: JSONObject = [
             "conversation": .string("direct:\(PushChatTests.directId)"), "room": .string(PushChatTests.room), "keyVersion": 2,
             "passphrase": .string(PushChatTests.passphrase), "frame": "",
@@ -117,9 +163,9 @@ final class PushChatTests: XCTestCase {
         let payload = directPayload(["frame": .object(envelope)])
         let request = try XCTUnwrap(PushChatRequest.parse(payload))
         let keys = PushRoomKeys(store: InMemorySharedItemStore())
-        XCTAssertNil(PushChatOpener.open(gone, request: request, privateKey: me, keys: keys))
+        XCTAssertEqual(PushChatOpener.open(gone, request: request, secureStore: keysPair.store, keys: keys), .unavailable)
         let merged = PushChatOpener.withPushedFrame(gone, pushed: payload)
-        let opened = try XCTUnwrap(PushChatOpener.open(merged, request: request, privateKey: me, keys: keys))
+        let opened = try XCTUnwrap(PushChatOpener.open(merged, request: request, secureStore: keysPair.store, keys: keys).message)
         XCTAssertEqual(opened.text, "running late")
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .nameAndMessage), PushPreview(title: "Pat", body: "running late"))
@@ -144,17 +190,18 @@ final class PushChatTests: XCTestCase {
         keys.remember(key, room: PushChatTests.channelRoom, passphrase: PushChatTests.passphrase)
         let request = try XCTUnwrap(
             PushChatRequest.parse(["topic": "chat", "channelId": .string(PushChatTests.channelId), "ref": .string(PushChatTests.ref)]))
-        let opened = try XCTUnwrap(PushChatOpener.open(pending, request: request, privateKey: nil, keys: keys))
+        let opened = try XCTUnwrap(PushChatOpener.open(pending, request: request, secureStore: nil, keys: keys).message)
         XCTAssertTrue(opened.isReply)
         XCTAssertEqual(
             PushPreviewText.preview(opened, request: request, mode: .nameAndMessage),
             PushPreview(title: "Ann in #design", body: "\u{1F4CE} mock.png"))
         var keyFrame = pending
-        keyFrame["frame"] = .object(try crypto.encrypt(try RoomSeal.fromPrivateKey(PushChatTests.channelRoom, X25519.generatePrivateKey()).keyFrame()))
-        XCTAssertNil(PushChatOpener.open(keyFrame, request: request, privateKey: nil, keys: keys))
+        let bundle = try RoomSeal.loadOrCreate(PushChatTests.channelRoom, acct: "ann", node: "ann-node", secureStore: InMemorySecureStore()).keyFrame()
+        keyFrame["frame"] = .object(try crypto.encrypt(bundle))
+        XCTAssertEqual(PushChatOpener.open(keyFrame, request: request, secureStore: nil, keys: keys), .unavailable)
         var otherChannel = pending
         otherChannel["channel"] = .string(String(repeating: "b", count: 32))
-        XCTAssertNil(PushChatOpener.open(otherChannel, request: request, privateKey: nil, keys: keys))
+        XCTAssertEqual(PushChatOpener.open(otherChannel, request: request, secureStore: nil, keys: keys), .unavailable)
     }
 
     func testOnlyChatAndRepliesWithTextOrAFileBecomeMessages() throws {

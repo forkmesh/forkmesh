@@ -140,22 +140,23 @@ final class MeshWireTests: XCTestCase {
         XCTAssertEqual(buffer.count, 0)
     }
 
-    func testABeaconRoundTripsEveryFieldTheRosterNeeds() {
-        let beacon = MeshBeacon(
-            nodeId: "node-ada-1", port: 4242, name: "ada", nodeName: "workshop", platform: "android",
-            version: "flutter-1.0", timestampMs: 1_750_000_000_000)
+    func testABeaconCarriesOnlyTheKeyIdAndHowToReachIt() {
+        let beacon = MeshBeacon(nodeId: "7N0av-G4pgHJPeGe", port: 4242, timestampMs: 1_750_000_000_000)
         let parsed = MeshBeacon.parse(beacon.toJSON())
-        XCTAssertEqual(parsed?.nodeId, "node-ada-1")
+        XCTAssertEqual(parsed?.nodeId, "7N0av-G4pgHJPeGe")
         XCTAssertEqual(parsed?.port, 4242)
-        XCTAssertEqual(parsed?.name, "ada")
-        XCTAssertEqual(parsed?.nodeName, "workshop")
-        XCTAssertEqual(parsed?.platform, "android")
         XCTAssertEqual(parsed?.timestampMs, 1_750_000_000_000)
+        XCTAssertEqual(parsed?.control, false)
+        XCTAssertEqual(Set(beacon.toJSON().keys), ["t", "v", "id", "port", "ts"])
     }
 
-    func testTheBeaconWireOrderMatchesTheDesktop() {
-        let json = JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, name: "n", reply: true, control: true).toJSON()))
-        XCTAssertEqual(json, #"{"t":"forkmesh-lan-mesh","v":1,"id":"a","port":1,"ts":0,"name":"n","reply":true,"control":true}"#)
+    func testTheBeaconWireOrderIsTheV3Shape() {
+        let json = JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, reply: true, control: true, node: "desk").toJSON()))
+        XCTAssertEqual(
+            json, #"{"t":"forkmesh-lan-mesh","v":3,"id":"a","port":1,"ts":0,"reply":true,"control":true,"node":"desk"}"#)
+        XCTAssertFalse(JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, node: "desk").toJSON())).contains("desk"),
+            "the control node id rides only with control")
+        XCTAssertEqual(MeshBeacon.parse(MeshBeacon(nodeId: "a", port: 1, control: true, node: "desk").toJSON())?.node, "desk")
     }
 
     func testAReplyBeaconSaysSoAndAnOrdinaryOneDoesNot() {
@@ -233,26 +234,28 @@ final class MeshWireTests: XCTestCase {
         XCTAssertNil(MeshBeacon.parse([:]))
         // A version written as a double still parses.
         var double = good
-        double["v"] = .double(1)
+        double["v"] = .double(3)
         XCTAssertNotNil(MeshBeacon.parse(double))
+        var old = good
+        old["v"] = 1
+        XCTAssertNil(MeshBeacon.parse(old), "a v1 beacon is ignored")
     }
 
-    func testLongFieldsAreBoundedAsTheDesktopBoundsThem() {
+    func testNamesInABeaconAreIgnored() {
         var beacon = MeshBeacon(nodeId: "a", port: 1).toJSON()
-        beacon["name"] = .string(String(repeating: "x", count: 50))
-        beacon["platform"] = .string(String(repeating: "p", count: 40))
-        let parsed = MeshBeacon.parse(beacon)
-        XCTAssertEqual(parsed?.name.count, 32)
-        XCTAssertEqual(parsed?.platform.count, 16)
+        beacon["name"] = "ada"
+        beacon["ownerUser"] = "ada"
+        let parsed = try? XCTUnwrap(MeshBeacon.parse(beacon))
+        XCTAssertEqual(parsed?.toJSON().contains("name"), false)
+        XCTAssertEqual(parsed?.toJSON().contains("ownerUser"), false)
     }
 
     func testTheBeaconOnTheWireIsCiphertextNotAnAdvertisement() async throws {
-        let beacon = MeshBeacon(nodeId: "node-ada-1", port: 4242, name: "ada", nodeName: "workshop")
+        let beacon = MeshBeacon(nodeId: "node-ada-1", port: 4242)
         let crypto = await Task.detached { RoomCrypto.shared(meshRoomName) }.value
         let envelope = try crypto.encrypt(beacon.toJSON())
         let datagram = JSON.encode(.object(envelope))
         XCTAssertFalse(datagram.contains("node-ada-1"))
-        XCTAssertFalse(datagram.contains("workshop"))
         XCTAssertFalse(datagram.contains(meshBeaconTag))
         let back = try XCTUnwrap(crypto.decrypt(envelope))
         XCTAssertEqual(MeshBeacon.parse(back)?.nodeId, "node-ada-1")
@@ -404,7 +407,7 @@ final class LocalMeshRoomTests: XCTestCase {
             for await _ in wire.datagrams { await answers.add() }
         }
         defer { listener.cancel() }
-        let envelope = try crypto.encrypt(MeshBeacon(nodeId: "someone-else", port: 1, name: "phone").toJSON())
+        let envelope = try crypto.encrypt(MeshBeacon(nodeId: "someone-else", port: 1).toJSON())
         _ = wire.send(Array(JSON.encode(.object(envelope)).utf8), to: .loopbackIPv4, port: 49742)
         var heard = false
         for _ in 0..<400 where !heard {
@@ -444,10 +447,10 @@ final class LocalMeshRoomTests: XCTestCase {
             }
         }
         defer { listener.cancel() }
-        let phoneId = phone.members()[0].id
+        let phoneId = phone.sealKeyId
         func beacon(reply: Bool) throws {
             let envelope = try crypto.encrypt(
-                MeshBeacon(nodeId: phoneId, port: phone.listenPort, name: "phone", reply: reply).toJSON())
+                MeshBeacon(nodeId: phoneId, port: phone.listenPort, reply: reply).toJSON())
             _ = wire.send(Array(JSON.encode(.object(envelope)).utf8), to: .loopbackIPv4, port: 49741)
         }
 
@@ -696,7 +699,7 @@ final class LocalMeshRoomTests: XCTestCase {
             for await _ in wire.datagrams { await answers.add() }
         }
         defer { listener.cancel() }
-        let envelope = try crypto.encrypt(MeshBeacon(nodeId: "someone-else", port: 1, name: "watch").toJSON())
+        let envelope = try crypto.encrypt(MeshBeacon(nodeId: "someone-else", port: 1).toJSON())
         _ = wire.send(Array(JSON.encode(.object(envelope)).utf8), to: .loopbackIPv4, port: 49743)
         var heard = false
         for _ in 0..<400 where !heard {
@@ -744,6 +747,82 @@ final class LocalMeshRoomTests: XCTestCase {
         XCTAssertFalse(meshWakeTokenUsable("mw1.abc.42.sig", now: 42))
     }
 
+    func testTheLinkIsAuthenticatedAndEncrypted() async throws {
+        let adaDevice = ChatDevice(name: "ada")
+        let graceDevice = ChatDevice(name: "grace")
+        let ada = makeMesh(adaDevice)
+        let grace = makeMesh(graceDevice)
+        _ = await ada.start()
+        _ = await grace.start()
+        _ = await ada.connectToPeer(.loopbackIPv4, port: grace.listenPort)
+        let linked = await waitUntil { ada.peerCount == 1 && grace.peerCount == 1 && ada.links.first?.keyKnown == true }
+        XCTAssertTrue(linked)
+        XCTAssertEqual(ada.links.first?.peerId, grace.sealKeyId, "the link's peer is the authenticated key id")
+        XCTAssertEqual(grace.links.first?.peerId, ada.sealKeyId)
+        XCTAssertEqual(ada.directLinks(), [grace.sealKeyId: .wifi])
+        let named = await waitUntil { grace.members().count == 2 && grace.members()[1].id == adaDevice.identity.nodeId }
+        XCTAssertTrue(named, "the hello inside the link names the node")
+        await ada.stop()
+        await grace.stop()
+    }
+
+    func testABlockedDeviceCannotLink() async throws {
+        let adaDevice = ChatDevice(name: "ada")
+        let graceDevice = ChatDevice(name: "grace")
+        let adaRoom = try RoomSeal.loadOrCreate(
+            meshRoomName, scope: meshRoomName, policy: .open, acct: "ada", node: adaDevice.identity.nodeId,
+            secureStore: adaDevice.secure)
+        let graceRoom = try RoomSeal.loadOrCreate(
+            meshRoomName, scope: meshRoomName, policy: .open, acct: "grace", node: graceDevice.identity.nodeId,
+            secureStore: graceDevice.secure)
+        XCTAssertNotNil(graceRoom.acceptBundle(adaRoom.keyFrame()))
+        XCTAssertTrue(graceRoom.block(adaRoom.keyId))
+        let ada = makeMesh(adaDevice)
+        let grace = makeMesh(graceDevice)
+        _ = await ada.start()
+        _ = await grace.start()
+        _ = await ada.connectToPeer(.loopbackIPv4, port: grace.listenPort)
+        let refused = await waitUntil { grace.diagnostics.lastDropReason.hasSuffix("blocked device") }
+        XCTAssertTrue(refused, grace.diagnosticsDetail())
+        XCTAssertEqual(grace.peerCount, 0)
+        await ada.stop()
+        await grace.stop()
+    }
+
+    func testAForgedLinkSignatureClosesTheLink() async throws {
+        let grace = makeMesh(ChatDevice(name: "grace"))
+        _ = await grace.start()
+        let impostor = try XCTUnwrap(try ChatKeyring.load(InMemorySecureStore(), create: true))
+        let handshake = try MeshLinkHandshake(keyring: impostor, initiator: true)
+        let socket = try await MeshTCPConnection.connect(to: .loopbackIPv4, port: grace.listenPort, timeout: 5)
+        defer { socket.close() }
+        let reader = MeshByteBuffer()
+        socket.write(meshFrameBytes(Array(JSON.encode(handshake.hello).utf8)))
+        var peerHello: JSONObject?
+        var closed = false
+        for await event in socket.events {
+            switch event {
+            case .data(let data):
+                reader.add(data)
+                if peerHello == nil, let frame = try meshTakeFrame(reader) {
+                    peerHello = JSON.parseObject(frame)
+                    _ = try handshake.receiveHello(try XCTUnwrap(peerHello))
+                    let forged: JSONObject = ["t": "fm-link-auth", "sig": .string(ChatV3.b64u([UInt8](repeating: 7, count: 64)))]
+                    socket.write(meshFrameBytes(Array(JSON.encode(forged).utf8)))
+                }
+            case .closed:
+                closed = true
+            }
+            if closed { break }
+        }
+        XCTAssertNotNil(peerHello)
+        XCTAssertTrue(closed, "the responder hangs up on a bad signature")
+        let dropped = await waitUntil { grace.diagnostics.lastDropReason.hasSuffix("link handshake") }
+        XCTAssertTrue(dropped, grace.diagnosticsDetail())
+        XCTAssertEqual(grace.peerCount, 0)
+        await grace.stop()
+    }
+
     func testWithNeitherTransportTheRoomDoesNotStart() async {
         let device = ChatDevice(name: "ada")
         let mesh = LocalMeshService(settings: device.settings, identity: device.identity, secureStore: device.secure)
@@ -759,8 +838,8 @@ final class LocalMeshRoomTests: XCTestCase {
 
 @MainActor
 func orderedPair(_ a: LocalMeshService, _ b: LocalMeshService) -> (LocalMeshService, LocalMeshService) {
-    let aId = a.members()[0].id
-    let bId = b.members()[0].id
+    let aId = (try? ChatKeyring.shared(a.secureStore))?.kid ?? ""
+    let bId = (try? ChatKeyring.shared(b.secureStore))?.kid ?? ""
     return bId.utf16.lexicographicallyPrecedes(aId.utf16) ? (a, b) : (b, a)
 }
 

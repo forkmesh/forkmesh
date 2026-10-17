@@ -96,6 +96,7 @@ public final class ChatHub: ShellChatBridge {
             direct?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
             direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             direct?.onChange = { [weak self] in self?.persistSoon() }
+            direct?.attachMesh(mesh)
             restoreDirectHistory()
             direct?.onFrame = { [weak self] frame, conversation in
                 guard let self, let direct = self.direct else { return }
@@ -814,6 +815,16 @@ public final class ChatHub: ShellChatBridge {
             return
         }
         Task { await direct.sendTyping(conversation, active: active) }
+    }
+
+    public func setFocus(_ conversation: String, _ on: Bool) {
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return }
+        direct.setFocus(conversation, on)
+    }
+
+    public func directRoute(_ conversation: String) -> DirectRoute {
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return .none }
+        return direct.route(conversation)
     }
 
     public var typingLine: String {

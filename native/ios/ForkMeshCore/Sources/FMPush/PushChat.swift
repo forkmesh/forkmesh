@@ -32,7 +32,6 @@ public struct PushChatRequest: Equatable, Sendable {
     public let ref: String
     public let conversation: String
     public let keyVersion: Int
-    public let sender: String
 
     public static let directPrefix = "direct:"
     public static let directEndpoint = "/api/chat/direct-messages"
@@ -52,19 +51,23 @@ public struct PushChatRequest: Equatable, Sendable {
         let conversation = (payload["conversation"]?.text ?? "").trimmingCharacters(in: .whitespaces)
         let channelId = payload["channelId"]?.text ?? ""
         let keyVersion = max(0, payload["keyVersion"]?.int(or: 0) ?? 0)
-        let sender = String((payload["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).prefix(64))
         if conversation.hasPrefix(directPrefix) {
             let id = String(conversation.dropFirst(directPrefix.count))
             guard isId(id) else { return nil }
-            return PushChatRequest(kind: .direct(id), ref: ref, conversation: conversation, keyVersion: keyVersion, sender: sender)
+            return PushChatRequest(kind: .direct(id), ref: ref, conversation: conversation, keyVersion: keyVersion)
         }
         guard isId(channelId) else { return nil }
-        return PushChatRequest(kind: .channel(channelId), ref: ref, conversation: conversation, keyVersion: keyVersion, sender: sender)
+        return PushChatRequest(kind: .channel(channelId), ref: ref, conversation: conversation, keyVersion: keyVersion)
     }
 
     public var isDirect: Bool {
         if case .direct = kind { return true }
         return false
+    }
+
+    public var trustScope: String? {
+        if case .direct = kind { return conversation }
+        return nil
     }
 
     public var pendingPath: String {
@@ -159,24 +162,36 @@ public final class PushRoomKeys: @unchecked Sendable {
     }
 }
 
+public enum PushChatOpened: Equatable, Sendable {
+    case message(PushChatMessage)
+    case unknownSender
+    case unavailable
+
+    public var message: PushChatMessage? {
+        if case .message(let message) = self { return message }
+        return nil
+    }
+}
+
 public enum PushChatOpener {
     public static let maxIdChars = 64
     public static let maxNameChars = 64
     public static let maxTextChars = 16_000
 
     public static func open(
-        _ pending: JSONObject, request: PushChatRequest, privateKey: [UInt8]?, keys: PushRoomKeys
-    ) -> PushChatMessage? {
+        _ pending: JSONObject, request: PushChatRequest, secureStore: SecureStore?, keys: PushRoomKeys,
+        now: Int64 = Date().epochMillis
+    ) -> PushChatOpened {
         let room = (pending["room"]?.text ?? "").trimmingCharacters(in: .whitespaces)
         let passphrase = pending["passphrase"]?.text ?? ""
-        guard !room.isEmpty, !passphrase.isEmpty else { return nil }
+        guard !room.isEmpty, !passphrase.isEmpty else { return .unavailable }
         switch request.kind {
         case .direct:
             let named = pending["conversation"]?.text ?? ""
-            if !named.isEmpty && named != request.conversation { return nil }
+            if !named.isEmpty && named != request.conversation { return .unavailable }
         case .channel(let id):
             let named = pending["channel"]?.text ?? ""
-            if !named.isEmpty && named != id { return nil }
+            if !named.isEmpty && named != id { return .unavailable }
         }
         let envelope: JSONObject
         if let object = pending["frame"]?.objectValue {
@@ -186,20 +201,33 @@ public enum PushChatOpener {
         }
         guard !envelope.isEmpty, let crypto = keys.crypto(room: room, passphrase: passphrase),
             let framed = crypto.decrypt(envelope)
-        else { return nil }
+        else { return .unavailable }
         let plain: JSONObject
         if RoomSeal.isSealedFrame(framed) {
-            guard let privateKey, privateKey.count == 32,
-                let seal = try? RoomSeal.fromPrivateKey(room, privateKey),
-                let opened = seal.unseal(framed)
-            else { return nil }
-            plain = opened
+            guard let secureStore else { return .unavailable }
+            let overlay = OverlaySecureStore(base: secureStore)
+            guard let keyring = try? ChatKeyring.load(overlay, create: false),
+                let seal = try? RoomSeal(
+                    room: room, scope: request.trustScope ?? room, policy: request.isDirect ? .strict : .open, acct: nil,
+                    node: nil, keyring: keyring, store: overlay)
+            else { return .unavailable }
+            let result = seal.open(framed, now: now)
+            switch result {
+            case .opened:
+                guard let opened = result.authenticatedPlain else { return .unavailable }
+                plain = opened
+            case .held:
+                return .unknownSender
+            default:
+                return .unavailable
+            }
         } else if request.isDirect || RoomSeal.isKeyFrame(framed) {
-            return nil
+            return .unavailable
         } else {
             plain = framed
         }
-        return message(plain, request: request)
+        guard let message = message(plain, request: request) else { return .unavailable }
+        return .message(message)
     }
 
     public static func withPushedFrame(_ pending: JSONObject, pushed: JSONObject) -> JSONObject {
@@ -237,24 +265,33 @@ public enum PushPreviewText {
     public static let hiddenTitle = "ForkMesh"
     public static let genericBody = "New message"
     public static let maxBodyChars = 1_000
+    public static let unknownSender = PushPreview(title: genericBody, body: "")
 
     public static func preview(
         _ message: PushChatMessage?, request: PushChatRequest, mode: PushPreviewMode
     ) -> PushPreview? {
         if mode == .hidden { return PushPreview(title: hiddenTitle, body: genericBody) }
-        let named = message?.sender ?? ""
-        let sender = named.isEmpty ? request.sender : named
+        guard let message else { return nil }
+        let sender = message.sender
         let title: String
         if request.isDirect {
             guard !sender.isEmpty else { return nil }
             title = sender
         } else {
-            guard let channel = message?.channel, !channel.isEmpty else { return nil }
-            title = sender.isEmpty ? channel : "\(sender) in \(channel)"
+            guard !message.channel.isEmpty else { return nil }
+            title = sender.isEmpty ? message.channel : "\(sender) in \(message.channel)"
         }
         if mode == .nameOnly { return PushPreview(title: title, body: genericBody) }
-        guard let message else { return nil }
         return PushPreview(title: title, body: body(message))
+    }
+
+    public static func preview(_ opened: PushChatOpened, request: PushChatRequest, mode: PushPreviewMode) -> PushPreview? {
+        if mode == .hidden { return PushPreview(title: hiddenTitle, body: genericBody) }
+        switch opened {
+        case .message(let message): return preview(message, request: request, mode: mode)
+        case .unknownSender: return unknownSender
+        case .unavailable: return nil
+        }
     }
 
     public static func body(_ message: PushChatMessage) -> String {

@@ -12,19 +12,35 @@ final class RoomSealCache {
         self.secureStore = secureStore
     }
 
-    subscript(room: String) -> RoomSeal? { loaded[room] }
+    subscript(room: String) -> RoomSeal? { loaded[room.dartTrimmed] }
 
-    func seal(_ room: String, storageScope: String) async throws -> RoomSeal {
-        if let existing = loaded[room] { return existing }
-        if let pending = loading[room] { return try await pending.value }
+    var all: [RoomSeal] { Array(loaded.values) }
+
+    func seal(
+        _ room: String, scope: String? = nil, policy: ChatTrustPolicy, acct: String, node: String,
+        participants: Set<String>? = nil
+    ) async throws -> RoomSeal {
+        let name = room.dartTrimmed
+        let key = "\(name)\n\(acct)\n\(node)"
+        if let existing = loaded[name], (existing.acct ?? "") == acct, (existing.node ?? "") == node,
+            existing.scope == (scope ?? name), existing.participants == participants
+        {
+            return existing
+        }
+        if let pending = loading[key] { return try await pending.value }
         let store = secureStore
         let task = Task.detached(priority: .userInitiated) {
-            try RoomSeal.loadOrCreate(room, storageScope: storageScope, secureStore: store)
+            try RoomSeal.loadOrCreate(
+                name, scope: scope, policy: policy, acct: acct, node: node, participants: participants, secureStore: store)
         }
-        loading[room] = task
-        defer { loading.removeValue(forKey: room) }
+        loading[key] = task
+        defer { loading.removeValue(forKey: key) }
         let seal = try await task.value
-        loaded[room] = seal
+        loaded[name] = seal
         return seal
+    }
+
+    func removeAll() {
+        loaded.removeAll()
     }
 }

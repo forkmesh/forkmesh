@@ -79,8 +79,12 @@ final class DirectMessagesTests: XCTestCase {
         await Task.detached { RoomCrypto.withPassphrase(DirectMessagesTests.room, "direct-pass") }.value
     }
 
-    @MainActor func peerSeal(_ scope: String) throws -> RoomSeal {
-        try RoomSeal.loadOrCreate(DirectMessagesTests.room, storageScope: scope, secureStore: InMemorySecureStore())
+    static let scope = "direct:\(conversationId)"
+
+    @MainActor func peerSeal(_ label: String, acct: String = "pat", node: String = "pat-node") throws -> RoomSeal {
+        try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: DirectMessagesTests.scope, policy: .strict, acct: acct, node: node,
+            secureStore: InMemorySecureStore())
     }
 
     @MainActor func preparedApi() -> FakeAccountApi {
@@ -143,8 +147,7 @@ final class DirectMessagesTests: XCTestCase {
         _ = await service.open(conversation)
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await Task.detached { RoomCrypto.withPassphrase(DirectMessagesTests.room, "direct-pass") }.value
-        let peerSeal = try RoomSeal.loadOrCreate(
-            DirectMessagesTests.room, storageScope: "peer", secureStore: InMemorySecureStore())
+        let peerSeal = try self.peerSeal("peer")
         connection.receive(text: JSON.encode(try crypto.encrypt(peerSeal.keyFrame())))
         let advertised = await waitUntil {
             connection.sentTexts.contains { RoomSeal.isKeyFrame(crypto.decrypt(JSON.parseObject($0)) ?? [:]) }
@@ -321,8 +324,14 @@ final class DirectMessagesTests: XCTestCase {
         connection.receive(text: peerKey)
         try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertEqual(sentOfKind(connection, DirectMessageFrames.supersededKind).count, 1)
-        let secondDevice = try peerSeal("peer-tablet")
+        let secondDevice = try peerSeal("peer-tablet", node: "pat-tablet")
         connection.receive(text: JSON.encode(try crypto.encrypt(secondDevice.keyFrame())))
+        let pending = await waitUntil { service.pendingDevices(conversation).map(\.kid) == [secondDevice.keyId] }
+        XCTAssertTrue(pending, "a second device of the same account waits for approval")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(
+            sentOfKind(connection, DirectMessageFrames.supersededKind).count, 1, "nothing is resealed to a pending device")
+        await service.approveDevice(conversation, kid: secondDevice.keyId)
         let again = await waitUntil { self.sentOfKind(connection, DirectMessageFrames.supersededKind).count == 2 }
         XCTAssertTrue(again)
         XCTAssertEqual(
@@ -331,8 +340,11 @@ final class DirectMessagesTests: XCTestCase {
         connection.receive(text: #"{"kind":"forkmesh-server-copies","v":1,"stored":0}"#)
         let delivered = await waitUntil { service.serverCopies(conversation) == 0 }
         XCTAssertTrue(delivered)
-        let thirdDevice = try peerSeal("peer-laptop")
+        let thirdDevice = try peerSeal("peer-laptop", node: "pat-laptop")
         connection.receive(text: JSON.encode(try crypto.encrypt(thirdDevice.keyFrame())))
+        let thirdPending = await waitUntil { service.pendingDevices(conversation).map(\.kid) == [thirdDevice.keyId] }
+        XCTAssertTrue(thirdPending)
+        await service.approveDevice(conversation, kid: thirdDevice.keyId)
         try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertEqual(sentOfKind(connection, DirectMessageFrames.supersededKind).count, 2)
         XCTAssertEqual(service.messages(conversation).map(\.text), ["before your key"])
@@ -346,7 +358,9 @@ final class DirectMessagesTests: XCTestCase {
         let service = makeService(api: api, ws: ws, store: store)
         await service.refresh()
         let conversation = service.conversations[0]
-        let earlier = try RoomSeal.loadOrCreate(DirectMessagesTests.room, storageScope: "earlier", secureStore: store)
+        let earlier = try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: DirectMessagesTests.scope, policy: .strict, acct: "me", node: "me-node",
+            secureStore: store)
         _ = await service.open(conversation)
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await roomCrypto()
@@ -374,6 +388,8 @@ final class DirectMessagesTests: XCTestCase {
         XCTAssertEqual(sentOfKind(connection, DirectMessageFrames.supersededKind)[0]["refs"], .array([.string(oldRef)]))
         let resend = try XCTUnwrap(connection.sentJSON.first { $0["resend"] == .bool(true) })
         XCTAssertEqual(resend["notify"], .bool(true))
+        let taught = await teach(peer, from: connection, crypto)
+        XCTAssertTrue(taught)
         let opened = try XCTUnwrap(peer.unseal(try XCTUnwrap(crypto.decrypt(resend))))
         XCTAssertEqual(opened["id"]?.text, "me-node-1-1")
         XCTAssertEqual(opened["text"]?.text, "sent yesterday")
@@ -395,6 +411,7 @@ final class DirectMessagesTests: XCTestCase {
         let peer = try peerSeal("peer")
         let taught = await teach(peer, from: connection, crypto)
         XCTAssertTrue(taught)
+        connection.receive(text: JSON.encode(try crypto.encrypt(peer.keyFrame())))
         let plain: JSONObject = [
             "type": "chat", "id": "pat-9", "senderId": "pat-node", "sender": "pat",
             "channel": .string(conversation), "text": "once", "ts": 1000,
@@ -637,6 +654,70 @@ final class DirectMessagesTests: XCTestCase {
         XCTAssertEqual(service.messages(conversation).first { $0.id == "pat-image" }?.fileName, "pasted-image.png")
         await service.closeAll()
         await harness.close()
+    }
+
+    @MainActor func testInjectedDevicesAreDroppedOrHeldUntilApproved() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws)
+        var events: [DirectTrustEvent] = []
+        service.onTrustEvent = { events.append($0) }
+        var alerts: [ChatMessage] = []
+        service.onMessage = { alerts.append($0) }
+        await service.refresh()
+        let conversation = service.conversations[0]
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let pat = try peerSeal("peer")
+        _ = await teach(pat, from: connection, crypto)
+        connection.receive(text: JSON.encode(try crypto.encrypt(pat.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [pat.keyId] }
+        XCTAssertTrue(known)
+        let first = try XCTUnwrap(service.safetyNumber(conversation))
+        XCTAssertEqual(first.digits.count, 60)
+        XCTAssertFalse(first.changed)
+
+        let outsider = try peerSeal("outsider", acct: "mallory", node: "mallory-node")
+        connection.receive(text: JSON.encode(try crypto.encrypt(outsider.keyFrame())))
+        let injected = try peerSeal("injected", node: "pat-new")
+        _ = await teach(injected, from: connection, crypto)
+        connection.receive(text: JSON.encode(try crypto.encrypt(injected.keyFrame())))
+        let pending = await waitUntil { service.pendingDevices(conversation).map(\.kid) == [injected.keyId] }
+        XCTAssertTrue(pending)
+        XCTAssertFalse(service.devices(conversation).contains { $0.kid == outsider.keyId }, "an outsider is dropped")
+        XCTAssertEqual(events, [.pendingDevice(conversation: conversation, kid: injected.keyId)])
+        XCTAssertEqual(service.pendingDevices(conversation).first?.acct, "pat")
+        XCTAssertEqual(service.devices(conversation).filter(\.isSelf).count, 1)
+
+        let plain: JSONObject = [
+            "type": "chat", "id": "new-1", "senderId": "pat-new", "sender": "pat", "channel": .string(conversation),
+            "text": "trust me", "ts": .int(Date().epochMillis),
+        ]
+        connection.receive(text: JSON.encode(try crypto.encrypt(try injected.seal(plain))))
+        _ = await waitUntil(0.3) { false }
+        XCTAssertTrue(service.messages(conversation).isEmpty, "a pending device's frames are held, not shown")
+        let reply = await service.send(conversation, text: "hi pat")
+        XCTAssertTrue(reply)
+        let sealedToInjected = connection.sentTexts.compactMap { crypto.decrypt(JSON.parseObject($0)) }
+            .contains { RoomSeal.isSealedFrame($0) && RoomSeal.wrappedKeyIds($0).contains(injected.keyId) }
+        XCTAssertFalse(sealedToInjected, "nothing is sealed to a pending device")
+
+        await service.approveDevice(conversation, kid: injected.keyId)
+        XCTAssertTrue(service.messages(conversation).contains { $0.text == "trust me" }, "approval opens the held frame")
+        XCTAssertEqual(alerts.map(\.text), ["trust me"])
+        let changed = try XCTUnwrap(service.safetyNumber(conversation))
+        XCTAssertTrue(changed.changed)
+        XCTAssertNotEqual(changed.digits, first.digits)
+        XCTAssertTrue(events.contains(.safetyNumberChanged(conversation: conversation)))
+        XCTAssertTrue(service.verifySafetyCode(conversation, scanned: changed.qr))
+        XCTAssertEqual(service.safetyNumber(conversation)?.verified, true)
+        XCTAssertEqual(service.safetyNumber(conversation)?.changed, false)
+
+        await service.blockDevice(conversation, kid: injected.keyId)
+        XCTAssertEqual(service.devices(conversation).first { $0.kid == injected.keyId }?.state, .blocked)
+        XCTAssertFalse(service.deviceKeys(conversation).contains(injected.keyId))
+        await service.closeAll()
     }
 
     @MainActor func testUnreadCountsFeedTheShellBadge() async throws {

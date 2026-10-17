@@ -24,23 +24,49 @@ MirrorCrypto and the relay's `validate_owner_envelope`. Conforms to `OwnerKeys`
   FIPS 203 modulus check. Include your own bundle to read the result back.
 - `v` fields compare numerically (`1.0` counts as `1`).
 
-## RoomSeal (`RoomSeal.swift`)
+## Chat protocol v3 (`ChatKeyring.swift`, `ChatTrust.swift`, `RoomSeal.swift`, `MeshLinkCrypto.swift`)
 
-Automatic device-to-device chat E2EE inside the room cipher: a persistent X25519 key per install,
-a fresh AES-256-GCM content key per frame wrapped for every known room device.
+The wire format is [docs/app/chat-protocol-v3.md](../../../docs/app/chat-protocol-v3.md); this is
+the Swift surface. v2 frames are ignored.
 
-- `RoomSeal.loadOrCreate(room, storageScope:, secureStore:) throws` (key `chat/e2ee/x25519PrivateV2`,
-  standard base64 of the clamped key; peers under `chat/e2ee/peersV2/<b64url(scope\nroom)>`;
-  scope defaults to the room). Throws `CryptoArgumentError` for an
-  empty room. `RoomSeal.fromPrivateKey(room, key32, storageScope:, secureStore:)` for vectors.
-- `keyId` (16 chars), `peerCount`, `keyFrame() -> JSONObject`, `acceptKeyFrame(frame) -> Bool`
-  (true when new; persisted), `seal(plain) throws -> JSONObject` (sealed to every peer and to
-  itself), `unseal(frame) -> JSONObject?` (a verified unknown sender becomes a peer),
-  `shouldPersistAdvertisement(now:)` (once a day per scope and room).
-- Static `isKeyFrame`, `isSealedFrame`, `frameKeyId`.
-- At most 63 peers; the oldest is evicted. Wire nonces/tags/bodies are standard padded base64,
-  `pub` is unpadded base64url, exactly as the browser and Qt clients.
+- `ChatKeyring`: the install's Ed25519 identity (`chat/e2ee/ed25519IdentityV3`, 32-byte seed,
+  standard base64) and its signed prekeys (`chat/e2ee/prekeysV3`, a JSON list of
+  `{id, xPriv, x, pqSeed, pq, ts, exp}`). `ChatKeyring.shared(store)` is one instance per
+  `SecureStore` (rebuilt if the stored identity changes, as on a project switch), so every room
+  sees the same prekeys and counters. `load(store, create: false)` never creates keys (the
+  notification extension). `rotateIfNeeded(now:)` adds a prekey once the newest is 24 h old,
+  wipes private halves past `exp` and keeps at most 10; `wipeExpired(now:)`. Counters
+  (`chat/e2ee/ctrV3/<b64u(room)>`) and the 1024-wide seen window per sender
+  (`chat/e2ee/seenV3/<b64u(room)>`, at most 256 senders a room) live here too.
+- `ChatTrustStore` (`keyring.trust(scope)`): records `{kid, idk, acct, node, spk, state,
+  firstSeen, verified, lastSeen}`, held frames (64 a room, at most 1 MiB of them persisted) and
+  the last room name of the scope, at `chat/e2ee/trustV3/<b64u(scope)>`. `approve`, `block`,
+  `markVerified`, `verify(scanned:)`, `acknowledgeSafetyChange`, `safetyNumber()`
+  (`ChatSafetyNumber`: `digits`, `groups`, `qr`, `verified`, `changed`). `changed` is set when the
+  approved set changes after it already held two accounts, which also clears `verified`.
+- `RoomSeal(room:scope:policy:acct:node:participants:keyring:store:)` or
+  `RoomSeal.loadOrCreate(room, scope:, policy:, acct:, node:, participants:, secureStore:)`.
+  `acct` is the account (trust), `node` the per-device `senderId` (forgery check);
+  `participants` drops DM bundles naming anyone else. `keyFrame(now:)` (the bundle, and this
+  device's own record), `acceptBundle(frame, now:) -> ChatBundleResult?`,
+  `needsAdvertisement(now:)` (the prekey rotated since the last `keyFrame`),
+  `shouldPersistAdvertisement(now:)`, `seal(plain)`, `seal(plain, for: [kid])`,
+  `seal(plain, forNodes:)` (relay `@peer` DMs), `open(frame, now:, history:) -> RoomSealOpen`
+  (`opened(plain, senderKid, senderAcct, senderNode)`, `held(kid)`, `notForMe`, `replay`,
+  `invalid`; `name` gives the spec's string), `reopenHeld(now:)`, `approve`, `block`,
+  `safetyNumber()`. `authenticatedPlain` is the opened plaintext with `senderId` set to the signed
+  `node`, which every author check downstream relies on. `unseal(frame)` is a read-only `peek`
+  (no counters, no holding) for tests. A frame from an unknown sender is held only when it is
+  addressed to this device. An open room with more than 64 devices seals to the 63 most recently
+  seen.
+- `MeshLinkCrypto` and `MeshLinkHandshake`: the `fm-link-hello` / `fm-link-auth` exchange, the
+  transcript, per-direction keys and the counter-nonce frames of a mesh link.
+- `OverlaySecureStore`: reads through to a store and keeps every write in memory. The push
+  opener wraps the shared keychain in one, so opening a frame in the extension never moves the
+  app's counters or seen windows.
 
 Tests: `Tests/FMCryptoTests/OwnerCryptoTests.swift` (the Qt interop case skips unless
-`desktop/build/forkmesh-tests` is built) and `RoomSealTests.swift` (the browser v2 wire vector and
-the Kotlin storage cases).
+`desktop/build/forkmesh-tests` is built) and `RoomSealTests.swift`: `RoomSealVectorTests` loads
+`conformance/chat/v3/vectors.json` and checks what `app/tests/test_chat_v3_vectors.py` checks
+(including that ML-KEM keys from the stored seeds and the link frames match byte for byte);
+`RoomSealRoundTripTests` covers sealing, strict trust, persistence and rotation.

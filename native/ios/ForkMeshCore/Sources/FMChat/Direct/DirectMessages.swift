@@ -50,6 +50,7 @@ public enum DirectMessageFrames {
     public static let maxReconnectDelay: TimeInterval = 30
     public static let ackTimeout: TimeInterval = 5
     public static let ackRetries = 3
+    public static let directAckTimeout: TimeInterval = 3
     public static let replyField = "replyTo"
 
     public static func frameRef(_ text: String) -> String {
@@ -306,6 +307,7 @@ public final class DirectMessageService {
     @ObservationIgnored let origin: @MainActor () -> URL?
     @ObservationIgnored let selfId: @MainActor () -> String
     @ObservationIgnored let displayName: @MainActor () -> String
+    @ObservationIgnored let accountName: (@MainActor () -> String)?
     @ObservationIgnored let clock: Clock
     @ObservationIgnored private var sockets: [String: DirectRoomSocket] = [:]
     @ObservationIgnored private var cryptos: [String: RoomCrypto] = [:]
@@ -328,7 +330,12 @@ public final class DirectMessageService {
     @ObservationIgnored public var onLiveFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored private var liveBudgets: [String: (perWindow: Int, windowMs: Int)] = [:]
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject, String) -> Void)?
-    @ObservationIgnored public var meshSender: (@MainActor (JSONObject, [String]) async -> Int)?
+    @ObservationIgnored public private(set) weak var mesh: LocalMeshService?
+    @ObservationIgnored private var focusedConversation: String?
+    @ObservationIgnored private var publishedFocus: String?
+    @ObservationIgnored private var directAcks: [String: DirectAckWait] = [:]
+    @ObservationIgnored private var safetyFlags: [String: Bool] = [:]
+    @ObservationIgnored public var onTrustEvent: (@MainActor (DirectTrustEvent) -> Void)?
     @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
     @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
@@ -348,6 +355,8 @@ public final class DirectMessageService {
     public private(set) var connected: Set<String> = []
     public private(set) var serverCopies: [String: Int] = [:]
     public private(set) var receipts: [String: ChatReceipt] = [:]
+    public private(set) var trustRevision = 0
+    public private(set) var routeRevision = 0
     private var history: [String: [ChatMessage]] = [:]
 
     public init(
@@ -357,9 +366,10 @@ public final class DirectMessageService {
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
         },
-        viewOncePrefs: KeyValueStore? = nil
+        viewOncePrefs: KeyValueStore? = nil, account: (@MainActor () -> String)? = nil
     ) {
         self.viewOnce = ViewOnceStore(prefs: viewOncePrefs)
+        self.accountName = account
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
@@ -510,8 +520,42 @@ public final class DirectMessageService {
         return crypto
     }
 
-    private func seal(for room: String) async throws -> RoomSeal {
-        try await seals.seal(room, storageScope: "direct|\(origin()?.host ?? "")")
+    public var currentAccount: String {
+        let named = (accountName?() ?? displayName()).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return named.isEmpty ? selfId() : named
+    }
+
+    private func participants(_ conversationId: String) -> Set<String>? {
+        guard let other = records.first(where: { $0.id == conversationId })?.otherUser.lowercased(), !other.isEmpty else {
+            return nil
+        }
+        return [currentAccount, other]
+    }
+
+    private func seal(for room: String, conversationId: String) async throws -> RoomSeal {
+        try await seals.seal(
+            room, scope: DirectMessageFrames.prefix + conversationId, policy: .strict, acct: currentAccount,
+            node: selfId(), participants: participants(conversationId))
+    }
+
+    private func loadedSeal(_ record: DirectConversation) -> RoomSeal? {
+        guard let room = roomNames[record.id], let seal = seals[room], (seal.node ?? "") == selfId(),
+            (seal.acct ?? "") == currentAccount
+        else { return nil }
+        return seal
+    }
+
+    private func sealFor(_ record: DirectConversation) async -> RoomSeal? {
+        if let loaded = loadedSeal(record) { return loaded }
+        if let room = roomNames[record.id] { return try? await seal(for: room, conversationId: record.id) }
+        let store = secureStore
+        let scope = record.conversation
+        let room = await Task.detached(priority: .userInitiated) {
+            (try? ChatKeyring.shared(store))?.trust(scope).room ?? ""
+        }.value
+        if room.isEmpty { return nil }
+        roomNames[record.id] = room
+        return try? await seal(for: room, conversationId: record.id)
     }
 
     @discardableResult
@@ -524,6 +568,7 @@ public final class DirectMessageService {
     public func appLifecycleChanged(_ state: AppLifecycleState) {
         if state == .inactive { return }
         foreground = state == .resumed
+        publishFocus()
         cancelReconnects()
         if foreground {
             backoff.removeAll()
@@ -600,7 +645,7 @@ public final class DirectMessageService {
                 return false
             }
             let crypto = await derive(roomName, passphrase)
-            let seal = try await seal(for: roomName)
+            let seal = try await seal(for: roomName, conversationId: id)
             roomNames[id] = roomName
             let connection = try await connector.connect(
                 url: url,
@@ -624,6 +669,8 @@ public final class DirectMessageService {
             }
             advertise(socket, persist: seal.shouldPersistAdvertisement(now: clock.nowMillis))
             if receivedRefs[id]?.isEmpty == false { Task { await self.flushReceived(id) } }
+            if let record = records.first(where: { $0.id == id }) { processHeld(seal, record: record) }
+            trustChanged()
             return true
         } catch {
             lastError = "\(error)"
@@ -721,25 +768,58 @@ public final class DirectMessageService {
         let seal = socket.seal
         let live = envelope["historyReplay"] != .bool(true)
         if RoomSeal.isKeyFrame(frame) {
-            if seal.acceptKeyFrame(frame), live {
-                advertise(socket)
-                reseal(socket)
-            }
+            acceptBundle(frame, record: record, seal: seal, live: live, socket: socket)
             return false
         }
         guard RoomSeal.isSealedFrame(frame) else { return false }
-        let kids = DirectMessageFrames.wrappedKeyIds(frame)
-        guard kids.contains(seal.keyId) else {
+        let kids = RoomSeal.wrappedKeyIds(frame)
+        let result = kids.contains(seal.keyId) ? seal.open(frame, now: clock.nowMillis, history: !live) : .notForMe
+        switch result {
+        case .opened:
+            guard let plain = result.authenticatedPlain else { return false }
+            return handleOpened(plain, kids: kids, envelope: envelope, record: record, live: live)
+        case .notForMe:
             if !socket.persistedAdvert {
                 socket.persistedAdvert = true
                 advertise(socket, persist: true)
             }
             return false
+        case .held:
+            trustChanged()
+            return false
+        case .replay:
+            return true
+        case .invalid:
+            return false
         }
-        let sender = RoomSeal.frameKeyId(frame)
-        let knownSender = sender == seal.keyId || seal.peerKeyIds.contains(sender)
-        guard let plain = seal.unseal(frame) else { return false }
-        if !knownSender && live { reseal(socket) }
+    }
+
+    private func acceptBundle(
+        _ frame: JSONObject, record: DirectConversation, seal: RoomSeal, live: Bool, socket: DirectRoomSocket?
+    ) {
+        guard let result = seal.acceptBundle(frame, now: clock.nowMillis), result.isNew || result.updated else { return }
+        if result.isNew && result.state == .pending {
+            onTrustEvent?(.pendingDevice(conversation: record.conversation, kid: result.kid))
+        }
+        processHeld(seal, record: record)
+        trustChanged()
+        if live, let socket {
+            advertise(socket)
+            reseal(socket)
+        }
+    }
+
+    private func processHeld(_ seal: RoomSeal, record: DirectConversation) {
+        for result in seal.reopenHeld(now: clock.nowMillis) {
+            guard let plain = result.authenticatedPlain else { continue }
+            _ = handleOpened(plain, kids: [], envelope: [:], record: record, live: true)
+        }
+    }
+
+    @discardableResult
+    private func handleOpened(
+        _ plain: JSONObject, kids: [String], envelope: JSONObject, record: DirectConversation, live: Bool
+    ) -> Bool {
         if DirectMessageFrames.isCallFrame(plain) {
             if live { onCallFrame?(plain, record.conversation) }
             return true
@@ -904,7 +984,7 @@ public final class DirectMessageService {
             let messageId = entries[index].messageId
             let lost = unacked.remove(messageId) != nil && receipts[messageId] == .sending
             if stale || lost {
-                guard let sealed = try? socket.seal.seal(entries[index].plain),
+                guard let sealed = try? socket.seal.seal(entries[index].plain, now: clock.nowMillis),
                     var envelope = try? socket.crypto.encrypt(sealed)
                 else { continue }
                 envelope["persist"] = true
@@ -984,32 +1064,8 @@ public final class DirectMessageService {
     }
 
     public func deviceKeys(_ conversation: String) -> [String] {
-        guard let record = record(for: conversation), let room = roomNames[record.id], let seal = seals[room] else {
-            return []
-        }
-        return seal.peerKeyIds
-    }
-
-    @discardableResult
-    public func acceptMeshDirect(_ channel: String, sealKeyId: String, plain: JSONObject) -> Bool {
-        guard let record = record(for: channel), !sealKeyId.isEmpty, plain["channel"]?.text == channel,
-            deviceKeys(channel).contains(sealKeyId)
-        else { return false }
-        var frame = plain
-        frame["type"] = .string("chat")
-        if isGone(plain["id"]?.text ?? "") { return false }
-        guard let message = DirectMessageFrames.chatMessage(frame, record: record, selfId: selfId()),
-            append(message, conversationId: record.id)
-        else { return false }
-        if !message.isSelf { onMessage?(message) }
-        return true
-    }
-
-    private func sendOverMesh(_ record: DirectConversation, _ plain: JSONObject) async -> Int {
-        guard let meshSender else { return 0 }
-        let keys = deviceKeys(record.conversation)
-        if keys.isEmpty { return 0 }
-        return await meshSender(plain, keys)
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return [] }
+        return seal.approvedKeyIds
     }
 
     private func settleUnsent(_ record: DirectConversation, _ plain: JSONObject, shown: Bool, reached: Int) -> Bool {
@@ -1036,8 +1092,7 @@ public final class DirectMessageService {
         var extra: JSONObject = ["text": .string(String(body.prefix(ChatLimits.maxTextChars)))]
         if let replyTo { extra[DirectMessageFrames.replyField] = DirectMessageFrames.replyFields(replyTo) }
         let plain = frame(record, type: "chat", extra: extra)
-        let reached = await sendOverMesh(record, plain)
-        return await sendSealed(record, plain, reached: reached)
+        return await sendSealed(record, plain)
     }
 
     @discardableResult
@@ -1053,14 +1108,14 @@ public final class DirectMessageService {
                 "fileMime": .string(String(mime.prefix(ChatLimits.maxMimeChars))),
                 "file": .string(data.base64EncodedString()),
             ])
-        return await sendSealed(record, plain, reached: 0)
+        return await sendSealed(record, plain, fileBytes: data.count)
     }
 
     @discardableResult
     public func sendLook(_ conversation: String, change: ChatLookChange) async -> Bool {
         guard let record = record(for: conversation) else { return false }
         let plain = frame(record, type: ChatLookFrames.type, extra: ChatLookFrames.fields(change))
-        return await sendSealed(record, plain, reached: 0, notify: false)
+        return await sendSealed(record, plain, notify: false)
     }
 
     public func liveInterval(_ conversation: String) -> Int64 {
@@ -1072,22 +1127,27 @@ public final class DirectMessageService {
 
     @discardableResult
     public func sendLive(_ conversation: String, fields: JSONObject) async -> Bool {
-        guard let record = record(for: conversation), let socket = sockets[record.id] else { return false }
+        guard let record = record(for: conversation) else { return false }
         let plain = frame(record, type: DirectLiveFrames.type, extra: fields)
+        let plan = await directPlan(record, fileBytes: 0)
+        let reached = await sendDirect(record, plain, to: plan.kids)
+        if plan.directOnly && reached > 0 { return true }
+        guard let socket = sockets[record.id] else { return reached > 0 }
         do {
-            var envelope = try socket.crypto.encrypt(try socket.seal.seal(plain))
+            var envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
             envelope["live"] = true
             let text = JSON.encode(envelope)
-            if text.utf8.count > DirectLiveFrames.maxEnvelopeBytes { return false }
+            if text.utf8.count > DirectLiveFrames.maxEnvelopeBytes { return reached > 0 }
             try await socket.connection.send(text: text)
+            readvertiseIfRotated(socket)
             return true
         } catch {
-            return false
+            return reached > 0
         }
     }
 
-    private func sendSealed(_ record: DirectConversation, _ plain: JSONObject, reached: Int, notify: Bool = true) async
-        -> Bool
+    private func sendSealed(_ record: DirectConversation, _ plain: JSONObject, notify: Bool = true, fileBytes: Int = 0)
+        async -> Bool
     {
         let id = plain["id"]?.text ?? ""
         let receipted = DirectMessageFrames.carriesReceipt(plain)
@@ -1096,12 +1156,33 @@ public final class DirectMessageService {
             shown = append(message, conversationId: record.id)
         }
         if receipted { setReceipt(.sending, id) }
+        let plan = await directPlan(record, fileBytes: fileBytes)
+        let reached = await sendDirect(record, plain, to: plan.kids)
+        if plan.directOnly && reached > 0 {
+            if receipted { setReceipt(.sent, id) }
+            if !id.isEmpty {
+                directAcks[id] = DirectAckWait(
+                    conversationId: record.id, plain: plain, notify: notify, kids: Set(plan.kids))
+                watchDirectAck(id)
+            }
+            if plain["type"]?.text == "delete" { applyDelete(plain, record: record, stash: false) }
+            onFrame?(plain, record.conversation)
+            return true
+        }
+        return await sendRelay(record, plain, notify: notify, reached: reached, shown: shown)
+    }
+
+    private func sendRelay(
+        _ record: DirectConversation, _ plain: JSONObject, notify: Bool, reached: Int, shown: Bool, local: Bool = true
+    ) async -> Bool {
+        let id = plain["id"]?.text ?? ""
+        let receipted = DirectMessageFrames.carriesReceipt(plain)
         if sockets[record.id] == nil, !(await open(record.conversation)) {
             return settleUnsent(record, plain, shown: shown, reached: reached)
         }
         guard let socket = sockets[record.id] else { return settleUnsent(record, plain, shown: shown, reached: reached) }
         do {
-            let sealed = try socket.seal.seal(plain)
+            let sealed = try socket.seal.seal(plain, now: clock.nowMillis)
             var envelope = try socket.crypto.encrypt(sealed)
             envelope["persist"] = true
             if notify { envelope["notify"] = true }
@@ -1114,8 +1195,11 @@ public final class DirectMessageService {
                     kids: DirectMessageFrames.wrappedKeyIds(sealed), notify: notify, ts: clock.nowMillis),
                 conversationId: record.id)
             if receipted { watchAck(id, conversationId: record.id, connection: socket.connection, attempt: 0) }
-            if plain["type"]?.text == "delete" { applyDelete(plain, record: record, stash: false) }
-            onFrame?(plain, record.conversation)
+            if local {
+                if plain["type"]?.text == "delete" { applyDelete(plain, record: record, stash: false) }
+                onFrame?(plain, record.conversation)
+            }
+            readvertiseIfRotated(socket)
             return true
         } catch {
             lastError = "\(error)"
@@ -1133,7 +1217,7 @@ public final class DirectMessageService {
         }
         if type == "reaction", (plain["reactorName"]?.text ?? "").isEmpty { plain["reactorName"] = plain["sender"] }
         if type == "edit", plain["editedAt"] == nil { plain["editedAt"] = plain["ts"] }
-        return await sendSealed(record, plain, reached: 0, notify: type == "thread-reply") ? plain : nil
+        return await sendSealed(record, plain, notify: type == "thread-reply") ? plain : nil
     }
 
     @discardableResult
@@ -1152,16 +1236,20 @@ public final class DirectMessageService {
 
     @discardableResult
     public func sendTyping(_ conversation: String, active: Bool) async -> Bool {
-        guard let record = record(for: conversation), let socket = sockets[record.id] else { return false }
+        guard let record = record(for: conversation) else { return false }
         var plain = frame(record, type: DirectMessageFrames.typingType, extra: ["active": .bool(active)])
         plain.removeValue(forKey: "channel")
         plain["conversation"] = .string(record.conversation)
+        let plan = await directPlan(record, fileBytes: 0)
+        let reached = await sendDirect(record, plain, to: plan.kids)
+        if plan.directOnly && reached > 0 { return true }
+        guard let socket = sockets[record.id] else { return reached > 0 }
         do {
-            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain))
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
             try await socket.connection.send(text: JSON.encode(envelope))
             return true
         } catch {
-            return false
+            return reached > 0
         }
     }
 
@@ -1171,7 +1259,7 @@ public final class DirectMessageService {
         else { return false }
         let plain = frame(record, type: type, extra: extra)
         do {
-            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain))
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
             try await socket.connection.send(text: JSON.encode(envelope))
             return true
         } catch {
@@ -1180,7 +1268,8 @@ public final class DirectMessageService {
     }
 
     private func advertise(_ socket: DirectRoomSocket, persist: Bool = false) {
-        guard var envelope = try? socket.crypto.encrypt(socket.seal.keyFrame()) else { return }
+        let bundle = socket.seal.keyFrame(now: clock.nowMillis)
+        guard !bundle.isEmpty, var envelope = try? socket.crypto.encrypt(bundle) else { return }
         if persist { envelope["persist"] = true }
         let connection = socket.connection
         Task { try? await connection.send(text: JSON.encode(envelope)) }
@@ -1249,6 +1338,13 @@ public final class DirectMessageService {
         viewOnce.clear()
         heldReceipts = [:]
         heldOrder = []
+        directAcks = [:]
+        focusedConversation = nil
+        publishedFocus = nil
+        safetyFlags = [:]
+        roomNames = [:]
+        seals.removeAll()
+        trustChanged()
     }
 
     private func call(_ method: String, _ path: String, _ body: JSONObject?) async throws -> JSONObject {
@@ -1257,6 +1353,254 @@ public final class DirectMessageService {
         } catch let error as OrgApiException {
             throw DirectMessageError.refused(error.code)
         }
+    }
+}
+
+extension DirectMessageService {
+    public func attachMesh(_ mesh: LocalMeshService) {
+        self.mesh = mesh
+        mesh.onDirectSealed = { [weak self] channel, frame, kid in
+            guard let self else { return }
+            Task { await self.receiveDirect(channel: channel, frame: frame, from: kid) }
+        }
+        mesh.onDirectAck = { [weak self] channel, id, kid in self?.directAcked(channel: channel, id: id, from: kid) }
+        mesh.onDirectFocus = { [weak self] _, _, _ in self?.routeChanged() }
+        mesh.onLinkAuthenticated = { [weak self] kid in self?.linkAuthenticated(kid) }
+        mesh.onLinkClosed = { [weak self] kid in self?.linkClosed(kid) }
+        routeChanged()
+    }
+
+    func directPlan(_ record: DirectConversation, fileBytes: Int) async -> (kids: [String], directOnly: Bool) {
+        guard let mesh, mesh.running else { return ([], false) }
+        let linked = mesh.directLinks()
+        if linked.isEmpty { return ([], false) }
+        guard let seal = await sealFor(record) else { return ([], false) }
+        let me = currentAccount
+        var kids: [String] = []
+        var directOnly = false
+        let focused = hasFocus(record)
+        for device in seal.trust.records(in: .approved) where device.kid != seal.keyId {
+            guard let kind = linked[device.kid] else { continue }
+            if fileBytes > 0 {
+                let limit =
+                    kind == .wifi
+                    ? LocalMeshService.directFileBytesOverWifi : LocalMeshService.directFileBytesOverBluetooth
+                if fileBytes > limit { continue }
+            }
+            kids.append(device.kid)
+            if focused && device.acct != me && mesh.peerFocus(device.kid, channel: record.conversation) {
+                directOnly = true
+            }
+        }
+        return (kids, directOnly && !kids.isEmpty)
+    }
+
+    func sendDirect(_ record: DirectConversation, _ plain: JSONObject, to kids: [String]) async -> Int {
+        guard let mesh, !kids.isEmpty, let seal = await sealFor(record) else { return 0 }
+        var reached = 0
+        for kid in kids {
+            guard let sealed = try? seal.seal(plain, for: [kid], now: clock.nowMillis) else { continue }
+            if await mesh.sendDirectSealed(sealed, channel: record.conversation, to: kid) { reached += 1 }
+        }
+        if let socket = sockets[record.id] { readvertiseIfRotated(socket) }
+        return reached
+    }
+
+    func readvertiseIfRotated(_ socket: DirectRoomSocket) {
+        if socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
+    }
+
+    func receiveDirect(channel: String, frame: JSONObject, from kid: String) async {
+        guard let record = record(for: channel), RoomSeal.frameKeyId(frame) == kid, let seal = await sealFor(record),
+            seal.trust.record(kid) != nil
+        else { return }
+        let result = seal.open(frame, now: clock.nowMillis)
+        switch result {
+        case .opened:
+            guard let plain = result.authenticatedPlain else { return }
+            _ = handleOpened(plain, kids: [], envelope: [:], record: record, live: true)
+            let id = plain["id"]?.text ?? ""
+            let type = plain["type"]?.text ?? ""
+            if !id.isEmpty && type != DirectMessageFrames.typingType && type != DirectLiveFrames.type {
+                await mesh?.sendDirectAck(channel: record.conversation, id: id, to: kid)
+            }
+        case .held:
+            trustChanged()
+        default:
+            break
+        }
+    }
+
+    func directAcked(channel: String, id: String, from kid: String) {
+        if let wait = directAcks[id] {
+            guard wait.kids.contains(kid), records.first(where: { $0.id == wait.conversationId })?.conversation == channel
+            else { return }
+            directAcks.removeValue(forKey: id)
+            if DirectMessageFrames.carriesReceipt(wait.plain) { setReceipt(.delivered, id) }
+            return
+        }
+        guard let record = record(for: channel), loadedSeal(record)?.trust.record(kid)?.state == .approved,
+            messages(channel).contains(where: { $0.id == id && $0.isSelf }), receipts[id] != nil
+        else { return }
+        setReceipt(.delivered, id)
+    }
+
+    func watchDirectAck(_ id: String) {
+        let sleeper = self.sleeper
+        Task { [weak self] in
+            do { try await sleeper(DirectMessageFrames.directAckTimeout) } catch { return }
+            await self?.fallBackToRelay(id)
+        }
+    }
+
+    func fallBackToRelay(_ id: String) async {
+        guard let wait = directAcks.removeValue(forKey: id),
+            let record = records.first(where: { $0.id == wait.conversationId })
+        else { return }
+        _ = await sendRelay(record, wait.plain, notify: wait.notify, reached: 1, shown: false, local: false)
+    }
+
+    func linkAuthenticated(_ kid: String) {
+        routeChanged()
+        guard let conversation = publishedFocus, let record = record(for: conversation), let mesh else { return }
+        Task { [weak self] in
+            guard let self, let seal = await self.sealFor(record), seal.trust.record(kid)?.state == .approved else { return }
+            await mesh.sendFocus(channel: record.conversation, on: true, to: kid)
+        }
+    }
+
+    func linkClosed(_ kid: String) {
+        routeChanged()
+        let linked = mesh?.directLinks() ?? [:]
+        let stranded = directAcks.filter { entry in
+            entry.value.kids.contains(kid) && !entry.value.kids.contains { other in linked[other] != nil }
+        }
+        for id in stranded.keys { Task { await self.fallBackToRelay(id) } }
+    }
+
+    public func setFocus(_ conversation: String, _ on: Bool) {
+        if on {
+            focusedConversation = conversation
+        } else if focusedConversation == conversation {
+            focusedConversation = nil
+        }
+        publishFocus()
+    }
+
+    public var focus: String? { foregroundFocus }
+
+    private var foregroundFocus: String? { foreground ? focusedConversation : nil }
+
+    func hasFocus(_ record: DirectConversation) -> Bool { foregroundFocus == record.conversation }
+
+    func publishFocus() {
+        let next = foregroundFocus
+        if next == publishedFocus { return }
+        let previous = publishedFocus
+        publishedFocus = next
+        if let previous { sendFocus(previous, false) }
+        if let next { sendFocus(next, true) }
+        routeChanged()
+    }
+
+    private func sendFocus(_ conversation: String, _ on: Bool) {
+        guard let mesh, let record = record(for: conversation) else { return }
+        Task { [weak self] in
+            guard let self, let seal = await self.sealFor(record) else { return }
+            let linked = mesh.directLinks()
+            for device in seal.trust.records(in: .approved) where device.kid != seal.keyId && linked[device.kid] != nil {
+                await mesh.sendFocus(channel: record.conversation, on: on, to: device.kid)
+            }
+        }
+    }
+
+    public func route(_ conversation: String) -> DirectRoute {
+        _ = routeRevision
+        _ = trustRevision
+        guard let mesh, mesh.running, let record = record(for: conversation), let seal = loadedSeal(record) else {
+            return .none
+        }
+        let linked = mesh.directLinks()
+        let me = currentAccount
+        var kinds: Set<MeshLinkKind> = []
+        var directOnly = false
+        for device in seal.trust.records(in: .approved) where device.kid != seal.keyId {
+            guard let kind = linked[device.kid] else { continue }
+            kinds.insert(kind)
+            if hasFocus(record) && device.acct != me && mesh.peerFocus(device.kid, channel: conversation) {
+                directOnly = true
+            }
+        }
+        if kinds.isEmpty { return .none }
+        if directOnly { return .directOnly }
+        return kinds.contains(.wifi) ? .wifi : .bluetooth
+    }
+
+    func routeChanged() {
+        routeRevision &+= 1
+    }
+
+    func trustChanged() {
+        trustRevision &+= 1
+        for record in records {
+            guard let seal = loadedSeal(record) else { continue }
+            let changed = seal.trust.safetyNumberChanged
+            let before = safetyFlags[record.id] ?? false
+            safetyFlags[record.id] = changed
+            if changed && !before { onTrustEvent?(.safetyNumberChanged(conversation: record.conversation)) }
+        }
+        routeChanged()
+    }
+
+    public func devices(_ conversation: String) -> [ChatDeviceInfo] {
+        _ = trustRevision
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return [] }
+        let me = currentAccount
+        return seal.trust.all.map { ChatDeviceInfo($0, ownKid: seal.keyId, ownAcct: me) }
+    }
+
+    public func pendingDevices(_ conversation: String) -> [ChatDeviceInfo] {
+        devices(conversation).filter { $0.state == .pending }
+    }
+
+    public func approveDevice(_ conversation: String, kid: String) async {
+        guard let record = record(for: conversation), let seal = await sealFor(record), seal.approve(kid) else { return }
+        processHeld(seal, record: record)
+        if let socket = sockets[record.id] { reseal(socket) }
+        trustChanged()
+    }
+
+    public func blockDevice(_ conversation: String, kid: String) async {
+        guard let record = record(for: conversation), let seal = await sealFor(record), kid != seal.keyId,
+            seal.block(kid)
+        else { return }
+        trustChanged()
+    }
+
+    public func safetyNumber(_ conversation: String) -> ChatSafetyNumber? {
+        _ = trustRevision
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return nil }
+        return seal.safetyNumber()
+    }
+
+    public func markVerified(_ conversation: String) {
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return }
+        seal.trust.markVerified()
+        trustChanged()
+    }
+
+    @discardableResult
+    public func verifySafetyCode(_ conversation: String, scanned: String) -> Bool {
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return false }
+        let verified = seal.trust.verify(scanned: scanned)
+        if verified { trustChanged() }
+        return verified
+    }
+
+    public func acknowledgeSafetyChange(_ conversation: String) {
+        guard let record = record(for: conversation), let seal = loadedSeal(record) else { return }
+        seal.trust.acknowledgeSafetyChange()
+        trustChanged()
     }
 }
 
@@ -1360,7 +1704,7 @@ extension DirectMessageService {
             extra: ["text": .string(kind.fallbackText), ViewOnceFrames.field: ViewOnceFrames.build(media)])
         let messageId = plain["id"]?.text ?? ""
         viewOnce.register(messageId: messageId, conversation: record.conversation, media: media, mine: true)
-        guard await sendSealed(record, plain, reached: 0) else {
+        guard await sendSealed(record, plain) else {
             viewOnce.apply(media: mediaId, state: .failed)
             _ = try? await transfer.withdraw(mediaId)
             throw ViewOnceError.unavailable

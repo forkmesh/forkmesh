@@ -237,11 +237,24 @@ final class ChatHistoryWriter: @unchecked Sendable {
         #endif
         do {
             try data.write(to: target, options: options)
+            ChatFiles.excludeFromBackup(directory)
+            ChatFiles.excludeFromBackup(target)
             written[target] = snapshot
             writes += 1
         } catch {
             written[target] = nil
         }
+    }
+}
+
+public enum ChatFiles {
+    public static func excludeFromBackup(_ url: URL) {
+        #if canImport(Darwin)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var target = url
+        try? target.setResourceValues(values)
+        #endif
     }
 }
 

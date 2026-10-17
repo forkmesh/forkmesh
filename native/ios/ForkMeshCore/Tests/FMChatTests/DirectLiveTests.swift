@@ -59,8 +59,10 @@ final class DirectLiveTests: XCTestCase {
         await Task.detached { RoomCrypto.withPassphrase(DirectMessagesTests.room, "direct-pass") }.value
     }
 
-    @MainActor func peerSeal(_ scope: String) throws -> RoomSeal {
-        try RoomSeal.loadOrCreate(DirectMessagesTests.room, storageScope: scope, secureStore: InMemorySecureStore())
+    @MainActor func peerSeal(_ label: String, acct: String = "pat", node: String = "pat-node") throws -> RoomSeal {
+        try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: "direct:\(DirectMessagesTests.conversationId)", policy: .strict, acct: acct,
+            node: node, secureStore: InMemorySecureStore())
     }
 
     @MainActor func teach(_ peer: RoomSeal, from connection: FakeWebSocketConnection, _ crypto: RoomCrypto) async -> Bool {

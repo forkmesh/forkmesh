@@ -35,7 +35,11 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
   (shown at once, removed on failure), `deleteMessage`, `switchConversation`, `mark*Read`,
   `markBadgeSeen`, `setOwnStatus`, `resetForRelaySwitch`, `identityChanged`. Wire: frames carry
   `version: "flutter-1.0"` (a wire value); public channel chat uses the room cipher only;
-  everything else is RoomSeal-sealed; `persist`/`notify` ride outside the seal.
+  everything else is sealed with chat protocol v3 (open trust, scope = the room name,
+  `acct` = the account or the node id for a guest, `node` = `selfId`); an `@peer` `dm` is sealed
+  only to the devices whose bundle `node` is the recipient, plus this account's own devices;
+  `persist`/`notify` ride outside the seal. Frames from a device whose bundle has not arrived are
+  held and opened when it does.
 - `RelayService.groups`: one person row per account. Members key on `owner` (`ownerUser`); a
   member without one (a signed-in web `/chat` tab sends `sender` and `accountKind: "user"` but no
   `ownerUser`) joins the account row whose owner equals its name, so the Online sheet shows
@@ -51,11 +55,16 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
 
 ### Room keys off the main thread (`Relay/RoomSealCache.swift`)
 
-`RoomSeal.loadOrCreate` reads (and on first use writes) the Keychain. `RelayService` already ran it
-in `Task.detached`; `DirectMessageService` and `OfficeChannelService` ran it on the main actor once
-per room, and a resume reopens up to 16 DM sockets, each needing one. Both now go through a
-`RoomSealCache`: one detached load per room, concurrent first loads for the same room share the
-task (so a new room never generates two keys), and the result is kept for the session.
+`RoomSeal.loadOrCreate` reads (and on first use writes) the Keychain, and a first install also
+generates the identity and an ML-KEM prekey. `RelayService` runs it in `Task.detached`;
+`DirectMessageService` and `OfficeChannelService` go through a `RoomSealCache`: one detached load
+per room, concurrent first loads share the task, and the result is kept for the session (reloaded
+when the account, `node` or DM participants change). All rooms share one `ChatKeyring` per
+secure store.
+
+Office rooms: private rooms are sealed (open trust, scope = the room name); public rooms stay
+readable by the server. A forkbot line keeps this device's `senderId` and names the bot in a
+`bot` field; `ChatFrameText.shownSender` shows such lines as `forkbot`.
 
 ## Local mesh (`Mesh/`)
 
@@ -71,6 +80,27 @@ the answer; EHOSTUNREACH means Local Network access is off.
   the platform-free parts (UUIDs, dial tie-break, chunking, long-write reassembly). Bluetooth
   permission is requested only once `#mesh` has been opened.
 - Constants: `meshConversation` ("#mesh"), `meshDiscoveryPort` (48732), `meshMulticastGroup`.
+- Chat protocol v3 links: each side sends a plaintext `fm-link-hello`, then a plaintext
+  `fm-link-auth` (the dialer or Bluetooth central is the initiator); only after the peer's
+  signature verifies does anything else go out, as AES-GCM counter frames. A bad signature, the
+  device's own identity, a blocked key id or 10 s without finishing closes the link. Before
+  authentication frames are capped at 4 KiB. The link's peer is the authenticated key id
+  (`MeshLink.peerId`); duplicate links are resolved by key id as before by node id.
+- Beacons carry only `{t, v:3, id: kid, port, ts, reply, control, node}`; names arrive in the
+  sealed `hello` inside the link, which also carries `port` for redials. Peers are keyed by key
+  id; `members()` shows the node id from the hello. `controlHosts()` uses the beacon's `node`.
+- `#mesh` frames are v3 sealed frames (open trust, scope `forkmesh-lan-mesh-v1`, `acct` the
+  account or node id, `node` the node id). The link sends this device's bundle first and then
+  every bundle it knows; new bundles are forwarded to other links. Opened `chat` frames are
+  flooded to every other link, other frames forwarded only to links whose device is a
+  recipient, each once (by signature). `hello`, `bye` and `typing` count only from the link's own
+  device. A device learned through another device gets this device's last 32 own messages
+  resealed to it, and a linked device gets them on its hello; that is the backfill now that
+  other devices' messages cannot be resealed.
+- Direct delivery: `directLinks()`, `peerFocus(kid, channel:)`, `sendDirectSealed`,
+  `sendDirectAck`, `sendFocus`, and the `onDirectSealed` / `onDirectAck` / `onDirectFocus` /
+  `onLinkAuthenticated` / `onLinkClosed` callbacks, which `DirectMessageService.attachMesh` takes
+  (`ChatHub.direct` attaches its mesh).
 
 iOS needs `NSLocalNetworkUsageDescription`; multicast also needs the
 `com.apple.developer.networking.multicast` entitlement (the subnet sweep works without it).
@@ -138,6 +168,10 @@ nothing.
 - `UserPresence`: `confirm(reason:dialog:) async -> Bool` (local authentication prompt).
 
 ## Chat history file (`Threads/ChatHistoryStore.swift`)
+
+Chat history files and the `#mesh` history are excluded from device backups
+(`ChatFiles.excludeFromBackup`, chat protocol v3 "On the device"); held frames live in the
+keychain, whose items are this-device-only.
 
 `ChatHub.attachHistory` restores `relay-<scope>.json` from Application Support once; on every
 relay change `scheduleSave` saves again 2 s later. The main thread only takes a copy-on-write
@@ -275,8 +309,21 @@ messages"). On iOS they live in `DirectMessageService`:
   advertisement.
 - **R3.** Each durable send is kept in a per-DM outbox (64 entries, 7 days) with its relay ref
   (first 40 hex of SHA-256 of the exact text sent) and the key ids it was wrapped for. When a
-  new peer key appears, entries not wrapped for every known peer are resealed and resent
-  (`resend: true`), and the old refs are sent in `forkmesh-superseded` frames.
+  new approved device appears (first device of an account, or one the user approved), entries
+  not wrapped for every approved device are resealed and resent (`resend: true`), and the old
+  refs are sent in `forkmesh-superseded` frames. Pending devices get nothing.
+- **Trust (v3, strict).** Scope `direct:<id>`, `acct` = the signed-in account (lowercased,
+  `displayName` unless an `account` closure is given), `node` = `selfId`, participants = this
+  account and `otherUser`. A bundle for anyone else is dropped; a second device of an account
+  is pending and its frames are held until `approveDevice`. History-replay frames skip only the
+  seen check. A frame not addressed to this device still asks for one durable advertisement.
+- **Direct over the mesh.** Every DM frame type except calls goes to each linked approved device
+  as `direct-sealed` (sealed to that device and this one); files up to 1 MiB over Wi-Fi and
+  256 KiB over Bluetooth. When this device has focus (foreground and `setFocus(conversation,
+  true)`) and a linked approved device of the other account reported focus, the frame goes over
+  the mesh only and waits 3 s for `direct-ack`; no ack or a dropped link sends the relay copy with
+  the same id. Otherwise it goes over the mesh and the relay. A `direct-ack` also marks an own
+  message delivered. Frames from a device the conversation has no record of are dropped.
 - **Dedupe.** A resend keeps the message id, so receivers drop the second copy.
 - **Unconfirmed sends.** A DM the server has not confirmed within a few seconds is sent again
   over a fresh connection, so it does not stay at "Sending".
@@ -334,16 +381,25 @@ before it is posted, since iOS may end the extension as soon as the banner is ha
 Logic is in **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBase and FMCrypto):
 
 - `PushChatRequest.parse` validates `ref` (40 lowercase hex), `conversation` or `channelId`.
-- `PushChatOpener.open` checks the pending answer names the same conversation, decrypts the
-  `RoomCrypto` envelope, unseals with the device's X25519 key, and accepts only `chat` and
-  `thread-reply`. DMs must be sealed.
+- `PushChatOpener.open(pending, request:, secureStore:, keys:) -> PushChatOpened`
+  (`message`, `unknownSender`, `unavailable`) checks the pending answer names the same
+  conversation, decrypts the `RoomCrypto` envelope and opens the v3 frame with the shared
+  identity, prekeys and trust records (strict for DMs, open for channels) through an
+  `OverlaySecureStore`, so nothing is written back. Only `chat` and `thread-reply` become
+  messages, and DMs must be sealed. A frame from a pending or unknown device is
+  `unknownSender`, shown as "New message".
+- Pushes carry no sender: both "Name and message" and "Name only" open the frame to learn it
+  (`PushPreviewText.preview(opened, request:, mode:)`), and the portrait is fetched for the
+  decrypted sender.
 - `PushRoomKeys` caches derived room keys (one keychain item, 32 entries) so only the first push
   of a room pays the 210,000 PBKDF2 rounds.
 - `PushPreviewMode` ("Notification content" setting): name and message (default), name only, or
   neither.
 
-The extension reads the device key named in the shared push credential
-(`Shared/PushCredentialStore.swift`) and links only the `ForkMeshPushCore` product.
+The extension reads the chat keys through `PushSecureReader` (`Shared/PushCredentialStore.swift`):
+the project prefix comes from the `deviceKeyName` in the shared push credential
+(`RoomSeal.privateKeyStoreKey` is now the v3 identity key; a v2 name still yields the prefix). It
+links only the `ForkMeshPushCore` product.
 
 ## Voice and video calls
 
@@ -520,3 +576,26 @@ parsing, calls (including the state lines, route notes and the ringback and ring
 `DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.
+
+## API for the UI (chat protocol v3)
+
+All on `DirectMessageService` (`@MainActor @Observable`; read `trustRevision` / `routeRevision`,
+which the methods below touch, to redraw):
+
+| Call | Use |
+| --- | --- |
+| `devices(conversation) -> [ChatDeviceInfo]` | Every device of the DM: `kid`, `acct`, `node`, `state` (`approved`, `pending`, `blocked`), `firstSeen`, `verified`, `isSelf`, `isOwnAccount`. |
+| `pendingDevices(conversation)` | The ones waiting; show the banner with Approve and Block. |
+| `approveDevice(conversation, kid:) async` | Approves, opens its held frames and reseals the outbox to it. |
+| `blockDevice(conversation, kid:) async` | Blocks; its frames are dropped from then on. |
+| `safetyNumber(conversation) -> ChatSafetyNumber?` | `digits` (60), `groups` (12 of 5), `qr` (`forkmesh-safety:3:<scope>:<b64u>`), `verified`, `changed`. |
+| `markVerified(conversation)` / `verifySafetyCode(conversation, scanned:) -> Bool` | After comparing digits / scanning the other phone's QR. |
+| `acknowledgeSafetyChange(conversation)` | Hides the "changed" notice. |
+| `onTrustEvent: (DirectTrustEvent) -> Void` | `.pendingDevice(conversation:kid:)` and `.safetyNumberChanged(conversation:)`. |
+| `route(conversation) -> DirectRoute` | `.none`, `.wifi`, `.bluetooth`, `.directOnly`; `label` is "", "Direct · Wi-Fi", "Direct · Bluetooth", "Direct only". |
+| `setFocus(conversation, on)` | Call when the transcript appears or goes away; app lifecycle is already applied. |
+
+`ChatHub.setFocus(conversation, on)` and `ChatHub.directRoute(conversation)` forward to it.
+`DirectTrustText` has the line and banner strings: `pendingDevice(name)` ("A new device for
+Alex wants to join this chat. Check the safety number, then approve or block."),
+`safetyNumberChanged(name)`, `approve`, `block`.
