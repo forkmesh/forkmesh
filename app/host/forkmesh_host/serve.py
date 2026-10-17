@@ -142,7 +142,7 @@ def server_limits(environ):
         "h11_max_incomplete_event_size": 64 * 1024,
         "timeout_keep_alive": _positive(
             environ, "FORKMESH_HOST_KEEPALIVE_S", 15),
-        "ws_max_size": 2 * 1024 * 1024,
+        "ws_max_size": 4 * 1024 * 1024,
     }
 
 

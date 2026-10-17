@@ -406,7 +406,7 @@ def test_server_limits():
     assert limits == {"limit_concurrency": 512,
                       "h11_max_incomplete_event_size": 64 * 1024,
                       "timeout_keep_alive": 15,
-                      "ws_max_size": 2 * MiB}
+                      "ws_max_size": 4 * MiB}
     assert serve.server_limits({"FORKMESH_HOST_LIMIT_CONCURRENCY": "50"})[
         "limit_concurrency"] == 50
     import inspect

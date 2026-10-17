@@ -1,7 +1,8 @@
 # Message text in chat push notifications
 
-Direct-message and channel pushes show the sender and text, while the server
-never sees plaintext. Home page: [app/README.md](README.md). Related:
+Direct-message and channel pushes show the sender and text once the phone has
+opened the frame, while neither the server nor Apple sees the text, the
+sender or the channel name. Home page: [app/README.md](README.md). Related:
 [chat-private-rooms.md](chat-private-rooms.md),
 [mobile push notifications](../../www/docs/operations/mobile-push-notifications.md).
 
@@ -10,15 +11,38 @@ never sees plaintext. Home page: [app/README.md](README.md). Related:
 1. The relay stores the sender's sealed frame in `chat_history`.
 2. The push (`direct_message_alert`, `chat_message_alert` in `app/src/apns.py`)
    carries `conversation`, the frame's relay `ref` (40 hex), `keyVersion`
-   and, for channels, `channelId`, with a fallback alert ("Direct message
-   from X" / "New message") and `mutable-content`. A direct-message push also
-   carries the sealed frame itself as `frame` (relay routing keys `ref`,
-   `recipients`, `recipientNames`, `historyReplay` stripped) whenever the
-   payload still fits Apple's 4 KB; a longer frame is left out and fetched.
+   and, for channels, `channelId`, with the fallback alert title
+   "New message" (with the usual icon), body "New message", and
+   `mutable-content`. There is no `sender` field and the title names no
+   sender or channel. A direct-message push also carries the sealed frame
+   itself as `frame` (relay routing keys `ref`, `recipients`,
+   `recipientNames`, `historyReplay` stripped) whenever the payload still
+   fits Apple's 4 KB; a longer frame is left out and fetched.
 3. The phone asks the pending route for the room passphrase (and the stored
-   frame), derives the room key, unseals the frame with its device key and
-   rewrites the banner to the sender and the message text, as Signal does.
+   frame), derives the room key, opens the v3 frame with its prekeys and
+   trust records, and rewrites the banner to the sender and the message text
+   according to its preview setting, as Signal does. A frame from a pending
+   or unknown device keeps "New message".
 4. On any failure the fallback alert stays.
+
+Why the sender and channel left the payload (2026-10-16, chat protocol v3,
+[chat-protocol-v3.md](chat-protocol-v3.md#push-notifications)): the alert
+text and custom keys reach Apple in the clear, so "Direct message from X",
+"New message in #design" and `"sender":"x"` told Apple who wrote to whom and
+where, even with previews hidden on the phone. The push for a newly started
+conversation now says "New direct conversation" for the same reason. The
+`conversation` routing field is unchanged, so an office channel push still
+carries `#office/<name>` (and the same `thread-id`) for the tap to open. The
+payload also carries `channelId`, so once every client routes by it the name
+can go too.
+
+A v3 frame no longer fits: a DM frame is sealed to at least two devices and
+each carries a 1088-byte ML-KEM ciphertext, so the outer envelope is about
+6 KB for two devices. `_sealed_frame` skips a frame string longer than the
+4 KB payload without parsing it, and the phone always takes the pending
+route. If a recipient's desktop or browser acknowledges the frame before the
+phone's fetch, the row is gone and the banner stays "New message" (see the
+2026-10-15 note below; v2 frames fitted).
 
 Why the frame rides in the push (2026-10-15): the recipient's desktop or
 browser is usually connected to the conversation, receives the message within
@@ -59,8 +83,8 @@ Clients: `native/ios/NotificationService`
 `BackgroundLinkService` ([native/ANDROID.md](../native/ANDROID.md)). Both
 phones offer a notification-content setting applied after decryption.
 
-Limits: a direct-message frame too long for the push whose row is already
-gone, frames not sealed for the phone, and frames from an older key version
-show the fallback banner.
+Limits: a direct-message frame too long for the push (every v3 frame) whose
+row is already gone, frames not sealed for the phone, frames from a pending
+device, and frames from an older key version show the fallback banner.
 
 Tests: `app/tests/test_apns_push.py`, `app/tests/test_chat_pending_routes.py`.

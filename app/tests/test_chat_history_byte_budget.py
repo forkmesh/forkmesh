@@ -2,7 +2,9 @@
 
 import ast
 import asyncio
+import base64
 import json
+import os
 from pathlib import Path
 import sqlite3
 
@@ -53,9 +55,9 @@ def _room_class(namespace):
     return globals_map["ForkMeshRoom"]
 
 
-def test_attachment_frame_ceiling_stays_below_d1_row_limit():
+def _entry_constants(names):
     tree = ast.parse(SOURCE, filename=str(ENTRY))
-    values = {
+    return {
         node.targets[0].id: eval(
             compile(ast.Expression(node.value), str(ENTRY), "eval"),
             {"__builtins__": {}},
@@ -64,21 +66,94 @@ def test_attachment_frame_ceiling_stays_below_d1_row_limit():
         if isinstance(node, ast.Assign)
         and len(node.targets) == 1
         and isinstance(node.targets[0], ast.Name)
-        and node.targets[0].id in {
-            "CHAT_HISTORY_MAX_BODY",
-            "CHAT_HISTORY_MAX_BYTES_PER_ROOM",
-            "CHAT_HISTORY_REPLAY_MAX_MESSAGES",
-            "CHAT_HISTORY_REPLAY_MAX_BYTES",
-            "CHAT_HISTORY_INGRESS_MAX_BYTES",
-            "CHAT_HISTORY_INGRESS_WINDOW_MS",
-        }
+        and node.targets[0].id in names
     }
-    assert 1_850_000 <= values["CHAT_HISTORY_MAX_BODY"] <= 1_900_000
+
+
+def _b64(size):
+    return base64.b64encode(os.urandom(size)).decode()
+
+
+def _b64u(size):
+    return base64.urlsafe_b64encode(os.urandom(size)).decode().rstrip("=")
+
+
+def _v3_relay_frame(plain_bytes, recipients):
+    sealed = {
+        "type": "sealed", "v": 3, "kid": _b64u(12), "idk": _b64u(32),
+        "ctr": 4_294_967_296, "ts": 1_800_000_000_000,
+        "nonce": _b64(12), "tag": _b64(16), "body": _b64(plain_bytes),
+        "keys": [
+            {"kid": _b64u(12), "spk": _b64u(12), "eph": _b64u(32),
+             "ct": _b64(1088), "nonce": _b64(12), "tag": _b64(16),
+             "key": _b64(32)}
+            for _ in range(recipients)
+        ],
+        "sig": _b64u(64),
+    }
+    inner = json.dumps(sealed, separators=(",", ":")).encode()
+    envelope = {
+        "kind": "cipher", "v": 1, "nonce": _b64(12), "tag": _b64(16),
+        "body": _b64(len(inner)), "persist": True, "notify": True,
+        "ref": "f" * 40, "recipients": 1, "recipientNames": ["x" * 63] * 20,
+    }
+    return len(json.dumps(envelope, separators=(",", ":")).encode())
+
+
+def _v3_file_plain_bytes(file_bytes):
+    plain = {
+        "type": "chat", "id": "m" * 36, "senderId": "s" * 64,
+        "sender": "n" * 63, "text": "t" * 2000, "ts": 1_800_000_000_000,
+        "fileName": "f" * 120 + ".jpg", "fileMime": "image/jpeg",
+        "file": _b64(file_bytes),
+    }
+    return len(json.dumps(plain, separators=(",", ":")).encode())
+
+
+def test_attachment_frame_ceiling_bounds_retention():
+    values = _entry_constants({
+        "MAX_TEXT_BYTES",
+        "CHAT_HISTORY_MAX_BODY",
+        "CHAT_HISTORY_MAX_BYTES_PER_ROOM",
+        "CHAT_HISTORY_REPLAY_MAX_MESSAGES",
+        "CHAT_HISTORY_REPLAY_MAX_BYTES",
+        "CHAT_HISTORY_INGRESS_MAX_BYTES",
+        "CHAT_HISTORY_INGRESS_WINDOW_MS",
+    })
+    assert values["CHAT_HISTORY_MAX_BODY"] <= values["MAX_TEXT_BYTES"]
     assert values["CHAT_HISTORY_MAX_BYTES_PER_ROOM"] == 16 * 1024 * 1024
     assert 1 <= values["CHAT_HISTORY_REPLAY_MAX_MESSAGES"] <= 100
-    assert values["CHAT_HISTORY_REPLAY_MAX_BYTES"] <= 2 * 1024 * 1024
+    assert (values["CHAT_HISTORY_MAX_BODY"]
+            <= values["CHAT_HISTORY_REPLAY_MAX_BYTES"] <= 4 * 1024 * 1024)
     assert values["CHAT_HISTORY_INGRESS_MAX_BYTES"] <= 8 * 1024 * 1024
     assert values["CHAT_HISTORY_INGRESS_WINDOW_MS"] >= 10 * 1000
+
+
+def test_a_v3_direct_file_to_64_devices_is_relayed_retained_and_replayed():
+    values = _entry_constants({
+        "MAX_TEXT_BYTES",
+        "CHAT_HISTORY_MAX_BODY",
+        "CHAT_HISTORY_REPLAY_MAX_BYTES",
+        "CHAT_HISTORY_INGRESS_MAX_BYTES",
+    })
+    frame = _v3_relay_frame(_v3_file_plain_bytes(1024 * 1024), 64)
+    assert frame <= values["CHAT_HISTORY_MAX_BODY"]
+    assert frame <= values["CHAT_HISTORY_REPLAY_MAX_BYTES"]
+    assert frame <= values["CHAT_HISTORY_INGRESS_MAX_BYTES"]
+    assert frame <= values["MAX_TEXT_BYTES"]
+    host = (ENTRY.parents[1] / "host" / "forkmesh_host").resolve()
+    serve = (host / "serve.py").read_text(encoding="utf-8")
+    assert '"ws_max_size": 4 * 1024 * 1024,' in serve
+    assert 4 * 1024 * 1024 >= values["MAX_TEXT_BYTES"]
+    cluster = (host / "durable_cluster.py").read_text(encoding="utf-8")
+    assert "MESH_WS_MAX_SIZE = 4 * 1024 * 1024 + 64 * 1024" in cluster
+    assert cluster.count("MESH_WS_MAX_SIZE") == 3
+
+
+def test_a_v3_live_frame_to_64_devices_fits_the_live_lane():
+    values = _entry_constants({"ROOM_LIVE_MAX_BYTES", "MAX_TEXT_BYTES"})
+    frame = _v3_relay_frame(11 * 1024, 64)
+    assert frame <= values["ROOM_LIVE_MAX_BYTES"] <= 256 * 1024
 
 
 def test_store_prunes_oldest_frames_by_count_and_total_bytes():

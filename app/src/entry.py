@@ -217,7 +217,7 @@ ROOM_MSG_MAX_PER_WINDOW = 20
 ROOM_LIVE_MAX_PER_WINDOW = 150
 ROOM_RECEIPT_MAX_PER_WINDOW = 40
 ROOM_RECEIPT_MAX_BYTES = 8 * 1024
-ROOM_LIVE_MAX_BYTES = 16 * 1024
+ROOM_LIVE_MAX_BYTES = 192 * 1024
 ROOM_LIVE_ACCESS_RECHECK_MS = 5 * 1000
 # Chat room sockets send regular encrypted presence/hello frames. If a reinstall
 # or network break leaves an old WebSocket hibernated in the room, stop counting
@@ -471,11 +471,7 @@ CLOUDFLARE_ATTENTION_LOG_MAX_CHARS = 12 * 1024
 # Retained chat history (encrypted) so late-joining nodes see some backlog.
 CHAT_HISTORY_RETAIN_MS = 7 * 24 * 60 * 60 * 1000  # keep the last 7 days
 CHAT_HISTORY_MAX_PER_ROOM = 500  # hard cap on retained messages per room
-# A 1 MiB attachment becomes about 1.87 MB after its file bytes and encrypted
-# envelope are each base64 encoded. Keep the row below D1's 2,000,000-byte hard
-# limit, then bound the aggregate so attachment traffic cannot grow one room
-# without limit.
-CHAT_HISTORY_MAX_BODY = 1_900_000
+CHAT_HISTORY_MAX_BODY = 3 * 1024 * 1024
 CHAT_HISTORY_MAX_BYTES_PER_ROOM = 16 * 1024 * 1024
 _CHAT_HISTORY_PRUNE_MEMO = {}
 CHAT_HISTORY_PRUNE_EVERY_STORES = 16
@@ -485,7 +481,7 @@ CHAT_HISTORY_PRUNE_EVERY_STORES = 16
 # tail instead; the encrypted archive remains retained and HTTP polling can
 # retrieve later messages incrementally.
 CHAT_HISTORY_REPLAY_MAX_MESSAGES = 64
-CHAT_HISTORY_REPLAY_MAX_BYTES = 2 * 1024 * 1024
+CHAT_HISTORY_REPLAY_MAX_BYTES = 4 * 1024 * 1024
 CHAT_HISTORY_INGRESS_WINDOW_MS = 10 * 1000
 CHAT_HISTORY_INGRESS_MAX_BYTES = 8 * 1024 * 1024
 CHAT_DIRECT_RECEIVED_REFS_MAX = 64
@@ -3532,8 +3528,6 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
         if channel_id:
             audience, channel_name = await _chat_channel_push_accounts(
                 env, channel_id)
-        elif room_key == PUBLIC_WORLD_GENERAL_ROOM_KEY:
-            channel_name = apns.APNS_WORLD_CHAT_NAME
         tokens = [
             entry for entry in await _apns_broadcast_tokens(env)
             if entry["account_bi"] != sender_bi
@@ -3546,7 +3540,6 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
     return await _apns_send_tokens(
         env, tokens, apns.APNS_CHAT_TOPIC,
         apns.chat_message_alert(
-            channel_name,
             apns.office_conversation(channel_name) if channel_id else "",
             channel_id=channel_id, ref=ref, key_version=key_version))
 
@@ -10111,13 +10104,13 @@ async def _chat_direct_message_retained(
     # count move until they reloaded. (A reader who *is* sitting in it already
     # got the message over this room's socket; the push is then redundant, and
     # notify_account_event's coalescing window absorbs it.)
-    recipient, sender = await _chat_direct_message_parties(
+    recipient = await _chat_direct_message_recipient(
         env, conversation_id, account_bi)
     if recipient:
         await notify_account_event(
             env, recipient, "direct-messages",
             _apns_module().direct_message_alert(
-                sender, conversation_id=conversation_id, ref=ref,
+                conversation_id=conversation_id, ref=ref,
                 key_version=key_version, frame=frame))
 
 
@@ -10722,13 +10715,13 @@ class _WorldCommunityRuntime:
         Payload-free, best-effort; see notify_account_event. Chat surfaces read
         their channel and conversation lists once when the page opens, so this
         is how a list that changed for somebody else's reason reaches them.
-        `started_by` names who opened a new direct conversation, so the phone
-        banner can say so.
+        `started_by` is who opened a new direct conversation; the phone banner
+        does not name them (docs/app/chat-protocol-v3.md, "Push
+        notifications").
         """
         push_alert = None
         if topic == "direct-messages":
-            push_alert = _apns_module().direct_message_alert(
-                started_by, started=True)
+            push_alert = _apns_module().direct_message_alert(started=True)
         await notify_account_event(self.env, owner, topic, push_alert)
 
     def new_id(self):

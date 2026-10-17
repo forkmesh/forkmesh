@@ -12,14 +12,12 @@ entry.py, which shares this transport.
 Every alert names its event in full. A ping carries the same headline, byline
 and body the inbox row shows ("#42 New comment" / "acme/widgets \xb7 by bob" /
 the comment text), rendered by _push_alert_item in entry.py from the row that
-was just written; the push test says it is a test; a chat or direct message
-names the channel or the sender. There is no generic "something happened"
-banner any more: a push with nothing specific to say is not sent at all (see
-alert_payload). The one thing no push can carry is the text of a chat or
-direct message, which is sealed end to end and unreadable to this Worker too —
-those alerts say who or where, and a direct message also carries its sealed
-frame. The phone decrypts it and shows the text itself, the way Signal does
-(docs/app/chat-push-previews.md).
+was just written; the push test says it is a test. A push with nothing
+specific to say is not sent at all (see alert_payload). Chat and direct
+messages are sealed end to end and unreadable to this Worker too, and their
+alerts name neither the sender nor the channel: the title is "New message"
+and the phone opens the sealed frame and fills in the sender and text itself
+(docs/app/chat-protocol-v3.md, docs/app/chat-push-previews.md).
 
 This deliberately hands Apple the text of pings. Every alert also sets
 `mutable-content`, so the bundled notification service extension
@@ -59,8 +57,9 @@ APNS_TEST_ALERT = {
 }
 # Chat and direct messages are end-to-end encrypted: neither this Worker nor
 # Apple can read the text, so the body says so instead of pretending.
+APNS_SEALED_TITLE = "New message"
 APNS_SEALED_BODY = "New message"
-APNS_WORLD_CHAT_NAME = "World chat"
+APNS_DIRECT_STARTED_TITLE = "New direct conversation"
 APNS_DIRECT_CONVERSATION_PREFIX = "direct:"
 APNS_DIRECT_ID_RE = re.compile(r"[0-9a-f]{32}")
 APNS_CHANNEL_ID_RE = re.compile(r"[0-9a-f]{32}")
@@ -308,27 +307,20 @@ def _fetch_fields(alert, ref, key_version):
     return alert
 
 
-def direct_message_alert(sender="", started=False, conversation_id="",
-                         ref="", key_version=0, frame=""):
+def direct_message_alert(started=False, conversation_id="", ref="",
+                         key_version=0, frame=""):
     """The banner for a direct message, which the relay cannot read."""
-    sender = str(sender or "").strip()
     if started:
         alert = {
-            "title": with_icon(
-                (sender + " started a direct conversation with you")
-                if sender else "New direct conversation",
-                PUSH_DIRECT_START_ICON),
+            "title": with_icon(APNS_DIRECT_STARTED_TITLE,
+                               PUSH_DIRECT_START_ICON),
             "body": "Open Chat in ForkMesh to reply.",
         }
     else:
         alert = {
-            "title": with_icon(
-                ("Direct message from " + sender) if sender
-                else "New direct message", PUSH_DIRECT_MESSAGE_ICON),
+            "title": with_icon(APNS_SEALED_TITLE, PUSH_DIRECT_MESSAGE_ICON),
             "body": APNS_SEALED_BODY,
         }
-    if sender:
-        alert["sender"] = sender
     conversation_id = str(conversation_id or "").strip().lower()
     if APNS_DIRECT_ID_RE.fullmatch(conversation_id):
         alert["conversation"] = APNS_DIRECT_CONVERSATION_PREFIX + conversation_id
@@ -344,6 +336,8 @@ def _sealed_frame(frame):
     if isinstance(frame, dict):
         envelope = frame
     else:
+        if len(str(frame or "")) > APNS_PAYLOAD_MAX_BYTES:
+            return None
         try:
             envelope = json.loads(str(frame or ""))
         except (TypeError, ValueError):
@@ -354,16 +348,11 @@ def _sealed_frame(frame):
             if key not in APNS_FRAME_RELAY_KEYS}
 
 
-def chat_message_alert(channel_name="", conversation="", channel_id="",
-                       ref="", key_version=0):
+def chat_message_alert(conversation="", channel_id="", ref="",
+                       key_version=0):
     """The banner for a channel or room message, which the relay cannot read."""
-    channel_name = str(channel_name or "").strip()
-    if channel_name and channel_name != APNS_WORLD_CHAT_NAME:
-        channel_name = "#" + channel_name.lstrip("#")
     alert = {
-        "title": with_icon(
-            ("New message in " + channel_name) if channel_name
-            else "New chat message", PUSH_CHAT_ICON),
+        "title": with_icon(APNS_SEALED_TITLE, PUSH_CHAT_ICON),
         "body": APNS_SEALED_BODY,
     }
     conversation = str(conversation or "").strip()
@@ -462,10 +451,6 @@ def alert_payload(alert, topic="", origin=""):
             sealed_frame = _sealed_frame(alert.get("frame"))
             if sealed_frame:
                 payload["frame"] = sealed_frame
-    sender = str(alert.get("sender") or "").strip().lower()
-    if sender and len(sender) <= 64 and all(
-            c.isascii() and (c.isalnum() or c in "-_.") for c in sender):
-        payload["sender"] = sender
     category = str(alert.get("category") or "").strip()
     if category:
         payload["aps"]["category"] = category[:40]
