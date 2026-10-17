@@ -194,6 +194,10 @@ struct ShellHomeSettingsForm: View {
 
     private var barSection: some View {
         Section {
+            Toggle(isOn: binding(\.hideBarIcons)) {
+                SwiftUI.Label("Hide icons in the bottom bar", systemImage: "eye.slash")
+            }
+            .accessibilityIdentifier("shell-home-hide-bar-icons")
             NavigationLink {
                 ShellBarSettingsForm(prefs: prefs)
                     .shellPageClearance()
@@ -202,7 +206,7 @@ struct ShellHomeSettingsForm: View {
             }
             .accessibilityIdentifier("shell-home-bar-settings-link")
         } footer: {
-            Text("Shape, glass, icon style and size, labels and how the selected icon is marked.")
+            Text("Icons already in the bottom bar leave Home so each one shows once; searching Home still finds them. Bottom bar sets its shape, glass, icon style and size, labels and how the selected icon is marked.")
         }
     }
 
@@ -247,7 +251,7 @@ struct HomeScreenSettingsCard: View {
                 .shellPageClearance()
         } label: {
             SettingsLinkRow(
-                icon: "grid_view_outlined", title: "Home screen", subtitle: "Icon style, sorting, categories and highlights")
+                icon: "grid_view_outlined", title: "Home screen", subtitle: "Icon style, sorting, categories, highlights and bar icons")
         }
         .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
         .accessibilityIdentifier("settings-home-screen")

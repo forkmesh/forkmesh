@@ -94,6 +94,7 @@ import com.forkmesh.nativeapp.feature.account.AccountFeature
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.projects.NoInstanceBanner
 import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
+import com.forkmesh.nativeapp.feature.account.settings.SettingsArea
 import com.forkmesh.nativeapp.feature.account.settings.rememberNowMillis
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.agents.RunnerAttentionChip
@@ -288,8 +289,8 @@ class HomeShell : Screen() {
         )
     }
 
-    private fun homeEntries(surfaces: PackageSurfaces, agentsOn: Boolean): List<ShellMenuEntry> {
-        val tabs = AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
+    private fun homeEntries(surfaces: PackageSurfaces, agentsOn: Boolean, hideBarIcons: Boolean): List<ShellMenuEntry> {
+        val tabs = if (hideBarIcons) emptyList() else AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
             if (tab == AppTab.Code) {
                 listOfNotNull(
                     ShellMenuEntry("repos", CodeButton.REPOS_LABEL, CodeButton.REPOS_ICON) { select(AppTab.Code) },
@@ -335,6 +336,7 @@ class HomeShell : Screen() {
             lastSurfaces = surfaces
         }
         val agentsOn = surfaces.agents
+        val hideBarIcons by SettingsArea.homeHidesBarIcons.collectAsState()
         val guest = Services.get<AuthService>()?.isGuest?.collectAsState()?.value == true
         val shellScope = rememberCoroutineScope()
         LaunchedEffect(Unit) {
@@ -416,7 +418,7 @@ class HomeShell : Screen() {
                 Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
                     ToolsFeature.BugReportOverlay(if (homeSelected) "home" else selectedTab.raw) {
                         if (homeSelected) {
-                            HomePage(homeEntries(surfaces, agentsOn), hubBadges(agentsSurface.activeCount), shellScope)
+                            HomePage(homeEntries(surfaces, agentsOn, hideBarIcons), hubBadges(agentsSurface.activeCount), shellScope)
                         } else {
                             TabStack(tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
                         }

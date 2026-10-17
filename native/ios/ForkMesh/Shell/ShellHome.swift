@@ -70,13 +70,13 @@ struct ShellHome: View {
     }
 
     private var shownGroups: [ShellMenuGroup] {
-        shownGroups(linked)
+        shownGroups(linked, docked: prefs.barIds(barItems))
     }
 
-    private func shownGroups(_ linked: [ShellMenuGroup]) -> [ShellMenuGroup] {
+    private func shownGroups(_ linked: [ShellMenuGroup], docked: Set<String>) -> [ShellMenuGroup] {
         ShellHome.arranged(
             ShellHome.filtered(linked, query: query), style: style, uses: prefs.uses, recent: prefs.recent,
-            searching: !trimmedQuery.isEmpty)
+            docked: docked, searching: !trimmedQuery.isEmpty)
     }
 
     private var groupInfo: [ShellHomeGroupInfo] {
@@ -108,8 +108,9 @@ struct ShellHome: View {
 
     private func makeLayout() -> ShellHomeLayout {
         let linked: [ShellMenuGroup] = self.linked
-        let shown: [ShellMenuGroup] = shownGroups(linked)
         let items: [ShellBarItem] = barItems
+        let docked: Set<String> = prefs.barIds(items)
+        let shown: [ShellMenuGroup] = shownGroups(linked, docked: docked)
         let ids: [String] = linked.flatMap { $0.items.map(\.id) }
         let uses: [String: Int] = prefs.uses
         let most: Int = ShellBarOrder.mostUses(uses, among: ids)
@@ -131,7 +132,7 @@ struct ShellHome: View {
         }
         let height: CGFloat = fittedTileHeight(shown)
         return ShellHomeLayout(
-            shown: shown, barItems: items, docked: prefs.barIds(items), heat: heat, frequent: frequent,
+            shown: shown, barItems: items, docked: docked, heat: heat, frequent: frequent,
             origins: origins, tileHeight: height, tileScale: gridTileHeight > 0 ? height / gridTileHeight : 1)
     }
 
@@ -490,7 +491,8 @@ struct ShellHome: View {
     }
 
     static func arranged(
-        _ groups: [ShellMenuGroup], style: ShellHomeStyle, uses: [String: Int], recent: [String], searching: Bool
+        _ groups: [ShellMenuGroup], style: ShellHomeStyle, uses: [String: Int], recent: [String],
+        docked: Set<String> = [], searching: Bool
     ) -> [ShellMenuGroup] {
         var byId: [String: ShellBarItem] = [:]
         for group in groups {
@@ -505,7 +507,7 @@ struct ShellHome: View {
                     ShellHomeEntry(id: item.id, title: item.title, badge: item.badge, count: item.count, active: item.active)
                 })
         }
-        return style.arranged(sections, uses: uses, recent: recent, searching: searching).map {
+        return style.arranged(sections, uses: uses, recent: recent, docked: docked, searching: searching).map {
             (section: ShellHomeArranged) -> ShellMenuGroup in
             ShellMenuGroup(id: section.id, title: section.title, items: section.ids.compactMap { byId[$0] })
         }

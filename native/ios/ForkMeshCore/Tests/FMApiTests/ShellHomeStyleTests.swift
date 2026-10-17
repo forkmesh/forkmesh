@@ -81,6 +81,25 @@ final class ShellHomeStyleTests: XCTestCase {
         XCTAssertTrue(style.hidden.isEmpty)
     }
 
+    func testBarIconsLeaveHomeByDefaultButNotASearch() {
+        var style: ShellHomeStyle = ShellHomeStyle()
+        XCTAssertTrue(style.hideBarIcons)
+        let docked: Set<String> = ["Agents", "Inbox", "Repos", "notes"]
+        let arranged: [ShellHomeArranged] = style.arranged(sections, uses: [:], recent: [], docked: docked)
+        XCTAssertEqual(arranged.map(\.id), ["workspace", "business"])
+        XCTAssertEqual(arranged[0].ids, ["tasks"])
+        XCTAssertEqual(
+            style.arranged(sections, uses: [:], recent: [], docked: docked, searching: true).map(\.ids),
+            sections.map { $0.entries.map(\.id) })
+        style.grouped = false
+        XCTAssertFalse(style.arranged(sections, uses: [:], recent: [], docked: docked)[0].ids.contains("Agents"))
+        style = ShellHomeStyle()
+        style.hideBarIcons = false
+        XCTAssertEqual(
+            style.arranged(sections, uses: [:], recent: [], docked: docked).map(\.ids), sections.map { $0.entries.map(\.id) })
+        XCTAssertFalse(style.isDefault)
+    }
+
     func testUngroupedIsOneSectionSortedAcrossEverything() {
         var style: ShellHomeStyle = ShellHomeStyle()
         style.grouped = false
@@ -113,6 +132,7 @@ final class ShellHomeStyleTests: XCTestCase {
         style.icons = .tiles
         style.across = 6
         style.highlightFrequent = false
+        style.hideBarIcons = false
         style.setShown("personal", false)
         style.save(store)
         XCTAssertEqual(ShellHomeStyle.load(store), style)
@@ -129,6 +149,7 @@ final class ShellHomeStyleTests: XCTestCase {
         XCTAssertEqual(style.across, 6)
         XCTAssertEqual(style.icons, .outline)
         XCTAssertTrue(style.grouped)
+        XCTAssertTrue(style.hideBarIcons)
         store.set("not json", forKey: ShellHomeStyle.key)
         XCTAssertEqual(ShellHomeStyle.load(store), ShellHomeStyle())
     }
