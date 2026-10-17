@@ -64,6 +64,9 @@ FAILURE_HINTS = (
      "The office Mac is off or away. Wake it, check tools/office-mac.sh --find, then run again."),
     (re.compile(r"held ~/ci/lock"),
      "Another build holds the Mac. See tools/mac_adhoc_deploy.py --status, or --unstick."),
+    (re.compile(r"via CoreSimulator spawn"),
+     "CoreSimulator on the Mac stayed wedged after the archive restarted it once. Run the "
+     "shortcut again; if it repeats, reboot the office Mac (docs/native/MAC_BUILD.md)."),
     (re.compile(r"without an IPA|^!! Export", re.M),
      "The archive built but no IPA was exported. Read the export log in the artifacts folder."),
 )
