@@ -35,7 +35,11 @@ final class DjDeck {
     var waveform: [DjWaveBar] = []
     var time: Double = 0
     var duration: Double = 0
-    var playing = false
+    var playing = false {
+        didSet { if oldValue, !playing { coast() } }
+    }
+    var coasting = false
+    var reading = false
     var advancing = false
     var cue: Double = 0
     var level: Double = 1
@@ -59,6 +63,8 @@ final class DjDeck {
     @ObservationIgnored var rateTask: Task<Void, Never>?
     @ObservationIgnored var brakeTask: Task<Void, Never>?
     @ObservationIgnored var brakeStart: CFTimeInterval = 0
+    @ObservationIgnored var spin = DjSpin()
+    @ObservationIgnored var coastTask: Task<Void, Never>?
     @ObservationIgnored let player: DjDeckPlayer
 
     init(side: DjDeckSide, host: DjPlayerHost) {
@@ -69,11 +75,32 @@ final class DjDeck {
     var loaded: Bool { !videoId.isEmpty }
     var effectiveRate: Double { rate * (1 + bend) * (1 - brake) }
     var shownBpm: Double { bpm * effectiveRate }
+    var moving: Bool { (playing || coasting) && !scratching }
 
     func position(at now: CFTimeInterval = CACurrentMediaTime()) -> Double {
         guard advancing, !scratching else { return time }
         let moved = time + (now - tickDate) * effectiveRate
         return duration > 0 ? min(duration, moved) : moved
+    }
+
+    func shown(at now: CFTimeInterval = CACurrentMediaTime()) -> Double {
+        let target = position(at: now)
+        guard moving else {
+            spin.hold(target, at: now)
+            return target
+        }
+        let goal = advancing ? effectiveRate : playing ? DjSpin.waiting * effectiveRate : 0
+        return spin.step(target: target, speed: goal, at: now)
+    }
+
+    private func coast() {
+        coasting = true
+        coastTask?.cancel()
+        coastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.coasting = false
+        }
     }
 
     func rebase(_ now: CFTimeInterval = CACurrentMediaTime()) {
@@ -288,6 +315,7 @@ final class DjStudioModel {
             deck.author = ""
             deck.artwork = nil
             deck.waveform = []
+            deck.reading = false
             deck.time = 0
             deck.duration = 0
             deck.playing = false
@@ -377,11 +405,12 @@ final class DjStudioModel {
         deck.title = title
         deck.author = author
         deck.artwork = nil
+        deck.reading = false
         if let measured = DjWaveSource.cached(id) {
             deck.waveform = measured
             analysed.insert(id)
         } else {
-            deck.waveform = DjStudio.waveform(id, count: DjWaveAccumulator.barCount)
+            deck.waveform = []
         }
         deck.time = start
         deck.tickDate = CACurrentMediaTime()
@@ -411,6 +440,7 @@ final class DjStudioModel {
         deck.author = ""
         deck.artwork = nil
         deck.waveform = []
+        deck.reading = false
         deck.time = 0
         deck.duration = 0
         deck.playing = false
@@ -548,14 +578,13 @@ final class DjStudioModel {
     private func analyse(_ deck: DjDeck, id: String, source: URL) {
         guard deck.videoId == id, !analysed.contains(id) else { return }
         analysed.insert(id)
+        deck.reading = true
         Task { [weak self, weak deck] in
             let bars = await DjWaveSource.bars(for: id, source: source)
-            guard let bars else {
-                self?.analysed.remove(id)
-                return
-            }
+            if bars == nil { self?.analysed.remove(id) }
             guard let deck, deck.videoId == id else { return }
-            deck.waveform = bars
+            deck.reading = false
+            if let bars { deck.waveform = bars }
         }
     }
 
