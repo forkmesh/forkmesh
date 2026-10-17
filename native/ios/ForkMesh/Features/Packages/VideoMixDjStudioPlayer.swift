@@ -42,6 +42,7 @@ final class DjDeckPlayer {
 final class DjPlayerHost: NSObject, WKNavigationDelegate {
     let webView: WKWebView
     var onEvent: ((DjDeckSide, DjPlayerEvent) -> Void)?
+    var onReload: (() -> Void)?
 
     private let origin: URL
     private var apiReady = false
@@ -209,6 +210,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         pending = lastLoad
         lastVolume = [:]
         webView.loadHTMLString(Self.html, baseURL: origin)
+        onReload?()
     }
 
     private static let html = """

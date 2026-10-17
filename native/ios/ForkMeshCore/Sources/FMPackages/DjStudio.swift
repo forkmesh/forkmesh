@@ -325,6 +325,8 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
     public var rate: Double = 1
     public var bpm: Double = 0
     public var loop: Bool = false
+    public var position: Double = 0
+    public var playing: Bool = false
 
     public init() {}
 
@@ -339,6 +341,8 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
         rate = DjStudio.clampRate(DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .rate)) ?? nil, 1, DjStudio.rateBounds))
         bpm = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .bpm)) ?? nil, 0, 0...250)
         loop = ((try? values.decodeIfPresent(Bool.self, forKey: .loop)) ?? nil) ?? false
+        position = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .position)) ?? nil, cue, 0...864_000)
+        playing = !videoId.isEmpty && (((try? values.decodeIfPresent(Bool.self, forKey: .playing)) ?? nil) ?? false)
     }
 }
 
@@ -394,8 +398,11 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
     public var history: [DjHistoryItem] = []
     public var queue: [DjQueueItem] = []
+    public var automix: Bool = false
 
     public init() {}
+
+    public var playing: Bool { a.playing || b.playing }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -411,6 +418,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
         let queued = ((try? values.decodeIfPresent([DjQueueEntry].self, forKey: .queue)) ?? nil) ?? []
         var ids = Set<String>()
         queue = Array(queued.compactMap(\.item).filter { ids.insert($0.id).inserted }.prefix(DjStudio.queueLimit))
+        automix = ((try? values.decodeIfPresent(Bool.self, forKey: .automix)) ?? nil) ?? false
     }
 
     public subscript(side: DjDeckSide) -> DjSavedDeck {

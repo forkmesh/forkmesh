@@ -722,6 +722,7 @@ struct HomeShell: View {
                 }
             }
             .task { await ShellSuggestions.shared.run() }
+            .task { DjStudioHub.shared.relaunch() }
             .task {
                 try? await Task.sleep(for: .seconds(2))
                 mountedTabs.insert(.agents)
