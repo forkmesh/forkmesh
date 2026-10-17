@@ -58,7 +58,8 @@ can log in as `build` on the Mac.
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
   of `native/ios/`, `codemagic.yaml`, `conformance/`, and the files outside
   them that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, `marketplace/packages/vault/tests/fixtures/`).
+  `app/src/app_runtime.py`, `marketplace/packages/vault/tests/fixtures/`,
+  `marketplace/packages/people/tests/fixtures/`).
   `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
   `tools/test_mac_adhoc_deploy.py` lists them; a new test that reads a file
   outside `native/ios/` must add it there and to `MAC_IOS_FETCH_SCRIPT` in

@@ -966,7 +966,8 @@ git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
 git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
-  '/app/src/apns.py' '/app/src/app_runtime.py' '/marketplace/packages/vault/tests/fixtures/'
+  '/app/src/apns.py' '/app/src/app_runtime.py' '/marketplace/packages/vault/tests/fixtures/' \
+  '/marketplace/packages/people/tests/fixtures/'
 attempt=1
 until git fetch -q --depth=1 --no-tags --filter=blob:none origin "$2" &&
     git -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD; do

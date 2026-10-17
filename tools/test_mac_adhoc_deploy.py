@@ -551,7 +551,8 @@ def test_the_mac_checkout_holds_every_file_the_core_tests_read():
     patterns = sparse_patterns(mac_adhoc_deploy.RELEASE.MAC_IOS_FETCH_SCRIPT)
     for path in ["native/ios/ForkMeshCore/Package.swift", "codemagic.yaml", "app/src/apns.py",
                  "app/src/app_runtime.py", "conformance/agent-transcript/v1/transcript.txt",
-                 "marketplace/packages/vault/tests/fixtures/interop-from-js.json"]:
+                 "marketplace/packages/vault/tests/fixtures/interop-from-js.json",
+                 "marketplace/packages/people/tests/fixtures/rings.json"]:
         assert (ROOT / path).is_file(), path
         assert any(pattern == f"/{path}" or (pattern.endswith("/") and f"/{path}".startswith(pattern))
                    for pattern in patterns), path
