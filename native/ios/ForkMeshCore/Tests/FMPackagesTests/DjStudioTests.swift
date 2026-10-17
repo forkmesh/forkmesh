@@ -79,23 +79,68 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjStudio.trackedPosition(predicted: 10, reported: .nan, continuous: true), 10)
     }
 
-    func testMiniBarsFollowThePlayhead() {
-        let bars = DjStudio.waveform("dQw4w9WgXcQ", count: 1200)
-        let early = DjStudio.miniBars(bars, time: 30, duration: 200)
-        XCTAssertEqual(early.count, 7)
-        XCTAssertEqual(early[3], bars[180])
-        XCTAssertNotEqual(early, DjStudio.miniBars(bars, time: 90, duration: 200))
-        XCTAssertEqual(DjStudio.miniBars(bars, time: 0, duration: 200)[0].level, 0.08)
-        XCTAssertEqual(DjStudio.miniBars([], time: 5, duration: 0).count, 7)
+    func testAmplitudeFollowsThePlayheadSmoothly() {
+        let bars = [DjWaveBar(level: 0.2, hue: 0.1), DjWaveBar(level: 1, hue: 0.5), DjWaveBar(level: 0.4, hue: 0.9)]
+        XCTAssertEqual(DjStudio.amplitude(bars, time: 50, duration: 300), bars[0])
+        XCTAssertEqual(DjStudio.amplitude(bars, time: 150, duration: 300), bars[1])
+        let between = DjStudio.amplitude(bars, time: 100, duration: 300)
+        XCTAssertEqual(between.level, 0.6, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.amplitude(bars, time: 300, duration: 300).level, 0.4, accuracy: 1e-9)
+        XCTAssertEqual(DjStudio.amplitude(bars, time: 301, duration: 300).level, 0)
+        XCTAssertEqual(DjStudio.amplitude([], time: 5, duration: 10).level, 0)
+        XCTAssertEqual(DjStudio.amplitude(bars, time: .nan, duration: 10).level, 0)
     }
 
-    func testWaveformIsStablePerVideo() {
-        let first = DjStudio.waveform("dQw4w9WgXcQ", count: 200)
-        XCTAssertEqual(first.count, 200)
-        XCTAssertEqual(first, DjStudio.waveform("dQw4w9WgXcQ", count: 200))
-        XCTAssertNotEqual(first, DjStudio.waveform("9bZkp7q19f0", count: 200))
-        XCTAssertTrue(first.allSatisfy { (0...1).contains($0.level) && (0..<1).contains($0.hue) })
-        XCTAssertTrue(DjStudio.waveform("", count: 200).isEmpty)
+    func testSpinRampsUpAndDownWithoutJumps() {
+        var spin = DjSpin()
+        XCTAssertEqual(spin.step(target: 10, speed: 1, at: 0), 10)
+        spin.hold(10, at: 0)
+        var now = 0.0
+        var shown = 10.0
+        var target = 10.0
+        for frame in 1...30 {
+            now += 1.0 / 60
+            if frame > 6 { target += 1.0 / 60 }
+            let next = spin.step(target: target, speed: frame > 6 ? 1 : DjSpin.waiting, at: now)
+            XCTAssertGreaterThanOrEqual(next, shown)
+            XCTAssertLessThan(next - shown, 0.03)
+            shown = next
+        }
+        XCTAssertEqual(shown, target, accuracy: 0.03)
+        for _ in 1...60 {
+            now += 1.0 / 60
+            let next = spin.step(target: target, speed: 0, at: now)
+            XCTAssertLessThan(abs(next - shown), 0.03)
+            shown = next
+        }
+        XCTAssertEqual(shown, target, accuracy: 0.01)
+        spin.hold(target, at: now)
+        XCTAssertEqual(spin.step(target: target, speed: 1, at: now + 5), target)
+        XCTAssertGreaterThan(spin.step(target: target, speed: 1, at: now + 5.016), target)
+        XCTAssertEqual(spin.step(target: 42, speed: 1, at: now + 5.03), 42)
+        XCTAssertEqual(spin.step(target: 42, speed: 1, at: now + 5.03), 42)
+        XCTAssertEqual(spin.step(target: .nan, speed: 1, at: now + 5.05), 42)
+    }
+
+    func testWaveBarsFollowTheSongLength() {
+        XCTAssertEqual(DjWaveAccumulator.bars(seconds: 30), DjWaveAccumulator.barCount)
+        XCTAssertEqual(DjWaveAccumulator.bars(seconds: 240), 4800)
+        XCTAssertEqual(DjWaveAccumulator.bars(seconds: 7200), DjWaveAccumulator.mostBars)
+        XCTAssertEqual(DjWaveAccumulator.bars(seconds: .nan), DjWaveAccumulator.barCount)
+    }
+
+    func testWaveRangesSplitTheStream() throws {
+        let url = try XCTUnwrap(URL(string: "https://rr1.googlevideo.com/videoplayback?itag=18&clen=5000001&dur=212.4"))
+        XCTAssertEqual(DjWaveRanges.declaredLength(url), 5_000_001)
+        XCTAssertNil(DjWaveRanges.declaredLength(try XCTUnwrap(URL(string: "https://example.com/a.mp4"))))
+        XCTAssertEqual(DjWaveRanges.total(contentRange: "bytes 0-2097151/5000001"), 5_000_001)
+        XCTAssertNil(DjWaveRanges.total(contentRange: "bytes 0-10/*"))
+        XCTAssertNil(DjWaveRanges.total(contentRange: nil))
+        let spans = DjWaveRanges.spans(total: 5_000_001, from: 2_097_152)
+        XCTAssertEqual(spans, [2_097_152...4_194_303, 4_194_304...5_000_000])
+        XCTAssertEqual(spans.map(\.count).reduce(0, +), 5_000_001 - 2_097_152)
+        XCTAssertTrue(DjWaveRanges.spans(total: 10, from: 10).isEmpty)
+        XCTAssertEqual(DjWaveRanges.header(0...2_097_151), "bytes=0-2097151")
     }
 
     func testTapTempo() {
