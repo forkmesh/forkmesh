@@ -253,6 +253,12 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
   mail account and saves the connection. Errors: `zoho_code_incomplete`,
   `zoho_account_missing`, `zoho_code_rejected` (with `zohoError`).
 - The in-app **Zoho setup guide** covers both paths.
+- Scopes: `ZohoMail.messages.READ`, `ZohoMail.messages.CREATE` (1.36.0, so
+  **Send AI email** can send from the mailbox), `ZohoMail.folders.READ` and
+  `ZohoMail.accounts.READ`. A connection made before 1.36.0 holds only the
+  read scopes: reconnect it (**Reconnect with Zoho** in settings, or a new
+  Self Client code with all four scopes) before automated email can go
+  through Zoho.
 
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
@@ -405,11 +411,34 @@ dialog names the recipient and the link first.
   agent (Claude Code or Codex) for a `Subject:` line and body and posts them
   back as `{subject, text, model}`; the same checks apply. The web says the
   host has no model. `preview: true` returns the draft without sending.
-- **Sent** through `runtime.send_mailtrap` with category `CRM automated
-  outreach` and `forkmesh_crm_send_id`, so Mailtrap's own delivery, open and
-  click events also reach the row. The contact's last-contacted date moves,
-  `contact.emailed` is recorded, and the usual tracked-email celebration and
-  "Automated outreach email sent" team ping go out.
+- **Sent through Zoho Mail when the organization has it connected** (1.36.0).
+  Before 1.36.0 every automated email went out through `runtime.send_mailtrap`
+  (the server's Mailtrap key, from the outreach sender), so it never showed in
+  the team's Zoho Sent folder; the Zoho connection could only read mail. Now
+  `_zoho_send` refreshes the access token, reads the account
+  (`GET /api/accounts/<id>`) and posts the tracked HTML to
+  `POST /api/accounts/<id>/messages`, so Zoho files it in Sent like any mail
+  written there. The sender is the outreach sender when Zoho lists it among
+  the account's addresses (`sendMailDetails`, `emailAddress`), else the
+  mailbox's primary address. The row is stored as `transport='external'`,
+  status `accepted`, provider `zoho`, `tracked: true`, with Zoho's message id
+  as `external_id`, so the next **Sync Zoho Mail** finds it already linked
+  instead of logging the message a second time. The three-day guard and the
+  learning history count these rows with the Mailtrap ones (`transport =
+  'mailtrap' OR status <> 'external'`; learning keeps only tracked rows).
+  A connected Zoho never falls back to Mailtrap: a token without the send
+  scope answers `409 zoho_send_not_allowed` asking for a reconnect, a one-click
+  connection whose host Zoho app is gone `409 send_failed`, any other Zoho
+  refusal `502 send_failed`; both leave a `failed` row and do not touch
+  the contact. The response carries `via` (`zoho` or `mailtrap`) and the
+  `fromEmail` used.
+- **Without Zoho** it is sent through `runtime.send_mailtrap` with category
+  `CRM automated outreach` and `forkmesh_crm_send_id`, so Mailtrap's own
+  delivery, open and click events also reach the row.
+- Either way the contact's last-contacted date moves, `contact.emailed` is
+  recorded, and the usual tracked-email celebration and "Automated outreach
+  email sent" team ping go out. Founders outreach (`/outreach/send`) and
+  one-off sends (`/emails/send`) still use Mailtrap.
 
 ### Open and click tracking
 

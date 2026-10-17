@@ -93,7 +93,7 @@ def test_web_zoho_guide_has_the_redirect_secrets_and_both_setups():
     assert all(name in guide for name in SECRETS)
     assert "Server-based Applications" in guide and "Multi-DC" in guide
     assert "optional_secrets" in guide and "tools/next_vault.py sync --execute" in guide
-    assert "Self Client" in guide and "ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoMail.accounts.READ" in guide
+    assert "Self Client" in guide and "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ" in guide
     assert "data-crm-zoho-guide data-crm-requires-install" in WEB_VIEW
     assert f'const CRM_ZOHO_CALLBACK = "{CALLBACK}";' in WEB_SCRIPT
     assert "else if (state.crmView.canManageSettings) openCrmZohoGuide();" in WEB_SCRIPT

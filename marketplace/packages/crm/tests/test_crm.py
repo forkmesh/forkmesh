@@ -648,7 +648,8 @@ def test_zoho_one_click_connects_with_the_platform_app_and_syncs():
     assert query["redirect_uri"] == ["https://app.example.com/api/crm/-/zoho/callback"]
     assert query["access_type"] == ["offline"] and query["prompt"] == ["consent"]
     assert set(query["scope"][0].split(",")) == {
-        "ZohoMail.messages.READ", "ZohoMail.folders.READ", "ZohoMail.accounts.READ"}
+        "ZohoMail.messages.READ", "ZohoMail.messages.CREATE", "ZohoMail.folders.READ",
+        "ZohoMail.accounts.READ"}
     state = _zoho_state(started["data"]["authorizationUrl"])
     assert "platform-secret" not in started["data"]["authorizationUrl"]
 

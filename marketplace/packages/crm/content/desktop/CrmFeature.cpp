@@ -601,6 +601,9 @@ QString autoEmailError(const QString &code, const QString &fallback)
          QStringLiteral("the draft had placeholders or links we could not check. Try again.")},
         {QStringLiteral("rate_limited"), QStringLiteral("the AI model is busy. Try again in a minute.")},
         {QStringLiteral("send_failed"), QStringLiteral("the email provider refused the send.")},
+        {QStringLiteral("zoho_send_not_allowed"),
+         QStringLiteral("Zoho Mail did not let ForkMesh send from your mailbox. Reconnect Zoho "
+                        "Mail in the CRM settings so it may send as well as read.")},
     };
     const QString message = known.value(code);
     if (!message.isEmpty())
@@ -2936,7 +2939,7 @@ void CrmFeature::updateZohoAction()
             ? QStringLiteral("Refresh the organization's shared Zoho Mail boxes")
             : m_canManageSettings && m_settings.value(QStringLiteral("zoho")).toObject()
                                          .value(QStringLiteral("oneClick")).toBool()
-            ? QStringLiteral("Sign in to Zoho and allow read access to the organization's mail")
+            ? QStringLiteral("Sign in to Zoho and allow reading the organization's mail and sending CRM emails")
             : m_canManageSettings
             ? QStringLiteral("Set up the Zoho OAuth client: opens the step-by-step guide")
             : QStringLiteral("Ask an owner or admin to connect Zoho Mail"));
@@ -10642,10 +10645,15 @@ void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
             this, QStringLiteral("Send AI email"),
             QStringLiteral("Write and send an email to %1 <%2> now?\n\nA model writes it from "
                            "their record and from what our past emails got opened or clicked "
-                           "for, with %3. It goes out straight away from the outreach sender.")
+                           "for, with %3. It goes out straight away from %4.")
                 .arg(contactLabel(contact), email,
                      investor ? QStringLiteral("their tracked deck link")
-                              : QStringLiteral("your referral link")));
+                              : QStringLiteral("your referral link"),
+                     m_settings.value(QStringLiteral("zoho")).toObject()
+                             .value(QStringLiteral("connected")).toBool()
+                         ? QStringLiteral("your connected Zoho Mail mailbox, so it lands in "
+                                          "its Sent folder")
+                         : QStringLiteral("the outreach sender")));
         if (answer != QMessageBox::Yes)
             return;
     }
@@ -10667,9 +10675,14 @@ void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
         if (ok) {
             const QJsonObject learning = payload.value(QStringLiteral("learning")).toObject();
             const int past = learning.value(QStringLiteral("sent")).toInt();
+            const QString via = text(payload, "via") == QLatin1String("zoho")
+                ? QStringLiteral(" from %1 through Zoho Mail")
+                      .arg(text(payload, "fromEmail").isEmpty() ? QStringLiteral("your mailbox")
+                                                                : text(payload, "fromEmail"))
+                : QString();
             setStatus(QString::fromUtf8("Sent \xE2\x80\x9C%1\xE2\x80\x9D to %2. You get a ping when "
                                         "they open it or click.%3")
-                          .arg(text(payload, "subject"), label,
+                          .arg(text(payload, "subject"), label + via,
                                past ? QStringLiteral(" Learned from %1 past emails (%2% opened, "
                                                      "%3% clicked).")
                                           .arg(past)
@@ -11408,7 +11421,7 @@ constexpr char kNoteDraftMark[] = "DRAFT, not sent.";
 constexpr char kZohoApiConsole[] = "https://api-console.zoho.com/";
 constexpr char kZohoCallbackUri[] = "https://app.forkmesh.com/api/crm/-/zoho/callback";
 constexpr char kZohoScopes[] =
-    "ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoMail.accounts.READ";
+    "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ";
 
 qsizetype noteDraftAt(const QString &notes)
 {
