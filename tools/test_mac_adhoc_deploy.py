@@ -148,6 +148,17 @@ def test_a_failed_fetch_names_the_git_error_and_a_fix(monkeypatch):
     assert "fetch the commit" in mac_adhoc_deploy.failure_hint(timeline.cause(error))
 
 
+
+def test_a_wedged_simulator_service_names_a_fix(monkeypatch):
+    timeline = fresh_timeline(monkeypatch)
+    timeline.begin("Build on the office Mac")
+    timeline.note("/Users/build/ci/tree/native/ios/ForkMeshWatch/Assets.xcassets: error: Failed to "
+                  "launch AssetCatalogSimulatorAgent via CoreSimulator spawn")
+    timeline.end(ok=False)
+    assert timeline.cause() == ["native/ios/ForkMeshWatch/Assets.xcassets: error: Failed to "
+                                "launch AssetCatalogSimulatorAgent via CoreSimulator spawn"]
+    assert "reboot the office Mac" in mac_adhoc_deploy.failure_hint(timeline.cause())
+
 def test_the_summary_times_every_phase_and_step(monkeypatch):
     timeline = fresh_timeline(monkeypatch, [0, 0, 65, 65, 765, 800])
     timeline.begin("Find the office Mac")

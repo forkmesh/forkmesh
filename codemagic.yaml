@@ -260,15 +260,10 @@ definitions:
           cache=(COMPILATION_CACHE_ENABLE_CACHING=YES)
           echo "Compilation cache on: unchanged modules come from $HOME/Library/Developer/Xcode/DerivedData/CompilationCache.noindex."
         fi
+        key=""
         if [ "${FORKMESH_NATIVE_SIGNING:-xcode}" = "manual" ]; then
           echo "Manual signing: unsigned archive, entitlements embedded next."
-          status=0
-          xcodebuild archive \
-            -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Release \
-            -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -destination "generic/platform=iOS" \
-            -skipPackagePluginValidation -skipMacroValidation \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" "${cache[@]}" \
-            > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
+          signing=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="")
         else
           # The key lives only for this command: a 0600 temp file, removed
           # on exit whatever happens.
@@ -276,15 +271,38 @@ definitions:
           trap 'rm -f "$key"' EXIT
           chmod 600 "$key"
           printf '%b\n' "$ASC_API_KEY_P8" > "$key"
+          signing=(-allowProvisioningUpdates
+                   -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+                   CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=742ZANCB57 FORKMESH_APP_ENTITLEMENTS=Debug)
+        fi
+        for attempt in 1 2; do
           status=0
           xcodebuild archive \
             -project ForkMesh.xcodeproj -scheme ForkMesh -configuration Release \
             -archivePath "$CM_BUILD_DIR/forkmesh-native.xcarchive" -destination "generic/platform=iOS" \
             -skipPackagePluginValidation -skipMacroValidation \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=742ZANCB57 FORKMESH_APP_ENTITLEMENTS=Debug "${cache[@]}" \
+            "${signing[@]}" "${cache[@]}" \
             > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
+          if [ "$status" = "0" ] || [ "$attempt" = "2" ] || ! grep -q "via CoreSimulator spawn" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
+            break
+          fi
+          echo "CoreSimulator could not spawn a helper; remounting the simulator runtimes, restarting CoreSimulatorService and archiving again."
+          grep -m 1 -oE "F_ADDFILESIGS_RETURN\) failed with errno=[0-9]+ in [^']*'[^']*'" "$CM_BUILD_DIR/xcodebuild-archive.log" || true
+          mounted="$(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true)"
+          xcrun simctl shutdown all >/dev/null 2>&1 || true
+          for runtime in $(xcrun simctl runtime list 2>/dev/null | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}'); do
+            xcrun simctl runtime unmount "$runtime" >/dev/null 2>&1 || true
+          done
+          killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1 || true
+          xcrun simctl runtime scan-and-mount >/dev/null 2>&1 || true
+          for wait in $(seq 1 30); do
+            xcrun simctl list runtimes >/dev/null 2>&1 || true
+            [ "$(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true)" -ge "$mounted" ] && break
+            sleep 2
+          done
+          echo "Simulator runtimes mounted again: $(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true) of $mounted."
+        done
+        if [ -n "$key" ]; then
           # What automatic signing did about identifiers, groups and profiles.
           grep -iE "provisioning|app group|application-groups|registered|certificate" \
             "$CM_BUILD_DIR/xcodebuild-archive.log" | grep -v "^ *export " | sort -u | head -n 40 || true
