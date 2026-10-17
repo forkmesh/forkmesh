@@ -52,10 +52,11 @@ struct ShellHomeIcon: View {
     let labelSize: CGFloat
     let showsCounts: Bool
     let heat: Double
+    let updated: Bool
 
     init(
         item: ShellBarItem, style: ShellHomeIconStyle, iconSize: CGFloat, labelSize: CGFloat, showsCounts: Bool = true,
-        heat: Double = 0
+        heat: Double = 0, updated: Bool = false
     ) {
         self.item = ShellHomeIconFace(item)
         self.style = style
@@ -63,6 +64,7 @@ struct ShellHomeIcon: View {
         self.labelSize = labelSize
         self.showsCounts = showsCounts
         self.heat = heat
+        self.updated = updated
     }
 
     static let boxRatio: CGFloat = 1.75
@@ -81,6 +83,7 @@ struct ShellHomeIcon: View {
             glyphBox
                 .overlay(alignment: .topTrailing) { countAnchor }
                 .overlay(alignment: .topLeading) { liveAnchor }
+                .overlay(alignment: .bottomTrailing) { updateAnchor }
             Text(item.title)
                 .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
                 .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
@@ -197,6 +200,21 @@ struct ShellHomeIcon: View {
             .accessibilityHidden(true)
     }
 
+    private var updateInset: CGFloat {
+        tiled ? corner * 0.3 : (box - iconSize) / 2
+    }
+
+    @ViewBuilder private var updateAnchor: some View {
+        if updated {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .overlay { ShellHomeUpdateDot() }
+                .offset(x: -updateInset, y: -updateInset)
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityHidden(true)
+        }
+    }
+
     @ViewBuilder private var liveAnchor: some View {
         if item.live > 0 {
             Color.clear
@@ -242,6 +260,21 @@ struct ShellHomeCountMark: View {
             }
             .padding(1.5)
             .background(Capsule().fill(fm.bgBase))
+            .fixedSize()
+    }
+}
+
+struct ShellHomeUpdateDot: View {
+    @Environment(\.fmPalette) var fm
+
+    static let size: CGFloat = 8
+
+    var body: some View {
+        Circle()
+            .fill(fm.accent)
+            .frame(width: ShellHomeUpdateDot.size, height: ShellHomeUpdateDot.size)
+            .padding(1.5)
+            .background(Circle().fill(fm.bgBase))
             .fixedSize()
     }
 }

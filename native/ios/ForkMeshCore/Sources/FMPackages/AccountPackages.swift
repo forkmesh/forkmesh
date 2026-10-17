@@ -228,6 +228,7 @@ public final class AccountPackagesStore {
     nonisolated public static let catalogKey = "packages/account/catalog"
     nonisolated public static let monitorsKey = "packages/status-page/monitors"
     nonisolated public static let projectInstallsKey = "packages/project-installs"
+    nonisolated public static let versionsKey = "packages/versions"
     nonisolated public static let defaultMonitorLimit = 20
     nonisolated public static let defaultRefreshMinutes = 15
 
@@ -240,6 +241,7 @@ public final class AccountPackagesStore {
     public private(set) var errorText = ""
     public private(set) var monitorError = ""
     public private(set) var projectRevision = 0
+    public private(set) var updated: Set<String> = []
 
     @ObservationIgnored public let client: PackagesClient
     @ObservationIgnored private let prefs: KeyValueStore
@@ -249,6 +251,8 @@ public final class AccountPackagesStore {
     @ObservationIgnored private let starterPack: () -> StarterPack
     @ObservationIgnored private var choiceCache: (namespace: String, values: [String: Bool])?
     @ObservationIgnored private var catalogLoaded = false
+    @ObservationIgnored private var seenVersions: [String: String] = [:]
+    @ObservationIgnored private var latestVersions: [String: String] = [:]
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored public var onChange: (() -> Void)?
 
@@ -269,6 +273,10 @@ public final class AccountPackagesStore {
             .compactMap(AccountPackageInfo.init(json:))
         monitors = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.monitorsKey) ?? "").maps("monitors")
             .compactMap(StatusMonitor.init(json:))
+        let versions = JSON.parseObject(prefs.string(forKey: AccountPackagesStore.versionsKey) ?? "")
+        seenVersions = AccountPackagesStore.versionMap(versions.obj("seen"))
+        latestVersions = AccountPackagesStore.versionMap(versions.obj("latest"))
+        updated = AccountPackagesStore.changed(seen: seenVersions, latest: latestVersions)
     }
 
     public func info(_ id: String) -> AccountPackageInfo? { catalog.first { $0.id == id } }
@@ -444,8 +452,62 @@ public final class AccountPackagesStore {
         return found.filter { !isInstalled($0) }.map { info($0) ?? AccountPackageInfo(id: $0) }
     }
 
+    public func isUpdated(_ id: String) -> Bool { updated.contains(id) }
+
+    public func isUpdated(hubItem id: String) -> Bool {
+        PackageRoutes.packageId(forHubItem: id).map { updated.contains($0) } ?? false
+    }
+
+    public func markViewed(_ id: String) {
+        guard let version = latestVersions[id], seenVersions[id] != version else { return }
+        seenVersions[id] = version
+        saveVersions()
+    }
+
+    public func markViewed(hubItem id: String) {
+        if let package = PackageRoutes.packageId(forHubItem: id) { markViewed(package) }
+    }
+
+    private func adoptVersions(_ packages: [MarketPackage]) {
+        for package in packages where !package.version.isEmpty {
+            latestVersions[package.id] = package.version
+            if seenVersions[package.id] == nil { seenVersions[package.id] = package.version }
+        }
+        saveVersions()
+    }
+
+    private func saveVersions() {
+        let saved: JSONObject = [
+            "seen": .object(AccountPackagesStore.versionJSON(seenVersions)),
+            "latest": .object(AccountPackagesStore.versionJSON(latestVersions)),
+        ]
+        prefs.set(JSON.encode(saved), forKey: AccountPackagesStore.versionsKey)
+        let next = AccountPackagesStore.changed(seen: seenVersions, latest: latestVersions)
+        if next != updated { updated = next }
+    }
+
+    nonisolated static func versionMap(_ json: JSONObject) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, value) in json where PackagesText.isPackageId(key) {
+            if let version = value.stringValue, !version.isEmpty { out[key] = version }
+        }
+        return out
+    }
+
+    nonisolated static func versionJSON(_ versions: [String: String]) -> JSONObject {
+        JSONObject(versions.keys.sorted().map { (id: String) -> (String, JSONValue) in (id, .string(versions[id] ?? "")) })
+    }
+
+    nonisolated static func changed(seen: [String: String], latest: [String: String]) -> Set<String> {
+        Set(latest.compactMap { (id: String, version: String) -> String? in
+            guard let viewed = seen[id], viewed != version else { return nil }
+            return id
+        })
+    }
+
     public func adoptCatalog(_ packages: [MarketPackage]) {
         guard !packages.isEmpty else { return }
+        adoptVersions(packages)
         catalog = packages.filter(\.accountSync).map(AccountPackageInfo.init(package:))
         catalogLoaded = true
         let saved: JSONObject = ["packages": .array(catalog.map { .object($0.json) })]
@@ -473,7 +535,10 @@ public final class AccountPackagesStore {
     public func install(_ id: String) async -> [String]? {
         let brought = ownsInstalls ? [id] + missingDependencies(of: id).map(\.id) : []
         let changed = await change(id) { try await self.client.installForAccount(id) }
-        if changed != nil { choose(brought, installed: true) }
+        if changed != nil {
+            choose(brought, installed: true)
+            for package in brought + [id] { markViewed(package) }
+        }
         return changed
     }
 
