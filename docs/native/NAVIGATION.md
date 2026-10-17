@@ -133,6 +133,15 @@ destination, in sections, with counts and activity:
   `TimelineView`s. The operator asked for the accent pills and the synced
   pulse on 2026-10-15.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
+- **Update dot.** A plugin tile whose Market package changed version since
+  the user last opened it shows a small accent dot at the icon's bottom right
+  (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
+  keeps the catalog version and the last viewed version of each package under
+  `packages/versions` on the device; the first catalog seen for a package is
+  its baseline, so installs and first launches show no dot. Opening the plugin
+  clears it: a Home pick (`markViewed(hubItem:)`), any route or tab
+  that belongs to the package (`PackageGate.packageId(for:)`), its Market page,
+  or installing it. The operator asked for the dot on 2026-10-16.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
