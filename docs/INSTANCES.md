@@ -19,6 +19,18 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
+  three surface families (Slate, the ForkMesh default, Zinc and Stone), a
+  dark/light preview switch and Shuffle, over a live mock of a repository
+  page drawn with the same tokens `instance_theme.py` accepts. "Customize
+  every colour" edits all 26 tokens for the previewed mode. Untouched, the
+  page sends `theme: ""` so the instance keeps the ForkMesh colours; a preset
+  loaded from a settings file is sent by name until edited; anything else is
+  sent as the full `{"dark": {...}, "light": {...}}` object (about 1.2 KB).
+  The browser only builds the colours: the launch API cleans them with
+  `instance_theme.clean`, the installer checks their shape, and
+  `instance-bootstrap` writes the `instance_settings` row on the server, so
+  the choice lives only in the instance's own database.
 - Secret fields are cleared after sending and on `pagehide`; nothing is kept
   in browser storage. The page polls the launch every second, keeps the
   launch id in the URL, and on failure refills non-secret fields from the
