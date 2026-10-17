@@ -13411,7 +13411,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "83509a81a8e93dafa25a304813ccf5c2565ec5a74b82d932773e741acc242305"
+    "10fa5453dc8a96ce2e6ddaaf856cad1eb790120ee6e9218b92c067248b100bf0"
 )
 
 
@@ -54243,7 +54243,8 @@ class ForkMeshNoteRoom(DurableObject):
             except Exception:
                 return json_response({"error": "invalid_event"}, status=400)
             if not isinstance(frame, dict) or frame.get("type") not in (
-                    "note-updated", "note-deleted", "access-changed"):
+                    "note-updated", "note-deleted", "access-changed",
+                    "note-activity"):
                 return json_response({"error": "invalid_event"}, status=400)
             payload = json.dumps(frame, separators=(",", ":"))
             for peer in self._peers():

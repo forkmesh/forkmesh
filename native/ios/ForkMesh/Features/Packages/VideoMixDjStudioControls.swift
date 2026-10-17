@@ -225,7 +225,7 @@ struct DjWaveform: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.moving)) { _ in
+            TimelineView(.animation(paused: !deck.moving)) { _ in
                 let time = deck.shown() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
                 let bars = deck.waveform
                 let duration = deck.duration
@@ -742,60 +742,50 @@ struct DjCrossfader: View {
     }
 }
 
-struct DjAutomixTab: View {
+struct DjAutomixButton: View {
     let model: DjStudioModel
     let u: CGFloat
-    var inset: CGFloat = 26
 
     var body: some View {
+        let on = model.automixOn
+        let height = 28 * u
         Button {
             DjTheme.tick()
             model.automix()
         } label: {
             HStack(spacing: 6 * u) {
-                Circle()
-                    .fill(model.automixOn ? DjTheme.active : Color.white.opacity(0.18))
-                    .frame(width: 8 * u, height: 8 * u)
-                    .shadow(color: DjTheme.active.opacity(model.automixOn ? 0.9 : 0), radius: 4 * u)
-                    .frame(width: 18 * u, height: 14 * u)
-                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 2 * u))
+                Image(systemName: model.automixing ? "arrow.left.arrow.right" : "shuffle")
+                    .font(.system(size: 12 * u, weight: .bold))
+                    .frame(width: 14 * u)
                 Text("AUTOMIX")
                     .font(.system(size: 12 * u, weight: .bold))
-                    .foregroundStyle(model.automixOn || model.automixing ? DjTheme.active : DjTheme.ink)
+                    .tracking(0.6 * u)
             }
-            .padding(.horizontal, inset * u)
-            .frame(height: 30 * u)
-            .background(DjTabShape().fill(DjTheme.rgb(0x2A2C31)))
-            .overlay(DjTabShape().stroke(model.automixOn ? DjTheme.active.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1))
+            .foregroundStyle(on ? DjTheme.rgb(0x08172A) : DjTheme.ink)
+            .padding(.horizontal, 14 * u)
+            .frame(height: height)
+            .background {
+                Capsule()
+                    .fill(on ? AnyShapeStyle(DjTheme.active) : AnyShapeStyle(DjTheme.control))
+                    .shadow(color: DjTheme.active.opacity(on ? 0.65 : 0), radius: 7 * u)
+            }
+            .overlay {
+                Capsule().strokeBorder(on ? Color.white.opacity(0.35) : DjTheme.active.opacity(0.55), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(DjPressStyle())
         .contextMenu {
             Button(model.automixing ? "Stop the Fade" : "Mix to the Other Deck Now", systemImage: "arrow.left.arrow.right") { model.mixNow() }
         }
-        .animation(.easeOut(duration: 0.2), value: model.automixOn)
+        .animation(.easeOut(duration: 0.2), value: on)
         .accessibilityLabel("Automix")
-        .accessibilityValue(model.automixOn ? "On" : "Off")
-        .accessibilityHint("When on, queued songs play one after another with an eight-second crossfade")
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityHint("When on, queued songs, then songs you have played, play one after another with an eight-second crossfade")
         .accessibilityAction(named: "Mix to the other deck now") { model.mixNow() }
-    }
-}
-
-struct DjTabShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let slant = rect.height * 0.9
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addCurve(
-            to: CGPoint(x: rect.minX + slant, y: rect.minY),
-            control1: CGPoint(x: rect.minX + slant * 0.5, y: rect.maxY),
-            control2: CGPoint(x: rect.minX + slant * 0.45, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - slant, y: rect.minY))
-        path.addCurve(
-            to: CGPoint(x: rect.maxX, y: rect.maxY),
-            control1: CGPoint(x: rect.maxX - slant * 0.45, y: rect.minY),
-            control2: CGPoint(x: rect.maxX - slant * 0.5, y: rect.maxY))
-        path.closeSubpath()
-        return path
     }
 }
 

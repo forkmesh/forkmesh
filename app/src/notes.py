@@ -5,6 +5,7 @@ account sessions, encryption and Durable Objects).  This module keeps the API
 contract and authorization rules independently testable.
 """
 
+import json
 import re
 
 
@@ -23,6 +24,10 @@ ROLES = frozenset({"viewer", "editor"})
 MAX_SUGGESTIONS = 8
 MAX_QUERY = 63
 MAX_SEARCH = 200
+MAX_EVENTS = 500
+MAX_ACTIVITY = 200
+VIEW_WINDOW_MS = 30 * 60 * 1000
+CLIENT_EVENTS = frozenset({"view", "copy-link", "export", "task", "issue"})
 
 
 def _response(runtime, payload, status=200, allow=""):
@@ -50,7 +55,7 @@ def _route(path):
     if clean == PREFIX:
         return "collection", "", ""
     match = re.fullmatch(
-        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|ws))?", clean)
+        r"/api/notes/([0-9a-f]{32})(?:/(versions|shares|links|activity|ws))?", clean)
     if not match:
         return None
     return "note", match.group(1), match.group(2) or ""
@@ -106,19 +111,75 @@ async def _shares(runtime, note_id):
     } for row in rows or []]
 
 
-def _counts(row):
+def _counts(row, activity=None):
+    row, activity = row or {}, activity or {}
+    web_views = int(row.get("reads") or 0)
+    web_readers = int(row.get("readers") or 0)
+    member_views = int(activity.get("views") or 0)
     return {
-        "views": int((row or {}).get("reads") or 0),
-        "readers": int((row or {}).get("readers") or 0),
-        "lastViewedAt": int((row or {}).get("last_at") or 0),
+        "views": web_views + member_views,
+        "readers": web_readers + int(activity.get("readers") or 0),
+        "lastViewedAt": max(int(row.get("last_at") or 0),
+                            int(activity.get("last_view_at") or 0)),
+        "webViews": web_views,
+        "webReaders": web_readers,
+        "webLastViewedAt": int(row.get("last_at") or 0),
+        "actions": int(activity.get("actions") or 0),
     }
 
 
-async def _views(runtime, note_id):
-    return _counts(await runtime.d1_first(
+ACTIVITY_COUNTS = (
+    "COALESCE(SUM(CASE WHEN kind='view' THEN hits ELSE 0 END),0) AS views,"
+    "COUNT(DISTINCT CASE WHEN kind='view' THEN actor_bi END) AS readers,"
+    "COALESCE(MAX(CASE WHEN kind='view' THEN last_at END),0) AS last_view_at,"
+    "COALESCE(SUM(CASE WHEN kind<>'view' THEN 1 ELSE 0 END),0) AS actions "
+    "FROM note_events")
+
+
+async def _views(runtime, note_id, public=True):
+    web = await runtime.d1_first(
         "SELECT COUNT(*) AS readers,COALESCE(SUM(hits),0) AS reads,"
         "COALESCE(MAX(last_at),0) AS last_at FROM note_views WHERE note_id=?",
-        note_id))
+        note_id) if public else None
+    activity = await runtime.d1_first(
+        "SELECT " + ACTIVITY_COUNTS + " WHERE note_id=?", note_id)
+    return _counts(web, activity)
+
+
+def _detail(value):
+    try:
+        data = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+async def _log(runtime, note_id, account_bi, kind, detail=None):
+    if not account_bi:
+        return
+    try:
+        now = runtime.now()
+        if kind == "view":
+            bumped = await runtime.d1_run(
+                "UPDATE note_events SET last_at=?,hits=hits+1 WHERE id=("
+                "SELECT id FROM note_events WHERE note_id=? AND actor_bi=? "
+                "AND kind='view' AND last_at>=? ORDER BY last_at DESC LIMIT 1)",
+                now, note_id, account_bi, now - VIEW_WINDOW_MS)
+            if runtime.changes(bumped) == 1:
+                await runtime.broadcast(note_id, {"type": "note-activity"})
+                return
+        await runtime.d1_run(
+            "INSERT INTO note_events(note_id,kind,actor_bi,created_at,last_at,"
+            "hits,detail) VALUES(?,?,?,?,?,1,?)",
+            note_id, kind, account_bi, now, now,
+            json.dumps(detail or {}, separators=(",", ":"), sort_keys=True))
+        await runtime.d1_run(
+            "DELETE FROM note_events WHERE note_id=? AND id NOT IN (SELECT id "
+            "FROM note_events WHERE note_id=? ORDER BY last_at DESC,id DESC "
+            "LIMIT ?)", note_id, note_id, MAX_EVENTS)
+        await runtime.broadcast(note_id, {"type": "note-activity"})
+    except Exception:
+        pass
 
 
 async def _record_view(runtime, note_id):
@@ -201,7 +262,12 @@ async def _views_by_note(runtime, note_ids):
         "COALESCE(MAX(last_at),0) AS last_at FROM note_views",
         " GROUP BY note_id",
     )
-    return {str(row.get("note_id") or ""): _counts(row) for row in rows}
+    activity = await _bulk(
+        runtime, note_ids, "SELECT note_id," + ACTIVITY_COUNTS, " GROUP BY note_id")
+    web = {str(row.get("note_id") or ""): row for row in rows}
+    members = {str(row.get("note_id") or ""): row for row in activity}
+    return {note_id: _counts(web.get(note_id), members.get(note_id))
+            for note_id in set(web) | set(members)}
 
 
 async def _project(runtime, row, role, full=True, counts=None):
@@ -219,15 +285,11 @@ async def _project(runtime, row, role, full=True, counts=None):
     }
     # Read counts are a non-identifying aggregate over a document the reader
     # is already allowed to open, so every role — public included — sees them.
-    # Only a published note can have been read by anyone, so an unpublished
-    # one reports zeroes without a query: that keeps the desktop's 3s
-    # freshness poll on a private note exactly as cheap as it was.
     if isinstance(counts, dict):
         result.update(counts)
-    elif result["visibility"] == "public":
-        result.update(await _views(runtime, row["note_id"]))
     else:
-        result.update(_counts(None))
+        result.update(await _views(
+            runtime, row["note_id"], result["visibility"] == "public"))
     if full:
         result["markdown"] = _markdown(data.get("markdown"))
         # Publishing exposes the authored document, not its ACL or possibly
@@ -299,7 +361,7 @@ async def _create(runtime, account_bi, actor, data):
         "ok": True, "note": await _project(runtime, row, "owner")}, status=201)
 
 
-async def _update(runtime, row, account_bi, actor, data):
+async def _update(runtime, row, account_bi, actor, data, event=None):
     role = await _role(runtime, row, account_bi)
     if role not in ("owner", "editor"):
         return _response(runtime, {"error": "note_not_found"}, status=404)
@@ -352,6 +414,12 @@ async def _update(runtime, row, account_bi, actor, data):
     await runtime.broadcast(row["note_id"], {
         "type": "note-updated", "version": new_version,
         "updatedAt": now, "actor": actor})
+    if visibility != str(row.get("visibility") or "private"):
+        await _log(runtime, row["note_id"], account_bi,
+                   "publish" if visibility == "public" else "unpublish")
+    if event:
+        await _log(runtime, row["note_id"], account_bi, event[0],
+                   {**event[1], "as": new_version})
     return _response(runtime, {
         "ok": True, "note": await _project(runtime, updated, role)})
 
@@ -410,7 +478,7 @@ async def _versions(runtime, row, account_bi, actor, method, data):
         "baseVersion": base,
         "title": (restored or {}).get("title", "Untitled note"),
         "markdown": (restored or {}).get("markdown", ""),
-    })
+    }, event=("restore", {"version": target}))
 
 
 async def _suggestions(runtime, account_bi, actor, shares, query):
@@ -452,13 +520,25 @@ async def _share(runtime, row, account_bi, actor, method, data):
     principal_bi, canonical = await runtime.principal(kind, name)
     if not principal_bi:
         return _response(runtime, {"error": "principal_not_found"}, status=404)
+    previous = await runtime.d1_first(
+        "SELECT role FROM note_shares WHERE note_id=? AND principal_type=? "
+        "AND principal_bi=?", row["note_id"], kind, principal_bi)
+    target = {"type": kind, "name": canonical}
+    event = None
     if method == "DELETE":
         await runtime.d1_run(
             "DELETE FROM note_shares WHERE note_id=? AND principal_type=? "
             "AND principal_bi=?", row["note_id"], kind, principal_bi)
+        if previous:
+            event = ("unshare", target)
     else:
         if role not in ROLES:
             return _response(runtime, {"error": "invalid_role"}, status=400)
+        if not previous:
+            event = ("share", {**target, "role": role})
+        elif str(previous.get("role") or "") != role:
+            event = ("role", {**target, "role": role,
+                              "from": str(previous.get("role") or "")})
         await runtime.d1_run(
             "INSERT INTO note_shares(note_id,principal_type,principal_bi,"
             "principal_name,role,added_by_bi,created_at) VALUES(?,?,?,?,?,?,?) "
@@ -468,6 +548,8 @@ async def _share(runtime, row, account_bi, actor, method, data):
             account_bi, runtime.now())
     # Force existing sockets through the current ACL immediately.
     await runtime.broadcast(row["note_id"], {"type": "access-changed"})
+    if event:
+        await _log(runtime, row["note_id"], account_bi, *event)
     return _response(runtime, {"ok": True, "shares": await _shares(runtime, row["note_id"])})
 
 
@@ -490,14 +572,88 @@ async def _link(runtime, row, account_bi, actor, method, data):
     if not await runtime.repository_access(owner, repo, actor):
         return _response(runtime, {"error": "repository_not_found"}, status=404)
     if method == "DELETE":
-        await runtime.d1_run(
+        result = await runtime.d1_run(
             "DELETE FROM note_links WHERE note_id=? AND owner=? AND repo=? "
             "AND kind=? AND number=?", row["note_id"], owner, repo, kind, number)
     else:
-        await runtime.d1_run(
+        result = await runtime.d1_run(
             "INSERT OR IGNORE INTO note_links(note_id,owner,repo,kind,number,created_at) "
             "VALUES(?,?,?,?,?,?)", row["note_id"], owner, repo, kind, number, runtime.now())
+    if runtime.changes(result) == 1:
+        await _log(runtime, row["note_id"], account_bi,
+                   "unlink" if method == "DELETE" else "link",
+                   {"owner": owner, "repo": repo, "kind": kind, "number": number})
     return _response(runtime, {"ok": True, "links": await _links(runtime, row["note_id"])})
+
+
+def _client_detail(kind, data):
+    detail = data.get("detail") if isinstance(data.get("detail"), dict) else {}
+    if kind != "issue":
+        return {}
+    owner = str(detail.get("owner") or "").strip().lower()
+    repo = str(detail.get("repo") or "").strip()
+    try:
+        number = int(detail.get("number"))
+    except (TypeError, ValueError, OverflowError):
+        number = 0
+    if (not NAME_RE.fullmatch(owner) or not REPO_RE.fullmatch(repo)
+            or number < 1 or number > 999999999):
+        return {}
+    return {"owner": owner, "repo": repo, "number": number}
+
+
+async def _activity(runtime, row, account_bi, actor, method, data):
+    role = await _role(runtime, row, account_bi)
+    if role in ("", "public"):
+        return _response(runtime, {"error": "note_not_found"}, status=404)
+    note_id = row["note_id"]
+    if method == "POST":
+        kind = str(data.get("kind") or "").strip().lower()
+        if kind not in CLIENT_EVENTS:
+            return _response(runtime, {"error": "invalid_event"}, status=400)
+        await _log(runtime, note_id, account_bi, kind, _client_detail(kind, data))
+    events = await runtime.d1_all(
+        "SELECT kind,actor_bi,created_at,last_at,hits,detail FROM note_events "
+        "WHERE note_id=? ORDER BY last_at DESC,id DESC LIMIT ?",
+        note_id, MAX_ACTIVITY)
+    versions = await runtime.d1_all(
+        "SELECT version,author_bi,created_at FROM note_versions "
+        "WHERE note_id=? AND version>1 ORDER BY version DESC LIMIT ?",
+        note_id, MAX_VERSIONS)
+    owner = {"author_bi": str(row.get("owner_bi") or "")}
+    people = ([{"author_bi": item.get("actor_bi")} for item in events or []]
+              + list(versions or []) + [owner])
+    names = await _author_names(runtime, note_id, people, account_bi, actor)
+    entries = []
+    for item in events or []:
+        entry = {
+            "kind": str(item.get("kind") or ""),
+            "actor": names.get(str(item.get("actor_bi") or ""), ""),
+            "at": int(item.get("last_at") or 0),
+            "firstAt": int(item.get("created_at") or 0),
+            "count": int(item.get("hits") or 1),
+        }
+        detail = _detail(item.get("detail"))
+        if detail:
+            entry["detail"] = detail
+        entries.append(entry)
+    for item in versions or []:
+        entries.append({
+            "kind": "edit",
+            "actor": names.get(str(item.get("author_bi") or ""), ""),
+            "at": int(item.get("created_at") or 0),
+            "version": int(item.get("version") or 0),
+        })
+    entries.append({
+        "kind": "create",
+        "actor": names.get(owner["author_bi"], ""),
+        "at": int(row.get("created_at") or 0),
+        "version": 1,
+    })
+    entries.sort(key=lambda entry: entry["at"], reverse=True)
+    counts = await _views(runtime, note_id, str(row.get("visibility") or "") == "public")
+    counts["versions"] = int(row.get("version") or 1)
+    return _response(runtime, {"ok": True, "counts": counts, "events": entries})
 
 
 async def handle(runtime, path):
@@ -507,7 +663,7 @@ async def handle(runtime, path):
     method = runtime.method()
     _, note_id, action = route
     allowed = (("GET", "POST") if not note_id else
-               ("GET", "POST") if action == "versions" else
+               ("GET", "POST") if action in ("versions", "activity") else
                ("GET", "POST", "DELETE") if action in ("shares", "links") else
                ("GET",) if action == "ws" else
                ("GET", "PATCH", "DELETE"))
@@ -552,6 +708,10 @@ async def handle(runtime, path):
         if not account_bi:
             return _response(runtime, {"error": "invalid_session"}, status=401)
         return await _link(runtime, row, account_bi, actor, method, data)
+    if action == "activity":
+        if not account_bi:
+            return _response(runtime, {"error": "invalid_session"}, status=401)
+        return await _activity(runtime, row, account_bi, actor, method, data)
     if method == "GET":
         # Only anonymous reads of a published note count: an owner opening
         # their own draft, a collaborator, and the desktop's 3s freshness

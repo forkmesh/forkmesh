@@ -328,7 +328,7 @@ def test_notes_suite_runs_on_rqlite(migrated_node):
                      "test_listing_carries_sidebar_status_shares_and_view_counts",
                      "test_private_note_is_hidden_and_organization_share_grants_read"):
             # each scenario on clean note tables
-            for table in ("note_views", "note_links", "note_versions",
+            for table in ("note_events", "note_views", "note_links", "note_versions",
                           "note_shares", "notes", "org_members"):
                 _SyncShim(migrated_node).execute("DELETE FROM %s" % table)
             getattr(test_notes, name)()
