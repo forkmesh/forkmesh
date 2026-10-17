@@ -46,7 +46,8 @@ final class PerformanceReportTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix("# \(PerformanceReport.title)\n"))
         XCTAssertTrue(text.contains("app: 1.2.5+13 (release)\ndevice: iPhone15,2"))
         XCTAssertTrue(text.contains("stalls since launch 2 (over 200ms)"))
-        XCTAssertTrue(text.contains("1x     total 900ms max 900ms operation api.GET /repos\n2x     total 750ms max 450ms eventLoop ui-isolate blocked"))
+        XCTAssertTrue(text.contains("## Stalls by name\n2x     total 750ms max 450ms last 12:00:05 eventLoop ui-isolate blocked\n"), text)
+        XCTAssertTrue(text.contains("## Slow operations by name\n1x     total 900ms max 900ms operation api.GET /repos\n"), text)
         XCTAssertTrue(text.contains("2x     finishedDuring api.GET /repos\n1x     finishedDuring chat.decode"))
         XCTAssertTrue(text.contains("2x     avg 1015ms max 2000ms failed 2  POST app.forkmesh.com/api/chat\n2x     avg 100ms max 120ms failed 0  GET app.forkmesh.com/api/repos/#"))
         XCTAssertTrue(text.contains("3x     RELAY relay frame # received"))
@@ -94,7 +95,7 @@ final class PerformanceReportTests: XCTestCase {
         XCTAssertLessThanOrEqual(text.unicodeScalars.count, PerformanceReport.maxChars)
         XCTAssertFalse(text.contains("[cut at"))
         XCTAssertTrue(text.contains("trimmed to fit"))
-        for heading in ["## Metrics", "## Slow events by name", "## HTTP endpoints", "## MetricKit", "## App log"] {
+        for heading in ["## Metrics", "## Stalls by name", "## Slow operations by name", "## HTTP endpoints", "## MetricKit", "## App log"] {
             XCTAssertTrue(text.contains(heading), heading)
         }
     }
@@ -139,9 +140,29 @@ final class PerformanceReportTests: XCTestCase {
         let text = PerformanceReport.text(
             telemetry: telemetry, metricKit: ["Crash 2026-10-02: signal 11\nstack: ForkMesh+0x1a < UIKitCore+0x2b"],
             now: clock.now, timeZone: utc)
-        XCTAssertTrue(text.contains("max 300ms frame\n"), text)
+        XCTAssertTrue(text.contains("## Stalls by name\n1x     total 300ms max 300ms last 12:00:00 frame\n"), text)
         XCTAssertFalse(text.contains("frame frame"))
         XCTAssertTrue(text.contains("## MetricKit\nCrash 2026-10-02: signal 11\nstack: ForkMesh+0x1a < UIKitCore+0x2b"))
+    }
+
+    @MainActor
+    func testStallsKeepTheirOwnSectionWhenOperationsCrowdTheReport() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(250))
+        clock.advance(90)
+        monitor.recordSlowEvent(kind: .sync, name: "genie.scan", duration: .milliseconds(220))
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(600))
+        for i in 0..<12 {
+            monitor.recordSlowEvent(kind: .operation, name: "api.GET /api/r\(i)", duration: .milliseconds(5000 + i))
+        }
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc)
+        XCTAssertTrue(text.contains(
+            "## Stalls by name\n2x     total 850ms max 600ms last 12:01:30 eventLoop ui-isolate blocked\n"
+                + "1x     total 220ms max 220ms last 12:01:30 sync genie.scan\n"), text)
+        XCTAssertTrue(text.contains("## Slow operations by name\n1x     total 5011ms max 5011ms operation api.GET /api/r11\n"), text)
+        XCTAssertTrue(text.contains("... 6 more"))
+        XCTAssertFalse(text.components(separatedBy: "## Slow operations by name")[1].contains("ui-isolate"))
     }
 
     @MainActor

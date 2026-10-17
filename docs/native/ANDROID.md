@@ -787,7 +787,8 @@ default in new projects except the chosen starter pack
 
 - The hub's last row shows `versionName (versionCode)`, opens `WhatsNewPage`
   from the bundled `changelog.json` ([MAC_BUILD.md](MAC_BUILD.md)), and has
-  Send diagnostics (`tools/PerformanceDiagnostics.kt`, `tools/AppChangelog.kt`,
+  Send diagnostics (the prompt points the agent at
+  [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md); `tools/PerformanceDiagnostics.kt`, `tools/AppChangelog.kt`,
   `feature/tools/AboutAndDiagnostics.kt`).
 - **Docs package**: the public docs library from the same bundle iOS ships
   (`native/ios/ForkMesh/Resources/DocsLibrary.json`,

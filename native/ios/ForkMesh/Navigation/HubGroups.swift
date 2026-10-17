@@ -42,8 +42,8 @@ final class HubPackageState {
         }
         let reviewer: Bool = await reviewing ?? false
         if started != epoch { return }
-        installed = found
-        adReviewer = reviewer
+        if installed != found { installed = found }
+        if adReviewer != reviewer { adReviewer = reviewer }
         if complete { OrganizationPackagesLedger.shared.replace(states) }
         PackageGateSync.publish()
     }

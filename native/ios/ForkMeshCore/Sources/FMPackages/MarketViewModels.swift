@@ -13,8 +13,8 @@ public final class OrganizationPackagesLedger {
     public init() {}
 
     public func replace(_ states: [OrgPackageState]) {
-        self.states = states
-        loaded = true
+        if self.states != states { self.states = states }
+        if !loaded { loaded = true }
     }
 
     public func update(_ state: OrgPackageState) {

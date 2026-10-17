@@ -115,7 +115,7 @@ final class ShellNavigatorCounts {
         }
         if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
         if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
-        fetched = next
+        if fetched != next { fetched = next }
         if !Task.isCancelled { loadedAt = Date() }
     }
 

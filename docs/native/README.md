@@ -181,7 +181,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - **Diagnostics.** "Send diagnostics" (the composer's "+" menu and
   `/diagnostics`) puts a performance report into the prompt; it trims its
   lowest-ranked sections to fit and lists crashes as the attributed thread's
-  top frames.
+  top frames. The prompt sends the agent to
+  [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md) (how to read the bundle,
+  every earlier check) and asks it to add its own check there.
 
 ## Security
 
@@ -225,7 +227,13 @@ avatar movement but does not silently change that saved feedback preference.
 - Parse API replies of 16 KB or more off the main actor
   (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`).
 - Write `@Observable` properties only when the value changes; every write
-  notifies, equal or not.
+  notifies, equal or not. This includes refreshes that rerun on every return
+  to the app: `AccountPackagesStore`, `HubPackageState`,
+  `OrganizationPackagesLedger` and `ShellNavigatorCounts` used to rewrite
+  what Home reads on each resume.
+- A scene-phase refresh runs on every inactive-to-active change (Control
+  Center, Notification Center, a system alert), not only after the
+  background; gate it on age (`AccountPackagesStore.refreshIfStale`).
 - Compute derived lists once per body and pass them down.
 - Do not let a ring cancel a load in flight, whatever started it; mark it and
   run one more load afterwards, or none when the load's reads had not gone out
