@@ -18,6 +18,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .localAI), "on-device-ai")
         XCTAssertEqual(PluginMenu.packageId(for: .logs), "logs")
         XCTAssertEqual(PluginMenu.packageId(for: .diagnostics), "diagnostics")
+        XCTAssertEqual(PluginMenu.packageId(for: .phoneSecurity), "phone-security")
     }
 
     func testEveryHomeKindBelongsToAMarketplacePackage() {

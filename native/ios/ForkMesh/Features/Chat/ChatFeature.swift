@@ -10,6 +10,7 @@ import FMChat
 import FMCrypto
 import FMLocalAI
 import FMNet
+import FMTools
 import Foundation
 import LocalAuthentication
 import Network
@@ -116,6 +117,9 @@ enum ChatFeature {
 
         Services.put(relay)
         Services.put(relay, as: OwnStatusAnnouncer.self)
+        let tools: ToolsHooks = ToolsFeature.hooks
+        tools.relayFrames = { relay.framesReceived }
+        tools.relayLog = { relay.log }
         Services.put(hub)
         Services.put(hub, as: ShellChatBridge.self)
         Services.put(mesh)

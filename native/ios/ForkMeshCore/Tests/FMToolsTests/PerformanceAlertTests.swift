@@ -89,6 +89,18 @@ final class DiagnosticsBundleTests: XCTestCase {
         XCTAssertTrue(with.contains("secret line"))
     }
 
+    func testThePromptSendsTheAgentToThePlaybookAndAsksItToAddThisCheck() throws {
+        let lead = DiagnosticsBundle.lead(reason: "")
+        XCTAssertTrue(lead.contains("First read \(DiagnosticsBundle.playbook)"))
+        XCTAssertTrue(lead.contains("add this check to it"))
+        var root = URL(fileURLWithPath: #filePath)
+        for _ in 0..<6 { root.deleteLastPathComponent() }
+        let page = try String(contentsOf: root.appendingPathComponent(DiagnosticsBundle.playbook), encoding: .utf8)
+        for heading in ["## Reading the bundle", "## Checks so far", "## Adding a check"] {
+            XCTAssertTrue(page.contains(heading), heading)
+        }
+    }
+
     func testThePromptFitsTheLimit() {
         let prompt = DiagnosticsBundle.prompt(reason: "x", report: String(repeating: "line of report\n", count: 2000),
                                               includeLogs: true, limit: 8000)

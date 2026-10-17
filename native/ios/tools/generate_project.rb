@@ -362,6 +362,16 @@ push_build_file = project.new(Obj::PBXBuildFile)
 push_build_file.product_ref = push_product
 extension.frameworks_build_phase.files << push_build_file
 
+nexus_package = project.new(Obj::XCLocalSwiftPackageReference)
+nexus_package.relative_path = 'Nexus'
+project.root_object.package_references << nexus_package
+nexus_product = project.new(Obj::XCSwiftPackageProductDependency)
+nexus_product.product_name = 'NexusUI'
+app.package_product_dependencies << nexus_product
+nexus_build_file = project.new(Obj::PBXBuildFile)
+nexus_build_file.product_ref = nexus_product
+app.frameworks_build_phase.files << nexus_build_file
+
 project.save
 
 # A shared scheme, so `xcodebuild -scheme ForkMesh` works on a fresh clone.

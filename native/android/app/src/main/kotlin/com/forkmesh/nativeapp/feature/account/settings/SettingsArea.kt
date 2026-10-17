@@ -42,10 +42,16 @@ import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 object SettingsArea {
     private const val OWNER = "WS18"
+    private val homeHidesBar = MutableStateFlow(true)
+
+    val homeHidesBarIcons: StateFlow<Boolean> = homeHidesBar.asStateFlow()
 
     val prefs: PrefStore? get() = Services.get<PrefStore>()
     val api: ApiService? get() = Services.get<ApiService>()
@@ -53,10 +59,16 @@ object SettingsArea {
     val account: String get() = Services.get<AuthService>()?.session?.value?.nodeName.orEmpty()
     val signedIn: Boolean get() = Services.get<AuthService>()?.session?.value != null && Services.get<AuthService>()?.isGuest?.value != true
 
+    fun setHomeHidesBarIcons(on: Boolean) {
+        prefs?.let { DeviceSettings.setHomeHidesBarIcons(it, on) }
+        homeHidesBar.value = on
+    }
+
     fun install(app: App) {
         prefs?.let { store ->
             DeviceSettings.migrateLegacySounds(store)
             AppearanceStore.hapticsEnabled = DeviceSettings.hapticsEnabled(store)
+            homeHidesBar.value = DeviceSettings.homeHidesBarIcons(store)
         }
         NavigationFeature.register(Route.Kind.Settings, OWNER) { route -> screenFor(SettingsCatalog.section((route as? Route.Settings)?.section)) }
         NavigationFeature.register(Route.Kind.Profile, OWNER) { route -> AccountProfileScreen((route as Route.Profile).name) }

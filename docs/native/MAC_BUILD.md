@@ -58,7 +58,8 @@ can log in as `build` on the Mac.
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
   of `native/ios/`, `codemagic.yaml`, `conformance/`, and the files outside
   them that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, `marketplace/packages/vault/tests/fixtures/`).
+  `app/src/app_runtime.py`, `marketplace/packages/vault/tests/fixtures/`,
+  `marketplace/packages/people/tests/fixtures/`).
   `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
   `tools/test_mac_adhoc_deploy.py` lists them; a new test that reads a file
   outside `native/ios/` must add it there and to `MAC_IOS_FETCH_SCRIPT` in
@@ -417,7 +418,10 @@ compile. Keep to these:
   async `currentConfigurations()`).
 - Keep SwiftUI modifier chains under roughly fifteen; split large `body`s into
   typed pieces (as `HomeShell` and `GenieSpiderLayer` do) to stay inside the
-  type checker's budget.
+  type checker's budget. The 2026-10-17 ad hoc build failed on
+  `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
+  `any Tip` ternary; it now builds in `pressable`, `described` and `body`,
+  with the hint and tip as plain computed properties.
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
 - Main-actor APIs called from static helpers or from a plain struct's `init`

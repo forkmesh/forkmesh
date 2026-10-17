@@ -172,6 +172,7 @@ sealed class Route {
     data class Cove(val id: String) : Route() { override val kind get() = Kind.Cove }
     data object Calories : Route() { override val kind get() = Kind.Calories }
     data object GlassesAlert : Route() { override val kind get() = Kind.GlassesAlert }
+    data object PhoneSecurity : Route() { override val kind get() = Kind.PhoneSecurity }
     data object FaceChanger : Route() { override val kind get() = Kind.FaceChanger }
     data object AppStoreStatus : Route() { override val kind get() = Kind.AppStoreStatus }
     data object RssReader : Route() { override val kind get() = Kind.RssReader }
@@ -215,7 +216,7 @@ sealed class Route {
         CrmOrg("crmOrg", "WS19"), Marketing("marketing", "WS19"), Analytics("analytics", "WS19"),
         Competitors("competitors", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
-        GlassesAlert("glassesAlert", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), RssReader("rssReader", "WS20"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), RssReader("rssReader", "WS20"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),
