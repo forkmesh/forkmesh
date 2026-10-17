@@ -353,7 +353,7 @@ struct HomeShell: View {
                 }
             }
             .task {
-                await ShellNavigatorCounts.shared.refresh()
+                await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false)
             }
         case .reportBug:
             ReportBugSheet(
@@ -1019,7 +1019,7 @@ struct HomeShell: View {
             }
         }
         Task { await HubPackageState.shared.refresh() }
-        Task { await ShellNavigatorCounts.shared.refresh() }
+        Task { await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false) }
         notifications?.start()
         if let auth = auth {
             Task { await auth.refreshAvatar() }
