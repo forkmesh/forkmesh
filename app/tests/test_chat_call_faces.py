@@ -464,12 +464,13 @@ def test_call_panel_has_a_face_picker():
     assert ".chat-call-face[hidden] { display: none; }" in CSS
     assert 'from "./chat-call-faces.js"' in CALLS
 
-def test_call_query_asks_before_ringing():
+def test_call_query_opens_the_pre_call_check_before_ringing():
     assert "offerRequestedCall(requestedDirect);" in CHAT
     start = CHAT.index("function offerRequestedCall(")
     body = CHAT[start:CHAT.index("\nfunction ", start + 1)]
     assert 'chatQuery.get("call")' in body
-    assert "globalThis.confirm(" in body
+    assert "previewDirectCall(requested);" in body
+    assert "startDirectCall" not in body
     assert "callsSupported()" in body
 
 def test_desktop_direct_message_header_offers_calls():
@@ -533,10 +534,10 @@ def test_native_call_page_exposes_face_operations():
     assert "window.fmCallCamera = (id, reply) => {" in page
     assert "window.fmCallCameraFailed = () => {" in page
     assert "faces.createFaceStage({ cameraStream: null, manual: true," in page
-    assert "navigator.mediaDevices.getUserMedia({ audio: true, video: false })" in page
+    assert "navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: false })" in page
     assert "wait(DEPTH_FRAME_MS)" in page
     assert "const DEPTH_FRAME_MS = 1500;" in page
-    assert "navigator.mediaDevices.getUserMedia({ video: true })" in page
+    assert "navigator.mediaDevices.getUserMedia({ video: VIDEO_CONSTRAINTS })" in page
     assert "stream = previewed || await openStream(media);" in page
     assert "if (!stream) stream = await openStream(media);" in page
     assert "stopPushed();\n      if (stage) stage.stop();" in page
@@ -553,7 +554,10 @@ def test_ios_wires_the_call_engine_screen_and_buttons():
     header = (app / "Features" / "Chat" / "Messages" / "MessagesConversationView.swift").read_text(encoding="utf-8")
     assert "DirectCallHeaderButtons(hub: hub, dark: palette.dark)" in header
     screen = (app / "Features" / "Chat" / "ChatScreen.swift").read_text(encoding="utf-8")
-    assert ".directCalls(hub)" in screen
+    assert ".directCalls(hub)" not in screen
+    root = (app / "App" / "ForkMeshApp.swift").read_text(encoding="utf-8")
+    assert root.count(".directCallsRoot()") == 1
+    assert "CallRinger.shared.attach(calls)" in install
     views = (app / "Features" / "Chat" / "Calls" / "DirectCallViews.swift").read_text(encoding="utf-8")
     assert "FaceChangerFaceMenu(look: engine.look, peer: factory?.current, notice: $notice)" in views
     assert "WebCallPeerFactory.requestAccess(for:" in views

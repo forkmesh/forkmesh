@@ -32,6 +32,14 @@ not copied: it is end-to-end encrypted to the original two participants.
   `call-ice`, `call-bye`. The relay sees only ciphertext and stores nothing.
 - **Media** is WebRTC (DTLS-SRTP) directly between peers, with a public STUN
   server and no TURN, so two peers behind symmetric NAT cannot connect.
+  Once connected, the call reads the selected ICE candidate pair from
+  `getStats()` every 4 s and shows whether the media is **Direct**
+  (peer-to-peer, no server in between: host, srflx or prflx candidates) or
+  **Relayed** (a `relay` candidate, meaning a TURN server, a third party,
+  carries the encrypted media). With today's STUN-only setup a call is
+  always direct or fails; the note is there so a TURN server added later is
+  visible to the people on the call. The live state line says "Connected ·
+  end-to-end encrypted" and no longer claims peer-to-peer on its own.
 - **Flow**: fixed transceiver order (audio, video), the caller offers only
   after accept, trickle ICE with a pre-answer queue, `replaceTrack` instead of
   renegotiation. Frames carry `to` so multi-device accounts converge on one
@@ -41,6 +49,36 @@ not copied: it is end-to-end encrypted to the original two participants.
   takes the normal notification path.
 - `/chat` has a `Permissions-Policy` override for camera and microphone and
   `mediastream:` in its CSP `media-src`.
+- **Pre-call check.** The Voice call and Video call buttons no longer ring
+  straight away. They open the call panel in preview: your camera picture
+  (video) with the face, background and voice pickers, or just the
+  microphone (voice), plus "Record a 10-second test clip", which records
+  exactly what the other person would get (the stage track and the changed
+  voice) and plays it back in the panel. "Start voice call" / "Start video
+  call" then rings, reusing the same camera and microphone. A
+  `/chat?dm=<name>&call=audio|video` link opens this check instead of a
+  `confirm()`, so a link still cannot ring anyone by itself. The separate
+  eye (preview) button is gone.
+- **Ringing.** While the caller waits for an answer they hear a ringback
+  tone (440 + 480 Hz, 2 s on, 4 s off). The callee gets a full-screen
+  incoming-call overlay with Accept and Decline, a ring (400 + 450 Hz double
+  ring), `navigator.vibrate` on phones, a flashing tab title and, when the
+  tab is hidden or not focused and notifications are allowed, a system
+  notification with `requireInteraction` that stays until the ring ends.
+  The browser asks for notification permission the first time you open a
+  pre-call check. Both tones are synthesized with Web Audio in
+  `chat-call-tones.js`; a browser that blocks audio before any click on the
+  page still shows the overlay and the notification.
+- **Quality.** `chat-call-quality.js` asks for 1280×720 at up to 30 fps and
+  for echo cancellation, noise suppression and automatic gain at 48 kHz
+  mono. It caps the senders at 2.5 Mbps video and 96 kbps audio, with high
+  priority and `balanced` degradation where the browser allows it. It also
+  adds Opus in-band FEC, no DTX and a 96 kbps average to the SDP sent to the
+  other side, so each side's encoder sends full-band, loss-resilient voice.
+  The Face Changer and Voice Changer pages share these constraints through
+  `call-studio.js`. The face stage still draws at 24 fps and at most 960 px
+  on the long side, so a filtered picture is limited by that, not by the
+  camera.
 - The desktop has no WebRTC stack; its call buttons open
   `/chat?dm=<name>&call=audio|video`, which asks for confirmation before
   ringing, so a link can never ring someone on its own.
@@ -53,7 +91,24 @@ in a WebView loading `direct-call.html` from an `https://` app-local origin (a
 secure context for `getUserMedia`); the native side drives it through
 `window.fmCall(id, op, args)` and receives replies through
 `webkit.messageHandlers.fmCall` or `FmCallBridge.post`. There is no CallKit,
-VoIP push or foreground service, so a call can drop in the background.
+VoIP push or foreground service, so a call can drop in the background, and a
+ring reaches a phone only while the app runs with the conversation's room
+socket open. Ringing a phone whose app was killed or suspended needs VoIP
+push and CallKit on iOS and a push-started call notification on Android,
+which need server work.
+
+The page applies the same quality settings as `/chat` (constraints, sender
+caps, Opus FEC on the SDP it returns from `offer`/`answer`) and posts a
+`{event: "route", route: "direct"|"relay", local, remote, protocol}` event
+when the call connects and whenever the selected pair changes (`route` op
+returns the last one). The apps show it under the call's state line. Both
+apps open a pre-call check from the conversation's Voice call and Video
+call buttons (live preview, a 10-second test clip played back, then Call),
+play a ringback while the caller waits, and ring the callee over any
+screen; the per-platform details are in `native/ios/docs/FMChat.md` and
+`docs/native/ANDROID.md`. `preview` and `record` also work with media
+`audio` (microphone only, `body.audio.preview`, an `audio/*` clip), which
+the voice-call check uses.
 
 The page, its host (`WebCallPeer` and its factory) and the face, background
 and voice choices belong to the Face Changer plug-in, not to chat; calls use
@@ -430,11 +485,12 @@ without a matching voice id gets the caller's own voice.
 
 ### Preview and reuse outside a call
 
-`/chat` has a Preview screen that opens the camera through the same stage
+`/chat`'s pre-call check (above) opens the camera through the same stage
 with Face, Background and Voice pickers and "Hear myself"; Start video call
-keeps the stage and offers its track, with no camera restart. In the phone
-apps that preview is the Face Changer plug-in's screen, not a button in the
-conversation ([below](#face-changer-on-the-phones)).
+keeps the stage and offers its track, with no camera restart. The phone apps
+have their own pre-call check, and the Face Changer plug-in's screen
+([below](#face-changer-on-the-phones)) is where the look is set up outside a
+call.
 
 ```js
 const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage, outfitId });
@@ -501,6 +557,17 @@ web view. It owns everything a face change needs, and calls reuse it:
   with the page's `record`/`recordStop`/`recordChunk` operations (the ones
   view-once video uses), capped at five minutes like the web studio. Android
   hands the clip to the share sheet; iOS shows it with Save and Share.
+- **The page must be on screen while it opens the camera.** WebKit does not
+  start `getUserMedia` for a `WKWebView` that is not in a window, and an
+  Android WebView that is not attached does not render or play. The first
+  native screens (2026-10-16) attached the WebView only after `preview`
+  returned, so the screen spun until the watchdog fired, then said "The
+  camera could not start". Because the one-thread worker was still waiting,
+  the Face, Background and Voice buttons did nothing in the meantime. The
+  iOS screen now shows the factory's previewing peer as soon as it exists,
+  and Android sets `previewing` before running the page's `preview`, so the
+  WebView is attached from the start (the same rule the old iOS call
+  preview learned on 2026-10-14).
 - **Calls.** `DirectCallEngine` takes the plug-in's look instead of keeping its
   own copy and listens to it: a change made in the plug-in, or from the call
   screen's Face, Background and Voice controls (the plug-in's own controls),
@@ -530,6 +597,8 @@ repository.
 ## Tests
 
 `app/tests/test_chat_direct_calls_frontend.py`,
+`app/tests/test_chat_call_checks.py` (pre-call check, tones, incoming alert,
+quality and route),
 `app/tests/test_chat_call_faces.py`, `app/tests/test_chat_call_voice.py`,
 `app/tests/test_chat_call_voice_realism.py`,
 `app/browser_tests/tests/native-call-record.spec.js`, plus the iOS and

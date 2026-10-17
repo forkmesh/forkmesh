@@ -38,7 +38,6 @@ private struct ChatScreenBody: View {
 
     var body: some View {
         content
-            .directCalls(hub)
             .onAppear {
                 hub.restoreLastConversation()
                 syncShellTop(channelsOpen)
