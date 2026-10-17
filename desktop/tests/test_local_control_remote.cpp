@@ -505,6 +505,12 @@ static void testBackupStatus()
     check(out.value(QStringLiteral("result")).toString() == QLatin1String("failed"), "failed");
     check(out.value(QStringLiteral("error")).toString() == QLatin1String("tar_failed"), "code");
 
+    input.failure = QStringLiteral("low_disk");
+    out = diag::backupStatus(input);
+    check(out.value(QStringLiteral("error")).toString() == QLatin1String("low_disk"),
+          "a backup skipped for free space keeps its own code");
+    input.failure = QStringLiteral("tar_failed");
+
     input.failureAtMs = 8000000;
     out = diag::backupStatus(input);
     check(out.value(QStringLiteral("result")).toString() == QLatin1String("ok"),

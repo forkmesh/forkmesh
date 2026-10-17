@@ -57,6 +57,14 @@ user decision: Android SDK and AVDs, Gradle homes, `~/Backups`,
 - `/tmp` is a separate 16 GB tmpfs: freeing it does not help `/`.
 - `ccache`, `ms-playwright`, `go-build` and the Go toolchains are in use, not
   stale; deleting them costs a cold rebuild or a re-download.
+- The desktop's hourly backup (`data/backups`) packed the Actions build cache
+  and run sandboxes, about 12 GiB a snapshot. On 2026-10-16 a desktop restart
+  orphaned a 12 GiB `.part`, cleanup only ran after a successful backup, and
+  the disk filled until `tools/next_deploy.py build` failed with ENOSPC (Deploy
+  nodes run #3568). The backup now leaves out `data/actions/cache` and
+  `data/actions/sandbox`, removes stale `.part` files before each run, skips a
+  run when less than 5 GiB is free (`kBackupFreeReserveBytes`, failure code
+  `low_disk`), and kills a tar that would take free space below that.
 - The disk refills about daily while many agents run. If it hits 0 bytes,
   a write can truncate a source file to 0 bytes (`git checkout -- <file>`)
   and leave a stale `index.lock`.

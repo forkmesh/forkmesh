@@ -107,8 +107,8 @@ LAZY_MODULES = {
     # imports it.
     "trust_lists.py",
     "blog_feed.py",
-    # Reached only through entry.py's bug_reports_handler proxy, on the
-    # POST /api/bug-reports path.
+    # Reached only through entry.py's bug_reports_handler and
+    # bug_reports_inbox_handler proxies, on the /api/bug-reports paths.
     "bug_reports.py",
     # The console's Support sections, reached only through entry.py's
     # admin_support_handler proxy on ?view=bugs and ?view=feedback.

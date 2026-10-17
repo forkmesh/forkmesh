@@ -26,18 +26,18 @@ Three properties matter more here than on the rest of the API:
   app version, source, status, timestamp -- stay in plaintext, so the report
   list sorts and paginates without decrypting anything.
 
-Nothing here reads reports back, so the public API surface stays write-only
-and no public route can be coaxed into listing what other people reported.
-Reports are read and triaged only in the platform-admin console's Bug
-reports section (admin_support.py), behind the secret console path, a live
-is_admin check and the console CSRF token.
+Reports are read back only by platform administrators: the Report a bug
+plugin lists, triages and downloads them through ``/api/bug-reports/inbox``
+behind a bearer session and a live is_admin check, and so does the
+platform-admin console's Bug reports section (admin_support.py).
 
 Attachments are chunked into encrypted rows in ``bug_report_attachments``.
-They never enter the repository issue inbox or a public API response.
+They never enter the repository issue inbox or a non-admin response.
 """
 
 import base64
 import re
+from urllib.parse import parse_qs, quote, urlparse
 
 
 def _bind_runtime(runtime):
@@ -74,6 +74,12 @@ RATE_LIMIT_MAX = 10
 # Reports the console has not been shown yet are what the badge counts, so the
 # statuses are deliberately few and mean exactly one thing each.
 STATUSES = ("new", "triaged", "closed")
+
+INBOX_PAGE_LIMIT = 50
+INBOX_FORM_BYTES = 4096
+REPORT_ID_RE = re.compile(r"[0-9a-f]{32}")
+CONTENT_TYPE_RE = re.compile(
+    r"[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}")
 
 # Where the report came from. An unknown value is normalized rather than
 # rejected: a future client should not have its reports dropped by an older
@@ -332,3 +338,205 @@ async def bug_reports_handler(env, request):
         {"ok": True, "id": report_id, "status": "new",
          "credited": bool(account), "attachments": len(attachments)},
         status=201, cache_control=no_store)
+
+
+async def _inbox_admin(env, request):
+    try:
+        authorization = str(request.headers.get("authorization") or "")
+    except Exception:
+        return ""
+    if not authorization.lower().startswith("bearer "):
+        return ""
+    try:
+        actor = safe_segment(await _authed_account_name(env, request)) or ""
+    except Exception:
+        return ""
+    return actor if actor and await _is_admin(env, actor) else ""
+
+
+async def _sealed_record(env, value):
+    if not value:
+        return {}
+    try:
+        record = await decrypt_row(env, value)
+    except Exception:
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+async def inbox_report(env, row):
+    record = await _sealed_record(env, row.get("data"))
+    attachments = [
+        {"id": str(item.get("id") or ""), "name": str(item.get("name") or "attachment"),
+         "contentType": str(item.get("contentType") or ""),
+         "size": int(item.get("size") or 0)}
+        for item in (record.get("attachments") or []) if isinstance(item, dict)]
+    return {
+        "id": str(row.get("report_id") or ""),
+        "status": str(row.get("status") or "new"),
+        "severity": str(row.get("severity") or "normal"),
+        "source": str(row.get("source") or ""),
+        "platform": str(row.get("platform") or ""),
+        "appVersion": str(row.get("app_version") or ""),
+        "createdAt": int(row.get("created_at") or 0),
+        "account": str(row.get("account") or record.get("account") or ""),
+        "message": str(record.get("message") or ""),
+        "contact": str(record.get("contact") or ""),
+        "screen": str(record.get("screen") or ""),
+        "package": str(record.get("package") or ""),
+        "osVersion": str(record.get("osVersion") or ""),
+        "device": str(record.get("device") or ""),
+        "attachments": attachments,
+    }
+
+
+async def _inbox_counts(env):
+    counts = {name: 0 for name in STATUSES}
+    for row in await d1_all(
+            env, "SELECT status, COUNT(*) AS n FROM bug_reports "
+            "GROUP BY status") or []:
+        row = dict(row)
+        name = str(row.get("status") or "")
+        if name in counts:
+            counts[name] = int(row.get("n") or 0)
+    return counts
+
+
+def _report_id(value):
+    candidate = _text(value, 64).lower()
+    return candidate if REPORT_ID_RE.fullmatch(candidate) else ""
+
+
+async def _inbox_set_status(env, request, actor, no_store):
+    try:
+        data = await bounded_json_request(request, max_bytes=INBOX_FORM_BYTES)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    data = data if isinstance(data, dict) else {}
+    report_id = _report_id(data.get("report"))
+    status = _text(data.get("status"), 40).lower()
+    if status not in STATUSES:
+        return json_response(
+            {"error": "invalid_status", "statuses": list(STATUSES)},
+            status=400, cache_control=no_store)
+    await ensure_schema(env)
+    row = await d1_first(
+        env, "SELECT status FROM bug_reports WHERE report_id=? LIMIT 1",
+        report_id) if report_id else None
+    if not row:
+        await _audit_sensitive_action(
+            env, actor, "admin.app_set_bug_status", "bug_report",
+            report_id, "failed", {"reason": "report_missing"})
+        return json_response(
+            {"error": "report_missing"}, status=404, cache_control=no_store)
+    previous = str(dict(row).get("status") or "new")
+    if previous != status:
+        await d1_run(
+            env, "UPDATE bug_reports SET status=? WHERE report_id=?",
+            status, report_id)
+        await _audit_sensitive_action(
+            env, actor, "admin.app_set_bug_status", "bug_report",
+            report_id, "success", {"from": previous, "to": status})
+    return json_response(
+        {"ok": True, "id": report_id, "status": status, "previous": previous,
+         "counts": await _inbox_counts(env)},
+        cache_control=no_store)
+
+
+async def _inbox_attachment(env, params, no_store):
+    report_id = _report_id((params.get("report") or [""])[0])
+    attachment_id = _report_id((params.get("attachment") or [""])[0])
+    if not report_id or not attachment_id:
+        return json_response(
+            {"error": "attachment_missing"}, status=404,
+            cache_control=no_store)
+    rows = [dict(row) for row in await d1_all(
+        env, "SELECT chunk_index, name, content_type, size, data FROM "
+        "bug_report_attachments WHERE report_id=? AND attachment_id=? "
+        "ORDER BY chunk_index", report_id, attachment_id) or []]
+    if not rows:
+        return json_response(
+            {"error": "attachment_missing"}, status=404,
+            cache_control=no_store)
+    pieces = []
+    for index, row in enumerate(rows):
+        chunk = row.get("chunk_index")
+        record = await _sealed_record(env, row.get("data"))
+        try:
+            if int(-1 if chunk is None else chunk) != index:
+                raise ValueError("chunk_out_of_order")
+            pieces.append(base64.b64decode(
+                str(record.get("data") or ""), validate=True))
+        except Exception:
+            return json_response(
+                {"error": "attachment_unavailable"}, status=410,
+                cache_control=no_store)
+    data = b"".join(pieces)
+    if len(data) != int(rows[0].get("size") or 0):
+        return json_response(
+            {"error": "attachment_unavailable"}, status=410,
+            cache_control=no_store)
+    content_type = str(rows[0].get("content_type") or "").lower()
+    if not CONTENT_TYPE_RE.fullmatch(content_type):
+        content_type = "application/octet-stream"
+    name = str(rows[0].get("name") or "attachment")[:160]
+    plain = re.sub(r'[^A-Za-z0-9._ -]', "_", name) or "attachment"
+    return Response(data, headers={
+        "content-type": content_type,
+        "content-disposition": "attachment; filename=\"%s\"; "
+                               "filename*=UTF-8''%s" % (plain, quote(name, safe="")),
+        "cache-control": no_store,
+        "content-security-policy": "sandbox",
+        "x-content-type-options": "nosniff",
+    })
+
+
+async def bug_reports_inbox_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    url = urlparse(str(request.url or ""))
+    attachment = url.path.rstrip("/").endswith("/attachment")
+    allowed = ("GET",) if attachment else ("GET", "POST")
+    if method_name(request) not in allowed:
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": ", ".join(allowed)})
+    actor = await _inbox_admin(env, request)
+    if not actor:
+        return json_response(
+            {"error": "admin_required"}, status=403, cache_control=no_store)
+    params = parse_qs(url.query)
+    if attachment:
+        return await _inbox_attachment(env, params, no_store)
+    if method_name(request) == "POST":
+        return await _inbox_set_status(env, request, actor, no_store)
+
+    def param(name):
+        return _text((params.get(name) or [""])[0], 40).lower()
+
+    status = param("status")
+    status = status if status in STATUSES else ""
+    try:
+        limit = max(1, min(int(param("limit") or INBOX_PAGE_LIMIT),
+                           INBOX_PAGE_LIMIT))
+    except ValueError:
+        limit = INBOX_PAGE_LIMIT
+    try:
+        offset = max(0, int(param("offset") or 0))
+    except ValueError:
+        offset = 0
+    await ensure_schema(env)
+    counts = await _inbox_counts(env)
+    clause, args = (" WHERE status=?", [status]) if status else ("", [])
+    rows = await d1_all(
+        env,
+        "SELECT report_id, account, source, platform, app_version, severity, "
+        "status, data, created_at FROM bug_reports" + clause
+        + " ORDER BY created_at DESC, report_id DESC LIMIT ? OFFSET ?",
+        *args, limit + 1, offset) or []
+    reports = [await inbox_report(env, dict(row)) for row in rows[:limit]]
+    return json_response(
+        {"ok": True, "status": status or "all", "counts": counts,
+         "reports": reports, "offset": offset,
+         "nextOffset": offset + limit if len(rows) > limit else None},
+        cache_control=no_store)

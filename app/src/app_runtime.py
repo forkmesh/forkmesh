@@ -2827,13 +2827,18 @@ class Default:
         if url.path in ("/api/push/mesh", "/api/push/mesh/"):
             return await mesh_wake_handler(self.env, request)
 
-        # In-app bug reports from the mobile client's report control. Write
-        # only, and deliberately reachable without a session: a crash in the
+        # In-app bug reports from the mobile client's report control. Writes
+        # are deliberately reachable without a session: a crash in the
         # login flow is exactly the report an authenticated-only endpoint
         # cannot receive. Matched before the generic /api/accounts/ prefix so
-        # an anonymous submission never enters the account router.
+        # an anonymous submission never enters the account router. The inbox
+        # lists them back to platform administrators only.
         if url.path in ("/api/bug-reports", "/api/bug-reports/"):
             return await bug_reports_handler(self.env, request)
+        if url.path in ("/api/bug-reports/inbox", "/api/bug-reports/inbox/",
+                        "/api/bug-reports/inbox/attachment",
+                        "/api/bug-reports/inbox/attachment/"):
+            return await bug_reports_inbox_handler(self.env, request)
 
         if url.path in ("/api/forkbot/chat", "/api/forkbot/chat/"):
             return await forkbot_chat_handler(self.env, request)

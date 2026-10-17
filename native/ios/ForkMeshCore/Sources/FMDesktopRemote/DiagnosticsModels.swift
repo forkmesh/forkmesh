@@ -336,6 +336,7 @@ public struct DesktopBackupStatus: Equatable, Sendable {
         case "tar_missing": return "The desktop has no tar tool to write backups with."
         case "nothing_to_back_up": return "There was nothing to back up yet."
         case "rename_failed": return "The backup was written but could not be saved in place."
+        case "low_disk": return "The backup was skipped to keep free space on the desktop's disk."
         default: return "The backup could not be written. Open Settings, Data on the desktop for details."
         }
     }
