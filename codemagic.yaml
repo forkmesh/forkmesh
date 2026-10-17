@@ -286,10 +286,21 @@ definitions:
           if [ "$status" = "0" ] || [ "$attempt" = "2" ] || ! grep -q "via CoreSimulator spawn" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
             break
           fi
-          echo "CoreSimulator could not spawn a helper; restarting CoreSimulatorService and archiving again."
+          echo "CoreSimulator could not spawn a helper; remounting the simulator runtimes, restarting CoreSimulatorService and archiving again."
+          grep -m 1 -oE "F_ADDFILESIGS_RETURN\) failed with errno=[0-9]+ in [^']*'[^']*'" "$CM_BUILD_DIR/xcodebuild-archive.log" || true
+          mounted="$(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true)"
           xcrun simctl shutdown all >/dev/null 2>&1 || true
+          for runtime in $(xcrun simctl runtime list 2>/dev/null | grep -oE '[0-9A-F]{8}(-[0-9A-F]{4}){3}-[0-9A-F]{12}'); do
+            xcrun simctl runtime unmount "$runtime" >/dev/null 2>&1 || true
+          done
           killall -9 com.apple.CoreSimulator.CoreSimulatorService >/dev/null 2>&1 || true
-          xcrun simctl list runtimes >/dev/null 2>&1 || true
+          xcrun simctl runtime scan-and-mount >/dev/null 2>&1 || true
+          for wait in $(seq 1 30); do
+            xcrun simctl list runtimes >/dev/null 2>&1 || true
+            [ "$(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true)" -ge "$mounted" ] && break
+            sleep 2
+          done
+          echo "Simulator runtimes mounted again: $(mount | grep -c "/Library/Developer/CoreSimulator/Volumes/" || true) of $mounted."
         done
         if [ -n "$key" ]; then
           # What automatic signing did about identifiers, groups and profiles.
