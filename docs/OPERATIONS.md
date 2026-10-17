@@ -156,7 +156,9 @@ Signed node registrations are not gated but have a per-IP limit.
 - Each `GET /signup` issues a claim cookie; a token from an earlier page view
   is refused with `turnstile_stale_page`.
 - Fails closed: without the secret, or on a siteverify error or timeout, the
-  forms answer 503 `turnstile_unavailable`.
+  forms answer 503 `turnstile_unavailable`. Signup then takes the backup
+  check instead (`docs/app/signup-failure-pings.md`, "Backup check"); set
+  `SIGNUP_BACKUP_CHECK=off` to make signup fail closed too.
 - Rotate in the Turnstile dashboard, update `secrets.env`, then
   `next_vault.py sync --execute` within the grace period.
 - Off the VPS platform with no secret, Cloudflare's always-pass test keys are

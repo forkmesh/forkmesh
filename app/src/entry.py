@@ -1715,6 +1715,9 @@ LOGIN_LOCKOUT_MS = 15 * 60 * 1000
 # squatting. Login has its own lockout; catalog writes have their own cooldown.
 SIGNUP_RATE_WINDOW_MS = 60 * 60 * 1000
 SIGNUP_MAX_PER_IP = 5
+SIGNUP_BACKUP_MAX_PER_IP = 10
+SIGNUP_BACKUP_MAX_PER_WINDOW = 60
+SIGNUP_BACKUP_RATE_KEY = "signup-backup-v1"
 ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000
 # How long a password-reset link stays valid after it is emailed.
 PASSWORD_RESET_TTL_MS = 60 * 60 * 1000
@@ -15882,7 +15885,7 @@ async def catalog_rate_check(env, owner_bi):
     return None
 
 
-async def signup_rate_check(env, ip_bi):
+async def signup_rate_check(env, ip_bi, limit=SIGNUP_MAX_PER_IP):
     # Throttle account creation per source IP: at most SIGNUP_MAX_PER_IP within a
     # rolling SIGNUP_RATE_WINDOW_MS. Returns a 429 response when over the limit,
     # else None (and records this creation). A missing IP (local/dev, or a proxy
@@ -15912,7 +15915,7 @@ async def signup_rate_check(env, ip_bi):
     )
     count = int((row or {}).get("count") or 1)
     window_start = int((row or {}).get("window_start_ts") or now)
-    if count > SIGNUP_MAX_PER_IP:
+    if count > limit:
         retry_ms = max(1000, SIGNUP_RATE_WINDOW_MS - (now - window_start))
         return json_response(
             {"error": "rate_limited", "retryAfterMs": retry_ms},
@@ -21148,6 +21151,33 @@ async def _turnstile_gate(env, request, data, action, challenge_url,
         cache_control="no-store, max-age=0, must-revalidate")
 
 
+async def _signup_backup_gate(env, request, data, cdata, outcome):
+    code, detail = _turnstile.verify_backup(
+        env, data.get(_turnstile.BACKUP_FIELD), cdata)
+    if code:
+        outcome["code"] = code
+        outcome["detail"] = detail
+        return json_response(
+            _turnstile.refusal_payload(code, "/signup"),
+            status=_turnstile.STATUS.get(code, 403),
+            cache_control="no-store, max-age=0, must-revalidate")
+    signup_ip = _transient_client_address(request)
+    budgets = [(SIGNUP_BACKUP_RATE_KEY, SIGNUP_BACKUP_MAX_PER_WINDOW)]
+    if signup_ip:
+        budgets.insert(0, (await blind_index(
+            env, SIGNUP_BACKUP_RATE_KEY + "\n" + signup_ip),
+            SIGNUP_BACKUP_MAX_PER_IP))
+    for key, limit in budgets:
+        throttled = await signup_rate_check(env, key, limit)
+        if throttled is not None:
+            outcome["code"] = "rate_limited"
+            outcome["detail"] = "backup_check"
+            await log_blocked_signup(
+                env, request, SIGNUP_PATH, 429, "rate_limited")
+            return throttled
+    return None
+
+
 # Simple web signup: create an active account from node name + email + password.
 # Solana payout details are intentionally handled later from the dashboard profile.
 async def _account_signup(env, request):
@@ -21178,10 +21208,16 @@ async def _account_signup(env, request):
     # Human check before any account lookup: the token must come from the
     # widget on the very page view that minted this signup claim (cdata).
     turnstile_outcome = {}
-    refused = await _turnstile_gate(
-        env, request, data, _turnstile.ACTION_SIGNUP, "/signup",
-        cdata=_turnstile.signup_cdata(signup_claim.get("claimId", "")),
-        log_path=SIGNUP_PATH, outcome=turnstile_outcome)
+    signup_cdata = _turnstile.signup_cdata(signup_claim.get("claimId", ""))
+    backup_proof = data.get(_turnstile.BACKUP_FIELD)
+    if backup_proof:
+        refused = await _signup_backup_gate(
+            env, request, data, signup_cdata, turnstile_outcome)
+    else:
+        refused = await _turnstile_gate(
+            env, request, data, _turnstile.ACTION_SIGNUP, "/signup",
+            cdata=signup_cdata, log_path=SIGNUP_PATH,
+            outcome=turnstile_outcome)
     if refused is not None:
         return await _signup_refused(
             env, turnstile_outcome.get("code") or "turnstile_failed", 403,
@@ -21302,6 +21338,9 @@ async def _account_signup(env, request):
     is_new_member = not existing or existing.get("status") != "active"
     rec.setdefault("created_at", int(Date.now()))
     signup_meta = _signup_metadata(request)
+    if backup_proof:
+        signup_meta["challenge"] = "backup:" + (
+            _turnstile.backup_reason(backup_proof) or "unknown")
     if signup_code_generation:
         signup_meta["adminReferralCodeGeneration"] = signup_code_generation
     signup_meta.update(await _capture_referral_source(
@@ -43743,6 +43782,7 @@ async def log_blocked_signup(env, request, path, status, reason):
 
 SIGNUP_PROBLEM_PATH = "/api/accounts/signup/problem"
 SIGNUP_BROWSER_PROBLEMS = frozenset({
+    "challenge_backup_failed",
     "challenge_error",
     "challenge_stale",
     "challenge_not_rendered",

@@ -61,7 +61,121 @@
   let challengeWaiters = [];
   let challengeErrors = 0;
   let challengeErrorCode = "";
-  let challengeErrorReported = false;
+  let challengeMissed = 0;
+
+  const BACKUP_PREFIX = "forkmesh-signup-backup-v1:";
+  const BACKUP_BITS = 18;
+  const BACKUP_BATCH = 20000;
+  const CHALLENGE_LOAD_WAIT_MS = 10 * 1000;
+  const SHA256_K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const SHA256_W = new Uint32Array(64);
+  let backupReason = "";
+  let backupProof = null;
+  let backupRun = null;
+
+  function sha256Head(text) {
+    const length = text.length;
+    const words = new Uint32Array((((length + 8) >> 6) + 1) * 16);
+    for (let i = 0; i < length; i += 1) words[i >> 2] |= text.charCodeAt(i) << (24 - (i & 3) * 8);
+    words[length >> 2] |= 0x80 << (24 - (length & 3) * 8);
+    words[words.length - 1] = length * 8;
+    const W = SHA256_W;
+    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+    let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    for (let base = 0; base < words.length; base += 16) {
+      for (let t = 0; t < 64; t += 1) {
+        if (t < 16) {
+          W[t] = words[base + t];
+        } else {
+          const x = W[t - 15];
+          const y = W[t - 2];
+          W[t] = W[t - 16] + W[t - 7]
+            + (((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3))
+            + (((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10));
+        }
+      }
+      let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (let t = 0; t < 64; t += 1) {
+        const t1 = (h + (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7)))
+          + ((e & f) ^ (~e & g)) + SHA256_K[t] + W[t]) | 0;
+        const t2 = ((((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10)))
+          + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+      h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+    }
+    return h0 >>> 0;
+  }
+
+  function solveBackupProof(prefix) {
+    return new Promise((resolve) => {
+      let nonce = 0;
+      const step = () => {
+        try {
+          for (const stop = nonce + BACKUP_BATCH; nonce < stop; nonce += 1) {
+            if ((sha256Head(prefix + nonce) >>> (32 - BACKUP_BITS)) === 0) {
+              resolve(String(nonce));
+              return;
+            }
+          }
+          setTimeout(step, 0);
+        } catch (_) {
+          resolve("");
+        }
+      };
+      setTimeout(step, 0);
+    });
+  }
+
+  function backupRunFor(cdata) {
+    if (!backupRun || backupRun.cdata !== cdata) {
+      backupRun = { cdata, promise: solveBackupProof(BACKUP_PREFIX + cdata + ":") };
+    }
+    return backupRun.promise;
+  }
+
+  async function backupAnswer() {
+    while (challengeBox && backupReason) {
+      const cdata = challengeBox.dataset.cdata || "";
+      if (backupProof && backupProof.cdata === cdata) return backupProof;
+      const nonce = await backupRunFor(cdata);
+      if (!nonce) {
+        backupRun = null;
+        return null;
+      }
+      if ((challengeBox.dataset.cdata || "") === cdata) backupProof = { cdata, nonce };
+    }
+    return null;
+  }
+
+  function useBackupCheck(reason) {
+    if (!challengeBox) return Promise.resolve(null);
+    if (!backupReason) {
+      backupReason = String(reason || "unknown").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24) || "unknown";
+      challengeToken = "";
+      challengeAt = 0;
+      try {
+        if (challengeWidget !== null && window.turnstile) window.turnstile.remove(challengeWidget);
+      } catch (_) {}
+      challengeWidget = null;
+      challengeBox.hidden = true;
+      if (/security check/i.test(signupHint.textContent)) setSignupHint("", "");
+      const waiters = challengeWaiters;
+      challengeWaiters = [];
+      waiters.forEach((resolve) => resolve(""));
+    }
+    return backupAnswer();
+  }
 
   function reportProblem(problem, detail) {
     if (!isLive) return;
@@ -92,7 +206,7 @@
   }
 
   function renderChallenge() {
-    if (!challengeBox || challengeWidget !== null || !window.turnstile) return;
+    if (!challengeBox || challengeWidget !== null || backupReason || !window.turnstile) return;
     try {
       challengeWidget = window.turnstile.render(challengeBox, {
         sitekey: challengeBox.dataset.sitekey || "",
@@ -112,16 +226,13 @@
             setSignupHint("The security check hit a snag and is retrying…", "");
             return true;
           }
-          setSignupHint("The security check could not load. Reload the page and try again.", "bad");
-          if (!challengeErrorReported) {
-            challengeErrorReported = true;
-            reportProblem("challenge_error", challengeErrorCode + ":" + challengeErrors);
-          }
+          useBackupCheck("e" + challengeErrorCode);
           return true;
         },
       });
     } catch (error) {
-      reportProblem("challenge_render_failed", error && error.name);
+      challengeWidget = null;
+      useBackupCheck("render_" + String((error && error.name) || "failed"));
     }
   }
 
@@ -194,6 +305,11 @@
     emailInput.name = field;
     if (challengeBox) {
       challengeBox.dataset.cdata = String(result.body.challengeCdata || "");
+      backupProof = null;
+      if (backupReason) {
+        backupAnswer();
+        return true;
+      }
       challengeToken = "";
       challengeAt = 0;
       try {
@@ -219,7 +335,7 @@
     createButton.textContent = "Checking…";
     setSignupHint("Refreshing the signup page…", "");
     const renewed = await renewSignupIntent();
-    const token = renewed ? await waitForChallenge() : "";
+    const token = renewed ? await (backupReason ? backupAnswer() : waitForChallenge()) : "";
     createButton.disabled = false;
     createButton.textContent = "Create account";
     if (!renewed) {
@@ -227,8 +343,11 @@
       reportProblem("signup_page_renew_failed", "");
       return false;
     }
-    if (challengeBox && challengeWidget !== null && !token) {
-      setSignupHint("Complete the security check above, then create your account.", "bad");
+    if (challengeBox && (backupReason || challengeWidget !== null) && !token) {
+      setSignupHint(backupReason
+        ? "The security check could not run. Reload the page and try again."
+        : "Complete the security check above, then create your account.", "bad");
+      if (backupReason) reportProblem("challenge_backup_failed", backupReason);
       return false;
     }
     setSignupHint("", "");
@@ -246,6 +365,11 @@
 
   window.forkmeshSignupChallengeReady = renderChallenge;
   renderChallenge();
+  if (challengeBox && isLive) {
+    setTimeout(() => {
+      if (!window.turnstile && challengeWidget === null) useBackupCheck("unavailable");
+    }, CHALLENGE_LOAD_WAIT_MS);
+  }
 
   function setNameHint(text, cls) {
     // Only surface this hint for an actual error; success/neutral states stay quiet.
@@ -376,6 +500,22 @@
     updateCreateState();
   }
 
+  async function solveBackupCheck() {
+    createButton.disabled = true;
+    createButton.textContent = "Checking…";
+    setSignupHint("Running a backup security check…", "");
+    const proof = await backupAnswer();
+    createButton.disabled = false;
+    createButton.textContent = "Create account";
+    if (!proof) {
+      setSignupHint("The security check could not run. Reload the page and try again.", "bad");
+      reportProblem("challenge_backup_failed", backupReason);
+      return false;
+    }
+    setSignupHint("", "");
+    return true;
+  }
+
   async function createAccount(event) {
     event.preventDefault();
     const nodeName = nameInput.value.trim().toLowerCase();
@@ -400,32 +540,36 @@
     if (signupIntentStale() && !(await renewSignupPage())) {
       return;
     }
-    if (challengeBox && challengeWidget !== null && challengeStale()) {
+    if (challengeBox && !backupReason && challengeWidget !== null && challengeStale()) {
       createButton.disabled = true;
       createButton.textContent = "Checking…";
       setSignupHint("Refreshing the security check…", "");
       const fresh = await refreshChallenge();
       createButton.disabled = false;
       createButton.textContent = "Create account";
-      if (!fresh) {
-        setSignupHint("Complete the security check above, then create your account.", "bad");
-        reportProblem("challenge_stale", "");
-        return;
-      }
       setSignupHint("", "");
+      if (!fresh) useBackupCheck("stale");
     }
-    if (challengeBox && !widgetToken()) {
+    if (challengeBox && !backupReason && !widgetToken()) {
       if (!window.turnstile) {
-        setSignupHint("The security check could not load. Reload the page and try again.", "bad");
-        reportProblem("challenge_unavailable", "");
+        useBackupCheck("unavailable");
       } else if (challengeWidget === null) {
         renderChallenge();
-        setSignupHint("Complete the security check above, then create your account.", "bad");
-        reportProblem("challenge_not_rendered", "");
-      } else {
+        if (challengeWidget === null) useBackupCheck("not_rendered");
+      } else if (challengeMissed < 1) {
+        challengeMissed += 1;
         setSignupHint("Complete the security check above, then create your account.", "bad");
         reportProblem("challenge_token_missing", challengeErrorCode);
+        return;
+      } else {
+        useBackupCheck("token_missing");
       }
+      if (!backupReason) {
+        setSignupHint("Complete the security check above, then create your account.", "bad");
+        return;
+      }
+    }
+    if (challengeBox && backupReason && !(await solveBackupCheck())) {
       return;
     }
 
@@ -441,7 +585,10 @@
           : "",
         ref: referralCode(),
         referralToken: referralToken(),
-        turnstileToken: challengeToken,
+        turnstileToken: backupReason ? "" : challengeToken,
+        ...(backupReason && backupProof
+          ? { backupProof: { nonce: backupProof.nonce, reason: backupReason } }
+          : {}),
         marketingEmail: Boolean(updatesAgree && updatesAgree.checked),
       }),
     });
@@ -453,6 +600,14 @@
       result = await postSignup();
       if (!result.ok && isLive && SIGNUP_PAGE_RENEW_ERRORS.includes(result.body.error)) {
         if (!(await renewSignupPage())) return;
+        createButton.disabled = true;
+        createButton.textContent = "Creating…";
+        result = await postSignup();
+      }
+      if (!result.ok && isLive && challengeBox && !backupReason
+          && result.body.error === "turnstile_unavailable") {
+        useBackupCheck("server_unavailable");
+        if (!(await solveBackupCheck())) return;
         createButton.disabled = true;
         createButton.textContent = "Creating…";
         result = await postSignup();
@@ -487,6 +642,7 @@
           : body.error === "turnstile_failed" ? "The security check could not be verified. Try it again."
           : body.error === "turnstile_stale_page" ? "This signup page was replaced by a newer one (another tab or a reload). Reload this page and try again."
           : body.error === "turnstile_unavailable" ? "Signup is temporarily unavailable (security check offline). Please try again in a few minutes."
+          : body.error === "rate_limited" ? "Too many signups from this network right now. Please try again in an hour."
           : "Could not create the account. Please try again.",
         "bad");
       return;
