@@ -57,52 +57,6 @@ class WebClientInteropCryptoTest {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    fun testWebClientAndKotlinExchangeRoomSealFrames() {
-        val root = webRoot() ?: return
-        val room = "world-general"
-        val browserPrivate = "UE5ZIyTdbSCtuDSqkI3g5TnXBMw1nx4Oz1BfmvE6CGc"
-        val browserKey = RoomSeal.fromPrivateKey(room, B64.decode("$browserPrivate="))
-        val android = RoomSeal.fromPrivateKey(room, B64.decode("cJMcO0LKgE1B6DRDn8z2mCcgt-cKyuWEtafYL2hFjHk="))
-        expect(android.acceptKeyFrame(browserKey.keyFrame()))
-        val plain = linkedMapOf<String, Any?>("type" to "dm", "id" to "android-seal-1", "text" to "sealed on Android é 😀")
-        CryptoInterop.withFiles("seal-frame.json", "seal-android-key.json") { (frameFile, keyFile) ->
-            frameFile.writeText(Json.stringify(android.seal(plain)))
-            keyFile.writeText(Json.stringify(android.keyFrame()))
-            val out = node(
-                """
-                import { readFileSync } from "node:fs";
-                import { pathToFileURL } from "node:url";
-                const [modulePath, framePath, keyPath, room, d, x] = process.argv.slice(1);
-                const { acceptSealKey, createRoomSealStore, sealFrame, unsealFrame } = await import(pathToFileURL(modulePath).href);
-                const items = new Map([["forkmesh.chat.e2ee.x25519.v2", JSON.stringify({ kty: "OKP", crv: "X25519", d, x })]]);
-                const storage = {
-                  getItem: (key) => items.has(key) ? items.get(key) : null,
-                  setItem: (key, value) => items.set(key, String(value)),
-                  removeItem: (key) => items.delete(key),
-                };
-                const seal = await createRoomSealStore({ storage }).resolve("scope", room);
-                const opened = await unsealFrame(JSON.parse(readFileSync(framePath, "utf8")), seal);
-                await acceptSealKey(JSON.parse(readFileSync(keyPath, "utf8")), seal);
-                const reply = await sealFrame({ type: "dm", id: "browser-seal-1", text: "sealed in the browser" }, seal);
-                process.stdout.write(JSON.stringify({ keyId: seal.keyId, opened, reply }));
-                """.trimIndent(),
-                File(root, "app/public/chat-seal.js").path,
-                frameFile.path,
-                keyFile.path,
-                room,
-                browserPrivate,
-                browserKey.keyFrame()["pub"] as String,
-            ) as Map<String, Any?>
-            assertEq(browserKey.keyId, out["keyId"])
-            assertEq(plain, out["opened"])
-            assertEq(
-                mapOf("type" to "dm", "id" to "browser-seal-1", "text" to "sealed in the browser"),
-                android.unseal(out["reply"] as Map<String, Any?>),
-            )
-        }
-    }
-
     fun testWebClientDecryptsKotlinRoomEnvelopes() {
         val root = webRoot() ?: return
         val plain = linkedMapOf<String, Any?>("type" to "chat", "id" to "android-1", "text" to "from Kotlin é 😀", "n" to 7L)

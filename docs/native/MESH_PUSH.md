@@ -29,9 +29,10 @@ local alerts raised by the phone itself.
      (`MainWindow::wakeLocalMeshPhones`, `signOrgTaskProof`).
 
    The server checks each token, drops the sender's own account and coalesces
-   each recipient to one push per 5 s. It then sends `New message in #mesh` on
-   the `chat` APNs topic to the token owner's phones. The message text never
-   leaves the LAN.
+   each recipient to one push per 5 s. It then sends `New message` (payload
+   `conversation: "#mesh"`, collapse id `mesh-room`) on the `chat` APNs topic
+   to the token owner's phones. The message text never leaves the LAN, and
+   since chat protocol v3 the title no longer names the room either.
 
 ## Local alerts over the mesh
 
@@ -49,7 +50,7 @@ leaves the devices and no account is needed.
   is unread. The body is the text, cut to 180 characters.
 - **One notification.** Each alert replaces the last. Opening `#mesh` marks
   the room read, which removes it. On iOS it also removes any wake pushes
-  ("New message in #mesh") still in Notification Center, and posting a local
+  (conversation `#mesh`) still in Notification Center, and posting a local
   alert removes the generic wake banners it supersedes.
 - **Read only while visible.** `#mesh` is marked read only while the app is in
   the foreground, otherwise each alert would be cleared as it is posted.

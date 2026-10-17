@@ -1476,11 +1476,21 @@
               </p>
               <p id="chat-seal-state" class="chat-attachment-meta" role="status" aria-live="polite"></p>
               <p class="chat-attachment-meta">
-                In an end-to-end encrypted conversation, a new device can read
-                messages addressed after its public key is learned but cannot
-                retroactively open older history. Changing a channel to Public does
-                not expose its previously encrypted messages.
+                Every message is signed by the device that wrote it and sealed with
+                post-quantum keys that each device replaces daily and deletes after
+                8 days. A new device can read only messages sealed after it joined.
+                In a direct message, a new device for someone already in the
+                conversation gets nothing until you approve it. Changing a channel
+                to Public does not expose its previously encrypted messages.
               </p>
+              <section id="chat-safety" class="chat-channel-section chat-safety" aria-labelledby="chat-safety-title" hidden>
+                <h3 id="chat-safety-title">Safety number</h3>
+                <p id="chat-safety-lead" class="chat-attachment-meta"></p>
+                <div id="chat-safety-digits" class="chat-safety-digits" aria-label="Safety number"></div>
+                <div id="chat-safety-qr" class="chat-safety-qr"></div>
+                <p id="chat-safety-state" class="chat-attachment-meta" role="status" aria-live="polite"></p>
+                <button id="chat-safety-verify" class="chat-safety-verify" type="button">Mark as verified</button>
+              </section>
             </div>
 
             <!-- Everything a channel manager controls, anchored under the
@@ -1568,6 +1578,13 @@
             <span id="chat-office-alert-copy"></span>
             <a id="chat-office-login" href="/login?next=%2Fchat%3Fembed%3Doffice" target="_top" hidden>Log in</a>
             <button id="chat-office-retry" type="button" hidden>Retry</button>
+          </div>
+
+          <div id="chat-trust-banner" class="chat-office-alert chat-trust-banner" role="alert" hidden>
+            <span id="chat-trust-banner-copy"></span>
+            <button id="chat-trust-safety" type="button">Safety number</button>
+            <button id="chat-trust-approve" class="chat-trust-approve" type="button">Approve</button>
+            <button id="chat-trust-block" class="chat-trust-block" type="button">Block</button>
           </div>
 
           <div id="chat-log" aria-live="polite" aria-label="Chat messages">

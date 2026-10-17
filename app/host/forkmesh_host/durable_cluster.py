@@ -62,6 +62,7 @@ _INTERNAL = ("x-fm-do-url", "x-fm-do-id", "x-fm-do-cf")
 MESH_MAX_BODY = 4 * 1024 * 1024
 MESH_MAX_DO_BODY = _cluster._env_int("FORKMESH_MESH_MAX_DO_BODY",
                                      32 * 1024 * 1024)
+MESH_WS_MAX_SIZE = 4 * 1024 * 1024 + 64 * 1024
 
 
 def object_name(object_id):
@@ -370,7 +371,7 @@ class ClusterDurableHost(LocalDurableHost):
             MeshASGI(self), host=host.strip("[]") or "127.0.0.1",
             port=int(port), lifespan="off", ws="websockets-sansio",
             log_level="warning", access_log=False, server_header=False,
-            proxy_headers=False, ws_max_size=2 * 1024 * 1024,
+            proxy_headers=False, ws_max_size=MESH_WS_MAX_SIZE,
             timeout_keep_alive=30)
         self._mesh_server = _MeshServer(config)
         await self._mesh_server.serve()
@@ -761,7 +762,7 @@ class ClusterDurableHost(LocalDurableHost):
             conn = await connect(
                 ws_url, additional_headers=headers,
                 subprotocols=protocols or None, open_timeout=10,
-                max_size=2 * 1024 * 1024, compression=None,
+                max_size=MESH_WS_MAX_SIZE, compression=None,
                 ping_interval=20, ping_timeout=20, user_agent_header=None,
                 close_timeout=5)
         except InvalidStatus as error:

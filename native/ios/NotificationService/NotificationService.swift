@@ -82,7 +82,6 @@ final class NotificationService: UNNotificationServiceExtension {
             let pushedOrigin = (request.content.userInfo["origin"] as? String) ?? ""
             let credentials = PushCredentialStore.load(origin: pushedOrigin)
             let origin = credentials?.origin ?? pushedOrigin
-            let sender = request.content.userInfo["sender"] as? String
             let mode = PushPreviewMode.parse(credentials?.preview)
             let pushed = Self.payload(request.content.userInfo)
             let chat = PushChatRequest.parse(pushed)
@@ -102,50 +101,48 @@ final class NotificationService: UNNotificationServiceExtension {
                 }
                 return
             }
-            switch mode {
-            case .hidden:
+            if mode == .hidden {
                 content.title = PushPreviewText.hiddenTitle
                 content.subtitle = ""
                 content.body = PushPreviewText.genericBody
                 deliver(content)
-            case .nameOnly:
-                if let chat, let preview = PushPreviewText.preview(nil, request: chat, mode: .nameOnly) {
-                    content.title = preview.title
+                return
+            }
+            guard let chat, let credentials,
+                let url = Self.pendingURL(origin: credentials.origin, path: chat.pendingPath)
+            else {
+                deliver(content)
+                return
+            }
+            var fetch = URLRequest(url: url)
+            fetch.httpMethod = "GET"
+            fetch.timeoutInterval = Self.fetchTimeout
+            fetch.setValue("Bearer " + credentials.session, forHTTPHeaderField: "Authorization")
+            fetch.setValue("application/json", forHTTPHeaderField: "Accept")
+            fetch.cachePolicy = .reloadIgnoringLocalCacheData
+            let chatStore = PushCredentialStore.chatStore(deviceKeyName: credentials.deviceKeyName)
+            task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
+                var opened = PushChatOpened.unavailable
+                if let data, (response as? HTTPURLResponse)?.statusCode == 200 {
+                    opened = PushChatOpener.open(
+                        PushChatOpener.withPushedFrame(JSON.parseObject(data), pushed: pushed), request: chat,
+                        secureStore: chatStore, keys: Self.roomKeys)
                 }
-                content.body = PushPreviewText.genericBody
-                attachPortrait(to: content, origin: origin, sender: sender)
-            case .nameAndMessage:
-                guard let chat, let credentials,
-                    let url = Self.pendingURL(origin: credentials.origin, path: chat.pendingPath)
-                else {
-                    attachPortrait(to: content, origin: origin, sender: sender)
+                if let preview = PushPreviewText.preview(opened, request: chat, mode: mode) {
+                    content.title = preview.title
+                    content.subtitle = ""
+                    content.body = preview.body
+                }
+                guard let message = opened.message else {
+                    self.deliver(content)
                     return
                 }
-                var fetch = URLRequest(url: url)
-                fetch.httpMethod = "GET"
-                fetch.timeoutInterval = Self.fetchTimeout
-                fetch.setValue("Bearer " + credentials.session, forHTTPHeaderField: "Authorization")
-                fetch.setValue("application/json", forHTTPHeaderField: "Accept")
-                fetch.cachePolicy = .reloadIgnoringLocalCacheData
-                let deviceKeyName = credentials.deviceKeyName
-                task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
-                    if let data, (response as? HTTPURLResponse)?.statusCode == 200,
-                        let message = PushChatOpener.open(
-                            PushChatOpener.withPushedFrame(JSON.parseObject(data), pushed: pushed), request: chat,
-                            privateKey: PushCredentialStore.deviceKey(named: deviceKeyName), keys: Self.roomKeys),
-                        let preview = PushPreviewText.preview(message, request: chat, mode: .nameAndMessage)
-                    {
-                        content.title = preview.title
-                        content.subtitle = ""
-                        content.body = preview.body
-                        var info = content.userInfo
-                        info["messageId"] = message.id
-                        content.userInfo = info
-                    }
-                    self.attachPortrait(to: content, origin: origin, sender: sender)
-                }
-                task?.resume()
+                var info = content.userInfo
+                info["messageId"] = message.id
+                content.userInfo = info
+                self.attachPortrait(to: content, origin: origin, sender: message.sender)
             }
+            task?.resume()
             return
         }
 

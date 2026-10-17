@@ -359,6 +359,11 @@ Budgets in `office/perf-budget.json`. Rendering is Canvas 2D (one pre-rendered
 map, cached sprites, viewport culling); movement is batched to 20 Hz and the
 proximity mesh recomputed every 250 ms.
 
+The script budget is 140 KB gzip since chat protocol v3 (2026-10-16): the
+Office chat bundles `app/public/chat-seal.js` and the ML-KEM-768 port
+`app/public/chat-mlkem.js`, about 8 KB gzip more than the v2 seal, which took
+the bundle from just under 130 KB to about 137 KB.
+
 ## Operations
 
 - Deploy with the normal app deploy (migrations, the `FORKMESH_ORG_OFFICE`

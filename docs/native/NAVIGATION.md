@@ -133,6 +133,15 @@ destination, in sections, with counts and activity:
   `TimelineView`s. The operator asked for the accent pills and the synced
   pulse on 2026-10-15.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
+- **Update dot.** A plugin tile whose Market package changed version since
+  the user last opened it shows a small accent dot at the icon's bottom right
+  (`ShellHomeUpdateDot`; VoiceOver reads "Updated"). `AccountPackagesStore`
+  keeps the catalog version and the last viewed version of each package under
+  `packages/versions` on the device; the first catalog seen for a package is
+  its baseline, so installs and first launches show no dot. Opening the plugin
+  clears it: a Home pick (`markViewed(hubItem:)`), any route or tab
+  that belongs to the package (`PackageGate.packageId(for:)`), its Market page,
+  or installing it. The operator asked for the dot on 2026-10-16.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
@@ -222,8 +231,18 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
   channel details sheet (`Channels/ChatChannelSheet.swift`) or the DM's
   encryption explanation.
 - DMs and groups use the conversation header instead: back circle, a pill with
-  the avatar and the name beside it over the presence and server-copies line,
-  and the call buttons ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)).
+  the avatar and the name beside it over the presence, route ("Direct · Wi-Fi",
+  "Direct · Bluetooth", "Direct only") and server-copies line, and the call
+  buttons ([native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md)).
+- Under a DM's header, each device waiting for approval gets a banner with
+  Approve, Block and the safety number; the transcript carries the matching
+  system lines and "Your safety number with X changed". The DM details sheet
+  has a "Safety number" row that pushes the digits, QR code and scanner.
+- With "Lock chats with Face ID" on (Settings > Chat privacy), the Chat tab
+  shows a lock placeholder after the app was in the background and asks for
+  Face ID or the passcode when the tab is opened; "Hide chats in the app
+  switcher" (on by default) covers the whole window whenever the app is not
+  active.
 - The channel list opens with "Recent" (the five newest conversations) and a
   small "N online" pill in that header; there are no count tiles.
 - The channel list is a full-width drawer from the left that hides the room
@@ -233,6 +252,14 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
 - The Chat tab reopens the last conversation per project
   (`ChatWorkspace.lastConversation`, Android `chat/lastConversation`) unless a
   notification or link chose one.
+- An office channel push names only its `channelId`; the tap opens the room
+  with that id (`ShellChatBridge.officeConversation`).
+- A notification or link that opens a conversation (`ChatHub.switchConversation`)
+  bumps `ChatHub.revealRequests`. The chat screens then close what was left
+  covering the transcript: the channel drawer, a page pushed inside Chat, and
+  their sheets and alerts. Before this, a tap switched the conversation
+  underneath, so a phone left on the channel list or a details sheet stayed
+  there instead of showing the chat the banner named.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
   `chatKeepsEndInView`.

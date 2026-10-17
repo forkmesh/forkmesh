@@ -15,9 +15,14 @@ import java.nio.file.Files
 class LocalMeshQueueTest {
     private val loopback: InetAddress = InetAddress.getByName("127.0.0.1")
 
-    private fun room(name: String, identity: Identity = Identity.fromSeed(Bytes.random(32)), history: File? = null): LocalMeshRoom {
+    private fun room(
+        name: String,
+        identity: Identity = Identity.fromSeed(Bytes.random(32)),
+        history: File? = null,
+        store: MemorySecretStore = MemorySecretStore(),
+    ): LocalMeshRoom {
         val settings = AccountSettings.create(MemoryPrefStore(mapOf("profile/name" to name)), MemorySecretStore())
-        val room = LocalMeshRoom(settings, identity, MemorySecretStore(), platform = "linux", historyFile = { history })
+        val room = LocalMeshRoom(settings, identity, store, platform = "linux", historyFile = { history })
         room.listenAddress = loopback
         room.accountProvider = { name }
         room.multicastEnabled = false
@@ -27,18 +32,19 @@ class LocalMeshQueueTest {
     }
 
     fun testAReplyBeaconSaysSoAndAnOrdinaryOneDoesNot() {
-        val reply = MeshBeacon(nodeId = "a", port = 1, reply = true).toJson()
+        val reply = MeshBeacon(kid = "a", port = 1, reply = true).toJson()
         assertEq(true, reply["reply"])
         assertEq(true, MeshBeacon.parse(reply)!!.reply)
-        val plain = MeshBeacon(nodeId = "a", port = 1).toJson()
+        val plain = MeshBeacon(kid = "a", port = 1).toJson()
         expect(!plain.containsKey("reply"))
         assertEq(false, MeshBeacon.parse(plain)!!.reply)
     }
 
     fun testAControlBeaconRoundTrips() {
-        val beacon = MeshBeacon(nodeId = "desk", port = 48800, control = true).toJson()
+        val beacon = MeshBeacon(kid = "desk", port = 48800, control = true, node = "desk-node").toJson()
         assertEq(true, MeshBeacon.parse(beacon)!!.control)
-        assertEq(false, MeshBeacon.parse(MeshBeacon(nodeId = "desk", port = 1).toJson())!!.control)
+        assertEq("desk-node", MeshBeacon.parse(beacon)!!.node)
+        assertEq(false, MeshBeacon.parse(MeshBeacon(kid = "desk", port = 1).toJson())!!.control)
     }
 
     fun testASubnetSweepStaysOnTheLocal24AndOffThisDevice() {
@@ -65,11 +71,12 @@ class LocalMeshQueueTest {
         val dir = Files.createTempDirectory("mesh-history").toFile()
         val historyFile = File(dir, "history.json")
         val identity = Identity.fromSeed(Bytes.random(32))
+        val keys = MemorySecretStore()
         val grace = room("grace")
         val carol = room("carol")
         var ada: LocalMeshRoom? = null
         try {
-            val alone = room("ada", identity, historyFile)
+            val alone = room("ada", identity, historyFile, keys)
             expect(alone.start())
             val sent = alone.sendMessage("anyone out there?")
             expect(alone.isQueued(sent), "nobody is linked, so the message waits")
@@ -77,7 +84,7 @@ class LocalMeshQueueTest {
             alone.dispose()
             expect(historyFile.exists(), "history written at stop")
 
-            val restarted = room("ada", identity, historyFile)
+            val restarted = room("ada", identity, historyFile, keys)
             ada = restarted
             expect(restarted.start())
             assertEq(listOf(sent), restarted.messages.map { it.id })

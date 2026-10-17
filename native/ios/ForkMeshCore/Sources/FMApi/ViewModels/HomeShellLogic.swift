@@ -139,6 +139,11 @@ public func pushChatConversation(isDirectMessage: Bool, unreadConversations: [St
     }
 }
 
+public func pushChatNamed(isDirectMessage: Bool, conversation: String, officeRoom: String?) -> String {
+    if !conversation.isEmpty || isDirectMessage { return conversation }
+    return officeRoom ?? ""
+}
+
 private func isPushDirectConversation(_ conversation: String) -> Bool {
     conversation.hasPrefix("@") || conversation.hasPrefix("direct:")
 }
@@ -199,6 +204,11 @@ public protocol ShellChatBridge: AnyObject {
     /// Opening the Chat tab clears its badge; each conversation stays unread until opened.
     func markBadgeSeen()
     func switchConversation(_ conversation: String)
+    func officeConversation(channelId: String) -> String?
+}
+
+extension ShellChatBridge {
+    public func officeConversation(channelId: String) -> String? { nil }
 }
 
 /// The desktop-on-this-network state for the top bar, from the local control

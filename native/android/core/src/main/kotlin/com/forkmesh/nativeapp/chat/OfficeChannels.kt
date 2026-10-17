@@ -3,6 +3,8 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.apps.AppBlocks
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.crypto.Sha256
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.jsonLong
@@ -242,6 +244,7 @@ class OfficeChannelService(
     private val displayName: () -> String,
     private val now: () -> Long = System::currentTimeMillis,
     private val platform: String = "android",
+    private val account: () -> String = { "" },
 ) {
     private class RoomSocket(val roomId: String, val crypto: RoomCrypto, val seal: RoomSeal, var socket: OfficeSocket? = null)
 
@@ -338,12 +341,16 @@ class OfficeChannelService(
     }
 
     private fun seal(room: String): RoomSeal {
-        synchronized(lock) { seals[room] }?.let { return it }
-        val scope = origin()?.let { runCatching { URI(it).host }.getOrNull() } ?: ""
-        val loaded = RoomSeal.loadOrCreate(room, storageScope = "office|$scope", secureStore = secureStore)
+        synchronized(lock) { seals[room] }?.let {
+            it.setIdentity(sealAccount(), selfId())
+            return it
+        }
+        val loaded = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, clock = now, node = selfId())
         synchronized(lock) { seals[room] = loaded }
         return loaded
     }
+
+    private fun sealAccount(): String = account().trim().lowercase().ifEmpty { selfId() }
 
     fun loadHistory(conversation: String) {
         val room = room(conversation) ?: return
@@ -365,7 +372,7 @@ class OfficeChannelService(
                 }
                 if (envelope.isEmpty()) continue
                 val plain = crypto.decrypt(envelope) ?: continue
-                accept(plain, room, seal, null, OfficeFrames.recipients(envelope))
+                accept(plain, room, seal, null, OfficeFrames.recipients(envelope), history = true)
             }
             notifyListeners()
         } catch (error: Exception) {
@@ -374,14 +381,29 @@ class OfficeChannelService(
         }
     }
 
-    private fun accept(frame: Map<String, Any?>, room: OfficeRoom, seal: RoomSeal, live: RoomSocket?, recipients: Int? = null) {
+    private fun accept(
+        frame: Map<String, Any?>,
+        room: OfficeRoom,
+        seal: RoomSeal,
+        live: RoomSocket?,
+        recipients: Int? = null,
+        history: Boolean = false,
+    ) {
         var plain = frame
+        if (RoomSeal.isLegacyFrame(plain)) return
         if (RoomSeal.isKeyFrame(plain)) {
-            if (seal.acceptKeyFrame(plain) && live != null) advertise(live)
+            val outcome = seal.acceptKeyFrame(plain, now()) ?: return
+            if (outcome.isNew && live != null) advertise(live)
+            for (held in seal.takeHeld(outcome.kid)) {
+                accept(held.frame, room, seal, live, (held.meta["recipients"] as? Number)?.toInt(), held.meta["history"] == true)
+            }
             return
         }
         if (RoomSeal.isSealedFrame(plain)) {
-            plain = seal.unseal(plain) ?: return
+            val meta = LinkedHashMap<String, Any?>()
+            if (history) meta["history"] = true
+            if (recipients != null) meta["recipients"] = recipients
+            plain = (seal.open(plain, now(), history = history, meta = meta) as? SealOpen.Opened)?.plain ?: return
         } else if (room.isPrivate && !room.serverVisible) {
             return
         }
@@ -514,7 +536,7 @@ class OfficeChannelService(
     }
 
     private fun advertise(holder: RoomSocket) {
-        val envelope = runCatching { holder.crypto.encrypt(holder.seal.keyFrame()) }.getOrNull() ?: return
+        val envelope = runCatching { holder.crypto.encrypt(holder.seal.keyFrame(now())) }.getOrNull() ?: return
         holder.socket?.sendText(Json.stringify(envelope))
     }
 
@@ -560,7 +582,8 @@ class OfficeChannelService(
         val socket = holder.socket ?: return ""
         val plain = frame(room, body, asBot)
         return try {
-            val framed = if (room.isPrivate) holder.seal.seal(plain) else plain
+            val framed = if (room.isPrivate) holder.seal.seal(plain, now()) else plain
+            if (room.isPrivate && holder.seal.needsAdvertisement()) advertise(holder)
             val envelope = LinkedHashMap(holder.crypto.encrypt(framed))
             envelope["persist"] = true
             envelope["notify"] = true

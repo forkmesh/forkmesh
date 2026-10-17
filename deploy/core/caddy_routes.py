@@ -50,6 +50,7 @@ WORLD_APP_ASSET_PATHS = (
     "/chat-attachments.js",
     "/chat-crypto.js",
     "/chat-issue-filing.js",
+    "/chat-mlkem.js",
     "/chat-moderation.js",
     "/chat-retention.js",
     "/chat-room-transport.js",

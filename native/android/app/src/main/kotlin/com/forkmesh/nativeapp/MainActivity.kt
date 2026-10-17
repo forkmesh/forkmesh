@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import com.forkmesh.nativeapp.feature.Features
+import com.forkmesh.nativeapp.feature.chat.ChatPrivacy
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
@@ -28,11 +29,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         AppearanceStore.init(this)
+        ChatPrivacy.init(this)
+        ChatPrivacy.applyWindow(this, ChatPrivacy.hideInSwitcher.value)
         FmUserActivity.startSync()
         val navigator = AppNavigation.init { HomeShell() }
         val kitGallery = KitGalleryScreen.fromIntent(this)
         setContent {
             val appearance by AppearanceStore.appearance.collectAsState()
+            val hideInSwitcher by ChatPrivacy.hideInSwitcher.collectAsState()
+            SideEffect { ChatPrivacy.applyWindow(this@MainActivity, hideInSwitcher) }
             val dark = appearance.isDark(isSystemInDarkTheme())
             SideEffect {
                 WindowCompat.getInsetsController(window, window.decorView).apply {

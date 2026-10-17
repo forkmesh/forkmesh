@@ -11,6 +11,7 @@ import UIKit
 struct MessagesConversationView<Drawer: View>: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.shellTabHidden) private var tabHidden
     let hub: ChatHub
     let onBack: (() -> Void)?
     let showsHeader: Bool
@@ -28,6 +29,12 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var drawing: Bool = false
     @State private var viewOnceOpen: ViewOnceEntry?
     @State private var jumpTarget: String?
+    @State private var transcriptSize: CGSize = .zero
+    @State private var safety: Bool = false
+    @State private var onScreen: Bool = false
+    @State private var focusReport: DirectFocusReporter = DirectFocusReporter { (conversation: String, on: Bool) in
+        ChatFeature.hub()?.setFocus(conversation, on)
+    }
 
     private var look: ChatLook { hub.conversationLook }
 
@@ -51,9 +58,16 @@ struct MessagesConversationView<Drawer: View>: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if showsHeader {
-                        header(palette).transition(.move(edge: .top).combined(with: .opacity))
+                    VStack(spacing: 0) {
+                        if showsHeader {
+                            header(palette).transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if hub.inDirect {
+                            MessagesTrustBanners(
+                                hub: hub, conversation: conversation, colors: palette, onSafety: { safety = true })
+                        }
                     }
+                    .animation(.easeOut(duration: 0.2), value: hub.trustRevision)
                 }
                 .shellDock {
                     VStack(spacing: 0) {
@@ -62,7 +76,7 @@ struct MessagesConversationView<Drawer: View>: View {
                                 .padding(.horizontal, FmSpace.x4)
                         }
                         MessagesComposer(
-                            hub: hub, colors: palette, draft: $draft, focused: $focused, drawing: $drawing, onSend: onSend)
+                            hub: hub, colors: palette, draft: $draft, focused: $focused, onSend: onSend)
                     }
                 }
                 .background {
@@ -82,16 +96,41 @@ struct MessagesConversationView<Drawer: View>: View {
         }
         .onChange(of: conversation) { (previous: String, _: String) in
             drawing = false
+            safety = false
             stopSharing(previous)
             startSharing(conversation)
+            reportFocus()
         }
-        .onAppear { startSharing(conversation) }
-        .onDisappear { stopSharing(conversation) }
+        .onChange(of: hub.revealRequests) { _, _ in
+            details = false
+            safety = false
+            tapbackTarget = nil
+            viewing = nil
+            viewOnceOpen = nil
+        }
+        .onAppear {
+            onScreen = true
+            startSharing(conversation)
+            reportFocus()
+        }
+        .onDisappear {
+            onScreen = false
+            stopSharing(conversation)
+            focusReport.clear()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 startSharing(conversation)
             } else {
                 stopSharing(conversation)
+            }
+            reportFocus()
+        }
+        .onChange(of: tabHidden) { _, _ in reportFocus() }
+        .sheet(isPresented: $safety) {
+            NavigationStack {
+                MessagesSafetyNumberScreen(hub: hub, conversation: conversation)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { safety = false } } }
             }
         }
         .sheet(isPresented: $details) {
@@ -132,7 +171,8 @@ struct MessagesConversationView<Drawer: View>: View {
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
-            .onTapGesture { focused = false }
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { (size: CGSize) in transcriptSize = size }
+            .onTapGesture(coordinateSpace: .local) { (location: CGPoint) in transcriptTapped(at: location) }
             .onAppear { scrollToEnd(proxy, items, animated: false) }
             .onChange(of: items.last?.id ?? "") { _, _ in scrollToEnd(proxy, items, animated: true) }
             .onChange(of: typing.isEmpty) { _, empty in
@@ -164,6 +204,8 @@ struct MessagesConversationView<Drawer: View>: View {
             }
         case .event(let event):
             MessagesSystemLine(text: event.text, colors: palette)
+        case .notice(let notice):
+            MessagesTrustLine(notice: notice, colors: palette, onSafety: { safety = true })
         case .message(let bubble):
             if let entry = hub.viewOnce(for: bubble.row.message) {
                 MessagesViewOnceRow(
@@ -197,6 +239,22 @@ struct MessagesConversationView<Drawer: View>: View {
         return MessagesBubbleLife(
             expiresAt: hub.expiresAt(message), lifetime: hub.lifetime(message.conversation),
             onServer: hub.isOnServer(message, receipt: bubble.receipt))
+    }
+
+    private func transcriptTapped(at location: CGPoint) {
+        if focused {
+            focused = false
+            return
+        }
+        guard let live = hub.live, hub.inDirect, transcriptSize.width > 0 else { return }
+        live.tap(hub.relay.currentConversation, at: DirectLiveGeometry.point(location, in: transcriptSize))
+        DirectLiveHaptics.sent()
+    }
+
+    private func reportFocus() {
+        focusReport.update(
+            conversation: hub.relay.currentConversation, onScreen: onScreen, tabHidden: tabHidden,
+            active: scenePhase == .active, locked: false)
     }
 
     private func stopSharing(_ conversation: String) {
@@ -258,17 +316,15 @@ struct MessagesConversationView<Drawer: View>: View {
         withAnimation(.easeOut(duration: 0.18)) { tapbackTarget = nil }
     }
 
-    private var headerDetail: String {
-        [hub.conversationSubtitle, hub.serverCopiesLine].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
-    }
+    private var headerDetail: String { hub.conversationDetailLine }
 
-    @ViewBuilder private var headerAvatar: some View {
-        if let live = hub.live, hub.inDirect {
-            MessagesLivePartnerAvatar(engine: live, conversation: hub.relay.currentConversation, size: 38) {
-                MessagesConversationAvatar(hub: hub, size: 38)
+    @ViewBuilder private func livePhone(_ palette: MessagesColors) -> some View {
+        if let live = hub.live, hub.inDirect, !hub.inGroupConversation {
+            MessagesLivePartnerPhone(
+                engine: live, conversation: hub.relay.currentConversation, name: hub.conversationName, dark: palette.dark
+            ) {
+                MessagesConversationAvatar(hub: hub, size: 22)
             }
-        } else {
-            MessagesConversationAvatar(hub: hub, size: 38)
         }
     }
 
@@ -294,7 +350,7 @@ struct MessagesConversationView<Drawer: View>: View {
             }
             Button(action: { details = true }) {
                 HStack(spacing: FmSpace.x2) {
-                    headerAvatar
+                    MessagesConversationAvatar(hub: hub, size: 38)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 3) {
                             Text(hub.conversationName)
@@ -324,11 +380,13 @@ struct MessagesConversationView<Drawer: View>: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                [hub.conversationName, hub.conversationSubtitle, hub.serverCopiesLine]
+                [hub.conversationName, hub.conversationSubtitle, hub.conversationRouteLine, hub.serverCopiesLine]
                     .filter { !$0.isEmpty }.joined(separator: ", "))
             .accessibilityHint("Shows details, people, photos and the background")
             .accessibilityIdentifier("chat-room-header")
             Spacer(minLength: 0)
+            livePhone(palette)
+            DirectLiveTouchButton(hub: hub, dark: palette.dark, drawing: $drawing, focused: $focused)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
@@ -431,7 +489,6 @@ struct MessagesComposer: View {
     let colors: MessagesColors
     @Binding var draft: String
     @Binding var focused: Bool
-    @Binding var drawing: Bool
     let onSend: () -> Void
     @State private var photos: [PhotosPickerItem] = []
     @State private var choosingPhotos: Bool = false
@@ -516,8 +573,6 @@ struct MessagesComposer: View {
     private var bar: some View {
         HStack(alignment: .bottom, spacing: FmSpace.x2) {
             plusMenu
-            DirectLiveTouchButton(hub: hub, dark: colors.dark, drawing: $drawing, focused: $focused)
-            DirectLiveTapButton(hub: hub, dark: colors.dark)
             if recorder.recording {
                 recordingField
             } else {

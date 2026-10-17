@@ -217,7 +217,7 @@ ROOM_MSG_MAX_PER_WINDOW = 20
 ROOM_LIVE_MAX_PER_WINDOW = 150
 ROOM_RECEIPT_MAX_PER_WINDOW = 40
 ROOM_RECEIPT_MAX_BYTES = 8 * 1024
-ROOM_LIVE_MAX_BYTES = 16 * 1024
+ROOM_LIVE_MAX_BYTES = 192 * 1024
 ROOM_LIVE_ACCESS_RECHECK_MS = 5 * 1000
 # Chat room sockets send regular encrypted presence/hello frames. If a reinstall
 # or network break leaves an old WebSocket hibernated in the room, stop counting
@@ -471,11 +471,7 @@ CLOUDFLARE_ATTENTION_LOG_MAX_CHARS = 12 * 1024
 # Retained chat history (encrypted) so late-joining nodes see some backlog.
 CHAT_HISTORY_RETAIN_MS = 7 * 24 * 60 * 60 * 1000  # keep the last 7 days
 CHAT_HISTORY_MAX_PER_ROOM = 500  # hard cap on retained messages per room
-# A 1 MiB attachment becomes about 1.87 MB after its file bytes and encrypted
-# envelope are each base64 encoded. Keep the row below D1's 2,000,000-byte hard
-# limit, then bound the aggregate so attachment traffic cannot grow one room
-# without limit.
-CHAT_HISTORY_MAX_BODY = 1_900_000
+CHAT_HISTORY_MAX_BODY = 3 * 1024 * 1024
 CHAT_HISTORY_MAX_BYTES_PER_ROOM = 16 * 1024 * 1024
 _CHAT_HISTORY_PRUNE_MEMO = {}
 CHAT_HISTORY_PRUNE_EVERY_STORES = 16
@@ -485,10 +481,12 @@ CHAT_HISTORY_PRUNE_EVERY_STORES = 16
 # tail instead; the encrypted archive remains retained and HTTP polling can
 # retrieve later messages incrementally.
 CHAT_HISTORY_REPLAY_MAX_MESSAGES = 64
-CHAT_HISTORY_REPLAY_MAX_BYTES = 2 * 1024 * 1024
+CHAT_HISTORY_REPLAY_MAX_BYTES = 4 * 1024 * 1024
 CHAT_HISTORY_INGRESS_WINDOW_MS = 10 * 1000
 CHAT_HISTORY_INGRESS_MAX_BYTES = 8 * 1024 * 1024
 CHAT_DIRECT_RECEIVED_REFS_MAX = 64
+CHAT_DIRECT_ACKED_GRACE_MS = 120 * 1000
+CHAT_DIRECT_ACKED_ROOM_KEY = "chat_direct_acked_room"
 CHAT_RECIPIENT_NAMES_MAX = 20
 CHAT_RECIPIENT_NAME_CACHE_MAX = 10000
 CHAT_CHANNEL_TICKET_TTL_MS = 60 * 1000
@@ -3528,12 +3526,9 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
     _CHAT_ROOM_PUSH_MEMO[room_key] = now
     try:
         audience = None
-        channel_name = ""
         if channel_id:
-            audience, channel_name = await _chat_channel_push_accounts(
+            audience, _channel_name = await _chat_channel_push_accounts(
                 env, channel_id)
-        elif room_key == PUBLIC_WORLD_GENERAL_ROOM_KEY:
-            channel_name = apns.APNS_WORLD_CHAT_NAME
         tokens = [
             entry for entry in await _apns_broadcast_tokens(env)
             if entry["account_bi"] != sender_bi
@@ -3546,8 +3541,6 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
     return await _apns_send_tokens(
         env, tokens, apns.APNS_CHAT_TOPIC,
         apns.chat_message_alert(
-            channel_name,
-            apns.office_conversation(channel_name) if channel_id else "",
             channel_id=channel_id, ref=ref, key_version=key_version))
 
 
@@ -10111,13 +10104,13 @@ async def _chat_direct_message_retained(
     # count move until they reloaded. (A reader who *is* sitting in it already
     # got the message over this room's socket; the push is then redundant, and
     # notify_account_event's coalescing window absorbs it.)
-    recipient, sender = await _chat_direct_message_parties(
+    recipient = await _chat_direct_message_recipient(
         env, conversation_id, account_bi)
     if recipient:
         await notify_account_event(
             env, recipient, "direct-messages",
             _apns_module().direct_message_alert(
-                sender, conversation_id=conversation_id, ref=ref,
+                conversation_id=conversation_id, ref=ref,
                 key_version=key_version, frame=frame))
 
 
@@ -10722,13 +10715,13 @@ class _WorldCommunityRuntime:
         Payload-free, best-effort; see notify_account_event. Chat surfaces read
         their channel and conversation lists once when the page opens, so this
         is how a list that changed for somebody else's reason reaches them.
-        `started_by` names who opened a new direct conversation, so the phone
-        banner can say so.
+        `started_by` is who opened a new direct conversation; the phone banner
+        does not name them (docs/app/chat-protocol-v3.md, "Push
+        notifications").
         """
         push_alert = None
         if topic == "direct-messages":
-            push_alert = _apns_module().direct_message_alert(
-                started_by, started=True)
+            push_alert = _apns_module().direct_message_alert(started=True)
         await notify_account_event(self.env, owner, topic, push_alert)
 
     def new_id(self):
@@ -13176,6 +13169,7 @@ SCHEMA_PRE_CREATE_ALTER_STATEMENTS = [
     "ALTER TABLE ap_outbox ADD COLUMN dedupe_bi TEXT",
     "ALTER TABLE ap_comments ADD COLUMN parent_remote_id_bi TEXT",
     "ALTER TABLE pull_inbox ADD COLUMN submission_bi TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE chat_history ADD COLUMN acked_at INTEGER NOT NULL DEFAULT 0",
     # This must precede SCHEMA_STATEMENTS because that list creates the
     # quarantine Discord uniqueness index. Existing databases gain the column
     # here; on a fresh database the missing-table error is harmless and the
@@ -13400,7 +13394,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "31e698fa0f738ce3ed690feccaaabf062f96e1b82f8d56b3f98886a813b7d7c0"
+    "cfae01526d880e13fdc3ea0f18605f99244efbbc0ce71269dde05109bec15701"
 )
 
 
@@ -52790,7 +52784,8 @@ async def chat_history_recent(env, room_key):
         "ROW_NUMBER() OVER (ORDER BY ts DESC,msg_id DESC) AS replay_position,"
         "SUM(length(body)) OVER (ORDER BY ts DESC,msg_id DESC) AS replay_bytes "
         "FROM (SELECT body,ts,msg_id FROM chat_history "
-        "WHERE room_key=? AND ts>=? ORDER BY ts DESC,msg_id DESC LIMIT ?)"
+        "WHERE room_key=? AND ts>=? AND acked_at=0 "
+        "ORDER BY ts DESC,msg_id DESC LIMIT ?)"
         ") WHERE replay_position<=? AND replay_bytes<=? "
         "ORDER BY ts ASC,msg_id ASC",
         room_key, cutoff,
@@ -52974,7 +52969,7 @@ async def chat_direct_server_copies(env, room_key):
     row = await d1_first(
         env,
         "SELECT COUNT(*) AS stored FROM chat_history "
-        "WHERE room_key=? AND ts>=? AND msg_id LIKE ?",
+        "WHERE room_key=? AND ts>=? AND acked_at=0 AND msg_id LIKE ?",
         room_key, int(Date.now()) - CHAT_HISTORY_RETAIN_MS, "%:n",
     )
     return int((row or {}).get("stored") or 0)
@@ -53023,14 +53018,32 @@ async def chat_direct_received(env, room_key, account_bi, refs):
     refs = chat_direct_refs(refs)
     if not room_key or not refs:
         return False
+    now = int(Date.now())
     await d1_run(
         env,
-        "DELETE FROM chat_history WHERE room_key=? "
+        "UPDATE chat_history SET acked_at=? WHERE room_key=? AND acked_at=0 "
         "AND substr(msg_id,41,1)=':' AND substr(msg_id,42,16)<>? "
         "AND substr(msg_id,1,40) IN (" + ",".join("?" * len(refs)) + ")",
-        room_key, str(account_bi)[:16], *refs,
+        now, room_key, str(account_bi)[:16], *refs,
     )
+    await chat_direct_acked_prune(env, room_key, now)
     return True
+
+
+async def chat_direct_acked_prune(env, room_key, now):
+    await d1_run(
+        env,
+        "DELETE FROM chat_history WHERE room_key=? AND acked_at>0 "
+        "AND acked_at<=?",
+        room_key, int(now) - CHAT_DIRECT_ACKED_GRACE_MS,
+    )
+    row = await d1_first(
+        env,
+        "SELECT MIN(acked_at) AS first FROM chat_history "
+        "WHERE room_key=? AND acked_at>0",
+        room_key,
+    )
+    return int((row or {}).get("first") or 0)
 
 
 async def chat_direct_superseded(env, room_key, account_bi, refs):
@@ -53060,7 +53073,7 @@ async def chat_history_since(env, room_key, since_ts=0):
     rows = await d1_all(
         env,
         "SELECT ts,body FROM chat_history WHERE room_key=? AND ts>? "
-        "ORDER BY ts ASC, msg_id ASC LIMIT ?",
+        "AND acked_at=0 ORDER BY ts ASC, msg_id ASC LIMIT ?",
         room_key, cutoff, CHAT_HISTORY_MAX_PER_ROOM,
     )
     return [
@@ -53111,7 +53124,7 @@ async def _chat_history_prune_bounds(env, room_key):
         "SELECT msg_id,"
         "ROW_NUMBER() OVER (ORDER BY ts DESC,msg_id DESC) AS row_number,"
         "SUM(length(body)) OVER (ORDER BY ts DESC,msg_id DESC) AS retained_bytes "
-        "FROM chat_history WHERE room_key=?"
+        "FROM chat_history WHERE room_key=? AND acked_at=0"
         ") WHERE row_number>? OR retained_bytes>?)",
         room_key,
         room_key,
@@ -53136,8 +53149,12 @@ async def chat_history_prune_expired(env):
     # per-minute cron (adhoc #49) so retention is enforced regardless of
     # traffic.
     await ensure_schema(env)
-    cutoff = int(Date.now()) - CHAT_HISTORY_RETAIN_MS
-    await d1_run(env, "DELETE FROM chat_history WHERE ts<?", cutoff)
+    now = int(Date.now())
+    await d1_run(env, "DELETE FROM chat_history WHERE ts<?",
+                 now - CHAT_HISTORY_RETAIN_MS)
+    await d1_run(
+        env, "DELETE FROM chat_history WHERE acked_at>0 AND acked_at<=?",
+        now - CHAT_DIRECT_ACKED_GRACE_MS)
 
 
 class ForkMeshDiscordGate(DurableObject):
@@ -54812,9 +54829,36 @@ class ForkMeshRoom(DurableObject):
             self._send_to_other_accounts(
                 account_bi, chat_direct_delivered_frame(
                     chat_direct_refs(refs)))
+            await self._schedule_acked_prune(_ws_attr(ws, "room"))
         if removed:
             await self._announce_server_copies(ws)
             await durable_object_traffic_flush(self)
+
+    async def _schedule_acked_prune(self, room_key, first=0):
+        if not room_key:
+            return
+        target = (
+            int(first or Date.now()) + CHAT_DIRECT_ACKED_GRACE_MS + 1000)
+        try:
+            await self.ctx.storage.put(CHAT_DIRECT_ACKED_ROOM_KEY, room_key)
+            current = await self.ctx.storage.getAlarm()
+            if current is None or int(current) > target:
+                await self.ctx.storage.setAlarm(target)
+        except Exception:
+            pass
+
+    async def alarm(self, alarm_info=None):
+        try:
+            room_key = await self.ctx.storage.get(CHAT_DIRECT_ACKED_ROOM_KEY)
+        except Exception:
+            return
+        room_key = str(room_key or "")
+        if not room_key:
+            return
+        first = await chat_direct_acked_prune(
+            self.env, room_key, int(Date.now()))
+        if first:
+            await self._schedule_acked_prune(room_key, first)
 
     def _send_to_other_accounts(self, account_bi, frame):
         frame_bytes = len(frame.encode("utf-8"))

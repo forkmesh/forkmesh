@@ -10,9 +10,10 @@ public let meshRoomName = "forkmesh-lan-mesh-v1"
 public let meshMulticastGroup = "239.192.79.42"
 public let meshDiscoveryPort = 48732
 public let meshBeaconTag = "forkmesh-lan-mesh"
-public let meshProtocolVersion = 1
+public let meshProtocolVersion = 3
 
 public let meshMaxFrameBytes = 24 * 1024 * 1024
+public let meshMaxHandshakeBytes = 4 * 1024
 let meshMaxTextChars = 16000
 let meshMaxNameChars = 32
 let meshWakeTokenMaxChars = 200
@@ -31,42 +32,23 @@ func meshWakeTokenUsable(_ token: String, now: Int64) -> Bool {
     return expires > now
 }
 
-/// The advertisement a device multicasts so others can find it.
-///
-/// A `reply` beacon is the unicast answer to a beacon heard from a device this one is not linked
-/// to. It reaches a sender whose own multicast never arrives here (an iPhone without Apple's
-/// multicast entitlement, or a desktop whose firewall drops unsolicited datagrams but passes the
-/// answer to one it sent), and is never itself answered, so two devices cannot ping-pong.
 public struct MeshBeacon: Equatable, Sendable {
     public var nodeId: String
     public var port: Int
-    public var name: String
-    public var nodeName: String
-    public var ownerUser: String
-    public var accountKind: String
-    public var platform: String
-    public var version: String
     public var timestampMs: Int64
     public var reply: Bool
-    /// The sender takes local control channels on its port: a desktop this phone can drive.
     public var control: Bool
+    public var node: String
 
     public init(
-        nodeId: String, port: Int, name: String = "", nodeName: String = "", ownerUser: String = "",
-        accountKind: String = "", platform: String = "", version: String = "", timestampMs: Int64 = 0,
-        reply: Bool = false, control: Bool = false
+        nodeId: String, port: Int, timestampMs: Int64 = 0, reply: Bool = false, control: Bool = false, node: String = ""
     ) {
         self.nodeId = nodeId
         self.port = port
-        self.name = name
-        self.nodeName = nodeName
-        self.ownerUser = ownerUser
-        self.accountKind = accountKind
-        self.platform = platform
-        self.version = version
         self.timestampMs = timestampMs
         self.reply = reply
         self.control = control
+        self.node = node
     }
 
     public func toJSON() -> JSONObject {
@@ -77,18 +59,14 @@ public struct MeshBeacon: Equatable, Sendable {
             "port": .int(Int64(port)),
             "ts": .int(timestampMs),
         ]
-        if !name.isEmpty { object["name"] = .string(name) }
-        if !nodeName.isEmpty { object["nodeName"] = .string(nodeName) }
-        if !ownerUser.isEmpty { object["ownerUser"] = .string(ownerUser) }
-        if !accountKind.isEmpty { object["accountKind"] = .string(accountKind) }
-        if !platform.isEmpty { object["platform"] = .string(platform) }
-        if !version.isEmpty { object["version"] = .string(version) }
         if reply { object["reply"] = true }
-        if control { object["control"] = true }
+        if control {
+            object["control"] = true
+            if !node.isEmpty { object["node"] = .string(node) }
+        }
         return object
     }
 
-    /// nil for anything that is not a beacon of a version this client speaks.
     public static func parse(_ object: JSONObject) -> MeshBeacon? {
         guard object["t"] == .string(meshBeaconTag),
             let version = object["v"], version.numEquals(Int64(meshProtocolVersion))
@@ -101,27 +79,20 @@ public struct MeshBeacon: Equatable, Sendable {
             portValue = Int(dartString(object["port"])) ?? 0
         }
         if id.isEmpty || portValue <= 0 || portValue > 65535 { return nil }
-        func bounded(_ key: String, _ max: Int = meshMaxNameChars) -> String {
-            dartPrefix(dartString(object[key]), max)
-        }
         let ts: Int64
         switch object["ts"] {
         case .int(let n)?: ts = n
         case .double(let d)? where d.isFinite: ts = Int64(d)
         default: ts = 0
         }
+        let control = object["control"] == .bool(true)
         return MeshBeacon(
             nodeId: dartPrefix(id, 160),
             port: portValue,
-            name: bounded("name"),
-            nodeName: bounded("nodeName"),
-            ownerUser: bounded("ownerUser"),
-            accountKind: bounded("accountKind", 16),
-            platform: bounded("platform", 16),
-            version: bounded("version"),
             timestampMs: ts,
             reply: object["reply"] == .bool(true),
-            control: object["control"] == .bool(true))
+            control: control,
+            node: control ? dartPrefix(dartString(object["node"]).dartTrimmed, 160) : "")
     }
 }
 

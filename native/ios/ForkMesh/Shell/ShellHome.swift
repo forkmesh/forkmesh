@@ -37,6 +37,7 @@ struct ShellHome: View {
     let groups: [ShellMenuGroup]
     let prefs: ShellBarPrefs
     var onPackage: (String) -> Void = { (_: String) in }
+    var isUpdated: (String) -> Bool = { (_: String) in false }
     var onSearch: (String) -> Void = { (_: String) in }
     let onPick: (ShellBarItem) -> Void
 
@@ -535,6 +536,7 @@ struct ShellHome: View {
         let uses: Int = prefs.uses[item.id] ?? 0
         let heat: Double = layout.heat[item.id] ?? 0
         let frequent: Bool = layout.frequent.contains(item.id)
+        let updated: Bool = isUpdated(item.id)
         let icon: CGFloat = iconSize * min(1, layout.tileScale)
         return Button {
             FmHaptics.selection()
@@ -543,7 +545,7 @@ struct ShellHome: View {
         } label: {
             ShellHomeIcon(
                 item: shown, style: style.icons, iconSize: icon, labelSize: labelSize, showsCounts: style.showCounts,
-                heat: heat
+                heat: heat, updated: updated
             )
             .padding(.horizontal, 2)
             .frame(maxWidth: .infinity)
@@ -571,14 +573,18 @@ struct ShellHome: View {
         }
         .onDrop(of: [.text], delegate: drop(group, near: item.id))
         .accessibilityLabel(Text(item.title))
-        .accessibilityValue(Text(ShellHome.value(item, docked: docked, uses: uses, frequent: frequent)))
+        .accessibilityValue(
+            Text(ShellHome.value(item, docked: docked, uses: uses, frequent: frequent, updated: updated)))
         .accessibilityAddTraits(item.selected ? [.isSelected, .isButton] : [.isButton])
         .accessibilityIdentifier("shell-home-\(group)-\(item.id)")
         .genieKeepsClear()
     }
 
-    static func value(_ item: ShellBarItem, docked: Bool, uses: Int = 0, frequent: Bool = false) -> String {
+    static func value(
+        _ item: ShellBarItem, docked: Bool, uses: Int = 0, frequent: Bool = false, updated: Bool = false
+    ) -> String {
         let parts: [String] = [
+            updated ? "Updated" : "",
             docked ? "In the bar" : "",
             item.active ? "Active" : "",
             item.badge > 0

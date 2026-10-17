@@ -69,6 +69,7 @@ public final class ChatHub: ShellChatBridge {
     public var workspace: ChatWorkspace
     public var pendingSearch: String?
     public var pendingSaved = false
+    public private(set) var revealRequests = 0
     public var office: OfficeChannelService? {
         didSet {
             office?.isExpired = expiry
@@ -95,6 +96,8 @@ public final class ChatHub: ShellChatBridge {
             direct?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
             direct?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
             direct?.onChange = { [weak self] in self?.persistSoon() }
+            direct?.onTrustEvent = { [weak self] event in self?.trustEvent(event) }
+            direct?.attachMesh(mesh)
             restoreDirectHistory()
             direct?.onFrame = { [weak self] frame, conversation in
                 guard let self, let direct = self.direct else { return }
@@ -143,6 +146,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored private var loadedScope = ""
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore: (messages: [ChatMessage], receipts: [String: ChatReceipt])?
+    @ObservationIgnored var trustChangedAt: [String: Date] = [:]
     public private(set) var replyingTo: ChatReplyQuote?
     @ObservationIgnored private var replyConversation = ""
     /// The last transient notice ("Chat is offline. Reconnecting..."), shown inline above the composer.
@@ -360,6 +364,7 @@ public final class ChatHub: ShellChatBridge {
         let target = (try? ChatReplyTarget.resolve(
             conversation, channels: relay.channels, roster: relay.roster(), offices: officeChannels)) ?? conversation
         select(target)
+        revealRequests += 1
     }
 
     /// `sendChatText`: the mesh room over the local transports, anything else through the relay.
@@ -812,6 +817,16 @@ public final class ChatHub: ShellChatBridge {
             return
         }
         Task { await direct.sendTyping(conversation, active: active) }
+    }
+
+    public func setFocus(_ conversation: String, _ on: Bool) {
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return }
+        direct.setFocus(conversation, on)
+    }
+
+    public func directRoute(_ conversation: String) -> DirectRoute {
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return .none }
+        return direct.route(conversation)
     }
 
     public var typingLine: String {

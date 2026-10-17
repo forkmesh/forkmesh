@@ -1,22 +1,3 @@
-// The local mesh room.
-//
-// Chat with whoever is running ForkMesh in the same place, with no relay, no account, no sign-in
-// and nothing sent to the internet. Byte-compatible with the desktop client's LocalMeshNode, so a
-// phone and a laptop join the same room.
-//
-// Two transports carry it:
-//  * The local network. An encrypted multicast beacon (TTL 1, so no router forwards it) advertises
-//    this device, and peers link over direct TCP. Every peer address is checked against
-//    `isLocalNetworkAddress` before a socket is opened or accepted.
-//  * Bluetooth, through `MeshNativeTransport`.
-//
-// Encryption is the room's: RoomCrypto (AES-256-GCM, key derived from the room name) wraps every
-// datagram and frame, and RoomSeal seals message bodies to the individual devices in the room.
-//
-// A BSD socket survives a refused send, so this sends on the discovery socket itself and keeps
-// the refusal bookkeeping (what `refused` reports, EHOSTUNREACH as "Local Network is off").
-// Darwin's EHOSTUNREACH is read from the platform (65 on iOS) rather than hard-coded.
-
 import FMAccount
 import FMApi
 import FMBase
@@ -138,17 +119,25 @@ public func defaultMeshHistoryFile() -> URL? {
     return directory.appendingPathComponent("local_mesh_history.json")
 }
 
+public enum MeshLinkKind: String, Equatable, Sendable {
+    case wifi, bluetooth
+}
+
 final class MeshLink {
     let socket: MeshTCPConnection?
     let bluetoothId: Int?
     let outbound: Bool
     let buffer = MeshByteBuffer()
+    var handshake: MeshLinkHandshake?
     var pending: [JSONObject] = []
     var peerId = ""
+    var nodeId = ""
     var helloMs: Int64 = 0
     var keyKnown = false
     var keyId = ""
+    var focus: Set<String> = []
     var reader: Task<Void, Never>?
+    var deadline: Task<Void, Never>?
 
     init(socket: MeshTCPConnection? = nil, bluetoothId: Int? = nil, outbound: Bool) {
         self.socket = socket
@@ -157,6 +146,10 @@ final class MeshLink {
     }
 
     var bluetooth: Bool { bluetoothId != nil }
+
+    var authenticated: Bool { handshake?.authenticated == true && !peerId.isEmpty }
+
+    var kind: MeshLinkKind { bluetooth ? .bluetooth : .wifi }
 }
 
 final class MeshPeer {
@@ -165,11 +158,11 @@ final class MeshPeer {
     var ownerUser = ""
     var platform = ""
     var version = ""
+    var nodeId = ""
+    var controlNode = ""
     var address: MeshAddress?
     var port = 0
     var lastSeenMs: Int64 = 0
-    // When a beacon first arrived from this peer with no link to it, or 0. The higher id dials
-    // once this is a while ago: the lower id's own dial is evidently not getting through.
     var unlinkedSinceMs: Int64 = 0
     var linked = false
     var control = false
@@ -178,6 +171,14 @@ final class MeshPeer {
 @MainActor
 @Observable
 public final class LocalMeshService {
+    nonisolated public static let directFileBytesOverWifi = 1024 * 1024
+    nonisolated public static let directFileBytesOverBluetooth = 256 * 1024
+    nonisolated static let handshakeTimeoutSeconds: TimeInterval = 10
+    nonisolated static let forwardMemory = 4096
+    nonisolated static let resealOwnLimit = 32
+    nonisolated static let maxKnownBundles = 64
+    nonisolated static let maxDirectChannelChars = 80
+
     @ObservationIgnored let settings: SettingsService
     @ObservationIgnored let identity: DeviceIdentity
     @ObservationIgnored let secureStore: SecureStore
@@ -201,9 +202,8 @@ public final class LocalMeshService {
     @ObservationIgnored private var sweepDelivered = 0
     @ObservationIgnored private var sweepUnreachable = 0
     @ObservationIgnored private var sweepRun = 0
-    @ObservationIgnored private var groupSendRefused = 0  // beats since multicast was refused, or 0
+    @ObservationIgnored private var groupSendRefused = 0
     @ObservationIgnored private var bluetoothReader: Task<Void, Never>?
-    /// Transport counters for the debug bar. Not observed: the bar refreshes on its own timer.
     @ObservationIgnored public private(set) var diagnostics = MeshDiagnostics()
     @ObservationIgnored private var startedMs: Int64 = 0
 
@@ -214,9 +214,11 @@ public final class LocalMeshService {
     @ObservationIgnored private var history: [JSONObject] = []
     @ObservationIgnored private var seenIds = Set<String>()
     @ObservationIgnored private var seenOrder: [String] = []
+    @ObservationIgnored private var forwarded = Set<String>()
+    @ObservationIgnored private var forwardedOrder: [String] = []
+    @ObservationIgnored private var knownBundles: [String: JSONObject] = [:]
+    @ObservationIgnored private var knownBundleOrder: [String] = []
     @ObservationIgnored private var dialing = Set<String>()
-    // Ids of this device's messages no device has taken yet. They wait in the history, which
-    // every device that joins is given.
     @ObservationIgnored private var queued = Set<String>()
     @ObservationIgnored private var historyFile: URL?
     @ObservationIgnored private var historyLoaded = false
@@ -226,7 +228,11 @@ public final class LocalMeshService {
     @ObservationIgnored public var wakeTokenProvider: (@MainActor () async -> String)?
     @ObservationIgnored public var wakeSender: (@MainActor ([String]) async -> Void)?
     @ObservationIgnored public var onIncoming: (@MainActor (ChatMessage, Int) -> Void)?
-    @ObservationIgnored public var onDirect: (@MainActor (String, String, JSONObject) -> Void)?
+    @ObservationIgnored public var onDirectSealed: (@MainActor (String, JSONObject, String) -> Void)?
+    @ObservationIgnored public var onDirectAck: (@MainActor (String, String, String) -> Void)?
+    @ObservationIgnored public var onDirectFocus: (@MainActor (String, String, Bool) -> Void)?
+    @ObservationIgnored public var onLinkAuthenticated: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var onLinkClosed: (@MainActor (String) -> Void)?
     @ObservationIgnored private var ownWakeToken = ""
     @ObservationIgnored private var wakeRefreshing = false
     @ObservationIgnored private var wakeTokens: [String: String] = [:]
@@ -236,19 +242,13 @@ public final class LocalMeshService {
     public private(set) var running = false
     public private(set) var networkActive = false
     public private(set) var unread = 0
-    /// True once a whole subnet sweep was refused with "no route to host" and none of it went out:
-    /// on iOS that is Local Network access being off for this app.
     public private(set) var localNetworkBlocked = false
-    /// Bumped by every change the room's screens care about.
     public private(set) var revision = 0
 
-    // Knobs, not settings: a test drives them to isolate one transport; production leaves them.
     @ObservationIgnored public var discoveryPort = meshDiscoveryPort
     @ObservationIgnored public var beaconIntervalMs = beaconIntervalDefaultMs
     @ObservationIgnored public var peerTimeoutMs = peerTimeoutDefaultMs
     @ObservationIgnored public var multicastEnabled = true
-    // iOS withholds multicast from apps without Apple's multicast entitlement, so there the subnet
-    // sweep is how this device is found at all.
     @ObservationIgnored public var addressSweepEnabled = LocalMeshService.defaultAddressSweep
     @ObservationIgnored public var networkEnabled = true
     @ObservationIgnored public var bluetoothEnabled = true
@@ -265,7 +265,6 @@ public final class LocalMeshService {
         #endif
     }
 
-    /// `historyFile` nil keeps no history on disk (a unit test).
     public init(
         settings: SettingsService,
         identity: DeviceIdentity,
@@ -300,7 +299,6 @@ public final class LocalMeshService {
     public var peerCount: Int { peers.values.filter(\.linked).count }
     public var sealKeyId: String { seal?.keyId ?? "" }
 
-    /// True while a message this device wrote has not reached any device yet.
     public func isQueued(_ messageId: String) -> Bool { queued.contains(messageId) }
 
     // MARK: Diagnostics
@@ -367,8 +365,6 @@ public final class LocalMeshService {
         return lines.joined(separator: "\n")
     }
 
-    // MARK: Identity and roster
-
     private var nodeId: String { identity.nodeId }
 
     @ObservationIgnored public var accountProvider: (@MainActor () -> String)?
@@ -380,23 +376,21 @@ public final class LocalMeshService {
 
     private var name: String { dartPrefix(persona.name, meshMaxNameChars) }
 
-    /// The name this device goes by in the room.
     public var displayName: String { name }
 
-    /// Desktops on this network offering a local control channel, with where to reach them.
     public func controlHosts() -> [MeshControlHost] {
         var hosts: [MeshControlHost] = []
         for id in peerIds {
-            guard let peer = peers[id], peer.control, let address = peer.address, peer.port > 0 else { continue }
+            guard let peer = peers[id], peer.control, !peer.controlNode.isEmpty, let address = peer.address, peer.port > 0
+            else { continue }
             hosts.append(
                 MeshControlHost(
-                    nodeId: id, address: address, port: peer.port, name: peer.name, nodeName: peer.nodeName,
+                    nodeId: peer.controlNode, address: address, port: peer.port, name: peer.name, nodeName: peer.nodeName,
                     ownerUser: peer.ownerUser, platform: peer.platform))
         }
         return hosts
     }
 
-    /// Self first, then every device currently in the room.
     public func members() -> [Member] {
         let now = clock.nowMillis
         var list = [
@@ -406,13 +400,27 @@ public final class LocalMeshService {
         ]
         for id in peerIds {
             guard let peer = peers[id] else { continue }
+            let shown = peer.nodeId.isEmpty ? id : peer.nodeId
             list.append(
                 Member(
-                    id: id, name: peer.name.isEmpty ? (peer.ownerUser.isEmpty ? id : peer.ownerUser) : peer.name,
+                    id: shown, name: peer.name.isEmpty ? (peer.ownerUser.isEmpty ? shown : peer.ownerUser) : peer.name,
                     online: peer.linked || now - peer.lastSeenMs <= Int64(peerTimeoutMs), platform: peer.platform,
                     version: peer.version, owner: peer.ownerUser, nodeName: peer.nodeName))
         }
         return list
+    }
+
+    public func directLinks() -> [String: MeshLinkKind] {
+        var out: [String: MeshLinkKind] = [:]
+        for link in links where link.authenticated {
+            if out[link.peerId] == .wifi { continue }
+            out[link.peerId] = link.kind
+        }
+        return out
+    }
+
+    public func peerFocus(_ kid: String, channel: String) -> Bool {
+        links.contains { $0.authenticated && $0.peerId == kid && $0.focus.contains(channel) }
     }
 
     public func roomOpened() async {
@@ -430,21 +438,21 @@ public final class LocalMeshService {
         notifyListeners()
     }
 
-    // MARK: Start and stop
-
-    /// Opens whichever transports this device has. False only when neither the network nor
-    /// Bluetooth can carry the room.
     @discardableResult
     public func start() async -> Bool {
         if running { return true }
         let store = secureStore
-        let scope = "\(meshRoomName)\n\(nodeId)"
+        let node = nodeId
+        let named = (accountProvider?() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let account = named.isEmpty ? node : named
         let keys: (RoomCrypto, RoomSeal)
         do {
             keys = try await Task.detached(priority: .userInitiated) {
-                // Scoped to this device's own id as well as the room, matching the desktop, so
-                // the sealing identity belongs to the device.
-                (RoomCrypto.shared(meshRoomName), try RoomSeal.loadOrCreate(meshRoomName, storageScope: scope, secureStore: store))
+                (
+                    RoomCrypto.shared(meshRoomName),
+                    try RoomSeal.loadOrCreate(
+                        meshRoomName, scope: meshRoomName, policy: .open, acct: account, node: node, secureStore: store)
+                )
             }.value
         } catch {
             diagnostics.startNote = "keys: \(error)"
@@ -501,6 +509,7 @@ public final class LocalMeshService {
         await sendBeacon()
         await sendUnicastBeacons()
         if !native.listening { _ = await openBluetooth() }
+        await advertiseIfRotated()
     }
 
     public func resume() async {
@@ -725,11 +734,8 @@ public final class LocalMeshService {
     }
 
     private func beaconDatagram(reply: Bool = false) -> [UInt8]? {
-        guard let crypto, let server else { return nil }
-        let me = persona
-        let beacon = MeshBeacon(
-            nodeId: nodeId, port: server.port, name: name, ownerUser: me.ownerUser, accountKind: me.accountKind,
-            platform: platformName, version: RelayService.clientVersion, timestampMs: clock.nowMillis, reply: reply)
+        guard let crypto, let server, let seal else { return nil }
+        let beacon = MeshBeacon(nodeId: seal.keyId, port: server.port, timestampMs: clock.nowMillis, reply: reply)
         guard let envelope = try? crypto.encrypt(beacon.toJSON()) else { return nil }
         return Array(JSON.encode(.object(envelope)).utf8)
     }
@@ -866,9 +872,8 @@ public final class LocalMeshService {
     }
 
     private func onDatagram(_ datagram: MeshDatagram) async {
-        guard running, let crypto else { return }
+        guard running, let crypto, let seal else { return }
         diagnostics.datagramsIn += 1
-        // A beacon from outside this network is not a mesh peer, whatever it claims.
         if !isLocalNetworkAddress(datagram.address) {
             diagnostics.offNetworkIn += 1
             return
@@ -881,42 +886,37 @@ public final class LocalMeshService {
             diagnostics.undecryptableIn += 1
             return
         }
-        if beacon.nodeId == nodeId {
+        let ownKid = seal.keyId
+        if beacon.nodeId == ownKid {
             diagnostics.ownBeaconsIn += 1
             return
         }
+        if seal.trust.record(beacon.nodeId)?.state == .blocked { return }
         diagnostics.peerBeaconsIn += 1
         diagnostics.lastBeaconMs = clock.nowMillis
-        let who = beacon.name.isEmpty ? dartPrefix(beacon.nodeId, 8) : beacon.name
+        let known = peers[beacon.nodeId]
+        let who = (known?.name.isEmpty ?? true) ? dartPrefix(beacon.nodeId, 8) : (known?.name ?? "")
         diagnostics.lastBeaconFrom = "\(who) \(datagram.address.address):\(beacon.port)\(beacon.reply ? " (reply)" : "")"
 
-        rememberPeer(
-            beacon.nodeId,
-            [
-                "sender": .string(beacon.name), "nodeName": .string(beacon.nodeName),
-                "ownerUser": .string(beacon.ownerUser), "platform": .string(beacon.platform),
-                "version": .string(beacon.version), "control": .bool(beacon.control),
-            ], linked: false)
+        rememberPeer(beacon.nodeId, [:], linked: false)
         guard let peer = peers[beacon.nodeId] else { return }
+        let controlChanged = peer.control != beacon.control || peer.controlNode != beacon.node
+        peer.control = beacon.control
+        peer.controlNode = beacon.node
         let moved = peer.address?.address != datagram.address.address || peer.port != beacon.port
         peer.address = datagram.address
         peer.port = beacon.port
-        // Where a desktop's control channel is reached changed: tell whoever drives it.
-        if moved && peer.control { notifyListeners() }
+        if (moved && peer.control) || controlChanged { notifyListeners() }
         if linkForPeer(beacon.nodeId) != nil {
             peer.unlinkedSinceMs = 0
             return
         }
-        // Answer straight back, so a sender that never hears this device's multicast still learns
-        // where to reach it.
         if !beacon.reply, let answer = beaconDatagram(reply: true), discovery != nil {
             sendDatagram(answer, datagram.address, datagram.port, count: { diagnostics.unicastSent += 1 })
         }
-        // Both sides beacon, so the lower id dials and the higher id listens; when the lower id's
-        // dial never lands, the higher id dials too once the peer has stayed unlinked half a beat.
         let now = clock.nowMillis
         if peer.unlinkedSinceMs == 0 { peer.unlinkedSinceMs = now }
-        if nodeId.utf16.lexicographicallyPrecedes(beacon.nodeId.utf16)
+        if ownKid.utf16.lexicographicallyPrecedes(beacon.nodeId.utf16)
             || now - peer.unlinkedSinceMs >= Int64(beaconIntervalMs / 2)
         {
             let address = datagram.address
@@ -925,8 +925,6 @@ public final class LocalMeshService {
         }
     }
 
-    /// Direct link to a peer this device already knows how to reach, for a network that filters
-    /// multicast. The address must be a local one.
     @discardableResult
     public func connectToPeer(_ address: MeshAddress, port: Int) async -> Bool {
         if !running || port <= 0 || !isLocalNetworkAddress(address) { return false }
@@ -963,8 +961,6 @@ public final class LocalMeshService {
         let link = MeshLink(socket: connection, outbound: outbound)
         links.append(link)
         link.reader = Task { [weak self] in
-            // The key frame goes out before anything is read, so nothing can be written to the
-            // link ahead of it.
             await self?.openLink(link)
             for await event in connection.events {
                 guard let self else { return }
@@ -977,8 +973,6 @@ public final class LocalMeshService {
             }
         }
     }
-
-    // MARK: Bluetooth transport
 
     private func openBluetooth() async -> Bool {
         if !bluetoothEnabled || !running { return false }
@@ -1017,15 +1011,20 @@ public final class LocalMeshService {
 
     private func linkForBluetooth(_ id: Int) -> MeshLink? { links.first { $0.bluetoothId == id } }
 
-    // MARK: Shared link handling
-
     private func openLink(_ link: MeshLink) async {
-        if let keyFrame = keyFrameBytes() { _ = await write(link, keyFrame) }
-        // The hello cannot be sealed to a device whose key has not arrived yet, so it waits in the
-        // link's queue. Ordering is preserved, so the peer still reads hello first.
-        var hello = envelope("hello")
-        if let server { hello["port"] = .int(Int64(server.port)) }
-        link.pending.append(hello)
+        guard let seal, let handshake = try? MeshLinkHandshake(keyring: seal.keyring, initiator: link.outbound) else {
+            await closeLink(link, reason: "no link keys")
+            return
+        }
+        link.handshake = handshake
+        _ = await writeRaw(link, Array(JSON.encode(handshake.hello).utf8))
+        let timeout = UInt64(LocalMeshService.handshakeTimeoutSeconds * 1_000_000_000)
+        link.deadline = Task { [weak self, weak link] in
+            try? await Task.sleep(nanoseconds: timeout)
+            guard let self, let link, !Task.isCancelled, !link.authenticated, self.links.contains(where: { $0 === link })
+            else { return }
+            await self.closeLink(link, reason: "handshake timeout")
+        }
     }
 
     private func onLinkData(_ link: MeshLink, _ data: Data) async {
@@ -1033,121 +1032,194 @@ public final class LocalMeshService {
         while true {
             let payload: Data?
             do {
-                payload = try meshTakeFrame(link.buffer)
+                payload = try meshTakeFrame(
+                    link.buffer, maxBytes: link.authenticated ? meshMaxFrameBytes : meshMaxHandshakeBytes)
             } catch {
                 await closeLink(link, reason: "oversized frame")
                 return
             }
             guard let payload else { return }
             await handleFrame(link, payload)
-            if !links.contains(where: { $0 === link }) { return }  // the frame closed this link
+            if !links.contains(where: { $0 === link }) { return }
         }
     }
 
     private func handleFrame(_ link: MeshLink, _ payload: Data) async {
-        guard let crypto, let seal else { return }
+        guard let seal, let handshake = link.handshake else { return }
         diagnostics.framesIn += 1
-        guard case .object(let envelope)? = try? JSON.parse(payload), let decrypted = crypto.decrypt(envelope) else {
-            diagnostics.framesBad += 1
-            return
-        }
-        if RoomSeal.isKeyFrame(decrypted) {
-            let keyId = dartString(decrypted["kid"])
-            if seal.acceptKeyFrame(decrypted) {
-                // Re-advertise so a peer that learned our key late can still open what we send.
-                if let keyFrame = keyFrameBytes() { _ = await write(link, keyFrame) }
-            }
-            if keyId == seal.keyId || seal.peerKeyIds.contains(keyId) { link.keyId = keyId }
-            if !link.keyKnown {
-                link.keyKnown = true
-                let queuedFrames = link.pending
-                link.pending.removeAll()
-                for frame in queuedFrames { _ = await writePlain(link, frame) }
-            }
-            return
-        }
-        guard let plain = seal.unseal(decrypted) else {
-            diagnostics.framesBad += 1
-            return
-        }
-        if dartString(plain["type"]) == "direct" {
-            handleDirect(plain, sealKeyId: RoomSeal.frameKeyId(decrypted), ownKeyId: seal.keyId)
-            return
-        }
-        await handlePlain(link, plain)
-    }
-
-    private func handleDirect(_ plain: JSONObject, sealKeyId: String, ownKeyId: String) {
-        let channel = dartString(plain["channel"])
-        if sealKeyId.isEmpty || sealKeyId == ownKeyId { return }
-        if !channel.hasPrefix(DirectMessageFrames.prefix) || channel.count > 80 { return }
-        onDirect?(channel, sealKeyId, plain)
-    }
-
-    public func sendDirect(_ plain: JSONObject, to keyIds: [String]) async -> Int {
-        guard let seal else { return 0 }
-        let channel = dartString(plain["channel"])
-        if !running || !channel.hasPrefix(DirectMessageFrames.prefix) || dartString(plain["id"]).isEmpty || keyIds.isEmpty {
-            return 0
-        }
-        var frame = plain
-        frame["type"] = .string("direct")
-        frame["conversation"] = .string(meshConversation)
-        var reached = Set<String>()
-        for link in links {
-            let keyId = link.keyId
-            if !link.keyKnown || keyId.isEmpty || keyId == seal.keyId || !keyIds.contains(keyId) || reached.contains(keyId) { continue }
-            if await writePlain(link, frame, onlyKeyIds: [keyId]) { reached.insert(keyId) }
-        }
-        return reached.count
-    }
-
-    private func handlePlain(_ link: MeshLink, _ plain: JSONObject) async {
-        let type = dartString(plain["type"])
-        let senderId = dartString(plain["senderId"])
-        if senderId.isEmpty || senderId == nodeId { return }
-        if dartString(plain["conversation"]) != meshConversation { return }
-
-        // A link's identity is fixed by its hello. Chat can still arrive over it authored by a
-        // third device (that is what makes the room reach devices that never linked directly), so
-        // only the link's own frames are held to the link's identity.
-        if type == "hello" {
-            if link.peerId.isEmpty {
-                let other = linkForPeer(senderId)
-                link.peerId = senderId
-                link.helloMs = clock.nowMillis
-                if let other {
-                    if link.bluetooth != other.bluetooth {
-                        let loser = link.bluetooth ? link : other
-                        await closeLink(loser, reason: "duplicate link")
-                        if loser === link { return }
-                    } else if link.helloMs - other.helloMs >= Int64(linkReplaceAfterMs) {
-                        await closeLink(other, reason: "replaced")
-                    } else {
-                        // Both devices dialled at once. Keep the link the higher node id opened: both
-                        // sides reach the same verdict, so one survives.
-                        let mine = link.outbound ? nodeId : senderId
-                        let theirs = other.outbound ? nodeId : senderId
-                        if mine.utf16.lexicographicallyPrecedes(theirs.utf16) {
-                            await closeLink(link, reason: "duplicate link")
-                            return
-                        }
-                        await closeLink(other, reason: "duplicate link")
-                    }
-                }
-            } else if link.peerId != senderId {
-                await closeLink(link, reason: "identity changed")
+        if !handshake.authenticated {
+            guard case .object(let frame)? = try? JSON.parse(payload) else {
+                diagnostics.framesBad += 1
+                await closeLink(link, reason: "link handshake")
                 return
             }
-        } else if (type == "typing" || type == "bye") && link.peerId != senderId {
+            do {
+                if handshake.peerIdentityKey == nil {
+                    let auth = try handshake.receiveHello(frame)
+                    if seal.trust.record(handshake.peerKid)?.state == .blocked {
+                        await closeLink(link, reason: "blocked device")
+                        return
+                    }
+                    _ = await writeRaw(link, Array(JSON.encode(auth).utf8))
+                } else {
+                    try handshake.receiveAuth(frame)
+                    await linkAuthenticated(link)
+                }
+            } catch {
+                diagnostics.framesBad += 1
+                await closeLink(link, reason: "link handshake")
+            }
             return
         }
+        guard let frame = try? handshake.open(Array(payload)) else {
+            diagnostics.framesBad += 1
+            await closeLink(link, reason: "bad link frame")
+            return
+        }
+        await handleLinkFrame(link, frame)
+    }
 
-        rememberPeer(senderId, plain, linked: link.peerId == senderId)
+    private func linkAuthenticated(_ link: MeshLink) async {
+        guard let seal, let handshake = link.handshake else { return }
+        link.deadline?.cancel()
+        link.deadline = nil
+        let kid = handshake.peerKid
+        let other = linkForPeer(kid)
+        link.peerId = kid
+        link.keyId = kid
+        link.helloMs = clock.nowMillis
+        if let other, other !== link {
+            if link.bluetooth != other.bluetooth {
+                let loser = link.bluetooth ? link : other
+                await closeLink(loser, reason: "duplicate link")
+                if loser === link { return }
+            } else if link.helloMs - other.helloMs >= Int64(linkReplaceAfterMs) {
+                await closeLink(other, reason: "replaced")
+            } else {
+                let mine = link.outbound ? seal.keyId : kid
+                let theirs = other.outbound ? seal.keyId : kid
+                if mine.utf16.lexicographicallyPrecedes(theirs.utf16) {
+                    await closeLink(link, reason: "duplicate link")
+                    return
+                }
+                await closeLink(other, reason: "duplicate link")
+            }
+        }
+        if !links.contains(where: { $0 === link }) { return }
+        rememberPeer(kid, [:], linked: false)
+        if let peer = peers[kid], peer.address == nil, let socket = link.socket { peer.address = socket.remoteAddress }
+        if let bundle = ownBundle() { _ = await writeLink(link, bundle) }
+        for known in knownBundleOrder where known != kid {
+            if let bundle = knownBundles[known] { _ = await writeLink(link, bundle) }
+        }
+        var hello = envelope("hello")
+        if let server { hello["port"] = .int(Int64(server.port)) }
+        link.pending.insert(hello, at: 0)
+        onLinkAuthenticated?(kid)
+        notifyListeners()
+    }
+
+    private func handleLinkFrame(_ link: MeshLink, _ frame: JSONObject) async {
+        switch dartString(frame["type"]) {
+        case RoomSeal.keyType:
+            await acceptMeshBundle(frame, from: link)
+        case RoomSeal.sealedType:
+            await acceptMeshSealed(frame, from: link)
+        case "direct-sealed":
+            let channel = dartString(frame["channel"])
+            guard isDirectChannel(channel), let sealed = frame["frame"]?.objectValue,
+                RoomSeal.frameKeyId(sealed) == link.peerId
+            else {
+                diagnostics.framesBad += 1
+                return
+            }
+            onDirectSealed?(channel, sealed, link.peerId)
+        case "direct-ack":
+            let channel = dartString(frame["channel"])
+            let id = dartString(frame["id"])
+            guard isDirectChannel(channel), !id.isEmpty, id.count <= 64 else { return }
+            onDirectAck?(channel, id, link.peerId)
+        case "focus":
+            let channel = dartString(frame["channel"])
+            guard isDirectChannel(channel), let on = frame["on"]?.boolValue else { return }
+            if on {
+                if link.focus.count >= 16 && !link.focus.contains(channel) { return }
+                link.focus.insert(channel)
+            } else {
+                link.focus.remove(channel)
+            }
+            onDirectFocus?(link.peerId, channel, on)
+        default:
+            diagnostics.framesBad += 1
+        }
+    }
+
+    private func isDirectChannel(_ channel: String) -> Bool {
+        channel.hasPrefix(DirectMessageFrames.prefix) && channel.count <= LocalMeshService.maxDirectChannelChars
+    }
+
+    private func acceptMeshBundle(_ frame: JSONObject, from link: MeshLink) async {
+        guard let seal, let result = seal.acceptBundle(frame, now: clock.nowMillis) else {
+            diagnostics.framesBad += 1
+            return
+        }
+        let kid = result.kid
+        if kid == seal.keyId { return }
+        if result.isNew || result.updated || knownBundles[kid] == nil { rememberBundle(kid, frame) }
+        if result.isNew || result.updated {
+            for other in links where other !== link && other.authenticated && other.peerId != kid {
+                _ = await writeLink(other, frame)
+            }
+        }
+        if kid == link.peerId && !link.keyKnown {
+            link.keyKnown = true
+            let waiting = link.pending
+            link.pending.removeAll()
+            for plain in waiting { _ = await writePlain(link, plain, only: [kid]) }
+        }
+        if result.isNew && kid != link.peerId { await resealOwnHistory(to: kid, via: nil) }
+        for opened in seal.reopenHeld(now: clock.nowMillis) { await handleOpened(opened, from: nil) }
+        notifyListeners()
+    }
+
+    private func acceptMeshSealed(_ frame: JSONObject, from link: MeshLink) async {
+        guard let seal, RoomSeal.isSealedFrame(frame) else {
+            diagnostics.framesBad += 1
+            return
+        }
+        guard rememberForwarded(dartString(frame["sig"])) else { return }
+        let sender = dartString(frame["kid"])
+        let result = seal.open(frame, now: clock.nowMillis)
+        if case .invalid = result {
+            diagnostics.framesBad += 1
+            return
+        }
+        let addressed = Set(RoomSeal.wrappedKeyIds(frame))
+        let flood = dartString(result.plain?["type"]) == "chat"
+        for other in links where other !== link && other.authenticated && other.peerId != sender {
+            if flood || addressed.contains(other.peerId) { _ = await writeLink(other, frame) }
+        }
+        await handleOpened(result, from: link)
+    }
+
+    private func handleOpened(_ result: RoomSealOpen, from link: MeshLink?) async {
+        guard case .opened(_, let senderKid, _, _) = result, let plain = result.authenticatedPlain else { return }
+        await handlePlain(plain, senderKid: senderKid)
+    }
+
+    private func handlePlain(_ plain: JSONObject, senderKid: String) async {
+        let type = dartString(plain["type"])
+        let senderId = dartString(plain["senderId"])
+        if senderId.isEmpty || senderId == nodeId || senderKid == seal?.keyId { return }
+        if dartString(plain["conversation"]) != meshConversation { return }
+        let direct = linkForPeer(senderKid)
+        if let direct { direct.nodeId = senderId }
+        if type == "hello" || type == "bye" || type == "typing" {
+            guard direct != nil else { return }
+        }
+        rememberPeer(senderKid, plain, linked: direct != nil)
         rememberWake(senderId, plain)
-        if type == "hello" && link.peerId == senderId, let peer = peers[senderId], let socket = link.socket {
-            // A peer that dialled this phone may never have been heard beaconing; its hello says
-            // where it listens.
+        if type == "hello", let direct, let peer = peers[senderKid], let socket = direct.socket {
             if case .int(let port)? = plain["port"], port > 0 && port <= 65535 {
                 let moved = peer.address != socket.remoteAddress || peer.port != Int(port)
                 peer.address = socket.remoteAddress
@@ -1163,13 +1235,11 @@ public final class LocalMeshService {
         if id.isEmpty || !markSeen(id) { return }
 
         if type == "hello" {
-            // The joiner gets this device's recent room history, the only backfill a relay-less
-            // room has.
-            for entry in history { _ = await writePlain(link, entry) }
+            if let direct { await resealOwnHistory(to: senderKid, via: direct) }
             return
         }
         if type == "bye" {
-            if removePeer(senderId) { notifyListeners() }
+            if removePeer(senderKid) { notifyListeners() }
             return
         }
         if type != "chat" { return }
@@ -1177,43 +1247,104 @@ public final class LocalMeshService {
         storeHistory(plain)
         let message: ChatMessage = toMessage(plain)
         let added: Bool = appendMessage(message)
-        // A mesh link is point to point, so relay what a peer said to the peers it may not be
-        // able to see. The id cache above stops it going round.
-        for other in links where other !== link && other.keyKnown {
-            _ = await writePlain(other, plain)
-        }
         notifyListeners()
         if added && !message.isSelf { onIncoming?(message, unread) }
     }
 
-    /// The public half of this device's sealing key: the one frame that cannot itself be sealed;
-    /// the room layer still encrypts it.
-    private func keyFrameBytes() -> [UInt8]? {
-        guard let crypto, let seal, let envelope = try? crypto.encrypt(seal.keyFrame()) else { return nil }
-        return Array(JSON.encode(.object(envelope)).utf8)
+    private func resealOwnHistory(to kid: String, via link: MeshLink?) async {
+        guard let seal else { return }
+        let own = history.filter { dartString($0["senderId"]) == nodeId && dartString($0["type"]) == "chat" }
+        for entry in own.suffix(LocalMeshService.resealOwnLimit) {
+            guard let sealed = try? seal.seal(entry, for: [kid], now: clock.nowMillis) else { continue }
+            rememberForwarded(dartString(sealed["sig"]))
+            let targets = link.map { [$0] } ?? links.filter { $0.authenticated && $0.keyKnown }
+            var wrote = false
+            for target in targets where target.authenticated {
+                if await writeLink(target, sealed) { wrote = true }
+            }
+            if wrote && queued.remove(dartString(entry["id"])) != nil {
+                scheduleHistorySave()
+                notifyListeners()
+            }
+        }
+        await advertiseIfRotated()
     }
 
-    private func writePlain(_ link: MeshLink, _ plain: JSONObject, onlyKeyIds: [String]? = nil) async -> Bool {
-        guard let crypto, let seal else { return false }
-        // Sealed at send time, not at compose time, so a device that joined after a message was
-        // written is still a recipient of the replayed copy.
-        let sealedFrame: JSONObject?
-        if let onlyKeyIds {
-            sealedFrame = try? seal.seal(plain, for: onlyKeyIds)
-        } else {
-            sealedFrame = try? seal.seal(plain)
+    private func ownBundle() -> JSONObject? {
+        guard let seal else { return nil }
+        let frame = seal.keyFrame(now: clock.nowMillis)
+        return frame.isEmpty ? nil : frame
+    }
+
+    private func advertiseIfRotated() async {
+        guard let seal, seal.needsAdvertisement(now: clock.nowMillis), let bundle = ownBundle() else { return }
+        for link in links where link.authenticated { _ = await writeLink(link, bundle) }
+    }
+
+    private func rememberBundle(_ kid: String, _ frame: JSONObject) {
+        if knownBundles.updateValue(frame, forKey: kid) == nil { knownBundleOrder.append(kid) }
+        while knownBundleOrder.count > LocalMeshService.maxKnownBundles {
+            knownBundles.removeValue(forKey: knownBundleOrder.removeFirst())
         }
-        guard let sealed = sealedFrame, let envelope = try? crypto.encrypt(sealed) else { return false }
-        let written = await write(link, Array(JSON.encode(.object(envelope)).utf8))
-        // Handed to a device: from here it travels on with that device's history.
-        if written && queued.remove(dartString(plain["id"])) != nil {
+    }
+
+    @discardableResult
+    private func rememberForwarded(_ signature: String) -> Bool {
+        if signature.isEmpty || forwarded.contains(signature) { return false }
+        forwarded.insert(signature)
+        forwardedOrder.append(signature)
+        while forwardedOrder.count > LocalMeshService.forwardMemory { forwarded.remove(forwardedOrder.removeFirst()) }
+        return true
+    }
+
+    public func sendDirectSealed(_ frame: JSONObject, channel: String, to kid: String) async -> Bool {
+        guard running, isDirectChannel(channel), let link = authenticatedLink(kid) else { return false }
+        return await writeLink(link, ["type": "direct-sealed", "channel": .string(channel), "frame": .object(frame)])
+    }
+
+    @discardableResult
+    public func sendDirectAck(channel: String, id: String, to kid: String) async -> Bool {
+        guard running, isDirectChannel(channel), !id.isEmpty, let link = authenticatedLink(kid) else { return false }
+        return await writeLink(link, ["type": "direct-ack", "channel": .string(channel), "id": .string(id)])
+    }
+
+    @discardableResult
+    public func sendFocus(channel: String, on: Bool, to kid: String) async -> Bool {
+        guard running, isDirectChannel(channel), let link = authenticatedLink(kid) else { return false }
+        return await writeLink(link, ["type": "focus", "channel": .string(channel), "on": .bool(on)])
+    }
+
+    private func authenticatedLink(_ kid: String) -> MeshLink? {
+        let candidates = links.filter { $0.authenticated && $0.peerId == kid }
+        return candidates.first { !$0.bluetooth } ?? candidates.first
+    }
+
+    private func writePlain(_ link: MeshLink, _ plain: JSONObject, only: [String]? = nil) async -> Bool {
+        guard let seal else { return false }
+        let sealedFrame: JSONObject?
+        if let only {
+            sealedFrame = try? seal.seal(plain, for: only, now: clock.nowMillis)
+        } else {
+            sealedFrame = try? seal.seal(plain, now: clock.nowMillis)
+        }
+        guard let sealed = sealedFrame else { return false }
+        rememberForwarded(dartString(sealed["sig"]))
+        let written = await writeLink(link, sealed)
+        let forOthers = RoomSeal.wrappedKeyIds(sealed).contains { $0 != seal.keyId }
+        if written && forOthers && queued.remove(dartString(plain["id"])) != nil {
             scheduleHistorySave()
             notifyListeners()
         }
+        await advertiseIfRotated()
         return written
     }
 
-    private func write(_ link: MeshLink, _ payload: [UInt8]) async -> Bool {
+    private func writeLink(_ link: MeshLink, _ frame: JSONObject) async -> Bool {
+        guard link.authenticated, let handshake = link.handshake, let data = try? handshake.seal(frame) else { return false }
+        return await writeRaw(link, data)
+    }
+
+    private func writeRaw(_ link: MeshLink, _ payload: [UInt8]) async -> Bool {
         if payload.count > meshMaxFrameBytes { return false }
         let framed = meshFrameBytes(payload)
         if let socket = link.socket {
@@ -1229,15 +1360,28 @@ public final class LocalMeshService {
     }
 
     private func sendToAll(_ plain: JSONObject) async {
+        guard let seal else { return }
+        var ready: [MeshLink] = []
         for link in links {
-            if !link.keyKnown {
-                // Hold it until the peer's sealing key lands, rather than send a frame that device
-                // could never open.
+            if !link.authenticated || !link.keyKnown {
                 if link.pending.count < 32 { link.pending.append(plain) }
                 continue
             }
-            _ = await writePlain(link, plain)
+            ready.append(link)
         }
+        if ready.isEmpty { return }
+        guard let sealed = try? seal.seal(plain, now: clock.nowMillis) else { return }
+        rememberForwarded(dartString(sealed["sig"]))
+        var wrote = false
+        for link in ready {
+            if await writeLink(link, sealed) { wrote = true }
+        }
+        let forOthers = RoomSeal.wrappedKeyIds(sealed).contains { $0 != seal.keyId }
+        if wrote && forOthers && queued.remove(dartString(plain["id"])) != nil {
+            scheduleHistorySave()
+            notifyListeners()
+        }
+        await advertiseIfRotated()
     }
 
     private func closeLink(_ link: MeshLink, notify: Bool = true, reason: String = "") async {
@@ -1247,6 +1391,9 @@ public final class LocalMeshService {
             diagnostics.lastDropReason = "\(who): \(reason.isEmpty ? "closed" : reason)"
         }
         links.removeAll { $0 === link }
+        link.deadline?.cancel()
+        link.deadline = nil
+        link.handshake?.wipe()
         link.socket?.close()
         let duplicate = reason == "duplicate link"
         let peerId = link.peerId
@@ -1254,7 +1401,9 @@ public final class LocalMeshService {
             await native.closeBluetoothLink(id, duplicate: duplicate)
             if present && duplicate && !peerId.isEmpty { bluetoothHeldOff[peerId] = id }
         }
-        guard !peerId.isEmpty, linkForPeer(peerId) == nil, let peer = peers[peerId] else { return }
+        guard !peerId.isEmpty, linkForPeer(peerId) == nil else { return }
+        if present { onLinkClosed?(peerId) }
+        guard let peer = peers[peerId] else { return }
         peer.linked = false
         if notify { notifyListeners() }
         if !present || !running || deliberateDropReasons.contains(reason) { return }
@@ -1284,8 +1433,6 @@ public final class LocalMeshService {
         if peerId.isEmpty { return nil }
         return links.first { $0.peerId == peerId }
     }
-
-    // MARK: Room state
 
     private func envelope(_ type: String) -> JSONObject {
         var frame: JSONObject = [
@@ -1345,7 +1492,6 @@ public final class LocalMeshService {
         Task { await wakeSender(tokens) }
     }
 
-    /// Returns the sent message's id, or "" when nothing was sent.
     @discardableResult
     public func sendMessage(_ text: String) async -> String {
         let trimmed = text.dartTrimmed
@@ -1355,8 +1501,6 @@ public final class LocalMeshService {
         let id = dartString(message["id"])
         _ = markSeen(id)
         storeHistory(message)
-        // Queued until a write to some device clears it: now, when a linked device's key lands, or
-        // when a device joins and gets the history.
         queued.insert(id)
         diagnostics.chatOut += 1
         await sendToAll(message)
@@ -1374,7 +1518,7 @@ public final class LocalMeshService {
     }
 
     private func rememberPeer(_ peerId: String, _ plain: JSONObject, linked: Bool) {
-        if peerId.isEmpty || peerId == nodeId { return }
+        if peerId.isEmpty || peerId == sealKeyId { return }
         let existing = peers[peerId]
         let peer = existing ?? MeshPeer()
         if existing == nil {
@@ -1394,18 +1538,15 @@ public final class LocalMeshService {
         if !platform.isEmpty { peer.platform = platform }
         let version = field("version")
         if !version.isEmpty { peer.version = version }
-        var controlChanged = false
-        if plain.contains("control") {
-            let control = plain["control"] == .bool(true)
-            controlChanged = control != peer.control
-            peer.control = control
-        }
+        let sender = dartPrefix(dartString(plain["senderId"]), 160)
+        let namedChanged = !sender.isEmpty && sender != peer.nodeId
+        if !sender.isEmpty { peer.nodeId = sender }
         if linked {
             peer.linked = true
             peer.unlinkedSinceMs = 0
         }
         peer.lastSeenMs = clock.nowMillis
-        if existing == nil || linked || controlChanged { notifyListeners() }
+        if existing == nil || linked || (namedChanged && peer.control) { notifyListeners() }
     }
 
     @discardableResult
@@ -1511,6 +1652,7 @@ public final class LocalMeshService {
             let temp = file.appendingPathExtension("tmp")
             try JSON.encodeData(.object(root)).write(to: temp)
             _ = rename(temp.path, file.path)
+            ChatFiles.excludeFromBackup(file)
         } catch {}
     }
 
@@ -1557,7 +1699,6 @@ public final class LocalMeshService {
         return "\(nodeId)-\(micros)-\(seq)"
     }
 
-    /// Closes every socket without the goodbye `stop` sends.
     public func dispose() {
         beaconTask?.cancel()
         sweepTask?.cancel()
@@ -1574,6 +1715,7 @@ public final class LocalMeshService {
         server?.close()
         for link in links {
             link.reader?.cancel()
+            link.deadline?.cancel()
             link.socket?.close()
         }
         running = false

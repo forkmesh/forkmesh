@@ -64,7 +64,7 @@
 		<string>ASCredentialExchangeActivityType</string>
 	</array>
 	<key>NSFaceIDUsageDescription</key>
-	<string>ForkMesh confirms it's you before destructive actions like deleting a repository.</string>
+	<string>ForkMesh confirms it's you before destructive actions like deleting a repository, and before showing your chats when Lock chats with Face ID is on.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>ForkMesh reaches nearby ForkMesh devices over Bluetooth so the #mesh room works with no Wi-Fi and no internet, and Glasses Alert listens for smart glasses near you.</string>
 	<key>UIBackgroundModes</key>

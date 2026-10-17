@@ -135,9 +135,11 @@ mostly one identical row per desktop status heartbeat.
   rescue image.
 - `DATA_KEY` cannot be rotated in place; rotation is an offline re-key.
 - Public chat channels are readable by the relay operator by design; private
-  channels and direct messages are end-to-end encrypted, but device public
-  keys are served unauthenticated, so an active operator could inject a key
-  for future messages.
+  channels and direct messages are end-to-end encrypted. Until chat protocol
+  v3 ([../app/chat-protocol-v3.md](../app/chat-protocol-v3.md)) an active
+  operator could inject a device key for future messages; v3 signs device
+  bundles, holds a new device of a DM contact until the user approves it, and
+  shows safety numbers. The server still knows which two accounts a DM joins.
 - The content security policy still allows inline scripts; a strict policy
   needs nonces.
 - `app/tests/test_no_banned_identifiers.py` guards against personal

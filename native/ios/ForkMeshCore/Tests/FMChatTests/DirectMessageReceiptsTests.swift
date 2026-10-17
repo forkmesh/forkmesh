@@ -40,8 +40,10 @@ struct DirectRoomHelpers {
         await Task.detached { RoomCrypto.withPassphrase(DirectMessagesTests.room, "direct-pass") }.value
     }
 
-    func peerSeal(_ scope: String) throws -> RoomSeal {
-        try RoomSeal.loadOrCreate(DirectMessagesTests.room, storageScope: scope, secureStore: InMemorySecureStore())
+    func peerSeal(_ label: String, acct: String = "pat", node: String = "pat-node") throws -> RoomSeal {
+        try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: "direct:\(DirectMessagesTests.conversationId)", policy: .strict, acct: acct,
+            node: node, secureStore: InMemorySecureStore())
     }
 
     func preparedApi() -> FakeAccountApi {
@@ -85,6 +87,12 @@ final class DirectMessageReceiptsTests: XCTestCase {
         let known = await waitUntil { service.deviceKeys(conversation).contains(peer.keyId) }
         XCTAssertTrue(known)
         return Room(service: service, connection: connection, crypto: crypto, peer: peer, conversation: conversation)
+    }
+
+    @MainActor func laptop(_ room: Room) async throws -> RoomSeal {
+        try RoomSeal.loadOrCreate(
+            DirectMessagesTests.room, scope: room.conversation, policy: .strict, acct: "me", node: "me-node",
+            secureStore: room.service.secureStore)
     }
 
     @MainActor func peerSends(_ room: Room, _ plain: JSONObject, replay: Bool = false) throws {
@@ -148,7 +156,8 @@ final class DirectMessageReceiptsTests: XCTestCase {
         let room = try await openRoom()
         var own = chat("me-node-1-1", "from my laptop", conversation: room.conversation, sender: "me-node")
         own["sender"] = "Me"
-        var envelope = try room.crypto.encrypt(try room.peer.seal(own))
+        let laptop = try await laptop(room)
+        var envelope = try room.crypto.encrypt(try laptop.seal(own))
         envelope["historyReplay"] = true
         envelope["ref"] = .string(String(repeating: "b", count: 40))
         room.connection.receive(text: JSON.encode(envelope))
@@ -399,16 +408,17 @@ final class DirectMessageReceiptsTests: XCTestCase {
             "type": "thread-reply", "id": "me-node-r0", "senderId": "me-node", "sender": "Me", "ts": .int(now - 40_000),
             "rootId": "pat-1", "channel": .string(room.conversation), "text": "from my laptop",
         ]
-        var envelope = try room.crypto.encrypt(try room.peer.seal(own))
+        let laptop = try await laptop(room)
+        var envelope = try room.crypto.encrypt(try laptop.seal(own))
         envelope["historyReplay"] = true
         envelope["ref"] = .string(String(repeating: "c", count: 40))
         room.connection.receive(text: JSON.encode(envelope))
         let replayed = await waitUntil { hub.threadRows("pat-1").count == 2 }
         XCTAssertTrue(replayed)
-        let laptop = try XCTUnwrap(hub.threadRows("pat-1").last)
-        XCTAssertTrue(laptop.message.isSelf)
-        XCTAssertTrue(laptop.deletable)
-        XCTAssertEqual(laptop.receipt, .sent)
+        let fromLaptop = try XCTUnwrap(hub.threadRows("pat-1").last)
+        XCTAssertTrue(fromLaptop.message.isSelf)
+        XCTAssertTrue(fromLaptop.deletable)
+        XCTAssertEqual(fromLaptop.receipt, .sent)
 
         let replied = await hub.replyInThread(channel: room.conversation, rootId: "pat-1", text: "noon then")
         XCTAssertTrue(replied)

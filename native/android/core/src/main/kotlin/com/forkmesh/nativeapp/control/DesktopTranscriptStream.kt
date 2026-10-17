@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.control
 
 import com.forkmesh.nativeapp.json.jsonText
+import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -29,11 +30,14 @@ class DesktopTranscriptStream(
     private var stopped = false
     private var awaiting = false
     private val early = ArrayList<Map<String, Any?>>()
+    private var filling = false
+    private val held = ArrayList<Map<String, Any?>>()
     private var followedLink: ControlLink? = null
     private var retry: ScheduledFuture<*>? = null
     private var retryDelayMs = 1_000L
 
     fun start(): Boolean {
+        hold(this)
         synchronized(lock) {
             stopped = false
             if (tap == null) tap = hub.addEventTap { event -> onEvent(event) }
@@ -58,6 +62,8 @@ class DesktopTranscriptStream(
             stopped = true
             generation++
             isStreaming = false
+            filling = false
+            held.clear()
             retry?.cancel(false)
             retry = null
             tap?.let { hub.removeEventTap(it) }
@@ -66,7 +72,7 @@ class DesktopTranscriptStream(
             linkToken = null
             link = hub.currentLink
         }
-        if (link != null) {
+        if (!release(this) && link != null) {
             worker.execute { runCatching { link.request("agents.unfollow", mapOf("id" to sessionId), 5_000) } }
         }
         worker.shutdown()
@@ -78,6 +84,8 @@ class DesktopTranscriptStream(
             generation++
             awaiting = true
             early.clear()
+            filling = false
+            held.clear()
             generation
         }
         try {
@@ -89,10 +97,10 @@ class DesktopTranscriptStream(
                 retryDelayMs = 1_000
                 isStreaming = answer["streaming"] == true
                 apply(answer)
-                val held = ArrayList(early)
+                val replay = ArrayList(early)
                 early.clear()
                 awaiting = false
-                held
+                replay
             }
             for (data in queued) onOutput(data)
         } catch (refusal: LocalControlException) {
@@ -144,12 +152,56 @@ class DesktopTranscriptStream(
         }
     }
 
-    private fun apply(data: Map<String, Any?>) {
+    private fun apply(data: Map<String, Any?>, fills: Boolean = true) {
+        if (filling) {
+            held.add(data)
+            return
+        }
         var delta = AgentTranscriptDelta.fromDesktop(data, next, sessionId)
-        if (!delta.reset && delta.from < next) return
-        if (!delta.reset && delta.from > next) delta = delta.copy(reset = true)
+        if (!delta.reset && delta.from > next) {
+            if (fills) {
+                held.add(data)
+                fill()
+                return
+            }
+            delta = delta.copy(reset = true)
+        }
+        if (!delta.reset && delta.from < next) delta = unseen(delta, next) ?: return
         next = delta.next
         onDelta(delta)
+    }
+
+    private fun fill() {
+        filling = true
+        val attempt = generation
+        val since = next
+        runCatching { worker.execute { fill(since, attempt) } }.onFailure { filling = false }
+    }
+
+    private fun fill(since: Int, attempt: Int) {
+        val params: Map<String, Any?> = if (since > 0) mapOf("id" to sessionId, "since" to since) else mapOf("id" to sessionId)
+        val answer = try {
+            hub.request("agents.transcript", params)
+        } catch (_: Throwable) {
+            synchronized(lock) {
+                if (stopped || attempt != generation) return
+                filling = false
+                held.clear()
+            }
+            follow()
+            return
+        }
+        synchronized(lock) {
+            if (stopped || attempt != generation) return
+            filling = false
+            val queued = ArrayList(held)
+            held.clear()
+            apply(answer, fills = false)
+            for (data in queued) {
+                if (stopped || attempt != generation) break
+                apply(data, fills = false)
+            }
+        }
     }
 
     private fun end(reason: String) {
@@ -167,6 +219,29 @@ class DesktopTranscriptStream(
             current != null
         }
         if (refollow) worker.execute { follow() } else scheduleRetry()
+    }
+
+    private companion object {
+        val holders = ArrayList<WeakReference<DesktopTranscriptStream>>()
+
+        fun hold(stream: DesktopTranscriptStream) {
+            synchronized(holders) {
+                holders.removeAll { it.get() == null }
+                if (holders.none { it.get() === stream }) holders.add(WeakReference(stream))
+            }
+        }
+
+        fun release(stream: DesktopTranscriptStream): Boolean = synchronized(holders) {
+            holders.removeAll { it.get().let { other -> other == null || other === stream } }
+            holders.any { it.get()?.let { other -> other.hub === stream.hub && other.sessionId == stream.sessionId } == true }
+        }
+
+        fun unseen(delta: AgentTranscriptDelta, after: Int): AgentTranscriptDelta? {
+            val skip = after - delta.from
+            if (delta.next <= after || delta.text.length != delta.next - delta.from) return null
+            if (Character.isLowSurrogate(delta.text[skip])) return null
+            return delta.copy(text = delta.text.substring(skip), from = after)
+        }
     }
 
     private fun scheduleRetry() {

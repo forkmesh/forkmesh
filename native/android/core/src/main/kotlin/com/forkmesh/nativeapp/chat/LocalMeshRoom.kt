@@ -1,8 +1,16 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.api.AccountSettings
+import com.forkmesh.nativeapp.crypto.Bytes
+import com.forkmesh.nativeapp.crypto.ChatV3
+import com.forkmesh.nativeapp.crypto.Ed25519
+import com.forkmesh.nativeapp.crypto.MeshLinkCrypto
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
+import com.forkmesh.nativeapp.crypto.TrustState
+import com.forkmesh.nativeapp.crypto.X25519
 import com.forkmesh.nativeapp.crypto.dartNumEquals
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.jsonText
@@ -36,7 +44,7 @@ const val MESH_ROOM_NAME = "forkmesh-lan-mesh-v1"
 const val MESH_MULTICAST_GROUP = "239.192.79.42"
 const val MESH_DISCOVERY_PORT = 48732
 const val MESH_BEACON_TAG = "forkmesh-lan-mesh"
-const val MESH_PROTOCOL_VERSION = 1
+const val MESH_PROTOCOL_VERSION = 3
 
 private const val MAX_FRAME_BYTES = 24 * 1024 * 1024
 private const val MAX_TEXT_CHARS = 16000
@@ -49,9 +57,11 @@ private const val SWEEP_INTERVAL_MS = 5000L
 private const val SEEN_CACHE_LIMIT = 4096
 private const val HISTORY_LIMIT = 200
 private const val MAX_LINKS = 64
+private const val MAX_FORWARDED_BUNDLES = 64
 
 private const val HISTORY_SAVE_DELAY_MS = 1000L
-private const val HISTORY_FILE_VERSION = 1L
+private const val HISTORY_FILE_VERSION = 2L
+private const val LEGACY_HISTORY_FILE_VERSION = 1L
 
 private const val ADDRESS_SWEEP_EVERY_BEATS = 4
 
@@ -74,7 +84,7 @@ const val MESH_KEEPALIVE_INTERVAL_S = 5
 const val MESH_KEEPALIVE_PROBES = 3
 const val MESH_UNACKED_TIMEOUT_MS = 30000
 
-private val SUPERSEDED_REASONS = setOf("duplicate link", "replaced", "identity changed")
+private val SUPERSEDED_REASONS = setOf("duplicate link", "replaced", "identity changed", "own identity", "blocked device")
 
 private val SKIPPED_INTERFACE_PREFIXES = listOf(
     "rmnet", "rev_rmnet", "ccmni", "clat", "v4-", "tun", "ppp", "pdp", "wwan", "dummy", "ifb", "sit",
@@ -192,34 +202,26 @@ internal fun meshAgeText(now: Long, thenMs: Long): String {
 private fun meshErrorText(error: Throwable): String = error.message ?: error.javaClass.simpleName
 
 data class MeshBeacon(
-    val nodeId: String,
+    val kid: String,
     val port: Int,
-    val name: String = "",
-    val nodeName: String = "",
-    val ownerUser: String = "",
-    val accountKind: String = "",
-    val platform: String = "",
-    val version: String = "",
     val timestampMs: Long = 0,
     val reply: Boolean = false,
     val control: Boolean = false,
+    val node: String = "",
 ) {
     fun toJson(): LinkedHashMap<String, Any?> {
         val out = linkedMapOf<String, Any?>(
             "t" to MESH_BEACON_TAG,
             "v" to MESH_PROTOCOL_VERSION.toLong(),
-            "id" to nodeId,
+            "id" to kid,
             "port" to port.toLong(),
             "ts" to timestampMs,
         )
-        if (name.isNotEmpty()) out["name"] = name
-        if (nodeName.isNotEmpty()) out["nodeName"] = nodeName
-        if (ownerUser.isNotEmpty()) out["ownerUser"] = ownerUser
-        if (accountKind.isNotEmpty()) out["accountKind"] = accountKind
-        if (platform.isNotEmpty()) out["platform"] = platform
-        if (version.isNotEmpty()) out["version"] = version
         if (reply) out["reply"] = true
-        if (control) out["control"] = true
+        if (control) {
+            out["control"] = true
+            if (node.isNotEmpty()) out["node"] = node
+        }
         return out
     }
 
@@ -230,23 +232,16 @@ data class MeshBeacon(
             val port = obj["port"]
             val portValue = if (port is Long) port else dartIntTryParse(if (port == null) "null" else jsonText(port)) ?: 0L
             if (id.isEmpty() || portValue <= 0 || portValue > 65535) return null
-            fun bounded(key: String, max: Int = MAX_NAME_CHARS): String {
-                val value = jsonText(obj[key])
-                return if (value.length > max) value.substring(0, max) else value
-            }
             val ts = obj["ts"]
+            val control = obj["control"] == true
+            val node = if (control) jsonText(obj["node"]).take(160) else ""
             return MeshBeacon(
-                nodeId = if (id.length > 160) id.substring(0, 160) else id,
+                kid = if (id.length > 160) id.substring(0, 160) else id,
                 port = portValue.toInt(),
-                name = bounded("name"),
-                nodeName = bounded("nodeName"),
-                ownerUser = bounded("ownerUser"),
-                accountKind = bounded("accountKind", 16),
-                platform = bounded("platform", 16),
-                version = bounded("version"),
                 timestampMs = if (ts is Number) ts.toLong() else 0L,
                 reply = obj["reply"] == true,
-                control = obj["control"] == true,
+                control = control,
+                node = node,
             )
         }
     }
@@ -357,16 +352,27 @@ class LocalMeshRoom(
     private val platform: String = "android",
     val loop: EventLoop = EventLoop("LocalMeshRoom"),
     private val historyFile: () -> File? = { null },
-) {
+) : DirectMeshLinks {
     private class MeshLink(val socket: Socket?, val bluetoothId: Int?, val outbound: Boolean, val writer: EventLoop.SerialQueue) {
         val buffer = BytesBuilderBuffer()
         val pending = ArrayList<Map<String, Any?>>()
         var peerId = ""
+        var peerIdk = ""
         var helloMs = 0L
         var keyKnown = false
-        var keyId = ""
         var closed = false
         var output: OutputStream? = null
+        var ephPrivate: ByteArray? = null
+        var ownHello: MeshLinkCrypto.Hello? = null
+        var peerHello: MeshLinkCrypto.Hello? = null
+        var transcript: ByteArray? = null
+        var sendKey: ByteArray? = null
+        var recvKey: ByteArray? = null
+        var sendCounter = 0L
+        var recvCounter = 0L
+        var authed = false
+        var helloSent = false
+        val peerFocus = HashSet<String>()
 
         @Volatile
         var writeStartedMs = -1L
@@ -385,6 +391,8 @@ class LocalMeshRoom(
         var unlinkedSinceMs = 0L
         var linked = false
         var control = false
+        var nodeId = ""
+        var controlNode = ""
     }
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -489,7 +497,7 @@ class LocalMeshRoom(
             if (!peer.control || peer.port <= 0) continue
             hosts.add(
                 MeshControlHost(
-                    nodeId = id,
+                    nodeId = peer.controlNode.ifEmpty { id },
                     address = address,
                     port = peer.port,
                     name = peer.name,
@@ -586,7 +594,18 @@ class LocalMeshRoom(
     var onIncoming: ((ChatMessage, Int) -> Unit)? = null
 
     @Volatile
-    var onDirect: ((String, String, Map<String, Any?>) -> Unit)? = null
+    var onDirect: ((String, Map<String, Any?>) -> Unit)? = null
+
+    @Volatile
+    var onLinksChanged: (() -> Unit)? = null
+
+    @Volatile
+    var isBlockedKid: ((String) -> Boolean)? = null
+
+    private val ownFocus = LinkedHashSet<String>()
+    private val historyFrames = HashMap<String, Map<String, Any?>>()
+    private val bundles = LinkedHashMap<String, Map<String, Any?>>()
+    private val relayed = LinkedHashSet<String>()
     private val wakeTokens = HashMap<String, String>()
     private val wakeOrder = ArrayList<String>()
 
@@ -634,7 +653,7 @@ class LocalMeshRoom(
         for ((id, peer) in peers) {
             list.add(
                 Member(
-                    id = id,
+                    id = peer.nodeId.ifEmpty { id },
                     name = peer.name.ifEmpty { peer.ownerUser.ifEmpty { id } },
                     online = peer.linked || now - peer.lastSeenMs <= peerTimeoutMs,
                     platform = peer.platform,
@@ -657,7 +676,10 @@ class LocalMeshRoom(
         val stored = history.removeAll { plain ->
             val ts = plain["ts"]
             val gone = ts is Number && rule.isExpired(ts.toLong(), MESH_CONVERSATION, nowMs)
-            if (gone) queued.remove(jsonText(plain["id"]))
+            if (gone) {
+                queued.remove(jsonText(plain["id"]))
+                historyFrames.remove(jsonText(plain["id"]))
+            }
             gone
         }
         if (stored) scheduleHistorySave()
@@ -677,7 +699,14 @@ class LocalMeshRoom(
     fun start(): Boolean {
         if (loop.call { isRunning }) return true
         val roomCrypto = RoomCrypto.shared(MESH_ROOM_NAME)
-        val roomSeal = RoomSeal.loadOrCreate(MESH_ROOM_NAME, storageScope = "$MESH_ROOM_NAME\n$nodeId", secureStore = secureStore)
+        val roomSeal = RoomSeal.loadOrCreate(
+            MESH_ROOM_NAME,
+            scope = MESH_ROOM_NAME,
+            policy = SealPolicy.OPEN,
+            acct = sealAccount(),
+            secureStore = secureStore,
+            node = nodeId,
+        )
         val file = if (loop.call { historyLoaded }) null else historyFile()
         loop.call {
             crypto = roomCrypto
@@ -1003,21 +1032,20 @@ class LocalMeshRoom(
 
     private fun beaconDatagram(reply: Boolean = false): ByteArray? {
         val roomCrypto = crypto ?: return null
+        val roomSeal = seal ?: return null
         val bound = server ?: return null
-        val self = persona
         val beacon = MeshBeacon(
-            nodeId = nodeId,
+            kid = roomSeal.keyId,
             port = bound.localPort,
-            name = name,
-            ownerUser = self.ownerUser,
-            accountKind = self.accountKind,
-            platform = platform,
-            version = RelayRoom.CLIENT_VERSION,
             timestampMs = System.currentTimeMillis(),
             reply = reply,
         )
         return Json.stringify(roomCrypto.encrypt(beacon.toJson())).toByteArray(StandardCharsets.UTF_8)
     }
+
+    private val ownKid: String get() = seal?.keyId ?: ""
+
+    private fun sealAccount(): String = persona.ownerUser.trim().lowercase().ifEmpty { nodeId }
 
     private fun sendDatagram(socket: MulticastSocket, datagram: ByteArray, to: InetAddress, port: Int, count: MeshDiagnostics.() -> Unit): Boolean =
         try {
@@ -1149,33 +1177,23 @@ class LocalMeshRoom(
             diag.undecryptableIn++
             return
         }
-        if (beacon.nodeId == nodeId) {
+        if (beacon.kid == ownKid) {
             diag.ownBeaconsIn++
             return
         }
         diag.peerBeaconsIn++
         diag.lastBeaconMs = System.currentTimeMillis()
-        val who = beacon.name.ifEmpty { beacon.nodeId.take(8) }
+        val who = peers[beacon.kid]?.name?.ifEmpty { null } ?: beacon.kid.take(8)
         diag.lastBeaconFrom = "$who ${from.hostAddress}:${beacon.port}${if (beacon.reply) " (reply)" else ""}"
 
-        rememberPeer(
-            beacon.nodeId,
-            mapOf(
-                "sender" to beacon.name,
-                "nodeName" to beacon.nodeName,
-                "ownerUser" to beacon.ownerUser,
-                "platform" to beacon.platform,
-                "version" to beacon.version,
-                "control" to beacon.control,
-            ),
-            linked = false,
-        )
-        val peer = peers[beacon.nodeId] ?: return
+        rememberPeer(beacon.kid, mapOf("control" to beacon.control), linked = false)
+        val peer = peers[beacon.kid] ?: return
+        if (beacon.control && beacon.node.isNotEmpty()) peer.controlNode = beacon.node
         val moved = peer.address?.hostAddress != from.hostAddress || peer.port != beacon.port
         peer.address = from
         peer.port = beacon.port
         if (moved && peer.control) notifyListeners()
-        if (linkForPeer(beacon.nodeId) != null) {
+        if (linkForPeer(beacon.kid) != null) {
             peer.unlinkedSinceMs = 0
             return
         }
@@ -1188,7 +1206,7 @@ class LocalMeshRoom(
         }
         val now = System.currentTimeMillis()
         if (peer.unlinkedSinceMs == 0L) peer.unlinkedSinceMs = now
-        if (nodeId < beacon.nodeId || now - peer.unlinkedSinceMs >= beaconIntervalMs / 2) {
+        if (ownKid < beacon.kid || now - peer.unlinkedSinceMs >= beaconIntervalMs / 2) {
             loop.io { connectToPeer(from, beacon.port) }
         }
     }
@@ -1318,10 +1336,18 @@ class LocalMeshRoom(
     private fun linkForBluetooth(id: Int): MeshLink? = links.firstOrNull { it.bluetoothId == id }
 
     private fun openLink(link: MeshLink) {
-        sendKeyFrame(link)
-        link.pending.add(envelope("hello"))
+        val roomSeal = seal
+        if (roomSeal == null) {
+            closeLink(link, reason = "mesh not ready")
+            return
+        }
+        val eph = X25519.generatePrivateKey()
+        val hello = MeshLinkCrypto.hello(roomSeal.keys.idk, X25519.publicKey(eph), Bytes.random(MeshLinkCrypto.NONCE_BYTES))
+        link.ephPrivate = eph
+        link.ownHello = hello
+        writeRaw(link, Json.stringify(hello.toJson()).toByteArray(StandardCharsets.UTF_8))
         loop.timer(handshakeTimeoutMs) {
-            if (link in links && link.peerId.isEmpty()) closeLink(link, reason = "handshake timeout")
+            if (link in links && (!link.authed || link.peerId.isEmpty())) closeLink(link, reason = "handshake timeout")
         }
     }
 
@@ -1339,117 +1365,263 @@ class LocalMeshRoom(
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private fun parseJson(bytes: ByteArray): Map<String, Any?>? = try {
+        Json.parse(String(bytes, StandardCharsets.UTF_8)) as? Map<String, Any?>
+    } catch (_: Exception) {
+        null
+    }
+
     private fun handleFrame(link: MeshLink, payload: ByteArray) {
-        val roomCrypto = crypto ?: return
         val roomSeal = seal ?: return
         diag.framesIn++
-        @Suppress("UNCHECKED_CAST")
-        val envelope = try {
-            Json.parse(String(payload, StandardCharsets.UTF_8)) as? Map<String, Any?>
-        } catch (_: Exception) {
-            null
+        if (link.peerHello == null) {
+            val hello = parseJson(payload)?.let(MeshLinkCrypto::parseHello)
+            if (hello == null) {
+                diag.framesBad++
+                closeLink(link, reason = "bad link hello")
+                return
+            }
+            onPeerHello(link, roomSeal, hello)
+            return
         }
-        val decrypted = envelope?.let { roomCrypto.decrypt(it) }
-        if (decrypted == null) {
+        if (!link.authed) {
+            val signature = parseJson(payload)?.let(MeshLinkCrypto::authSignature)
+            if (signature == null) {
+                diag.framesBad++
+                closeLink(link, reason = "bad link auth")
+                return
+            }
+            onPeerAuth(link, roomSeal, signature)
+            return
+        }
+        val key = link.recvKey ?: return
+        val clear = MeshLinkCrypto.open(key, link.recvCounter, payload)
+        if (clear == null) {
+            diag.framesBad++
+            closeLink(link, reason = "bad link frame")
+            return
+        }
+        link.recvCounter++
+        val frame = parseJson(clear)
+        if (frame == null) {
             diag.framesBad++
             return
         }
-        if (RoomSeal.isKeyFrame(decrypted)) {
-            val keyId = jsonText(decrypted["kid"])
-            if (roomSeal.acceptKeyFrame(decrypted)) {
-                sendKeyFrame(link)
+        when (jsonText(frame["type"])) {
+            ChatV3.KEY_TYPE -> onBundle(link, roomSeal, frame)
+            ChatV3.SEALED_TYPE -> onSealed(link, roomSeal, frame)
+            DirectMessageFrames.DIRECT_SEALED, DirectMessageFrames.DIRECT_ACK -> handleDirect(link, frame)
+            DirectMessageFrames.FOCUS -> {
+                val channel = jsonText(frame["channel"])
+                if (channel.startsWith(DirectMessageFrames.PREFIX) && channel.length <= 80) {
+                    if (frame["on"] == true) link.peerFocus.add(channel) else link.peerFocus.remove(channel)
+                    handleDirect(link, frame)
+                }
             }
-            if (keyId == roomSeal.keyId || keyId in roomSeal.peerKeyIds) link.keyId = keyId
-            if (!link.keyKnown) {
-                link.keyKnown = true
-                val queued = ArrayList(link.pending)
-                link.pending.clear()
-                for (frame in queued) writePlain(link, frame)
-            }
-            return
+            else -> diag.framesBad++
         }
-        val plain = roomSeal.unseal(decrypted)
-        if (plain == null) {
-            diag.framesBad++
-            return
-        }
-        if (jsonText(plain["type"]) == "direct") {
-            handleDirect(plain, RoomSeal.frameKeyId(decrypted), roomSeal.keyId)
-            return
-        }
-        handlePlain(link, plain)
     }
 
-    private fun handleDirect(plain: Map<String, Any?>, sealKeyId: String, ownKeyId: String) {
-        val channel = jsonText(plain["channel"])
-        if (sealKeyId.isEmpty() || sealKeyId == ownKeyId) return
+    private fun onPeerHello(link: MeshLink, roomSeal: RoomSeal, hello: MeshLinkCrypto.Hello) {
+        val own = link.ownHello
+        val eph = link.ephPrivate
+        if (own == null || eph == null) {
+            closeLink(link, reason = "bad link state")
+            return
+        }
+        if (hello.idk == roomSeal.keys.idkText) {
+            closeLink(link, reason = "own identity")
+            return
+        }
+        if (blocked(roomSeal, hello.kid)) {
+            closeLink(link, reason = "blocked device")
+            return
+        }
+        link.peerHello = hello
+        val transcript = if (link.outbound) MeshLinkCrypto.transcript(own, hello) else MeshLinkCrypto.transcript(hello, own)
+        link.transcript = transcript
+        val keys = try {
+            MeshLinkCrypto.keys(eph, hello.ephBytes, transcript)
+        } catch (_: IllegalArgumentException) {
+            closeLink(link, reason = "bad link key")
+            return
+        } finally {
+            Bytes.wipe(eph)
+            link.ephPrivate = null
+        }
+        link.sendKey = if (link.outbound) keys.i2r else keys.r2i
+        link.recvKey = if (link.outbound) keys.r2i else keys.i2r
+        val signature = roomSeal.keys.sign(MeshLinkCrypto.authMessage(link.outbound, transcript))
+        writeRaw(link, Json.stringify(MeshLinkCrypto.authFrame(signature)).toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun blocked(roomSeal: RoomSeal, kid: String): Boolean {
+        if (roomSeal.trust.record(kid)?.state == TrustState.BLOCKED) return true
+        return runCatching { isBlockedKid?.invoke(kid) == true }.getOrDefault(false)
+    }
+
+    private fun onPeerAuth(link: MeshLink, roomSeal: RoomSeal, signature: ByteArray) {
+        val hello = link.peerHello ?: return
+        val transcript = link.transcript ?: return
+        if (!Ed25519.verify(hello.idkBytes, MeshLinkCrypto.authMessage(!link.outbound, transcript), signature)) {
+            closeLink(link, reason = "bad link signature")
+            return
+        }
+        val kid = hello.kid
+        val other = linkForPeer(kid)
+        val now = linkClock()
+        link.authed = true
+        link.peerId = kid
+        link.peerIdk = hello.idk
+        link.helloMs = now
+        if (other != null && other !== link) {
+            val bluetooth = link.bluetoothId != null
+            if (bluetooth != (other.bluetoothId != null)) {
+                if (bluetooth) {
+                    closeLink(link, reason = "duplicate link")
+                    return
+                }
+                closeLink(other, reason = "duplicate link")
+            } else if (now - other.helloMs >= linkReplaceAfterMs) {
+                closeLink(other, reason = "replaced")
+            } else {
+                val mine = if (link.outbound) ownKid else kid
+                val theirs = if (other.outbound) ownKid else kid
+                if (mine < theirs) {
+                    closeLink(link, reason = "duplicate link")
+                    return
+                }
+                closeLink(other, reason = "duplicate link")
+            }
+        }
+        rememberPeer(kid, emptyMap(), linked = true)
+        val peer = peers[kid]
+        val socket = link.socket
+        if (peer != null && socket != null && peer.address == null) peer.address = socket.inetAddress
+        roomSeal.setIdentity(sealAccount(), nodeId)
+        writeFrame(link, roomSeal.keyFrame())
+        for ((known, bundle) in bundles) if (known != kid) writeFrame(link, bundle)
+        for (channel in ownFocus) writeFrame(link, DirectMessageFrames.focusFrame(channel, true))
+        linksChanged()
+    }
+
+    private fun linksChanged() {
+        val handler = onLinksChanged ?: return
+        loop.io { handler() }
+    }
+
+    private fun onBundle(link: MeshLink, roomSeal: RoomSeal, frame: Map<String, Any?>) {
+        val outcome = roomSeal.acceptKeyFrame(frame)
+        if (outcome == null) {
+            diag.framesBad++
+            return
+        }
+        if (outcome.isNew || outcome.updated) {
+            bundles.remove(outcome.kid)
+            bundles[outcome.kid] = frame
+            while (bundles.size > MAX_FORWARDED_BUNDLES) bundles.remove(bundles.keys.first())
+            for (other in ArrayList(links)) {
+                if (other !== link && other.authed && !other.closed) writeFrame(other, frame)
+            }
+            if (outcome.isNew && outcome.kid != link.peerId && outcome.state == TrustState.APPROVED) resealOwnHistory(outcome.kid)
+        }
+        if (outcome.kid == link.peerId && frame["idk"] == link.peerIdk && !link.keyKnown) {
+            link.keyKnown = true
+            val hello = envelope("hello")
+            server?.localPort?.let { hello["port"] = it.toLong() }
+            writePlain(link, hello, only = listOf(link.peerId))
+            val queued = ArrayList(link.pending)
+            link.pending.clear()
+            for (plain in queued) writePlain(link, plain)
+        }
+        for (held in roomSeal.takeHeld(outcome.kid)) onSealed(link, roomSeal, held.frame)
+    }
+
+    private fun onSealed(link: MeshLink, roomSeal: RoomSeal, frame: Map<String, Any?>) {
+        when (val result = roomSeal.open(frame)) {
+            is SealOpen.Opened -> handlePlain(link, result.plain, frame, result.senderKid)
+            is SealOpen.NotForMe -> relayForeign(link, frame)
+            is SealOpen.Held -> if (!result.blocked) relayForeign(link, frame)
+            is SealOpen.Invalid -> diag.framesBad++
+            is SealOpen.Replay -> {}
+        }
+    }
+
+    private fun relayForeign(from: MeshLink, frame: Map<String, Any?>) {
+        val key = "${RoomSeal.frameKeyId(frame)}:${frame["ctr"]}"
+        if (!relayed.add(key)) return
+        while (relayed.size > SEEN_CACHE_LIMIT) relayed.remove(relayed.first())
+        val addressed = RoomSeal.wrappedKeyIds(frame).toSet()
+        for (other in ArrayList(links)) {
+            if (other === from || !other.keyKnown || other.peerId !in addressed) continue
+            writeFrame(other, frame)
+        }
+    }
+
+    private fun resealOwnHistory(kid: String) {
+        val roomSeal = seal ?: return
+        for (entry in ArrayList(history)) {
+            if (jsonText(entry["senderId"]) != nodeId) continue
+            val frame = try {
+                roomSeal.seal(entry, only = listOf(kid))
+            } catch (_: Exception) {
+                return
+            }
+            for (link in ArrayList(links)) if (link.keyKnown && !link.closed) writeFrame(link, frame)
+        }
+    }
+
+    private fun handleDirect(link: MeshLink, frame: Map<String, Any?>) {
+        val channel = jsonText(frame["channel"])
+        if (!link.authed || link.peerId.isEmpty()) return
         if (!channel.startsWith(DirectMessageFrames.PREFIX) || channel.length > 80) return
         val handler = onDirect ?: return
-        loop.io { handler(channel, sealKeyId, plain) }
+        val kid = link.peerId
+        loop.io { handler(kid, frame) }
     }
 
-    fun sendDirect(plain: Map<String, Any?>, keyIds: Collection<String>): Int = loop.call {
-        val roomSeal = seal ?: return@call 0
-        val channel = jsonText(plain["channel"])
-        if (!isRunning || !channel.startsWith(DirectMessageFrames.PREFIX) || jsonText(plain["id"]).isEmpty() || keyIds.isEmpty()) {
-            return@call 0
+    override fun linkedKids(): Map<String, MeshRoute> = loop.call {
+        val out = LinkedHashMap<String, MeshRoute>()
+        for (link in links) {
+            if (!link.authed || link.closed || link.peerId.isEmpty()) continue
+            val route = if (link.bluetoothId != null) MeshRoute.BLUETOOTH else MeshRoute.WIFI
+            if (out[link.peerId] != MeshRoute.WIFI) out[link.peerId] = route
         }
-        val frame = LinkedHashMap(plain)
-        frame["type"] = "direct"
-        frame["conversation"] = MESH_CONVERSATION
-        val reached = HashSet<String>()
+        out
+    }
+
+    override fun peerFocused(kid: String, channel: String): Boolean = loop.call {
+        links.any { it.authed && !it.closed && it.peerId == kid && channel in it.peerFocus }
+    }
+
+    override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = loop.call {
+        if (!isRunning) return@call false
+        val link = links.firstOrNull { it.authed && !it.closed && it.peerId == kid } ?: return@call false
+        writeFrame(link, frame)
+    }
+
+    override fun setFocus(channel: String, on: Boolean) = loop.post {
+        val changed = if (on) ownFocus.add(channel) else ownFocus.remove(channel)
+        if (!changed) return@post
         for (link in ArrayList(links)) {
-            val keyId = link.keyId
-            if (!link.keyKnown || keyId.isEmpty() || keyId == roomSeal.keyId || keyId !in keyIds || keyId in reached) continue
-            if (writePlain(link, frame, listOf(keyId))) reached.add(keyId)
+            if (link.authed && !link.closed) writeFrame(link, DirectMessageFrames.focusFrame(channel, on))
         }
-        reached.size
     }
 
-    private fun handlePlain(link: MeshLink, plain: Map<String, Any?>) {
+    private fun handlePlain(link: MeshLink, plain: Map<String, Any?>, frame: Map<String, Any?>, senderKid: String) {
         val type = jsonText(plain["type"])
         val senderId = jsonText(plain["senderId"])
         if (senderId.isEmpty() || senderId == nodeId) return
         if (jsonText(plain["conversation"]) != MESH_CONVERSATION) return
+        val fromLinkPeer = senderKid == link.peerId
+        if ((type == "hello" || type == "typing" || type == "bye") && !fromLinkPeer) return
 
-        if (type == "hello") {
-            if (link.peerId.isEmpty()) {
-                val other = linkForPeer(senderId)
-                val now = linkClock()
-                link.peerId = senderId
-                link.helloMs = now
-                if (other != null) {
-                    val bluetooth = link.bluetoothId != null
-                    if (bluetooth != (other.bluetoothId != null)) {
-                        if (bluetooth) {
-                            closeLink(link, reason = "duplicate link")
-                            return
-                        }
-                        closeLink(other, reason = "duplicate link")
-                    } else if (now - other.helloMs >= linkReplaceAfterMs) {
-                        closeLink(other, reason = "replaced")
-                    } else {
-                        val mine = if (link.outbound) nodeId else senderId
-                        val theirs = if (other.outbound) nodeId else senderId
-                        if (mine < theirs) {
-                            closeLink(link, reason = "duplicate link")
-                            return
-                        }
-                        closeLink(other, reason = "duplicate link")
-                    }
-                }
-            } else if (link.peerId != senderId) {
-                closeLink(link, reason = "identity changed")
-                return
-            }
-        } else if ((type == "typing" || type == "bye") && link.peerId != senderId) {
-            return
-        }
-
-        rememberPeer(senderId, plain, linked = link.peerId == senderId)
+        if (type == "hello") peers[senderKid]?.nodeId = senderId
+        rememberPeer(senderKid, plain, linked = fromLinkPeer)
         rememberWake(senderId, plain)
-        if (type == "hello" && link.peerId == senderId) {
-            val peer = peers[senderId]
+        if (type == "hello") {
+            val peer = peers[senderKid]
             val socket = link.socket
             if (peer != null && socket != null) {
                 if (peer.address == null) peer.address = socket.inetAddress
@@ -1463,24 +1635,38 @@ class LocalMeshRoom(
         if (id.isEmpty() || !markSeen(id)) return
 
         if (type == "hello") {
-            for (entry in ArrayList(history)) writePlain(link, entry)
+            sendHistory(link)
             return
         }
         if (type == "bye") {
-            if (peers.remove(senderId) != null) notifyListeners()
+            if (peers.remove(senderKid) != null) notifyListeners()
             return
         }
         if (type != "chat") return
         diag.chatIn++
-        storeHistory(plain)
+        storeHistory(plain, frame)
         val message = toMessage(plain)
         val added = appendMessage(message)
+        val addressed = RoomSeal.wrappedKeyIds(frame).toSet()
         for (other in ArrayList(links)) {
-            if (other === link || !other.keyKnown) continue
-            writePlain(other, plain)
+            if (other === link || !other.keyKnown || other.peerId !in addressed) continue
+            writeFrame(other, frame)
         }
         notifyListeners()
         if (added && !message.self) announceIncoming(message)
+    }
+
+    private fun sendHistory(link: MeshLink) {
+        val kid = link.peerId
+        for (entry in ArrayList(history)) {
+            val id = jsonText(entry["id"])
+            if (jsonText(entry["senderId"]) == nodeId) {
+                writePlain(link, entry, only = listOf(kid))
+                continue
+            }
+            val stored = historyFrames[id] ?: continue
+            if (kid in RoomSeal.wrappedKeyIds(stored)) writeFrame(link, stored)
+        }
     }
 
     private fun announceIncoming(message: ChatMessage) {
@@ -1492,19 +1678,15 @@ class LocalMeshRoom(
         }
     }
 
-    private fun sendKeyFrame(link: MeshLink) {
-        val roomCrypto = crypto ?: return
-        val roomSeal = seal ?: return
-        val envelope = roomCrypto.encrypt(roomSeal.keyFrame())
-        write(link, Json.stringify(envelope).toByteArray(StandardCharsets.UTF_8))
-    }
-
-    private fun writePlain(link: MeshLink, plain: Map<String, Any?>, onlyKeyIds: Collection<String>? = null): Boolean {
-        val roomCrypto = crypto ?: return false
+    private fun writePlain(link: MeshLink, plain: Map<String, Any?>, only: Collection<String>? = null): Boolean {
         val roomSeal = seal ?: return false
-        val sealed = if (onlyKeyIds == null) roomSeal.seal(plain) else roomSeal.sealFor(plain, onlyKeyIds)
-        val envelope = roomCrypto.encrypt(sealed)
-        val written = write(link, Json.stringify(envelope).toByteArray(StandardCharsets.UTF_8))
+        val sealed = try {
+            roomSeal.seal(plain, only = only)
+        } catch (_: Exception) {
+            return false
+        }
+        if (roomSeal.needsAdvertisement()) readvertise(roomSeal)
+        val written = writeFrame(link, sealed)
         if (written && queued.remove(jsonText(plain["id"]))) {
             scheduleHistorySave()
             notifyListeners()
@@ -1512,7 +1694,21 @@ class LocalMeshRoom(
         return written
     }
 
-    private fun write(link: MeshLink, payload: ByteArray): Boolean {
+    private fun readvertise(roomSeal: RoomSeal) {
+        val bundle = roomSeal.keyFrame()
+        for (link in ArrayList(links)) if (link.authed && !link.closed) writeFrame(link, bundle)
+    }
+
+    private fun writeFrame(link: MeshLink, frame: Map<String, Any?>): Boolean {
+        val key = link.sendKey ?: return false
+        if (!link.authed || link.closed) return false
+        val plain = Json.stringify(frame).toByteArray(StandardCharsets.UTF_8)
+        if (plain.size + ChatV3.TAG_BYTES > MAX_FRAME_BYTES) return false
+        val counter = link.sendCounter++
+        return writeRaw(link, MeshLinkCrypto.seal(key, counter, plain))
+    }
+
+    private fun writeRaw(link: MeshLink, payload: ByteArray): Boolean {
         if (payload.size > MAX_FRAME_BYTES || link.closed) return false
         val framed = frameBytes(payload)
         val output = link.output
@@ -1537,13 +1733,24 @@ class LocalMeshRoom(
     }
 
     private fun sendToAll(plain: Map<String, Any?>) {
+        val roomSeal = seal ?: return
+        var sealed: Map<String, Any?>? = null
         for (link in ArrayList(links)) {
             if (!link.keyKnown) {
                 if (link.pending.size < 32) link.pending.add(plain)
                 continue
             }
-            writePlain(link, plain)
+            val frame = sealed ?: try {
+                roomSeal.seal(plain).also { sealed = it }
+            } catch (_: Exception) {
+                return
+            }
+            if (writeFrame(link, frame) && queued.remove(jsonText(plain["id"]))) {
+                scheduleHistorySave()
+                notifyListeners()
+            }
         }
+        if (sealed != null && roomSeal.needsAdvertisement()) readvertise(roomSeal)
     }
 
     private fun closeLink(link: MeshLink, notify: Boolean = true, reason: String = "") {
@@ -1554,6 +1761,10 @@ class LocalMeshRoom(
         links.remove(link)
         val duplicate = reason == "duplicate link"
         loop.io { releaseLink(link, duplicate) }
+        link.sendKey?.let { Bytes.wipe(it) }
+        link.recvKey?.let { Bytes.wipe(it) }
+        link.ephPrivate?.let { Bytes.wipe(it) }
+        if (link.authed) linksChanged()
         val peerId = link.peerId
         if (peerId.isEmpty() || linkForPeer(peerId) != null) return
         val peer = peers[peerId] ?: return
@@ -1675,9 +1886,14 @@ class LocalMeshRoom(
         if (changed) notifyListeners()
     }
 
-    private fun storeHistory(plain: Map<String, Any?>) {
+    private fun storeHistory(plain: Map<String, Any?>, frame: Map<String, Any?>? = null) {
         history.add(plain)
-        while (history.size > HISTORY_LIMIT) queued.remove(jsonText(history.removeAt(0)["id"]))
+        if (frame != null) historyFrames[jsonText(plain["id"])] = frame
+        while (history.size > HISTORY_LIMIT) {
+            val dropped = jsonText(history.removeAt(0)["id"])
+            queued.remove(dropped)
+            historyFrames.remove(dropped)
+        }
         scheduleHistorySave()
     }
 
@@ -1689,19 +1905,22 @@ class LocalMeshRoom(
             if (!file.exists()) return
             @Suppress("UNCHECKED_CAST")
             val root = Json.parse(file.readText(StandardCharsets.UTF_8)) as? Map<String, Any?> ?: return
-            if (!dartNumEquals(root["v"], HISTORY_FILE_VERSION)) return
+            if (!dartNumEquals(root["v"], HISTORY_FILE_VERSION) && !dartNumEquals(root["v"], LEGACY_HISTORY_FILE_VERSION)) return
             val queuedIds = (root["queued"] as? List<*>).orEmpty().map { jsonText(it) }.toSet()
+            val frames = root["frames"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
             for (entry in (root["history"] as? List<*>).orEmpty()) {
                 @Suppress("UNCHECKED_CAST")
                 val plain = entry as? Map<String, Any?> ?: continue
                 val id = jsonText(plain["id"])
                 if (id.isEmpty() || plain["type"] != "chat" || plain["conversation"] != MESH_CONVERSATION || !markSeen(id)) continue
                 history.add(plain)
+                @Suppress("UNCHECKED_CAST")
+                (frames[id] as? Map<String, Any?>)?.let { if (RoomSeal.isSealedFrame(it)) historyFrames[id] = it }
                 rememberWake(jsonText(plain["senderId"]), plain)
                 if (id in queuedIds && plain["senderId"] == nodeId) queued.add(id)
                 appendMessage(toMessage(plain), countUnread = false)
             }
-            while (history.size > HISTORY_LIMIT) history.removeAt(0)
+            while (history.size > HISTORY_LIMIT) historyFrames.remove(jsonText(history.removeAt(0)["id"]))
         } catch (_: Exception) {
         }
     }
@@ -1709,6 +1928,7 @@ class LocalMeshRoom(
     private fun historySnapshot(): Map<String, Any?> = linkedMapOf(
         "v" to HISTORY_FILE_VERSION,
         "history" to ArrayList(history),
+        "frames" to LinkedHashMap(historyFrames),
         "queued" to ArrayList(queued),
     )
 

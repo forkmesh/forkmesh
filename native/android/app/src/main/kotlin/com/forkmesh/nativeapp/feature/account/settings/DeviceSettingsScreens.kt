@@ -31,6 +31,7 @@ class GeneralSettingsScreen : Screen() {
         var sounds by remember { mutableStateOf(SoundCuePrefs.enabled(prefs)) }
         SettingsPage("General", navigator) {
             item { SettingsCard("Appearance") { AppearanceCard() } }
+            item { SettingsCard("Chat privacy") { com.forkmesh.nativeapp.feature.chat.ChatPrivacySettings() } }
             item {
                 SettingsCard("Feedback") {
                     SettingsSwitch("Haptics", "Small vibrations when you switch tabs, send and confirm.", haptics) {

@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "OfficeChannelMirror.h"
 #include "Tooltips.h"
 #include "MainWindowInternal.h"
 #include "ChatListPreview.h"
@@ -13135,6 +13136,14 @@ QWidget *MainWindow::buildChatHeader()
     m_channelTitle->setObjectName("channelTitle");
     // #general begins as an explicitly public channel. Conversation switches
     // update both this transport icon and the adjacent access-policy badge.
+    m_directRouteLabel = new QLabel;
+    m_directRouteLabel->setObjectName(QStringLiteral("directRouteLabel"));
+    m_directRouteLabel->setTextFormat(Qt::PlainText);
+    m_directRouteLabel->setStyleSheet(QStringLiteral("color: #8b949e; font-size: 11px;"));
+    m_directRouteLabel->setToolTip(QStringLiteral(
+        "Messages reach the other person's linked device directly over the local "
+        "network or Bluetooth"));
+    m_directRouteLabel->hide();
     m_serverCopiesLabel = new QLabel;
     m_serverCopiesLabel->setObjectName("serverCopiesLabel");
     m_serverCopiesLabel->setTextFormat(Qt::PlainText);
@@ -13231,8 +13240,14 @@ QWidget *MainWindow::buildChatHeader()
     auto *headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(16, 0, 16, 0);
     headerLayout->setSpacing(8);
+    auto *titleBox = new QWidget;
+    auto *titleBoxLayout = new QVBoxLayout(titleBox);
+    titleBoxLayout->setContentsMargins(0, 0, 0, 0);
+    titleBoxLayout->setSpacing(0);
+    titleBoxLayout->addWidget(m_channelTitle);
+    titleBoxLayout->addWidget(m_directRouteLabel);
     headerLayout->addWidget(hashGlyph, 0, Qt::AlignVCenter);
-    headerLayout->addWidget(m_channelTitle, 0, Qt::AlignVCenter);
+    headerLayout->addWidget(titleBox, 0, Qt::AlignVCenter);
     headerLayout->addWidget(m_serverCopiesLabel, 0, Qt::AlignVCenter);
     headerLayout->addSpacing(4);
     headerLayout->addWidget(topicDivider, 0, Qt::AlignVCenter);
@@ -13273,6 +13288,43 @@ QWidget *MainWindow::buildChatHeader()
             &MainWindow::allowFirewall);
     connect(firewallDismiss, &QPushButton::clicked, m_firewallBanner,
             &QWidget::hide);
+
+    m_devicePendingBanner = new QWidget;
+    m_devicePendingBanner->setObjectName(QStringLiteral("firewallBanner"));
+    m_devicePendingLabel = new QLabel;
+    m_devicePendingLabel->setObjectName(QStringLiteral("firewallBannerLabel"));
+    m_devicePendingLabel->setWordWrap(true);
+    auto *approveDevice = new QPushButton(QStringLiteral("Approve"));
+    approveDevice->setObjectName(QStringLiteral("primaryButton"));
+    approveDevice->setCursor(Qt::PointingHandCursor);
+    auto *blockDevice = new QPushButton(QStringLiteral("Block"));
+    blockDevice->setObjectName(QStringLiteral("ghostButton"));
+    blockDevice->setCursor(Qt::PointingHandCursor);
+    auto *safetyButton = new QPushButton(QStringLiteral("Safety number"));
+    safetyButton->setObjectName(QStringLiteral("ghostButton"));
+    safetyButton->setCursor(Qt::PointingHandCursor);
+    auto *pendingLayout = new QHBoxLayout(m_devicePendingBanner);
+    pendingLayout->setContentsMargins(16, 10, 12, 10);
+    pendingLayout->setSpacing(10);
+    pendingLayout->addWidget(m_devicePendingLabel, 1);
+    pendingLayout->addWidget(safetyButton);
+    pendingLayout->addWidget(blockDevice);
+    pendingLayout->addWidget(approveDevice);
+    m_devicePendingBanner->hide();
+    connect(approveDevice, &QPushButton::clicked, this, [this] {
+        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
+            m_officeChannelMirror->approveDirectDevice(m_currentConversation,
+                                                       m_devicePendingKid);
+        refreshDevicePendingBanner();
+    });
+    connect(blockDevice, &QPushButton::clicked, this, [this] {
+        if (m_officeChannelMirror && !m_devicePendingKid.isEmpty())
+            m_officeChannelMirror->blockDirectDevice(m_currentConversation,
+                                                     m_devicePendingKid);
+        refreshDevicePendingBanner();
+    });
+    connect(safetyButton, &QPushButton::clicked, this,
+            [this] { showDirectDetails(m_currentConversation); });
 
     m_meshDebugBar = new QWidget;
     m_meshDebugBar->setObjectName("meshDebugBar");
@@ -13483,6 +13535,7 @@ QWidget *MainWindow::buildChatMainColumn(QWidget *header, QPushButton *&sendButt
     mainColumn->setSpacing(0);
     mainColumn->addWidget(header);
     mainColumn->addWidget(m_firewallBanner);
+    mainColumn->addWidget(m_devicePendingBanner);
     mainColumn->addWidget(m_meshDebugBar);
     mainColumn->addWidget(m_chatUnreadBanner);
     m_chatBody = new QWidget;

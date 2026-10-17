@@ -125,7 +125,7 @@ public final class HomeShellModel {
     /// is still being routed.
     public func routePush(
         isChat: Bool, isDirectMessage: Bool, alertId: String, href: String, agent: String = "",
-        ping: ForkNotification? = nil, conversation: String = ""
+        ping: ForkNotification? = nil, conversation: String = "", channelId: String = ""
     ) async -> ShellPushRoute? {
         if routingPush { return nil }
         routingPush = true
@@ -134,7 +134,9 @@ public final class HomeShellModel {
             if let chat,
                 let target = pushChatConversation(
                     isDirectMessage: isDirectMessage, unreadConversations: chat.unreadConversations,
-                    pushed: conversation)
+                    pushed: pushChatNamed(
+                        isDirectMessage: isDirectMessage, conversation: conversation,
+                        officeRoom: channelId.isEmpty ? nil : chat.officeConversation(channelId: channelId)))
             {
                 chat.switchConversation(target)
             }

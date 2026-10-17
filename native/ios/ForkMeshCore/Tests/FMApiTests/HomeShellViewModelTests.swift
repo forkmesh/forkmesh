@@ -85,6 +85,13 @@ final class HomeShellViewModelTests: XCTestCase {
         XCTAssertNil(pushDeepLink(pushHref: "", rowHref: nil))
     }
 
+    func testAPushNamingOnlyAnOfficeChannelUsesThatRoom() {
+        XCTAssertEqual(pushChatNamed(isDirectMessage: false, conversation: "", officeRoom: "#office/design"), "#office/design")
+        XCTAssertEqual(pushChatNamed(isDirectMessage: false, conversation: "#mesh", officeRoom: "#office/design"), "#mesh")
+        XCTAssertEqual(pushChatNamed(isDirectMessage: true, conversation: "", officeRoom: "#office/design"), "")
+        XCTAssertEqual(pushChatNamed(isDirectMessage: false, conversation: "", officeRoom: nil), "")
+    }
+
     func testLocalDesktopLabels() {
         XCTAssertEqual(ShellLocalDesktop.connected("Mac").label, "Connected to Mac on this network")
         XCTAssertEqual(ShellLocalDesktop.awaitingApproval("Mac").label, "Approve this phone on Mac")

@@ -29,12 +29,6 @@ RECEIVER_JWK = {
 }
 SENDER_KEY_ID = "SQAm1SbhWWBxNiSt"
 RECEIVER_KEY_ID = "PA22MdT_F-KVxa5L"
-VECTOR_PLAIN = {
-    "type": "chat",
-    "id": "seal-vector-2",
-    "sender": "ada",
-    "text": "automatic beyond the relay",
-}
 VECTOR_FRAME = {
     "type": "sealed",
     "v": 2,
@@ -135,21 +129,21 @@ def test_devices_exchange_public_keys_and_encrypt_without_setup():
         acceptSealKey, createRoomSealStore, isSealKeyFrame, isSealedFrame,
         sealFrame, sealKeyFrame, unsealFrame,
       }} from "./chat-seal.js";
-      {_storage("aliceStorage", SENDER_JWK)}
+      {_storage("aliceStorage")}
       {_storage("bobStorage", RECEIVER_JWK)}
       bobStorageItems.set("forkmesh.chat.seal.scope", "obsolete phrase");
-      const aliceStore = createRoomSealStore({{ storage: aliceStorage }});
-      const bobStore = createRoomSealStore({{ storage: bobStorage }});
+      const aliceStore = createRoomSealStore({{ storage: aliceStorage, acct: "alice", node: "alice" }});
+      const bobStore = createRoomSealStore({{ storage: bobStorage, acct: "bob", node: "bob" }});
       const alice = await aliceStore.resolve("scope", {json.dumps(VECTOR_ROOM)});
       const bob = await bobStore.resolve("scope", {json.dumps(VECTOR_ROOM)});
-      const aliceKey = sealKeyFrame(alice);
-      const bobKey = sealKeyFrame(bob);
+      const aliceKey = await sealKeyFrame(alice);
+      const bobKey = await sealKeyFrame(bob);
       await acceptSealKey(bobKey, alice);
       await acceptSealKey(aliceKey, bob);
       const frame = await sealFrame(
-        {{ type: "chat", id: "m1", text: "no setup required" }}, alice);
+        {{ type: "chat", id: "m1", senderId: "alice", text: "no setup required" }}, alice);
       const relabelled = {{ ...frame, kid: bob.keyId }};
-      const revived = createRoomSealStore({{ storage: bobStorage }});
+      const revived = createRoomSealStore({{ storage: bobStorage, acct: "bob", node: "bob" }});
       const revivedBob = await revived.resolve("scope", {json.dumps(VECTOR_ROOM)});
       const rotatedBob = await revived.resolve("scope", "chat-channel:42:v2");
       const otherControllerBob = await revived.resolve(
@@ -157,15 +151,16 @@ def test_devices_exchange_public_keys_and_encrypt_without_setup():
       process.stdout.write(JSON.stringify({{
         aliceId: alice.keyId,
         bobId: bob.keyId,
-        privateExtractable: alice.identity.privateKey.extractable,
         keyFrames: isSealKeyFrame(aliceKey) && isSealKeyFrame(bobKey),
+        bundleAcct: aliceKey.acct,
         sealed: isSealedFrame(frame),
+        version: frame.v,
         leaked: JSON.stringify(frame).includes("no setup required"),
-        recipientIds: frame.keys.map((entry) => entry.kid).sort(),
+        recipientIds: frame.keys.map((entry) => entry.kid),
         opened: await unsealFrame(frame, bob),
         relabelled: await unsealFrame(relabelled, bob),
-        persistedIdentity: JSON.parse(
-          bobStorageItems.get("forkmesh.chat.e2ee.x25519.v2")),
+        persistedIdentity: bobStorageItems.get("forkmesh.chat/e2ee/ed25519IdentityV3"),
+        legacyIdentityRetained: bobStorageItems.has("forkmesh.chat.e2ee.x25519.v2"),
         legacyPhraseRetained: bobStorageItems.has("forkmesh.chat.seal.scope"),
         revivedId: revivedBob.keyId,
         revivedPeers: revivedBob.peerCount,
@@ -176,54 +171,44 @@ def test_devices_exchange_public_keys_and_encrypt_without_setup():
         storeApi: Object.keys(bobStore).sort(),
       }}));
     """)
-    assert result["aliceId"] == SENDER_KEY_ID
-    assert result["bobId"] == RECEIVER_KEY_ID
-    assert result["privateExtractable"] is False
+    assert result["aliceId"] != result["bobId"]
     assert result["keyFrames"] is True
+    assert result["bundleAcct"] == "alice"
     assert result["sealed"] is True
+    assert result["version"] == 3
     assert result["leaked"] is False
-    assert result["recipientIds"] == sorted([SENDER_KEY_ID, RECEIVER_KEY_ID])
-    assert result["opened"]["text"] == "no setup required"
-    assert result["relabelled"] is None
-    assert result["persistedIdentity"] == RECEIVER_JWK
+    assert result["recipientIds"] == sorted([result["aliceId"], result["bobId"]])
+    assert result["opened"]["status"] == "opened"
+    assert result["opened"]["plain"]["text"] == "no setup required"
+    assert result["opened"]["acct"] == "alice"
+    assert result["relabelled"]["status"] == "invalid"
+    assert len(result["persistedIdentity"]) == 44
+    assert result["legacyIdentityRetained"] is False
     assert result["legacyPhraseRetained"] is False
-    assert result["revivedId"] == RECEIVER_KEY_ID
+    assert result["revivedId"] == result["bobId"]
     assert result["revivedPeers"] == 1
     assert result["rotatedPeers"] == 0
     assert result["otherControllerPeers"] == 0
     assert result["firstAnnouncement"] is True
     assert result["duplicateAnnouncement"] is False
-    assert result["storeApi"] == ["has", "resolve"]
+    assert result["storeApi"] == ["account", "has", "identity", "node", "resolve", "subscribe", "wipeExpired"]
 
 
-def test_browser_opens_the_cross_client_v2_frame():
+def test_browser_ignores_v2_frames():
     result = _run_module(f"""
-      import {{ createRoomSealStore, isSealedFrame, unsealFrame }}
+      import {{ createRoomSealStore, isSealedFrame, isSealKeyFrame, unsealFrame }}
         from "./chat-seal.js";
-      {_storage("senderStorage", SENDER_JWK)}
       {_storage("receiverStorage", RECEIVER_JWK)}
-      const sender = await createRoomSealStore({{ storage: senderStorage }})
+      const receiver = await createRoomSealStore({{ storage: receiverStorage, acct: "bob", node: "bob" }})
         .resolve("scope", {json.dumps(VECTOR_ROOM)});
-      const receiver = await createRoomSealStore({{ storage: receiverStorage }})
-        .resolve("scope", {json.dumps(VECTOR_ROOM)});
-      const wrongRoom = await createRoomSealStore({{ storage: receiverStorage }})
-        .resolve("other", "chat-channel:42:v1");
       const frame = {json.dumps(VECTOR_FRAME)};
       process.stdout.write(JSON.stringify({{
         sealed: isSealedFrame(frame),
+        key: isSealKeyFrame({{ type: "e2ee-key", v: 2, kid: frame.kid, pub: frame.pub }}),
         receiver: await unsealFrame(frame, receiver),
-        sender: await unsealFrame(frame, sender),
-        wrongRoom: await unsealFrame(frame, wrongRoom),
-        malformed: isSealedFrame({{ type: "sealed", v: 2, kid: "short" }}),
       }}));
     """)
-    assert result == {
-        "sealed": True,
-        "receiver": VECTOR_PLAIN,
-        "sender": VECTOR_PLAIN,
-        "wrongRoom": None,
-        "malformed": False,
-    }
+    assert result == {"sealed": False, "key": False, "receiver": {"status": "invalid"}}
 
 
 def test_transport_exposes_only_recipient_ciphertext_to_the_controller():
@@ -236,10 +221,10 @@ def test_transport_exposes_only_recipient_ciphertext_to_the_controller():
         sealFrame, sealKeyFrame, unsealFrame,
       }} from "./chat-seal.js";
       {_fake_websocket()}
-      {_storage("aliceStorage", SENDER_JWK)}
-      {_storage("bobStorage", RECEIVER_JWK)}
-      const aliceStore = createRoomSealStore({{ storage: aliceStorage }});
-      const bob = await createRoomSealStore({{ storage: bobStorage }})
+      {_storage("aliceStorage")}
+      {_storage("bobStorage")}
+      const aliceStore = createRoomSealStore({{ storage: aliceStorage, acct: "alice", node: "alice" }});
+      const bob = await createRoomSealStore({{ storage: bobStorage, acct: "bob", node: "bob" }})
         .resolve("scope", {json.dumps(VECTOR_ROOM)});
       const received = [];
       const refused = [];
@@ -269,11 +254,11 @@ def test_transport_exposes_only_recipient_ciphertext_to_the_controller():
       const aliceKey = initial.find(isSealKeyFrame);
       await acceptSealKey(aliceKey, bob);
       socket.emit("message", {{ data: JSON.stringify(
-        await encryptObject(sealKeyFrame(bob), roomKey)) }});
+        await encryptObject(await sealKeyFrame(bob), roomKey)) }});
       await settle();
 
       const sent = await transport.send(
-        {{ type: "chat", id: "m1", text: "beyond the controller" }},
+        {{ type: "chat", id: "m1", senderId: "alice", text: "beyond the controller" }},
         {{ persist: true }},
       );
       await settle();
@@ -288,7 +273,7 @@ def test_transport_exposes_only_recipient_ciphertext_to_the_controller():
       }}, roomKey)) }});
       socket.emit("message", {{ data: JSON.stringify(await encryptObject(
         await sealFrame({{
-          type: "chat", id: "peer", text: "peer ciphertext",
+          type: "chat", id: "peer", senderId: "bob", text: "peer ciphertext",
         }}, bob), roomKey)) }});
       await settle();
       process.stdout.write(JSON.stringify({{
@@ -305,9 +290,9 @@ def test_transport_exposes_only_recipient_ciphertext_to_the_controller():
     assert result["sent"] is True
     assert result["sealed"] is True
     assert result["persist"] is True
-    assert result["controllerFrame"]["v"] == 2
+    assert result["controllerFrame"]["v"] == 3
     assert "beyond the controller" not in result["controllerText"]
-    assert result["participant"]["text"] == "beyond the controller"
+    assert result["participant"]["plain"]["text"] == "beyond the controller"
     assert [frame["id"] for frame in result["received"]] == ["peer"]
     assert result["refused"] == [""]
 
@@ -408,7 +393,7 @@ def test_browser_surfaces_apply_public_and_private_policy_automatically():
 
     assert 'from "./chat-seal.js"' in chat
     assert 'from "./chat-seal.js"' in transport
-    assert "roomSeals.resolve(room.scope, roomName, RELAY_HOST)" in chat
+    assert "roomSeals.resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope))" in chat
     assert "End-to-end" in html and "controller-readable" in html
     assert "allowsControllerAccess" in transport
     assert "controllerReadableScope" in chat
@@ -426,7 +411,10 @@ def test_browser_surfaces_apply_public_and_private_policy_automatically():
     assert "sealModule.sealKeyFrame(roomSeal)" in dashboard
     assert "sealModule.acceptSealKey(framed, roomSeal)" in dashboard
     assert "sealModule.sealFrame(obj, roomSeal, ACTIVE_ROOM)" in dashboard
-    assert "sealModule.unsealFrame(framed, roomSeal, ACTIVE_ROOM)" in dashboard
+    assert "sealModule.unsealFrame(framed, roomSeal, ACTIVE_ROOM, { history })" in dashboard
+    assert "node: selfId," in chat and "node: selfId," in dashboard
+    assert "acct: () => userSession()?.nodeName" in chat + dashboard
+    assert "sealOptionsFor(room.scope)" in chat
 
 
 def test_forkbot_is_guarded_by_controller_readable_channel_policy():

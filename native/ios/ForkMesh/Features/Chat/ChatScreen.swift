@@ -13,10 +13,11 @@ import UIKit
 
 struct ChatScreen: View {
     @State private var hub: ChatHub? = ChatFeature.hub()
+    @State private var privacy: ChatPrivacy? = Services.get(ChatPrivacy.self)
 
     var body: some View {
         if let hub = hub {
-            ChatScreenBody(hub: hub)
+            ChatLockGate(privacy: privacy) { ChatScreenBody(hub: hub) }
                 .fmQuietSounds()
         } else {
             FmEmptyState(icon: "chat_bubble_outline", title: "Chat is not available")
@@ -77,6 +78,7 @@ private struct ChatScreenBody: View {
                 hub.pendingSaved = false
                 searchRequest = ChatSearchRequest(scope: .saved)
             }
+            .onChange(of: hub.revealRequests) { _, _ in revealConversation() }
             .sheet(isPresented: $composing) {
                 ChatNewMessageSheet(hub: hub)
             }
@@ -159,6 +161,14 @@ private struct ChatScreenBody: View {
             channelsOpen = false
             syncShellTop(false)
         }
+    }
+
+    private func revealConversation() {
+        if channelsOpen { closeChannels() }
+        pushed = nil
+        issueDraft = nil
+        composing = false
+        searchRequest = nil
     }
 
     private func syncShellTop(_ open: Bool) {
@@ -245,6 +255,16 @@ private struct ChatTranscript<Drawer: View>: View {
         .onChange(of: hub.currentConversation) { _, now in
             hub.workspace.setDraft(draft, for: draftRoom)
             loadDraft(now)
+        }
+        .onChange(of: hub.revealRequests) { _, _ in
+            sharing = nil
+            person = nil
+            sealInfo = false
+            inviting = false
+            managing = nil
+            channelInfo = false
+            broadcast = nil
+            editing = nil
         }
         .sheet(item: $sharing) { (request: ChatShareRequest) in
             ChatShareMessageSheet(hub: hub, request: request)

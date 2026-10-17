@@ -432,11 +432,12 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
     public let receivedMs: Int
     public let alarm: String
     public let conversation: String
+    public let channelId: String
 
     public init(
         topic: String = "", alertId: String = "", href: String = "", origin: String = "", agent: String = "",
         title: String = "", subtitle: String = "", body: String = "", kind: String = "", repo: String = "",
-        receivedMs: Int = 0, alarm: String = "", conversation: String = ""
+        receivedMs: Int = 0, alarm: String = "", conversation: String = "", channelId: String = ""
     ) {
         self.topic = topic
         self.alertId = alertId
@@ -451,6 +452,7 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
         self.receivedMs = receivedMs
         self.alarm = PushOpen.alarms.contains(alarm) ? alarm : ""
         self.conversation = conversation
+        self.channelId = channelId
     }
 
     public static let alarms: Set<String> = ["power"]
@@ -472,7 +474,7 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
             origin: origin.isEmpty ? field("host") : origin, agent: opensAgent ? field("sessionId") : "",
             title: field("title"), subtitle: field("subtitle"), body: field("body"), kind: field("kind"),
             repo: field("repo"), receivedMs: DartCore.intTryParse(field("receivedMs")) ?? 0,
-            alarm: field("alarm"), conversation: field("conversation"))
+            alarm: field("alarm"), conversation: field("conversation"), channelId: field("channelId"))
     }
 
     public var ping: ForkNotification? {

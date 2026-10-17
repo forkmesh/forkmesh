@@ -2322,6 +2322,7 @@ void MainWindow::startSession()
     server->setConnectionAuthorizer([this](const QUrl &endpoint) {
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
+    server->setChatAccount(chatTrustAccount());
     const auto *networkInfo = QNetworkInformation::instance();
     if (m_offlineMode || projectInstancePending() ||
         (networkInfo && networkInfo->reachability() ==
@@ -3088,16 +3089,22 @@ void MainWindow::startOfficeChannelMirror()
                 return authorizeFirewallConnection(QStringLiteral("WebSocket"),
                                                    endpoint);
             });
-        m_officeChannelMirror->setMeshDirectSender(
-            [this](const QString &channel, const QString &messageId,
-                   const QString &text, const QStringList &keyIds) {
-                return m_localMesh && m_localMesh->isRunning()
-                           ? m_localMesh->sendDirect(channel, messageId, text,
-                                                     keyIds)
-                           : 0;
-            });
         connect(m_officeChannelMirror, &OfficeChannelMirror::messageArrived,
                 this, &MainWindow::onMessage);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::directDevicePending, this,
+                &MainWindow::noteDirectDevicePending);
+        connect(m_officeChannelMirror,
+                &OfficeChannelMirror::directSafetyNumberChanged, this,
+                &MainWindow::noteDirectSafetyChanged);
+        connect(m_officeChannelMirror, &OfficeChannelMirror::directRouteChanged, this,
+                [this](const QString &conversation) {
+                    if (conversation == m_currentConversation) {
+                        refreshDirectRoute();
+                        refreshDevicePendingBanner();
+                    }
+                });
+        connect(m_officeChannelMirror, &OfficeChannelMirror::typingChanged, this,
+                &MainWindow::onTypingChanged);
         connect(m_officeChannelMirror, &OfficeChannelMirror::readMarksFetched,
                 this, &MainWindow::applyReadMarks);
         connect(m_officeChannelMirror,
@@ -3299,6 +3306,8 @@ void MainWindow::startOfficeChannelMirror()
     m_officeChannelMirror->setIdentity(node, m_profileIdentity.publicKey(),
                                        chatDisplayName());
     m_officeChannelMirror->start();
+    wireDirectMesh();
+    refreshDirectFocus();
 }
 
 void MainWindow::startLocalMesh()
@@ -3327,15 +3336,9 @@ void MainWindow::startLocalMesh()
                 .toHex()
                 .left(16)) +
         QStringLiteral(".json"));
+    m_localMesh->setControlNode(m_profileIdentity.publicKey());
     connect(m_localMesh, &LocalMeshNode::messageArrived, this,
             &MainWindow::onMessage);
-    connect(m_localMesh, &LocalMeshNode::directMessageArrived, this,
-            [this](const QString &channel, const QString &sealKeyId,
-                   const QJsonObject &plain) {
-                if (m_officeChannelMirror)
-                    m_officeChannelMirror->acceptMeshDirect(channel, sealKeyId,
-                                                            plain);
-            });
     connect(m_localMesh, &LocalMeshNode::queuedChanged, this,
             [this](const QString &messageId, bool) {
                 if (isLocalMeshConversation(m_currentConversation))
@@ -3371,6 +3374,7 @@ void MainWindow::startLocalMesh()
         return;
     }
     setChannels(m_channels); // folds the mesh room into the sidebar
+    wireDirectMesh();
     checkLocalMeshFirewall();
     if (m_offlineMode)
         startOfficeChannelMirror();

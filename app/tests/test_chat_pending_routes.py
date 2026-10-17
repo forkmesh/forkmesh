@@ -25,8 +25,14 @@ import test_chat_direct_messages_api as direct_tests  # noqa: E402
 REF = "0123456789abcdef0123456789abcdef01234567"
 OTHER_REF = "f" * 40
 FRAME = '{"kind":"cipher","v":1,"iv":"i","data":"d","ref":"' + REF + '"}'
-CHAT_HISTORY_SQL = (ROOT / "migrations" / "0008_chat_history.sql").read_text(
-    encoding="utf-8")
+CHAT_HISTORY_SQL = (
+    "CREATE TABLE IF NOT EXISTS schema_meta "
+    "(k TEXT PRIMARY KEY, v TEXT NOT NULL);\n"
+    + (ROOT / "migrations" / "0008_chat_history.sql").read_text(
+        encoding="utf-8")
+    + (ROOT / "migrations" / "0269_chat_history_acked_grace.sql").read_text(
+        encoding="utf-8"))
+GRACE_MS = 120 * 1000
 
 
 def _snapshot(db, tables):
@@ -54,10 +60,17 @@ class ChannelRuntime(channel_tests.FakeRuntime):
         self.db.executescript(CHAT_HISTORY_SQL)
 
 
-def _store(runtime, room, msg_id, body=FRAME):
+def _store(runtime, room, msg_id, body=FRAME, ts=1):
     runtime.db.execute(
         "INSERT INTO chat_history (room_key,msg_id,ts,body) VALUES (?,?,?,?)",
-        (room, msg_id, 1, body))
+        (room, msg_id, ts, body))
+    runtime.db.commit()
+
+
+def _ack(runtime, room, ref, at):
+    runtime.db.execute(
+        "UPDATE chat_history SET acked_at=? WHERE room_key=? "
+        "AND substr(msg_id,1,40)=?", (at, room, ref))
     runtime.db.commit()
 
 
@@ -171,6 +184,69 @@ def test_direct_pending_reads_only_the_current_key_version():
         assert found["data"]["keyVersion"] == 2
         assert found["data"]["room"] == f"chat-direct:{conversation_id}:v2"
     asyncio.run(run())
+
+
+def test_an_acknowledged_direct_frame_stays_pending_for_the_grace_only():
+    async def run():
+        runtime, conversation_id, room = await _direct_setup()
+        runtime.db.execute("UPDATE chat_history SET ts=? WHERE room_key=?",
+                           (runtime.clock, room))
+        _ack(runtime, room, REF, runtime.clock)
+        tables = ("chat_history",)
+        before = _snapshot(runtime.db, tables)
+        held = await _direct_pending(runtime, "bob", conversation_id)
+        assert held["data"]["frame"] == FRAME
+        assert _snapshot(runtime.db, tables) == before
+        runtime.clock += GRACE_MS - 1
+        late = await _direct_pending(runtime, "bob", conversation_id)
+        assert late["data"]["frame"] == FRAME
+        runtime.clock += 1
+        gone = await _direct_pending(runtime, "bob", conversation_id)
+        assert gone["status"] == 200
+        assert gone["data"]["frame"] == ""
+    asyncio.run(run())
+
+
+def test_an_acknowledged_frame_is_never_held_past_retention():
+    async def run():
+        runtime, conversation_id, room = await _direct_setup()
+        _ack(runtime, room, REF, runtime.clock)
+        held = await _direct_pending(runtime, "bob", conversation_id)
+        assert held["data"]["frame"] == ""
+        unacked = await _direct_pending(
+            runtime, "bob", conversation_id, ref=OTHER_REF)
+        assert unacked["data"]["frame"] == "other"
+    asyncio.run(run())
+
+
+def test_a_delivery_receipt_ignores_an_acknowledged_frame():
+    async def run():
+        runtime, conversation_id, room = await _direct_setup()
+        _ack(runtime, room, REF, runtime.clock)
+        delivered = await _direct_delivered(
+            runtime, "bob", conversation_id, ref=REF)
+        assert delivered["status"] == 404
+        assert runtime.delivered_announcements == []
+    asyncio.run(run())
+
+
+def test_the_preview_grace_matches_the_relay():
+    import ast
+    entry = (SRC / "entry.py").read_text(encoding="utf-8")
+    tree = ast.parse(entry)
+    values = {
+        node.targets[0].id: eval(compile(
+            ast.Expression(node.value), "entry.py", "eval"),
+            {"__builtins__": {}})
+        for node in tree.body
+        if isinstance(node, ast.Assign) and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id in {
+            "CHAT_DIRECT_ACKED_GRACE_MS", "CHAT_HISTORY_RETAIN_MS"}
+    }
+    assert direct_api.PENDING_ACKED_GRACE_MS == GRACE_MS
+    assert values["CHAT_DIRECT_ACKED_GRACE_MS"] == GRACE_MS
+    assert direct_api.PENDING_RETAIN_MS == values["CHAT_HISTORY_RETAIN_MS"]
 
 
 async def _channel_setup(visibility="private"):

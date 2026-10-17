@@ -25,6 +25,7 @@ FUNCTIONS = {
     "chat_server_copies_frame",
     "chat_direct_server_copies",
     "chat_direct_received",
+    "chat_direct_acked_prune",
     "chat_direct_superseded",
     "chat_direct_refs",
     "chat_direct_delivered_frame",
@@ -95,12 +96,19 @@ class _Context:
 class _Storage:
     def __init__(self):
         self.values = {}
+        self.alarm = None
 
     async def get(self, key):
         return self.values.get(key)
 
     async def put(self, key, value):
         self.values[key] = value
+
+    async def getAlarm(self):
+        return self.alarm
+
+    async def setAlarm(self, when):
+        self.alarm = when
 
 
 class _Date:
@@ -118,6 +126,7 @@ def _harness(channel=None, members=(), participants=()):
         ) or (isinstance(node, ast.ClassDef) and node.name == "ForkMeshRoom")
     ]
     stored = []
+    acked = {}
     retained = []
     retained_handles = []
 
@@ -125,25 +134,52 @@ def _harness(channel=None, members=(), participants=()):
         if "FROM chat_channels" in sql:
             return channel
         if "COUNT(*) AS stored FROM chat_history" in sql:
+            assert "acked_at=0" in sql
             room_key, _cutoff, _pattern = args
             return {"stored": sum(
                 1 for row in stored
-                if row[0] == room_key and row[1].endswith(":n"))}
+                if row[0] == room_key and row[1].endswith(":n")
+                and (row[0], row[1]) not in acked)}
+        if "MIN(acked_at)" in sql:
+            (room_key,) = args
+            times = [at for (room, _msg), at in acked.items()
+                     if room == room_key]
+            return {"first": min(times) if times else None}
         raise AssertionError((sql, args))
 
+    def _matches(row, room_key, tag, refs, own):
+        return (
+            row[0] == room_key
+            and row[1][40:41] == ":"
+            and (row[1][41:57] == tag) == own
+            and row[1][:40] in refs
+        )
+
     async def d1_run(_env, sql, *args):
+        if sql.startswith("UPDATE chat_history SET acked_at=?"):
+            now, room_key, tag, *refs = args
+            for row in stored:
+                if (_matches(row, room_key, tag, refs, False)
+                        and (row[0], row[1]) not in acked):
+                    acked[(row[0], row[1])] = now
+            return
+        if "acked_at>0 AND acked_at<=?" in sql:
+            room_key, cutoff = args
+            gone = {key for key, at in acked.items()
+                    if key[0] == room_key and at <= cutoff}
+            stored[:] = [row for row in stored
+                         if (row[0], row[1]) not in gone]
+            for key in gone:
+                acked.pop(key)
+            return
         assert sql.startswith("DELETE FROM chat_history WHERE room_key=?")
         room_key, tag, *refs = args
         own = "substr(msg_id,42,16)=?" in sql
-        stored[:] = [
-            row for row in stored
-            if not (
-                row[0] == room_key
-                and row[1][40:41] == ":"
-                and (row[1][41:57] == tag) == own
-                and row[1][:40] in refs
-            )
-        ]
+        gone = [row for row in stored
+                if _matches(row, room_key, tag, refs, own)]
+        stored[:] = [row for row in stored if row not in gone]
+        for row in gone:
+            acked.pop((row[0], row[1]), None)
 
     async def d1_all(_env, sql, *args):
         if "FROM chat_channel_members" in sql:
@@ -179,6 +215,9 @@ def _harness(channel=None, members=(), participants=()):
         "CHAT_HISTORY_MAX_BODY": 1_900_000,
         "CHAT_HISTORY_RETAIN_MS": 7 * 24 * 60 * 60 * 1000,
         "CHAT_DIRECT_RECEIVED_REFS_MAX": 64,
+        "CHAT_DIRECT_ACKED_GRACE_MS": 120_000,
+        "CHAT_DIRECT_ACKED_ROOM_KEY": "chat_direct_acked_room",
+        "_acked": acked,
         "CHAT_RECIPIENT_NAMES_MAX": 20,
         "CHAT_RECIPIENT_NAME_CACHE_MAX": 10000,
         "_CHAT_RECIPIENT_NAMES": {},
@@ -466,8 +505,8 @@ def _copies(socket):
     return [frame["stored"] for frame in _kind(socket, "forkmesh-server-copies")]
 
 
-def test_direct_message_is_deleted_once_the_other_person_receives_it():
-    _namespace, room_type, stored = _harness(participants=(ALICE, BOB))
+def test_a_received_direct_message_is_deleted_after_the_preview_grace():
+    namespace, room_type, stored = _harness(participants=(ALICE, BOB))
     alice = _Socket("s1", ALICE, direct_id=DIRECT)
     bob = _Socket("s2", BOB, direct_id=DIRECT)
     frame = _chat_frame()
@@ -479,12 +518,32 @@ def test_direct_message_is_deleted_once_the_other_person_receives_it():
     assert _copies(bob) == [1]
     ref = _kind(bob, "cipher")[0]["ref"]
 
-    _relay(room_type, [alice, bob], bob, json.dumps(
-        {"kind": "forkmesh-received", "v": 1, "refs": [ref]}))
+    room = room_type()
+    room.env = object()
+    room.ctx = _Context([alice, bob])
+    asyncio.run(room.webSocketMessage(bob, json.dumps(
+        {"kind": "forkmesh-received", "v": 1, "refs": [ref]})))
 
-    assert stored == []
+    assert len(stored) == 1
+    assert namespace["_acked"] == {(stored[0][0], stored[0][1]): NOW}
     assert _copies(alice) == [1, 0]
     assert _copies(bob) == [1, 0]
+    assert room.ctx.storage.values == {
+        "chat_direct_acked_room": "chat-direct:" + DIRECT + ":v1"}
+    assert room.ctx.storage.alarm == NOW + 121_000
+
+    asyncio.run(room.alarm())
+    assert len(stored) == 1
+
+    class _Later:
+        @staticmethod
+        def now():
+            return NOW + 120_000
+
+    namespace["Date"] = _Later
+    asyncio.run(room.alarm())
+    assert stored == []
+    assert namespace["_acked"] == {}
 
 
 def test_receiving_a_direct_message_tells_the_sender_it_was_delivered():
@@ -519,7 +578,7 @@ def test_received_frames_are_not_dropped_by_the_message_budget():
     _relay(room_type, [alice, bob], bob, json.dumps(
         {"kind": "forkmesh-received", "v": 1, "refs": [ref]}))
 
-    assert [row for row in stored if row[1].startswith(ref)] == []
+    assert [key for key in namespace["_acked"] if key[1].startswith(ref)]
     assert _kind(alice, "forkmesh-delivered")[-1]["refs"] == [ref]
     assert bob.attachment["rc_count"] == 1
     assert bob.attachment["rl_count"] == 3
