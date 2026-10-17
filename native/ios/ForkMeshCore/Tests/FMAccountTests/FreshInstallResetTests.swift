@@ -7,10 +7,9 @@ final class FreshInstallResetTests: XCTestCase {
     struct Phone {
         let keychain: MemoryKeychain
         let prefs: InMemoryKeyValueStore
-        let flutterPrefs: InMemoryKeyValueStore
 
         func reset() -> FreshInstallReset {
-            FreshInstallReset(prefs: prefs, flutterPrefs: flutterPrefs) {
+            FreshInstallReset(prefs: prefs) {
                 for key in try keychain.readAll().keys { try keychain.delete(key) }
             }
         }
@@ -22,9 +21,7 @@ final class FreshInstallResetTests: XCTestCase {
     ]
 
     func testAReinstallErasesTheKeychainLeftFromTheDeletedApp() {
-        let phone = Phone(
-            keychain: MemoryKeychain(Self.leftovers), prefs: InMemoryKeyValueStore(),
-            flutterPrefs: InMemoryKeyValueStore())
+        let phone = Phone(keychain: MemoryKeychain(Self.leftovers), prefs: InMemoryKeyValueStore())
         XCTAssertEqual(phone.reset().run(), .erased)
         XCTAssertTrue(phone.keychain.snapshot.isEmpty)
         XCTAssertEqual(phone.prefs.bool(forKey: FreshInstallReset.installedKey), true)
@@ -32,9 +29,7 @@ final class FreshInstallResetTests: XCTestCase {
     }
 
     func testLaterLaunchesKeepTheNewSession() {
-        let phone = Phone(
-            keychain: MemoryKeychain(Self.leftovers), prefs: InMemoryKeyValueStore(),
-            flutterPrefs: InMemoryKeyValueStore())
+        let phone = Phone(keychain: MemoryKeychain(Self.leftovers), prefs: InMemoryKeyValueStore())
         phone.reset().run()
         try? phone.keychain.write("auth/session/app.forkmesh.com", "new")
         XCTAssertEqual(phone.reset().run(), .alreadyInstalled)
@@ -44,27 +39,18 @@ final class FreshInstallResetTests: XCTestCase {
     func testAnUpdatedNativeAppKeepsItsLogin() {
         let phone = Phone(
             keychain: MemoryKeychain(Self.leftovers),
-            prefs: InMemoryKeyValueStore([FlutterMigration.doneKey: true]),
-            flutterPrefs: InMemoryKeyValueStore())
+            prefs: InMemoryKeyValueStore(["relays/active": "app.forkmesh.com"]))
         XCTAssertEqual(phone.reset().run(), .upgraded)
         XCTAssertEqual(phone.keychain.snapshot, Self.leftovers)
         XCTAssertEqual(phone.reset().run(), .alreadyInstalled)
     }
 
-    func testAnUpdateFromTheFlutterAppKeepsItsLogin() {
-        let phone = Phone(
-            keychain: MemoryKeychain(Self.leftovers), prefs: InMemoryKeyValueStore(),
-            flutterPrefs: InMemoryKeyValueStore(["relays/active": "app.forkmesh.com"]))
-        XCTAssertEqual(phone.reset().run(), .upgraded)
-        XCTAssertEqual(phone.keychain.snapshot, Self.leftovers)
-    }
-
     func testALockedKeychainIsErasedOnTheNextLaunch() {
         let keychain = MemoryKeychain(Self.leftovers)
-        let phone = Phone(keychain: keychain, prefs: InMemoryKeyValueStore(), flutterPrefs: InMemoryKeyValueStore())
+        let phone = Phone(keychain: keychain, prefs: InMemoryKeyValueStore())
         keychain.failing = true
         guard case .deferred = phone.reset().run() else { return XCTFail("expected deferred") }
-        phone.prefs.set(1, forKey: FlutterMigration.attemptsKey)
+        phone.prefs.set("dark", forKey: "appearance/themeMode")
         keychain.failing = false
         XCTAssertEqual(phone.reset().run(), .erased)
         XCTAssertTrue(keychain.snapshot.isEmpty)

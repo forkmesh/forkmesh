@@ -34,7 +34,7 @@ import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountEventChannel
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.SettingsService
-import com.forkmesh.nativeapp.feature.account.projects.FlutterFiles
+import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
@@ -167,7 +167,7 @@ object ChatDepth {
         hub = chat
 
         val historyScope = { ChatHistoryCodec.scopeName(settings.core.serverUrl, settings.core.room) }
-        val historyDir = File(FlutterFiles.projectSupportDir(app, scopeInfo), "chat-history")
+        val historyDir = File(AppFiles.projectSupportDir(app, scopeInfo), "chat-history")
         chat.attachHistory(ChatHistoryStore(historyDir), historyScope)
         room.addListener { scheduleSave() }
         if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)

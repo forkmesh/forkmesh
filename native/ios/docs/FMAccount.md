@@ -2,8 +2,7 @@
 
 Settings, relays, auth and the session, performance monitor, stall log, trust lists, sync
 status. `import FMAccount` (re-import `FMBase`/`FMNet`/`FMCrypto` for their types). Storage is
-FMBase's synchronous `KeyValueStore` / `SecureStore`, with the keys the retired Flutter app wrote
-(so migrated data reads back), and every call is synchronous.
+FMBase's synchronous `KeyValueStore` / `SecureStore`, and every call is synchronous.
 
 Also here: the Kotlin app's SecurityBootstrap. Owner crypto and room seal live in FMCrypto
 (docs/FMCryptoAdditions.md).
@@ -147,16 +146,16 @@ Deleting the app from an iPhone removes its UserDefaults and files, but iOS
 keeps its Keychain items. So that a reinstall asks the user to sign in again,
 the first launch of a new install erases those leftovers.
 
-`FreshInstallReset(prefs:flutterPrefs:eraseKeychain:).run()` is the first step
-of `AppServices.start`, before the Flutter migration and before anything reads
-the Keychain (`FlutterMigrationRunner.eraseLeftoversOfADeletedApp`, with
+`FreshInstallReset(prefs:eraseKeychain:).run()` is the first step
+of `AppServices.start`, before anything reads
+the Keychain (`StartupMaintenance.eraseLeftoversOfADeletedApp`, with
 `KeychainBackend.eraseAll`, which deletes every item of every class in all of
 the app's access groups: the session, identity, owner keys, vault copy, push
 credentials and share drop).
 
 - `install/installed` set: `.alreadyInstalled`, nothing happens.
-- No marker, but the app's `fm.` preferences or the Flutter app's `flutter.`
-  preferences hold anything: an update, which keeps its login. The marker is
+- No marker, but the app's `fm.` preferences hold anything: an update, which
+  keeps its login. The marker is
   set: `.upgraded`.
 - No marker and no preferences: a new install. `install/erasePending` is set,
   the Keychain is erased, then the marker replaces it: `.erased`. If the erase

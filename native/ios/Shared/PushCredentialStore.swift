@@ -1,8 +1,3 @@
-// Push credentials in the keychain, per-project items keyed by host
-// (2454591cb). It lives in Shared/ because both the app and the notification
-// service extension compile it. The group and service are the ones the retired
-// Flutter app wrote, so its items are read as they are: the format is the same.
-
 import FMBase
 import FMCrypto
 import FMPush

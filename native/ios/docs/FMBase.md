@@ -45,7 +45,7 @@ Surprises: NaN/Infinity encode as `null`. A lone `\uD800` escape parses to U+FFF
 
 Both protocols are synchronous, class-bound and Sendable (UserDefaults and the Keychain are synchronous).
 
-- `protocol KeyValueStore`: `string|bool|int|double|stringList(forKey:) -> T?` (nil when unset or another type), `set(_:forKey:)` for String, Bool, Int, Double, [String] (and `String?`: nil removes), `remove(_)`, `contains(_)`, `keys: Set<String>`, `clear()`; `string(forKey:or:)` etc. Keys are the names the retired Flutter app stored ("server/url"), so migrated data reads back.
+- `protocol KeyValueStore`: `string|bool|int|double|stringList(forKey:) -> T?` (nil when unset or another type), `set(_:forKey:)` for String, Bool, Int, Double, [String] (and `String?`: nil removes), `remove(_)`, `contains(_)`, `keys: Set<String>`, `clear()`; `string(forKey:or:)` etc.
 - `InMemoryKeyValueStore(seed: JSONObject)`, `.snapshot`. `FileKeyValueStore(url:)`: one pretty JSON file, rewritten atomically on every change; an unreadable file starts empty.
 - `protocol SecureStore`: `read(_) -> String?`, `write(_, _)`, `delete(_)`, `readAll() -> [String: String]`; extension `migrateFromPrefs(_ prefs, keys:)`. `InMemorySecureStore(seed)`.
 - The app target implements these in `ForkMesh/Platform` (UserDefaults, Keychain). Note `int(forKey:)` must return nil for a stored double; `double(forKey:)` may read a stored int.

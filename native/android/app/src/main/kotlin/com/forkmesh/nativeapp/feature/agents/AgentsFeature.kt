@@ -109,7 +109,7 @@ object AgentsFeature {
                 mesh = meshSource,
                 scopePrefix = scopePrefix,
                 userName = { accountName() },
-                filesDirectory = { File(com.forkmesh.nativeapp.feature.account.projects.FlutterFiles.documentsDir(app), "ForkMesh from desktop") },
+                filesDirectory = { File(com.forkmesh.nativeapp.feature.account.projects.AppFiles.documentsDir(app), "ForkMesh from desktop") },
                 platform = "android",
             ).also { service ->
                 service.addEventTap { event -> beats.tryEmit(AgentBeat("desktop", event.event, null)) }

@@ -31,7 +31,6 @@ import com.forkmesh.nativeapp.account.projects.ProjectDirectory
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.AuthController
 import com.forkmesh.nativeapp.feature.account.projects.ChooseInstanceSheet
-import com.forkmesh.nativeapp.feature.account.projects.FlutterDataMigration
 import com.forkmesh.nativeapp.feature.account.projects.ProjectsService
 import com.forkmesh.nativeapp.feature.push.PingCache
 import com.forkmesh.nativeapp.platform.Prefs
@@ -76,12 +75,10 @@ object AccountFeature {
         globals?.let { return it }
         val secureStore = SecureStore(app)
         val rawPrefs = Prefs(app)
-        FlutterDataMigration.runBeforeLaunch(app, secureStore, rawPrefs)
         val prefs = PrefsStore(rawPrefs)
         AccountSettings.prepareForProjects(prefs, secureStore)
         runCatching { NextProjectFold.run(FoldPrefsStore(rawPrefs), secureStore) { secureStore.keys() } }
-        val legacyInstall = FlutterDataMigration.isUpgraded(rawPrefs) ||
-            secureStore.contains(AuthController.SESSION_KEY) ||
+        val legacyInstall = secureStore.contains(AuthController.SESSION_KEY) ||
             secureStore.contains(AuthController.IDENTITY_SEED_KEY)
         val directory = ProjectDirectory.load(prefs, legacyInstall = legacyInstall)
         return Globals(secureStore, rawPrefs, prefs, ProjectsService(app, directory, secureStore, rawPrefs)).also { globals = it }
@@ -118,11 +115,6 @@ object AccountFeature {
         val auth = Services.put(AuthService.create(settings, prefs, projectSecrets, project.id, secureStore))
         api.onRouteMissing = { path ->
             com.forkmesh.nativeapp.account.projects.RelayFeature.learnableFromPath(path)?.let { projects.directory.markFeatureMissing(project.id, it) }
-        }
-        AppLifecycle.scope.launch {
-            withContext(Dispatchers.IO) {
-                FlutterDataMigration.retireWhenVerified(app, secureStore, g.rawPrefs, api, auth.isAuthenticated)
-            }
         }
 
         api.sessionTokenProvider = { auth.core.session?.sessionToken ?: "" }

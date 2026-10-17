@@ -4,28 +4,6 @@
 import FMBase
 import Foundation
 
-/// Where one project keeps everything it owns on this phone.
-///
-/// A project is one ForkMesh instance (app.forkmesh.com, app.next.forkmesh.com, a self-hosted one)
-/// together with *everything the app holds for it*: the node key, the owner-encryption key, the
-/// vault's device copy, local repositories, agent branch records, carried node-sync rows and the
-/// instance-specific settings. Two projects must never see each other's copy of any of that, so
-/// every one of those stores is addressed through a scope:
-///
-/// * preference keys are prefixed with `namespace` (`key(_:)`, or the `prefs(_:)` view);
-/// * secure-store entries go through a `secure(_:)` view;
-/// * files live under `<base>/projects/<slug>/` (`directory(_:)`).
-///
-/// The project an existing install was using before projects existed keeps the **legacy**
-/// namespace (the empty prefix and the original directories), so upgrading moves nothing and signs
-/// nobody out. Every project added after that gets `p/<projectId>/`. The key names are
-/// byte-for-byte the retired Flutter app's, which is what lets the Flutter-to-native migration copy them
-/// across unchanged (docs/native/PARITY.md, section 5).
-///
-/// In the app the registered `SecureStore` and `KeyValueStore` already address the active project
-/// (see `ProjectScopeRouter`). A key built with `key(_:)` for a non-legacy project starts with
-/// `p/`, and those stores pass such a key through untouched, so building keys explicitly is safe
-/// with either kind of store.
 public struct ProjectScope: Hashable, Sendable, CustomStringConvertible {
     /// The project this scope belongs to: its origin (`host[:port]`). Empty only for `legacy` as
     /// used by harnesses that build services without a project at all.

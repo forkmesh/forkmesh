@@ -12,13 +12,6 @@ import Foundation
 import LocalAuthentication
 import SwiftUI
 
-/// Creates the on-device repository store (under Documents, per project, as
-/// the retired Flutter app kept it) and the publisher, registers both, and
-/// lets the phone serve as a node: the node-sync applier writes drained issues,
-/// discussions and pull records into the repositories it holds. Needs
-/// ApiService, DeviceIdentity and KeyValueStore registered first, and
-/// ChatFeature's NodeSyncService for the applier (AppServices registers
-/// ChatFeature before this area).
 @MainActor
 enum LocalReposFeature {
     static func register() {

@@ -1,18 +1,3 @@
-// Password Vault cryptography, suite "fmv1",
-// the same formats the browser writes (marketplace/packages/vault/content/crypto/vault-crypto.js)
-// and the desktop reads (content/desktop/VaultCrypto.cpp). There is no Kotlin counterpart.
-//
-// Nothing new is implemented here: FMCrypto supplies Argon2id, HKDF-SHA-256, AES-256-GCM, X25519,
-// Ed25519, ML-KEM-768 (keys expanded from their d||z seed) and SHA3-256 for the X-Wing combiner.
-// Tests/FMVaultTests/VaultInteropTests.swift opens the blobs the browser, the desktop and the
-// retired Flutter app committed.
-//
-// Everything is synchronous. `stretch` is seconds of work and must run off the main actor
-// (VaultClient does); the rest is milliseconds.
-//
-// NFKC comes from Foundation (`VaultCrypto.nfkc`). A padded-looking base64 value with non-zero
-// trailing bits is `invalid_encoding`.
-
 import FMBase
 import FMCrypto
 import Foundation

@@ -60,7 +60,7 @@ final class ProjectStorageTests: XCTestCase {
         XCTAssertEqual(prefsBase.string(forKey: "p/app.next.forkmesh.com/profile/name"), "bob")
     }
 
-    func testOnlyTheFlutterScopedPreferencesArePerProject() {
+    func testOnlyTheScopedPreferencesArePerProject() {
         let base = InMemoryKeyValueStore()
         let router = ProjectScopeRouter()
         let prefs = ProjectRoutedKeyValueStore(base: base, router: router)

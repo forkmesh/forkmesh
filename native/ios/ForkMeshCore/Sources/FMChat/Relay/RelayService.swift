@@ -31,8 +31,7 @@ public final class RelayService: OwnStatusAnnouncer {
     /// within the window are dropped so stale nodes don't show online).
     nonisolated public static let presenceInterval: TimeInterval = 60
     nonisolated public static let staleMs: Int64 = 180_000
-    /// What every relay frame says it was sent by (`version`): the value the retired Flutter app sent.
-    nonisolated public static let clientVersion = "flutter-1.0"
+    nonisolated public static let clientVersion = "native-1.0"
 
     @ObservationIgnored let settings: SettingsService
     @ObservationIgnored let identity: DeviceIdentity

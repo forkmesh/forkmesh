@@ -237,7 +237,6 @@ final class LocalRepoStoreTests: XCTestCase {
             publishedAs: "a/x", origin: .cloned)
         XCTAssertEqual(LocalRepoRecord.fromJSON(record.toJSON()), record)
         XCTAssertEqual(record.syncLabel, "Cloned")
-        // The retired Flutter app wrote microseconds; the Swift reader keeps milliseconds.
         let dart = LocalRepoRecord.fromJSON([
             "name": "y", "path": "/p/y", "createdAt": "2026-08-23T12:00:00.123456Z", "lastCommitAt": nil,
         ])

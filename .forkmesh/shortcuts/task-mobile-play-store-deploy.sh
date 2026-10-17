@@ -22,7 +22,7 @@ details = f"""A reminder to deploy the Android app to the Google Play Store.
 - Android version on main: {version} / versionCode {code} (native/android/app/build.gradle.kts)
 - Newest release tag: {tag or "none"}
 - main: {head}
-- Application id: `com.forkmesh.forkmesh` (the id the Flutter store build used, so its users upgrade in place)
+- Application id: `com.forkmesh.forkmesh` (the id the earlier store build used, so its users upgrade in place)
 
 Steps:
 1. Sign in to Play Console with the ForkMesh Google account and open or create the ForkMesh app: https://play.google.com/console
@@ -33,7 +33,7 @@ Steps:
 4. Fill in the store listing, Data safety (same data types as the App Store privacy answers), the content rating questionnaire and the privacy policy URL `https://forkmesh.com/privacy`.
 5. Upload the bundle to Internal testing, install it on a phone, check sign-in and the relay, then promote it to Production.
 
-Guides: docs/native/ANDROID.md (application id, signing, Flutter migration) and docs/native/README.md, "Configuration"."""
+Guides: docs/native/ANDROID.md (application id, signing) and docs/native/README.md, "Configuration"."""
 
 task = mcp.create_task({
     "title": "Reminder: deploy the Android app to the Play Store",

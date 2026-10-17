@@ -7,11 +7,11 @@ The filterable report is at
 
 ## Method
 
-Package metadata comes from each ecosystem's registry (pub.dev, npm, PyPI,
-go.dev, Gradle/Maven plugin indexes) and advisories from the OSV database,
-queried per package and exact pinned version. Toolchains (Go, Flutter, Kotlin,
-Android Gradle Plugin) are audited alongside libraries, since a stale toolchain
-can carry standard-library advisories even when every package is current.
+Package metadata comes from each ecosystem's registry (npm, PyPI, go.dev,
+Gradle/Maven plugin indexes) and advisories from the OSV database, queried per
+package and exact pinned version. Toolchains (Go, Kotlin, Android Gradle
+Plugin) are audited alongside libraries, since a stale toolchain can carry
+standard-library advisories even when every package is current.
 
 ## Scoring rubric
 

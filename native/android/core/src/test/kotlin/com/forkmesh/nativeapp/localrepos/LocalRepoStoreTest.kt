@@ -197,7 +197,7 @@ class LocalRepoStoreTest {
         File(store.root, "index.json").writeText(
             """
             {"version": 1, "repos": [
-              {"name": "moved", "path": "/data/user/0/com.forkmesh.forkmesh/app_flutter/forkmesh/repos/moved",
+              {"name": "moved", "path": "/data/user/0/com.forkmesh.forkmesh/app_documents/forkmesh/repos/moved",
                "createdAt": "2026-08-20T10:00:00.000Z", "publishedAs": "alice/moved", "origin": "cloned"}
             ]}
             """.trimIndent(),
@@ -213,7 +213,7 @@ class LocalRepoStoreTest {
         assertEq(setOf(File(store.root, "moved").path, File(store.root, "orphan").path), paths)
     }
 
-    fun testReadsAnIndexWrittenByTheFlutterApp() = withStore { _, store ->
+    fun testReadsAnIndexWithEveryRecordField() = withStore { _, store ->
         store.root.mkdirs()
         val worktree = File(store.root, "field-notes").apply { mkdirs() }
         File(store.root, "index.json").writeText(

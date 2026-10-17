@@ -26,7 +26,7 @@ class IdentityCryptoTest {
         assertEq(url.encodeToString(identity.publicKeyBytes), identity.publicKeyB64url)
     }
 
-    fun testASeedStoredByFlutterGivesTheSameKeyAndSignatures() {
+    fun testAStoredSeedGivesTheSameKeyAndSignatures() {
         val seed = bytesOfHex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
         val store = MemorySecretStore(mapOf(Identity.SEED_KEY to Base64.getEncoder().encodeToString(seed)))
         val identity = Identity.loadOrCreate(store)

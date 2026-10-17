@@ -14,8 +14,6 @@ desktop cannot tell them apart.
   `forkmesh-android-universal.apk` asset) is built as `com.forkmesh.forkmesh`;
   local builds default to `com.forkmesh.nativeapp`, which installs beside it
   ([ANDROID.md](ANDROID.md), section 4).
-- Both replace the retired Flutter app and migrate its data on first launch
-  (see Operations). `.gitignore` ignores `/mobile/`.
 
 Topic pages:
 
@@ -170,13 +168,6 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   v3 direct-distribution key (`android-direct-distribution-v3.jks` under the
   home project's `data/release/`). See
   [`docs/release/README.md`](../release/README.md).
-- **Migration from the Flutter app.** On first launch each app copies the
-  Flutter app's Keychain/Keystore secrets and `flutter.*` preferences into its
-  own stores under the same key names, reads every value back, and deletes the
-  Flutter copies only after the relay accepts the migrated session. iOS:
-  `FMAccount/FlutterMigration.swift` ([IOS_RELEASE.md](IOS_RELEASE.md),
-  "Flutter-to-native migration"); Android: `C/migration` and
-  `FlutterDataMigration.kt` ([ANDROID.md](ANDROID.md), section 4).
 - `native/ios/tools/asc_bundle_ids.py ensure` registers the bundle ids and
   capabilities (reads `ASC_KEY_ID`, `ASC_ISSUER_ID` and the key under
   `~/.appstoreconnect/private_keys/`).
