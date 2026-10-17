@@ -641,7 +641,7 @@ ExternalCall classifyWords(const QStringList &raw, const QString &cwd)
         return remoteSubs.contains(sub) ? packageCall(QStringLiteral("packagist.org"), words)
                                         : ExternalCall{};
     }
-    if (program == QLatin1String("flutter") || program == QLatin1String("dart")) {
+    if (program == QLatin1String("dart")) {
         const QString action = sub == QLatin1String("pub") ? firstOperand(words, 2) : sub;
         static const QSet<QString> remoteSubs{
             QStringLiteral("get"),     QStringLiteral("upgrade"), QStringLiteral("add"),
@@ -649,9 +649,6 @@ ExternalCall classifyWords(const QStringList &raw, const QString &cwd)
         if ((sub == QLatin1String("pub") || sub == QLatin1String("create")) &&
             (remoteSubs.contains(action) || sub == QLatin1String("create")))
             return packageCall(QStringLiteral("pub.dev"), words);
-        if (program == QLatin1String("flutter") && (sub == QLatin1String("upgrade") ||
-                                                    sub == QLatin1String("precache")))
-            return packageCall(QStringLiteral("storage.googleapis.com"), words);
         return {};
     }
     if (program == QLatin1String("brew")) {

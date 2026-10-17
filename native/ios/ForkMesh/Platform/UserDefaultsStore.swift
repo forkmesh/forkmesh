@@ -1,7 +1,3 @@
-// The shared_preferences half of the retired Flutter app's storage, over UserDefaults, addressed
-// per project (docs/native/PARITY.md, WS1): the few per-project preference keys go to the active
-// project's namespace, everything else is shared.
-
 import FMAccount
 import FMBase
 import CoreFoundation
@@ -48,11 +44,6 @@ final class UserDefaultsStore: KeyValueStore, @unchecked Sendable {
     func clear() { routed.clear() }
 }
 
-/// `KeyValueStore` over `UserDefaults.standard`, by full key.
-///
-/// Keys carry a prefix, as shared_preferences' do, so `keys` and `clear()`
-/// see what the app wrote and not the entries iOS keeps in the same domain
-/// (AppleLanguages and friends).
 final class UserDefaultsBackend: KeyValueStore, @unchecked Sendable {
     static let appPrefix = "fm."
     private let prefix: String
@@ -66,11 +57,6 @@ final class UserDefaultsBackend: KeyValueStore, @unchecked Sendable {
     private func name(_ key: String) -> String { prefix + key }
 
     func string(forKey key: String) -> String? { defaults.object(forKey: name(key)) as? String }
-
-    // UserDefaults hands every number back as an NSNumber, and `as? Int`
-    // happily converts a stored Bool or a whole Double. shared_preferences
-    // keeps the three apart (`getInt` on a double is null), so the kind is
-    // read from the CFNumber itself.
 
     private func number(_ key: String) -> NSNumber? { defaults.object(forKey: name(key)) as? NSNumber }
 
@@ -88,8 +74,6 @@ final class UserDefaultsBackend: KeyValueStore, @unchecked Sendable {
         return value.intValue
     }
 
-    /// A stored int reads as a double, as shared_preferences' `getDouble` does
-    /// after an int was written.
     func double(forKey key: String) -> Double? {
         guard let value = number(key), !Self.isBool(value) else { return nil }
         return value.doubleValue

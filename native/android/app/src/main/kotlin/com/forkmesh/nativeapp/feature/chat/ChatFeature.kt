@@ -41,7 +41,7 @@ import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.feature.account.NotificationService
 import com.forkmesh.nativeapp.feature.account.SettingsService
-import com.forkmesh.nativeapp.feature.account.projects.FlutterFiles
+import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.feature.account.projects.ProjectConnectionProbe
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
@@ -149,7 +149,7 @@ object ChatFeature {
         val projectScope = Services.get<ProjectScope>() ?: ProjectScope.legacy
         projectId = if (projectScope.isLegacy) "" else projectScope.projectId
         appContext = app
-        filesDir = FlutterFiles.projectSupportDir(app, projectScope)
+        filesDir = AppFiles.projectSupportDir(app, projectScope)
         repositories = null
         if (!trackingActivities) {
             trackingActivities = true

@@ -1299,11 +1299,11 @@
   {
     "slug": "pub-dev",
     "name": "pub.dev",
-    "tagline": "Dart and Flutter package repository",
+    "tagline": "Dart package repository",
     "url": "https://pub.dev",
     "category": "packages",
-    "summary": "pub.dev hosts packages for Dart and Flutter.",
-    "watching": "The security scan reads Pub lockfiles as the Pub ecosystem for OSV lookups. The desktop's agent network gate maps dart and flutter pub commands to pub.dev so the agent firewall can ask first.",
+    "summary": "pub.dev hosts packages for Dart.",
+    "watching": "The security scan reads Pub lockfiles as the Pub ecosystem for OSV lookups. The desktop's agent network gate maps dart pub commands to pub.dev so the agent firewall can ask first.",
     "tags": [
       "registry",
       "dart"
@@ -4067,31 +4067,6 @@
     "integration": "uses",
     "integrations": [
       "Tools: Windows code signing"
-    ],
-    "reviewed": "2026-09",
-    "published": true
-  },
-  {
-    "slug": "google-tink",
-    "name": "Tink",
-    "tagline": "Multi-language cryptographic library from Google",
-    "url": "https://developers.google.com/tink",
-    "repo": "https://github.com/tink-crypto/tink-java",
-    "category": "security",
-    "summary": "Google's cryptographic library, underlying AndroidX EncryptedSharedPreferences.",
-    "watching": "native/android core reads Tink AES-SIV/AES-GCM keysets (TinkEsp.kt) to migrate secrets the Flutter app stored with flutter_secure_storage's EncryptedSharedPreferences.",
-    "tags": [
-      "crypto",
-      "android",
-      "migration"
-    ],
-    "openSource": true,
-    "license": "Apache-2.0",
-    "gitNative": false,
-    "maker": "Google",
-    "integration": "uses",
-    "integrations": [
-      "Native app: Flutter secret migration"
     ],
     "reviewed": "2026-09",
     "published": true

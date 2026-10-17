@@ -13,12 +13,10 @@ public final class FreshInstallReset {
     public static let pendingKey = "install/erasePending"
 
     private let prefs: KeyValueStore
-    private let flutterPrefs: KeyValueStore
     private let eraseKeychain: () throws -> Void
 
-    public init(prefs: KeyValueStore, flutterPrefs: KeyValueStore, eraseKeychain: @escaping () throws -> Void) {
+    public init(prefs: KeyValueStore, eraseKeychain: @escaping () throws -> Void) {
         self.prefs = prefs
-        self.flutterPrefs = flutterPrefs
         self.eraseKeychain = eraseKeychain
     }
 
@@ -26,7 +24,7 @@ public final class FreshInstallReset {
     public func run() -> FreshInstallOutcome {
         if prefs.bool(forKey: FreshInstallReset.installedKey) == true { return .alreadyInstalled }
         let pending: Bool = prefs.bool(forKey: FreshInstallReset.pendingKey) == true
-        if !pending && !(prefs.keys.isEmpty && flutterPrefs.keys.isEmpty) {
+        if !pending && !prefs.keys.isEmpty {
             prefs.set(true, forKey: FreshInstallReset.installedKey)
             return .upgraded
         }

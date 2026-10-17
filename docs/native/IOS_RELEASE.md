@@ -2,9 +2,9 @@
 
 The App Store app **ForkMesh** (`com.forkmesh.forkmesh`) ships from
 `native/ios`. This page covers the Codemagic workflows in `codemagic.yaml`,
-the helper scripts in `native/ios/tools/` and `tools/`, the store rules the
-app must follow, and the Flutter-to-native migration. Building on the office
-Mac instead of Codemagic is in [MAC_BUILD.md](MAC_BUILD.md).
+the helper scripts in `native/ios/tools/` and `tools/`, and the store rules
+the app must follow. Building on the office Mac instead of Codemagic is in
+[MAC_BUILD.md](MAC_BUILD.md).
 
 ## Version
 
@@ -294,37 +294,6 @@ The white-ringed hexagon icon replaced the grey cube on 2026-10-04 (commit
 before that date: ship a new `ios-native-release` build. If the new build is
 installed and the home screen still shows the cube, iOS is showing its cached
 icon; restarting the phone clears it.
-
-## Flutter-to-native migration
-
-`FMAccount/FlutterMigration.swift`, run by
-`ForkMesh/App/FlutterMigrationRunner.swift` from `AppServices.start` before any
-store is built. Tests: `FMAccountTests/FlutterMigrationTests.swift`.
-
-Flutter left secrets in flutter_secure_storage (generic-password items,
-service `flutter_secure_storage_service`, account = key,
-`kSecAttrAccessibleWhenUnlocked`, group `742ZANCB57.com.forkmesh.forkmesh`) and
-preferences as `UserDefaults` keys `flutter.<key>`. Key names are identical to
-the native ones, so the migration copies each key into the Keychain service
-`com.forkmesh.forkmesh.secure` and `fm.<key>` preferences.
-
-- **Active project.** When none is named, `relays/active` is set to
-  `app.forkmesh.com`, so the upgraded user stays signed in.
-- **Idempotent.** `migration/flutter/done` stops later runs. Until then each
-  launch retries and a Flutter value wins over a native one (a native value
-  may come from a background launch that could not read the locked keychain).
-- **Deferred, not guessed.** An unreadable Flutter keychain or a failed write
-  returns `deferred` with nothing marked.
-- **Verified.** Every copied value is read back; counts and keys are kept
-  under `migration/flutter/`.
-- **Kept until verified.** Nothing is deleted until
-  `FlutterMigrationRunner.retireWhenVerified` sees the relay accept the
-  migrated session (`GET /api/accounts/sessions`); then the copied Flutter
-  items and preferences are deleted. Failed deletes retry.
-- **Files** need no move: the container paths are the same, and the
-  repository index's absolute paths are rebased on load.
-- **Push** credential items keep the Flutter names (service
-  `com.forkmesh.forkmesh.push`, items `session` and `session@<host>`).
 
 ## Open items
 

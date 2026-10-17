@@ -1,5 +1,5 @@
 // Generated from native/android/app/src/main/assets/fonts/MaterialIcons.codepoints
-// (Flutter's MaterialIcons codepoint table, Apache-2.0) for the icon names
+// (the MaterialIcons codepoint table, Apache-2.0) for the icon names
 // the app uses, plus `help_outline`, the glyph unknown
 // names draw. Do not edit by hand: when a screen needs a new icon, add the
 // name from that file with its codepoint.

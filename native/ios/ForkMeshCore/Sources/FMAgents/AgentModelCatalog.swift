@@ -118,8 +118,6 @@ public enum AgentModelCatalog {
     }
 }
 
-/// Remembers the queued-run model a person last picked
-/// (`agent/node-model-alias`, the key the retired Flutter app wrote).
 public enum NodeModelPreference {
     public static let key = "agent/node-model-alias"
 

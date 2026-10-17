@@ -145,7 +145,7 @@ final class RelayServiceTests: XCTestCase {
         let chat = try XCTUnwrap(h.openFrames().first { $0["type"] == "chat" })
         XCTAssertEqual(chat["text"], "retain this message")
         XCTAssertEqual(chat["channel"], "#general")
-        XCTAssertEqual(chat["version"], "flutter-1.0")
+        XCTAssertEqual(chat["version"], "native-1.0")
         XCTAssertEqual(chat["platform"], "ios")
         XCTAssertNil(chat["persist"], "the retention flag rides outside the ciphertext")
         await h.close()

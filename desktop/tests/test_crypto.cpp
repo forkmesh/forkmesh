@@ -8762,7 +8762,7 @@ int main(int argc, char *argv[])
             QStringLiteral(".forkmesh/ios.yml"),
             QStringLiteral("name: iOS\non: [workflow_dispatch]\n"
                            "jobs:\n  build:\n    runs-on:\n      - mac1\n"
-                           "    steps:\n      - run: flutter build ios\n"));
+                           "    steps:\n      - run: xcodebuild -scheme ForkMesh build\n"));
         check(ios.runsOn == QStringList{QStringLiteral("mac1")},
               "job-level runs-on block lists parse too");
         check(!ios.runsOnNode({QStringLiteral("forkmesh")}),
@@ -8820,12 +8820,12 @@ int main(int argc, char *argv[])
         // whatever capability tags the operator typed in Settings.
         const QStringList labels = ActionFile::nodeLabels(
             QStringLiteral("Mac1"), QString(),
-            QStringLiteral("ios, xcode  flutter,ios"));
+            QStringLiteral("ios, xcode  swift,ios"));
         check(labels.contains(QStringLiteral("mac1")),
               "the machine node name is always a label, lower-cased");
         check(labels.contains(QStringLiteral("ios")) &&
                   labels.contains(QStringLiteral("xcode")) &&
-                  labels.contains(QStringLiteral("flutter")),
+                  labels.contains(QStringLiteral("swift")),
               "configured labels split on commas and whitespace");
         check(labels.count(QStringLiteral("ios")) == 1,
               "duplicate labels are collapsed");

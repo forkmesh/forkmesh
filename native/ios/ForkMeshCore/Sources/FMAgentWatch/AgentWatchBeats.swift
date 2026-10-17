@@ -93,7 +93,7 @@ public func motionForTool(_ rawName: String, command: String = "") -> AgentMotio
 
 private let testCommands = [
     "pytest", "ctest", "cargo test", "go test", "npm test", "npm run test", "yarn test", "pnpm test",
-    "flutter test", "dart test", "jest", "vitest", "playwright", "gradlew test", "-tests", "unittest",
+    "dart test", "jest", "vitest", "playwright", "gradlew test", "-tests", "unittest",
 ]
 private let installCommands = [
     "npm install", "npm i ", "npm ci", "pip install", "pip3 install", "uv add", "uv pip", "uv sync",
@@ -102,7 +102,7 @@ private let installCommands = [
     "poetry install",
 ]
 private let buildCommands = [
-    "ninja", "cmake", "make ", "cargo build", "go build", "npm run build", "gradlew", "flutter build",
+    "ninja", "cmake", "make ", "cargo build", "go build", "npm run build", "gradlew",
     "xcodebuild", "webpack", "vite build", "g++ ", "gcc ", "clang",
 ]
 

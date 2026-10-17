@@ -40,13 +40,13 @@ final class ApiServiceAgentsTests: XCTestCase {
         let http = FakeHTTPClient { request in
             XCTAssertEqual(request.method, "POST")
             XCTAssertEqual(request.apiPath, "/api/repo/owner/repo/agents/42/transcript")
-            return apiJSON(["ok": true, "status": "done", "transcript": "Running tests\nflutter test passed"])
+            return apiJSON(["ok": true, "status": "done", "transcript": "Running tests\ndart test passed"])
         }
         let detail = try await makeTestApi(http).agentTranscript("owner", "repo", 42, ownerAccount: "owner")
 
         XCTAssertEqual(http.lastRequest?.bodyText, #"{"ownerAccount":"owner"}"#)
         XCTAssertEqual(detail.status, "done")
-        XCTAssertTrue(detail.transcript.contains("flutter test passed"))
+        XCTAssertTrue(detail.transcript.contains("dart test passed"))
         XCTAssertFalse(detail.sealedForOtherDevice)
     }
 
@@ -62,7 +62,7 @@ final class ApiServiceAgentsTests: XCTestCase {
                     "runs": [["id": 7, "workflowName": "Test suite", "status": "running", "ref": "refs/heads/main"]],
                 ])
             case "/api/repo/owner/repo/actions/7/log":
-                return apiJSON(["ok": true, "id": 7, "status": "success", "log": "flutter test passed"])
+                return apiJSON(["ok": true, "id": 7, "status": "success", "log": "dart test passed"])
             default:
                 return nil
             }
@@ -83,7 +83,7 @@ final class ApiServiceAgentsTests: XCTestCase {
         XCTAssertEqual(requests[1].apiPath, "/api/repo/owner/repo/actions/7/log")
         XCTAssertEqual(requests[1].bodyText, #"{"ownerAccount":"owner","ts":"1001","sig":"signed-log"}"#)
         XCTAssertEqual(log.statusLabel, "Success")
-        XCTAssertEqual(log.log, "flutter test passed")
+        XCTAssertEqual(log.log, "dart test passed")
 
         // Blank optional fields are left out.
         _ = try await api.repoActions("owner", "repo")

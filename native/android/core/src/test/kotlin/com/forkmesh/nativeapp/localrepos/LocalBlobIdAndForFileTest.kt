@@ -92,8 +92,8 @@ class LocalBlobIdAndForFileTest {
         assertEq("", refused.patch)
     }
 
-    fun testStoreRootFollowsFlutterDocumentsLayout() {
-        val docs = File("/data/user/0/com.forkmesh.forkmesh/app_flutter")
+    fun testStoreRootFollowsTheDocumentsLayout() {
+        val docs = File("/data/user/0/com.forkmesh.forkmesh/app_documents")
         assertEq(File(docs, "forkmesh/repos"), LocalRepoStore.rootIn(docs))
         assertEq(File(docs, "projects/app.next.forkmesh.com_8443/forkmesh/repos"), LocalRepoStore.rootIn(docs, "App.Next.ForkMesh.com:8443"))
         assertEq("___1_", LocalRepoStore.projectSlug("[::1]"))

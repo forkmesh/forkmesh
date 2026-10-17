@@ -1,6 +1,3 @@
-// The flutter_secure_storage half of the retired Flutter app's storage, over
-// the Keychain.
-
 import FMAccount
 import FMBase
 import Foundation

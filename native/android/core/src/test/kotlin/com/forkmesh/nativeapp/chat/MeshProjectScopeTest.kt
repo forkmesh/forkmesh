@@ -24,7 +24,7 @@ class MeshProjectScopeTest {
         val next = meshSeal(ProjectScope(nextId, ProjectScope.namespaceFor(nextId)), base)
         expect(production.first != next.first, "node ids differ")
         expect(production.second != next.second, "seal key ids differ")
-        expect(base.read(ChatDeviceKeys.IDENTITY_STORE_KEY) != null, "production keeps the legacy namespace, as Flutter")
+        expect(base.read(ChatDeviceKeys.IDENTITY_STORE_KEY) != null, "production keeps the legacy namespace")
         expect(base.read(ProjectScope.namespaceFor(nextId) + ChatDeviceKeys.IDENTITY_STORE_KEY) != null, "next is under p/<id>/")
     }
 

@@ -440,12 +440,12 @@ PlayKind playForCommand(const QString &command)
         return PlayKind::Push;
     if (has("pytest") || has("ctest") || has("cargo test") || has("go test")
         || has("npm test") || has("npm run test") || has("yarn test") || has("pnpm test")
-        || has("flutter test") || has("dart test") || has("jest") || has("vitest")
+        || has("dart test") || has("jest") || has("vitest")
         || has("playwright") || has("gradlew test") || has("-tests") || has("unittest"))
         return PlayKind::Test;
     if (has("ninja") || has("cmake --build") || has("make ") || c.trimmed() == QLatin1String("make")
         || has("cargo build") || has("go build") || has("npm run build") || has("tsc")
-        || has("gradlew") || has("flutter build") || has("xcodebuild"))
+        || has("gradlew") || has("xcodebuild"))
         return PlayKind::Build;
     return PlayKind::Shell;
 }

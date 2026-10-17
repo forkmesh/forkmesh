@@ -68,7 +68,7 @@ class RelayRoom(
         const val KEY_REPLY_DELAY_MS = 25L
         const val LOG_LIMIT = 500
 
-        const val CLIENT_VERSION = "flutter-1.0"
+        const val CLIENT_VERSION = "native-1.0"
 
         private val seq = AtomicLong()
     }

@@ -310,7 +310,7 @@ static void testCommandIcons()
          {"grep", "cat", "head", "tail", "sed", "cut", "wc", "sort", "ls", "find", "cd",
           "mkdir", "cp", "mv", "ln", "rm", "chmod", "touch", "diff", "echo", "git", "gh",
           "python3", "pytest", "node", "npm", "cmake", "ninja", "make", "g++", "gcc",
-          "flutter", "dart", "swift", "xcodebuild", "go", "rustc", "cargo", "gradle",
+          "dart", "swift", "xcodebuild", "go", "rustc", "cargo", "gradle",
           "java", "kotlin", "ruby", "docker", "sqlite3", "psql", "curl", "ping", "ssh",
           "openssl", "systemctl", "journalctl", "ps", "df", "kill", "sleep", "date", "tar",
           "apt", "jq", "ffmpeg", "adb", "claude", "ollama", "aws", "xdg-open"}) {

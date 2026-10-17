@@ -805,12 +805,12 @@ class ApiServiceTest {
     fun testAgentTranscriptPostsOwnerAccountAndParsesTheDetail() {
         val transport = FakeTransport { request ->
             assertEq("/api/repo/owner/repo/agents/42/transcript", request.path())
-            jsonResponse(mapOf("ok" to true, "status" to "done", "transcript" to "Running tests\nflutter test passed"))
+            jsonResponse(mapOf("ok" to true, "status" to "done", "transcript" to "Running tests\nnpm test passed"))
         }
         val detail = api(transport).agentTranscript("owner", "repo", 42, ownerAccount = "owner")
         assertEq(mapOf("ownerAccount" to "owner"), transport.requests.single().bodyJson())
         assertEq("done", detail.status)
-        expect(detail.transcript.contains("flutter test passed"))
+        expect(detail.transcript.contains("npm test passed"))
         expect(!detail.sealedForOtherDevice)
     }
 
@@ -824,7 +824,7 @@ class ApiServiceTest {
                         "runs" to listOf(mapOf("id" to 7, "workflowName" to "Test suite", "status" to "running", "ref" to "refs/heads/main")),
                     ),
                 )
-                "/api/repo/owner/repo/actions/7/log" -> jsonResponse(mapOf("ok" to true, "id" to 7, "status" to "success", "log" to "flutter test passed"))
+                "/api/repo/owner/repo/actions/7/log" -> jsonResponse(mapOf("ok" to true, "id" to 7, "status" to "success", "log" to "npm test passed"))
                 else -> null
             }
         }
@@ -838,7 +838,7 @@ class ApiServiceTest {
         assertEq("/api/repo/owner/repo/actions/7/log", transport.requests[1].path())
         assertEq(mapOf("ownerAccount" to "owner", "ts" to "1001", "sig" to "signed-log"), transport.requests[1].bodyJson())
         assertEq("Success", log.statusLabel)
-        assertEq("flutter test passed", log.log)
+        assertEq("npm test passed", log.log)
         api.repoActions("owner", "repo")
         assertEq(emptyMap<String, Any?>(), transport.requests[2].bodyJson())
     }

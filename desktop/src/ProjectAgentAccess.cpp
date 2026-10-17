@@ -420,7 +420,7 @@ QStringList sharedToolFolders(const QString &homeDir)
     QStringList folders;
     for (const char *relative :
          {".local/bin", ".local/lib", ".local/share/claude", ".cargo/bin", ".rustup",
-          ".nvm", ".bun/bin", ".deno/bin", "go/bin", "sdk", "flutter", ".pyenv"}) {
+          ".nvm", ".bun/bin", ".deno/bin", "go/bin", "sdk", ".pyenv"}) {
         const QString path = home.filePath(QLatin1String(relative));
         if (QFileInfo(path).isDir())
             folders.append(path);

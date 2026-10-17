@@ -606,8 +606,6 @@ final class PushNotificationServiceTests: XCTestCase {
     // MARK: Per-project push (PARITY row #52) and the per-token apns-topic (5.2)
 
     func testRegistrationNamesTheAppThatMintedTheToken() async throws {
-        // The relay sends each token under its own app's apns-topic; without the bundle id a
-        // native-app token is sent under the retired Flutter app's topic, refused and pruned.
         let relay = PushRelay()
         let platform = RecordingPlatform()
         platform.cachedToken = tokenA

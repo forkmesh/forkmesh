@@ -5,14 +5,6 @@
 import FMBase
 import Foundation
 
-/// The public key, base64url-encoded without padding, is the canonical node id: the chat sender
-/// id, the repo owner namespace and the `author` on signed inbox events.
-///
-/// Stored format (identical to the retired Flutter app): secure-store key `seedKey` holds the
-/// standard padded base64 of the raw 32-byte Ed25519 seed.
-///
-/// Calls are synchronous (Keychain I/O and a scalar multiplication); keep `loadOrCreate` and
-/// `rotate` off the main thread. `sign` is thread-safe and sees a `rotate` atomically.
 public final class Identity: DeviceIdentity, @unchecked Sendable {
     public static let seedKey = "identity/ed25519Seed"
 

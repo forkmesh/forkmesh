@@ -24,7 +24,7 @@ class VaultInteropTest {
 
     fun testOpensTheDesktopsFixture() = opens("interop-from-cpp.json")
 
-    fun testOpensTheFlutterAppsFixture() = opens("interop-from-dart.json")
+    fun testOpensTheDartFixture() = opens("interop-from-dart.json")
 
     fun testOpensWhatItWrites() = opens(Json.parseObject(Json.stringify(makeFixture())), "kotlin")
 

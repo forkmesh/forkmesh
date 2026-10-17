@@ -2,9 +2,7 @@
 
 The ForkMesh Android app, written in **Kotlin + Jetpack Compose**. Development
 builds use the application id `com.forkmesh.nativeapp`; release builds ship as
-`com.forkmesh.forkmesh`, the store/APK id, and take over the data the retired
-Flutter app left on the device (see
-[What carries over from the Flutter app](#what-carries-over-from-the-flutter-app)).
+`com.forkmesh.forkmesh`, the store/APK id.
 
 The developer home page for both native apps (this one and `native/ios`) is
 [`docs/native/README.md`](../../docs/native/README.md); the reasons behind
@@ -96,8 +94,7 @@ app/    Android + Compose.
 
 - **Wire and storage compatibility.** Endpoints, storage keys and signing
   formats match the other ForkMesh clients (the iOS app, the desktop and the
-  web client) and what the retired Flutter app stored on the device; the relay
-  and the desktop app cannot tell the clients apart.
+  web client); the relay and the desktop app cannot tell the clients apart.
 - **Code only.** No comments or KDoc in the source. The reasons behind
   non-obvious decisions go in `docs/native/ANDROID.md`.
 - **Feature seams.** The shell only calls the `*Feature` objects. A feature
@@ -137,39 +134,12 @@ Release signing comes from four variables:
 A `com.forkmesh.forkmesh` release build without them fails; it is never signed
 with the debug key.
 
-### What carries over from the Flutter app
-
-Earlier releases of `com.forkmesh.forkmesh` were the Flutter app, which has
-been retired. On the first launch after the update the native app copies the
-Flutter app's data into its own stores (`core/.../migration`,
-`app/.../feature/account/projects/FlutterDataMigration.kt`), before any
-service reads them:
-
-- `flutter_secure_storage` (both its custom-cipher layout: RSA-OAEP or PKCS#1
-  wrapped AES-GCM or AES-CBC keys under
-  `<applicationId>.FlutterSecureStoragePluginKey[OAEP]`, and its older
-  EncryptedSharedPreferences layout) into the Keystore-backed `SecureStore`, under the same key names: node key,
-  owner key, per-project sessions (`auth/session/<projectId>`), vault device
-  copy, agent credentials, `p/<projectId>/` scopes.
-- `FlutterSharedPreferences` `flutter.<key>` into the native preferences,
-  including the project list and the active project. An upgraded install with
-  no recorded project lands on ForkMesh; a fresh install starts on ForkMesh
-  (`app.forkmesh.com`).
-- The Flutter copies are deleted only after the relay accepts the migrated
-  session (`GET /api/accounts/devices`), and never while any Flutter secret
-  could not be decrypted. The migration is idempotent and retries while the
-  Keystore is unavailable.
-
-The Keystore keys only survive because the application id and signing key stay
-the same: a reinstall under another id or key starts empty.
+The Keystore keys only survive an update because the application id and
+signing key stay the same: a reinstall under another id or key starts empty.
 
 ### Release checklist
 
-1. The migration has been checked on a device that ran the last Flutter APK
-   (signed in, with a local repository and a vault unlocked): after the update
-   the user is still signed in on every project, the vault opens, and the
-   Flutter prefs files are gone after the first verified session.
-2. To build the release APK by hand, work in a worktree at the release commit
+1. To build the release APK by hand, work in a worktree at the release commit
    and use the **v3** direct-distribution signing key
    (`~/projects/forkmesh/data/release/android-direct-distribution-v3.jks`,
    alias `forkmesh`, password file `.apk-keystore-password` next to it; never
@@ -183,19 +153,18 @@ the same: a reinstall under another id or key starts empty.
      -Pforkmesh.versionName=<MAJOR.MINOR.PATCH>
    ```
    Output: `app/build/outputs/apk/release/app-release.apk`.
-3. Verify: `apksigner verify --print-certs` must report the single signer
+2. Verify: `apksigner verify --print-certs` must report the single signer
    `e8c028a49936350273a1bcb4e822c0d4f8fedb98c3417ba9eb9d3c617a33f49a`
    (`DEFAULT_SIGNER_SHA256` in `tools/forkmesh-release-host.py`), and
    `aapt2 dump badging` must show `package: name='com.forkmesh.forkmesh'` with
    the expected `versionCode`. The release host runs both checks on its own
    build.
-4. The asset name is `forkmesh-android-universal.apk`: the homepage download
+3. The asset name is `forkmesh-android-universal.apk`: the homepage download
    widget (`www/public/homepage-downloads.js`), the install support matrix
    (`www/docs/install-support-matrix.{json,md}`), the status page's release
    checks (`app/src/status_monitoring.py`) and the release manifests
    (`.forkmesh/releases/*/release.json`, `SHASUMS256.txt`) use it. Publish the
    APK into the candidate with `tools/forkmesh-release-publish.sh` and promote
    it as usual (`.forkmesh/releases/README.md`).
-5. Device support: the native app's `minSdk` is 26. A phone on Android 7.x
-   that runs the Flutter APK cannot take the update; say so in the release
-   notes.
+4. Device support: the native app's `minSdk` is 26; phones on Android 7.x
+   cannot install it.

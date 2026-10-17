@@ -1,9 +1,3 @@
-// The vault's cross-client fixtures, carried verbatim from
-// marketplace/packages/vault/tests/fixtures/ (interop-from-{js,cpp,dart}.json: what the browser,
-// the desktop and the retired Flutter app wrote; openssl-vectors.json: Argon2id and ML-KEM-768
-// answers from OpenSSL 3.5). VaultInteropTests also opens whatever the repository holds today. Test
-// keys only. Nothing here protects anything.
-
 enum VaultFixtures {
     /// interop-from-js.json
     static let fromJs = #"""

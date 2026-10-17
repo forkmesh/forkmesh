@@ -4,7 +4,7 @@
 // swiftlint:disable all
 
 enum Goldens {
-    static let transcript = "==> Started from a prompt (CC).\n==> Preparing an isolated worktree for branch 1-fix\u{2026}\n\n> fix the flaky test\nplease\n\n==> Running Claude Code (stream-json transcript) on branch 1-fix\n[Bash git status]\n\nLooking at the failing test first.\nIt lives in the **sync** suite.\n\n[Read /src/sync.dart]\n[Grep kSlotSeconds]\n[Bash python3 - <<'EOF'\np = 'x'\nprint(p)\nEOF]\n[Edit /src/sync.dart]\n[Bash flutter test test/sync_test.dart]\n[TodoWrite {\"todos\":[]}]\n[mcp__forkmesh__search_issues {\"query\":\"flaky\"}]\n[Bash {\"command\":\"sleep 30\",\"run_in_background\":true}]\n==> Compacting the context\n==> Retrying after an API error\n==> Hook PreToolUse answered\n(thinking) about the next step\n\nFixed and committed. The whole run took a while and this paragraph is deliberately long so that the clip at ninety code units cuts it with an ellipsis at the end of the line.\n"
+    static let transcript = "==> Started from a prompt (CC).\n==> Preparing an isolated worktree for branch 1-fix\u{2026}\n\n> fix the flaky test\nplease\n\n==> Running Claude Code (stream-json transcript) on branch 1-fix\n[Bash git status]\n\nLooking at the failing test first.\nIt lives in the **sync** suite.\n\n[Read /src/sync.dart]\n[Grep kSlotSeconds]\n[Bash python3 - <<'EOF'\np = 'x'\nprint(p)\nEOF]\n[Edit /src/sync.dart]\n[Bash dart test test/sync_test.dart]\n[TodoWrite {\"todos\":[]}]\n[mcp__forkmesh__search_issues {\"query\":\"flaky\"}]\n[Bash {\"command\":\"sleep 30\",\"run_in_background\":true}]\n==> Compacting the context\n==> Retrying after an API error\n==> Hook PreToolUse answered\n(thinking) about the next step\n\nFixed and committed. The whole run took a while and this paragraph is deliberately long so that the clip at ninety code units cuts it with an ellipsis at the end of the line.\n"
     /// motion name, text, bytes, said, seed
     static let beats: [(String, String, Int, String, Int)] = [
         ("start", "Started from a prompt (CC).", 27, "", 1603092536),
@@ -17,7 +17,7 @@ enum Goldens {
         ("search", "Grep kSlotSeconds", 19, "", 3442783799),
         ("run", "Bash python3 - <<'EOF'", 45, "", 2202947662),
         ("write", "Edit /src/sync.dart", 21, "", 771005228),
-        ("test", "Bash flutter test test/sync_test.dart", 39, "", 1325044139),
+        ("test", "Bash dart test test/sync_test.dart", 36, "", 1675023376),
         ("todo", "TodoWrite {\"todos\":[]}", 24, "", 2990988703),
         ("mcp", "mcp__forkmesh__search_issues {\"query\":\"flaky\"}", 48, "", 1574303278),
         ("spawn", "Bash {\"command\":\"sleep 30\",\"run_in_background\":true}", 54, "", 2347848713),

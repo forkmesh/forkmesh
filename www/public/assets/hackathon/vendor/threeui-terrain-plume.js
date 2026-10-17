@@ -616,7 +616,7 @@ function createDriveTerrain(root, tcv, rcv, options) {
     for (let i = 0; i < bands; i += 1) {
       const y = i * bh;
       const v = (y + bh * 0.5) / H;
-      /* two slow beats plus a per-band flutter, so no row sits perfectly still */
+      /* two slow beats plus a per-band flicker, so no row sits perfectly still */
       let dx = Math.sin(v * 26.0 + t * 2.1) * 0.8 + Math.sin(v * 6.1 - t * 1.3) * 1.5;
       dx += (ihash(i, Math.floor(t * 7)) - 0.5) * 2.0;
       dx *= TAPE.wobble * DPR;
