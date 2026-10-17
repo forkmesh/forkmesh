@@ -19,7 +19,6 @@ struct VideoMixDjStudioScreen: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
-            .statusBarHidden()
             .onAppear {
                 guard !opened else { return }
                 opened = true
@@ -77,7 +76,7 @@ struct DjStudioView: View {
         } message: {
             Text("Stops and unloads both decks, and clears cues, loops, tempo, BPM, levels, the crossfader and sampler sections. Recently Played is kept.")
         }
-        .statusBarHidden()
+        .statusBarHidden(false)
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)
         .preferredColorScheme(.dark)

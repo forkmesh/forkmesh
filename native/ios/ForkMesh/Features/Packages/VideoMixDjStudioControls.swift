@@ -196,14 +196,24 @@ struct DjClock: View {
     let u: CGFloat
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: !deck.playing || deck.scratching)) { _ in
-            let position = deck.position()
-            Text(deck.showsRemaining ? "-" + DjStudio.clock(max(0, deck.duration - position)) : DjStudio.clock(position))
-                .font(.system(size: 30 * u, weight: .light))
+        HStack(alignment: .firstTextBaseline, spacing: 4 * u) {
+            TimelineView(.animation(minimumInterval: 0.25, paused: !deck.playing || deck.scratching)) { _ in
+                let position = deck.position()
+                Text(deck.showsRemaining ? "-" + DjStudio.clock(max(0, deck.duration - position)) : DjStudio.clock(position))
+                    .font(.system(size: 30 * u, weight: .light))
+                    .monospacedDigit()
+                    .foregroundStyle(DjTheme.ink)
+            }
+            Text("/ " + (deck.duration > 0 ? DjStudio.clock(deck.duration) : "--:--"))
+                .font(.system(size: 14 * u, weight: .regular))
                 .monospacedDigit()
-                .foregroundStyle(DjTheme.ink)
+                .foregroundStyle(DjTheme.muted)
+                .opacity(deck.loaded ? 1 : 0.5)
         }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Deck \(deck.side.label) time")
+        .accessibilityValue(deck.duration > 0 ? "\(DjStudio.clock(deck.time)) of \(DjStudio.clock(deck.duration))" : DjStudio.clock(deck.time))
     }
 }
 
@@ -215,8 +225,8 @@ struct DjWaveform: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.playing || deck.scratching)) { _ in
-                let time = deck.position() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !deck.moving)) { _ in
+                let time = deck.shown() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
                 let bars = deck.waveform
                 let duration = deck.duration
                 Canvas(rendersAsynchronously: false) { context, area in
@@ -238,6 +248,16 @@ struct DjWaveform: View {
                         }
                         model.seek(deck.side, to: deck.position() - Double(value.translation.width / size.width) * DjWaveDrawing.window)
                     })
+        }
+        .overlay {
+            if deck.loaded, deck.waveform.isEmpty, deck.reading {
+                Text("Reading the audio…")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DjTheme.muted)
+                    .padding(.horizontal, 6)
+                    .background(DjTheme.panel.opacity(0.85), in: Capsule())
+                    .allowsHitTesting(false)
+            }
         }
         .clipped()
         .accessibilityElement()
@@ -272,17 +292,6 @@ enum DjWaveDrawing {
             x += step
         }
         fill(context, paths)
-    }
-
-    static func mini(_ context: GraphicsContext, _ size: CGSize, bars: [DjWaveBar]) {
-        guard !bars.isEmpty, size.width > 0 else { return }
-        let slot = size.width * 0.8 / CGFloat(bars.count)
-        for (index, bar) in bars.enumerated() {
-            let height = max(1, CGFloat(bar.level) * size.height * 0.72)
-            let rect = CGRect(x: size.width * 0.1 + CGFloat(index) * slot + slot * 0.2, y: (size.height - height) / 2, width: slot * 0.6, height: height)
-            let bucket = min(DjTheme.waveColors.count - 1, max(0, Int(bar.hue * Double(DjTheme.waveColors.count))))
-            context.fill(Path(roundedRect: rect, cornerRadius: slot * 0.3), with: .color(DjTheme.waveColors[bucket]))
-        }
     }
 
     private static func add(_ paths: inout [Path], _ bar: DjWaveBar, x: CGFloat, width: CGFloat, size: CGSize) {

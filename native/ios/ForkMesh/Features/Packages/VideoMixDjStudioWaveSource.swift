@@ -6,6 +6,7 @@ import Foundation
 enum DjWaveSource {
     static let sampleRate: Double = 22_050
     static let largestDownload: Int64 = 200 * 1024 * 1024
+    static let parallel = 4
 
     static func cached(_ id: String) -> [DjWaveBar]? {
         guard let url = cacheURL(id), let data = try? Data(contentsOf: url) else { return nil }
@@ -33,29 +34,62 @@ enum DjWaveSource {
     }
 
     private static func download(_ source: URL) async -> URL? {
-        guard source.scheme == "https" else { return nil }
-        var request = URLRequest(url: source)
-        request.timeoutInterval = 60
-        request.allowsConstrainedNetworkAccess = false
-        guard let (file, response) = try? await URLSession.shared.download(for: request),
-            let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-            http.expectedContentLength <= largestDownload
-        else { return nil }
-        let mime = (http.mimeType ?? "").lowercased()
-        guard !mime.contains("webm"), !mime.contains("mpegurl") else {
-            try? FileManager.default.removeItem(at: file)
-            return nil
-        }
-        let named = FileManager.default.temporaryDirectory
+        guard source.scheme == "https", let (head, response) = await fetch(source, span: 0...(DjWaveRanges.chunk - 1)) else { return nil }
+        let mime = (response.mimeType ?? "").lowercased()
+        guard !mime.contains("webm"), !mime.contains("mpegurl") else { return nil }
+        let total = response.statusCode == 206
+            ? DjWaveRanges.total(contentRange: response.value(forHTTPHeaderField: "Content-Range")) ?? DjWaveRanges.declaredLength(source)
+            : Int64(head.count)
+        guard let total, total > 0, total <= largestDownload, Int64(head.count) <= total else { return nil }
+        let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("dj-wave-" + UUID().uuidString)
             .appendingPathExtension(mime.hasPrefix("audio/") ? "m4a" : "mp4")
-        do {
-            try FileManager.default.moveItem(at: file, to: named)
-        } catch {
+        guard FileManager.default.createFile(atPath: file.path, contents: head), let handle = try? FileHandle(forWritingTo: file) else { return nil }
+        let complete = await fill(handle, from: source, spans: DjWaveRanges.spans(total: total, from: Int64(head.count)))
+        try? handle.close()
+        guard complete else {
             try? FileManager.default.removeItem(at: file)
             return nil
         }
-        return named
+        return file
+    }
+
+    private static func fill(_ handle: FileHandle, from source: URL, spans: [ClosedRange<Int64>]) async -> Bool {
+        await withTaskGroup(of: (ClosedRange<Int64>, Data?).self) { group in
+            var waiting = spans.makeIterator()
+            for _ in 0..<parallel {
+                guard let span = waiting.next() else { break }
+                group.addTask { (span, await fetch(source, span: span)?.0) }
+            }
+            while let (span, data) = await group.next() {
+                guard let data, data.count == span.count, !Task.isCancelled,
+                    (try? handle.seek(toOffset: UInt64(span.lowerBound))) != nil, (try? handle.write(contentsOf: data)) != nil
+                else {
+                    group.cancelAll()
+                    return false
+                }
+                if let next = waiting.next() { group.addTask { (next, await fetch(source, span: next)?.0) } }
+            }
+            return true
+        }
+    }
+
+    private static func fetch(_ source: URL, span: ClosedRange<Int64>) async -> (Data, HTTPURLResponse)? {
+        var request = URLRequest(url: source)
+        request.timeoutInterval = 30
+        request.allowsConstrainedNetworkAccess = false
+        request.setValue(DjWaveRanges.header(span), forHTTPHeaderField: "Range")
+        request.setValue("https://www.youtube-nocookie.com/", forHTTPHeaderField: "Referer")
+        request.setValue("https://www.youtube-nocookie.com", forHTTPHeaderField: "Origin")
+        for attempt in 0..<3 {
+            guard !Task.isCancelled else { return nil }
+            if let (data, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse {
+                if (200...299).contains(http.statusCode) { return (data, http) }
+                if (400...499).contains(http.statusCode) { return nil }
+            }
+            try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+        }
+        return nil
     }
 
     private static func decode(_ file: URL) async -> [DjWaveBar]? {
@@ -76,7 +110,8 @@ enum DjWaveSource {
         guard reader.canAdd(output) else { return nil }
         reader.add(output)
         guard reader.startReading() else { return nil }
-        var accumulator = DjWaveAccumulator(sampleRate: sampleRate, totalSamples: Int(duration * sampleRate))
+        let count = DjWaveAccumulator.bars(seconds: duration)
+        var accumulator = DjWaveAccumulator(sampleRate: sampleRate, totalSamples: Int(duration * sampleRate), bars: count)
         var samples: [Float] = []
         while let buffer = output.copyNextSampleBuffer() {
             if Task.isCancelled {
@@ -95,6 +130,6 @@ enum DjWaveSource {
             accumulator.add(samples)
         }
         guard reader.status == .completed else { return nil }
-        return accumulator.finish()
+        return accumulator.finish(bars: count)
     }
 }
