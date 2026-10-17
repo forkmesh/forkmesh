@@ -132,6 +132,13 @@ destination, in sections, with counts and activity:
   Both read the same wall clock, so they stay in step across separate
   `TimelineView`s. The operator asked for the accent pills and the synced
   pulse on 2026-10-15.
+- The current repository's section counts (`ShellCounts.repoCount`) load
+  from the shell, not only from Home, so a Pull requests icon pinned to the
+  bottom bar shows its open count on any page. The Pull requests page writes
+  its own open count back once its list loads (`RepoPullsTab`), and Home,
+  the bar and the page's Open chip all count a pull as open unless it is
+  closed or merged (`PullStatusFilter.open`). The operator asked for the
+  count on the mobile Pull requests icon on 2026-10-16.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
 - **Update dot.** A plugin tile whose Market package changed version since
   the user last opened it shows a small accent dot at the icon's bottom right
