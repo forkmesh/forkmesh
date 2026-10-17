@@ -283,6 +283,7 @@ public final class BugReportInboxModel {
             await fetch(offset: 0)
             return
         }
+        if inbox.cancelled { return }
         loaded = true
         if !inbox.ok {
             problem = inbox.message

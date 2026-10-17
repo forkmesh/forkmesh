@@ -36,7 +36,7 @@ struct BugReportInboxView: View {
                 .padding(.horizontal, FmSpace.x4)
                 .padding(.vertical, FmSpace.x3)
             }
-            .refreshable { await model.reload() }
+            .refreshable { await Task { await model.reload() }.value }
         }
         .task { if !model.loaded { await model.reload() } }
         .quickLookPreview($preview)

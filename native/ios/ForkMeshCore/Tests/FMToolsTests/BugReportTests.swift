@@ -246,6 +246,23 @@ final class BugReportTests: XCTestCase {
     }
 
     @MainActor
+    func testACancelledLoadShowsNoErrorAndLoadsAgain() async {
+        var cancel = true
+        let model = BugReportInboxModel(load: { _, _ in
+            if cancel { return .cancelledLoad }
+            return BugReportInbox(ok: true, reports: [BugReportInboxItem(json: ["id": "a"])])
+        })
+        await model.reload()
+        XCTAssertFalse(model.loaded)
+        XCTAssertEqual(model.problem, "")
+        XCTAssertFalse(model.loading)
+        cancel = false
+        await model.reload()
+        XCTAssertTrue(model.loaded)
+        XCTAssertEqual(model.reports.map(\.id), ["a"])
+    }
+
+    @MainActor
     func testTriageMovesAReportOutOfAFilteredQueue() async {
         var changes: [(String, String)] = []
         let model = BugReportInboxModel(
