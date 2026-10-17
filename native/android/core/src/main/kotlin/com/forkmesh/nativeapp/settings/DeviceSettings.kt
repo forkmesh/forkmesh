@@ -5,6 +5,7 @@ import com.forkmesh.nativeapp.api.PrefStore
 object DeviceSettings {
     const val HAPTICS_KEY = "device/haptics"
     const val SOUNDS_KEY = "device/sounds"
+    const val HOME_HIDES_BAR_ICONS_KEY = "home/hideBarIcons"
     const val LEGACY_SOUNDS_KEY = "sounds.enabled"
     const val DICTATION_LOCALE_KEY = "voice/dictationLocale"
     const val LOCAL_AUTHOR_NAME_KEY = "repos/authorName"
@@ -15,6 +16,10 @@ object DeviceSettings {
     fun hapticsEnabled(prefs: PrefStore): Boolean = prefs.getBool(HAPTICS_KEY) ?: true
 
     fun setHapticsEnabled(prefs: PrefStore, value: Boolean) = prefs.putBool(HAPTICS_KEY, value)
+
+    fun homeHidesBarIcons(prefs: PrefStore): Boolean = prefs.getBool(HOME_HIDES_BAR_ICONS_KEY) ?: true
+
+    fun setHomeHidesBarIcons(prefs: PrefStore, value: Boolean) = prefs.putBool(HOME_HIDES_BAR_ICONS_KEY, value)
 
     fun soundsEnabled(prefs: PrefStore): Boolean = prefs.getBool(SOUNDS_KEY) ?: true
 
