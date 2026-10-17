@@ -19,16 +19,24 @@ banned from every site the cores serve. See
 
 ## Classification
 
-`probe_ban.classify(path)` percent-decodes and lower-cases the path and checks
-each segment; the path takes the heaviest class any segment earns.
+`probe_ban.classify(path)` percent-decodes the path (twice when it was
+double-encoded, as in `status%252ephp`), lower-cases it, checks the whole path
+against product signatures and then each segment; the path takes the heaviest
+class it earns.
 
 | Class | Weight | Examples |
 | --- | --- | --- |
-| `secret` | 3 | `.env*`, `.git`, `.svn`, `.aws`, `.ssh`, `.npmrc`, `.htpasswd`, `id_rsa`, `wp-config.php*`, credential/key files, `*.pem`/`*.key`, AI-agent configs |
-| `script` | 2 | `.php*`, `.asp(x)`, `.jsp`, `.cgi`, `.cfm`, `phpinfo`, `cgi-bin`, `..` traversal |
-| `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer`, `actuator`, `solr`, `server-status` |
-| `backup` | 2 | last segment ending `.sql`, `.bak`, `.old`, `.swp`, `~`, `.zip`, `.tar.gz`, `.db`, `.log` |
-| `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `web.config`, other dot-segments |
+| `secret` | 3 | `.env*`, `.git`, `.svn`, `.aws`, `.ssh`, `.npmrc`, `.htpasswd`, `id_rsa`, `wp-config.php*`, credential/key files (`*-key.txt`, `*_token.txt`, `creds.json`, `<provider>.json` for mail, payment, auth, database and AI providers), `*.pem`/`*.key`, AI-agent configs; a last segment named like a credential variable (`MAILGUN_API_KEY`, `MAIL_PASSWORD`, `aws_keys`, `*-credentials`, `service-accounts`); cloud metadata (`/latest/meta-data`, `/computeMetadata/v1`, `/metadata/identity`), Vault `/v1/sys/`, Rails `config/{environments,initializers}/*.rb`, Magento `app/etc/local.xml` |
+| `script` | 2 | `.php*`, `.asp(x)`, `.jsp`, `.cgi`, `.cfm`, `.rsp`, `phpinfo*`, `cgi-bin`, `/api/<x>.php`, `..` traversal (also double-encoded), invalid UTF-8 (`%c0`), Windows drive paths |
+| `cms` | 2 | `wp-*`, `xmlrpc`, `phpmyadmin`, `adminer*`, `actuator` (also under `/api/`), `solr`, `server-status`; first-segment products (`jenkins`, `grafana`, `kibana`, `rabbitmq`, `airflow`, `jupyter`, `administrator`, debug toolbars, `fpm-status`); infrastructure APIs: pprof, Consul `/v1/{agent,catalog,status,health}/`, etcd `/v3/kv/`, Docker `/v1.NN/`, Elasticsearch `/_cat`, `/_search`, ..., Sentry `/api/0/`, GitLab `/api/v4/ci/`, `/rails/` |
+| `backup` | 2 | last segment ending `.sql`, `.bak`, `.old`, `.swp`/`.swn`, `~`, `.zip`, `.tar.gz`, `.db`, `.log`, `.log.N`; `db`/`database`/`dump`/`backup`/`users` `.csv`/`.json`/`.xml`; anything under `/var/log/` |
+| `config` | 1 | `.yml`, `.ini`, `.conf`, `.toml`, `config*`, `appsettings*`, `Dockerfile`, `web.config`, build and dependency files (`go.sum`, `requirements.txt`, `Makefile`, `pom.xml`, `manage.py`, ...), `node_modules`, `venv`, API-doc discovery (`swagger*`, `api-docs`, `openapi.json`, `graphiql`), other dot-segments |
+
+Product names count only as the first segment and credential-variable names
+only as the last, so a marketplace package or repository called `jenkins` or
+`aws-credentials` is never a probe. Repository routes win over signatures
+(`/rails/rails/blob/...` is a repository). Generic words (`/admin`, `/mail`,
+`/redis`, `/secrets`) stay unclassified.
 
 Never classified: `/.well-known/…`, `/docs/…`, `/_host/…`, the redacted
 private-repository path, repository routes (`blob`, `tree`, `raw`, ...),
@@ -42,8 +50,17 @@ deep or repository `/api/…` paths, and ordinary asset extensions.
   `blind_index("probe-visitor:" + address)`.
 - Each **distinct** probe path adds its weight within a one-hour window;
   repeats add nothing.
-- At **6 points** the visitor is banned, which needs at least two kinds of
-  evidence, since one address can be a shared NAT or VPN exit.
+- At **4 points** the visitor is banned. The heaviest path weighs 3, so a
+  ban always needs at least two distinct probe paths, since one address can be
+  a shared NAT or VPN exit.
+- The threshold was 6 until 2026-10-16. That week production had 39 bans but
+  32 visitors left below 6, most of them two-path WordPress scans
+  (`//xmlrpc.php` + `//wordpress/` = 4) and paired `.php` probes. A
+  visitor's own browser never scores (see Safety rules), so two direct probe
+  paths in an hour are not ordinary traffic. The same review found about 340
+  scanner paths (credential-variable names, cloud metadata, pprof, Consul,
+  Vault, Elasticsearch, Jenkins, double-encoded files) that matched no class;
+  the table above now covers them.
 - A ban lasts a day, or a week for a repeat within 30 days. It writes
   `probe_bans` and a `request_block_rules` row
   `auto-probe-<first 32 hex of the blind index>` (`ip` or `cidr`, priority 0),

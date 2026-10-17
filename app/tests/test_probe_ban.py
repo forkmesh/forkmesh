@@ -71,6 +71,54 @@ SCANNER_PATHS = {
     "/runtime-config.js": "config",
     "/AGENTS.md": "config",
     "/env": "config",
+    "/MAILGUN_API_KEY": "secret",
+    "/MAIL_PASSWORD": "secret",
+    "/ses-smtp-credentials": "secret",
+    "/aws_keys": "secret",
+    "/service-accounts": "secret",
+    "/openai-key%2etxt": "secret",
+    "/github_token.txt": "secret",
+    "/creds%2ejson": "secret",
+    "/aws-ses%2ejson": "secret",
+    "/planetscale.json": "secret",
+    "/latest/meta-data/iam/security-credentials/": "secret",
+    "/computeMetadata/v1/instance/service-accounts/default/token": "secret",
+    "/metadata/identity/oauth2/token": "secret",
+    "/v1/sys/seal-status": "secret",
+    "/config/initializers/stripe%2erb": "secret",
+    "/app/etc/local%2exml": "secret",
+    "/status%252ephp": "script",
+    "/config%252ephp%252ebak": "backup",
+    "/%252e%252e/": "script",
+    "/%c0": "script",
+    "/C:/Windows/System32/drivers/etc/hosts": "script",
+    "/api/index.php/v1/config/application": "script",
+    "/phpinfo%2ehtml": "script",
+    "/api/actuator/health/kafka": "cms",
+    "/debug/pprof/heap": "cms",
+    "/v1/catalog/services": "cms",
+    "/v3/kv/range": "cms",
+    "/v1.40/containers/json": "cms",
+    "/_cat/": "cms",
+    "/_search": "cms",
+    "/grafana/api/datasources": "cms",
+    "/jenkins/api/json": "cms",
+    "/scriptText": "cms",
+    "/api/0/organizations/": "cms",
+    "/rails/info/properties": "cms",
+    "/_debugbar/": "cms",
+    "/administrator/": "cms",
+    "/functionRouter": "cms",
+    "/storage/logs/laravel%2elog%2e1": "backup",
+    "/var/log/mail%2eerr": "backup",
+    "/package%2ejson%2eswn": "backup",
+    "/dump%2ecsv": "backup",
+    "/go.sum": "config",
+    "/requirements.txt": "config",
+    "/manage%2epy": "config",
+    "/node_modules/": "config",
+    "/swagger-ui%2ehtml": "config",
+    "/v2/api-docs": "config",
 }
 
 OUR_404S = (
@@ -85,7 +133,15 @@ OUR_404S = (
     "/api/v1/timelines/public", "/api/mail/t/o/[id].gif",
     "/docs/ssh-gateway-config.schema.json/", "/.well-known/security.txt",
     "/private-or-unpublished-repository/[api:blob]", "/blog/some-post",
-    "/@alice", "/alice", "/security", "/", "", "no-slash")
+    "/@alice", "/alice", "/security", "/", "", "no-slash",
+    "/market/previews/packages/jenkins/preview/market.png",
+    "/market/previews/packages/aws-credentials/preview/market.png",
+    "/market/previews/packages/sentry/preview/market.png",
+    "/rails/rails/blob/main/config/initializers/stripe.rb",
+    "/grafana/api/tree/main/README.md", "/api/v3/rate_limit",
+    "/api/v1/instance", "/api/chat/direct-messages/[opaque]",
+    "/api/market/reviews/forkmesh/diagnostics", "/blog/api-keys-explained",
+    "/assets/fonts/Lato-Bold.ttf", "/index.js.map", "/mail", "/admin")
 
 
 class ProbeHarness(Harness):
@@ -187,12 +243,21 @@ def test_two_secret_probes_ban_the_visitor_everywhere():
 def test_mixed_families_add_up_and_one_stray_404_does_not():
     h = ProbeHarness()
     assert h.scan("/config.json") == "scored"
-    assert h.scan("/wp-login.php") == "scored"
     assert h.scan("/favicon.ico") == ""
-    assert h.scan("/backup.zip") == "scored"
-    assert h.visitor()["score"] == 5
-    assert h.scan("/phpinfo") == "banned"
-    assert h.bans()[0]["kinds"] == "backup,script,config"
+    assert h.scan("/Dockerfile") == "scored"
+    assert h.scan("/composer.lock") == "scored"
+    assert h.visitor()["score"] == 3
+    assert h.scan("/backup.zip") == "banned"
+    assert h.bans()[0]["kinds"] == "backup,config"
+
+
+def test_one_probe_path_never_bans_and_a_wordpress_pair_does():
+    h = ProbeHarness()
+    assert h.scan("/.env") == "scored"
+    assert h.scan("//xmlrpc.php", {"ip": OTHER}) == "scored"
+    assert h.rules() == []
+    assert h.scan("//wordpress/", {"ip": OTHER}) == "banned"
+    assert [b["kinds"] for b in h.bans()] == ["cms,script"]
 
 
 def test_the_score_window_is_one_hour():
