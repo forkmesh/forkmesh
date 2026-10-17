@@ -150,10 +150,13 @@ public struct DjJam: Equatable, Sendable, Identifiable {
     public var members: [DjJamMember]
     public var queue: [DjQueueItem]
     public var decks: [DjDeckSide: DjJamDeck]
+    public var presence: [DjJamPresence]
+    public var reactions: [DjJamReaction]
 
     public init(
         id: String, title: String = "", owner: String = "", me: String = "", myStatus: String = "",
-        now: Int64 = 0, members: [DjJamMember] = [], queue: [DjQueueItem] = [], decks: [DjDeckSide: DjJamDeck] = [:]
+        now: Int64 = 0, members: [DjJamMember] = [], queue: [DjQueueItem] = [], decks: [DjDeckSide: DjJamDeck] = [:],
+        presence: [DjJamPresence] = [], reactions: [DjJamReaction] = []
     ) {
         self.id = id
         self.title = title
@@ -164,6 +167,29 @@ public struct DjJam: Equatable, Sendable, Identifiable {
         self.members = members
         self.queue = queue
         self.decks = decks
+        self.presence = presence
+        self.reactions = reactions
+    }
+
+    public static let awayAfter: Int64 = 12_000
+
+    public func presence(of name: String) -> DjJamPresence? { presence.first { $0.name == name } }
+
+    public func status(of member: DjJamMember) -> DjPersonStatus { Self.status(of: member, seen: presence(of: member.name)) }
+
+    public static func status(of member: DjJamMember, seen: DjJamPresence?) -> DjPersonStatus {
+        guard member.joined else { return .invited }
+        guard let seen, seen.ago <= awayAfter else { return .away }
+        if seen.state == DjPresenceState.studio.rawValue { return .studio }
+        return seen.playing ? .listening : .idle
+    }
+
+    public var shared: DjJam {
+        var copy = self
+        copy.now = 0
+        copy.presence = []
+        copy.reactions = []
+        return copy
     }
 
     public var isOwner: Bool { myStatus == "owner" }
@@ -192,7 +218,9 @@ public struct DjJam: Equatable, Sendable, Identifiable {
                 return DjJamMember(name: name, status: row["status"]?.stringValue ?? "")
             },
             queue: (jam["queue"]?.arrayValue ?? []).compactMap { $0.objectValue.flatMap(DjQueueItem.init) },
-            decks: decks)
+            decks: decks,
+            presence: (jam["presence"]?.arrayValue ?? []).compactMap { $0.objectValue.flatMap(DjJamPresence.init) },
+            reactions: (jam["reactions"]?.arrayValue ?? []).compactMap { $0.objectValue.flatMap(DjJamReaction.init) })
     }
 
     public static func userNames(_ object: JSONObject, excluding: Set<String> = []) -> [String] {

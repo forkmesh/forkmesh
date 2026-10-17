@@ -44,6 +44,7 @@ struct VideoMixDjStudioScreen: View {
 }
 
 struct DjStudioView: View {
+    static let space = "dj-studio"
     @Bindable var model: DjStudioModel
 
     var body: some View {
@@ -55,8 +56,11 @@ struct DjStudioView: View {
             }
         }
         .background(DjTheme.backdrop.ignoresSafeArea())
+        .overlay { DjReactionLayer(model: model) }
+        .overlay(alignment: .bottom) { DjReactionDock(model: model) }
+        .overlay { DjQueueGhost(model: model) }
         .overlay(alignment: .top) { DjNotice(model: model) }
-        .animation(.easeOut(duration: 0.2), value: model.notice)
+        .coordinateSpace(.named(Self.space))
         .sheet(item: $model.sheet, onDismiss: {
             if model.resettingAfterSheet {
                 model.resettingAfterSheet = false
@@ -93,9 +97,10 @@ struct DjLandscape: View {
         let footer = 34 * u
         let middle = max(120, size.height - top - bottom - footer)
         let strip = 58 * u
+        let level = 30 * u
         let narrowest = 96 * u
-        let d = max(100, min(middle - 10 * u, (size.width - 2 * strip - narrowest - 40 * u) / 2))
-        let centre = max(narrowest, min(230 * u, size.width - 2 * strip - 2 * d - 40 * u))
+        let d = max(100, min(middle - 10 * u, (size.width - 2 * strip - 2 * level - narrowest - 40 * u) / 2))
+        let centre = max(narrowest, min(230 * u, size.width - 2 * strip - 2 * level - 2 * d - 40 * u))
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8 * u) {
                 DjBackButton(model: model, size: 34 * u)
@@ -124,12 +129,16 @@ struct DjLandscape: View {
             HStack(spacing: 0) {
                 DjPitchStrip(model: model, deck: model.a, u: u)
                     .frame(height: middle - 12 * u)
+                DjLevelFader(model: model, deck: model.a, u: u)
+                    .frame(width: level, height: middle - 12 * u)
                 Spacer(minLength: 4 * u)
                 DjPlatter(model: model, deck: model.a, d: d)
                 DjQueueView(model: model, u: u, vertical: true)
                     .frame(width: centre, height: middle - 8 * u)
                 DjPlatter(model: model, deck: model.b, d: d)
                 Spacer(minLength: 4 * u)
+                DjLevelFader(model: model, deck: model.b, u: u)
+                    .frame(width: level, height: middle - 12 * u)
                 DjPitchStrip(model: model, deck: model.b, u: u)
                     .frame(height: middle - 12 * u)
             }
@@ -168,16 +177,22 @@ struct DjPortrait: View {
         let u = min(1.6, max(0.74, min(size.width / 390, size.height / 780)))
         let header = 40 * u
         let wave = 24 * u
-        let mixer = 122 * u
+        let people = model.inJam ? 34 * u : 0
+        let mixer = 122 * u + people
         let footer = 42 * u
         let deckBody = max(110, (size.height - mixer - footer - 2 * (header + wave) - 32 * u) / 2)
-        let d = max(100, min(deckBody - 6 * u, size.width - 166 * u))
+        let d = max(100, min(deckBody - 6 * u, size.width - 198 * u))
         VStack(spacing: 0) {
             deck(model.a, deckBody: deckBody, d: d, header: header, wave: wave, u: u)
             VStack(spacing: 4 * u) {
                 DjQueueView(model: model, u: u, vertical: false)
                     .frame(height: 58 * u)
                     .padding(.horizontal, 10 * u)
+                if people > 0 {
+                    DjPeopleStrip(model: model, size: 22 * u)
+                        .frame(height: people - 4 * u)
+                        .padding(.horizontal, 10 * u)
+                }
                 DjCrossfader(model: model, u: u)
                     .frame(height: 46 * u)
                     .padding(.horizontal, 24 * u)
@@ -220,6 +235,8 @@ struct DjPortrait: View {
                 Spacer(minLength: 0)
                 DjPlatter(model: model, deck: deck, d: d)
                 Spacer(minLength: 0)
+                DjLevelFader(model: model, deck: deck, u: u * 0.92)
+                    .frame(width: 26 * u, height: deckBody - 4 * u)
                 DjPitchStrip(model: model, deck: deck, u: u * 0.92)
                     .frame(height: deckBody - 4 * u)
             }
@@ -240,6 +257,7 @@ struct DjUtilityRow: View {
             DjPadsButton(model: model, size: 26 * u)
             DjAutomixTab(model: model, u: u, inset: 16)
                 .fixedSize()
+            DjReactButton(model: model, size: 26 * u)
             DjResetButton(model: model, size: 28 * u)
         }
         .frame(maxWidth: .infinity)
@@ -255,5 +273,20 @@ struct DjPadsButton: View {
             Image(systemName: "square.grid.3x3.fill")
         }
         .accessibilityLabel("Sampler pads")
+    }
+}
+
+struct DjReactionDock: View {
+    let model: DjStudioModel
+
+    var body: some View {
+        ZStack {
+            if model.reacting {
+                DjReactionBar(model: model)
+                    .padding(.bottom, 56)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.reacting)
     }
 }
