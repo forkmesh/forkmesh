@@ -2993,7 +2993,14 @@
             .notes-pop-sec { padding: .85rem 1rem; }
             .notes-pop-sec + .notes-pop-sec { border-top: 1px solid var(--nt-soft); }
             .notes-pop h2 { margin: 0 0 .6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
-            .notes-invite { display: flex; gap: .4rem; }
+            .notes-invite { position: relative; display: flex; gap: .4rem; }
+            .notes-suggest { position: absolute; z-index: 2; top: calc(100% + 4px); left: 0; right: 0; max-height: 15rem; overflow-y: auto; padding: 4px; border: 1px solid var(--nt-border); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
+            .notes-suggest button { display: grid; width: 100%; height: var(--dashboard-menu-row-height); grid-template-columns: 1.25rem minmax(0, 1fr) auto; align-items: center; gap: 8px; border-radius: var(--dashboard-control-radius); padding: 0 8px; text-align: left; font-size: var(--dashboard-control-font); color: rgb(var(--dashboard-popover-foreground-rgb)); }
+            .notes-suggest button[aria-selected="true"], .notes-suggest button:hover { background: var(--nt-selected); }
+            .notes-suggest .notes-avatar { width: 1.25rem; height: 1.25rem; font-size: .55rem; }
+            .notes-suggest .notes-person-name { font-size: var(--dashboard-control-font); }
+            .notes-suggest-empty { padding: .4rem .5rem; font-size: .72rem; color: var(--nt-muted); }
+            .notes-access { margin-top: .85rem; border-top: 1px solid var(--nt-soft); padding-top: .75rem; }
             .notes-field { display: flex; min-width: 0; flex: 1; align-items: center; border: 1px solid var(--nt-border); border-radius: .375rem; background: rgb(var(--dashboard-background-rgb)); padding-right: .2rem; }
             .notes-field:focus-within { border-color: var(--nt-primary); box-shadow: inset 0 0 0 1px var(--nt-primary); }
             .notes-field input { min-width: 0; flex: 1; border: 0; background: transparent; padding: .3rem .55rem; font-size: .8rem; outline: none; }
@@ -3166,12 +3173,21 @@
                     <form data-note-share-form class="notes-invite">
                       <div class="notes-field">
                         <select data-note-share-type aria-label="Share with"><option value="user">User</option><option value="organization">Org</option></select>
-                        <input data-note-share-name autocomplete="off" placeholder="Username or organization" aria-label="Name" />
+                        <input data-note-share-name autocomplete="off" placeholder="Username or organization" aria-label="Name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="note-share-suggestions" />
                         <select data-note-share-role aria-label="Role"><option value="editor">Can edit</option><option value="viewer">Can view</option></select>
                       </div>
                       <button data-note-share-add type="submit" class="notes-btn">Invite</button>
+                      <div data-note-share-suggestions id="note-share-suggestions" class="notes-suggest" role="listbox" aria-label="Matching people and organizations" hidden></div>
                     </form>
                     <div data-note-shares class="notes-people"></div>
+                    <div data-note-access-row class="notes-access" hidden>
+                      <div class="notes-person-name">Link for people with access</div>
+                      <div class="notes-person-hint">Only people this note is shared with can open it.</div>
+                      <div class="notes-copy">
+                        <a data-note-access-link></a>
+                        <button data-note-copy-access-link type="button">Copy link</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="notes-pop-sec">
                     <div class="notes-publish">
@@ -3190,6 +3206,7 @@
                 <div data-note-menu class="notes-pop notes-menu" role="menu" hidden>
                   <button data-note-versions-open type="button" role="menuitem"><i data-lucide="history"></i>Version history</button>
                   <button data-note-link-start type="button" role="menuitem"><i data-lucide="link"></i>Link issue or PR</button>
+                  <button data-note-menu-copy-link type="button" role="menuitem"><i data-lucide="copy"></i>Copy link</button>
                   <a data-note-menu-public target="_blank" rel="noopener" role="menuitem" hidden><i data-lucide="external-link"></i>Open published page</a>
                   <button data-note-export type="button" role="menuitem"><i data-lucide="download"></i>Download Markdown</button>
                   <hr data-note-delete-sep />
