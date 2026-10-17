@@ -19,6 +19,18 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
+  three surface families (Slate, the ForkMesh default, Zinc and Stone), a
+  dark/light preview switch and Shuffle, over a live mock of a repository
+  page drawn with the same tokens `instance_theme.py` accepts. "Customize
+  every colour" edits all 26 tokens for the previewed mode. Untouched, the
+  page sends `theme: ""` so the instance keeps the ForkMesh colours; a preset
+  loaded from a settings file is sent by name until edited; anything else is
+  sent as the full `{"dark": {...}, "light": {...}}` object (about 1.2 KB).
+  The browser only builds the colours: the launch API cleans them with
+  `instance_theme.clean`, the installer checks their shape, and
+  `instance-bootstrap` writes the `instance_settings` row on the server, so
+  the choice lives only in the instance's own database.
 - Secret fields are cleared after sending and on `pagehide`; nothing is kept
   in browser storage. The page polls the launch every second, keeps the
   launch id in the URL, and on failure refills non-secret fields from the
@@ -111,8 +123,10 @@ app does not redirect Git clients to its own origin.
 - **Theme** (`app/src/instance_theme.py`): one `instance_settings` row
   (`k = 'theme'`) holding `{"dark": {...}, "light": {...}}` of known token
   names to `#rrggbb` colours, max 8 KB, no raw CSS. Served as
-  `/instance-theme.css`; set at setup from a preset or with
-  `PUT /api/instance/theme` by an admin.
+  `/instance-theme.css`; set at setup from a preset name or a full colour
+  object (the start page's picker), or later with `PUT /api/instance/theme`
+  by an admin. The installer passes an object to `instance-bootstrap` as
+  JSON and refuses one with other modes, odd token names or non-hex values.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
   pages and others) are off on an instance unless listed in

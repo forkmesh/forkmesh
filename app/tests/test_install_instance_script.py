@@ -441,3 +441,32 @@ def test_the_bootstrap_settings_carry_the_owners_from_stdin():
     assert spec["owners"] == owners
     assert spec["adminPassword"] == ADMIN_PASSWORD + "\nwith a line break"
     assert spec["ownerName"] == "acme"
+
+
+def test_a_theme_is_a_preset_name_or_a_set_of_colours(tmp_path):
+    result = parse(tmp_path, settings(theme="crimson"))
+    assert result.returncode == 0, result.stdout
+    assert values(result.stdout)["CFG_theme"] == "crimson"
+    colours = {"dark": {"primary": "#F97316", "link": "#fb923c"}, "light": {"primary": "#ea580c"}}
+    result = parse(tmp_path, settings(theme=colours), stdin=True)
+    assert result.returncode == 0, result.stdout
+    assert json.loads(values(result.stdout)["CFG_theme"]) == colours
+    for bad in ({"sepia": {"primary": "#000000"}}, {"dark": {"primary": "red"}},
+                {"dark": {"Primary;": "#000000"}}, {"dark": ["#000000"]},
+                {"dark": {"primary": "#000000\"; rm"}}, "Not A Preset"):
+        result = parse(tmp_path, settings(theme=bad))
+        assert result.returncode == 2, bad
+        assert "Setting theme must" in result.stdout
+
+
+def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
+    bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
+    code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
+    stdin = "[]\n" + ADMIN_PASSWORD
+    colours = {"dark": {"primary": "#f97316"}}
+    for theme, expected in ((json.dumps(colours), colours), ("crimson", "crimson"), ("", "")):
+        result = subprocess.run(
+            ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, theme],
+            input=stdin, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["theme"] == expected

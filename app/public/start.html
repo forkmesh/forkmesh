@@ -131,13 +131,6 @@
       .field-row.owner-row { grid-template-columns: 1fr 1.4fr 1fr auto; align-items: center; margin-bottom: 8px; }
       @media (max-width: 560px) { .field-row, .field-row.three, .field-row.owner-row { grid-template-columns: 1fr; } }
       .project-input { font-size: 18px !important; font-weight: 700; padding: 12px 14px !important; }
-      .preview {
-        display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        border: 1px dashed var(--field-border); border-radius: 12px;
-        padding: 10px 14px; font-size: 13px; color: var(--ink-soft);
-      }
-      .preview strong { color: var(--ink-strong); font-size: 15px; }
-      .preview small { color: var(--ink-faint); }
       .segmented { display: inline-flex; border: 1px solid var(--field-border); border-radius: 10px; padding: 3px; gap: 3px; }
       .segmented label {
         display: inline-flex; align-items: center; margin: 0; cursor: pointer;
@@ -240,6 +233,113 @@
         color: var(--button-foreground); background: var(--button-fill); border: 1px solid var(--button-border);
       }
       .powered { text-align: center; color: var(--ink-faint); font-size: 12px; margin-top: 18px; }
+      .theme-bar {
+        display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; padding: 8px;
+        border: 1px solid var(--field-border); border-radius: 16px; background: var(--panel-bg); margin-bottom: 10px;
+      }
+      .theme-group {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px;
+        border-radius: 12px; background: var(--field-bg);
+      }
+      .theme-chip {
+        display: inline-grid; place-items: center; min-width: 38px; height: 38px; padding: 0 8px; gap: 6px;
+        border: 1px solid transparent; border-radius: 10px; background: none; color: var(--ink-soft);
+        font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer;
+      }
+      .theme-chip:hover { color: var(--ink-strong); background: var(--track); }
+      .theme-chip[aria-checked="true"], .theme-chip[aria-pressed="true"] {
+        color: var(--ink-strong); background: var(--track); border-color: var(--field-border);
+      }
+      .theme-chip:focus-visible, .theme-shuffle:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+      .theme-chip.neutral { grid-auto-flow: column; }
+      .swatch-dot {
+        width: 22px; height: 22px; border-radius: 999px; display: block;
+        background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--swatch) 55%, #ffffff), var(--swatch) 72%);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+      }
+      .swatch-dot.split { background: linear-gradient(135deg, var(--swatch-a) 50%, var(--swatch-b) 50%); width: 16px; height: 16px; }
+      .swatch-dot.rainbow { background: conic-gradient(#ef4444, #f59e0b, #22c55e, #14b8a6, #3b82f6, #8b5cf6, #ec4899, #ef4444); }
+      .theme-custom { position: relative; }
+      .theme-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
+      .theme-shuffle {
+        margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; min-height: 46px;
+        border: 1px solid var(--button-border); border-radius: 12px; cursor: pointer;
+        color: var(--button-foreground); background: var(--button-fill); box-shadow: var(--button-shadow);
+        font: inherit; font-size: 14px; font-weight: 700;
+      }
+      .theme-shuffle:hover { background: var(--button-fill-hover); }
+      .theme-preview {
+        --tp-radius: 8px;
+        border: 1px solid var(--field-border); border-radius: 14px; overflow: hidden;
+        background: var(--t-background); color: var(--t-foreground); font-size: 12px; line-height: 1.4;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .theme-preview * { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
+      .tp-header {
+        display: flex; align-items: center; gap: 14px; padding: 9px 12px;
+        background: var(--t-header); border-bottom: 1px solid var(--t-border);
+      }
+      .tp-header .preview-name strong { color: var(--t-foreground); font-size: 13px; }
+      .tp-header .preview-name img { width: 20px; height: 20px; }
+      .tp-nav { display: flex; gap: 12px; color: var(--t-muted-foreground); }
+      .tp-search {
+        margin-left: auto; padding: 4px 10px; min-width: 120px; border-radius: 6px;
+        border: 1px solid var(--t-border); background: var(--t-canvas); color: var(--t-muted-foreground);
+      }
+      .tp-avatar { width: 22px; height: 22px; border-radius: 999px; background: var(--t-primary); flex: none; }
+      .tp-body { display: grid; grid-template-columns: 132px 1fr; min-height: 230px; }
+      .tp-side { background: var(--t-sidebar); border-right: 1px solid var(--t-border); padding: 10px 8px; display: grid; align-content: start; gap: 2px; }
+      .tp-side-item { padding: 5px 8px; border-radius: 6px; color: var(--t-muted-foreground); display: flex; justify-content: space-between; }
+      .tp-side-item.on { background: var(--t-secondary); color: var(--t-secondary-foreground); box-shadow: inset 2px 0 0 var(--t-primary); }
+      .tp-side-item em, .tp-tabs em {
+        font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 999px;
+        background: var(--t-muted); color: var(--t-muted-foreground);
+      }
+      .tp-main { padding: 12px 14px; background: var(--t-background); min-width: 0; }
+      .tp-title { display: flex; align-items: center; gap: 5px; font-size: 14px; color: var(--t-muted-foreground); }
+      .tp-link { color: var(--t-link); }
+      .tp-title strong.tp-link { font-weight: 700; }
+      .tp-pill { margin-left: 6px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--t-border); color: var(--t-muted-foreground); }
+      .tp-tabs { display: flex; gap: 14px; margin: 10px 0 12px; border-bottom: 1px solid var(--t-border); color: var(--t-muted-foreground); }
+      .tp-tabs span { padding: 0 2px 7px; display: inline-flex; gap: 5px; align-items: center; }
+      .tp-tabs span.on { color: var(--t-foreground); font-weight: 650; box-shadow: inset 0 -2px 0 var(--t-tab-underline); }
+      .tp-toolbar { display: flex; gap: 6px; margin-bottom: 10px; }
+      .tp-input {
+        flex: 1; min-width: 0; padding: 5px 9px; border-radius: 6px; background: var(--t-canvas);
+        border: 1px solid var(--t-ring); box-shadow: inset 0 0 0 1px var(--t-ring); color: var(--t-foreground);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .tp-btn {
+        padding: 5px 10px; border-radius: 6px; font-weight: 650; white-space: nowrap;
+        background: var(--t-secondary); color: var(--t-secondary-foreground); border: 1px solid var(--t-border);
+      }
+      .tp-btn.primary { background: var(--t-primary); color: var(--t-primary-foreground); border-color: transparent; }
+      .tp-card { border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-card); color: var(--t-card-foreground); }
+      .tp-row { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; padding: 8px 10px; }
+      .tp-row + .tp-row { border-top: 1px solid var(--t-border); }
+      .tp-row b { display: block; font-weight: 650; }
+      .tp-row small { color: var(--t-muted-foreground); font-size: 11px; }
+      .tp-dot { width: 10px; height: 10px; border-radius: 999px; border: 2px solid var(--t-open); }
+      .tp-label { font-size: 10.5px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--t-accent) 18%, transparent); color: var(--t-link); }
+      .tp-label.bad { background: color-mix(in srgb, var(--t-destructive) 18%, transparent); color: var(--t-destructive); }
+      .tp-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--t-muted-foreground); }
+      .tp-default-logo { width: 20px; height: 20px; }
+      .theme-more { margin-top: 10px; }
+      .theme-tokens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin-bottom: 10px; }
+      .field label.theme-token { display: grid; grid-template-columns: 28px 1fr 92px; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; font-weight: 500; color: var(--ink); text-transform: capitalize; }
+      .theme-token input[type="color"] {
+        width: 28px; height: 28px; padding: 0; border: 1px solid var(--field-border); border-radius: 8px; background: none; cursor: pointer;
+      }
+      .theme-token input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+      .theme-token input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+      .field .theme-token input[type="text"] { padding: 5px 8px; font-family: var(--mono); font-size: 12px; border-radius: 8px; }
+      .theme-group-title { grid-column: 1 / -1; margin: 6px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+      @media (max-width: 640px) {
+        .theme-shuffle { margin-left: 0; flex: 1; justify-content: center; }
+        .tp-body { grid-template-columns: 1fr; }
+        .tp-side, .tp-nav, .tp-search { display: none; }
+        .theme-tokens { grid-template-columns: 1fr; }
+      }
     </style>
     <script src="/genie-spider.js?v=${version}" defer></script>
   </head>
@@ -299,17 +399,64 @@
               </div>
               <p class="help">It replaces the ForkMesh logo in your instance's header, browser tab and emails. Without one, the ForkMesh logo stays.</p>
             </div>
-            <div class="field">
-              <label for="start-theme">Colour theme</label>
-              <select id="start-theme" name="theme">
-                <option value="">ForkMesh (green)</option>
-                <option value="crimson">Crimson (zinc and red)</option>
-              </select>
-              <p class="help">Colours for your instance's pages, in dark and light mode. Layout stays the same.</p>
-            </div>
-            <div class="preview" aria-live="polite">
-              <span class="preview-name"><img data-start-preview-logo alt="" hidden /><strong data-start-preview-name>Acme Code</strong> <small data-start-preview-host></small></span>
-              <small>Powered by ForkMesh</small>
+            <div class="field theme-field">
+              <span class="label" id="start-theme-label">Colour theme</span>
+              <div class="theme-bar" data-start-theme aria-labelledby="start-theme-label">
+                <div class="theme-group" role="radiogroup" aria-label="Accent colour" data-start-theme-accents></div>
+                <div class="theme-group" role="radiogroup" aria-label="Surfaces" data-start-theme-neutrals></div>
+                <div class="theme-group" role="group" aria-label="Preview mode">
+                  <button type="button" class="theme-chip icon" data-start-theme-mode="light" aria-pressed="false" title="Preview light mode">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+                  </button>
+                  <button type="button" class="theme-chip icon" data-start-theme-mode="dark" aria-pressed="true" title="Preview dark mode">
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></svg>
+                  </button>
+                </div>
+                <button type="button" class="theme-shuffle" data-start-theme-shuffle>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="11" height="11" rx="2.5" /><path d="M10 8V6.5A2.5 2.5 0 0 1 12.5 4h5A2.5 2.5 0 0 1 20 6.5v5a2.5 2.5 0 0 1-2.5 2.5H14" /><circle cx="6.5" cy="11.5" r=".6" fill="currentColor" /><circle cx="10.5" cy="15.5" r=".6" fill="currentColor" /><circle cx="16.5" cy="7.5" r=".6" fill="currentColor" /></svg>
+                  Shuffle
+                </button>
+              </div>
+              <div class="theme-preview" data-start-theme-preview data-mode="dark" aria-live="polite">
+                <div class="tp-header">
+                  <span class="preview-name"><img data-start-preview-logo alt="" hidden /><img class="tp-default-logo" data-start-theme-default-logo src="/assets/logo.svg" alt="" /><strong data-start-preview-name>Acme Code</strong></span>
+                  <span class="tp-nav"><span>Repositories</span><span>Issues</span><span>Pull requests</span></span>
+                  <span class="tp-search">Search or jump to…</span>
+                  <span class="tp-avatar" aria-hidden="true"></span>
+                </div>
+                <div class="tp-body">
+                  <div class="tp-side">
+                    <span class="tp-side-item on">Overview</span>
+                    <span class="tp-side-item">Code</span>
+                    <span class="tp-side-item">Issues <em>3</em></span>
+                    <span class="tp-side-item">Pull requests</span>
+                    <span class="tp-side-item">Settings</span>
+                  </div>
+                  <div class="tp-main">
+                    <div class="tp-title"><span class="tp-link" data-start-theme-owner>acme</span> / <strong class="tp-link">forkmesh</strong><span class="tp-pill">Public</span></div>
+                    <div class="tp-tabs"><span class="on">Code</span><span>Issues <em>3</em></span><span>Pull requests</span><span>Actions</span></div>
+                    <div class="tp-toolbar">
+                      <span class="tp-input">is:open label:bug</span>
+                      <span class="tp-btn">Labels</span>
+                      <span class="tp-btn primary">New issue</span>
+                    </div>
+                    <div class="tp-card">
+                      <div class="tp-row"><span class="tp-dot"></span><span><b>Sign in with a passkey</b><small>#12 opened 2 hours ago by ada</small></span><span class="tp-label">feature</span></div>
+                      <div class="tp-row"><span class="tp-dot"></span><span><b>Mirror pushes time out on large repos</b><small>#9 opened yesterday by grace</small></span><span class="tp-label bad">bug</span></div>
+                      <div class="tp-row"><span class="tp-dot"></span><span><b>Dark mode for the mail templates</b><small>#7 opened 3 days ago by linus</small></span></div>
+                    </div>
+                    <div class="tp-foot"><small data-start-preview-host></small><small>Powered by ForkMesh</small></div>
+                  </div>
+                </div>
+              </div>
+              <details class="more theme-more" data-start-theme-more>
+                <summary>Customize every colour</summary>
+                <p class="help">These change the <b data-start-theme-mode-name>dark</b> mode. Switch the preview with the sun and moon to edit the other one.</p>
+                <div class="theme-tokens" data-start-theme-tokens></div>
+                <button type="button" class="link-btn" data-start-theme-reset>Back to the ForkMesh colours</button>
+              </details>
+              <input type="hidden" name="theme" />
+              <p class="help" data-start-theme-note>Colours for your instance's pages, in dark and light mode. Layout stays the same, and admins can change them later.</p>
             </div>
           </section>
 

@@ -103,17 +103,30 @@ def test_the_form_takes_an_optional_logo():
     assert '"logo"' in SCRIPT.split("CONFIG_FIELDS = [", 1)[1].split("]", 1)[0]
 
 
-def test_anyone_can_pick_a_theme_preset_at_setup():
+def test_anyone_can_build_a_theme_with_a_live_preview_at_setup():
     import sys
     sys.path.insert(0, str(ROOT / "app" / "src"))
     import instance_theme
-    picker = PAGE.split('<select id="start-theme" name="theme">', 1)[1].split("</select>", 1)[0]
-    assert '<option value="">' in picker
+    assert '<input type="hidden" name="theme" />' in PAGE
+    for hook in ("data-start-theme-accents", "data-start-theme-neutrals", 'data-start-theme-mode="light"',
+                 'data-start-theme-mode="dark"', "data-start-theme-shuffle", "data-start-theme-preview",
+                 "data-start-theme-tokens", "data-start-theme-reset"):
+        assert hook in PAGE, hook
+    groups = SCRIPT.split("const THEME_GROUPS = [", 1)[1].split("\n  ];", 1)[0]
+    page_tokens = re.findall(r'"([a-z-]+)"', groups.split("[", 1)[1])
+    assert sorted(set(page_tokens)) == sorted(instance_theme.TOKENS)
+    presets = SCRIPT.split("const THEME_PRESETS = {", 1)[1].split("};", 1)[0]
     for name in instance_theme.PRESETS:
-        assert '<option value="%s">' % name in picker, name
-    assert "blt" not in PAGE.lower()
-    assert 'theme: value("theme"),' in SCRIPT
+        assert "%s:" % name in presets, name
+    preview = PAGE.split("data-start-theme-preview", 1)[1].split("data-start-theme-more", 1)[0]
+    used = set(re.findall(r"var\(--t-([a-z-]+)\)", PAGE))
+    assert used <= set(instance_theme.TOKENS)
+    assert {"background", "primary", "link", "border", "tab-underline", "open"} <= used
+    assert "data-start-preview-name" in preview and "data-start-preview-logo" in preview
+    assert 'theme: value("theme").startsWith("{") ? JSON.parse(value("theme")) : value("theme"),' in SCRIPT
+    assert 'if (key === "theme") {' in SCRIPT
     assert '"theme"' in SCRIPT.split("CONFIG_FIELDS = [", 1)[1].split("]", 1)[0]
+    assert "blt" not in PAGE.lower()
 
 
 def test_the_example_zip_holds_the_example_settings_and_a_logo():

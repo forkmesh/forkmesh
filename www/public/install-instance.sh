@@ -243,8 +243,19 @@ if logo and not update:
 plugins = [p for p in (c.get("plugins") or []) if isinstance(p, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,40}", p)]
 values["plugins"] = ",".join(plugins)
 theme = c.get("theme") or ""
-if not isinstance(theme, str) or (theme and not re.fullmatch(r"[a-z][a-z0-9-]{0,40}", theme)):
-    sys.exit("Setting theme must be the name of a theme preset.")
+if isinstance(theme, dict):
+    if not set(theme) <= {"dark", "light"} or not all(
+            isinstance(tokens, dict) and all(
+                isinstance(name, str) and re.fullmatch(r"[a-z][a-z-]{0,40}", name)
+                and isinstance(colour, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", colour)
+                for name, colour in tokens.items())
+            for tokens in theme.values()):
+        sys.exit("Setting theme must map dark and light to token names and #rrggbb colours.")
+    theme = json.dumps(theme, separators=(",", ":"), sort_keys=True)
+    if len(theme) > 8192:
+        sys.exit("Setting theme is larger than 8 KB.")
+elif not isinstance(theme, str) or (theme and not re.fullmatch(r"[a-z][a-z0-9-]{0,40}", theme)):
+    sys.exit("Setting theme must be the name of a theme preset or a set of colours.")
 values["theme"] = theme
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
@@ -1206,7 +1217,8 @@ print(json.dumps({
     "adminUsername": sys.argv[1], "adminEmail": sys.argv[2],
     "adminPassword": sys.stdin.read(), "ownerType": sys.argv[3],
     "ownerName": sys.argv[4], "projectName": sys.argv[5],
-    "nodePublicKey": sys.argv[6], "theme": sys.argv[7], "owners": owners}))
+    "nodePublicKey": sys.argv[6], "owners": owners,
+    "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7]}))
 ' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" \
       | host_cli instance-bootstrap 2>&1 | tail -n 1
   )" || true

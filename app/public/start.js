@@ -40,6 +40,7 @@
     $("[data-start-owner-org]").hidden = ownerType !== "org";
     $("[data-start-owner-others]").hidden = ownerType !== "org";
     const owner = ownerType === "org" ? field("ownerName").value.trim() : field("adminUsername").value.trim();
+    $("[data-start-theme-owner]").textContent = owner.toLowerCase() || "acme";
     const base = domain || (host ? `${host.replace(/[.:]/g, "-")}.sslip.io` : "your-domain");
     $("[data-start-repo-preview]").textContent = owner
       ? `Your repository: https://${base}/${owner.toLowerCase()}/forkmesh`
@@ -118,6 +119,7 @@
       if (value) image.src = value;
       else image.removeAttribute("src");
     }
+    $("[data-start-theme-default-logo]").hidden = Boolean(value);
     $("[data-start-logo-clear]").hidden = !value;
     $("[data-start-logo-name]").textContent = value ? label || "Logo loaded" : LOGO_HINT;
   };
@@ -156,6 +158,278 @@
     logoDrop.classList.remove("dragging");
     readLogo(event.dataTransfer.files[0]);
   });
+
+  const THEME_MODES = ["dark", "light"];
+  const THEME_GROUPS = [
+    ["Surfaces", ["background", "header", "sidebar", "card", "popover", "canvas", "subtle", "muted", "secondary"]],
+    ["Text", ["foreground", "card-foreground", "popover-foreground", "secondary-foreground", "muted-foreground"]],
+    ["Accent", ["primary", "primary-foreground", "accent", "accent-foreground", "ring", "link", "link-hover", "tab-underline"]],
+    ["Status and lines", ["border", "destructive", "open", "scrollbar"]],
+  ];
+  const THEME_TOKENS = THEME_GROUPS.flatMap(([, names]) => names);
+  const ACCENT_TOKENS = THEME_GROUPS[2][1];
+  const NEUTRAL_TOKENS = THEME_TOKENS.filter((name) => !ACCENT_TOKENS.includes(name));
+  const THEME_STATUS = {
+    dark: { destructive: "#f85149", open: "#3fb950" },
+    light: { destructive: "#dc2626", open: "#1a7f37" },
+  };
+  const NEUTRALS = {
+    slate: {
+      label: "Slate",
+      dark: { header: "#010409", sidebar: "#0c1117", background: "#010409", foreground: "#f0f6fc", card: "#0d1117", "card-foreground": "#f0f6fc", popover: "#161b22", "popover-foreground": "#f0f6fc", secondary: "#21262d", "secondary-foreground": "#c9d1d9", muted: "#161b22", "muted-foreground": "#9198a1", border: "#3d444d", canvas: "#0d1117", subtle: "#151b23", scrollbar: "#8b949e" },
+      light: { header: "#f6f8fa", sidebar: "#ffffff", background: "#ffffff", foreground: "#000000", card: "#ffffff", "card-foreground": "#000000", popover: "#ffffff", "popover-foreground": "#000000", secondary: "#ffffff", "secondary-foreground": "#1f2328", muted: "#ffffff", "muted-foreground": "#59636e", border: "#e2e8f0", canvas: "#ffffff", subtle: "#f6f8fa", scrollbar: "#475569" },
+    },
+    zinc: {
+      label: "Zinc",
+      dark: { header: "#09090b", sidebar: "#18181b", background: "#09090b", foreground: "#f4f4f5", card: "#18181b", "card-foreground": "#f4f4f5", popover: "#27272a", "popover-foreground": "#f4f4f5", secondary: "#27272a", "secondary-foreground": "#e4e4e7", muted: "#27272a", "muted-foreground": "#a1a1aa", border: "#27272a", canvas: "#18181b", subtle: "#18181b", scrollbar: "#a1a1aa" },
+      light: { header: "#ffffff", sidebar: "#f9fafb", background: "#ffffff", foreground: "#111827", card: "#ffffff", "card-foreground": "#111827", popover: "#ffffff", "popover-foreground": "#111827", secondary: "#f9fafb", "secondary-foreground": "#111827", muted: "#f9fafb", "muted-foreground": "#4b5563", border: "#e5e7eb", canvas: "#ffffff", subtle: "#f9fafb", scrollbar: "#71717a" },
+    },
+    stone: {
+      label: "Stone",
+      dark: { header: "#0c0a09", sidebar: "#1c1917", background: "#0c0a09", foreground: "#f5f5f4", card: "#1c1917", "card-foreground": "#f5f5f4", popover: "#292524", "popover-foreground": "#f5f5f4", secondary: "#292524", "secondary-foreground": "#e7e5e4", muted: "#292524", "muted-foreground": "#a8a29e", border: "#44403c", canvas: "#1c1917", subtle: "#1c1917", scrollbar: "#a8a29e" },
+      light: { header: "#fafaf9", sidebar: "#f5f5f4", background: "#ffffff", foreground: "#1c1917", card: "#ffffff", "card-foreground": "#1c1917", popover: "#ffffff", "popover-foreground": "#1c1917", secondary: "#f5f5f4", "secondary-foreground": "#292524", muted: "#f5f5f4", "muted-foreground": "#57534e", border: "#e7e5e4", canvas: "#ffffff", subtle: "#fafaf9", scrollbar: "#78716c" },
+    },
+  };
+  const ACCENTS = [
+    {
+      id: "forkmesh", label: "ForkMesh blue", dark: "#4493f8", light: "#0969da",
+      extra: {
+        dark: { accent: "#58a6ff", ring: "#58a6ff", link: "#58a6ff", "link-hover": "#79c0ff", "tab-underline": "#f78166" },
+        light: { link: "#0969da", "link-hover": "#0550ae", "tab-underline": "#fd8c73" },
+      },
+    },
+    { id: "crimson", label: "Crimson", dark: "#ef4444", light: "#dc2626" },
+    { id: "orange", label: "Orange", dark: "#f97316", light: "#ea580c" },
+    { id: "amber", label: "Amber", dark: "#f59e0b", light: "#d97706" },
+    { id: "green", label: "Green", dark: "#22c55e", light: "#16a34a" },
+    { id: "teal", label: "Teal", dark: "#14b8a6", light: "#0d9488" },
+    { id: "violet", label: "Violet", dark: "#8b5cf6", light: "#7c3aed" },
+    { id: "pink", label: "Pink", dark: "#ec4899", light: "#db2777" },
+  ];
+  const THEME_PRESETS = { crimson: { neutral: "zinc", accent: "crimson" } };
+  const HEX_RE = /^#[0-9a-f]{6}$/;
+
+  const hexRgb = (hex) => [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
+  const rgbHex = (rgb) => "#" + rgb.map((part) => Math.round(Math.min(255, Math.max(0, part))).toString(16).padStart(2, "0")).join("");
+  const mixHex = (a, b, amount) => {
+    const [from, to] = [hexRgb(a), hexRgb(b)];
+    return rgbHex(from.map((part, index) => part + (to[index] - part) * amount));
+  };
+  const luminance = (hex) => {
+    const [r, g, b] = hexRgb(hex).map((part) => {
+      const value = part / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const readableOn = (hex) => (luminance(hex) > 0.4 ? "#000000" : "#ffffff");
+  const hslHex = (hue, saturation, lightness) => {
+    const s = saturation / 100;
+    const l = lightness / 100;
+    const k = (n) => (n + hue / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return rgbHex([0, 8, 4].map((n) => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))));
+  };
+
+  const themeState = { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", edits: { dark: {}, light: {} }, mode: "dark" };
+  const accentTokens = (accent, mode) => {
+    const colour = accent[mode];
+    return {
+      primary: colour,
+      "primary-foreground": readableOn(colour),
+      accent: colour,
+      "accent-foreground": readableOn(colour),
+      ring: colour,
+      link: mode === "dark" ? mixHex(colour, "#ffffff", 0.2) : colour,
+      "link-hover": mode === "dark" ? mixHex(colour, "#ffffff", 0.4) : mixHex(colour, "#000000", 0.2),
+      "tab-underline": colour,
+      ...((accent.extra || {})[mode] || {}),
+    };
+  };
+  const currentTheme = () => {
+    const theme = {};
+    for (const mode of THEME_MODES) {
+      theme[mode] = {
+        ...NEUTRALS[themeState.neutral][mode],
+        ...THEME_STATUS[mode],
+        ...accentTokens(themeState.accent, mode),
+        ...((themeState.loaded || {})[mode] || {}),
+        ...themeState.edits[mode],
+      };
+    }
+    return theme;
+  };
+  const themeIsDefault = () =>
+    themeState.neutral === "slate" && themeState.accent.id === "forkmesh" && !themeState.loaded &&
+    THEME_MODES.every((mode) => !Object.keys(themeState.edits[mode]).length);
+  const themeValue = () => {
+    if (themeState.preset) return themeState.preset;
+    if (themeIsDefault()) return "";
+    return JSON.stringify(currentTheme());
+  };
+
+  const accentBox = $("[data-start-theme-accents]");
+  const neutralBox = $("[data-start-theme-neutrals]");
+  const tokenBox = $("[data-start-theme-tokens]");
+  const themePreview = $("[data-start-theme-preview]");
+  const chip = (className, label, inner) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `theme-chip ${className}`;
+    button.setAttribute("role", "radio");
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.innerHTML = inner;
+    accentBox.append(button);
+    return button;
+  };
+  for (const accent of ACCENTS) {
+    const button = chip("", accent.label, `<span class="swatch-dot" style="--swatch:${accent.dark}"></span>`);
+    button.dataset.accent = accent.id;
+    button.addEventListener("click", () => chooseAccent(accent));
+  }
+  const customChip = chip("theme-custom", "Your own colour", '<span class="swatch-dot rainbow"></span><input type="color" value="#4493f8" aria-label="Pick your own accent colour" />');
+  customChip.dataset.accent = "custom";
+  const customInput = customChip.querySelector("input");
+  customInput.addEventListener("input", () => {
+    const colour = customInput.value.toLowerCase();
+    chooseAccent({ id: "custom", label: "Your own colour", dark: colour, light: luminance(colour) > 0.3 ? mixHex(colour, "#000000", 0.18) : colour });
+  });
+  for (const [id, neutral] of Object.entries(NEUTRALS)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "theme-chip neutral";
+    button.setAttribute("role", "radio");
+    button.dataset.neutral = id;
+    button.innerHTML = `<span class="swatch-dot split" style="--swatch-a:${neutral.dark.background};--swatch-b:${neutral.light.subtle}"></span>${neutral.label}`;
+    button.addEventListener("click", () => chooseNeutral(id));
+    neutralBox.append(button);
+  }
+
+  const tokenInputs = {};
+  for (const [title, names] of THEME_GROUPS) {
+    const heading = document.createElement("p");
+    heading.className = "theme-group-title";
+    heading.textContent = title;
+    tokenBox.append(heading);
+    for (const name of names) {
+      const row = document.createElement("label");
+      row.className = "theme-token";
+      row.innerHTML = `<input type="color" aria-label="${name} colour" /><span>${name.replace(/-/g, " ")}</span><input type="text" maxlength="7" spellcheck="false" aria-label="${name} hex value" />`;
+      const [picker, text] = row.querySelectorAll("input");
+      const set = (value) => {
+        const colour = value.trim().toLowerCase();
+        if (!HEX_RE.test(colour)) return false;
+        themeState.edits[themeState.mode][name] = colour;
+        themeState.preset = "";
+        renderTheme();
+        return true;
+      };
+      picker.addEventListener("input", () => set(picker.value));
+      text.addEventListener("input", () => {
+        text.toggleAttribute("aria-invalid", !set(text.value.startsWith("#") ? text.value : "#" + text.value));
+      });
+      text.addEventListener("blur", () => {
+        text.removeAttribute("aria-invalid");
+        renderTheme();
+      });
+      tokenInputs[name] = { picker, text };
+      tokenBox.append(row);
+    }
+  }
+
+  const renderTheme = () => {
+    const theme = currentTheme();
+    const tokens = theme[themeState.mode];
+    for (const name of THEME_TOKENS) themePreview.style.setProperty(`--t-${name}`, tokens[name]);
+    themePreview.dataset.mode = themeState.mode;
+    for (const [name, inputs] of Object.entries(tokenInputs)) {
+      inputs.picker.value = tokens[name];
+      if (document.activeElement !== inputs.text) inputs.text.value = tokens[name];
+    }
+    for (const button of accentBox.querySelectorAll("[data-accent]")) {
+      button.setAttribute("aria-checked", String(button.dataset.accent === themeState.accent.id));
+    }
+    for (const button of neutralBox.querySelectorAll("[data-neutral]")) {
+      button.setAttribute("aria-checked", String(button.dataset.neutral === themeState.neutral));
+    }
+    for (const button of document.querySelectorAll("[data-start-theme-mode]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.startThemeMode === themeState.mode));
+    }
+    $("[data-start-theme-mode-name]").textContent = themeState.mode;
+    field("theme").value = themeValue();
+  };
+  const dropEdits = (names) => {
+    for (const mode of THEME_MODES) for (const name of names) delete themeState.edits[mode][name];
+  };
+  const chooseAccent = (accent) => {
+    themeState.accent = accent;
+    themeState.loaded = null;
+    themeState.preset = "";
+    dropEdits(ACCENT_TOKENS);
+    renderTheme();
+  };
+  const chooseNeutral = (id) => {
+    themeState.neutral = id;
+    themeState.loaded = null;
+    themeState.preset = "";
+    dropEdits(NEUTRAL_TOKENS);
+    renderTheme();
+  };
+  const resetTheme = () => {
+    Object.assign(themeState, { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", edits: { dark: {}, light: {} } });
+    renderTheme();
+  };
+  const setThemeFrom = (raw) => {
+    if (raw === null || raw === undefined || raw === "") {
+      resetTheme();
+      return true;
+    }
+    if (typeof raw === "string") {
+      const preset = THEME_PRESETS[raw.trim().toLowerCase()];
+      if (!preset) return false;
+      resetTheme();
+      themeState.neutral = preset.neutral;
+      themeState.accent = ACCENTS.find((accent) => accent.id === preset.accent);
+      themeState.preset = raw.trim().toLowerCase();
+      renderTheme();
+      return true;
+    }
+    if (typeof raw !== "object" || Array.isArray(raw)) return false;
+    const loaded = {};
+    for (const [mode, tokens] of Object.entries(raw)) {
+      if (!THEME_MODES.includes(mode) || !tokens || typeof tokens !== "object" || Array.isArray(tokens)) return false;
+      loaded[mode] = {};
+      for (const [name, colour] of Object.entries(tokens)) {
+        const value = String(colour || "").trim().toLowerCase();
+        if (!THEME_TOKENS.includes(name) || !HEX_RE.test(value)) return false;
+        loaded[mode][name] = value;
+      }
+    }
+    resetTheme();
+    themeState.loaded = loaded;
+    themeState.accent = { id: "loaded", label: "From your settings", dark: (loaded.dark || {}).primary || ACCENTS[0].dark, light: (loaded.light || {}).primary || ACCENTS[0].light };
+    renderTheme();
+    return true;
+  };
+  for (const button of document.querySelectorAll("[data-start-theme-mode]")) {
+    button.addEventListener("click", () => {
+      themeState.mode = button.dataset.startThemeMode;
+      renderTheme();
+    });
+  }
+  $("[data-start-theme-shuffle]").addEventListener("click", () => {
+    const hue = Math.floor(Math.random() * 360);
+    const names = Object.keys(NEUTRALS);
+    themeState.neutral = names[Math.floor(Math.random() * names.length)];
+    themeState.edits = { dark: {}, light: {} };
+    const dark = hslHex(hue, 78, 60);
+    customInput.value = dark;
+    chooseAccent({ id: "custom", label: "Your own colour", dark, light: hslHex(hue, 72, 42) });
+  });
+  $("[data-start-theme-reset]").addEventListener("click", resetTheme);
+  themeState.mode = document.documentElement.classList.contains("light") ? "light" : "dark";
+  renderTheme();
 
   const MAX_OWNERS = 20;
   const ownerList = $("[data-start-owners]");
@@ -215,6 +489,10 @@
     const skipped = [];
     for (const [key, raw] of Object.entries(settings)) {
       if (/^[_$]/.test(key)) continue;
+      if (key === "theme") {
+        if (!setThemeFrom(raw)) skipped.push(key);
+        continue;
+      }
       if (key === "owners" && Array.isArray(raw) && raw.length <= MAX_OWNERS) {
         setOwners(raw);
         continue;
@@ -496,7 +774,7 @@
     return {
       projectName: value("projectName").trim(),
       logo: value("logo"),
-      theme: value("theme"),
+      theme: value("theme").startsWith("{") ? JSON.parse(value("theme")) : value("theme"),
       host: value("host").trim(),
       port: Number(value("port") || 22),
       sshUser: value("sshUser").trim() || "root",
