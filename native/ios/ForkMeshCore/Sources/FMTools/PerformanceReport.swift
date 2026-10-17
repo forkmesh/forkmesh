@@ -34,7 +34,8 @@ public enum PerformanceReport {
         let parts: [Part] = [
             Part("", header(telemetry, monitor, events, context, now, timeZone), rank: headerRank),
             Part("Metrics (5m | 1h)", metricTable(telemetry), rank: 10),
-            Part("Slow events by name", eventGroups(events), rank: 9),
+            Part("Stalls by name", eventGroups(events.filter(\.isStall), lastSeen: timeZone), rank: 9),
+            Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
             Part("HTTP endpoints, last \(minutes) min", endpoints(telemetry.log, now), rank: 6),
             Part("MetricKit", metricKitLines(metricKit), rank: 8),
@@ -187,13 +188,17 @@ public enum PerformanceReport {
         var count = 0
         var totalMs = 0
         var maxMs = 0
+        var last = ""
     }
 
-    static func eventGroups(_ events: [PerformanceEvent]) -> String {
+    static func eventGroups(_ events: [PerformanceEvent], lastSeen timeZone: TimeZone? = nil) -> String {
         var groups: [String: EventGroup] = [:]
         for event in events {
             let key = eventKey(event)
             var group = groups[key] ?? EventGroup(key: key)
+            if group.last.isEmpty, let timeZone {
+                group.last = AppLogEntry(timestamp: event.timestamp, category: .perf, message: "").stamp(timeZone: timeZone)
+            }
             group.count += 1
             group.totalMs += event.durationMs
             group.maxMs = max(group.maxMs, event.durationMs)
@@ -201,7 +206,8 @@ public enum PerformanceReport {
         }
         let sorted = groups.values.sorted { ($0.totalMs, $1.key) > ($1.totalMs, $0.key) }
         var lines = sorted.prefix(topRows).map { (g: EventGroup) -> String in
-            row(["\(g.count)x", "total \(g.totalMs)ms", "max \(g.maxMs)ms", clip(g.key, keyChars)])
+            let when: [String] = g.last.isEmpty ? [] : ["last \(g.last)"]
+            return row(["\(g.count)x", "total \(g.totalMs)ms", "max \(g.maxMs)ms"] + when + [clip(g.key, keyChars)])
         }
         if sorted.count > topRows { lines.append("... \(sorted.count - topRows) more") }
         return lines.joined(separator: "\n")

@@ -76,6 +76,7 @@ class PerformanceDiagnosticsTest {
         val without = DiagnosticsBundle.prompt("The app froze for 0.4 s", report, includeLogs = false)
         expect(!without.contains("secret line"))
         expect(without.startsWith("The app detected a performance issue: The app froze for 0.4 s."))
+        expect(without.contains("First read ${DiagnosticsBundle.PLAYBOOK}") && without.contains("add this check to it"))
         expect(DiagnosticsBundle.prompt("", report, includeLogs = true).contains("secret line"))
         val long = DiagnosticsBundle.prompt("x", "line\n".repeat(5000), includeLogs = true)
         expect(long.length <= DiagnosticsBundle.MAX_PROMPT_CHARS && long.endsWith("[cut to fit the prompt]"))
