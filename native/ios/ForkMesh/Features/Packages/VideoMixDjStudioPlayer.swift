@@ -9,6 +9,7 @@ enum DjPlayerEvent {
     case state(Int)
     case meta(title: String, author: String)
     case failed(Int)
+    case source(id: String, url: URL)
 }
 
 struct DjVolume: Equatable {
@@ -169,6 +170,12 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
             onEvent?(side, .meta(title: message["title"] as? String ?? "", author: message["author"] as? String ?? ""))
         case "error":
             onEvent?(side, .failed(Int(number("code"))))
+        case "source":
+            if let id = message["id"] as? String, DjStudio.isVideoId(id),
+                let text = message["src"] as? String, let url = URL(string: text), url.scheme == "https"
+            {
+                onEvent?(side, .source(id: id, url: url))
+            }
         default:
             break
         }
@@ -239,6 +246,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         function fmBackground(on){B=on?1:0;K.forEach(function(k){var d=D[k],p=d.p;if(B&&d.routed&&!d.mirror&&p&&d.ready&&!d.w.muted&&d.w.gain>=0.02){var s=p.getPlayerState(),v=p.getVideoData?p.getVideoData():null;if((s===1||s===3)&&v&&v.video_id){var t=p.getCurrentTime()||0;d.resume=true;d.w.on=1;d.w.from=t;make(k,v.video_id,t);return}}push(k)})}
         addEventListener("message",function(e){var m=e.data;if(!m||typeof m!=="object"||!m.fmdjFrame)return;K.forEach(function(k){if(!e.source||frame(k)!==e.source)return;var d=D[k];
         if(m.fmdjFrame==="voice"){d.voice={t:+m.t||0,d:+m.d||0,s:m.s|0,at:Date.now()};if(d.voice.s===0&&d.w.on){d.w.on=0;push(k)}tick(k)}
+        else if(m.fmdjFrame==="source"){if(typeof m.src==="string"&&m.src.indexOf("https:")===0&&d.id)post({type:"source",deck:k,id:d.id,src:m.src})}
         else if(m.fmdjFrame==="routed"){d.mirror=!!m.mirror;if(!d.routed){d.routed=true;fmVolume(k,d.w.volume,d.w.muted,d.w.gain)}}
         else push(k)})});
         setInterval(function(){n++;K.forEach(function(k){var d=D[k];if(!d.p||!d.ready||heard(d))return;var s=d.p.getPlayerState();if(s===1||s===3||n%4===0)tick(k)})},250);
@@ -285,6 +293,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         function fresh(v,src,cors,t){var a=document.createElement("audio");a.fmSrc=src;a.fmCors=cors;a.preload="auto";if(cors)a.crossOrigin="anonymous";
         a.addEventListener("error",function(){if(!a.fmCors||a.readyState>0||A.get(v)!==a)return;var at=a.currentTime;a.fmCors=false;a.removeAttribute("crossorigin");a.src=src;try{a.currentTime=at}catch(x){}soon()});
         ["playing","pause","waiting","seeked","ended"].forEach(function(n){a.addEventListener(n,report)});
+        if(cors)parent.postMessage({fmdjFrame:"source",src:src},"*");
         pitch(a);a.src=src;if(t>0)try{a.currentTime=t}catch(x){}speed(a,scratching()?1:w.rate);return a}
         function voice(v,make){if(!own(v))return null;if(blob(v))return solo(v)?v:null;var src=v.currentSrc||v.src||"";if(!src||src===stale)return null;var a=A.get(v);if(a&&a.fmSrc===src)return a;if(!make)return null;if(a)quiet(a);
         a=fresh(v,src,!/m3u8|manifest/i.test(src),v.readyState>=1?v.currentTime:w.from);A.set(v,a);return a}

@@ -7,6 +7,7 @@ struct DjPlatter: View {
     let deck: DjDeck
     let d: CGFloat
     @State private var lastAngle: Double?
+    @State private var pressed = false
     @GestureState private var touching = false
 
     var body: some View {
@@ -16,15 +17,19 @@ struct DjPlatter: View {
                 .contentShape(Circle().scale(0.86))
                 .gesture(scratch)
                 .onChange(of: touching) { _, now in
-                    if !now, lastAngle != nil {
+                    guard !now else { return }
+                    if lastAngle != nil {
                         lastAngle = nil
                         model.scratchEnded(deck.side)
+                    } else if pressed {
+                        model.touchEnded(deck.side)
                     }
+                    pressed = false
                 }
                 .accessibilityElement()
                 .accessibilityLabel("Deck \(deck.side.label) turntable")
                 .accessibilityValue(deck.loaded ? "\(DjStudio.clock(deck.time)) of \(DjStudio.clock(deck.duration))" : "Empty")
-                .accessibilityHint(deck.loaded ? "Drag around the record to scratch through the track" : "Double-tap to load a video")
+                .accessibilityHint(deck.loaded ? "Touch the record to slow it briefly; drag around it to scratch" : "Double-tap to load a video")
                 .accessibilityAction { if !deck.loaded { model.openLoad(deck.side) } }
             DjTonearm(deck: deck, d: d)
                 .allowsHitTesting(false)
@@ -48,12 +53,18 @@ struct DjPlatter: View {
         DragGesture(minimumDistance: 0)
             .updating($touching) { _, state, _ in state = true }
             .onChanged { value in
+                if !pressed {
+                    pressed = true
+                    model.touchBegan(deck.side)
+                }
                 let dx = Double(value.location.x - d / 2)
                 let dy = Double(value.location.y - d / 2)
                 let angle = atan2(dy, dx)
                 guard let last = lastAngle else {
+                    let threshold = max(DjStudio.scratchThreshold, Double(d) * 0.05)
+                    guard deck.loaded, DjStudio.isScratch(dx: Double(value.translation.width), dy: Double(value.translation.height), threshold: threshold) else { return }
                     lastAngle = angle
-                    if deck.loaded { model.scratchBegan(deck.side) }
+                    model.scratchBegan(deck.side)
                     return
                 }
                 lastAngle = angle
@@ -63,9 +74,13 @@ struct DjPlatter: View {
                 model.scratchMoved(deck.side, radians: change)
             }
             .onEnded { value in
+                let scratched = lastAngle != nil
                 lastAngle = nil
-                if deck.loaded {
+                pressed = false
+                if scratched {
                     model.scratchEnded(deck.side)
+                } else if deck.loaded {
+                    model.touchEnded(deck.side)
                 } else if abs(value.translation.width) + abs(value.translation.height) < 10 {
                     model.openLoad(deck.side)
                 }

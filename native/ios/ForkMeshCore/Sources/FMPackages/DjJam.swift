@@ -195,6 +195,15 @@ public struct DjJam: Equatable, Sendable, Identifiable {
             decks: decks)
     }
 
+    public static func userNames(_ object: JSONObject, excluding: Set<String> = []) -> [String] {
+        var names: [String] = []
+        for value in object["users"]?.arrayValue ?? [] {
+            let name = (value.objectValue?["name"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            if !name.isEmpty, !excluding.contains(name), !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
     public static func needsSeek(local: Double, remote: Double, playing: Bool) -> Bool {
         guard local.isFinite, remote.isFinite else { return false }
         return abs(local - remote) > (playing ? 1.5 : 0.5)

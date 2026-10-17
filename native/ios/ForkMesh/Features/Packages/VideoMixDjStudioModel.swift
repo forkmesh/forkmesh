@@ -11,6 +11,7 @@ enum DjSheet: Identifiable, Equatable {
     case deck(DjDeckSide)
     case pads
     case info
+    case jam
 
     var id: String {
         switch self {
@@ -18,6 +19,7 @@ enum DjSheet: Identifiable, Equatable {
         case let .deck(side): return "deck-\(side.rawValue)"
         case .pads: return "pads"
         case .info: return "info"
+        case .jam: return "jam"
         }
     }
 }
@@ -120,10 +122,24 @@ final class DjStudioModel {
     var leavingAfterSheet = false
     var confirmingReset = false
     var resettingAfterSheet = false
+    var queue: [DjQueueItem] = []
+    var jam: DjJam?
+    var jams: [DjJamSummary] = []
+    var jamBusy = false
+    var jamProblem = ""
+    var inviteText = ""
+    var inviteSuggestions: [String] = []
+
+    @ObservationIgnored var jamTask: Task<Void, Never>?
+    @ObservationIgnored var shareTasks: [DjDeckSide: Task<Void, Never>] = [:]
+    @ObservationIgnored var suggestTask: Task<Void, Never>?
+    @ObservationIgnored var applied: [DjDeckSide: Int64] = [:]
+    @ObservationIgnored var applyingRemote = false
+    @ObservationIgnored private var analysed: Set<String> = []
 
     @ObservationIgnored var onLeave: (() -> Void)?
     @ObservationIgnored let host: DjPlayerHost
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let sampler = DjSampler()
     @ObservationIgnored private var sectionCursor = 0
     @ObservationIgnored private var searchInstances: [URL] = []
@@ -151,6 +167,7 @@ final class DjStudioModel {
         sections = saved.sections
         sectionCursor = sections.firstIndex(where: { $0 == nil }) ?? 0
         history = saved.history
+        queue = saved.queue
         host.onEvent = { [weak self] side, event in
             guard let self else { return }
             self.handle(event, self.deck(side))
@@ -198,6 +215,7 @@ final class DjStudioModel {
         FmOrientationLock.allowLandscape(true)
         host.dock()
         applyMix()
+        resumeJam()
     }
 
     func disappear() {
@@ -322,6 +340,7 @@ final class DjStudioModel {
         prepare(deck, id: id, title: title, author: author, start: 0, keepSettings: false)
         show(title.isEmpty ? "Deck \(side.label) loaded." : "Deck \(side.label): \(title)")
         save()
+        share(side)
     }
 
     func loadLink(_ text: String) -> Bool {
@@ -339,13 +358,18 @@ final class DjStudioModel {
         }
     }
 
-    private func prepare(_ deck: DjDeck, id: String, title: String, author: String, start: Double, keepSettings: Bool) {
+    func prepare(_ deck: DjDeck, id: String, title: String, author: String, start: Double, keepSettings: Bool) {
         sectionTasks[deck.side]?.cancel()
         deck.videoId = id
         deck.title = title
         deck.author = author
         deck.artwork = nil
-        deck.waveform = DjStudio.waveform(id, count: 1200)
+        if let measured = DjWaveSource.cached(id) {
+            deck.waveform = measured
+            analysed.insert(id)
+        } else {
+            deck.waveform = DjStudio.waveform(id, count: DjWaveAccumulator.barCount)
+        }
         deck.time = start
         deck.tickDate = CACurrentMediaTime()
         deck.duration = 0
@@ -384,6 +408,7 @@ final class DjStudioModel {
         deck.sample = .idle
         sections = sections.map { $0?.deck == side ? nil : $0 }
         save()
+        share(side)
     }
 
     private func handle(_ event: DjPlayerEvent, _ deck: DjDeck) {
@@ -391,6 +416,9 @@ final class DjStudioModel {
         case .ready:
             applyMix()
             deck.player.setRate(deck.effectiveRate)
+            if deck.playing { deck.player.play() }
+        case let .source(id, url):
+            analyse(deck, id: id, source: url)
         case let .tick(time, duration, state):
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
             guard !deck.scratching else { return }
@@ -488,9 +516,10 @@ final class DjStudioModel {
         deck.time = 0
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
+        share(deck.side)
     }
 
-    private func play(_ deck: DjDeck) {
+    func play(_ deck: DjDeck) {
         host.dock()
         claimAudio()
         deck.rebase()
@@ -498,6 +527,21 @@ final class DjStudioModel {
         deck.playing = true
         deck.player.play()
         remember(deck)
+        share(deck.side)
+    }
+
+    private func analyse(_ deck: DjDeck, id: String, source: URL) {
+        guard deck.videoId == id, !analysed.contains(id) else { return }
+        analysed.insert(id)
+        Task { [weak self, weak deck] in
+            let bars = await DjWaveSource.bars(for: id, source: source)
+            guard let bars else {
+                self?.analysed.remove(id)
+                return
+            }
+            guard let deck, deck.videoId == id else { return }
+            deck.waveform = bars
+        }
     }
 
     private func remember(_ deck: DjDeck) {
@@ -518,11 +562,12 @@ final class DjStudioModel {
         save()
     }
 
-    private func pause(_ deck: DjDeck) {
+    func pause(_ deck: DjDeck) {
         advance(false, deck)
         deck.settle()
         deck.playing = false
         deck.player.pause()
+        share(deck.side)
     }
 
     func setCue(_ side: DjDeckSide) {
@@ -540,6 +585,7 @@ final class DjStudioModel {
         deck.time = deck.cue
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
+        share(side)
     }
 
     func cueStop(_ side: DjDeckSide) {
@@ -557,6 +603,7 @@ final class DjStudioModel {
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
         deck.player.seek(target)
+        share(side)
     }
 
     func setRate(_ side: DjDeckSide, _ rate: Double) {
@@ -567,6 +614,7 @@ final class DjStudioModel {
         deck.rate = clamped
         sendRate(deck)
         save()
+        share(side)
     }
 
     func touchBegan(_ side: DjDeckSide) {
@@ -628,6 +676,7 @@ final class DjStudioModel {
         deck.rebase()
         deck.rate = DjStudio.syncedRate(ownBpm: deck.bpm, otherBpm: other.bpm, otherRate: other.effectiveRate)
         sendRate(deck)
+        share(side)
         show(deck.bpm > 0 && other.bpm > 0
             ? "Deck \(side.label) matched to \(String(format: "%.1f", other.shownBpm)) BPM."
             : "Deck \(side.label) matched Deck \(side.other.label)’s tempo. Tap both BPM boxes to beat-match.")
@@ -728,6 +777,7 @@ final class DjStudioModel {
         deck.settle()
         deck.playing = deck.resumeAfterScratch
         if deck.resumeAfterScratch { deck.player.play() } else { deck.player.pause() }
+        share(side)
     }
 
     func setCrossfader(_ value: Double, cancelAutomix: Bool = true) {
@@ -955,6 +1005,7 @@ final class DjStudioModel {
         saved.samplerLevel = samplerLevel
         saved.sections = sections
         saved.history = history
+        saved.queue = queue
         for deck in [a, b] {
             var stored = DjSavedDeck()
             stored.videoId = deck.videoId

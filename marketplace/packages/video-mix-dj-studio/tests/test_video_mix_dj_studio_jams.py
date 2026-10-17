@@ -164,3 +164,13 @@ def test_purge_removes_owned_jams_and_memberships():
     asyncio.run(jam.purge_account_data(runtime, "bi:cara", "cara"))
     names = [row[0] for row in runtime.db.execute("SELECT account_name FROM vmdj_jam_members WHERE jam_id=?", (theirs,))]
     assert names == ["bob"]
+
+
+def test_manifest_declares_the_jam_worker_and_the_player_reports_audio_sources():
+    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["worker"] == {"module": "video_mix_dj_studio", "api": jam.PREFIX, "outboundOrigins": []}
+    assert manifest["entrypoints"]["worker"] == "content/worker/video_mix_dj_studio.py"
+    assert manifest["dataLifecycle"] == {"scope": "account"}
+    player = (PACKAGE.parents[2] / "native" / "ios" / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
+    assert 'if(cors)parent.postMessage({fmdjFrame:"source",src:src},"*")' in player
+    assert 'post({type:"source",deck:k,id:d.id,src:m.src})' in player

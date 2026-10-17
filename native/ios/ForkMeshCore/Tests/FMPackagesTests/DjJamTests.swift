@@ -44,6 +44,7 @@ final class DjJamTests: XCTestCase {
         XCTAssertTrue(DjJam.needsSeek(local: 10, remote: 12, playing: true))
         XCTAssertTrue(DjJam.needsSeek(local: 10, remote: 10.8, playing: false))
         XCTAssertFalse(DjJam.needsSeek(local: .nan, remote: 10, playing: false))
+        XCTAssertEqual(DjJam.userNames(["users": [["name": "Bob "], ["name": "bob"], ["name": "alice"], ["x": 1]]], excluding: ["alice"]), ["bob"])
     }
 
     func testDeckBodyRoundsPosition() {
