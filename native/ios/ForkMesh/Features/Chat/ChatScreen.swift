@@ -419,7 +419,7 @@ private struct ChatTranscript<Drawer: View>: View {
             .buttonStyle(.plain)
             .accessibilityLabel("New message")
             if let onNewAgent = shell.onNewAgent {
-                ShellNewAgentButton(onNewAgent: onNewAgent, onPalette: shell.onPalette)
+                ShellNewAgentButton(onNewAgent: onNewAgent, onPalette: shell.onPalette, onVoice: shell.onVoice)
             }
             if shell.onHub != nil {
                 shellCapsule
@@ -690,6 +690,7 @@ struct ChatShellActions {
     var onHub: (() -> Void)?
     var onNewAgent: (() -> Void)?
     var onPalette: () -> Void = {}
+    var onVoice: ((CGRect) -> Void)?
     var name: String = ""
     var avatarPng: String = ""
 }
