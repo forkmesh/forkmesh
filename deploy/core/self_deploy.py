@@ -39,6 +39,8 @@ STEP_TIMEOUT = 900
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 NODE_RE = re.compile(r"^[a-z][a-z0-9-]{0,30}$")
+ADMIN_KIND = "admin"
+UPSTREAM_KEY = "core_upstream"
 DONE = ("deployed", "failed", "skipped")
 TERMINAL = ("deployed", "failed", "skipped", "superseded", "expired")
 
@@ -204,6 +206,8 @@ class Agent:
         self.state = Path(config.get("stateDir") or STATE)
         self.go = str(config.get("go") or GO)
         self.roll_daemon_enabled = bool(config.get("rollDaemon", True))
+        self.admin_updates = bool(config.get("adminUpdates"))
+        self.upstream = ""
         self.sleep = time.sleep
 
     def git(self, *args, check=True):
@@ -246,7 +250,39 @@ class Agent:
             args += list(only_from)
         return self.db.execute(sql, *args)
 
+    def check_admin(self, row):
+        if not self.admin_updates:
+            raise Problem("updates from the admin console are off on this core")
+        if self.now() - int(row["created_at"]) > MAX_APPROVAL_AGE_MS and \
+                row["status"] == "pending":
+            raise Problem("the update request is older than two hours")
+        if not row.get("base_after"):
+            main = self.git("rev-parse", "refs/heads/main").stdout.strip()
+            if not OID_RE.fullmatch(main):
+                raise Problem("main is not readable on this core")
+            self.db.execute(
+                "UPDATE deploy_approvals SET base_before=?,head=?,base_after=?,"
+                "updated_at=? WHERE id=? AND base_after=''",
+                main, main, main, self.now(), row["id"])
+            pinned = self.db.query(
+                "SELECT base_before,head,base_after FROM deploy_approvals "
+                "WHERE id=?", row["id"])
+            if pinned:
+                row.update(pinned[0])
+        target = str(row.get("base_after") or "")
+        if not OID_RE.fullmatch(target):
+            raise Problem("the update target is malformed")
+        if not self.has_commit(target):
+            if self.now() - int(row["created_at"]) > WAIT_FOR_COMMIT_MS:
+                raise Problem("the requested commit never reached this core")
+            raise Wait()
+        main = self.git("rev-parse", "refs/heads/main").stdout.strip()
+        if not self.is_ancestor(target, main):
+            raise Problem("the requested commit is not on main")
+
     def check(self, row):
+        if row.get("kind") == ADMIN_KIND:
+            return self.check_admin(row)
         if not signature_valid(row, self.keys):
             raise Problem("the approval is not signed by an enrolled phone key")
         if self.now() - int(row["created_at"]) > MAX_APPROVAL_AGE_MS and \
@@ -298,7 +334,35 @@ class Agent:
             return None, []
         return rows[-1], rows[:-1]
 
+    def publish_upstream(self):
+        resolved = self.git("rev-parse", "--verify", "-q", "refs/heads/main",
+                            check=False)
+        main = resolved.stdout.strip()
+        if resolved.returncode != 0 or not OID_RE.fullmatch(main) or \
+                main == self.upstream:
+            return False
+        fields = self.git("log", "-1", "--format=%ct%n%s", main).stdout
+        stamp, _, subject = fields.partition("\n")
+        cmake = self.git("show", main + ":desktop/CMakeLists.txt", check=False)
+        match = VERSION_RE.search(cmake.stdout or "")
+        doc = json.dumps({
+            "commit": main, "time": int(stamp.strip() or 0),
+            "subject": subject.strip()[:500],
+            "version": match.group(1) if match else "",
+            "node": self.node, "checkedAt": self.now(),
+        }, sort_keys=True)
+        self.db.execute(
+            "INSERT INTO instance_settings (k, doc, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, "
+            "updated_at=excluded.updated_at", UPSTREAM_KEY, doc, self.now())
+        self.upstream = main
+        return True
+
     def tick(self):
+        try:
+            self.publish_upstream()
+        except Exception:
+            pass
         row, older = self.pick()
         if row is None:
             return "idle"
@@ -814,8 +878,10 @@ def build_command(clone, rev, out):
 
 def serve(config_path):
     config = json.loads(Path(config_path).read_text("utf-8"))
-    if not config.get("enabled") or not config.get("approverKeys"):
-        print("self-deploy: disabled or no enrolled phone key; idle", flush=True)
+    if not config.get("enabled") or not (
+            config.get("approverKeys") or config.get("adminUpdates")):
+        print("self-deploy: disabled, or no enrolled phone key and no admin "
+              "updates; idle", flush=True)
         while True:
             time.sleep(3600)
     agent = Agent(config, Rqlite())

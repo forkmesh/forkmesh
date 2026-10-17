@@ -9947,6 +9947,19 @@
     probe.src = url;
   }
 
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+
+  function applyRepoFeatures(features) {
+    if (!features || typeof features !== "object") return;
+    REPO_FEATURE_TABS.forEach((key) => {
+      if (!(key in features)) return;
+      const on = Boolean(features[key]);
+      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      const box = $(`[data-repo-feature="${key}"]`);
+      if (box) box.checked = on;
+    });
+  }
+
   async function loadRepoFediverse(repo) {
     // Public branding + follower count from the relay (GET /about). Fills the
     // Watch button count, the popover, and the social badge header.
@@ -9996,6 +10009,7 @@
       // of silently showing zeros.
       $("[data-repo-watch-disabled]")?.classList.toggle(
         "hidden", body.fediverse?.enabled !== false);
+      applyRepoFeatures(body.features);
       // Seed the gear form's federation switches with the stored settings so
       // an untouched save round-trips them unchanged.
       const apSettings = body.fediverse?.settings;

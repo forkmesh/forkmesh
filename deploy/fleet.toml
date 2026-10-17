@@ -205,6 +205,7 @@ approver_keys = []
 repository = "forkmesh/forkmesh"
 git_dir = "/var/lib/forkmesh/repositories/forkmesh-forkmesh.git"
 roll_daemon = true
+admin_updates = false
 
 [logs]
 reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCrAoFfL4IOBhTdX/98mVagk fmnext-logread"

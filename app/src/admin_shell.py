@@ -85,6 +85,9 @@ NAV = (
     )),
     ("Platform", (
         ("controls", "Controls", "sliders", ("console", "controls")),
+        ("update", "Update ForkMesh", "refresh", ("console", "update")),
+        ("repo-addresses", "Repository addresses", "branch",
+         ("console", "repo-addresses")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

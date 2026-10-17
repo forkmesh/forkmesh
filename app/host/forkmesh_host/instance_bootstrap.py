@@ -10,6 +10,7 @@ PUBKEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 NODE = "forkmesh"
 REPO = "forkmesh"
 MAX_OWNERS = 20
+MIRROR_FEATURES = {"issues": False, "pulls": False, "discussions": False}
 EMAIL_RE = re.compile(
     r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@"
     r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$")
@@ -185,6 +186,15 @@ async def ensure_alias(entry, env, owner):
         int(entry.Date.now()))
 
 
+async def ensure_mirror_features(entry, env):
+    repo_bi = await entry.blind_index(
+        env, "repo-feature-settings:%s/%s" % (NODE, REPO))
+    await entry.d1_run(
+        env, "INSERT OR IGNORE INTO repo_feature_settings (repo_bi, data, "
+        "updated_at) VALUES (?,?,?)", repo_bi,
+        json.dumps(MIRROR_FEATURES, sort_keys=True), int(entry.Date.now()))
+
+
 async def ensure_theme(entry, env, value):
     try:
         doc = entry.instance_theme.dump(entry.instance_theme.clean(value))
@@ -214,6 +224,7 @@ async def bootstrap(runtime, spec):
     if spec["nodePublicKey"]:
         await ensure_node(entry, env, spec["nodePublicKey"])
         await ensure_alias(entry, env, spec["owner"])
+        await ensure_mirror_features(entry, env)
     if spec["theme"]:
         await ensure_theme(entry, env, spec["theme"])
     return {

@@ -524,9 +524,12 @@ def core_role_settings(fleet):
     hosted = names if enabled else ""
     owners = ",".join(core_daemon_names(fleet) + retired_core_names(fleet)) \
         if enabled else ""
+    settings = self_deploy_settings(fleet)
+    admin_updates = "1" if settings["enabled"] and settings["adminUpdates"] else ""
     return "\n".join(["", "FORKMESH_VAR_RUNNER_POOL_TARGET_NODES=%s" % names,
                       "FORKMESH_VAR_HOSTED_GIT_CORE_NODES=%s" % hosted,
-                      "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners])
+                      "FORKMESH_VAR_HOSTED_GIT_CORE_OWNERS=%s" % owners,
+                      "FORKMESH_VAR_CORE_ADMIN_UPDATES=%s" % admin_updates])
 
 
 def public_hosts(fleet):
@@ -996,9 +999,11 @@ def self_deploy_settings(fleet):
     repository = str(settings.get("repository") or "forkmesh/forkmesh")
     if repository.count("/") != 1:
         raise RenderError("self_deploy.repository must be owner/name")
+    admin_updates = bool(settings.get("admin_updates"))
     return {
-        "enabled": bool(settings.get("enabled")) and bool(keys),
+        "enabled": bool(settings.get("enabled")) and (bool(keys) or admin_updates),
         "approverKeys": keys,
+        "adminUpdates": admin_updates,
         "repository": repository,
         "gitDir": str(settings.get("git_dir")
                       or "/var/lib/forkmesh/repositories/forkmesh-forkmesh.git"),

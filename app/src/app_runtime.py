@@ -1198,6 +1198,10 @@ class Default:
             return await _instance_directory_admin.admin_handler(
                 self.env, request, params, csrf_field, admin_query,
                 account_cookie_name)
+        if params.get("view", [""])[0] in _server_update_admin.VIEWS:
+            return await _server_update_admin.admin_handler(
+                self.env, request, params, csrf_field, admin_query,
+                account_cookie_name)
         if params.get("view", [""])[0] == _ids_console.VIEW:
             return await _ids_console.admin_handler(
                 self.env, request, params, csrf_field, admin_query,
@@ -3875,6 +3879,14 @@ class Default:
         # per-repo rel="me" head tags are injected at serve time so Mastodon
         # can verify the repo actor's profile link (green check) against this
         # very page — a static shared asset can't carry a per-repo link.
+        short_route = await self._repo_short_route(url)
+        if short_route is not None:
+            short_url, short_name = short_route
+            if short_name and looks_like_repo_route(short_url.path):
+                return await self._serve_repo_page(
+                    request, short_url, short_name)
+            return await self._route(request, short_url)
+
         if looks_like_repo_route(url.path):
             return await self._serve_repo_page(request, url)
 
@@ -4114,7 +4126,39 @@ class Default:
         await edge_cache_put(cache_key, page)
         return page
 
-    async def _serve_repo_page(self, request, url):
+    async def _repo_short_setting(self):
+        now = int(Date.now())
+        setting = repo_short_urls.cached(now)
+        if setting is not None:
+            return setting
+        try:
+            row = await d1_first(
+                self.env,
+                "SELECT doc FROM instance_settings WHERE k=?",
+                repo_short_urls.SETTING_KEY)
+        except Exception:
+            row = None
+        return repo_short_urls.remember(
+            repo_short_urls.parse((row or {}).get("doc") or ""), now)
+
+    async def _repo_short_route(self, url):
+        setting = await self._repo_short_setting()
+        if not setting["short"]:
+            return None
+        hit = repo_short_urls.rewrite(url.path, setting["owner"])
+        if hit is None:
+            return None
+        name = repo_short_urls.first_name(url.path)
+        if repo_short_urls.OWNER_RE.fullmatch(name):
+            try:
+                if (await _account_row(self.env, name))[1] or \
+                        (await _org_row(self.env, name))[1]:
+                    return None
+            except Exception:
+                return None
+        return url._replace(path=hit[0]), hit[1]
+
+    async def _serve_repo_page(self, request, url, short_name=""):
         # The shared repo-detail document, plus per-repo head tags:
         #  - <link rel="me" href="<repo actor url>"> — the reciprocal half of
         #    the repo actor's verified "Repository" row: that row links this git
@@ -4177,7 +4221,7 @@ class Default:
                     # A state-less legacy record may still render its generic
                     # shell, but it cannot safely create a reusable social
                     # cache entry until it republishes a commit/state pin.
-                    if social_version:
+                    if social_version and not short_name:
                         cache_key = "%s/%s/%s?repo-state=%s" % (
                             origin, quote(owner), quote(repo),
                             quote(social_version, safe=""))
@@ -4238,6 +4282,13 @@ class Default:
                    og_card.CARD_W, og_card.CARD_H,
                    title, _html_escape(og_description), og_image))
             body = body.replace("</head>", tags + "</head>", 1)
+        if short_name and owner and "</head>" in body:
+            body = body.replace(
+                "</head>",
+                '<meta name="forkmesh-repo-short" content="%s">'
+                '<meta name="forkmesh-repo-owner" content="%s">'
+                "</head>" % (_html_escape(short_name), _html_escape(owner)),
+                1)
         page = Response(body, status=200, headers={
             "content-type": "text/html; charset=utf-8",
             "cache-control": (
