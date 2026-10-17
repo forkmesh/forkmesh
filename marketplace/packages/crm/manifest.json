@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
   "screenshots": [
     {
@@ -71,7 +71,7 @@
     },
     {
       "id": "email.zoho.import",
-      "label": "Use encrypted organization OAuth credentials to import Zoho Mail after an explicit sync",
+      "label": "Use encrypted organization OAuth credentials to sync Zoho Mail and send confirmed automated emails from it",
       "risk": "high"
     },
     {
