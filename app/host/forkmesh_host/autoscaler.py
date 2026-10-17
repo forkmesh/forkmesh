@@ -22,6 +22,7 @@ BOOT_TIMEOUT_MS = 25 * 60_000
 JOIN_TIMEOUT_MS = 35 * 60_000
 DRAIN_MS = 180_000
 METRICS_FRESH_MS = 120_000
+AUDIT_RETAIN_MS = 30 * 86_400_000
 OWNER_KEY = ("ForkMeshAutoscaler", "tick-v1")
 JOIN_KEY_LABEL = b"fmnext-autoscale-join-v1"
 APP_WG_OFFSET = 20
@@ -198,7 +199,7 @@ class Store:
             "VALUES (?,?,?,?,?,?,?)", os.urandom(12).hex(), now_ms(), pool,
             event, node, 1 if ok else 0, str(detail)[:1000])
         await self.execute("DELETE FROM autoscale_audit WHERE ts < ?",
-                           now_ms() - 90 * 86_400_000)
+                           now_ms() - AUDIT_RETAIN_MS)
 
     async def recent_audit(self, limit=30):
         rows = await self.query("SELECT ts, pool, event, node, ok, detail FROM "
@@ -299,6 +300,7 @@ class Autoscaler:
         self._metrics_task = None
         self.stats = {"ticks": 0, "owned": 0, "actions": 0, "errors": 0}
         self.last_tick_ms = 0
+        self.last_dry_run = {}
 
     def _env(self, name):
         value = getattr(self.runtime.env, name, "") or ""
@@ -392,10 +394,15 @@ class Autoscaler:
                             + "; waiting for %s to finish (%s)" % (
                                 busy[0]["name"], busy[0]["state"]))
         state["decision"] = decision
-        if decision["action"] != "none":
+        if decision["action"] == "none":
+            self.last_dry_run.pop(pool, None)
+        else:
             if conf["dryRun"]:
-                await self.store.audit(pool, "decision_dry_run", "%s: %s" % (
-                    decision["action"], decision["reason"]))
+                key = (decision["action"], decision.get("node") or "")
+                if self.last_dry_run.get(pool) != key:
+                    await self.store.audit(pool, "decision_dry_run", "%s: %s" % (
+                        decision["action"], decision["reason"]))
+                    self.last_dry_run[pool] = key
             else:
                 ok = await self.act(pool, decision["action"], decision["reason"],
                                     settings, now, node=decision.get("node"))

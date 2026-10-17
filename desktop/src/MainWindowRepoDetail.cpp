@@ -1434,8 +1434,11 @@ void MainWindow::openRepoDetail(int repoIndex, int landingTab)
                  m_repositories.at(repoIndex).name));
     if (repoIndex != m_repoDetailIndex)
         clearBranchDiffCache();
+    const bool repositoryChanged = m_repoDetailIndex != repoIndex;
     m_repoDetailIndex = repoIndex;
     renderPageNotices();
+    if (repositoryChanged)
+        QTimer::singleShot(0, this, [this] { notifyNativePackagesRepositoryChanged(); });
     {
         const RepositoryRecord &opened = m_repositories.at(repoIndex);
         const QString source =

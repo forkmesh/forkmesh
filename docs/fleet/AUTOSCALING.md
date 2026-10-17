@@ -134,6 +134,16 @@ Every non-trivial decision, create, destroy, join, failure, settings write and
 command is recorded in `autoscale_audit`, and every real action also raises a
 `security_incidents` row (detector `autoscaler`) delivered to admins.
 
+- A dry-run pool writes `decision_dry_run` only when the decision (action and
+  target node) differs from the last dry-run decision this process recorded
+  for the pool, not on every 60 s tick. A tick that decides "none" forgets it,
+  so the same decision coming back is written again; so does a restart.
+- Rows are kept 30 days (`AUDIT_RETAIN_MS`), pruned on every audit write. The
+  status view reads only the newest 30 rows.
+- Why: the 2026-10-16 table audit found `autoscale_audit` at 3.1 MiB and 27k
+  rows on 1 GB nodes, almost all one identical dry-run row per minute under a
+  90-day retention.
+
 ## Threat model
 
 - **Compromised core app:** can use the provider key directly; cannot obtain

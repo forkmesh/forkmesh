@@ -150,6 +150,7 @@ Planned extractions are described in
 | [`vscodium`](packages/vscodium/manifest.json) | Adds an "open in VSCodium" action to the branch diff header via `DesktopPackageExtension::branchActions()`. |
 | [`winamp`](packages/winamp/manifest.json) | An installable desktop theme (palette plus QSS). |
 | [`gemma-4`](packages/gemma-4/manifest.json), `nemotron-*`, `muse-spark-*` | Opt-in agent model packages described by [`agent.schema.json`](agent.schema.json); models are pulled through allowlisted Ollama operations. |
+| [`strata`](packages/strata/manifest.json), [`ember`](packages/ember/manifest.json), [`synapse`](packages/synapse/manifest.json) | Desktop codebase analysis for any repository you open: architecture and complexity with technical debt (Strata), file-level hotspots and code health (Ember), and the import graph as a 3D brain (Synapse). `code-map` and `size-map` switch the built-in Code map and Size map. |
 | [`timers`](packages/timers/manifest.json) | Top-bar timers, countdowns and alarms with absolute deadlines. |
 | [`forkmesh-ide`](packages/forkmesh-ide/manifest.json) | Source for the VS Code-compatible issue and agent extension (catalog content until the Market can install VSIX files). |
 | [`forkmesh-sky-office`](packages/forkmesh-sky-office/manifest.json) | A World district package installed through the generic `install(host)` contract and loaded lazily. |

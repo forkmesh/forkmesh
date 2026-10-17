@@ -8622,6 +8622,13 @@ private:
     void nativePackageSearchIndexChanged();
     void syncNativePackageBadge(const QString &id);
     QString nativePackageAgentName() const;
+    forkmesh::market::NativePackageRepository nativePackageRepository(int index) const;
+    QList<forkmesh::market::NativePackageRepository> nativePackageRepositories() const;
+    forkmesh::market::NativePackageRepository currentNativePackageRepository() const;
+    void openNativePackageRepositoryFile(
+        const forkmesh::market::NativePackageRepository &repository,
+        const QString &path, int line);
+    void notifyNativePackagesRepositoryChanged();
     void askNativePackageAgent(
         const QString &prompt,
         forkmesh::market::NativePackageAgentReplyHandler done);

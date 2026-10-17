@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "EmberModel.h",
+    "EmberModel.cpp",
+    "EmberMapView.h",
+    "EmberMapView.cpp",
+    "EmberWidgets.h",
+    "EmberWidgets.cpp",
+    "EmberFeature.h",
+    "EmberFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_ember.cpp",
+    "EmberModel.h",
+    "EmberModel.cpp",
+    "EmberMapView.h",
+    "EmberMapView.cpp",
+    "EmberWidgets.h",
+    "EmberWidgets.cpp",
+    "EmberFeature.h",
+    "EmberFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets",
+    "Qt6::Concurrent"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp",
+    "RepoInsight.h",
+    "RepoInsight.cpp",
+    "RepoInsightBar.h",
+    "RepoInsightBar.cpp"
+  ]
+}

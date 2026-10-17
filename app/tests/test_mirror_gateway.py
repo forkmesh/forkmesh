@@ -4148,3 +4148,26 @@ def test_portable_session_handoff_refuses_redirects_browsers_rewrite():
                     "/ok\r\nSet-Cookie: x=1", "/ok\nLocation: //evil.example",
                     "/ok\x7f"):
         assert status(hostile) == 400, hostile
+
+
+def test_release_digest_is_remembered_until_the_file_changes(tmp_path, monkeypatch):
+    blob = tmp_path / "data"
+    blob.write_bytes(b"release bytes")
+    digest = hashlib.sha256(b"release bytes").hexdigest()
+    gateway._RELEASE_DIGEST_MEMO.clear()
+    hashed = []
+    real = gateway._sha256_file
+
+    def counted(path):
+        hashed.append(path)
+        return real(path)
+
+    monkeypatch.setattr(gateway, "_sha256_file", counted)
+    assert gateway._release_digest_matches(blob, digest)
+    assert gateway._release_digest_matches(blob, digest)
+    assert len(hashed) == 1
+    blob.write_bytes(b"tampered bytes")
+    os.utime(blob, ns=(1, 1))
+    assert not gateway._release_digest_matches(blob, digest)
+    assert len(hashed) == 2
+    gateway._RELEASE_DIGEST_MEMO.clear()

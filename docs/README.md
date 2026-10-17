@@ -24,6 +24,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | World (3D) | `world/` | [world/README.md](world/README.md) |
 | Native apps (iOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
+| Codebase analysis (Code Map, Size Map, Strata, Ember, Synapse) | `desktop/src/RepoInsight*`, `marketplace/packages/{code-map,size-map,strata,ember,synapse}/` | [marketplace/codebase-analysis.md](marketplace/codebase-analysis.md) |
 | Releases and installers | `tools/package/`, release tooling, `.forkmesh/releases/` | [release/README.md](release/README.md) |
 | Fleet rendering and operator tools | `deploy/`, `tools/next_*.py` | [deploy/README.md](deploy/README.md) |
 | Security | cross-cutting | [security/README.md](security/README.md) |

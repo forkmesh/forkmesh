@@ -92,6 +92,40 @@ readiness, and restore the previous binary on failure. Outcomes are recorded
 in `<work>/rollout-vX.Y.Z.json`; failed passes retry after a backoff. The
 desktop's own rollout skips hosts that already run the release.
 
+## Release store prune on nodes
+
+Publishing, `seed_mirrors` and the desktop's push to managed hosts only ever
+add blobs to `<gitDir>/forkmesh-releases`, and the desktop prunes only its own
+store. On 2026-10-16 the n2 and n3 stores had reached 8.8 GB (about 5 GB a
+month) with their disks at 85%, so the Go daemon now prunes its own stores
+(`server/releaseprune.go`).
+
+The sync loop runs it five minutes after start and then every
+`releasePruneInterval` (default `6h`, 10m to 168h). Per release store (aliases
+sharing one store are pruned once, with the union of their manifests):
+
+- The referenced set is every `assets[].blob_sha256` in every
+  `.forkmesh/releases/<channel>/release.json` at the repository's `HEAD`.
+- If `HEAD` is unborn, a manifest cannot be read or parsed, an asset digest is
+  malformed, or the set is empty, nothing is deleted.
+- If the `HEAD` commit is older than `releasePruneMinAge`, nothing is deleted:
+  a node whose sync has stalled would otherwise read an old channel list and
+  delete blobs that only a newer `HEAD` references.
+- If any referenced blob is missing from the store, nothing is deleted that
+  run: a publish or seed may be in progress.
+- Only `sha256/<aa>/<64 lowercase hex>` directories whose name starts with
+  `<aa>` are candidates, and only when the directory and every file in it are
+  older than `releasePruneMinAge` (default `168h`, at least `24h`), because
+  `seed_mirrors` lands blobs before their metadata.
+- Deletes go through `removeTreeUnder(<store>/sha256/<aa>, <hash dir>)`; an
+  emptied shard is removed with `os.Remove`. At most 200 blobs per store per
+  run; each run logs one `release store prune` line per store with the count
+  and bytes.
+
+Releases dropped from every channel at `HEAD` lose their blobs after the
+minimum age, so an old version stays downloadable by hash only while some
+channel still names it.
+
 ## Protocols
 
 - `release.json`: `schema`, `repo`, `tag`, `tag_commit`, `build_commit`,
