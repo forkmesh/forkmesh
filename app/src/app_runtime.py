@@ -3880,6 +3880,11 @@ class Default:
         # per-repo rel="me" head tags are injected at serve time so Mastodon
         # can verify the repo actor's profile link (green check) against this
         # very page — a static shared asset can't carry a per-repo link.
+        project_target = await self._repo_projects_redirect(url)
+        if project_target:
+            return Response("", status=302, headers={
+                "location": project_target, "cache-control": "no-store"})
+
         short_route = await self._repo_short_route(url)
         if short_route is not None:
             short_url, short_name = short_route
@@ -4141,6 +4146,31 @@ class Default:
             row = None
         return repo_short_urls.remember(
             repo_short_urls.parse((row or {}).get("doc") or ""), now)
+
+    async def _repo_projects_setting(self):
+        now = int(Date.now())
+        setting = repo_projects.cached(now)
+        if setting is not None:
+            return setting
+        try:
+            row = await d1_first(
+                self.env,
+                "SELECT doc FROM instance_settings WHERE k=?",
+                repo_projects.SETTING_KEY)
+        except Exception:
+            row = None
+        return repo_projects.remember(
+            repo_projects.parse((row or {}).get("doc") or ""), now)
+
+    async def _repo_projects_redirect(self, url):
+        setting = await self._repo_projects_setting()
+        if not setting["repo"]:
+            return None
+        short = await self._repo_short_setting()
+        if not short["short"]:
+            return None
+        return repo_projects.redirect(
+            url.path, url.query, setting, short["owner"])
 
     async def _repo_short_route(self, url):
         setting = await self._repo_short_setting()

@@ -435,6 +435,7 @@ def test_offline_commits_render_terminal_state_and_abort_a_stuck_fetch():
     function directRepoRequestCandidates() { return []; }
     """ + fetcher + "\n" + commits + """
 const container = { innerHTML: "" };
+const state = { repoHistoryPath: "" };
 let aborted = false;
 let cleared = false;
 function $(selector) {
