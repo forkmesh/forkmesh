@@ -420,8 +420,13 @@ compile. Keep to these:
   typed pieces (as `HomeShell` and `GenieSpiderLayer` do) to stay inside the
   type checker's budget. The 2026-10-17 ad hoc build failed on
   `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
-  `any Tip` ternary; it now builds in `pressable`, `described` and `body`,
-  with the hint and tip as plain computed properties.
+  `any Tip` ternary; it now builds in `pressable`, `described`, `tipped` and
+  `body`, with the hint as a plain computed property.
+- Pass `popoverTip` a concrete tip type, never `any Tip`: an existential picks
+  the iOS 26 overload (`popoverTip(_:isPresented:attachmentAnchor:arrowEdge:action:)`)
+  and the archive fails on availability. To choose between tips, branch in a
+  `@ViewBuilder` with one `popoverTip` per tip (the 2026-10-17 ad hoc build of
+  `6e0b9032db` failed on `ShellNewAgentButton`'s `any Tip` property).
 - `FMDesktopRemote` and `FMInsights` both declare `DesktopHealth`; a file that
   imports both must qualify it.
 - Main-actor APIs called from static helpers or from a plain struct's `init`

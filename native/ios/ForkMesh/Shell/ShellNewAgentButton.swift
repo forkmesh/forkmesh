@@ -237,8 +237,7 @@ struct ShellNewAgentButton: View {
     private var running: Int { ShellCounts.shared.agents }
 
     var body: some View {
-        described
-            .popoverTip(tip)
+        tipped
             .genieKeepsClear()
             .onAppear {
                 feel(!tabHidden)
@@ -302,11 +301,12 @@ struct ShellNewAgentButton: View {
         return "Opens the composer to start an agent. Each star is an agent running. Touch and hold to speak a prompt."
     }
 
-    private var tip: any Tip {
+    @ViewBuilder private var tipped: some View {
         if onVoice == nil {
-            return paletteTip
+            described.popoverTip(paletteTip)
+        } else {
+            described.popoverTip(voiceTip)
         }
-        return voiceTip
     }
 
     static func runningLabel(_ count: Int) -> String {
