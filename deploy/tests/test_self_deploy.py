@@ -544,3 +544,70 @@ def test_a_binary_that_refuses_the_config_changes_nothing(tmp_path, live):
     assert (live / "bin").read_text() == "old binary"
     assert sorted(p.name for p in live.iterdir()) == ["bin", "mirror-node.json", "tools"]
     assert not any(c[:2] == ["systemctl", "restart"] for c in system.calls)
+
+
+def admin_request(db, created=NOW):
+    db.execute(
+        "INSERT INTO deploy_approvals (request_id,kind,owner,repo,target,"
+        "base_before,head,base_after,public_key,signature,signed_at,actor,"
+        "status,created_at,updated_at) VALUES ('admin:1:ab','admin','forkmesh',"
+        "'forkmesh','main','','','','','',?,'ada','pending',?,?)",
+        created, created, created)
+    return db.query("SELECT id FROM deploy_approvals WHERE request_id='admin:1:ab'")[0]["id"]
+
+
+def test_an_admin_request_deploys_main_on_every_core(repo):
+    db, phone, steps, clock = FakeDB(), Phone(), Steps(), [NOW + 1000]
+    db.db.execute("CREATE TABLE instance_settings (k TEXT PRIMARY KEY, "
+                  "doc TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+    request_id = admin_request(db)
+    agents = {n: agent_for(n, db, repo, phone, steps, clock) for n in ("n1", "n2", "n3")}
+    for agent in agents.values():
+        agent.admin_updates = True
+    for _ in range(3):
+        for name in ("n1", "n2", "n3"):
+            agents[name].tick()
+    row = db.query("SELECT * FROM deploy_approvals WHERE id=?", request_id)[0]
+    assert row["base_after"] == repo["merged"] and row["status"] == "deployed"
+    rev = repo["merged"][:12]
+    assert [c for c in steps.calls if c[1] == "activate"] == [
+        ("n1", "activate", rev), ("n2", "activate", rev), ("n3", "activate", rev)]
+    upstream = __import__("json").loads(db.query(
+        "SELECT doc FROM instance_settings WHERE k='core_upstream'")[0]["doc"])
+    assert upstream["commit"] == repo["merged"] and upstream["subject"] == "merge"
+
+
+def test_an_admin_request_is_skipped_when_admin_updates_are_off(repo):
+    db, phone, steps, clock = FakeDB(), Phone(), Steps(), [NOW + 1000]
+    request_id = admin_request(db)
+    agent = agent_for("n1", db, repo, phone, steps, clock)
+    assert agent.tick() == "skipped: updates from the admin console are off on this core"
+    assert status(db, request_id)["status"] == "skipped"
+    assert steps.calls == []
+
+
+def test_an_old_admin_request_expires(repo):
+    db, phone, steps, clock = FakeDB(), Phone(), Steps(), [NOW + 3 * 60 * 60 * 1000]
+    request_id = admin_request(db)
+    agent = agent_for("n1", db, repo, phone, steps, clock)
+    agent.admin_updates = True
+    assert agent.tick().startswith("skipped: the update request is older")
+    assert status(db, request_id)["status"] == "skipped"
+
+
+def test_render_turns_on_admin_updates_without_a_phone_key():
+    fleet = {"domain": "next.forkmesh.com", "nodes": [{"name": "n1"}],
+             "self_deploy": {"enabled": True, "admin_updates": True}}
+    settings = render.self_deploy_settings(fleet)
+    assert settings["enabled"] and settings["adminUpdates"]
+    assert "FORKMESH_VAR_CORE_ADMIN_UPDATES=1" in render.core_role_settings(fleet)
+    fleet["self_deploy"]["admin_updates"] = False
+    assert "FORKMESH_VAR_CORE_ADMIN_UPDATES=\n" in render.core_role_settings(fleet) + "\n"
+    assert not render.self_deploy_settings(fleet)["enabled"]
+
+
+def test_the_admin_announcement_names_the_console():
+    title, body = deploy_approvals.announcement(
+        {"kind": "admin", "base_after": "a" * 40, "status": "deployed"})
+    assert title == "Deployed aaaaaaaaaaaa to the cores"
+    assert "admin console" in body

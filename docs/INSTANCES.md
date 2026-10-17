@@ -98,6 +98,14 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   published ranges.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first.
+- An admin can run the same update from the admin console (Platform →
+  Update ForkMesh). The `services` step installs
+  `forkmesh-instance-update.path` and `.service` and the helper
+  `tools/instance-update.sh`; the app only writes a request file. Every build
+  writes `/opt/forkmesh-instance/build-info.json` (version, commit, message),
+  and `app.env` carries `BUILD_REV`, `APP_VERSION`, `BUILD_INFO_FILE` and the
+  request and status paths. See
+  [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
 
 ## Bootstrap (`instance_bootstrap.py`)
@@ -109,6 +117,11 @@ other owners, the organization, the `forkmesh` node account and the
 node's own signed refs digest count as the flagship proof;
 `HOSTED_GIT_CORE_NODES=forkmesh` makes it the core for new repositories. The
 app does not redirect Git clients to its own origin.
+The bootstrap also switches Issues, Pull requests and Discussions off on the
+`<owner>/forkmesh` mirror; the owner can turn them back on in the
+repository's Settings tab ([app/repo-features.md](app/repo-features.md)).
+Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
+→ Repository addresses ([app/server-update.md](app/server-update.md)).
 
 ## White label
 
@@ -166,6 +179,6 @@ to every provider.
 
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
-`test_instance_theme.py`, `test_instance_pages.py`,
+`test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`, and
 `app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`.

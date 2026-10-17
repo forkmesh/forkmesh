@@ -108,6 +108,7 @@ def _defaults_constant(name="AP_REPO_SETTING_DEFAULTS"):
 AP_REPO_SETTING_DEFAULTS = _defaults_constant()
 REPO_ALERT_SETTING_DEFAULTS = _defaults_constant(
     "REPO_ALERT_SETTING_DEFAULTS")
+REPO_FEATURE_DEFAULTS = _defaults_constant("REPO_FEATURE_DEFAULTS")
 
 
 def _settings_ns(settings_rows):
@@ -209,6 +210,9 @@ def test_about_get_returns_followers_list_and_settings():
         # no row means every alert email stays off.
         if "FROM repo_alert_settings" in sql:
             return None
+        if "FROM repo_feature_settings" in sql:
+            assert args == ("bi:repo-feature-settings:mirror2/proj",)
+            return {"data": json.dumps({"pulls": False})}
         raise AssertionError("unexpected d1_first: " + sql)
 
     async def d1_all(env, sql, *args):
@@ -252,8 +256,10 @@ def test_about_get_returns_followers_list_and_settings():
 
     ns = _load("_repo_about_public", "_ap_repo_settings_get",
                "_ap_repo_settings_bi", "_repo_alert_settings_get",
-               "_repo_alert_settings_bi",
+               "_repo_alert_settings_bi", "_repo_features_get",
+               "_repo_features_bi",
                extra_globals={
+                   "REPO_FEATURE_DEFAULTS": REPO_FEATURE_DEFAULTS,
                    "REPO_ALERT_SETTING_DEFAULTS":
                        REPO_ALERT_SETTING_DEFAULTS,
                    "json_response": _json_response,
@@ -320,6 +326,8 @@ def test_about_get_returns_followers_list_and_settings():
                                      "broadcastEvents": True,
                                      "acceptComments": False}
     assert fediverse["enabled"] is True
+    assert resp["data"]["features"] == {
+        "issues": True, "pulls": False, "discussions": True}
     # Platform operational-alert state is not exposed from a public repo API.
     assert "alerts" not in resp["data"]
 

@@ -1418,9 +1418,21 @@
   // route prefix (e.g. /dashboard/owner/repo/issues -> ["owner","repo","issues"])
   // so repo-route parsing sees the same clean owner/repo/tab shape regardless
   // of whether the browser landed here directly or via the 404.html bounce.
+  function repoShortRoute() {
+    const name = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
+    const owner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+    return name && owner ? { name, owner } : null;
+  }
+
   function repoRouteParts() {
     let parts = location.pathname.split("/").filter(Boolean);
     if (parts[0] === "dashboard") parts = parts.slice(1);
+    const short = repoShortRoute();
+    if (short && parts.length && decodeURIComponent(parts[0]) === short.name) {
+      const rest = parts.slice(1);
+      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
+      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+    }
     return parts;
   }
 

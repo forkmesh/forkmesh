@@ -36,6 +36,8 @@ class Entry:
             CREATE TABLE org_repos (org_bi TEXT NOT NULL, repo TEXT NOT NULL,
                 node_owner TEXT NOT NULL, created_at INTEGER NOT NULL,
                 PRIMARY KEY (org_bi, repo));
+            CREATE TABLE repo_feature_settings (repo_bi TEXT PRIMARY KEY,
+                data TEXT NOT NULL, updated_at INTEGER NOT NULL);
         """)
         self.Date = SimpleNamespace(now=lambda: 1_700_000_000_000)
         self.touched = []
@@ -138,10 +140,18 @@ def test_admin_org_node_and_alias_are_created_once():
     alias = entry.db.execute("SELECT * FROM org_repos").fetchone()
     assert (alias["org_bi"], alias["repo"], alias["node_owner"]) == (
         "bi:org:acme", "forkmesh", "forkmesh")
+    features = entry.db.execute("SELECT * FROM repo_feature_settings").fetchone()
+    assert features["repo_bi"] == "bi:repo-feature-settings:forkmesh/forkmesh"
+    assert json.loads(features["data"]) == {
+        "discussions": False, "issues": False, "pulls": False}
+    entry.db.execute("UPDATE repo_feature_settings SET data=?",
+                     ('{"issues": true}',))
     again = run(entry, spec(adminPassword="another-pass-1"))
     assert again["adminCreated"] is False and again["orgCreated"] is False
     assert user(entry, "ada")["data"]["pass_hash"] == "hash:another-pass-1"
     assert entry.db.execute("SELECT COUNT(*) FROM orgs").fetchone()[0] == 1
+    assert entry.db.execute(
+        "SELECT data FROM repo_feature_settings").fetchone()[0] == '{"issues": true}'
 
 
 def test_user_owner_gets_the_alias_without_an_org():

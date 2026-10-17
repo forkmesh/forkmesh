@@ -73,7 +73,7 @@ def test_latest_native_migration_stamps_exact_runtime_schema_fingerprint():
     stamps = _migration_schema_fingerprint_stamps()
     assert stamps
     migration_name, fingerprint = stamps[-1]
-    assert migration_name == "0269_chat_history_acked_grace.sql"
+    assert migration_name == "0270_repo_feature_settings.sql"
     assert fingerprint == _runtime_schema_fingerprint()
     # Production must not import/hash the complete schema merely to discover
     # the marker the deploy migration just wrote. Pinning the literal keeps a

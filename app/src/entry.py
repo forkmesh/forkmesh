@@ -6311,6 +6311,8 @@ _not_found_log = _LazyModule("not_found_log")
 _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
+_server_update_admin = _LazyModule("server_update_admin")
+repo_short_urls = _LazyModule("repo_short_urls")
 _ids_console = _LazyModule("ids_console")
 # The hackathon growth layer (app/src/hackathon.py is its pure policy half).
 # Lazy for the usual reason -- none of it belongs in the entrypoint's
@@ -13409,7 +13411,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "cfae01526d880e13fdc3ea0f18605f99244efbbc0ce71269dde05109bec15701"
+    "83509a81a8e93dafa25a304813ccf5c2565ec5a74b82d932773e741acc242305"
 )
 
 
@@ -16629,6 +16631,7 @@ async def _repo_about_public(env, request, owner, repo):
             "followersList": followers_list,
             "settings": ap_settings,
         },
+        "features": await _repo_features_get(env, owner, repo),
     }, cache_control="public, max-age=600")
 
 
@@ -16801,6 +16804,22 @@ async def repo_about_handler(env, request, owner, repo):
                     "_ap_purge_repo_digest_queues")
                 if callable(purge_digests):
                     await purge_digests(env, owner, repo)
+    features = None
+    feature_data = data.get("features")
+    if isinstance(feature_data, dict):
+        current_features = await _repo_features_get(env, owner, repo)
+        features = dict(current_features)
+        for key in REPO_FEATURE_DEFAULTS:
+            if key in feature_data:
+                features[key] = bool(feature_data.get(key))
+        if features != current_features:
+            await d1_run(
+                env,
+                "INSERT INTO repo_feature_settings (repo_bi, data, updated_at)"
+                " VALUES (?,?,?) ON CONFLICT(repo_bi) DO UPDATE SET"
+                " data=excluded.data, updated_at=excluded.updated_at",
+                await _repo_features_bi(env, owner, repo),
+                json.dumps(features, sort_keys=True), int(Date.now()))
     if text_changed:
         # Queue the edit for the owner's desktop node, which writes it into the
         # repo's committed .forkmesh/info.json (the same file the desktop app's
@@ -16859,6 +16878,8 @@ async def repo_about_handler(env, request, owner, repo):
     }
     if ap_settings is not None:
         result["fediverse"] = {"settings": ap_settings}
+    if features is not None:
+        result["features"] = features
     return json_response(result)
 
 
@@ -18636,7 +18657,8 @@ async def _delete_repo_named_state(env, owner, repo):
     key = owner + "/" + repo
     statements = []
     for prefix, table in (("ap-repo-settings:", "ap_repo_settings"),
-                          ("repo-alert-settings:", "repo_alert_settings")):
+                          ("repo-alert-settings:", "repo_alert_settings"),
+                          ("repo-feature-settings:", "repo_feature_settings")):
         statements.append((
             "DELETE FROM " + table + " WHERE repo_bi=?",
             (await blind_index(env, prefix + key),)))
@@ -34434,6 +34456,43 @@ AP_REPO_SETTING_DEFAULTS = {
     "acceptComments": True,  # remote replies ingested as federated comments
 }
 
+REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True}
+
+
+async def _repo_features_bi(env, owner, repo):
+    owner = str(owner or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    node = await _org_repo_node(env, owner, repo)
+    return await blind_index(
+        env, "repo-feature-settings:%s/%s" % (node or owner, repo))
+
+
+async def _repo_features_get(env, owner, repo):
+    row = await d1_first(
+        env, "SELECT data FROM repo_feature_settings WHERE repo_bi=?",
+        await _repo_features_bi(env, owner, repo))
+    features = dict(REPO_FEATURE_DEFAULTS)
+    try:
+        stored = json.loads((row or {}).get("data") or "{}")
+    except ValueError:
+        stored = {}
+    if isinstance(stored, dict):
+        for key in REPO_FEATURE_DEFAULTS:
+            if key in stored:
+                features[key] = bool(stored[key])
+    return features
+
+
+async def _repo_feature_off(env, owner, repo, feature):
+    try:
+        features = await _repo_features_get(env, owner, repo)
+    except Exception:
+        return None
+    if features.get(feature, True):
+        return None
+    return json_response(
+        {"error": "feature_disabled", "feature": feature}, status=403)
+
 
 
 
@@ -39756,6 +39815,9 @@ async def issues_handler(env, request, owner, repo):
     except _OrgAliasUnresolved:
         return json_response({"error": "alias_unresolved"}, status=503)
     if method == "POST":
+        disabled = await _repo_feature_off(env, owner, repo, "issues")
+        if disabled is not None:
+            return disabled
         try:
             data = await bounded_json_request(request)
         except Exception:
@@ -40117,6 +40179,9 @@ async def pulls_handler(env, request, owner, repo):
     except _OrgAliasUnresolved:
         return json_response({"error": "alias_unresolved"}, status=503)
     if method == "POST":
+        disabled = await _repo_feature_off(env, owner, repo, "pulls")
+        if disabled is not None:
+            return disabled
         try:
             data = await bounded_json_request(request)
         except Exception:
@@ -40510,6 +40575,9 @@ async def discussions_handler(env, request, owner, repo):
     except _OrgAliasUnresolved:
         return json_response({"error": "alias_unresolved"}, status=503)
     if method == "POST":
+        disabled = await _repo_feature_off(env, owner, repo, "discussions")
+        if disabled is not None:
+            return disabled
         try:
             data = await bounded_json_request(request)
         except Exception:

@@ -140,6 +140,8 @@ def announcement(row):
     message = str(row.get("message") or "")
     if status == "deployed":
         return ("Deployed " + commit + " to the cores",
+                "Requested from the admin console and live on every core."
+                if row.get("kind") == "admin" else
                 "Merged from your phone and live on every core.")
     if status == "failed":
         return ("Deploy of " + commit + " failed",
@@ -152,7 +154,7 @@ async def announce(env):
     await ensure_schema(env)
     rows = await d1_all(
         env,
-        "SELECT id,base_after,actor,status,message FROM deploy_approvals "
+        "SELECT id,kind,base_after,actor,status,message FROM deploy_approvals "
         "WHERE announced=0 AND status IN (%s) ORDER BY id LIMIT 20"
         % ",".join("?" * len(TERMINAL)), *TERMINAL)
     sent = 0

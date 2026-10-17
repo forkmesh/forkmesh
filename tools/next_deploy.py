@@ -206,13 +206,27 @@ def stage_release(rev, stage: Path, fleet, run=subprocess.run):
     (stage / "WHEELHOUSE").write_text(cached_wheelhouse(run).name + "\n")
     stage_join_tree(stage)
     (stage / "BUILD_REV").write_text(rev + "\n")
+    (stage / "BUILD_INFO.json").write_text(json.dumps(
+        build_info(rev), sort_keys=True) + "\n")
     # The app validates DEPLOY_FINGERPRINT as 64 lowercase hex (public
     # snapshot rows are keyed on it): the same input digest deploy.sh stamps.
     fingerprint = deploy_fingerprint()
     (stage / "release.env").write_text(
         "FORKMESH_VAR_BUILD_REV=%s\nFORKMESH_VAR_DEPLOY_FINGERPRINT=%s\n"
-        "FORKMESH_VAR_APP_VERSION=%s\n" % (
-            rev, fingerprint, common.release_version()))
+        "FORKMESH_VAR_APP_VERSION=%s\nFORKMESH_VAR_BUILD_INFO_FILE=%s\n" % (
+            rev, fingerprint, common.release_version(),
+            CURRENT + "/BUILD_INFO.json"))
+
+
+def build_info(rev):
+    found = subprocess.run(
+        ["git", "log", "-1", "--format=%H%n%ct%n%s", rev], cwd=REPO,
+        capture_output=True, text=True, check=False)
+    commit, stamp, subject = (found.stdout.split("\n", 2) + ["", "", ""])[:3] \
+        if found.returncode == 0 else (rev, "0", "")
+    return {"version": common.release_version(), "commit": commit.strip(),
+            "commitTime": int(stamp.strip() or 0),
+            "subject": subject.strip()[:500], "builtAt": int(time.time())}
 
 
 def wheelhouse_key(requirements=None) -> str:
