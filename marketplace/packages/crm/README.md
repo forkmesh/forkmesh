@@ -77,6 +77,18 @@ generic package sockets and generated registries.
   existed), the import adds that starter pipeline first and audits
   `crm.flows.add`; a member's import never changes pipelines. Files that mix
   pipelines open a plain list, as before.
+- **Ranked grants** (1.37.0): an empty Grants-type pipeline offers **Load the
+  100 ranked grants**, on the web as a button where the empty list would be
+  and on the desktop in the pipeline tab's right-click menu. It is one
+  `POST /api/crm/<org>/contacts/grants` with `{"flow", "viewId"}`, for owners
+  and admins only. The worker reads `content/worker/crm_grants.csv`, which
+  `tools/grants_build.py` writes from `docs/finance/grants/grants.json`, puts
+  every row on the requested Grants-type pipeline (`grants` when none is
+  named, adding the starter pipeline if needed), leaves out programs whose name
+  is already on that pipeline, and imports the rest through the CSV import
+  into the open list, or a new list named after the pipeline. Loading again
+  adds nothing. The rows have no email, so this name check is what keeps a
+  second load from duplicating them.
 - **GitHub contributors** (desktop): clones the repository with
   `git clone --bare --filter=tree:0 --no-tags` (commits only, no credentials,
   no prompts, 10 minute limit, temporary folder removed), reads `git log
