@@ -84,7 +84,7 @@ def test_tasks_page_uses_the_full_authorized_lifecycle_api():
 
 def test_task_detail_shows_every_private_record_family():
     js = assembled_dashboard_js()
-    detail = js[js.index("function renderTaskDetail("):js.index("function renderTasksPage(")]
+    detail = js[js.index("function taskEditablePropsHtml("):js.index("function renderTasksPage(")]
     for marker in (
         "task.details",
         "task.department",

@@ -76,7 +76,9 @@ def test_the_refresh_button_is_the_way_back_to_the_relay():
 
 
 def test_task_edit_applies_the_authoritative_patch_response_immediately():
-    edit = _function(QT_TASKS, "void MainWindow::editOrganizationTask()")
+    assert "patchOrganizationTask(task, body);" in _function(
+        QT_TASKS, "void MainWindow::editOrganizationTask()")
+    edit = _function(QT_TASKS, "void MainWindow::patchOrganizationTask(")
     assert "settleOrganizationTaskEdit(taskId, task, ok, payload, error," in edit
     settle = _function(QT_TASKS, "bool MainWindow::settleOrganizationTaskEdit(")
     assert "*updated = replaceOrganizationTask(changed);" in settle
@@ -87,7 +89,7 @@ def test_task_edit_applies_the_authoritative_patch_response_immediately():
 
 
 def test_task_edit_shows_on_save_and_survives_a_stale_catalog_read():
-    edit = _function(QT_TASKS, "void MainWindow::editOrganizationTask()")
+    edit = _function(QT_TASKS, "void MainWindow::patchOrganizationTask(")
     # The row changes before the PATCH is even sent, and rolls back on failure.
     optimistic = edit.index("replaceOrganizationTask(optimistic);")
     assert optimistic < edit.index("requestOrganizationTasks(")
