@@ -470,6 +470,26 @@ def test_a_theme_preset_is_checked_and_reaches_the_installer():
     assert '"theme": form["theme"],' in Path(instance_launch.__file__).read_text(encoding="utf-8")
 
 
+def test_a_full_colour_theme_is_cleaned_and_reaches_the_installer():
+    colours = {"dark": {"primary": "#F97316", "background": "#0c0a09"},
+               "light": {"primary": "#ea580c"}}
+    result, problem = instance_launch.validate(form(theme=colours))
+    assert problem is None
+    assert result["theme"] == instance_theme.clean(colours)
+    assert result["theme"]["dark"]["primary"] == "#f97316"
+    assert instance_launch.validate(form(theme={}))[0]["theme"] == ""
+    for bad in ({"sepia": {"primary": "#000000"}}, {"dark": {"primary": "red"}},
+                {"dark": {"cta": "#000000"}}, {"dark": ["#000000"]}, ["dark"], 7,
+                {"dark": {name: "#000000" for name in instance_theme.TOKENS},
+                 "light": {"primary": "url(x)"}}):
+        result, problem = instance_launch.validate(form(theme=bad))
+        assert result is None and problem[0] == "invalid_theme" and problem[2] == "theme", bad
+    runtime = Runtime()
+    answer = post(runtime, form(theme=colours))
+    assert answer["status"] == 202, answer
+    assert runtime.requests[1]["config"]["theme"] == instance_theme.clean(colours)
+
+
 OWNER_PASSWORD = "grace-password-33"  # forkmesh-secret-scan:ignore-line
 
 

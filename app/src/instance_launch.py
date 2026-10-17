@@ -128,6 +128,27 @@ def logo_kind(raw):
     return ""
 
 
+def parse_theme(value):
+    if value is None or value == "" or value == {}:
+        return "", None
+    if isinstance(value, str):
+        name = value.strip().lower()[:41]
+        if not name or name in instance_theme.PRESETS:
+            return name, None
+        return None, ("invalid_theme", "Choose one of the colour themes "
+                      "listed, or the default.", "theme")
+    if not isinstance(value, dict):
+        return None, ("invalid_theme", "The colour theme must be a preset "
+                      "name or a set of colours.", "theme")
+    try:
+        theme = instance_theme.clean(value)
+        instance_theme.dump(theme)
+    except instance_theme.ThemeError as error:
+        return None, ("invalid_theme", "The colour theme is not valid: %s."
+                      % error, "theme")
+    return theme or "", None
+
+
 def parse_logo(value):
     if not isinstance(value, str) or not value.strip():
         return "", None
@@ -267,10 +288,9 @@ def validate(data):
     logo, problem = parse_logo(data.get("logo"))
     if problem:
         return None, problem
-    theme = _text(data, "theme", 41).lower()
-    if theme and theme not in instance_theme.PRESETS:
-        return None, ("invalid_theme", "Choose one of the colour themes "
-                      "listed, or the default.", "theme")
+    theme, problem = parse_theme(data.get("theme"))
+    if problem:
+        return None, problem
     provider = _text(data, "mailProvider", 20).lower() or "none"
     if provider not in MAIL_PROVIDERS:
         return None, ("invalid_mail_provider", "Choose Mailtrap, SendGrid, "
