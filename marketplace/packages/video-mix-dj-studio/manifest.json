@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Audio",
-  "version": "1.0.0",
-  "summary": "Mix two YouTube decks with turntables, crossfader, cues, loops, captured sections, tempo and local sampler pads on iOS, desktop and web.",
+  "version": "1.1.0",
+  "summary": "Mix two YouTube decks with turntables, crossfader, cues, loops, sampled sections, tempo and sampler pads, and jam with friends who share the decks and the queue.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -32,6 +32,7 @@
   "entrypoints": {
     "desktop": "builtin:video-mix-dj-studio",
     "ios": "builtin:video-mix-dj-studio",
+    "worker": "content/worker/video_mix_dj_studio.py",
     "dashboard-view": "content/web/view.html",
     "dashboard-script": "content/web/page.js",
     "settings": "builtin:package"
@@ -70,6 +71,11 @@
       "risk": "low"
     },
     {
+      "id": "account.jam.share",
+      "label": "Create jam sessions, invite ForkMesh users by name, and share both decks and a video queue with the people who join",
+      "risk": "sensitive"
+    },
+    {
       "id": "chrome.rail.button",
       "label": "Add a Video Mix DJ button to the desktop rail that opens this studio in your browser",
       "risk": "low"
@@ -91,6 +97,11 @@
     "migrations": []
   },
   "dataLifecycle": {
-    "scope": "none"
+    "scope": "account"
+  },
+  "worker": {
+    "module": "video_mix_dj_studio",
+    "api": "/api/video-mix-dj-studio",
+    "outboundOrigins": []
   }
 }
