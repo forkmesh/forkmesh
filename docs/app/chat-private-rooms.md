@@ -222,14 +222,17 @@ What is still not covered (audit 2026-10-14):
 
 - Files posted in a public `#` channel are not sealed, so the server can read
   them (`RelayService.isControllerReadableFrame`).
-- Device keys are trusted on first use; nothing ties a key to an account.
+- Device keys were trusted on first use with nothing tying a key to an account;
+  chat protocol v3 ([chat-protocol-v3.md](chat-protocol-v3.md), 2026-10-16)
+  binds each device key to its account in a signed bundle and holds any further
+  device of a DM account until the user approves it.
 - The server deletes a retained DM frame when one device of the recipient
   account acknowledges it, not when the file is viewed, and a view-once part
   can be downloaded again until the client calls consume.
 - View-once tombstone rows (sender, recipient, size, times) are kept 30 days;
   self-hosted SQLite has no `secure_delete`.
 - Chat history JSON (text and file names, no file bytes) uses
-  until-first-unlock protection and is included in backups.
+  until-first-unlock protection. Since v3 it is excluded from backups.
 - The desktop writes received files up to 512 KB in plaintext into its chat
   history; Android leaves `cacheDir/chat-media/` behind.
 
