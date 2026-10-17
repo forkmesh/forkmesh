@@ -636,9 +636,12 @@ class DirectMessagesTest {
             "channel" to conversation, "text" to "sent while you were away", "ts" to System.currentTimeMillis(),
         )
         val stale = own + ("id" to "me-node-0") + ("ts" to System.currentTimeMillis() - 8L * 24 * 60 * 60 * 1000)
+        val staleFrame = mine.seal(stale)
+        val ownFrame = mine.seal(own)
+        assertEq(listOf(mine.keyId), RoomSeal.wrappedKeyIds(ownFrame), "sealed before this phone knew the peer")
         socket.onText(envelope(peer.keyFrame(), "ref" to "b".repeat(40), "historyReplay" to true))
-        socket.onText(envelope(mine.seal(stale), "ref" to "c".repeat(40), "historyReplay" to true, "notify" to true))
-        socket.onText(envelope(mine.seal(own), "ref" to ownRef, "historyReplay" to true, "notify" to true))
+        socket.onText(envelope(staleFrame, "ref" to "c".repeat(40), "historyReplay" to true, "notify" to true))
+        socket.onText(envelope(ownFrame, "ref" to ownRef, "historyReplay" to true, "notify" to true))
         val before = socket.sent.size
         socket.onText(historyEnd)
         val after = sentFrames(socket, before)
