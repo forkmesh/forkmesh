@@ -5,10 +5,10 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   const el = (name) => root.querySelector(`[data-vmdj="${name}"]`);
   const key = "forkmesh.videoMixDjStudio.v1";
   const decks = {
-    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
-    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false },
+    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
+    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
   };
-  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "" };
+  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "", savedAt: 0, leaving: false };
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -32,6 +32,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
         decks[name].level = safeNumber(value.level, 100, 0, 100);
         decks[name].rate = safeNumber(value.rate, 1, 0.25, 2);
         decks[name].loop = value.loop === true;
+        decks[name].start = safeNumber(value.position, decks[name].cue, 0, 864000);
+        decks[name].resume = value.playing === true && Boolean(decks[name].id);
       }
     } catch (_) {}
   }
@@ -40,8 +42,9 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     const saved = { crossfader: state.crossfader, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
     for (const name of ["a", "b"]) {
       const deck = decks[name];
-      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop };
+      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, position: deck.time, playing: deck.playing || deck.resume };
     }
+    state.savedAt = Date.now();
     try { localStorage.setItem(key, JSON.stringify(saved)); } catch (_) {}
   }
 
@@ -88,12 +91,13 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     command(deck, "addEventListener", ["infoDelivery"]);
   }
 
-  function embedUrl(id) {
+  function embedUrl(id, start = 0) {
     const origin = encodeURIComponent(location.origin);
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&playsinline=1&rel=0&origin=${origin}`;
+    const from = start >= 1 ? `&start=${Math.floor(start)}` : "";
+    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&playsinline=1&rel=0${from}&origin=${origin}`;
   }
 
-  function loadDeck(name, value = el(`url-${name}`).value) {
+  function loadDeck(name, value = el(`url-${name}`).value, start = 0, resume = false) {
     const deck = decks[name];
     const id = videoId(value);
     if (!id) {
@@ -105,11 +109,13 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     deck.ready = false;
     deck.playing = false;
     deck.duration = 0;
-    deck.time = 0;
+    deck.time = start;
+    deck.start = start;
+    deck.resume = resume;
     const player = el(`player-${name}`);
     player.hidden = false;
     el(`placeholder-${name}`).hidden = true;
-    player.src = embedUrl(id);
+    player.src = embedUrl(id, start);
     deck.player = player;
     player.onload = () => {
       setTimeout(() => listen(deck), 100);
@@ -199,7 +205,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   function destroyDeck(name) {
     const deck = decks[name];
     if (deck.player) deck.player.src = "about:blank";
-    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false });
+    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false });
   }
 
   function volumeMix() {
@@ -458,6 +464,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       const deck = decks[name];
       if (deck.loop && deck.playing && deck.time >= deck.cue + 8) command(deck, "seekTo", [deck.cue, true]);
     }
+    if ((decks.a.playing || decks.b.playing) && Date.now() - state.savedAt > 5000) persist();
     render();
   }
 
@@ -471,11 +478,19 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (typeof info.currentTime === "number") deck.time = info.currentTime;
     if (typeof info.duration === "number" && info.duration > 0) deck.duration = info.duration;
     if (typeof info.videoData?.title === "string") deck.title = info.videoData.title;
-    if (data.event === "onStateChange") deck.playing = Number(data.info) === 1;
+    if (data.event === "onStateChange") {
+      const playerState = Number(data.info);
+      deck.playing = playerState === 1;
+      if (playerState === 1 || playerState === 0 || (playerState === 2 && !state.leaving)) deck.resume = false;
+      if (!state.leaving) persist();
+    }
     if (data.event === "onReady") {
       deck.ready = true;
       command(deck, "setPlaybackRate", [deck.rate]);
       applyMix();
+      if (deck.start > 0) command(deck, "seekTo", [deck.start, true]);
+      deck.start = 0;
+      if (deck.resume) command(deck, "playVideo");
     }
   }
 
@@ -550,9 +565,22 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     else if (event.key === "ArrowLeft") { event.preventDefault(); changeCrossfader(state.crossfader - 5); }
     else if (event.key === "ArrowRight") { event.preventDefault(); changeCrossfader(state.crossfader + 5); }
   });
-  window.addEventListener("pagehide", () => { if (state.interval) clearInterval(state.interval); for (const name of ["a", "b"]) command(decks[name], "pauseVideo"); });
+  window.addEventListener("pagehide", () => {
+    if (state.interval) clearInterval(state.interval);
+    state.interval = null;
+    state.leaving = true;
+    for (const name of ["a", "b"]) decks[name].resume = decks[name].playing || decks[name].resume;
+    persist();
+    for (const name of ["a", "b"]) command(decks[name], "pauseVideo");
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    state.leaving = false;
+    if (!state.interval) state.interval = window.setInterval(refresh, 250);
+    for (const name of ["a", "b"]) if (decks[name].resume) command(decks[name], "playVideo");
+  });
   restore();
   render();
-  for (const name of ["a", "b"]) if (decks[name].id) loadDeck(name, decks[name].url);
+  for (const name of ["a", "b"]) if (decks[name].id) loadDeck(name, decks[name].url, decks[name].start, decks[name].resume);
   state.interval = window.setInterval(refresh, 250);
 });

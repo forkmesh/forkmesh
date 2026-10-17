@@ -184,6 +184,25 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(DjSaved.decode(Data("nonsense".utf8)), DjSaved())
     }
 
+    func testSavedPlaybackResumesWhereItWas() {
+        let old = DjSaved.decode(Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":42}}"#.utf8))
+        XCTAssertEqual(old.a.position, 42)
+        XCTAssertFalse(old.playing)
+        XCTAssertFalse(old.automix)
+        let saved = DjSaved.decode(Data(#"{"a":{"videoId":"dQw4w9WgXcQ","cue":5,"position":-3,"playing":true},"b":{"position":80,"playing":true},"automix":true}"#.utf8))
+        XCTAssertEqual(saved.a.position, 0)
+        XCTAssertTrue(saved.a.playing)
+        XCTAssertEqual(saved.b.position, 80)
+        XCTAssertFalse(saved.b.playing)
+        XCTAssertTrue(saved.playing)
+        XCTAssertTrue(saved.automix)
+        var playing = DjSaved()
+        playing.b.videoId = "9bZkp7q19f0"
+        playing.b.position = 61.5
+        playing.b.playing = true
+        XCTAssertEqual(DjSaved.decode(playing.encoded()), playing)
+    }
+
     func testHistoryKeepsLatestFirstWithoutDuplicates() {
         var history = DjStudio.remember([], id: "dQw4w9WgXcQ", title: "Song", author: "Band")
         history = DjStudio.remember(history, id: "9bZkp7q19f0", title: "Other", author: "")
