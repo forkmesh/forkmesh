@@ -17,7 +17,7 @@ let modules: [Module] = [
     Module(name: "NexusDiscovery", deps: ["NexusCore", "NexusDNS", "NexusConnectivity"]),
     Module(name: "NexusRemote", deps: ["NexusCore"]),
     Module(name: "NexusKit", deps: ["NexusCore", "NexusDNS", "NexusWeb", "NexusConnectivity", "NexusScan", "NexusDiscovery", "NexusRemote"]),
-    Module(name: "NexusStore", deps: ["NexusCore", "NexusKit"], appleOnly: true),
+    Module(name: "NexusStore", deps: ["NexusCore", "NexusKit"], appleOnly: true, tested: false),
     Module(name: "NexusUI", deps: ["NexusCore", "NexusKit", "NexusStore", "NexusWeb"], appleOnly: true, tested: false),
 ]
 
