@@ -564,6 +564,94 @@ default in new projects except the chosen starter pack
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).
+- **Direct calls** (`A/feature/chat/DirectCall*.kt`, `PreCallScreen.kt`,
+  `CallRinger.kt`, `IncomingCallNotifier.kt`; engine `C/chat/DirectCalls.kt`;
+  protocol in `docs/app/chat-direct-calls.md`).
+  - **Pre-call check.** Voice call and Video call in the conversation header
+    no longer ring at once. After the permission prompt they set
+    `DirectCallFeature.precall`, and `DirectCallOverlay` draws
+    `PreCallScreen` as a full-screen layer, not a Navigator screen, so the
+    call screen can replace it without leaving a screen in the stack. It is
+    refused while a call is active or `WebCallPeers.busy`. The screen opens a
+    preview through `WebCallPeers.preview(…, media, owner = "precall")`:
+    video uses the camera with the look's face, background and voice; voice
+    uses the microphone only (`media` "audio") and shows the avatar. The
+    factory's WebView is attached from the first frame, under the avatar
+    for voice, because a detached WebView never starts `getUserMedia`. A
+    spinner shows while it opens, and a failure shows a message, Try again
+    and a Call button that still works. Face, Background, Voice and Hear
+    myself match the Face Changer screen. "Record test clip" records up to
+    10 s (countdown, auto-stop) through the page's `record`, saves it under
+    `cacheDir/precall-test`, then plays it back at once (`VideoView` for
+    video, `MediaPlayer` for audio) with Replay, Re-record and Discard. The
+    folder is emptied on the worker when the layer goes away.
+    `WebCallPeer.finishRecording` keeps `audio/*` mimes now, because a voice
+    preview records an audio clip. Call runs `engine.start` on the worker,
+    and the engine listener clears `precall` as soon as a phase exists.
+  - **Handoff.** `makePeer` reuses the previewing peer whenever the preview's
+    media equals the call's media (video as before, and now voice too), so
+    the camera or microphone is not reopened. Leaving the pre-call layer ends
+    the preview only when no call is active, checked on the worker after the
+    queued `start`. A preview is tagged with its owner; when a call ends
+    without having taken the preview (declined or missed while ringing),
+    `DirectCallFeature` calls `endPreview("precall")`, which leaves a Face
+    Changer screen preview alone. `FaceChangerFeature` skips face and
+    background updates for an audio preview.
+  - **Ringback.** `CallRinger` listens to the engine on the main thread.
+    While the phase is RINGING (only a caller rings) it plays
+    `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
+    any other phase, which covers connect, decline, missed and hang-up. The
+    `ToneGenerator` is released by `ProjectLifecycle.onClose` and by
+    `DirectCallFeature.uninstall`.
+  - **Incoming calls.** While an invite is pending and no call is active,
+    `CallRinger` plays the default ringtone (`RingtoneManager.TYPE_RINGTONE`)
+    with a looping `MediaPlayer` (`USAGE_NOTIFICATION_RINGTONE`) and a
+    repeating vibration, following the ringer mode: silent plays nothing,
+    vibrate only vibrates. While the app is not in the foreground it also
+    posts `IncomingCallNotifier`'s notification on the "Incoming calls"
+    channel (`IMPORTANCE_HIGH`, no channel sound or vibration because the app
+    rings itself): `CATEGORY_CALL`, ongoing, public on the lock screen, a
+    full-screen intent to `MainActivity` (`com.forkmesh.call.SHOW`), and
+    Accept (`com.forkmesh.call.ACCEPT`, an activity intent routed through
+    `Features.onIntent` to `DirectCallFeature.onIntent`) and Decline (the
+    manifest receiver `CallActionReceiver`). Both carry the call id and act
+    only on that invite; Accept from the notification accepts at once only
+    when the microphone (and camera) permissions are already granted,
+    otherwise it opens the in-app incoming screen. On API 31+ the
+    notification uses `Notification.CallStyle.forIncomingCall` and falls back
+    to plain actions if posting it fails. On API 34+ the full-screen intent
+    is used only when `canUseFullScreenIntent()` is true; otherwise the
+    notification is a heads-up with no CallStyle. The notification is not
+    posted in the foreground (the in-app screen is showing) and is cancelled
+    when the app comes forward. The ring, vibration and notification stop on
+    accept, decline, a cleared or stale invite, or once a call is active.
+    The manifest declares `USE_FULL_SCREEN_INTENT`.
+  - **Lock screen.** `CallRinger.window` drives `CallWindowEffect` in
+    `DirectCallOverlay`: `setShowWhenLocked` while an invite rings or any
+    call is active (so an answered call stays visible over the keyguard) and
+    `setTurnScreenOn` only while ringing; both reset afterwards (window flags
+    on API 26).
+  - **Incoming screen.** The small top banner is gone. `DirectCallOverlay`
+    shows a full-screen incoming UI: caller, "Video call" or "Voice call",
+    and large red Decline and green Accept buttons (Accept goes through the
+    permission prompt). It sits above the pre-call layer, which stays
+    composed underneath so its preview survives a declined invite.
+  - **Route note.** The page posts a `route` event (`direct` or `relay`)
+    when the call connects and when the selected ICE pair changes.
+    `WebCallPeer.onRoute` feeds `WebCallPeers.route`, a `StateFlow<String>`
+    that is reset when a peer is made and when the live peer is destroyed,
+    so `DirectCallPeer` is unchanged. Once live, the call screen shows
+    "Direct · peer-to-peer, no server in between" or "Relayed · through a
+    TURN relay server (third party)" under the status line, and the LIVE
+    status line reads "Connected · end-to-end encrypted" (relayed media is
+    still encrypted end to end). The pre-call layer says "Calls go directly
+    between your devices when possible."
+  - **Limits.** Calls ring only while the app is running and the room
+    socket is connected: the invite arrives over the DM socket, and there is
+    no call push yet, so a killed or long-backgrounded app does not ring.
+    Ringing a killed app needs a server-sent push that starts the
+    notification (server work). The ringback tone follows the voice-call
+    stream, so it is quiet through the earpiece on some phones.
 
 ## 15. You hub, diagnostics and docs
 

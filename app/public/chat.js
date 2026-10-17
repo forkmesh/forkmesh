@@ -286,7 +286,6 @@ const directDialogClose = document.querySelector("#chat-direct-dialog-close");
 const directAddBtn = document.querySelector("#chat-direct-add");
 const callAudioBtn = document.querySelector("#chat-call-audio");
 const callVideoBtn = document.querySelector("#chat-call-video");
-const callPreviewBtn = document.querySelector("#chat-call-preview");
 const directSearch = document.querySelector("#chat-direct-search");
 const directOptions = document.querySelector("#chat-direct-options");
 const directEmpty = document.querySelector("#chat-direct-empty");
@@ -1972,7 +1971,6 @@ function updateAdminChannelControls() {
   const callable = directActions && callsSupported();
   if (callAudioBtn) callAudioBtn.hidden = !callable;
   if (callVideoBtn) callVideoBtn.hidden = !callable;
-  if (callPreviewBtn) callPreviewBtn.hidden = !callable;
   if (viewOnceVideoBtn) {
     viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
   }
@@ -5887,23 +5885,20 @@ const chatCalls = createChatCalls({
   sendSignal: sendCallSignal,
   partnerFor: (channelKey) => directMessageForKey(channelKey)?.otherUser || "",
   onMissed: sendMissedCallLine,
+  requestStart: (media) => startDirectCall(media),
 });
 
 function offerRequestedCall(partner) {
   const requested = String(chatQuery.get("call") || "").trim().toLowerCase();
   if (requested !== "audio" && requested !== "video") return;
   if (!callsSupported() || !directMessageForKey(activeChannel)) return;
-  const kind = requested === "video" ? "video" : "voice";
-  if (!globalThis.confirm(`Start an encrypted ${kind} call with @${partner}?`)) {
-    return;
-  }
-  startDirectCall(requested);
+  previewDirectCall(requested);
 }
 
-function previewDirectCall() {
+function previewDirectCall(media) {
   const direct = directMessageForKey(activeChannel);
   if (!direct || !userSession() || chatCalls.active()) return;
-  chatCalls.preview(activeChannel, direct.otherUser).catch(() => {
+  chatCalls.preview(activeChannel, direct.otherUser, media).catch(() => {
     setStatus("The camera or microphone is unavailable", "unavailable");
   });
 }
@@ -7069,9 +7064,8 @@ function wireChatControls() {
   sendBtn.addEventListener("click", sendCurrentMessage);
   directCreateBtn?.addEventListener("click", () => openDirectMessageDialog("new"));
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
-  callAudioBtn?.addEventListener("click", () => startDirectCall("audio"));
-  callVideoBtn?.addEventListener("click", () => startDirectCall("video"));
-  callPreviewBtn?.addEventListener("click", previewDirectCall);
+  callAudioBtn?.addEventListener("click", () => previewDirectCall("audio"));
+  callVideoBtn?.addEventListener("click", () => previewDirectCall("video"));
   viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
   viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);
