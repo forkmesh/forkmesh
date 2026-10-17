@@ -176,10 +176,11 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                 "while allowing ForkBot, MCP, and incoming webhooks to read and post messages.\n\n" +
                 "Private channels and direct messages add automatic device-to-device encryption beyond the controller key."
         const val PRIVATE_SEAL_SUMMARY =
-            "Encryption is automatic. This device created a private X25519 key locally and sends only its public key. " +
-                "Each message uses a fresh key wrapped for known room devices, so the controller's room key alone can forward " +
-                "and retain it but cannot decrypt it.\n\nA new device can read messages addressed after its first visit; it " +
-                "cannot retroactively open older history. ForkBot runs on the relay and is unavailable in end-to-end encrypted rooms."
+            "Encryption is automatic. This device keeps a signing key and daily prekeys (X25519 and ML-KEM-768) that never leave it. " +
+                "Every message is signed and gets a fresh key wrapped for each approved device, so the server can forward and " +
+                "store it but cannot read or forge it. Prekeys are wiped after 8 days.\n\nIn direct messages a new device of " +
+                "either person waits until you approve it; compare the safety number to check. A new device cannot open " +
+                "older history. ForkBot runs on the relay and is unavailable in end-to-end encrypted rooms."
         const val SERVER_VISIBLE_SEAL_SUMMARY =
             "Server notices: ForkMesh writes these notes itself, so the server can read them. " +
                 "They are not end-to-end encrypted. Only you can see this channel, and nobody can post in it."

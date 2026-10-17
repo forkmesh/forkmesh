@@ -1,7 +1,14 @@
 package com.forkmesh.nativeapp.chat
 
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
+import com.forkmesh.nativeapp.crypto.ChatTrust
+import com.forkmesh.nativeapp.crypto.ChatV3
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
+import com.forkmesh.nativeapp.crypto.TrustChange
+import com.forkmesh.nativeapp.crypto.TrustState
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.jsonLong
 import com.forkmesh.nativeapp.json.jsonMaps
@@ -10,7 +17,6 @@ import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.SecretStore
-import java.net.URI
 import java.net.URLEncoder
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
@@ -25,6 +31,20 @@ data class DirectConversation(
 ) {
     val conversation: String get() = DirectMessageFrames.PREFIX + id
 }
+
+enum class MeshRoute(val label: String) { WIFI("Wi-Fi"), BLUETOOTH("Bluetooth") }
+
+interface DirectMeshLinks {
+    fun linkedKids(): Map<String, MeshRoute>
+
+    fun peerFocused(kid: String, channel: String): Boolean
+
+    fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean
+
+    fun setFocus(channel: String, on: Boolean)
+}
+
+data class DirectDevice(val kid: String, val acct: String, val state: TrustState, val verified: Boolean, val firstSeen: Long)
 
 object DirectMessageFrames {
     const val PREFIX = "direct:"
@@ -45,6 +65,13 @@ object DirectMessageFrames {
     const val OUTBOX_MAX = 64
     const val OUTBOX_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
     const val RECONNECT_MAX_SECONDS = 300
+    const val SYSTEM_SENDER = "forkmesh-system"
+    const val DIRECT_SEALED = "direct-sealed"
+    const val DIRECT_ACK = "direct-ack"
+    const val FOCUS = "focus"
+    const val DIRECT_ACK_TIMEOUT_MS = 3_000L
+    const val BLUETOOTH_FILE_BYTES = 256 * 1024
+    const val ROUTE_DIRECT_ONLY = "Direct only"
     private val REF = Regex("^[0-9a-f]{40}$")
 
     fun supersededFrames(refs: List<String>): List<String> =
@@ -69,6 +96,31 @@ object DirectMessageFrames {
     fun isRead(envelope: Map<String, Any?>): Boolean = envelope["kind"] == READ
 
     fun isMutation(type: String): Boolean = type == "edit" || type == "delete"
+
+    fun roomName(record: DirectConversation): String = "chat-direct:${record.id}:v${record.keyVersion}"
+
+    fun trustScope(conversationId: String): String = PREFIX + conversationId
+
+    fun pendingDeviceLine(name: String): String =
+        "A new device for $name wants to join this chat. Check the safety number, then approve or block."
+
+    fun safetyChangedLine(name: String): String = "Your safety number with $name changed"
+
+    fun routeLabel(route: MeshRoute): String = "Direct \u00b7 ${route.label}"
+
+    fun directSealed(channel: String, frame: Map<String, Any?>): Map<String, Any?> =
+        linkedMapOf("type" to DIRECT_SEALED, "channel" to channel, "frame" to frame)
+
+    fun directAck(channel: String, id: String): Map<String, Any?> = linkedMapOf("type" to DIRECT_ACK, "channel" to channel, "id" to id)
+
+    fun focusFrame(channel: String, on: Boolean): Map<String, Any?> = linkedMapOf("type" to FOCUS, "channel" to channel, "on" to on)
+
+    fun fileBytes(plain: Map<String, Any?>): Int {
+        val file = plain["file"] as? String ?: return 0
+        return file.length / 4 * 3
+    }
+
+    fun safetyGroups(digits: String): List<String> = digits.chunked(5)
 
     fun serverCopies(envelope: Map<String, Any?>): Int? {
         if (envelope["kind"] != SERVER_COPIES) return null
@@ -209,6 +261,7 @@ class DirectMessageService(
     private val now: () -> Long = System::currentTimeMillis,
     private val platform: String = "android",
     private val loop: EventLoop = sharedLoop,
+    private val account: () -> String = { "" },
 ) {
     private class OutboxEntry(
         var ref: String,
@@ -290,7 +343,16 @@ class DirectMessageService(
     var onFrame: ((Map<String, Any?>, String) -> Unit)? = null
 
     @Volatile
-    var meshSender: ((Map<String, Any?>, List<String>) -> Int)? = null
+    var mesh: DirectMeshLinks? = null
+
+    private class PendingDirect(val record: DirectConversation, val plain: Map<String, Any?>, val notify: Boolean, val kids: Set<String>) {
+        var timer: LoopTimer? = null
+    }
+
+    private val pendingDirect = LinkedHashMap<String, PendingDirect>()
+
+    @Volatile
+    private var screenFocused = ""
 
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
@@ -482,13 +544,42 @@ class DirectMessageService(
         return crypto
     }
 
-    private fun seal(room: String): RoomSeal {
-        synchronized(lock) { seals[room] }?.let { return it }
-        val scope = origin()?.let { runCatching { URI(it).host }.getOrNull() } ?: ""
-        val loaded = RoomSeal.loadOrCreate(room, storageScope = "direct|$scope", secureStore = secureStore)
+    private fun sealAccount(): String = account().trim().lowercase().ifEmpty { selfId() }
+
+    private fun participants(conversationId: String): Set<String>? {
+        val other = records.firstOrNull { it.id == conversationId }?.otherUser ?: return null
+        return setOf(sealAccount(), other)
+    }
+
+    private fun seal(room: String, conversationId: String): RoomSeal {
+        synchronized(lock) { seals[room] }?.let {
+            it.setIdentity(sealAccount(), selfId())
+            it.participants = participants(conversationId)
+            return it
+        }
+        val loaded = RoomSeal.loadOrCreate(
+            room,
+            scope = DirectMessageFrames.trustScope(conversationId),
+            policy = SealPolicy.STRICT,
+            acct = sealAccount(),
+            secureStore = secureStore,
+            clock = now,
+            node = selfId(),
+        )
+        loaded.participants = participants(conversationId)
         synchronized(lock) { seals[room] = loaded }
         return loaded
     }
+
+    private fun sealFor(record: DirectConversation): RoomSeal {
+        val room = synchronized(lock) { roomNames[record.id] } ?: DirectMessageFrames.roomName(record)
+        return seal(room, record.id)
+    }
+
+    private fun trustFor(record: DirectConversation): ChatTrust =
+        ChatTrust.forStore(secureStore, DirectMessageFrames.trustScope(record.id))
+
+    private fun ownKid(): String = ChatDeviceKeys.forStore(secureStore).kid
 
     fun open(conversation: String): Boolean {
         val record = record(conversation) ?: return false
@@ -513,7 +604,7 @@ class DirectMessageService(
                 return false
             }
             val crypto = derive(roomName, passphrase)
-            val seal = seal(roomName)
+            val seal = seal(roomName, record.id)
             synchronized(lock) { roomNames[record.id] = roomName }
             val holder = RoomSocket(record.id, crypto, seal)
             val socket = connector.connect(
@@ -536,6 +627,9 @@ class DirectMessageService(
             }
             for (text in queued) socket.sendText(text)
             advertise(holder, persist = seal.shouldPersistAdvertisement(now()))
+            for (kid in trustFor(record).heldKids(roomName)) {
+                if (trustFor(record).record(kid)?.state == TrustState.APPROVED) releaseHeld(record, seal, kid, holder)
+            }
             notifyListeners()
             true
         } catch (error: Exception) {
@@ -590,37 +684,95 @@ class DirectMessageService(
         }
         val framed = holder.crypto.decrypt(envelope) ?: return
         val replay = envelope["historyReplay"] == true
+        if (RoomSeal.isLegacyFrame(framed)) return
         if (RoomSeal.isKeyFrame(framed)) {
-            if (holder.seal.acceptKeyFrame(framed)) {
-                if (!replay) advertise(holder)
-                peerLearned(holder)
-            }
+            acceptBundle(record, holder.seal, framed, holder, replay)
             return
         }
         if (!RoomSeal.isSealedFrame(framed)) return
-        val kids = RoomSeal.wrappedKeyIds(framed)
-        if (holder.seal.keyId !in kids) {
-            askForReseal(holder)
-            return
-        }
-        val known = holder.seal.peerKeyIds
-        val plain = holder.seal.unseal(framed) ?: return
-        val learned = holder.seal.peerKeyIds.any { it !in known }
         val ref = DirectMessageFrames.relayRef(envelope)
-        handle(plain, record, if (replay) null else holder, ref)
-        if (replay) noteOwn(holder, plain, ref, kids, envelope["notify"] == true)
-        if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) {
-            if (learned) peerLearned(holder)
-            return
+        val meta = linkedMapOf<String, Any?>("ref" to ref, "replay" to replay, "notify" to (envelope["notify"] == true))
+        processSealed(record, holder, framed, meta)
+    }
+
+    private fun acceptBundle(record: DirectConversation, seal: RoomSeal, frame: Map<String, Any?>, holder: RoomSocket?, replay: Boolean) {
+        val outcome = seal.acceptKeyFrame(frame, now()) ?: return
+        if (outcome.isNew && holder != null && !replay) advertise(holder)
+        if (outcome.isNew && outcome.state == TrustState.PENDING) {
+            systemLine(record, "pending-${outcome.kid}", DirectMessageFrames.pendingDeviceLine(deviceOwnerName(record, outcome.acct)))
         }
-        if (ref.isNotEmpty()) {
-            if (replay) {
-                synchronized(lock) { if (ref !in holder.replayRefs) holder.replayRefs.add(ref) }
+        if (outcome.state == TrustState.APPROVED && outcome.updated) {
+            if (holder != null) peerLearned(holder)
+            releaseHeld(record, seal, outcome.kid, holder)
+        }
+        notifyListeners()
+    }
+
+    private fun deviceOwnerName(record: DirectConversation, acct: String): String =
+        if (acct == sealAccount()) "your account" else record.otherUser
+
+    private fun releaseHeld(record: DirectConversation, seal: RoomSeal, kid: String, holder: RoomSocket?) {
+        val live = holder ?: synchronized(lock) { sockets[record.id] }
+        for (held in seal.takeHeld(kid)) {
+            if (live != null && seal === live.seal) {
+                processSealed(record, live, held.frame, held.meta)
             } else {
-                sendReceived(holder, listOf(ref))
+                openDirectFrame(record, seal, held.frame, kid, held.meta)
             }
         }
-        if (learned) peerLearned(holder)
+    }
+
+    private fun processSealed(record: DirectConversation, holder: RoomSocket, framed: Map<String, Any?>, meta: Map<String, Any?>) {
+        val replay = meta["replay"] == true
+        val ref = jsonText(meta["ref"])
+        val kids = RoomSeal.wrappedKeyIds(framed)
+        when (val result = holder.seal.open(framed, now(), history = replay, meta = meta)) {
+            is SealOpen.Opened -> {
+                val plain = result.plain
+                if (!senderMatches(result, plain)) return
+                handle(plain, record, !replay, ref)
+                if (replay) noteOwn(holder, plain, ref, kids, meta["notify"] == true)
+                if (ref.isNotEmpty() && holdReceipt(plain, holder.conversationId, ref)) return
+                acknowledgeRef(holder, ref, replay)
+            }
+            is SealOpen.NotForMe -> askForReseal(holder)
+            is SealOpen.Replay -> acknowledgeRef(holder, ref, replay)
+            is SealOpen.Held -> {
+                if (result.blocked) return
+                if (holder.seal.keyId !in kids) askForReseal(holder)
+                notifyListeners()
+            }
+            is SealOpen.Invalid -> {}
+        }
+    }
+
+    private fun acknowledgeRef(holder: RoomSocket, ref: String, replay: Boolean) {
+        if (ref.isEmpty()) return
+        if (replay) {
+            synchronized(lock) { if (ref !in holder.replayRefs) holder.replayRefs.add(ref) }
+        } else {
+            sendReceived(holder, listOf(ref))
+        }
+    }
+
+    private fun senderMatches(result: SealOpen.Opened, plain: Map<String, Any?>): Boolean {
+        val node = result.senderNode ?: return true
+        if (jsonText(plain["senderId"]) != node) return false
+        if (jsonText(plain["type"]) == "reaction" && jsonText(plain["reactorId"]).let { it.isNotEmpty() && it != node }) return false
+        return true
+    }
+
+    private fun systemLine(record: DirectConversation, key: String, text: String) {
+        val message = ChatMessage(
+            id = "system-$key",
+            conversation = record.conversation,
+            senderId = DirectMessageFrames.SYSTEM_SENDER,
+            senderName = "ForkMesh",
+            text = text,
+            timestamp = now(),
+            ephemeral = true,
+        )
+        if (append(message, record.id)) notifyListeners()
     }
 
     private fun sendOrQueue(holder: RoomSocket, text: String): Boolean {
@@ -640,9 +792,9 @@ class DirectMessageService(
         for (frame in DirectMessageFrames.receivedFrames(refs)) sendOrQueue(holder, frame)
     }
 
-    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: RoomSocket?, ref: String = "") {
+    private fun handle(plain: Map<String, Any?>, record: DirectConversation, live: Boolean, ref: String = "") {
         if (DirectMessageFrames.isCallFrame(plain)) {
-            if (live != null) onCallFrame?.invoke(plain, record.conversation)
+            if (live) onCallFrame?.invoke(plain, record.conversation)
             return
         }
         val type = jsonText(plain["type"])
@@ -663,7 +815,7 @@ class DirectMessageService(
         if (message.self) track(record.id, message.id, ref, ChatReceipt.SENT)
         val kept = !added || applyPending(record, message.id)
         notifyListeners()
-        if (added && kept && live != null && !message.self) onMessage?.invoke(message)
+        if (added && kept && live && !message.self) onMessage?.invoke(message)
     }
 
     private fun authorOf(record: DirectConversation, target: String): String? =
@@ -692,7 +844,7 @@ class DirectMessageService(
 
     private fun applyPending(record: DirectConversation, id: String): Boolean {
         val held = synchronized(lock) { pendingMutations.remove("${record.id}|$id") } ?: return true
-        for (frame in held) handle(frame, record, null)
+        for (frame in held) handle(frame, record, false)
         return authorOf(record, id) != null
     }
 
@@ -856,36 +1008,220 @@ class DirectMessageService(
 
     fun deviceKeys(conversation: String): List<String> {
         val record = record(conversation) ?: return emptyList()
-        val seal = synchronized(lock) { roomNames[record.id]?.let { seals[it] } } ?: return emptyList()
-        return seal.peerKeyIds
+        val own = ownKid()
+        return trustFor(record).approved().map { it.kid }.filter { it != own }
     }
 
-    fun acceptMeshDirect(channel: String, sealKeyId: String, plain: Map<String, Any?>): Boolean {
-        val record = record(channel) ?: return false
-        if (sealKeyId.isEmpty() || jsonText(plain["channel"]) != channel || sealKeyId !in deviceKeys(channel)) return false
-        val frame = LinkedHashMap(plain)
-        frame["type"] = "chat"
-        val message = DirectMessageFrames.chatMessage(frame, record, selfId()) ?: return false
-        trackViewOnce(frame, message)
-        if (!append(message, record.id)) return false
+    fun devices(conversation: String): List<DirectDevice> {
+        val record = record(conversation) ?: return emptyList()
+        val own = ownKid()
+        return trustFor(record).records().filter { it.kid != own }.map { DirectDevice(it.kid, it.acct, it.state, it.verified, it.firstSeen) }
+    }
+
+    fun pendingDevices(conversation: String): List<DirectDevice> = devices(conversation).filter { it.state == TrustState.PENDING }
+
+    fun approveDevice(conversation: String, kid: String): Boolean {
+        val record = record(conversation) ?: return false
+        val change = trustFor(record).approve(kid, sealAccount()) ?: return false
+        afterTrustChange(record, change)
+        releaseHeld(record, sealFor(record), kid, null)
+        synchronized(lock) { sockets[record.id] }?.let { peerLearned(it) }
         notifyListeners()
-        if (!message.self) onMessage?.invoke(message)
         return true
     }
 
-    private fun sendOverMesh(record: DirectConversation, plain: Map<String, Any?>): Int {
-        val sender = meshSender ?: return 0
-        val keys = deviceKeys(record.conversation)
-        if (keys.isEmpty()) return 0
-        return runCatching { sender(plain, keys) }.getOrDefault(0)
+    fun blockDevice(conversation: String, kid: String): Boolean {
+        val record = record(conversation) ?: return false
+        val change = trustFor(record).block(kid, sealAccount()) ?: return false
+        afterTrustChange(record, change)
+        notifyListeners()
+        return true
+    }
+
+    private fun afterTrustChange(record: DirectConversation, change: TrustChange) {
+        if (!change.changed || !change.hadOtherApproved) return
+        systemLine(record, "safety-${now()}-${sequence.incrementAndGet()}", DirectMessageFrames.safetyChangedLine(record.otherUser))
+    }
+
+    fun safetyNumber(conversation: String): ChatV3.SafetyNumber? {
+        val record = record(conversation) ?: return null
+        val keys = ChatDeviceKeys.forStore(secureStore)
+        val idks = LinkedHashMap<String, ByteArray>()
+        idks[keys.kid] = keys.idk
+        for (approved in trustFor(record).approved()) idks[approved.kid] = approved.idkBytes
+        return ChatV3.safetyNumber(DirectMessageFrames.trustScope(record.id), idks.values)
+    }
+
+    fun isVerified(conversation: String): Boolean = record(conversation)?.let { trustFor(it).verified() } == true
+
+    fun markVerified(conversation: String): Boolean {
+        val record = record(conversation) ?: return false
+        trustFor(record).markVerified()
+        notifyListeners()
+        return true
+    }
+
+    fun verifyScanned(conversation: String, scanned: String): Boolean {
+        val number = safetyNumber(conversation) ?: return false
+        if (scanned.trim() != number.qr) return false
+        return markVerified(conversation)
+    }
+
+    fun screenFocus(conversation: String) {
+        val id = DirectMessageFrames.conversationId(conversation)
+        val previous = synchronized(lock) {
+            val old = screenFocused
+            if (old == id) return
+            screenFocused = id
+            old
+        }
+        val links = mesh
+        if (links != null) {
+            if (previous.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + previous, false) }
+            if (id.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + id, true) }
+        }
+        notifyListeners()
+    }
+
+    private fun linkedDevices(record: DirectConversation): Map<String, MeshRoute> {
+        val links = mesh ?: return emptyMap()
+        val linked = runCatching { links.linkedKids() }.getOrDefault(emptyMap())
+        if (linked.isEmpty()) return emptyMap()
+        val own = ownKid()
+        val approved = trustFor(record).approved().map { it.kid }.filter { it != own }.toSet()
+        return linked.filterKeys { it in approved }
+    }
+
+    private fun focusedOthers(record: DirectConversation, linked: Map<String, MeshRoute>): Set<String> {
+        val links = mesh ?: return emptySet()
+        if (screenFocused != record.id || linked.isEmpty()) return emptySet()
+        val me = sealAccount()
+        val trust = trustFor(record)
+        return linked.keys.filter { kid ->
+            trust.record(kid)?.acct != me && runCatching { links.peerFocused(kid, record.conversation) }.getOrDefault(false)
+        }.toSet()
+    }
+
+    fun routeLabel(conversation: String): String {
+        val record = record(conversation) ?: return ""
+        val linked = linkedDevices(record)
+        if (linked.isEmpty()) return ""
+        if (focusedOthers(record, linked).isNotEmpty()) return DirectMessageFrames.ROUTE_DIRECT_ONLY
+        val route = if (MeshRoute.WIFI in linked.values) MeshRoute.WIFI else MeshRoute.BLUETOOTH
+        return DirectMessageFrames.routeLabel(route)
+    }
+
+    private class DirectSend(val kids: Set<String>, val directOnly: Boolean)
+
+    private fun sendDirectCopies(record: DirectConversation, plain: Map<String, Any?>): DirectSend {
+        val links = mesh ?: return DirectSend(emptySet(), false)
+        val linked = linkedDevices(record)
+        if (linked.isEmpty() || jsonText(plain["id"]).isEmpty()) return DirectSend(emptySet(), false)
+        val focused = focusedOthers(record, linked)
+        val size = DirectMessageFrames.fileBytes(plain)
+        val seal = sealFor(record)
+        val reached = LinkedHashSet<String>()
+        for ((kid, route) in linked) {
+            if (route == MeshRoute.BLUETOOTH && size > DirectMessageFrames.BLUETOOTH_FILE_BYTES) continue
+            val sent = runCatching {
+                val frame = seal.seal(plain, now(), only = listOf(kid))
+                links.sendDirect(kid, DirectMessageFrames.directSealed(record.conversation, frame))
+            }.getOrDefault(false)
+            if (sent) reached.add(kid)
+        }
+        return DirectSend(reached, focused.any { it in reached })
+    }
+
+    private fun awaitAck(record: DirectConversation, plain: Map<String, Any?>, notify: Boolean, kids: Set<String>) {
+        val id = jsonText(plain["id"])
+        val entry = PendingDirect(record, plain, notify, kids)
+        val replaced = synchronized(lock) {
+            val old = pendingDirect.put(id, entry)
+            while (pendingDirect.size > DirectMessageFrames.OUTBOX_MAX) {
+                val oldest = pendingDirect.keys.first()
+                pendingDirect.remove(oldest)?.timer?.cancel()
+            }
+            old
+        }
+        replaced?.timer?.cancel()
+        entry.timer = loop.timer(DirectMessageFrames.DIRECT_ACK_TIMEOUT_MS) { loop.io { relayFallback(id) } }
+    }
+
+    private fun relayFallback(id: String) {
+        val entry = synchronized(lock) { pendingDirect.remove(id) } ?: return
+        entry.timer?.cancel()
+        sendSealed(entry.record, entry.plain, entry.notify, direct = false)
+    }
+
+    fun meshLinksChanged() {
+        val linked = runCatching { mesh?.linkedKids()?.keys }.getOrNull() ?: emptySet()
+        val due = synchronized(lock) { pendingDirect.filter { (_, entry) -> entry.kids.any { it !in linked } }.keys.toList() }
+        for (id in due) relayFallback(id)
+        notifyListeners()
+    }
+
+    fun acceptMeshFrame(linkKid: String, frame: Map<String, Any?>) {
+        val record = record(jsonText(frame["channel"])) ?: return
+        when (jsonText(frame["type"])) {
+            DirectMessageFrames.DIRECT_SEALED -> {
+                @Suppress("UNCHECKED_CAST")
+                val inner = frame["frame"] as? Map<String, Any?> ?: return
+                if (!RoomSeal.isSealedFrame(inner) || inner["kid"] != linkKid) return
+                openDirectFrame(record, sealFor(record), inner, linkKid, emptyMap(), ackVia = linkKid)
+            }
+            DirectMessageFrames.DIRECT_ACK -> {
+                val id = jsonText(frame["id"])
+                val entry = synchronized(lock) {
+                    val pending = pendingDirect[id]
+                    if (pending != null && linkKid in pending.kids) pendingDirect.remove(id) else null
+                }
+                entry?.timer?.cancel()
+                if (synchronized(lock) { receipts.containsKey(id) }) {
+                    track(record.id, id, "", ChatReceipt.DELIVERED)
+                    notifyListeners()
+                }
+            }
+            DirectMessageFrames.FOCUS -> notifyListeners()
+        }
+    }
+
+    private fun openDirectFrame(
+        record: DirectConversation,
+        seal: RoomSeal,
+        frame: Map<String, Any?>,
+        kid: String,
+        meta: Map<String, Any?>,
+        ackVia: String? = null,
+    ) {
+        val result = seal.open(frame, now(), history = ackVia != null || meta["replay"] == true, meta = meta)
+        if (result !is SealOpen.Opened) {
+            if (result is SealOpen.Held && !result.blocked) notifyListeners()
+            return
+        }
+        val plain = result.plain
+        if (result.senderKid != kid || !senderMatches(result, plain) || jsonText(plain["channel"]) != record.conversation) return
+        if (!result.replayed) handle(plain, record, meta["replay"] != true, jsonText(meta["ref"]))
+        val id = jsonText(plain["id"])
+        val links = mesh
+        if (ackVia != null && links != null && id.isNotEmpty()) {
+            runCatching { links.sendDirect(ackVia, DirectMessageFrames.directAck(record.conversation, id)) }
+        }
     }
 
     private fun keepMeshOnly(record: DirectConversation, plain: Map<String, Any?>, reached: Int): Boolean {
         if (reached <= 0) return false
-        DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
+        return applyLocally(record, plain)
+    }
+
+    private fun applyLocally(record: DirectConversation, plain: Map<String, Any?>): Boolean {
+        val type = jsonText(plain["type"])
+        if (type == "delete") remove(record, jsonText(plain["target"]))
+        onFrame?.invoke(plain, record.conversation)
+        if (type == "chat") DirectMessageFrames.chatMessage(plain, record, selfId())?.let {
             trackViewOnce(plain, it)
             append(it, record.id)
         }
+        if (type == "chat" || type == "thread-reply") track(record.id, jsonText(plain["id"]), "", ChatReceipt.SENT)
         notifyListeners()
         return true
     }
@@ -895,7 +1231,7 @@ class DirectMessageService(
         val record = record(conversation) ?: return false
         if (body.isEmpty()) return false
         val plain = frame(record, "chat", linkedMapOf("text" to body.take(ChatLimits.MAX_TEXT_CHARS)))
-        return sendSealed(record, plain, sendOverMesh(record, plain))
+        return sendSealed(record, plain)
     }
 
     fun sendFile(conversation: String, fileName: String, mime: String, data: ByteArray): Boolean {
@@ -911,10 +1247,16 @@ class DirectMessageService(
                 "file" to Base64.getEncoder().encodeToString(data),
             ),
         )
-        return sendSealed(record, plain, 0)
+        return sendSealed(record, plain)
     }
 
-    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, reached: Int, notify: Boolean = true): Boolean {
+    private fun sendSealed(record: DirectConversation, plain: Map<String, Any?>, notify: Boolean = true, direct: Boolean = true): Boolean {
+        val copies = if (direct) sendDirectCopies(record, plain) else DirectSend(emptySet(), false)
+        if (copies.directOnly) {
+            awaitAck(record, plain, notify, copies.kids)
+            return applyLocally(record, plain)
+        }
+        val reached = copies.kids.size
         if (synchronized(lock) { sockets[record.id]?.socket == null } && !open(record.conversation)) return keepMeshOnly(record, plain, reached)
         val holder = synchronized(lock) { sockets[record.id] } ?: return keepMeshOnly(record, plain, reached)
         val socket = holder.socket ?: return keepMeshOnly(record, plain, reached)
@@ -922,7 +1264,8 @@ class DirectMessageService(
         val type = jsonText(plain["type"])
         val content = type == "chat" || type == "thread-reply"
         return try {
-            val sealed = holder.seal.seal(plain)
+            val sealed = holder.seal.seal(plain, now())
+            if (holder.seal.needsAdvertisement()) advertise(holder, persist = true)
             val envelope = LinkedHashMap(holder.crypto.encrypt(sealed))
             envelope["persist"] = true
             if (notify) envelope["notify"] = true
@@ -930,7 +1273,7 @@ class DirectMessageService(
             val ref = OfficeFrames.sentRef(frameText)
             if (content) track(record.id, id, ref, ChatReceipt.SENDING)
             if (!socket.sendText(frameText)) {
-                synchronized(lock) { receipts.remove(id) }
+                synchronized(lock) { if (reached == 0) receipts.remove(id) }
                 return keepMeshOnly(record, plain, reached)
             }
             remember(holder, OutboxEntry(ref, plain, RoomSeal.wrappedKeyIds(sealed), notify, now()))
@@ -954,7 +1297,7 @@ class DirectMessageService(
         val root = rootId.trim().take(ChatLimits.MAX_ROOT_ID_CHARS)
         val record = record(conversation) ?: return false
         if (body.isEmpty() || root.isEmpty()) return false
-        return sendSealed(record, frame(record, "thread-reply", linkedMapOf("rootId" to root, "text" to body)), 0)
+        return sendSealed(record, frame(record, "thread-reply", linkedMapOf("rootId" to root, "text" to body)))
     }
 
     fun react(conversation: String, target: String, emoji: String, added: Boolean): Boolean {
@@ -968,7 +1311,7 @@ class DirectMessageService(
             "reactorName" to displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
             "added" to added,
         )
-        return sendSealed(record, frame(record, "reaction", extra), 0, notify = false)
+        return sendSealed(record, frame(record, "reaction", extra), notify = false)
     }
 
     fun edit(conversation: String, target: String, text: String): Boolean {
@@ -978,7 +1321,7 @@ class DirectMessageService(
         val me = selfId()
         if (me.isEmpty() || authorOf(record, target) != me) return false
         val extra = linkedMapOf<String, Any?>("conversation" to record.conversation, "target" to target, "text" to body, "editedAt" to now())
-        return sendSealed(record, frame(record, "edit", extra), 0, notify = false)
+        return sendSealed(record, frame(record, "edit", extra), notify = false)
     }
 
     fun deleteMessage(message: ChatMessage): Boolean {
@@ -987,7 +1330,7 @@ class DirectMessageService(
         if (me.isEmpty() || message.senderId != me || authorOf(record, message.id) != me) return false
         val ref = synchronized(lock) { idRefs[message.id] }
         val plain = frame(record, "delete", linkedMapOf("conversation" to record.conversation, "target" to message.id))
-        if (!sendSealed(record, plain, 0, notify = false)) return false
+        if (!sendSealed(record, plain, notify = false)) return false
         val holder = synchronized(lock) { sockets[record.id] }
         if (ref != null && holder != null) for (frame in DirectMessageFrames.supersededFrames(listOf(ref))) sendOrQueue(holder, frame)
         return true
@@ -1071,7 +1414,7 @@ class DirectMessageService(
         )
         key.fill(0)
         val plain = frame(record, "chat", linkedMapOf("text" to kind.text, ViewOnceCodec.FIELD to field))
-        val sent = sendSealed(record, plain, 0)
+        val sent = sendSealed(record, plain)
         if (!sent) {
             runCatching { media.withdraw(record.id, mediaId) }
             viewOnce.byMedia(mediaId)?.let { viewOnce.mark(it.messageId, ViewOnceState.WITHDRAWN) }

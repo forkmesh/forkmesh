@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatReceipt
@@ -39,10 +40,13 @@ class DirectMessagesTest {
 
     private val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
 
-    private fun mySeal(store: MemorySecretStore) =
-        RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store)
+    private val scope = "direct:$conversationId"
 
-    private fun peerSeal() = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
+    private fun mySeal(store: MemorySecretStore) =
+        RoomSeal.loadOrCreate(room, scope = scope, policy = SealPolicy.STRICT, acct = "me-node", secureStore = store)
+
+    private fun peerSeal() =
+        RoomSeal.loadOrCreate(room, scope = scope, policy = SealPolicy.STRICT, acct = "pat", secureStore = MemorySecretStore(), node = "pat-node")
 
     private fun envelope(frame: Map<String, Any?>, vararg extra: Pair<String, Any?>): String =
         Json.stringify(crypto.encrypt(frame) + extra)
@@ -66,6 +70,7 @@ class DirectMessagesTest {
         val socket: FakeOfficeSocket,
         val peer: RoomSeal,
         val conversation: String,
+        val store: MemorySecretStore,
     )
 
     private fun rig(): Rig {
@@ -82,7 +87,7 @@ class DirectMessagesTest {
         val peer = peerSeal()
         peer.acceptKeyFrame(mySeal(store).keyFrame())
         socket.onText(envelope(peer.keyFrame()))
-        return Rig(dm, hub, socket, peer, conversation)
+        return Rig(dm, hub, socket, peer, conversation, store)
     }
 
     private fun Rig.fromPeer(frame: Map<String, Any?>, ref: String = "") {
@@ -336,6 +341,67 @@ class DirectMessagesTest {
         expect(!r.dm.edit(r.conversation, theirs.id, "mine now"))
     }
 
+    fun testANewDeviceIsHeldUntilApprovedAndTheSafetyNumberChanges() {
+        val r = rig()
+        val before = r.dm.safetyNumber(r.conversation)!!
+        assertEq(60, before.digits.length)
+        assertEq(12, DirectMessageFrames.safetyGroups(before.digits).size)
+        expect(before.qr.startsWith("forkmesh-safety:3:direct:$conversationId:"))
+        expect(!r.dm.isVerified(r.conversation))
+        expect(!r.dm.verifyScanned(r.conversation, "forkmesh-safety:3:direct:$conversationId:wrong"))
+        expect(r.dm.verifyScanned(r.conversation, before.qr))
+        expect(r.dm.isVerified(r.conversation))
+
+        val phone = peerSeal()
+        phone.acceptKeyFrame(mySeal(r.store).keyFrame())
+        r.socket.onText(envelope(phone.keyFrame()))
+        assertEq(listOf(phone.keyId), r.dm.pendingDevices(r.conversation).map { it.kid })
+        val line = r.dm.messages(r.conversation).single { it.senderId == DirectMessageFrames.SYSTEM_SENDER }
+        assertEq(DirectMessageFrames.pendingDeviceLine("pat"), line.text)
+        expect(line.ephemeral)
+
+        val from = r.socket.sent.size
+        expect(r.dm.send(r.conversation, "not for the new phone yet"))
+        val sealed = sentFrames(r.socket, from).mapNotNull { crypto.decrypt(it) }.single { RoomSeal.isSealedFrame(it) }
+        expect(phone.keyId !in RoomSeal.wrappedKeyIds(sealed), "a pending device gets nothing sealed to it")
+        expect(r.peer.keyId in RoomSeal.wrappedKeyIds(sealed))
+
+        r.socket.onText(envelope(phone.seal(peerChat("pat-new-1", "from my new phone"))))
+        expect(r.dm.messages(r.conversation).none { it.text == "from my new phone" }, "held, not shown")
+        expect(r.dm.approveDevice(r.conversation, phone.keyId))
+        expect(r.dm.messages(r.conversation).any { it.text == "from my new phone" }, "shown once approved")
+        expect(r.dm.messages(r.conversation).any { it.text == DirectMessageFrames.safetyChangedLine("pat") })
+        expect(r.dm.pendingDevices(r.conversation).isEmpty())
+        expect(!r.dm.isVerified(r.conversation), "a changed device set clears verified")
+        val after = r.dm.safetyNumber(r.conversation)!!
+        expect(after.digits != before.digits)
+        expect(!r.dm.verifyScanned(r.conversation, before.qr))
+        expect(r.dm.markVerified(r.conversation))
+        expect(r.dm.isVerified(r.conversation))
+    }
+
+    fun testABlockedDeviceIsIgnored() {
+        val r = rig()
+        val phone = peerSeal()
+        phone.acceptKeyFrame(mySeal(r.store).keyFrame())
+        r.socket.onText(envelope(phone.keyFrame()))
+        expect(r.dm.blockDevice(r.conversation, phone.keyId))
+        r.socket.onText(envelope(phone.seal(peerChat("pat-b", "blocked"))))
+        expect(r.dm.messages(r.conversation).none { it.text == "blocked" })
+        expect(r.dm.pendingDevices(r.conversation).isEmpty())
+        expect(r.dm.messages(r.conversation).none { it.text == DirectMessageFrames.safetyChangedLine("pat") })
+        assertEq(listOf(r.peer.keyId), r.dm.deviceKeys(r.conversation))
+    }
+
+    fun testASenderIdThatIsNotTheDevicesAccountIsDropped() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "real"))
+        r.fromPeer(peerChat("x-1", "pretending to be me") + ("senderId" to "me-node"))
+        r.fromPeer(r.peerFrame("reaction", "x-2", "target" to "pat-1", "emoji" to "👍", "reactorId" to "me-node", "added" to true))
+        assertEq(listOf("real"), r.dm.messages(r.conversation).map { it.text })
+        expect(r.hub.rows(r.conversation).single().reactions.isEmpty(), "a reaction must come from its reactor")
+    }
+
     fun testConversationsAreParsedAndBounded() {
         val payload = mapOf(
             "conversations" to listOf(
@@ -406,7 +472,7 @@ class DirectMessagesTest {
         expect(dm.open(conversation))
         val socket = connector.last!!
         val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
-        val peerSeal = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
+        val peerSeal = peerSeal()
         socket.onText(Json.stringify(crypto.encrypt(peerSeal.keyFrame())))
         for (text in socket.sent) {
             val frame = crypto.decrypt(Json.parseObject(text)) ?: continue
@@ -476,7 +542,8 @@ class DirectMessagesTest {
         socket.onText(envelope(peerSeal().keyFrame(), "ref" to liveKeyRef))
         socket.onText(envelope(peer.seal(peerChat("pat-3", "three")), "ref" to liveRef))
         assertEq(listOf(replayRef, liveRef), receipts(socket))
-        assertEq(setOf("one", "two", "three"), dm.messages(conversation).map { it.text }.toSet())
+        assertEq(setOf("one", "two", "three"), dm.messages(conversation).filter { !it.ephemeral }.map { it.text }.toSet())
+        assertEq(1, dm.pendingDevices(conversation).size, "a second device for the same chat waits for approval")
         socket.onText("""{"kind":"forkmesh-server-copies","v":1,"stored":0}""")
         assertEq("Not stored on the server", hub.serverCopiesLine(conversation))
         dm.closeAll()
@@ -488,6 +555,7 @@ class DirectMessagesTest {
         peer.acceptKeyFrame(mySeal(store).keyFrame())
         val replayRef = "a".repeat(40)
         val connector = ScriptedDirectConnector { onText ->
+            onText(envelope(peer.keyFrame(), "historyReplay" to true))
             onText(envelope(peer.seal(peerChat("pat-1", "early")), "ref" to replayRef, "historyReplay" to true))
             onText(historyEnd)
         }
@@ -519,8 +587,9 @@ class DirectMessagesTest {
     }
 
     fun testOwnMessagesAreResealedWhenThePeerKeyArrives() {
+        val store = MemorySecretStore()
         val connector = FakeOfficeConnector()
-        val dm = service(preparedApi(), connector)
+        val dm = service(preparedApi(), connector, store)
         dm.refresh()
         val conversation = dm.conversations.single()
         val socket = connector.last!!
@@ -528,6 +597,7 @@ class DirectMessagesTest {
         expect(dm.send(conversation, "before your key"))
         val firstRef = OfficeFrames.sentRef(socket.sent.last())
         val peer = peerSeal()
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
         assertEq(null, peer.unseal(crypto.decrypt(Json.parseObject(socket.sent.last()))!!))
         val before = socket.sent.size
         socket.onText(envelope(peer.keyFrame()))
@@ -559,6 +629,7 @@ class DirectMessagesTest {
         val conversation = dm.conversations.single()
         val socket = connector.last!!
         val peer = peerSeal()
+        peer.acceptKeyFrame(mine.keyFrame())
         val ownRef = "a".repeat(40)
         val own = mapOf(
             "type" to "chat", "id" to "me-node-1", "senderId" to "me-node", "sender" to "Me", "accountKind" to "user",
@@ -590,6 +661,7 @@ class DirectMessagesTest {
         socket.onText(historyEnd)
         val peer = peerSeal()
         peer.acceptKeyFrame(mySeal(store).keyFrame())
+        socket.onText(envelope(peer.keyFrame()))
         val chat = peerChat("pat-7", "once")
         socket.onText(envelope(peer.seal(chat), "ref" to "a".repeat(40), "persist" to true, "notify" to true))
         socket.onText(envelope(peer.seal(chat), "ref" to "b".repeat(40), "persist" to true, "notify" to true, "resend" to true))
@@ -687,7 +759,7 @@ class DirectMessagesTest {
         assertEq(2, dm.unreadTotal)
         val socket = connector.last!!
         val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
-        val peerSeal = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
+        val peerSeal = peerSeal()
         socket.onText(Json.stringify(crypto.encrypt(peerSeal.keyFrame())))
         for (text in socket.sent) {
             val frame = crypto.decrypt(Json.parseObject(text)) ?: continue

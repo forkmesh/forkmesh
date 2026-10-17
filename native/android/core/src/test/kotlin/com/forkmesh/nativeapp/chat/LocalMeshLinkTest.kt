@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.MemoryPrefStore
 import com.forkmesh.nativeapp.crypto.Bytes
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.security.Identity
 import com.forkmesh.nativeapp.security.MemorySecretStore
 import com.forkmesh.nativeapp.testing.assertEq
@@ -15,14 +16,14 @@ class LocalMeshLinkTest {
     private fun room(
         name: String,
         transport: MeshNativeTransport,
-        identity: Identity = Identity.fromSeed(Bytes.random(32)),
+        store: MemorySecretStore = MemorySecretStore(),
         network: Boolean = false,
     ): LocalMeshRoom {
         val settings = AccountSettings.create(MemoryPrefStore(mapOf("profile/name" to name)), MemorySecretStore())
         val room = LocalMeshRoom(
             settings,
-            identity,
-            MemorySecretStore(),
+            Identity.fromSeed(Bytes.random(32)),
+            store,
             native = transport,
             platform = "linux",
             loop = EventLoop("mesh-$name", virtualTime = true),
@@ -35,11 +36,12 @@ class LocalMeshLinkTest {
         return room
     }
 
-    private fun lowAndHigh(): Pair<Identity, Identity> {
-        val first = Identity.fromSeed(Bytes.random(32))
-        var second = Identity.fromSeed(Bytes.random(32))
-        while (second.nodeId == first.nodeId) second = Identity.fromSeed(Bytes.random(32))
-        return if (first.nodeId < second.nodeId) first to second else second to first
+    private fun lowAndHigh(): Pair<MemorySecretStore, MemorySecretStore> {
+        val first = MemorySecretStore()
+        val second = MemorySecretStore()
+        val firstKid = ChatDeviceKeys.forStore(first).kid
+        val secondKid = ChatDeviceKeys.forStore(second).kid
+        return if (firstKid < secondKid) first to second else second to first
     }
 
     private fun closeAll(vararg rooms: LocalMeshRoom) {
@@ -60,8 +62,8 @@ class LocalMeshLinkTest {
         val (low, high) = lowAndHigh()
         val phoneLink = FakeBluetooth.pairOf("phone", "laptop")
         val laptopLink = phoneLink.peer
-        val phone = room("phone", phoneLink, identity = high)
-        val laptop = room("laptop", laptopLink, identity = low)
+        val phone = room("phone", phoneLink, store = high)
+        val laptop = room("laptop", laptopLink, store = low)
         try {
             expect(phone.start())
             expect(laptop.start())
@@ -91,8 +93,8 @@ class LocalMeshLinkTest {
         val (low, high) = lowAndHigh()
         val lowLink = FakeBluetooth.pairOf("low", "high")
         val highLink = lowLink.peer
-        val lower = room("low", lowLink, identity = low)
-        val higher = room("high", highLink, identity = high)
+        val lower = room("low", lowLink, store = low)
+        val higher = room("high", highLink, store = high)
         try {
             expect(lower.start())
             expect(higher.start())

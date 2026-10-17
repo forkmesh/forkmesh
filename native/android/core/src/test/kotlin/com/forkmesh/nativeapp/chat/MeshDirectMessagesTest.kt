@@ -3,10 +3,13 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.MemoryPrefStore
 import com.forkmesh.nativeapp.crypto.Bytes
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.model.ChatReceipt
 import com.forkmesh.nativeapp.security.Identity
 import com.forkmesh.nativeapp.security.MemorySecretStore
 import com.forkmesh.nativeapp.testing.assertEq
@@ -56,51 +59,69 @@ class MeshDirectMessagesTest {
         return api
     }
 
-    private fun service(api: FakeAccountApi, connector: OfficeSocketConnector, store: MemorySecretStore, self: String) =
+    private fun service(api: FakeAccountApi, connector: OfficeSocketConnector, store: MemorySecretStore, self: String, loop: EventLoop) =
         DirectMessageService(
             api, connector, store, { "https://app.forkmesh.com" }, { "$self-node" }, { self },
-            loop = EventLoop("mesh-direct-$self", virtualTime = true),
+            loop = loop,
+            account = { self },
         )
 
-    private fun learn(connector: DroppableConnector, otherStore: MemorySecretStore) {
-        val other = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = otherStore)
-        connector.last!!.onText(Json.stringify(crypto.encrypt(other.keyFrame())))
+    private fun dmSeal(store: MemorySecretStore, acct: String) =
+        RoomSeal.loadOrCreate(room, scope = channel, policy = SealPolicy.STRICT, acct = acct, secureStore = store, node = "$acct-node")
+
+    private fun learn(connector: DroppableConnector, otherStore: MemorySecretStore, otherAcct: String) {
+        connector.last!!.onText(Json.stringify(crypto.encrypt(dmSeal(otherStore, otherAcct).keyFrame())))
     }
 
-    fun testADirectMessageReachesTheOtherPhoneOverTheMeshWithTheRelayDown() {
+    private fun relayChats(socket: FakeOfficeSocket, from: Int): Int =
+        socket.sent.drop(from).count { text ->
+            val framed = crypto.decrypt(Json.parseObject(text)) ?: return@count false
+            RoomSeal.isSealedFrame(framed)
+        }
+
+    fun testDirectMessagesUseAuthenticatedLinksAndTheFocusRule() {
         val annStore = MemorySecretStore()
         val patStore = MemorySecretStore()
         val eveStore = MemorySecretStore()
         val annMesh = mesh("ann", annStore)
         val patMesh = mesh("pat", patStore)
         val eveMesh = mesh("eve", eveStore)
+        val annLoop = EventLoop("mesh-direct-ann", virtualTime = true)
+        val patLoop = EventLoop("mesh-direct-pat", virtualTime = true)
         try {
             val annApi = api("pat")
             val annConnector = DroppableConnector()
-            val ann = service(annApi, annConnector, annStore, "ann")
+            val ann = service(annApi, annConnector, annStore, "ann", annLoop)
             val patConnector = DroppableConnector()
-            val pat = service(api("ann"), patConnector, patStore, "pat")
+            val pat = service(api("ann"), patConnector, patStore, "pat", patLoop)
             ann.refresh()
             pat.refresh()
             expect(ann.open(channel) && pat.open(channel))
-            learn(annConnector, patStore)
-            learn(patConnector, annStore)
+            learn(annConnector, patStore, "pat")
+            learn(patConnector, annStore, "ann")
+            val annKid = ChatDeviceKeys.forStore(annStore).kid
+            val patKid = ChatDeviceKeys.forStore(patStore).kid
+            val eveKid = ChatDeviceKeys.forStore(eveStore).kid
+            assertEq(listOf(patKid), ann.deviceKeys(channel), "ann's conversation approved pat's one device")
+
+            ann.mesh = annMesh
+            pat.mesh = patMesh
+            annMesh.onDirect = { kid, frame -> ann.acceptMeshFrame(kid, frame) }
+            patMesh.onDirect = { kid, frame -> pat.acceptMeshFrame(kid, frame) }
+            annMesh.onLinksChanged = { ann.meshLinksChanged() }
+            val eveSaw = ArrayList<Map<String, Any?>>()
+            eveMesh.onDirect = { _, frame -> if (frame["type"] != DirectMessageFrames.FOCUS) synchronized(eveSaw) { eveSaw.add(frame) } }
+            val patAlerts = ArrayList<ChatMessage>()
+            pat.onMessage = { synchronized(patAlerts) { patAlerts.add(it) } }
 
             expect(annMesh.start() && patMesh.start() && eveMesh.start())
-            assertEq(listOf(patMesh.sealKeyId), ann.deviceKeys(channel), "ann's room knows pat's one device key")
-            expect(patMesh.sealKeyId != eveMesh.sealKeyId)
+            assertEq(annKid, annMesh.sealKeyId, "the mesh and the conversation share one device identity")
             expect(annMesh.connectToPeer(loopback, patMesh.listenPort))
             expect(eveMesh.connectToPeer(loopback, annMesh.listenPort))
             expect(eveMesh.connectToPeer(loopback, patMesh.listenPort))
             expect(waitUntil { annMesh.peerCount == 2 && patMesh.peerCount == 2 && eveMesh.peerCount == 2 }, "the three phones link")
-            Thread.sleep(300)
-
-            ann.meshSender = { plain, keys -> annMesh.sendDirect(plain, keys) }
-            patMesh.onDirect = { wire, keyId, plain -> pat.acceptMeshDirect(wire, keyId, plain) }
-            val eveSaw = ArrayList<Map<String, Any?>>()
-            eveMesh.onDirect = { _, _, plain -> synchronized(eveSaw) { eveSaw.add(plain) } }
-            val patAlerts = ArrayList<ChatMessage>()
-            pat.onMessage = { synchronized(patAlerts) { patAlerts.add(it) } }
+            expect(waitUntil { annMesh.linkedKids().keys == setOf(patKid, eveKid) }, "links carry authenticated device ids")
+            assertEq("Direct · Wi-Fi", ann.routeLabel(channel))
 
             annApi.failures["GET /api/chat/direct-messages/$conversationId/room-access"] = IllegalStateException("offline")
             annConnector.drop()
@@ -108,32 +129,63 @@ class MeshDirectMessagesTest {
             expect(ann.send(channel, "the router is down"), "the send still succeeds over the mesh")
             assertEq(listOf("the router is down"), ann.messages(channel).map { it.text })
             expect(waitUntil { pat.messages(channel).any { it.text == "the router is down" } }, "pat's phone shows it")
-            val shown = pat.messages(channel).single()
+            val shown = pat.messages(channel).single { it.text == "the router is down" }
             assertEq("ann", shown.senderName)
             expect(!shown.self)
             expect(waitUntil { synchronized(patAlerts) { patAlerts.size == 1 } }, "and raises one alert")
-            Thread.sleep(300)
+            val firstId = ann.messages(channel).single().id
+            expect(waitUntil { ann.receipt(firstId) == ChatReceipt.DELIVERED }, "pat's direct-ack marks it delivered")
             expect(synchronized(eveSaw) { eveSaw.isEmpty() }, "the third phone on the mesh is never sent it")
             expect(eveMesh.messages.isEmpty() && patMesh.messages.isEmpty(), "and it never lands in #mesh")
 
-            val forged = linkedMapOf<String, Any?>(
-                "type" to "direct", "id" to "eve-1", "senderId" to "ann-node", "sender" to "ann",
-                "channel" to channel, "text" to "it is ann, honest", "ts" to System.currentTimeMillis(),
+            val forged = dmSeal(eveStore, "ann").seal(
+                linkedMapOf(
+                    "type" to "chat", "id" to "eve-1", "senderId" to "ann-node", "sender" to "ann",
+                    "channel" to channel, "text" to "it is ann, honest", "ts" to System.currentTimeMillis(),
+                ),
             )
-            expect(eveMesh.sendDirect(forged, listOf(patMesh.sealKeyId)) == 1, "eve can address pat's device key")
+            expect(eveMesh.sendDirect(patKid, DirectMessageFrames.directSealed(channel, forged)), "eve can reach pat's link")
             Thread.sleep(500)
-            expect(pat.messages(channel).none { it.text.contains("honest") }, "but pat refuses a key the conversation never saw")
+            expect(pat.messages(channel).none { it.text.contains("honest") }, "but pat never shows a device the chat did not approve")
 
-            pat.closeAll()
-            expect(!pat.isConnected(channel))
-            val replay = pat.messages(channel).single()
-            expect(!pat.acceptMeshDirect(channel, annMesh.sealKeyId, mapOf("channel" to channel, "id" to replay.id, "text" to replay.text)),
-                "a message already shown is not shown twice")
+            annApi.failures.remove("GET /api/chat/direct-messages/$conversationId/room-access")
+            expect(ann.open(channel))
+            val relay = annConnector.last!!
+            ann.screenFocus(channel)
+            pat.screenFocus(channel)
+            expect(waitUntil { annMesh.peerFocused(patKid, channel) }, "pat's focus reaches ann over the link")
+            assertEq(DirectMessageFrames.ROUTE_DIRECT_ONLY, ann.routeLabel(channel))
+            val before = relay.sent.size
+            expect(ann.send(channel, "only between us"))
+            expect(waitUntil { pat.messages(channel).any { it.text == "only between us" } })
+            val onlyId = ann.messages(channel).last().id
+            expect(waitUntil { ann.receipt(onlyId) == ChatReceipt.DELIVERED })
+            annLoop.advance(DirectMessageFrames.DIRECT_ACK_TIMEOUT_MS + 1)
+            Thread.sleep(300)
+            assertEq(0, relayChats(relay, before), "while both look at the chat nothing reaches the server")
+
+            patMesh.onDirect = { kid, frame -> if (frame["type"] != DirectMessageFrames.DIRECT_SEALED) pat.acceptMeshFrame(kid, frame) }
+            val silent = relay.sent.size
+            expect(ann.send(channel, "is anyone there"))
+            assertEq(0, relayChats(relay, silent))
+            annLoop.advance(DirectMessageFrames.DIRECT_ACK_TIMEOUT_MS + 1)
+            expect(waitUntil { relayChats(relay, silent) == 1 }, "no ack within 3 s sends the relay copy")
+            patMesh.onDirect = { kid, frame -> pat.acceptMeshFrame(kid, frame) }
+
+            pat.screenFocus("")
+            expect(waitUntil { !annMesh.peerFocused(patKid, channel) })
+            assertEq("Direct · Wi-Fi", ann.routeLabel(channel))
+            val both = relay.sent.size
+            expect(ann.send(channel, "back to normal"))
+            assertEq(1, relayChats(relay, both), "without the other side's focus the relay copy goes too")
+            expect(waitUntil { pat.messages(channel).count { it.text == "back to normal" } == 1 })
         } finally {
             for (node in listOf(annMesh, patMesh, eveMesh)) {
                 node.stop()
                 node.dispose()
             }
+            annLoop.shutdown()
+            patLoop.shutdown()
         }
     }
 
@@ -141,12 +193,24 @@ class MeshDirectMessagesTest {
         val store = MemorySecretStore()
         val api = api("pat")
         api.failures["GET /api/chat/direct-messages/$conversationId/room-access"] = IllegalStateException("offline")
-        val dm = service(api, DroppableConnector(), store, "ann")
+        val dm = service(api, DroppableConnector(), store, "ann", EventLoop("mesh-direct-none", virtualTime = true))
         dm.refresh()
         var asked = 0
-        dm.meshSender = { _, _ -> asked++; 0 }
+        dm.mesh = object : DirectMeshLinks {
+            override fun linkedKids(): Map<String, MeshRoute> {
+                asked++
+                return emptyMap()
+            }
+
+            override fun peerFocused(kid: String, channel: String): Boolean = false
+
+            override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = error("nothing is linked")
+
+            override fun setFocus(channel: String, on: Boolean) {}
+        }
         expect(!dm.send(channel, "hello?"), "nothing reached anyone")
-        assertEq(0, asked, "no device key is known, so the mesh is not even asked")
+        expect(asked > 0)
         expect(dm.messages(channel).isEmpty())
+        assertEq("", dm.routeLabel(channel))
     }
 }
