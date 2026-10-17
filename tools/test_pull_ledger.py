@@ -354,3 +354,63 @@ def test_dirty_ledger_checkout_is_left_alone(repo, key_file, tmp_path):
     assert code == 0, out
     assert "did not refresh" in out
     assert "uncommitted desktop edit" in pull.read_text()
+
+
+def test_merged_records_the_merge_and_retires_the_branch(repo, key_file):
+    assert cli(repo, key_file, "comment", str(OPEN_PULL), "--body", "hi",
+               "--execute")[0] == 0
+    branch_tip = run_git(repo, "rev-parse", "refs/heads/forkmesh/pull/7")
+    code, out = cli(repo, key_file, "merged", str(OPEN_PULL), "--comment",
+                    "Merged into main as abc123.", "--execute")
+    assert code == 0, out
+    files = ledger_files(repo)
+    pull = files[".forkmesh/pulls/7/pull.md"]
+    assert "\nstatus: merged\n" in pull
+    assert "\nmergedBy: %s\n" % pl.Identity.load(key_file).public in pull
+    assert pull.index("mergedAt: ") < pull.index("\nts: ")
+    assert "Merged into main as abc123." in files[".forkmesh/pulls/7/0004-comment.md"]
+    assert run_git(repo, "log", "-2", "--format=%s", pl.LEDGER_REF).splitlines() == [
+        "pull #7: merged", "pull #7: comment"]
+    assert "refs/heads/forkmesh/pull/7 " not in all_refs(repo)
+    meta = run_git(repo, "rev-parse", "refs/pr/7/metadata")
+    assert run_git(repo, "rev-parse", meta + "^") == branch_tip
+    assert "status: merged" in run_git(
+        repo, "cat-file", "blob", meta + ":.forkmesh/pulls/7/pull.md")
+    refs = all_refs(repo)
+    assert cli(repo, key_file, "merged", str(OPEN_PULL), "--execute")[0] == 1
+    assert all_refs(repo) == refs
+
+
+def test_merged_adopts_a_pull_only_its_fetched_branch_carries(repo, key_file):
+    index = repo.parent / "branch-index"
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    for rel, content in {".forkmesh/pulls/12/pull.md": PULL_MD.format(n=12, status="open"),
+                         ".forkmesh/pulls/12/commits.mbox": "From x\n\xe9\n"}.items():
+        blob = run_git(repo, "hash-object", "-w", "--stdin", input_bytes=content.encode())
+        subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--cacheinfo",
+                        "100644,%s,%s" % (blob, rel)], check=True, env=env)
+    tree = subprocess.run(["git", "-C", str(repo), "write-tree"], check=True, env=env,
+                          capture_output=True).stdout.decode().strip()
+    remote_tip = run_git(repo, "commit-tree", tree, "-m", "pull #12: metadata snapshot")
+    run_git(repo, "update-ref", "refs/remotes/origin/forkmesh/pull/12", remote_tip)
+    code, out = cli(repo, key_file, "merged", "12", "--execute")
+    assert code == 0, out
+    files = ledger_files(repo)
+    assert "\nstatus: merged\n" in files[".forkmesh/pulls/12/pull.md"]
+    assert files[".forkmesh/pulls/12/commits.mbox"] == "From x\n\xe9"
+    assert run_git(repo, "log", "-2", "--format=%s", pl.LEDGER_REF).splitlines() == [
+        "pull #12: merged", "pull #12: adopt"]
+    meta = run_git(repo, "rev-parse", "refs/pr/12/metadata")
+    assert run_git(repo, "rev-parse", meta + "^") == remote_tip
+    assert "refs/heads/forkmesh/pull/12 " not in all_refs(repo)
+
+
+def test_merged_moves_a_pending_merge_reward_to_pending_wallet():
+    text = PULL_MD.format(n=7, status="open").replace(
+        "sig: contributorsig\n",
+        "sig: contributorsig\nrewardCondition: merged\nrewardStatus: pending_merge\n")
+    merged = pl.with_merged(text, 1790000005000, "ownerkey")
+    assert "\nrewardStatus: pending_wallet\n" in merged
+    assert "\nmergedAt: 1790000005000\nmergedBy: ownerkey\nts: " in merged
+    other = text.replace("rewardCondition: merged", "rewardCondition: payout")
+    assert "\nrewardStatus: pending_merge\n" in pl.with_merged(other, 1, "k")

@@ -11,9 +11,10 @@ python3 tools/pull_ledger.py comment 315 --body "Rebased on main, please retest.
 python3 tools/pull_ledger.py comment 315 --body-file note.md --execute
 python3 tools/pull_ledger.py close 315 --comment "Superseded by #320. Reply here if you disagree." --execute
 python3 tools/pull_ledger.py reopen 315 --execute
+python3 tools/pull_ledger.py merged 315 --comment "Merged into main as 8d5b213776." --execute
 ```
 
-`close` takes `--comment` or `--comment-file`; the comment is written first,
+`close` and `merged` take `--comment` or `--comment-file`; the comment is written first,
 then the status. It refuses an unknown pull, a merged pull, a pull that is
 already closed, and `reopen` refuses a pull that is not closed.
 
@@ -30,6 +31,31 @@ A closed pull stays closed. `PullStore::reconcileMergedPulls` only looks at
 `PullStore.h`), and the web reader passes the status through as the pull's
 state (`app/host/forkmesh_host/repo_views.py`), so the dashboard lists it under
 "Closed".
+
+## Merged records a merge that already happened
+
+`merged` is for an open pull whose change is already on its base, landed by
+hand (`git am` of its `commits.mbox`) or through another pull. The desktop's
+Merge button would try to apply the patch again and stop on conflicts, and
+`PullStore::reconcileMergedPulls` only recognises branch-backed pulls, so
+patch-backed pulls landed this way stayed `open`. Closing them instead would
+drop the merge from the record badges and leave a merge-conditional reward
+waiting.
+
+It writes what `PullStore::mergePull` writes for a patch-backed pull:
+`status: merged`, `mergedAt` (milliseconds) and `mergedBy` (the node key), and
+it moves a `rewardStatus: pending_merge` estimate whose condition is empty or
+`merged` to `pending_wallet` (`PullReward::advanceForMerge`). It does not
+check that the change is on the base; the operator does that first.
+
+A pull that only its own `forkmesh/pull/<N>` branch carries (local, then
+`origin`'s fetched copy) and that the ledger has never had is first copied
+into the ledger as `pull #N: adopt`. A merged pull keeps no branch
+([intake-and-attestation.md](../server/intake-and-attestation.md), "Merged
+pulls keep no branch"): the tool commits the merged record to
+`refs/pr/<N>/metadata` with the old branch tip (or `origin`'s) as its parent
+and deletes the local `refs/heads/forkmesh/pull/<N>` at its exact oid. The
+served branch is retired by the server's sweep once the ledger syncs.
 
 ## What it writes
 
