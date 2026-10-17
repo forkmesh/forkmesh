@@ -867,11 +867,130 @@
       ? `<ol class="task-timeline">${entries.map((entry) => taskTimelineEntryHtml(entry, task)).join("")}</ol>`
       : `<p class="task-comment-hint mb-3">${pending ? "Loading activity…" : "Nothing has happened to this task yet."}</p>`;
     const count = Number(task.replyCount || (Array.isArray(task.replies) ? task.replies.length : 0));
-    const composer = `<form data-task-reply-form="${escapeHtml(task.id)}" class="task-comment-form">
-      <div class="task-mention-field"><textarea data-task-reply-input data-task-mention-input="${escapeHtml(task.id)}" maxlength="2000" rows="3" required autocomplete="off" placeholder="Leave a comment — type @ to ping a teammate" class="task-input">${escapeHtml(taskCommentDrafts.get(task.id) || "")}</textarea><div data-task-mention-list class="task-mention-list fm-popover" role="listbox" aria-label="Mention a teammate" hidden></div></div>
-      <div class="task-comment-footer"><span class="task-comment-hint">Private to your organization. Everyone on the task is pinged; Ctrl+Enter posts.</span><button type="submit" class="task-action-button" data-tone="primary"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment</button></div>${taskNoticeHtml(task, "activity")}
+    return taskDetailCard("messages-square", `Activity · ${count} comment${count === 1 ? "" : "s"}`, timeline, true);
+  }
+
+  function taskQuickCommentHtml(task) {
+    if (task.deletedAt) return "";
+    return `<form data-task-reply-form="${escapeHtml(task.id)}" class="task-comment-form task-quick-comment">
+      <div class="task-mention-field"><textarea data-task-reply-input data-task-mention-input="${escapeHtml(task.id)}" maxlength="2000" rows="2" required autocomplete="off" placeholder="Leave a comment — type @ to ping a teammate" aria-label="Comment on this task" class="task-input">${escapeHtml(taskCommentDrafts.get(task.id) || "")}</textarea><div data-task-mention-list class="task-mention-list fm-popover" role="listbox" aria-label="Mention a teammate" hidden></div></div>
+      <div class="task-comment-footer"><span class="task-comment-hint">Everyone on the task is pinged; Ctrl+Enter posts.</span><button type="submit" class="task-action-button" data-tone="primary"><i data-lucide="send" class="h-3.5 w-3.5"></i>Comment</button></div>${taskNoticeHtml(task, "activity")}
     </form>`;
-    return taskDetailCard("messages-square", `Activity · ${count} comment${count === 1 ? "" : "s"}`, timeline + composer, true);
+  }
+
+  function taskStatusChoice(task) {
+    const key = taskStatusKey(task);
+    return key === "done" || key === "active" ? key : "ready";
+  }
+
+  function taskPropertyAccess(task) {
+    const actor = state.tasksView.actor;
+    const manager = state.tasksView.canManage;
+    const done = taskIsDone(task);
+    const active = task.status === "active";
+    const mine = taskAssigneeKind(task) === "user" && task.assignee === actor;
+    const creator = Boolean(actor) && task.createdBy === actor;
+    const reviewer = Boolean(actor) && task.qa?.reviewer === actor;
+    const busy = Boolean(state.tasksView.busyId) || Boolean(task.deletedAt);
+    return {
+      busy,
+      edit: !busy && manager && !active && !done,
+      priority: !busy && manager,
+      start: !busy && !done && mine,
+      complete: !busy && !done && (mine || manager),
+      undo: !busy && done && (manager || mine || creator || reviewer),
+      locked: task.deletedAt ? "Restore the task to change this" : !manager ? "Only task managers can change this" : active ? "Stop the task to change this" : done ? "Mark the task undone to change this" : "",
+    };
+  }
+
+  function taskPropSelectHtml(name, label, choices, current, enabled, title = "") {
+    if (!enabled) {
+      const shown = choices.find(([value]) => value === current)?.[1] || "—";
+      return `<span${title ? ` title="${escapeHtml(title)}"` : ""}>${escapeHtml(shown)}</span>`;
+    }
+    const options = choices.map(([value, text, allowed = true]) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}${allowed || value === current ? "" : " disabled"}>${escapeHtml(text)}</option>`).join("");
+    return `<select class="task-prop-input" data-task-prop="${name}" aria-label="${escapeHtml(label)}"${title ? ` title="${escapeHtml(title)}"` : ""}${enabled ? "" : " disabled"}>${options}</select>`;
+  }
+
+  function taskPropTextHtml(name, label, value, enabled, placeholder, title = "", extra = "") {
+    if (!enabled) return `<span${title ? ` title="${escapeHtml(title)}"` : ""}>${value ? escapeHtml(value) : '<span class="text-muted-foreground">None</span>'}</span>`;
+    return `<input class="task-prop-input" data-task-prop="${name}" aria-label="${escapeHtml(label)}" value="${escapeHtml(value || "")}" placeholder="${escapeHtml(placeholder)}" autocomplete="off" spellcheck="false"${title ? ` title="${escapeHtml(title)}"` : ""}${extra}${enabled ? "" : " disabled"} />`;
+  }
+
+  function taskEditablePropsHtml(task) {
+    const access = taskPropertyAccess(task);
+    const status = taskStatusChoice(task);
+    const statusChoices = [
+      ["ready", "Ready", access.undo || (status === "active" && access.start)],
+      ["active", "In progress", access.start],
+      ["done", "Done", access.complete],
+    ];
+    const statusEnabled = access.start || access.complete || access.undo;
+    const kind = taskAssigneeKind(task);
+    const assignment = kind === "user" && task.assignee ? `user:${task.assignee}` : kind === "agent" ? "agent" : "unassigned";
+    const members = [...new Set([...(state.tasksView.members || []).map((name) => String(name || "").toLowerCase()).filter(Boolean), ...(kind === "user" && task.assignee ? [task.assignee] : [])])];
+    const assigneeChoices = [["unassigned", "Unassigned"], ["agent", "Bot", Boolean(task.repository)], ...members.map((name) => [`user:${name}`, `@${name}`])];
+    const departments = [...new Set([...(state.tasksView.departments.length ? state.tasksView.departments : ["general", "engineering"]), ...(task.department ? [task.department] : [])])];
+    const teams = [...new Set([...(state.tasksView.teams || []), ...(task.team ? [task.team] : [])])];
+    const priority = Number(task.priority ?? 50);
+    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}@${escapeHtml(task.createdBy)}` : "—";
+    return taskPropsHtml([
+      ["Status", `${taskRingHtml(task)}${task.deletedAt ? '<span>In trash</span>' : statusEnabled ? taskPropSelectHtml("status", "Status", statusChoices, status, true) : `<span>${escapeHtml(taskStatusLabel(task))}</span>`}`],
+      ["Priority", `${taskPriorityHtml(task)}${access.priority ? `<input type="number" min="1" max="99" step="1" inputmode="numeric" class="task-prop-input task-prop-number" data-task-prop="priority" aria-label="Priority" value="${escapeHtml(String(priority))}" />` : `<span class="tabular-nums">P${escapeHtml(String(priority))}</span>`}<span class="text-muted-foreground">${TASK_PRIORITY_LABELS[taskPriorityLevel(task)]}</span>`],
+      ["Assignee", `${taskAvatarHtml(task)}${access.edit ? taskPropSelectHtml("assignee", "Assignee", assigneeChoices, assignment, true) : `<span title="${escapeHtml(access.locked)}">${escapeHtml(taskAssigneeLabel(task))}</span>`}`],
+      ["Created by", creator],
+      ["Repository", access.edit ? taskPropTextHtml("repository", "Repository", task.repository, true, "owner/repository") : task.repository ? taskRepositoryHtml(task.repository) : '<span class="text-muted-foreground">None</span>'],
+      ["Department", taskPropSelectHtml("department", "Department", departments.map((value) => [value, `#${value.replaceAll("-", " ")}`]), task.department || "general", access.edit, access.locked)],
+      ["Team", taskPropSelectHtml("team", "Team", [["", "No specific team"], ...teams.map((value) => [value, value])], task.team || "", access.edit, access.locked)],
+      ["Follows", taskPropTextHtml("parentTaskId", "Follows task", task.parentTaskId, access.edit, "Parent task ID", access.locked, ' maxlength="32"')],
+      task.destination && ["Routed to", `<span class="task-label"><span>${escapeHtml(task.destination)}</span></span>`],
+    ]) + taskNoticeHtml(task, "props");
+  }
+
+  async function submitTaskProperty(control) {
+    const task = selectedTask();
+    const name = control?.dataset.taskProp;
+    if (!task || !name || control.disabled || state.tasksView.busyId) return;
+    if (name === "status") {
+      const current = taskStatusChoice(task);
+      const target = control.value;
+      if (target === current) return;
+      const action = target === "done" ? "complete" : current === "done" ? "undo" : target === "active" ? "start" : "stop";
+      void mutateTask(action, task);
+      return;
+    }
+    let body = null;
+    if (name === "priority") {
+      const raw = Math.round(Number(control.value));
+      if (!Number.isFinite(raw)) { renderTaskDetail(); return; }
+      const priority = Math.max(1, Math.min(99, raw));
+      if (priority !== Number(task.priority ?? 50)) body = { priority };
+    } else if (name === "assignee") {
+      const value = String(control.value || "unassigned");
+      const kind = value === "agent" ? "agent" : value.startsWith("user:") ? "user" : "unassigned";
+      const current = taskAssigneeKind(task) === "user" && task.assignee ? `user:${task.assignee}` : taskAssigneeKind(task) === "agent" ? "agent" : "unassigned";
+      if (value !== current) body = { assigneeKind: kind, ...(kind === "user" ? { assignee: value.slice(5) } : {}) };
+    } else {
+      const value = String(control.value || "").trim().toLowerCase();
+      const previous = String(task[name] || "").trim();
+      const next = name === "repository" ? String(control.value || "").trim() : value;
+      if (next !== previous) body = { [name]: next };
+    }
+    if (!body) return;
+    state.tasksView.busyId = task.id;
+    renderTaskDetail();
+    try {
+      const payload = await taskRequest("PATCH", `/api/tasks/${task.id}`, body);
+      replaceTask(payload.task);
+      taskDetailsLoaded.add(payload.task.id);
+      taskDetailNotice = { taskId: task.id, place: "props", message: "Saved.", tone: "good" };
+      renderTasksPage();
+    } catch (error) {
+      taskDetailNotice = { taskId: task.id, place: "props", message: taskFriendlyError(error), tone: "bad" };
+    } finally {
+      state.tasksView.busyId = "";
+      renderTaskDetail();
+    }
   }
 
   function taskCanCheckIn(task) {
@@ -1055,7 +1174,6 @@
     }
     const qa = task.qa || {};
     const agent = task.agent || {};
-    const routing = [task.department && `#${task.department}`, task.team && `team:${task.team}`, task.destination && `to:${task.destination}`].filter(Boolean);
     const updated = relativeTimeLabel(task.updatedAt || task.createdAt);
     const checkin = task.lastCheckin;
     const agentLines = [
@@ -1065,11 +1183,8 @@
       agent.finishedBy && `Finished by: ${agent.finishedBy}`,
       (task.agentSessionId || agent.sessionId) && `Session: ${task.agentSessionId || agent.sessionId}`,
     ].filter(Boolean);
-    const routingHtml = routing.map((value) => `<span class="task-label"><span>${escapeHtml(value)}</span></span>`).join("") || '<span class="text-muted-foreground">None</span>';
-    const priorityLevel = taskPriorityLevel(task);
     const qaTone = { passed: "", failed: "bad", requested: "attention" }[qa.status];
     const qaLabel = { passed: "Passed", failed: "Failed", requested: "Awaiting review" }[qa.status] || (qa.status && qa.status !== "unknown" ? qa.status : "Not requested");
-    const creator = task.createdBy ? `${taskAvatarHtml({ assigneeKind: "user", assignee: task.createdBy })}@${escapeHtml(task.createdBy)}` : "—";
     detail.innerHTML = `<article class="task-detail" data-task-detail-id="${escapeHtml(task.id)}">
       <div class="task-detail-main">
         <header class="task-detail-head">
@@ -1077,6 +1192,7 @@
           <h2 class="task-detail-title">${escapeHtml(task.title || "Organization task")}</h2>
           <div class="task-action-bar">${taskActionsHtml(task)}</div>
           ${taskNoticeHtml(task, "actions")}
+          ${taskQuickCommentHtml(task)}
         </header>
         ${task.deletedAt ? taskDetailCard("trash-2", "In trash", `<p>Deleted ${escapeHtml(taskDate(task.deletedAt))}${task.deletedBy ? ` by @${escapeHtml(task.deletedBy)}` : ""}</p>${task.deleteReason ? `<p class="mt-1 text-xs text-muted-foreground">${escapeHtml(task.deleteReason)}</p>` : ""}<p class="mt-2 text-xs text-muted-foreground">Restorable until ${escapeHtml(taskDate(task.purgeAt))}; after that it is purged with its replies, check-ins, QA reviews and attachments.</p>`, true, true) : ""}
         ${taskCheckinHtml(task)}
@@ -1089,15 +1205,7 @@
         ${taskActivityHtml(task)}
       </div>
       <aside class="task-detail-aside" aria-label="Task properties">
-        ${taskPropsGroupHtml("", taskPropsHtml([
-          ["Status", `<span class="task-state" data-state="${task.deletedAt ? "trash" : taskStatusKey(task)}">${taskRingHtml(task)}${escapeHtml(task.deletedAt ? "In trash" : taskStatusLabel(task))}</span>`],
-          ["Priority", `${taskPriorityHtml(task)}<span class="tabular-nums">P${escapeHtml(String(task.priority ?? 50))}</span><span class="text-muted-foreground">${TASK_PRIORITY_LABELS[priorityLevel]}</span>`],
-          ["Assignee", `${taskAvatarHtml(task)}<span>${escapeHtml(taskAssigneeLabel(task))}</span>`],
-          ["Created by", creator],
-          task.parentTaskId && ["Follows", `<span class="font-mono text-xs">${escapeHtml(task.parentTaskId.slice(0, 8))}</span>`],
-          ["Repository", task.repository ? taskRepositoryHtml(task.repository) : '<span class="text-muted-foreground">None</span>'],
-          ["Routing", routingHtml],
-        ]))}
+        ${taskPropsGroupHtml("", taskEditablePropsHtml(task))}
         ${taskProgressCardHtml(task)}
         ${taskPersistentReminderHtml(task)}
         ${taskPropsGroupHtml("Timing", taskPropsHtml([
@@ -1541,7 +1649,7 @@
       const payload = await taskRequest(method, path, body);
       replaceTask(payload.task);
       taskDetailsLoaded.add(payload.task.id);
-      taskDetailNotice = { taskId: task.id, place: "actions", message: { start: "Task started.", stop: "Task stopped.", assign: "Task added to the bot queue.", return: "Task returned to the list.", undo: "Task reopened." }[action] || "Task updated.", tone: "good" };
+      taskDetailNotice = { taskId: task.id, place: "actions", message: { start: "Task started.", stop: "Task stopped.", complete: "Task completed.", assign: "Task added to the bot queue.", return: "Task returned to the list.", undo: "Task reopened." }[action] || "Task updated.", tone: "good" };
       renderTasksPage();
     } catch (error) {
       taskDetailNotice = { taskId: task.id, place: "actions", message: taskFriendlyError(error), tone: "bad" };
@@ -1848,6 +1956,16 @@
         const copied = await copyTextToClipboard(taskPromptText(task));
         setTaskNotice(task.id, "actions", copied ? "Task prompt copied." : "Could not copy the task prompt.", copied ? "good" : "bad");
       } else void mutateTask(action, task);
+    });
+    detailPane?.addEventListener("change", (event) => {
+      const control = event.target.closest?.("[data-task-prop]");
+      if (control) void submitTaskProperty(control);
+    });
+    detailPane?.addEventListener("keydown", (event) => {
+      const control = event.target.closest?.("input[data-task-prop]");
+      if (!control) return;
+      if (event.key === "Enter") { event.preventDefault(); control.blur(); }
+      else if (event.key === "Escape") { event.preventDefault(); renderTaskDetail(); }
     });
     $("[data-tasks-detail]")?.addEventListener("submit", (event) => {
       const progressForm = event.target.closest("[data-task-progress-form]");
