@@ -7,6 +7,7 @@ command in the same push is refused before git runs.
 """
 
 import base64
+import json
 import os
 import shutil
 import subprocess
@@ -405,3 +406,126 @@ def test_real_git_clone_and_push_over_http(served):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+MAIN_REF = "refs/heads/main"
+
+
+def actions_grant(ref=MAIN_REF, **kwargs):
+    return grant("actions-push", ref, **kwargs)
+
+
+def test_actions_push_grant_message_and_branch_rule():
+    assert gateway.runner_grant_message(
+        "mirror-a", "alice", "project", "actions-push", "refs/heads/release/v1",
+        "fmnext-run-1", "grant_0123456789", 1000, 2000,
+    ) == (
+        "forkmesh-runner-grant-v1\nmirror-a\nalice\nproject\nactions-push\n"
+        "refs/heads/release/v1\nfmnext-run-1\ngrant_0123456789\n1000\n2000"
+    )
+    for ref in (
+        "", "main", "refs/tags/v1", "refs/heads/", "refs/heads/-x",
+        "refs/heads/a..b", "refs/heads/a//b", "refs/heads/a@{1}",
+        "refs/heads/a/", "refs/heads/a.lock", "refs/heads/a.",
+        "refs/heads/" + "a" * 201, "refs/heads/a b",
+    ):
+        assert gateway.runner_grant_message(
+            "mirror-a", "alice", "project", "actions-push", ref,
+            "fmnext-run-1", "grant_0123456789", 1000, 2000) == "", ref
+    assert gateway.runner_grant_message(
+        "mirror-a", "alice", "project", "actions-push", MAIN_REF,
+        "fmnext-run-1", "grant_0123456789", 1000, 1000 + 10_800_001) == ""
+    assert gateway.runner_branch_ref("refs/heads/" + "a" * 200)
+    assert gateway.parse_runner_grant(actions_grant()).access == "actions-push"
+
+
+def test_actions_push_fast_forwards_the_granted_branch(served):
+    app, bare, commit, _verifier, tmp = served
+    logged = []
+    app.log = logged.append
+    advert = app.dispatch(
+        "GET",
+        "/v1/runner/alice/project.git/info/refs?service=git-receive-pack",
+        {"X-ForkMesh-Runner-Grant": actions_grant()}, b"")
+    assert advert.status == 200
+    assert app.dispatch(
+        "GET",
+        "/v1/runner/alice/project.git/info/refs?service=git-upload-pack",
+        {"X-ForkMesh-Runner-Grant": actions_grant()}, b"",
+    ).status == 404
+    work, new = new_commit(tmp, bare)
+    response = receive(app, actions_grant(), push_body(
+        [(commit, new, MAIN_REF)], pack_for(work, new, commit)))
+    assert response.status == 200, response.body
+    assert run(["git", "rev-parse", MAIN_REF], bare) == new
+    report = json.loads(
+        response.headers[gateway.REF_UPDATES_HEADER])
+    assert report["actions"] is True
+    assert report["updates"][0]["ref"] == MAIN_REF
+    assert any(entry.get("actions") is True for entry in logged)
+    target = "/v1/runner/alice/project.git/git-receive-pack"
+    wide = max(gateway.MAX_REQUEST_BODY, app.config.receive_max_input_bytes)
+    assert app.request_body_limit(
+        "POST", target, {"X-ForkMesh-Runner-Grant": actions_grant()}) == wide
+
+
+def test_agent_push_report_has_no_actions_flag(served):
+    app, bare, _commit, _verifier, tmp = served
+    work, new = new_commit(tmp, bare)
+    response = receive(app, grant(), push_body(
+        [(ZERO, new, AGENT_REF)], pack_for(work, new, ZERO)))
+    assert response.status == 200
+    report = json.loads(
+        response.headers[gateway.REF_UPDATES_HEADER])
+    assert "actions" not in report
+
+
+def test_actions_push_refuses_other_refs_creates_deletes_and_stale(served):
+    app, bare, commit, _verifier, tmp = served
+    before = refs(bare)
+    work, new = new_commit(tmp, bare)
+    pack = pack_for(work, new, commit)
+    for commands in (
+        [(commit, new, "refs/heads/other")],
+        [(commit, new, AGENT_REF)],
+        [(commit, new, MAIN_REF), (commit, new, MAIN_REF)],
+        [(commit, ZERO, MAIN_REF)],
+        [(ZERO, new, MAIN_REF)],
+        [(new, new, MAIN_REF)],
+    ):
+        assert receive(app, actions_grant(), push_body(
+            commands, pack)).status == 404, commands
+    created = receive(app, actions_grant("refs/heads/fresh"), push_body(
+        [(ZERO, new, "refs/heads/fresh")], pack_for(work, new, ZERO)))
+    assert created.status == 404
+    assert refs(bare) == before
+    _other, rewritten = new_commit(tmp, bare, name="rewrite")
+    run(["git", "fetch", "--quiet", "origin"], work)
+    assert receive(app, actions_grant(), push_body(
+        [(commit, new, MAIN_REF)], pack)).status == 200
+    forced = receive(app, actions_grant(), push_body(
+        [(new, rewritten, MAIN_REF)], pack_for(_other, rewritten, ZERO)))
+    assert b"ok " + MAIN_REF.encode() not in forced.body
+    assert run(["git", "rev-parse", MAIN_REF], bare) == new
+
+
+def test_actions_scope_checks_without_git():
+    oid, tip = "a" * 40, "b" * 40
+    gateway.enforce_runner_push_scope(
+        [(tip, oid, MAIN_REF)], MAIN_REF, "actions-push", tip)
+    for commands, current in (
+        ([(tip, oid, MAIN_REF)], ""),
+        ([(tip, oid, MAIN_REF)], None),
+        ([(oid, oid, MAIN_REF)], tip),
+        ([(ZERO, oid, MAIN_REF)], ""),
+        ([(tip, ZERO, MAIN_REF)], tip),
+    ):
+        with pytest.raises(gateway.GatewayError):
+            gateway.enforce_runner_push_scope(
+                commands, MAIN_REF, "actions-push", current)
+    with pytest.raises(gateway.GatewayError):
+        gateway.enforce_runner_push_scope(
+            [(tip, oid, MAIN_REF)], MAIN_REF, "push", tip)
+    with pytest.raises(gateway.GatewayError):
+        gateway.enforce_runner_push_scope(
+            [(ZERO, oid, AGENT_REF)], AGENT_REF, "admin", None)
