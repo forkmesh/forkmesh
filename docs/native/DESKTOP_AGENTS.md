@@ -519,13 +519,35 @@ use `agents.takeover` instead ([RUNNER_AGENTS.md](RUNNER_AGENTS.md)).
 - Outside agents: a 200 ms size check while followed.
 - Pacing: at most every 15 ms on the LAN, 80 ms through the relay, and not
   while the relay socket has frames queued.
-- Phones: `DesktopTranscriptStream` applies an event only when its `from`
-  matches, drops older events, resets on gaps, holds events that arrive before
-  the follow's answer, re-follows from `next` when the hub's link changes, and
-  retries 1 s to 15 s while no link is up. `refollow()` re-registers on the same
-  stream (never an unfollow first, which could race).
-  `AgentControlCenter.refreshDesktop()` re-reads only the desktop half on a
-  bell.
+- Phones: `DesktopTranscriptStream` applies an event when its `from`
+  matches, keeps only the unseen tail of one that starts before `next`, holds
+  events that arrive before the follow's answer, re-follows from `next` when
+  the hub's link changes, and retries 1 s to 15 s while no link is up.
+  `refollow()` re-registers on the same stream (never an unfollow first, which
+  could race). `AgentControlCenter.refreshDesktop()` re-reads only the desktop
+  half on a bell.
+- **One desktop follow, several phone streams.** The desktop keeps one follow
+  per connection and session, but a phone streams one run from several places
+  at once: the run page, the Agents tab's Eagle feeds (`AgentEagleFeed`) and
+  dots watch (`AgentDotsWatch`), both through `ControlWatchFeeds`, and Watch.
+  Fixed 2026-10-16, when a reply sent from the phone did not show on its run
+  page until the app came back to the foreground or the page was reopened:
+  - The Agents tab stops its feeds 500 ms after a run page opens over it
+    (`AgentsScreen.leave`), and its dots watch stops when no row runs. Each
+    stopped stream sent `agents.unfollow`, which also removed the run page's
+    follow. The page still read as streaming, so `load()`, the
+    `agents.changed` bell and pull to refresh all skipped the read. Streams of
+    one session on one hub now count each other, and `stop()` unfollows only
+    when it is the last one.
+  - A feed that starts when the reply makes the run active follows from 0 and
+    moves the desktop's cursor. The run page then saw a gap and replaced its
+    transcript with the newest chunk. On a gap a stream now holds the event,
+    reads the missing part with `agents.transcript {id, since: next}` (which
+    leaves the follow alone), and then applies what it held. If that read
+    fails, it follows again.
+  - Pull to refresh on a streaming run page calls `refollow()`. Before, iOS
+    did nothing, and Android closed the stream and opened a new one, whose
+    follow the old stream's late `agents.unfollow` could remove.
 - `TranscriptBlockCache.update(text)` parses only new lines and falls back to a
   full parse on reset.
 
