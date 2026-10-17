@@ -9,9 +9,7 @@ struct DjNowPlayingChip: View {
     var body: some View {
         if let model = hub.model, !model.onScreen, let deck = model.audibleDeck {
             Button { SurfaceRouter.open(.videoMixDjStudio) } label: {
-                DjMiniRecord(deck: deck, size: 34)
-                    .padding(5)
-                    .shellGlass(Circle())
+                DjMiniRecord(deck: deck, size: 44)
                     .contentShape(Circle())
             }
             .buttonStyle(ShellBarButtonStyle())
@@ -43,7 +41,6 @@ struct DjMiniRecord: View {
                             .resizable()
                             .interpolation(.low)
                             .frame(width: size * 0.92, height: size * 0.92)
-                            .clipShape(Circle())
                             .opacity(0.8)
                     }
                     DjMiniGrooves(size: size).equatable()

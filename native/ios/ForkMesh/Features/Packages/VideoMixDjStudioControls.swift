@@ -21,7 +21,13 @@ enum DjTheme {
     static let playhead = rgb(0xE0242C)
     static let waveColors: [Color] = (0..<24).map { Color(hue: Double($0) / 24, saturation: 0.72, brightness: 1) }
 
-    static func tick() { FmHaptics.impact(.light) }
+    @MainActor private static let tapper = UIImpactFeedbackGenerator(style: .light)
+
+    @MainActor static func tick() {
+        guard !UIAccessibility.isReduceMotionEnabled, FmHaptics.enabled else { return }
+        tapper.impactOccurred()
+        tapper.prepare()
+    }
 }
 
 struct DjRoundButton<Label: View>: View {
@@ -314,7 +320,7 @@ struct DjTransport: View {
 
     var body: some View {
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
-        let atStart = deck.position() < 0.05
+        let atStart = !deck.playing && deck.position() < 0.05
         layout {
             button("START", symbol: "play.fill", tint: DjTheme.play, lit: deck.playing) { model.start(deck.side) }
                 .accessibilityLabel("Start Deck \(deck.side.label)")
@@ -580,6 +586,67 @@ struct DjPitchFader: View {
     }
 }
 
+struct DjLevelFader: View {
+    let model: DjStudioModel
+    let deck: DjDeck
+    let u: CGFloat
+    @State private var startLevel: Double?
+
+    var body: some View {
+        VStack(spacing: 4 * u) {
+            Image(systemName: deck.level < 0.01 ? "speaker.slash.fill" : deck.level < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 11 * u, weight: .semibold))
+                .foregroundStyle(DjTheme.muted)
+                .frame(height: 16 * u)
+            GeometryReader { geometry in
+                let knob = CGSize(width: min(geometry.size.width, 24 * u), height: 14 * u)
+                let travel = max(1, geometry.size.height - knob.height)
+                let y = knob.height / 2 + CGFloat(1 - deck.level) * travel
+                ZStack(alignment: .top) {
+                    Capsule()
+                        .fill(Color.black.opacity(0.7))
+                        .frame(width: 5 * u, height: travel)
+                        .offset(y: knob.height / 2)
+                    Capsule()
+                        .fill(DjTheme.play.opacity(0.85))
+                        .frame(width: 5 * u, height: max(0, travel - (y - knob.height / 2)))
+                        .offset(y: y)
+                    DjFaderKnob(size: knob, horizontal: false)
+                        .offset(y: y - knob.height / 2)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            let start = startLevel ?? deck.level
+                            if startLevel == nil { startLevel = start }
+                            model.setLevel(deck.side, start - Double(value.translation.height / travel))
+                        }
+                        .onEnded { _ in startLevel = nil })
+                .onTapGesture(count: 2) {
+                    DjTheme.tick()
+                    model.setLevel(deck.side, 1)
+                }
+            }
+            Text("\(Int((deck.level * 100).rounded()))")
+                .font(.system(size: 10 * u, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(DjTheme.muted)
+                .frame(height: 14 * u)
+        }
+        .padding(.vertical, 4 * u)
+        .background(DjTheme.panel, in: RoundedRectangle(cornerRadius: 5 * u, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 5 * u, style: .continuous).strokeBorder(DjTheme.edge, lineWidth: 1))
+        .accessibilityElement()
+        .accessibilityLabel("Deck \(deck.side.label) volume")
+        .accessibilityValue("\(Int((deck.level * 100).rounded())) percent")
+        .accessibilityAdjustableAction { direction in
+            model.setLevel(deck.side, deck.level + (direction == .increment ? 0.05 : -0.05))
+        }
+    }
+}
+
 struct DjFaderKnob: View, Equatable {
     let size: CGSize
     let horizontal: Bool
@@ -677,22 +744,30 @@ struct DjAutomixTab: View {
             model.automix()
         } label: {
             HStack(spacing: 6 * u) {
-                Image(systemName: model.automixing ? "stop.fill" : "play.fill")
-                    .font(.system(size: 8 * u, weight: .bold))
-                    .foregroundStyle(DjTheme.ink.opacity(0.8))
+                Circle()
+                    .fill(model.automixOn ? DjTheme.active : Color.white.opacity(0.18))
+                    .frame(width: 8 * u, height: 8 * u)
+                    .shadow(color: DjTheme.active.opacity(model.automixOn ? 0.9 : 0), radius: 4 * u)
                     .frame(width: 18 * u, height: 14 * u)
                     .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 2 * u))
                 Text("AUTOMIX")
                     .font(.system(size: 12 * u, weight: .bold))
-                    .foregroundStyle(model.automixing ? DjTheme.active : DjTheme.ink)
+                    .foregroundStyle(model.automixOn || model.automixing ? DjTheme.active : DjTheme.ink)
             }
             .padding(.horizontal, inset * u)
             .frame(height: 30 * u)
             .background(DjTabShape().fill(DjTheme.rgb(0x2A2C31)))
-            .overlay(DjTabShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .overlay(DjTabShape().stroke(model.automixOn ? DjTheme.active.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1))
         }
         .buttonStyle(DjPressStyle())
-        .accessibilityLabel(model.automixing ? "Stop automix" : "Automix to the other deck")
+        .contextMenu {
+            Button(model.automixing ? "Stop the Fade" : "Mix to the Other Deck Now", systemImage: "arrow.left.arrow.right") { model.mixNow() }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.automixOn)
+        .accessibilityLabel("Automix")
+        .accessibilityValue(model.automixOn ? "On" : "Off")
+        .accessibilityHint("When on, queued songs play one after another with an eight-second crossfade")
+        .accessibilityAction(named: "Mix to the other deck now") { model.mixNow() }
     }
 }
 
@@ -719,19 +794,25 @@ struct DjNotice: View {
     let model: DjStudioModel
 
     var body: some View {
-        if let notice = model.notice {
-            Text(notice)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(DjTheme.ink)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
-                .environment(\.colorScheme, .dark)
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .accessibilityAddTraits(.updatesFrequently)
-                .allowsHitTesting(false)
+        ZStack {
+            if let notice = model.notice { bubble(notice) }
         }
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.2), value: model.notice)
+    }
+
+    private func bubble(_ notice: String) -> some View {
+        Text(notice)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(DjTheme.ink)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .environment(\.colorScheme, .dark)
+            .padding(.top, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityAddTraits(.updatesFrequently)
+            .allowsHitTesting(false)
     }
 }

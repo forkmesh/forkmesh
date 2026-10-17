@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Audio",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "summary": "Mix two YouTube decks with turntables, crossfader, cues, loops, sampled sections, tempo and sampler pads, and jam with friends who share the decks and the queue.",
   "screenshots": [
     {
@@ -72,7 +72,7 @@
     },
     {
       "id": "account.jam.share",
-      "label": "Create jam sessions, invite ForkMesh users by name, and share both decks and a video queue with the people who join",
+      "label": "Jam with invited ForkMesh users: share both decks, the queue, who is listening, phone motion and reactions",
       "risk": "sensitive"
     },
     {
