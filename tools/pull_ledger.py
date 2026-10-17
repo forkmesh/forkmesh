@@ -23,6 +23,8 @@ LEDGER_REF = "refs/heads/forkmesh/pulls"
 PULLS_PREFIX = ".forkmesh/pulls"
 EVENT_NAME = re.compile(r"^(\d{4})-([a-z-]+)\.md$")
 ATTEMPTS = 5
+PULL_BRANCH_SOURCES = ("refs/heads/forkmesh/pull/%d",
+                       "refs/remotes/origin/forkmesh/pull/%d")
 
 
 class LedgerError(Exception):
@@ -60,7 +62,7 @@ def read_blob(repo, rev, path):
     result = git(repo, "cat-file", "blob", "%s:%s" % (rev, path), check=False)
     if result.returncode != 0:
         return None
-    return result.stdout.decode("utf-8")
+    return result.stdout.decode("utf-8", "surrogateescape")
 
 
 def list_pull_files(repo, rev, number):
@@ -223,6 +225,49 @@ def with_status(text, status):
     return "\n".join(lines)
 
 
+def with_merged(text, merged_at, merged_by):
+    lines = with_status(text, "merged").split("\n")
+    end = lines.index("---", 1)
+    fields = {"mergedAt": str(int(merged_at)), "mergedBy": merged_by}
+    values = {}
+    for i in range(1, end):
+        name, sep, value = lines[i].partition(": ")
+        if sep:
+            values[name] = (i, value)
+    for name, value in fields.items():
+        if name in values:
+            lines[values[name][0]] = "%s: %s" % (name, value)
+    missing = ["%s: %s" % (n, v) for n, v in fields.items() if n not in values]
+    insert_at = values["ts"][0] if "ts" in values else end
+    lines[insert_at:insert_at] = missing
+    reward = values.get("rewardStatus")
+    condition = values.get("rewardCondition", (None, ""))[1].strip()
+    if reward and reward[1].strip() == "pending_merge" and condition in ("", "merged"):
+        index = lines.index("rewardStatus: " + reward[1])
+        lines[index] = "rewardStatus: pending_wallet"
+    return "\n".join(lines)
+
+
+def resolve_commit(repo, ref):
+    result = git(repo, "rev-parse", "--verify", "-q", ref + "^{commit}", check=False)
+    return result.stdout.decode().strip() if result.returncode == 0 else ""
+
+
+def pull_branch_source(repo, number):
+    for pattern in PULL_BRANCH_SOURCES:
+        ref = pattern % number
+        if resolve_commit(repo, ref) and read_blob(
+                repo, ref, "%s/%d/pull.md" % (PULLS_PREFIX, number)) is not None:
+            return ref
+    return ""
+
+
+def pull_folder_files(repo, rev, number):
+    folder = "%s/%d/" % (PULLS_PREFIX, number)
+    out = git_text(repo, "ls-tree", "-r", "--name-only", rev, folder)
+    return {path: read_blob(repo, rev, path) for path in out.splitlines() if path}
+
+
 def build_tree(repo, base_tree, files):
     scratch = tempfile.mkdtemp(prefix="pull-ledger-index-")
     index_path = os.path.join(scratch, "index")
@@ -231,7 +276,7 @@ def build_tree(repo, base_tree, files):
         git(repo, "read-tree", base_tree, env=env)
         for path, content in files.items():
             blob = git_text(repo, "hash-object", "-w", "--stdin",
-                            input_bytes=content.encode("utf-8"))
+                            input_bytes=content.encode("utf-8", "surrogateescape"))
             git(repo, "update-index", "--add", "--cacheinfo",
                 "100644,%s,%s" % (blob, path), env=env)
         return git_text(repo, "write-tree", env=env)
@@ -256,7 +301,15 @@ def cas_update(repo, ref, new, old, message):
 
 
 def plan_steps(repo, tip, action, number, args, identity, author_name, key):
-    pull = load_pull(repo, tip, number)
+    steps = []
+    source = ""
+    if action == "merged" and read_blob(
+            repo, tip, "%s/%d/pull.md" % (PULLS_PREFIX, number)) is None:
+        source = pull_branch_source(repo, number)
+    if source:
+        steps.append(("pull #%d: adopt" % number,
+                      pull_folder_files(repo, source, number), None))
+    pull = load_pull(repo, source or tip, number)
     status = pull["status"]
     if status == "merged":
         raise LedgerError("Pull request #%d is merged; refusing to %s it." % (
@@ -265,7 +318,8 @@ def plan_steps(repo, tip, action, number, args, identity, author_name, key):
         raise LedgerError("Pull request #%d is already closed." % number)
     if action == "reopen" and status != "closed":
         raise LedgerError("Pull request #%d is %s, not closed." % (number, status))
-    steps = []
+    if action == "merged" and status != "open":
+        raise LedgerError("Pull request #%d is %s, not open." % (number, status))
     body = args.get("comment")
     if body is not None:
         ev = make_comment_event(number, body, identity, author_name, key)
@@ -278,6 +332,11 @@ def plan_steps(repo, tip, action, number, args, identity, author_name, key):
         steps.append(("pull #%d: %s" % (number, new_status),
                       {"%s/%d/pull.md" % (PULLS_PREFIX, number):
                        with_status(pull["text"], new_status)}, None))
+    if action == "merged":
+        merged_at = args.get("merged_at") or int(time.time() * 1000)
+        steps.append(("pull #%d: merged" % number,
+                      {"%s/%d/pull.md" % (PULLS_PREFIX, number):
+                       with_merged(pull["text"], merged_at, identity.public)}, None))
     return steps
 
 
@@ -290,20 +349,15 @@ def write_steps(repo, tip, steps):
     return parent
 
 
-def snapshot_pull_metadata(repo, ledger_commit, number):
+def snapshot_pull_metadata(repo, ledger_commit, number, retire=False):
     pull_tree = git_text(repo, "rev-parse", "--verify",
                          "%s:%s/%d" % (ledger_commit, PULLS_PREFIX, number))
     branch_ref = "refs/heads/forkmesh/pull/%d" % number
     metadata_ref = "refs/pr/%d/metadata" % number
-
-    def resolve(ref):
-        result = git(repo, "rev-parse", "--verify", "-q", ref + "^{commit}",
-                     check=False)
-        return result.stdout.decode().strip() if result.returncode == 0 else ""
-
-    old_tip = resolve(branch_ref)
-    parent = old_tip or resolve(metadata_ref)
-    if parent:
+    old_tip = resolve_commit(repo, branch_ref)
+    parent = old_tip or resolve_commit(repo, metadata_ref) or resolve_commit(
+        repo, PULL_BRANCH_SOURCES[1] % number)
+    if parent and not retire:
         result = git(repo, "rev-parse", "--verify", "-q",
                      "%s:%s/%d" % (parent, PULLS_PREFIX, number), check=False)
         if result.stdout.decode().strip() == pull_tree:
@@ -320,6 +374,15 @@ def snapshot_pull_metadata(repo, ledger_commit, number):
     commit_args += ["-m", "pull #%d: metadata snapshot" % number]
     new_tip = git_text(repo, *commit_args)
     message = "pull #%d: metadata snapshot" % number
+    if retire:
+        git(repo, "update-ref", "-m", message, metadata_ref, new_tip)
+        if old_tip:
+            result = git(repo, "update-ref", "-m", message, "-d", branch_ref,
+                         old_tip, check=False)
+            if result.returncode != 0:
+                raise LedgerMoved("%s moved while retiring it (%s)." % (
+                    branch_ref, result.stderr.decode(errors="replace").strip()))
+        return new_tip
     if old_tip:
         cas_update(repo, branch_ref, new_tip, old_tip, message)
     else:
@@ -433,7 +496,7 @@ def run_write(repo, action, number, args, identity, author_name, key, execute,
         for message, _, _ in steps:
             out.write("  %s\n" % message)
         try:
-            snapshot_pull_metadata(repo, new, number)
+            snapshot_pull_metadata(repo, new, number, retire=action == "merged")
         except LedgerError as err:
             out.write("warning: per-pull metadata ref not advanced (%s); the "
                       "desktop refreshes it on its next pull list.\n" % err)
@@ -467,7 +530,8 @@ def read_body(text, path):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="pull_ledger.py",
-        description="Comment on, close and reopen native ForkMesh pull requests "
+        description="Comment on, close, reopen and record merges of native "
+                    "ForkMesh pull requests "
                     "on the forkmesh/pulls ledger branch. Writes are dry runs "
                     "unless --execute is given.")
     parser.add_argument("--repo-dir", default=str(REPO),
@@ -501,6 +565,13 @@ def build_parser():
     p_reopen = sub.add_parser("reopen", help="set a closed pull back to open")
     p_reopen.add_argument("number", type=int)
     p_reopen.add_argument("--execute", action="store_true", help="write it")
+    p_merged = sub.add_parser(
+        "merged", help="record an open pull whose change is already on its base "
+                       "as merged and retire its branch")
+    p_merged.add_argument("number", type=int)
+    p_merged.add_argument("--comment", help="comment posted before the merge record")
+    p_merged.add_argument("--comment-file", help="read that comment from a file")
+    p_merged.add_argument("--execute", action="store_true", help="write it")
     return parser
 
 
@@ -517,7 +588,7 @@ def main(argv=None, out=None):
             if body is None:
                 raise LedgerError("comment needs --body or --body-file.")
             extra["comment"] = body
-        elif args.command == "close":
+        elif args.command in ("close", "merged"):
             body = read_body(args.comment, args.comment_file)
             if body is not None:
                 extra["comment"] = body
