@@ -336,13 +336,15 @@ def test_preview_runs_the_call_pipeline_and_start_keeps_it():
 
 def test_chat_page_has_preview_and_background_picker():
     for marker in (
-        'id="chat-call-preview"', 'id="chat-call-background-row"', 'id="chat-call-background-options"',
+        'id="chat-call-background-row"', 'id="chat-call-background-options"',
         'id="chat-call-background-file"', 'id="chat-call-preview-slot"', 'id="chat-call-start"',
     ):
         assert marker in HTML
     assert ".chat-call-backgrounds[hidden] { display: none; }" in CSS
     assert ".chat-call-panel.is-preview #chat-call-local" in CSS
-    assert "callPreviewBtn?.addEventListener(\"click\", previewDirectCall);" in CHAT
+    assert 'id="chat-call-preview"' not in HTML
+    assert 'callAudioBtn?.addEventListener("click", () => previewDirectCall("audio"));' in CHAT
+    assert 'callVideoBtn?.addEventListener("click", () => previewDirectCall("video"));' in CHAT
 
 
 def test_android_wires_backgrounds_and_the_preview():
@@ -354,7 +356,7 @@ def test_android_wires_backgrounds_and_the_preview():
     assert "peers.preview(look.face, look.background, look.customBackgroundImage, look.customFaceImage)" in screen
     assert "ActivityResultContracts.PickVisualMedia()" in controls
     assert 'request("background", listOf(id, image))' in peer
-    assert "if (previewed != null && video) {" in peer
+    assert "if (previewed != null && previewMedia == media) {" in peer
     assert "FaceChangerLook.BACKGROUND_PREF" in installer
     core = (ROOT.parent / "native" / "android" / "core" / "src" / "main" / "kotlin" / "com" / "forkmesh" / "nativeapp" / "facechanger" / "FaceChangerLook.kt").read_text(encoding="utf-8")
     assert 'const val BACKGROUND_PREF = "chat.callBackground"' in core

@@ -36,18 +36,26 @@ import {
   savedCallerPitch,
   savedVoiceChoice,
 } from "./chat-call-voice.js";
+import {
+  CALL_ROUTE_CHECK_MS,
+  CALL_TEST_CLIP_MS,
+  callMediaConstraints,
+  callRouteLabel,
+  readCallRoute,
+  recordTestClip,
+  tuneCallSdp,
+  tuneCallSenders,
+} from "./chat-call-quality.js";
+import { createCallTones } from "./chat-call-tones.js";
 
 const RING_TIMEOUT_MS = 45000;
 const INVITE_RESEND_MS = 3000;
 const INVITE_STALE_MS = 9000;
 const DISCONNECT_GRACE_MS = 8000;
 const VOICE_READY_MS = 2500;
-const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true };
-const VIDEO_CONSTRAINTS = {
-  width: { ideal: 640 },
-  height: { ideal: 360 },
-  frameRate: { ideal: 24 },
-};
+const VIBRATE_PATTERN = [600, 300, 600, 1500];
+const VIBRATE_EVERY_MS = 3000;
+const TITLE_FLASH_MS = 1000;
 
 export const CALL_FRAME_TYPES = new Set([
   "call-invite",
@@ -67,6 +75,13 @@ export function callsSupported(globalRef = globalThis) {
   );
 }
 
+export function askCallNotifications(NotificationImpl = globalThis.Notification) {
+  if (NotificationImpl?.permission !== "default" || typeof NotificationImpl.requestPermission !== "function") return;
+  try {
+    Promise.resolve(NotificationImpl.requestPermission()).catch(() => {});
+  } catch (_) {}
+}
+
 export function createChatCalls({
   iceServers = [],
   selfId = "",
@@ -75,6 +90,7 @@ export function createChatCalls({
   partnerFor = () => "",
   onMissed = () => {},
   onActiveChange = () => {},
+  requestStart = null,
   getUserMediaImpl = (constraints) =>
     globalThis.navigator.mediaDevices.getUserMedia(constraints),
   RTCPeerConnectionImpl = globalThis.RTCPeerConnection,
@@ -91,6 +107,12 @@ export function createChatCalls({
   clearTimeoutImpl = globalThis.clearTimeout.bind(globalThis),
   setIntervalImpl = globalThis.setInterval.bind(globalThis),
   clearIntervalImpl = globalThis.clearInterval.bind(globalThis),
+  tones = createCallTones({ setIntervalImpl, clearIntervalImpl }),
+  NotificationImpl = globalThis.Notification,
+  navigatorRef = globalThis.navigator,
+  recordTestClipImpl = recordTestClip,
+  readRouteImpl = readCallRoute,
+  URLImpl = globalThis.URL,
 } = {}) {
   const panel = documentRef.querySelector("#chat-call-panel");
   const peerLabel = documentRef.querySelector("#chat-call-peer");
@@ -115,9 +137,15 @@ export function createChatCalls({
   const backgroundFile = documentRef.querySelector("#chat-call-background-file");
   const previewSlot = documentRef.querySelector("#chat-call-preview-slot");
   const startBtn = documentRef.querySelector("#chat-call-start");
+  const routeLabel = documentRef.querySelector("#chat-call-route");
+  const testRow = documentRef.querySelector("#chat-call-test-row");
+  const testBtn = documentRef.querySelector("#chat-call-test");
+  const testPlayer = documentRef.querySelector("#chat-call-test-player");
+  const incomingKind = documentRef.querySelector("#chat-call-incoming-kind");
 
   let call = null;
   let invite = null;
+  let ringAlert = null;
 
   function newCallId() {
     return (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
@@ -134,6 +162,39 @@ export function createChatCalls({
     if (!call) return;
     call.phase = phase;
     if (stateLabel) stateLabel.textContent = String(text || "");
+    syncTones();
+  }
+
+  function syncTones() {
+    if (invite && ringAlert?.callId === invite.callId) tones.ring();
+    else if (call?.phase === "ringing-out") tones.ringback();
+    else tones.stop();
+  }
+
+  function renderRoute() {
+    if (!routeLabel) return;
+    const text = call?.phase === "live" ? callRouteLabel(call.route) : "";
+    routeLabel.textContent = text;
+    routeLabel.hidden = !text;
+    if (call?.route) routeLabel.setAttribute("data-route", call.route.route);
+  }
+
+  function watchRoute(pc) {
+    if (!call || call.routeTimer) return;
+    const current = call;
+    const check = () => {
+      if (call !== current || current.pc !== pc) return;
+      Promise.resolve()
+        .then(() => readRouteImpl(pc))
+        .then((found) => {
+          if (!found || call !== current || current.pc !== pc) return;
+          current.route = found;
+          renderRoute();
+        })
+        .catch(() => {});
+    };
+    current.routeTimer = setIntervalImpl(check, CALL_ROUTE_CHECK_MS);
+    check();
   }
 
   function renderPanel() {
@@ -146,7 +207,13 @@ export function createChatCalls({
     renderBackgrounds();
     const previewing = call.phase === "preview";
     panel.classList.toggle("is-preview", previewing);
-    if (startBtn) startBtn.hidden = !previewing;
+    if (startBtn) {
+      startBtn.hidden = !previewing;
+      startBtn.textContent = call.media === "video" ? "Start video call" : "Start voice call";
+    }
+    if (testRow) testRow.hidden = !previewing;
+    renderTest();
+    renderRoute();
     if (hangupBtn) hangupBtn.textContent = previewing ? "Close" : "Hang up";
     if (previewSlot) previewSlot.hidden = !previewing;
     if (muteBtn) muteBtn.textContent = call.muted ? "Unmute" : "Mute";
@@ -248,6 +315,64 @@ export function createChatCalls({
     if (invite?.staleTimer) clearTimeoutImpl(invite.staleTimer);
     invite = null;
     if (incomingEl) incomingEl.hidden = true;
+    stopRingAlert();
+    syncTones();
+  }
+
+  function startRingAlert(pending) {
+    if (ringAlert?.callId === pending.callId) return;
+    stopRingAlert();
+    const title = `Incoming ${pending.media === "video" ? "video" : "voice"} call`;
+    const body = `@${pending.partner} is calling you`;
+    ringAlert = { callId: pending.callId, notification: null, vibrateTimer: null, titleTimer: null, title: documentRef.title };
+    const vibrate = () => {
+      try {
+        navigatorRef?.vibrate?.(VIBRATE_PATTERN);
+      } catch (_) {}
+    };
+    vibrate();
+    ringAlert.vibrateTimer = setIntervalImpl(vibrate, VIBRATE_EVERY_MS);
+    if (typeof ringAlert.title === "string") {
+      let flip = false;
+      ringAlert.titleTimer = setIntervalImpl(() => {
+        flip = !flip;
+        documentRef.title = flip ? `📞 ${body}` : ringAlert?.title || "";
+      }, TITLE_FLASH_MS);
+    }
+    const away = Boolean(documentRef.hidden) || (typeof documentRef.hasFocus === "function" && !documentRef.hasFocus());
+    if (away && NotificationImpl?.permission === "granted") {
+      try {
+        const notification = new NotificationImpl(title, {
+          body,
+          tag: `forkmesh-call-${pending.callId}`,
+          requireInteraction: true,
+          renotify: true,
+          silent: false,
+        });
+        notification.onclick = () => {
+          try {
+            globalThis.focus?.();
+          } catch (_) {}
+          notification.close?.();
+        };
+        ringAlert.notification = notification;
+      } catch (_) {}
+    }
+  }
+
+  function stopRingAlert() {
+    const current = ringAlert;
+    ringAlert = null;
+    if (!current) return;
+    if (current.vibrateTimer) clearIntervalImpl(current.vibrateTimer);
+    if (current.titleTimer) clearIntervalImpl(current.titleTimer);
+    if (typeof current.title === "string") documentRef.title = current.title;
+    try {
+      navigatorRef?.vibrate?.(0);
+    } catch (_) {}
+    try {
+      current.notification?.close?.();
+    } catch (_) {}
   }
 
   function signal(type, extra) {
@@ -262,9 +387,11 @@ export function createChatCalls({
     if (call.inviteTimer) clearIntervalImpl(call.inviteTimer);
     if (call.ringTimer) clearTimeoutImpl(call.ringTimer);
     if (call.disconnectTimer) clearTimeoutImpl(call.disconnectTimer);
+    if (call.routeTimer) clearIntervalImpl(call.routeTimer);
     call.inviteTimer = null;
     call.ringTimer = null;
     call.disconnectTimer = null;
+    call.routeTimer = null;
   }
 
   function knownFace(id) {
@@ -430,6 +557,7 @@ export function createChatCalls({
   function teardown() {
     if (!call) return;
     clearCallTimers();
+    clearTest();
     stopVoicePreview();
     try {
       call.stage?.stop();
@@ -446,6 +574,8 @@ export function createChatCalls({
       } catch (_) {}
     }
     call = null;
+    syncTones();
+    renderRoute();
     if (localVideo) localVideo.srcObject = null;
     if (remoteVideo) remoteVideo.srcObject = null;
     if (panel) panel.hidden = true;
@@ -459,10 +589,7 @@ export function createChatCalls({
   }
 
   async function localMedia(media) {
-    return getUserMediaImpl({
-      audio: AUDIO_CONSTRAINTS,
-      video: media === "video" ? VIDEO_CONSTRAINTS : false,
-    });
+    return getUserMediaImpl(callMediaConstraints(media));
   }
 
   function attachLocalPreview() {
@@ -505,7 +632,10 @@ export function createChatCalls({
     pc.onconnectionstatechange = () => {
       if (!call || call.pc !== pc) return;
       if (pc.connectionState === "connected") {
-        setPhase("live", "Connected · encrypted peer-to-peer");
+        setPhase("live", "Connected · end-to-end encrypted");
+        renderRoute();
+        watchRoute(pc);
+        void tuneCallSenders(pc);
       } else if (
         pc.connectionState === "failed" ||
         pc.connectionState === "closed"
@@ -540,13 +670,104 @@ export function createChatCalls({
     if (!call || call.phase !== "preview") return null;
     const kept = call;
     stopVoicePreview({ keepStream: true });
-    if (media !== "video") {
+    if (kept.media !== (media === "video" ? "video" : "audio")) {
       teardown();
       return null;
     }
     clearCallTimers();
+    clearTest();
     call = null;
     return kept;
+  }
+
+  function testTracks() {
+    if (!call) return [];
+    const audio = call.voicePreview?.track?.() || call.localStream.getAudioTracks()[0] || null;
+    return [call.media === "video" ? outgoingTrack("video") : null, audio].filter(Boolean);
+  }
+
+  function clearTest() {
+    const current = call;
+    if (!current) return;
+    const recording = current.testRecording;
+    current.testRecording = null;
+    if (recording) Promise.resolve(recording.stop()).catch(() => {});
+    if (current.testUrl) {
+      try {
+        URLImpl?.revokeObjectURL?.(current.testUrl);
+      } catch (_) {}
+    }
+    current.testUrl = "";
+    current.testLeftMs = 0;
+    if (testPlayer) {
+      try {
+        testPlayer.pause?.();
+      } catch (_) {}
+      testPlayer.removeAttribute?.("src");
+      testPlayer.hidden = true;
+    }
+  }
+
+  function renderTest() {
+    if (!testBtn || !call) return;
+    if (call.testRecording) {
+      testBtn.textContent = `Stop test (${Math.ceil(call.testLeftMs / 1000)}s left)`;
+      testBtn.setAttribute("aria-pressed", "true");
+    } else {
+      testBtn.textContent = call.testUrl ? "Record again" : "Record a 10-second test clip";
+      testBtn.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  async function recordTest() {
+    if (!call || call.phase !== "preview") return false;
+    const current = call;
+    if (current.testRecording) {
+      await current.testRecording.stop();
+      return true;
+    }
+    clearTest();
+    let recording;
+    try {
+      recording = recordTestClipImpl(testTracks(), {
+        maxMs: CALL_TEST_CLIP_MS,
+        onTick: (ms, max) => {
+          if (call !== current) return;
+          current.testLeftMs = Math.max(0, max - ms);
+          renderTest();
+        },
+      });
+    } catch (_) {
+      if (stateLabel) stateLabel.textContent = "Recording a test clip is not available in this browser.";
+      return false;
+    }
+    current.testRecording = recording;
+    current.testLeftMs = CALL_TEST_CLIP_MS;
+    if (stateLabel) stateLabel.textContent = "Recording a test clip · speak and look at the camera";
+    renderTest();
+    try {
+      const clip = await recording.done;
+      if (call !== current || current.testRecording !== recording) return false;
+      current.testRecording = null;
+      if (!clip?.blob?.size) throw new Error("empty_clip");
+      current.testUrl = URLImpl.createObjectURL(clip.blob);
+      if (testPlayer) {
+        testPlayer.src = current.testUrl;
+        testPlayer.classList.toggle("is-audio", !clip.video);
+        testPlayer.hidden = false;
+        Promise.resolve(testPlayer.play?.()).catch(() => {});
+      }
+      if (stateLabel) stateLabel.textContent = "Playing your test clip · this is how you will look and sound";
+      return true;
+    } catch (_) {
+      if (call === current) {
+        current.testRecording = null;
+        if (stateLabel) stateLabel.textContent = "The test clip could not be recorded. Try again.";
+      }
+      return false;
+    } finally {
+      if (call === current) renderTest();
+    }
   }
 
   function stopVoicePreview(options) {
@@ -562,9 +783,11 @@ export function createChatCalls({
     }
   }
 
-  async function preview(channelKey, partner) {
+  async function preview(channelKey, partner, media = "video") {
     if (call || !channelKey || !partner) return false;
-    const localStream = await localMedia("video");
+    askCallNotifications(NotificationImpl);
+    const kind = media === "video" ? "video" : "audio";
+    const localStream = await localMedia(kind);
     if (call) {
       for (const track of localStream.getTracks()) track.stop();
       return false;
@@ -573,7 +796,7 @@ export function createChatCalls({
       channelKey,
       callId: "",
       partner: String(partner),
-      media: "video",
+      media: kind,
       role: "preview",
       phase: "preview",
       peerId: "",
@@ -595,9 +818,16 @@ export function createChatCalls({
       inviteTimer: null,
       ringTimer: null,
       disconnectTimer: null,
+      routeTimer: null,
+      route: null,
+      testRecording: null,
+      testUrl: "",
+      testLeftMs: 0,
     };
-    useSaved();
-    setPhase("preview", "Preview · only you can see this");
+    if (kind === "video") useSaved();
+    setPhase("preview", kind === "video"
+      ? "Check your camera and voice · only you can see this"
+      : "Check your microphone · only you can hear this");
     renderPanel();
     const previewing = call;
     Promise.resolve()
@@ -648,6 +878,8 @@ export function createChatCalls({
       inviteTimer: null,
       ringTimer: null,
       disconnectTimer: null,
+      routeTimer: null,
+      route: null,
     };
     if (kind === "video" && previewed) {
       call.faceId = previewed.faceId;
@@ -720,6 +952,8 @@ export function createChatCalls({
       inviteTimer: null,
       ringTimer: null,
       disconnectTimer: null,
+      routeTimer: null,
+      route: null,
     };
     if (call.media === "video" && previewed) {
       call.faceId = previewed.faceId;
@@ -766,11 +1000,13 @@ export function createChatCalls({
       staleTimer: null,
     };
     invite.staleTimer = setTimeoutImpl(hideIncoming, INVITE_STALE_MS);
-    if (incomingLabel) {
-      incomingLabel.textContent =
-        `@${partner} is starting an encrypted ${media} call`;
+    if (incomingLabel) incomingLabel.textContent = `@${partner}`;
+    if (incomingKind) {
+      incomingKind.textContent = media === "video" ? "Incoming video call" : "Incoming voice call";
     }
     if (incomingEl) incomingEl.hidden = false;
+    startRingAlert(invite);
+    syncTones();
   }
 
   async function handleCallerAccept(plain) {
@@ -788,7 +1024,8 @@ export function createChatCalls({
     }
     try {
       await pc.setLocalDescription();
-      await signal("call-offer", { to: call.peerId, sdp: pc.localDescription });
+      await tuneCallSenders(pc);
+      await signal("call-offer", { to: call.peerId, sdp: tuneCallSdp(pc.localDescription) });
     } catch (_) {
       endCall({ notifyPeer: true });
     }
@@ -804,7 +1041,8 @@ export function createChatCalls({
         if (track) await transceiver.sender.replaceTrack(track);
       }
       await pc.setLocalDescription();
-      await signal("call-answer", { to: call.peerId, sdp: pc.localDescription });
+      await tuneCallSenders(pc);
+      await signal("call-answer", { to: call.peerId, sdp: tuneCallSdp(pc.localDescription) });
       await flushPendingIce();
     } catch (_) {
       endCall({ notifyPeer: true });
@@ -959,13 +1197,19 @@ export function createChatCalls({
   });
   startBtn?.addEventListener("click", () => {
     if (call?.phase !== "preview") return;
-    start(call.channelKey, call.partner, "video").catch(() => {});
+    if (requestStart) requestStart(call.media);
+    else start(call.channelKey, call.partner, call.media).catch(() => {});
+  });
+  testBtn?.addEventListener("click", () => {
+    recordTest().catch(() => {});
   });
 
   return {
     start,
     preview,
     previewing: () => call?.phase === "preview",
+    recordTest,
+    route: () => call?.route || null,
     setBackground: (id, image = "") => chooseBackground(id, image),
     background: () => call?.backgroundId || "",
     stage: () => call?.stage || null,

@@ -4,9 +4,20 @@ import UIKit
 
 enum DirectCallActions {
     @MainActor
-    static func start(_ media: DirectCallKind, hub: ChatHub) {
-        guard let engine = hub.calls, engine.available, !engine.active else { return }
+    static func open(_ media: DirectCallKind, hub: ChatHub) {
+        guard let engine = hub.calls, engine.available, !engine.active, engine.invite == nil,
+            DirectCallPrecheck.shared.request == nil
+        else { return }
+        if let factory = engine.peerFactory as? WebCallPeerFactory, factory.busy {
+            hub.post("A call is already using the camera and microphone.")
+            return
+        }
         let conversation = hub.currentConversation
+        let partner = engine.partnerName(for: conversation)
+        guard !partner.isEmpty else {
+            hub.post("The call could not start. Check that this conversation is connected.")
+            return
+        }
         Task { @MainActor in
             guard await WebCallPeerFactory.requestAccess(for: media) else {
                 hub.post(
@@ -15,15 +26,24 @@ enum DirectCallActions {
                         : "Allow ForkMesh to use the microphone in Settings to make calls.")
                 return
             }
-            if !(await engine.start(conversation, media: media)) {
-                hub.post("The call could not start. Check that this conversation is connected.")
-            }
+            guard !engine.active, engine.invite == nil, DirectCallPrecheck.shared.request == nil else { return }
+            if let factory = engine.peerFactory as? WebCallPeerFactory, factory.busy { return }
+            DirectCallPrecheck.shared.request = DirectCallPrecheckRequest(
+                conversation: conversation, partner: partner, media: media)
         }
+    }
+
+    @MainActor
+    static func start(_ request: DirectCallPrecheckRequest, engine: DirectCallEngine) async -> Bool {
+        guard engine.available, !engine.active else { return false }
+        guard await WebCallPeerFactory.requestAccess(for: request.media) else { return false }
+        return await engine.start(request.conversation, media: request.media)
     }
 
     @MainActor
     static func accept(_ engine: DirectCallEngine, hub: ChatHub) {
         guard let invite = engine.invite else { return }
+        CallRinger.shared.hush()
         Task { @MainActor in
             guard await WebCallPeerFactory.requestAccess(for: invite.media) else {
                 await engine.declineInvite()
@@ -50,7 +70,7 @@ struct DirectCallHeaderButtons: View {
     }
 
     private func button(_ symbol: String, label: String, media: DirectCallKind, engine: DirectCallEngine) -> some View {
-        Button(action: { DirectCallActions.start(media, hub: hub) }) {
+        Button(action: { DirectCallActions.open(media, hub: hub) }) {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(dark ? Color.white : Color.black)
@@ -65,79 +85,154 @@ struct DirectCallHeaderButtons: View {
 }
 
 struct DirectCallLayer: ViewModifier {
-    let hub: ChatHub
+    let hub: ChatHub?
+    @State private var handed: ObjectIdentifier?
+
+    private var engine: DirectCallEngine? { hub?.calls }
+
+    private var factory: WebCallPeerFactory? { engine?.peerFactory as? WebCallPeerFactory }
 
     func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .top) {
-                if let engine = hub.calls, let invite = engine.invite, !engine.active {
-                    DirectCallIncomingBanner(invite: invite, engine: engine, hub: hub)
-                        .padding(.horizontal, FmSpace.x3)
-                        .padding(.top, FmSpace.x2)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+        let shown: Bool = isShown
+        return content
+            .fullScreenCover(isPresented: shownBinding(shown)) {
+                if let hub, let engine = hub.calls {
+                    DirectCallCover(engine: engine, hub: hub, factory: engine.peerFactory as? WebCallPeerFactory)
                 }
             }
-            .fullScreenCover(isPresented: activeBinding) {
-                if let engine = hub.calls {
-                    DirectCallScreen(engine: engine, factory: engine.peerFactory as? WebCallPeerFactory)
-                }
+            .onChange(of: engine?.active ?? false) { (_: Bool, now: Bool) in
+                activeChanged(now)
             }
     }
 
-    private var activeBinding: Binding<Bool> {
+    private var isShown: Bool {
+        guard let engine else { return false }
+        return engine.active || engine.invite != nil || DirectCallPrecheck.shared.request != nil
+    }
+
+    private func shownBinding(_ shown: Bool) -> Binding<Bool> {
         Binding(
-            get: { hub.calls?.active ?? false },
-            set: { shown in
-                guard !shown, let engine = hub.calls, engine.active else { return }
-                Task { await engine.hangUp() }
+            get: { shown },
+            set: { (now: Bool) in
+                guard !now else { return }
+                DirectCallPrecheck.shared.request = nil
+                if let engine = hub?.calls, engine.active { Task { await engine.hangUp() } }
             })
+    }
+
+    private func activeChanged(_ now: Bool) {
+        guard let factory else { return }
+        if now {
+            DirectCallPrecheck.shared.request = nil
+            if let current = factory.current, current.previewing {
+                handed = ObjectIdentifier(current)
+            } else {
+                handed = nil
+            }
+            return
+        }
+        if let handed, let current = factory.current, current.previewing, ObjectIdentifier(current) == handed {
+            factory.endPreview()
+        }
+        handed = nil
+    }
+}
+
+struct DirectCallRootLayer: ViewModifier {
+    func body(content: Content) -> some View {
+        content.modifier(DirectCallLayer(hub: ChatFeature.hub()))
     }
 }
 
 extension View {
-    func directCalls(_ hub: ChatHub) -> some View { modifier(DirectCallLayer(hub: hub)) }
+    func directCallsRoot() -> some View { modifier(DirectCallRootLayer()) }
 }
 
-struct DirectCallIncomingBanner: View {
-    @Environment(\.fmPalette) private var fm
+struct DirectCallCover: View {
+    let engine: DirectCallEngine
+    let hub: ChatHub
+    let factory: WebCallPeerFactory?
+
+    private var precheck: DirectCallPrecheck { DirectCallPrecheck.shared }
+
+    var body: some View {
+        if engine.active {
+            DirectCallScreen(engine: engine, factory: factory)
+        } else if let invite = engine.invite {
+            DirectCallIncomingScreen(invite: invite, engine: engine, hub: hub)
+        } else if let request = precheck.request, let factory {
+            DirectCallPreviewScreen(request: request, engine: engine, factory: factory)
+        } else {
+            Color.black.ignoresSafeArea()
+        }
+    }
+}
+
+struct DirectCallIncomingScreen: View {
     let invite: DirectCallInvite
     let engine: DirectCallEngine
     let hub: ChatHub
 
     var body: some View {
-        HStack(spacing: FmSpace.x3) {
-            FmAvatar(name: invite.partner, size: 40, fontSize: FmType.body)
-            VStack(alignment: .leading, spacing: 2) {
+        ZStack {
+            LinearGradient(
+                colors: [Color(white: 0.16), Color.black], startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            VStack(spacing: FmSpace.x3) {
+                Spacer()
+                FmAvatar(name: invite.partner, size: 120, fontSize: 44)
                 Text("@\(invite.partner)")
-                    .font(.system(size: 15, weight: .semibold))
-                Text(invite.media == .video ? "Encrypted video call" : "Encrypted voice call")
-                    .font(.system(size: 12))
-                    .foregroundStyle(fm.textSecondary)
+                    .font(.system(size: 30, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(invite.media == .video ? "Video call" : "Voice call")
+                    .font(.system(size: 17))
+                    .opacity(0.85)
+                Text("End-to-end encrypted")
+                    .font(.system(size: 13))
+                    .opacity(0.6)
+                Spacer()
+                HStack(spacing: FmSpace.x8) {
+                    answer(
+                        "Decline", symbol: "phone.down.fill", fill: Color.red, identifier: "chat-call-decline"
+                    ) {
+                        Task { await engine.declineInvite() }
+                    }
+                    answer(
+                        "Accept", symbol: invite.media == .video ? "video.fill" : "phone.fill", fill: Color.green,
+                        identifier: "chat-call-accept"
+                    ) {
+                        DirectCallActions.accept(engine, hub: hub)
+                    }
+                }
+                .padding(.bottom, FmSpace.x7)
             }
-            Spacer(minLength: 0)
-            Button(action: { Task { await engine.declineInvite() } }) {
-                Image(systemName: "phone.down.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.red))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Decline")
-            Button(action: { DirectCallActions.accept(engine, hub: hub) }) {
-                Image(systemName: invite.media == .video ? "video.fill" : "phone.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.green))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Accept")
+            .foregroundStyle(.white)
+            .padding(.horizontal, FmSpace.x5)
         }
-        .padding(FmSpace.x3)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.regularMaterial))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chat-call-incoming")
+    }
+
+    private func answer(
+        _ title: String, symbol: String, fill: Color, identifier: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: FmSpace.x2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 76, height: 76)
+                    .background(Circle().fill(fill))
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(identifier)
     }
 }
 
@@ -169,6 +264,13 @@ struct DirectCallScreen: View {
                     Text(engine.stateLine)
                         .font(.system(size: 13))
                         .opacity(0.8)
+                    if engine.phase == .live, let route = factory?.route {
+                        Text(route.note)
+                            .font(.system(size: 12, weight: .medium))
+                            .multilineTextAlignment(.center)
+                            .opacity(0.8)
+                            .accessibilityIdentifier("chat-call-route")
+                    }
                     if !engine.voice.isEmpty {
                         Text("Voice: \(FaceChangerLook.voiceLabel(engine.voice))")
                             .font(.system(size: 12, weight: .medium))
@@ -179,6 +281,7 @@ struct DirectCallScreen: View {
                 .foregroundStyle(.white)
                 .shadow(radius: 4)
                 .padding(.top, FmSpace.x4)
+                .padding(.horizontal, FmSpace.x5)
                 .accessibilityElement(children: .combine)
                 if !notice.isEmpty {
                     Text(notice)
@@ -239,4 +342,3 @@ struct DirectCallScreen: View {
         .accessibilityLabel(label)
     }
 }
-

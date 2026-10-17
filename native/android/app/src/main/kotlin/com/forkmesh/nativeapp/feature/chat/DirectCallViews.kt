@@ -1,8 +1,11 @@
 package com.forkmesh.nativeapp.feature.chat
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
-import android.content.pm.PackageManager
+import android.content.ContextWrapper
+import android.os.Build
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,9 +23,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,11 +37,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,9 +56,7 @@ import com.forkmesh.nativeapp.feature.facechanger.CallRoundButton
 import com.forkmesh.nativeapp.feature.facechanger.FaceChangerButtons
 import com.forkmesh.nativeapp.feature.facechanger.adoptContext
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
-import com.forkmesh.nativeapp.ui.kit.FmIconTile
 import com.forkmesh.nativeapp.ui.theme.Fm
-import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 
 private data class DirectCallView(
@@ -84,15 +83,14 @@ private fun DirectCallEngine.view(): DirectCallView = DirectCallView(
     voice = voice,
 )
 
-private fun callPermissions(kind: DirectCallKind): Array<String> =
+internal fun callPermissions(kind: DirectCallKind): Array<String> =
     if (kind == DirectCallKind.VIDEO) {
         arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
     } else {
         arrayOf(Manifest.permission.RECORD_AUDIO)
     }
 
-private fun callPermitted(context: Context, kind: DirectCallKind): Boolean =
-    callPermissions(kind).all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+private fun callPermitted(context: Context, kind: DirectCallKind): Boolean = DirectCallFeature.permitted(context, kind)
 
 private fun deniedNotice(kind: DirectCallKind): String =
     if (kind == DirectCallKind.VIDEO) "Allow the camera and microphone to use video calls." else "Allow the microphone to use voice calls."
@@ -131,9 +129,7 @@ fun DirectCallButtons(conversation: String) {
     val (_, state) = rememberCallView() ?: return
     if (!state.available) return
     val start = rememberCallPermissionGate { kind ->
-        DirectCallFeature.run { engine ->
-            if (!engine.start(conversation, kind)) ChatDepth.post("The call could not start. Try again in a moment.")
-        }
+        DirectCallFeature.openPreCall(conversation, kind)?.let(ChatDepth::post)
     }
     val idle = state.phase == null
     FmIconButton(icon = "call", label = "Voice call", onPressed = if (idle) ({ start(DirectCallKind.AUDIO) }) else null)
@@ -142,46 +138,119 @@ fun DirectCallButtons(conversation: String) {
 
 @Composable
 fun DirectCallOverlay() {
+    CallWindowEffect()
     val (engine, state) = rememberCallView() ?: return
+    val precall by DirectCallFeature.precall.collectAsState()
+    val pending = precall
+    if (state.phase == null && pending != null) PreCallScreen(pending)
     when {
         state.phase != null -> DirectCallScreen(state)
-        state.invite != null -> IncomingCallBanner(engine, state.invite)
+        state.invite != null -> IncomingCallScreen(engine, state.invite)
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
+private fun Activity.applyCallWindow(state: CallWindow) {
+    if (Build.VERSION.SDK_INT >= 27) {
+        setShowWhenLocked(state.showWhenLocked)
+        setTurnScreenOn(state.turnScreenOn)
+    } else {
+        @Suppress("DEPRECATION")
+        val locked = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+        @Suppress("DEPRECATION")
+        val wake = WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        if (state.showWhenLocked) window.addFlags(locked) else window.clearFlags(locked)
+        if (state.turnScreenOn) window.addFlags(wake) else window.clearFlags(wake)
     }
 }
 
 @Composable
-private fun IncomingCallBanner(engine: DirectCallEngine, invite: DirectCallInvite) {
+private fun CallWindowEffect() {
+    val wanted by CallRinger.window.collectAsState()
+    val context = LocalContext.current
+    DisposableEffect(wanted, context) {
+        val activity = context.findActivity()
+        activity?.applyCallWindow(wanted)
+        onDispose { activity?.applyCallWindow(CallWindow()) }
+    }
+}
+
+@Composable
+internal fun CallAvatar(name: String, size: Int = 112) {
+    Box(
+        Modifier.size(size.dp).clip(CircleShape).background(Fm.colors.accent.copy(alpha = .35f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            name.take(1).uppercase().ifEmpty { "?" },
+            color = Color.White,
+            fontSize = (size * 0.4f).sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun LabeledCallButton(icon: String, label: String, background: Color, onPressed: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CallRoundButton(icon = icon, label = label, background = background, size = 76, onPressed = onPressed)
+        Spacer(Modifier.height(FmSpace.x2))
+        Text(label, color = Color.White, style = Fm.text.bodyMedium)
+    }
+}
+
+@Composable
+private fun IncomingCallScreen(engine: DirectCallEngine, invite: DirectCallInvite) {
     val colors = Fm.colors
-    val accept = rememberCallPermissionGate { _ -> DirectCallFeature.run { if (it === engine) it.acceptInvite() } }
-    Box(Modifier.fillMaxSize().statusBarsPadding().padding(FmSpace.x3), contentAlignment = Alignment.TopCenter) {
+    val video = invite.media == DirectCallKind.VIDEO
+    val accept = rememberCallPermissionGate { _ ->
+        DirectCallFeature.run { if (it === engine && it.invite?.callId == invite.callId) it.acceptInvite() }
+    }
+    BackHandler {}
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0E1116))
+            .clickable(indication = null, interactionSource = null) {},
+    ) {
+        Column(
+            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 72.dp, start = FmSpace.x4, end = FmSpace.x4),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(if (video) "Video call" else "Voice call", color = Color.White.copy(alpha = .75f), style = Fm.text.bodyLarge)
+            Spacer(Modifier.height(FmSpace.x5))
+            CallAvatar(invite.partner, size = 128)
+            Spacer(Modifier.height(FmSpace.x4))
+            Text(
+                "@${invite.partner}",
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = Fm.text.headlineSmall,
+            )
+            Spacer(Modifier.height(FmSpace.x1))
+            Text("is calling you on ForkMesh", color = Color.White.copy(alpha = .75f), style = Fm.text.bodyMedium)
+        }
         Row(
             Modifier
-                .fillMaxWidth()
-                .shadow(12.dp, RoundedCornerShape(FmRadius.lg))
-                .clip(RoundedCornerShape(FmRadius.lg))
-                .background(colors.bgElevated)
-                .padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 56.dp, start = FmSpace.x4, end = FmSpace.x4)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FmIconTile(icon = if (invite.media == DirectCallKind.VIDEO) "videocam" else "call", tint = colors.success)
-            Spacer(Modifier.width(FmSpace.x3))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "@${invite.partner}",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = Fm.text.titleMedium.copy(color = colors.textPrimary),
-                )
-                Text(
-                    if (invite.media == DirectCallKind.VIDEO) "Incoming video call" else "Incoming voice call",
-                    style = Fm.text.bodySmall.copy(color = colors.textTertiary),
-                )
+            LabeledCallButton(icon = "call_end", label = "Decline", background = colors.danger) {
+                DirectCallFeature.run { if (it.invite?.callId == invite.callId) it.declineInvite() }
             }
-            CallRoundButton(icon = "call_end", label = "Decline", background = colors.danger, size = 44) {
-                DirectCallFeature.run { it.declineInvite() }
+            LabeledCallButton(icon = if (video) "videocam" else "call", label = "Accept", background = colors.success) {
+                accept(invite.media)
             }
-            Spacer(Modifier.width(FmSpace.x3))
-            CallRoundButton(icon = "call", label = "Accept", background = colors.success, size = 44) { accept(invite.media) }
         }
     }
 }
@@ -194,6 +263,7 @@ private fun DirectCallScreen(state: DirectCallView) {
     val webView = peers?.view?.collectAsState()?.value
     val facesSupported = peers?.facesSupported?.collectAsState()?.value == true
     val thumbs = peers?.backgrounds?.collectAsState()?.value
+    val route = peers?.route?.collectAsState()?.value.orEmpty()
     val video = state.media == DirectCallKind.VIDEO
     DisposableEffect(hostView) {
         hostView.keepScreenOn = true
@@ -213,17 +283,7 @@ private fun DirectCallScreen(state: DirectCallView) {
         }
         if (!video || state.phase != DirectCallPhase.LIVE) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier.size(112.dp).clip(CircleShape).background(colors.accent.copy(alpha = .35f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        state.partner.take(1).uppercase().ifEmpty { "?" },
-                        color = Color.White,
-                        fontSize = 44.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
+                CallAvatar(state.partner)
             }
         }
         Column(
@@ -239,6 +299,14 @@ private fun DirectCallScreen(state: DirectCallView) {
             )
             Spacer(Modifier.height(FmSpace.x1))
             Text(state.status, color = Color.White.copy(alpha = .75f), style = Fm.text.bodyMedium)
+            if (state.phase == DirectCallPhase.LIVE && route.isNotEmpty()) {
+                Text(
+                    if (route == "relay") "Relayed · through a TURN relay server (third party)" else "Direct · peer-to-peer, no server in between",
+                    color = Color.White.copy(alpha = .75f),
+                    textAlign = TextAlign.Center,
+                    style = Fm.text.bodySmall,
+                )
+            }
             if (state.voice.isNotEmpty()) {
                 Text(
                     "Voice: ${FaceChangerLook.voiceLabel(state.voice)}",

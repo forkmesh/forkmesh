@@ -23,13 +23,10 @@ import {
   createVoiceStage,
 } from "./chat-call-voice.js";
 import { recordViewOnce } from "./chat-view-once-recorder.js";
+import { CALL_AUDIO_CONSTRAINTS, CALL_VIDEO_CONSTRAINTS } from "./chat-call-quality.js";
 
-export const STUDIO_AUDIO = Object.freeze({ echoCancellation: true, noiseSuppression: true });
-export const STUDIO_VIDEO = Object.freeze({
-  width: { ideal: 640 },
-  height: { ideal: 360 },
-  frameRate: { ideal: 24 },
-});
+export const STUDIO_AUDIO = CALL_AUDIO_CONSTRAINTS;
+export const STUDIO_VIDEO = CALL_VIDEO_CONSTRAINTS;
 export const STUDIO_CLIP_MAX_MS = 5 * 60 * 1000;
 export const STUDIO_VOICE_WORKLET_URL = new URL("./chat-call-voice-worklet.js", import.meta.url).href;
 export const STUDIO_FACE_WATCH_MS = 30000;

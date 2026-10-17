@@ -146,9 +146,13 @@ public final class DirectCallEngine {
         switch phase {
         case .ringing: return "Calling @\(partner)…"
         case .connecting: return "Connecting…"
-        case .live: return "Connected · encrypted peer-to-peer"
+        case .live: return "Connected · end-to-end encrypted"
         case nil: return ""
         }
+    }
+
+    public func partnerName(for conversation: String) -> String {
+        conversation.isEmpty ? "" : partnerFor(conversation)
     }
 
     @discardableResult

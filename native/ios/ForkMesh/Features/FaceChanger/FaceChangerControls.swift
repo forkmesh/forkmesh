@@ -116,14 +116,17 @@ final class FaceChangerStudio {
         guard let peer = factory.current, peer.previewing else { return }
         switch part {
         case .face:
-            if look.face == FaceChangerLook.customFace {
+            if peer.previewMedia != .video {
+                peer.setVoice(look.effectiveVoice)
+            } else if look.face == FaceChangerLook.customFace {
                 peer.setFace(look.face, image: look.faceImage)
+                peer.setVoice(look.effectiveVoice)
             } else {
                 peer.setFace(look.face)
+                peer.setVoice(look.effectiveVoice)
             }
-            peer.setVoice(look.effectiveVoice)
         case .background:
-            peer.setBackground(look.background, image: look.customBackgroundImage)
+            if peer.previewMedia == .video { peer.setBackground(look.background, image: look.customBackgroundImage) }
         case .voice:
             peer.setVoice(look.effectiveVoice)
         }

@@ -17,6 +17,19 @@ struct WebCallRecording {
     let data: Data
     let mime: String
     let durationMs: Int64
+
+    var fileExtension: String {
+        switch mime {
+        case "video/mp4": return "mp4"
+        case "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/aac": return "m4a"
+        default: return "webm"
+        }
+    }
+
+    static func keptMime(_ raw: String) -> String {
+        if raw.hasPrefix("video/") || raw.hasPrefix("audio/") { return raw }
+        return "video/mp4"
+    }
 }
 
 enum WebCallError: Error {
@@ -29,25 +42,19 @@ enum WebCallError: Error {
 @Observable
 final class WebCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: WebCallPeer?
+    private(set) var route: DirectCallRoute?
     var voice: @MainActor () -> String = { "" }
 
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
+        route = nil
         if let previewed = current, previewed.previewing, media == .video {
-            previewed.previewing = false
-            previewed.dropRecording()
-            do {
-                _ = try await previewed.run(
-                    "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
-            } catch {
-                previewed.close()
-                throw error
-            }
-            return previewed
+            return try await adopt(previewed, media: media, iceServers: iceServers)
+        }
+        if let previewed = current, previewed.previewing, previewed.previewMedia == media {
+            return try await adopt(previewed, media: media, iceServers: iceServers)
         }
         current?.close()
-        let peer = WebCallPeer { [weak self] closed in
-            if self?.current === closed { self?.current = nil }
-        }
+        let peer = freshPeer()
         current = peer
         do {
             try await peer.load()
@@ -60,23 +67,54 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
         return peer
     }
 
+    private func adopt(_ previewed: WebCallPeer, media: DirectCallKind, iceServers: [String]) async throws -> WebCallPeer {
+        previewed.previewing = false
+        previewed.dropRecording()
+        do {
+            _ = try await previewed.run(
+                "setup", [.string(media.rawValue), .array(iceServers.map { .string($0) }), .string(""), .string(voice())])
+        } catch {
+            previewed.close()
+            throw error
+        }
+        return previewed
+    }
+
+    private func freshPeer() -> WebCallPeer {
+        let peer = WebCallPeer { [weak self] (closed: WebCallPeer) in
+            guard let self, self.current === closed else { return }
+            self.current = nil
+            self.route = nil
+        }
+        peer.onRoute = { [weak self, weak peer] (found: DirectCallRoute?) in
+            guard let self, let peer, self.current === peer, !peer.previewing else { return }
+            self.route = found
+        }
+        return peer
+    }
+
     var busy: Bool {
         guard let current else { return false }
         return !current.previewing
     }
 
-    func preview(face: String, background: String, image: String, faceImage: String = "") async throws -> WebCallPeer {
-        if let previewed = current, previewed.previewing { return previewed }
-        guard !busy else { throw WebCallError.failed("busy") }
-        let peer = WebCallPeer { [weak self] closed in
-            if self?.current === closed { self?.current = nil }
+    func preview(
+        media: DirectCallKind = .video, face: String = "", background: String = "", image: String = "",
+        faceImage: String = ""
+    ) async throws -> WebCallPeer {
+        if let previewed = current, previewed.previewing {
+            if previewed.previewMedia == media { return previewed }
+            previewed.close()
         }
+        guard !busy else { throw WebCallError.failed("busy") }
+        let peer = freshPeer()
         peer.previewing = true
+        peer.previewMedia = media
         current = peer
         do {
             try await peer.load()
             try await peer.preview(
-                media: .video, voice: voice(), face: face, background: background, image: image, faceImage: faceImage)
+                media: media, voice: voice(), face: face, background: background, image: image, faceImage: faceImage)
         } catch {
             peer.close()
             throw error
@@ -114,6 +152,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
+    var onRoute: (@MainActor (DirectCallRoute?) -> Void)?
     let webView: WKWebView
     private let proxy = WebCallMessageProxy()
     private let onDispose: @MainActor (WebCallPeer) -> Void
@@ -125,6 +164,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     private var voiceObserver: (@MainActor (String) -> Void)?
     private var depthCamera: CallDepthCamera?
     var previewing = false
+    var previewMedia: DirectCallKind = .video
 
     init(onDispose: @escaping @MainActor (WebCallPeer) -> Void) {
         self.onDispose = onDispose
@@ -213,6 +253,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
                 landmarks: message["landmarks"]?.boolValue ?? false, mask: message["mask"]?.boolValue ?? false)
         case "voice":
             voiceObserver?(message["id"]?.text ?? "")
+        case "route":
+            onRoute?(DirectCallRoute(rawValue: message["route"]?.text ?? ""))
         case "live":
             onLive?()
         case "closed":
@@ -381,8 +423,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
         let mime: String = (summary["mime"]?.text ?? "").split(separator: ";").first
             .map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
         return WebCallRecording(
-            data: data, mime: mime.hasPrefix("video/") ? mime : "video/mp4",
-            durationMs: Int64(summary["durationMs"]?.intValue ?? 0))
+            data: data, mime: WebCallRecording.keptMime(mime), durationMs: Int64(summary["durationMs"]?.intValue ?? 0))
     }
 
     func dropRecording() {
@@ -418,7 +459,32 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
 struct WebCallSurface: UIViewRepresentable {
     let webView: WKWebView
 
-    func makeUIView(context: Context) -> WKWebView { webView }
+    final class Coordinator {
+        weak var held: WKWebView?
+    }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let holder = UIView(frame: .zero)
+        holder.backgroundColor = .black
+        holder.clipsToBounds = true
+        hold(in: holder, context.coordinator)
+        return holder
+    }
+
+    func updateUIView(_ holder: UIView, context: Context) {
+        guard context.coordinator.held !== webView || webView.superview == nil else { return }
+        hold(in: holder, context.coordinator)
+    }
+
+    private func hold(in holder: UIView, _ coordinator: Coordinator) {
+        coordinator.held = webView
+        guard webView.superview !== holder else { return }
+        for stale in holder.subviews { stale.removeFromSuperview() }
+        webView.removeFromSuperview()
+        webView.frame = holder.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        holder.addSubview(webView)
+    }
 }
