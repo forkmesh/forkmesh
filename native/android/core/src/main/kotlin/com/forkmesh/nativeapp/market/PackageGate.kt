@@ -78,6 +78,7 @@ object PackageGate {
         put("face-changer", Route.Kind.FaceChanger)
         put("app-store-status", Route.Kind.AppStoreStatus)
         put("rss-reader", Route.Kind.RssReader)
+        put(WORKFLOWS, Route.Kind.Workflows)
         put("people", Route.Kind.People)
         put("docs", Route.Kind.Docs)
         put("on-device-ai", Route.Kind.LocalAI)

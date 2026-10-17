@@ -51,10 +51,8 @@ final class RedirectRecorder: NSObject, URLSessionTaskDelegate, @unchecked Senda
             let host = challenge.protectionSpace.host
             let chain = (0..<SecTrustGetCertificateCount(trust)).compactMap { index -> CertificateSummary? in
                 guard let certificate = SecTrustGetCertificateAtIndex(trust, index) else { return nil }
-                let values = SecCertificateCopyValues(certificate, nil, nil) as? [CFString: Any] ?? [:]
                 let subject = SecCertificateCopySubjectSummary(certificate).map { String($0) } ?? host
-                let before = ((values[kSecOIDX509V1ValidityNotBefore] as? [CFString: Any])?[kSecPropertyKeyValue] as? Date) ?? .distantPast
-                let after = ((values[kSecOIDX509V1ValidityNotAfter] as? [CFString: Any])?[kSecPropertyKeyValue] as? Date) ?? .distantFuture
+                let (before, after) = Self.validity(of: certificate)
                 let data = SecCertificateCopyData(certificate) as Data
                 return CertificateSummary(subject: subject, subjectCommonName: subject, issuer: "System-provided", issuerCommonName: nil, serialNumber: "Unavailable", version: 3, notBefore: before, notAfter: after, subjectAlternativeNames: [], publicKeyAlgorithm: "Unavailable", publicKeyBits: nil, signatureAlgorithm: "Unavailable", isCertificateAuthority: false, isSelfIssued: false, sha256Fingerprint: data.base64EncodedString())
             }
@@ -62,6 +60,22 @@ final class RedirectRecorder: NSObject, URLSessionTaskDelegate, @unchecked Senda
             state.withLock { $0.1 = TLSObservation(host: host, port: UInt16(challenge.protectionSpace.port), serverName: host, chain: chain, trust: trusted ? .trusted : .untrusted("System trust evaluation failed")) }
         }
         completionHandler(.performDefaultHandling, nil)
+    }
+
+    static func validity(of certificate: SecCertificate) -> (Date, Date) {
+        if #available(iOS 18, macOS 15, tvOS 18, watchOS 11, visionOS 2, *) {
+            let before = SecCertificateCopyNotValidBeforeDate(certificate).map { $0 as Date } ?? .distantPast
+            let after = SecCertificateCopyNotValidAfterDate(certificate).map { $0 as Date } ?? .distantFuture
+            return (before, after)
+        }
+        #if os(macOS)
+        let values = SecCertificateCopyValues(certificate, nil, nil) as? [CFString: Any] ?? [:]
+        let before = ((values[kSecOIDX509V1ValidityNotBefore] as? [CFString: Any])?[kSecPropertyKeyValue] as? Date) ?? .distantPast
+        let after = ((values[kSecOIDX509V1ValidityNotAfter] as? [CFString: Any])?[kSecPropertyKeyValue] as? Date) ?? .distantFuture
+        return (before, after)
+        #else
+        return (.distantPast, .distantFuture)
+        #endif
     }
     #endif
 }

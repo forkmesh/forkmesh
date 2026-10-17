@@ -177,6 +177,7 @@ public enum RouteCatalog {
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
         case .rssReader: return "RSS Reader"
+        case .workflows: return "Workflows"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
         case .logs: return "Logs"
@@ -253,6 +254,7 @@ public enum RouteCatalog {
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
         case .rssReader: return "dot.radiowaves.up.forward"
+        case .workflows: return "point.3.connected.trianglepath.dotted"
         case .localAI: return "cpu"
         case .activity: return "bolt"
         case .logs: return "text.alignleft"
@@ -283,7 +285,6 @@ public struct HubItem: Identifiable, Equatable, Sendable {
         case route(Route)
         case world
         case designSystem
-        case workflows
         case reportBug
         case setStatus
         case signIn
@@ -406,7 +407,7 @@ public enum HubCatalog {
             .destination(.tour),
             HubItem(id: "world", title: "World", symbol: "globe", action: .world),
             HubItem(id: "designSystem", title: "Design", symbol: "paintpalette", action: .designSystem),
-            HubItem(id: "workflows", title: "Workflows", symbol: "point.3.connected.trianglepath.dotted", action: .workflows),
+            .destination(.workflows),
         ]
         if guest {
             items.append(HubItem(id: "signIn", title: "Sign in", symbol: "person.crop.circle.badge.plus", action: .signIn))

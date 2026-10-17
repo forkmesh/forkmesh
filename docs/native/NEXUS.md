@@ -64,4 +64,8 @@ cd native/ios/Nexus
 swift test
 ```
 
-The Linux test suite covers target parsing, safety decisions, DNS packets, banner classification, inventory merging, report contracts and public defaults. Apple-only SwiftUI and SwiftData targets are parsed in repository checks and compile when the package is linked by the iOS target on macOS.
+The Linux test suite covers target parsing, safety decisions, DNS packets, banner classification, inventory merging, report contracts and public defaults. Apple-only SwiftUI and SwiftData targets are parsed in repository checks and compile when the package is linked by the iOS target on macOS. Linux does not compile the `Network.framework` transport either, so build the package for iOS on the office Mac after changing it (`docs/native/MAC_BUILD.md`, "Swift rules the Mac archive enforces"). `NexusStore` and `NexusUI` have no test targets.
+
+`NetworkTransport.swift` shares one `startConnection` for TCP and UDP. Its state handler clears itself after the first `ready`, `failed` or `cancelled`, so a later failure or `close()` cannot resume the continuation twice. Each wait sits in `withTaskCancellationHandler`, which cancels the `NWConnection` when `withTimeout` gives up; without it a connection stuck in `waiting` kept the timeout from returning. A cancelled connection reports `ConnectionFailure.cancelled`.
+
+`HTTPInspector` reads certificate validity dates with `SecCertificateCopyNotValidBeforeDate`/`AfterDate` on iOS 18 and macOS 15, and with `SecCertificateCopyValues` on older macOS. iOS 17 has no public API for them, so the summary there carries open-ended dates.
