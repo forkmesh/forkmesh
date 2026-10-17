@@ -96,6 +96,7 @@ public:
                         const QString &before = QString()) const;
     QString artifactsDir() const; // <root>/artifacts (validated run outputs)
     QString sandboxDir() const; // <root>/sandbox (disposable per-run trees)
+    QString cacheRoot() const;
     // <root>/cache/<repoKey>: the one writable Action mount that outlives a
     // run, so compilers can reuse yesterday's objects. Scoped per repository —
     // never shared between two of them — because a run can write anything it
