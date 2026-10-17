@@ -432,7 +432,7 @@ OPERATION_QUERY_FIELDS = {
     "blobs": frozenset({"path", "ref"}),
     "blob": frozenset({"path", "ref"}),
     "raw": frozenset({"path", "ref"}),
-    "history": frozenset({"ref", "all", "since", "until"}),
+    "history": frozenset({"ref", "all", "since", "until", "path"}),
     "commit": frozenset({"path"}),
     "compare": frozenset({"base", "head"}),
     "merge-preview": frozenset({"base", "head", "rules", "pull", "orgRules"}),
@@ -4505,6 +4505,9 @@ class GitRepository:
             since, until = int(since_raw), int(until_raw)
             if since < 0 or until <= since or until - since > 366 * 86400:
                 raise GatewayError("invalid history time range")
+        path = _safe_repo_path(query.get("path", ""))
+        if path and all_refs:
+            raise GatewayError("history scope is ambiguous")
         commit = self.resolve_commit("" if all_refs else query.get("ref", ""))
         arguments = ["log"]
         if all_refs:
@@ -4517,6 +4520,8 @@ class GitRepository:
         if since_raw:
             arguments += [f"--since=@{since}", f"--until=@{until}"]
         arguments.append("--format=%H%x1f%an%x1f%cI%x1f%P%x1f%s")
+        if path:
+            arguments += ["--", path]
         output = _run_git(
             self.git_dir,
             arguments,
