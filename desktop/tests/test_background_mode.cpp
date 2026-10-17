@@ -34,6 +34,7 @@ struct Recorder {
     QByteArray systemState = "running\n";
     QByteArray userState = "running\n";
     bool preparingForShutdown = false;
+    QByteArray sleepStates = "static\nstatic\nstatic\nstatic\nstatic\n";
 
     bg::CommandResult run(const QString &program, const QStringList &arguments)
     {
@@ -47,6 +48,10 @@ struct Recorder {
             result.output = systemState;
         if (call == QLatin1String("systemctl --user is-system-running"))
             result.output = userState;
+        if (arguments.value(0) == QLatin1String("is-enabled")) {
+            result.output = sleepStates;
+            result.ok = !sleepStates.startsWith("masked");
+        }
         if (program == QLatin1String("busctl"))
             result.output = preparingForShutdown ? "b true\n" : "b false\n";
         if (program == QLatin1String("loginctl")) {
@@ -102,6 +107,19 @@ void testTexts()
     check(unit.contains(QLatin1String("Environment=QT_QPA_PLATFORM=offscreen")),
           "the unit uses the offscreen platform");
     check(unit.contains(QLatin1String("Restart=on-failure")), "the unit restarts after a crash");
+    check(unit.contains(QLatin1String("StartLimitIntervalSec=0")) &&
+              !unit.contains(QLatin1String("StartLimitBurst")),
+          "the unit never gives up restarting");
+    check(unit.contains(QLatin1String("RestartSteps=5")) &&
+              unit.contains(QLatin1String("RestartMaxDelaySec=300")),
+          "restarts back off to at most five minutes apart");
+    check(bg::sleepTargets().size() == 5 && bg::sleepTargets().contains(QLatin1String("suspend.target")),
+          "every systemd sleep target is listed");
+    check(bg::systemSleepArguments(true) ==
+              QStringList{QStringLiteral("systemctl"), QStringLiteral("mask")} + bg::sleepTargets(),
+          "turning sleep off masks the sleep targets");
+    check(bg::systemSleepArguments(false).value(1) == QLatin1String("unmask"),
+          "allowing sleep unmasks them");
     check(unit.contains(QLatin1String("WantedBy=default.target")), "the unit is wanted at start");
     check(bg::execStartBinary(unit) == binary, "the unit binary round-trips");
     const QString entry = bg::headlessDesktopEntry(binary, QStringLiteral("work"));
@@ -181,6 +199,54 @@ void testLogout()
     const bg::StartManager plain = manager(home.path(), &noSystemd);
     check(!plain.keepAcrossLogout(other, project, &error) && !error.isEmpty(),
           "without a user systemd it says it cannot keep running after log-out");
+}
+
+void testSleepDisabled()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    const bg::StartManager m = manager(home.path(), &recorder);
+    check(!m.sleepDisabled() && !m.status(QStringLiteral("forkmesh")).sleepDisabled,
+          "sleep is allowed while the targets are not masked");
+    recorder.sleepStates = "masked\nmasked\nmasked\nmasked-runtime\nmasked\n";
+    check(m.sleepDisabled() && m.status(QStringLiteral("forkmesh")).sleepDisabled,
+          "masked sleep targets mean the computer never sleeps");
+    recorder.sleepStates = "masked\nstatic\nmasked\nmasked\nmasked\n";
+    check(!m.sleepDisabled(), "one unmasked target still lets the computer sleep");
+    recorder.sleepStates = "masked\n";
+    check(!m.sleepDisabled(), "a short answer is not trusted");
+}
+
+void testRefreshUnit()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    const bg::StartManager m = manager(home.path(), &recorder);
+    const QString binary = fakeBinary(home.path());
+    const QString project = QStringLiteral("forkmesh");
+    check(!m.refreshUnit(binary, project), "nothing is written while start at boot is off");
+    check(!QFileInfo::exists(m.systemdUnitPath(project)), "refreshing does not install the unit");
+    QString error;
+    check(m.enable(binary, project, &error), "enable succeeds");
+    QFile old(m.systemdUnitPath(project));
+    old.open(QIODevice::WriteOnly);
+    old.write(bg::systemdUnit(binary, project)
+                  .replace(QLatin1String("StartLimitIntervalSec=0"),
+                           QLatin1String("StartLimitIntervalSec=600\nStartLimitBurst=5"))
+                  .toUtf8());
+    old.close();
+    const QString other = home.path() + QStringLiteral("/other/forkmesh");
+    QDir().mkpath(QFileInfo(other).absolutePath());
+    QFile::copy(binary, other);
+    recorder.calls.clear();
+    check(m.refreshUnit(other, project), "an old unit is rewritten");
+    check(read(m.systemdUnitPath(project)) == bg::systemdUnit(binary, project),
+          "the rewritten unit keeps its working binary");
+    check(recorder.called(QStringLiteral("systemctl --user daemon-reload")),
+          "systemd reloads the rewritten unit");
+    recorder.calls.clear();
+    check(!m.refreshUnit(other, project) && recorder.calls.isEmpty(),
+          "a current unit is left alone");
 }
 
 void testShuttingDown()
@@ -353,6 +419,8 @@ int main(int argc, char **argv)
     testXdg();
     testLogout();
     testShuttingDown();
+    testSleepDisabled();
+    testRefreshUnit();
 #if defined(Q_OS_LINUX)
     testLegacyEngine();
     testHandOverMessage();

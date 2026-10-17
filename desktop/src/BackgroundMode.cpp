@@ -215,6 +215,20 @@ QStringList serviceVariables()
             QStringLiteral("WATCHDOG_PID"),     QStringLiteral("WATCHDOG_USEC")};
 }
 
+QStringList sleepTargets()
+{
+    return {QStringLiteral("sleep.target"), QStringLiteral("suspend.target"),
+            QStringLiteral("hibernate.target"), QStringLiteral("hybrid-sleep.target"),
+            QStringLiteral("suspend-then-hibernate.target")};
+}
+
+QStringList systemSleepArguments(bool disable)
+{
+    return QStringList{QStringLiteral("systemctl"),
+                       disable ? QStringLiteral("mask") : QStringLiteral("unmask")} +
+           sleepTargets();
+}
+
 QString desktopBinaryPath()
 {
     const QString appImage = qEnvironmentVariable("APPIMAGE");
@@ -233,8 +247,7 @@ QString systemdUnit(const QString &binary, const QString &project)
                QStringLiteral("Description=ForkMesh without a window (%1)").arg(project),
                QStringLiteral("After=network-online.target"),
                QStringLiteral("Wants=network-online.target"),
-               QStringLiteral("StartLimitIntervalSec=600"),
-               QStringLiteral("StartLimitBurst=5"),
+               QStringLiteral("StartLimitIntervalSec=0"),
                QString(),
                QStringLiteral("[Service]"),
                QStringLiteral("Type=simple"),
@@ -244,6 +257,8 @@ QString systemdUnit(const QString &binary, const QString &project)
                               "FORKMESH_PROJECT FORKMESH_PROJECT_DIR"),
                QStringLiteral("Restart=on-failure"),
                QStringLiteral("RestartSec=10"),
+               QStringLiteral("RestartSteps=5"),
+               QStringLiteral("RestartMaxDelaySec=300"),
                QStringLiteral("KillMode=mixed"),
                QStringLiteral("TimeoutStopSec=30"),
                QString(),
@@ -499,6 +514,39 @@ bool StartManager::unitInstalled(const QString &project) const
     return QFileInfo::exists(systemdUnitPath(project));
 }
 
+bool StartManager::refreshUnit(const QString &binary, const QString &project) const
+{
+    const QString path = systemdUnitPath(project);
+    if (!paths::isValidSlug(project) || !QFileInfo::exists(path))
+        return false;
+    const QString current = readText(path);
+    const QString installed = execStartBinary(current);
+    const QString chosen = validBinary(installed) ? installed : binary;
+    if (!validBinary(chosen))
+        return false;
+    const QString wanted = systemdUnit(chosen, project);
+    if (current == wanted || !writeText(path, wanted, nullptr))
+        return false;
+    call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("daemon-reload")});
+    return true;
+}
+
+bool StartManager::sleepDisabled() const
+{
+    const QStringList states =
+        QString::fromUtf8(
+            call(QStringLiteral("systemctl"), QStringList{QStringLiteral("is-enabled")} + sleepTargets())
+                .output)
+            .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    if (states.size() != sleepTargets().size())
+        return false;
+    for (const QString &state : states) {
+        if (!state.trimmed().startsWith(QLatin1String("masked")))
+            return false;
+    }
+    return true;
+}
+
 bool StartManager::keepAcrossLogout(const QString &binary, const QString &project,
                                     QString *error) const
 {
@@ -579,6 +627,7 @@ bool StartManager::shuttingDown() const
 StartStatus StartManager::status(const QString &project) const
 {
     StartStatus status;
+    status.sleepDisabled = sleepDisabled();
     status.afterLogout = QFileInfo::exists(logoutUnitPath(project)) && lingering();
     const QString unit = systemdUnitPath(project);
     if (QFileInfo::exists(unit)) {
@@ -847,6 +896,14 @@ void syncLogoutHandOver()
     if (!StartManager::system().syncLogoutHandOver(keepRunning(), desktopBinaryPath(),
                                                    paths::projectSlug(), &error))
         qWarning().noquote() << "ForkMesh may stop when you log out:" << error;
+}
+
+void refreshStartUnit()
+{
+    if (!supported())
+        return;
+    if (StartManager::system().refreshUnit(desktopBinaryPath(), paths::projectSlug()))
+        qInfo().noquote() << "Updated the unit that starts ForkMesh without a window.";
 }
 
 QString handOverAtLogout()

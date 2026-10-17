@@ -27,6 +27,7 @@ struct StartStatus {
     QString binary;
     bool atBoot = false;
     bool afterLogout = false;
+    bool sleepDisabled = false;
 };
 
 struct LegacyEngine {
@@ -49,6 +50,8 @@ public:
     bool enable(const QString &binary, const QString &project, QString *error = nullptr) const;
     bool disable(const QString &project, QString *error = nullptr) const;
     bool unitInstalled(const QString &project) const;
+    bool refreshUnit(const QString &binary, const QString &project) const;
+    bool sleepDisabled() const;
     bool keepAcrossLogout(const QString &binary, const QString &project,
                           QString *error = nullptr) const;
     void dropLogoutHandOver(const QString &project) const;
@@ -78,6 +81,8 @@ QStringList trayArguments(const QString &project);
 QString logoutUnitName(const QString &project);
 QStringList logoutArguments(const QString &project);
 QStringList serviceVariables();
+QStringList sleepTargets();
+QStringList systemSleepArguments(bool disable);
 QString desktopBinaryPath();
 
 QString systemdUnit(const QString &binary, const QString &project);
@@ -100,6 +105,7 @@ bool startHeadless();
 bool launchTray();
 void migrateLegacyEngine();
 void syncLogoutHandOver();
+void refreshStartUnit();
 QString handOverAtLogout();
 
 } // namespace forkmesh::background
