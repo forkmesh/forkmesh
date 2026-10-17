@@ -373,6 +373,20 @@ int main(int argc, char **argv)
                    .isValid(),
           "Rate opens the package's reviews page on the active host");
 
+    check(packageShareUrl(QString(), QStringLiteral("Crm")) ==
+                  QUrl(QStringLiteral("https://forkmesh.com/market/crm")) &&
+              packageShareUrl(QStringLiteral("forkmesh"),
+                              QStringLiteral("nemotron-3.5-lightning"))
+                      .toString() ==
+                  QStringLiteral(
+                      "https://forkmesh.com/market/nemotron-3.5-lightning") &&
+              !packageShareUrl(QStringLiteral("forkmesh-apps"),
+                               QStringLiteral("crm"))
+                   .isValid() &&
+              !packageShareUrl(QString(), QStringLiteral("previews")).isValid() &&
+              !packageShareUrl(QString(), QStringLiteral("a/b")).isValid(),
+          "Copy link gives the plugin's public Market page");
+
     QJsonObject sentPayload;
     PackageFeedbackReplyHandler pendingReply;
     int sends = 0;

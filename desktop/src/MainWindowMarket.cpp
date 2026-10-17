@@ -14,7 +14,9 @@
 #include "ServerNode.h"
 #include "SettingsSectionsView.h"
 
+#include <QApplication>
 #include <QBuffer>
+#include <QClipboard>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -2517,6 +2519,18 @@ void MainWindow::addPackageFeedbackActions(QMenu *menu, const QString &id)
         QString::fromUtf8("Send feedback or report a bug\xE2\x80\xA6"), this,
         [this, id] { showPackageFeedbackDialog(id); });
     feedback->setObjectName(QStringLiteral("packageFeedbackAction"));
+    const QUrl link =
+        forkmesh::market::packageShareUrl(manifest->marketplaceId, id);
+    if (!link.isValid())
+        return;
+    QAction *copyLink = menu->addAction(
+        QStringLiteral("Copy link to %1").arg(name), this, [this, link, name] {
+            QApplication::clipboard()->setText(link.toString());
+            flashMessage(QStringLiteral("Copied the link to %1").arg(name));
+        });
+    copyLink->setObjectName(QStringLiteral("packageCopyLinkAction"));
+    copyLink->setToolTip(
+        QStringLiteral("Copy %1 to share this plugin").arg(link.toString()));
 }
 
 QMenu *MainWindow::buildPackageActionsMenu(const QString &id, QWidget *parent)

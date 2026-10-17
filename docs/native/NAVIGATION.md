@@ -832,6 +832,7 @@ the website's own:
 | `/dashboard/chat`, `/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |
+| `/market/<package-id>` (plugin share link; not `/market/previews/…`) | `.market`, then `.package(id)` |
 | anything else | opens in the browser |
 
 `oauth` is a reserved owner, so `/oauth/authorize` always opens in the

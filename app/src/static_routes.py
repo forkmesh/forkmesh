@@ -21,6 +21,9 @@ from plugin_registry import (
 )
 
 ECOSYSTEM_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+MARKET_PACKAGE_RE = re.compile(
+    r"^(?=.{1,96}$)[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+MARKET_ASSET_FOLDERS = frozenset({"previews"})
 
 
 REPO_TAB_ROUTES = frozenset({
@@ -327,6 +330,8 @@ def external_site_route(pathname):
         return "www"
     if is_ecosystem_project_path(pathname):
         return "www"
+    if is_market_package_path(pathname):
+        return "www"
     return None
 
 
@@ -336,8 +341,19 @@ def is_ecosystem_project_path(pathname):
             and ECOSYSTEM_SLUG_RE.match(parts[1]) is not None)
 
 
+def is_market_package_path(pathname):
+    parts = path_parts(pathname)
+    return (len(parts) == 2 and parts[0] == "market"
+            and parts[1] not in MARKET_ASSET_FOLDERS
+            and MARKET_PACKAGE_RE.match(parts[1]) is not None)
+
+
 def site_document_asset_path(pathname):
-    return "/ecosystem" if is_ecosystem_project_path(pathname) else pathname
+    if is_ecosystem_project_path(pathname):
+        return "/ecosystem"
+    if is_market_package_path(pathname):
+        return "/market"
+    return pathname
 
 
 def looks_like_repo_route(pathname):

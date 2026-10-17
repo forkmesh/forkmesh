@@ -188,6 +188,32 @@ affiliate program).
   Themes (`theme`) buttons. Clicking the selected button again clears it;
   search terms apply with the selected category.
 
+## Share links
+
+Every catalog package has one public link, `https://forkmesh.com/market/<id>`
+(only the official `forkmesh` market has public pages). There is no separate
+page per package. The www Worker (`MARKET_PACKAGE` in `www/worker.js`) and the
+App (`static_routes.is_market_package_path`) serve the `/market` document for
+that path. The page script then outlines the package's card, scrolls to it and
+puts its name in the title. `/market/previews/*` stays a static asset path:
+`previews` is never read as a package id, and every `run_worker_first` list
+pairs `/market/*` with `!/market/previews/*`.
+
+- **forkmesh.com/market:** each card gets **Share** and **Copy link** buttons,
+  written by `build_market_catalog.render_share`. Share opens the system
+  share sheet through `navigator.share`. Where that isn't available, Share
+  copies the link instead.
+- **Web dashboard:** the plugin page's options menu (`09-plugin-menu.js`) has
+  **Share…** and **Copy link**. Share… shows only when the browser has
+  `navigator.share`.
+- **Desktop:** the plugin options menu and the rail menu have **Copy link to
+  <name>** (`forkmesh::market::packageShareUrl`). Qt has no cross-platform
+  share sheet, so the desktop only copies.
+- **iPhone and Android:** the package screen's menu has **Share…** (the
+  system share sheet) and **Copy link**. The universal link or app link opens
+  the package screen, stacked under Market. `/market/previews/...` and
+  `forkmesh://market/<filter>` keep their old meaning.
+
 ## Packages
 
 Every package lives in `marketplace/packages/<id>/` with its own README. Groups:

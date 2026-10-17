@@ -77,6 +77,8 @@ run_worker_first = [
   "/features",
   "/leaderboards",
   "/market",
+  "/market/*",
+  "!/market/previews/*",
   "/network",
   "/ecosystem",
   "/ecosystem/*",

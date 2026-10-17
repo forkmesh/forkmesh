@@ -86,4 +86,35 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.rateLabel("CRM", rated: false), "Rate CRM")
         XCTAssertEqual(PluginMenu.rateLabel("CRM", rated: true), "Edit your rating of CRM")
     }
+
+    func testEveryPackageSharesItsPublicMarketLink() {
+        XCTAssertEqual(PluginMenu.shareURL(packageId: "crm")?.absoluteString, "https://forkmesh.com/market/crm")
+        XCTAssertEqual(
+            PluginMenu.shareURL(packageId: "video-mix-dj-studio")?.absoluteString,
+            "https://forkmesh.com/market/video-mix-dj-studio")
+        XCTAssertEqual(PluginMenu.shareURL(packageId: " RSS-Reader ")?.absoluteString, "https://forkmesh.com/market/rss-reader")
+        XCTAssertEqual(PluginMenu.shareURL(packageId: "acme.tools")?.absoluteString, "https://forkmesh.com/market/acme.tools")
+        XCTAssertNil(PluginMenu.shareURL(packageId: ""))
+        XCTAssertNil(PluginMenu.shareURL(packageId: "previews"))
+        XCTAssertNil(PluginMenu.shareURL(packageId: "../crm"))
+        XCTAssertNil(PluginMenu.shareURL(packageId: "crm/reviews"))
+        XCTAssertNil(PluginMenu.shareURL(packageId: "9lives"))
+        XCTAssertNil(PluginMenu.shareURL(packageId: String(repeating: "a", count: 97)))
+    }
+
+    func testASharedLinkOpensThePackageItWasSharedFrom() {
+        for id in ["crm", "rss-reader", "face-changer", "acme.tools"] {
+            let url = PluginMenu.shareURL(packageId: id)
+            XCTAssertNotNil(url, id)
+            XCTAssertEqual(url.flatMap { RouteParser.parse($0)?.stack }, [.market(filter: nil), .package(id: id)], id)
+        }
+    }
+
+    func testShareLabelsMatchTheMenuStyle() {
+        XCTAssertEqual(PluginMenu.shareLabel, "Share\u{2026}")
+        XCTAssertEqual(PluginMenu.copyLinkLabel, "Copy link")
+        XCTAssertEqual(PluginMenu.linkCopiedNotice, "Link copied")
+        XCTAssertEqual(PluginMenu.shareSubject("CRM"), "CRM on ForkMesh")
+        XCTAssertEqual(PluginMenu.shareMessage("CRM"), "Get CRM from the ForkMesh Market.")
+    }
 }

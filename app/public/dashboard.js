@@ -41523,6 +41523,32 @@
     return `/market-reviews?market=forkmesh&package=${encodeURIComponent(id)}`;
   }
 
+  function pluginShareUrl(id) {
+    return `https://forkmesh.com/market/${encodeURIComponent(id)}`;
+  }
+
+  async function copyPluginLink(plugin) {
+    const button = $("[data-plugin-menu-copy-link]");
+    const copied = await copyTextToClipboard(pluginShareUrl(plugin.id));
+    if (!button) return;
+    button.textContent = copied ? "Link copied" : "Copy failed";
+    window.setTimeout(() => {
+      button.textContent = "Copy link";
+      setPluginMenuOpen(false);
+    }, 1200);
+  }
+
+  async function sharePlugin(plugin) {
+    setPluginMenuOpen(false);
+    const url = pluginShareUrl(plugin.id);
+    try {
+      await navigator.share({ title: plugin.name, text: `${plugin.name} on the ForkMesh Market`, url });
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      if (!(await copyTextToClipboard(url))) showErrorNotice(`The link to ${plugin.name} could not be shared or copied.`);
+    }
+  }
+
   function setPluginMenuOpen(open) {
     const dropdown = $("[data-plugin-menu-dropdown]");
     if (!dropdown) return;
@@ -41632,6 +41658,8 @@
       rate.href = pluginReviewUrl(plugin.id);
       rate.textContent = `Rate ${plugin.name}`;
     }
+    const share = $("[data-plugin-menu-share]");
+    if (share) share.hidden = typeof navigator.share !== "function";
     const uninstall = $("[data-plugin-menu-uninstall-label]");
     if (uninstall) uninstall.textContent = `Uninstall ${plugin.name}…`;
     document.addEventListener("click", (event) => {
@@ -41645,6 +41673,16 @@
         event.preventDefault();
         setPluginMenuOpen(false);
         setFeedbackModalOpen(true, plugin);
+        return;
+      }
+      if (event.target.closest("[data-plugin-menu-share]")) {
+        event.preventDefault();
+        void sharePlugin(plugin);
+        return;
+      }
+      if (event.target.closest("[data-plugin-menu-copy-link]")) {
+        event.preventDefault();
+        void copyPluginLink(plugin);
         return;
       }
       if (event.target.closest("[data-plugin-menu-uninstall]")) {

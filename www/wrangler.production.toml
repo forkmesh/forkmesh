@@ -58,6 +58,8 @@ run_worker_first = [
   # Certification badges re-check expiry per request (worker.js).
   "/docs/certification/badges/*",
   "/market",
+  "/market/*",
+  "!/market/previews/*",
   "/ecosystem",
   "/ecosystem/*",
   "/press",

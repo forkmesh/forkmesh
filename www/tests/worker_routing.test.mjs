@@ -66,6 +66,43 @@ test("ecosystem project pages are served by the ecosystem document", async () =>
 });
 
 
+test("plugin share links are served by the market document", async () => {
+  const requested = [];
+  const env = environment({
+    ASSETS: {
+      async fetch(request) {
+        requested.push(new URL(request.url).pathname + new URL(request.url).search);
+        return new Response("<h1>ForkMesh Market</h1>", {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      },
+    },
+  });
+  for (const path of ["/market/crm", "/market/nemotron-3.5-lightning/?ref=share"]) {
+    const response = await worker.fetch(
+      new Request("https://forkmesh.com" + path, { headers: { dnt: "1" } }),
+      env,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "<h1>ForkMesh Market</h1>");
+  }
+  assert.deepEqual(requested, ["/market", "/market"]);
+
+  const preview = await worker.fetch(
+    new Request("https://forkmesh.com/market/previews/packages/notes/preview/market.webp"),
+    env,
+  );
+  assert.equal(preview.status, 200);
+  assert.equal(requested.at(-1), "/market/previews/packages/notes/preview/market.webp");
+
+  for (const path of ["/market/Crm", "/market/crm/settings"]) {
+    const response = await worker.fetch(new Request("https://forkmesh.com" + path), env);
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("location"), "https://app.forkmesh.com" + path);
+  }
+});
+
+
 test("public profiles and the assets their markup names stay on this origin", async () => {
   const proxied = [];
   const profileProxyHeaders = [];

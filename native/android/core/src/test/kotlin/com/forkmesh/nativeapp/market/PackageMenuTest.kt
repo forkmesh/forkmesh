@@ -42,4 +42,16 @@ class PackageMenuTest {
         assertEq("Uninstall from acme", PackageMenu.uninstallLabel("acme"))
         assertEq("Send feedback or report a bug", PackageMenu.FEEDBACK)
     }
+
+    fun testEveryPluginHasAPublicShareLink() {
+        assertEq("https://forkmesh.com/market/notes", PackageMenu.shareUrl("notes"))
+        assertEq("https://forkmesh.com/market/face-changer", PackageMenu.shareUrl("Face-Changer"))
+        assertEq("https://forkmesh.com/market/acme.crm-2", PackageMenu.shareUrl(" acme.crm-2 "))
+        assertEq("https://forkmesh.com/market/" + "a".repeat(96), PackageMenu.shareUrl("a".repeat(96)))
+        for (bad in listOf("", "9lives", "-notes", "notes-", "no--tes", "no_tes", "a/b", "previews", "a".repeat(97))) {
+            assertEq(null, PackageMenu.shareUrl(bad), bad)
+        }
+        assertEq("Share…", PackageMenu.SHARE)
+        assertEq("Copy link", PackageMenu.COPY_LINK)
+    }
 }

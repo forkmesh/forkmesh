@@ -610,6 +610,8 @@ def render_world_wrangler_config(
             '  "/docs/*",',
             '  "/features",',
             '  "/market",',
+            '  "/market/*",',
+            '  "!/market/previews/*",',
             '  "/ecosystem",',
             '  "/ecosystem/*",',
             '  "/press",',

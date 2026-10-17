@@ -275,6 +275,21 @@
         font-weight: 600;
         text-decoration: none;
       }
+      .market-share { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+      .market-share-button {
+        padding: 5px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--accent-bright);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .market-share-button:hover { border-color: var(--accent-bright); }
+      .market-share-button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+      .market-item.is-shared { border-color: var(--accent-bright); box-shadow: 0 0 0 2px var(--accent-bright); }
       .market-nested {
         margin: 16px 0 0;
         border-top: 1px solid var(--border);
@@ -579,6 +594,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/capture" data-market-share-name="Capture">Share<span class="visually-hidden"> Capture</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/capture">Copy link<span class="visually-hidden"> to Capture</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/capture">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/capture/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -633,6 +652,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/ledger" data-market-share-name="Ledger">Share<span class="visually-hidden"> Ledger</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/ledger">Copy link<span class="visually-hidden"> to Ledger</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/ledger">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/ledger/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -683,6 +706,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/x-banner-board" data-market-share-name="X Banner Board">Share<span class="visually-hidden"> X Banner Board</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/x-banner-board">Copy link<span class="visually-hidden"> to X Banner Board</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/x-banner-board">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/x-banner-board/manifest.json">Read the manifest &rarr;</a>
@@ -735,13 +762,17 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/reddit-banner-board" data-market-share-name="Reddit Banner Board">Share<span class="visually-hidden"> Reddit Banner Board</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/reddit-banner-board">Copy link<span class="visually-hidden"> to Reddit Banner Board</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/reddit-banner-board">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/reddit-banner-board/manifest.json">Read the manifest &rarr;</a>
         </article>
         <article class="market-item" data-market-package="crm" data-market-shelf="Extensions" data-market-name="CRM">
           <header class="market-item-head">
             <h3>CRM</h3>
-            <span class="market-version">v1.35.0</span>
+            <span class="market-version">v1.36.0</span>
           </header>
           <p class="market-badges">
             <span class="market-badge">Desktop extension</span>
@@ -779,7 +810,7 @@
             <li data-risk="sensitive">Read encrypted contacts and email history for your organizations<span class="market-risk">sensitive</span></li>
             <li data-risk="sensitive">Create and update shared organization CRM records<span class="market-risk">sensitive</span></li>
             <li data-risk="high">Send an email, including founders outreach, only after you explicitly submit its compose form<span class="market-risk">high</span></li>
-            <li data-risk="high">Use encrypted organization OAuth credentials to import Zoho Mail after an explicit sync<span class="market-risk">high</span></li>
+            <li data-risk="high">Use encrypted organization OAuth credentials to sync Zoho Mail and send confirmed automated emails from it<span class="market-risk">high</span></li>
             <li data-risk="sensitive">Open a configured email-provider send link after an explicit click<span class="market-risk">sensitive</span></li>
             <li data-risk="sensitive">Import a selected contacts CSV and export organization contacts<span class="market-risk">sensitive</span></li>
             <li data-risk="sensitive">Tie the Gmail or Zoho Mail message you open to a contact after an explicit click in the ForkMesh browser extension<span class="market-risk">sensitive</span></li>
@@ -796,6 +827,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/crm" data-market-share-name="CRM">Share<span class="visually-hidden"> CRM</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/crm">Copy link<span class="visually-hidden"> to CRM</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/crm">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/crm/manifest.json">Read the manifest &rarr;</a>
@@ -857,6 +892,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/marketing" data-market-share-name="Marketing">Share<span class="visually-hidden"> Marketing</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/marketing">Copy link<span class="visually-hidden"> to Marketing</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/marketing">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/marketing/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -908,6 +947,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/competitor" data-market-share-name="Competitor Watch">Share<span class="visually-hidden"> Competitor Watch</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/competitor">Copy link<span class="visually-hidden"> to Competitor Watch</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/competitor">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/competitor/manifest.json">Read the manifest &rarr;</a>
@@ -962,6 +1005,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/analytics" data-market-share-name="Analytics">Share<span class="visually-hidden"> Analytics</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/analytics">Copy link<span class="visually-hidden"> to Analytics</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/analytics">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/analytics/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1014,6 +1061,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/tasks" data-market-share-name="Tasks">Share<span class="visually-hidden"> Tasks</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/tasks">Copy link<span class="visually-hidden"> to Tasks</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/tasks">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/tasks/manifest.json">Read the manifest &rarr;</a>
@@ -1068,6 +1119,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/calendar" data-market-share-name="Calendar">Share<span class="visually-hidden"> Calendar</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/calendar">Copy link<span class="visually-hidden"> to Calendar</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/calendar">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/calendar/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1121,6 +1176,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/notes" data-market-share-name="Notes">Share<span class="visually-hidden"> Notes</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/notes">Copy link<span class="visually-hidden"> to Notes</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/notes">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/notes/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1171,6 +1230,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/discord" data-market-share-name="Discord">Share<span class="visually-hidden"> Discord</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/discord">Copy link<span class="visually-hidden"> to Discord</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/discord">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/discord/manifest.json">Read the manifest &rarr;</a>
@@ -1224,6 +1287,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/gemma-4" data-market-share-name="Gemma 4">Share<span class="visually-hidden"> Gemma 4</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/gemma-4">Copy link<span class="visually-hidden"> to Gemma 4</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/gemma-4">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/gemma-4/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1274,6 +1341,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/nemotron-3-ultra" data-market-share-name="Nemotron 3 Ultra">Share<span class="visually-hidden"> Nemotron 3 Ultra</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/nemotron-3-ultra">Copy link<span class="visually-hidden"> to Nemotron 3 Ultra</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/nemotron-3-ultra">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/nemotron-3-ultra/manifest.json">Read the manifest &rarr;</a>
@@ -1327,6 +1398,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/nemotron-3.5-lightning" data-market-share-name="Nemotron 3.5 Lightning">Share<span class="visually-hidden"> Nemotron 3.5 Lightning</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/nemotron-3.5-lightning">Copy link<span class="visually-hidden"> to Nemotron 3.5 Lightning</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/nemotron-3.5-lightning">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/nemotron-3.5-lightning/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1378,6 +1453,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/muse-spark-1.3-contributor" data-market-share-name="Muse Spark 1.3 Contributor">Share<span class="visually-hidden"> Muse Spark 1.3 Contributor</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/muse-spark-1.3-contributor">Copy link<span class="visually-hidden"> to Muse Spark 1.3 Contributor</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/muse-spark-1.3-contributor">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/muse-spark-1.3-contributor/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1423,6 +1502,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/winamp" data-market-share-name="Winamp Classic">Share<span class="visually-hidden"> Winamp Classic</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/winamp">Copy link<span class="visually-hidden"> to Winamp Classic</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/winamp">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/winamp/manifest.json">Read the manifest &rarr;</a>
@@ -1476,6 +1559,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/forkmesh-ide" data-market-share-name="ForkMesh for VS Code">Share<span class="visually-hidden"> ForkMesh for VS Code</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/forkmesh-ide">Copy link<span class="visually-hidden"> to ForkMesh for VS Code</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/forkmesh-ide">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/forkmesh-ide/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1527,6 +1614,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/sentry" data-market-share-name="Sentry">Share<span class="visually-hidden"> Sentry</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/sentry">Copy link<span class="visually-hidden"> to Sentry</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sentry">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sentry/manifest.json">Read the manifest &rarr;</a>
@@ -1580,6 +1671,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/app-store-status" data-market-share-name="App Store Status">Share<span class="visually-hidden"> App Store Status</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/app-store-status">Copy link<span class="visually-hidden"> to App Store Status</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/app-store-status">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/app-store-status/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1631,6 +1726,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/timers" data-market-share-name="Timers">Share<span class="visually-hidden"> Timers</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/timers">Copy link<span class="visually-hidden"> to Timers</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/timers">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/timers/manifest.json">Read the manifest &rarr;</a>
@@ -1684,6 +1783,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/forkmesh-sky-office" data-market-share-name="ForkMesh Aquarium Sky Office">Share<span class="visually-hidden"> ForkMesh Aquarium Sky Office</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/forkmesh-sky-office">Copy link<span class="visually-hidden"> to ForkMesh Aquarium Sky Office</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/forkmesh-sky-office">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/forkmesh-sky-office/manifest.json">Read the manifest &rarr;</a>
@@ -1743,6 +1846,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/calories" data-market-share-name="Calorie Counter">Share<span class="visually-hidden"> Calorie Counter</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/calories">Copy link<span class="visually-hidden"> to Calorie Counter</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/calories">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/calories/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1801,6 +1908,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/vault" data-market-share-name="Password Vault">Share<span class="visually-hidden"> Password Vault</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/vault">Copy link<span class="visually-hidden"> to Password Vault</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/vault">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/vault/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1854,6 +1965,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/rss-reader" data-market-share-name="RSS Reader">Share<span class="visually-hidden"> RSS Reader</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/rss-reader">Copy link<span class="visually-hidden"> to RSS Reader</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/rss-reader">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/rss-reader/manifest.json">Read the manifest &rarr;</a>
@@ -1910,6 +2025,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/steps" data-market-share-name="Pedometer">Share<span class="visually-hidden"> Pedometer</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/steps">Copy link<span class="visually-hidden"> to Pedometer</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/steps">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/steps/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -1965,6 +2084,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/water" data-market-share-name="Water Intake">Share<span class="visually-hidden"> Water Intake</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/water">Copy link<span class="visually-hidden"> to Water Intake</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/water">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/water/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2019,6 +2142,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/sleep" data-market-share-name="Sleep">Share<span class="visually-hidden"> Sleep</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/sleep">Copy link<span class="visually-hidden"> to Sleep</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sleep">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sleep/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2072,6 +2199,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/sugar-break" data-market-share-name="Sugar Break">Share<span class="visually-hidden"> Sugar Break</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/sugar-break">Copy link<span class="visually-hidden"> to Sugar Break</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sugar-break">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sugar-break/manifest.json">Read the manifest &rarr;</a>
@@ -2128,6 +2259,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/stretch" data-market-share-name="Stretch Break">Share<span class="visually-hidden"> Stretch Break</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/stretch">Copy link<span class="visually-hidden"> to Stretch Break</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/stretch">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/stretch/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2180,6 +2315,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/food-guide" data-market-share-name="Food Guide">Share<span class="visually-hidden"> Food Guide</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/food-guide">Copy link<span class="visually-hidden"> to Food Guide</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/food-guide">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/food-guide/manifest.json">Read the manifest &rarr;</a>
@@ -2235,6 +2374,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/browser-extension" data-market-share-name="Browser Extension">Share<span class="visually-hidden"> Browser Extension</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/browser-extension">Copy link<span class="visually-hidden"> to Browser Extension</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/browser-extension">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/browser-extension/manifest.json">Read the manifest &rarr;</a>
@@ -2292,6 +2435,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/voice-changer" data-market-share-name="Voice Changer">Share<span class="visually-hidden"> Voice Changer</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/voice-changer">Copy link<span class="visually-hidden"> to Voice Changer</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/voice-changer">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/voice-changer/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2347,13 +2494,17 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/face-changer" data-market-share-name="Face Changer">Share<span class="visually-hidden"> Face Changer</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/face-changer">Copy link<span class="visually-hidden"> to Face Changer</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/face-changer">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/face-changer/manifest.json">Read the manifest &rarr;</a>
         </article>
         <article class="market-item" data-market-package="video-mix-dj-studio" data-market-shelf="Extensions" data-market-name="Video Mix DJ Studio">
           <header class="market-item-head">
             <h3>Video Mix DJ Studio</h3>
-            <span class="market-version">v1.0.0</span>
+            <span class="market-version">v1.1.0</span>
           </header>
           <p class="market-badges">
             <span class="market-badge">Desktop extension</span>
@@ -2377,14 +2528,14 @@
           <div class="market-screenshots">
             <img class="market-screenshot" src="/market/previews/packages/video-mix-dj-studio/preview/market.svg" alt="Video Mix DJ Studio showing two video decks, a central crossfader and a saved set panel" loading="lazy" decoding="async" />
           </div>
-          <p class="market-summary">Mix two YouTube decks with turntables, crossfader, cues, loops, captured sections, tempo and local sampler pads on iOS, desktop and web.</p>
+          <p class="market-summary">Mix two YouTube decks with turntables, crossfader, cues, loops, sampled sections, tempo and sampler pads, and jam with friends who share the decks and the queue.</p>
           <dl class="market-facts">
             <dt>Creator</dt>
             <dd><a href="/@forkmesh">ForkMesh</a></dd>
             <dt>Licence</dt>
             <dd>Free &amp; open source · MIT</dd>
             <dt>Runs in</dt>
-            <dd>Dashboard-Script, Dashboard-View, Desktop app, Ios, Settings</dd>
+            <dd>Dashboard-Script, Dashboard-View, Desktop app, Ios, Settings, Worker</dd>
             <dt>Shows on</dt>
             <dd>Phone, Desktop and Web; you choose where</dd>
           </dl>
@@ -2393,6 +2544,7 @@
             <li data-risk="sensitive">Embed the two YouTube videos you choose so they can be mixed in this browser<span class="market-risk">sensitive</span></li>
             <li data-risk="sensitive">Search public YouTube video indexes from the studio and load a selected result into a deck<span class="market-risk">sensitive</span></li>
             <li data-risk="low">Keep your deck choices, cue points, captured sections, sampler level and saved set in this browser only<span class="market-risk">low</span></li>
+            <li data-risk="sensitive">Create jam sessions, invite ForkMesh users by name, and share both decks and a video queue with the people who join<span class="market-risk">sensitive</span></li>
             <li data-risk="low">Add a Video Mix DJ button to the desktop rail that opens this studio in your browser<span class="market-risk">low</span></li>
           </ul>
           <p class="market-trust">
@@ -2401,6 +2553,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/video-mix-dj-studio" data-market-share-name="Video Mix DJ Studio">Share<span class="visually-hidden"> Video Mix DJ Studio</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/video-mix-dj-studio">Copy link<span class="visually-hidden"> to Video Mix DJ Studio</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/video-mix-dj-studio">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/video-mix-dj-studio/manifest.json">Read the manifest &rarr;</a>
@@ -2455,6 +2611,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/agent-watch" data-market-share-name="Watch">Share<span class="visually-hidden"> Watch</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/agent-watch">Copy link<span class="visually-hidden"> to Watch</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/agent-watch">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/agent-watch/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2507,6 +2667,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/tour" data-market-share-name="Tour">Share<span class="visually-hidden"> Tour</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/tour">Copy link<span class="visually-hidden"> to Tour</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/tour">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/tour/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2558,6 +2722,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/aquarium" data-market-share-name="Aquarium">Share<span class="visually-hidden"> Aquarium</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/aquarium">Copy link<span class="visually-hidden"> to Aquarium</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/aquarium">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/aquarium/manifest.json">Read the manifest &rarr;</a>
@@ -2612,6 +2780,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/backups" data-market-share-name="Backups">Share<span class="visually-hidden"> Backups</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/backups">Copy link<span class="visually-hidden"> to Backups</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/backups">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/backups/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2663,6 +2835,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/docs" data-market-share-name="Docs">Share<span class="visually-hidden"> Docs</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/docs">Copy link<span class="visually-hidden"> to Docs</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/docs">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/docs/manifest.json">Read the manifest &rarr;</a>
@@ -2718,6 +2894,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/cleanup" data-market-share-name="Disk Cleanup">Share<span class="visually-hidden"> Disk Cleanup</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/cleanup">Copy link<span class="visually-hidden"> to Disk Cleanup</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/cleanup">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/cleanup/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -2770,6 +2950,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/computer-security" data-market-share-name="Security">Share<span class="visually-hidden"> Security</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/computer-security">Copy link<span class="visually-hidden"> to Security</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/computer-security">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/computer-security/manifest.json">Read the manifest &rarr;</a>
@@ -2939,6 +3123,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/status-page" data-market-share-name="Status Page">Share<span class="visually-hidden"> Status Page</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/status-page">Copy link<span class="visually-hidden"> to Status Page</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/status-page">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/status-page/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3013,6 +3201,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/logs" data-market-share-name="Logs">Share<span class="visually-hidden"> Logs</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/logs">Copy link<span class="visually-hidden"> to Logs</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/logs">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/logs/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3063,6 +3255,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/diagnostics" data-market-share-name="Diagnostics">Share<span class="visually-hidden"> Diagnostics</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/diagnostics">Copy link<span class="visually-hidden"> to Diagnostics</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/diagnostics">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/diagnostics/manifest.json">Read the manifest &rarr;</a>
@@ -3117,6 +3313,10 @@
             <span>Source available</span>
             <span>Reproducible build</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/speech" data-market-share-name="Speech Playground">Share<span class="visually-hidden"> Speech Playground</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/speech">Copy link<span class="visually-hidden"> to Speech Playground</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/speech">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/speech/manifest.json">Read the manifest &rarr;</a>
@@ -3173,6 +3373,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/glasses-alert" data-market-share-name="Glasses Alert">Share<span class="visually-hidden"> Glasses Alert</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/glasses-alert">Copy link<span class="visually-hidden"> to Glasses Alert</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/glasses-alert">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/glasses-alert/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3226,6 +3430,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/design-system" data-market-share-name="Design System">Share<span class="visually-hidden"> Design System</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/design-system">Copy link<span class="visually-hidden"> to Design System</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/design-system">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/design-system/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3275,6 +3483,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/vscodium" data-market-share-name="VSCodium">Share<span class="visually-hidden"> VSCodium</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/vscodium">Copy link<span class="visually-hidden"> to VSCodium</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/vscodium">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/vscodium/manifest.json">Read the manifest &rarr;</a>
@@ -3419,6 +3631,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/workflows" data-market-share-name="Workflows">Share<span class="visually-hidden"> Workflows</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/workflows">Copy link<span class="visually-hidden"> to Workflows</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/workflows">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/workflows/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3487,6 +3703,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/agents" data-market-share-name="Agents">Share<span class="visually-hidden"> Agents</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/agents">Copy link<span class="visually-hidden"> to Agents</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/agents">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/agents/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3537,6 +3757,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/inbox" data-market-share-name="Inbox">Share<span class="visually-hidden"> Inbox</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/inbox">Copy link<span class="visually-hidden"> to Inbox</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/inbox">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/inbox/manifest.json">Read the manifest &rarr;</a>
@@ -3589,6 +3813,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/code" data-market-share-name="Code">Share<span class="visually-hidden"> Code</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/code">Copy link<span class="visually-hidden"> to Code</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/code">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/code/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3639,6 +3867,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/chat" data-market-share-name="Chat">Share<span class="visually-hidden"> Chat</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/chat">Copy link<span class="visually-hidden"> to Chat</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/chat">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/chat/manifest.json">Read the manifest &rarr;</a>
@@ -3691,6 +3923,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/bug-reports" data-market-share-name="Report a bug">Share<span class="visually-hidden"> Report a bug</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/bug-reports">Copy link<span class="visually-hidden"> to Report a bug</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/bug-reports">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/bug-reports/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3742,6 +3978,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/issues" data-market-share-name="Issues">Share<span class="visually-hidden"> Issues</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/issues">Copy link<span class="visually-hidden"> to Issues</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/issues">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/issues/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3792,6 +4032,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/commits" data-market-share-name="Commits">Share<span class="visually-hidden"> Commits</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/commits">Copy link<span class="visually-hidden"> to Commits</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/commits">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/commits/manifest.json">Read the manifest &rarr;</a>
@@ -3855,6 +4099,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/branches" data-market-share-name="Branches">Share<span class="visually-hidden"> Branches</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/branches">Copy link<span class="visually-hidden"> to Branches</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/branches">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/branches/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -3905,6 +4153,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/releases" data-market-share-name="Releases">Share<span class="visually-hidden"> Releases</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/releases">Copy link<span class="visually-hidden"> to Releases</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/releases">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/releases/manifest.json">Read the manifest &rarr;</a>
@@ -3957,6 +4209,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/actions" data-market-share-name="Actions">Share<span class="visually-hidden"> Actions</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/actions">Copy link<span class="visually-hidden"> to Actions</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/actions">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/actions/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4007,6 +4263,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/discussions" data-market-share-name="Discussions">Share<span class="visually-hidden"> Discussions</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/discussions">Copy link<span class="visually-hidden"> to Discussions</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/discussions">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/discussions/manifest.json">Read the manifest &rarr;</a>
@@ -4059,6 +4319,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/desktops" data-market-share-name="Desktops">Share<span class="visually-hidden"> Desktops</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/desktops">Copy link<span class="visually-hidden"> to Desktops</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/desktops">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/desktops/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4109,6 +4373,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/shortcuts" data-market-share-name="Shortcuts">Share<span class="visually-hidden"> Shortcuts</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/shortcuts">Copy link<span class="visually-hidden"> to Shortcuts</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/shortcuts">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/shortcuts/manifest.json">Read the manifest &rarr;</a>
@@ -4161,6 +4429,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/hosts" data-market-share-name="Hosts &amp; fleet">Share<span class="visually-hidden"> Hosts &amp; fleet</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/hosts">Copy link<span class="visually-hidden"> to Hosts &amp; fleet</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/hosts">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/hosts/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4211,6 +4483,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/network" data-market-share-name="Network &amp; nodes">Share<span class="visually-hidden"> Network &amp; nodes</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/network">Copy link<span class="visually-hidden"> to Network &amp; nodes</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/network">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/network/manifest.json">Read the manifest &rarr;</a>
@@ -4263,6 +4539,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/coves" data-market-share-name="Coves">Share<span class="visually-hidden"> Coves</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/coves">Copy link<span class="visually-hidden"> to Coves</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/coves">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/coves/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4313,6 +4593,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/on-device-ai" data-market-share-name="On-device AI">Share<span class="visually-hidden"> On-device AI</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/on-device-ai">Copy link<span class="visually-hidden"> to On-device AI</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/on-device-ai">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/on-device-ai/manifest.json">Read the manifest &rarr;</a>
@@ -4365,6 +4649,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/activity" data-market-share-name="Activity">Share<span class="visually-hidden"> Activity</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/activity">Copy link<span class="visually-hidden"> to Activity</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/activity">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/activity/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4416,6 +4704,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/stats" data-market-share-name="Stats">Share<span class="visually-hidden"> Stats</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/stats">Copy link<span class="visually-hidden"> to Stats</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/stats">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/stats/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4466,6 +4758,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/organizations" data-market-share-name="Organizations">Share<span class="visually-hidden"> Organizations</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/organizations">Copy link<span class="visually-hidden"> to Organizations</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/organizations">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/organizations/manifest.json">Read the manifest &rarr;</a>
@@ -4529,6 +4825,10 @@
               </li>
             </ul>
           </details>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/world" data-market-share-name="World">Share<span class="visually-hidden"> World</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/world">Copy link<span class="visually-hidden"> to World</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/world">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/world/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4581,6 +4881,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/people" data-market-share-name="People">Share<span class="visually-hidden"> People</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/people">Copy link<span class="visually-hidden"> to People</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/people">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/people/manifest.json">Read the manifest &rarr;</a>
@@ -4636,6 +4940,10 @@
             <span>Reproducible build</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/mastodon" data-market-share-name="Mastodon">Share<span class="visually-hidden"> Mastodon</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/mastodon">Copy link<span class="visually-hidden"> to Mastodon</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/mastodon">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/mastodon/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4684,6 +4992,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/sign-in" data-market-share-name="Sign in">Share<span class="visually-hidden"> Sign in</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/sign-in">Copy link<span class="visually-hidden"> to Sign in</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sign-in">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/sign-in/manifest.json">Read the manifest &rarr;</a>
@@ -4734,6 +5046,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/code-map" data-market-share-name="Code Map">Share<span class="visually-hidden"> Code Map</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/code-map">Copy link<span class="visually-hidden"> to Code Map</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/code-map">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/code-map/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4782,6 +5098,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/size-map" data-market-share-name="Size Map">Share<span class="visually-hidden"> Size Map</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/size-map">Copy link<span class="visually-hidden"> to Size Map</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/size-map">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/size-map/manifest.json">Read the manifest &rarr;</a>
@@ -4834,6 +5154,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/strata" data-market-share-name="Strata">Share<span class="visually-hidden"> Strata</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/strata">Copy link<span class="visually-hidden"> to Strata</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/strata">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/strata/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4885,6 +5209,10 @@
             <span>Source available</span>
             <span>Signature verified</span>
           </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/ember" data-market-share-name="Ember">Share<span class="visually-hidden"> Ember</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/ember">Copy link<span class="visually-hidden"> to Ember</span></button>
+          </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/ember">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/ember/manifest.json">Read the manifest &rarr;</a>
         </article>
@@ -4935,6 +5263,10 @@
             <span>Creator retains ownership</span>
             <span>Source available</span>
             <span>Signature verified</span>
+          </p>
+          <p class="market-share">
+            <button type="button" class="market-share-button" data-market-share="https://forkmesh.com/market/synapse" data-market-share-name="Synapse">Share<span class="visually-hidden"> Synapse</span></button>
+            <button type="button" class="market-share-button" data-market-copy-link="https://forkmesh.com/market/synapse">Copy link<span class="visually-hidden"> to Synapse</span></button>
           </p>
           <a class="market-repository" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/synapse">View public repository &nearr;</a>
           <a class="market-source" href="https://app.forkmesh.com/forkmesh/forkmesh/tree/main/marketplace/packages/synapse/manifest.json">Read the manifest &rarr;</a>
@@ -5519,6 +5851,57 @@ cd forkmesh &amp;&amp; mkdir -p marketplace/packages/my-package</pre>
           }
         });
       });
+
+      (() => {
+        const writeText = (text) => {
+          if (navigator.clipboard) return navigator.clipboard.writeText(text);
+          const area = document.createElement("textarea");
+          area.value = text;
+          area.style.position = "fixed";
+          area.style.left = "-9999px";
+          document.body.append(area);
+          area.select();
+          document.execCommand("copy");
+          area.remove();
+          return Promise.resolve();
+        };
+        const flash = (button, label) => {
+          const original = button.dataset.marketLabel || button.innerHTML;
+          button.dataset.marketLabel = original;
+          button.textContent = label;
+          setTimeout(() => { button.innerHTML = original; }, 1500);
+        };
+        const copy = (button, url) => writeText(url)
+          .then(() => flash(button, "Copied"), () => flash(button, "Copy failed"));
+        document.querySelectorAll("[data-market-copy-link]").forEach((button) => {
+          button.addEventListener("click", () => copy(button, button.dataset.marketCopyLink));
+        });
+        document.querySelectorAll("[data-market-share]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const url = button.dataset.marketShare;
+            const name = button.dataset.marketShareName || "ForkMesh plugin";
+            if (navigator.share) {
+              try {
+                await navigator.share({ title: name, text: `${name} on the ForkMesh Market`, url });
+                return;
+              } catch (error) {
+                if (error && error.name === "AbortError") return;
+              }
+            }
+            copy(button, url);
+          });
+        });
+        const shared = location.pathname.match(/^\/market\/([^/]+)\/?$/);
+        if (!shared) return;
+        const id = decodeURIComponent(shared[1]);
+        const card = Array.from(document.querySelectorAll(".market-item[data-market-package]"))
+          .find((item) => item.dataset.marketPackage === id);
+        if (!card) return;
+        const name = card.dataset.marketName;
+        if (name) document.title = `${name} — ForkMesh Market`;
+        card.classList.add("is-shared");
+        requestAnimationFrame(() => card.scrollIntoView({ block: "center" }));
+      })();
 
       const marketSummary = fetch("/api/market/reviews/summary", { headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
