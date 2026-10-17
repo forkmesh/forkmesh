@@ -102,8 +102,8 @@ void MainWindow::startLocalControlUpdate()
 void MainWindow::restartComputer()
 {
     QProcess *process = new QProcess(this);
-    process->setProgram(QStringLiteral("loginctl"));
-    process->setArguments({QStringLiteral("reboot")});
+    process->setProgram(QStringLiteral("systemctl"));
+    process->setArguments({QStringLiteral("--no-ask-password"), QStringLiteral("reboot")});
     process->setProcessChannelMode(QProcess::MergedChannels);
     const auto failed = [this, process](const QString &message) {
         if (!m_computerRestarting) {
@@ -131,7 +131,7 @@ void MainWindow::restartComputer()
                 }
                 const QString detail = QString::fromUtf8(process->readAllStandardOutput()).simplified();
                 failed(detail.isEmpty()
-                           ? QStringLiteral("Could not request a computer restart (loginctl exited %1).").arg(exitCode)
+                           ? QStringLiteral("Could not request a computer restart (systemctl exited %1).").arg(exitCode)
                            : QStringLiteral("Could not request a computer restart: %1").arg(detail));
             });
     process->start();
@@ -203,7 +203,7 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
             QDateTime::currentMSecsSinceEpoch());
         if ((action != updatectl::actionName() && !computerRestart) ||
             verdict != hostctl::ConfirmationStore::Result::Ok) {
-            const QString why = action != updatectl::actionName()
+            const QString why = action != updatectl::actionName() && !computerRestart
                                     ? QStringLiteral("unknown_action")
                                     : hostctl::confirmationError(verdict);
             logSystem(QStringLiteral("Refused a rebuild and restart from %1: %2.")
@@ -221,7 +221,7 @@ void MainWindow::handleLocalControlUpdateRequest(int connectionId, int requestId
             watchLocalControlUpdate(connectionId);
             m_computerRestarting = true;
             m_updateFeed.reset();
-            m_updateFeed.append(QStringLiteral("==> Restarting computer\n$ loginctl reboot\n"));
+            m_updateFeed.append(QStringLiteral("==> Restarting computer\n$ systemctl reboot\n"));
             setUpdateStatus(QStringLiteral("Restarting computer..."));
             server->respond(connectionId, requestId,
                             {{QStringLiteral("started"), true},

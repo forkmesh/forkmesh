@@ -136,6 +136,7 @@ public final class DesktopControlHub {
         guard let loaded = try? await loader(), started == epoch else { return }
         accountDesktops = loaded
         accountDesktopsLoadedAt = Date()
+        local?.setAccountDesktops(Set(loaded.map(\.key)))
         let before = reach
         refreshReach()
         if before != reach { revision &+= 1 }
