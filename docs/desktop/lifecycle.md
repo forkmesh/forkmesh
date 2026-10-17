@@ -143,6 +143,8 @@ Settings → General → STARTUP:
 - **Keep ForkMesh running without a window after I close it**
   (`background/keepRunning`, off by default). Closing the window starts
   `forkmesh --headless --project <slug> --wait-for-lock` and the tray.
+  Turning it on also keeps ForkMesh running after you log out (see
+  [Logging out](#logging-out)).
 - **Start ForkMesh without a window when the computer starts.** Turning it on
   also turns on the first box. The settings page runs `systemctl` and
   `loginctl` off the UI thread.
@@ -153,10 +155,12 @@ Settings → General → STARTUP:
 only when the setting is on, the window still holds the single-instance lock,
 and the close was not a stop signal or a restart. Rebuild & restart, update,
 switching project and deleting the account all release the lock before they
-quit, so they never hand over. A window run as a systemd service
-(`forkmesh-source.service`) hands over too: the windowless instance is started
-in its own scope (`systemd-run --user --scope --unit=forkmesh-headless-<project>`),
-so stopping the window's unit does not stop it, and the service variables
+quit, so they never hand over. Whenever a user systemd is reachable (the
+window runs as a service, or `$XDG_RUNTIME_DIR/systemd/private` exists), the
+windowless instance is started in its own scope
+(`systemd-run --user --scope --unit=forkmesh-headless-<project>`), so neither
+stopping the window's unit (`forkmesh-source.service`) nor the end of the
+launcher's `app-*.scope` at log-out stops it, and the service variables
 (`INVOCATION_ID`, `NOTIFY_SOCKET`, …) are removed from its environment. When
 the start-at-boot unit is installed, the window starts that unit instead
 (`systemctl --user start --no-block`), so systemd restarts it after a crash.
@@ -214,6 +218,51 @@ without a window** is on (`handOverWithoutDisplay` in `main.cpp`), so phones
 and agents are served until a window can open; that window then takes over as
 usual. Starting it when it already runs does nothing.
 
+### Logging out
+
+Asked for on 2026-10-16: turn ForkMesh off, log out, and have it keep
+running. Two things stood in the way. Lingering was only turned on with
+**Start at boot**, so with just **Keep running** the user manager, and the
+windowless instance in it, stopped at log-out. And logging out with the
+window open never handed over: the compositor goes away, Qt `_exit`s on the
+broken display connection, and no `closeEvent` runs.
+
+With **Keep running** on, the window (5 s after it starts, on a pool thread,
+`syncLogoutHandOver`) and the settings box install
+`~/.config/systemd/user/forkmesh-logout-<project>.service` and turn lingering
+on (the same `forkmesh-headless.linger` marker; the marker is released only
+when no `forkmesh-headless-*` or `forkmesh-logout-*` unit is left). The unit
+is `Type=oneshot`, `RemainAfterExit=yes`, `PartOf=` and
+`After=graphical-session.target`, `WantedBy=graphical-session.target`, and
+has only an `ExecStop`: `forkmesh --hand-over-at-logout --project <slug>`.
+At log-out systemd stops it before the target, and so before GNOME Shell
+(`graphical-session.target` is ordered after `gnome-session.target`, which is
+after `org.gnome.Shell@wayland.service`), while the window can still close
+normally. Turning **Keep running** off disables and removes it.
+
+`--hand-over-at-logout` does nothing when **Keep running** is off or the
+computer is shutting down (`systemctl is-system-running` or
+`systemctl --user is-system-running` says `stopping`, or logind's
+`PreparingForShutdown` is true); a reboot keeps the stop path described in
+[Agents across a stop](#agents-across-a-stop). Otherwise it sends `hand-over`
+on the single-instance socket. A window answers `yield`, records that the
+session is ending, and closes: `closeEvent` hands over as it does for a
+close by hand, without starting the tray (it would lose its display a moment
+later) and without writing the source guard's close hold, so
+`forkmesh-source.service` comes back at the next log-in. A windowless instance
+does not answer. The helper then waits up to 45 s for the window's process to
+exit (`TimeoutStopSec=60`).
+
+An installed unit keeps its binary while that binary is still an executable
+file, so a worktree build started against the real profile does not point the
+unit at a build that is deleted with its worktree.
+
+Limits: a desktop session without `graphical-session.target` (most window
+managers started without systemd) never stops the unit at log-out; the window
+dies with its display and the windowless instance starts only through
+**Start at boot** or the next launch. Without a user systemd there is no
+log-out hand-over at all.
+
 ### Start at boot
 
 - `~/.config/systemd/user/forkmesh-headless-<project>.service`:
@@ -231,6 +280,8 @@ usual. Starting it when it already runs does nothing.
   starts at log-in and Settings says how to turn lingering on.
 - Without a user systemd it writes
   `~/.config/autostart/forkmesh-headless-<project>.desktop` instead.
+- With **Keep running** on, lingering is on already (see
+  [Logging out](#logging-out)), and turning start at boot off leaves it on.
 - Either way it writes `~/.config/autostart/forkmesh-tray-<project>.desktop`,
   because a unit started at boot has no display for a tray.
 - Unit names carry `headless` so a project called `source` cannot collide with

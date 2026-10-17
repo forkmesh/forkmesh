@@ -18,6 +18,7 @@ private:
     void refresh();
     void applyStatus(const forkmesh::background::StartStatus &status, const QString &error);
     void setStartAtBoot(bool on);
+    void setKeepRunning(bool on);
 
     QCheckBox *m_keepRunning = nullptr;
     QCheckBox *m_startAtBoot = nullptr;

@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -17,10 +18,12 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QThread>
 
 #include <atomic>
 
 #ifdef Q_OS_UNIX
+#include <cerrno>
 #include <csignal>
 #include <unistd.h>
 #endif
@@ -34,6 +37,7 @@ constexpr char kLegacyLingerMarker[] = "forkmesh-core.linger";
 constexpr char kLegacyEngineName[] = "forkmesh-core";
 
 std::atomic_bool g_stopSignal{false};
+std::atomic_bool g_sessionEnding{false};
 
 bool writeText(const QString &path, const QString &content, QString *error)
 {
@@ -137,9 +141,13 @@ bool startDetached(const QString &program, const QStringList &arguments)
 bool startInOwnScope(const QString &scope, const QString &program, const QStringList &arguments)
 {
 #if defined(Q_OS_LINUX)
-    const bool underService = !qEnvironmentVariableIsEmpty("INVOCATION_ID");
+    const QString runtime = qEnvironmentVariable("XDG_RUNTIME_DIR");
+    const bool userManager =
+        !qEnvironmentVariableIsEmpty("INVOCATION_ID") ||
+        (QDir::isAbsolutePath(runtime) &&
+         QFileInfo::exists(runtime + QStringLiteral("/systemd/private")));
     const QString systemdRun =
-        underService ? QStandardPaths::findExecutable(QStringLiteral("systemd-run")) : QString();
+        userManager ? QStandardPaths::findExecutable(QStringLiteral("systemd-run")) : QString();
     if (!systemdRun.isEmpty() &&
         startDetached(systemdRun, QStringList{QStringLiteral("--user"), QStringLiteral("--scope"),
                                               QStringLiteral("--quiet"), QStringLiteral("--collect"),
@@ -186,6 +194,16 @@ QStringList headlessArguments(const QString &project)
 QStringList trayArguments(const QString &project)
 {
     return {QStringLiteral("--tray"), QStringLiteral("--project"), project};
+}
+
+QString logoutUnitName(const QString &project)
+{
+    return QStringLiteral("forkmesh-logout-") + project + QStringLiteral(".service");
+}
+
+QStringList logoutArguments(const QString &project)
+{
+    return {QStringLiteral("--hand-over-at-logout"), QStringLiteral("--project"), project};
 }
 
 QStringList serviceVariables()
@@ -236,6 +254,33 @@ QString systemdUnit(const QString &binary, const QString &project)
         .join(QLatin1Char('\n'));
 }
 
+QString logoutUnit(const QString &binary, const QString &project)
+{
+    QStringList command{systemdQuote(binary)};
+    for (const QString &argument : logoutArguments(project))
+        command << systemdQuote(argument);
+    return QStringList{
+               QStringLiteral("[Unit]"),
+               QStringLiteral("Description=Keep ForkMesh running after log-out (%1)").arg(project),
+               QStringLiteral("PartOf=graphical-session.target"),
+               QStringLiteral("After=graphical-session.target"),
+               QString(),
+               QStringLiteral("[Service]"),
+               QStringLiteral("Type=oneshot"),
+               QStringLiteral("RemainAfterExit=yes"),
+               QStringLiteral("ExecStop=") + command.join(QLatin1Char(' ')),
+               QStringLiteral("Environment=QT_QPA_PLATFORM=offscreen"),
+               QStringLiteral("UnsetEnvironment=FORKMESH_HOME FORKMESH_PROJECTS_DIR "
+                              "FORKMESH_PROJECT FORKMESH_PROJECT_DIR"),
+               QStringLiteral("TimeoutStopSec=%1").arg(kLogoutWaitMs / 1000 + 15),
+               QString(),
+               QStringLiteral("[Install]"),
+               QStringLiteral("WantedBy=graphical-session.target"),
+               QString(),
+           }
+        .join(QLatin1Char('\n'));
+}
+
 QString headlessDesktopEntry(const QString &binary, const QString &project)
 {
     return QStringList{
@@ -271,12 +316,14 @@ QString trayDesktopEntry(const QString &binary, const QString &project)
         .join(QLatin1Char('\n'));
 }
 
-QString execStartBinary(const QString &unit)
+namespace {
+
+QString execBinary(const QString &unit, QLatin1String key)
 {
     for (const QString &line : unit.split(QLatin1Char('\n'))) {
-        if (!line.startsWith(QLatin1String("ExecStart=")))
+        if (!line.startsWith(key))
             continue;
-        const QString rest = line.mid(10).trimmed();
+        const QString rest = line.mid(key.size()).trimmed();
         if (!rest.startsWith(QLatin1Char('"')))
             return rest.section(QLatin1Char(' '), 0, 0);
         QString out;
@@ -298,6 +345,18 @@ QString execStartBinary(const QString &unit)
         return out;
     }
     return {};
+}
+
+} // namespace
+
+QString execStartBinary(const QString &unit)
+{
+    return execBinary(unit, QLatin1String("ExecStart="));
+}
+
+QString execStopBinary(const QString &unit)
+{
+    return execBinary(unit, QLatin1String("ExecStop="));
 }
 
 QString desktopExecBinary(const QString &entry)
@@ -370,6 +429,11 @@ QString StartManager::systemdUnitPath(const QString &project) const
     return configHome + QStringLiteral("/systemd/user/") + unitName(project);
 }
 
+QString StartManager::logoutUnitPath(const QString &project) const
+{
+    return configHome + QStringLiteral("/systemd/user/") + logoutUnitName(project);
+}
+
 QString StartManager::headlessEntryPath(const QString &project) const
 {
     return configHome + QStringLiteral("/autostart/") + label(project) + QStringLiteral(".desktop");
@@ -418,7 +482,8 @@ void StartManager::releaseLinger() const
     if (!QFileInfo::exists(lingerMarkerPath()))
         return;
     const QStringList units = QDir(QFileInfo(lingerMarkerPath()).absolutePath())
-                                  .entryList({QStringLiteral("forkmesh-headless-*.service")},
+                                  .entryList({QStringLiteral("forkmesh-headless-*.service"),
+                                              QStringLiteral("forkmesh-logout-*.service")},
                                              QDir::Files);
     if (!units.isEmpty())
         return;
@@ -434,9 +499,87 @@ bool StartManager::unitInstalled(const QString &project) const
     return QFileInfo::exists(systemdUnitPath(project));
 }
 
+bool StartManager::keepAcrossLogout(const QString &binary, const QString &project,
+                                    QString *error) const
+{
+    if (!paths::isValidSlug(project)) {
+        if (error)
+            *error = QStringLiteral("invalid project name %1").arg(project);
+        return false;
+    }
+    if (!hasSystemd()) {
+        if (error)
+            *error = QStringLiteral("there is no user systemd to keep it running after log-out");
+        return false;
+    }
+    const QString path = logoutUnitPath(project);
+    const QString current = readText(path);
+    const QString installed = execStopBinary(current);
+    const QString chosen = validBinary(installed) ? installed : binary;
+    if (!validBinary(chosen)) {
+        if (error)
+            *error = QStringLiteral("%1 is not an executable file").arg(chosen);
+        return false;
+    }
+    const QString wanted = logoutUnit(chosen, project);
+    if (current != wanted) {
+        if (!writeText(path, wanted, error))
+            return false;
+        call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("daemon-reload")});
+    }
+    const CommandResult enabled =
+        call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("enable"),
+                                           QStringLiteral("--now"), logoutUnitName(project)});
+    if (!enabled.ok) {
+        if (error)
+            *error = QStringLiteral("systemctl --user enable --now %1 failed: %2")
+                         .arg(logoutUnitName(project), QString::fromUtf8(enabled.output).trimmed());
+        return false;
+    }
+    enableLinger();
+    return true;
+}
+
+void StartManager::dropLogoutHandOver(const QString &project) const
+{
+    if (!paths::isValidSlug(project) || !QFileInfo::exists(logoutUnitPath(project)))
+        return;
+    call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("disable"),
+                                       QStringLiteral("--now"), logoutUnitName(project)});
+    removeFile(logoutUnitPath(project));
+    call(QStringLiteral("systemctl"), {QStringLiteral("--user"), QStringLiteral("daemon-reload")});
+    releaseLinger();
+}
+
+bool StartManager::syncLogoutHandOver(bool keep, const QString &binary, const QString &project,
+                                      QString *error) const
+{
+    if (keep)
+        return keepAcrossLogout(binary, project, error);
+    dropLogoutHandOver(project);
+    return true;
+}
+
+bool StartManager::shuttingDown() const
+{
+    for (const QStringList &arguments :
+         {QStringList{QStringLiteral("is-system-running")},
+          QStringList{QStringLiteral("--user"), QStringLiteral("is-system-running")}}) {
+        if (call(QStringLiteral("systemctl"), arguments).output.trimmed() == "stopping")
+            return true;
+    }
+    const CommandResult preparing = call(
+        QStringLiteral("busctl"),
+        {QStringLiteral("get-property"), QStringLiteral("org.freedesktop.login1"),
+         QStringLiteral("/org/freedesktop/login1"), QStringLiteral("org.freedesktop.login1.Manager"),
+         QStringLiteral("PreparingForShutdown")});
+    return preparing.ok && preparing.output.trimmed() == "b true";
+}
+
 StartStatus StartManager::status(const QString &project) const
 {
     StartStatus status;
+    status.afterLogout = QFileInfo::exists(logoutUnitPath(project)) && lingering();
     const QString unit = systemdUnitPath(project);
     if (QFileInfo::exists(unit)) {
         status.enabled = true;
@@ -591,12 +734,24 @@ bool keepRunning()
 
 void setKeepRunning(bool on)
 {
-    QSettings().setValue(QLatin1String(kKeepRunningSetting), on);
+    QSettings settings;
+    settings.setValue(QLatin1String(kKeepRunningSetting), on);
+    settings.sync();
 }
 
 void noteStopSignal()
 {
     g_stopSignal = true;
+}
+
+void noteSessionEnding()
+{
+    g_sessionEnding = true;
+}
+
+bool sessionEnding()
+{
+    return g_sessionEnding;
 }
 
 bool startHeadless()
@@ -629,7 +784,8 @@ bool handOverAfterWindowClose(bool restarting)
         return false;
     }
     qInfo().noquote() << "ForkMesh keeps running without a window for phones and agents.";
-    launchTray();
+    if (!g_sessionEnding)
+        launchTray();
     return true;
 }
 
@@ -681,6 +837,36 @@ void migrateLegacyEngine()
     }
     for (const QString &step : std::as_const(legacy.steps))
         qInfo().noquote() << "Retired the Go background engine:" << step;
+}
+
+void syncLogoutHandOver()
+{
+    if (!supported() || isBackgroundInstance())
+        return;
+    QString error;
+    if (!StartManager::system().syncLogoutHandOver(keepRunning(), desktopBinaryPath(),
+                                                   paths::projectSlug(), &error))
+        qWarning().noquote() << "ForkMesh may stop when you log out:" << error;
+}
+
+QString handOverAtLogout()
+{
+    if (!supported() || !keepRunning())
+        return QStringLiteral("ForkMesh is not set to keep running without a window.");
+    if (StartManager::system().shuttingDown())
+        return QStringLiteral("The computer is shutting down; ForkMesh stops with it.");
+    const qint64 window = singleInstanceHolderPid();
+    if (!askWindowToHandOver())
+        return QStringLiteral("No ForkMesh window is open.");
+    QElapsedTimer waited;
+    waited.start();
+#ifdef Q_OS_UNIX
+    while (window > 1 && waited.elapsed() < kLogoutWaitMs &&
+           (::kill(pid_t(window), 0) == 0 || errno != ESRCH))
+        QThread::msleep(200);
+#endif
+    return QStringLiteral("ForkMesh closed its window after %1 ms and keeps running without one.")
+        .arg(waited.elapsed());
 }
 
 } // namespace forkmesh::background
