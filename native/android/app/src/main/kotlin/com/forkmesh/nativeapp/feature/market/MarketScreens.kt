@@ -138,6 +138,7 @@ internal fun routeFor(pkg: MarketPackage): Route? = when ((pkg.phoneSurface as? 
     "faceChanger" -> Route.FaceChanger
     "appStoreStatus" -> Route.AppStoreStatus
     "rssReader" -> Route.RssReader
+    "workflows" -> Route.Workflows
     "people" -> Route.People
     "docs" -> Route.Docs
     "notes" -> Route.Notes

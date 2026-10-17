@@ -69,6 +69,10 @@ extension ApiService {
         try await accountApiCall(method, "/api/notes\(suffix)", body)
     }
 
+    public func workflowsApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
+        try await accountApiCall(method, "/api/workflows\(suffix)", body)
+    }
+
     /// A request under the organization task board API, e.g. `tasksApi("GET", "?offset=0")`.
     /// Non-members get 403 `org_member_required`.
     public func tasksApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {

@@ -132,6 +132,7 @@ enum NavigationRoutes {
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }
         fallback(routes, .rssReader) { _ in AnyView(RSSReaderScreen()) }
+        fallback(routes, .workflows) { _ in AnyView(WorkflowsScreen()) }
         fallback(routes, .people) { _ in AnyView(PeopleScreen()) }
         fallback(routes, .docs) { _ in AnyView(DocsScreen()) }
         fallback(routes, .vault) { _ in AnyView(VaultScreen()) }
