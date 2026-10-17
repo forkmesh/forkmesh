@@ -9,8 +9,16 @@
   const SUBREDDIT = /^[a-z0-9_]{2,21}$/i;
   const POST_ID = /^[a-z0-9]{1,12}$/;
   const AUTHOR = /^[A-Za-z0-9_-]{1,20}$/;
-  const VIEW_ATTRIBUTES = ["view-count", "views", "viewcount", "view_count"];
-  const VIEW_TEXT = [/^([\d.,]+\s*[kmb]?)\s+(?:total\s+)?views?$/i, /^(?:total\s+)?views?\s*[:·]?\s*([\d.,]+\s*[kmb]?)$/i];
+  const VIEW_ATTRIBUTES = ["view-count", "views", "viewcount", "view_count", "data-view-count", "data-views", "impression-count", "impressions"];
+  const VIEW_ATTRIBUTE = /(?:^|[-_])(?:view|views|viewcount|impressions?)(?:[-_]?count)?$/i;
+  const VIEW_TEXT = [
+    /^([\d.,]+\s*[kmb]?)\s+(?:total\s+)?(?:views?|impressions?)(?:\s+(?:on|of)\s+.{1,30})?$/i,
+    /^(?:total\s+)?(?:views?|impressions?)(?:\s+count)?\s*[:·]?\s*([\d.,]+\s*[kmb]?)$/i,
+    /^viewed\s+([\d.,]+\s*[kmb]?)\s+times?$/i,
+    /^([\d.,]+\s*[kmb]?)\s+(?:people|users|redditors)\s+(?:have\s+)?(?:viewed|seen)\b.{0,30}$/i,
+  ];
+  const VIEW_ICON = /(?:^|[-_\s])(?:views?|eye|insights?|impressions?|analytics)(?:[-_\s]|$)/i;
+  const VIEW_LABEL_ATTRIBUTES = ["aria-label", "title", "alt", "data-tooltip", "tooltip", "label"];
   const VIEW_SCAN = 3000;
   let watch = { subreddits: new Set(), queries: new Set(), monitored: new Map(), accounts: new Set() };
   let watchAt = 0;
@@ -203,22 +211,51 @@
     return null;
   }
 
-  function viewsIn(root, nested = "") {
-    if (!root) return null;
+  function viewAttribute(node) {
     for (const name of VIEW_ATTRIBUTES) {
-      const value = abbreviated(root.getAttribute?.(name));
+      const value = abbreviated(node.getAttribute?.(name));
       if (value !== null) return value;
     }
+    for (const attribute of node.attributes || []) {
+      if (VIEW_ATTRIBUTE.test(attribute.name)) {
+        const value = abbreviated(attribute.value);
+        if (value !== null) return value;
+      }
+    }
+    return null;
+  }
+
+  function viewIcon(node) {
+    const names = [node.getAttribute?.("icon-name"), node.getAttribute?.("name"), node.getAttribute?.("data-icon"),
+      node.getAttribute?.("aria-label"), typeof node.className === "string" ? node.className : node.className?.baseVal];
+    return names.some((name) => name && VIEW_ICON.test(String(name)));
+  }
+
+  function viewBeside(node) {
+    const children = [...(node.children || [])];
+    if (!children.length || children.length > 4) return null;
+    const own = text(node);
+    const counted = children.map((child) => abbreviated(child.getAttribute?.("number"))).find((value) => value !== null) ?? null;
+    const value = own ? abbreviated(own) : counted;
+    if (value === null) return null;
+    const icon = children.some((child) => viewIcon(child) || [...(child.querySelectorAll?.("[icon-name], svg") || [])].slice(0, 4).some(viewIcon));
+    return icon ? value : null;
+  }
+
+  function viewsIn(root, nested = "") {
+    if (!root) return null;
     const stack = [root];
     let seen = 0;
     while (stack.length && seen < VIEW_SCAN) {
       const node = stack.pop();
       seen += 1;
       const children = [...(node.children || [])];
-      const found = viewLabel(node.getAttribute?.("aria-label")) ?? (children.length ? null : viewLabel(node.textContent));
+      let found = node.getAttribute ? viewAttribute(node) : null;
+      for (const name of VIEW_LABEL_ATTRIBUTES) found ??= viewLabel(node.getAttribute?.(name));
+      found ??= viewLabel(node.textContent) ?? viewBeside(node);
       if (found !== null) return found;
       if (node.shadowRoot) stack.push(node.shadowRoot);
-      for (const child of children) if (!nested || !child.matches?.(nested)) stack.push(child);
+      for (const child of children.reverse()) if (!nested || !child.matches?.(nested)) stack.push(child);
     }
     return null;
   }
@@ -300,32 +337,51 @@
     return watch.monitored.has(postId) ? threadReading(postId, watch.monitored.get(postId)) : null;
   }
 
+  function signedIn() {
+    const link = document.querySelector("#header-bottom-right span.user a[href*=\"/user/\"], #header-bottom-right .user a[href*=\"/user/\"]");
+    return link ? author(String(link.getAttribute("href") || "").split("/user/")[1]?.split("/")[0]) : "";
+  }
+
+  function commentNode(postId, commentId) {
+    const found = document.querySelector(`shreddit-comment[thingid="t1_${commentId}"]`)
+      || document.querySelector(`[thingid="t1_${commentId}"]`)
+      || [...document.querySelectorAll("shreddit-comment[permalink]")].find((node) =>
+        permalinkParts(node.getAttribute("permalink"))?.commentId === commentId);
+    if (found) return { node: found, old: false };
+    const old = document.querySelector(`div.thing[data-fullname="t1_${commentId}"]`) || document.querySelector(`#thing_t1_${commentId}`);
+    return old ? { node: old, old: true } : null;
+  }
+
   function threadReading(postId, commentId) {
-    const reading = { postId, title: "", views: null, score: null, comments: null, commentId, commentViews: null, commentScore: null };
+    const reading = {
+      postId, title: "", views: null, score: null, comments: null, author: "", commentId, commentViews: null, commentScore: null,
+      commentAuthor: "", signedIn: signedIn(), readAs: "",
+    };
     const shreddit = document.querySelector(`shreddit-post[id="t3_${postId}"]`);
     const old = document.querySelector(`div.thing[data-fullname="t3_${postId}"]`);
     if (shreddit) {
       Object.assign(reading, {
         title: String(shreddit.getAttribute("post-title") || ""), score: integer(shreddit.getAttribute("score")),
-        comments: integer(shreddit.getAttribute("comment-count")), views: postViews(shreddit),
+        comments: integer(shreddit.getAttribute("comment-count")), views: postViews(shreddit), author: author(shreddit.getAttribute("author")),
       });
     } else if (old) {
       Object.assign(reading, {
         title: text(old.querySelector("a.title")), score: integer(old.getAttribute("data-score")),
-        comments: integer(old.getAttribute("data-comments-count")), views: postViews(old),
+        comments: integer(old.getAttribute("data-comments-count")), views: postViews(old), author: author(old.getAttribute("data-author")),
       });
     }
-    if (commentId) {
-      const comment = document.querySelector(`shreddit-comment[thingid="t1_${commentId}"]`);
-      const oldComment = document.querySelector(`div.thing[data-fullname="t1_${commentId}"]`);
-      if (comment) {
-        reading.commentScore = integer(comment.getAttribute("score"));
-        reading.commentViews = viewsIn(comment, "shreddit-comment");
-      } else if (oldComment) {
-        reading.commentScore = integer(oldComment.querySelector(".tagline .score.unvoted")?.getAttribute("title"));
-        reading.commentViews = viewsIn(oldComment.querySelector(".entry"));
-      }
+    const comment = commentId ? commentNode(postId, commentId) : null;
+    if (comment?.old) {
+      reading.commentScore = integer(comment.node.querySelector(".tagline .score.unvoted")?.getAttribute("title"));
+      reading.commentViews = viewsIn(comment.node.querySelector(".entry"));
+      reading.commentAuthor = author(comment.node.getAttribute("data-author"));
+    } else if (comment) {
+      reading.commentScore = integer(comment.node.getAttribute("score"));
+      reading.commentViews = viewsIn(comment.node, "shreddit-comment");
+      reading.commentAuthor = author(comment.node.getAttribute("author"));
     }
+    reading.readAs = reading.signedIn
+      || (reading.commentViews !== null && reading.commentAuthor) || (reading.views !== null && reading.author) || "";
     reading.title = reading.title.replace(/\s+/g, " ").trim().slice(0, 300);
     const found = [reading.views, reading.score, reading.comments, reading.commentViews, reading.commentScore]
       .some((value) => value !== null);
@@ -369,7 +425,8 @@
     }
     if (where.kind === "profile") {
       const found = profileItems(where.account, where.tab);
-      return found.length ? { kind: "profile", account: where.account, posts: found } : null;
+      const readAs = signedIn() || (found.some((item) => item.views !== null) ? author(where.account) : "");
+      return found.length ? { kind: "profile", account: where.account, posts: found, readAs } : null;
     }
     let found = posts();
     if (where.kind === "thread") found = found.filter((item) => item.id === where.postId);

@@ -1080,8 +1080,23 @@ window.ForkMeshDashboard.registerPage("marketing", ({
     if (item.postedAt) parts.push(`posted ${relativeTimeLabel(item.postedAt)}`);
     if (item.source === "extension") parts.push("from the browser extension");
     if (!item.monitored && Number.isFinite(item.views)) parts.push(`${fmtFull(item.views)} view${item.views === 1 ? "" : "s"}`);
-    if (!item.monitored && item.checkedAt) parts.push(`read ${relativeTimeLabel(item.checkedAt)}`);
+    if (!item.monitored) parts.push(...redditCommentDetails(item));
+    if (!item.monitored && item.checkedAt) parts.push(`read ${relativeTimeLabel(item.checkedAt)}${item.readAs ? ` as u/${item.readAs}` : ""}`);
     return parts.join(" · ");
+  }
+
+  function redditCommentDetails(item) {
+    const parts = [];
+    if (item.monitorCommentUrl && (Number.isFinite(item.commentViews) || Number.isFinite(item.commentScore))) {
+      const comment = [];
+      if (Number.isFinite(item.commentViews)) comment.push(`${fmtFull(item.commentViews)} view${item.commentViews === 1 ? "" : "s"}`);
+      if (Number.isFinite(item.commentScore)) comment.push(`${item.commentScore.toLocaleString()} point${item.commentScore === 1 ? "" : "s"}`);
+      parts.push(`${item.commentAuthor ? `u/${item.commentAuthor}'s` : "your"} comment: ${comment.join(", ")}`);
+    }
+    const owner = item.monitorCommentUrl ? item.commentAuthor : item.author;
+    const shown = item.monitorCommentUrl ? Number.isFinite(item.commentViews) : Number.isFinite(item.views);
+    if (item.checkedAt && !shown && owner) parts.push(`views show only to u/${owner}: sign in to Reddit as u/${owner} and press Update`);
+    return parts;
   }
 
   function redditViewsChange(item) {
@@ -1107,7 +1122,8 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       if (Number.isFinite(item.commentViews)) comment.push(`${fmtFull(item.commentViews)} view${item.commentViews === 1 ? "" : "s"}`);
       parts.push(`comment: ${comment.join(", ") || "not found on the page"}`);
     }
-    parts.push(`read ${relativeTimeLabel(item.checkedAt)}`);
+    if (!Number.isFinite(item.commentViews)) parts.push(...redditCommentDetails(item).filter((part) => part.startsWith("views show")));
+    parts.push(`read ${relativeTimeLabel(item.checkedAt)}${item.readAs ? ` as u/${item.readAs}` : ""}`);
     return `Monitored · ${parts.join(" · ")}`;
   }
 
@@ -1265,8 +1281,12 @@ window.ForkMeshDashboard.registerPage("marketing", ({
       note: field("note"), replyUrl: field("reply"), rulesChecked: $(`[data-marketing-reddit-rules]`).checked,
       disclosed: $(`[data-marketing-reddit-disclosed]`).checked, monitored: $(`[data-marketing-reddit-monitored]`).checked,
       commentUrl: field("comment") };
-    try { await request(orgPath(`/reddit${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
-      $(`[data-marketing-reddit-dialog]`).close(); message("notice", "Thread saved."); await load(); }
+    try { const saved = await request(orgPath(`/reddit${id ? `/${id}` : ""}`), id ? "PATCH" : "POST", body);
+      $(`[data-marketing-reddit-dialog]`).close();
+      const thread = saved?.thread || {};
+      message("notice", !id && thread.id && thread.createdAt !== thread.updatedAt ? "That thread was already logged; the comment link was added to it." : "Thread saved.");
+      await load();
+      if (!id && thread.id && redditThreadsJob.available && !redditThreadsJob.running) updateRedditThreads([thread.id]); }
     catch (error) {
       const existing = error.status === 409 ? redditThreadById(error.payload?.threadId) : null;
       if (existing) { $(`[data-marketing-reddit-dialog]`).close(); message("notice", "That thread is already logged; here it is."); openRedditThread(existing); }

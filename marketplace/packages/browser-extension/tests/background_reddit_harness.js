@@ -67,12 +67,14 @@ const alarms = [];
 let tabReply = () => null;
 let browserActor = "charlie";
 let listener = null;
+let alarmListener = null;
+const startListeners = [];
 const noop = { addListener() {} };
 const chrome = {
   runtime: {
     id: "ext", getURL: (suffix) => `chrome-extension://ext/${suffix}`,
     onMessage: { addListener(callback) { listener = callback; } },
-    onInstalled: noop, onStartup: noop,
+    onInstalled: { addListener(callback) { startListeners.push(callback); } }, onStartup: noop,
   },
   permissions: { onRemoved: noop, contains: async () => false },
   scripting: {
@@ -103,7 +105,7 @@ const chrome = {
     async sendMessage(id, request) { tabMessages.push([id, request]); return tabReply(request, id); },
   },
   alarms: {
-    onAlarm: noop,
+    onAlarm: { addListener(callback) { alarmListener = callback; } },
     async create(name, options) { alarms.push([name, options]); },
     async clear(name) { alarms.push([name, null]); },
   },
@@ -153,6 +155,10 @@ function message(request, sender) {
   await alice("PUT", "/api/marketing/acme/settings", {
     reddit: { subreddits: ["selfhosted", "git"], queries: ["self-hosted git"] } });
   Object.assign(storage, { sessionToken: "token", account: "charlie" });
+  const autoOff = await message({ type: "fm-reddit-auto-update", on: false }, POPUP);
+  check("the automatic thread update is on until it is switched off", autoOff.ok && autoOff.autoUpdate === false
+    && JSON.stringify(alarms.pop()) === JSON.stringify(["fm-reddit-auto-update", null]));
+  check("a page cannot switch the automatic update", (await message({ type: "fm-reddit-auto-update", on: true }, TAB)).error === "forbidden_sender");
 
   const empty = await message({ type: "fm-reddit-watch" }, TAB);
   check("the cached watch list starts empty", empty.ok && empty.subreddits.length === 0);
@@ -311,7 +317,7 @@ function message(request, sender) {
   const viewsLeaf = node({}, {}, "45 views");
   const reply = node({}, {}, "", [node({}, {}, "Nice tool, 999 views"), node({}, {}, "", [viewsLeaf])]);
   const nested = node({ score: "7" }, {}, "", [node({}, {}, "2 views")], "shreddit-comment");
-  const ownComment = node({ thingid: "t1_pec00w1", score: "3" }, {}, "", [nested, reply], "shreddit-comment");
+  const ownComment = node({ thingid: "t1_pec00w1", score: "3", author: "forkmesh" }, {}, "", [nested, reply], "shreddit-comment");
   const ownPost = node({ id: "t3_1wy1g5i", permalink: "/r/devops/comments/1wy1g5i/weekly_self_promotion_thread/",
     "post-title": "Weekly Self Promotion Thread", author: "AutoModerator", score: "8", "comment-count": "40",
     "view-count": "1.2K" });
@@ -323,8 +329,29 @@ function message(request, sender) {
   const seenMonitor = commentPage.sent.find((item) => item.type === "fm-reddit-observe");
   check("a monitored thread in an unwatched subreddit is read", seenMonitor
     && JSON.stringify(seenMonitor.observation.monitor) === JSON.stringify({ postId: "1wy1g5i",
-      title: "Weekly Self Promotion Thread", views: 1200, score: 8, comments: 40, commentId: "pec00w1",
-      commentViews: 45, commentScore: 3 }), JSON.stringify(seenMonitor?.observation));
+      title: "Weekly Self Promotion Thread", views: 1200, score: 8, comments: 40, author: "AutoModerator", commentId: "pec00w1",
+      commentViews: 45, commentScore: 3, commentAuthor: "forkmesh", signedIn: "", readAs: "forkmesh" }), JSON.stringify(seenMonitor?.observation));
+
+  const iconViews = node({ thingid: "t1_icn001", author: "forkmesh" }, {}, "", [
+    node({}, {}, "Great answer"),
+    node({}, {}, "7 views", [node({}, {}, "7"), node({}, {}, " views")]),
+  ], "shreddit-comment");
+  const besideIcon = node({ thingid: "t1_icn002", author: "forkmesh" }, {}, "", [
+    node({}, {}, "3", [node({ "icon-name": "upvote-outline" }), node({}, {}, "3")]),
+    node({}, {}, "12", [node({ "icon-name": "view-outline" }), node({}, {}, "12")]),
+  ], "shreddit-comment");
+  const counted = node({ thingid: "t1_icn003" }, {}, "", [node({}, {}, "", [node({ "icon-name": "eye" }), node({ number: "1500" })])], "shreddit-comment");
+  const iconPage = await readPage("https://www.reddit.com/r/devops/comments/1wy1g5i/comment/icn001/", {
+    'shreddit-comment[thingid="t1_icn001"]': [iconViews], 'shreddit-comment[thingid="t1_icn002"]': [besideIcon],
+    'shreddit-comment[thingid="t1_icn003"]': [counted],
+  }, monitoredWatch);
+  const iconRead = (commentId) => new Promise((resolve) => iconPage.listeners[0](
+    { type: "fm-reddit-read", postId: "1wy1g5i", commentId }, { id: "ext" }, resolve));
+  const [wrapped, beside, numbered] = [await iconRead("icn001"), await iconRead("icn002"), await iconRead("icn003")];
+  check("a comment's views split across elements are read", wrapped.ok && wrapped.monitor.commentViews === 7
+    && wrapped.monitor.readAs === "forkmesh", JSON.stringify(wrapped));
+  check("a bare number beside a views icon is read, not the score beside the vote icon", beside.monitor.commentViews === 12, JSON.stringify(beside));
+  check("a counted number beside an eye icon is read", numbered.monitor.commentViews === 1500 && numbered.monitor.readAs === "", JSON.stringify(numbered));
   const answered = await new Promise((resolve) => commentPage.listeners[0](
     { type: "fm-reddit-read", postId: "1wy1g5i" }, { id: "ext" }, resolve));
   check("the reader answers the extension's read request", answered.ok && answered.monitor.views === 1200);
@@ -335,9 +362,15 @@ function message(request, sender) {
   await settled();
   const sentByItself = await message({ type: "fm-reddit-stats" }, POPUP);
   const readingPatch = patches().pop();
-  check("a reading on a logged thread is sent to the desk by itself", deskWritesSince(fetchedBeforeReading).length === 1
+  const switchWrites = deskWritesSince(fetchedBeforeReading).filter((item) => item.path === "/api/marketing/acme/settings");
+  check("the account a reading was taken as is offered to the desk's accounts", switchWrites.length === 1
+    && JSON.stringify(switchWrites[0].body) === JSON.stringify({ reddit: { accounts: ["forkmesh"] } })
+    && sentByItself.signedIn === "forkmesh" && /u\/forkmesh was not added/.test(sentByItself.errors[0]?.message || ""), JSON.stringify([switchWrites, sentByItself.errors]));
+  await message({ type: "fm-reddit-clear-errors" }, POPUP);
+  check("a reading on a logged thread is sent to the desk by itself", deskWritesSince(fetchedBeforeReading).filter((item) => !item.path.endsWith("/settings")).length === 1
     && sentByItself.readingsWaiting === 0 && readingPatch.body.views === 1200 && readingPatch.body.commentScore === 3
-    && readingPatch.body.checkedAt > 0 && readingPatch.body.title === "Weekly Self Promotion Thread", JSON.stringify(readingPatch));
+    && readingPatch.body.checkedAt > 0 && readingPatch.body.title === "Weekly Self Promotion Thread"
+    && readingPatch.body.commentAuthor === "forkmesh" && readingPatch.body.readAs === "forkmesh" && readingPatch.body.author === "AutoModerator", JSON.stringify(readingPatch));
   const sentReading = await message({ type: "fm-reddit-sync" }, POPUP);
   check("Send finds no reading left to send", sentReading.lastSync.readings === 0 && sentReading.readingsWaiting === 0);
   const devops = () => rpc({ control: "threads" }).then((reply) => reply.data.rows.find((item) => item.postId === "1wy1g5i"));
@@ -586,6 +619,53 @@ function message(request, sender) {
     && every.read === logged.length && every.threadIds[every.threadIds.length - 1] === linux.id, JSON.stringify(every));
   check("an unknown thread id is refused", (await message({ type: "fm-reddit-threads-update", organization: "acme", threadIds: ["nope"] }, DASHBOARD)).error
     === "reddit_threads_empty");
+
+  const autoOn = await message({ type: "fm-reddit-auto-update", on: true }, POPUP);
+  check("switching the automatic update on sets an hourly alarm", autoOn.ok && autoOn.autoUpdate === true
+    && JSON.stringify(alarms.pop()) === JSON.stringify(["fm-reddit-auto-update", { periodInMinutes: 60 }]));
+  const commented = await alice("POST", "/api/marketing/acme/reddit", { url: "https://www.reddit.com/r/selfhosted/comments/zzz999/comment/yyy111/" });
+  tabReply = (request) => (request.type === "fm-reddit-read" ? { ok: true, monitor: { postId: request.postId, title: "Ask about mirrors", views: null,
+    score: 5, comments: 9, author: "grace_h", commentId: request.commentId, commentViews: 7, commentScore: 2, commentAuthor: "forkmesh", readAs: "forkmesh" } } : null);
+  const autoTabsBefore = tabsCreated.length;
+  const waitAuto = (since) => new Promise((resolve) => {
+    const poll = async () => {
+      const stats = await message({ type: "fm-reddit-stats" }, POPUP);
+      if (stats.lastAuto && stats.lastAuto.at > since && !stats.updating) resolve(stats);
+      else setTimeout(poll, 5);
+    };
+    void poll();
+  });
+  const autoSince = Date.now() - 1;
+  startListeners.forEach((callback) => callback());
+  const autoStats = await waitAuto(autoSince);
+  const autoTabs = tabsCreated.slice(autoTabsBefore);
+  check("loading the extension reads a newly logged thread at its comment, and only threads not read lately",
+    commented.status === 201 && JSON.stringify(autoTabs) === JSON.stringify(["https://www.reddit.com/r/selfhosted/comments/zzz999/comment/yyy111/"])
+    && autoStats.lastAuto.read === 1 && autoStats.lastAuto.sent === 1, JSON.stringify([autoTabs, autoStats.lastAuto]));
+  const autoThread = (await alice("GET", "/api/marketing/acme/reddit")).data.redditThreads.find((item) => item.postId === "zzz999");
+  check("the thread log shows the comment's views and who could see them", autoThread.commentViews === 7 && autoThread.views === null
+    && autoThread.commentAuthor === "forkmesh" && autoThread.readAs === "forkmesh" && autoThread.author === "grace_h", JSON.stringify(autoThread));
+  const fetchedBeforeAlarm = fetched.length;
+  alarmListener({ name: "fm-reddit-auto-update" });
+  await settled();
+  check("the hourly alarm right after does nothing", fetched.length === fetchedBeforeAlarm && tabsCreated.length === autoTabsBefore + 1);
+
+  const switchSince = Date.now() - 1;
+  await message({ type: "fm-reddit-observe", observation: { kind: "profile", account: "grace_h", posts: [], readAs: "grace_h" }, fresh: false }, TAB);
+  const switched = await waitAuto(switchSince);
+  const switchedDesk = (await alice("GET", "/api/marketing/acme/reddit")).data.redditDesk.accounts.map((item) => item.name);
+  check("signing in to Reddit as another account is noticed and adds it to the desk", switched.signedIn === "grace_h"
+    && switchedDesk.join() === "ada_lovelace,forkmesh,grace_h" && switched.accounts.join() === "ada_lovelace,forkmesh,grace_h", JSON.stringify([switched.signedIn, switchedDesk]));
+  const graceThreads = (await alice("GET", "/api/marketing/acme/reddit")).data.redditThreads.filter((item) => item.author === "grace_h");
+  check("then that account's threads are read again as it, though they were read lately", switched.lastAuto.account === "grace_h"
+    && graceThreads.length === 2 && switched.lastAuto.total === 2 && switched.lastAuto.read === 2
+    && tabsCreated.slice(-2).includes("https://www.reddit.com/r/selfhosted/comments/zzz999/comment/yyy111/"), JSON.stringify(switched.lastAuto));
+  const removed = await message({ type: "fm-reddit-accounts-change", remove: "u/grace_h" }, POPUP);
+  check("the popup removes an account", removed.ok && removed.accounts.join() === "ada_lovelace,forkmesh");
+  const readded = await message({ type: "fm-reddit-accounts-change", add: "grace_h" }, POPUP);
+  check("the popup adds an account", readded.ok && readded.accounts.join() === "ada_lovelace,forkmesh,grace_h");
+  check("the popup refuses a name that is not a Reddit username", (await message({ type: "fm-reddit-accounts-change", add: "not a name!" }, POPUP)).error === "invalid_reddit_account");
+  check("a page cannot change the accounts", (await message({ type: "fm-reddit-accounts-change", add: "x_y" }, TAB)).error === "forbidden_sender");
 
   await message({ type: "fm-reddit-error", message: "boom", page: "/r/git/" }, TAB);
   check("errors land in the widget", (await message({ type: "fm-reddit-stats" }, POPUP)).errors[0].message === "/r/git/ boom");

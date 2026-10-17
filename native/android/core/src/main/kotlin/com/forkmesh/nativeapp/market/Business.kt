@@ -525,6 +525,7 @@ data class MarketingOverview(
     val redditThreads: List<MarketingRecord> = emptyList(),
     val redditSubreddits: List<MarketingRedditSubreddit> = emptyList(),
     val redditQueries: List<MarketingNamedLink> = emptyList(),
+    val redditAccounts: List<MarketingNamedLink> = emptyList(),
     val redditSummary: JsonMap = emptyMap(),
     val posts: List<MarketingRecord> = emptyList(),
     val adTotals: List<MarketingAdTotals> = emptyList(),
@@ -586,6 +587,8 @@ data class MarketingOverview(
 
     val redditQueriesText: String get() = redditQueries.joinToString("\n") { it.name }
 
+    val redditAccountsText: String get() = redditAccounts.joinToString("\n") { it.name }
+
     fun replacing(item: MarketingContent): MarketingOverview = copy(content = content.map { if (it.id == item.id) item else it })
 
     fun replacing(ad: MarketingCampaignAd): MarketingOverview = copy(ads = ads.map { if (it.id == ad.id) ad else it })
@@ -628,6 +631,7 @@ data class MarketingOverview(
                 redditThreads = records("redditThreads", MarketingKind.REDDIT_THREAD),
                 redditSubreddits = desk.maps("subreddits").map(MarketingRedditSubreddit::fromJson),
                 redditQueries = desk.maps("queries").map { MarketingNamedLink(it.str("query"), it.str("query"), it.str("url")) },
+                redditAccounts = desk.maps("accounts").map { MarketingNamedLink(it.str("name"), it.str("name"), it.str("url")) }.filter { it.name.isNotEmpty() },
                 redditSummary = desk.obj("summary"),
                 posts = records("posts", MarketingKind.POST),
                 adTotals = adsSummary.maps("currencies").map(MarketingAdTotals::fromJson),

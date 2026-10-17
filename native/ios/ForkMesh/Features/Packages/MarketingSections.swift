@@ -781,6 +781,23 @@ struct MarketingRedditSection: View {
             Text("Read each subreddit's rules, disclose who you work for, and link with the tagged landing link.")
         }
         Section {
+            if overview.redditAccounts.isEmpty {
+                Text("No Reddit accounts yet.").foregroundStyle(.secondary)
+            }
+            ForEach(overview.redditAccounts) { account in
+                if let url = URL(string: account.url) {
+                    Link("u/" + account.name, destination: url)
+                } else {
+                    Text("u/" + account.name)
+                }
+            }
+            if overview.canManageSettings, let draft = model.newDraft(.redditWatch) {
+                Button("Edit accounts", systemImage: "person.crop.circle") { present(.form(draft)) }
+            }
+        } header: {
+            Text("Your accounts")
+        }
+        Section {
             ForEach(overview.redditSubreddits) { subreddit in
                 HStack {
                     if let url = URL(string: subreddit.url) {
@@ -817,7 +834,10 @@ struct MarketingRedditSection: View {
                                 present(.form(MarketingDraft(kind: .redditThread, id: thread.id, overview: overview, json: thread.json,
                                                              zone: model.timeZone)))
                             } label: {
-                                MarketingRecordRow(record: thread, overview: overview, working: model.isWorking(thread.id))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    MarketingRecordRow(record: thread, overview: overview, working: model.isWorking(thread.id))
+                                    Text(thread.redditActivity()).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
                             }
                             .buttonStyle(.plain)
                             Button("Copy ChatGPT reply prompt", systemImage: "doc.on.doc") {

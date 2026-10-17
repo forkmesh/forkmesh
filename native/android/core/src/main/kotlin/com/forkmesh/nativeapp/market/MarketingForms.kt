@@ -315,6 +315,7 @@ object MarketingForms {
             MarketingKind.REDDIT_WATCH -> listOf(
                 MarketingField("subreddits", "Subreddits", MarketingFieldKind.ListText, hint = "Comma separated, without r/"),
                 MarketingField("queries", "Searches", MarketingFieldKind.Lines, hint = "One per line"),
+                MarketingField("accounts", "Accounts", MarketingFieldKind.Lines, hint = "Up to 10, without u/"),
             )
             MarketingKind.X_CONNECTION -> listOf(
                 MarketingField("apiKey", "API key", MarketingFieldKind.Secret, required = true),
@@ -577,7 +578,11 @@ object MarketingForms {
         MarketingKind.GOALS -> MarketingDraft.of(kind, overview, overview.settings.obj("analytics"), zone = zone)
         MarketingKind.REDDIT_WATCH -> MarketingDraft.of(
             kind, overview,
-            mapOf("subreddits" to overview.redditSubreddits.map { it.name }, "queries" to overview.redditQueries.map { it.name }), zone = zone,
+            mapOf(
+                "subreddits" to overview.redditSubreddits.map { it.name }, "queries" to overview.redditQueries.map { it.name },
+                "accounts" to overview.redditAccounts.map { it.name },
+            ),
+            zone = zone,
         )
         else -> MarketingDraft.of(kind, overview, zone = zone)
     }

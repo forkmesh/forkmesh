@@ -330,6 +330,7 @@ public enum MarketingForms {
             return [
                 MarketingField("subreddits", "Subreddits", .list, hint: "Comma separated, without r/"),
                 MarketingField("queries", "Searches", .lines, hint: "One per line"),
+                MarketingField("accounts", "Accounts", .lines, hint: "Up to 10, without u/"),
             ]
         case .xConnection:
             return [
@@ -555,6 +556,7 @@ public enum MarketingForms {
         case .goals:
             return ["analytics": .object(body)]
         case .redditWatch:
+            if (body["accounts"]?.strings ?? []).count > 10 { throw MarketingFormError("Up to 10 Reddit accounts.") }
             return ["reddit": .object(body)]
         case .xPost:
             if let content = draft.original["contentId"] { body["contentId"] = content }
@@ -632,6 +634,7 @@ public enum MarketingForms {
             return MarketingDraft(kind: kind, overview: overview, json: [
                 "subreddits": .array(overview.redditSubreddits.map { .string($0.name) }),
                 "queries": .array(overview.redditQueries.map { .string($0.name) }),
+                "accounts": .array(overview.redditAccounts.map { .string($0.name) }),
             ], zone: zone)
         default: return MarketingDraft(kind: kind, overview: overview, zone: zone)
         }

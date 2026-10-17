@@ -540,6 +540,7 @@ REDDIT_HISTORY_LIMIT = 180
 REDDIT_HISTORY_MERGE_MS = 30 * 60 * 1000
 REDDIT_MONITOR_FIELDS = (("views", 0), ("score", -REDDIT_COUNT_LIMIT), ("comments", 0),
                          ("commentViews", 0), ("commentScore", -REDDIT_COUNT_LIMIT))
+REDDIT_READER_FIELDS = ("commentAuthor", "readAs")
 REDDIT_IDEA_LIMIT = 12
 REDDIT_TOPIC_LIMIT = 12
 REDDIT_TOPIC_MIN_THREADS = 2
@@ -2676,6 +2677,7 @@ def _reddit_thread_data(data, existing=None):
 
 
 def _reddit_watched_comment(data, result, creating):
+    before = result.get("commentUrl") or ""
     linked = _reddit_comment_url(data.get("url")) if "url" in data else None
     if _clean(data.get("commentUrl"), 1000):
         comment = _reddit_comment_url(data.get("commentUrl"))
@@ -2692,6 +2694,9 @@ def _reddit_watched_comment(data, result, creating):
             return "reddit_comment_not_in_thread"
         comment = None
     result["commentUrl"] = comment["url"] if comment else ""
+    if before and result["commentUrl"] != before:
+        for key in ("commentViews", "commentScore", "commentAuthor"):
+            result.pop(key, None)
     if "monitored" in data or creating:
         result["monitored"] = data.get("monitored") is True
     return ""
@@ -2716,6 +2721,12 @@ def _reddit_monitor_fields(data, result, creating):
     for key, _ in REDDIT_MONITOR_FIELDS:
         if point[key] is not None:
             result[key] = point[key]
+    for key in REDDIT_READER_FIELDS:
+        name = _reddit_author(data.get(key)) if key in data else ""
+        if name is None:
+            return "invalid_reddit_" + key.lower()
+        if name:
+            result[key] = name
     result["checkedAt"] = checked
     if last and checked - _integer(last.get("at")) < REDDIT_HISTORY_MERGE_MS:
         history[-1] = {key: (point[key] if point.get(key) is not None else last.get(key))
@@ -2856,6 +2867,7 @@ async def _reddit_thread_project(runtime, row, attribution):
         "source": _choice(data.get("source"), REDDIT_SOURCES, "manual"),
         "monitored": data.get("monitored") is True,
         "commentUrl": str(data.get("commentUrl") or ""),
+        **{key: str(data.get(key) or "") for key in REDDIT_READER_FIELDS},
         "checkedAt": max(0, _integer(data.get("checkedAt"))),
         "history": _reddit_history(data.get("history")),
         "createdBy": str(row.get("created_by_name") or ""),
@@ -6110,6 +6122,13 @@ async def _save_reddit_thread(runtime, row, org_bi, org_name, account_bi, actor,
         "SELECT thread_id FROM marketing_reddit_threads WHERE org_bi=? AND post_bi=?",
         org_bi, post_bi)
     if duplicate and (not row or duplicate["thread_id"] != row["thread_id"]):
+        if not row and envelope.get("commentUrl"):
+            merged = await _reddit_thread_row(runtime, org_bi, duplicate["thread_id"])
+            kept = await runtime.open(merged.get("data")) if merged else None
+            if isinstance(kept, dict) and kept.get("commentUrl") != envelope["commentUrl"]:
+                return await _save_reddit_thread(
+                    runtime, merged, org_bi, org_name, account_bi, actor,
+                    {"commentUrl": envelope["commentUrl"]})
         return _response(runtime, {"error": "reddit_thread_exists",
                                    "threadId": duplicate["thread_id"]}, 409)
     now = runtime.now()

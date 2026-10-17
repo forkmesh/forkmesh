@@ -79,6 +79,8 @@ class PackagesException(val code: String, val status: Int = 0, val fields: Map<S
             "invalid_subreddit" -> "That is not a subreddit name."
             "too_many_reddit_watch" -> "Up to 40 subreddits and 40 searches."
             "invalid_reddit_query" -> "Searches are up to 120 characters."
+            "invalid_reddit_account" -> "That is not a Reddit username."
+            "too_many_reddit_accounts" -> "Up to 10 Reddit accounts."
             "invalid_post_url" -> "Paste the https link of the post."
             "ready_post_changed" -> "Herald replaced that post. The card shows the current one."
             "ready_post_not_found" -> "That post was already marked posted or skipped."

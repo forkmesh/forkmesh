@@ -359,6 +359,21 @@ page.
   account's change notice, and a 15-second check for four minutes). Before
   1.42.0 only monitored threads were ever read again, and only after **Send**
   in the extension's popup, so the log looked frozen.
+- **Comment links and who can see the views** (1.43.0, extension 2.25.0).
+  Logging a comment link for a post that is already logged attaches the
+  comment to that thread (200) instead of refusing it, unless it is already
+  the thread's comment (409). Changing a thread's comment clears the old
+  comment's numbers. A reading `PATCH` may carry `commentAuthor` and `readAs`
+  (Reddit usernames: the comment's author and the account the extension was
+  signed in as); a new reading without them keeps the stored ones. Before
+  1.43.0 the desktop's Activity column and the web log showed a logged
+  comment's views only on monitored threads, so a comment link with 7 views
+  showed nothing. Now every platform shows "your comment: 7 views" (or
+  "u/<name>'s comment"), "read … as u/<name>", and, when the views were not
+  visible, "views show only to u/<author>", because Reddit shows them only to
+  the account that posted. The desktop's watch list dialog, the web watch
+  list, the iPhone and Android watch forms and the extension's popup all edit
+  the same 10 accounts.
 - **Your posts**: the `reddit` posted links (see Posted links), newest first,
   with views, points and comments and when they were read. **Add post** logs
   one by hand (address, title, posting day, numbers, note; numbers that

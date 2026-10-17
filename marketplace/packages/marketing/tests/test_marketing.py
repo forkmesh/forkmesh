@@ -1600,6 +1600,40 @@ def test_monitored_reddit_threads_keep_a_view_history_and_their_comment():
     assert (replied["commentUrl"], replied["monitorCommentId"]) == ("", "def456")
 
 
+def test_a_comment_link_joins_its_logged_thread_and_keeps_who_read_its_views():
+    runtime = Runtime()
+    path = "/api/marketing/acme/reddit"
+    post = call(runtime.use("POST", "charlie", {
+        "url": "https://www.reddit.com/r/devops/comments/1wy1g5i/some_title/"}), path)
+    assert post["status"] == 201
+    joined = call(runtime.use("POST", "charlie", {
+        "url": "https://www.reddit.com/r/devops/comments/1wy1g5i/comment/pec00w1/?utm_source=share",
+        "note": "ignored"}), path)
+    assert joined["status"] == 200
+    thread = joined["data"]["thread"]
+    assert (thread["id"], thread["commentUrl"], thread["monitorCommentId"], thread["note"]) == (
+        post["data"]["thread"]["id"],
+        "https://www.reddit.com/r/devops/comments/1wy1g5i/comment/pec00w1/", "pec00w1", "")
+    again = call(runtime.use("POST", "charlie", {
+        "url": "https://www.reddit.com/r/devops/comments/1wy1g5i/comment/pec00w1/"}), path)
+    assert (again["status"], again["data"]["error"]) == (409, "reddit_thread_exists")
+    item = f"{path}/{thread['id']}"
+    read = call(runtime.use("PATCH", "charlie", {
+        "checkedAt": 1_000_000, "commentViews": 7, "commentScore": 1,
+        "commentAuthor": "u/forkmesh", "readAs": "forkmesh"}), item)["data"]["thread"]
+    assert (read["views"], read["commentViews"], read["commentScore"], read["commentAuthor"],
+            read["readAs"]) == (None, 7, 1, "forkmesh", "forkmesh")
+    other = call(runtime.use("PATCH", "charlie", {
+        "checkedAt": 2_000_000, "score": 4, "readAs": "grace_h"}), item)["data"]["thread"]
+    assert (other["commentViews"], other["commentAuthor"], other["readAs"]) == (7, "forkmesh", "grace_h")
+    denied = call(runtime.use("PATCH", "charlie", {"checkedAt": 3_000_000, "readAs": "not a name!"}), item)
+    assert (denied["status"], denied["data"]["error"]) == (400, "invalid_reddit_readas")
+    moved = call(runtime.use("PATCH", "charlie", {
+        "commentUrl": "https://www.reddit.com/r/devops/comments/1wy1g5i/comment/pzz11/"}), item)["data"]["thread"]
+    assert (moved["commentViews"], moved["commentScore"], moved["commentAuthor"], moved["readAs"]) == (
+        None, None, "", "grace_h")
+
+
 def test_posted_links_are_added_by_hand_on_any_channel_and_keep_their_stats():
     runtime = Runtime()
     path = "/api/marketing/acme/posts"
