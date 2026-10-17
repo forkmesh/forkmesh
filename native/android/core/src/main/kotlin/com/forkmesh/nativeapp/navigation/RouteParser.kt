@@ -30,6 +30,12 @@ object RouteParser {
     )
     private val safeSegment = Regex("^[A-Za-z0-9._-]+$")
     private val commitHash = Regex("^[0-9a-f]{7,64}$")
+    private val marketPackage = Regex("^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+    private const val MARKET_PACKAGE_MAX = 96
+    private val marketReserved = setOf("previews")
+
+    fun marketPackageId(raw: String): String? =
+        raw.takeIf { it.length <= MARKET_PACKAGE_MAX && it !in marketReserved && marketPackage.matches(it) }
 
     fun isUniversalLinkHost(host: String): Boolean = host.lowercase() in universalLinkHosts
 
@@ -72,8 +78,13 @@ object RouteParser {
         if (scheme != "https") return null
         val host = uri.host ?: return null
         if (!isUniversalLinkHost(host)) return null
-        val stack = routes(pathSegments, query, me) ?: return null
+        val stack = sharedPackage(pathSegments) ?: routes(pathSegments, query, me) ?: return null
         return ParsedLink(explicitProject ?: projectId(host), stack, explicitProject != null)
+    }
+
+    private fun sharedPackage(segments: List<String>): List<Route>? {
+        if (segments.size != 2 || segments[0] != "market") return null
+        return marketPackageId(segments[1])?.let { stack(Route.Package(it)) }
     }
 
     fun routes(segments: List<String>, query: Map<String, String> = emptyMap(), me: String = ""): List<Route>? {

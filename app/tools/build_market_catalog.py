@@ -39,6 +39,7 @@ ONBOARDING_END = "<!-- market:onboarding:end -->"
 INDENT = " " * 8
 APP_URL = "https://app.forkmesh.com"
 SOURCE_URL = APP_URL + "/forkmesh/forkmesh/tree/main/marketplace"
+SHARE_URL = "https://forkmesh.com/market"
 
 # The desktop Market groups the manifest's package type into one of its
 # category tabs (MainWindowMarket.cpp). The landing page shows the same
@@ -150,6 +151,23 @@ def trust_badges(manifest: dict) -> list[str]:
 
 
 MARKET_PREVIEW_ROOT = "/market/previews"
+
+
+def share_url(package_id: str) -> str:
+    return f"{SHARE_URL}/{package_id}"
+
+
+def render_share(manifest: dict) -> list[str]:
+    url = escape(share_url(manifest["id"]))
+    name = escape(manifest["name"])
+    return [
+        '  <p class="market-share">',
+        f'    <button type="button" class="market-share-button" data-market-share="{url}"'
+        f' data-market-share-name="{name}">Share<span class="visually-hidden"> {name}</span></button>',
+        f'    <button type="button" class="market-share-button" data-market-copy-link="{url}">'
+        f'Copy link<span class="visually-hidden"> to {name}</span></button>',
+        "  </p>",
+    ]
 
 
 def screenshot_url(directory: str, path: str) -> str:
@@ -308,6 +326,7 @@ def render_card(manifest: dict, children: list[dict] | None = None) -> list[str]
     if children:
         lines.extend(render_nested(children))
 
+    lines.extend(render_share(manifest))
     lines.extend(
         [
             f'  <a class="market-repository" href="{SOURCE_URL}/{escape(directory)}">'

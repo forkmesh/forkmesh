@@ -29,9 +29,15 @@ public enum RouteParser {
 
     private static let safeSegment = try! NSRegularExpression(pattern: "^[A-Za-z0-9._-]+$")
     private static let commitHash = try! NSRegularExpression(pattern: "^[0-9a-f]{7,64}$")
+    private static let packageIdPattern = try! NSRegularExpression(pattern: "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+    static let marketReservedSegments: Set<String> = ["previews"]
 
     public static func isUniversalLinkHost(_ host: String) -> Bool {
         universalLinkHosts.contains(host.lowercased())
+    }
+
+    public static func isPackageId(_ id: String) -> Bool {
+        id.count <= 96 && !marketReservedSegments.contains(id) && matches(packageIdPattern, id)
     }
 
     public static func projectId(forHost host: String) -> String {
@@ -69,6 +75,8 @@ public enum RouteParser {
         case "ledger.html": return segments.count == 1 ? [.ledger(section: nil)] : nil
         case "market.html": return segments.count == 1 ? [.market(filter: nil)] : nil
         case "status.html": return segments.count == 1 ? [.status] : nil
+        case "market" where segments.count == 2 && first == "market":
+            return isPackageId(segments[1]) ? stack(for: .package(id: segments[1])) : nil
         default: break
         }
         guard segments.count >= 2 else { return nil }

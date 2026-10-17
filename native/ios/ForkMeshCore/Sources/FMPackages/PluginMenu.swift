@@ -13,6 +13,14 @@ public enum PluginMenu {
 
     public static let feedbackLabel = "Send feedback or report a bug"
 
+    public static let shareLabel = "Share…"
+
+    public static let copyLinkLabel = "Copy link"
+
+    public static let linkCopiedNotice = "Link copied"
+
+    public static let shareHost = "forkmesh.com"
+
     public static let homeKinds: Set<Route.Kind> = [
         .teammates, .shortcuts, .notes, .tasks, .calendar, .timers, .desktops, .hosts, .network,
         .crm, .crmOrg, .marketing, .analytics, .competitors, .ledger, .vault, .coves,
@@ -49,5 +57,19 @@ public enum PluginMenu {
 
     public static func rateLabel(_ name: String, rated: Bool) -> String {
         rated ? "Edit your rating of \(name)" : "Rate \(name)"
+    }
+
+    public static func shareURL(packageId: String) -> URL? {
+        let id = packageId.dartTrimmed.lowercased()
+        guard RouteParser.isPackageId(id) else { return nil }
+        return URL(string: "https://\(shareHost)/market/\(id)")
+    }
+
+    public static func shareSubject(_ name: String) -> String {
+        "\(name) on ForkMesh"
+    }
+
+    public static func shareMessage(_ name: String) -> String {
+        "Get \(name) from the ForkMesh Market."
     }
 }

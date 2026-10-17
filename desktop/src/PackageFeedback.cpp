@@ -10,6 +10,7 @@
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSysInfo>
 #include <QUrlQuery>
 #include <QVBoxLayout>
@@ -140,6 +141,18 @@ QUrl packageRatingUrl(const QString &origin, const QString &marketplaceId,
     url.setQuery(query);
     url.setFragment(QString());
     return url;
+}
+
+QUrl packageShareUrl(const QString &marketplaceId, const QString &packageId)
+{
+    static const QRegularExpression idPattern(QStringLiteral(
+        "^(?=.{1,96}$)[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"));
+    const QString market = marketplaceId.trimmed().toLower();
+    const QString id = packageId.trimmed().toLower();
+    if ((!market.isEmpty() && market != QLatin1String("forkmesh")) ||
+        id == QLatin1String("previews") || !idPattern.match(id).hasMatch())
+        return {};
+    return QUrl(QStringLiteral("https://forkmesh.com/market/") + id);
 }
 
 PackageFeedbackDialog::PackageFeedbackDialog(const PackageFeedbackReport &base,

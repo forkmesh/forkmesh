@@ -44,6 +44,8 @@ run_worker_first = [
   "/docs/*",
   "/features",
   "/market",
+  "/market/*",
+  "!/market/previews/*",
   "/ecosystem",
   "/ecosystem/*",
   "/press",

@@ -44,8 +44,9 @@ const HACKATHON_APP_DOCUMENTS = /^\/hackathon\/(?:join|squad|challenge|projects)
 // link, so it is proxied in place rather than redirected.
 const PITCH_DECK_DOCUMENTS = /^\/pitch-deck\/[a-z0-9]{10,40}\/?$/;
 const ECOSYSTEM_PROJECT = /^\/ecosystem\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\/?$/;
+const MARKET_PACKAGE = /^\/market\/(?!previews\/?$)(?=[^/]{1,96}\/?$)[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*\/?$/;
 
-const WWW_PREFIXES = ["/assets/", "/favicon/", "/blog/", "/docs/"];
+const WWW_PREFIXES = ["/assets/", "/favicon/", "/blog/", "/docs/", "/market/previews/"];
 const FEED_PATHS = new Set([
   "/rss.xml",
   "/feed.xml",
@@ -706,6 +707,12 @@ export default {
     if (ECOSYSTEM_PROJECT.test(path)) {
       const pageUrl = new URL(request.url);
       pageUrl.pathname = "/ecosystem";
+      pageUrl.search = "";
+      return captureAttribution(request, env, ctx, await asset(new Request(pageUrl, request), env));
+    }
+    if (MARKET_PACKAGE.test(path)) {
+      const pageUrl = new URL(request.url);
+      pageUrl.pathname = "/market";
       pageUrl.search = "";
       return captureAttribution(request, env, ctx, await asset(new Request(pageUrl, request), env));
     }

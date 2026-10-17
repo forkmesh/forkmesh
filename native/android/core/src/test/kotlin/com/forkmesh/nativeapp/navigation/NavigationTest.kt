@@ -137,6 +137,29 @@ class NavigationTest {
         assertEq(null, GuestGate.action(Route.Docs, guest = true))
     }
 
+    fun testSharedPluginLinksOpenThePackageOverTheMarket() {
+        val stack = listOf(Route.Market(null), Route.Package("face-changer"))
+        for (host in listOf("forkmesh.com", "app.forkmesh.com", "app.next.forkmesh.com")) {
+            val link = RouteParser.parse("https://$host/market/face-changer")!!
+            assertEq(stack, link.stack, host)
+            assertEq("app.forkmesh.com", link.project, host)
+            assertEq(stack, RouteParser.parse("https://$host/market/face-changer/")!!.stack, host)
+        }
+        assertEq(Route.Package("acme.crm-2"), RouteParser.parse("https://forkmesh.com/market/acme.crm-2")!!.destination)
+        assertEq(RouteParser.stack(Route.Package("notes")), RouteParser.parse("https://forkmesh.com/market/notes")!!.stack)
+        for (bad in listOf(
+            "previews", "previews/notes.png", "previews/notes", "Notes", "9lives", "no_tes", "notes-", "notes/extra",
+            "a%2Fb", "a".repeat(97),
+        )) {
+            assertEq(null, RouteParser.parse("https://forkmesh.com/market/$bad"), bad)
+        }
+        assertEq(null, RouteParser.parse("https://www.forkmesh.com/market/notes"))
+        assertEq(null, RouteParser.parse("http://forkmesh.com/market/notes"))
+        assertEq(listOf(Route.Market(null)), RouteParser.parse("https://forkmesh.com/market.html")!!.stack)
+        assertEq(listOf(Route.Market("notes")), RouteParser.parse("forkmesh://market/notes")!!.stack)
+        assertEq(listOf(Route.Market("installed")), RouteParser.parse("forkmesh://market/installed")!!.stack)
+    }
+
     fun testInstalledAppsLinksAndConsentStayInTheBrowser() {
         assertEq(listOf(Route.InstalledApps), RouteParser.parse("https://app.forkmesh.com/dashboard/apps")!!.stack)
         assertEq(listOf(Route.InstalledApps), RouteParser.parse("https://forkmesh.com/dashboard/apps/")!!.stack)

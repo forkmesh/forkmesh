@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.market
 
+import android.content.Context
+import android.content.Intent
+import com.forkmesh.nativeapp.ui.kit.copyMessageText
 import com.forkmesh.nativeapp.feature.tools.ReportBugSheet
 import com.forkmesh.nativeapp.market.PackageMenu
 import androidx.compose.foundation.background
@@ -99,6 +102,16 @@ private const val DEVICE_UNINSTALL_NOTE = "Uninstalling hides it from the home m
 
 internal fun forgetSharedMarket() {
     sharedMarket = null
+}
+
+private fun sharePackage(context: Context, name: String, url: String) {
+    val send = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, name)
+        .putExtra(Intent.EXTRA_TEXT, url)
+    runCatching {
+        context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }
 
 private fun marketModel(filter: MarketFilter): MarketModel? =
@@ -392,6 +405,14 @@ class PackageScreen(private val packageId: String) : Screen() {
                                 icon = "star",
                             )
                             FmDropdownMenuItem(PackageMenu.FEEDBACK, onClick = { menu = false; feedback = true }, icon = "feedback")
+                            PackageMenu.shareUrl(pkg.id)?.let { url ->
+                                FmDropdownMenuItem(PackageMenu.SHARE, onClick = { menu = false; sharePackage(context, pkg.name, url) }, icon = "share")
+                                FmDropdownMenuItem(
+                                    PackageMenu.COPY_LINK,
+                                    onClick = { menu = false; copyMessageText(context, url, packageStatus) },
+                                    icon = "content_copy",
+                                )
+                            }
                             market.uninstallAction(pkg, signedIn)?.let { action ->
                                 HorizontalDivider(thickness = Dp.Hairline, color = Fm.colors.border)
                                 PackageUninstall.requests(pkg, action).forEach { request ->

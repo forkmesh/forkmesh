@@ -2,6 +2,7 @@ import FMApi
 import FMBase
 import FMPackages
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct MarketDestination: View {
@@ -685,6 +686,7 @@ struct PackageDetailScreen: View {
     @State private var accountAction: AccountPackageAction?
     @State private var monitorName = ""
     @State private var monitorURL = ""
+    @State private var notice: FmNotice?
 
     init(client: PackagesClient, packageId: String) {
         self.client = client
@@ -697,6 +699,12 @@ struct PackageDetailScreen: View {
         List {
             if let package = market.package(packageId) {
                 header(package)
+                if notice != nil {
+                    Section {
+                        FmNoticeLine($notice)
+                            .accessibilityIdentifier("market-package-notice")
+                    }
+                }
                 quickRateSection
                 openSection(package)
                 phoneInstallSection(package)
@@ -801,6 +809,24 @@ struct PackageDetailScreen: View {
             Label(PluginMenu.feedbackLabel, systemImage: "exclamationmark.bubble")
         }
         .accessibilityIdentifier("market-package-more-feedback")
+        if let link = PluginMenu.shareURL(packageId: package.id) {
+            Divider()
+            ShareLink(
+                item: link, subject: Text(PluginMenu.shareSubject(package.name)),
+                message: Text(PluginMenu.shareMessage(package.name))
+            ) {
+                Label(PluginMenu.shareLabel, systemImage: "square.and.arrow.up")
+            }
+            .accessibilityIdentifier("market-package-more-share")
+            Button {
+                UIPasteboard.general.items = [[UTType.url.identifier: link, UTType.plainText.identifier: link.absoluteString]]
+                notice = FmNotice(PluginMenu.linkCopiedNotice)
+                FmHaptics.commit()
+            } label: {
+                Label(PluginMenu.copyLinkLabel, systemImage: "link")
+            }
+            .accessibilityIdentifier("market-package-more-copy-link")
+        }
         if let uninstall = market.uninstallAction(package, signedIn: PackagesFeature.signedIn) {
             Divider()
             PackageUninstallMenuItems(package: package, uninstall: uninstall) { (organization: String) in

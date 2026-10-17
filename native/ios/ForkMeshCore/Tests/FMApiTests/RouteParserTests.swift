@@ -169,6 +169,50 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(web("/status.html"), [.status])
     }
 
+    func testMarketShareLinksOpenThePackageUnderTheMarket() {
+        let expected: [Route] = [.market(filter: nil), .package(id: "crm")]
+        for host in RouteParser.universalLinkHosts {
+            XCTAssertEqual(stack("https://\(host)/market/crm"), expected, host)
+            XCTAssertEqual(stack("https://\(host)/market/crm/"), expected, host)
+        }
+        XCTAssertEqual(web("/market/rss-reader"), [.market(filter: nil), .package(id: "rss-reader")])
+        XCTAssertEqual(web("/market/acme.status-page2"), [.market(filter: nil), .package(id: "acme.status-page2")])
+        XCTAssertEqual(stack("forkmesh://market/crm"), expected)
+        let longest = String(repeating: "a", count: 96)
+        XCTAssertEqual(web("/market/\(longest)"), [.market(filter: nil), .package(id: longest)])
+    }
+
+    func testMarketPathsThatAreNotPackagesFallThroughToSafari() {
+        XCTAssertNil(web("/market"))
+        XCTAssertNil(web("/market/"))
+        XCTAssertNil(web("/market/previews"))
+        XCTAssertNil(web("/market/previews/"))
+        XCTAssertNil(web("/market/previews/crm.png"))
+        XCTAssertNil(web("/market/crm/reviews"))
+        XCTAssertNil(web("/market/CRM"))
+        XCTAssertNil(web("/market/1crm"))
+        XCTAssertNil(web("/market/crm-"))
+        XCTAssertNil(web("/market/crm--x"))
+        XCTAssertNil(web("/market/crm_x"))
+        XCTAssertNil(web("/market/crm.png.."))
+        XCTAssertNil(web("/market/" + String(repeating: "a", count: 97)))
+        XCTAssertEqual(web("/market.html"), [.market(filter: nil)])
+    }
+
+    func testPackageIdsFollowTheMarketplaceRule() {
+        XCTAssertTrue(RouteParser.isPackageId("crm"))
+        XCTAssertTrue(RouteParser.isPackageId("video-mix-dj-studio"))
+        XCTAssertTrue(RouteParser.isPackageId("acme.tools"))
+        XCTAssertTrue(RouteParser.isPackageId(String(repeating: "a", count: 96)))
+        XCTAssertFalse(RouteParser.isPackageId(String(repeating: "a", count: 97)))
+        XCTAssertFalse(RouteParser.isPackageId(""))
+        XCTAssertFalse(RouteParser.isPackageId("previews"))
+        XCTAssertFalse(RouteParser.isPackageId("Crm"))
+        XCTAssertFalse(RouteParser.isPackageId("-crm"))
+        XCTAssertFalse(RouteParser.isPackageId("crm/x"))
+        XCTAssertFalse(RouteParser.isPackageId("crm x"))
+    }
+
     func testAnythingElseFallsThroughToSafari() {
         XCTAssertNil(web("/"))
         XCTAssertNil(web("/pricing.html"))

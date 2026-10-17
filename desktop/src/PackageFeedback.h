@@ -47,6 +47,7 @@ PackageFeedbackOutcome packageFeedbackOutcome(int httpStatus,
                                               const QString &networkError);
 QUrl packageRatingUrl(const QString &origin, const QString &marketplaceId,
                       const QString &packageId);
+QUrl packageShareUrl(const QString &marketplaceId, const QString &packageId);
 
 using PackageFeedbackReplyHandler =
     std::function<void(int, const QByteArray &, const QString &)>;
