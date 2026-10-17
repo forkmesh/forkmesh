@@ -13258,6 +13258,16 @@ SCHEMA_PRE_CREATE_ALTER_STATEMENTS = [
     "ALTER TABLE runner_login_sessions ADD COLUMN term_rows INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE runner_availability ADD COLUMN features TEXT NOT NULL DEFAULT ''",
     "DROP INDEX IF EXISTS idx_runner_login_sessions_active",
+    "ALTER TABLE repo_action_jobs ADD COLUMN event TEXT NOT NULL DEFAULT 'push'",
+    "ALTER TABLE repo_action_jobs ADD COLUMN workflow TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN ref TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN before_oid TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN payload TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN token_hash TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE repo_action_jobs ADD COLUMN pushed_commit TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE runner_nodes ADD COLUMN actions_trusted INTEGER NOT NULL DEFAULT 0",
 ]
 
 # Post-CREATE column additions for tables that predate them. Idempotent: a
@@ -13414,7 +13424,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "10fa5453dc8a96ce2e6ddaaf856cad1eb790120ee6e9218b92c067248b100bf0"
+    "bd23d448215d983ffe1f306a258fa0c4918fb74df8b099c19f7632986f37a6b5"
 )
 
 
