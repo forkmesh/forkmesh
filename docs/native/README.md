@@ -191,6 +191,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
   the pinned deterministic vectors).
 - The iOS app shows no prices, plans or paid features and moves no money
   ([IOS_RELEASE.md](IOS_RELEASE.md), "App Review: nothing paid on iOS").
+- The **Phone Security** package (`phone-security`) is the phones' checkup,
+  the counterpart of the desktop's Security package; checks, rules and code
+  are in [../marketplace/phone-security.md](../marketplace/phone-security.md).
 
 ## Traps
 

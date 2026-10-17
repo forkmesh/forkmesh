@@ -157,6 +157,26 @@ Detects Meta smart glasses from Bluetooth advertisements; no API.
   a fixed hashed angle per device, real bearing for followed glasses).
 - Prefs: `glassesAlert.range`, `glassesAlert.watching`, `glassesAlert.keepAwake`.
 
+### Phone Security (`PhoneSecurity*.swift`, package `phone-security`)
+
+The phone checkup; the check table and severity choices are in
+[`docs/marketplace/phone-security.md`](../../../docs/marketplace/phone-security.md).
+
+- `PhoneSecurityFacts` holds what the app's `PhoneSecurityProbe` read; a `nil` field makes its
+  check Unavailable. `PhoneSecurityScanner.scan` is pure, so tests feed it fixtures.
+- `PhoneSecurityCatalog` lists the checks, `PhoneSecurityPaths` the jailbreak paths, system links,
+  injected-library markers and injection variables, `PhoneSecurityExplanations` the plain-language
+  text, and `PhoneSecurityPolicy.newestIOSMajor` the newest iOS major (bump it with each release).
+- `PhoneSecurityReport` sorts worst first and gives the filters, counts, category list, search,
+  headline and the desktop's summary wording.
+- `PhoneSecurityProbe` (app) reads LocalAuthentication, notification settings, the Info.plist,
+  `CFNetworkCopySystemProxySettings`, dyld's image list, `sysctl` for `P_TRACED`, `lstat` and
+  file existence, and permission statuses. The sandbox test creates a uniquely named file in
+  `/private` and unlinks it at once; it only succeeds on a jailbroken phone.
+- `PhoneSecurityScreen` (app) shows the headline, filters with counts, a category menu, search and
+  a detail sheet whose fix opens ForkMesh's Settings page or its notification settings, or lists
+  steps for system settings iOS cannot link to.
+
 ### Speech Playground (`SpeechModels.swift`, package `speech`)
 
 On-device text to speech. `SpeechPlaygroundModel` picks `SpeechVoices.best` (natural voices
