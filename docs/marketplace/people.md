@@ -69,6 +69,12 @@ All four apps call the same routes:
   Android `Route.Dm`, the desktop's `startDirectMessageWith`, the web's
   `/chat?dm=<name>`. People adds no server code.
 
+The iPhone's `accountCall` builds its URL with `pathWithQueryURL`, so
+`?view=world` and `?viewer=` stay a query. Built with `url(path)` the `?` was
+escaped into the path, the server answered `/api/accounts/users%3Fview=world`
+as a lookup of an account by that name (`{"ok":true,"exists":false}`), and
+the page showed every ring empty with no error.
+
 ## Where the code lives
 
 | Platform | Logic | Screen |

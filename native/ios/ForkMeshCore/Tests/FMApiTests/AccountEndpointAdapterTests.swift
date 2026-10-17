@@ -22,6 +22,17 @@ final class AccountEndpointAdapterTests: XCTestCase {
     }
 
     @MainActor
+    func testAQueryInThePathStaysAQuery() async throws {
+        let http = apiRouteByPath { path, query, _ in
+            path == "/api/accounts/users" && query["view"] == "world" ? apiJSON(["ok": true, "users": [["name": "ada"]]]) : nil
+        }
+        let api = makeTestApi(http)
+        let map = try await api.accountCall("GET", "/api/accounts/users?view=world", nil)
+        XCTAssertEqual(map["users"]?.objects.count, 1)
+        XCTAssertEqual(http.requests[0].apiRawQuery, "view=world")
+    }
+
+    @MainActor
     func testErrorsCarryTheServerCodeAndStatus() async {
         let http = apiRouteByPath { path, _, _ in
             path.hasSuffix("ssh-keys") ? apiJSON(["error": "ssh_key_limit_reached"], status: 429) : nil
