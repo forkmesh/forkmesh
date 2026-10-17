@@ -2328,6 +2328,12 @@ public:
                                 durationMs);
     }
     bool testRunShortcut(const QString &filePath) { return runShortcut(filePath); }
+    int testQueueShortcut(const QString &filePath) { return queueShortcut(filePath); }
+    bool testUnqueueShortcut(const QString &filePath) { return unqueueShortcut(filePath); }
+    int testShortcutQueuePosition(const QString &filePath) const
+    {
+        return shortcutQueuePosition(filePath);
+    }
     QString testScrubTermShortcutPath(int repoIndex) const
     {
         return scrubTermShortcutPath(repoIndex);
@@ -8424,6 +8430,14 @@ private:
     bool runShortcut(QString filePath, int repoIndex = -1,
                      QMap<QString, QString> environmentOverrides = {});
     bool shortcutRunning(const QString &filePath) const;
+    int queueShortcut(QString filePath, int repoIndex = -1);
+    bool unqueueShortcut(const QString &filePath);
+    void clearShortcutQueue();
+    int shortcutQueuePosition(const QString &filePath) const;
+    bool shortcutRepoBusy(const QString &repo) const;
+    QString shortcutRepoKey(int repoIndex) const;
+    void startNextQueuedShortcuts();
+    void refreshShortcutQueueLabel();
     QProcess *shortcutProcess(const QString &filePath) const;
     forkmesh::localcontrol::insights::ShortcutRun *shortcutRunById(int id);
     void appendShortcutOutput(int runId, const QString &chunk);
@@ -12611,6 +12625,16 @@ private:
     QList<ShortcutProgress> m_shortcutProgress;
     QHash<int, QProcess *> m_shortcutProcesses;
     QHash<QString, int> m_shortcutRestarts;
+    struct QueuedShortcut
+    {
+        QString path;
+        QString repo;
+        QString file;
+        QString name;
+    };
+    QList<QueuedShortcut> m_shortcutQueue;
+    QLabel *m_shortcutQueueLabel = nullptr;
+    QPushButton *m_shortcutQueueClear = nullptr;
     QList<forkmesh::localcontrol::insights::ShortcutRun> m_shortcutRuns;
     int m_shortcutRunCounter = 0;
     int m_shortcutShownRun = 0;

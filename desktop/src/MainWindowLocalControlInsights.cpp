@@ -309,6 +309,8 @@ void MainWindow::handleLocalControlInsightsRequest(int connectionId, int request
                          : kind != QLatin1String("file") &&
                                !insightctl::shortcutPrompt(text).isEmpty()},
                     {QStringLiteral("running"), running},
+                    {QStringLiteral("queued"),
+                     skill ? 0 : shortcutQueuePosition(info.absoluteFilePath())},
                     {QStringLiteral("lastOutput"),
                      running ? insightctl::lastOutputLine(live->output) : stats.lastOutput},
                     {QStringLiteral("lastOk"), stats.lastOk},
@@ -445,6 +447,66 @@ void MainWindow::runLocalControlInsightsAction(int connectionId, int requestId,
                          {QStringLiteral("subject"), subject},
                          {QStringLiteral("message"),
                           enabled ? QStringLiteral("Switched on.") : QStringLiteral("Switched off.")}});
+        server->broadcast(QStringLiteral("insights.changed"));
+        return;
+    }
+    if (action == QLatin1String("queueShortcut") || action == QLatin1String("unqueueShortcut")) {
+        const QString repo = subject.section(QLatin1Char('|'), 0, 0);
+        const QString scope = subject.section(QLatin1Char('|'), 1, 1);
+        const QString file = subject.section(QLatin1Char('|'), 2);
+        int repoIndex = -1;
+        const QString dir = localControlShortcutDir(repo, scope, &repoIndex);
+        const QFileInfo info(dir.isEmpty() ? QString() : QDir(dir).filePath(file));
+        if (repoIndex < 0 || !info.isFile()) {
+            server->respondError(connectionId, requestId, QStringLiteral("unknown_shortcut"));
+            return;
+        }
+        if (scope != QLatin1String("shortcut") ||
+            insightctl::shortcutKind(info.fileName(), info.isExecutable()) !=
+                QLatin1String("script")) {
+            server->respondError(connectionId, requestId, QStringLiteral("not_a_script"));
+            return;
+        }
+        const QString name =
+            insightctl::parseShortcutMeta(file, readShortcutText(info.absoluteFilePath())).name;
+        if (action == QLatin1String("unqueueShortcut")) {
+            const bool removed = unqueueShortcut(info.absoluteFilePath());
+            logSystem(QStringLiteral("Shortcut %1 in %2 taken out of the queue by %3.")
+                          .arg(file, repo, who));
+            server->respond(connectionId, requestId,
+                            {{QStringLiteral("started"), false},
+                             {QStringLiteral("action"), action},
+                             {QStringLiteral("subject"), subject},
+                             {QStringLiteral("message"),
+                              (removed ? QStringLiteral("Took %1 out of the queue.")
+                                       : QStringLiteral("%1 was not queued."))
+                                  .arg(name)}});
+            return;
+        }
+        const int position = queueShortcut(info.absoluteFilePath(), repoIndex);
+        if (position < 0) {
+            server->respondError(connectionId, requestId, QStringLiteral("shortcut_not_started"));
+            return;
+        }
+        logSystem(QStringLiteral("Shortcut %1 in %2 %3 on the desktop for %4.")
+                      .arg(file, repo,
+                           position > 0 ? QStringLiteral("queued") : QStringLiteral("started"),
+                           who));
+        QJsonObject answer{{QStringLiteral("started"), position == 0},
+                           {QStringLiteral("queued"), position},
+                           {QStringLiteral("action"), action},
+                           {QStringLiteral("subject"), subject},
+                           {QStringLiteral("message"),
+                            position > 0
+                                ? QStringLiteral("Queued %1: number %2 in line on the desktop.")
+                                      .arg(name)
+                                      .arg(position)
+                                : QStringLiteral("Nothing was running, so %1 started on the "
+                                                 "desktop.")
+                                      .arg(name)}};
+        if (position == 0)
+            answer.insert(QStringLiteral("run"), m_shortcutRunCounter);
+        server->respond(connectionId, requestId, answer);
         server->broadcast(QStringLiteral("insights.changed"));
         return;
     }

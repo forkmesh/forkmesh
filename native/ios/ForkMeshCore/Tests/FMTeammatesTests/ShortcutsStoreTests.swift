@@ -62,6 +62,56 @@ final class ShortcutsStoreTests: XCTestCase {
         XCTAssertEqual(channel.last("insights.run")?.str("token"), "t")
     }
 
+    @MainActor func testOneTapRunPreparesAndRunsWithoutASheet() async throws {
+        let channel = FakeTeamChannel()
+        channel.replies["insights.prepare"] = ["token": "t", "action": "runShortcut", "subject": "f/r|shortcut|ship.sh"]
+        channel.replies["insights.run"] = ["started": true, "message": "Running Ship on the desktop."]
+        channel.replies["insights.shortcuts"] = Self.catalogJSON
+        let store = ShortcutsStore(channel: channel)
+        let entry = ShortcutEntry(json: ["file": "ship.sh", "scope": "shortcut", "name": "Ship", "kind": "script", "runnable": true])
+        let message = try await store.runNow(repo: "f/r", entry: entry)
+        XCTAssertEqual(message, "Running Ship on the desktop.")
+        XCTAssertEqual(channel.last("insights.prepare")?.str("action"), "runShortcut")
+        XCTAssertEqual(channel.last("insights.run")?.str("token"), "t")
+        XCTAssertEqual(channel.last("insights.run")?.str("action"), "runShortcut")
+        XCTAssertEqual(channel.count("insights.shortcuts"), 1)
+    }
+
+    @MainActor func testQueueAndUnqueueUseTheirOwnActions() async throws {
+        let channel = FakeTeamChannel()
+        channel.replies["insights.prepare"] = ["token": "q", "action": "queueShortcut", "subject": "f/r|shortcut|ship.sh"]
+        channel.replies["insights.run"] = ["queued": 1, "message": "Queued Ship: number 1 in line on the desktop."]
+        let store = ShortcutsStore(channel: channel)
+        let entry = ShortcutEntry(json: ["file": "ship.sh", "scope": "shortcut", "name": "Ship", "kind": "script", "runnable": true])
+        XCTAssertTrue(entry.queueable)
+        let message = try await store.queue(repo: "f/r", entry: entry)
+        XCTAssertEqual(message, "Queued Ship: number 1 in line on the desktop.")
+        XCTAssertEqual(channel.last("insights.prepare")?.str("action"), "queueShortcut")
+        XCTAssertEqual(channel.last("insights.prepare")?.str("file"), "ship.sh")
+        channel.replies["insights.prepare"] = ["token": "u", "action": "unqueueShortcut", "subject": "f/r|shortcut|ship.sh"]
+        try await store.unqueue(repo: "f/r", entry: entry)
+        XCTAssertEqual(channel.last("insights.prepare")?.str("action"), "unqueueShortcut")
+        XCTAssertEqual(channel.last("insights.run")?.str("token"), "u")
+    }
+
+    @MainActor func testQueuedPositionAndBusyRepoComeFromTheCatalog() async throws {
+        let channel = FakeTeamChannel()
+        channel.replies["insights.shortcuts"] = [
+            "repo": "f/r", "repos": ["f/r"],
+            "entries": [
+                ["file": "build.sh", "scope": "shortcut", "name": "Build", "kind": "script", "runnable": true, "running": true],
+                ["file": "ship.sh", "scope": "shortcut", "name": "Ship", "kind": "script", "runnable": true, "queued": 2],
+                ["file": "fix.md", "scope": "shortcut", "name": "Fix", "kind": "prompt", "runnable": true],
+            ],
+        ]
+        let store = ShortcutsStore(channel: channel)
+        await store.refresh(repo: "f/r")
+        let catalog = try XCTUnwrap(store.catalog)
+        XCTAssertTrue(store.repoBusy(repo: "f/r"))
+        XCTAssertEqual(catalog.entries.first { $0.file == "ship.sh" }?.queued, 2)
+        XCTAssertEqual(catalog.entries.first { $0.file == "fix.md" }?.queueable, false)
+    }
+
     @MainActor func testChangedEventRefreshesTheShownRepo() async throws {
         let channel = FakeTeamChannel()
         channel.replies["insights.shortcuts"] = Self.catalogJSON

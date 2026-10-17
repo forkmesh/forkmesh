@@ -21,10 +21,19 @@ struct ShortcutsScreen: View {
     let opened: String
 
     @State private var repo = ""
+    @State private var banner = ""
+    @State private var error = ""
+    @State private var working: Set<String> = []
 
     var body: some View {
         List {
             Section {
+                if !banner.isEmpty {
+                    Label(banner, systemImage: "checkmark.circle").foregroundStyle(.green).font(.footnote).frame(maxWidth: .infinity, alignment: .leading).fmMessageTools(banner)
+                }
+                if !error.isEmpty {
+                    Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.footnote).frame(maxWidth: .infinity, alignment: .leading).fmMessageTools(error)
+                }
                 if store.catalog?.onPhone == true {
                     Label(
                         "From this iPhone's copy of the repository. Prompt shortcuts and skills run here; scripts need the desktop.",
@@ -109,8 +118,76 @@ struct ShortcutsScreen: View {
                 if entry.uses > 0 {
                     Text("\(entry.uses)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
+                actions(entry)
             }
         }
+    }
+
+    @ViewBuilder
+    private func actions(_ entry: ShortcutEntry) -> some View {
+        let busy = working.contains(entry.id)
+        if entry.queued > 0 {
+            Text("Queued #\(entry.queued)").font(.caption2).foregroundStyle(.secondary)
+            Button {
+                act(entry) { try await store.unqueue(repo: repo, entry: entry) }
+            } label: {
+                Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .disabled(busy)
+            .accessibilityLabel("Remove \(entry.name) from the queue")
+        } else if entry.queueable, store.repoBusy(repo: repo) {
+            Button {
+                act(entry) { try await store.queue(repo: repo, entry: entry) }
+            } label: {
+                Image(systemName: "text.badge.plus")
+            }
+            .buttonStyle(.borderless)
+            .disabled(busy || repo.isEmpty)
+            .accessibilityLabel("Queue \(entry.name) after the running shortcuts")
+        }
+        if PhoneShortcuts.runsOnPhone(entry) || (entry.runnable && !entry.onPhone) {
+            Button {
+                if entry.onPhone {
+                    act(entry) { try await ShortcutPhoneRun.compose(store: store, repo: repo, entry: entry); return "" }
+                } else {
+                    act(entry) { try await store.runNow(repo: repo, entry: entry) }
+                }
+            } label: {
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "play.fill")
+                }
+            }
+            .buttonStyle(.borderless)
+            .disabled(busy || repo.isEmpty)
+            .accessibilityLabel("Run \(entry.name)")
+            .accessibilityIdentifier("shortcut-run-\(entry.file)")
+        }
+    }
+
+    private func act(_ entry: ShortcutEntry, _ perform: @escaping () async throws -> String) {
+        working.insert(entry.id)
+        Task {
+            defer { working.remove(entry.id) }
+            do {
+                banner = try await perform()
+                error = ""
+            } catch {
+                banner = ""
+                self.error = TeamErrorText.describe(error)
+            }
+        }
+    }
+}
+
+enum ShortcutPhoneRun {
+    @MainActor
+    static func compose(store: ShortcutsStore, repo: String, entry: ShortcutEntry) async throws {
+        let prompt = try await store.phonePrompt(repo: repo, entry: entry)
+        AppNavigator.shared?.router.requestCompose(
+            ComposeTarget(repo: RepoRef(slug: repo), text: prompt, onDevice: true))
     }
 }
 
@@ -283,9 +360,7 @@ struct ShortcutDetailScreen: View {
 
     private func runHere() async {
         do {
-            let prompt = try await store.phonePrompt(repo: repo, entry: entry)
-            AppNavigator.shared?.router.requestCompose(
-                ComposeTarget(repo: RepoRef(slug: repo), text: prompt, onDevice: true))
+            try await ShortcutPhoneRun.compose(store: store, repo: repo, entry: entry)
             error = ""
         } catch {
             self.error = TeamErrorText.describe(error)
