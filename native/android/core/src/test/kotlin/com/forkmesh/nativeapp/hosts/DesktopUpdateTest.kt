@@ -76,13 +76,13 @@ class DesktopUpdateTest {
         assertEq("The computer is restarting.", store.restartComputer(confirmation))
         assertEq("computerRestart", channel.last("update.run").str("action"))
         assertEq(DesktopUpdateStage.Restarting, store.stage)
-        assertEq(listOf("==> Restarting computer", "\$ loginctl reboot"), store.lines)
+        assertEq(listOf("==> Restarting computer", "\$ systemctl reboot"), store.lines)
         assertEq("computerRestart", store.state.kind)
         channel.emit(
             "update.progress",
             mapOf(
                 "run" to 2L, "running" to true, "kind" to "computerRestart",
-                "lines" to listOf("==> Restarting computer", "\$ loginctl reboot"),
+                "lines" to listOf("==> Restarting computer", "\$ systemctl reboot"),
             ),
         )
         assertEq(DesktopUpdateStage.Restarting, store.stage)
