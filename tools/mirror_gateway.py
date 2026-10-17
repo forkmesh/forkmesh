@@ -922,7 +922,9 @@ RUNNER_GRANT_HEADER = "x-forkmesh-runner-grant"
 RUNNER_GRANT_MAX_TTL_MS = 3 * 60 * 60 * 1000
 RUNNER_GRANT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
 RUNNER_AGENT_REF_REST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$")
+RUNNER_BRANCH_REF_REST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 RUNNER_GRANT_MAX_TOKEN = 4096
+RUNNER_PUSH_ACCESS = ("push", "actions-push")
 # A push grant names one ref, so one command is the most a valid push holds.
 RUNNER_PUSH_MAX_COMMANDS = 1
 RUNNER_PUSH_MAX_PREAMBLE_LINES = 64
@@ -938,6 +940,23 @@ def runner_agent_ref(value: Any) -> str:
     rest = ref[len(prefix):]
     if (
         not RUNNER_AGENT_REF_REST_RE.fullmatch(rest)
+        or ".." in rest
+        or "//" in rest
+        or "@{" in rest
+        or rest.endswith(("/", ".lock", "."))
+    ):
+        return ""
+    return ref
+
+
+def runner_branch_ref(value: Any) -> str:
+    ref = str(value or "")
+    prefix = "refs/heads/"
+    if not ref.startswith(prefix):
+        return ""
+    rest = ref[len(prefix):]
+    if (
+        not RUNNER_BRANCH_REF_REST_RE.fullmatch(rest)
         or ".." in rest
         or "//" in rest
         or "@{" in rest
@@ -986,6 +1005,9 @@ def runner_grant_message(
             return ""
     elif access == "push":
         if runner_agent_ref(ref) != ref or not ref:
+            return ""
+    elif access == "actions-push":
+        if runner_branch_ref(ref) != ref or not ref:
             return ""
     else:
         return ""
@@ -1209,18 +1231,32 @@ def ref_transitions(
 
 
 def enforce_runner_push_scope(
-    commands: list[tuple[str, str, str]], allowed_ref: str
+    commands: list[tuple[str, str, str]],
+    allowed_ref: str,
+    access: str = "push",
+    current: str | None = None,
 ) -> None:
     """Refuse a push unless it moves only the grant's one ref, forward."""
-    if not allowed_ref or runner_agent_ref(allowed_ref) != allowed_ref:
+    if access == "actions-push":
+        valid_ref = runner_branch_ref(allowed_ref)
+    elif access == "push":
+        valid_ref = runner_agent_ref(allowed_ref)
+    else:
+        raise GatewayError("runner push grant names no ref")
+    if not allowed_ref or valid_ref != allowed_ref:
         raise GatewayError("runner push grant names no ref")
     if not commands or len(commands) > RUNNER_PUSH_MAX_COMMANDS:
         raise GatewayError("runner push must update exactly one ref")
-    for _old, new, ref in commands:
+    for old, new, ref in commands:
         if ref != allowed_ref:
             raise GatewayError("runner push names a ref outside its grant")
         if set(new) == {"0"}:
             raise GatewayError("runner push may not delete its ref")
+        if access == "actions-push":
+            if set(old) == {"0"} or not current:
+                raise GatewayError("actions push may not create a branch")
+            if old != current:
+                raise GatewayError("actions push is not based on the tip")
 
 
 # The desktop that deployed a host follows that host's whole journal through
@@ -9287,6 +9323,7 @@ class GatewayApplication:
         owner: str,
         name: str,
         decoded_body: bytes,
+        actions: bool = False,
     ) -> GatewayResponse:
         """Run one authorized receive-pack and publish its side effects."""
         if len(decoded_body) > self.config.receive_max_input_bytes:
@@ -9304,17 +9341,24 @@ class GatewayApplication:
                 if ref.startswith("refs/heads/"):
                     update["commits"] = repository.new_commit_count(old, new)
                 updates.append(update)
+            report: dict[str, Any] = {
+                "total": len(changes), "updates": updates}
+            if actions:
+                report["actions"] = True
             headers[REF_UPDATES_HEADER] = json.dumps(
-                {"total": len(changes), "updates": updates},
+                report,
                 ensure_ascii=True, separators=(",", ":"), sort_keys=True)
-            self.log({
+            entry: dict[str, Any] = {
                 "time": datetime.now(timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z"),
                 "operation": "git-receive-pack",
                 "status": 200,
                 "refsUpdated": len(changes),
-            })
+            }
+            if actions:
+                entry["actions"] = True
+            self.log(entry)
         if refs_changed:
             repository.invalidate_memory_generation()
             self.response_cache.invalidate_all()
@@ -9339,17 +9383,18 @@ class GatewayApplication:
         headers: Mapping[str, str],
         owner: str,
         repository: str,
-        access: str,
+        access: str | tuple[str, ...],
     ) -> RunnerGrant:
         """Verify a runner grant for one repository and access level."""
         normalized = {str(k).lower(): str(v) for k, v in headers.items()}
         grant = parse_runner_grant(normalized.get(RUNNER_GRANT_HEADER, ""))
         now = self.clock_ms()
+        accepted = (access,) if isinstance(access, str) else tuple(access)
         if (
             grant.node != self.config.node
             or grant.owner != owner.lower()
             or grant.repository.lower() != repository.lower()
-            or grant.access != access
+            or grant.access not in accepted
             or now < grant.issued_at - CAPABILITY_WINDOW_MS
             or now > grant.expires_at
         ):
@@ -9406,7 +9451,8 @@ class GatewayApplication:
                 "git-upload-pack", "git-receive-pack"
             ):
                 raise GatewayError("Git service is not available")
-            access = "read" if service == "git-upload-pack" else "push"
+            access = (
+                "read" if service == "git-upload-pack" else RUNNER_PUSH_ACCESS)
             self._runner_grant(headers, owner, name, access)
             repository = self._runner_repository(owner, name)
             if access == "read":
@@ -9438,17 +9484,22 @@ class GatewayApplication:
             )
         if content_type != "application/x-git-receive-pack-request":
             raise GatewayError("Git service is not available")
-        grant = self._runner_grant(headers, owner, name, "push")
+        grant = self._runner_grant(headers, owner, name, RUNNER_PUSH_ACCESS)
         repository = self._runner_repository(owner, name)
         decoded_body = _decode_git_body(
             body,
             normalized.get("content-encoding", ""),
             max(MAX_REQUEST_BODY, self.config.receive_max_input_bytes),
         )
+        actions = grant.access == "actions-push"
+        current = None
+        if actions:
+            current = stable_refs(repository.git_dir).get(grant.ref, "")
         enforce_runner_push_scope(
-            receive_pack_commands(decoded_body), grant.ref)
+            receive_pack_commands(decoded_body), grant.ref, grant.access,
+            current)
         return self._run_receive_pack(
-            repository, owner, repository.config.name, decoded_body)
+            repository, owner, repository.config.name, decoded_body, actions)
 
     def request_body_limit(
         self, method: str, target: str, headers: Mapping[str, str]
@@ -9468,7 +9519,8 @@ class GatewayApplication:
         ):
             try:
                 self._runner_grant(
-                    headers, runner_route[0], runner_route[1], "push")
+                    headers, runner_route[0], runner_route[1],
+                    RUNNER_PUSH_ACCESS)
             except GatewayError:
                 return MAX_REQUEST_BODY
             return max(MAX_REQUEST_BODY, self.config.receive_max_input_bytes)

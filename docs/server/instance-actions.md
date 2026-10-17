@@ -163,6 +163,29 @@ events run `commit` when the lease names one the cache has, else the branch
 tip. `issues` and `issue_comment` runs need the payload's `action` in the
 workflow's `types` (no `types` means every action).
 
+The grant is a runner grant (`forkmesh-runner-grant-v1`, same message layout
+and 3-hour TTL cap as `push`) with access `actions-push` and ref
+`refs/heads/<branch>`, where the branch matches
+`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$` and has no `..`, `//` or `@{` and does
+not end in `/`, `.lock` or `.`. The gateway (`tools/mirror_gateway.py`,
+`runner_branch_ref`, `enforce_runner_push_scope`) serves the receive-pack
+advertisement and receive-pack for it like a `push` grant, but before git
+runs it refuses the push unless it holds exactly one command for the granted
+ref whose old id is the branch's current tip: creates, deletes, other refs and
+stale bases are refused. Git's own `receive.denyNonFastForwards` then refuses
+a new commit that does not descend from the old one (the pack is not in the
+repository before git runs, so the gateway cannot check ancestry itself).
+
+The gateway never calls the app. An accepted Actions push is reported the way
+runner pushes are: the `hosted-pushes.json` sidecar for the refresh cycle (no
+new field; that file's schema is closed) and the `X-ForkMesh-Ref-Updates`
+response header, which for an `actions-push` grant carries
+`"actions": true` next to `total` and `updates`; the gateway's access log
+entry carries `"actions": true` too. The push reaches the runner's git, not
+the app, so the app records it from the runner's report (`pushed_commit`)
+and never sees it in `core_push.record_accepted_push`; any proxy that relays
+the header must skip `push` triggers when `actions` is true.
+
 ## Job API
 
 `Authorization: Bearer $FORKMESH_TOKEN`. The token is random, stored as a
