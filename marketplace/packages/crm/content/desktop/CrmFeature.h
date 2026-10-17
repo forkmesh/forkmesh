@@ -407,6 +407,7 @@ private:
     // Which pipeline a list reads off. Empty makes it a plain list again, one
     // holding only the contacts put on it.
     void setSheetFlow(const QString &sheetId, const QString &flowId);
+    void loadRankedGrants(const QString &sheetId);
     // Right-click on contact rows: move the selected contacts into a
     // pipeline (their flow), move them along its stages, or add them to,
     // move them to, or take them off a list.
@@ -611,6 +612,7 @@ private:
     QSet<QString> m_autoSending;
     QPointer<QPushButton> m_draftButton;
     bool m_usersReading = false;
+    bool m_grantsLoading = false;
     QComboBox *m_organization = nullptr;
     QLabel *m_status = nullptr;
     QProgressBar *m_importProgress = nullptr;
