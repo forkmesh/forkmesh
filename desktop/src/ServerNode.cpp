@@ -369,12 +369,13 @@ ServerNode::ServerNode(const QString &userName, const QString &nodeName,
       m_crypto(roomPassphrase.isEmpty()
                    ? RoomCrypto(m_roomName)
                    : RoomCrypto(m_roomName, roomPassphrase)),
-      m_seal(
-          m_roomName,
-          serverUrl.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment |
-                             QUrl::RemoveUserInfo).toString() +
-              QLatin1Char('\n') + m_roomName)
+      m_seal(m_roomName, m_roomName, RoomSeal::Policy::Open, m_nodeId, m_nodeId)
 {
+    m_chatAccount = m_nodeId;
+    if (const auto device = m_seal.device())
+        m_deviceToken = device->subscribe(
+            [this](forkmesh::chatv3::ChatDevice::Event event, const QString &scope,
+                   const QString &) { onDeviceEvent(event, scope); });
     m_presenceIntervalMs = kPresenceIntervalMs;
     const QByteArray material = m_url.toString().toUtf8() + '\n' +
                                 m_roomName.toUtf8();
@@ -384,6 +385,122 @@ ServerNode::ServerNode(const QString &userName, const QString &nodeName,
     m_endpoints = {m_url}; // default to the single URL; setEndpoints() adds failovers
     loadKnownPeers();
     loadHiddenChannels();
+}
+
+ServerNode::~ServerNode()
+{
+    if (const auto device = m_seal.device())
+        device->unsubscribe(m_deviceToken);
+}
+
+void ServerNode::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event,
+                               const QString &scope)
+{
+    using Event = forkmesh::chatv3::ChatDevice::Event;
+    if (event == Event::PrekeyRotated) {
+        if (m_rotationAdvertQueued)
+            return;
+        m_rotationAdvertQueued = true;
+        QMetaObject::invokeMethod(
+            this,
+            [this] {
+                m_rotationAdvertQueued = false;
+                sendKeyAdvertisement(true);
+            },
+            Qt::QueuedConnection);
+        return;
+    }
+    if (scope != m_seal.trustScope() || m_trustRefreshQueued)
+        return;
+    m_trustRefreshQueued = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_trustRefreshQueued = false;
+            reopenHeldFrames();
+            if (m_directRoom)
+                resealOutbox();
+            emit roomSealPeersChanged();
+        },
+        Qt::QueuedConnection);
+}
+
+void ServerNode::rebuildSeal()
+{
+    const auto device = m_seal.device();
+    if (!m_directRoom) {
+        m_seal = RoomSeal(m_roomName, m_roomName, RoomSeal::Policy::Open, m_chatAccount,
+                          m_nodeId, device);
+        return;
+    }
+    static const QRegularExpression directRoom(
+        QStringLiteral("\\Achat-direct:([0-9a-f]{32}):v[0-9]+\\z"));
+    const QRegularExpressionMatch match = directRoom.match(m_roomName);
+    const QString scope = match.hasMatch()
+                              ? QStringLiteral("direct:") + match.captured(1)
+                              : QStringLiteral("direct-room:") + m_roomName;
+    m_seal = RoomSeal(m_roomName, scope, RoomSeal::Policy::Strict, m_chatAccount, m_nodeId,
+                      device);
+    m_seal.setParticipants(m_directParticipants);
+}
+
+void ServerNode::setChatAccount(const QString &account)
+{
+    const QString normalized = account.trimmed().toLower();
+    const QString value = normalized.isEmpty() ? m_nodeId : normalized;
+    if (value == m_chatAccount)
+        return;
+    m_chatAccount = value;
+    rebuildSeal();
+}
+
+void ServerNode::setDirectParticipants(const QStringList &participants)
+{
+    m_directParticipants = participants;
+    m_seal.setParticipants(participants);
+}
+
+void ServerNode::setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device)
+{
+    if (!device || device == m_seal.device())
+        return;
+    if (const auto previous = m_seal.device())
+        previous->unsubscribe(m_deviceToken);
+    m_seal = RoomSeal(m_roomName, m_roomName, RoomSeal::Policy::Open, m_chatAccount,
+                      m_nodeId, device);
+    m_deviceToken = device->subscribe(
+        [this](forkmesh::chatv3::ChatDevice::Event event, const QString &scope,
+               const QString &) { onDeviceEvent(event, scope); });
+    rebuildSeal();
+}
+
+void ServerNode::approveSealDevice(const QString &kid)
+{
+    m_seal.approve(kid);
+}
+
+void ServerNode::blockSealDevice(const QString &kid)
+{
+    m_seal.block(kid);
+}
+
+void ServerNode::reopenHeldFrames()
+{
+    const QList<QJsonObject> released = m_seal.takeReleasedHeld();
+    for (const QJsonObject &frame : released)
+        handleSealedFrame(frame, QJsonObject());
+}
+
+QJsonObject ServerNode::sealForRoom(const QJsonObject &plain) const
+{
+    if (plain.value(QStringLiteral("type")).toString() != QLatin1String("dm"))
+        return m_seal.sealObject(plain);
+    const QString to = plain.value(QStringLiteral("to")).toString();
+    QStringList recipients = m_seal.keyIdsForNode(to);
+    for (const QString &kid : m_seal.keyIdsForAcct(m_chatAccount))
+        if (!recipients.contains(kid))
+            recipients.append(kid);
+    return m_seal.sealObjectFor(plain, recipients);
 }
 
 void ServerNode::setEndpoints(const QList<QUrl> &endpoints)
@@ -804,6 +921,7 @@ void ServerNode::onSocketReadyRead()
         emit connectionChanged(true);
         emit networkDiagnosticsChanged();
         m_mismatchAdvertised = false;
+        m_historyEnded = false;
         sendKeyAdvertisement(m_seal.shouldPersistAdvertisement());
         sendHello(true, true);
         if (!m_avatarPng.isEmpty())
@@ -952,6 +1070,7 @@ void ServerNode::processFrame(const QByteArray &payload)
     }
     if (forkmesh::recipients::isHistoryEndFrame(envelope)) {
         m_lastRxType = QStringLiteral("history-end");
+        m_historyEnded = true;
         if (m_directRoom)
             resealOutbox();
         return;
@@ -960,46 +1079,85 @@ void ServerNode::processFrame(const QByteArray &payload)
     if (plain.isEmpty())
         return;
     m_lastRxSender = plain.value(QStringLiteral("senderId")).toString();
+    if (RoomSeal::isLegacyFrame(plain)) {
+        m_lastRxType = QStringLiteral("legacy-seal");
+        return;
+    }
     if (RoomSeal::isKeyFrame(plain)) {
         m_lastRxType = QStringLiteral("e2ee-key");
-        if (m_seal.acceptKeyFrame(plain)) {
+        m_lastRxSender.clear();
+        bool changed = false;
+        m_seal.acceptKeyFrame(plain, &changed);
+        if (changed) {
             scheduleKeyAdvertisement();
             if (m_directRoom)
                 resealOutbox();
             emit roomSealPeersChanged();
+            reopenHeldFrames();
         }
         return;
     }
     if (RoomSeal::isSealedFrame(plain)) {
-        const QString sealKeyId = RoomSeal::frameKeyId(plain);
-        const QJsonObject sealed = plain;
-        const int peersBefore = m_seal.peerCount();
-        plain = m_seal.unsealObject(plain);
-        if (plain.isEmpty()) {
-            noteSealMismatch(sealKeyId);
-            if (m_directRoom && !m_mismatchAdvertised) {
-                m_mismatchAdvertised = true;
-                sendKeyAdvertisement(true);
-            }
-            return;
-        }
-        if (m_directRoom) {
-            if (plain.value(QStringLiteral("senderId")).toString() == m_nodeId &&
-                envelope.value(QStringLiteral("persist")).toBool())
-                rememberOutbox(forkmesh::recipients::relayRef(envelope), plain,
-                               sealed);
-            if (m_seal.peerCount() != peersBefore)
-                resealOutbox();
-        }
-        if (m_seal.peerCount() != peersBefore)
-            emit roomSealPeersChanged();
-    } else if (!isControllerReadableFrame(plain)) {
-        // Only an explicitly public #channel accepts an application frame the
-        // controller can author. Private channels, DMs, and control traffic
-        // stay fail-closed behind the recipient seal.
+        handleSealedFrame(plain, envelope);
+        return;
+    }
+    if (!isControllerReadableFrame(plain)) {
         noteSealMismatch(QString());
         return;
     }
+    dispatchPlain(plain, envelope, QJsonObject(), QString());
+}
+
+void ServerNode::handleSealedFrame(const QJsonObject &sealed,
+                                   const QJsonObject &envelope)
+{
+    const bool replayed =
+        !m_historyEnded && envelope.value(QStringLiteral("historyReplay")).toBool();
+    const RoomSeal::Opened opened = m_seal.open(sealed, replayed);
+    switch (opened.status) {
+    case RoomSeal::Status::Opened:
+        break;
+    case RoomSeal::Status::Held: {
+        m_lastRxType = QStringLiteral("held");
+        const bool unknown = m_seal.acctForKeyId(opened.senderKid).isEmpty();
+        if (unknown) {
+            noteSealMismatch(opened.senderKid, true);
+            if (!m_mismatchAdvertised) {
+                m_mismatchAdvertised = true;
+                sendKeyAdvertisement(true);
+            }
+        }
+        return;
+    }
+    case RoomSeal::Status::NotForMe:
+        m_lastRxType = QStringLiteral("not-for-me");
+        noteSealMismatch(opened.senderKid);
+        if (m_directRoom && !m_mismatchAdvertised) {
+            m_mismatchAdvertised = true;
+            sendKeyAdvertisement(true);
+        }
+        return;
+    case RoomSeal::Status::Replay:
+        m_lastRxType = QStringLiteral("replay");
+        return;
+    case RoomSeal::Status::Invalid:
+        m_lastRxType = QStringLiteral("invalid");
+        return;
+    }
+    QJsonObject plain = opened.plain;
+    if (!plain.contains(QStringLiteral("senderId")) && !opened.senderNode.isEmpty())
+        plain.insert(QStringLiteral("senderId"), opened.senderNode);
+    RoomSeal::useSignedTime(plain, opened);
+    dispatchPlain(plain, envelope, sealed, opened.senderAcct);
+}
+
+void ServerNode::dispatchPlain(QJsonObject plain, const QJsonObject &envelope,
+                               const QJsonObject &sealed, const QString &senderAcct)
+{
+    if (m_directRoom && !sealed.isEmpty() &&
+        plain.value(QStringLiteral("senderId")).toString() == m_nodeId &&
+        envelope.value(QStringLiteral("persist")).toBool())
+        rememberOutbox(forkmesh::recipients::relayRef(envelope), plain, sealed);
     const QString type = plain.value("type").toString();
     if (!type.isEmpty()) {
         m_lastRxType = type;
@@ -1023,7 +1181,14 @@ void ServerNode::processFrame(const QByteArray &payload)
         }
         return;
     }
-    noteReceived(envelope);
+    if (!senderAcct.isEmpty() && senderAcct == m_chatAccount) {
+        const QString ownId = plain.value(QStringLiteral("id")).toString();
+        if (!ownId.isEmpty() && (type == QLatin1String("chat") ||
+                                 type == QLatin1String("thread-reply")))
+            rememberSentRef(forkmesh::recipients::relayRef(envelope), ownId.left(96));
+    }
+    if (!envelope.isEmpty())
+        noteReceived(envelope);
     handlePlain(plain, recipients, recipientNames);
 }
 
@@ -1320,7 +1485,10 @@ bool ServerNode::isControllerReadableFrame(const QJsonObject &plain) const
 
 void ServerNode::setDirectRoom(bool direct)
 {
+    if (m_directRoom == direct)
+        return;
     m_directRoom = direct;
+    rebuildSeal();
 }
 
 void ServerNode::rememberOutbox(const QString &ref, const QJsonObject &plain,
@@ -1399,7 +1567,7 @@ void ServerNode::sendEncrypted(const QJsonObject &plain, bool showActivity,
     // layer. Everything else gets the automatic device-to-device layer first.
     const QJsonObject framed = isControllerReadableFrame(moderated)
                                    ? moderated
-                                   : m_seal.sealObject(moderated);
+                                   : sealForRoom(moderated);
     if (framed.isEmpty()) {
         emit systemMessage("Mainnode room seal failed; message was not sent.");
         return;
@@ -1444,7 +1612,10 @@ void ServerNode::sendKeyAdvertisement(bool persist)
 {
     if (!m_wsReady || !m_seal.isValid())
         return;
-    QJsonObject envelope = m_crypto.encryptObject(m_seal.keyFrame());
+    const QJsonObject bundle = m_seal.keyFrame();
+    if (bundle.isEmpty())
+        return;
+    QJsonObject envelope = m_crypto.encryptObject(bundle);
     if (envelope.isEmpty())
         return;
     if (persist)
@@ -1698,11 +1869,14 @@ QString ServerNode::sendThreadReplyWithId(const QString &channel,
 
 void ServerNode::sendRoomReaction(const QString &conversation,
                                   const QString &messageId,
-                                  const QString &emoji, bool added)
+                                  const QString &emoji, bool added,
+                                  const QString &frameId)
 {
     if (conversation.isEmpty() || messageId.isEmpty() || emoji.isEmpty())
         return;
     QJsonObject message = makeMessage("reaction");
+    if (!frameId.trimmed().isEmpty())
+        message.insert("id", frameId.trimmed().left(96));
     message.insert("conversation", conversation);
     message.insert("target", messageId.left(96));
     message.insert("emoji", emoji);
@@ -1720,12 +1894,15 @@ void ServerNode::sendRoomReaction(const QString &conversation,
 }
 
 void ServerNode::sendRoomEdit(const QString &conversation,
-                              const QString &messageId, const QString &newText)
+                              const QString &messageId, const QString &newText,
+                              const QString &frameId)
 {
     const QString text = filteredChatText(newText.trimmed()).left(kMaxTextChars);
     if (conversation.isEmpty() || messageId.isEmpty() || text.trimmed().isEmpty())
         return;
     QJsonObject message = makeMessage("edit");
+    if (!frameId.trimmed().isEmpty())
+        message.insert("id", frameId.trimmed().left(96));
     message.insert("conversation", conversation);
     message.insert("target", messageId.left(96));
     message.insert("text", text);
@@ -1736,11 +1913,13 @@ void ServerNode::sendRoomEdit(const QString &conversation,
 }
 
 void ServerNode::sendRoomDelete(const QString &conversation,
-                                const QString &messageId)
+                                const QString &messageId, const QString &frameId)
 {
     if (conversation.isEmpty() || messageId.isEmpty())
         return;
     QJsonObject message = makeMessage("delete");
+    if (!frameId.trimmed().isEmpty())
+        message.insert("id", frameId.trimmed().left(96));
     message.insert("conversation", conversation);
     message.insert("target", messageId.left(96));
     markSeen(message.value("id").toString());
@@ -1789,15 +1968,20 @@ QString ServerNode::roomSealKeyId() const
     return m_seal.keyId();
 }
 
-// Empty means an unencrypted/controller-authored frame was refused. A sender
-// key means retained ciphertext was not addressed to this device, commonly
-// because it predates this device's first public-key announcement.
-void ServerNode::noteSealMismatch(const QString &keyId)
+void ServerNode::noteSealMismatch(const QString &keyId, bool unknownSender)
 {
     if (m_reportedSealKeyIds.contains(keyId))
         return;
     m_reportedSealKeyIds.insert(keyId);
     emit roomSealMismatch(keyId);
+    if (unknownSender) {
+        emit systemMessage(
+            QStringLiteral("An end-to-end encrypted message from device %1 is "
+                           "waiting for that device's key and opens when it "
+                           "arrives.")
+                .arg(keyId));
+        return;
+    }
     if (keyId.isEmpty()) {
         emit systemMessage(
             QStringLiteral("Automatic end-to-end encryption refused an "
@@ -2435,6 +2619,8 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
         const QString target = message.value("target").toString();
         const QString emoji = message.value("emoji").toString();
         const QString reactorId = message.value("reactorId").toString();
+        if (!reactorId.isEmpty() && reactorId != senderId)
+            return;
         const QString reactorName = message.value("reactorName").toString();
         if (m_messageConversation.contains(target)) {
             if (message.value("added").toBool())

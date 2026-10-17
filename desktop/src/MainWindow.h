@@ -10304,6 +10304,16 @@ private:
     // person who runs it out of the room.
     void promptRoomSeal();
     void refreshRoomSealButton();
+    void wireDirectMesh();
+    void refreshDirectFocus();
+    void refreshDirectRoute();
+    void refreshDevicePendingBanner();
+    void noteDirectDevicePending(const QString &conversation, const QString &kid);
+    void noteDirectSafetyChanged(const QString &conversation);
+    void addChatSecurityLine(const QString &conversation, const QString &text);
+    void showDirectDetails(const QString &conversation);
+    QString directPeerLabel(const QString &conversation) const;
+    QString chatTrustAccount() const;
     void renameChatConversation(const QString &oldConversation,
                                 const QString &newConversation);
     void promptDeleteRoom(const QString &channel);
@@ -11315,6 +11325,12 @@ private:
     QLabel *m_channelTitle = nullptr;
     QLabel *m_encryptionLabel = nullptr;
     QLabel *m_serverCopiesLabel = nullptr;
+    QLabel *m_directRouteLabel = nullptr;
+    QWidget *m_devicePendingBanner = nullptr;
+    QLabel *m_devicePendingLabel = nullptr;
+    QString m_devicePendingKid;
+    bool m_directMeshWired = false;
+    bool m_directFocusHooked = false;
     QHash<QString, int> m_directServerCopies;
     // "Seal"/"Sealed" — sets or removes the room's participant-held second
     // encryption layer.

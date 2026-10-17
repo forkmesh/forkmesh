@@ -45,8 +45,14 @@ Part of [the desktop docs](README.md).
   the probe now ignores the 90 s gate, retries at most every 30 s
   (`kAutoOfflineProbeMaxDelayMs`), and the minute tick in `MainWindow.cpp`
   probes as a backstop. Online, nothing new is polled.
-- `RoomSeal::acceptKeyFrame()` writes the peer list to QSettings only for a new
-  peer, because each settings write rewrites the whole file on the GUI thread.
+- Chat frames are sealed with chat protocol v3 (`src/RoomSeal.*`,
+  [chat.md](chat.md)). Trust records, seen counters and held frames are written
+  to QSettings two seconds after a change (and at quit), because each settings
+  write rewrites the whole file on the GUI thread; approvals and blocks are
+  written at once. v2 `sealed`/`e2ee-key` frames are ignored.
+- `ServerNode` passes v3 frames through unchanged up to the 96 MiB WebSocket
+  limit. Frames the relay marks `historyReplay` before `forkmesh-history-end`
+  skip only the already-seen counter check.
 
 ## Cloudflare Worker log tail
 
@@ -238,20 +244,58 @@ destroys mirrors on its own.
 
 `src/LocalMeshNode.*` discovers other ForkMesh devices on the LAN by UDP beacon
 and links them over TCP, both on port 48732 (`kDefaultDiscoveryPort`). The
-`#mesh` room key is shared by every install and proves nothing about identity.
+beacon's room key is shared by every install and proves nothing about identity,
+so a beacon carries only `{t, v:3, id: kid, port, ts, reply, control, node}`;
+names, account and platform travel in the mesh `hello` inside the link. The
+dial tie-break compares key ids (`kid`), not node ids.
 `src/MeshFirewall.*` generates the rule for `ufw`, `firewalld` or Windows
 `netsh`; `localMesh/firewallOpened` records once the port is known to be open so
 the Allow banner is not shown again. Direct messages travel over the mesh
-sealed to the recipient's linked devices
-([../app/chat-private-rooms.md](../app/chat-private-rooms.md)); iPhones that left
-the room are woken via push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).
+as `direct-sealed` frames to the other person's linked, approved devices
+([chat.md](chat.md#direct-delivery)); iPhones that left the room are woken via
+push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).
+
+### Mesh links v3
+
+Every LAN and Bluetooth link runs the `fm-link-hello` / `fm-link-auth`
+handshake of [chat protocol v3](../app/chat-protocol-v3.md#mesh-links-v3):
+both sides send a plaintext hello on connect (the dialer and the BLE central
+are the initiator), sign the transcript, and then every frame is AES-256-GCM
+under a per-direction key with a counter nonce. A bad signature, the
+desktop's own identity key, a blocked key id or a frame that fails to open
+closes the link. Duplicate links are resolved when the link authenticates, by
+key id.
+
+- After auth the desktop sends its `#mesh` bundle first, then the bundles it
+  has learned this session, then its DM focus. The mesh `hello` waits until
+  the peer's bundle has arrived, so it can be sealed to that device.
+- `#mesh` messages are v3 sealed frames (open policy, acct and node = node
+  id). Every frame is forwarded at most once (by signature) and keeps its
+  original signature and counter: a chat frame this node opened goes to every
+  other link, a frame it cannot open (not addressed to it, or from a device
+  whose bundle it lacks) only to the links whose device is among the frame's
+  recipients. New bundles go to every other link. `hello`, `typing` and `bye`
+  are accepted only from the link's own device and never forwarded.
+- Because a forwarded frame opens only for the devices its author sealed it
+  to, a node that learns a new device's bundle from a link re-seals its own
+  recent `#mesh` messages to that device and sends them over that link. A
+  joiner therefore gets other people's history only if their author is still
+  reachable, or if it was already a recipient. Others' sealed frames are kept
+  in memory only, so after a restart only this device's own history is
+  replayed.
+- The local-control port still accepts `fm-control-hello` as the first frame
+  of an inbound TCP link; the desktop's own `fm-link-hello` has already been
+  written by then, and the phone's control client skips plain frames before
+  its welcome.
+
 The transport diagnostics line (`LocalMeshNode::diagnosticsLine`) is behind the
 pulse button in the `#mesh` header and refreshes only while shown.
 
 ### Over Bluetooth
 
-Bluetooth carries the same already-encrypted frames, so a device on both
-transports bridges them. Built only with Qt Bluetooth (`FORKMESH_HAS_BLUETOOTH`);
+Bluetooth links run the same v3 handshake and carry the same frames, so a
+device on both transports bridges them. Direct-message files go over a
+Bluetooth link only up to 256 KiB (1 MiB over TCP). Built only with Qt Bluetooth (`FORKMESH_HAS_BLUETOOTH`);
 the Linux release binary is LAN-only.
 
 - **RFCOMM** (SDP service `7f9e5c10-…-2b7ad1e05f11`): desktop ↔ desktop and
@@ -272,9 +316,10 @@ Test: `forkmesh-chat-transport-tests` (`testLocalMeshCrossClientConstants`).
 - **Keepalive.** Every mesh TCP link sets `SO_KEEPALIVE` (10 s idle, 5 s
   interval, 3 probes) and `TCP_USER_TIMEOUT` 30 s where available
   (`enableLinkKeepAlive`).
-- **Duplicate links.** Both ends apply the same rule: prefer TCP over
-  Bluetooth; else close the older link as `replaced` if its hello is at least
-  10 s old; else use the node-id tiebreak.
+- **Duplicate links.** Both ends apply the same rule when a link authenticates:
+  prefer TCP over Bluetooth; else close the older link as `replaced` if it
+  authenticated at least 10 s ago; else keep the link the higher key id
+  dialled.
 - **Dials** time out after 8 s. A LAN link that drops after being up 5 s is
   redialed after 1.5 s and triggers an early Bluetooth scan; a TCP drop lifts
   Bluetooth hold-offs.
@@ -290,7 +335,9 @@ browser over the relay) lists, starts, steers, stops and continues agents and
 moves files, without relaying content in clear.
 
 - `LocalMeshNode` hands inbound links whose first frame is `fm-control-hello`
-  to `LocalControlServer`, so the mesh firewall rule covers it.
+  to `LocalControlServer`, so the mesh firewall rule covers it; a first frame
+  of `fm-link-hello` starts a v3 mesh link. The beacon's `node` field (with
+  `control: true`) is the desktop's Ed25519 key that local control signs with.
 - Handshake: hello / welcome / auth with each side's Ed25519 identity and a
   fresh X25519 key, both signing the transcript; frames are AES-256-GCM under
   per-direction HKDF keys with a counter nonce.

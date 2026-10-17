@@ -1517,6 +1517,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 void MainWindow::changeEvent(QEvent *event)
 {
     QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::ActivationChange)
+        refreshDirectFocus();
     // Names the refreshes below for the footer's outcome lines: a `git status`
     // that ran because the window came back to the front says so.
     const forkmesh::BackgroundRoutine routine(

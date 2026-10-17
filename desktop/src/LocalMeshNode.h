@@ -16,6 +16,7 @@
 #include <QStringList>
 
 #include <functional>
+#include <memory>
 
 class QIODevice;
 class QTcpServer;
@@ -53,16 +54,6 @@ class QBluetoothServiceInfo;
 //
 // Frames are identical on both, so a device bridged to one peer over Wi-Fi and
 // another over Bluetooth relays between them and the room stays one room.
-//
-// Both layers of the relay room's encryption are reused unchanged, so the
-// desktop and the native iOS and Android apps interoperate byte for byte:
-//   * RoomCrypto (AES-256-GCM, key derived from the mesh room name) wraps every
-//     datagram and every link frame, so nothing on the wire is readable by
-//     another program sharing the network.
-//   * RoomSeal (X25519 + per-frame AES-256-GCM content keys) seals message
-//     bodies to the individual devices actually in the room, so a frame is
-//     readable only by the devices whose public keys were exchanged over that
-//     network. Key frames are the one exception: they carry the public halves.
 namespace forkmesh::localmesh {
 
 // The one conversation this transport carries. Deliberately not a "#channel"
@@ -99,18 +90,12 @@ bool isLocalNetworkAddress(const QHostAddress &address);
 // firewall drops unsolicited inbound datagrams but passes the answer to one it
 // sent — and is never itself answered, so two nodes cannot ping-pong.
 struct Beacon {
-    QString nodeId;
-    QString name;
-    QString nodeName;
-    QString ownerUser;
-    QString accountKind;
-    QString platform;
-    QString version;
+    QString kid;
     quint16 port = 0;
     qint64 timestampMs = 0;
     bool reply = false;
-    // This node takes local control channels (LocalControl.h) on its port.
     bool control = false;
+    QString node;
 };
 QJsonObject beaconObject(const Beacon &beacon);
 bool parseBeacon(const QJsonObject &object, Beacon *out);
@@ -177,8 +162,15 @@ public:
     QString sendFile(const QString &fileName, const QString &mimeType,
                      const QByteArray &data);
     void sendTyping(bool active);
-    int sendDirect(const QString &channel, const QString &messageId,
-                   const QString &text, const QStringList &keyIds);
+    QList<forkmesh::chatv3::MeshLinkedDevice> linkedDevices() const;
+    bool sendDirectSealed(const QString &kid, const QString &channel,
+                          const QJsonObject &frame);
+    void setDirectFocus(const QString &channel, bool on);
+    using DirectHandler = std::function<QString(
+        const QString &kid, const QString &channel, const QJsonObject &frame)>;
+    void setDirectHandler(DirectHandler handler);
+    void setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device);
+    void setControlNode(const QString &nodeKey);
     // True while a message this device wrote has not reached any device yet.
     bool isQueued(const QString &messageId) const
     {
@@ -228,13 +220,14 @@ public:
     void setAddressSweepEnabledForTests(bool enabled);
     // Keeps a test off the machine's Bluetooth stack (and off DBus).
     void setBluetoothEnabledForTests(bool enabled);
-    void setSealKeyForTests(const QByteArray &privateKey);
 #endif
 
 signals:
     void messageArrived(const ChatMessage &message);
-    void directMessageArrived(const QString &channel, const QString &sealKeyId,
-                              const QJsonObject &plain);
+    void directAcked(const QString &kid, const QString &channel,
+                     const QString &messageId);
+    void peerFocusChanged(const QString &kid, const QString &channel, bool on);
+    void linkedDevicesChanged();
     // A message of this device's became queued (no device to take it) or was
     // handed to a device.
     void queuedChanged(const QString &messageId, bool queued);
@@ -253,22 +246,32 @@ signals:
 
 private:
     struct Link {
-        // Either a QTcpSocket or a QBluetoothSocket: the framing, sealing and
-        // room logic are identical, so everything past the handshake works
-        // against the QIODevice.
+        enum class Stage { Hello, Auth, Open };
         QIODevice *socket = nullptr;
         QByteArray buffer;
-        QString peerId;        // empty until the peer's hello arrives
-        bool keyKnown = false; // the peer's sealing key has been accepted
-        QString keyId;
+        Stage stage = Stage::Hello;
+        QString peerId;
         bool outbound = false;
         bool bluetooth = false;
         QString btKey;
         qint64 helloMs = 0;
-        QQueue<QJsonObject> pending; // frames held until keyKnown
+        QByteArray ephPriv;
+        QJsonObject ownHello;
+        QJsonObject peerHello;
+        QByteArray transcript;
+        QByteArray peerIdk;
+        QString peerKid;
+        QByteArray sendKey;
+        QByteArray recvKey;
+        quint64 sendCounter = 0;
+        quint64 recvCounter = 0;
+        bool bundleKnown = false;
+        QQueue<QJsonObject> pending;
+        QSet<QString> focus;
     };
 
     struct Peer {
+        QString nodeId;
         QString name;
         QString nodeName;
         QString ownerUser;
@@ -371,26 +374,38 @@ private:
     void sweepPeers();
 
     QJsonObject makeMessage(const QString &type) const;
-    // Seals for the peers known right now, encrypts, and writes one frame.
-    bool writePlain(Link &link, const QJsonObject &plain,
-                    const QStringList *onlyKeyIds = nullptr);
-    void sendToAll(const QJsonObject &plain);
+    bool writeRaw(Link &link, const QJsonObject &frame);
+    bool writeLink(Link &link, const QJsonObject &frame);
+    bool writeSealedTo(Link &link, const QJsonObject &plain);
+    void sendToAll(const QJsonObject &plain, bool store = false);
+    QStringList sessionKeyIds() const;
+    void clearQueued(const QString &id);
+    void handleLinkHello(Link &link, const QByteArray &payload);
+    void handleLinkAuth(Link &link, const QByteArray &payload);
+    void onLinkAuthenticated(Link &link);
+    void handleLinkFrame(Link &link, const QJsonObject &frame);
+    void handleBundle(Link &link, const QJsonObject &bundle);
+    void handleSealed(Link &link, const QJsonObject &frame);
+    void handleEnvelope(Link &link, const QJsonObject &plain,
+                        const QString &senderKid, const QJsonObject &frame);
+    void forwardFrame(Link *from, const QJsonObject &frame);
+    bool rememberForwarded(const QString &sig);
+    void resealOwnHistory(Link &link, const QString &kid);
+    void flushLinkPending(Link &link);
+    void attachDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device);
+    void onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event);
     // Sends a message this device wrote, queueing it when nobody is linked.
     QString sendOwn(QJsonObject message);
     void loadHistory();
     void scheduleHistorySave();
     void saveHistory();
-    void sendKeyFrame(Link &link);
-    void sendHello(Link &link);
     void sendHistoryTo(Link &link);
-    void handleFrame(Link &link, const QByteArray &payload);
-    void handlePlain(Link &link, const QJsonObject &plain);
-    void handleDirect(const QJsonObject &plain, const QString &sealKeyId);
-    void rememberPeer(const QString &peerId, const QJsonObject &plain,
+    void rememberPeer(const QString &kid, const QJsonObject &plain,
                       bool linked, bool bluetooth);
     void rememberWake(const QString &senderId, const QJsonObject &plain);
     Link *linkFor(QIODevice *socket);
-    Link *linkForPeer(const QString &peerId);
+    Link *linkForPeer(const QString &kid, const Link *except = nullptr);
+    const Link *openLinkFor(const QString &kid) const;
     void storeHistory(const QJsonObject &plain);
     bool markSeen(const QString &id);
     void emitChat(const QJsonObject &plain, bool historical = false);
@@ -406,6 +421,16 @@ private:
 
     RoomCrypto m_crypto;
     RoomSeal m_seal;
+    std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    int m_deviceToken = 0;
+    QHash<QString, QJsonObject> m_bundles;
+    QStringList m_bundleOrder;
+    QSet<QString> m_forwarded;
+    QQueue<QString> m_forwardedOrder;
+    QHash<QString, QJsonObject> m_historyFrames;
+    QSet<QString> m_ownFocus;
+    DirectHandler m_directHandler;
+    QString m_controlNode;
 
     QTcpServer *m_server = nullptr;
     QUdpSocket *m_discovery = nullptr;
@@ -433,7 +458,7 @@ private:
     QTimer *m_typingStopTimer = nullptr;
 
     QList<Link *> m_links;
-    QHash<QString, Peer> m_peers; // peer id -> last advertisement
+    QHash<QString, Peer> m_peers;
     QHash<QString, QString> m_wakeTokens;
     QStringList m_wakeOrder;
     QList<QJsonObject> m_history; // recent mesh frames, replayed to joiners
