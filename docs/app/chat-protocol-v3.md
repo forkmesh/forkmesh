@@ -241,7 +241,7 @@ cannot be joined by a device claiming someone else's identity.
    The dialer (TCP outbound, Bluetooth central) is the initiator `I`, the
    other side the responder `Rs`.
 2. `T = H("forkmesh-mesh-link-v3\n" + I.idk + "\n" + I.eph + "\n" + I.nonce + "\n" + Rs.idk + "\n" + Rs.eph + "\n" + Rs.nonce)`.
-3. Each side sends `{"t":"fm-link-auth","sig":"<b64u>"}`: Ed25519 by its `IK`
+3. Each side sends a length-prefixed plaintext `{"t":"fm-link-auth","sig":"<b64u>"}`: Ed25519 by its `IK`
    over `forkmesh-mesh-link-auth-v3\n<i|r>\n<b64u(T)>` (`i` from the
    initiator, `r` from the responder). A bad signature, the side's own `idk`,
    or a blocked `kid` closes the link.
@@ -267,7 +267,17 @@ frame: `fm-control-hello` starts local control, `fm-link-hello` a mesh link.
 
 Beacons keep the shared discovery key but carry only
 `{t, v:3, id: kid, port, ts, reply, control, node}` (`node`, the desktop's
-Ed25519 node id for local control, only with `control: true`). Names, account
+Ed25519 node id for local control, only with `control: true`). `reply` and
+`control` may be left out when false; receivers treat a missing one as false.
+The mesh `hello` envelope also carries `port`, so a dropped link can be
+redialled.
+
+`#mesh` is multi-hop. A device forwards a new `#mesh` bundle to its other
+links, forwards a sealed `#mesh` frame it cannot open to the links whose device
+is among the frame's recipients (and floods frames it opened, as v2 did), and
+re-seals its own history to a device it learns about through another device.
+Forwarded frames keep their original signatures and counters, so every hop
+still checks them. Names, account
 and platform travel in the mesh `hello` inside the encrypted link. The `#mesh`
 room's messages are v3 sealed frames (open policy) carried over links; a
 forwarded frame keeps its original signature.
