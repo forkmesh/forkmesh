@@ -192,9 +192,11 @@ senderAcct)`, `held(kid)`, `notForMe`, `replay`, `invalid`.
 8. Only now record `ctr` as seen and return `opened`.
 
 `ctr` and the seen set are updated only for frames that verify, so a forged
-frame cannot burn a counter. Edits, deletes, reactions and receipts are
-accepted only when their sender's `acct` equals the `acct` of the message they
-change.
+frame cannot burn a counter. Edits and deletes are accepted only from the
+device that sent the message: the editing frame's authenticated `node` must
+equal the original's. A reaction's `reactorId` must equal its frame's `node`.
+Every client chose this stricter rule over matching `acct`, so a message cannot
+yet be edited from the sender's other device.
 
 Frames the relay sends as its history replay on connect skip only the
 already-seen part of step 4; signature, `ts`, trust and `node` checks still
