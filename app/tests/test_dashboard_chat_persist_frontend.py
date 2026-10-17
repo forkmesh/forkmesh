@@ -69,7 +69,7 @@ def test_dashboard_history_starts_at_five_and_reveals_viewport_sized_batches():
     assert "historyRowIds.push(id);" in CHAT
     assert "historyReplayEnvelopes.push(envelope);" in CHAT
     assert 'envelope?.kind === "forkmesh-history-end"' in CHAT
-    assert "Promise.all(envelopes.map(decryptObject))" in CHAT
+    assert "envelopes.map((envelope) => decryptObject(envelope, true))" in CHAT
     assert "handlePlain(plain, true)" in CHAT
     assert 'if (plain.type === "chat") handlePlain(plain, true);' in CHAT
     assert 'if (plain.type !== "chat") handlePlain(plain, true);' in CHAT

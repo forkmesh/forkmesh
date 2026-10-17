@@ -364,16 +364,22 @@ load.
   one, plain otherwise. Trust records, counters, the replay window (a 1024-bit
   map per sender) and up to 64 held frames per room are stored next to them,
   keyed by relay host plus trust scope or room.
-- `acct` is the browser's `forkmesh.chat.selfId`, the `senderId` it already
-  writes; `createRoomSealStore({ acct })` takes it from `chat.js`,
-  `dashboard-chat.js` and the Office chat. `direct:<id>` rooms are strict with
-  that trust scope; every other room is open, scoped by room name.
+- `createRoomSealStore({ acct, node })`: `acct` is the signed-in account name
+  (lowercased, read when a room is resolved; a guest falls back to `node`),
+  `node` is the browser's `forkmesh.chat.selfId`, the `senderId` it already
+  writes. `chat.js`, `dashboard-chat.js` and the Office chat pass both.
+  `direct:<id>` rooms are strict with that trust scope and are resolved with
+  the DM's two account names as `participants`, so a bundle naming anyone else
+  is dropped; every other room is open, scoped by room name.
+- Bot lines (ForkBot, Claude, Codex) keep the posting browser's `senderId` and
+  name the bot in `bot`; `chat.js` and `dashboard-chat.js` render them as the
+  bot from that field.
 - The relay replays a room's backlog on every connect and the web keeps no
   local history, so frames in the history batch skip the "already seen" check
   (everything else, signature and `ts` window included, still applies). Live
   frames that were already seen are dropped as replays.
-- An opened frame without `senderId` gets the sender's `acct`; a frame whose
-  `reactorId` is not the sender's `acct` is dropped. Edits and deletes already
+- An opened frame without `senderId` gets the sender's `node`; a frame whose
+  `reactorId` is not the sender's `node` is dropped. Edits and deletes already
   require the original's `senderId`, which v3 now authenticates.
 - Frames held for a pending or unknown device are opened when its bundle
   arrives or the user approves it, and go to the page as history, so they do
