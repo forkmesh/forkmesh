@@ -168,6 +168,10 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
 - **Never restart the gateway to adopt a generation**: it kills an in-flight
   merge job. The executor writes `mirror-gateway/pull-jobs/gateway-generation`
   so the cycle can recognise its own write.
+- **Size a pty before starting its child.** `startPtyCommand` sets the
+  window size on the master before `cmd.Start`; sizing it afterwards let a
+  fast CLI read `0 0` as its first size (CI run #3523,
+  `TestRunnerTerminalRunsTheCLIAndFollowsTheSize`).
 - The catalog's 52-week activity comes from one
   `git rev-list --since=52 weeks ago --timestamp --parents HEAD` pass.
 - Ref updates are compare-and-swap: `reconcileUpstreamRefs` reads refs with
