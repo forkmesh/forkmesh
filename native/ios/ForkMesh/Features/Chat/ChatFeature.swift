@@ -126,6 +126,9 @@ enum ChatFeature {
         Services.put(
             ChatLinkPreviewService(
                 http: URLSessionHTTPClient(), store: prefs, file: ChatLinkPreviewService.defaultFile))
+        let privacy: ChatPrivacy = ChatPrivacy(store: prefs)
+        Services.put(privacy)
+        ChatPrivacyShield.shared.install(enabled: { privacy.coversAppSwitcher })
 
         UserPresence.instance.prompt = LocalAuthPresencePrompt()
 
@@ -146,6 +149,7 @@ enum ChatFeature {
                 MeshAlerts.foreground = state == .resumed
                 if state == .resumed && MeshAlerts.onScreen { hub.roomShown() }
                 if state == .paused {
+                    privacy.appBackgrounded()
                     meshBackgrounded = true
                 } else if state == .resumed {
                     let rebuild = meshBackgrounded

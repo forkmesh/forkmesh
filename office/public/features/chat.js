@@ -48,7 +48,7 @@ async function request(path, init = {}) {
 export default function setup(api) {
   const { $, tint } = api;
   const me = selfId(api.store);
-  const seals = createRoomSealStore();
+  const seals = createRoomSealStore({ acct: () => account(), node: me });
   const retention = createChatRetention({ request: (body) => request(CHAT_RETENTION_ENDPOINT, { method: 'POST', body: JSON.stringify(body) }), storage: globalThis.localStorage });
   const S = { cur: null, view: 'chat', convs: new Map(), rooms: {}, here: null, transport: null, editing: null, ac: null, acSel: 0, presence: null, readMarks: new Map(), noPic: new Set() };
 
@@ -226,13 +226,14 @@ export default function setup(api) {
       },
       allowsControllerAccess: () => false,
       isDirectRoom: (room) => String(room?.scope || '').startsWith('direct:'),
-      resolveSeal: (room, roomName) => seals.resolve(room.scope, roomName, location.host),
+      resolveSeal: (room, roomName) => seals.resolve(room.scope, roomName, location.host, room.scope.startsWith('direct:') && S.convs.get(room.scope)?.peer && account() ? { participants: [account(), S.convs.get(room.scope).peer] } : {}),
       onPlain,
       onHistory,
       onRecipients,
       onDelivered: (ids, room) => advance(room, 'delivered', ids),
       onRead: (room) => advance(room, 'read'),
       onSealed: () => { status.textContent = 'Some earlier messages were sealed for other devices.'; },
+      onTrust: (event) => { if (event.type === 'pending') status.textContent = 'A new device wants to join this chat. Check the safety number in Chat, then approve or block it.'; },
       onState: (state, detail) => {
         if (detail.room?.scope !== c.key) return;
         if (state === 'connected') {

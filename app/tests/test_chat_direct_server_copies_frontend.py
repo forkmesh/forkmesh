@@ -163,7 +163,7 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
         from {json.dumps(TRANSPORT.as_uri())};
       import {{ decryptObject, derivePassphraseKey, encryptObject }}
         from {json.dumps(CRYPTO.as_uri())};
-      import {{ createRoomSealStore, sealFrame, sealKeyFrame, unsealFrame }}
+      import {{ acceptSealKey, createRoomSealStore, sealFrame, sealKeyFrame, unsealFrame }}
         from {json.dumps(SEAL.as_uri())};
       const memory = () => {{
         const values = new Map();
@@ -198,10 +198,10 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
         close() {{ this.readyState = 3; }}
       }}
       const roomName = "direct-alpha";
-      const aliceStore = createRoomSealStore({{ storage: memory() }});
-      const bob = await createRoomSealStore({{ storage: memory() }})
+      const aliceStore = createRoomSealStore({{ storage: memory(), acct: "alice", node: "alice" }});
+      const bob = await createRoomSealStore({{ storage: memory(), acct: "bob", node: "bob" }})
         .resolve("direct:alpha", roomName);
-      const stranger = await createRoomSealStore({{ storage: memory() }})
+      const stranger = await createRoomSealStore({{ storage: memory(), acct: "stranger", node: "stranger" }})
         .resolve("direct:alpha", roomName);
       const transport = createChatRoomTransport({{
         authorize: async (room) => ({{
@@ -243,9 +243,10 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
         return count;
       }};
       await deliver({{ kind: "forkmesh-history-end", v: 1 }});
+      await deliver(await encryptObject(await sealKeyFrame(stranger), key));
 
       await transport.send(
-        {{ type: "chat", id: "m1", text: "are you there", ts: Date.now() }},
+        {{ type: "chat", id: "m1", senderId: "alice", text: "are you there", ts: Date.now() }},
         {{ persist: true }});
       const firstText = socket.sent.at(-1);
       const firstRef = await frameRef(firstText);
@@ -253,7 +254,7 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
 
       const persistedBefore = await keyAdverts(true);
       const unreadable = await encryptObject(
-        await sealFrame({{ type: "chat", id: "x1", text: "hidden" }},
+        await sealFrame({{ type: "chat", id: "x1", senderId: "stranger", text: "hidden" }},
                         stranger, roomName), key);
       unreadable.persist = true;
       unreadable.ref = "a".repeat(40);
@@ -261,7 +262,7 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
       await deliver(unreadable);
       const persistedAfter = await keyAdverts(true);
 
-      const bobKey = await encryptObject(sealKeyFrame(bob), key);
+      const bobKey = await encryptObject(await sealKeyFrame(bob), key);
       bobKey.persist = true;
       bobKey.ref = "b".repeat(40);
       const sentBefore = socket.sent.length;
@@ -271,6 +272,11 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
       const resent = after.find((envelope) => envelope.resend === true);
       const superseded = after.find(
         (envelope) => envelope.kind === "forkmesh-superseded");
+      for (const envelope of sentEnvelopes()) {{
+        if (envelope.kind !== "cipher") continue;
+        const inner = await decryptObject(envelope, key);
+        if (inner?.type === "e2ee-key") await acceptSealKey(inner, bob);
+      }}
       const reopened = resent
         ? await unsealFrame(await decryptObject(resent, key), bob, roomName)
         : null;
@@ -279,10 +285,10 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
           envelope.refs.includes("b".repeat(40)));
 
       await deliver({{ kind: "forkmesh-server-copies", v: 1, stored: 0 }});
-      const phone = await createRoomSealStore({{ storage: memory() }})
+      const phone = await createRoomSealStore({{ storage: memory(), acct: "phone", node: "phone" }})
         .resolve("direct:alpha", roomName);
       const beforePhone = socket.sent.length;
-      await deliver(await encryptObject(sealKeyFrame(phone), key));
+      await deliver(await encryptObject(await sealKeyFrame(phone), key));
       const resentAgain = sentEnvelopes().slice(beforePhone)
         .some((envelope) => envelope.resend === true);
 
@@ -295,12 +301,13 @@ def test_direct_messages_are_resealed_once_the_peer_key_arrives():
         firstRef, keyAcked, resentAgain,
       }}));
     """)
-    assert result["firstKeys"] == 1
+    assert result["firstKeys"] == 2
     assert result["persistedAfter"] == result["persistedBefore"] + 1
     assert result["resent"] is True
     assert result["resentPersist"] is True and result["resentNotify"] is True
-    assert result["reopened"]["id"] == "m1"
-    assert result["reopened"]["text"] == "are you there"
+    assert result["reopened"]["status"] == "opened"
+    assert result["reopened"]["plain"]["id"] == "m1"
+    assert result["reopened"]["plain"]["text"] == "are you there"
     assert result["supersededRefs"] == [result["firstRef"]]
     assert result["keyAcked"] is False
     assert result["resentAgain"] is False

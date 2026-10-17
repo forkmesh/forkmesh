@@ -190,16 +190,47 @@ application id `com.forkmesh.nativeapp` installs beside it.
   - one socket to the selected DM and every DM with unread messages; reconnect
     1 s doubling to 5 min; selecting marks read;
   - frames sent before `connect` returns are queued and flushed;
-  - key advertisements are never acknowledged; the first sealed frame not
-    wrapped for this device triggers one persisted advertisement;
+  - chat protocol v3 ([chat-protocol-v3.md](../app/chat-protocol-v3.md)),
+    strict trust in scope `direct:<id>`: bundle `acct` is the signed-in
+    account (lowercased; a guest uses its node id), `node` the DM self id;
+    a bundle whose `acct` is not one of the two participants is dropped;
+  - a further device of an account that already has an approved device is
+    pending: nothing is sealed to it, its frames are held (up to 64 per
+    room, persisted with the trust records; frames over 96 KiB stay in
+    memory only so the secure store stays small), a system line and a
+    banner with Approve and Block appear; approving opens the held frames;
+  - edits and deletes must come from the author's `node`, reactions from
+    their `reactorId`, which must also be the frame's `node`;
+  - key advertisements are never acknowledged; a frame not wrapped for this
+    device triggers one persisted advertisement;
   - up to 64 own durable frames are kept 7 days and re-sealed with
-    `resend: true` when a new peer key appears, followed by
+    `resend: true` when a new device is approved, followed by
     `forkmesh-superseded`;
+  - the relay's history replay (`historyReplay: true`) skips only the seen
+    check, so a restarted phone (DM history is not kept on disk) still shows
+    the conversation; the seen windows of replayed frames are saved every 32
+    frames instead of one write per frame;
+  - Safety number (room menu): 60 digits in 12 groups, the QR string as a
+    QR code, "Scan their code" with the camera scanner used for pairing,
+    and "Mark as verified"; any change to the approved set clears verified
+    and adds "Your safety number with <name> changed";
+  - direct delivery: every DM frame type the phone sends (text, files,
+    edits, deletes, reactions, thread replies, view-once) also goes as
+    `direct-sealed` to each linked approved device, sealed to that device
+    only; files over 256 KiB skip Bluetooth links. Calls and receipts stay on
+    the relay. Focus is "app in the foreground, that DM on screen, the
+    channel drawer closed"; when this phone and a linked device of the other
+    person both have focus, the frame goes only over the mesh and the relay
+    copy follows after 3 s without a `direct-ack` or when the link drops. The
+    route shows under the name: "Direct · Wi-Fi", "Direct · Bluetooth" or
+    "Direct only";
   - DM notifications decrypt on the phone: a `direct-messages` frame names
     `conversation` and `ref`; the service reads
     `/api/chat/direct-messages/<id>/pending?ref=<ref>` (side-effect free),
-    decrypts with `RoomCrypto` and unseals with the existing device key
-    (`RoomSeal.existing`). One `MessagingStyle` notification per conversation,
+    decrypts with `RoomCrypto` and opens the v3 frame read-only
+    (`RoomSeal.existing`, no counter recorded and nothing held, so the DM
+    socket can still open the same frame later); a pending or unknown device
+    gives the generic notification. One `MessagingStyle` notification per conversation,
     lock-screen version "New message". The "Notification content" setting
     (`notifications/content`) chooses name and message, name only, or neither.
     Any failure falls back to a generic notification.
@@ -209,21 +240,50 @@ application id `com.forkmesh.nativeapp` installs beside it.
     while this phone has no DM socket open
     ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks)).
 - **Relay room** (`C/chat/RelayRoom.kt`): every frame encrypted twice
-  (`RoomCrypto` room key and `RoomSeal` to the room's devices), except public
-  `#channel` chat. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,
+  (`RoomCrypto` room key and a v3 `RoomSeal`, open trust, scope = room name),
+  except public `#channel` chat. `@peer` DMs are sealed to the devices whose
+  bundle `node` is the recipient plus this account's own devices. v2 frames
+  are ignored. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,
   16, then 30 s; presence every 60 s, peers dropped after 180 s. Envelope
   `version` matches iOS.
 - **RoomCrypto**: AES-256-GCM, key PBKDF2-HMAC-SHA256(passphrase or app key,
   salt SHA-256("ForkMesh room:" + room)[0..16], 210000 rounds), cached per
   (room, secret).
-- **RoomSeal**: a persistent X25519 key per installation; each protected frame
-  gets a fresh content key wrapped per known device.
-- **Local mesh** (`C/chat/LocalMeshRoom.kt`): byte-compatible with the
-  desktop's `LocalMeshNode`. Encrypted multicast beacon (TTL 1), direct TCP
-  links, local-address checks before any socket, subnet broadcast and a paced
-  /24 sweep where multicast is filtered, Bluetooth RFCOMM, and a BLE scan for
-  the iPhone's GATT service (`C/chat/MeshBle.kt`, wire format in
+- **RoomSeal** (`C/crypto/RoomSeal.kt`, `ChatV3.kt`, `ChatDeviceKeys.kt`,
+  `ChatTrust.kt`): chat protocol v3. One Ed25519 identity per secure-store
+  namespace (`chat/e2ee/ed25519IdentityV3`), signed prekeys X25519 +
+  ML-KEM-768 (`MlKem768`, seed `d || z`) in `chat/e2ee/prekeysV3`, a new one
+  every 24 h, private halves wiped after 8 days, at most 10. The prekey list
+  stores only the private halves; public keys are recomputed on load. The
+  in-memory key set, trust records and counters are shared per underlying
+  store and namespace (`ScopedSecretStore` wrappers compare equal), because
+  two copies would rotate prekeys apart and lose frames. Counters are
+  reserved 32 at a time so a send costs one store write per 32 frames and a
+  counter is never reused after a crash. Held frames are only kept when the
+  signature verifies under the frame's own key and the frame has an entry for
+  this device, so junk cannot push real frames out of the 64 slots. The
+  legacy v2 key `chat/e2ee/x25519PrivateV2` is deleted when the v3 identity is
+  created. Vectors: `core/src/test/.../crypto/ChatV3VectorsTest.kt` reads
+  `conformance/chat/v3/vectors.json` (copy in test resources when the repo is
+  not reachable).
+- **Local mesh** (`C/chat/LocalMeshRoom.kt`): mesh links v3. Encrypted
+  multicast beacon (TTL 1) carrying only `{t, v:3, id: kid, port, ts,
+  reply, control, node}`, direct TCP links, local-address checks before any
+  socket, subnet broadcast and a paced /24 sweep where multicast is filtered,
+  Bluetooth RFCOMM, and a BLE scan for the iPhone's GATT service
+  (`C/chat/MeshBle.kt`, wire format in
   [networking.md](../desktop/networking.md)). Needs a Wi-Fi multicast lock.
+  Every link starts with plaintext `fm-link-hello` and `fm-link-auth`
+  frames (length-prefixed like every frame) and then carries AES-GCM frames
+  with per-direction counters; a bad frame closes the link. Peers are keyed
+  by the authenticated kid; names travel in the sealed mesh `hello`. The
+  phone forwards every new `#mesh` bundle to its other links and relays
+  sealed frames it cannot open to links whose device is addressed, and when
+  it learns a device it has no link to it re-seals its own history to that
+  device: without that a late joiner two hops away could never read anything,
+  because a v3 frame can only be opened by the devices it was sealed to. The
+  history file (v2) keeps each received message's original sealed frame for
+  backfill. The same links carry `direct-sealed`, `direct-ack` and `focus`.
 - **Node sync** (`C/chat/NodeSyncEngine.kt`, `NodeSyncApplier.kt`):
   `GET /api/sync` is destructive, so the phone stands by while a desktop node
   is enrolled. Poll 60 s, backoff 2 s to 30 s with ±25% jitter. Requests sign
@@ -231,6 +291,16 @@ application id `com.forkmesh.nativeapp` installs beside it.
   durably committed. Written formats match the desktop's stores and
   `server/intake.go` (issue JSON with four-space indent and sorted keys;
   pulls only on `forkmesh/pulls`).
+- **Chat privacy** (General settings, `A/feature/chat/ChatPrivacy.kt`):
+  "Hide chats in the app switcher" (on by default) sets `FLAG_SECURE` on the
+  activity; "Lock chats with fingerprint" (needs a screen lock) asks with
+  the framework `BiometricPrompt` (fingerprint, face or screen lock) on
+  Android 9 and later and the keyguard credential screen before, when Chat
+  opens after the app was in the background. Chat history, the mesh history
+  and the secure store (keys, trust records, held frames) are excluded from
+  cloud backup and device transfer (`res/xml/data_extraction_rules.xml`,
+  `backup_rules.xml`); `projects/` is excluded whole because rules cannot
+  match the per-project `chat-history` folders.
 - **Chat retention.** `POST /api/accounts/chat-retention` reads and writes the
   account's retention (default 7 days, clamped 1 hour to 7 days, per-chat
   overrides keyed by conversation string or `channel:<roomId>`). A message is

@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkInterface>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -47,7 +48,7 @@
 
 namespace {
 
-constexpr int kProtocolVersion = 1;
+constexpr int kProtocolVersion = 3;
 constexpr int kDefaultDiscoveryPort = 48732;
 
 // The first frame of a local control channel (LocalControl.h): plain JSON,
@@ -117,6 +118,24 @@ constexpr qsizetype kMaxFileBytes = 16ll * 1024 * 1024;
 constexpr qsizetype kMaxBase64FileChars = 22ll * 1024 * 1024;
 constexpr qsizetype kMaxFrameBytes = 24ll * 1024 * 1024;
 const char kBeaconTag[] = "forkmesh-lan-mesh";
+constexpr int kMaxSessionRecipients = 63;
+constexpr int kForwardedCacheLimit = 4096;
+constexpr int kMaxNodeKeyChars = 200;
+
+bool validKid(const QString &kid)
+{
+    static const QRegularExpression pattern(QStringLiteral("\\A[A-Za-z0-9_-]{16}\\z"));
+    return pattern.match(kid).hasMatch();
+}
+
+QJsonObject parseObject(const QByteArray &payload)
+{
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(payload, &error);
+    return error.error == QJsonParseError::NoError && document.isObject()
+               ? document.object()
+               : QJsonObject();
+}
 
 QString currentPlatform()
 {
@@ -346,25 +365,16 @@ QJsonObject beaconObject(const Beacon &beacon)
     QJsonObject object{
         {QStringLiteral("t"), QLatin1String(kBeaconTag)},
         {QStringLiteral("v"), kProtocolVersion},
-        {QStringLiteral("id"), beacon.nodeId},
+        {QStringLiteral("id"), beacon.kid},
         {QStringLiteral("port"), int(beacon.port)},
         {QStringLiteral("ts"), double(beacon.timestampMs)}};
-    if (!beacon.name.isEmpty())
-        object.insert(QStringLiteral("name"), beacon.name);
-    if (!beacon.nodeName.isEmpty())
-        object.insert(QStringLiteral("nodeName"), beacon.nodeName);
-    if (!beacon.ownerUser.isEmpty())
-        object.insert(QStringLiteral("ownerUser"), beacon.ownerUser);
-    if (!beacon.accountKind.isEmpty())
-        object.insert(QStringLiteral("accountKind"), beacon.accountKind);
-    if (!beacon.platform.isEmpty())
-        object.insert(QStringLiteral("platform"), beacon.platform);
-    if (!beacon.version.isEmpty())
-        object.insert(QStringLiteral("version"), beacon.version);
     if (beacon.reply)
         object.insert(QStringLiteral("reply"), true);
-    if (beacon.control)
+    if (beacon.control) {
         object.insert(QStringLiteral("control"), true);
+        if (!beacon.node.isEmpty())
+            object.insert(QStringLiteral("node"), beacon.node);
+    }
     return object;
 }
 
@@ -376,22 +386,18 @@ bool parseBeacon(const QJsonObject &object, Beacon *out)
             QLatin1String(kBeaconTag) ||
         object.value(QStringLiteral("v")).toInt() != kProtocolVersion)
         return false;
-    const QString nodeId =
-        object.value(QStringLiteral("id")).toString().trimmed().left(160);
+    const QString kid = object.value(QStringLiteral("id")).toString();
     const int port = object.value(QStringLiteral("port")).toInt();
-    if (nodeId.isEmpty() || port <= 0 || port > 65535)
+    if (!validKid(kid) || port <= 0 || port > 65535)
         return false;
-    out->nodeId = nodeId;
+    out->kid = kid;
     out->port = quint16(port);
-    out->name = boundedText(object, "name", kMaxDisplayNameChars);
-    out->nodeName = boundedText(object, "nodeName", kMaxDisplayNameChars);
-    out->ownerUser = boundedText(object, "ownerUser", kMaxDisplayNameChars);
-    out->accountKind = boundedText(object, "accountKind", 16);
-    out->platform = boundedText(object, "platform", 16);
-    out->version = boundedText(object, "version", kMaxVersionChars);
     out->timestampMs = qint64(object.value(QStringLiteral("ts")).toDouble());
     out->reply = object.value(QStringLiteral("reply")).toBool();
     out->control = object.value(QStringLiteral("control")).toBool();
+    out->node = out->control
+                    ? object.value(QStringLiteral("node")).toString().left(kMaxNodeKeyChars)
+                    : QString();
     return true;
 }
 
@@ -483,20 +489,72 @@ LocalMeshNode::LocalMeshNode(const QString &userName, const QString &nodeName,
       m_platform(currentPlatform()),
       m_version(QStringLiteral(FORKMESH_VERSION).left(kMaxVersionChars)),
       m_crypto(roomName()),
-      // Scoped to this device's stable id as well as the room, so the sealing
-      // identity belongs to the device rather than to the install directory —
-      // and so two nodes hosted by one process are two distinct devices.
-      m_seal(roomName(), roomName() + QLatin1Char('\n') + m_nodeId),
       m_discoveryPort(kDefaultDiscoveryPort),
       m_beaconIntervalMs(kBeaconIntervalMs),
       m_peerTimeoutMs(kPeerTimeoutMs),
       m_linkReplaceAfterMs(kLinkReplaceAfterMs)
 {
+#ifdef FORKMESH_LOCAL_MESH_TESTS
+    attachDevice(forkmesh::chatv3::ChatDevice::sharedForTests(
+        forkmesh::chatv3::sha256("forkmesh-mesh-test:" + m_nodeId.toUtf8())));
+#else
+    attachDevice(forkmesh::chatv3::ChatDevice::local());
+#endif
 }
 
 LocalMeshNode::~LocalMeshNode()
 {
     stop();
+    if (m_device)
+        m_device->unsubscribe(m_deviceToken);
+}
+
+void LocalMeshNode::attachDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device)
+{
+    if (!device || device == m_device)
+        return;
+    if (m_device)
+        m_device->unsubscribe(m_deviceToken);
+    m_device = std::move(device);
+    m_seal = RoomSeal(roomName(), roomName(), RoomSeal::Policy::Open, m_nodeId, m_nodeId,
+                      m_device);
+    m_deviceToken = m_device->subscribe(
+        [this](forkmesh::chatv3::ChatDevice::Event event, const QString &,
+               const QString &) { onDeviceEvent(event); });
+}
+
+void LocalMeshNode::setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device)
+{
+    if (m_running)
+        return;
+    attachDevice(std::move(device));
+}
+
+void LocalMeshNode::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event)
+{
+    if (event != forkmesh::chatv3::ChatDevice::Event::PrekeyRotated)
+        return;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            const QJsonObject bundle = m_seal.keyFrame();
+            if (bundle.isEmpty())
+                return;
+            for (Link *link : std::as_const(m_links))
+                if (link->stage == Link::Stage::Open)
+                    writeLink(*link, bundle);
+        },
+        Qt::QueuedConnection);
+}
+
+void LocalMeshNode::setControlNode(const QString &nodeKey)
+{
+    m_controlNode = nodeKey.trimmed().left(kMaxNodeKeyChars);
+}
+
+void LocalMeshNode::setDirectHandler(DirectHandler handler)
+{
+    m_directHandler = std::move(handler);
 }
 
 bool LocalMeshNode::start()
@@ -664,7 +722,12 @@ void LocalMeshNode::stop()
         m_server = nullptr;
     }
     closeBluetooth();
+    m_bundles.clear();
+    m_bundleOrder.clear();
+    m_forwarded.clear();
+    m_forwardedOrder.clear();
     noteMembershipChange();
+    emit linkedDevicesChanged();
 }
 
 // ---- Bluetooth transport ---------------------------------------------------
@@ -1094,17 +1157,12 @@ QByteArray LocalMeshNode::beaconDatagram(bool reply) const
     if (!m_server)
         return {};
     Beacon beacon;
-    beacon.nodeId = m_nodeId;
-    beacon.name = m_userName;
-    beacon.nodeName = m_nodeName;
-    beacon.ownerUser = m_ownerUser;
-    beacon.accountKind = m_accountKind;
-    beacon.platform = m_platform;
-    beacon.version = m_version;
+    beacon.kid = m_seal.keyId();
     beacon.port = m_server->serverPort();
     beacon.timestampMs = QDateTime::currentMSecsSinceEpoch();
     beacon.reply = reply;
     beacon.control = bool(m_controlHandler);
+    beacon.node = beacon.control ? m_controlNode : QString();
     const QJsonObject envelope = m_crypto.encryptObject(beaconObject(beacon));
     if (envelope.isEmpty())
         return {};
@@ -1215,33 +1273,28 @@ void LocalMeshNode::onDatagrams()
             ++m_diag.undecryptableIn;
             continue;
         }
-        if (beacon.nodeId == m_nodeId) {
+        if (beacon.kid == m_seal.keyId()) {
             ++m_diag.ownBeaconsIn;
             continue;
         }
         ++m_diag.peerBeaconsIn;
         m_diag.lastBeaconMs = QDateTime::currentMSecsSinceEpoch();
+        const QString heardName = m_peers.value(beacon.kid).name;
         m_diag.lastBeaconFrom =
             QStringLiteral("%1 %2:%3%4")
-                .arg(beacon.name.isEmpty() ? beacon.nodeId.left(8) : beacon.name,
+                .arg(heardName.isEmpty() ? beacon.kid.left(8) : heardName,
                      sender.toString())
                 .arg(beacon.port)
                 .arg(beacon.reply ? QStringLiteral(" (reply)") : QString());
-        QJsonObject advert{{QStringLiteral("sender"), beacon.name},
-                           {QStringLiteral("nodeName"), beacon.nodeName},
-                           {QStringLiteral("ownerUser"), beacon.ownerUser},
-                           {QStringLiteral("accountKind"), beacon.accountKind},
-                           {QStringLiteral("platform"), beacon.platform},
-                           {QStringLiteral("version"), beacon.version}};
-        rememberPeer(beacon.nodeId, advert, false, false);
+        rememberPeer(beacon.kid, QJsonObject(), false, false);
         if (!m_running || !m_discovery)
             break;
-        Peer &peer = m_peers[beacon.nodeId];
+        Peer &peer = m_peers[beacon.kid];
         QHostAddress reachable(sender);
         reachable.setScopeId(QString());
         peer.address = reachable;
         peer.port = beacon.port;
-        if (linkForPeer(beacon.nodeId)) {
+        if (linkForPeer(beacon.kid)) {
             peer.unlinkedSinceMs = 0;
             continue;
         }
@@ -1261,7 +1314,7 @@ void LocalMeshNode::onDatagrams()
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         if (peer.unlinkedSinceMs == 0)
             peer.unlinkedSinceMs = now;
-        if (m_nodeId < beacon.nodeId ||
+        if (m_seal.keyId() < beacon.kid ||
             now - peer.unlinkedSinceMs >= m_beaconIntervalMs / 2)
             connectToPeer(reachable, beacon.port);
     }
@@ -1365,21 +1418,18 @@ void LocalMeshNode::attachLink(QIODevice *socket, bool outbound, bool bluetooth)
     link->socket = socket;
     link->outbound = outbound;
     link->bluetooth = bluetooth;
+    link->ephPriv = forkmesh::chatv3::randomBytes(32);
+    link->ownHello = forkmesh::chatv3::linkHello(
+        m_seal.device() ? m_seal.device()->idk() : QByteArray(),
+        forkmesh::chatv3::x25519Public(link->ephPriv),
+        forkmesh::chatv3::randomBytes(16));
     m_links.append(link);
     if (auto *tcp = qobject_cast<QTcpSocket *>(socket))
         enableLinkKeepAlive(tcp);
-    // Reading is the same on both transports: QIODevice delivers the bytes and
-    // the frame codec does the rest. Only the teardown signals differ, and the
-    // transport that opened the socket wires those.
     connect(socket, &QIODevice::readyRead, this,
             [this, socket] { onLinkReadyRead(socket); });
-    sendKeyFrame(*link);
-    sendHello(*link);
+    writeRaw(*link, link->ownHello);
 }
-
-// The hello cannot be sealed to a device whose key has not arrived yet, so it
-// waits in the link's queue with everything else until the peer's key frame
-// lands. Ordering is preserved, so the peer still reads hello first.
 
 void LocalMeshNode::onLinkReadyRead(QIODevice *socket)
 {
@@ -1390,13 +1440,13 @@ void LocalMeshNode::onLinkReadyRead(QIODevice *socket)
     QByteArray payload;
     bool overflow = false;
     while (takeFrame(link->buffer, &payload, &overflow)) {
-        // A phone opening a control channel says so in its first frame, on a
-        // link it dialled; the room never sees it.
-        if (link->peerId.isEmpty() && !link->outbound && !link->bluetooth &&
-            isControlChannelHello(payload)) {
+        ++m_diag.framesIn;
+        if (link->stage == Link::Stage::Hello && !link->outbound &&
+            !link->bluetooth && isControlChannelHello(payload)) {
             auto *tcp = qobject_cast<QTcpSocket *>(socket);
             const QByteArray rest = link->buffer;
             m_links.removeOne(link);
+            forkmesh::chatv3::wipe(link->ephPriv);
             delete link;
             socket->disconnect(this);
             if (!tcp || !m_controlHandler) {
@@ -1407,12 +1457,331 @@ void LocalMeshNode::onLinkReadyRead(QIODevice *socket)
             m_controlHandler(tcp, payload, rest);
             return;
         }
-        handleFrame(*link, payload);
-        if (!linkFor(socket)) // the frame closed this link
+        switch (link->stage) {
+        case Link::Stage::Hello:
+            handleLinkHello(*link, payload);
+            break;
+        case Link::Stage::Auth:
+            handleLinkAuth(*link, payload);
+            break;
+        case Link::Stage::Open: {
+            QByteArray clear;
+            if (!forkmesh::chatv3::linkOpen(link->recvKey, link->recvCounter, payload,
+                                            &clear)) {
+                ++m_diag.framesUndecryptable;
+                dropLink(socket, QStringLiteral("bad link frame"));
+                return;
+            }
+            ++link->recvCounter;
+            const QJsonObject frame = parseObject(clear);
+            if (!frame.isEmpty())
+                handleLinkFrame(*link, frame);
+            break;
+        }
+        }
+        link = linkFor(socket);
+        if (!link)
             return;
     }
     if (overflow)
         dropLink(socket, QStringLiteral("oversized frame"));
+}
+
+void LocalMeshNode::handleLinkHello(Link &link, const QByteArray &payload)
+{
+    const QJsonObject hello = parseObject(payload);
+    if (!forkmesh::chatv3::isLinkHello(hello)) {
+        ++m_diag.framesUndecryptable;
+        dropLink(link.socket, QStringLiteral("not a v3 link"));
+        return;
+    }
+    const QByteArray idk =
+        forkmesh::chatv3::fromB64u(hello.value(QStringLiteral("idk")).toString());
+    const QString kid = forkmesh::chatv3::id16(idk);
+    if (!m_device || idk == m_device->idk()) {
+        dropLink(link.socket, QStringLiteral("own identity"));
+        return;
+    }
+    if (m_device->isBlockedAnywhere(kid)) {
+        dropLink(link.socket, QStringLiteral("blocked device"));
+        return;
+    }
+    link.peerHello = hello;
+    link.peerIdk = idk;
+    link.peerKid = kid;
+    link.transcript = link.outbound
+                          ? forkmesh::chatv3::linkTranscript(link.ownHello, hello)
+                          : forkmesh::chatv3::linkTranscript(hello, link.ownHello);
+    const QByteArray sig = m_device->sign(forkmesh::chatv3::linkAuthMessage(
+        link.outbound ? QStringLiteral("i") : QStringLiteral("r"), link.transcript));
+    link.stage = Link::Stage::Auth;
+    writeRaw(link, QJsonObject{{QStringLiteral("t"), QStringLiteral("fm-link-auth")},
+                               {QStringLiteral("sig"), forkmesh::chatv3::b64u(sig)}});
+}
+
+void LocalMeshNode::handleLinkAuth(Link &link, const QByteArray &payload)
+{
+    const QJsonObject auth = parseObject(payload);
+    bool ok = false;
+    const QByteArray sig =
+        forkmesh::chatv3::fromB64u(auth.value(QStringLiteral("sig")).toString(), &ok);
+    if (auth.value(QStringLiteral("t")).toString() != QLatin1String("fm-link-auth") ||
+        !ok ||
+        !forkmesh::chatv3::ed25519Verify(
+            link.peerIdk, sig,
+            forkmesh::chatv3::linkAuthMessage(
+                link.outbound ? QStringLiteral("r") : QStringLiteral("i"),
+                link.transcript))) {
+        ++m_diag.framesUndecryptable;
+        dropLink(link.socket, QStringLiteral("bad link auth"));
+        return;
+    }
+    QByteArray i2r;
+    QByteArray r2i;
+    const bool derived = forkmesh::chatv3::linkKeys(
+        link.ephPriv,
+        forkmesh::chatv3::fromB64u(link.peerHello.value(QStringLiteral("eph")).toString()),
+        link.transcript, &i2r, &r2i);
+    forkmesh::chatv3::wipe(link.ephPriv);
+    if (!derived) {
+        dropLink(link.socket, QStringLiteral("bad link key"));
+        return;
+    }
+    link.sendKey = link.outbound ? i2r : r2i;
+    link.recvKey = link.outbound ? r2i : i2r;
+    forkmesh::chatv3::wipe(i2r);
+    forkmesh::chatv3::wipe(r2i);
+    link.stage = Link::Stage::Open;
+    onLinkAuthenticated(link);
+}
+
+void LocalMeshNode::onLinkAuthenticated(Link &link)
+{
+    QIODevice *socket = link.socket;
+    const QString kid = link.peerKid;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    link.helloMs = now;
+    if (Link *other = linkForPeer(kid, &link)) {
+        if (other->bluetooth != link.bluetooth) {
+            if (link.bluetooth) {
+                dropLink(socket, QStringLiteral("duplicate link"));
+                return;
+            }
+            dropLink(other->socket, QStringLiteral("duplicate link"));
+        } else if (now - other->helloMs >= m_linkReplaceAfterMs) {
+            dropLink(other->socket, QStringLiteral("replaced"));
+        } else {
+            const QString own = m_seal.keyId();
+            const QString mine = link.outbound ? own : kid;
+            const QString theirs = other->outbound ? own : kid;
+            if (mine < theirs) {
+                dropLink(socket, QStringLiteral("duplicate link"));
+                return;
+            }
+            dropLink(other->socket, QStringLiteral("duplicate link"));
+        }
+    }
+    Link *live = linkFor(socket);
+    if (!live)
+        return;
+    m_peers[kid].unlinkedSinceMs = 0;
+    m_peers[kid].lastSeenMs = now;
+    const QJsonObject bundle = m_seal.keyFrame();
+    if (!bundle.isEmpty())
+        writeLink(*live, bundle);
+    for (const QString &known : std::as_const(m_bundleOrder))
+        if (known != kid)
+            writeLink(*live, m_bundles.value(known));
+    for (const QString &channel : std::as_const(m_ownFocus))
+        writeLink(*live, QJsonObject{{QStringLiteral("type"), QStringLiteral("focus")},
+                                     {QStringLiteral("channel"), channel},
+                                     {QStringLiteral("on"), true}});
+    QJsonObject hello = makeMessage(QStringLiteral("hello"));
+    if (m_server)
+        hello.insert(QStringLiteral("port"), int(m_server->serverPort()));
+    if (m_controlHandler)
+        hello.insert(QStringLiteral("control"), true);
+    live->pending.prepend(hello);
+    if (live->bundleKnown)
+        flushLinkPending(*live);
+    emit linkedDevicesChanged();
+}
+
+void LocalMeshNode::handleLinkFrame(Link &link, const QJsonObject &frame)
+{
+    const QString type = frame.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("e2ee-key")) {
+        handleBundle(link, frame);
+        return;
+    }
+    if (type == QLatin1String("sealed")) {
+        handleSealed(link, frame);
+        return;
+    }
+    const QString channel = frame.value(QStringLiteral("channel")).toString();
+    if (!channel.startsWith(QLatin1String("direct:")) || channel.size() > 80)
+        return;
+    if (type == QLatin1String("direct-sealed")) {
+        const QJsonObject sealed = frame.value(QStringLiteral("frame")).toObject();
+        if (sealed.value(QStringLiteral("kid")).toString() != link.peerKid) {
+            m_diag.lastDropReason = QStringLiteral("direct frame from another device");
+            return;
+        }
+        ++m_diag.directIn;
+        const QString accepted =
+            m_directHandler ? m_directHandler(link.peerKid, channel, sealed) : QString();
+        if (!accepted.isEmpty())
+            writeLink(link, QJsonObject{{QStringLiteral("type"), QStringLiteral("direct-ack")},
+                                        {QStringLiteral("channel"), channel},
+                                        {QStringLiteral("id"), accepted}});
+        return;
+    }
+    if (type == QLatin1String("direct-ack")) {
+        const QString id = frame.value(QStringLiteral("id")).toString().left(96);
+        if (!id.isEmpty())
+            emit directAcked(link.peerKid, channel, id);
+        return;
+    }
+    if (type == QLatin1String("focus")) {
+        const bool on = frame.value(QStringLiteral("on")).toBool();
+        const bool changed = on ? !link.focus.contains(channel) : link.focus.contains(channel);
+        if (on)
+            link.focus.insert(channel);
+        else
+            link.focus.remove(channel);
+        if (changed)
+            emit peerFocusChanged(link.peerKid, channel, on);
+    }
+}
+
+void LocalMeshNode::handleBundle(Link &link, const QJsonObject &bundle)
+{
+    const QString kid = bundle.value(QStringLiteral("kid")).toString();
+    if (kid == m_seal.keyId())
+        return;
+    bool changed = false;
+    if (m_seal.acceptKeyFrame(bundle, &changed) == RoomSeal::BundleResult::Rejected) {
+        ++m_diag.framesUnsealable;
+        return;
+    }
+    const QJsonObject known = m_bundles.value(kid);
+    const bool fresh = known.isEmpty() || changed;
+    if (fresh) {
+        m_bundles.insert(kid, bundle);
+        m_bundleOrder.removeAll(kid);
+        m_bundleOrder.append(kid);
+        while (m_bundleOrder.size() > kMaxSessionRecipients)
+            m_bundles.remove(m_bundleOrder.takeFirst());
+    }
+    QIODevice *socket = link.socket;
+    if (kid == link.peerKid && !link.bundleKnown) {
+        link.bundleKnown = true;
+        flushLinkPending(link);
+        if (!linkFor(socket))
+            return;
+    }
+    if (!fresh)
+        return;
+    for (Link *other : std::as_const(m_links))
+        if (other != &link && other->stage == Link::Stage::Open)
+            writeLink(*other, bundle);
+    if (known.isEmpty() && kid != link.peerKid)
+        resealOwnHistory(link, kid);
+    const QList<QJsonObject> released = m_seal.takeReleasedHeld();
+    for (const QJsonObject &frame : released) {
+        Link *current = linkFor(socket);
+        if (!current)
+            return;
+        handleSealed(*current, frame);
+    }
+}
+
+void LocalMeshNode::handleSealed(Link &link, const QJsonObject &frame)
+{
+    const QString sig = frame.value(QStringLiteral("sig")).toString();
+    const RoomSeal::Opened opened = m_seal.open(frame);
+    bool forward = false;
+    switch (opened.status) {
+    case RoomSeal::Status::Opened: {
+        const QString type = opened.plain.value(QStringLiteral("type")).toString();
+        forward = type == QLatin1String("chat");
+        if (forward && !rememberForwarded(sig))
+            forward = false;
+        QIODevice *socket = link.socket;
+        QJsonObject plain = opened.plain;
+        RoomSeal::useSignedTime(plain, opened);
+        handleEnvelope(link, plain, opened.senderKid, frame);
+        Link *current = linkFor(socket);
+        if (forward)
+            forwardFrame(current, frame);
+        return;
+    }
+    case RoomSeal::Status::NotForMe:
+    case RoomSeal::Status::Held: {
+        if (!rememberForwarded(sig))
+            return;
+        QSet<QString> recipients;
+        for (const QJsonValue &value : frame.value(QStringLiteral("keys")).toArray())
+            recipients.insert(value.toObject().value(QStringLiteral("kid")).toString());
+        for (Link *other : std::as_const(m_links))
+            if (other != &link && other->stage == Link::Stage::Open &&
+                recipients.contains(other->peerKid))
+                writeLink(*other, frame);
+        return;
+    }
+    case RoomSeal::Status::Replay:
+        break;
+    case RoomSeal::Status::Invalid:
+        ++m_diag.framesUnsealable;
+        break;
+    }
+    if (forward)
+        forwardFrame(&link, frame);
+}
+
+void LocalMeshNode::forwardFrame(Link *from, const QJsonObject &frame)
+{
+    for (Link *other : std::as_const(m_links))
+        if (other != from && other->stage == Link::Stage::Open)
+            writeLink(*other, frame);
+}
+
+bool LocalMeshNode::rememberForwarded(const QString &sig)
+{
+    if (sig.isEmpty() || m_forwarded.contains(sig))
+        return false;
+    m_forwarded.insert(sig);
+    m_forwardedOrder.enqueue(sig);
+    while (m_forwardedOrder.size() > kForwardedCacheLimit)
+        m_forwarded.remove(m_forwardedOrder.dequeue());
+    return true;
+}
+
+void LocalMeshNode::resealOwnHistory(Link &link, const QString &kid)
+{
+    QIODevice *socket = link.socket;
+    for (const QJsonObject &entry : std::as_const(m_history)) {
+        if (entry.value(QStringLiteral("senderId")).toString() != m_nodeId)
+            continue;
+        const QJsonObject frame = m_seal.sealObjectFor(entry, {kid});
+        Link *current = linkFor(socket);
+        if (frame.isEmpty() || !current)
+            return;
+        rememberForwarded(frame.value(QStringLiteral("sig")).toString());
+        if (writeLink(*current, frame))
+            clearQueued(entry.value(QStringLiteral("id")).toString());
+    }
+}
+
+void LocalMeshNode::flushLinkPending(Link &link)
+{
+    QIODevice *socket = link.socket;
+    while (!link.pending.isEmpty()) {
+        const QJsonObject plain = link.pending.dequeue();
+        writeSealedTo(link, plain);
+        if (!linkFor(socket))
+            return;
+    }
 }
 
 void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
@@ -1422,12 +1791,13 @@ void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
         if (link->socket != socket)
             continue;
         m_diag.lastDropReason =
-            (link->peerId.isEmpty() ? QStringLiteral("unnamed link")
-                                    : link->peerId.left(8)) +
+            (link->peerKid.isEmpty() ? QStringLiteral("unnamed link")
+                                     : link->peerKid.left(8)) +
             QStringLiteral(": ") +
             (reason.isEmpty() ? QStringLiteral("closed") : reason);
         m_links.removeAt(i);
-        const QString peerId = link->peerId;
+        const QString peerId = link->peerKid;
+        const bool wasOpen = link->stage == Link::Stage::Open;
         const bool bluetooth = link->bluetooth;
         const bool settled =
             link->helloMs > 0 &&
@@ -1438,10 +1808,15 @@ void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
             m_btQuietUntil.insert(link->btKey,
                                   QDateTime::currentMSecsSinceEpoch() +
                                       kBluetoothQuietMs);
+        forkmesh::chatv3::wipe(link->ephPriv);
+        forkmesh::chatv3::wipe(link->sendKey);
+        forkmesh::chatv3::wipe(link->recvKey);
         delete link;
         socket->disconnect(this);
         socket->close();
         socket->deleteLater();
+        if (wasOpen)
+            emit linkedDevicesChanged();
         const bool superseded = reason == QLatin1String("duplicate link") ||
                                 reason == QLatin1String("replaced") ||
                                 reason == QLatin1String("identity changed");
@@ -1531,220 +1906,196 @@ QJsonObject LocalMeshNode::makeMessage(const QString &type) const
     return message;
 }
 
-bool LocalMeshNode::writePlain(Link &link, const QJsonObject &plain,
-                               const QStringList *onlyKeyIds)
+bool LocalMeshNode::writeRaw(Link &link, const QJsonObject &frame)
 {
     if (!link.socket || !link.socket->isWritable())
         return false;
-    // Sealed at send time, not at compose time, so a device that joined after
-    // a message was written is still a recipient of the replayed copy.
-    const QJsonObject sealed = onlyKeyIds
-                                   ? m_seal.sealObjectFor(plain, *onlyKeyIds)
-                                   : m_seal.sealObject(plain);
-    if (sealed.isEmpty())
+    const QByteArray payload = QJsonDocument(frame).toJson(QJsonDocument::Compact);
+    return link.socket->write(frameBytes(payload)) == payload.size() + 4;
+}
+
+bool LocalMeshNode::writeLink(Link &link, const QJsonObject &frame)
+{
+    if (link.stage != Link::Stage::Open || frame.isEmpty() || !link.socket ||
+        !link.socket->isWritable())
         return false;
-    const QJsonObject envelope = m_crypto.encryptObject(sealed);
-    if (envelope.isEmpty())
+    const QByteArray plain = QJsonDocument(frame).toJson(QJsonDocument::Compact);
+    if (plain.size() + 16 > maxFrameBytes())
         return false;
-    const QByteArray payload =
-        QJsonDocument(envelope).toJson(QJsonDocument::Compact);
-    if (payload.size() > maxFrameBytes())
+    const QByteArray data =
+        forkmesh::chatv3::linkSeal(link.sendKey, link.sendCounter, plain);
+    if (data.isEmpty())
         return false;
-    if (link.socket->write(frameBytes(payload)) != payload.size() + 4)
+    ++link.sendCounter;
+    return link.socket->write(frameBytes(data)) == data.size() + 4;
+}
+
+QStringList LocalMeshNode::sessionKeyIds() const
+{
+    return m_bundleOrder;
+}
+
+void LocalMeshNode::clearQueued(const QString &id)
+{
+    if (m_queued.isEmpty() || !m_queued.remove(id))
+        return;
+    scheduleHistorySave();
+    emit queuedChanged(id, false);
+}
+
+bool LocalMeshNode::writeSealedTo(Link &link, const QJsonObject &plain)
+{
+    if (link.stage != Link::Stage::Open || link.peerKid.isEmpty())
         return false;
-    // Handed to a device: from here it travels on with that device's
-    // history, whether or not this one is still around.
-    if (!m_queued.isEmpty()) {
-        const QString id = plain.value(QStringLiteral("id")).toString();
-        if (m_queued.remove(id)) {
-            scheduleHistorySave();
-            emit queuedChanged(id, false);
-        }
-    }
+    const QJsonObject frame = m_seal.sealObjectFor(plain, {link.peerKid});
+    if (frame.isEmpty())
+        return false;
+    rememberForwarded(frame.value(QStringLiteral("sig")).toString());
+    if (!writeLink(link, frame))
+        return false;
+    clearQueued(plain.value(QStringLiteral("id")).toString());
     return true;
 }
 
-void LocalMeshNode::sendToAll(const QJsonObject &plain)
+void LocalMeshNode::sendToAll(const QJsonObject &plain, bool store)
 {
-    for (Link *link : std::as_const(m_links)) {
-        if (!link->keyKnown) {
-            // Hold it until the peer's sealing key lands, rather than send a
-            // frame that device could never open.
+    QJsonObject frame;
+    bool sealed = false;
+    const QString id = plain.value(QStringLiteral("id")).toString();
+    const QList<Link *> links = m_links;
+    for (Link *link : links) {
+        if (!m_links.contains(link))
+            continue;
+        if (link->stage != Link::Stage::Open || !link->bundleKnown) {
             if (link->pending.size() < kMaxPendingFrames)
                 link->pending.enqueue(plain);
             continue;
         }
-        writePlain(*link, plain);
+        if (!sealed) {
+            sealed = true;
+            frame = m_seal.sealObjectFor(plain, sessionKeyIds());
+            if (!frame.isEmpty())
+                rememberForwarded(frame.value(QStringLiteral("sig")).toString());
+        }
+        if (frame.isEmpty())
+            break;
+        if (writeLink(*link, frame))
+            clearQueued(id);
     }
-}
-
-void LocalMeshNode::sendKeyFrame(Link &link)
-{
-    if (!link.socket || !m_seal.isValid())
-        return;
-    // The public half of this device's sealing key is the one frame that
-    // cannot itself be sealed; the room layer still encrypts it.
-    const QJsonObject envelope = m_crypto.encryptObject(m_seal.keyFrame());
-    if (envelope.isEmpty())
-        return;
-    const QByteArray payload =
-        QJsonDocument(envelope).toJson(QJsonDocument::Compact);
-    link.socket->write(frameBytes(payload));
-}
-
-void LocalMeshNode::sendHello(Link &link)
-{
-    QJsonObject hello = makeMessage(QStringLiteral("hello"));
-    if (m_server)
-        hello.insert(QStringLiteral("port"), int(m_server->serverPort()));
-    if (m_controlHandler)
-        hello.insert(QStringLiteral("control"), true);
-    if (link.keyKnown)
-        writePlain(link, hello);
-    else
-        link.pending.enqueue(hello);
+    if (store && !frame.isEmpty() && !id.isEmpty())
+        m_historyFrames.insert(id, frame);
 }
 
 void LocalMeshNode::sendHistoryTo(Link &link)
 {
-    for (const QJsonObject &entry : std::as_const(m_history))
-        writePlain(link, entry);
-}
-
-void LocalMeshNode::handleFrame(Link &link, const QByteArray &payload)
-{
-    ++m_diag.framesIn;
-    const QJsonDocument document = QJsonDocument::fromJson(payload);
-    const QJsonObject decrypted = document.isObject()
-                                      ? m_crypto.decryptObject(document.object())
-                                      : QJsonObject();
-    if (decrypted.isEmpty()) {
-        ++m_diag.framesUndecryptable;
-        return;
-    }
-    if (RoomSeal::isKeyFrame(decrypted)) {
-        const QString keyId =
-            decrypted.value(QStringLiteral("kid")).toString();
-        if (m_seal.acceptKeyFrame(decrypted)) {
-            // Re-advertise so a peer that learned our key late can still open
-            // what we send next.
-            sendKeyFrame(link);
-        }
-        if (keyId == m_seal.keyId() || m_seal.peerKeyIds().contains(keyId))
-            link.keyId = keyId;
-        if (!link.keyKnown) {
-            link.keyKnown = true;
-            while (!link.pending.isEmpty())
-                writePlain(link, link.pending.dequeue());
-        }
-        return;
-    }
-    const QString sealKeyId = RoomSeal::frameKeyId(decrypted);
-    const QJsonObject plain = m_seal.unsealObject(decrypted);
-    if (plain.isEmpty()) {
-        ++m_diag.framesUnsealable;
-        return;
-    }
-    if (plain.value(QStringLiteral("type")).toString() ==
-        QLatin1String("direct")) {
-        handleDirect(plain, sealKeyId);
-        return;
-    }
-    handlePlain(link, plain);
-}
-
-void LocalMeshNode::handleDirect(const QJsonObject &plain,
-                                 const QString &sealKeyId)
-{
-    const QString senderId =
-        plain.value(QStringLiteral("senderId")).toString();
-    const QString channel = plain.value(QStringLiteral("channel")).toString();
-    if (senderId.isEmpty() || senderId.size() > 160 || senderId == m_nodeId ||
-        sealKeyId.isEmpty() || sealKeyId == m_seal.keyId() ||
-        !channel.startsWith(QLatin1String("direct:")) || channel.size() > 80)
-        return;
-    ++m_diag.directIn;
-    emit directMessageArrived(channel, sealKeyId, plain);
-}
-
-int LocalMeshNode::sendDirect(const QString &channel, const QString &messageId,
-                              const QString &text, const QStringList &keyIds)
-{
-    const QString body = text.trimmed().left(kMaxTextChars);
-    if (!m_running || !channel.startsWith(QLatin1String("direct:")) ||
-        messageId.isEmpty() || body.isEmpty() || keyIds.isEmpty())
-        return 0;
-    QJsonObject message = makeMessage(QStringLiteral("direct"));
-    message.insert(QStringLiteral("id"), messageId);
-    message.insert(QStringLiteral("channel"), channel);
-    message.insert(QStringLiteral("text"), body);
-    QSet<QString> reached;
-    for (Link *link : std::as_const(m_links)) {
-        if (!link->keyKnown || link->keyId.isEmpty() ||
-            link->keyId == m_seal.keyId() || !keyIds.contains(link->keyId) ||
-            reached.contains(link->keyId))
+    QIODevice *socket = link.socket;
+    const QList<QJsonObject> history = m_history;
+    for (const QJsonObject &entry : history) {
+        Link *current = linkFor(socket);
+        if (!current)
+            return;
+        const QString id = entry.value(QStringLiteral("id")).toString();
+        if (entry.value(QStringLiteral("senderId")).toString() == m_nodeId) {
+            writeSealedTo(*current, entry);
             continue;
-        const QStringList only{link->keyId};
-        if (writePlain(*link, message, &only))
-            reached.insert(link->keyId);
+        }
+        const auto frame = m_historyFrames.constFind(id);
+        if (frame != m_historyFrames.constEnd())
+            writeLink(*current, frame.value());
     }
-    m_diag.directOut += int(reached.size());
-    return int(reached.size());
 }
 
-void LocalMeshNode::handlePlain(Link &link, const QJsonObject &plain)
+QList<forkmesh::chatv3::MeshLinkedDevice> LocalMeshNode::linkedDevices() const
+{
+    QList<forkmesh::chatv3::MeshLinkedDevice> devices;
+    QHash<QString, int> index;
+    for (const Link *link : m_links) {
+        if (link->stage != Link::Stage::Open || link->peerKid.isEmpty())
+            continue;
+        const auto found = index.constFind(link->peerKid);
+        if (found != index.constEnd()) {
+            forkmesh::chatv3::MeshLinkedDevice &device = devices[found.value()];
+            device.bluetooth = device.bluetooth && link->bluetooth;
+            device.focus.unite(link->focus);
+            continue;
+        }
+        forkmesh::chatv3::MeshLinkedDevice device;
+        device.kid = link->peerKid;
+        device.bluetooth = link->bluetooth;
+        device.focus = link->focus;
+        index.insert(link->peerKid, int(devices.size()));
+        devices.append(device);
+    }
+    return devices;
+}
+
+const LocalMeshNode::Link *LocalMeshNode::openLinkFor(const QString &kid) const
+{
+    const Link *best = nullptr;
+    for (const Link *link : m_links) {
+        if (link->stage != Link::Stage::Open || link->peerKid != kid)
+            continue;
+        if (!best || (best->bluetooth && !link->bluetooth))
+            best = link;
+    }
+    return best;
+}
+
+bool LocalMeshNode::sendDirectSealed(const QString &kid, const QString &channel,
+                                     const QJsonObject &frame)
+{
+    if (!m_running || !channel.startsWith(QLatin1String("direct:")) ||
+        frame.value(QStringLiteral("kid")).toString() != m_seal.keyId())
+        return false;
+    Link *link = const_cast<Link *>(openLinkFor(kid));
+    if (!link)
+        return false;
+    const bool written =
+        writeLink(*link, QJsonObject{{QStringLiteral("type"), QStringLiteral("direct-sealed")},
+                                     {QStringLiteral("channel"), channel},
+                                     {QStringLiteral("frame"), frame}});
+    if (written)
+        ++m_diag.directOut;
+    return written;
+}
+
+void LocalMeshNode::setDirectFocus(const QString &channel, bool on)
+{
+    if (!channel.startsWith(QLatin1String("direct:")))
+        return;
+    if (on == m_ownFocus.contains(channel))
+        return;
+    if (on)
+        m_ownFocus.insert(channel);
+    else
+        m_ownFocus.remove(channel);
+    const QJsonObject frame{{QStringLiteral("type"), QStringLiteral("focus")},
+                            {QStringLiteral("channel"), channel},
+                            {QStringLiteral("on"), on}};
+    for (Link *link : std::as_const(m_links))
+        if (link->stage == Link::Stage::Open)
+            writeLink(*link, frame);
+}
+
+void LocalMeshNode::handleEnvelope(Link &link, const QJsonObject &plain,
+                                   const QString &senderKid, const QJsonObject &frame)
 {
     const QString type = plain.value(QStringLiteral("type")).toString();
     const QString senderId =
         plain.value(QStringLiteral("senderId")).toString().left(160);
-    if (senderId.isEmpty() || senderId == m_nodeId)
+    if (senderId.isEmpty() || senderId == m_nodeId || senderKid == m_seal.keyId())
         return;
-    if (plain.value(QStringLiteral("conversation")).toString() !=
-        conversation())
+    if (plain.value(QStringLiteral("conversation")).toString() != conversation())
         return;
+    const bool fromLink = senderKid == link.peerKid;
+    if ((type == QLatin1String("hello") || type == QLatin1String("typing") ||
+         type == QLatin1String("bye")) &&
+        !fromLink)
+        return;
+    if (type == QLatin1String("hello"))
+        link.peerId = senderId;
 
-    // A link's identity is fixed by its hello. Chat can still arrive over it
-    // authored by a third device — that is what makes the room reach devices
-    // that never dialled each other — so only the link's own frames are held
-    // to the link's identity.
-    if (type == QLatin1String("hello")) {
-        if (link.peerId.isEmpty()) {
-            // Both devices dialled at once. Keep the link the higher node id
-            // opened: both sides reach the same verdict, so one survives.
-            Link *other = linkForPeer(senderId); // not this link: its id is unset
-            const qint64 now = QDateTime::currentMSecsSinceEpoch();
-            link.peerId = senderId;
-            link.helloMs = now;
-            if (other && other->bluetooth != link.bluetooth) {
-                if (link.bluetooth) {
-                    dropLink(link.socket, QStringLiteral("duplicate link"));
-                    return;
-                }
-                dropLink(other->socket, QStringLiteral("duplicate link"));
-            } else if (other &&
-                       now - other->helloMs >= m_linkReplaceAfterMs) {
-                dropLink(other->socket, QStringLiteral("replaced"));
-            } else if (other) {
-                const QString mine = link.outbound ? m_nodeId : senderId;
-                const QString theirs = other->outbound ? m_nodeId : senderId;
-                if (mine < theirs) {
-                    dropLink(link.socket, QStringLiteral("duplicate link"));
-                    return;
-                }
-                dropLink(other->socket, QStringLiteral("duplicate link"));
-            }
-        } else if (link.peerId != senderId) {
-            dropLink(link.socket, QStringLiteral("identity changed"));
-            return;
-        }
-    } else if ((type == QLatin1String("typing") ||
-                type == QLatin1String("bye")) &&
-               link.peerId != senderId) {
-        // Presence speaks only for the device on the other end of the link.
-        return;
-    }
-
-    rememberPeer(senderId, plain, link.peerId == senderId, link.bluetooth);
+    rememberPeer(senderKid, plain, fromLink && link.peerId == senderId, link.bluetooth);
     rememberWake(senderId, plain);
 
     if (type == QLatin1String("typing")) {
@@ -1759,13 +2110,11 @@ void LocalMeshNode::handlePlain(Link &link, const QJsonObject &plain)
         return;
 
     if (type == QLatin1String("hello")) {
-        // The joiner gets this device's recent room history, which is the only
-        // backfill a relay-less room has.
         sendHistoryTo(link);
         return;
     }
     if (type == QLatin1String("bye")) {
-        if (m_peers.remove(senderId) > 0)
+        if (m_peers.remove(senderKid) > 0)
             noteMembershipChange();
         return;
     }
@@ -1773,33 +2122,32 @@ void LocalMeshNode::handlePlain(Link &link, const QJsonObject &plain)
         return;
     ++m_diag.chatIn;
     storeHistory(plain);
+    m_historyFrames.insert(id, frame);
     emitChat(plain);
-    // A mesh link is point to point, so relay what a peer said to the peers it
-    // may not be able to see. The id cache above stops it from going round.
-    for (Link *other : std::as_const(m_links)) {
-        if (other == &link || !other->keyKnown)
-            continue;
-        writePlain(*other, plain);
-    }
 }
 
-void LocalMeshNode::rememberPeer(const QString &peerId, const QJsonObject &plain,
+void LocalMeshNode::rememberPeer(const QString &kid, const QJsonObject &plain,
                                  bool linked, bool bluetooth)
 {
-    if (peerId.isEmpty() || peerId == m_nodeId)
+    if (kid.isEmpty() || kid == m_seal.keyId())
         return;
-    const bool isNew = !m_peers.contains(peerId);
-    Peer &peer = m_peers[peerId];
+    const bool isNew = !m_peers.contains(kid);
+    Peer &peer = m_peers[kid];
+    const QString nodeId =
+        plain.value(QStringLiteral("senderId")).toString().left(160);
     const QString name = boundedText(plain, "sender", kMaxDisplayNameChars);
     const QString nodeName = boundedText(plain, "nodeName", kMaxDisplayNameChars);
     const QString ownerUser = boundedText(plain, "ownerUser", kMaxDisplayNameChars);
     const QString accountKind = boundedText(plain, "accountKind", 16);
     const QString platform = boundedText(plain, "platform", 16);
     const QString version = boundedText(plain, "version", kMaxVersionChars);
-    const bool changed = isNew || (!name.isEmpty() && name != peer.name) ||
+    const bool changed = isNew || (!nodeId.isEmpty() && nodeId != peer.nodeId) ||
+                         (!name.isEmpty() && name != peer.name) ||
                          (!nodeName.isEmpty() && nodeName != peer.nodeName) ||
                          (!ownerUser.isEmpty() && ownerUser != peer.ownerUser) ||
                          (linked && !peer.linked);
+    if (!nodeId.isEmpty())
+        peer.nodeId = nodeId;
     if (!name.isEmpty())
         peer.name = name;
     if (!nodeName.isEmpty())
@@ -1830,12 +2178,12 @@ LocalMeshNode::Link *LocalMeshNode::linkFor(QIODevice *socket)
     return nullptr;
 }
 
-LocalMeshNode::Link *LocalMeshNode::linkForPeer(const QString &peerId)
+LocalMeshNode::Link *LocalMeshNode::linkForPeer(const QString &kid, const Link *except)
 {
-    if (peerId.isEmpty())
+    if (kid.isEmpty())
         return nullptr;
     for (Link *link : std::as_const(m_links))
-        if (link->peerId == peerId)
+        if (link != except && link->stage == Link::Stage::Open && link->peerKid == kid)
             return link;
     return nullptr;
 }
@@ -1937,7 +2285,7 @@ QString LocalMeshNode::sendOwn(QJsonObject message)
     // device's key lands, or when a device joins and gets the history.
     m_queued.insert(id);
     ++m_diag.chatOut;
-    sendToAll(message);
+    sendToAll(message, true);
     const QStringList wake = wakeTargets();
     if (!wake.isEmpty())
         emit wakeRequested(wake);
@@ -2072,8 +2420,8 @@ QList<MemberInfo> LocalMeshNode::members() const
     roster.append(self);
     for (auto it = m_peers.constBegin(); it != m_peers.constEnd(); ++it) {
         MemberInfo member;
-        member.id = it.key();
-        member.name = it->name.isEmpty() ? it.key() : it->name;
+        member.id = it->nodeId.isEmpty() ? it.key() : it->nodeId;
+        member.name = it->name.isEmpty() ? member.id : it->name;
         member.nodeName = it->nodeName;
         member.ownerUser = it->ownerUser;
         member.accountKind = it->accountKind;
@@ -2156,7 +2504,7 @@ QString LocalMeshNode::diagnosticsLine() const
     const Diagnostics &d = m_diag;
     int keyed = 0;
     for (const Link *link : m_links)
-        if (link->keyKnown)
+        if (link->bundleKnown)
             ++keyed;
     QStringList parts;
     parts << QStringLiteral("udp %1 %2")
@@ -2341,11 +2689,6 @@ void LocalMeshNode::setMulticastEnabledForTests(bool enabled)
 void LocalMeshNode::setAddressSweepEnabledForTests(bool enabled)
 {
     m_addressSweepEnabled = enabled;
-}
-
-void LocalMeshNode::setSealKeyForTests(const QByteArray &privateKey)
-{
-    m_seal = RoomSeal(roomName(), privateKey);
 }
 
 void LocalMeshNode::setBluetoothEnabledForTests(bool enabled)

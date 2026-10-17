@@ -19,8 +19,10 @@
 #include <QVector>
 
 #include <functional>
+#include <memory>
 
 class QNetworkAccessManager;
+class QTimer;
 class ServerNode;
 
 // Office channels are independently encrypted rooms admitted with 60-second
@@ -30,6 +32,8 @@ class ServerNode;
 namespace forkmesh::office {
 
 constexpr qsizetype kMaxDirectFileBytes = 1024 * 1024;
+constexpr qsizetype kMaxBluetoothDirectFileBytes = 256 * 1024;
+constexpr int kDirectOnlyAckMs = 3000;
 
 QString conversationForChannel(const QString &channelName);
 bool isOfficeConversation(const QString &conversation);
@@ -122,6 +126,7 @@ class OfficeChannelMirror : public QObject
 public:
     explicit OfficeChannelMirror(QNetworkAccessManager *network,
                                  QObject *parent = nullptr);
+    ~OfficeChannelMirror() override;
 
     // Signs a canonical string with this node's account identity key, in the
     // same base64url form the relay's signed endpoints expect.
@@ -130,10 +135,24 @@ public:
                      const QString &displayName = QString());
     void setConnectionAuthorizer(std::function<bool(const QUrl &)> authorizer);
     void setApiBase(const QUrl &apiBase);
-    using MeshDirectSender = std::function<int(
-        const QString &channel, const QString &messageId, const QString &text,
-        const QStringList &keyIds)>;
-    void setMeshDirectSender(MeshDirectSender sender);
+    struct MeshTransport {
+        std::function<QList<forkmesh::chatv3::MeshLinkedDevice>()> linkedDevices;
+        std::function<bool(const QString &kid, const QString &channel,
+                           const QJsonObject &frame)>
+            sendDirect;
+        std::function<void(const QString &channel, bool on)> sendFocus;
+    };
+    void setMeshTransport(MeshTransport transport);
+    void setChatDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> device);
+
+    struct DirectDevice {
+        QString kid;
+        QString acct;
+        bool own = false;
+        forkmesh::chatv3::TrustState state = forkmesh::chatv3::TrustState::Pending;
+        bool verified = false;
+        qint64 firstSeen = 0;
+    };
 
     void start();
     void stop();
@@ -185,8 +204,23 @@ public:
     void refreshDirectMessages();
     void watchConversation(const QString &conversation);
     QStringList directDeviceKeys(const QString &conversation) const;
-    bool acceptMeshDirect(const QString &channel, const QString &sealKeyId,
-                          const QJsonObject &plain);
+    QString acceptMeshDirect(const QString &linkKid, const QString &channel,
+                             const QJsonObject &frame);
+    void meshDirectAcked(const QString &kid, const QString &channel,
+                         const QString &messageId);
+    void meshLinksChanged();
+    void meshPeerFocusChanged(const QString &kid, const QString &channel, bool on);
+    void setFocusedConversation(const QString &conversation);
+    QString focusedConversation() const { return m_focusedConversation; }
+    QString directRouteLabel(const QString &conversation) const;
+    bool hasDirectSeal(const QString &conversation) const;
+    QList<DirectDevice> directDevices(const QString &conversation) const;
+    bool approveDirectDevice(const QString &conversation, const QString &kid);
+    bool blockDirectDevice(const QString &conversation, const QString &kid);
+    forkmesh::chatv3::SafetyNumber directSafetyNumber(const QString &conversation) const;
+    bool isDirectVerified(const QString &conversation) const;
+    void markDirectVerified(const QString &conversation);
+    QString directConversationForChannel(const QString &channel) const;
     QString readMarkKey(const QString &conversation) const;
     void fetchReadMarks();
     void postReadMarks(const QHash<QString, qint64> &marks);
@@ -230,6 +264,11 @@ signals:
     void directConversationReady(const QString &conversation);
     void directMessageFailed(const QString &username, const QString &reason);
     void readMarksFetched(const QHash<QString, qint64> &marks);
+    void directDevicePending(const QString &conversation, const QString &kid);
+    void directSafetyNumberChanged(const QString &conversation);
+    void directRouteChanged(const QString &conversation);
+    void typingChanged(const QString &conversation, const QString &peerId,
+                       const QString &peerName, bool active);
 
 private:
     struct PendingText {
@@ -266,7 +305,8 @@ private:
         QSet<QString> seenIds;
         QQueue<QString> seenOrder;
         QQueue<PendingText> pendingTexts;
-        QStringList deviceKeys;
+        RoomSeal directSeal;
+        QSet<QString> meshInFlight;
         QSet<QString> meshDelivered;
         QPointer<ServerNode> sender;
         bool accessFetching = false;
@@ -297,7 +337,25 @@ private:
     void flushPending(Room &room);
     void failPending(Room &room, const QString &reason);
     void rememberSeen(Room &room, const QString &messageId);
-    void rememberDeviceKeys(Room &room, const QStringList &keyIds);
+    struct DirectOnly {
+        QString roomId;
+        PendingText pending;
+        QStringList kids;
+        QTimer *timer = nullptr;
+    };
+    const RoomSeal &directSealFor(Room &room);
+    void setDirectRoomName(Room &room, const QString &roomName);
+    QJsonObject directPlain(const Room &room, const PendingText &pending) const;
+    void sendDirectPending(Room &room, const PendingText &pending);
+    int deliverOverMesh(Room &room, const QJsonObject &plain, qsizetype fileBytes,
+                        bool *directOnly, QStringList *peerKids);
+    void fallBackToRelay(const QString &messageId);
+    void dispatchDirectPlain(Room &room, const QJsonObject &plain);
+    void processHeldDirect(Room &room);
+    void onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event,
+                       const QString &scope, const QString &kid);
+    Room *roomForScope(const QString &scope);
+    QString selfDirectAcct() const;
     void saveDirectDirectory() const;
     void restoreDirectDirectory();
     void discardSender(Room &room);
@@ -324,7 +382,11 @@ private:
     qint64 m_lastListMs = 0;
     std::function<QString(const QByteArray &)> m_signer;
     std::function<bool(const QUrl &)> m_connectionAuthorizer;
-    MeshDirectSender m_meshDirectSender;
+    MeshTransport m_mesh;
+    std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    int m_deviceToken = 0;
+    QHash<QString, DirectOnly> m_directOnly;
+    QString m_focusedConversation;
     QString m_account;
     QString m_selfId;
     QString m_displayName;

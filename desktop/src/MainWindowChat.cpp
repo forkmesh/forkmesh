@@ -2304,6 +2304,7 @@ QWidget *MainWindow::buildChatPage()
                 renderPageNotices();
                 noteGeniePage();
                 updatePackageActionsButton();
+                refreshDirectFocus();
                 if (index == 4)
                     setLogOverlayExpanded(false);
                 else

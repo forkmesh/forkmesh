@@ -33,9 +33,9 @@ def _apns_stub():
     import types
     return types.SimpleNamespace(
         direct_message_alert=(
-            lambda sender="", started=False, conversation_id="", ref="",
+            lambda started=False, conversation_id="", ref="",
             key_version=0, frame="": {
-                "title": "Direct message from " + sender,
+                "title": "New message",
                 **({"ref": ref, "keyVersion": key_version} if ref else {})}))
 
 
@@ -337,10 +337,10 @@ def test_retained_direct_message_atomically_advances_sender_cursor():
         clock[0],
     ))
 
-    # alice sent it, so bob is the one whose unread count moved, and his
-    # phone banner names her.
+    # alice sent it, so bob is the one whose unread count moved; his phone
+    # banner does not name her.
     assert pushes == [("bob", "direct-messages")]
-    assert alerts == [{"title": "Direct message from alice"}]
+    assert alerts == [{"title": "New message"}]
 
     assert len(calls) == 1
     statements = calls[0][1]

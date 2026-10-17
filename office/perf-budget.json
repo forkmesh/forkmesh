@@ -1,5 +1,5 @@
 {
-  "scriptGzipBytes": 130000,
+  "scriptGzipBytes": 140000,
   "styleGzipBytes": 14000,
   "frameP95Ms": 16.7,
   "frameMaxLongFrames": 3

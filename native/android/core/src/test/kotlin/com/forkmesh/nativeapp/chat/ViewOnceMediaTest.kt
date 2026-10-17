@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.MemorySecretStore
@@ -99,6 +100,12 @@ class ViewOnceMediaTest {
     private val conversation = "direct:$conversationId"
     private val room = "chat-direct:$conversationId:v1"
     private val crypto = RoomCrypto.withPassphrase(room, "direct-pass")
+
+    private fun mySeal(store: MemorySecretStore) =
+        RoomSeal.loadOrCreate(room, scope = conversation, policy = SealPolicy.STRICT, acct = "me-node", secureStore = store)
+
+    private fun peerSeal() =
+        RoomSeal.loadOrCreate(room, scope = conversation, policy = SealPolicy.STRICT, acct = "pat", secureStore = MemorySecretStore(), node = "pat-node")
 
     private fun prepared(server: FakeMediaServer): FakeMediaServer {
         server.replies["GET /api/chat/direct-messages"] = mapOf(
@@ -272,8 +279,9 @@ class ViewOnceMediaTest {
         dm.refresh()
         expect(dm.open(conversation))
         val socket = connector.last!!
-        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
+        val peer = peerSeal()
         socket.onText(Json.stringify(crypto.encrypt(peer.keyFrame())))
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
         val recording = ByteArray(700_000) { (it % 97).toByte() }
         expect(hub.sendViewOnce(conversation, ViewOnceKind.VIDEO, "video/mp4", 9_000, recording))
         val mediaId = server.items.keys.single()
@@ -329,8 +337,9 @@ class ViewOnceMediaTest {
         dm.refresh()
         expect(dm.open(conversation))
         val socket = connector.last!!
-        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
-        peer.acceptKeyFrame(RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store).keyFrame())
+        val peer = peerSeal()
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
+        socket.onText(Json.stringify(crypto.encrypt(peer.keyFrame())))
         val media = ViewOnceMedia(ViewOnceKind.VOICE, mediaId, key, iv, "audio/mp4", 4_000, sealed.size.toLong(), 1)
         val chat = mapOf(
             "type" to "chat", "id" to "pat-1", "senderId" to "pat-node", "sender" to "pat", "accountKind" to "user",
@@ -370,8 +379,9 @@ class ViewOnceMediaTest {
         dm.refresh()
         expect(dm.open(conversation))
         val socket = connector.last!!
-        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
-        peer.acceptKeyFrame(RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store).keyFrame())
+        val peer = peerSeal()
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
+        socket.onText(Json.stringify(crypto.encrypt(peer.keyFrame())))
         for ((index, id) in listOf(first, second).withIndex()) {
             val media = ViewOnceMedia(ViewOnceKind.VIDEO, id, ByteArray(32), ByteArray(12), "video/mp4", 1_000, 100, 1)
             val chat = mapOf(
@@ -413,8 +423,9 @@ class ViewOnceMediaTest {
         dm.refresh()
         expect(dm.open(conversation))
         val socket = connector.last!!
-        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
-        peer.acceptKeyFrame(RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store).keyFrame())
+        val peer = peerSeal()
+        peer.acceptKeyFrame(mySeal(store).keyFrame())
+        socket.onText(Json.stringify(crypto.encrypt(peer.keyFrame())))
         fun chat(id: String, media: ViewOnceMedia?) = mapOf(
             "type" to "chat", "id" to id, "senderId" to "pat-node", "sender" to "pat",
             "channel" to conversation, "text" to "plain $id", "ts" to 1L,

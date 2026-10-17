@@ -6,6 +6,8 @@ import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.chat.OfficeFrames
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.jsonLong
 import com.forkmesh.nativeapp.json.jsonText
@@ -91,9 +93,16 @@ object DirectMessagePreviews {
         }
         val framed = RoomCrypto.withPassphrase(room, passphrase).decrypt(envelope) ?: return null
         if (!RoomSeal.isSealedFrame(framed)) return null
-        val seal = RoomSeal.existing(room, secureStore = secrets) ?: return null
-        val plain = seal.unseal(framed) ?: return null
-        return preview(plain, event)
+        val seal = RoomSeal.existing(
+            room,
+            scope = DirectMessageFrames.trustScope(event.conversationId),
+            policy = SealPolicy.STRICT,
+            acct = "",
+            secureStore = secrets,
+        ) ?: return null
+        val opened = seal.open(framed, hold = false, commit = false) as? SealOpen.Opened ?: return null
+        if (opened.senderNode != null && jsonText(opened.plain["senderId"]) != opened.senderNode) return null
+        return preview(opened.plain, event)
     }
 
     fun preview(plain: Map<String, Any?>, event: DirectMessageEvent): DirectMessagePreview? {

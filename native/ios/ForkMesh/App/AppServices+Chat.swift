@@ -62,11 +62,6 @@ struct ChatInstaller: AppServicesInstaller {
             let live: DirectLiveEngine = installLive(hub: hub, direct: direct)
             let readMarks: ChatReadMarks = ChatReadMarks(api: api)
             hub.readMarks = readMarks
-            let mesh: LocalMeshService = hub.mesh
-            direct.meshSender = { (plain: JSONObject, keys: [String]) in await mesh.sendDirect(plain, to: keys) }
-            mesh.onDirect = { (channel: String, keyId: String, plain: JSONObject) in
-                _ = direct.acceptMeshDirect(channel, sealKeyId: keyId, plain: plain)
-            }
             hub.forkbot = api
             hub.apps = api.appsClient
             Services.put(office)

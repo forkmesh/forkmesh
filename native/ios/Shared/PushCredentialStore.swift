@@ -3,6 +3,8 @@
 // service extension compile it. The group and service are the ones the retired
 // Flutter app wrote, so its items are read as they are: the format is the same.
 
+import FMBase
+import FMCrypto
 import FMPush
 import Foundation
 import Security
@@ -169,7 +171,9 @@ enum PushCredentialStore {
         }
     }
 
-    static func deviceKey(named name: String) -> [UInt8]? {
+    static let legacyDeviceKeyNames = ["chat/e2ee/x25519PrivateV2"]
+
+    static func secureItem(_ name: String) -> String? {
         guard !name.isEmpty else { return nil }
         let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -179,11 +183,21 @@ enum PushCredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var found: CFTypeRef?
-        guard SecItemCopyMatching(lookup as CFDictionary, &found) == errSecSuccess, let data = found as? Data,
-            let text = String(data: data, encoding: .utf8),
-            let bytes = Data(base64Encoded: text.trimmingCharacters(in: .whitespacesAndNewlines)), bytes.count == 32
-        else { return nil }
-        return Array(bytes)
+        guard SecItemCopyMatching(lookup as CFDictionary, &found) == errSecSuccess, let data = found as? Data else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func chatKeyPrefix(deviceKeyName name: String) -> String {
+        for suffix in [RoomSeal.privateKeyStoreKey] + legacyDeviceKeyNames where name.hasSuffix(suffix) {
+            return String(name.dropLast(suffix.count))
+        }
+        return ""
+    }
+
+    static func chatStore(deviceKeyName: String) -> SecureStore {
+        PushSecureReader(prefix: chatKeyPrefix(deviceKeyName: deviceKeyName))
     }
 
     /// Called on sign-out. A stale session would keep fetching a signed-out
@@ -201,4 +215,20 @@ enum PushCredentialStore {
             kSecAttrAccessGroup as String: accessGroup,
         ]
     }
+}
+
+final class PushSecureReader: SecureStore, @unchecked Sendable {
+    let prefix: String
+
+    init(prefix: String) {
+        self.prefix = prefix
+    }
+
+    func read(_ key: String) -> String? { PushCredentialStore.secureItem(prefix + key) }
+
+    func write(_ key: String, _ value: String) {}
+
+    func delete(_ key: String) {}
+
+    func readAll() -> [String: String] { [:] }
 }

@@ -41,8 +41,7 @@ constexpr int kMaxPendingTextsPerRoom = 32;
 constexpr int kSeenIdsPerRoom = 1000;
 constexpr int kMaxDirectConversations = 50;
 constexpr int kMaxLiveDirectRooms = 8;
-constexpr int kMaxDirectDeviceKeys = 64;
-constexpr int kMaxDeviceKeyChars = 64;
+constexpr int kMaxDirectRoomNameChars = 160;
 constexpr int kMaxInvitees = 500;
 constexpr int kMaxEveryoneMembers = 20000;
 
@@ -59,17 +58,6 @@ QString normalizedUsername(const QString &value)
     if (name.startsWith(QLatin1Char('@')))
         name.remove(0, 1);
     return usernamePattern().match(name).hasMatch() ? name : QString();
-}
-
-QStringList mergedDeviceKeys(QStringList current, const QStringList &added)
-{
-    for (const QString &keyId : added)
-        if (!keyId.isEmpty() && keyId.size() <= kMaxDeviceKeyChars &&
-            !current.contains(keyId))
-            current.append(keyId);
-    while (current.size() > kMaxDirectDeviceKeys)
-        current.removeFirst();
-    return current;
 }
 
 QString sha256Hex(const QString &value)
@@ -457,6 +445,107 @@ OfficeChannelMirror::OfficeChannelMirror(QNetworkAccessManager *network,
                                          QObject *parent)
     : QObject(parent), m_network(network)
 {
+    setChatDevice(forkmesh::chatv3::ChatDevice::local());
+}
+
+OfficeChannelMirror::~OfficeChannelMirror()
+{
+    if (m_device)
+        m_device->unsubscribe(m_deviceToken);
+}
+
+void OfficeChannelMirror::setChatDevice(
+    std::shared_ptr<forkmesh::chatv3::ChatDevice> device)
+{
+    if (!device || device == m_device)
+        return;
+    if (m_device)
+        m_device->unsubscribe(m_deviceToken);
+    m_device = std::move(device);
+    m_deviceToken = m_device->subscribe(
+        [this](forkmesh::chatv3::ChatDevice::Event event, const QString &scope,
+               const QString &kid) { onDeviceEvent(event, scope, kid); });
+    for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it)
+        it->directSeal = RoomSeal();
+}
+
+void OfficeChannelMirror::setMeshTransport(MeshTransport transport)
+{
+    m_mesh = std::move(transport);
+}
+
+QString OfficeChannelMirror::selfDirectAcct() const
+{
+    return m_account.isEmpty() ? m_selfId : m_account;
+}
+
+const RoomSeal &OfficeChannelMirror::directSealFor(Room &room)
+{
+    if (room.direct && !room.room.isEmpty() &&
+        (!room.directSeal.isValid() || room.directSeal.roomName() != room.room ||
+         room.directSeal.device() != m_device ||
+         room.directSeal.acct() != selfDirectAcct() ||
+         room.directSeal.node() != m_selfId))
+        room.directSeal = RoomSeal(room.room, QStringLiteral("direct:") + room.id,
+                                   RoomSeal::Policy::Strict, selfDirectAcct(), m_selfId,
+                                   m_device);
+    room.directSeal.setParticipants(room.members);
+    return room.directSeal;
+}
+
+void OfficeChannelMirror::setDirectRoomName(Room &room, const QString &roomName)
+{
+    const QString name = roomName.trimmed().left(kMaxDirectRoomNameChars);
+    if (!room.direct || name.isEmpty() || name == room.room)
+        return;
+    room.room = name;
+    room.directSeal = RoomSeal();
+    saveDirectDirectory();
+}
+
+OfficeChannelMirror::Room *OfficeChannelMirror::roomForScope(const QString &scope)
+{
+    if (!scope.startsWith(QLatin1String("direct:")))
+        return nullptr;
+    const auto it = m_rooms.find(scope.mid(7));
+    return it == m_rooms.end() || !it->direct ? nullptr : &it.value();
+}
+
+void OfficeChannelMirror::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event,
+                                        const QString &scope, const QString &kid)
+{
+    using Event = forkmesh::chatv3::ChatDevice::Event;
+    Room *room = roomForScope(scope);
+    if (!room)
+        return;
+    const QString conversation = room->conversation;
+    const QString roomId = room->id;
+    switch (event) {
+    case Event::DevicePending:
+        emit directDevicePending(conversation, kid);
+        emit directRouteChanged(conversation);
+        break;
+    case Event::SafetyNumberChanged:
+        emit directSafetyNumberChanged(conversation);
+        break;
+    case Event::TrustChanged:
+        emit directRouteChanged(conversation);
+        QMetaObject::invokeMethod(
+            this,
+            [this, roomId] {
+                const auto it = m_rooms.find(roomId);
+                if (it == m_rooms.end())
+                    return;
+                if (it->sender)
+                    it->sender->reopenHeldFrames();
+                else
+                    processHeldDirect(it.value());
+            },
+            Qt::QueuedConnection);
+        break;
+    case Event::PrekeyRotated:
+        break;
+    }
 }
 
 void OfficeChannelMirror::setSigner(std::function<QString(const QByteArray &)> signer)
@@ -505,11 +594,6 @@ void OfficeChannelMirror::setApiBase(const QUrl &apiBase)
     m_apiBase = base;
 }
 
-void OfficeChannelMirror::setMeshDirectSender(MeshDirectSender sender)
-{
-    m_meshDirectSender = std::move(sender);
-}
-
 bool OfficeChannelMirror::ready() const
 {
     return m_network && m_signer && !m_account.isEmpty() &&
@@ -528,6 +612,10 @@ void OfficeChannelMirror::start()
 void OfficeChannelMirror::stop()
 {
     m_active = false;
+    for (auto it = m_directOnly.begin(); it != m_directOnly.end(); ++it)
+        if (it->timer)
+            it->timer->deleteLater();
+    m_directOnly.clear();
     for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it)
         discardSender(it.value());
     m_rooms.clear();
@@ -934,47 +1022,433 @@ void OfficeChannelMirror::postReadMarks(const QHash<QString, qint64> &marks)
 QStringList OfficeChannelMirror::directDeviceKeys(
     const QString &conversation) const
 {
-    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it)
-        if (it->direct && it->conversation == conversation)
-            return it->deviceKeys;
-    return {};
+    QStringList keys;
+    for (const DirectDevice &device : directDevices(conversation))
+        if (!device.own && device.state == forkmesh::chatv3::TrustState::Approved)
+            keys.append(device.kid);
+    return keys;
 }
 
-bool OfficeChannelMirror::acceptMeshDirect(const QString &channel,
-                                           const QString &sealKeyId,
-                                           const QJsonObject &plain)
+QString OfficeChannelMirror::directConversationForChannel(const QString &channel) const
 {
-    if (!m_active || !channel.startsWith(QLatin1String("direct:")) ||
-        sealKeyId.isEmpty() ||
-        plain.value(QStringLiteral("channel")).toString() != channel)
+    if (!channel.startsWith(QLatin1String("direct:")))
+        return QString();
+    const auto it = m_rooms.constFind(channel.mid(7));
+    return it == m_rooms.constEnd() || !it->direct ? QString() : it->conversation;
+}
+
+bool OfficeChannelMirror::hasDirectSeal(const QString &conversation) const
+{
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it)
+        if (it->direct && it->conversation == conversation)
+            return !it->room.isEmpty();
+    return false;
+}
+
+QList<OfficeChannelMirror::DirectDevice>
+OfficeChannelMirror::directDevices(const QString &conversation) const
+{
+    QList<DirectDevice> devices;
+    if (!m_device)
+        return devices;
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (!it->direct || it->conversation != conversation)
+            continue;
+        for (const forkmesh::chatv3::TrustRecord &record :
+             m_device->records(QStringLiteral("direct:") + it->id)) {
+            if (record.kid == m_device->kid())
+                continue;
+            DirectDevice device;
+            device.kid = record.kid;
+            device.acct = record.acct;
+            device.own = record.acct == selfDirectAcct();
+            device.state = record.state;
+            device.verified = record.verified;
+            device.firstSeen = record.firstSeen;
+            devices.append(device);
+        }
+        break;
+    }
+    return devices;
+}
+
+bool OfficeChannelMirror::approveDirectDevice(const QString &conversation,
+                                              const QString &kid)
+{
+    Room *room = findRoom(conversation);
+    if (!room || !room->direct || !m_device)
         return false;
-    const auto it = m_rooms.find(channel.mid(7));
-    if (it == m_rooms.end() || !it->direct ||
-        !it->deviceKeys.contains(sealKeyId))
-        return false;
-    Room &room = it.value();
-    QJsonObject frame = plain;
-    frame.insert(QStringLiteral("type"), QStringLiteral("chat"));
-    frame.remove(QStringLiteral("file"));
-    frame.remove(QStringLiteral("fileName"));
-    ChatMessage message;
-    if (!forkmesh::office::chatMessageFromPlain(frame, room.conversation,
-                                                m_selfId, &message) ||
-        room.seenIds.contains(message.id))
-        return false;
-    rememberSeen(room, message.id);
-    emit messageArrived(message);
+    m_device->setState(QStringLiteral("direct:") + room->id, kid,
+                       forkmesh::chatv3::TrustState::Approved);
     return true;
 }
 
-void OfficeChannelMirror::rememberDeviceKeys(Room &room,
-                                             const QStringList &keyIds)
+bool OfficeChannelMirror::blockDirectDevice(const QString &conversation,
+                                            const QString &kid)
 {
-    const QStringList merged = mergedDeviceKeys(room.deviceKeys, keyIds);
-    if (merged == room.deviceKeys)
+    Room *room = findRoom(conversation);
+    if (!room || !room->direct || !m_device)
+        return false;
+    m_device->setState(QStringLiteral("direct:") + room->id, kid,
+                       forkmesh::chatv3::TrustState::Blocked);
+    return true;
+}
+
+forkmesh::chatv3::SafetyNumber
+OfficeChannelMirror::directSafetyNumber(const QString &conversation) const
+{
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it)
+        if (it->direct && it->conversation == conversation && m_device)
+            return m_device->safetyNumberFor(QStringLiteral("direct:") + it->id);
+    return {};
+}
+
+bool OfficeChannelMirror::isDirectVerified(const QString &conversation) const
+{
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it)
+        if (it->direct && it->conversation == conversation && m_device)
+            return m_device->isVerified(QStringLiteral("direct:") + it->id);
+    return false;
+}
+
+void OfficeChannelMirror::markDirectVerified(const QString &conversation)
+{
+    Room *room = findRoom(conversation);
+    if (room && room->direct && m_device)
+        m_device->markVerified(QStringLiteral("direct:") + room->id);
+}
+
+QJsonObject OfficeChannelMirror::directPlain(const Room &room,
+                                             const PendingText &pending) const
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const QString name = m_displayName.isEmpty() ? m_account : m_displayName;
+    QJsonObject plain{{QStringLiteral("id"), pending.id},
+                      {QStringLiteral("senderId"), m_selfId},
+                      {QStringLiteral("sender"), name},
+                      {QStringLiteral("accountKind"), QStringLiteral("user")},
+                      {QStringLiteral("nodeName"), m_account},
+                      {QStringLiteral("ownerUser"), m_account},
+                      {QStringLiteral("ts"), double(now)}};
+    const QString channel = wireChannel(room);
+    if (pending.kind == QLatin1String("reaction")) {
+        plain.insert(QStringLiteral("type"), QStringLiteral("reaction"));
+        plain.insert(QStringLiteral("conversation"), channel);
+        plain.insert(QStringLiteral("target"), pending.target);
+        plain.insert(QStringLiteral("emoji"), pending.emoji);
+        plain.insert(QStringLiteral("reactorId"), m_selfId);
+        plain.insert(QStringLiteral("reactorName"), name);
+        plain.insert(QStringLiteral("added"), pending.added);
+    } else if (pending.kind == QLatin1String("edit")) {
+        plain.insert(QStringLiteral("type"), QStringLiteral("edit"));
+        plain.insert(QStringLiteral("conversation"), channel);
+        plain.insert(QStringLiteral("target"), pending.target);
+        plain.insert(QStringLiteral("text"), pending.text);
+        plain.insert(QStringLiteral("editedAt"), double(now));
+    } else if (pending.kind == QLatin1String("delete")) {
+        plain.insert(QStringLiteral("type"), QStringLiteral("delete"));
+        plain.insert(QStringLiteral("conversation"), channel);
+        plain.insert(QStringLiteral("target"), pending.target);
+    } else if (pending.kind == QLatin1String("reply")) {
+        plain.insert(QStringLiteral("type"), QStringLiteral("thread-reply"));
+        plain.insert(QStringLiteral("channel"), channel);
+        plain.insert(QStringLiteral("rootId"), pending.rootId);
+        plain.insert(QStringLiteral("text"), ServerNode::moderatedChatText(pending.text));
+    } else {
+        plain.insert(QStringLiteral("type"), QStringLiteral("chat"));
+        plain.insert(QStringLiteral("channel"), channel);
+        if (pending.fileData.isEmpty()) {
+            plain.insert(QStringLiteral("text"), ServerNode::moderatedChatText(pending.text));
+        } else {
+            plain.insert(QStringLiteral("fileName"), pending.fileName);
+            plain.insert(QStringLiteral("fileMime"), pending.fileMime);
+            plain.insert(QStringLiteral("file"),
+                         QString::fromLatin1(pending.fileData.toBase64()));
+        }
+    }
+    return plain;
+}
+
+int OfficeChannelMirror::deliverOverMesh(Room &room, const QJsonObject &plain,
+                                         qsizetype fileBytes, bool *directOnly,
+                                         QStringList *peerKids)
+{
+    if (directOnly)
+        *directOnly = false;
+    if (!room.direct || !m_mesh.linkedDevices || !m_mesh.sendDirect ||
+        room.room.isEmpty())
+        return 0;
+    const RoomSeal &seal = directSealFor(room);
+    if (!seal.isValid())
+        return 0;
+    const QString channel = wireChannel(room);
+    const QString self = seal.keyId();
+    bool peerFocused = false;
+    int reached = 0;
+    const QList<forkmesh::chatv3::MeshLinkedDevice> devices = m_mesh.linkedDevices();
+    for (const forkmesh::chatv3::MeshLinkedDevice &device : devices) {
+        if (device.kid == self || !seal.isApproved(device.kid))
+            continue;
+        const qsizetype limit = device.bluetooth
+                                    ? forkmesh::office::kMaxBluetoothDirectFileBytes
+                                    : forkmesh::office::kMaxDirectFileBytes;
+        if (fileBytes > limit)
+            continue;
+        const QJsonObject frame = seal.sealObjectFor(plain, {device.kid});
+        if (frame.isEmpty() || !m_mesh.sendDirect(device.kid, channel, frame))
+            continue;
+        ++reached;
+        if (seal.acctForKeyId(device.kid) == selfDirectAcct())
+            continue;
+        if (peerKids)
+            peerKids->append(device.kid);
+        if (device.focus.contains(channel))
+            peerFocused = true;
+    }
+    if (directOnly)
+        *directOnly = peerFocused && m_focusedConversation == room.conversation;
+    return reached;
+}
+
+void OfficeChannelMirror::sendDirectPending(Room &room, const PendingText &pending)
+{
+    bool directOnly = false;
+    QStringList peerKids;
+    const int reached = deliverOverMesh(room, directPlain(room, pending),
+                                        pending.fileData.size(), &directOnly,
+                                        &peerKids);
+    if (reached > 0) {
+        room.meshInFlight.insert(pending.id);
+        emit sendActivity(QStringLiteral("Office chat: sent a message for %1 to %2 "
+                                         "device(s) over the local mesh.")
+                              .arg(room.conversation)
+                              .arg(reached));
+    }
+    if (directOnly && !m_directOnly.contains(pending.id)) {
+        DirectOnly waiting;
+        waiting.roomId = room.id;
+        waiting.pending = pending;
+        waiting.kids = peerKids;
+        waiting.timer = new QTimer(this);
+        waiting.timer->setSingleShot(true);
+        const QString id = pending.id;
+        connect(waiting.timer, &QTimer::timeout, this, [this, id] { fallBackToRelay(id); });
+        waiting.timer->start(forkmesh::office::kDirectOnlyAckMs);
+        m_directOnly.insert(id, waiting);
         return;
-    room.deviceKeys = merged;
-    saveDirectDirectory();
+    }
+    room.pendingTexts.enqueue(pending);
+    if (room.sender && room.senderConnected)
+        flushPending(room);
+    else if (!room.sender && !room.accessFetching)
+        fetchRoomAccess(room.id);
+}
+
+void OfficeChannelMirror::fallBackToRelay(const QString &messageId)
+{
+    const auto waiting = m_directOnly.find(messageId);
+    if (waiting == m_directOnly.end())
+        return;
+    const DirectOnly entry = waiting.value();
+    m_directOnly.erase(waiting);
+    if (entry.timer)
+        entry.timer->deleteLater();
+    const auto it = m_rooms.find(entry.roomId);
+    if (it == m_rooms.end())
+        return;
+    Room &room = it.value();
+    room.pendingTexts.enqueue(entry.pending);
+    emit sendActivity(QStringLiteral("Office chat: no direct answer for %1, sending "
+                                     "through the relay.")
+                          .arg(room.conversation));
+    if (room.sender && room.senderConnected)
+        flushPending(room);
+    else if (!room.sender && !room.accessFetching)
+        fetchRoomAccess(room.id);
+}
+
+QString OfficeChannelMirror::acceptMeshDirect(const QString &linkKid,
+                                              const QString &channel,
+                                              const QJsonObject &frame)
+{
+    if (!m_active || !channel.startsWith(QLatin1String("direct:")) ||
+        linkKid.isEmpty() ||
+        frame.value(QStringLiteral("kid")).toString() != linkKid)
+        return QString();
+    const auto it = m_rooms.find(channel.mid(7));
+    if (it == m_rooms.end() || !it->direct || it->room.isEmpty())
+        return QString();
+    Room &room = it.value();
+    const RoomSeal &seal = directSealFor(room);
+    const RoomSeal::Opened opened = seal.open(frame);
+    if (opened.status != RoomSeal::Status::Opened || opened.self)
+        return QString();
+    QJsonObject plain = opened.plain;
+    if (!plain.contains(QStringLiteral("senderId")))
+        plain.insert(QStringLiteral("senderId"), opened.senderNode);
+    RoomSeal::useSignedTime(plain, opened);
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    const QString wire = wireChannel(room);
+    const bool message = type == QLatin1String("chat") ||
+                         type == QLatin1String("thread-reply");
+    const QString bound = plain.value(message ? QStringLiteral("channel")
+                                              : QStringLiteral("conversation"))
+                              .toString();
+    if (bound != wire)
+        return QString();
+    const QString id = plain.value(QStringLiteral("id")).toString().left(96);
+    dispatchDirectPlain(room, plain);
+    return id;
+}
+
+void OfficeChannelMirror::dispatchDirectPlain(Room &room, const QJsonObject &plain)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("chat") || type == QLatin1String("thread-reply")) {
+        ChatMessage message;
+        if (!forkmesh::office::chatMessageFromPlain(plain, room.conversation, m_selfId,
+                                                    &message) ||
+            room.seenIds.contains(message.id))
+            return;
+        rememberSeen(room, message.id);
+        emit messageArrived(message);
+        return;
+    }
+    if (type == QLatin1String("reaction") || type == QLatin1String("edit") ||
+        type == QLatin1String("delete")) {
+        applyMutation(room, plain);
+        return;
+    }
+    if (type == QLatin1String("typing"))
+        emit typingChanged(room.conversation,
+                           plain.value(QStringLiteral("senderId")).toString(),
+                           boundedText(plain, "sender", kMaxDisplayNameChars),
+                           plain.value(QStringLiteral("active")).toBool());
+}
+
+void OfficeChannelMirror::processHeldDirect(Room &room)
+{
+    if (room.room.isEmpty())
+        return;
+    const RoomSeal &seal = directSealFor(room);
+    const QList<QJsonObject> released = seal.takeReleasedHeld();
+    for (const QJsonObject &frame : released) {
+        const RoomSeal::Opened opened = seal.open(frame);
+        if (opened.status != RoomSeal::Status::Opened || opened.self)
+            continue;
+        QJsonObject plain = opened.plain;
+        if (!plain.contains(QStringLiteral("senderId")))
+            plain.insert(QStringLiteral("senderId"), opened.senderNode);
+        RoomSeal::useSignedTime(plain, opened);
+        dispatchDirectPlain(room, plain);
+    }
+}
+
+void OfficeChannelMirror::meshDirectAcked(const QString &kid, const QString &channel,
+                                          const QString &messageId)
+{
+    if (!channel.startsWith(QLatin1String("direct:")) || messageId.isEmpty())
+        return;
+    const auto it = m_rooms.find(channel.mid(7));
+    if (it == m_rooms.end() || !it->direct)
+        return;
+    Room &room = it.value();
+    const RoomSeal &seal = directSealFor(room);
+    if (!seal.isApproved(kid) || seal.acctForKeyId(kid) == selfDirectAcct())
+        return;
+    const auto waiting = m_directOnly.find(messageId);
+    if (waiting != m_directOnly.end()) {
+        if (waiting->timer)
+            waiting->timer->deleteLater();
+        m_directOnly.erase(waiting);
+    }
+    room.meshInFlight.remove(messageId);
+    if (room.meshDelivered.contains(messageId))
+        return;
+    room.meshDelivered.insert(messageId);
+    emit messagesDelivered(room.conversation, {messageId});
+}
+
+void OfficeChannelMirror::meshLinksChanged()
+{
+    QSet<QString> linked;
+    if (m_mesh.linkedDevices)
+        for (const forkmesh::chatv3::MeshLinkedDevice &device : m_mesh.linkedDevices())
+            linked.insert(device.kid);
+    QStringList stranded;
+    for (auto it = m_directOnly.cbegin(); it != m_directOnly.cend(); ++it) {
+        bool reachable = false;
+        for (const QString &kid : it->kids)
+            reachable = reachable || linked.contains(kid);
+        if (!reachable)
+            stranded.append(it.key());
+    }
+    for (const QString &id : std::as_const(stranded))
+        fallBackToRelay(id);
+    for (const QString &conversation : std::as_const(m_directConversations))
+        emit directRouteChanged(conversation);
+}
+
+void OfficeChannelMirror::meshPeerFocusChanged(const QString &kid,
+                                               const QString &channel, bool on)
+{
+    Q_UNUSED(kid);
+    Q_UNUSED(on);
+    const QString conversation = directConversationForChannel(channel);
+    if (!conversation.isEmpty())
+        emit directRouteChanged(conversation);
+}
+
+void OfficeChannelMirror::setFocusedConversation(const QString &conversation)
+{
+    if (conversation == m_focusedConversation)
+        return;
+    const QString previous = m_focusedConversation;
+    m_focusedConversation = conversation;
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (!it->direct)
+            continue;
+        if (it->conversation == previous && m_mesh.sendFocus)
+            m_mesh.sendFocus(wireChannel(it.value()), false);
+        if (it->conversation == conversation && m_mesh.sendFocus)
+            m_mesh.sendFocus(wireChannel(it.value()), true);
+    }
+    if (!previous.isEmpty())
+        emit directRouteChanged(previous);
+    if (!conversation.isEmpty())
+        emit directRouteChanged(conversation);
+}
+
+QString OfficeChannelMirror::directRouteLabel(const QString &conversation) const
+{
+    if (!m_mesh.linkedDevices || !m_device)
+        return QString();
+    for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
+        if (!it->direct || it->conversation != conversation || it->room.isEmpty())
+            continue;
+        const QString scope = QStringLiteral("direct:") + it->id;
+        const QString channel = wireChannel(it.value());
+        bool lan = false;
+        bool bluetooth = false;
+        bool focused = false;
+        for (const forkmesh::chatv3::MeshLinkedDevice &device : m_mesh.linkedDevices()) {
+            const forkmesh::chatv3::TrustRecord *record =
+                m_device->record(scope, device.kid);
+            if (!record || record->state != forkmesh::chatv3::TrustState::Approved ||
+                record->acct == selfDirectAcct())
+                continue;
+            (device.bluetooth ? bluetooth : lan) = true;
+            focused = focused || device.focus.contains(channel);
+        }
+        if (focused && m_focusedConversation == conversation)
+            return QStringLiteral("Direct only");
+        if (lan)
+            return QStringLiteral("Direct · Wi-Fi");
+        if (bluetooth)
+            return QStringLiteral("Direct · Bluetooth");
+        return QString();
+    }
+    return QString();
 }
 
 void OfficeChannelMirror::saveDirectDirectory() const
@@ -989,7 +1463,7 @@ void OfficeChannelMirror::saveDirectDirectory() const
             conversations.append(QJsonObject{
                 {QStringLiteral("id"), it->id},
                 {QStringLiteral("otherUser"), it->name},
-                {QStringLiteral("keys"), QJsonArray::fromStringList(it->deviceKeys)}});
+                {QStringLiteral("room"), it->room}});
             break;
         }
     }
@@ -1026,11 +1500,10 @@ void OfficeChannelMirror::restoreDirectDirectory()
         const QString conversation = upsertDirectRoom(entry, int(ordered.size()));
         if (conversation.isEmpty())
             continue;
-        QStringList keys;
-        for (const QJsonValue &key : entry.value(QStringLiteral("keys")).toArray())
-            keys.append(key.toString());
         Room &room = m_rooms[entry.value(QStringLiteral("id")).toString()];
-        room.deviceKeys = mergedDeviceKeys(room.deviceKeys, keys);
+        const QString roomName = entry.value(QStringLiteral("room")).toString().trimmed();
+        if (room.room.isEmpty() && !roomName.isEmpty())
+            room.room = roomName.left(kMaxDirectRoomNameChars);
         ordered.append(conversation);
     }
     if (ordered.isEmpty())
@@ -1203,7 +1676,7 @@ bool OfficeChannelMirror::sendMessage(const QString &conversation,
             return false;
         const QString messageId =
             QUuid::createUuid().toString(QUuid::WithoutBraces);
-        room.pendingTexts.enqueue({messageId, message, {}, {}, {}});
+        const PendingText pending{messageId, message, {}, {}, {}};
         rememberSeen(room, messageId);
         ChatMessage echo;
         echo.id = messageId;
@@ -1216,19 +1689,11 @@ bool OfficeChannelMirror::sendMessage(const QString &conversation,
         emit messageArrived(echo);
         emit sendActivity(QStringLiteral("Office chat: queued a message for %1.")
                               .arg(conversation));
-        if (room.direct && m_meshDirectSender && !room.deviceKeys.isEmpty()) {
-            const int reached = m_meshDirectSender(wireChannel(room), messageId,
-                                                   echo.text, room.deviceKeys);
-            if (reached > 0) {
-                room.meshDelivered.insert(messageId);
-                emit messagesDelivered(room.conversation, {messageId});
-                emit sendActivity(
-                    QStringLiteral("Office chat: delivered a message for %1 to "
-                                   "%2 device(s) over the local mesh.")
-                        .arg(conversation)
-                        .arg(reached));
-            }
+        if (room.direct) {
+            sendDirectPending(room, pending);
+            return true;
         }
+        room.pendingTexts.enqueue(pending);
         if (room.sender && room.senderConnected)
             flushPending(room);
         else if (!room.sender && !room.accessFetching)
@@ -1269,7 +1734,7 @@ bool OfficeChannelMirror::sendFile(const QString &conversation,
         const QString mime = mimeType.trimmed().isEmpty()
                                  ? QStringLiteral("application/octet-stream")
                                  : mimeType.trimmed().left(kMaxMimeChars);
-        room.pendingTexts.enqueue({messageId, QString(), name, mime, data});
+        const PendingText pending{messageId, QString(), name, mime, data};
         rememberSeen(room, messageId);
         ChatMessage echo;
         echo.id = messageId;
@@ -1284,6 +1749,11 @@ bool OfficeChannelMirror::sendFile(const QString &conversation,
         emit messageArrived(echo);
         emit sendActivity(QStringLiteral("Office chat: queued %1 for %2.")
                               .arg(name, conversation));
+        if (room.direct) {
+            sendDirectPending(room, pending);
+            return true;
+        }
+        room.pendingTexts.enqueue(pending);
         if (room.sender && room.senderConnected)
             flushPending(room);
         else if (!room.sender && !room.accessFetching)
@@ -1345,6 +1815,10 @@ bool OfficeChannelMirror::queueMutation(const QString &conversation,
     Room *room = findRoom(conversation);
     if (!room || !reservePendingSlot(*room))
         return false;
+    if (room->direct) {
+        sendDirectPending(*room, pending);
+        return true;
+    }
     room->pendingTexts.enqueue(pending);
     if (room->sender && room->senderConnected)
         flushPending(*room);
@@ -1369,7 +1843,6 @@ bool OfficeChannelMirror::sendThreadReply(const QString &conversation,
     pending.text = message;
     pending.kind = QStringLiteral("reply");
     pending.rootId = root;
-    room->pendingTexts.enqueue(pending);
     rememberSeen(*room, pending.id);
     ChatMessage echo;
     echo.id = pending.id;
@@ -1385,6 +1858,11 @@ bool OfficeChannelMirror::sendThreadReply(const QString &conversation,
     if (!m_rooms.contains(roomId))
         return true;
     Room &live = m_rooms[roomId];
+    if (live.direct) {
+        sendDirectPending(live, pending);
+        return true;
+    }
+    live.pendingTexts.enqueue(pending);
     if (live.sender && live.senderConnected)
         flushPending(live);
     else if (!live.sender && !live.accessFetching)
@@ -1401,6 +1879,7 @@ bool OfficeChannelMirror::sendReaction(const QString &conversation,
         emoji.size() > 32)
         return false;
     PendingText pending;
+    pending.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     pending.kind = QStringLiteral("reaction");
     pending.target = target;
     pending.emoji = emoji;
@@ -1429,13 +1908,15 @@ bool OfficeChannelMirror::editMessage(const QString &conversation,
     for (PendingText &pending : room->pendingTexts) {
         if (pending.id == target && pending.fileData.isEmpty() &&
             (pending.kind.isEmpty() || pending.kind == QLatin1String("reply")) &&
-            !room->meshDelivered.contains(target)) {
+            !room->meshDelivered.contains(target) &&
+            !room->meshInFlight.contains(target)) {
             pending.text = edited;
             queued = true;
         }
     }
     if (!queued) {
         PendingText pending;
+        pending.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         pending.kind = QStringLiteral("edit");
         pending.target = target;
         pending.text = edited;
@@ -1456,7 +1937,7 @@ bool OfficeChannelMirror::deleteMessage(const QString &conversation,
     if (!room)
         return false;
     bool unsent = false;
-    if (!room->meshDelivered.contains(target)) {
+    if (!room->meshDelivered.contains(target) && !room->meshInFlight.contains(target)) {
         for (qsizetype i = room->pendingTexts.size() - 1; i >= 0; --i) {
             const PendingText &pending = room->pendingTexts.at(i);
             if (pending.id == target &&
@@ -1469,6 +1950,7 @@ bool OfficeChannelMirror::deleteMessage(const QString &conversation,
     }
     if (!unsent) {
         PendingText pending;
+        pending.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         pending.kind = QStringLiteral("delete");
         pending.target = target;
         if (!queueMutation(conversation, pending))
@@ -2346,9 +2828,15 @@ void OfficeChannelMirror::openSender(const QString &channelId,
     }
 
     discardSender(room);
+    if (room.direct)
+        setDirectRoomName(room, roomName);
     auto *sender = new ServerNode(
         m_displayName.isEmpty() ? m_account : m_displayName, m_account, m_account,
         m_selfId, endpoint, roomName, QString(), passphrase, this);
+    sender->setChatDevice(m_device);
+    sender->setChatAccount(selfDirectAcct());
+    if (room.direct)
+        sender->setDirectParticipants(room.members);
     sender->setAccountKind(QStringLiteral("user"));
     sender->setDirectRoom(room.direct);
     if (!room.direct) {
@@ -2414,14 +2902,21 @@ void OfficeChannelMirror::openSender(const QString &channelId,
                 });
     }
     if (room.direct) {
-        rememberDeviceKeys(room, sender->roomSealPeerKeyIds());
         connect(sender, &ServerNode::roomSealPeersChanged, this,
                 [this, channelId, sender] {
                     if (!m_rooms.contains(channelId) ||
                         m_rooms[channelId].sender != sender)
                         return;
-                    rememberDeviceKeys(m_rooms[channelId],
-                                       sender->roomSealPeerKeyIds());
+                    emit directRouteChanged(m_rooms[channelId].conversation);
+                });
+        connect(sender, &ChatBackend::typingChanged, this,
+                [this, channelId, sender](const QString &, const QString &peerId,
+                                          const QString &peerName, bool active) {
+                    if (!m_rooms.contains(channelId) ||
+                        m_rooms[channelId].sender != sender)
+                        return;
+                    emit typingChanged(m_rooms[channelId].conversation, peerId,
+                                       peerName, active);
                 });
     }
     if (room.direct)
@@ -2493,17 +2988,18 @@ void OfficeChannelMirror::flushPending(Room &room)
     while (!room.pendingTexts.isEmpty()) {
         const PendingText pending = room.pendingTexts.dequeue();
         room.meshDelivered.remove(pending.id);
+        room.meshInFlight.remove(pending.id);
         if (pending.kind == QLatin1String("reply"))
             room.sender->sendThreadReplyWithId(wireChannel(room), pending.rootId,
                                                pending.text, pending.id);
         else if (pending.kind == QLatin1String("reaction"))
             room.sender->sendRoomReaction(wireChannel(room), pending.target,
-                                          pending.emoji, pending.added);
+                                          pending.emoji, pending.added, pending.id);
         else if (pending.kind == QLatin1String("edit"))
             room.sender->sendRoomEdit(wireChannel(room), pending.target,
-                                      pending.text);
+                                      pending.text, pending.id);
         else if (pending.kind == QLatin1String("delete"))
-            room.sender->sendRoomDelete(wireChannel(room), pending.target);
+            room.sender->sendRoomDelete(wireChannel(room), pending.target, pending.id);
         else if (pending.fileData.isEmpty())
             room.sender->sendChatWithId(wireChannel(room), pending.text, pending.id);
         else
@@ -2527,6 +3023,7 @@ void OfficeChannelMirror::failPending(Room &room, const QString &reason)
     while (!room.pendingTexts.isEmpty()) {
         const PendingText pending = room.pendingTexts.dequeue();
         if (room.meshDelivered.contains(pending.id) ||
+            room.meshInFlight.contains(pending.id) ||
             pending.kind == QLatin1String("reaction") ||
             pending.kind == QLatin1String("edit") ||
             pending.kind == QLatin1String("delete")) {
@@ -2626,7 +3123,8 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
     if (roomName != room.room || !room.crypto.isValid()) {
         room.room = roomName;
         room.crypto = RoomCrypto(roomName, passphrase);
-        room.seal = RoomSeal(roomName);
+        room.seal = RoomSeal(roomName, roomName, RoomSeal::Policy::Open, selfDirectAcct(),
+                             m_selfId, m_device);
         if (!room.crypto.isValid())
             return;
     }
@@ -2645,14 +3143,20 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
         if (envelope.isEmpty())
             continue;
         QJsonObject plain = room.crypto.decryptObject(envelope);
+        if (RoomSeal::isLegacyFrame(plain))
+            continue;
         if (RoomSeal::isKeyFrame(plain)) {
             room.seal.acceptKeyFrame(plain);
             continue;
         }
         if (RoomSeal::isSealedFrame(plain)) {
-            plain = room.seal.unsealObject(plain);
-            if (plain.isEmpty())
+            const RoomSeal::Opened opened = room.seal.open(plain, true);
+            if (opened.status != RoomSeal::Status::Opened)
                 continue;
+            plain = opened.plain;
+            if (!plain.contains(QStringLiteral("senderId")))
+                plain.insert(QStringLiteral("senderId"), opened.senderNode);
+            RoomSeal::useSignedTime(plain, opened);
         } else if (room.privateRoom && !room.serverVisible) {
             // The history endpoint is controlled by the relay too. Apply the
             // same fail-closed policy as the live socket for private rooms.

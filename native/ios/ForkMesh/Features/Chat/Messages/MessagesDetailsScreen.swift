@@ -67,6 +67,7 @@ struct MessagesDetailsScreen: View {
                     }
                 }
                 if group { peopleSection }
+                if DirectMessageFrames.isDirect(conversation) { safetySection }
                 photosSection
                 Section {
                     ChatRetentionMenu(hub: hub, conversation: conversation)
@@ -230,6 +231,25 @@ struct MessagesDetailsScreen: View {
             }
         } header: {
             Text(members.count == 1 ? "1 Person" : "\(members.count) People")
+        }
+    }
+
+    private var safetySection: some View {
+        let verified: Bool = hub.safetyVerified(conversation)
+        return Section {
+            NavigationLink {
+                MessagesSafetyNumberScreen(hub: hub, conversation: conversation)
+            } label: {
+                HStack {
+                    Label(DirectTrustText.safetyNumber, systemImage: "checkmark.shield")
+                    Spacer()
+                    Text(verified ? DirectTrustText.verified : DirectTrustText.notVerified)
+                        .foregroundStyle(verified ? fm.success : fm.textSecondary)
+                }
+            }
+            .accessibilityIdentifier("chat-details-safety-number")
+        } footer: {
+            Text(DirectTrustText.safetyExplainer(hub.trustName(conversation)))
         }
     }
 

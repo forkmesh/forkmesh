@@ -28,7 +28,12 @@ final class DesktopTranscriptStreamTests: XCTestCase {
     @MainActor func testTheDesktopPushesOutputAsItIsWritten() async throws {
         let desktop = try FakeRelayDesktop()
         var followed: JSONObject = [:]
+        var read: JSONObject = [:]
         desktop.handler = { method, params in
+            if method == "agents.transcript" {
+                read = params
+                return self.output(7, String(repeating: "x", count: 32), from: 8)
+            }
             guard method == "agents.follow" else { return nil }
             followed = params
             var answer = self.output(7, "abc", from: 3)
@@ -52,10 +57,11 @@ final class DesktopTranscriptStreamTests: XCTestCase {
         desktop.event("agents.output", output(7, "stale", from: 2))
         desktop.event("agents.output", output(7, "tail", from: 40))
         desktop.event("agents.output", output(7, "", from: 44, status: "completed"))
-        let got = await waitFor { deltas.count == 4 }
+        let got = await waitFor { deltas.count == 5 }
         XCTAssertTrue(got)
-        XCTAssertEqual(deltas.map(\.text), ["abc", "de", "tail", ""])
-        XCTAssertEqual(deltas.map(\.reset), [false, false, true, false], "a gap replaces the text")
+        XCTAssertEqual(read.int("since"), 8, "a gap reads what was missed")
+        XCTAssertEqual(deltas.map(\.text), ["abc", "de", String(repeating: "x", count: 32), "tail", ""])
+        XCTAssertEqual(deltas.map(\.reset), [false, false, false, false, false])
         XCTAssertEqual(deltas.last?.status, "completed")
         XCTAssertEqual(stream.next, 44)
 
@@ -67,6 +73,70 @@ final class DesktopTranscriptStreamTests: XCTestCase {
             desktop.requests.contains { $0.str("method") == "agents.unfollow" && $0.obj("params").int("id") == 7 }
         }
         XCTAssertTrue(unfollowed)
+    }
+
+    @MainActor func testAStreamThatStopsLeavesTheDesktopFollowToTheOthers() async throws {
+        let desktop = try FakeRelayDesktop()
+        desktop.handler = { method, _ in
+            guard method == "agents.follow" else { return nil }
+            var answer = self.output(7, "abc", from: 0)
+            answer["streaming"] = true
+            return answer
+        }
+        let hub = try hub(desktop)
+        var page: [AgentTranscriptDelta] = []
+        let list = DesktopTranscriptStream(hub: hub, sessionId: 7) { _ in }
+        let run = DesktopTranscriptStream(hub: hub, sessionId: 7) { page.append($0) }
+        let other = DesktopTranscriptStream(hub: hub, sessionId: 8) { _ in }
+        _ = await list.start()
+        _ = await run.start()
+        _ = await other.start()
+        list.stop()
+        other.stop()
+        let unfollowedOther = await waitFor {
+            desktop.requests.contains { $0.str("method") == "agents.unfollow" && $0.obj("params").int("id") == 8 }
+        }
+        XCTAssertTrue(unfollowedOther)
+        XCTAssertFalse(
+            desktop.requests.contains { $0.str("method") == "agents.unfollow" && $0.obj("params").int("id") == 7 },
+            "the run page still follows session 7")
+
+        desktop.event("agents.output", output(7, "de", from: 3))
+        let got = await waitFor { page.count == 2 }
+        XCTAssertTrue(got)
+        XCTAssertEqual(page.map(\.text), ["abc", "de"])
+
+        run.stop()
+        let unfollowed = await waitFor {
+            desktop.requests.contains { $0.str("method") == "agents.unfollow" && $0.obj("params").int("id") == 7 }
+        }
+        XCTAssertTrue(unfollowed)
+    }
+
+    @MainActor func testAStreamAheadOfTheDesktopKeepsOnlyWhatIsNew() async throws {
+        let desktop = try FakeRelayDesktop()
+        desktop.handler = { method, _ in
+            guard method == "agents.follow" else { return nil }
+            var answer = self.output(7, "abcdefgh", from: 0)
+            answer["streaming"] = true
+            return answer
+        }
+        let hub = try hub(desktop)
+        var deltas: [AgentTranscriptDelta] = []
+        let stream = DesktopTranscriptStream(hub: hub, sessionId: 7) { deltas.append($0) }
+        _ = await stream.start()
+        XCTAssertEqual(stream.next, 8)
+
+        desktop.event("agents.output", output(7, "ghij", from: 6))
+        desktop.event("agents.output", output(7, "j", from: 9))
+        desktop.event("agents.output", output(7, "k", from: 10))
+        let got = await waitFor { deltas.count == 3 }
+        XCTAssertTrue(got)
+        XCTAssertEqual(deltas.map(\.text), ["abcdefgh", "ij", "k"])
+        XCTAssertEqual(deltas.map(\.from), [0, 8, 10])
+        XCTAssertEqual(stream.next, 11)
+        XCTAssertFalse(desktop.requests.contains { $0.str("method") == "agents.transcript" })
+        stream.stop()
     }
 
     @MainActor func testRefollowPicksUpWhatAQuietFollowMissed() async throws {

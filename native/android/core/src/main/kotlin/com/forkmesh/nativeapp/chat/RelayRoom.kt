@@ -5,6 +5,8 @@ import com.forkmesh.nativeapp.api.DartException
 import com.forkmesh.nativeapp.api.ServerUrl
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
@@ -392,7 +394,7 @@ class RelayRoom(
                 RoomCrypto.withPassphrase(room, shared)
             }
             if (!loop.call { (generation == openGeneration).also { if (it) crypto = roomCrypto } }) return
-            val roomSeal = RoomSeal.loadOrCreate(room, storageScope = settings.serverUrl, secureStore = secureStore)
+            val roomSeal = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, node = nodeId)
             val current = loop.call {
                 (generation == openGeneration).also {
                     if (it) {
@@ -565,7 +567,8 @@ class RelayRoom(
                 val persist = plain["persist"] == true
                 val payload = if (persist) LinkedHashMap(plain).apply { remove("persist") } else plain
                 if (roomSeal == null) throw IllegalStateException("End-to-end encryption unavailable.")
-                val framed = if (isControllerReadableFrame(payload)) payload else roomSeal.seal(payload)
+                val framed = if (isControllerReadableFrame(payload)) payload else roomSeal.seal(payload, only = directRecipients(roomSeal, payload))
+                if (roomSeal.needsAdvertisement()) loop.post { sendKeyAdvertisement(true) }
                 val envelope = LinkedHashMap(roomCrypto.encrypt(framed))
                 if (persist) {
                     envelope["persist"] = true
@@ -585,6 +588,15 @@ class RelayRoom(
         }
     }
 
+    private fun directRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>): Collection<String>? {
+        if (jsonText(payload["type"]) != "dm") return null
+        val to = jsonText(payload["to"])
+        val own = sealAccount()
+        return roomSeal.trust.approved().filter { it.node == to || it.acct == own }.map { it.kid }
+    }
+
+    private fun sealAccount(): String = persona.ownerUser.trim().lowercase().ifEmpty { nodeId }
+
     private fun sendKeyAdvertisement(persist: Boolean) {
         val roomCrypto = crypto
         val roomSeal = seal
@@ -592,6 +604,7 @@ class RelayRoom(
         if (roomCrypto == null || roomSeal == null || socket == null || connectionState != RelayConnectionState.CONNECTED) {
             return
         }
+        roomSeal.setIdentity(sealAccount(), nodeId)
         writer.execute {
             val envelope = LinkedHashMap(roomCrypto.encrypt(roomSeal.keyFrame()))
             if (persist) envelope["persist"] = true
@@ -818,8 +831,11 @@ class RelayRoom(
         } ?: return
         val decrypted = session.crypto.decrypt(envelope) ?: return
         val roomSeal = session.seal
+        if (RoomSeal.isLegacyFrame(decrypted)) return
         if (RoomSeal.isKeyFrame(decrypted)) {
-            if (roomSeal.acceptKeyFrame(decrypted)) session.onLoop { replyWithKeySoon() }
+            val outcome = roomSeal.acceptKeyFrame(decrypted) ?: return
+            if (outcome.isNew) session.onLoop { replyWithKeySoon() }
+            for (held in roomSeal.takeHeld(outcome.kid)) openSealed(session, held.frame, held.meta["history"] == true)
             return
         }
         if (!RoomSeal.isSealedFrame(decrypted)) {
@@ -830,12 +846,18 @@ class RelayRoom(
             }
             return
         }
-        val opened = roomSeal.unseal(decrypted)
-        if (opened == null) {
-            val keyId = RoomSeal.frameKeyId(decrypted)
-            session.onLoop { noteSealMismatch(keyId) }
-        } else {
-            session.onLoop { handle(opened) }
+        openSealed(session, decrypted, envelope["historyReplay"] == true)
+    }
+
+    private fun openSealed(session: Session, frame: Map<String, Any?>, history: Boolean) {
+        when (val opened = session.seal.open(frame, history = history, meta = if (history) mapOf("history" to true) else emptyMap())) {
+            is SealOpen.Opened -> session.onLoop { handle(opened.plain) }
+            is SealOpen.NotForMe -> {
+                val keyId = RoomSeal.frameKeyId(frame)
+                session.onLoop { noteSealMismatch(keyId) }
+            }
+            is SealOpen.Held -> if (!opened.blocked) session.onLoop { replyWithKeySoon() }
+            else -> {}
         }
     }
 

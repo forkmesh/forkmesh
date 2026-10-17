@@ -1,8 +1,11 @@
 package com.forkmesh.nativeapp.push
 
 import com.forkmesh.nativeapp.chat.FakeAccountApi
+import com.forkmesh.nativeapp.crypto.ChatDeviceKeys
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
+import com.forkmesh.nativeapp.crypto.SealOpen
+import com.forkmesh.nativeapp.crypto.SealPolicy
 import com.forkmesh.nativeapp.json.Json
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.MemorySecretStore
@@ -25,12 +28,25 @@ class DirectMessagePreviewTest {
         "conversation" to "direct:$id", "room" to room, "keyVersion" to 1L, "passphrase" to "direct-pass", "frame" to frame,
     ) + extra
 
-    private fun sealedFor(store: MemorySecretStore, plain: Map<String, Any?>): String {
-        val mine = RoomSeal.loadOrCreate(room, storageScope = "direct|app.forkmesh.com", secureStore = store)
-        val peer = RoomSeal.loadOrCreate(room, storageScope = "peer", secureStore = MemorySecretStore())
-        peer.acceptKeyFrame(mine.keyFrame())
-        return Json.stringify(crypto.encrypt(peer.seal(plain)) + ("ref" to ref) + ("persist" to true) + ("notify" to true))
+    private val peers = java.util.IdentityHashMap<MemorySecretStore, RoomSeal>()
+
+    private fun mine(store: MemorySecretStore): RoomSeal =
+        RoomSeal.loadOrCreate(room, scope = "direct:$id", policy = SealPolicy.STRICT, acct = "me-node", secureStore = store)
+
+    private fun device(acct: String = "pat"): RoomSeal =
+        RoomSeal.loadOrCreate(room, scope = "direct:$id", policy = SealPolicy.STRICT, acct = acct, secureStore = MemorySecretStore(), node = "pat-node")
+
+    private fun peerFor(store: MemorySecretStore): RoomSeal = peers.getOrPut(store) {
+        val peer = device()
+        peer.acceptKeyFrame(mine(store).keyFrame())
+        mine(store).acceptKeyFrame(peer.keyFrame())
+        peer
     }
+
+    private fun wire(frame: Map<String, Any?>): String =
+        Json.stringify(crypto.encrypt(frame) + ("ref" to ref) + ("persist" to true) + ("notify" to true))
+
+    private fun sealedFor(store: MemorySecretStore, plain: Map<String, Any?>): String = wire(peerFor(store).seal(plain))
 
     fun testEventFramesNameTheConversationAndRef() {
         val frame = mapOf("type" to "event", "topic" to "direct-messages", "conversation" to "direct:$id", "ref" to ref, "keyVersion" to 3L)
@@ -60,9 +76,22 @@ class DirectMessagePreviewTest {
         expect(!preview.reply)
         val stranger = MemorySecretStore()
         assertEq(null, DirectMessagePreviews.fetch(api, event, stranger))
-        assertEq(null, stranger.read(RoomSeal.PRIVATE_KEY_STORE_KEY))
+        assertEq(null, stranger.read(ChatDeviceKeys.IDENTITY_STORE_KEY))
         api.failures["GET /api/chat/direct-messages/$id/pending"] = OrgApiException("not_found", "gone")
         assertEq(null, DirectMessagePreviews.fetch(api, event, store))
+    }
+
+    fun testAPreviewLeavesTheFrameForTheAppAndSkipsUnapprovedDevices() {
+        val store = MemorySecretStore()
+        val frame = peerFor(store).seal(chat())
+        expect(DirectMessagePreviews.open(event, pending(wire(frame)), store) != null)
+        expect(mine(store).open(frame) is SealOpen.Opened, "the preview did not use up the frame's counter")
+        val newPhone = device()
+        newPhone.acceptKeyFrame(mine(store).keyFrame())
+        mine(store).acceptKeyFrame(newPhone.keyFrame())
+        val fromNewPhone = wire(newPhone.seal(chat("id" to "pat-2")))
+        assertEq(null, DirectMessagePreviews.open(event, pending(fromNewPhone), store), "a pending device shows only New message")
+        assertEq(0, mine(store).trust.heldCount(room), "the preview does not hold frames either")
     }
 
     fun testDeliveryIsConfirmedWithAPostThatReadsNothing() {

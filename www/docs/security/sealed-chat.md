@@ -11,67 +11,100 @@ conversation has one policy:
 | Private channel or direct message | Automatic device-to-device encryption inside the room cipher | Unavailable |
 
 Public channels are controller-readable on purpose: server-side integrations
-cannot read or post recipient-sealed messages. Making a channel public affects
+cannot read or post device-sealed messages. Making a channel public affects
 only new messages; making it private rotates the room key and revokes its
 incoming webhooks.
 
-## Device identities
+Device-to-device encryption uses chat protocol v3 (October 2026). Every
+client (web, desktop, iOS, Android) speaks only v3; older v2 frames are
+ignored. The full specification is `docs/app/chat-protocol-v3.md` in the
+ForkMesh repository.
 
-Each installation creates an X25519 key pair on first use (browser local
-storage, desktop settings, mobile secure store). The private key never leaves
-the device. Public keys are announced through the room cipher:
+## Device keys
 
-```json
-{ "type": "e2ee-key", "v": 2, "kid": "…", "pub": "…" }
-```
+Each installation keeps two kinds of keys on the device (browser storage
+wrapped by a non-extractable key where the browser supports it, the desktop
+secure store, the iOS keychain, Android Keystore-wrapped storage):
 
-`pub` is the raw 32-byte public key in unpadded base64url; `kid` is the first
-16 characters of `base64url(SHA-256(pub))`. Learned keys are scoped to
-controller and room.
+- an **identity key** (Ed25519) for the life of the install, which signs
+  everything the device sends;
+- **prekeys**, each an X25519 key plus an ML-KEM-768 (post-quantum) key. A new
+  prekey is made every 24 hours and its private half is deleted 8 days after it
+  was made.
 
-## Protected message envelope
+Private keys never leave the device.
 
-For each protected frame the sender generates a random 32-byte content key,
-encrypts the JSON frame with AES-256-GCM, and wraps the content key for every
-known room device (including its own) with a key derived from X25519 and
-HKDF-SHA256:
+## Bundles and new devices
 
-```json
-{
-  "type": "sealed", "v": 2, "kid": "…", "pub": "…",
-  "nonce": "…", "tag": "…", "body": "…",
-  "keys": [{ "kid": "…", "nonce": "…", "tag": "…", "key": "…" }]
-}
-```
+A device announces itself in each room with a signed bundle: its identity key,
+its newest prekey, the account it belongs to and the sender id it uses in that
+room. Other devices check the signature before using it.
 
-For sender `S`, recipient `R`, room `ROOM` and content nonce `N`:
+- Before v3 the server could add a key to a direct message and every client
+  would start encrypting to it. Now, in a direct message, a bundle that names anyone other than the two people in the
+  conversation is dropped, and a second device for an account that already
+  has one is **held**: it receives nothing and its messages are not shown until
+  you approve it. You see a line in the conversation and a banner with Approve
+  and Block.
+- Channels and Office rooms accept every validly signed device.
 
-| Value | Definition |
-| --- | --- |
-| Shared secret | `X25519(senderPrivate, recipientPublic)` |
-| HKDF salt | `SHA-256("ForkMesh chat e2ee salt:" + ROOM)` |
-| HKDF info | `"forkmesh-chat-e2ee-kek-v2\n" + ROOM + "\n" + S + "\n" + R` |
-| Wrapping key | HKDF-SHA256, 32 bytes |
-| Content AAD | `"forkmesh-chat-e2ee-content-v2\n" + ROOM + "\n" + S` |
-| Wrap AAD | `"forkmesh-chat-e2ee-wrap-v2\n" + ROOM + "\n" + S + "\n" + R + "\n" + base64url(N)` |
+## Sealed messages
 
-The AAD binds each frame to its room, sender and recipient. Protected
-conversations reject frames that are not valid v2 envelopes. Recipient lists
-are capped at 64 devices.
+For each protected message the sender picks a random content key and encrypts
+the message with AES-256-GCM. For each approved device it then combines a fresh
+X25519 exchange with an ML-KEM-768 encapsulation to that device's prekey,
+derives a wrapping key with HKDF-SHA256, and wraps the content key. The whole
+frame, including every wrapped key, is signed by the sender's identity key and
+carries a counter and a timestamp.
+
+A receiving device rejects a frame that:
+
+- is not signed by an approved device;
+- claims a sender id other than the one in that device's signed bundle;
+- repeats a counter it has already accepted (the relay replaying a frame);
+- was not wrapped for one of its kept prekeys.
+
+Relay-held copies are kept for up to 7 days; prekeys live 8, so a message can
+still be opened while it is waiting. After a prekey is deleted, nothing sealed
+to it can be opened again, even with the device in hand.
+
+## Safety numbers
+
+In a direct message, the encryption panel shows a 60-digit safety number and a
+QR code. It covers every approved device of both people. Compare the digits
+with the other person, or scan their code, then mark the conversation verified.
+If an approved device is added or removed the number changes, the verified mark
+is cleared and the conversation says so.
 
 ## Limits
 
-- Key discovery is not authenticated membership: an active controller can
-  inject a key, and a modified web client can read browser plaintext.
-- Timing, sizes, connection metadata and public keys remain visible.
-- No ratchet and no post-compromise security; a compromised device exposes the
-  content keys wrapped for it.
-- A new device cannot read messages sent before its key was known.
-- The controller can drop, delay or replay frames.
+- The controller still sees who talks to whom, when, and how much, and it can
+  drop or delay frames.
+- Channels approve every device that presents a valid bundle; only direct
+  messages hold new devices.
+- Forward secrecy is per prekey, not per message: a device compromised today
+  exposes the messages sealed to the prekeys it still holds (up to 8 days).
+  Recovery after a compromise comes with the next prekey rotation (24 hours).
+- A new device cannot read messages sent before it was approved.
+- A modified web client served by a compromised host can read what it shows
+  you, as with any web app.
+- None of this has had an outside security audit yet.
+
+## Compared with Signal
+
+Signal is ahead in two ways: its Double Ratchet gives forward secrecy for every
+single message, and sealed sender hides who sent a message from Signal's own
+server. ForkMesh v3 adds post-quantum key agreement on every message, a
+signature on every frame, holds a new device of a contact until you approve it
+(Signal warns and keeps sending), and lets nearby devices chat directly over
+Wi-Fi or Bluetooth without a server. A ratchet and sealed-sender delivery are
+the next steps.
 
 ## Implementations
 
-Browser (`app/public/chat-seal.js`, `app/public/chat-room-transport.js`),
-desktop (`desktop/src/RoomSeal.{h,cpp}`), iOS (`FMCrypto/RoomSeal.swift`) and
-Android (`crypto/RoomSeal.kt`) pin the same v2 envelope fixture, so any change
-to derivation, AAD, encoding or wire shape fails the cross-client tests.
+Browser (`app/public/chat-seal.js`, `app/public/chat-mlkem.js`,
+`app/public/chat-room-transport.js`), desktop (`desktop/src/RoomSeal.{h,cpp}`),
+iOS (`FMCrypto/RoomSeal.swift`) and Android (`crypto/RoomSeal.kt`) all open the
+shared wire vectors in `conformance/chat/v3/vectors.json`, so a change to key
+derivation, signed strings, encoding or frame shape fails the cross-client
+tests.

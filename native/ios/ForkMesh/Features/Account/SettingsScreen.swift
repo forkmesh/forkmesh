@@ -173,6 +173,7 @@ struct SettingsScreen: View {
             .quickSetup, .profile, .general, .repos, .agents, .voice, .identity, .device, .desktops,
             .relay, .data, .security, .account, .onDeviceAI, .legal,
         ]
+        if Services.get(ChatPrivacy.self) != nil { ids.insert(.chatPrivacy) }
         let signedIn: Bool = hasRealSession(session) && !guest
         if signedIn {
             ids.formUnion([.sshKeys, .mcp, .sessions, .apps])
@@ -327,6 +328,12 @@ struct SettingsScreen: View {
             if shown.contains(.notifications) {
                 notificationsSection(settings: settings, session: session, guest: guest)
                     .id(SettingsSectionId.notifications)
+            }
+            if shown.contains(.chatPrivacy), let privacy = Services.get(ChatPrivacy.self) {
+                SettingsSection(title: "Chat privacy") {
+                    SettingsCardBox { ChatPrivacyCard(privacy: privacy) }
+                }
+                .id(SettingsSectionId.chatPrivacy)
             }
             if shown.contains(.nodes) {
                 SettingsSection(title: "Nodes on this account") {

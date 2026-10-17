@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="file" path="chat-history/" />
+    <exclude domain="file" path="projects/" />
+    <exclude domain="file" path="local_mesh_history.json" />
+    <exclude domain="sharedpref" path="forkmesh.secure.xml" />
+</full-backup-content>
