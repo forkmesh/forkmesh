@@ -288,6 +288,30 @@ class LocalControlTest {
         assertEq(paired, automaticControlTarget(listOf(mine, paired), setOf("paired"), "fran", setOf("paired")))
     }
 
+    fun testADesktopTheAccountListsIsDialledOnTheLanWithoutAnOwnerMatch() {
+        val desktop = FakeDesktop()
+        val (server, _) = serve(desktop)
+        val identity = Identity.fromSeed(ByteArray(32) { 8 })
+        val dir = LocalScratch.create("control-account")
+        val owned = MeshControlHost(desktop.key, "127.0.0.1", server.localPort, nodeName = "desk")
+        val service = LocalControlService(identity, MemoryPrefStore(), FixedHosts(listOf(owned)), "p/y/", userName = { "" }, filesDirectory = { File(dir, "in") })
+        expect(!service.connected && service.status == LocalControlStatus.Idle)
+        val connected = CountDownLatch(1)
+        service.addListener { if (service.connected) connected.countDown() }
+        service.setAccountDesktops(setOf(desktop.key))
+        if (!service.connected) expect(connected.await(5, TimeUnit.SECONDS))
+        assertEq(desktop.key, service.paired.single().key)
+        service.dispose()
+        server.close()
+        LocalScratch.delete(dir)
+
+        val stranger = MeshControlHost("stranger", "127.0.0.1", 1)
+        val paired = MeshControlHost("paired", "127.0.0.1", 1)
+        assertEq(owned, automaticControlTarget(listOf(stranger, owned), emptySet(), "", setOf(desktop.key), setOf(desktop.key)))
+        assertEq(paired, automaticControlTarget(listOf(owned, paired), setOf("paired"), "fran", emptySet(), setOf(desktop.key)))
+        assertEq(null, automaticControlTarget(listOf(stranger), emptySet(), "fran", emptySet(), setOf(desktop.key)))
+    }
+
     fun testSafeNameAndPairedJson() {
         assertEq("passwd", LocalControlService.safeName("../../etc/passwd"))
         assertEq("a_b.txt", LocalControlService.safeName("a?b.txt"))

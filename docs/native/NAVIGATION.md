@@ -270,6 +270,13 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
   their sheets and alerts. Before this, a tap switched the conversation
   underneath, so a phone left on the channel list or a details sheet stayed
   there instead of showing the chat the banner named.
+- `.dm(user)` (the People sheet's Message button) names an
+  account. On iOS `ChatHub.switchConversation("@user")` opens that account's
+  direct message, or starts one (`ChatHub.accountRecipient` then `openPerson`),
+  as the chat person sheet does; only an exact relay peer id stays a peer room.
+  Before this it only matched people online right now, so anyone else opened an
+  empty room titled "@direct message". A `direct:` id is opened as is, not
+  wrapped as `@direct:…`.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
   `chatKeepsEndInView`.
