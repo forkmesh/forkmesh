@@ -28,15 +28,35 @@ class AppearanceTest {
     fun testReadUsesTheStoredKeys() {
         val stored = mapOf("appearance/themeMode" to "dark", "appearance/accent" to "teal")
         val appearance = Appearance.read { stored[it] }
-        assertEq(Appearance(ThemeModeChoice.dark, AccentChoice.teal), appearance)
+        assertEq(Appearance(ThemeModeChoice.dark, AppTheme(accent = AccentChoice.teal)), appearance)
         assertEq(0xFF2DD4BF, appearance.accent.accent(dark = true))
-        assertEq(0xFF0D9488, appearance.accent.accent(dark = false))
+        assertEq(0xFF0F766E, appearance.accent.accent(dark = false))
+    }
+
+    fun testReadBuildsTheWholeTheme() {
+        val stored = mapOf(
+            "appearance/accent" to "custom",
+            "appearance/accentCustom" to "#7c3aed",
+            "appearance/surface" to "slate",
+            "appearance/themeColors" to "{\"dark\":{\"bgBase\":\"#111111\"}}",
+        )
+        val theme = Appearance.read({ stored[it] }) { if (it == "appearance/readableColors") false else null }.theme
+        assertEq(ThemeSurface.slate, theme.surface)
+        assertEq(0x7C3AEDL, theme.customAccent)
+        assertEq(AccentChoice.blue, theme.accent)
+        assertEq("custom", theme.accentName)
+        assertEq(false, theme.readable)
+        assertEq(mapOf(ThemeToken.bgBase to 0x111111L), theme.darkColors)
+        assertEq(AppTheme.standard, Appearance.read { null }.theme)
+        assertEq(null, Appearance.read { if (it == "appearance/accentCustom") "#7c3aed" else null }.theme.customAccent)
     }
 
     fun testAccentColoursStayStable() {
-        assertEq(0xFF007AFF, AccentChoice.blue.light)
+        assertEq(0xFF0066CC, AccentChoice.blue.light)
+        assertEq(0xFF409CFF, AccentChoice.blue.onDark)
         assertEq(0x33164A8CL, AccentChoice.blue.subtleOnDark)
-        assertEq(0x1A6161F2L, AccentChoice.purple.accentSubtle(dark = false))
+        assertEq(0x1A5856D6L, AccentChoice.purple.accentSubtle(dark = false))
+        assertEq(0xFF8B85FF, AccentChoice.purple.accent(dark = true))
     }
 
     fun testEveryAccentHasALabelAndTheSameNamesAsIos() {
@@ -45,7 +65,7 @@ class AppearanceTest {
             AccentChoice.entries.map { it.name },
         )
         assertEq(AccentChoice.orange, AccentChoice.fromName("orange"))
-        assertEq(0xFFC2410C, AccentChoice.orange.accent(dark = false))
+        assertEq(0xFFC0400C, AccentChoice.orange.accent(dark = false))
         assertEq(0xFFFB923C, AccentChoice.orange.accent(dark = true))
         for (accent in AccentChoice.entries) {
             assertEq(true, accent.label.isNotEmpty())

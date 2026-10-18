@@ -22,6 +22,7 @@ Topic pages:
 | [PARITY.md](PARITY.md) | Phone feature matrix, platform decisions, iOS workstream hooks, the watchOS app, bundle ids |
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, sitemap and URLs |
+| [THEMES.md](THEMES.md) | Accent contrast, surface families, the theme editor and its stored keys |
 | [DESKTOP_AGENTS.md](DESKTOP_AGENTS.md) | Desktop agents on the phone (relay control, diff, merge, delete) |
 | [RUNNER_AGENTS.md](RUNNER_AGENTS.md) | Cloud runner agents: branches, merge and clean up, pull requests |
 | [AGENT_ATTACHMENTS.md](AGENT_ATTACHMENTS.md) | Photos and files in agent transcripts and prompts |
