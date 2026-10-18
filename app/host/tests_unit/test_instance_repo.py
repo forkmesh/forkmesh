@@ -34,6 +34,36 @@ def test_spec_is_normalized_and_bad_values_are_refused(tmp_path):
             repo.read_spec(args(tmp_path, **bad))
 
 
+def test_fork_and_switch_options_are_normalized(tmp_path):
+    spec = repo.read_spec(args(tmp_path))
+    assert spec["forkOf"] == "" and spec["protect"] is None
+    assert spec["actions"] is None
+    spec = repo.read_spec(args(tmp_path, fork_of="Acme/ForkMesh",
+                               protect_default_branch=True, actions="off"))
+    assert spec["forkOf"] == "acme/forkmesh" and spec["protect"] is True
+    assert spec["actions"] is False
+    assert repo.read_spec(args(tmp_path, actions="on"))["actions"] is True
+    assert repo.read_spec(args(
+        tmp_path, protect_default_branch=False))["protect"] is False
+    for bad in ("acme", "acme/x/y", "-a/b", "acme/Bolt", "alice/bolt"):
+        with pytest.raises(repo.RepoError):
+            repo.read_spec(args(tmp_path, fork_of=bad))
+
+
+def test_shared_history_is_found_by_commit_or_root(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    git(work, "init", "-q", "-b", "main")
+    first = commit(work, "a", 10)
+    second = commit(work, "b", 10)
+    local = repo.Git()
+    assert repo.shares_history(local, None, {"commits": [second]}, cwd=work)
+    assert repo.shares_history(local, None, {"commits": ["f" * 40, first]},
+                               cwd=work)
+    assert not repo.shares_history(local, None, {"commits": ["f" * 40]},
+                                   cwd=work)
+
+
 @pytest.mark.skipif(os.geteuid() == 0, reason="checks the non-root path")
 def test_switching_users_needs_root(tmp_path):
     me = pwd.getpwuid(os.geteuid()).pw_name

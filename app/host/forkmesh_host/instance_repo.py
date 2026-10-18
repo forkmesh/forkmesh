@@ -218,7 +218,7 @@ def shares_history(git, git_dir, parent, cwd=None):
     return bool(roots & set(commits))
 
 
-async def configure(runtime, spec, parent):
+async def link_fork(runtime, spec, parent):
     entry, env = runtime.entry, runtime.env
     hosted_git, _, _ = _modules(entry)
     owner, name = spec["owner"], spec["name"]
@@ -242,6 +242,13 @@ async def configure(runtime, spec, parent):
             changed["forkedFrom"] = parent["forkedFrom"]
         await entry._index_repo_fork_edge(
             env, catalog, prior, (row or {}).get("owner_bi"), key_bi)
+    return changed
+
+
+async def apply_settings(runtime, spec):
+    entry, env = runtime.entry, runtime.env
+    owner, name = spec["owner"], spec["name"]
+    changed = {}
     features = {}
     if spec["protect"] is not None:
         features["protectDefaultBranch"] = spec["protect"]
@@ -765,11 +772,12 @@ def run(args, spec):
         parent = in_app(read_parent) if spec["forkOf"] else {}
         check_source_history(spec, parent)
         info = in_app(prepare)
+        configured = in_app(apply_settings)
         max_bytes = _forked(app_user, limit)
         filled = fill(spec, info, max_bytes, git_user)
         check_filled_history(spec, parent, filled, git_user)
         recorded = in_app(record, info, filled)
-        configured = in_app(configure, parent)
+        configured.update(in_app(link_fork, parent))
     else:
         runtime = _runtime(args)
 
@@ -778,11 +786,12 @@ def run(args, spec):
                 "forkOf"] else {}
             check_source_history(spec, parent)
             info = await prepare(runtime, spec)
+            configured = await apply_settings(runtime, spec)
             max_bytes = _modules(runtime.entry)[1].max_bytes(runtime.env)
             filled = fill(spec, info, max_bytes, git_user)
             check_filled_history(spec, parent, filled, git_user)
             recorded = await record(runtime, spec, info, filled)
-            configured = await configure(runtime, spec, parent)
+            configured.update(await link_fork(runtime, spec, parent))
             return info, filled, recorded, configured
         info, filled, recorded, configured = asyncio.run(everything())
     return {
