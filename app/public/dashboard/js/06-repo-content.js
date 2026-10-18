@@ -7674,7 +7674,10 @@
     } catch (_) {
       if (state.repoRemoteForks.key === key) state.repoRemoteForks.loaded = true;
     }
-    if (repoAboutStillCurrent(repo)) renderRepoRemoteForks();
+    if (repoAboutStillCurrent(repo)) {
+      renderRepoRemoteForks();
+      syncRepoPullBatchEntry(repo);
+    }
     return state.repoRemoteForks.forks;
   }
 
@@ -9560,6 +9563,8 @@
     if (kind === "pulls") {
       delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
       syncPullQueryBox();
+      syncRepoPullBatchEntry(repo);
+      if (state.session?.nodeName && !repoReadOnlyMirror(repo)) void loadRepoRemoteForks(repo);
     }
     // Drop the previous repo's cache up front so a failed load can never leave
     // the page filter re-rendering rows that are no longer on screen.
