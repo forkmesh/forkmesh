@@ -178,7 +178,7 @@
   `;
 
   const LEGAL_HTML = `
-    <nav class="fm-nav-legal" aria-label="Legal and security">
+    <nav class="fm-nav-legal" aria-label="Legal and security" data-instance-legal-group>
       <span class="fm-nav-group-title">Legal &amp; security</span>
       <a href="/security-report">Security</a>
       <a href="/privacy">Privacy</a>

@@ -8,6 +8,13 @@
   let hiddenPaths = [];
   let offsiteHosts = [];
   let ready = false;
+  let legal = null;
+  const LEGAL_PATHS = { "/terms": "terms", "/privacy": "privacy", "/security": "security", "/security-report": "security" };
+  const LEGAL_PENDING =
+    Object.keys(LEGAL_PATHS)
+      .map((path) => `:is(header, nav, aside, footer) a[href="${path}"]:not([data-instance-legal])`)
+      .concat(["[data-instance-legal-consent]:not([data-instance-legal])", "[data-instance-legal-group]:not([data-instance-legal])"])
+      .join(", ") + " { display: none !important; }";
 
   const swap = (value) => value.replace(BRAND, name);
 
@@ -54,14 +61,83 @@
   const isHidden = (path) =>
     hiddenPaths.some((prefix) => path === prefix || path.startsWith(prefix.replace(/\/$/, "") + "/"));
 
+  const legalPage = (url) => (url.origin === location.origin ? LEGAL_PATHS[url.pathname.replace(/(.)\/$/, "$1")] || "" : "");
+
+  const legalEntry = (page) => {
+    const entry = legal && legal[page];
+    return entry && entry.enabled && typeof entry.href === "string" && entry.href ? entry : null;
+  };
+
+  const showLegal = (link, page) => {
+    const entry = legalEntry(page);
+    if (!entry) {
+      hide(link);
+      return;
+    }
+    link.setAttribute("href", entry.href);
+    link.setAttribute("data-instance-legal", page);
+    if (entry.external) {
+      link.rel = "noopener";
+      link.target = "_blank";
+    }
+  };
+
+  const legalLink = (page, label) => {
+    const entry = legalEntry(page);
+    const link = document.createElement("a");
+    link.href = entry.href;
+    link.textContent = label;
+    link.setAttribute("data-instance-legal", page);
+    if (entry.external) {
+      link.rel = "noopener";
+      link.target = "_blank";
+    }
+    return link;
+  };
+
+  const legalConsent = () => {
+    const label = document.querySelector("[data-instance-legal-consent]:not([data-instance-legal])");
+    if (!label || !legal) return;
+    const terms = Boolean(legalEntry("terms"));
+    const privacy = Boolean(legalEntry("privacy"));
+    const text = label.querySelector("[data-instance-legal-consent-text]");
+    if (!terms && !privacy) {
+      label.hidden = true;
+    } else if (text) {
+      const parts = terms
+        ? ["I agree to the ", legalLink("terms", "Terms")].concat(
+            privacy ? [" and have read the ", legalLink("privacy", "Privacy"), " policy."] : ["."])
+        : ["I have read the ", legalLink("privacy", "Privacy"), " policy."];
+      text.replaceChildren(...parts);
+    }
+    label.setAttribute("data-instance-legal", terms || privacy ? "on" : "off");
+    const box = label.querySelector("input[type='checkbox']");
+    if (box) box.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const legalGroups = (root) => {
+    if (!legal || !root.querySelectorAll) return;
+    for (const group of root.querySelectorAll("[data-instance-legal-group]:not([data-instance-legal])")) {
+      const on = group.querySelector("a[data-instance-legal]");
+      if (!on) group.hidden = true;
+      group.setAttribute("data-instance-legal", on ? "on" : "off");
+    }
+  };
+
   const hideLinks = (root) => {
     if (!ready || !root.querySelectorAll) return;
     for (const link of root.querySelectorAll("a[href]")) {
-      if (leaveAlone(link)) continue;
+      if (leaveAlone(link) || link.hasAttribute("data-instance-legal")) continue;
+      if (link.closest("[data-instance-legal-consent]")) continue;
       let url;
       try {
         url = new URL(link.getAttribute("href"), location.href);
       } catch {
+        continue;
+      }
+      const page = legal ? legalPage(url) : "";
+      if (page) {
+        showLegal(link, page);
         continue;
       }
       if (offsiteHosts.includes(url.hostname)) {
@@ -77,6 +153,8 @@
       }
       if (url.origin === location.origin && isHidden(url.pathname)) hide(link);
     }
+    legalGroups(root);
+    legalConsent();
   };
 
   const nameBesideLogo = () => {
@@ -168,8 +246,17 @@
     document.body.append(footer);
   };
 
+  const legalStyle = () => {
+    if (document.querySelector("style[data-instance-legal-pending]")) return;
+    const style = document.createElement("style");
+    style.setAttribute("data-instance-legal-pending", "");
+    style.textContent = LEGAL_PENDING;
+    (document.head || document.documentElement).append(style);
+  };
+
   const start = () => {
     hidePlugins(null);
+    legalStyle();
     if (document.title.indexOf("ForkMesh") !== -1) document.title = swap(document.title);
     walk(document);
     poweredBy();
@@ -191,7 +278,12 @@
     fetch("/api/instance", { credentials: "same-origin" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!data || !Array.isArray(data.plugins)) return;
+        legal = (data && data.legal && typeof data.legal === "object") ? data.legal : {};
+        if (!data || !Array.isArray(data.plugins)) {
+          ready = true;
+          hideLinks(document.documentElement);
+          return;
+        }
         const off = data.plugins.filter((plugin) => !plugin.enabled);
         hiddenPaths = off.flatMap((plugin) => plugin.paths || []);
         offsiteHosts = Array.isArray(data.offsiteHosts) ? data.offsiteHosts : [];
@@ -199,7 +291,11 @@
         hideLinks(document.documentElement);
         hidePlugins(off.map((plugin) => String(plugin.id || "")));
       })
-      .catch(() => {});
+      .catch(() => {
+        legal = {};
+        ready = true;
+        hideLinks(document.documentElement);
+      });
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true });
