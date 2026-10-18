@@ -63,6 +63,14 @@ import {
 } from "./world-debug-log.js";
 import { proceduralAvatarFaceDataURL } from "./world-avatar-face.js";
 import {
+  PORTAL_PARAM,
+  homePortalHex,
+  portalDestination,
+  requestedPortalSlot,
+  withHomePortal,
+  worldPortalURL,
+} from "./world-instance-portals.js";
+import {
   WORLD_MEMBER_DIRECTORY_PATH,
   installWorldBoot,
   readWorldBootPrefs,
@@ -3601,6 +3609,7 @@ function normalizeInstanceHexes(value) {
           ? logo
           : "",
         slot,
+        worldUrl: worldPortalURL(item?.worldUrl, new URL(url).hostname),
       };
     })
     .filter(Boolean);
@@ -6406,6 +6415,8 @@ class ForkMeshWorld extends HTMLElement {
     this.nearbyLandmarkId = "";
     this.federatedInstances = [];
     this.instanceHexes = [];
+    this.homePortal = undefined;
+    this.pendingPortalSlot = requestedPortalSlot(location.search);
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -7946,7 +7957,13 @@ class ForkMeshWorld extends HTMLElement {
         onStartWorldSignSelect: (plot) => this.openStartInstance(plot),
         onDrinkWater: () =>
           this.hudNotice("Fresh garden water — hydration restored. 💧"),
-        onInstanceHexagonSelect: ({ url, label }) => {
+        onInstanceHexagonSelect: ({ url, label, worldUrl, arrivalSlot }) => {
+          const portal = portalDestination(worldUrl, arrivalSlot);
+          if (portal) {
+            this.hudNotice(`Through the portal to ${label || "a ForkMesh World"}…`);
+            window.location.assign(portal);
+            return;
+          }
           const destination = safeHTTPURL(url);
           if (!destination.startsWith("https://")) return;
           this.hudNotice(`Opening ${label || "ForkMesh instance"}…`);
@@ -11181,6 +11198,19 @@ class ForkMeshWorld extends HTMLElement {
       this.world?.updateFederatedInstances?.(instances);
       this.celebrateRecentInstance(instances);
     } catch (_) {}
+    if (this.homePortal === undefined) {
+      try {
+        this.homePortal = homePortalHex(
+          await this.fetchJSON("/api/instance", {
+            auth: false,
+            timeout: 5000,
+            credentials: "omit",
+          }),
+        );
+      } catch (_) {
+        this.homePortal = null;
+      }
+    }
     try {
       const payload = await this.fetchJSON(
         `/api/start/instances?refresh=${Math.floor(Date.now() / 300_000)}`,
@@ -11190,9 +11220,16 @@ class ForkMeshWorld extends HTMLElement {
           credentials: "omit",
         },
       );
-      this.instanceHexes = normalizeInstanceHexes(payload);
+      this.instanceHexes = withHomePortal(
+        normalizeInstanceHexes(payload),
+        this.homePortal,
+      );
       this.world?.updateInstanceHexes?.(this.instanceHexes);
-    } catch (_) {}
+    } catch (_) {
+      this.instanceHexes = withHomePortal([], this.homePortal);
+      this.world?.updateInstanceHexes?.(this.instanceHexes);
+    }
+    this.applyPortalArrival();
     try {
       const payload = await this.fetchJSON(
         `/api/world/installs?refresh=${Math.floor(Date.now() / 30_000)}`,
@@ -11205,6 +11242,22 @@ class ForkMeshWorld extends HTMLElement {
       this.celebrateRecentInstall(
         Array.isArray(payload?.installs) ? payload.installs : [],
       );
+    } catch (_) {}
+  }
+
+  applyPortalArrival() {
+    const slot = this.pendingPortalSlot;
+    if (slot < 0 || !this.world?.setSpawn) return;
+    const hex = this.instanceHexes.find((item) => item.slot === slot);
+    const spawn = hex ? this.world.instanceHexArrival?.(slot) : null;
+    if (!spawn) return;
+    this.pendingPortalSlot = -1;
+    this.world.setSpawn(spawn);
+    this.hudNotice(`Arrived through the portal at ${hex.name}`);
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete(PORTAL_PARAM);
+      history.replaceState(history.state, "", url.href);
     } catch (_) {}
   }
 

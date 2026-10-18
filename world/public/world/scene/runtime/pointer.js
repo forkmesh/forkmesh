@@ -772,6 +772,8 @@ export function functions({
       onInstanceHexagonSelect({
         url: String(hit.object.userData.url || ""),
         label: String(hit.object.userData.label || "ForkMesh instance"),
+        worldUrl: String(hit.object.userData.worldUrl || ""),
+        arrivalSlot: Number(hit.object.userData.arrivalSlot),
       });
       return;
     }

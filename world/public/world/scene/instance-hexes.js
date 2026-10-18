@@ -20,6 +20,18 @@ const LOGO_TEXTURE_SIZE = 256;
 const GROUND_LOGO_SIZE = 150;
 const LANDMARK_INSET = CONTINUOUS_CITY_RADIUS * 0.55;
 
+export function instanceHexArrival(slot) {
+  const tile = instanceHexSlot(slot);
+  if (!tile) return null;
+  const reach = LANDMARK_INSET + 18;
+  return {
+    x: tile.x - tile.normalX * reach,
+    z: tile.z - tile.normalZ * reach,
+    heading: Math.atan2(tile.normalX, tile.normalZ),
+    space: "town-square",
+  };
+}
+
 export function instanceHexSlot(slot) {
   const index = Number(slot);
   return Number.isInteger(index) ? INSTANCE_HEX_SLOTS[index] || null : null;
@@ -161,6 +173,10 @@ export function createInstanceHex(THREE, instance, interactive) {
     object.userData.interactive = "instance-hexagon";
     object.userData.url = instance.url;
     object.userData.label = instance.name;
+    object.userData.worldUrl = instance.worldUrl || "";
+    object.userData.arrivalSlot = Number.isInteger(instance.arrivalSlot)
+      ? instance.arrivalSlot
+      : instance.slot;
     interactive.push(object);
   };
 
@@ -231,7 +247,9 @@ export function createInstanceHex(THREE, instance, interactive) {
   const label = makeLabelSprite(
     THREE,
     String(instance.name || "ForkMesh instance").slice(0, 22),
-    String(instance.host || "").slice(0, 32),
+    instance.worldUrl
+      ? `portal · ${String(instance.host || "")}`.slice(0, 32)
+      : String(instance.host || "").slice(0, 32),
     "#9ef7c6",
   );
   label.scale.set(15, 5, 1);

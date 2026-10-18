@@ -135,3 +135,79 @@ stack never calls production. An instance's app unit now sets
 `INSTANCE_DIRECTORY_URL=https://app.forkmesh.com`, so the announcement is the
 only production call an instance makes. Both are written by the installer
 and refreshed by `--update`.
+
+## World connectivity
+
+What "each World is connected" means in the code:
+
+- **One World per origin.** The World is a static app (`world/public/world`)
+  plus the `/api/world/*` routes. On forkmesh.com it is served at
+  `https://world.forkmesh.com/world/` (`WORLD_ORIGIN`). The installer sets
+  `WORLD_ORIGIN` to the instance's own origin, so on an instance with the
+  `world` plugin on, `external_site_delivery` serves the bundled World
+  locally at `https://<domain>/world/`, with its own members, chat and Office
+  in the instance's database. With the plugin off `/world` is not found.
+  Worlds share no state: there is no relay between them.
+- **Twelve instance slots.** The ForkMesh World's town is ringed by twelve
+  instance hexagons (`INSTANCE_HEX_SLOTS`, `scene/layout.js`). Every World
+  reads `/api/start/instances` on its own origin and builds a hexagon for each
+  entry with `world: true` and a slot. Only forkmesh.com's directory has
+  entries, so only the ForkMesh World shows them.
+- **Portals.** A directory entry carries `worldUrl`
+  (`https://<domain>/world/`) when the instance announced one, that is when
+  it chose a World hexagon and its `world` plugin is on
+  (`instance_directory.world_url` requires the same host). Its hexagon's
+  label reads "portal · <domain>", and clicking the landmark travels, in the
+  same tab, to `https://<domain>/world/?portal=<slot>`. Without `worldUrl`
+  the landmark opens the instance's home page in a new tab, as before.
+- **The way back.** `/api/instance` on an instance reports
+  `directory: {listed, world, portal}`; `portal` is
+  `{"home": "https://world.forkmesh.com/world/", "slot": <its hexagon>}` once
+  forkmesh.com has listed it with a World (`worldHome` comes from
+  forkmesh.com's own `WORLD_ORIGIN` in the announcement answer). The
+  instance's World turns that into one "ForkMesh World" hexagon at the same
+  slot (`homePortalHex`, `world/public/world/world-instance-portals.js`), and
+  its landmark travels to `https://world.forkmesh.com/world/?portal=<slot>`.
+- **Arrival.** `?portal=<n>` (0 to 11) makes the World place the visitor in
+  front of hexagon `n`'s landmark (`instanceHexArrival`,
+  `scene/instance-hexes.js`, through `setSpawn`) as soon as that hexagon is
+  built, then drops the parameter from the address. Both Worlds use the same
+  layout, so walking through a portal lands next to the portal that leads
+  back. A slot that has no hexagon is ignored and the visitor arrives as
+  usual.
+- The legacy relay federation (`/api/world/instances`, approved `relays`
+  rows drawn as small towers in the Fediverse district) is separate and
+  unchanged.
+
+## Testing it
+
+Automated: `app/tests/test_instance_registry.py` (protocol, failure cases,
+console, document, `/api/instance`), `app/tests/test_instance_directory.py`,
+`app/tests/test_install_instance_script.py`,
+`app/host/tests_unit/test_instance_bootstrap.py`,
+`app/tests/host/test_host_egress.py` and
+`world/tests/test_world_instance_portals.py` (URL rules, home portal, arrival
+spots, wiring).
+
+By hand, once forkmesh.com and the instance both run this code:
+
+1. On the instance, Platform → Plugins: turn **World and Office** on and
+   save. `https://<domain>/world/` opens the instance's World.
+2. Platform → ForkMesh directory: turn on both switches, **Save and
+   announce**. The page shows "Listed" and "World hexagon N". Check
+   `curl -s https://<domain>/.well-known/forkmesh-instance.json` (choices,
+   `worldUrl`, `publicKey`) and
+   `curl -s https://app.forkmesh.com/api/start/instances` (the entry with
+   `"world": true`, its `slot` and `worldUrl`).
+3. `curl -s https://<domain>/api/instance | jq .directory` shows
+   `portal.home` and `portal.slot`.
+4. Open `https://world.forkmesh.com/world/?portal=<slot>`: you arrive in front
+   of the instance's hexagon, labelled "portal · <domain>". Click its board:
+   the browser goes to `https://<domain>/world/?portal=<slot>` and you arrive
+   in front of the "ForkMesh World" hexagon there. Click that board to go
+   back.
+5. Turn both switches off and save: the page shows "Not listed" and the entry
+   leaves `/api/start/instances`.
+
+On forkmesh.com the admin console's Instances view shows the entry as
+"Joined from its own console" with Hide and Delete.

@@ -153,6 +153,7 @@ def test_a_signed_announcement_lists_the_instance_and_gives_it_a_hexagon():
     assert [(item["name"], item["url"], item["slot"]) for item in entries] == [
         ("Acme Code", "https://%s/" % DOMAIN, 0)]
     assert entries[0]["id"] == reply["id"]
+    assert entries[0]["worldUrl"] == "https://%s/world/" % DOMAIN
     assert entries[0]["logo"].startswith("/api/start/instances/")
     stored = registrations(directory)
     assert len(stored) == 1 and stored[0]["public_key"] == key.public
@@ -172,6 +173,23 @@ def test_announcing_again_updates_the_name_and_keeps_the_id_and_hexagon():
     assert status == 200 and again["id"] == first["id"]
     assert again["slot"] == first["slot"]
     assert listed(directory)[0]["name"] == "Acme Git"
+
+
+def test_a_world_address_is_published_only_with_a_hexagon():
+    directory, key = Directory(), Key()
+    joined(directory, key, worldUrl="")
+    assert listed(directory)[0]["worldUrl"] == ""
+    directory.clock += 60_000
+    serve(directory, doc(key=key, world=False, worldUrl=""))
+    ring(directory, announcement(key, ts=directory.clock))
+    assert listed(directory)[0]["world"] is False
+    assert listed(directory)[0]["worldUrl"] == ""
+    row = {"url": "https://a.example.org/",
+           "world_url": "https://b.example.org/world/"}
+    assert instance_directory.world_url(row, True) == ""
+    row["world_url"] = "https://a.example.org/world/"
+    assert instance_directory.world_url(row, True) == row["world_url"]
+    assert instance_directory.world_url(row, False) == ""
 
 
 def test_turning_both_off_removes_the_instance():

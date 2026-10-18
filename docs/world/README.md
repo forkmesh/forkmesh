@@ -475,7 +475,12 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   instance's address. `refreshInstanceDirectory()` reads
   `/api/start/instances` every 5 minutes and keeps entries with
   `world: true`, an https address, a 32-hex id and an unused slot. Nothing is
-  built while no instance has a hexagon.
+  built while no instance has a hexagon. An entry with a `worldUrl` is a
+  portal: the board travels to that instance's own World at
+  `?portal=<slot>`, and an instance's World draws one "ForkMesh World"
+  hexagon that leads back; `?portal=<n>` places the arriving visitor in front
+  of hexagon `n`
+  ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
   by the road width plus junction discs. `WORLD_RADIUS` (1900) bounds remote
   avatars, spawns, flight and the server's saved-view check; the relay's

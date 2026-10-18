@@ -58,7 +58,8 @@ def test_a_finished_launch_gets_a_hexagon_and_a_homepage_row():
     assert entries == [{
         "id": launch_id, "name": "Acme Code", "url": "https://code.example.com/",
         "logo": "/api/start/instances/%s/logo?v=%d" % (launch_id, runtime.clock),
-        "listed": True, "world": True, "slot": 0, "createdAt": runtime.clock,
+        "listed": True, "world": True, "slot": 0, "worldUrl": "",
+        "createdAt": runtime.clock,
     }]
     image = logo(runtime, launch_id)
     assert image["type"] == "image/png" and image["body"] == PNG
