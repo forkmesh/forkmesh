@@ -82,7 +82,7 @@
 	<key>NSMotionUsageDescription</key>
 	<string>Pedometer counts your steps with the motion sensor while you watch today's total, and notices when you start a walk to show its steps on the Lock Screen and in the Dynamic Island. Sleep works out how long you slept from when your phone lay still by your bed.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>ForkMesh finds other ForkMesh devices on this Wi-Fi so the #mesh room can chat without the internet, NEXUS can discover services on networks you are authorized to inspect, and the Router plugin can manage your OpenWrt router.</string>
+	<string>ForkMesh finds other ForkMesh devices on this Wi-Fi so the #mesh room can chat without the internet, NEXUS can discover services on networks you are authorized to inspect, the Router plugin can manage your OpenWrt router, and Files can open disks shared on your network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

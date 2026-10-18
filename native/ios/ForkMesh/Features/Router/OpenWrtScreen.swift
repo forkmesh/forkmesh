@@ -1,4 +1,5 @@
 import FMBase
+import FMFiles
 import FMPackages
 import SwiftUI
 
@@ -683,6 +684,7 @@ struct OpenWrtStorageScreen: View {
     @State private var shareGuests = false
     @State private var unmountDisk: OpenWrtDisk?
     @State private var confirmInstall = false
+    @State private var confirmShareInstall = false
 
     var body: some View {
         let disks = model.snapshot.disks
@@ -729,19 +731,32 @@ struct OpenWrtStorageScreen: View {
             }
             Section {
                 ForEach(model.snapshot.shares) { share in
-                    LabeledContent(share.name, value: "\(share.path)\(share.readOnly ? " · read only" : "")\(share.guests ? " · guests" : "")")
-                        .swipeActions {
-                            Button("Stop sharing", role: .destructive) {
-                                Task { await model.delete(model.snapshot.shareConfig, share.section, what: "Share \(share.name)") }
-                            }
+                    NavigationLink {
+                        NetworkShareEntryScreen(share: NetworkShare(address: model.routerHost, share: share.name, guest: share.guests))
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            LabeledContent(share.name, value: "\(share.path)\(share.readOnly ? " · read only" : "")\(share.guests ? " · guests" : "")")
+                            Text("Browse files").font(.caption).foregroundStyle(.tint)
                         }
+                    }
+                    .accessibilityIdentifier("openwrt-share-browse-\(share.name)")
+                    .swipeActions {
+                        Button("Stop sharing", role: .destructive) {
+                            Task { await model.delete(model.snapshot.shareConfig, share.section, what: "Share \(share.name)") }
+                        }
+                    }
+                }
+                if model.snapshot.shareConfig.isEmpty {
+                    Button("Install network sharing") { confirmShareInstall = true }
+                        .disabled(model.storageBusy || model.busy || !model.signedIn)
+                        .accessibilityIdentifier("openwrt-install-sharing")
                 }
             } header: {
                 Text("Network shares")
             } footer: {
                 Text(model.snapshot.shareConfig.isEmpty
-                     ? "To share disks with computers and phones, install ksmbd-server and luci-app-ksmbd on the Packages screen."
-                     : "Shared with the \(model.snapshot.shareConfig) file server (SMB). Swipe a mounted disk to share it.")
+                     ? "To share disks with computers and phones, install ksmbd-server and luci-app-ksmbd."
+                     : "Shared with the \(model.snapshot.shareConfig) file server (SMB). Swipe a mounted disk to share it; tap a share to browse its files.")
             }
         }
         .navigationTitle("Storage")
@@ -778,6 +793,11 @@ struct OpenWrtStorageScreen: View {
             Button("Install") { Task { await model.installStorageSupport() } }
         } message: {
             Text("This updates the router's package lists and installs \(OpenWrtModel.usbStoragePackages.joined(separator: ", ")). The router needs internet access to download them.")
+        }
+        .confirmationDialog("Install network sharing?", isPresented: $confirmShareInstall, titleVisibility: .visible) {
+            Button("Install") { Task { await model.installShareSupport() } }
+        } message: {
+            Text("This updates the router's package lists and installs \(OpenWrtModel.shareSupportPackages.joined(separator: " and ")), the file server and its settings page. The router needs internet access to download them.")
         }
     }
 

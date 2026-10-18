@@ -479,6 +479,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowCalendar.cpp
     src/MainWindowNotes.cpp
     src/MainWindowFiles.cpp
+    src/MainWindowNetworkFiles.cpp
     src/MainWindowStats.cpp
     src/MainWindowIssues.cpp
     src/MainWindowSourceControl.cpp
@@ -762,6 +763,14 @@ set(FORKMESH_APP_SOURCES
     src/CoveFileSupport.cpp
     src/CoveFileEditor.h
     src/CoveFileEditor.cpp
+    src/SmbProtocol.h
+    src/SmbProtocol.cpp
+    src/SmbClient.h
+    src/SmbClient.cpp
+    src/NetworkShares.h
+    src/NetworkShares.cpp
+    src/NetworkFilesPanel.h
+    src/NetworkFilesPanel.cpp
     src/MirrorCrypto.h
     src/MirrorCrypto.cpp
     src/PrivateMirrorStore.h
@@ -1553,6 +1562,42 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-cove-files-tests PRIVATE Qt6::Widgets)
     if(APPLE)
         set_target_properties(forkmesh-cove-files-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-smb-tests
+        tests/test_smb_client.cpp
+        tests/FakeSmbServer.h
+        src/SmbProtocol.h
+        src/SmbProtocol.cpp
+        src/SmbClient.h
+        src/SmbClient.cpp
+        src/NetworkShares.h
+        src/NetworkShares.cpp
+    )
+    target_include_directories(forkmesh-smb-tests PRIVATE src tests)
+    target_link_libraries(forkmesh-smb-tests PRIVATE Qt6::Network)
+    if(APPLE)
+        set_target_properties(forkmesh-smb-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-network-files-tests
+        tests/test_network_files_panel.cpp
+        tests/FakeSmbServer.h
+        src/SmbProtocol.h
+        src/SmbProtocol.cpp
+        src/SmbClient.h
+        src/SmbClient.cpp
+        src/NetworkShares.h
+        src/NetworkShares.cpp
+        src/NetworkFilesPanel.h
+        src/NetworkFilesPanel.cpp
+    )
+    target_include_directories(forkmesh-network-files-tests PRIVATE src tests)
+    target_link_libraries(forkmesh-network-files-tests PRIVATE Qt6::Widgets Qt6::Network Qt6::Concurrent)
+    if(APPLE)
+        set_target_properties(forkmesh-network-files-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3674,6 +3719,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     set_target_properties(
         forkmesh-trust-list-tests
         forkmesh-cove-files-tests forkmesh-tests
+        forkmesh-smb-tests forkmesh-network-files-tests
         forkmesh-project-invite-tests
         forkmesh-stats-dashboard-tests
         forkmesh-fleet-visualizer-tests
@@ -3760,6 +3806,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     enable_testing()
     forkmesh_add_package_module_tests()
     add_test(NAME forkmesh-cove-files-tests COMMAND forkmesh-cove-files-tests)
+    add_test(NAME forkmesh-smb-tests COMMAND forkmesh-smb-tests)
+    add_test(NAME forkmesh-network-files-tests COMMAND forkmesh-network-files-tests)
+    set_tests_properties(forkmesh-network-files-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-project-invite-tests
              COMMAND forkmesh-project-invite-tests)
     add_test(NAME forkmesh-stats-dashboard-tests
@@ -4199,6 +4249,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         USES_TERMINAL)
     add_dependencies(check forkmesh-cove-files-tests
+        forkmesh-smb-tests forkmesh-network-files-tests
         forkmesh-project-invite-tests
         forkmesh-stats-dashboard-tests
         forkmesh-fleet-visualizer-tests

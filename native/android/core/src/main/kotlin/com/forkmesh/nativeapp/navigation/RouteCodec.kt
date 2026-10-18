@@ -179,6 +179,7 @@ object RouteCodec {
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.RssReader -> Route.RssReader
             Route.Kind.SecureDrive -> Route.SecureDrive
+            Route.Kind.Files -> Route.Files
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity
