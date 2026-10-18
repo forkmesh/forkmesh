@@ -20,12 +20,14 @@ extension StatsDestination {
         guard let api = InsightsFeature.api, let store = InsightsFeature.statsLayoutStore() else { return nil }
         var desktop: (@MainActor () async throws -> DesktopHealth)?
         var codemagic: (@MainActor () async throws -> CodemagicUsage)?
+        var desktopTiles: (@MainActor () async throws -> DesktopTilesReply)?
         if let client = InsightsFeature.desktopClient {
             desktop = { @MainActor () async throws -> DesktopHealth in try await client.health() }
             codemagic = { @MainActor () async throws -> CodemagicUsage in try await client.codemagic() }
+            desktopTiles = { @MainActor () async throws -> DesktopTilesReply in try await client.tiles() }
         }
         return StatsBoardModel(transport: api, layoutStore: store, desktop: desktop, codemagic: codemagic,
-                               history: InsightsFeature.statsHistoryStore())
+                               desktopTiles: desktopTiles, history: InsightsFeature.statsHistoryStore())
     }
 }
 
@@ -59,6 +61,9 @@ struct StatsScreen: View {
                 }
                 if !model.desktopNote.isEmpty {
                     InsightsBanner(text: model.desktopNote, systemImage: "desktopcomputer", tint: .secondary)
+                }
+                if !model.desktopTilesNote.isEmpty {
+                    InsightsBanner(text: model.desktopTilesNote, systemImage: "desktopcomputer", tint: .secondary)
                 }
                 StatsDesktopLinks()
                 if let updated = model.updatedAt {
@@ -340,10 +345,25 @@ struct StatsSparkline: View {
     }
 }
 
+struct StatsAddGroup: Identifiable {
+    let id: String
+    let entries: [StatsTileCatalogEntry]
+}
+
 struct StatsEditSheet: View {
     @Bindable var model: StatsBoardModel
     @Environment(\.dismiss) private var dismiss
     @State private var confirmReset = false
+
+    private var addableGroups: [StatsAddGroup] {
+        var order: [String] = []
+        var byGroup: [String: [StatsTileCatalogEntry]] = [:]
+        for entry in model.addable {
+            if byGroup[entry.group] == nil { order.append(entry.group) }
+            byGroup[entry.group, default: []].append(entry)
+        }
+        return order.map { StatsAddGroup(id: $0, entries: byGroup[$0] ?? []) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -366,9 +386,9 @@ struct StatsEditSheet: View {
                         for id in ids { model.remove(id) }
                     }
                 }
-                if !model.addable.isEmpty {
-                    Section("Add") {
-                        ForEach(model.addable) { entry in
+                ForEach(addableGroups) { section in
+                    Section("Add: \(section.id)") {
+                        ForEach(section.entries) { entry in
                             Button {
                                 model.add(entry.id)
                             } label: {

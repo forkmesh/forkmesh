@@ -3,13 +3,9 @@ import FMBase
 import Foundation
 
 public enum PluginMenu {
-    public enum Item: String, CaseIterable, Sendable {
-        case rate
-        case feedback
-        case uninstall
-    }
-
     public static let buttonIdentifier = "plugin-more"
+
+    public static let optionsLabel = "Rate, report or uninstall…"
 
     public static let feedbackLabel = "Send feedback or report a bug"
 
@@ -43,10 +39,6 @@ public enum PluginMenu {
 
     public static func addsButton(for route: Route) -> Bool {
         packageId(for: route) != nil && !screenOwnsMenu(route)
-    }
-
-    public static func items(canUninstall: Bool) -> [Item] {
-        canUninstall ? [.rate, .feedback, .uninstall] : [.rate, .feedback]
     }
 
     public static func name(catalog: String?, route: Route) -> String {

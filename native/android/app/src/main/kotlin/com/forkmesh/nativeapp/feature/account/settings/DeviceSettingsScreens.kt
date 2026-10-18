@@ -32,7 +32,7 @@ class GeneralSettingsScreen : Screen() {
         var sounds by remember { mutableStateOf(SoundCuePrefs.enabled(prefs)) }
         val hideBarIcons by SettingsArea.homeHidesBarIcons.collectAsState()
         SettingsPage("General", navigator) {
-            item { SettingsCard("Appearance") { AppearanceCard() } }
+            item { SettingsCard("Appearance") { AppearanceCard(navigator) } }
             item {
                 SettingsCard("Home screen") {
                     SettingsSwitch("Hide icons in the bottom bar", "Icons already in the bottom bar leave Home so each one shows once.", hideBarIcons) {

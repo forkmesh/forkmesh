@@ -112,10 +112,12 @@ internal class StatsScreen : Screen() {
         val scope = rememberCoroutineScope()
         val model = remember {
             val transport = InsightsFeature.transport ?: com.forkmesh.nativeapp.insights.InsightsRequesting { _, _, _ -> throw IllegalStateException("Sign in first.") }
+            val client = InsightsFeature.desktopClient()
             StatsBoardModel(
                 transport,
                 InsightsFeature.statsLayoutStore() ?: StatsLayoutStore(MemoryPrefStore()),
-                desktop = InsightsFeature.desktopClient()?.let { client -> { client.health() } },
+                desktop = client?.let { paired -> { paired.health() } },
+                desktopTiles = client?.let { paired -> { paired.tiles() } },
             )
         }
         fun reload() {
@@ -133,6 +135,7 @@ internal class StatsScreen : Screen() {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 if (model.failures.isNotEmpty()) item { Text("Could not load: ${model.failures.joinToString(", ")}", style = Fm.text.bodySmall.copy(color = c.warning)) }
                 if (model.desktopNote.isNotEmpty()) item { Text(model.desktopNote, style = Fm.text.bodySmall.copy(color = c.textSecondary)) }
+                if (model.desktopTilesNote.isNotEmpty()) item { Text(model.desktopTilesNote, style = Fm.text.bodySmall.copy(color = c.textSecondary)) }
                 val visible = model.visible
                 val rows = ArrayList<List<com.forkmesh.nativeapp.insights.StatsTilePlacement>>()
                 var pending = ArrayList<com.forkmesh.nativeapp.insights.StatsTilePlacement>()
@@ -166,11 +169,14 @@ internal class StatsScreen : Screen() {
                     val addable = model.addable
                     if (addable.isNotEmpty()) {
                         item { FmSectionHeader("Add a tile") }
-                        items(addable, key = { "add-" + it.id }) { entry ->
-                            FmListRow(entry.title, subtitle = entry.hint, leading = { FmIcon(entry.icon, size = 20.dp, tint = c.textSecondary) }, onTap = {
-                                model.add(entry.id)
-                                version++
-                            }, showChevron = false)
+                        for ((group, entries) in addable.groupBy { it.group }) {
+                            item(key = "add-group-$group") { Text(group, style = Fm.text.labelMedium.copy(color = c.textSecondary)) }
+                            items(entries, key = { "add-" + it.id }) { entry ->
+                                FmListRow(entry.title, subtitle = entry.hint, leading = { FmIcon(entry.icon, size = 20.dp, tint = c.textSecondary) }, onTap = {
+                                    model.add(entry.id)
+                                    version++
+                                }, showChevron = false)
+                            }
                         }
                     }
                     item { FmToneButton("Reset the board", onPressed = { model.reset(); version++ }) }
@@ -206,7 +212,10 @@ internal class StatsScreen : Screen() {
                 when {
                     data == null && loading -> Loading()
                     data == null -> Text("—", style = Fm.text.titleLarge.copy(color = c.textDisabled))
-                    !data.available -> Text("—", style = Fm.text.titleLarge.copy(color = c.textDisabled))
+                    !data.available -> {
+                        Text("—", style = Fm.text.titleLarge.copy(color = c.textDisabled))
+                        if (data.note.isNotEmpty()) Text(data.note, style = Fm.text.labelSmall.copy(color = c.textTertiary), maxLines = 2)
+                    }
                     else -> {
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(data.value, style = Fm.text.titleLarge.copy(color = c.textPrimary, fontWeight = FontWeight.SemiBold))
@@ -219,7 +228,11 @@ internal class StatsScreen : Screen() {
                             }
                         }
                         if (data.note.isNotEmpty()) Text(data.note, style = Fm.text.labelSmall.copy(color = c.textTertiary), maxLines = 2)
-                        if (!data.series.isEmpty) Sparkline(data.series.values, c.accent)
+                        if (data.series.categorical) {
+                            BarChart(data.series.values, c.accent, height = 28.dp)
+                        } else if (!data.series.isEmpty) {
+                            Sparkline(data.series.values, c.accent)
+                        }
                     }
                 }
                 if (editing) {

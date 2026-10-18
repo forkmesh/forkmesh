@@ -78,11 +78,59 @@ final class PluginMenuTests: XCTestCase {
         }
     }
 
-    func testTheMenuOffersRateAndFeedbackAndUninstallOnlyWhenPossible() {
-        XCTAssertEqual(PluginMenu.items(canUninstall: true), [.rate, .feedback, .uninstall])
-        XCTAssertEqual(PluginMenu.items(canUninstall: false), [.rate, .feedback])
+    func testTheMenuOpensOnePopupForRatingReportingAndUninstalling() {
         XCTAssertEqual(PluginMenu.buttonIdentifier, "plugin-more")
+        XCTAssertEqual(PluginMenu.optionsLabel, "Rate, report or uninstall\u{2026}")
         XCTAssertEqual(PluginMenu.feedbackLabel, "Send feedback or report a bug")
+    }
+
+    func testThePopupSendsARatingAReportOrBoth() {
+        XCTAssertFalse(PluginFeedback().canSend)
+        XCTAssertFalse(PluginFeedback(text: "   ").canSend)
+        XCTAssertFalse(PluginFeedback(text: "  ").canAskAgent)
+        let rated = PluginFeedback(stars: 5)
+        XCTAssertTrue(rated.canSend)
+        XCTAssertTrue(rated.rates)
+        XCTAssertFalse(rated.reports)
+        XCTAssertFalse(rated.canAskAgent)
+        let written = PluginFeedback(text: "Crashes on open")
+        XCTAssertTrue(written.canSend)
+        XCTAssertFalse(written.rates)
+        XCTAssertTrue(written.canAskAgent)
+    }
+
+    func testFiveStarsKeepTheEarlierReviewAndFewerStarsUseTheTypedText() {
+        let rules = ReviewRules()
+        let earlier = ReviewDraft(stars: 3, problem: "old problem", improvement: "old idea", comment: "kept")
+        XCTAssertNil(PluginFeedback(text: "words").review(earlier, rules: rules))
+        let five = PluginFeedback(stars: 5, text: "Love it").review(earlier, rules: rules)
+        XCTAssertEqual(five?.stars, 5)
+        XCTAssertEqual(five?.problem, "old problem")
+        XCTAssertFalse(PluginFeedback(stars: 5).asksImprovement(rules))
+        let three = PluginFeedback(stars: 2, text: "  The sync stops  ", improvement: " Retry it ").review(earlier, rules: rules)
+        XCTAssertEqual(three?.stars, 2)
+        XCTAssertEqual(three?.problem, "The sync stops")
+        XCTAssertEqual(three?.improvement, "Retry it")
+        XCTAssertEqual(three?.comment, "kept")
+        XCTAssertTrue(PluginFeedback(stars: 2).asksImprovement(rules))
+        XCTAssertEqual(PluginFeedback(stars: 2).review(earlier, rules: rules)?.problem, "old problem")
+    }
+
+    func testThanksSayWhatWasSent() {
+        XCTAssertEqual(PluginFeedback.thanks("CRM", rated: true, reported: false), "Thanks for rating CRM.")
+        XCTAssertEqual(
+            PluginFeedback.thanks("CRM", rated: false, reported: true), "Thanks \u{2014} your feedback on CRM reached the ForkMesh team.")
+        XCTAssertEqual(
+            PluginFeedback.thanks("CRM", rated: true, reported: true),
+            "Thanks \u{2014} your rating and feedback on CRM reached the ForkMesh team.")
+    }
+
+    func testTheAgentPromptNamesThePluginAndCarriesTheText() {
+        let prompt = PluginFeedback(stars: 2, text: " Export is empty ").agentPrompt(
+            name: "Ledger", packageId: "ledger", screen: "Ledger", device: "iPhone")
+        XCTAssertTrue(prompt.hasPrefix("Feedback on the ForkMesh plugin Ledger (package `ledger`), sent from the Ledger screen of the iPhone app:"))
+        XCTAssertTrue(prompt.contains("\n\nExport is empty\n\nRated 2 of 5 stars.\n\n"))
+        XCTAssertFalse(PluginFeedback(text: "x").agentPrompt(name: "A", packageId: "a", screen: "A", device: "iPhone").contains("Rated"))
     }
 
     func testLabelsUseTheCatalogNameAndFallBackToTheRouteTitle() {
