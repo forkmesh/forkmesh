@@ -486,12 +486,12 @@ struct DiffReviewStream<Header: View>: View {
                     showFiles = true
                 }) {
                     HStack(spacing: 4) {
-                        FmIcon("format_list_bulleted", size: 18, color: fm.textSecondary)
+                        FmIcon("format_list_bulleted", size: 16, color: fm.textSecondary)
                         Text("\(model.seen)/\(model.files.count)")
-                            .fmMono(size: 13, weight: FmType.emphasis,
+                            .fmMono(size: 12, weight: FmType.emphasis,
                                     color: model.seen == model.files.count && !model.files.isEmpty ? fm.success : fm.textPrimary)
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
                     .frame(minWidth: Self.toolSide, minHeight: Self.toolSide)
                     .contentShape(Self.toolShape)
                 }
@@ -562,7 +562,7 @@ struct DiffReviewStream<Header: View>: View {
                             }
                         }
                     } label: {
-                        FmIcon("more_horiz", size: 20, color: fm.textSecondary)
+                        FmIcon("more_horiz", size: 17, color: fm.textSecondary)
                             .frame(width: Self.toolSide, height: Self.toolSide)
                             .contentShape(Self.toolShape)
                     }
@@ -578,9 +578,9 @@ struct DiffReviewStream<Header: View>: View {
         .accessibilityIdentifier("diff-toolbar")
     }
 
-    private static var toolSide: CGFloat { 36 }
-    private static var toolGap: CGFloat { 6 }
-    private static var toolShape: RoundedRectangle { RoundedRectangle(cornerRadius: 9, style: .continuous) }
+    private static var toolSide: CGFloat { 30 }
+    private static var toolGap: CGFloat { 4 }
+    private static var toolShape: RoundedRectangle { RoundedRectangle(cornerRadius: 8, style: .continuous) }
 
     private func tool(
         _ icon: String, _ label: String, active: Bool = false, cue: FmCue = .click, id: String,
@@ -591,7 +591,7 @@ struct DiffReviewStream<Header: View>: View {
             ratchet.mute()
             action()
         }) {
-            FmIcon(icon, size: 20, color: active ? fm.accent : fm.textSecondary)
+            FmIcon(icon, size: 17, color: active ? fm.accent : fm.textSecondary)
                 .frame(width: Self.toolSide, height: Self.toolSide)
                 .contentShape(Self.toolShape)
         }
