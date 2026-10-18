@@ -35806,7 +35806,7 @@
       ? `<span class="text-[11px] text-muted-foreground">after ${escapeHtml(row.dependsOn.join(", "))}</span>`
       : "";
     return `
-      <li data-pull-batch-row="${escapeHtml(row.branch)}" class="border-t border-border px-3 py-3 first:border-t-0 sm:px-4">
+      <li data-pull-batch-row="${escapeHtml(row.branch)}" class="border-t border-border px-4 py-3 first:border-t-0">
         <div class="flex items-start gap-3">
           <input id="${id}" data-pull-batch-include type="checkbox" ${row.include ? "checked" : ""} ${locked ? "disabled" : ""} aria-label="Send ${escapeHtml(row.branch)}" class="mt-1 h-4 w-4 shrink-0 rounded border-border" />
           <div class="grid min-w-0 flex-1 gap-1">
@@ -35997,7 +35997,7 @@
         ? `Titles, descriptions and order come from <a href="${escapeHtml(repoLinkUrl(repo, "blob", PULL_BATCH_FILE))}" class="font-mono text-accent hover:underline">${escapeHtml(PULL_BATCH_FILE)}</a> on ${escapeHtml(batch.defaultBranch)}.`
         : `Commit <span class="font-mono text-foreground">${escapeHtml(PULL_BATCH_FILE)}</span> to ${escapeHtml(batch.defaultBranch)} to fill in titles, descriptions and dependencies.`;
     container.innerHTML = `
-      <form data-pull-batch class="grid gap-4 border-t border-border bg-background px-3 py-4 sm:px-4">
+      <form data-pull-batch class="grid gap-4 border-t border-border bg-background p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <button type="button" data-repo-pull-cancel class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
         </div>
@@ -36006,7 +36006,7 @@
           <p class="text-[13px] text-muted-foreground">Each branch becomes its own pull request on the fork you pick: compared with its base here, signed in this browser and sent in order. Pull requests already sent to that fork are skipped, so you can press Send all again to finish.</p>
           <p class="text-[12px] text-muted-foreground">${fileLine}</p>
         </header>
-        <div class="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div class="grid gap-3 sm:grid-cols-2">
           <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">Send to
             <select data-pull-batch-target class="h-control w-full min-w-0 rounded-control border border-border bg-background px-2 text-[16px] text-foreground outline-none focus:border-accent sm:text-control">${batch.forks.map((fork) => `<option value="${escapeHtml(fork.url)}" ${fork.url === batch.remote.url ? "selected" : ""}>${escapeHtml(`${fork.owner}/${fork.name}`)} on ${escapeHtml(fork.host)}</option>`).join("")}</select>
           </label>
@@ -36015,14 +36015,14 @@
           </label>
         </div>
         <div class="overflow-hidden rounded-md border border-border">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-3 py-2 sm:px-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-2">
             <span class="text-xs font-medium text-foreground">Branches</span>
             <span data-pull-batch-summary class="text-[11px] text-muted-foreground"></span>
           </div>
-          <ol data-pull-batch-list class="divide-y-0"></ol>
+          <ol data-pull-batch-list></ol>
         </div>
         <p data-pull-batch-notice role="status" class="hidden text-[12px] text-attention"></p>
-        <div class="sticky bottom-0 -mx-3 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background px-3 py-3 sm:static sm:mx-0 sm:border-0 sm:px-0 sm:py-0">
+        <div class="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3">
           ${composeIdentityHtml(state.session, "Signing")}
           <button type="button" data-pull-batch-stop class="hidden h-9 items-center rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-secondary">Stop</button>
           <button type="submit" data-pull-batch-send class="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-50 sm:flex-none"><i data-lucide="send" class="h-4 w-4"></i>Send all</button>
