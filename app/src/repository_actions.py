@@ -444,6 +444,138 @@ def _actions_node_unavailable():
         cache_control="no-store", extra_headers=EXPECTED_DEGRADED_HEADERS)
 
 
+def _instance_actions(env):
+    return bool(str(getattr(env, "ACTIONS_INSTANCE_RUNNER", "") or "").strip())
+
+
+def _runner_runtime(env):
+    import runner_leases
+    runner_leases._bind_runtime(globals())
+    return runner_leases.WorkerRuntime(env, None)
+
+
+async def _instance_actor(env, request, owner, repo, data=None):
+    _, record = await _account_session_record(env, request, data or {})
+    actor = clean_string(
+        (record or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not actor:
+        return "", False
+    try:
+        allowed = bool(
+            ACTIONS_CONTROL_ACTOR_RE.fullmatch(actor)
+            and (actor == owner
+                 or await _account_owns_node(env, actor, owner)
+                 or await _org_write_allowed(env, owner, repo, actor)))
+    except Exception:
+        allowed = False
+    return actor, allowed
+
+
+def _instance_error(error, status, message=""):
+    body = {"error": error}
+    if message:
+        body["message"] = message
+    return json_response(body, status=status, cache_control="no-store")
+
+
+async def _instance_actions_control(env, request, owner, repo):
+    owner = str(owner or "").strip().lower()
+    try:
+        raw = str(await request.text())
+    except Exception:
+        return _instance_error("invalid_request", 400)
+    if len(raw.encode("utf-8")) > ACTIONS_CONTROL_BODY_MAX_BYTES * 4:
+        return _instance_error("request_too_large", 413)
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = None
+    if not isinstance(data, dict) or data.get("action") not in (
+            "dispatch", "cancel", "rerun"):
+        return _instance_error("invalid_request", 400)
+    actor, allowed = await _instance_actor(env, request, owner, repo, data)
+    if not actor:
+        return _instance_error("invalid_session", 401)
+    target = owner + "/" + repo
+    action = data["action"]
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.actions_control", "repository", target,
+            "denied", {"action": action})
+        return _instance_error("forbidden", 403)
+    import runner_actions
+    runtime = _runner_runtime(env)
+    await runtime.ensure_schema()
+    details = {"action": action, "node": "runner"}
+    if action == "dispatch":
+        workflow = data.get("workflow")
+        ref = data.get("ref")
+        if isinstance(ref, str) and not ref.startswith("refs/"):
+            ref = "refs/heads/" + ref
+        if not _actions_workflow_path(workflow) or not _actions_control_ref(
+                ref) or (data.get("inputs") is not None
+                         and not isinstance(data.get("inputs"), dict)):
+            return _instance_error("invalid_request", 400)
+        data["ref"] = ref
+        job, reason, message = await runner_actions.dispatch(
+            runtime, owner, repo, workflow, data["ref"], data.get("inputs"),
+            actor)
+        details["workflow"] = workflow
+        run_id = job * runner_actions.RUN_ID_STRIDE
+    else:
+        if not _actions_integer(data.get("runId"), 1,
+                                ACTIONS_MAX_SAFE_INTEGER):
+            return _instance_error("invalid_request", 400)
+        details["runId"] = data["runId"]
+        if action == "cancel":
+            reason = await runner_actions.cancel(
+                runtime, owner, repo, data["runId"])
+            run_id, message = data["runId"], ""
+        else:
+            job, reason = await runner_actions.rerun(
+                runtime, owner, repo, data["runId"], actor)
+            run_id, message = job * runner_actions.RUN_ID_STRIDE, ""
+    if reason:
+        await _audit_sensitive_action(
+            env, actor, "repository.actions_control", "repository", target,
+            "failure", {**details, "reason": reason})
+        status = {"run_not_found": 404, "workflow_not_found": 404,
+                  "input_required": 400, "input_invalid": 400,
+                  "invalid_request": 400, "ref_not_found": 400}.get(
+                      reason, 409)
+        return _instance_error(reason, status, message)
+    await _audit_sensitive_action(
+        env, actor, "repository.actions_control", "repository", target,
+        "success", details)
+    return json_response(
+        {"ok": True, "status": "applied", "action": action, "runId": run_id},
+        status=202, cache_control="no-store")
+
+
+async def repository_actions_run_log_handler(env, request, owner, repo,
+                                             run_id):
+    if method_name(request) != "GET":
+        return json_response({"error": "method_not_allowed"}, status=405)
+    owner = str(owner or "").strip().lower()
+    actor, allowed = await _instance_actor(env, request, owner, repo)
+    if not actor:
+        return _instance_error("invalid_session", 401)
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.actions_status", "repository",
+            owner + "/" + repo, "denied", {"runId": run_id})
+        return _instance_error("forbidden", 403)
+    import runner_actions
+    runtime = _runner_runtime(env)
+    await runtime.ensure_schema()
+    found = await runner_actions.run_log(runtime, owner, repo, run_id)
+    if found is None:
+        return _instance_error("run_not_found", 404)
+    return json_response(
+        {"ok": True, "runId": int(run_id), **found},
+        cache_control="private, no-store, max-age=0, must-revalidate")
+
+
 async def repository_actions_control_handler(env, request, owner, repo):
     """Authorize, audit, and courier one Actions control request.
 
@@ -454,6 +586,8 @@ async def repository_actions_control_handler(env, request, owner, repo):
     """
     if method_name(request) != "POST":
         return json_response({"error": "method_not_allowed"}, status=405)
+    if _instance_actions(env):
+        return await _instance_actions_control(env, request, owner, repo)
     try:
         context = await _https_mirror_public_context(env, owner, repo)
     except _HttpsMirrorContextUnavailable:

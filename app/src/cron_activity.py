@@ -42,6 +42,8 @@ CRON_PHASE_CATALOG = (
     ("self-deploy-pings", 1, (0,), "notifications",
      "Ping the admins and the approver when the cores finish deploying a "
      "merge approved from a phone."),
+    ("actions-schedule", 1, (0,), "platform",
+     "Queue instance Actions workflows whose cron schedule is due."),
     ("snapshot-status", 3, (0,), "snapshots",
      "Republish the anonymous /api/status and /api/status/world bodies."),
     ("snapshot-mirrors", 3, (1,), "snapshots",
