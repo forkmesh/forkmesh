@@ -143,7 +143,9 @@ Uninstall is `requestPackageRemoval(id, true)`, so it always asks first, and
 it is disabled for `managedExternally` packages as on the rail. The rail's
 right-click menu offers the same Rate and feedback items
 (`addPackageFeedbackActions`), which also covers built-in packages that have
-no native page.
+no native page. The rail menu, the ⋯ menu and a plugin's icon on Home all add
+the same **Uninstall <name>…** item (`addPackageUninstallAction`), so the
+wording and the confirmation match wherever it is removed from.
 
 **Worker runtime.** A package module receives `_PluginApiRuntime`
 (`app/src/entry.py`): `session`, `json_body`, `organization`,

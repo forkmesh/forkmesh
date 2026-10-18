@@ -4230,6 +4230,11 @@ private:
     // Right-click on a package's rail button: settings, export, remove.
     void attachPackageRailMenu(QPushButton *button, const QString &entrypoint);
     QMenu *buildPackageRailMenu(const QString &entrypoint, QWidget *parent);
+    const forkmesh::market::PackageManifest *
+    installedPackageForEntrypoint(const QString &entrypoint) const;
+    void addPackageUninstallAction(QMenu *menu, const QString &id);
+    void addHomeTilePackageActions(QMenu *menu, const QString &key);
+    QWidget *railWidgetForKey(const QString &key) const;
     void addPackageFeedbackActions(QMenu *menu, const QString &id);
     QMenu *buildPackageActionsMenu(const QString &id, QWidget *parent);
     QPushButton *createPackageActionsButton(std::function<QString()> packageId,

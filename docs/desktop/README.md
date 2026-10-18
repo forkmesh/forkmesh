@@ -119,7 +119,10 @@ Everything is in `desktop/`.
   live counts read from the rail buttons themselves so they never disagree.
   The open repository's Code icon carries its open pull requests ("3 open
   pulls"), read from the repository's Pulls tab badge, so the two always
-  match.
+  match. Right-clicking a plugin's icon adds its settings and **Uninstall**
+  (`HomeBoard::setTileMenu`, `MainWindow::addHomeTilePackageActions`): the
+  tile's rail button carries the package entrypoint, so Home offers exactly
+  the plugins the rail does.
 - **Packages.** Many features are Market packages hosted in the desktop and
   can be turned off per project; hiding a package hides its rail button, tabs
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).
