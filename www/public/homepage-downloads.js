@@ -299,9 +299,16 @@
     return downloadLink(asset, [label[0], "Universal"], tag);
   }
 
+  function buildNumber(asset) {
+    const build = Number(asset.build);
+    return Number.isSafeInteger(build) && build > 1 ? build : 0;
+  }
+
   function downloadLink(asset, label, tag) {
     const platform = platformFor(asset.name, label[0]);
     const size = formatSize(asset.size);
+    const build = buildNumber(asset);
+    const release = build ? `${tag} build ${build}` : tag;
     const link = document.createElement("a");
     link.className = "home-download";
     link.href =
@@ -310,15 +317,15 @@
       `?filename=${encodeURIComponent(asset.name)}`;
     link.download = asset.name;
     link.dataset.forkmeshProductAction = "home-download";
-    link.title = `${label[0]} ${tag}`;
+    link.title = `${label[0]} ${release}`;
     link.setAttribute(
       "aria-label",
-      `Download ${label[0]} ${tag}, ${label[1]}${size ? `, ${size}` : ""}`,
+      `Download ${label[0]} ${release}, ${label[1]}${size ? `, ${size}` : ""}`,
     );
     markCurrent(link, platform);
     link.append(
       downloadHead(platform, tag),
-      downloadBody(platform, [platform[2], label[1], size]),
+      downloadBody(platform, [platform[2], label[1], build ? `Build ${build}` : "", size]),
       downloadAction("Download", "download"),
     );
     linkSources.set(link, { asset, label, tag });

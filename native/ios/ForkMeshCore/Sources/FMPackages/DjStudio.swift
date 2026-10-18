@@ -283,8 +283,26 @@ public enum DjStudio {
         return components?.url
     }
 
+    public static func similarURL(_ instance: URL, id: String) -> URL? {
+        guard isVideoId(id) else { return nil }
+        var components = URLComponents(url: instance.appendingPathComponent("api/v1/videos/\(id)"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "fields", value: "recommendedVideos")]
+        return components?.url
+    }
+
+    public static func similarResults(_ data: Data) -> [DjSearchResult] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let rows = object["recommendedVideos"] as? [[String: Any]]
+        else { return [] }
+        return results(rows)
+    }
+
     public static func searchResults(_ data: Data) -> [DjSearchResult] {
         guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return results(rows)
+    }
+
+    static func results(_ rows: [[String: Any]]) -> [DjSearchResult] {
         var seen = Set<String>()
         return rows.compactMap { row in
             let link = (row["url"] as? String).map { $0.hasPrefix("/") ? "https://www.youtube.com" + $0 : $0 }

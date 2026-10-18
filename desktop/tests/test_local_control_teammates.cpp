@@ -357,6 +357,82 @@ static void testInsights()
     check(insights::lastOutputLine(QString()).isEmpty(), "no output, no line");
 }
 
+static void testShortcutSteps()
+{
+    const QString script = QStringLiteral(
+        "#!/usr/bin/env bash\n"
+        "# name: Deploy new version\n"
+        "# step: Prepare\n"
+        "set -euo pipefail\n"
+        "\n"
+        "tag=\"$(date +%Y%m%d)\"\n"
+        "\n"
+        "# step: Reset build numbers to 1\n"
+        "python3 -u tools/forkmesh-release-host.py --reset-builds --tag \"$tag\"\n"
+        "\n"
+        "#step:   Deploy   Android build  \n"
+        "bash .forkmesh/shortcuts/deploy-build-android.sh --first-build\n"
+        "bash .forkmesh/shortcuts/deploy-build-linux.sh\n"
+        "\n"
+        "  \n"
+        "# step: Deploy Linux build\r\n"
+        "  bash .forkmesh/shortcuts/deploy-build-linux.sh\r\n"
+        "\n"
+        "# just a comment\n"
+        "# step: not a step, not the first line\n"
+        "echo done\n"
+        "\n"
+        "# step: Bad link\n"
+        "bash .forkmesh/shortcuts/../escape.sh\n"
+        "bashx .forkmesh/shortcuts/other.sh\n"
+        "bash .forkmesh/shortcuts/joined.sh;echo\n");
+    const QList<insights::ShortcutStep> steps = insights::parseShortcutSteps(script);
+    check(steps.size() == 5, "named blocks are steps, unnamed blocks are not");
+    if (steps.size() == 5) {
+        check(steps.at(0).name == QStringLiteral("Prepare"), "a step right after the header");
+        check(steps.at(1).name == QStringLiteral("Reset build numbers to 1") &&
+                  steps.at(1).shortcut.isEmpty(),
+              "plain step has no link");
+        check(steps.at(2).name == QStringLiteral("Deploy Android build") &&
+                  steps.at(2).shortcut == QStringLiteral("deploy-build-android.sh"),
+              "first bash line links the step, whitespace collapsed");
+        check(steps.at(3).name == QStringLiteral("Deploy Linux build") &&
+                  steps.at(3).shortcut == QStringLiteral("deploy-build-linux.sh"),
+              "CRLF lines and indented bash lines");
+        check(steps.at(4).name == QStringLiteral("Bad link") && steps.at(4).shortcut.isEmpty(),
+              "only exact bash .forkmesh/shortcuts/<file> lines link");
+    }
+    const QJsonArray rows = insights::shortcutStepRows(steps);
+    check(rows.size() == 5 && !rows.at(1).toObject().contains(QStringLiteral("shortcut")) &&
+              rows.at(2).toObject().value(QStringLiteral("shortcut")).toString() ==
+                  QStringLiteral("deploy-build-android.sh"),
+          "step rows carry shortcut only when linked");
+
+    const QList<insights::ShortcutStep> plain = insights::parseShortcutSteps(
+        QStringLiteral("#!/bin/bash\n# name: X\nset -e\n# step: Build\nmake\n"));
+    check(plain.isEmpty(), "a step line inside a block is not a step");
+
+    QString many;
+    for (int i = 0; i < 40; ++i)
+        many += QStringLiteral("# step: Step %1 %2\necho %1\n\n").arg(i).arg(QString(100, QLatin1Char('x')));
+    const QList<insights::ShortcutStep> capped = insights::parseShortcutSteps(many);
+    check(capped.size() == insights::kMaxShortcutSteps, "at most 32 steps");
+    check(!capped.isEmpty() && capped.first().name.size() == insights::kMaxShortcutStepName,
+          "step names cut at 80 characters");
+    check(insights::parseShortcutSteps(QStringLiteral("# step:   \necho\n")).isEmpty(),
+          "an empty step name is not a step");
+
+    const insights::ShortcutMeta meta =
+        insights::parseShortcutMeta(QStringLiteral("deploy.sh"), script);
+    check(meta.description.isEmpty() ||
+              !meta.description.contains(QStringLiteral("step"), Qt::CaseInsensitive),
+          "step lines never become the description");
+    check(insights::parseShortcutMeta(QStringLiteral("d.sh"),
+                                      QStringLiteral("# step: Build\n# Builds it\n"))
+                  .description == QStringLiteral("Builds it"),
+          "the first non-step comment is still the description");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
@@ -366,6 +442,7 @@ int main(int argc, char **argv)
     testSubjects();
     testStats();
     testInsights();
+    testShortcutSteps();
     if (failures == 0)
         std::cout << "local control teammates tests passed\n";
     return failures == 0 ? 0 : 1;

@@ -70,3 +70,67 @@ Phone API: the actions `queueShortcut` and `unqueueShortcut` take the same
 `repo`/`scope`/`file` subject as `runShortcut`. They are confirmed actions
 (`mutatingActions`) and only accept script shortcuts (`not_a_script`
 otherwise).
+
+## Steps and linked shortcuts
+
+A multi-step script, such as `deploy-new-version.sh`, can name its steps and
+point at the shortcuts it runs, so its card reads like a workflow (the deploy
+shortcuts are described in [../release/README.md](../release/README.md#build-numbers)). The desktop,
+the phones and the web canvas (`app/src/workflow_files.py`) follow the same
+rules:
+
+- The header is an optional `#!` first line followed by the `# name:`,
+  `# description:`, `# agent:` and `# model:` lines (at most 20 lines). The
+  rest of the file is split into blocks on blank lines.
+- A block whose first line matches `^#\s*step:\s*(.+?)\s*$` is a named step.
+  Its name is that capture with whitespace collapsed, cut to 80 characters.
+  Unnamed blocks are not steps.
+- A step links to another shortcut when one of its lines matches
+  `^\s*bash\s+\.forkmesh/shortcuts/([A-Za-z0-9._-]{1,96})(?:\s|$)`. The first
+  such line wins. The linked file is in the same repository's
+  `.forkmesh/shortcuts/` folder.
+- At most 32 steps are read. Only scripts have steps; skills and prompts never
+  do.
+- `# step:` lines are never taken as the description, even when there is no
+  `# description:` line.
+
+```sh
+# step: Reset build numbers to 1
+python3 -u tools/forkmesh-release-host.py --reset-builds --tag "$tag"
+
+# step: Deploy Android build
+bash .forkmesh/shortcuts/deploy-build-android.sh --first-build
+```
+
+Code: `parseShortcutSteps` in `desktop/src/LocalControlInsights.cpp` (tested
+in `desktop/tests/test_local_control_teammates.cpp`), `ShortcutStepList` and
+`revealShortcutFile` in `desktop/src/MainWindowShortcuts.cpp` (the card and its
+link are checked by `forkmesh-window-tests --teammates-only`;
+`FORKMESH_SHORTCUT_STEPS_SHOT=<file.png>` saves the card).
+
+**Cards.** Under the description, a card draws its steps as a compact vertical
+list in the style of the Actions page's step dots: a dot per step joined by a
+line, then the step name. A linked step has a filled dot in the accent colour
+and an accent `→ <title>` label after its name, showing the linked shortcut's
+`# name:` (or its file name). Clicking the label scrolls to that shortcut's
+card and outlines it in the accent colour for a moment. It does not run
+anything. If a search or the skills-only filter hides the card, both are
+cleared first. A link to a file that is not in the folder shows a notice.
+Clicking anywhere else on the list runs the card as usual. A card shows at
+most six rows: past six steps it shows the first five and `+N more`. The
+tooltip lists every step.
+
+**Table.** The **Type** column reads `script · N steps`. Its tooltip, and the
+name's, lists the steps. The right-click menu has **Go to linked <file>** for
+each linked shortcut, which selects that row.
+
+**Progress.** Cards do not mark which step is running. The script runs as one
+`bash` process, so the desktop has no reliable signal for the current step
+(output varies, and nested `bash .forkmesh/shortcuts/...` runs are not seen).
+The run's overall progress bar is unchanged.
+
+**Phones.** Each `insights.shortcuts` entry with at least one step carries
+`"steps": [{"name": "Reset build numbers to 1"}, {"name": "Deploy Android build",
+"shortcut": "deploy-build-android.sh"}]`. `shortcut` is present only on a
+linked step and names a file in the same repository and scope as the entry.
+Entries without steps have no `steps` key.

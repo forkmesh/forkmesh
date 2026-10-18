@@ -1,0 +1,197 @@
+{
+    "container": "interop-from-cpp.fmsd",
+    "deletedFiles": [
+        "old.txt"
+    ],
+    "deviceSafety": {
+        "135072a7fc5fb3ec5c3147804c1ad40d": "24028 19023 31640 34916",
+        "3e0f4e57b195e3f594f5f7b243593ed6": "80465 08288 37237 28711"
+    },
+    "drive": "4c4e7124ffbfd245b4d5df0059d574c7",
+    "files": [
+        {
+            "id": "8a9dc6ce93ddf3aafc0420f5e948b493",
+            "kind": "spreadsheet",
+            "name": "Budget 2027.csv",
+            "sha256": "e7be6587dc7b403a6fd0f9a9e38761027c5d01d484899f9af608352a3a0bd28e",
+            "size": 54,
+            "versions": 1
+        },
+        {
+            "id": "0ec43a4d49351ebb6d36e5387ad3b7de",
+            "kind": "text",
+            "name": "empty.txt",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "size": 0,
+            "versions": 1
+        },
+        {
+            "id": "d51e2b6367b351b55e0985361104a935",
+            "kind": "document",
+            "name": "Notes.html",
+            "sha256": "3fec4804ba3a4b62b0cc1cba1e799252fa00aa6f42f9902322c76256bb057a8b",
+            "size": 74,
+            "versions": 2
+        },
+        {
+            "id": "389267138bf561a587c5fde4dc976f36",
+            "kind": "file",
+            "name": "photo.bin",
+            "sha256": "688bc99b0ae286c5f425ac7353e2d2efda3881b34e5a4d5566d30699cc550b2f",
+            "size": 40000,
+            "versions": 1
+        },
+        {
+            "id": "93f8084a682af946bed65a4aca85c379",
+            "kind": "drawing",
+            "name": "Sketch.svg",
+            "sha256": "41d0c0f1033a681de9783cb29dbcc08b6fafaf4ea139fd9d9617df24f5efac00",
+            "size": 368,
+            "versions": 1
+        }
+    ],
+    "format": "forkmesh-secure-drive-interop-v1",
+    "joinRequest": {
+        "mailbox": 53,
+        "name": "Spare tablet",
+        "safety": "93966 98595 06757 51483"
+    },
+    "label": "Interop share",
+    "members": [
+        {
+            "device": "3e0f4e57b195e3f594f5f7b243593ed6",
+            "drives": [
+                {
+                    "cachedRoot": "eyJiIjoiZXlKa2NtbDJaU0k2SWpSak5HVTNNVEkwWm1aaVptUXlORFZpTkdRMVpHWXdNRFU1WkRVM05HTTNJaXdpWjJWdUlqb3hOaXdpYkc5bmN5STZleUl4TXpVd056SmhOMlpqTldaaU0yVmpOV016TVRRM09EQTBZekZoWkRRd1pDSTZXMXMwTml3eFhWMHNJak5sTUdZMFpUVTNZakU1TldVelpqVTVOR1kxWmpkaU1qUXpOVGt6WldRMklqcGJXelE1TERGZFhYMHNJbkJoWjJWeklqbzNNeXdpY0hKbGRpSTZJbEJYWDJKNmRUWkNaa1ZFWVVWTmQycDNObU16U2tSNVZFRmlaVTlDWm00dGRERldhRGxWWmt4NmEwVWlMQ0owYVcxbElqb3hOemt5TXpBd01qUXpOakU1TENKMklqb3lMQ0ozY21sMFpYSWlPaUl6WlRCbU5HVTFOMkl4T1RWbE0yWTFPVFJtTldZM1lqSTBNelU1TTJWa05pSjkiLCJzIjoiMDlXMzhXLXpkMlBVNks0YzA0VmpxSXpWTHBHNTQ5a2JUa1NrTy1TVnFoNXk3LXFwVmNPVFdMSWlMMkstTGNDdnFtaHBXLWdmUWsxWXhWNFdFSzhjQVEifQ",
+                    "container": "interop-from-cpp.fmsd",
+                    "drive": "4c4e7124ffbfd245b4d5df0059d574c7",
+                    "epochs": [
+                        {
+                            "id": "9a9fbd7cba3b4043",
+                            "key": "kAHhlHrQaCrgA7s2sVxw_7Mn4IvrnONSkvsyjyJsQNQ",
+                            "n": 0
+                        }
+                    ],
+                    "heads": {
+                        "135072a7fc5fb3ec5c3147804c1ad40d": [
+                            2,
+                            "vn2hf47oiLErckJ66_ZF5-yQdhE4gqMVp0PY3wMs0Cs"
+                        ],
+                        "3e0f4e57b195e3f594f5f7b243593ed6": [
+                            14,
+                            "7KB68rIs6iB9mcNjrTFLdVpSpS1cNbx8na2DFskCE5c"
+                        ]
+                    },
+                    "id": "aebf9ba6b542046465cf9ffca156b4d6",
+                    "joinSecret": "",
+                    "joinedAt": 1792300243172,
+                    "keyringSeen": true,
+                    "label": "Interop share",
+                    "lamport": 18,
+                    "lastHash": "7KB68rIs6iB9mcNjrTFLdVpSpS1cNbx8na2DFskCE5c",
+                    "lastSeq": 14,
+                    "mailbox": 36,
+                    "removed": [
+                    ],
+                    "root": "3e0f4e57b195e3f594f5f7b243593ed6",
+                    "rootEd25519": "3FhrcI4oX7eg3LIfGQ5mUo5vzmhheT-PplrQJo_5CHY",
+                    "rootGeneration": 16,
+                    "rootHash": "An92lKTt_atvUfTQKWVO1POi2Uy5HxYo3O78Av3Yxow"
+                }
+            ],
+            "keys": {
+                "ed25519": "52CDh7pnNybcVnnpf0z89UNjwuURQ_S92Ei-UCW9Kvg",
+                "mlkemSeed": "N5P3eruIHga31qIN0TLTOz6dU1UbzW7lxPWoNyKR5M65zq1CbOebthlQvjIZEOEH-zo1iNo2iePOABGBLwdMTQ",
+                "x25519": "K-9fHZpTSNqtr_G0IuE3DPTFpXwNF5-6FC1UBN2Q88Y"
+            },
+            "name": "Office laptop"
+        },
+        {
+            "device": "135072a7fc5fb3ec5c3147804c1ad40d",
+            "drives": [
+                {
+                    "cachedRoot": "eyJiIjoiZXlKa2NtbDJaU0k2SWpSak5HVTNNVEkwWm1aaVptUXlORFZpTkdRMVpHWXdNRFU1WkRVM05HTTNJaXdpWjJWdUlqb3hOaXdpYkc5bmN5STZleUl4TXpVd056SmhOMlpqTldaaU0yVmpOV016TVRRM09EQTBZekZoWkRRd1pDSTZXMXMwTml3eFhWMHNJak5sTUdZMFpUVTNZakU1TldVelpqVTVOR1kxWmpkaU1qUXpOVGt6WldRMklqcGJXelE1TERGZFhYMHNJbkJoWjJWeklqbzNNeXdpY0hKbGRpSTZJbEJYWDJKNmRUWkNaa1ZFWVVWTmQycDNObU16U2tSNVZFRmlaVTlDWm00dGRERldhRGxWWmt4NmEwVWlMQ0owYVcxbElqb3hOemt5TXpBd01qUXpOakU1TENKMklqb3lMQ0ozY21sMFpYSWlPaUl6WlRCbU5HVTFOMkl4T1RWbE0yWTFPVFJtTldZM1lqSTBNelU1TTJWa05pSjkiLCJzIjoiMDlXMzhXLXpkMlBVNks0YzA0VmpxSXpWTHBHNTQ5a2JUa1NrTy1TVnFoNXk3LXFwVmNPVFdMSWlMMkstTGNDdnFtaHBXLWdmUWsxWXhWNFdFSzhjQVEifQ",
+                    "container": "interop-from-cpp.fmsd",
+                    "drive": "4c4e7124ffbfd245b4d5df0059d574c7",
+                    "epochs": [
+                        {
+                            "id": "9a9fbd7cba3b4043",
+                            "key": "kAHhlHrQaCrgA7s2sVxw_7Mn4IvrnONSkvsyjyJsQNQ",
+                            "n": 0
+                        }
+                    ],
+                    "heads": {
+                        "135072a7fc5fb3ec5c3147804c1ad40d": [
+                            2,
+                            "vn2hf47oiLErckJ66_ZF5-yQdhE4gqMVp0PY3wMs0Cs"
+                        ],
+                        "3e0f4e57b195e3f594f5f7b243593ed6": [
+                            14,
+                            "7KB68rIs6iB9mcNjrTFLdVpSpS1cNbx8na2DFskCE5c"
+                        ]
+                    },
+                    "id": "6908c54a8aa1437de837040f65b58fb1",
+                    "joinSecret": "",
+                    "joinedAt": 1792300243443,
+                    "keyringSeen": true,
+                    "label": "Interop share",
+                    "lamport": 18,
+                    "lastHash": "vn2hf47oiLErckJ66_ZF5-yQdhE4gqMVp0PY3wMs0Cs",
+                    "lastSeq": 2,
+                    "mailbox": 12,
+                    "removed": [
+                    ],
+                    "root": "3e0f4e57b195e3f594f5f7b243593ed6",
+                    "rootEd25519": "3FhrcI4oX7eg3LIfGQ5mUo5vzmhheT-PplrQJo_5CHY",
+                    "rootGeneration": 16,
+                    "rootHash": "An92lKTt_atvUfTQKWVO1POi2Uy5HxYo3O78Av3Yxow"
+                }
+            ],
+            "keys": {
+                "ed25519": "cJ4s_r3vL9urmWNk0dlnrPngNQkpPFSEHSJKVx5KsBs",
+                "mlkemSeed": "rzBStSy69i6tDjYrNjiVSyleSOWWZyQ2QbITMVfFsXufAziLphCfrKjOiilXHSvQn0bxF6o1PZZ_rH1PjwB-Fg",
+                "x25519": "yoyn1MTfhVHuNovawD59d2Hsm332MEt4tepgt0M20vU"
+            },
+            "name": "Front desk phone"
+        }
+    ],
+    "minimumRecords": 18,
+    "openInviteCode": "PV0-ZH5-31E-SFE-JFC-DH0-2GY-KVK-E13",
+    "passphrase": "correct horse battery",
+    "pending": {
+        "device": "dd9378918b02c16e7dc8faa4efcfcfc2",
+        "drives": [
+            {
+                "cachedRoot": "",
+                "container": "interop-from-cpp.fmsd",
+                "drive": "",
+                "epochs": [
+                ],
+                "heads": {
+                },
+                "id": "62cb114b4bbc60f949c90b2cbdf222a7",
+                "joinSecret": "IQtiqaYlcvVb48qcfcbKdg",
+                "joinedAt": 0,
+                "keyringSeen": false,
+                "label": "interop-from-cpp",
+                "lamport": 0,
+                "lastHash": "",
+                "lastSeq": -1,
+                "mailbox": 53,
+                "removed": [
+                ],
+                "root": "",
+                "rootEd25519": "",
+                "rootGeneration": -1,
+                "rootHash": ""
+            }
+        ],
+        "keys": {
+            "ed25519": "KJAnT9pZtQJ2ig54awzZnCo4jUEvnmS-ylmNFRL2A4M",
+            "mlkemSeed": "ScKDbsWWjqYYna3mGK_tsJvOVMX4j1Mo7R6NIerRHZ-jUH5HwgYlY9XXZnr-1OimPvvah_xz1Ji0MtZhmTYjcg",
+            "x25519": "cdq1fClKXc3IesBI89pIZwJXrp2HLrbgEEBnq3ZJzOk"
+        },
+        "name": "Spare tablet"
+    },
+    "writer": "cpp"
+}

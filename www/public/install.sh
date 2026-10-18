@@ -1547,6 +1547,15 @@ _manifest_build_commit() {
     head -n 1 | tr 'A-F' 'a-f'
 }
 
+_manifest_asset_commit() {
+  [ -f "$1" ] && [ -n "$2" ] || return 0
+  local name_re
+  name_re="$(printf '%s' "$2" | sed 's/[.]/[.]/g')"
+  tr -d '\n' < "$1" | grep -o "{\"name\":\"${name_re}\"[^}]*}" |
+    sed -n 's/.*"commit"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]*\)".*/\1/p' |
+    head -n 1 | tr 'A-F' 'a-f'
+}
+
 _manifest_tag() {
   [ -f "$1" ] || return 0
   sed -n 's/.*"tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" |
@@ -1564,7 +1573,7 @@ _manifest_checksums_sha256() {
 # Ed25519 publisher trust anchor verifies its detached signature.
 _verify_release_metadata() {
   local manifest="$1" signature="$2" sums="$3"
-  local manifest_hash sums_hash expected_sums tag build_commit
+  local manifest_hash sums_hash expected_sums tag build_commit asset_commit
   manifest_hash="$(_sha256_file "$manifest")"
   if ! printf '%s' "$manifest_hash" | grep -Eq '^[0-9a-f]{64}$'; then
     warn "A working SHA-256 tool is required for every prebuilt install."
@@ -1603,6 +1612,8 @@ _verify_release_metadata() {
   fi
   if [ -n "$FORKMESH_EXPECTED_BUILD_COMMIT" ]; then
     build_commit="$(_manifest_build_commit "$manifest")"
+    asset_commit="$(_manifest_asset_commit "$manifest" "${ASSET_NAME:-}")"
+    [ -z "$asset_commit" ] || build_commit="$asset_commit"
     if [ "$build_commit" != "$FORKMESH_EXPECTED_BUILD_COMMIT" ]; then
       warn "Published release does not match required build commit $FORKMESH_EXPECTED_BUILD_COMMIT."
       return 1

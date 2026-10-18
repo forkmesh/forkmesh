@@ -79,6 +79,12 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.background(false) }
         }
+        center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.run("fmAway(1)") }
+        }
+        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.run("fmAway(0)") }
+        }
     }
 
     private func background(_ entering: Bool) {
@@ -217,13 +223,13 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
         <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}.s{position:absolute;top:0;bottom:0;width:50%}#sa{left:0}#sb{right:0}.s>*{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
         </head><body><div class="s" id="sa"><div id="a"></div></div><div class="s" id="sb"><div id="b"></div></div><script>
-        var K=["a","b"],D={},n=0,B=0,M=0;
+        var K=["a","b"],D={},n=0,B=0,M=0,L=0;
         K.forEach(function(k){D[k]={p:null,ready:false,meta:"",id:"",routed:false,mirror:false,voice:null,w:{rate:1,volume:100,muted:false,gain:1,scratch:null,at:0,on:0,from:0,gen:0}}});
         function post(m){try{webkit.messageHandlers.deck.postMessage(m)}catch(e){}}
         function onYouTubeIframeAPIReady(){post({type:"api"})}
         function frame(k){try{var f=D[k].p&&D[k].p.getIframe&&D[k].p.getIframe();return f&&f.contentWindow}catch(e){return null}}
         function heard(d){return!!d.voice&&Date.now()-d.voice.at<1500}
-        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at,bg:B,on:x.on,from:x.from,gen:x.gen},"*")}
+        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at,bg:B,away:L,on:x.on,from:x.from,gen:x.gen},"*")}
         function fmCall(k,name){var d=D[k];if(!d.p||!d.ready||typeof d.p[name]!=="function")return;var a=[].slice.call(arguments,2);
         if(name==="playVideo")d.w.on=1;else if(name==="pauseVideo"||name==="stopVideo")d.w.on=0;else if(name==="seekTo")d.w.from=+a[0]||0;
         push(k);d.p[name].apply(d.p,a);setTimeout(function(){tick(k)},60)}
@@ -246,6 +252,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         onStateChange:function(e){if(e.data===1)push(k);if(!heard(d)){if(e.data===0&&d.w.on){d.w.on=0;push(k)}post({type:"state",deck:k,state:e.data})}tick(k)},
         onError:function(e){var was=d.w.on;d.w.on=0;push(k);if(!M&&d.id&&[2,100,101,150,152,153].indexOf(e.data)<0){M=1;d.resume=!!was;d.w.on=was;make(k,d.id,d.w.from);return}post({type:"error",deck:k,code:e.data})}}})}
         function fmBackground(on){B=on?1:0;K.forEach(function(k){var d=D[k],p=d.p;if(B&&d.routed&&!d.mirror&&p&&d.ready&&!d.w.muted&&d.w.gain>=0.02){var s=p.getPlayerState(),v=p.getVideoData?p.getVideoData():null;if((s===1||s===3)&&v&&v.video_id){var t=p.getCurrentTime()||0;d.resume=true;d.w.on=1;d.w.from=t;make(k,v.video_id,t);return}}push(k)})}
+        function fmAway(on){L=on?1:0;K.forEach(push)}
         addEventListener("message",function(e){var m=e.data;if(!m||typeof m!=="object"||!m.fmdjFrame)return;K.forEach(function(k){if(!e.source||frame(k)!==e.source)return;var d=D[k];
         if(m.fmdjFrame==="voice"){d.voice={t:+m.t||0,d:+m.d||0,s:m.s|0,at:Date.now()};if(d.voice.s===0&&d.w.on){d.w.on=0;push(k)}tick(k)}
         else if(m.fmdjFrame==="source"){if(typeof m.src==="string"&&m.src.indexOf("https:")===0&&d.id)post({type:"source",deck:k,id:d.id,src:m.src})}
@@ -259,7 +266,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         (function(){
         if(window.top===window||!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname))return;
         var mse=/[?&]fmmse=1(&|$)/.test(location.search);
-        var w={rate:1,gain:1,scratch:null,at:0,bg:0,on:0,from:0},ctx=null,amp=null,live=null,last=null,stale="",tries=0,waking=0,moved=0,beat=0,queued=0;
+        var w={rate:1,gain:1,scratch:null,at:0,bg:0,away:0,on:0,from:0},ctx=null,amp=null,live=null,last=null,spare=null,stale="",tries=0,waking=0,moved=0,beat=0,queued=0;
         var P=HTMLMediaElement.prototype,md=Object.getOwnPropertyDescriptor(P,"muted"),H=new WeakMap(),T=new WeakMap(),A=new WeakMap(),decoys=[];
         function own(v){return!!v&&v.tagName==="VIDEO"&&decoys.indexOf(v)<0}
         function want(v){var h=H.get(v);return h?h.want:md.get.call(v)}
@@ -295,10 +302,9 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         function fresh(v,src,cors,t){var a=document.createElement("audio");a.fmSrc=src;a.fmCors=cors;a.preload="auto";if(cors)a.crossOrigin="anonymous";
         a.addEventListener("error",function(){if(!a.fmCors||a.readyState>0||A.get(v)!==a)return;var at=a.currentTime;a.fmCors=false;a.removeAttribute("crossorigin");a.src=src;try{a.currentTime=at}catch(x){}soon()});
         ["playing","pause","waiting","seeked","ended"].forEach(function(n){a.addEventListener(n,report)});
-        if(cors)parent.postMessage({fmdjFrame:"source",src:src},"*");
         pitch(a);a.src=src;if(t>0)try{a.currentTime=t}catch(x){}speed(a,scratching()?1:w.rate);return a}
         function voice(v,make){if(!own(v))return null;if(blob(v))return solo(v)?v:null;var src=v.currentSrc||v.src||"";if(!src||src===stale)return null;var a=A.get(v);if(a&&a.fmSrc===src)return a;if(!make)return null;if(a)quiet(a);
-        a=fresh(v,src,!/m3u8|manifest/i.test(src),v.readyState>=1?v.currentTime:w.from);A.set(v,a);return a}
+        a=fresh(v,src,!/m3u8|manifest/i.test(src),v.readyState>=1?v.currentTime:w.from);if(a.fmCors)parent.postMessage({fmdjFrame:"source",src:src},"*");A.set(v,a);return a}
         function report(){var v=video(),e=v&&voice(v,false);if(!e)return;var s=e.ended?0:(w.on||!e.paused)?(!e.paused&&!e.seeking&&e.readyState>=3?1:3):2;
         parent.postMessage({fmdjFrame:"voice",t:e.currentTime||0,d:isFinite(e.duration)?e.duration:0,s:s},"*")}
         function route(e){
@@ -325,12 +331,27 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         if(!scratching()){speed(a,w.rate);
         if(w.on){if(a.paused)start(a)}else if(!a.paused)a.pause();
         if(!w.bg&&a.readyState>=1&&v.readyState>=1&&!a.seeking&&!v.seeking&&!a.ended&&!v.ended&&Math.abs(a.currentTime-v.currentTime)>1&&Date.now()-moved>3000){moved=Date.now();v.fmOurs=a.currentTime;try{v.currentTime=a.currentTime}catch(x){}}}}
-        report()}
-        function rescue(){var v=video(),a=v&&voice(v,false);if(!a||a===v||!a.fmNode)return;var b=fresh(v,a.fmSrc,a.fmCors,a.currentTime);b.muted=a.muted;A.set(v,b);var go=!a.paused;quiet(a);if(go)start(b)}
+        standby(v,a);report()}
+        function drop(){if(spare){quiet(spare);spare=null}}
+        function swap(v,a,go){var s=spare;spare=null;speed(s,scratching()?1:w.rate);s.muted=a.muted;A.set(v,s);if(last===a)last=s;if(a.fmNode){try{a.fmNode.disconnect()}catch(x){}if(live===a)live=null}quiet(a);if(go)start(s);else if(!s.paused)s.pause()}
+        function standby(v,a){
+        if(!a||a===v||!a.fmNode||a.fmLone||!w.on||w.bg||scratching()||want(v)||a.ended||!(w.gain>=0.999||w.away)){drop();return}
+        if(spare&&spare.error){a.fmLone=1;drop();return}
+        if(!spare||spare.fmSrc!==a.fmSrc){drop();spare=fresh(v,a.fmSrc,a.fmCors,a.currentTime+0.2);spare.muted=true;spare.fmMoved=Date.now()}
+        if(spare.paused)start(spare);
+        if(spare.readyState<3||spare.seeking||a.seeking||a.paused){speed(spare,w.rate);return}
+        var d=spare.currentTime-a.currentTime;
+        if(Math.abs(d)>0.6){if(Date.now()-spare.fmMoved>2000){spare.fmMoved=Date.now();try{spare.currentTime=a.currentTime+0.2}catch(x){}}return}
+        if(w.gain>=0.999&&Math.abs(d)<0.03){swap(v,a,true);return}
+        speed(spare,w.rate*(1-Math.max(-0.15,Math.min(0.15,d))))}
+        function rescue(){var v=video(),a=v&&voice(v,false);if(!a||a===v||!a.fmNode)return;
+        if(spare&&spare.fmSrc===a.fmSrc&&!spare.error){if(Math.abs(spare.currentTime-a.currentTime)>0.08)try{spare.currentTime=a.currentTime}catch(x){}}
+        else{drop();spare=fresh(v,a.fmSrc,a.fmCors,a.currentTime)}
+        swap(v,a,!a.paused)}
         document.addEventListener("seeking",function(e){var v=e.target;if(!own(v))return;var o=v.fmOurs;v.fmOurs=null;if(o!=null&&Math.abs(v.currentTime-o)<0.05)return;
         var a=voice(v,false);if(!a||a===v)return;if(Math.abs(a.currentTime-v.currentTime)>(a.paused?0.02:0.25))try{a.currentTime=v.currentTime}catch(x){}},true);
         ["loadstart","emptied","loadedmetadata","resize","play","playing","pause","ended","ratechange"].forEach(function(t){document.addEventListener(t,function(e){if(!own(e.target))return;if(t==="loadstart"||t==="emptied")stale="";if(t==="loadstart"||t==="emptied"||t==="loadedmetadata"||t==="resize")seal(e.target);if(t==="ratechange"||t==="playing"||t==="loadedmetadata")apply();soon()},true)});
-        addEventListener("message",function(e){var m=e.data;if(e.source!==parent||!m||typeof m!=="object"||m.fmdj!==1)return;var was=w.bg;if(w.gen!=null&&m.gen!==w.gen){var v=video(),a=v&&A.get(v);stale=v?v.currentSrc||v.src||"":"";if(a){quiet(a);A.delete(v)}}w=m;if(w.bg&&!was)rescue();apply();sync()});
+        addEventListener("message",function(e){var m=e.data;if(e.source!==parent||!m||typeof m!=="object"||m.fmdj!==1)return;var was=w.bg;if(w.gen!=null&&m.gen!==w.gen){var v=video(),a=v&&A.get(v);stale=v?v.currentSrc||v.src||"":"";drop();if(a){quiet(a);A.delete(v)}}w=m;if(w.bg&&!was)rescue();apply();sync()});
         setInterval(function(){beat++;if(w.on||beat%4===0)sync()},250);
         parent.postMessage({fmdjFrame:"hello"},"*");
         })();

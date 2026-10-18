@@ -49,7 +49,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Tasks | [task-progress](task-progress.md), [issue-to-task](issue-to-task.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |
 | Agents and desktop | [agents-page](agents-page.md), [desktop-agents-web](desktop-agents-web.md), [desktop-commands](desktop-commands.md), [settings-agents-and-runners](settings-agents-and-runners.md), [agent-notes](agent-notes.md), [activity-today](activity-today.md), [workflows](workflows.md), [workflow-steps](workflow-steps.md), [workflow-scripts](workflow-scripts.md) |
 | Accounts and organizations | [member-roster](member-roster.md), [organization-bot-scopes](organization-bot-scopes.md), [payments-and-plans](payments-and-plans.md), [badges](badges.md), [discussion-answers](discussion-answers.md), [challenges](challenges.md), [feedback-bounties-links](feedback-bounties-links.md), [early-ios-testers](early-ios-testers.md) |
-| Operations and growth | [server-update](server-update.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [marketing-email](marketing-email.md), [onboarding-email](onboarding-email.md), [ecosystem](ecosystem.md), [package-ai-failures](package-ai-failures.md) |
+| Operations and growth | [server-update](server-update.md), [analytics](analytics.md), [not-found-tracking](not-found-tracking.md), [probe-auto-ban](probe-auto-ban.md), [signup-failure-pings](signup-failure-pings.md), [password-reset-challenge](password-reset-challenge.md), [marketing-email](marketing-email.md), [onboarding-email](onboarding-email.md), [ecosystem](ecosystem.md), [package-ai-failures](package-ai-failures.md) |
 
 ## Architecture
 
@@ -179,7 +179,8 @@ exhaust memory. Browser tests:
 - The host applies a Host allowlist, streamed body caps, an SSRF egress guard
   and edge-client verification before the App sees a request
   (`request_guard.py`, `egress.py`).
-- Signup forms require Turnstile (`app/src/turnstile.py`).
+- Signup and password-reset forms require Turnstile (`app/src/turnstile.py`)
+  or its backup check.
 - The admin console is behind `ADMIN_PATH` and `ADMIN_PASS` with a 12-hour
   cookie; its Database tab hides and write-blocks host tables such as
   `host_secrets`.

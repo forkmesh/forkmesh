@@ -49,7 +49,11 @@ struct DjPlatter: View {
             .position(x: d * 0.13, y: d * 0.13)
             DjCueLight(model: model, deck: deck, d: d)
                 .position(x: d * 0.12, y: d * 0.88)
+            DjNextButton(model: model, deck: deck, size: d * 0.1)
+                .position(x: d * 0.3, y: d * 0.955)
             if deck.loaded {
+                DjSimilarButton(model: model, deck: deck, size: d * 0.1)
+                    .position(x: d * 0.7, y: d * 0.955)
                 DjFileButton(model: model, deck: deck, size: d * 0.13)
                     .position(x: d * 0.88, y: d * 0.88)
             }
@@ -148,6 +152,8 @@ struct DjPlinth: View, Equatable {
             Circle().fill(face).frame(width: d * 0.2, height: d * 0.2).position(x: d * 0.13, y: d * 0.13)
             Circle().fill(DjTheme.rgb(0x17181B)).frame(width: d * 0.22, height: d * 0.22).position(x: d * 0.885, y: d * 0.115)
             Circle().fill(face).frame(width: d * 0.12, height: d * 0.12).position(x: d * 0.12, y: d * 0.88)
+            Circle().fill(face).frame(width: d * 0.13, height: d * 0.13).position(x: d * 0.3, y: d * 0.955)
+            Circle().fill(face).frame(width: d * 0.13, height: d * 0.13).position(x: d * 0.7, y: d * 0.955)
             Circle().strokeBorder(Color.black.opacity(0.5), lineWidth: 1).frame(width: d * 0.96, height: d * 0.96)
             Circle()
                 .fill(LinearGradient(colors: [DjTheme.rgb(0x4A4D53), DjTheme.rgb(0x2A2C30)], startPoint: .top, endPoint: .bottom))

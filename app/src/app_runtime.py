@@ -1733,6 +1733,7 @@ class Default:
                 "ok": True,
                 "name": instance_name(self.env),
                 "branded": instance_branded(self.env),
+                "logo": instance_logo_url(self.env),
                 "loginDeadline": login_deadline,
                 "poweredBy": {"name": "ForkMesh",
                               "url": "https://forkmesh.com/"},

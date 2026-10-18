@@ -259,10 +259,12 @@ public enum RouteParser {
         case "speech": return [.speech]
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
+        case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
+        case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
         case "workflows": return tail.isEmpty ? [.workflows] : nil
         case "people": return [.people]
         case "docs": return [.docs]
@@ -302,6 +304,8 @@ public enum RouteParser {
             return [.inbox(InboxFilter(rawValue: tail.first ?? "") ?? .all)]
         case "rss-reader":
             return tail.isEmpty ? [.rssReader] : nil
+        case "secure-drive":
+            return tail.isEmpty ? [.secureDrive] : nil
         default:
             return routes(segments: all, query: query, me: me)
         }

@@ -22,6 +22,8 @@ and publisher flags are documented beside the data in
 | `tools/package/macos_universal_on_mac.sh` | universal (arm64 + x86_64) `.dmg` build on a Mac |
 | `codemagic.yaml` (`macos-desktop`, `ios-native-release`), `native/ios/tools/asc_appstore.py` | cloud Mac fallback for the `.dmg`; iOS archive, upload, TestFlight and App Store submission |
 | `.forkmesh/releases/<channel>/` | `SHASUMS256.txt`, `release.json`, `release.json.sig`, `appcast.xml` |
+| `.forkmesh/releases/builds.json` | the build number each platform is on for the current version |
+| `.forkmesh/shortcuts/deploy-build-*.sh`, `deploy-new-version.sh` | one-tap per-platform builds and the new-version workflow ([Build numbers](#build-numbers)) |
 | `www/public/install.sh`, `www/public/uninstall.sh` | one-line installer and uninstaller |
 | `desktop/src/MainWindowSetup.cpp` (`tryPrebuiltAutoUpdate`) | in-app update to a signed prebuilt |
 | `app/src/releases.py`, `app/src/urls.py` | content-addressed download route |
@@ -74,9 +76,48 @@ and publisher flags are documented beside the data in
   newest build once (recorded in `<work>/ios-vX.Y.Z.json`), with the annotated
   tag message as What's New.
 - **Android:** `forkmesh-android-universal.apk`, signed with the
-  direct-distribution keystore; versionCode must grow.
+  direct-distribution keystore; versionCode must grow, so it is
+  `(MAJOR*10000 + MINOR*100 + PATCH) * 100 + BUILD`.
 - **Homepage:** `www/public/homepage-downloads.js` reads and verifies `latest`
   in the browser; the release host checks the served manifest after promotion.
+
+## Build numbers
+
+Each platform can ship a new build of the current version without a new tag,
+so a fix reaches the homepage for one platform without a release.
+
+- `--deploy-build PLATFORM` (`android`, `linux`, `windows`, `macos`) builds the
+  next build number from `main`, publishes it into the newest candidate (or
+  `--tag`), promotes it to `latest` when nothing else is missing, seeds the
+  mirrors, merges the metadata to `main` and moves the tag. With `--dry-run`
+  it only prints the plan. With `--first-build` it does nothing when the
+  version already has a build for that platform.
+- `--check-build PLATFORM` waits up to 30 minutes until app.forkmesh.com
+  serves the promoted manifest. While the version is still held back for
+  other platforms it reports that and succeeds.
+- `--reset-builds` writes `builds.json` with every platform at 1 for the
+  version; `--wait-candidate --tag vX.Y.Z` waits up to two hours for the
+  release workflow's candidate manifest on `main`.
+- These modes wait up to four hours for the timer's run to release the host
+  lock instead of exiting.
+- Build numbers live in `builds.json` and in each rebuilt asset's signed
+  `build` and `commit` fields; the details and the reasons are in
+  `.forkmesh/releases/README.md`, "Per-platform builds". The homepage shows
+  `Build N` on a rebuilt download.
+
+The shortcuts run these modes as named steps, so the desktop, phone and web
+canvas show each operation:
+
+| Shortcut | Steps |
+| --- | --- |
+| `Deploy Android build`, `Deploy Linux build`, `Deploy Windows build`, `Deploy macOS build` | Plan the build → Build, sign and publish → Check the homepage |
+| `Deploy new version` | Cut the new version (`tools/forkmesh_release_request.py create`) → Wait for the release candidate → Reset build numbers to 1 → Deploy Android, Linux, Windows and macOS build (each runs the linked shortcut with `--first-build`) |
+
+They are shortcuts rather than Actions workflows because they need the
+release host's signing material, the office Mac and the primary checkout,
+none of which the Actions sandbox can reach. Arguments given to the
+new-version shortcut go to `forkmesh_release_request.py create` (for example
+`--tag v1.3.0`).
 
 ## Mirror daemon rollout
 
@@ -130,7 +171,8 @@ channel still names it.
 
 - `release.json`: `schema`, `repo`, `tag`, `tag_commit`, `build_commit`,
   `channel`, `created_at`, `checksums_sha256`, `assets[]` (`name`,
-  `blob_sha256`, `size`, `os`, `arch`). `release.json.sig` is a raw 64-byte
+  `blob_sha256`, `size`, `os`, `arch`, and on a per-platform rebuild `build`
+  and `commit`). `release.json.sig` is a raw 64-byte
   Ed25519 signature over the exact file bytes.
 - `tag_commit` is the commit the tag pointed to at signing; verifiers check
   `git merge-base --is-ancestor <tag_commit> <tag>`. An empty `build_commit` is
@@ -169,11 +211,14 @@ python3 tools/forkmesh-release-host.py --tag vX.Y.Z --dry-run
 python3 tools/forkmesh-release-host.py --auto --rollout-only --dry-run
 python3 tools/forkmesh-release-host.py --tag vX.Y.Z --ios-only
 python3 tools/forkmesh-release-host.py --auto --skip-ios
+python3 tools/forkmesh-release-host.py --deploy-build android --dry-run
+python3 tools/forkmesh-release-host.py --reset-builds --tag vX.Y.Z --dry-run
 python3 tools/forkmesh-release-promote.py --candidate candidate-X.Y.Z --dry-run
 python3 desktop/tests/validate_release_version_stamp.py
 tools/package/linux-baseline.sh check <binary> <AppImage>
 python3 -m pytest app/tests/test_linux_release_baseline.py app/tests/test_install_lifecycle.py app/tests/test_installer_source.py app/tests/test_releases.py
 python3 -m pytest app/tests/test_release_host_completion.py tools/test_ios_app_store_release.py
+python3 -m pytest app/tests/test_release_host_builds.py app/tests/test_deploy_build_shortcuts.py
 python3 -m pytest tools/test_forkmesh_release_host_rollout.py tools/test_forkmesh_release_host_seed.py
 ```
 

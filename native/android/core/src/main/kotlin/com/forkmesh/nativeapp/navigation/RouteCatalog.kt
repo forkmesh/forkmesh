@@ -146,9 +146,11 @@ object RouteCatalog {
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
+        Route.Kind.OpenWrtRouter -> "Router"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.RssReader -> "RSS Reader"
+        Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
@@ -213,9 +215,11 @@ object RouteCatalog {
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
+        Route.Kind.OpenWrtRouter -> "router"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.RssReader -> "feed"
+        Route.Kind.SecureDrive -> "lock"
         Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
@@ -314,8 +318,10 @@ object HubCatalog {
         HubItem.destination(Route.Calories, guestAction = "use the calorie counter"),
         HubItem.destination(Route.GlassesAlert),
         HubItem.destination(Route.PhoneSecurity),
+        HubItem.destination(Route.OpenWrtRouter),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
+        HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
         HubItem.destination(Route.Activity),
     )

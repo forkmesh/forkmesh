@@ -7,11 +7,31 @@ import com.forkmesh.nativeapp.control.DesktopControlFamilyName
 import com.forkmesh.nativeapp.control.LocalControlException
 import com.forkmesh.nativeapp.json.bool
 import com.forkmesh.nativeapp.json.int
+import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.long
 import com.forkmesh.nativeapp.json.maps
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
+
+data class ShortcutStep(val name: String, val shortcut: String = "") {
+    val linked: Boolean get() = shortcut.isNotEmpty()
+
+    fun spoken(index: Int, count: Int, opens: Boolean): String =
+        "Step ${index + 1} of $count, $name" + if (opens) ", opens shortcut" else ""
+
+    companion object {
+        const val MAX = 32
+
+        fun list(value: Any?): List<ShortcutStep> = jsonMaps(value).mapNotNull(::from).take(MAX)
+
+        fun from(json: Map<String, Any?>): ShortcutStep? {
+            val shortcut = (json["shortcut"] as? String)?.trim().orEmpty()
+            val name = (json["name"] as? String)?.trim().orEmpty().ifEmpty { shortcut }
+            return if (name.isEmpty()) null else ShortcutStep(name, shortcut)
+        }
+    }
+}
 
 data class ShortcutEntry(
     val file: String,
@@ -31,8 +51,15 @@ data class ShortcutEntry(
     val expectedMs: Long = -1,
     val startedAtMs: Long = 0,
     val queued: Int = 0,
+    val steps: List<ShortcutStep> = emptyList(),
 ) {
     val id: String get() = "$scope|$file"
+
+    val stepsText: String get() = when (steps.size) {
+        0 -> ""
+        1 -> "1 step"
+        else -> "${steps.size} steps"
+    }
 
     val isSkill: Boolean get() = scope != "shortcut"
 
@@ -59,6 +86,7 @@ data class ShortcutEntry(
             expectedMs = json.long("expectedMs", json.long("lastMs", -1)),
             startedAtMs = startedAt(json, nowMs),
             queued = json.int("queued"),
+            steps = ShortcutStep.list(json["steps"]),
         )
     }
 }
@@ -105,6 +133,12 @@ data class ShortcutCatalog(val repo: String = "", val repos: List<String> = empt
     val shortcuts: List<ShortcutEntry> get() = entries.filter { !it.isSkill }.sortedByDescending { it.uses }
 
     val skills: List<ShortcutEntry> get() = entries.filter { it.isSkill }.sortedByDescending { it.uses }
+
+    fun target(from: ShortcutEntry, step: ShortcutStep): ShortcutEntry? {
+        if (!step.linked) return null
+        val same = entries.filter { it.scope == from.scope && it.id != from.id }
+        return same.firstOrNull { it.file == step.shortcut } ?: same.firstOrNull { it.file.substringBeforeLast('.') == step.shortcut }
+    }
 
     fun pick(preferred: String): String =
         repos.firstOrNull { it.equals(preferred, ignoreCase = true) } ?: repos.firstOrNull() ?: preferred

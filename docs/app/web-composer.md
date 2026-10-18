@@ -106,6 +106,13 @@ follows `visualViewport`; pages reserve `--fmc-page-clearance`. A
 `[data-composer-slot]` element (the dashboard home) hosts an always-open
 inline dock.
 
+Any session with a `nodeName` that is not a node session mounts the dock; it
+does not also need an `email`, because the dashboard writes a missing email
+back as `""`, and requiring one left the home stuck on "Loading prompt...".
+When the dashboard has booted (`forkmesh:composer-host`) and the dock still
+does not mount (a node session, an iframe), the slot is hidden rather than
+left showing its placeholder.
+
 `installErrorActions()` adds Copy and Send to prompt buttons to every
 dashboard error element; `showErrorNotice()` replaces `window.alert()`. The
 "Start an agent" modal uses one `<provider>|<model>` select

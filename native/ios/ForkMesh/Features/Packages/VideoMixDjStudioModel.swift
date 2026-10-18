@@ -14,6 +14,7 @@ enum DjSheet: Identifiable, Equatable {
     case jam
     case crate
     case song(String)
+    case similar(DjDeckSide)
 
     var id: String {
         switch self {
@@ -24,6 +25,7 @@ enum DjSheet: Identifiable, Equatable {
         case .jam: return "jam"
         case .crate: return "crate"
         case let .song(id): return "song-\(id)"
+        case let .similar(side): return "similar-\(side.rawValue)"
         }
     }
 }
@@ -168,6 +170,10 @@ final class DjStudioModel {
     var searchResults: [DjSearchResult] = []
     var searching = false
     var searchProblem = ""
+    var similarSeed = ""
+    var similarResults: [DjSearchResult] = []
+    var similarLoading = false
+    var similarProblem = ""
     var history: [DjHistoryItem] = []
     var library: [DjPlayedSong] = []
     var crate = DjCrate()
@@ -216,6 +222,7 @@ final class DjStudioModel {
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var similarTask: Task<Void, Never>?
     @ObservationIgnored private var sectionTasks: [DjDeckSide: Task<Void, Never>] = [:]
     @ObservationIgnored private var previousCategory: AVAudioSession.Category?
     @ObservationIgnored private var previousOptions: AVAudioSession.CategoryOptions = []
@@ -279,6 +286,7 @@ final class DjStudioModel {
             guard type == .ended, options.contains(.shouldResume) else { return }
             MainActor.assumeIsolated { self?.comeBack() }
         }
+        refreshSmart()
     }
 
     func resumePlayback() {
@@ -589,6 +597,8 @@ final class DjStudioModel {
                 if crate.track(deck.videoId) != nil {
                     crate.keep(deck.videoId, title: title, author: author)
                     saveCrate()
+                } else {
+                    refreshSmart()
                 }
                 save()
             }
@@ -718,6 +728,7 @@ final class DjStudioModel {
         guard deck.loaded, !deck.counted else { return }
         deck.counted = true
         library = DjStudio.played(library, id: deck.videoId, title: deck.title, author: deck.author, at: Date().timeIntervalSince1970)
+        refreshSmart()
     }
 
     func plays(_ id: String) -> Int {
@@ -728,18 +739,21 @@ final class DjStudioModel {
         let ids = Set(offsets.compactMap { history.indices.contains($0) ? history[$0].id : nil })
         history.remove(atOffsets: offsets)
         library.removeAll { ids.contains($0.id) }
+        refreshSmart()
         save()
     }
 
     func forgetPlayed(_ id: String) {
         history.removeAll { $0.id == id }
         library.removeAll { $0.id == id }
+        refreshSmart()
         save()
     }
 
     func clearHistory() {
         history = []
         library = []
+        refreshSmart()
         save()
     }
 
@@ -1085,6 +1099,84 @@ final class DjStudioModel {
         mix(from: live, to: incoming, seconds: DjStudio.automixSeconds)
     }
 
+    func quickNext(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard !deck.scratching else { return }
+        var resume = deck.playing || deck.keepsPlaying
+        let other = self.deck(side.other)
+        if automixing {
+            automixTask?.cancel()
+            automixing = false
+            if other.playing {
+                resume = false
+                fade(to: other.side == .a ? -1 : 1, seconds: 0.4, then: nil)
+            }
+        }
+        guard preload(side) else {
+            show(crate.focus == .everything ? "Nothing to load next: queue a song or play a few first." : "Nothing else in \(crate.label(crate.focus)) to load next.")
+            return
+        }
+        if resume { play(deck) }
+    }
+
+    func deleteSong(on side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else { return }
+        let id = deck.videoId
+        let name = deck.title.isEmpty ? "the song" : deck.title
+        removeSong(id)
+        if !inJam, queue.contains(where: { $0.videoId == id }) {
+            queue.removeAll { $0.videoId == id }
+            save()
+        }
+        if automixOn, deck.playing, skipOut(deck) {
+            show("Deleted \(name). Mixing into the next song.")
+            return
+        }
+        let resume = deck.playing || deck.keepsPlaying
+        if preload(side) {
+            if resume { play(deck) }
+            show("Deleted \(name). Loaded the next song.")
+        } else {
+            eject(side)
+            show("Deleted \(name).")
+        }
+    }
+
+    func openSimilar(_ side: DjDeckSide) {
+        let deck = deck(side)
+        guard deck.loaded else {
+            openLoad(side)
+            return
+        }
+        let other = self.deck(side.other)
+        searchTarget = other.playing ? .queue : DjLoadTarget(side.other)
+        sheet = .similar(side)
+        findSimilar(song(deck.videoId))
+    }
+
+    func findSimilar(_ seed: DjTrack) {
+        guard similarSeed != seed.id || (similarResults.isEmpty && !similarLoading) else { return }
+        similarTask?.cancel()
+        similarSeed = seed.id
+        similarResults = []
+        similarProblem = ""
+        similarLoading = true
+        similarTask = Task { [weak self] in
+            guard let self else { return }
+            var found = await self.fetchInvidious({ DjStudio.similarURL($0, id: seed.id) }, parse: DjStudio.similarResults)
+            if found?.isEmpty != false {
+                let query = DjSmart.searchQuery(seed)
+                if query.count >= 2, let more = await self.fetchResults(query) { found = more }
+            }
+            guard !Task.isCancelled, self.similarSeed == seed.id else { return }
+            self.similarLoading = false
+            let results = (found ?? []).filter { $0.id != seed.id }
+            self.similarResults = results
+            self.similarProblem = found == nil ? "YouTube suggestions are unavailable right now." : results.isEmpty ? "YouTube has no suggestions for this song." : ""
+        }
+    }
+
     private func replay() -> DjPlayedSong? {
         let decks = [a, b].filter(\.loaded)
         let song = crate.next(
@@ -1309,6 +1401,10 @@ final class DjStudioModel {
     }
 
     private func fetchResults(_ query: String) async -> [DjSearchResult]? {
+        await fetchInvidious({ DjStudio.searchURL($0, query: query) }, parse: DjStudio.searchResults)
+    }
+
+    private func fetchInvidious(_ address: (URL) -> URL?, parse: (Data) -> [DjSearchResult]) async -> [DjSearchResult]? {
         if searchInstances.isEmpty, let index = URL(string: "https://api.invidious.io/instances.json?sort_by=health"),
             let (data, response) = try? await URLSession.shared.data(from: index),
             (response as? HTTPURLResponse)?.statusCode == 200
@@ -1316,7 +1412,7 @@ final class DjStudioModel {
             searchInstances = DjStudio.searchInstances(data)
         }
         for instance in searchInstances {
-            guard let url = DjStudio.searchURL(instance, query: query) else { continue }
+            guard let url = address(instance) else { continue }
             var request = URLRequest(url: url)
             request.timeoutInterval = 8
             if let (data, response) = try? await URLSession.shared.data(for: request),
@@ -1324,7 +1420,7 @@ final class DjStudioModel {
             {
                 searchInstances.removeAll { $0 == instance }
                 searchInstances.insert(instance, at: 0)
-                return DjStudio.searchResults(data)
+                return parse(data)
             }
             if Task.isCancelled { return nil }
         }
@@ -1333,6 +1429,7 @@ final class DjStudioModel {
     }
 
     func saveCrate() {
+        refreshSmart()
         store.write(crate)
     }
 

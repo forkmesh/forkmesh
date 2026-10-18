@@ -301,6 +301,30 @@
     return String(text || "").split("\n").map((line) => line.trim()).find(Boolean) || "";
   }
 
+  const WF_STEP_RE = /^#\s*step:\s*(.+?)\s*$/;
+  const WF_RUN_SHORTCUT_RE = /^\s*bash\s+\.forkmesh\/shortcuts\/([A-Za-z0-9._-]{1,96})(?:\s|$)/;
+
+  function wfStepName(text) {
+    const first = String(text || "").split("\n").find((line) => line.trim());
+    const match = first ? first.match(WF_STEP_RE) : null;
+    return match ? match[1].replace(/\s+/g, " ").slice(0, 80) : "";
+  }
+
+  function wfStepCommand(text) {
+    const lines = String(text || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length && wfStepName(text)) lines.shift();
+    return lines[0] || "";
+  }
+
+  function wfShortcutLink(node) {
+    if (node.type !== "shortcut.run") return "";
+    for (const line of String(node.params?.text || "").split("\n")) {
+      const match = line.match(WF_RUN_SHORTCUT_RE);
+      if (match) return match[1];
+    }
+    return "";
+  }
+
   function wfList(value) {
     if (Array.isArray(value)) return value.map(String);
     return String(value || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
@@ -337,6 +361,8 @@
       case "action.step": return p.name || wfShort(wfFirstLine(p.run), 40) || "Run step";
       case "shortcut.header":
       case "skill.header": return p.name || wfShort(String(wfView().current?.path || "").split("/").pop(), 40);
+      case "shortcut.block":
+      case "shortcut.run": return wfShort(wfStepName(p.text), 60) || node.name;
       case "agent.profile": return p.name || "Special agent";
       default: return node.name;
     }
@@ -401,7 +427,11 @@
       case "action.step": return wfShort(wfFirstLine(p.run)) || "No command yet";
       case "shortcut.header": return [p.agent, p.model].filter(Boolean).join(" · ") || wfShort(p.description) || "Shortcut";
       case "skill.header": return wfShort(p.description) || "Skill";
-      case "shortcut.block":
+      case "shortcut.run": {
+        const file = wfShortcutLink(node);
+        return file ? `Runs ${file}` : wfShort(wfStepCommand(p.text)) || "Empty";
+      }
+      case "shortcut.block": return wfShort(wfStepCommand(p.text)) || "Empty";
       case "skill.block": return wfShort(wfFirstLine(p.text)) || "Empty";
       case "agent.profile": return wfShort(p.specialty || p.focus) || "Special agent";
       case "agent.schedule": {
@@ -544,6 +574,10 @@
     }).join("");
     const title = wfNodeTitle(node);
     const sub = node.disabled ? "Disabled" : wfNodeSummary(node);
+    const link = wfShortcutLink(node);
+    const open = link
+      ? `<button type="button" class="wf-node-link" data-wf-open-file="${escapeHtml(`.forkmesh/shortcuts/${link}`)}" aria-label="Open ${escapeHtml(link)}" title="Open ${escapeHtml(link)} on the canvas"><i data-lucide="arrow-up-right"></i><span>Open</span></button>`
+      : "";
     return `<div class="${classes.join(" ")}" data-wf-node="${escapeHtml(node.id)}" data-status="${escapeHtml(entry?.status || "")}" style="left:${node.x}px;top:${node.y}px;--wf-node-color:${escapeHtml(spec.color || "#64748b")}" role="button" aria-label="${escapeHtml(`${title}: ${sub}`)}">
       ${status}
       ${spec.inputs ? `<span class="wf-port wf-port-in" data-wf-port-in="${escapeHtml(node.id)}" title="Drag to move a connection"></span>` : ""}
@@ -552,7 +586,7 @@
         <div class="wf-node-text">
           <div class="wf-node-kicker">${escapeHtml(spec.name)}</div>
           <div class="wf-node-title">${escapeHtml(title)}</div>
-          <div class="wf-node-sub">${escapeHtml(sub)}</div>
+          ${open ? `<div class="wf-node-subline"><div class="wf-node-sub">${escapeHtml(sub)}</div>${open}</div>` : `<div class="wf-node-sub">${escapeHtml(sub)}</div>`}
         </div>
       </div>
       ${ports}
@@ -2080,7 +2114,7 @@
     canvas.addEventListener("pointerdown", (event) => {
       const view = wfView();
       if (!view.current || event.button > 0) return;
-      if (event.target.closest("[data-wf-add-after], .wf-zoom, [data-wf-empty] button")) return;
+      if (event.target.closest("[data-wf-add-after], [data-wf-open-file], .wf-zoom, [data-wf-empty] button")) return;
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       canvas.setPointerCapture(event.pointerId);
       if (pointers.size === 2) {
@@ -2346,6 +2380,11 @@
           const sub = el.querySelector(".wf-node-sub");
           if (title) title.textContent = wfNodeTitle(node);
           if (sub) sub.textContent = node.disabled ? "Disabled" : wfNodeSummary(node);
+          const link = wfShortcutLink(node);
+          if ((el.querySelector("[data-wf-open-file]")?.dataset.wfOpenFile || "") !== (link ? `.forkmesh/shortcuts/${link}` : "")) {
+            el.outerHTML = wfNodeHtml(node);
+            window.lucide?.createIcons();
+          }
         }
         if (wfIsFileMode() && wfIsRoot(node)) wfRenderToolbar();
       }

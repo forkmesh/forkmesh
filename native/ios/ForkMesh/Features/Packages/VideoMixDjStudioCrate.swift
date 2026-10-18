@@ -6,6 +6,8 @@ enum DjCrateRoute: Hashable {
     case playlist(String)
     case tag(String)
     case songs
+    case smartKind(DjSmartKind)
+    case smart(String)
 }
 
 struct DjCrateExport: Transferable, Sendable {
@@ -67,6 +69,26 @@ struct DjCrateSheet: View {
                 Text("Playlists")
             }
             Section {
+                ForEach(DjSmartKind.allCases, id: \.self) { (kind: DjSmartKind) in
+                    let lists = crate.smart.filter { $0.kind == kind }
+                    if !lists.isEmpty {
+                        NavigationLink(value: DjCrateRoute.smartKind(kind)) {
+                            LabeledContent {
+                                Text("\(lists.count)").monospacedDigit()
+                            } label: {
+                                Label(kind.title, systemImage: lists.contains { crate.focus == .smart($0.id) } ? "scope" : DjCrateSheet.symbol(kind))
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Smart Playlists")
+            } footer: {
+                Text(crate.smart.isEmpty
+                    ? "As you play and save songs they are sorted into smart playlists by genre, style, decade, artist and how often you play them."
+                    : "Every song is sorted into these automatically from its title, channel, tags and plays. They update as you play.")
+            }
+            Section {
                 ForEach(crate.tagCounts) { (tag: DjTagCount) in
                     NavigationLink(value: DjCrateRoute.tag(tag.name)) {
                         LabeledContent {
@@ -121,6 +143,8 @@ struct DjCrateSheet: View {
             case let .playlist(id): DjPlaylistView(model: model, id: id)
             case let .tag(name): DjTagView(model: model, name: name)
             case .songs: DjAllSongsView(model: model)
+            case let .smartKind(kind): DjSmartKindView(model: model, kind: kind)
+            case let .smart(id): DjSmartView(model: model, id: id)
             }
         }
         .alert("New Playlist", isPresented: $naming) {
@@ -140,6 +164,16 @@ struct DjCrateSheet: View {
             model.importData(data, name: url.deletingPathExtension().lastPathComponent)
         }
     }
+
+    static func symbol(_ kind: DjSmartKind) -> String {
+        switch kind {
+        case .listening: return "chart.bar"
+        case .genre: return "music.quarternote.3"
+        case .style: return "slider.horizontal.3"
+        case .decade: return "calendar"
+        case .artist: return "person.2"
+        }
+    }
 }
 
 struct DjFocusPicker: View {
@@ -156,6 +190,16 @@ struct DjFocusPicker: View {
                 ForEach(crate.tagCounts) { (tag: DjTagCount) in
                     Text("#\(tag.name)").tag(DjFocus.tag(tag.name))
                 }
+                ForEach(DjSmartKind.allCases, id: \.self) { (kind: DjSmartKind) in
+                    let lists = crate.smart.filter { $0.kind == kind }
+                    if !lists.isEmpty {
+                        Section(kind.title) {
+                            ForEach(lists) { (list: DjSmartList) in
+                                Text(list.name).tag(DjFocus.smart(list.id))
+                            }
+                        }
+                    }
+                }
             } label: {
                 Label("Plays", systemImage: "scope")
             }
@@ -168,7 +212,7 @@ struct DjFocusPicker: View {
             Text("AUTOMIX")
         } footer: {
             Text(crate.focus == .everything
-                ? "With the queue empty, AUTOMIX shuffles every song you have played or saved. Choose a playlist or tag to keep it to those songs."
+                ? "With the queue empty, AUTOMIX shuffles every song you have played or saved, except those marked Don’t Shuffle. Choose a playlist, tag or smart playlist to keep it to those songs."
                 : "With the queue empty, AUTOMIX plays only \(crate.label(crate.focus)), \(crate.shuffle ? "shuffled" : "in order"), and starts over at the end.")
         }
     }
@@ -443,7 +487,7 @@ struct DjTrackRow: View {
                 Text(track.shownTitle)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
-                Text([track.author, DjStudio.playsLabel(plays)].filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([track.author, DjStudio.playsLabel(plays), track.noShuffle ? "Not shuffled" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -476,6 +520,7 @@ struct DjTrackMenu: View {
             Button("Add to the Queue", systemImage: "text.badge.plus") { model.enqueue(id: track.id, title: track.title, author: track.author) }
             DjPlaylistMenu(model: model, id: track.id)
             Button("Tags and Playlists…", systemImage: "tag") { editing = true }
+            DjSongActions(model: model, id: track.id)
         } label: {
             DjTrackRow(track: track, plays: model.plays(track.id), icon: "ellipsis")
         }
@@ -592,6 +637,11 @@ struct DjSongEditor: View {
                 Text("Playlists")
             }
             Section {
+                Toggle("Leave Out of Shuffle", isOn: Binding(get: { !model.crate.shuffles(id) }, set: { _ in model.toggleShuffle(id) }))
+            } footer: {
+                Text("AUTOMIX and Next never pick a song left out of shuffle; it still plays in order in a playlist and from the queue.")
+            }
+            Section {
                 Button("Load on Deck A") { model.loadTrack(track, on: .a) }
                 Button("Load on Deck B") { model.loadTrack(track, on: .b) }
                 Button("Add to the Queue") { model.enqueue(id: track.id, title: track.title, author: track.author) }
@@ -641,7 +691,7 @@ struct DjFileButton: View {
         let crate = model.crate
         let id = deck.videoId
         let focus = crate.focus
-        let inFocus = focus != .everything && crate.songs(focus).contains { $0.id == id }
+        let inFocus = focus.isFiled && crate.songs(focus).contains { $0.id == id }
         let filed = crate.track(id).map { !$0.tags.isEmpty } == true || crate.playlists.contains { $0.songs.contains(id) }
         Menu {
             Section(inFocus ? "Move from \(crate.label(focus)) to" : "Add to") {
@@ -674,6 +724,10 @@ struct DjFileButton: View {
                 }
             }
             Button("Tags and Playlists…", systemImage: "slider.horizontal.3") { model.editSong(id) }
+            Button("Find Similar…", systemImage: "sparkle.magnifyingglass") { model.openSimilar(deck.side) }
+            Section {
+                DjSongActions(model: model, id: id) { model.deleteSong(on: deck.side) }
+            }
         } label: {
             DjRoundFace(size: size, lit: filed) {
                 Image(systemName: "text.badge.plus")

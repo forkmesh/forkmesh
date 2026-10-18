@@ -111,6 +111,14 @@ QString requestDataPreview(QNetworkAccessManager::Operation op,
     }
 }
 
+QString privateRequestPreview(QIODevice *outgoingData)
+{
+    const qint64 size = outgoingData && !outgoingData->isSequential()
+                            ? qMax<qint64>(0, outgoingData->size())
+                            : 0;
+    return QStringLiteral("<private request body: %1 bytes>").arg(size);
+}
+
 QString responseDataPreview(QNetworkReply *reply, qint64 downloaded)
 {
     if (!reply)
@@ -1359,7 +1367,11 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
     Operation op, const QNetworkRequest &request, QIODevice *outgoingData)
 {
     const QUrl url = request.url();
-    const QString requestData = requestDataPreview(op, url, outgoingData);
+    const bool privatePayload =
+        forkmesh::networkRequestPayloadIsPrivate(request);
+    const QString requestData =
+        privatePayload ? privateRequestPreview(outgoingData)
+                       : requestDataPreview(op, url, outgoingData);
     const int requestIndex = noteEndpointAttempt(op, url, requestData);
     if (m_clientVersionBlocked && !isOnThisMachine(url)) {
         // Ahead of offline mode, the firewall and the backoff: a retired build
@@ -1464,7 +1476,8 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
                     tracker->downloaded = qMax(tracker->downloaded, received);
                 });
         connect(reply, &QNetworkReply::finished, this,
-                [this, reply, tracker, op, url, requestIndex] {
+                [this, reply, tracker, op, url, requestIndex,
+                 privatePayload] {
                     const QVariant code =
                         reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
                     const int status = code.isValid() ? code.toInt() : 0;
@@ -1476,7 +1489,11 @@ QNetworkReply *BackoffNetworkAccessManager::createRequest(
                         qMax(tracker->downloaded, reply->bytesAvailable());
                     noteEndpointFinished(
                         op, url, tracker->uploaded, downloaded, status, error,
-                        requestIndex, responseDataPreview(reply, downloaded));
+                        requestIndex,
+                        privatePayload
+                            ? QStringLiteral("<private response body: %1 bytes>")
+                                  .arg(downloaded)
+                            : responseDataPreview(reply, downloaded));
                 });
         return reply;
     };

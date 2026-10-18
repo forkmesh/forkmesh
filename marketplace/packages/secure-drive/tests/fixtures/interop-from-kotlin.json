@@ -1,0 +1,192 @@
+{
+    "format": "forkmesh-secure-drive-interop-v1",
+    "writer": "kotlin",
+    "container": "interop-from-kotlin.fmsd",
+    "passphrase": "correct horse battery",
+    "drive": "e999fd38c3110149d98e06b22c59d1b9",
+    "label": "Interop share",
+    "members": [
+        {
+            "device": "0dd4b8df316e6bc35dc186fad9fac6aa",
+            "name": "Office laptop",
+            "keys": {
+                "x25519": "chHO9CCDgerqpuBloF3eqQo8v7lyuYqSwhRz5f0yPtk",
+                "mlkemSeed": "iGx24Q_GV0KBP6PavGt8vYpagdNCSoONnGFPlEet7-9PMDRUQKaRhzsT0C-Vx4j8MPSU9VA_YaGECJ82mi63Cg",
+                "ed25519": "djxreCk2TyqTDqf2z6gG4m_28Vfg_KLPd02bzv3fG1U"
+            },
+            "drives": [
+                {
+                    "id": "33755436efee7f950fbe7e98f340beb5",
+                    "container": "interop-from-kotlin.fmsd",
+                    "label": "Interop share",
+                    "drive": "e999fd38c3110149d98e06b22c59d1b9",
+                    "root": "0dd4b8df316e6bc35dc186fad9fac6aa",
+                    "rootEd25519": "mbZwSJAU1EtxkecNO5W_tnAheAbMeMGb05BvSmczhws",
+                    "epochs": [
+                        {
+                            "id": "2e958508e0f44ef0",
+                            "n": 0,
+                            "key": "wSI4Hyf5lv8DaS7dmjiN3VUGJjtbTPmhOK9ys0nBhWc"
+                        }
+                    ],
+                    "mailbox": 29,
+                    "lastSeq": 14,
+                    "lastHash": "qYvzii-wxEshoHLmRxuCpVIJJq2ZcVRqg30zxkPRtfE",
+                    "lamport": 18,
+                    "heads": {
+                        "0dd4b8df316e6bc35dc186fad9fac6aa": [
+                            14,
+                            "qYvzii-wxEshoHLmRxuCpVIJJq2ZcVRqg30zxkPRtfE"
+                        ],
+                        "b3f5d6d7739bd941dee31b20347de0b4": [
+                            2,
+                            "YXgkLbGyuQjpB6GuhcROyJl0QLo6y1Poo4usxVVbQkA"
+                        ]
+                    },
+                    "rootGeneration": 16,
+                    "rootHash": "SegdPTJBmPhNCJrjsJ-lBdM7XeePYwkWswqr99VBwKI",
+                    "removed": [],
+                    "cachedRoot": "eyJiIjoiZXlKMklqb3lMQ0prY21sMlpTSTZJbVU1T1RsbVpETTRZek14TVRBeE5EbGtPVGhsTURaaU1qSmpOVGxrTVdJNUlpd2laMlZ1SWpveE5pd2ljR0ZuWlhNaU9qY3pMQ0pzYjJkeklqcDdJakJrWkRSaU9HUm1NekUyWlRaaVl6TTFaR014T0RabVlXUTVabUZqTm1GaElqcGJXelE1TERGZFhTd2lZak5tTldRMlpEYzNNemxpWkRrME1XUmxaVE14WWpJd016UTNaR1V3WWpRaU9sdGJORFlzTVYxZGZTd2lkM0pwZEdWeUlqb2lNR1JrTkdJNFpHWXpNVFpsTm1Kak16VmtZekU0Tm1aaFpEbG1ZV00yWVdFaUxDSjBhVzFsSWpveE56a3lNekF3TXprME1ERXdMQ0p3Y21WMklqb2lNM0JWYlVweWIwWlNVUzFUUmpWbmQwZHRkRzlmTm1SRk0wdEZNMlJxVTBONFl5MXZValpHY0hSNWR5SjkiLCJzIjoiVGRSelhGX2J5bTB3V1VDbnpKblZ5UUladG1aNUtoYWw3aEpCNFBNQW1lMURUNVZHMGJySk5UTEZZOWZrNy01YzJXTlg0elJJSllyQXd0NTlVQUlsQWcifQ",
+                    "keyringSeen": true,
+                    "joinSecret": "",
+                    "joinedAt": 1792300393497
+                }
+            ]
+        },
+        {
+            "device": "b3f5d6d7739bd941dee31b20347de0b4",
+            "name": "Front desk phone",
+            "keys": {
+                "x25519": "XJwVH2CUiY5Ji8gJ8bwzqtCHnckYV0fZ8iBvfDzDJ1E",
+                "mlkemSeed": "WzInKHBzhCyxbOQsSZT34tE2qSFyhX2uDXwrHEy1arG8XxvVwS4RPgIu8XcC5kdXNHRXNevJsAWsjiSYSCSXQQ",
+                "ed25519": "xAUYKMaWBys9dysPCI5-nLLyYr2xrXW2aQR8g5jDeNs"
+            },
+            "drives": [
+                {
+                    "id": "1af27fff4385e43c2950d27f031388d1",
+                    "container": "interop-from-kotlin.fmsd",
+                    "label": "Interop share",
+                    "drive": "e999fd38c3110149d98e06b22c59d1b9",
+                    "root": "0dd4b8df316e6bc35dc186fad9fac6aa",
+                    "rootEd25519": "mbZwSJAU1EtxkecNO5W_tnAheAbMeMGb05BvSmczhws",
+                    "epochs": [
+                        {
+                            "id": "2e958508e0f44ef0",
+                            "n": 0,
+                            "key": "wSI4Hyf5lv8DaS7dmjiN3VUGJjtbTPmhOK9ys0nBhWc"
+                        }
+                    ],
+                    "mailbox": 16,
+                    "lastSeq": 2,
+                    "lastHash": "YXgkLbGyuQjpB6GuhcROyJl0QLo6y1Poo4usxVVbQkA",
+                    "lamport": 18,
+                    "heads": {
+                        "0dd4b8df316e6bc35dc186fad9fac6aa": [
+                            14,
+                            "qYvzii-wxEshoHLmRxuCpVIJJq2ZcVRqg30zxkPRtfE"
+                        ],
+                        "b3f5d6d7739bd941dee31b20347de0b4": [
+                            2,
+                            "YXgkLbGyuQjpB6GuhcROyJl0QLo6y1Poo4usxVVbQkA"
+                        ]
+                    },
+                    "rootGeneration": 16,
+                    "rootHash": "SegdPTJBmPhNCJrjsJ-lBdM7XeePYwkWswqr99VBwKI",
+                    "removed": [],
+                    "cachedRoot": "eyJiIjoiZXlKMklqb3lMQ0prY21sMlpTSTZJbVU1T1RsbVpETTRZek14TVRBeE5EbGtPVGhsTURaaU1qSmpOVGxrTVdJNUlpd2laMlZ1SWpveE5pd2ljR0ZuWlhNaU9qY3pMQ0pzYjJkeklqcDdJakJrWkRSaU9HUm1NekUyWlRaaVl6TTFaR014T0RabVlXUTVabUZqTm1GaElqcGJXelE1TERGZFhTd2lZak5tTldRMlpEYzNNemxpWkRrME1XUmxaVE14WWpJd016UTNaR1V3WWpRaU9sdGJORFlzTVYxZGZTd2lkM0pwZEdWeUlqb2lNR1JrTkdJNFpHWXpNVFpsTm1Kak16VmtZekU0Tm1aaFpEbG1ZV00yWVdFaUxDSjBhVzFsSWpveE56a3lNekF3TXprME1ERXdMQ0p3Y21WMklqb2lNM0JWYlVweWIwWlNVUzFUUmpWbmQwZHRkRzlmTm1SRk0wdEZNMlJxVTBONFl5MXZValpHY0hSNWR5SjkiLCJzIjoiVGRSelhGX2J5bTB3V1VDbnpKblZ5UUladG1aNUtoYWw3aEpCNFBNQW1lMURUNVZHMGJySk5UTEZZOWZrNy01YzJXTlg0elJJSllyQXd0NTlVQUlsQWcifQ",
+                    "keyringSeen": true,
+                    "joinSecret": "",
+                    "joinedAt": 1792300393815
+                }
+            ]
+        }
+    ],
+    "pending": {
+        "device": "536ed60476b33f6307e8d9d99e593529",
+        "name": "Spare tablet",
+        "keys": {
+            "x25519": "1qPtPfNjhvJb_ZdFCDewtEw8Js1JaVXwePf4vLJVl-Y",
+            "mlkemSeed": "viHhFX-VkPPyZZTy0x5ZLY5hRvBC6KMBK85mC1cJ3SOJqEiCHZ6Of0lq2AsT6jn1qyX6yBGkocnbjQsJ5GLIhA",
+            "ed25519": "zgt1hpGGi0zbq1CymU-T0VqcUlRLER-LLXCY9pgIZTw"
+        },
+        "drives": [
+            {
+                "id": "24f701332dd694eefb9d34330f25f503",
+                "container": "interop-from-kotlin.fmsd",
+                "label": "interop-from-kotlin",
+                "drive": "",
+                "root": "",
+                "rootEd25519": "",
+                "epochs": [],
+                "mailbox": 10,
+                "lastSeq": -1,
+                "lastHash": "",
+                "lamport": 0,
+                "heads": {},
+                "rootGeneration": -1,
+                "rootHash": "",
+                "removed": [],
+                "cachedRoot": "",
+                "keyringSeen": false,
+                "joinSecret": "aQQRZ-Fj4trjcbOEYVqHZQ",
+                "joinedAt": 0
+            }
+        ]
+    },
+    "joinRequest": {
+        "mailbox": 10,
+        "name": "Spare tablet",
+        "safety": "59675 89012 71123 66200"
+    },
+    "openInviteCode": "16G-5V2-8FR-8JK-CGE-0V2-FT5-P0J-G3P",
+    "files": [
+        {
+            "id": "65c98be05014cb94e75bd8ed4709b510",
+            "name": "Budget 2027.csv",
+            "kind": "spreadsheet",
+            "versions": 1,
+            "size": 54,
+            "sha256": "e7be6587dc7b403a6fd0f9a9e38761027c5d01d484899f9af608352a3a0bd28e"
+        },
+        {
+            "id": "e634f75b556028ddea84f45bd38a4dee",
+            "name": "empty.txt",
+            "kind": "text",
+            "versions": 1,
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "id": "883d423daef3ac443de0b1e422309e67",
+            "name": "Notes.html",
+            "kind": "document",
+            "versions": 2,
+            "size": 74,
+            "sha256": "3fec4804ba3a4b62b0cc1cba1e799252fa00aa6f42f9902322c76256bb057a8b"
+        },
+        {
+            "id": "c3498b88953996c3d976a696ef5c72b0",
+            "name": "photo.bin",
+            "kind": "file",
+            "versions": 1,
+            "size": 40000,
+            "sha256": "688bc99b0ae286c5f425ac7353e2d2efda3881b34e5a4d5566d30699cc550b2f"
+        },
+        {
+            "id": "7ae7d4f0879974c4f40b0ddcfa798b6c",
+            "name": "Sketch.svg",
+            "kind": "drawing",
+            "versions": 1,
+            "size": 368,
+            "sha256": "41d0c0f1033a681de9783cb29dbcc08b6fafaf4ea139fd9d9617df24f5efac00"
+        }
+    ],
+    "deletedFiles": [
+        "old.txt"
+    ],
+    "minimumRecords": 18,
+    "deviceSafety": {
+        "0dd4b8df316e6bc35dc186fad9fac6aa": "20315 86177 67661 09002",
+        "b3f5d6d7739bd941dee31b20347de0b4": "01460 82826 81928 61916"
+    }
+}

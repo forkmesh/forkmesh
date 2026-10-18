@@ -173,6 +173,100 @@ def test_shortcut_and_skill_documents():
     assert "# agent:" not in text and text.startswith("# name: New skill\n")
 
 
+def test_every_shortcut_file_round_trips_byte_for_byte():
+    paths = sorted(p for p in (FORKMESH / "shortcuts").glob("*")
+                   if p.is_file())
+    assert paths
+    for path in paths:
+        relative = path.relative_to(PROJECT).as_posix()
+        text, out, warnings = _round_trip(relative)
+        assert out == text, relative
+        assert warnings == []
+
+
+DEPLOY = """#!/usr/bin/env bash
+# name: Deploy everything
+# description: Builds and ships both apps
+set -euo pipefail
+
+# step:   Deploy   Android build  
+bash .forkmesh/shortcuts/deploy-build-android.sh --first-build
+
+# step: Ship iOS
+cd native/ios
+  bash .forkmesh/shortcuts/ship_ios.v2.sh
+bash .forkmesh/shortcuts/second.sh
+
+echo "not a step"
+# step: too late
+
+#   step: Notify
+echo bash .forkmesh/shortcuts/no.sh
+"""
+
+
+def test_shortcut_named_steps_and_links():
+    path = ".forkmesh/shortcuts/deploy-all.sh"
+    document, warnings = files.parse_file(path, DEPLOY)
+    assert warnings == []
+    blocks = [(n["type"], n["name"], n["params"])
+              for n in document["nodes"][1:]]
+    assert [b[0] for b in blocks] == ["shortcut.block", "shortcut.run",
+                                      "shortcut.run", "shortcut.block",
+                                      "shortcut.block"]
+    assert [b[1] for b in blocks] == ["Commands 1", "Deploy Android build",
+                                      "Ship iOS", "Commands 4", "Notify"]
+    assert blocks[1][2]["shortcut"] == "deploy-build-android.sh"
+    assert blocks[2][2]["shortcut"] == "ship_ios.v2.sh"
+    assert "shortcut" not in blocks[3][2] and "shortcut" not in blocks[4][2]
+    out, _ = files.render_file(json.loads(json.dumps(document)))
+    assert out == DEPLOY
+    long_name = "# step: " + "x" * 120 + "\nbash .forkmesh/shortcuts/a.sh"
+    assert files.shortcut_step_name(long_name) == "x" * 80
+    assert files.shortcut_link("bash .forkmesh/shortcuts/a.sh;") == ""
+    assert files.shortcut_link("bash .forkmesh/shortcuts/a.sh") == "a.sh"
+    assert files.shortcut_link("bash  ./.forkmesh/shortcuts/a.sh") == ""
+    prompt, _ = files.parse_file(".forkmesh/shortcuts/ask.md",
+                                 "# name: Ask\n\n# step: Read\n"
+                                 "bash .forkmesh/shortcuts/a.sh\n")
+    assert [(n["type"], n["name"]) for n in prompt["nodes"][1:]] == [
+        ("shortcut.block", "Section 1")]
+
+
+def test_shortcut_run_nodes_render_like_blocks():
+    path = ".forkmesh/shortcuts/deploy-all.sh"
+    document, _ = files.parse_file(path, DEPLOY)
+    run = next(n for n in document["nodes"] if n["type"] == "shortcut.run")
+    run["params"] = {"text": "# step: Local only\necho changed",
+                     "shortcut": "stale.sh"}
+    document["nodes"].append({"id": "n1", "type": "shortcut.run",
+                              "name": "Run shortcut", "x": 0, "y": 0,
+                              "params": {"text": "bash .forkmesh/shortcuts/"
+                                                 "last.sh"}})
+    tail = document["connections"][-1]["to"]
+    document["connections"].append({"from": tail, "to": "n1"})
+    out, _ = files.render_file(document)
+    assert "# step: Local only\necho changed\n\n# step: Ship iOS" in out
+    assert out.endswith("echo bash .forkmesh/shortcuts/no.sh\n\n"
+                        "bash .forkmesh/shortcuts/last.sh\n")
+    again, _ = files.parse_file(path, out)
+    types = [n["type"] for n in again["nodes"]]
+    assert types[2] == "shortcut.block" and types[-1] == "shortcut.run"
+    assert again["nodes"][2]["name"] == "Local only"
+    run_spec = files.FILE_NODES["shortcut.run"]
+    assert run_spec["kind"] == "shortcut" and run_spec["icon"]
+    assert [f["key"] for f in run_spec["fields"]] == ["text"]
+
+
+def test_shortcut_without_final_newline_keeps_it_off():
+    path = ".forkmesh/shortcuts/plain.md"
+    text = "# name: Plain\n\nNo newline at the end"
+    document, _ = files.parse_file(path, text)
+    assert files.render_file(document)[0] == text
+    document["meta"].pop("finalNewline")
+    assert files.render_file(document)[0] == text + "\n"
+
+
 def test_special_agent_graph_controls_triggers_and_uses():
     text = (FORKMESH / "teammates" / "hearth.json").read_text(
         encoding="utf-8")

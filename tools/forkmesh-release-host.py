@@ -82,6 +82,20 @@ MACOS_X86_64_ASSET = "forkmesh-macos-x86_64.dmg"
 MACOS_ASSETS = (MACOS_ASSET, MACOS_X86_64_ASSET)
 HOST_ASSETS = (LINUX_ASSET, APPIMAGE_ASSET, APK_ASSET, WINDOWS_ASSET, MACOS_ASSET,
                MACOS_X86_64_ASSET)
+PLATFORM_ASSETS = {
+    "android": (APK_ASSET,),
+    "linux": (LINUX_ASSET, APPIMAGE_ASSET),
+    "macos": MACOS_ASSETS,
+    "windows": (WINDOWS_ASSET,),
+}
+PLATFORM_LABELS = {"android": "Android", "linux": "Linux", "macos": "macOS",
+                   "windows": "Windows"}
+MAX_BUILD = 99
+LOCK_WAIT_SECONDS = 4 * 60 * 60
+LOCK_POLL_SECONDS = 15
+CANDIDATE_WAIT_SECONDS = 2 * 60 * 60
+CANDIDATE_POLL_SECONDS = 30
+HOMEPAGE_POLL_SECONDS = 30
 CODEMAGIC_API = "https://api.codemagic.io"
 CODEMAGIC_DEFAULT_APP_ID = "6aac6e1e7b35578e30ad5a76"
 CODEMAGIC_WORKFLOW = "macos-desktop"
@@ -104,6 +118,7 @@ MACHO_FAT = b"\xca\xfe\xba\xbe"
 MACHO_THIN_64 = b"\xcf\xfa\xed\xfe"
 SCAN_OVERLAP = 256
 RELEASES = ".forkmesh/releases"
+BUILDS_FILE = f"{RELEASES}/builds.json"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import forkmesh_paths  # noqa: E402  (sibling module; tools run as scripts)
@@ -180,12 +195,13 @@ def parse_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups()) if match else None
 
 
-def android_version_code(tag: str) -> int:
-    """Android versionCode for a desktop release: MAJOR*10000 + MINOR*100 + PATCH.
+def android_version_code(tag: str, build: int = 1) -> int:
+    """Android versionCode for build N of a desktop release:
+    (MAJOR*10000 + MINOR*100 + PATCH) * 100 + N.
 
-    It only has to increase from release to release so each APK installs over
-    the previous one; v0.8.6's hand-built APK carried versionCode 4, and v0.8.7
-    is 807.
+    It only has to increase from build to build so each APK installs over
+    the previous one; v1.2.8 shipped as 10208 before build numbers, and its
+    successor v1.2.9 build 1 is 1020901.
     """
     version = parse_version(tag)
     if version is None:
@@ -196,7 +212,9 @@ def android_version_code(tag: str) -> int:
             f"release {tag} does not fit the MAJOR*10000+MINOR*100+PATCH "
             "versionCode scheme"
         )
-    return major * 10000 + minor * 100 + patch
+    if not 1 <= build <= MAX_BUILD:
+        raise CompletionError(f"build {build} is outside 1-{MAX_BUILD}")
+    return (major * 10000 + minor * 100 + patch) * 100 + build
 
 
 def asset_names(manifest: dict | None) -> frozenset[str]:
@@ -281,6 +299,107 @@ def pending_android_completion(
     if latest_version is not None and parse_version(str(manifest.get("tag"))) == latest_version:
         return None
     return (channel, manifest) if APK_ASSET in missing else None
+
+
+def valid_build(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAX_BUILD
+
+
+def parse_builds(text: str) -> dict:
+    try:
+        data = json.loads(text or "{}")
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    tag = str(data.get("tag") or "")
+    raw = data.get("builds") if isinstance(data.get("builds"), dict) else {}
+    return {
+        "tag": tag if parse_version(tag) else "",
+        "builds": {platform: raw[platform] if valid_build(raw.get(platform)) else 1
+                   for platform in PLATFORM_ASSETS},
+    }
+
+
+def render_builds(tag: str, builds: dict[str, int]) -> str:
+    return json.dumps({"tag": tag,
+                       "builds": {platform: builds.get(platform, 1)
+                                  for platform in PLATFORM_ASSETS}}, indent=2) + "\n"
+
+
+def recorded_builds(text: str, tag: str) -> dict[str, int]:
+    state = parse_builds(text)
+    if state["tag"] != tag:
+        return {platform: 1 for platform in PLATFORM_ASSETS}
+    return dict(state["builds"])
+
+
+def platform_build(manifest: dict | None, platform: str) -> int:
+    builds = [asset.get("build") for asset in (manifest or {}).get("assets", [])
+              if isinstance(asset, dict) and asset.get("name") in PLATFORM_ASSETS[platform]]
+    return max((build for build in builds if valid_build(build)), default=1)
+
+
+def deploy_target(manifests: dict[str, dict], tag: str | None = None) -> tuple[str, dict]:
+    if tag:
+        tag = tag if tag.startswith("v") else f"v{tag}"
+        channel = f"candidate-{tag.lstrip('v')}"
+        candidate = manifests.get(channel)
+        if candidate is None or candidate.get("tag") != tag:
+            raise CompletionError(f"main has no {channel} manifest for {tag}")
+        return channel, candidate
+    latest_version = parse_version(str((manifests.get("latest") or {}).get("tag", "")))
+    best = None
+    for channel, manifest in manifests.items():
+        if not channel.startswith("candidate-"):
+            continue
+        version = parse_version(str(manifest.get("tag", "")))
+        if version is None or f"candidate-{'.'.join(map(str, version))}" != channel:
+            continue
+        if latest_version is not None and version < latest_version:
+            continue
+        if best is None or version > best[0]:
+            best = (version, channel, manifest)
+    if best is None:
+        raise CompletionError("main has no release candidate to build for")
+    return best[1], best[2]
+
+
+def promotion_blockers(latest: dict | None, candidate_names: frozenset[str],
+                       required: frozenset[str]) -> frozenset[str]:
+    return (asset_names(latest) | required) - candidate_names
+
+
+def plan_deploy(manifests: dict[str, dict], platform: str, builds_text: str,
+                main_commit: str, tag: str | None = None,
+                first_build: bool = False) -> dict:
+    channel, candidate = deploy_target(manifests, tag)
+    tag = str(candidate["tag"])
+    names = PLATFORM_ASSETS[platform]
+    published = set(names) <= asset_names(candidate)
+    current = max(recorded_builds(builds_text, tag)[platform],
+                  platform_build(candidate, platform)) if published else 0
+    plan = {"platform": platform, "channel": channel, "tag": tag, "assets": names,
+            "current": current, "skip": False, "rebuild": published}
+    if published and first_build:
+        return dict(plan, skip=True, build=current,
+                    commit=str(candidate.get("build_commit", "")).lower())
+    if not published:
+        return dict(plan, build=1, commit=str(candidate.get("build_commit", "")).lower())
+    if current >= MAX_BUILD:
+        raise CompletionError(f"{PLATFORM_LABELS[platform]} {tag} already reached build "
+                              f"{MAX_BUILD}; cut a new version instead")
+    if not COMMIT_RE.match(main_commit or ""):
+        raise CompletionError("main has no exact commit to build from")
+    return dict(plan, build=current + 1, commit=main_commit.lower())
+
+
+def describe_plan(plan: dict) -> str:
+    label = PLATFORM_LABELS[plan["platform"]]
+    source = ("a rebuild from main" if plan["rebuild"]
+              else "the release's build commit")
+    return (f"{label} {plan['tag']} build {plan['build']} from {plan['commit'][:12]} "
+            f"({source}) into {plan['channel']}")
 
 
 def installer_public_key(install_sh: str) -> str:
@@ -1855,6 +1974,38 @@ def describe(missing: frozenset[str]) -> str:
     return ", ".join(sorted(missing))
 
 
+def parked_tag_target(repo: Path, tag: str, tag_commit: str) -> str | None:
+    peeled = git(repo, "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}", check=False)
+    if peeled.lower() == tag_commit:
+        return None
+    # A previous completion moved the tag onto its metadata commit (so
+    # updaters read the promoted manifest there). The publisher insists
+    # the tag still peels to the manifest's tag commit, so park it there
+    # for the publish and put it back afterwards; the served mirror never
+    # takes a non-forced tag move, so nothing public changes meanwhile.
+    descends = run(["git", "-C", repo, "merge-base", "--is-ancestor", tag_commit, peeled],
+                   check=False).returncode == 0
+    if not peeled or not descends:
+        raise CompletionError(f"tag {tag} points at {peeled[:12] or 'nothing'}, "
+                              f"not the candidate's tag commit {tag_commit[:12]}")
+    return peeled
+
+
+def release_hosts(args: argparse.Namespace) -> list:
+    hosts_file = Path(args.hosts_file).expanduser()
+    seed_file = Path(args.seed_hosts_file).expanduser()
+    hosts = seed_targets(
+        parse_hosts(hosts_file.read_text()) if hosts_file.is_file() else [],
+        Path(args.ssh_key).expanduser())
+    hosts += seed_targets(
+        seed_hosts(seed_file.read_text() if seed_file.is_file() else ""),
+        Path(args.seed_ssh_key).expanduser(),
+        Path(args.seed_known_hosts).expanduser())
+    if not hosts:
+        raise ConfigError(f"no release hosts listed in {hosts_file} or {seed_file}")
+    return hosts
+
+
 def complete_release(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     work = Path(args.work_dir).expanduser()
@@ -1905,20 +2056,7 @@ def complete_release(args: argparse.Namespace) -> int:
     build_commit = str(candidate.get("build_commit", "")).lower()
     if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
         raise CompletionError(f"{channel} manifest has no exact tag/build commit")
-    peeled = git(repo, "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}", check=False)
-    parked_tag = None
-    if peeled.lower() != tag_commit:
-        # A previous completion moved the tag onto its metadata commit (so
-        # updaters read the promoted manifest there). The publisher insists
-        # the tag still peels to the manifest's tag commit, so park it there
-        # for the publish and put it back afterwards; the served mirror never
-        # takes a non-forced tag move, so nothing public changes meanwhile.
-        descends = run(["git", "-C", repo, "merge-base", "--is-ancestor", tag_commit, peeled],
-                       check=False).returncode == 0
-        if not peeled or not descends:
-            raise CompletionError(f"tag {tag} points at {peeled[:12] or 'nothing'}, "
-                                  f"not the candidate's tag commit {tag_commit[:12]}")
-        parked_tag = peeled
+    parked_tag = parked_tag_target(repo, tag, tag_commit)
     marker = work / f"failed-{channel}"
     if not args.tag and failure_backoff_active(marker, time.time()):
         log(f"{channel} failed recently; waiting before another attempt")
@@ -1939,17 +2077,7 @@ def complete_release(args: argparse.Namespace) -> int:
         return 0
 
     installer_key = installer_public_key(git(repo, "show", "main:www/public/install.sh"))
-    hosts_file = Path(args.hosts_file).expanduser()
-    seed_file = Path(args.seed_hosts_file).expanduser()
-    hosts = seed_targets(
-        parse_hosts(hosts_file.read_text()) if hosts_file.is_file() else [],
-        Path(args.ssh_key).expanduser())
-    hosts += seed_targets(
-        seed_hosts(seed_file.read_text() if seed_file.is_file() else ""),
-        Path(args.seed_ssh_key).expanduser(),
-        Path(args.seed_known_hosts).expanduser())
-    if not hosts:
-        raise ConfigError(f"no release hosts listed in {hosts_file} or {seed_file}")
+    hosts = release_hosts(args)
 
     built: dict[str, Path] = {name: local_dmg for name in from_local}
     mac = find_build_mac() if macos_wanted else None
@@ -2133,6 +2261,223 @@ def check_homepage(args: argparse.Namespace, fetch=None, now=None) -> int:
                           f"does not serve the {tag} manifest on main ({reason})")
 
 
+def build_platform(plan: dict, repo: Path, work: Path, args: argparse.Namespace) -> dict[str, Path]:
+    platform, tag, commit, channel = plan["platform"], plan["tag"], plan["commit"], plan["channel"]
+    if platform == "linux":
+        linux = build_linux_assets(repo, work, tag, commit, channel)
+        return {name: linux[name] for name in (*LINUX_ASSETS, ZSYNC_ASSET)}
+    if platform == "android":
+        return {APK_ASSET: build_apk(repo, work, tag, commit,
+                                     android_version_code(tag, plan["build"]),
+                                     args.signer_sha256)}
+    if platform == "windows":
+        return {WINDOWS_ASSET: build_windows_installer(repo, work, tag, commit, channel,
+                                                       args.windows_signer_sha256)}
+    if args.macos_dmg:
+        dmg = Path(args.macos_dmg).expanduser()
+    else:
+        mac = find_build_mac()
+        dmg = None
+        if mac:
+            try:
+                dmg = build_macos_on_mac(mac, repo, work, tag, commit)
+            except MacUnreachable as exc:
+                log(str(exc))
+        if dmg is None:
+            if plan["rebuild"]:
+                raise CompletionError("a macOS rebuild needs the office Mac (Codemagic builds "
+                                      "only the release tag); start it and run this again")
+            client, build_id, deferred = start_codemagic_macos(tag, commit,
+                                                               args.public_repository)
+            if deferred:
+                raise CompletionError(f"the macOS image is deferred: {deferred}")
+            dmg = await_macos_dmg(client, build_id, tag, commit, work / f"macos-{tag}")
+    _, names = local_macos_dmg(dmg, commit)
+    if set(MACOS_ASSETS) - names:
+        raise CompletionError(f"{dmg.name} is not a universal image; "
+                              f"it can only be {describe(frozenset(names))}")
+    return {name: dmg for name in MACOS_ASSETS}
+
+
+def deploy_build(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    work = Path(args.work_dir).expanduser()
+    work.mkdir(parents=True, exist_ok=True)
+    cas = Path(args.served_mirror).expanduser() / "forkmesh-releases"
+    gate = _load_gate()
+    try:
+        required = gate.parse_required_assets(os.environ.get(gate.REQUIRED_ASSETS_ENV))
+    except gate.GateError as exc:
+        raise ConfigError(str(exc)) from None
+    manifests = manifests_at(repo, "main")
+    builds_text = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
+    plan = plan_deploy(manifests, args.deploy_build, builds_text,
+                       git(repo, "rev-parse", "--verify", "main"), args.tag, args.first_build)
+    label = PLATFORM_LABELS[plan["platform"]]
+    tag, channel = plan["tag"], plan["channel"]
+    candidate = manifests[channel]
+    if plan["skip"]:
+        log(f"{label} {tag} already has build {plan['build']}; nothing to build")
+        return 0
+    built_names = frozenset(plan["assets"]) | (
+        frozenset({ZSYNC_ASSET}) if plan["platform"] == "linux" else frozenset())
+    blockers = promotion_blockers(manifests.get("latest"),
+                                  asset_names(candidate) | built_names, required)
+    if args.dry_run:
+        log(f"plan: {describe_plan(plan)}")
+        log(f"plan: then {'promote it to latest' if not blockers else 'hold it back until ' + describe(blockers) + ' are built'}")
+        return 0
+    tag_commit = str(candidate.get("tag_commit", "")).lower()
+    build_commit = str(candidate.get("build_commit", "")).lower()
+    if not COMMIT_RE.match(tag_commit) or not COMMIT_RE.match(build_commit):
+        raise CompletionError(f"{channel} manifest has no exact tag/build commit")
+    installer_key = installer_public_key(git(repo, "show", "main:www/public/install.sh"))
+    hosts = release_hosts(args)
+    log(f"deploying {describe_plan(plan)}")
+    built = build_platform(plan, repo, work, args)
+    digests = {name: sha256_file(path) for name, path in built.items()}
+    builds = recorded_builds(builds_text, tag)
+    builds[plan["platform"]] = plan["build"]
+    publish_args = (("--build", str(plan["build"]), "--asset-commit", plan["commit"])
+                    if plan["rebuild"] else ())
+    branch = f"release/{tag}-{plan['platform']}-build-{plan['build']}"
+    promote_tree = work / f"promote-{tag}"
+    parked_tag = parked_tag_target(repo, tag, tag_commit)
+    if parked_tag:
+        move_tag(repo, tag, tag_commit)
+    try:
+        metadata_commit, assets = publish_and_promote(
+            repo, work, branch, promote_tree, channel, tag, tag_commit, build_commit,
+            cas, built, digests, frozenset(built), installer_key, promote=not blockers,
+            held_for=describe(blockers), publish_args=publish_args,
+            extra_files={BUILDS_FILE: render_builds(tag, builds)}, built_at=plan["commit"])
+    finally:
+        if parked_tag:
+            move_tag(repo, tag, parked_tag)
+    seed_mirrors(cas, sorted(set(assets.values())), hosts, args.remote_repository)
+    if args.no_land:
+        log(f"metadata committed on {branch} ({metadata_commit[:12]}); not merged or tagged")
+        return 0
+    land_on_main(repo, branch, f"Merge {branch}: publish {label} {tag} build {plan['build']}")
+    remove_worktree(repo, promote_tree)
+    if blockers:
+        log(f"{label} {tag} build {plan['build']} is in {channel}; it goes public once "
+            f"{describe(blockers)} are built")
+        return 0
+    move_tag(repo, tag, metadata_commit)
+    bare = Path(args.served_mirror).expanduser()
+    if bare.is_dir():
+        run(["git", "-C", bare, "fetch", "--quiet", repo, f"+refs/tags/{tag}:refs/tags/{tag}"],
+            check=False)
+    log(f"{label} {tag} build {plan['build']} is live in latest; tag -> {metadata_commit[:12]}")
+    return 0
+
+
+def reset_build_numbers(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    work = Path(args.work_dir).expanduser()
+    _, candidate = deploy_target(manifests_at(repo, "main"), args.tag)
+    tag = str(candidate["tag"])
+    current = run(["git", "-C", repo, "show", f"main:{BUILDS_FILE}"], check=False).stdout
+    text = render_builds(tag, {platform: 1 for platform in PLATFORM_ASSETS})
+    summary = ", ".join(f"{PLATFORM_LABELS[p]} 1" for p in PLATFORM_ASSETS)
+    if current == text:
+        log(f"{tag} build numbers are already reset: {summary}")
+        return 0
+    if args.dry_run:
+        log(f"dry run: would reset {tag} build numbers to {summary}")
+        return 0
+    branch = f"release/{tag}-reset-builds"
+    tree = work / f"reset-builds-{tag}"
+    remove_worktree(repo, tree)
+    if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False):
+        git(repo, "branch", "-D", branch)
+    git(repo, "worktree", "add", "-q", "-b", branch, str(tree), "main")
+    try:
+        (tree / BUILDS_FILE).write_text(text)
+        git(tree, "add", "--", BUILDS_FILE)
+        git(tree, "-c", "user.name=ForkMesh Actions", "-c", "user.email=actions@forkmesh.local",
+            "commit", "-q", "-m", f"release: reset {tag} build numbers to 1")
+    finally:
+        remove_worktree(repo, tree)
+    land_on_main(repo, branch, f"Merge {branch}: reset {tag} build numbers to 1")
+    log(f"{tag} build numbers reset: {summary}")
+    return 0
+
+
+def wait_for_candidate(args: argparse.Namespace, sleep=time.sleep,
+                       clock=time.monotonic) -> int:
+    repo = Path(args.repo).resolve()
+    tag = args.tag if args.tag.startswith("v") else f"v{args.tag}"
+    deadline = clock() + CANDIDATE_WAIT_SECONDS
+    announced = False
+    while True:
+        try:
+            channel, _ = deploy_target(manifests_at(repo, "main"), tag)
+        except CompletionError:
+            if clock() >= deadline:
+                raise CompletionError(f"main still has no candidate for {tag} after "
+                                      f"{CANDIDATE_WAIT_SECONDS // 60} minutes; check the "
+                                      "release workflow on the Actions page") from None
+            if not announced:
+                log(f"waiting for the release workflow to publish {tag}'s candidate on main")
+                announced = True
+            sleep(CANDIDATE_POLL_SECONDS)
+            continue
+        log(f"{channel} is on main; {tag} is ready for its builds")
+        return 0
+
+
+def check_build(args: argparse.Namespace, fetch=None, sleep=time.sleep,
+                clock=time.monotonic) -> int:
+    repo = Path(args.repo).resolve()
+    platform = args.check_build
+    label = PLATFORM_LABELS[platform]
+    manifests = manifests_at(repo, "main")
+    channel, candidate = deploy_target(manifests, args.tag)
+    latest = manifests.get("latest") or {}
+    tag = str(candidate.get("tag", ""))
+    if latest.get("tag") != tag:
+        log(f"{label} {tag} waits in {channel}; the homepage keeps "
+            f"{latest.get('tag') or 'its release'} until every platform is built")
+        return 0
+    build = platform_build(latest, platform)
+    if args.dry_run:
+        log(f"dry run: would wait for the homepage to offer {label} {tag} build {build}")
+        return 0
+    deadline = clock() + HOMEPAGE_WAIT_SECONDS
+    while True:
+        try:
+            served = (fetch or fetch_homepage_manifest)()
+            reason = f"it serves {served.get('tag') or 'no tag'}"
+        except (OSError, ValueError) as exc:
+            served, reason = {}, str(exc)
+        if (served.get("tag") == tag
+                and served.get("checksums_sha256") == latest.get("checksums_sha256")):
+            log(f"the homepage offers {label} {tag} build {build}")
+            return 0
+        if clock() >= deadline:
+            raise CompletionError(f"the homepage does not offer {label} {tag} build {build} "
+                                  f"yet ({reason})")
+        sleep(HOMEPAGE_POLL_SECONDS)
+
+
+def acquire_lock(lock, wait: bool, sleep=time.sleep, clock=time.monotonic) -> bool:
+    deadline = clock() + (LOCK_WAIT_SECONDS if wait else 0)
+    announced = False
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            if clock() >= deadline:
+                return False
+            if not announced:
+                log("waiting for the release host's current run to finish")
+                announced = True
+            sleep(LOCK_POLL_SECONDS)
+
+
 def save_rollout_state(path: Path, state: dict) -> None:
     staged = path.with_name(path.name + ".tmp")
     staged.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
@@ -2216,7 +2561,10 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
                         cas: Path, built: dict[str, Path], digests: dict[str, str],
                         missing: frozenset[str], installer_key: str,
                         promote: bool = True,
-                        held_for: str = MACOS_ASSET) -> tuple[str, dict[str, str]]:
+                        held_for: str = MACOS_ASSET,
+                        publish_args: tuple = (),
+                        extra_files: dict[str, str] | None = None,
+                        built_at: str = "") -> tuple[str, dict[str, str]]:
     """Publish the built assets into the candidate, promote it, verify the
     promoted manifest, and commit the metadata on `branch`."""
     remove_worktree(repo, promote_tree)
@@ -2235,8 +2583,12 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
             staged.append(target)
         run([promote_tree / "tools/forkmesh-release-publish.sh", "--channel", channel,
              "--signing-key", key, "--tag", tag, "--tag-commit", tag_commit,
-             "--build-commit", build_commit, "--cas-dir", cas, *staged],
+             "--build-commit", build_commit, "--cas-dir", cas, *publish_args, *staged],
             cwd=promote_tree)
+        for relative, text in (extra_files or {}).items():
+            (promote_tree / relative).write_text(text)
+            git(promote_tree, "add", "--", relative)
+        built_at = built_at or build_commit
         if not promote:
             candidate_dir = promote_tree / RELEASES / channel
             published = json.loads((candidate_dir / "release.json").read_text())
@@ -2249,7 +2601,7 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
             git(promote_tree, "-c", "user.name=ForkMesh Actions",
                 "-c", "user.email=actions@forkmesh.local", "commit", "-q", "-m",
                 f"release: publish {tag} {describe(frozenset(built))} into {channel}\n\n"
-                f"Held back for {held_for}. Built at {build_commit[:12]} by "
+                f"Held back for {held_for}. Built at {built_at[:12]} by "
                 f"tools/forkmesh-release-host.py:\n{summary}")
             return git(promote_tree, "rev-parse", "HEAD"), assets
         promoted = run([sys.executable, "tools/forkmesh-release-promote.py",
@@ -2275,17 +2627,32 @@ def publish_and_promote(repo: Path, work: Path, branch: str, promote_tree: Path,
     git(promote_tree, "-c", "user.name=ForkMesh Actions",
         "-c", "user.email=actions@forkmesh.local", "commit", "-q", "-m",
         f"release: publish {tag} {describe(missing)} and promote to latest\n\n"
-        f"Built at {build_commit[:12]} by tools/forkmesh-release-host.py:\n{summary}")
+        f"Built at {built_at[:12]} by tools/forkmesh-release-host.py:\n{summary}")
     metadata_commit = git(promote_tree, "rev-parse", "HEAD")
     return metadata_commit, assets
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    target = parser.add_mutually_exclusive_group(required=True)
+    target = parser.add_mutually_exclusive_group()
     target.add_argument("--auto", action="store_true",
                         help="complete the newest held-back release, if any")
     target.add_argument("--tag", help="complete this release, e.g. v0.8.7")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--deploy-build", choices=sorted(PLATFORM_ASSETS), metavar="PLATFORM",
+                       help="build the next build number of one platform (android, linux, "
+                            "macos, windows) and publish it to the homepage; the newest "
+                            "candidate's version unless --tag names one")
+    modes.add_argument("--check-build", choices=sorted(PLATFORM_ASSETS), metavar="PLATFORM",
+                       help="wait until the homepage offers that platform's newest build")
+    modes.add_argument("--reset-builds", action="store_true",
+                       help="reset every platform's build number to 1 for the newest "
+                            "candidate's version (or --tag)")
+    modes.add_argument("--wait-candidate", action="store_true",
+                       help="wait until main carries the --tag release's candidate manifest")
+    parser.add_argument("--first-build", action="store_true",
+                        help="with --deploy-build: build only when the platform has no "
+                             "build of this version yet")
     parser.add_argument("--only", action="append", choices=HOST_ASSETS,
                         help="build only this host asset (repeatable)")
     parser.add_argument("--dry-run", action="store_true")
@@ -2332,15 +2699,33 @@ def main(argv: list[str] | None = None) -> int:
                         default=os.environ.get("FORKMESH_WINDOWS_SIGNER_SHA256",
                                                DEFAULT_WINDOWS_SIGNER_SHA256))
     args = parser.parse_args(argv)
+    build_mode = args.deploy_build or args.reset_builds
+    if args.auto and (build_mode or args.check_build or args.wait_candidate):
+        parser.error("--auto completes held-back releases; give --tag or nothing instead")
+    if not (args.auto or args.tag or build_mode or args.check_build or args.wait_candidate):
+        parser.error("give --auto, --tag, --deploy-build, --check-build or --reset-builds")
+    if args.wait_candidate and not args.tag:
+        parser.error("--wait-candidate needs --tag")
+    if args.first_build and not args.deploy_build:
+        parser.error("--first-build goes with --deploy-build")
+    if args.check_build:
+        return run_step(check_build, args)
+    if args.wait_candidate:
+        return run_step(wait_for_candidate, args)
 
     work = Path(args.work_dir).expanduser()
     work.mkdir(parents=True, exist_ok=True)
     with (work / "lock").open("w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not acquire_lock(lock, bool(build_mode)):
+            if build_mode:
+                log(f"the release host stayed busy for {LOCK_WAIT_SECONDS // 3600} hours")
+                return 1
             log("another completion run holds the lock; exiting")
             return 0
+        if args.deploy_build:
+            return run_step(deploy_build, args)
+        if args.reset_builds:
+            return run_step(reset_build_numbers, args)
         codes = []
         if args.rollout_only:
             return run_step(roll_out_release, args)

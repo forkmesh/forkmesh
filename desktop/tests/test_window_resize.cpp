@@ -17679,6 +17679,80 @@ else:
         check(!shortcutPanelEntries().isEmpty(),
               QStringLiteral("switching the Shortcuts view back restores the cards"));
 
+        {
+            const QString deployPath = QDir(repository.path())
+                .filePath(QStringLiteral(".forkmesh/shortcuts/deploy-new-version.sh"));
+            const QString androidPath = QDir(repository.path())
+                .filePath(QStringLiteral(".forkmesh/shortcuts/deploy-build-android.sh"));
+            QByteArray deployScript =
+                "#!/usr/bin/env bash\n# name: Deploy new version\n\n"
+                "# step: Reset build numbers to 1\necho reset\n\n"
+                "# step: Android\n"
+                "bash .forkmesh/shortcuts/deploy-build-android.sh --first-build\n\n"
+                "echo unnamed block\n\n";
+            for (int i = 1; i <= 6; ++i)
+                deployScript += QStringLiteral("# step: Platform %1\necho %1\n\n")
+                                    .arg(i)
+                                    .toUtf8();
+            const bool stepFixtures =
+                writeFixture(QStringLiteral(".forkmesh/shortcuts/deploy-new-version.sh"),
+                             deployScript) &&
+                writeFixture(QStringLiteral(".forkmesh/shortcuts/deploy-build-android.sh"),
+                             QByteArrayLiteral("# name: Deploy Android build\necho android\n"));
+            if (shortcutsFilter) {
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("shortcuts")));
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("all")));
+            }
+            QPushButton *deployCard = shortcutCardNamed(QStringLiteral("Deploy new version"));
+            QPushButton *androidCard = shortcutCardNamed(QStringLiteral("Deploy Android build"));
+            QWidget *stepList =
+                deployCard ? deployCard->findChild<QWidget *>(QStringLiteral("shortcutStepList"))
+                           : nullptr;
+            if (stepList)
+                stepList->resize(qMax(stepList->width(), 300), stepList->sizeHint().height());
+            if (deployCard && !qEnvironmentVariableIsEmpty("FORKMESH_SHORTCUT_STEPS_SHOT"))
+                deployCard->grab().save(qEnvironmentVariable("FORKMESH_SHORTCUT_STEPS_SHOT"));
+            bool highlighted = false;
+            if (stepList) {
+                const QFontMetrics metrics = stepList->fontMetrics();
+                const QPointF point(16 + metrics.horizontalAdvance(QStringLiteral("Android")) +
+                                        2 + 8 + 6,
+                                    metrics.height() + 5 + (metrics.height() + 5) / 2);
+                const QPointF global = stepList->mapToGlobal(point);
+                QMouseEvent press(QEvent::MouseButtonPress, point, global, Qt::LeftButton,
+                                  Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent release(QEvent::MouseButtonRelease, point, global, Qt::LeftButton,
+                                    Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(stepList, &press);
+                QApplication::sendEvent(stepList, &release);
+                QApplication::processEvents();
+                highlighted =
+                    androidCard && androidCard->property("shortcutHighlighted").toBool();
+            }
+            check(stepFixtures && deployCard && androidCard && stepList &&
+                      deployCard->property("shortcutStepCount").toInt() == 8 &&
+                      stepList->toolTip().contains(
+                          QStringLiteral("2. Android → deploy-build-android.sh")) &&
+                      stepList->toolTip().contains(QStringLiteral("8. Platform 6")) &&
+                      androidCard->property("shortcutStepCount").toInt() == 0 &&
+                      highlighted,
+                  QString("a shortcut with steps draws them on its card and its link "
+                          "highlights the linked card (steps=%1 highlighted=%2)")
+                      .arg(deployCard ? deployCard->property("shortcutStepCount").toInt() : -1)
+                      .arg(highlighted));
+            QFile::remove(deployPath);
+            QFile::remove(androidPath);
+            if (shortcutsFilter) {
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("shortcuts")));
+                shortcutsFilter->setCurrentIndex(
+                    shortcutsFilter->findData(QStringLiteral("all")));
+            }
+            shortcutPanelEntries();
+        }
+
         window.testChooseTeammateRepo(repositoryIndex);
         auto *teamBackend = new ServerNode(
             QStringLiteral("qa-tester"), QStringLiteral("qa-node"),

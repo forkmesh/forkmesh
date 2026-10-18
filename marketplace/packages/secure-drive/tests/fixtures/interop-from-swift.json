@@ -1,0 +1,192 @@
+{
+    "format": "forkmesh-secure-drive-interop-v1",
+    "writer": "swift",
+    "container": "interop-from-swift.fmsd",
+    "passphrase": "correct horse battery",
+    "drive": "93256921a7937915df4f33297d2ae827",
+    "label": "Interop share",
+    "members": [
+        {
+            "device": "2f2ac236ae85c3c93689e20cb438c5e1",
+            "name": "Office iPhone",
+            "keys": {
+                "x25519": "qnpp3q5dYSrW7HtBKQqbyBMzk9u7KP7cDIfQiJN7Y4I",
+                "mlkemSeed": "u7Bkpbloql--voiLWaeywcDiTesQ3eh75DGE8kUpGa7hIQbyDl_LRLAXczS54GzCBSmkZVld5YwLI1e1bE2Pfg",
+                "ed25519": "NVAtO_Klvkk2pzdM9XX0aAXiZ540IzScUL8I9LPQ4qE"
+            },
+            "drives": [
+                {
+                    "id": "f38b46c99915091aac843ef5e55bf5a1",
+                    "container": "interop-from-swift.fmsd",
+                    "label": "Interop share",
+                    "drive": "93256921a7937915df4f33297d2ae827",
+                    "root": "2f2ac236ae85c3c93689e20cb438c5e1",
+                    "rootEd25519": "JRUUGtuqq7_7N9n5NEwZuC8LezOiyWO_RCq7T_bFuvc",
+                    "epochs": [
+                        {
+                            "id": "5cef8243d69557de",
+                            "n": 0,
+                            "key": "YIJ9m3nyokFFOdmaHSqDKQLzGiEJ5FWnQMObt4PoH_4"
+                        }
+                    ],
+                    "mailbox": 36,
+                    "lastSeq": 14,
+                    "lastHash": "7lY43VsA_xdFjLK0_6DR1jh3I8Zn9yIeL0DPlopw8Y0",
+                    "lamport": 18,
+                    "heads": {
+                        "2f2ac236ae85c3c93689e20cb438c5e1": [
+                            14,
+                            "7lY43VsA_xdFjLK0_6DR1jh3I8Zn9yIeL0DPlopw8Y0"
+                        ],
+                        "fbe38a051e7bcc97c832908e52ecccf7": [
+                            2,
+                            "yZP8eNVN9Lb8528OBYmqFnBh0YNeaNa-TrdtZ9LcpeM"
+                        ]
+                    },
+                    "rootGeneration": 16,
+                    "rootHash": "lO-2sH3UM1Vypa5ysB3j-k6HM8Se76gJLt4Ntq7JKVs",
+                    "removed": [],
+                    "cachedRoot": "eyJiIjoiZXlKMklqb3lMQ0prY21sMlpTSTZJamt6TWpVMk9USXhZVGM1TXpjNU1UVmtaalJtTXpNeU9UZGtNbUZsT0RJM0lpd2laMlZ1SWpveE5pd2ljR0ZuWlhNaU9qY3pMQ0pzYjJkeklqcDdJakptTW1Gak1qTTJZV1U0TldNell6a3pOamc1WlRJd1kySTBNemhqTldVeElqcGJXelE1TERGZFhTd2labUpsTXpoaE1EVXhaVGRpWTJNNU4yTTRNekk1TURobE5USmxZMk5qWmpjaU9sdGJORFlzTVYxZGZTd2lkM0pwZEdWeUlqb2lNbVl5WVdNeU16WmhaVGcxWXpOak9UTTJPRGxsTWpCallqUXpPR00xWlRFaUxDSjBhVzFsSWpveE56a3lNekF3TkRrek5UQTRMQ0p3Y21WMklqb2ljRnBxUVdkZkxWbE5ObU52VUZsQlREZGFMVWRoVVV0cVlscHFPVkpVTW5NMlNYTlhjRGM0ZFdaVVl5SjkiLCJzIjoiWmlMZFFsd21GbzNkRTBhY1JWS2RMODdUT0ZSQjhSbDFGU0dBT3ZBRjc4YjhibmpydnViY2RPalY0SWdvX3g0U1VlOTJ4T2hVWnItNEotVmVKVzBHQUEifQ",
+                    "keyringSeen": true,
+                    "joinSecret": "",
+                    "joinedAt": 1792300488479
+                }
+            ]
+        },
+        {
+            "device": "fbe38a051e7bcc97c832908e52ecccf7",
+            "name": "Front desk phone",
+            "keys": {
+                "x25519": "IVXegGuZbxH1rSilWwSl6zAPHZTZ1DmABJ3hepAGZkk",
+                "mlkemSeed": "_r_NWYwzBALvjmSyPMfJimtbEfyaVQRxzJWv5ivzIQbopQeOK8V2MHBLuDjeCxqbGL15ca-qFCAr4s-J2iTHWg",
+                "ed25519": "y9nyP39m1eGzv2BPY9nDyopvzit-xYP-GuQw7UZM_HY"
+            },
+            "drives": [
+                {
+                    "id": "bd0a8c0fdb6d30b69158b6a7062912df",
+                    "container": "interop-from-swift.fmsd",
+                    "label": "Interop share",
+                    "drive": "93256921a7937915df4f33297d2ae827",
+                    "root": "2f2ac236ae85c3c93689e20cb438c5e1",
+                    "rootEd25519": "JRUUGtuqq7_7N9n5NEwZuC8LezOiyWO_RCq7T_bFuvc",
+                    "epochs": [
+                        {
+                            "id": "5cef8243d69557de",
+                            "n": 0,
+                            "key": "YIJ9m3nyokFFOdmaHSqDKQLzGiEJ5FWnQMObt4PoH_4"
+                        }
+                    ],
+                    "mailbox": 35,
+                    "lastSeq": 2,
+                    "lastHash": "yZP8eNVN9Lb8528OBYmqFnBh0YNeaNa-TrdtZ9LcpeM",
+                    "lamport": 18,
+                    "heads": {
+                        "2f2ac236ae85c3c93689e20cb438c5e1": [
+                            14,
+                            "7lY43VsA_xdFjLK0_6DR1jh3I8Zn9yIeL0DPlopw8Y0"
+                        ],
+                        "fbe38a051e7bcc97c832908e52ecccf7": [
+                            2,
+                            "yZP8eNVN9Lb8528OBYmqFnBh0YNeaNa-TrdtZ9LcpeM"
+                        ]
+                    },
+                    "rootGeneration": 16,
+                    "rootHash": "lO-2sH3UM1Vypa5ysB3j-k6HM8Se76gJLt4Ntq7JKVs",
+                    "removed": [],
+                    "cachedRoot": "eyJiIjoiZXlKMklqb3lMQ0prY21sMlpTSTZJamt6TWpVMk9USXhZVGM1TXpjNU1UVmtaalJtTXpNeU9UZGtNbUZsT0RJM0lpd2laMlZ1SWpveE5pd2ljR0ZuWlhNaU9qY3pMQ0pzYjJkeklqcDdJakptTW1Gak1qTTJZV1U0TldNell6a3pOamc1WlRJd1kySTBNemhqTldVeElqcGJXelE1TERGZFhTd2labUpsTXpoaE1EVXhaVGRpWTJNNU4yTTRNekk1TURobE5USmxZMk5qWmpjaU9sdGJORFlzTVYxZGZTd2lkM0pwZEdWeUlqb2lNbVl5WVdNeU16WmhaVGcxWXpOak9UTTJPRGxsTWpCallqUXpPR00xWlRFaUxDSjBhVzFsSWpveE56a3lNekF3TkRrek5UQTRMQ0p3Y21WMklqb2ljRnBxUVdkZkxWbE5ObU52VUZsQlREZGFMVWRoVVV0cVlscHFPVkpVTW5NMlNYTlhjRGM0ZFdaVVl5SjkiLCJzIjoiWmlMZFFsd21GbzNkRTBhY1JWS2RMODdUT0ZSQjhSbDFGU0dBT3ZBRjc4YjhibmpydnViY2RPalY0SWdvX3g0U1VlOTJ4T2hVWnItNEotVmVKVzBHQUEifQ",
+                    "keyringSeen": true,
+                    "joinSecret": "",
+                    "joinedAt": 1792300491854
+                }
+            ]
+        }
+    ],
+    "pending": {
+        "device": "6315f08c836617b7b0e8a92845dfa53e",
+        "name": "Spare tablet",
+        "keys": {
+            "x25519": "PDubC3wipGOjcXWT-ptAWRy8PGQyJYUgRNLr46NA2ZQ",
+            "mlkemSeed": "7r4O3osja4j5hkQ1UkZkeRq1bL6j30QQfgPDZTNjB10cQcWoLMcvf06lie_d0XB_zIPpSFLgmucVVnb6kQjy-Q",
+            "ed25519": "DpBO_I1b3lM0wAUnAez7rGSV9QW-RPXsKNhkDhEiDj0"
+        },
+        "drives": [
+            {
+                "id": "93f1943a92b6ed07802bff127ee6b936",
+                "container": "interop-from-swift.fmsd",
+                "label": "interop-from-swift",
+                "drive": "",
+                "root": "",
+                "rootEd25519": "",
+                "epochs": [],
+                "mailbox": 49,
+                "lastSeq": -1,
+                "lastHash": "",
+                "lamport": 0,
+                "heads": {},
+                "rootGeneration": -1,
+                "rootHash": "",
+                "removed": [],
+                "cachedRoot": "",
+                "keyringSeen": false,
+                "joinSecret": "GNAZlGlb6E_znrsx_jdmRQ",
+                "joinedAt": 0
+            }
+        ]
+    },
+    "joinRequest": {
+        "mailbox": 49,
+        "name": "Spare tablet",
+        "safety": "44041 93912 85229 19658"
+    },
+    "openInviteCode": "Q9B-KWT-35V-TT2-M1T-KC4-XT0-YDM-EK1",
+    "files": [
+        {
+            "id": "7a75888575f56aef8d00054d796c933c",
+            "name": "Budget 2027.csv",
+            "kind": "spreadsheet",
+            "versions": 1,
+            "size": 54,
+            "sha256": "e7be6587dc7b403a6fd0f9a9e38761027c5d01d484899f9af608352a3a0bd28e"
+        },
+        {
+            "id": "d177dad18f4d58eaff8287520c315136",
+            "name": "empty.txt",
+            "kind": "text",
+            "versions": 1,
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "id": "5b1d53e5bd411eb0ec58228a97aac8c6",
+            "name": "Notes.html",
+            "kind": "document",
+            "versions": 2,
+            "size": 74,
+            "sha256": "3fec4804ba3a4b62b0cc1cba1e799252fa00aa6f42f9902322c76256bb057a8b"
+        },
+        {
+            "id": "7922b5b4c4377031895691c82e4a85d2",
+            "name": "photo.bin",
+            "kind": "file",
+            "versions": 1,
+            "size": 40000,
+            "sha256": "688bc99b0ae286c5f425ac7353e2d2efda3881b34e5a4d5566d30699cc550b2f"
+        },
+        {
+            "id": "bc6e635cc369ce49584fb6047d777ade",
+            "name": "Sketch.svg",
+            "kind": "drawing",
+            "versions": 1,
+            "size": 368,
+            "sha256": "41d0c0f1033a681de9783cb29dbcc08b6fafaf4ea139fd9d9617df24f5efac00"
+        }
+    ],
+    "deletedFiles": [
+        "old.txt"
+    ],
+    "minimumRecords": 18,
+    "deviceSafety": {
+        "2f2ac236ae85c3c93689e20cb438c5e1": "35277 18185 49854 15686",
+        "fbe38a051e7bcc97c832908e52ecccf7": "13301 33925 33017 82000"
+    }
+}
