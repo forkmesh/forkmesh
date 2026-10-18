@@ -58,7 +58,7 @@
     },
     {
       "id": "desktop.logins.use",
-      "label": "On the desktop, save the router password in your Password Vault and fill it from there when you ask",
+      "label": "Save the router password in your Password Vault and fill it from there when you ask",
       "risk": "sensitive"
     }
   ],

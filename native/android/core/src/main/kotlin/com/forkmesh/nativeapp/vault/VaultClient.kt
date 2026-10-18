@@ -42,6 +42,15 @@ class VaultRecipient(val name: String, val state: String, val fingerprint: Strin
 
 data class VaultShareOutcome(val sealedTo: List<String>, val skipped: List<String>, val withoutVault: List<String>)
 
+sealed class VaultLoginAnswer {
+    data class Saved(val changed: Boolean) : VaultLoginAnswer()
+    data class Found(val logins: List<VaultItem>) : VaultLoginAnswer()
+    data object Locked : VaultLoginAnswer()
+    data object NoVault : VaultLoginAnswer()
+    data object SignedOut : VaultLoginAnswer()
+    data class Failed(val text: String) : VaultLoginAnswer()
+}
+
 object VaultFields {
     val LIMITS = listOf("title" to 200, "username" to 320, "password" to 4096, "url" to 2048, "notes" to 8000)
 
@@ -292,6 +301,27 @@ class VaultClient(
 
     fun matching(host: String): List<VaultItem> = items.filter { it.readable && VaultCrypto.matchesHost(it.url, host) }
 
+    fun loginsFor(url: String): List<VaultItem> {
+        val origin = loginOrigin(url)
+        if (origin.isEmpty() || !unlocked) return emptyList()
+        return items.filter { it.readable && it.password.isNotEmpty() && loginOrigin(it.url) == origin }
+    }
+
+    fun rememberLogin(fields: Map<String, Any?>): Pair<String, Boolean> = guarded {
+        keys()
+        val url = fields["url"] as? String ?: ""
+        if (loginOrigin(url).isEmpty()) throw VaultException("invalid_url")
+        load()
+        val username = fields["username"] as? String ?: ""
+        val password = fields["password"] as? String ?: ""
+        val match = loginsFor(url).firstOrNull { it.permission != "read" && it.username == username }
+        if (match != null && match.password == password) return@guarded match.id to false
+        val next = if (match == null) fields else match.fields + ("password" to password)
+        val id = save(next, match?.id ?: "")
+        load()
+        id to true
+    }
+
     fun save(fields: Map<String, Any?>, id: String = ""): String = guarded {
         val keyset = keys()
         val clean = VaultFields.clean(fields)
@@ -498,6 +528,25 @@ class VaultClient(
     }
 
     companion object {
+        private val SCHEME_PREFIX = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
+
+        fun loginOrigin(url: String): String {
+            val text = url.trim()
+            if (text.isEmpty()) return ""
+            val uri = try {
+                java.net.URI(if (SCHEME_PREFIX.containsMatchIn(text)) text else "http://$text")
+            } catch (_: Exception) {
+                return ""
+            }
+            val scheme = uri.scheme?.lowercase() ?: return ""
+            if (scheme != "http" && scheme != "https") return ""
+            var host = uri.host?.lowercase() ?: return ""
+            if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length - 1)
+            if (host.isEmpty()) return ""
+            val port = if (uri.port > 0) uri.port else if (scheme == "https") 443 else 80
+            return "$scheme://$host:$port"
+        }
+
         internal fun trustState(pins: Map<String, Any?>, name: String, fingerprint: String): String {
             val pinned = pins[name] ?: return "new"
             return if (pinned == fingerprint) "pinned" else "changed"

@@ -492,6 +492,43 @@ public final class VaultClient {
         items.filter { $0.readable && VaultCrypto.matchesHost($0.url, host) }
     }
 
+    nonisolated public static func loginOrigin(_ url: String) -> String {
+        let text = url.dartTrimmed
+        if text.isEmpty { return "" }
+        let full = text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) != nil ? text : "http://" + text
+        guard let parts = URLComponents(string: full), let scheme = parts.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return "" }
+        var host = (parts.host ?? "").lowercased()
+        if host.hasPrefix("[") && host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        if host.isEmpty { return "" }
+        return "\(scheme)://\(host):\(parts.port ?? (scheme == "https" ? 443 : 80))"
+    }
+
+    public func logins(for url: String) -> [VaultItem] {
+        let origin = Self.loginOrigin(url)
+        if origin.isEmpty || !unlocked { return [] }
+        return items.filter { $0.readable && !$0.password.isEmpty && Self.loginOrigin($0.url) == origin }
+    }
+
+    public func rememberLogin(_ fields: JSONObject) async throws -> (id: String, changed: Bool) {
+        _ = try keys()
+        let url = fields["url"]?.string(or: "") ?? ""
+        if Self.loginOrigin(url).isEmpty { throw VaultError("invalid_url") }
+        _ = try await load()
+        let username = fields["username"]?.string(or: "") ?? ""
+        let password = fields["password"]?.string(or: "") ?? ""
+        let match = logins(for: url).first { $0.permission != "read" && $0.username == username }
+        if let match, match.password == password { return (match.id, false) }
+        var next = fields
+        if let match {
+            next = match.fields
+            next["password"] = .string(password)
+        }
+        let id = try await save(next, id: match?.id ?? "")
+        _ = try await load()
+        return (id, true)
+    }
+
     // MARK: - Writing
 
     @discardableResult

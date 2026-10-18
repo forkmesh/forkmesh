@@ -62,9 +62,9 @@ validation sits next to its tests rather than in the views.
 - **State.** iOS keeps an `@Observable` `OpenWrtRouterModel` per Router
   screen; Android a process-wide `OpenWrtState.shared` its sub-screens share.
   The address, user and pinned fingerprints are stored (`UserDefaults`, and the
-  `market.packages.openwrt` shared preferences); the password is not, and the
-  phones do not offer saving it in the Password Vault yet (the desktop does,
-  see Safety).
+  `market.packages.openwrt` shared preferences), with the `saveLogin` switch;
+  the password itself is stored only in the Password Vault, when saved there
+  (see Safety).
 - **Apply.** The same rollback loop as the desktop, with real sleeps injected
   by the app (`apply(rollback:wait:)`); the tests pass a recorder instead.
 
@@ -220,6 +220,21 @@ signed-in account has.
   fills the form and connects; a password that came from the vault is not
   saved back. Only a successful sign-in saves, so a mistyped password never
   reaches the vault. The manifest permission is `desktop.logins.use`.
+- **Saving it in the Password Vault (phones).** The phones have the same switch
+  (**Save the password in Password Vault**, on by default) and **Use saved
+  password** button whenever someone is signed in to ForkMesh. The Vault is
+  part of the app there, so the Router model calls `VaultService` directly:
+  `saveLogin(title, url, username, password)` and `findLogins(url)` answer
+  `VaultLoginAnswer` (`saved`, `found`, `locked`, `noVault`, `signedOut`,
+  `failed`), with the same origin match and update rules as the desktop
+  (`VaultClient.rememberLogin` / `loginsFor` / `loginOrigin`). A `locked`
+  answer makes the Router screen show the Vault's own unlock sheet
+  (`VaultUnlockSheet` on iOS, `VaultUnlockDialog` on Android), which names the
+  Router and the address, takes the master password or offers quick unlock,
+  and on success replays the save or fill. The Router model never sees the
+  master password. iOS: `OpenWrtRouterModel.saveInVault`, `signInWithVault`,
+  `vaultUnlocked`, `vaultPromptCancelled`, `useVaultLogin`; Android: the same
+  names on `OpenWrtState`.
 - **HTTPS.** OpenWrt's `luci-ssl` certificate is self-signed. On a TLS error
   the client reports the leaf certificate's SHA-256; the page shows it and
   **Trust this certificate** pins it per host and port. A pinned certificate

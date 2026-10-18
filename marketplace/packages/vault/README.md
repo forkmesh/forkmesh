@@ -198,6 +198,16 @@ the real Worker module.
 
 The vault locks when idle, after a minute in the background, and on sign-out.
 
+**Saving the Router's password.** `VaultService.saveLogin` and `findLogins`
+(both apps) let the Router keep its password here, with the same rules as the
+desktop's login store: matched by origin, an unchanged password is not saved
+again, a new one updates the login and keeps its title. A locked vault answers
+`locked`, and the Router shows this package's unlock sheet (`VaultUnlockSheet`,
+`VaultUnlockDialog`) rather than asking for the master password itself.
+`VaultClientFlowTests` / `VaultClientFlowTest` and
+`VaultScreenFlowTests.testAnotherFeatureSavesAndFindsALoginThroughTheService`
+check it against the real Worker module.
+
 **Quick unlock** (opt-in) keeps the unlocked keyset in the platform's secure
 storage and releases it after the device's own biometric or passcode prompt.
 It trades the master password's strength for the device lock's: anyone who can

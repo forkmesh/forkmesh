@@ -1,8 +1,20 @@
 import FMBase
 import FMFiles
 import FMPackages
+import FMVault
 import Foundation
 import Observation
+
+struct OpenWrtVaultPrompt: Identifiable {
+    enum Action {
+        case save(title: String, url: String, username: String, password: String, done: String)
+        case fill(url: String)
+    }
+
+    let id = UUID()
+    let purpose: String
+    let action: Action
+}
 
 @MainActor
 @Observable
@@ -24,8 +36,16 @@ final class OpenWrtRouterModel {
     var storageLog: String = ""
     var storageBusy: Bool = false
     var routerHost: String = ""
+    var saveToVault: Bool {
+        didSet { UserDefaults.standard.set(saveToVault, forKey: Self.prefix + "saveLogin") }
+    }
+    var vaultPrompt: OpenWrtVaultPrompt?
+    var vaultChoices: [VaultItem] = []
 
     @ObservationIgnored private var client: OpenWrtClient?
+    @ObservationIgnored private var loginUrl = ""
+    @ObservationIgnored private var loginUser = ""
+    @ObservationIgnored private var filledFromVault = ""
     @ObservationIgnored private var http: OpenWrtHTTPClient?
     @ObservationIgnored private var certificateKey: String = ""
 
@@ -33,6 +53,24 @@ final class OpenWrtRouterModel {
         let defaults = UserDefaults.standard
         address = defaults.string(forKey: Self.prefix + "address") ?? ""
         user = defaults.string(forKey: Self.prefix + "user") ?? "root"
+        saveToVault = defaults.object(forKey: Self.prefix + "saveLogin") as? Bool ?? true
+    }
+
+    var vault: VaultService? { Services.get(VaultService.self) }
+
+    var vaultOffered: Bool {
+        guard let vault else { return false }
+        return vault.phase != .signedOut
+    }
+
+    private static func origin(_ base: URL) -> String {
+        guard var parts = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return "" }
+        parts.user = nil
+        parts.password = nil
+        parts.path = ""
+        parts.query = nil
+        parts.fragment = nil
+        return parts.string ?? ""
     }
 
     var addressNote: String {
@@ -81,7 +119,8 @@ final class OpenWrtRouterModel {
         http = transport
         let router = OpenWrtClient(http: transport, base: target)
         let account = user.trimmingCharacters(in: .whitespaces).isEmpty ? "root" : user.trimmingCharacters(in: .whitespaces)
-        let result = await router.signIn(user: account, password: password)
+        let secret = password
+        let result = await router.signIn(user: account, password: secret)
         guard result.ok else {
             pendingCertificate = result.certificate
             show(result.error, error: true)
@@ -94,8 +133,108 @@ final class OpenWrtRouterModel {
         UserDefaults.standard.set(address, forKey: Self.prefix + "address")
         UserDefaults.standard.set(account, forKey: Self.prefix + "user")
         signedIn = true
-        show("Connected to \(host).")
+        loginUrl = Self.origin(base)
+        loginUser = account
+        let fromVault = !filledFromVault.isEmpty && secret == filledFromVault
+        filledFromVault = ""
+        let connected = "Connected to \(host)."
+        show(connected)
         await refresh()
+        if !fromVault && saveToVault && vaultOffered { await saveInVault(secret, done: connected) }
+    }
+
+    func saveInVault(_ secret: String, done: String) async {
+        guard !loginUrl.isEmpty, !secret.isEmpty else { return }
+        let host = URLComponents(string: loginUrl)?.host ?? routerHost
+        await perform(.save(title: "OpenWrt router (\(host))", url: loginUrl, username: loginUser.isEmpty ? "root" : loginUser,
+                            password: secret, done: done),
+                      purpose: "Router asks to save the password for \(loginUrl) in your Password Vault.")
+    }
+
+    func signInWithVault() async {
+        let typed = address.trimmingCharacters(in: .whitespaces).isEmpty ? "192.168.1.1" : address
+        let parsed = OpenWrtModel.parseAddress(typed)
+        guard parsed.valid, let base = parsed.base else {
+            show(parsed.error, error: true)
+            return
+        }
+        let url = Self.origin(base)
+        await perform(.fill(url: url), purpose: "Router asks for the password you saved for \(url).")
+    }
+
+    func vaultUnlocked() async {
+        guard let prompt = vaultPrompt else { return }
+        vaultPrompt = nil
+        await perform(prompt.action, purpose: prompt.purpose)
+    }
+
+    func vaultPromptCancelled() {
+        guard let prompt = vaultPrompt else { return }
+        vaultPrompt = nil
+        if case let .save(_, _, _, _, done) = prompt.action {
+            show("\(done) The password was not saved in Password Vault.")
+        } else {
+            show("")
+        }
+    }
+
+    func useVaultLogin(_ item: VaultItem) async {
+        vaultChoices = []
+        user = item.username.isEmpty ? "root" : item.username
+        password = item.password
+        filledFromVault = item.password
+        await connect()
+    }
+
+    private func perform(_ action: OpenWrtVaultPrompt.Action, purpose: String) async {
+        guard let vault else { return }
+        switch action {
+        case let .save(title, url, username, secret, done):
+            switch await vault.saveLogin(title: title, url: url, username: username, password: secret) {
+            case let .saved(changed):
+                show(changed ? "\(done) The password is saved in Password Vault." : "\(done) The password was already saved in Password Vault.")
+            case .locked:
+                vaultPrompt = OpenWrtVaultPrompt(purpose: purpose, action: action)
+            case .noVault:
+                show("\(done) The password was not saved: create a Password Vault first in Tools, Vault.", error: true)
+            case .signedOut:
+                show("\(done) Sign in to ForkMesh to save the password in Password Vault.", error: true)
+            case let .failed(text):
+                show("\(done) The password was not saved in Password Vault: \(text)", error: true)
+            case .found:
+                break
+            }
+        case let .fill(url):
+            switch await vault.findLogins(url: url) {
+            case let .found(items):
+                await choose(items, url: url)
+            case .locked:
+                vaultPrompt = OpenWrtVaultPrompt(purpose: purpose, action: action)
+            case .noVault:
+                show("There is no Password Vault on this account yet. Create one in Tools, Vault.", error: true)
+            case .signedOut:
+                show("Sign in to ForkMesh to use Password Vault.", error: true)
+            case let .failed(text):
+                show(text, error: true)
+            case .saved:
+                break
+            }
+        }
+    }
+
+    private func choose(_ items: [VaultItem], url: String) async {
+        if items.isEmpty {
+            show("Password Vault has no password for \(url) yet. Type it once with “Save the password in Password Vault” on.", error: true)
+            return
+        }
+        let typed = user.trimmingCharacters(in: .whitespaces).isEmpty ? "root" : user.trimmingCharacters(in: .whitespaces)
+        if let same = items.first(where: { $0.username == typed }) {
+            await useVaultLogin(same)
+        } else if items.count == 1 {
+            await useVaultLogin(items[0])
+        } else {
+            vaultChoices = items
+        }
     }
 
     func trustCertificate() async {
@@ -115,6 +254,8 @@ final class OpenWrtRouterModel {
         storageLog = ""
         storageBusy = false
         routerHost = ""
+        loginUrl = ""
+        loginUser = ""
         FilesLibrary.shared.routerShares = []
     }
 
@@ -414,6 +555,7 @@ final class OpenWrtRouterModel {
         let result = await client.call("luci", "setPassword", ["username": .string(account.isEmpty ? "root" : account), "password": .string(password)])
         if result.ok { await client.rememberPassword(password) }
         report(result, "Router password changed.")
+        if result.ok && saveToVault && vaultOffered { await saveInVault(password, done: "Router password changed.") }
         return result.ok
     }
 }

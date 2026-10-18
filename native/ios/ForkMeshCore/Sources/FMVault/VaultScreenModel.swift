@@ -36,6 +36,7 @@ public enum VaultCopy {
         "vault_full": "This vault is full.",
         "title_required": "Give the login a title.",
         "invalid_session": "Sign in to ForkMesh to open your vault.",
+        "invalid_url": "That login has no web address the vault can match.",
     ]
 
     /// The sentence for a vault error code, the code spelled out when

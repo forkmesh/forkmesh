@@ -22,6 +22,7 @@ object VaultScreenLogic {
         "vault_full" to "This vault is full.",
         "title_required" to "Give the login a title.",
         "invalid_session" to "Sign in to ForkMesh to open your vault.",
+        "invalid_url" to "That login has no web address the vault can match.",
     )
 
     fun errorText(error: Throwable): String {

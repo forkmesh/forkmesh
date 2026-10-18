@@ -21,6 +21,8 @@ import com.forkmesh.nativeapp.vault.VaultClient
 import com.forkmesh.nativeapp.vault.VaultCrypto
 import com.forkmesh.nativeapp.vault.VaultException
 import com.forkmesh.nativeapp.vault.VaultItem
+import com.forkmesh.nativeapp.vault.VaultLoginAnswer
+import com.forkmesh.nativeapp.vault.VaultScreenLogic
 import com.forkmesh.nativeapp.vault.VaultRecipient
 import com.forkmesh.nativeapp.vault.VaultShareOutcome
 import kotlinx.coroutines.CoroutineScope
@@ -298,6 +300,45 @@ class VaultService(
         val saved = io { client.save(fields, id) }
         reload()
         return saved
+    }
+
+    suspend fun saveLogin(title: String, url: String, username: String, password: String): VaultLoginAnswer {
+        loginBlocked()?.let { return it }
+        touch()
+        return try {
+            val fields = mapOf("title" to title, "url" to url, "username" to username, "password" to password, "notes" to "")
+            val (_, changed) = io { client.rememberLogin(fields) }
+            syncAutofill()
+            publish()
+            VaultLoginAnswer.Saved(changed)
+        } catch (error: Exception) {
+            VaultLoginAnswer.Failed(VaultScreenLogic.errorText(error))
+        }
+    }
+
+    suspend fun findLogins(url: String): VaultLoginAnswer {
+        loginBlocked()?.let { return it }
+        touch()
+        return try {
+            reload()
+            VaultLoginAnswer.Found(client.loginsFor(url))
+        } catch (error: Exception) {
+            VaultLoginAnswer.Failed(VaultScreenLogic.errorText(error))
+        }
+    }
+
+    private suspend fun loginBlocked(): VaultLoginAnswer? {
+        try {
+            refresh()
+        } catch (error: Exception) {
+            return VaultLoginAnswer.Failed(VaultScreenLogic.errorText(error))
+        }
+        return when (phaseState.value) {
+            VaultPhase.Unlocked -> null
+            VaultPhase.NotSetUp -> VaultLoginAnswer.NoVault
+            VaultPhase.SignedOut -> VaultLoginAnswer.SignedOut
+            VaultPhase.Loading, VaultPhase.Locked -> VaultLoginAnswer.Locked
+        }
     }
 
     suspend fun remove(id: String) {
