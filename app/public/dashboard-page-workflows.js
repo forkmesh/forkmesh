@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["workflows"] = (core) => {
-  const { $, $$, blobText, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, platformName, sendTextToPrompt, state } = core;
+  const { $, $$, blobText, desktopBrand, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, platformName, sendTextToPrompt, state } = core;
   const WF_NODE_W = 216;
   const WF_NODE_H = 64;
   const WF_GRID = 8;
@@ -71,8 +71,8 @@
     forbidden: "You need write access to this repository to save.",
     conflict: "The file changed in the repository while you were editing. Reload it and try again.",
     plugin_not_installed: "This part of Workflows is turned off for your account.",
-    runs_on_desktop: "This workflow runs on your desktop. Press Run workflow here while the ForkMesh desktop app is open.",
-    desktop_steps_only: "Desktop steps cannot be mixed with steps that run on ForkMesh. Keep them in their own workflow.",
+    runs_on_desktop: `This workflow runs on your desktop. Press Run workflow here while the ${desktopBrand()}desktop app is open.`,
+    desktop_steps_only: `Desktop steps cannot be mixed with steps that run on ${platformName()}. Keep them in their own workflow.`,
     desktop_needs_manual: "Desktop steps run only by hand: start the workflow with Manual run.",
     not_a_desktop_workflow: "Only workflows with desktop steps record runs from the desktop.",
     invalid_run: "The desktop's run could not be recorded.",
@@ -81,7 +81,7 @@
   const WF_DESKTOP_ERRORS = {
     busy: "Another disk cleanup step is still running on the desktop.",
     bad_step: "The desktop does not know this step.",
-    unsupported_action: "The desktop app is too old for desktop steps. Update ForkMesh on the desktop.",
+    unsupported_action: `The desktop app is too old for desktop steps. Update the ${desktopBrand()}desktop app.`,
     cleanup_failed: "The cleanup step failed on the desktop.",
   };
   const WF_FAILURE_PROMPT_MAX = 7500;
@@ -894,7 +894,7 @@
       return { kind: "script-part", label: "Part of a script", icon: "file-code", text: `One part of ${script.path} (${script.language}). Your desktop runs only this part of the script, with --step ${script.step}.` };
     }
     if (node.type === "core.code") {
-      return { kind: "script", label: "Script", icon: "file-code", text: "Your own JavaScript. ForkMesh's sandboxed script interpreter runs it on the server, or on the phone that runs the workflow; it cannot reach files, the network or the host." };
+      return { kind: "script", label: "Script", icon: "file-code", text: `Your own JavaScript. ${platformName()}'s sandboxed script interpreter runs it on the server, or on the phone that runs the workflow; it cannot reach files, the network or the host.` };
     }
     if (node.type === "core.comment") return { kind: "note", label: "Note", icon: "sticky-note", text: "A note on the canvas. It does not run and passes nothing on." };
     if (wfIsFileMode()) {
@@ -913,12 +913,12 @@
     if (spec.kind === "app") return { kind: "integration", label: "Integration call", icon: "plug", text: `Calls the ${spec.name} API once for each item it receives, signed in with the credential you pick.` };
     if (node.type === "core.http") return { kind: "request", label: "Web request", icon: "globe", text: "Calls the address you enter once for each item it receives and passes the reply on." };
     if (node.type === "core.runWorkflow") return { kind: "workflow", label: "Runs another workflow", icon: "workflow", text: "Runs one of your other workflows with each item and passes on what it returns." };
-    if (spec.kind === "core") return { kind: "built-in", label: "Built-in step", icon: "box", text: "A step built into ForkMesh. It works on the items it receives and calls nothing outside ForkMesh." };
-    return { kind: "unknown", label: "Unknown step", icon: "circle-help", text: "This step type is not in the catalog any more, so ForkMesh cannot run it." };
+    if (spec.kind === "core") return { kind: "built-in", label: "Built-in step", icon: "box", text: `A step built into ${platformName()}. It works on the items it receives and calls nothing outside ${platformName()}.` };
+    return { kind: "unknown", label: "Unknown step", icon: "circle-help", text: `This step type is not in the catalog any more, so ${platformName()} cannot run it.` };
   }
 
   function wfRunsOn(node) {
-    if (wfIsDesktopType(node.type)) return "Your desktop, through the ForkMesh desktop app";
+    if (wfIsDesktopType(node.type)) return `Your desktop, through the ${desktopBrand()}desktop app`;
     if (node.type === "core.comment") return "Nowhere, it is a note";
     if (wfIsFileMode()) {
       const kind = wfView().current?.kind;
@@ -927,7 +927,7 @@
       if (kind === "skill") return "In the agent that loads the skill";
       return "In the special agent";
     }
-    return "The ForkMesh server, or the phone that runs the workflow";
+    return `The ${platformName()} server, or the phone that runs the workflow`;
   }
 
   function wfNeighbours(node) {
@@ -1214,7 +1214,7 @@
       return `<details class="wf-more wf-script-part" data-wf-script-part="${escapeHtml(name)}"${name === open ? " open" : ""}><summary><span class="wf-mono">${escapeHtml(name)}()</span><span class="wf-help mt-0">lines ${start} to ${end}</span></summary>${wfCodeHtml(lines.slice(start - 1, end).join("\n"), start)}</details>`;
     }).join("");
     const whole = `<details class="wf-more wf-script-part" data-wf-script-part=""><summary><span>Whole file</span><span class="wf-help mt-0">${lines.length} lines; the code this step runs is marked</span></summary>${wfCodeHtml(lines.join("\n"), 1, (number) => ranges.some(([start, end]) => number >= start && number <= end))}</details>`;
-    wfOpenDialog(`${info.path} · ${node.name}`, "file-code", `<div class="p-2">${facts}<p class="wf-label">Code this step runs, in the order it is used</p>${parts}${whole}<p class="wf-help">This is the copy on the ForkMesh server. Your desktop runs the copy in its own checkout, which matches once both are up to date.</p></div>`, true);
+    wfOpenDialog(`${info.path} · ${node.name}`, "file-code", `<div class="p-2">${facts}<p class="wf-label">Code this step runs, in the order it is used</p>${parts}${whole}<p class="wf-help">This is the copy on the ${escapeHtml(platformName())} server. Your desktop runs the copy in its own checkout, which matches once both are up to date.</p></div>`, true);
     if (focus) wfScrollToMark(`[data-wf-script-part="${CSS.escape(focus)}"]`);
   }
 
@@ -1455,7 +1455,7 @@
     const ordered = wfRunOrder(workflow).map((node) => node.id).filter((id) => nodes[id]);
     const ids = ordered.concat(Object.keys(nodes).filter((id) => !ordered.includes(id)));
     const where = `/dashboard/workflows${workflow.id ? `?id=${encodeURIComponent(workflow.id)}` : ""}`;
-    const lines = [`The ForkMesh workflow "${workflow.name || "Untitled workflow"}" failed (${where}). Find the cause and fix it.`, ""];
+    const lines = [`The ${platformName()} workflow "${workflow.name || "Untitled workflow"}" failed (${where}). Find the cause and fix it.`, ""];
     const started = Number(run.startedAt) ? new Date(Number(run.startedAt)).toISOString() : "an unknown time";
     lines.push(`Run ${run.id || "(not saved)"}, ${wfTriggerLabel(run.trigger)}, started ${started}, failed after ${wfDuration((run.finishedAt || 0) - (run.startedAt || 0))}.`);
     if (run.error) lines.push(`Error: ${run.error}`);
@@ -1859,7 +1859,7 @@
     if (!state.session?.sessionToken) throw new Error(WF_ERROR_TEXT.unauthorized);
     const hub = await desktopControlHub();
     const desktops = await hub.desktops();
-    if (!desktops.length) throw new Error("No ForkMesh desktop is linked to your account. Open the desktop app and sign in, then run this again.");
+    if (!desktops.length) throw new Error(`No ${desktopBrand()}desktop is linked to your account. Open the desktop app and sign in, then run this again.`);
     let failure = null;
     for (const desktop of desktops) {
       try {

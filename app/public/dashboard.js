@@ -45221,7 +45221,7 @@
     "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=987abe164a59",
-    "workflows": "/dashboard-page-workflows.js?v=35a9e53b7c1d",
+    "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",
   };
   const dashboardChunkScope = {
     $,
