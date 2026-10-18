@@ -241,6 +241,36 @@ class ProjectsTest {
         assertEq(ProbeStatus.ok, older.status)
         assertEq("Connected to ForkMesh 1.2.4.", older.message)
         assertEq("", older.logoUrl)
+        expect(!older.branded)
+    }
+
+    fun testProbeReadsTheLogoFromTheManifestOfAnOlderBrandedInstance() {
+        val version = response(200, "{\"ok\":true,\"rev\":\"r1\",\"worker\":\"w\"}")
+        var instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"branded\":true}")
+        var manifest = response(200, "{\"icons\":[{\"src\":\"/instance-logo.svg\"},{\"src\":\"/instance-logo.png\"}]}")
+        val requested = ArrayList<String>()
+        val probe = ProjectProbe(HttpTransport { request ->
+            requested.add(request.url)
+            when {
+                request.url.endsWith("/api/instance") -> instance
+                request.url.endsWith("/favicon/site.webmanifest") -> manifest
+                else -> version
+            }
+        })
+        val older = probe.check("relay.example.com")
+        expect(older.branded)
+        assertEq("https://relay.example.com/instance-logo.png", older.logoUrl)
+        expect(requested.last() == "https://relay.example.com/favicon/site.webmanifest")
+        manifest = response(200, "{\"icons\":[{\"src\":\"/favicon/android-chrome-192x192.png\"}]}")
+        assertEq("", probe.check("relay.example.com").logoUrl)
+        manifest = response(404, "")
+        assertEq("", probe.check("relay.example.com").logoUrl)
+        instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"branded\":true,\"logo\":\"\"}")
+        requested.clear()
+        val noLogo = probe.check("relay.example.com")
+        assertEq("", noLogo.logoUrl)
+        expect(noLogo.branded)
+        expect(requested.none { it.endsWith("/favicon/site.webmanifest") })
     }
 
     private class RecordingDriver(override val directory: ProjectDirectory) : ProjectSwitchDriver {

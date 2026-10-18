@@ -606,7 +606,7 @@ private fun AddProjectDialog(projects: ProjectsService, done: (Project?) -> Unit
                 ProjectImages.remember(logoName, picked)
                 if (hasHost) projects.setLogo(created.id, logoName)
             } else if (hasHost) {
-                projects.adoptInstanceLogo(created.id, result?.logoUrl.orEmpty())
+                projects.adoptInstanceLogo(created.id, result?.logoUrl.orEmpty(), result?.branded == true)
             }
             done(projects.directory.byId(created.id) ?: created)
         }

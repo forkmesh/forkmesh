@@ -236,7 +236,8 @@ def test_brand_tool_puts_a_raster_logo_everywhere_the_mark_was(tmp_path):
     assert apply_instance_brand.apply(dist, "Acme Code", logo) == 0
 
 
-def test_brand_tool_uses_an_svg_logo_as_it_is_and_refuses_unsafe_ones(tmp_path):
+def test_brand_tool_uses_an_svg_logo_as_it_is_and_refuses_unsafe_ones(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path / "no-tools"))
     dist = branded_dist(tmp_path / "dist")
     (dist / "instance-logo.png").write_bytes(PNG)
     svg = b'<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>'
@@ -252,6 +253,29 @@ def test_brand_tool_uses_an_svg_logo_as_it_is_and_refuses_unsafe_ones(tmp_path):
         logo.write_bytes(bad)
         with pytest.raises(SystemExit):
             apply_instance_brand.apply(dist, "Acme Code", logo)
+
+
+def test_brand_tool_gives_an_svg_logo_a_png_copy_for_the_phone_apps(tmp_path, monkeypatch):
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    fake = tools / "rsvg-convert"
+    fake.write_text("#!/bin/sh\nprintf '%%s ' \"$@\" > %s\nprintf '\\211PNG\\r\\n\\032\\nraster'\n" % (tools / "args"))
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools))
+    dist = branded_dist(tmp_path / "dist")
+    logo = tmp_path / "logo.svg"
+    logo.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>')
+    apply_instance_brand.apply(dist, "Acme Code", logo)
+    assert (dist / "instance-logo.png").read_bytes() == b"\x89PNG\r\n\x1a\nraster"
+    assert (tools / "args").read_text().split() == ["--width", "512", "--height", "512", "--keep-aspect-ratio"]
+    manifest = json.loads((dist / "favicon" / "site.webmanifest").read_text())
+    assert manifest["icons"] == [
+        {"src": "/instance-logo.png", "sizes": "512x512", "type": "image/png"},
+        {"src": "/instance-logo.svg", "sizes": "any", "type": "image/svg+xml"}]
+    assert 'href="/instance-logo.svg"' in (dist / "index.html").read_text()
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    apply_instance_brand.apply(dist, "Acme Code", logo)
+    assert not (dist / "instance-logo.png").exists()
 
 
 def test_branded_email_shows_the_instance_logo():
