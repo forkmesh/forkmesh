@@ -925,6 +925,7 @@ RUNNER_AGENT_REF_REST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$")
 RUNNER_BRANCH_REF_REST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 RUNNER_GRANT_MAX_TOKEN = 4096
 RUNNER_PUSH_ACCESS = ("push", "actions-push")
+RUNNER_READ_ACCESS = ("read", "actions-push")
 # A push grant names one ref, so one command is the most a valid push holds.
 RUNNER_PUSH_MAX_COMMANDS = 1
 RUNNER_PUSH_MAX_PREAMBLE_LINES = 64
@@ -9432,10 +9433,11 @@ class GatewayApplication:
     ) -> GatewayResponse:
         """Native git smart-HTTP for one runner grant (see RUNNER_GRANT_*).
 
-        A read grant serves info/refs + upload-pack. A push grant serves the
-        receive-pack advertisement and a receive-pack whose every command
-        updates exactly the grant's ref, forward only; the command section
-        is checked before git runs, so a refused push changes nothing.
+        A read or actions-push grant serves info/refs + upload-pack. A push
+        grant serves the receive-pack advertisement and a receive-pack whose
+        every command updates exactly the grant's ref, forward only; the
+        command section is checked before git runs, so a refused push changes
+        nothing.
         """
         owner, name, route_operation = route
         normalized = {str(k).lower(): str(v) for k, v in headers.items()}
@@ -9451,11 +9453,12 @@ class GatewayApplication:
                 "git-upload-pack", "git-receive-pack"
             ):
                 raise GatewayError("Git service is not available")
-            access = (
-                "read" if service == "git-upload-pack" else RUNNER_PUSH_ACCESS)
-            self._runner_grant(headers, owner, name, access)
+            reading = service == "git-upload-pack"
+            self._runner_grant(
+                headers, owner, name,
+                RUNNER_READ_ACCESS if reading else RUNNER_PUSH_ACCESS)
             repository = self._runner_repository(owner, name)
-            if access == "read":
+            if reading:
                 return GatewayResponse(
                     200,
                     "application/x-git-upload-pack-advertisement",
@@ -9473,7 +9476,7 @@ class GatewayApplication:
         if route_operation == "git-upload-pack":
             if content_type != "application/x-git-upload-pack-request":
                 raise GatewayError("Git service is not available")
-            self._runner_grant(headers, owner, name, "read")
+            self._runner_grant(headers, owner, name, RUNNER_READ_ACCESS)
             repository = self._runner_repository(owner, name)
             decoded_body = _decode_git_body(
                 body, normalized.get("content-encoding", ""))

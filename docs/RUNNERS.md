@@ -69,7 +69,9 @@ arbitrary code inside its sandbox. It cannot:
   a delete, a push certificate or malformed input; non-fast-forward pushes are
   denied. An instance's own Actions runner may hold an `actions-push` grant
   for one `refs/heads/<branch>` instead, accepted only as a fast-forward of
-  the existing tip ([server/instance-actions.md](server/instance-actions.md)).
+  the existing tip; that grant also fetches the same repository, so a
+  workflow can rebase before it pushes
+  ([server/instance-actions.md](server/instance-actions.md)).
 - **Mint or extend a grant.** Grants are Ed25519-signed by the router key,
   which only the app holds, over `forkmesh-runner-grant-v1` plus node, owner,
   repo, access, ref, runner, grant id and times.
