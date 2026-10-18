@@ -191,7 +191,7 @@ public enum StatsCatalog {
         StatsTileCatalogEntry(id: "codemagic", title: "Codemagic minutes", group: "Builds",
                               hint: "Free Codemagic build minutes left this month, read by your paired desktop",
                               symbol: "hammer"),
-    ]
+    ] + LiveReleases.catalog + DesktopTiles.catalog
 
     public static let defaults: [StatsTilePlacement] = [
         StatsTilePlacement(id: "nodes"), StatsTilePlacement(id: "repos"),
@@ -200,7 +200,7 @@ public enum StatsCatalog {
         StatsTilePlacement(id: "desktopLoad"), StatsTilePlacement(id: "hosts"),
         StatsTilePlacement(id: "incidents"), StatsTilePlacement(id: "codemagic"),
         StatsTilePlacement(id: "desktopMemory"), StatsTilePlacement(id: "stalls"),
-    ]
+    ] + LiveReleases.defaults + DesktopTiles.defaults
 
     public static func entry(_ id: String) -> StatsTileCatalogEntry? { entries.first { $0.id == id } }
 }
@@ -208,6 +208,7 @@ public enum StatsCatalog {
 public final class StatsLayoutStore: @unchecked Sendable {
     public static let layoutKey = "insights/stats/layout.v1"
     public static let offeredKey = "insights/stats/offered.v1"
+    public static let desktopTilesKey = "insights/stats/desktop-tiles.v1"
 
     private let store: KeyValueStore
     private let scope: String
@@ -237,6 +238,14 @@ public final class StatsLayoutStore: @unchecked Sendable {
 
     public func reset() {
         store.remove(key(StatsLayoutStore.layoutKey))
+    }
+
+    public func loadDesktopTiles() -> Set<String> {
+        Set((store.stringList(forKey: key(StatsLayoutStore.desktopTilesKey)) ?? []).filter { DesktopTiles.ids.contains($0) })
+    }
+
+    public func saveDesktopTiles(_ ids: Set<String>) {
+        store.set(ids.sorted(), forKey: key(StatsLayoutStore.desktopTilesKey))
     }
 }
 

@@ -57,7 +57,7 @@ Paths: `D/` is `desktop/src/`, `MP/` is `marketplace/packages/`, `NI/` is
 | 9 | Pings, chat, DMs, World | Inbox, chat depth, Discord bridge over `discord.` | World speech bridge |
 | 10 | Notes, calendar, timers | Notes, calendar, timers (local notifications and Live Activities) | None |
 | 11 | Marketplace and packages | Market, CRM, marketing, analytics, ads, ledger, tips, password vault and AutoFill | System voice changer, IDE and browser extensions, suggested host apps, package publishing |
-| 12 | Stats, health, logs, diagnostics | Stats, desktop health summary over `diag.`, logs, admin console | Component health, memory page, Qt diagnostics, background attribution |
+| 12 | Stats, health, logs, diagnostics | Stats (every desktop tile over `stats.tiles`, release versions; [STATS.md](STATS.md)), desktop health summary over `diag.`, logs, admin console | Component health, memory page, Qt diagnostics, background attribution |
 | 13 | Settings | Account, appearance, pings, SSH keys, MCP, identity, devices, data | Suggested apps |
 | 14 | Accounts, identity, keys, devices | Sign-in, keys, devices, organizations | Claude Code device setup |
 | 15 | Projects and multi-instance | One isolated scope per project (PARITY.md, WS1) | None |

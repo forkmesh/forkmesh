@@ -32,6 +32,7 @@ Topic pages:
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
+| [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |

@@ -366,6 +366,79 @@ QVector<StatsTilePlacement> StatsDashboard::layoutFromJson(const QJsonArray &arr
     return layout;
 }
 
+namespace {
+
+QString statusWire(StatsTileStatus status)
+{
+    switch (status) {
+    case StatsTileStatus::Good:
+        return QStringLiteral("good");
+    case StatsTileStatus::Warning:
+        return QStringLiteral("warning");
+    case StatsTileStatus::Critical:
+        return QStringLiteral("critical");
+    case StatsTileStatus::None:
+        break;
+    }
+    return QStringLiteral("none");
+}
+
+QString trendWire(StatsTrendPolarity trend)
+{
+    switch (trend) {
+    case StatsTrendPolarity::UpIsGood:
+        return QStringLiteral("up");
+    case StatsTrendPolarity::DownIsGood:
+        return QStringLiteral("down");
+    case StatsTrendPolarity::Neutral:
+        break;
+    }
+    return QStringLiteral("neutral");
+}
+
+QString clipped(const QString &text, int max)
+{
+    return text.size() <= max ? text : text.left(max);
+}
+
+}
+
+QJsonObject StatsDashboard::tileToJson(const StatsTileCatalogEntry &entry,
+                                       const StatsTileData &data)
+{
+    QJsonObject tile{{QStringLiteral("id"), entry.id},
+                     {QStringLiteral("title"), clipped(entry.title, kMaxRemoteTextChars)},
+                     {QStringLiteral("group"), clipped(entry.group, kMaxRemoteTextChars)},
+                     {QStringLiteral("hint"), clipped(entry.hint, kMaxRemoteNoteChars)},
+                     {QStringLiteral("value"), clipped(data.value, kMaxRemoteTextChars)},
+                     {QStringLiteral("note"), clipped(data.note, kMaxRemoteNoteChars)},
+                     {QStringLiteral("unit"), clipped(data.unit, kMaxRemoteTextChars)},
+                     {QStringLiteral("available"), data.available},
+                     {QStringLiteral("status"), statusWire(data.status)},
+                     {QStringLiteral("trend"), trendWire(data.trend)}};
+    if (data.series.isEmpty())
+        return tile;
+    const int count = int(data.series.values.size());
+    const int first = qMax(0, count - kMaxRemoteSeriesPoints);
+    QJsonArray labels;
+    QJsonArray values;
+    QJsonArray tones;
+    for (int index = first; index < count; ++index) {
+        const double value = data.series.values.at(index);
+        values.append(std::isfinite(value) ? value : 0.0);
+        labels.append(clipped(data.series.labels.value(index), kMaxRemoteTextChars));
+        if (data.series.tones.size() == count)
+            tones.append(statusWire(data.series.tones.at(index)));
+    }
+    QJsonObject series{{QStringLiteral("labels"), labels},
+                       {QStringLiteral("values"), values},
+                       {QStringLiteral("categorical"), data.series.categorical}};
+    if (!tones.isEmpty())
+        series.insert(QStringLiteral("tones"), tones);
+    tile.insert(QStringLiteral("series"), series);
+    return tile;
+}
+
 StatsDashboard::LayoutMerge StatsDashboard::mergeSavedLayout(
     const QVector<StatsTilePlacement> &saved, bool hasSaved,
     const QVector<StatsTilePlacement> &defaults,
