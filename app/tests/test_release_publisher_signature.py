@@ -225,3 +225,49 @@ def test_same_release_candidate_accumulates_platform_assets(release_repo):
         "forkmesh-linux-x86_64",
         "forkmesh-windows-x86_64-setup.exe",
     }
+
+
+def test_platform_rebuild_records_its_build_and_commit(release_repo):
+    repo, commit, linux, private_key, _ = release_repo
+    windows = repo / "forkmesh-windows-x86_64-setup.exe"
+    windows.write_bytes(b"MZ native setup\n")
+    common = (
+        "--channel", "candidate-1.2.3",
+        "--tag", "v1.2.3",
+        "--build-commit", commit,
+        "--cas-dir", repo / "cas",
+        "--signing-key", private_key,
+    )
+    assert _run(*common, linux, windows, cwd=repo).returncode == 0
+    rebuilt_commit = "ab" * 20
+    windows.write_bytes(b"MZ native setup, build 2\n")
+    second = _run(*common, "--build", "2", "--asset-commit", rebuilt_commit.upper(),
+                  windows, cwd=repo)
+    assert second.returncode == 0, second.stderr
+    manifest_path = repo / ".forkmesh/releases/candidate-1.2.3/release.json"
+    manifest = json.loads(manifest_path.read_text())
+    assets = {asset["name"]: asset for asset in manifest["assets"]}
+    assert manifest["build_commit"] == commit
+    assert "build" not in assets["forkmesh-linux-x86_64"]
+    assert assets["forkmesh-windows-x86_64-setup.exe"]["build"] == 2
+    assert assets["forkmesh-windows-x86_64-setup.exe"]["commit"] == rebuilt_commit
+    assert manifest_path.read_text().count('"build_commit"') == 1
+
+    linux.write_bytes(b"\x7fELF build 3\n")
+    third = _run(*common, "--build", "3", "--asset-commit", rebuilt_commit, linux, cwd=repo)
+    assert third.returncode == 0, third.stderr
+    assets = {a["name"]: a for a in json.loads(manifest_path.read_text())["assets"]}
+    assert assets["forkmesh-windows-x86_64-setup.exe"]["build"] == 2
+    assert assets["forkmesh-linux-x86_64"]["build"] == 3
+
+
+@pytest.mark.parametrize("build,asset_commit", [("0", "ab" * 20), ("2", ""), ("x", "ab" * 20),
+                                                ("2", "not-a-commit")])
+def test_platform_rebuild_rejects_bad_build_fields(release_repo, build, asset_commit):
+    repo, commit, linux, private_key, _ = release_repo
+    result = _run("--channel", "candidate-1.2.3", "--tag", "v1.2.3",
+                  "--build-commit", commit, "--cas-dir", repo / "cas",
+                  "--signing-key", private_key, "--build", build,
+                  "--asset-commit", asset_commit, linux, cwd=repo)
+    assert result.returncode == 2
+    assert not (repo / ".forkmesh/releases/candidate-1.2.3/release.json").exists()

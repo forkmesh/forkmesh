@@ -1,20 +1,28 @@
 package com.forkmesh.nativeapp.feature.teammates
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -25,11 +33,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.feature.agents.opsIo
 import com.forkmesh.nativeapp.feature.agents.rememberOpsTick
 import com.forkmesh.nativeapp.feature.code.DetailScaffold
@@ -38,6 +56,7 @@ import com.forkmesh.nativeapp.teammates.ShortcutEntry
 import com.forkmesh.nativeapp.teammates.ShortcutProgress
 import com.forkmesh.nativeapp.teammates.ShortcutRowStatus
 import com.forkmesh.nativeapp.teammates.ShortcutRun
+import com.forkmesh.nativeapp.teammates.ShortcutStep
 import com.forkmesh.nativeapp.teammates.TeamErrorText
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
@@ -48,7 +67,9 @@ import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import com.forkmesh.nativeapp.ui.theme.FmIcon
+import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
 import kotlinx.coroutines.CancellationException
@@ -83,10 +104,14 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
             }
         }
         LaunchedEffect(Unit) { load(repo) }
-        fun open(entry: ShortcutEntry) {
+        fun open(entry: ShortcutEntry, reveal: Boolean) {
             scope.launch {
                 try {
                     shown = entry to opsIo { store.text(repo, entry) }
+                    if (reveal) {
+                        repeat(2) { withFrameNanos { } }
+                        list.animateScrollToItem(maxOf(0, list.layoutInfo.totalItemsCount - detailItems(entry)))
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -162,11 +187,11 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
                     if (catalog.shortcuts.isNotEmpty()) {
                         item { FmSectionHeader("Shortcuts", count = catalog.shortcuts.size) }
                         val busy = store.repoBusy(repo)
-                        items(catalog.shortcuts, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), busy, entry.id in working, ::open, actions) }
+                        items(catalog.shortcuts, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), busy, entry.id in working, { open(it, false) }, actions) }
                     }
                     if (catalog.skills.isNotEmpty()) {
                         item { FmSectionHeader("Skills", count = catalog.skills.size) }
-                        items(catalog.skills, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), false, entry.id in working, ::open, actions) }
+                        items(catalog.skills, key = { it.id }) { entry -> ShortcutRow(entry, store.status(repo, entry), false, entry.id in working, { open(it, false) }, actions) }
                     }
                     if (catalog.entries.isEmpty() && !store.loading) {
                         item { Text("No shortcuts or skills here yet.", style = Fm.text.bodyMedium.copy(color = c.textSecondary)) }
@@ -182,7 +207,98 @@ internal class ShortcutsScreen(private val opened: String) : Screen() {
                             )
                         }
                     }
+                    if (entry.steps.isNotEmpty()) {
+                        item { ShortcutSteps(entry, { step -> catalog?.target(entry, step) }, { open(it, true) }) }
+                    }
                     item { FmCard(Modifier.fillMaxWidth()) { SelectionContainer { Text(text, style = Fm.text.bodySmall.copy(color = c.textPrimary)) } } }
+                }
+            }
+        }
+    }
+}
+
+private fun detailItems(entry: ShortcutEntry): Int = 2 + (if (entry.runnable) 0 else 1) + (if (entry.steps.isEmpty()) 0 else 1)
+
+@Composable
+private fun ShortcutSteps(entry: ShortcutEntry, target: (ShortcutStep) -> ShortcutEntry?, onOpen: (ShortcutEntry) -> Unit) {
+    val c = Fm.colors
+    val haptics = FmHaptics.current
+    val dot = with(LocalDensity.current) { 22.sp.toDp() }
+    FmCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = FmSpace.x3, vertical = FmSpace.x1)) {
+        Column {
+            entry.steps.forEachIndexed { index, step ->
+                val linked = target(step)
+                val spoken = step.spoken(index, entry.steps.size, linked != null)
+                val first = index == 0
+                val last = index == entry.steps.lastIndex
+                val line = c.border
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .height(IntrinsicSize.Min)
+                        .clip(RoundedCornerShape(FmRadius.sm))
+                        .then(
+                            if (linked != null) {
+                                Modifier.clickable(role = Role.Button, onClickLabel = "Open ${linked.name.ifEmpty { linked.file }}") {
+                                    haptics.tap()
+                                    onOpen(linked)
+                                }
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .semantics(mergeDescendants = true) { contentDescription = spoken },
+                ) {
+                    Box(
+                        Modifier
+                            .width(dot + FmSpace.x1)
+                            .fillMaxHeight()
+                            .drawBehind {
+                                val x = size.width / 2
+                                val top = FmSpace.x3.toPx()
+                                val stroke = 2.dp.toPx()
+                                if (!first) drawLine(line, Offset(x, 0f), Offset(x, top), stroke)
+                                if (!last) drawLine(line, Offset(x, top + dot.toPx()), Offset(x, size.height), stroke)
+                            },
+                    ) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = FmSpace.x3)
+                                .size(dot)
+                                .clip(CircleShape)
+                                .background(if (linked != null) c.accentSubtle else c.bgOverlay)
+                                .border(1.dp, if (linked != null) c.accent else c.border, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "${index + 1}",
+                                style = Fm.text.labelSmall.copy(color = if (linked != null) c.accent else c.textSecondary, fontWeight = FmType.emphasis),
+                                maxLines = 1,
+                                modifier = Modifier.clearAndSetSemantics { },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(FmSpace.x3))
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(vertical = FmSpace.x3)
+                            .heightIn(min = dot),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            step.name,
+                            style = Fm.text.bodyMedium.copy(color = if (linked != null) c.accent else c.textPrimary),
+                            modifier = Modifier.clearAndSetSemantics { },
+                        )
+                    }
+                    if (linked != null) {
+                        Box(Modifier.padding(top = FmSpace.x3).heightIn(min = dot), contentAlignment = Alignment.Center) {
+                            FmIcon("chevron_right", size = 20.dp, tint = c.accent)
+                        }
+                    }
                 }
             }
         }
@@ -228,6 +344,9 @@ private fun ShortcutRow(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
+                if (entry.steps.isNotEmpty()) {
+                    Text(entry.stepsText, style = Fm.text.bodySmall.copy(color = c.textSecondary), maxLines = 1)
                 }
                 ShortcutTiming(status)
                 if (entry.queued > 0) {

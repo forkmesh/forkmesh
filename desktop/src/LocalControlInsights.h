@@ -61,6 +61,15 @@ struct ShortcutMeta {
     QString model;
 };
 ShortcutMeta parseShortcutMeta(const QString &fileName, const QString &text);
+struct ShortcutStep {
+    QString name;
+    QString shortcut;
+};
+constexpr int kMaxShortcutSteps = 32;
+constexpr int kMaxShortcutStepName = 80;
+bool isShortcutStepLine(const QString &line);
+QList<ShortcutStep> parseShortcutSteps(const QString &text);
+QJsonArray shortcutStepRows(const QList<ShortcutStep> &steps);
 QString shortcutPrompt(const QString &text);
 QString shortcutKind(const QString &fileName, bool executable);
 bool validShortcutFile(const QString &fileName);

@@ -81,6 +81,8 @@ answers them without running the Worker. Static responses carry
   `earlierAsset` checks the signed
   `candidate-<major>.<minor>.<patch-1…patch-6>` manifests, newest first, and
   links the first verified copy, labelled with that manifest's tag.
+  A per-platform rebuild (an asset with `build` above 1) shows `Build N` in
+  the card's details and in its title and label.
   Two assets of one platform that share a `blob_sha256` render as one
   "Universal" card. A newer `candidate-<version>` is named only when it
   carries a verified asset the card offers.

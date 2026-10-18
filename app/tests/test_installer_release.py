@@ -904,3 +904,38 @@ def test_local_binary_missing_or_empty_upload_declines():
     rc, installed, _ = _run_local(b"")  # exists but empty
     assert rc != 0
     assert installed is None
+
+
+def _rebuilt_manifest(sums_line, release_commit, asset_commit):
+    return (
+        '{"schema":"forkmesh-release-v2","repo":"forkmesh/forkmesh",'
+        '"tag":"v0.7.0","tag_commit":"%s","build_commit":"%s",'
+        '"channel":"latest","checksums_sha256":"%s",'
+        '"assets":[{"name":"forkmesh-linux-x86_64","build":2,"commit":"%s"},'
+        '{"name":"forkmesh-linux-x86_64.AppImage"}]}'
+        % ("f0" * 20, release_commit, hashlib.sha256(sums_line.encode()).hexdigest(),
+           asset_commit)
+    )
+
+
+def test_commit_pinned_install_uses_a_rebuilt_assets_own_commit():
+    rebuilt = "d4" * 20
+    payload = (
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  --version) printf "ForkMesh 0.7.0\\n" ;;\n'
+        '  --build-commit) printf "%s\\n" ;;\n'
+        "  *) exit 2 ;;\n"
+        "esac\n" % rebuilt
+    ).encode()
+    sums = "%s  forkmesh-linux-x86_64\n" % hashlib.sha256(payload).hexdigest()
+    manifest = _rebuilt_manifest(sums, "a1" * 20, rebuilt.upper())
+    rc, installed, stderr, _ = _run(sums, payload, manifest=manifest,
+                                    expected_build_commit=rebuilt, expected_version="0.7.0")
+    assert rc == 0, stderr
+    assert installed == payload
+    rc, installed, stderr, _ = _run(sums, payload, manifest=manifest,
+                                    expected_build_commit="a1" * 20,
+                                    expected_version="0.7.0")
+    assert rc != 0 and installed is None
+    assert "does not match required build commit" in stderr
