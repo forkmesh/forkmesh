@@ -479,6 +479,16 @@ public final class AccountPackagesStore {
         saveVersions()
     }
 
+    public func canMarkUpdated(hubItem id: String) -> Bool {
+        PackageRoutes.packageId(forHubItem: id).map { latestVersions[$0] != nil && !updated.contains($0) } ?? false
+    }
+
+    public func markAllUnviewed() {
+        guard updated.count < latestVersions.count else { return }
+        seenVersions = [:]
+        saveVersions()
+    }
+
     private func adoptVersions(_ packages: [MarketPackage]) {
         for package in packages where !package.version.isEmpty {
             latestVersions[package.id] = package.version

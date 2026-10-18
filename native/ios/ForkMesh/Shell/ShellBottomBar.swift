@@ -771,6 +771,8 @@ struct ShellBarCellLabel: View {
 
     private var ringSize: CGFloat { tiled ? tileSide - 5 : iconSize + 10 }
 
+    private var haloOutset: CGFloat { ringShown && !tiled ? 8 : 0 }
+
     var body: some View {
         VStack(spacing: spacing) {
             glyph
@@ -782,7 +784,7 @@ struct ShellBarCellLabel: View {
                     }
                 }
                 .background {
-                    if item.active && activity && !ringShown {
+                    if item.active && activity {
                         activityMark
                             .transition(.scale.combined(with: .opacity))
                     } else if heat > 0 {
@@ -834,9 +836,9 @@ struct ShellBarCellLabel: View {
     @ViewBuilder private var activityMark: some View {
         if homeMarks {
             ShellHomeActivityRing(
-                size: tiled ? tileSide + 5 : iconSize + 14, corner: tiled ? tileSide * 0.3 + 2.5 : nil)
+                size: (tiled ? tileSide + 5 : iconSize + 14) + haloOutset, corner: tiled ? tileSide * 0.3 + 2.5 : nil)
         } else {
-            ShellActivityHalo(size: (tiled ? tileSide : iconSize) + 10)
+            ShellActivityHalo(size: (tiled ? tileSide : iconSize) + 10 + haloOutset)
         }
     }
 

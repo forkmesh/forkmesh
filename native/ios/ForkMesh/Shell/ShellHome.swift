@@ -40,6 +40,8 @@ struct ShellHome: View {
     var isUpdated: (String) -> Bool = { (_: String) in false }
     var onSearch: (String) -> Void = { (_: String) in }
     var onClearUpdates: () -> Void = {}
+    var canShowUpdate: (String) -> Bool = { (_: String) in false }
+    var onShowUpdates: () -> Void = {}
     let onPick: (ShellBarItem) -> Void
 
     @State private var naming: ShellBarNaming?
@@ -219,6 +221,10 @@ struct ShellHome: View {
             ShellBarSettingsSheet(prefs: prefs)
         }
         .confirmationDialog("Home", isPresented: $backgroundMenuShown, titleVisibility: .hidden) {
+            if canShowUpdates {
+                Button("Show all update dots") { showUpdates() }
+                    .accessibilityIdentifier("shell-home-background-show-dots")
+            }
             if hasUpdates {
                 Button("Clear all update dots") { clearUpdates() }
                     .accessibilityIdentifier("shell-home-background-clear-dots")
@@ -270,6 +276,17 @@ struct ShellHome: View {
 
     private var hasUpdates: Bool {
         linked.contains { (group: ShellMenuGroup) in group.items.contains { isUpdated($0.id) } }
+    }
+
+    private var canShowUpdates: Bool {
+        linked.contains { (group: ShellMenuGroup) in group.items.contains { canShowUpdate($0.id) } }
+    }
+
+    private func showUpdates() {
+        withAnimation(reduceMotion ? nil : .snappy) {
+            onShowUpdates()
+        }
+        FmHaptics.success()
     }
 
     private func clearUpdates() {

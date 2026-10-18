@@ -144,6 +144,9 @@ destination, in sections, with counts and activity:
   updates twice a second. With no earlier run to estimate from it spins a
   short arc instead. It follows the Show activity setting, and VoiceOver reads
   "Running, N percent". The operator asked for it on 2026-10-18.
+  The activity halo stays on outside the ring (`ShellBarCellLabel.haloOutset`
+  widens it 8 pt when icons are not tiles, so the two do not overlap); the
+  operator asked for the halo back the same day.
 - The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
   once per turn of the activity ring (`ShellActivityHalo.turn`), when the
   ring's bright head passes the top-left corner where the count sits
@@ -180,6 +183,11 @@ destination, in sections, with counts and activity:
   long-press menus while any dot shows. The background fills at least one
   screen (`minHeight: viewHeight`) so the space below a short grid answers the
   press. The operator asked for it on 2026-10-18.
+  The background menu also offers **Show all update dots** while any plugin
+  tile with a known Market version has no dot:
+  `AccountPackagesStore.markAllUnviewed()` forgets every seen version, so each
+  such tile shows its dot again until it is tapped. The operator asked for it
+  the same day, to clear dots one icon at a time.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.

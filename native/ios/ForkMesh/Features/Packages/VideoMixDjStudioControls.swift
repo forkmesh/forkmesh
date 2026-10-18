@@ -232,7 +232,9 @@ struct DjWaveform: View {
                 let bars = deck.waveform
                 let duration = deck.duration
                 Canvas(rendersAsynchronously: false) { context, area in
+                    let began = CACurrentMediaTime()
                     DjWaveDrawing.zoomed(context, area, bars: bars, time: time, duration: duration)
+                    DjVitalsRecorder.shared.work(.wave, from: began, to: CACurrentMediaTime())
                 }
             }
             .contentShape(Rectangle())

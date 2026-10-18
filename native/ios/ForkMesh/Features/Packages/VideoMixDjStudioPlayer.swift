@@ -1,4 +1,5 @@
 import FMPackages
+import QuartzCore
 import SwiftUI
 import UIKit
 import WebKit
@@ -34,7 +35,6 @@ final class DjDeckPlayer {
     func stop() { host.stop(side) }
     func seek(_ seconds: Double) { host.call(side, "seekTo", DjPlayerHost.number(seconds), "true") }
     func setRate(_ rate: Double) { host.setRate(side, rate) }
-    func setVolume(_ volume: DjVolume) { host.setVolume(side, volume) }
     func scratch(_ speed: Double?, at seconds: Double) { host.scratch(side, speed, at: seconds) }
 }
 
@@ -50,6 +50,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
     private var lastLoad: [DjDeckSide: String] = [:]
     private var lastVolume: [DjDeckSide: DjVolume] = [:]
     private var handOff: UIBackgroundTaskIdentifier = .invalid
+    private var scripts = 0
 
     init(origin: URL) {
         self.origin = origin
@@ -148,10 +149,15 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         run("fmScratch('\(side.rawValue)',\(speed.map(Self.number) ?? "null"),\(Self.number(seconds)))")
     }
 
-    func setVolume(_ side: DjDeckSide, _ volume: DjVolume) {
-        guard apiReady, lastVolume[side] != volume else { return }
-        lastVolume[side] = volume
-        run("fmVolume('\(side.rawValue)',\(volume.level),\(volume.muted),\(Self.number(volume.gain)))")
+    func setVolumes(_ volumes: [(DjDeckSide, DjVolume)]) {
+        guard apiReady else { return }
+        var calls: [String] = []
+        for (side, volume) in volumes where lastVolume[side] != volume {
+            lastVolume[side] = volume
+            calls.append("fmVolume('\(side.rawValue)',\(volume.level),\(volume.muted),\(Self.number(volume.gain)))")
+        }
+        guard !calls.isEmpty else { return }
+        run(calls.joined(separator: ";"))
     }
 
     fileprivate func receive(_ body: Any) {
@@ -190,7 +196,17 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
 
     private func run(_ script: String) {
         guard apiReady else { return }
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        scripts += 1
+        DjVitalsRecorder.shared.update { $0.scriptSent() }
+        guard scripts % DjDiagnostics.scriptSampleEvery == 0 else {
+            webView.evaluateJavaScript(script, completionHandler: nil)
+            return
+        }
+        let sent = CACurrentMediaTime()
+        webView.evaluateJavaScript(script) { _, _ in
+            let trip = (CACurrentMediaTime() - sent) * 1000
+            DjVitalsRecorder.shared.update { $0.scriptReturned(ms: trip) }
+        }
     }
 
     nonisolated static func number(_ value: Double) -> String {

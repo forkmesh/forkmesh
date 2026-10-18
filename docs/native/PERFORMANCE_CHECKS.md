@@ -6,7 +6,9 @@ bundle (iOS: `DiagnosticsBundle` in `FMTools`, report from
 `core/.../tools/PerformanceDiagnostics.kt`). The prompt sends the agent here
 first and asks it to add its check below before committing, so each check
 starts from what the previous ones learned. Keep this page short: correct a
-wrong reading in place rather than adding a contradicting note.
+wrong reading in place rather than adding a contradicting note. The DJ
+studio has its own button, bundle and page:
+[../marketplace/video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md).
 
 ## Reading the bundle
 

@@ -271,6 +271,7 @@ struct DjUtilityRow: View {
                 .fixedSize()
             DjReactButton(model: model, size: 26 * u)
             DjResetButton(model: model, size: 28 * u)
+            DjDiagnosticsButton(model: model, size: 18 * u)
         }
         .frame(maxWidth: .infinity)
     }
