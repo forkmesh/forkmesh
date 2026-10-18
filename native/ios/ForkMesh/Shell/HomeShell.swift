@@ -346,7 +346,8 @@ struct HomeShell: View {
                 isUpdated: { (id: String) in accountPackages?.isUpdated(hubItem: id) ?? false },
                 onSearch: { (query: String) in
                     leavePage { openSearch(query) }
-                }
+                },
+                onClearUpdates: { accountPackages?.markAllViewed() }
             ) { (item: ShellBarItem) in
                 accountPackages?.markViewed(hubItem: item.id)
                 ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)

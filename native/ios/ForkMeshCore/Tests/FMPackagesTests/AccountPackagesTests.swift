@@ -472,6 +472,27 @@ final class AccountPackagesTests: XCTestCase {
         XCTAssertTrue(viewed.updated.isEmpty)
     }
 
+    @MainActor func testMarkAllViewedClearsEveryUpdateDot() {
+        let prefs = InMemoryKeyValueStore()
+        let store = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        store.adoptCatalog([
+            MarketPackage(id: "calories", name: "Calories", version: "2.5.1"),
+            MarketPackage(id: "notes", name: "Notes", version: "1.1.0"),
+            MarketPackage(id: "tasks", name: "Tasks"),
+        ])
+        XCTAssertEqual(store.updated, ["calories", "notes"])
+
+        store.markAllViewed()
+        XCTAssertTrue(store.updated.isEmpty)
+        let again = AccountPackagesStore(
+            client: PackagesClient(transport: FakePackagesTransport()), prefs: prefs, signedIn: { false })
+        XCTAssertTrue(again.updated.isEmpty)
+
+        store.adoptCatalog([MarketPackage(id: "notes", name: "Notes", version: "1.2.0")])
+        XCTAssertEqual(store.updated, ["notes"])
+    }
+
     @MainActor func testHubItemsMapToTheirPackage() {
         let store = AccountPackagesStore(
             client: PackagesClient(transport: FakePackagesTransport()), prefs: InMemoryKeyValueStore(), signedIn: { false })
