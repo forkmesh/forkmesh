@@ -8,6 +8,7 @@
 #include "MainWindowInternal.h"
 #include "RepoSecurity.h"
 #include "RepoStatsStore.h"
+#include "StatsDashboard.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -358,6 +359,17 @@ void MainWindow::handleLocalControlStatsRequest(int connectionId, int requestId,
         server->respond(connectionId, requestId,
                         statsctl::timeline(m_networkLogDigest, now,
                                            statsctl::clampDays(params.value(QStringLiteral("days")))));
+        return;
+    }
+    if (method == QLatin1String("stats.tiles")) {
+        if (!m_statsRefreshTimer || !m_statsRefreshTimer->isActive())
+            sampleStatsHistory();
+        QJsonArray tiles;
+        for (const StatsTileCatalogEntry &entry : statsTileCatalog())
+            tiles.append(StatsDashboard::tileToJson(entry, statsTileData(entry.id)));
+        server->respond(connectionId, requestId,
+                        {{QStringLiteral("tiles"), tiles},
+                         {QStringLiteral("sampledAt"), double(now)}});
         return;
     }
     if (method == QLatin1String("stats.quality")) {

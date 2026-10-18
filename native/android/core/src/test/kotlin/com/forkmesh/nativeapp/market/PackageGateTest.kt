@@ -14,6 +14,8 @@ import com.forkmesh.nativeapp.navigation.PaletteCommand
 import com.forkmesh.nativeapp.navigation.PaletteContext
 import com.forkmesh.nativeapp.navigation.RepoRef
 import com.forkmesh.nativeapp.navigation.Route
+import com.forkmesh.nativeapp.navigation.RouteCatalog
+import com.forkmesh.nativeapp.navigation.RouteParser
 import com.forkmesh.nativeapp.navigation.ShellQuickAction
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
@@ -302,6 +304,21 @@ class PackageGateTest {
         expect("secureDrive" in hidden)
         val ids = HubCatalog.groups(guest = false, hidden = hidden) { true }.flatMap { it.items }.map { it.id }
         expect("secureDrive" !in ids)
+    }
+
+    fun testFilesIsAGatedPackage() {
+        assertEq("files", PackageGate.HUB_ITEMS[Route.Kind.Files.raw])
+        assertEq("files", PackageGate.ROUTE_KINDS[Route.Kind.Files])
+        assertEq("files", MarketPackage.NATIVE_DESTINATIONS["files"])
+        expect("files" in PackageGate.GATED)
+        assertEq("files", PackageMenu.packageFor(Route.Kind.Files))
+        val hidden = PackageSurfaces.of(store(legacy = false)::shows).hubItems
+        expect("files" in hidden)
+        val ids = HubCatalog.groups(guest = false, hidden = hidden) { true }.flatMap { it.items }.map { it.id }
+        expect("files" !in ids)
+        assertEq(listOf(Route.Files), RouteParser.parse("forkmesh://files")!!.stack)
+        assertEq(listOf(Route.Files), RouteParser.parse("https://app.forkmesh.com/dashboard/files")!!.stack)
+        assertEq("Files", RouteCatalog.title(Route.Kind.Files))
     }
 
     fun testWorkflowsIsAGatedPackage() {
