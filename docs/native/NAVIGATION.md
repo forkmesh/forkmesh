@@ -428,6 +428,10 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
   changes, ping settings, delete all) are squares in the same bar, so every
   control is one tap. A phone too narrow for the bar scrolls it sideways.
+  Holding a square shows its name in a small popover (`FmHoldName`), and the
+  tap it ends with is dropped. The unread badges are drawn over the whole bar
+  (`InboxBadgeKey` anchors) rather than on each square, because on iOS 26 the
+  glass container composited the squares above their own badges (2026-10-18).
 - **Market** (`MarketScreen`): one slim navigation bar line with no
   background: back, the search field (`MarketSearchField`, in the title's
   place), then a sort menu and a filter menu (`MarketSortMenu`,
