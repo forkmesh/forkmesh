@@ -520,7 +520,20 @@ announces again every six hours; the protocol is in
 [app/instance-federation.md](app/instance-federation.md). The World has 12
 instance slots. Cron phase `instance-health` probes
 `https://<domain>/readyz`; two misses in a row hide the entry, a day offline
-pings the admins once per outage. The admin console's Instances view can
+pings the admins once per outage.
+
+The forkmesh.com homepage's "Federated instances" section
+(`www/templates/pages/index.html`) reads `/api/start/instances` without
+credentials and shows each listed instance's logo, name, address and status:
+"Online" when its last `/readyz` check answered, "Checking" before the first
+check or after one miss (each entry carries `status` and `checkedAt`;
+instances that missed two checks are not in the list at all). Under the list
+is a "Start an instance" button to `/start`, styled as a secondary button
+because the page's green call to action is its sign-up button. On
+forkmesh.com the section always shows, with "No instance has joined yet."
+when the list is empty; on an instance (whose own directory is empty) the
+section and the button stay hidden. Tests:
+`app/tests/test_homepage_federated_instances.py`. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
 

@@ -153,6 +153,9 @@ def public_entry(row):
         "world": world,
         "slot": int(row.get("slot", -1)) if world else -1,
         "worldUrl": world_url(row, world),
+        "status": "online" if int(row.get("checked_at") or 0) and not int(
+            row.get("failures") or 0) else "checking",
+        "checkedAt": int(row.get("checked_at") or 0),
         "createdAt": int(row.get("created_at") or 0),
     }
 
@@ -161,7 +164,8 @@ async def instances(runtime):
     await ensure(runtime)
     rows = await runtime.d1_all(
         "SELECT d.id,d.name,d.url,d.logo<>'' AS has_logo,d.world,d.listed,"
-        "d.slot,d.created_at,d.updated_at,r.world_url AS world_url "
+        "d.slot,d.created_at,d.updated_at,d.checked_at,d.failures,"
+        "r.world_url AS world_url "
         "FROM instance_directory d LEFT JOIN instance_registrations r "
         "ON r.domain=d.domain WHERE " + VISIBLE_D +
         " ORDER BY d.created_at, d.domain LIMIT ?",
