@@ -185,6 +185,34 @@ prompt; where the platform cannot ask, quick unlock is not offered.
   them to Passwords, DuckDuckGo or any other app that accepts imports.
   One-time-code secrets travel as `otpauth://` links in the notes.
 
+## Importing from Apple Passwords and other managers
+
+The web dashboard (Import, beside New login) and the desktop rail page
+(Import…) read the same CSV exports the iOS app does: Apple Passwords
+(`Title,URL,Username,Password,Notes,OTPAuth`, from File, Export All Passwords
+to File on a Mac, or the `Passwords.csv` inside the ZIP that Safari's Export
+writes on iPhone), DuckDuckGo, Chrome, Firefox, Bitwarden and 1Password.
+
+- Columns are matched by name, so a file from another manager with a
+  Password column also imports. A row with neither a username nor a password
+  is left out and counted.
+- A login whose host (`www.` folded, or its title when it has no https
+  address), username (case-folded) and password match one already in the
+  vault, or earlier in the file, is skipped. Importing a file twice adds
+  nothing.
+- A login without a title is named after its host, then its username, then
+  "Imported login". An `otpauth://` link goes into the notes, since the vault
+  has no one-time-code field; the iOS export writes it back to its column.
+- Each login is encrypted on the device and saved on its own, in order. The
+  first refusal (a full vault, a lost session) stops the import and says how
+  many are left; what was saved stays.
+- The plaintext file is read into memory only, and the desktop zeroes its
+  copy once parsed. Both clients remind the person to delete the export.
+- The parser and planner are `readImportCsv`, `planImport`, `importFields` and
+  `importLogins` in `content/crypto/vault-client.js` and their C++ twins in
+  `VaultClient`; `tests/e2e_client.js` and `tests/test_vault_client_flow.cpp`
+  import an Apple Passwords file against the real Worker module.
+
 ## Limits of this implementation
 
 - It has not been audited by a third party.

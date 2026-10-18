@@ -8,7 +8,9 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
 #include <QFormLayout>
@@ -247,9 +249,13 @@ void VaultFeature::buildAppPanel(QWidget *panel)
     newButton->setObjectName(QStringLiteral("primaryButton"));
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     refreshButton->setObjectName(QStringLiteral("ghostButton"));
+    m_importButton = new QPushButton(QStringLiteral("Import…"));
+    m_importButton->setObjectName(QStringLiteral("ghostButton"));
+    m_importButton->setToolTip(QStringLiteral("Import a CSV export from Apple Passwords or another password manager"));
     toolbar->addWidget(m_search, 1);
     toolbar->addWidget(m_filter);
     toolbar->addWidget(refreshButton);
+    toolbar->addWidget(m_importButton);
     toolbar->addWidget(newButton);
     layout->addLayout(toolbar);
 
@@ -267,7 +273,7 @@ void VaultFeature::buildAppPanel(QWidget *panel)
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setAlternatingRowColors(true);
     layout->addWidget(m_table, 1);
-    m_empty = mutedLabel(QStringLiteral("Nothing here yet. Add a login, or install the ForkMesh browser extension to fill and save them as you browse."));
+    m_empty = mutedLabel(QStringLiteral("Nothing here yet. Add a login, import the logins saved in Apple Passwords or another password manager, or install the ForkMesh browser extension to fill and save them as you browse."));
     m_empty->setAlignment(Qt::AlignHCenter);
     layout->addWidget(m_empty);
 
@@ -305,6 +311,7 @@ void VaultFeature::buildAppPanel(QWidget *panel)
     connect(m_filter, &QComboBox::currentIndexChanged, this, [this] { renderItems(); });
     connect(newButton, &QPushButton::clicked, this, [this] { editItem(QString()); });
     connect(refreshButton, &QPushButton::clicked, this, [this] { reload(); });
+    connect(m_importButton, &QPushButton::clicked, this, [this] { importPasswords(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] {
         const bool any = !selectedId().isEmpty();
         for (QPushButton *button : std::as_const(m_rowButtons))
@@ -336,7 +343,8 @@ void VaultFeature::setBusy(bool busy)
 {
     m_busy = busy;
     for (QWidget *widget : std::initializer_list<QWidget *>{m_setupButton, m_unlockButton, m_setupPassword,
-                                                             m_setupConfirm, m_unlockPassword, m_lockButton, m_settingsButton})
+                                                             m_setupConfirm, m_unlockPassword, m_lockButton, m_settingsButton,
+                                                             m_importButton})
         widget->setEnabled(!busy);
     const bool any = !selectedId().isEmpty();
     for (QPushButton *button : std::as_const(m_rowButtons))
@@ -364,6 +372,10 @@ QString VaultFeature::explain(const QString &code) const
         {QStringLiteral("vault_locked"), QStringLiteral("The vault is locked.")},
         {QStringLiteral("vault_full"), QStringLiteral("This vault is full.")},
         {QStringLiteral("title_required"), QStringLiteral("Give the login a title.")},
+        {QStringLiteral("csv_empty"), QStringLiteral("That file is empty.")},
+        {QStringLiteral("csv_too_large"), QStringLiteral("That file is larger than 16 MB, which is more than any password export.")},
+        {QStringLiteral("csv_unknown_columns"), QStringLiteral("That file has no Password column. Choose the CSV that Apple Passwords or another password manager exported.")},
+        {QStringLiteral("csv_no_logins"), QStringLiteral("That file has no logins in it.")},
         {QStringLiteral("invalid_session"), QStringLiteral("Sign in to your ForkMesh account on this device to open your vault.")},
     };
     const QString known = words.value(code);
@@ -625,7 +637,7 @@ void VaultFeature::renderItems()
                                   .arg(count)
                                   .arg(count == 1 ? QString() : QStringLiteral("s"));
     const QString emptyText = query.isEmpty()
-        ? QStringLiteral("Nothing here yet. Add a login, or install the ForkMesh browser extension to fill and save them as you browse.")
+        ? QStringLiteral("Nothing here yet. Add a login, import the logins saved in Apple Passwords or another password manager, or install the ForkMesh browser extension to fill and save them as you browse.")
         : QStringLiteral("No saved login matches \"%1\". Try a different search.")
               .arg(query);
     m_empty->setText(emptyText);
@@ -1037,6 +1049,95 @@ void VaultFeature::showRecoveryCode(const QString &code)
     connect(done, &QPushButton::clicked, &dialog, &QDialog::accept);
     dialog.exec();
     shown->clear();
+}
+
+void VaultFeature::importPasswords()
+{
+    if (!m_client->unlocked() || m_busy)
+        return;
+    QMessageBox intro(QMessageBox::Information, QStringLiteral("Import passwords"),
+                      QStringLiteral("Choose a CSV export. Each login is encrypted on this device before it is uploaded, "
+                                     "and logins already in the vault are skipped."),
+                      QMessageBox::Cancel, this);
+    intro.setInformativeText(QStringLiteral(
+        "From Apple Passwords on a Mac: open Passwords and choose File, then Export All Passwords to File.\n"
+        "On an iPhone or iPad: Settings, then Apps, Safari, Export. Unzip it and choose Passwords.csv.\n\n"
+        "CSV exports from DuckDuckGo, Chrome, Firefox, Bitwarden and 1Password work too. "
+        "The exported file holds every password in plain text: delete it once the import is done."));
+    QPushButton *choose = intro.addButton(QStringLiteral("Choose CSV file…"), QMessageBox::AcceptRole);
+    intro.setDefaultButton(choose);
+    intro.exec();
+    if (intro.clickedButton() != choose)
+        return;
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import passwords"), QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
+        QStringLiteral("CSV (*.csv);;All files (*)"));
+    if (path.isEmpty() || !m_client->unlocked())
+        return;
+    QFile source(path);
+    if (source.size() > VaultClient::kImportMaxBytes) {
+        setStatus(explain(QStringLiteral("csv_too_large")), true);
+        return;
+    }
+    if (!source.open(QIODevice::ReadOnly)) {
+        setStatus(QStringLiteral("Could not open %1.").arg(QFileInfo(path).fileName()), true);
+        return;
+    }
+    QByteArray bytes = source.readAll();
+    source.close();
+    ImportFile file;
+    QString code;
+    const bool read = VaultClient::readImportCsv(bytes, &file, &code);
+    bytes.fill('\0');
+    if (!read) {
+        setStatus(explain(code), true);
+        return;
+    }
+    const ImportPlan plan = VaultClient::planImport(file.logins, m_client->items());
+    const QString left = file.skippedRows == 0 ? QString()
+        : QStringLiteral(" %1 row%2 without a username or a password %3 left out.")
+              .arg(file.skippedRows).arg(file.skippedRows == 1 ? QString() : QStringLiteral("s"),
+                                          file.skippedRows == 1 ? QStringLiteral("is") : QStringLiteral("are"));
+    const QString already = plan.duplicates == 0 ? QString()
+        : QStringLiteral(" %1 already in the vault %2 skipped.")
+              .arg(plan.duplicates).arg(plan.duplicates == 1 ? QStringLiteral("is") : QStringLiteral("are"));
+    if (plan.fresh.isEmpty()) {
+        setStatus(QStringLiteral("Every login in that file is already in the vault.") + left);
+        return;
+    }
+    const QString count = QStringLiteral("%1 login%2").arg(plan.fresh.size()).arg(plan.fresh.size() == 1 ? QString() : QStringLiteral("s"));
+    if (QMessageBox::question(this, QStringLiteral("Import passwords"),
+                              QStringLiteral("Import %1 from %2?%3%4").arg(count, file.sourceLabel, already, left))
+        != QMessageBox::Yes)
+        return;
+    setBusy(true);
+    setStatus(QStringLiteral("Importing %1…").arg(count));
+    const QPointer<VaultFeature> guard(this);
+    const QString label = file.sourceLabel;
+    m_client->importLogins(
+        file.logins,
+        [guard](int done, int total) {
+            if (!guard)
+                return;
+            guard->touch();
+            guard->setStatus(QStringLiteral("Importing… %1 of %2").arg(done).arg(total));
+        },
+        [guard, label, already](const ImportReport &report) {
+            if (!guard)
+                return;
+            guard->setBusy(false);
+            guard->renderItems();
+            if (guard->m_searchIndexChanged)
+                guard->m_searchIndexChanged();
+            const QString added = QStringLiteral("Imported %1 login%2 from %3.%4")
+                                      .arg(report.added).arg(report.added == 1 ? QString() : QStringLiteral("s"), label, already);
+            if (!report.stoppedBy.isEmpty())
+                guard->setStatus(QStringLiteral("%1 %2 could not be imported: %3")
+                                     .arg(added).arg(report.remaining).arg(guard->explain(report.stoppedBy)), true);
+            else
+                guard->setStatus(added + QStringLiteral(" Delete the exported file now: it holds every password in plain text."));
+            guard->touch();
+        });
 }
 
 void VaultFeature::openSettings()

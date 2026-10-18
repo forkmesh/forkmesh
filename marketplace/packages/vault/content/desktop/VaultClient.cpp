@@ -1,6 +1,7 @@
 #include "VaultClient.h"
 
 #include <QJsonValue>
+#include <QSet>
 #include <QUrl>
 
 #include <algorithm>
@@ -417,6 +418,195 @@ QJsonObject VaultClient::cleanFields(const QJsonObject &fields, QString *code)
     return out;
 }
 
+QList<QStringList> VaultClient::parseCsv(const QString &text)
+{
+    QList<QStringList> rows;
+    QStringList row;
+    QString field;
+    bool quoted = false, atFieldStart = true;
+    const QString source = text.startsWith(QChar(0xFEFF)) ? text.mid(1) : text;
+    const auto endField = [&] { row.append(field); field.clear(); atFieldStart = true; };
+    const auto endRow = [&] {
+        endField();
+        if (!(row.size() == 1 && row.first().isEmpty()))
+            rows.append(row);
+        row.clear();
+    };
+    for (qsizetype i = 0; i < source.size(); ++i) {
+        const QChar c = source.at(i);
+        const QChar next = i + 1 < source.size() ? source.at(i + 1) : QChar();
+        if (quoted) {
+            if (c != QLatin1Char('"')) {
+                field.append(c);
+            } else if (next == QLatin1Char('"')) {
+                field.append(c);
+                ++i;
+            } else {
+                quoted = false;
+            }
+        } else if (c == QLatin1Char('"') && atFieldStart) {
+            quoted = true;
+            atFieldStart = false;
+        } else if (c == QLatin1Char(',')) {
+            endField();
+        } else if (c == QLatin1Char('\r') || c == QLatin1Char('\n')) {
+            if (c == QLatin1Char('\r') && next == QLatin1Char('\n'))
+                ++i;
+            endRow();
+        } else {
+            field.append(c);
+            atFieldStart = false;
+        }
+    }
+    if (!field.isEmpty() || !row.isEmpty() || quoted)
+        endRow();
+    return rows;
+}
+
+bool VaultClient::readImportCsv(const QByteArray &bytes, ImportFile *file, QString *code)
+{
+    static const QList<std::pair<QString, QStringList>> columns{
+        {QStringLiteral("title"), {QStringLiteral("title"), QStringLiteral("name"), QStringLiteral("account"), QStringLiteral("item name"),
+                                   QStringLiteral("login name"), QStringLiteral("display name")}},
+        {QStringLiteral("url"), {QStringLiteral("url"), QStringLiteral("login_uri"), QStringLiteral("uri"), QStringLiteral("website"),
+                                 QStringLiteral("web site"), QStringLiteral("web address"), QStringLiteral("site"), QStringLiteral("hostname"),
+                                 QStringLiteral("login url"), QStringLiteral("urls")}},
+        {QStringLiteral("username"), {QStringLiteral("username"), QStringLiteral("login_username"), QStringLiteral("user name"),
+                                      QStringLiteral("user"), QStringLiteral("login"), QStringLiteral("email"),
+                                      QStringLiteral("email address"), QStringLiteral("user id")}},
+        {QStringLiteral("password"), {QStringLiteral("password"), QStringLiteral("login_password"), QStringLiteral("pass")}},
+        {QStringLiteral("notes"), {QStringLiteral("notes"), QStringLiteral("note"), QStringLiteral("comments"), QStringLiteral("comment"),
+                                   QStringLiteral("extra")}},
+        {QStringLiteral("otpauth"), {QStringLiteral("otpauth"), QStringLiteral("login_totp"), QStringLiteral("totp"), QStringLiteral("otp"),
+                                     QStringLiteral("one-time password"), QStringLiteral("otp auth"), QStringLiteral("otp url")}},
+    };
+    const auto fail = [code](const char *why) {
+        if (code)
+            *code = QLatin1String(why);
+        return false;
+    };
+    if (bytes.size() > kImportMaxBytes)
+        return fail("csv_too_large");
+    QString text = QString::fromUtf8(bytes);
+    if (text.contains(QChar::ReplacementCharacter) && !bytes.contains("\xEF\xBF\xBD"))
+        text = QString::fromLatin1(bytes);
+    const QList<QStringList> rows = parseCsv(text);
+    if (rows.isEmpty())
+        return fail("csv_empty");
+    QStringList names;
+    for (const QString &name : rows.first())
+        names.append(name.trimmed().toLower());
+    QHash<QString, qsizetype> index;
+    for (const auto &[field, aliases] : columns) {
+        for (const QString &alias : aliases) {
+            if (names.contains(alias)) {
+                index.insert(field, names.indexOf(alias));
+                break;
+            }
+        }
+    }
+    if (!index.contains(QStringLiteral("password")))
+        return fail("csv_unknown_columns");
+    ImportFile out;
+    for (qsizetype r = 1; r < rows.size(); ++r) {
+        const QStringList &row = rows.at(r);
+        const auto value = [&](const char *field) {
+            const qsizetype at = index.value(QLatin1String(field), -1);
+            return at >= 0 && at < row.size() ? row.at(at) : QString();
+        };
+        const ImportLogin login{value("title").trimmed(), value("url").trimmed(), value("username"),
+                                value("password"), value("notes"), value("otpauth").trimmed()};
+        if (login.password.isEmpty() && login.username.trimmed().isEmpty()) {
+            if (std::any_of(row.cbegin(), row.cend(), [](const QString &cell) { return !cell.trimmed().isEmpty(); }))
+                ++out.skippedRows;
+            continue;
+        }
+        out.logins.append(login);
+    }
+    if (out.logins.isEmpty())
+        return fail("csv_no_logins");
+    const auto has = [&names](std::initializer_list<const char *> wanted) {
+        return std::all_of(wanted.begin(), wanted.end(), [&names](const char *name) { return names.contains(QLatin1String(name)); });
+    };
+    if (has({"login_uri"}) || has({"login_password"}))
+        out.source = QStringLiteral("bitwarden");
+    else if (has({"httprealm"}) || has({"formactionorigin"}) || has({"guid"}))
+        out.source = QStringLiteral("firefox");
+    else if (has({"otpauth"}))
+        out.source = QStringLiteral("applePasswords");
+    else if (has({"name", "url", "username", "password", "note"}))
+        out.source = QStringLiteral("chrome");
+    else if (has({"archived"}) || has({"one-time password"}))
+        out.source = QStringLiteral("onePassword");
+    else if (has({"title", "url", "username", "password", "notes"}))
+        out.source = QStringLiteral("duckDuckGo");
+    else
+        out.source = QStringLiteral("other");
+    static const QHash<QString, QString> labels{
+        {QStringLiteral("applePasswords"), QStringLiteral("Apple Passwords")}, {QStringLiteral("duckDuckGo"), QStringLiteral("DuckDuckGo")},
+        {QStringLiteral("chrome"), QStringLiteral("Chrome")}, {QStringLiteral("firefox"), QStringLiteral("Firefox")},
+        {QStringLiteral("bitwarden"), QStringLiteral("Bitwarden")}, {QStringLiteral("onePassword"), QStringLiteral("1Password")},
+        {QStringLiteral("other"), QStringLiteral("a password manager")}};
+    out.sourceLabel = labels.value(out.source);
+    if (file)
+        *file = out;
+    return true;
+}
+
+namespace {
+
+QString importTitle(const QString &title, const QString &url, const QString &username)
+{
+    if (!title.trimmed().isEmpty())
+        return title.trimmed();
+    const QString host = loginHost(url);
+    if (!host.isEmpty())
+        return host;
+    return username.trimmed().isEmpty() ? QStringLiteral("Imported login") : username.trimmed();
+}
+
+QString importIdentity(const QString &title, const QString &url, const QString &username, const QString &password)
+{
+    const QString host = loginHost(url);
+    const QString place = host.isEmpty() ? importTitle(title, url, username).toLower() : host;
+    return place + QChar(0) + username.trimmed().toLower() + QChar(0) + password;
+}
+
+}  // namespace
+
+QJsonObject VaultClient::importFields(const ImportLogin &login)
+{
+    QString notes = login.notes.trimmed();
+    const QString code = login.otpauth.trimmed();
+    if (!code.isEmpty() && !notes.contains(code))
+        notes = notes.isEmpty() ? code : notes + QStringLiteral("\n\n") + code;
+    return {{QStringLiteral("title"), importTitle(login.title, login.url, login.username)},
+            {QStringLiteral("url"), login.url.trimmed()},
+            {QStringLiteral("username"), login.username},
+            {QStringLiteral("password"), login.password},
+            {QStringLiteral("notes"), notes}};
+}
+
+ImportPlan VaultClient::planImport(const QList<ImportLogin> &logins, const QList<VaultItem> &items)
+{
+    QSet<QString> seen;
+    for (const VaultItem &item : items) {
+        if (item.readable())
+            seen.insert(importIdentity(item.field("title"), item.field("url"), item.field("username"), item.field("password")));
+    }
+    ImportPlan plan;
+    for (const ImportLogin &login : logins) {
+        const QString key = importIdentity(login.title, login.url, login.username, login.password);
+        if (seen.contains(key)) {
+            ++plan.duplicates;
+            continue;
+        }
+        seen.insert(key);
+        plan.fresh.append(login);
+    }
+    return plan;
+}
+
 void VaultClient::save(const QJsonObject &fields, const QString &id,
                        std::function<void(const QString &, const QString &)> done)
 {
@@ -699,6 +889,42 @@ QString VaultClient::myFingerprint() const
     if (!unlocked() || !publicBundle(m_keyset, m_account, &mine, &failure) || !fingerprint(mine, &text, &failure))
         return QString();
     return text;
+}
+
+void VaultClient::importLogins(const QList<ImportLogin> &logins, std::function<void(int, int)> progress,
+                               std::function<void(const ImportReport &)> done)
+{
+    if (!unlocked()) {
+        done({0, 0, int(logins.size()), QStringLiteral("vault_locked")});
+        return;
+    }
+    const ImportPlan plan = planImport(logins, m_items);
+    auto report = std::make_shared<ImportReport>();
+    report->duplicates = plan.duplicates;
+    const auto finish = [this, report, done] {
+        load([report, done](const QString &) { done(*report); });
+    };
+    auto step = std::make_shared<std::function<void(qsizetype)>>();
+    *step = [this, plan, report, progress, finish, weak = std::weak_ptr<std::function<void(qsizetype)>>(step)](qsizetype at) {
+        if (at >= plan.fresh.size()) {
+            finish();
+            return;
+        }
+        save(importFields(plan.fresh.at(at)), QString(), [=](const QString &code, const QString &) {
+            if (!code.isEmpty()) {
+                report->stoppedBy = code;
+                report->remaining = int(plan.fresh.size() - at);
+                finish();
+                return;
+            }
+            ++report->added;
+            if (progress)
+                progress(report->added, int(plan.fresh.size()));
+            if (const auto next = weak.lock())
+                (*next)(at + 1);
+        });
+    };
+    (*step)(0);
 }
 
 void VaultClient::exportData(std::function<void(const QString &, const QJsonObject &)> done)

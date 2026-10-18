@@ -57,6 +57,10 @@ window.ForkMeshDashboard.registerPage("vault", ({
     vault_locked: "The vault is locked.",
     vault_full: "This vault is full.",
     title_required: "Give the login a title.",
+    csv_empty: "That file is empty.",
+    csv_too_large: "That file is larger than 16 MB, which is more than any password export.",
+    csv_unknown_columns: "That file has no Password column. Choose the CSV that Apple Passwords or another password manager exported.",
+    csv_no_logins: "That file has no logins in it.",
   };
   function explain(error) {
     const code = String(error?.code || error?.payload?.error || "");
@@ -378,6 +382,29 @@ window.ForkMeshDashboard.registerPage("vault", ({
       $(`[data-vault-settings-dialog]`).close(); show("setup"); message("notice", "Vault deleted.");
     } catch (error) { $(`[data-vault-settings-dialog]`).close(); message("error", explain(error)); }
   }
+  async function importFile(file) {
+    clearMessages();
+    $(`[data-vault-import-dialog]`).close();
+    if (!file) return;
+    try {
+      if (file.size > Vault.IMPORT_MAX_BYTES) throw new Vault.VaultError("csv_too_large");
+      const parsed = Vault.readImportCsv(await file.text());
+      const plan = Vault.planImport(parsed.logins, state.client.list());
+      const unreadable = parsed.skippedRows ? ` ${parsed.skippedRows} row${parsed.skippedRows === 1 ? " has" : "s have"} neither a username nor a password and ${parsed.skippedRows === 1 ? "is" : "are"} left out.` : "";
+      const already = plan.duplicates ? ` ${plan.duplicates} ${plan.duplicates === 1 ? "is" : "are"} already in the vault and ${plan.duplicates === 1 ? "is" : "are"} skipped.` : "";
+      if (!plan.fresh.length) { message("notice", `Every login in that file is already in the vault.${unreadable}`); return; }
+      const count = `${plan.fresh.length} login${plan.fresh.length === 1 ? "" : "s"}`;
+      if (!(await ask(`Import ${count} from ${parsed.sourceLabel}?${already}${unreadable} Each one is encrypted here before it is uploaded.`, { title: "Import passwords", action: `Import ${count}` }))) return;
+      const report = await busy($(`[data-vault-app]`), () => state.client.importLogins(parsed.logins, (done, total) => {
+        message("notice", `Importing… ${done} of ${total}`); touch();
+      }));
+      renderList();
+      const added = `Imported ${report.added} login${report.added === 1 ? "" : "s"} from ${parsed.sourceLabel}.${already}`;
+      if (report.stoppedBy) message("error", `${added} ${report.remaining} could not be imported: ${explain({ code: report.stoppedBy, message: report.stoppedBy })}`);
+      else message("notice", `${added} Delete the exported file now: it holds every password in plain text.`);
+    } catch (error) { message("error", explain(error)); }
+    finally { touch(); }
+  }
   async function openSettings() {
     $(`[data-vault-my-fingerprint]`).textContent = await state.client.myFingerprint().catch(() => "");
     $(`[data-vault-autolock]`).value = String(autolockMinutes());
@@ -424,6 +451,9 @@ window.ForkMeshDashboard.registerPage("vault", ({
     $(`[data-vault-search]`)?.addEventListener("input", renderList);
     $(`[data-vault-filter]`)?.addEventListener("change", renderList);
     $(`[data-vault-new]`)?.addEventListener("click", () => openEditor());
+    $(`[data-vault-import-open]`)?.addEventListener("click", () => $(`[data-vault-import-dialog]`).showModal());
+    $(`[data-vault-import-choose]`)?.addEventListener("click", () => { const input = $(`[data-vault-import-file]`); input.value = ""; input.click(); });
+    $(`[data-vault-import-file]`)?.addEventListener("change", (event) => { const [file] = event.target.files || []; event.target.value = ""; void importFile(file); });
     $(`[data-vault-list]`)?.addEventListener("click", (event) => {
       const row = event.target.closest("[data-vault-item]"); if (!row) return;
       const item = state.client.find(row.dataset.vaultItem); if (!item?.fields) return;
