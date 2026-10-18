@@ -720,3 +720,32 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
     finally:
         for name in ("runner_leases", "runner_actions"):
             sys.modules.pop(name, None)
+
+
+def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_pushes(
+        module):
+    loaded, _ctx = module
+    zero = "0" * 40
+
+    def heads(updates, default="main"):
+        return [item["ref"][len("refs/heads/"):]
+                for item in loaded.instance_action_updates(
+                    _report(*updates)["updates"], default)]
+
+    imported = [("refs/heads/b%02d" % i, zero, "%040x" % (i + 1), 1)
+                for i in range(45)]
+    imported.insert(7, ("refs/heads/main", zero, "f" * 40, 9))
+    assert heads(imported) == ["main"]
+    assert heads(imported[:8] + [("refs/tags/v1", zero, "e" * 40, 0)]) == [
+        "main"]
+    created = [("refs/heads/n%d" % i, zero, "%040x" % (i + 1), 1)
+               for i in range(4)]
+    assert heads(created) == []
+    assert heads(created[:3]) == ["n0", "n1", "n2"]
+    moved = [("refs/heads/m%d" % i, "1" * 40, "%040x" % (i + 1), 1)
+             for i in range(8)]
+    assert heads(moved + created + [
+        ("refs/heads/main", "1" * 40, "2" * 40, 1)]) == [
+            "main", "m0", "m1", "m2", "m3", "m4"]
+    assert heads([("refs/heads/topic", "", "3" * 40, 1),
+                  ("refs/heads/gone", "1" * 40, zero, 0)]) == ["topic"]

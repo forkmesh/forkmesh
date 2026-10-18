@@ -461,11 +461,14 @@ async def _instance_actor(env, request, owner, repo, data=None):
     if not actor:
         return "", False
     try:
+        import runner_actions
+        storage, _public = await runner_actions.identity(
+            _runner_runtime(env), owner, repo)
         allowed = bool(
             ACTIONS_CONTROL_ACTOR_RE.fullmatch(actor)
-            and (actor == owner
-                 or await _account_owns_node(env, actor, owner)
-                 or await _org_write_allowed(env, owner, repo, actor)))
+            and (actor == storage
+                 or await _account_owns_node(env, actor, storage)
+                 or await _org_write_allowed(env, storage, repo, actor)))
     except Exception:
         allowed = False
     return actor, allowed
@@ -550,6 +553,29 @@ async def _instance_actions_control(env, request, owner, repo):
     return json_response(
         {"ok": True, "status": "applied", "action": action, "runId": run_id},
         status=202, cache_control="no-store")
+
+
+async def repository_actions_instance_status_handler(env, request, owner,
+                                                    repo):
+    owner = str(owner or "").strip().lower()
+    actor, allowed = await _instance_actor(env, request, owner, repo)
+    if not actor:
+        return _instance_error("invalid_session", 401)
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.actions_status", "repository",
+            owner + "/" + repo, "denied", {})
+        return _instance_error("forbidden", 403)
+    import runner_actions
+    runtime = _runner_runtime(env)
+    await runtime.ensure_schema()
+    snapshot = await runner_actions.snapshot(runtime, owner, repo, always=True)
+    await _audit_sensitive_action(
+        env, actor, "repository.actions_status", "repository",
+        owner + "/" + repo, "success", {"node": snapshot["node"]})
+    return json_response(
+        snapshot,
+        cache_control="private, no-store, max-age=0, must-revalidate")
 
 
 async def repository_actions_run_log_handler(env, request, owner, repo,

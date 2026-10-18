@@ -50315,6 +50315,9 @@ async def repository_actions_status_handler(env, request, owner, repo):
     """Return private redacted executor state to the owner or org writer."""
     if method_name(request) != "GET":
         return json_response({"error": "method_not_allowed"}, status=405)
+    if str(getattr(env, "ACTIONS_INSTANCE_RUNNER", "") or "").strip():
+        return await repository_actions_instance_status_handler(
+            env, request, owner, repo)
     try:
         context = await _https_mirror_public_context(env, owner, repo)
     except _HttpsMirrorContextUnavailable:
@@ -50393,6 +50396,8 @@ repository_actions_control_handler = _repository_actions.export(
     "repository_actions_control_handler")
 repository_actions_run_log_handler = _repository_actions.export(
     "repository_actions_run_log_handler")
+repository_actions_instance_status_handler = _repository_actions.export(
+    "repository_actions_instance_status_handler")
 
 
 async def _organization_owner_can_merge_repo(

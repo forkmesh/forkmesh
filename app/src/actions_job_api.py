@@ -72,8 +72,8 @@ async def _job(env, request):
 
 
 async def public_owner(env, owner, repo):
-    import runner_leases
-    return await runner_leases._gateway_owner(_runtime(env), owner, repo)
+    import runner_actions
+    return (await runner_actions.identity(_runtime(env), owner, repo))[1]
 
 
 async def bot_identity(env):
@@ -218,8 +218,7 @@ async def issue_event_payload(env, owner, repo, number, event, item):
 
 async def queue_issue_event(env, owner, repo, number, event, item):
     import runner_actions
-    owner = str(owner or "").strip().lower()
-    org = await public_owner(env, owner, repo)
+    owner, org = await runner_actions.identity(_runtime(env), owner, repo)
     if str(event.get("authorName") or "").strip().lower() == org + "-actions":
         return []
     rows = await d1_all(
