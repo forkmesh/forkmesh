@@ -233,7 +233,8 @@ usual `owner/name` otherwise; a string key goes through `repoPublicKey`.
 for example `Bounty funded on acme/Repo` becomes `Bounty funded on Repo`).
 They are used by the sidebar, the dashboard home list, the repositories
 page, global search, profile activity, the activity feed, notifications,
-the agent, task and note lists, the pull request compose and detail
+the agent, task and note lists, the repository page's loading header and
+its not-found message, the pull request compose and detail
 labels, the contribution tips, the commit detail, the copy-path menu, the
 code map and the agent repository picker. The sidebar and home list
 deduplicate on that label, so a repository stored under its creator

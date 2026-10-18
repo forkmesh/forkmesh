@@ -1765,7 +1765,7 @@
     const requested = requestedRepoKey();
     const detail = $("[data-repo-detail]");
     const headerContext = $("[data-dashboard-header-context]");
-    if (headerContext && requested) headerContext.textContent = requested;
+    if (headerContext && requested) headerContext.textContent = repoPublicKey(requested);
     // A node that reads the repository locally sends the page with its first
     // view already rendered (app/host/forkmesh_host/repo_ssr.py); keep that
     // on screen until the full interface replaces it.
@@ -1830,7 +1830,7 @@
   // happened and offer the ways out (adhoc #1642). The name is echoed back
   // escaped: it is whatever was in the URL bar.
   function renderRepoNotFound(detail, requested) {
-    const name = escapeHtml(requested || "");
+    const name = escapeHtml(repoPublicKey(requested || ""));
     detail.innerHTML = `
       <section class="flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-16 text-center">
         <p class="font-mono text-4xl font-semibold text-muted-foreground">404</p>
