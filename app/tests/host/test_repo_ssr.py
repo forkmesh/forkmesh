@@ -220,7 +220,7 @@ def test_a_short_address_page_gets_its_first_view_with_short_links():
     assert repo_ssr.PLACEHOLDER in other and "data-repo-ssr" not in other
 
 
-RAW = "/api/repo/acme-bolt/Bolt/raw?ref=main&path="
+RAW = "/api/repo/acme/tools/raw?ref=main&path="
 
 
 def test_readme_html_avatars_render_as_linked_images():
@@ -228,7 +228,7 @@ def test_readme_html_avatars_render_as_linked_images():
         '<a href="https://github.com/alice" title="alice"><img src="https://github.com/alice.png?size=60" '
         'width="50" height="50" alt="alice"></a> <a href="https://github.com/bob">'
         '<img src="https://github.com/bob.png?size=60" width="50" height="50" alt="bob"></a>\n',
-        "/Bolt", RAW)
+        "/tools", RAW)
     assert "undefined" not in out
     assert out.count("<img ") == 2
     assert ('<a href="https://github.com/alice"><img src="https://github.com/alice.png?size=60" '
@@ -238,15 +238,15 @@ def test_readme_html_avatars_render_as_linked_images():
 
 def test_readme_relative_and_centred_images_use_the_raw_endpoint():
     out = repo_ssr.markdown_html(
-        '<p align="center"><img src="bolt-b/logo.png" alt="Logo" width="140" height="140"></p>\n\n'
+        '<p align="center"><img src="core/logo.png" alt="Logo" width="140" height="140"></p>\n\n'
         "![shot](./docs/a%20b.png) [![badge](https://e.example/b.svg)](https://e.example)\n",
-        "/Bolt", RAW)
+        "/tools", RAW)
     assert out.startswith('<div class="text-center"><p><img src="'
-                          '/api/repo/acme-bolt/Bolt/raw?ref=main&amp;path=bolt-b%2Flogo.png"')
+                          '/api/repo/acme/tools/raw?ref=main&amp;path=core%2Flogo.png"')
     assert 'width="140" height="140"' in out
     assert "path=docs%2Fa%20b.png" in out
     assert '<a href="https://e.example"><img src="https://e.example/b.svg" alt="badge"' in out
-    assert repo_ssr.markdown_html("![x](logo.png)", "/Bolt") == "<p>x</p>"
+    assert repo_ssr.markdown_html("![x](logo.png)", "/tools") == "<p>x</p>"
 
 
 def test_readme_raw_html_stays_sanitized():
@@ -257,7 +257,7 @@ def test_readme_raw_html_stays_sanitized():
         '<img src="//evil.example/a.png" alt="p"> <a href="https://ok.example" style="color:red">ok</a> '
         '<img src="https://e.example/a.png" alt="q&quot; onload=&quot;r">\n'
         "\x01" + "9\x01 tail\n",
-        "/Bolt", RAW)
+        "/tools", RAW)
     for bad in ("javascript:", "onerror", "onclick", "onload=\"", "<svg", "<iframe",
                 "data:image", "//evil", "style="):
         assert bad not in out, bad

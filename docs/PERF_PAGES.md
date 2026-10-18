@@ -51,7 +51,7 @@ Fonts were not the cause: DejaVu Sans Mono is a Latin subset with
 `font-display: swap` used only for counts and hashes, and the theme is set by
 the inline head script before the stylesheet.
 
-Measured on code.example.org, signed out, headless Chromium 1366×900, three
+Measured on a white-label instance, signed out, headless Chromium 1366×900, three
 cold loads each; "after" serves this branch's pages, scripts and instance
 stylesheet in place of the live ones. CLS is the sum of layout shifts;
 "first view" is the share of pixels that differ between the first contentful
@@ -59,11 +59,11 @@ frame and the settled page.
 
 | Page | CLS before | CLS after | First view before | First view after |
 |---|---|---|---|---|
-| `/Bolt` | 0.0036 | 0 | 14-18 % | 7 % |
+| short-address monorepo root | 0.0036 | 0 | 14-18 % | 7 % |
 | `/dashboard` | 0.0047 | 0.0027 | 1.8 % | 0.9 % |
-| `/forkmesh` | 0.0291 | 0.0016 | 14-17 % | 7.5 % |
-| `/@drew` | 0.1649 | 0.0077 | 8.5 % | 7.1 % |
-| `/Bolt/actions` | 0.0010 | 0.0002 | 12.9 % | 8.3 % |
+| mirrored repository root | 0.0291 | 0.0016 | 14-17 % | 7.5 % |
+| `/@name` profile | 0.1649 | 0.0077 | 8.5 % | 7.1 % |
+| repository Actions tab | 0.0010 | 0.0002 | 12.9 % | 8.3 % |
 
 What still differs after the first paint is data the first view does not
 have: counts and stars, the branch count, the release row, the languages and
