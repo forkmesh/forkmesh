@@ -118,6 +118,22 @@ The account-level install state of one package, in order:
    when the package's `account_installed` hook says the account set it up
    through its own install panel.
 
+On a self-hosted instance (`INSTANCE_NAME` set, `instance_features.branded`)
+step 2 counts every account as created before every date
+(`_instance_created_at` in `plugin_data.py`), so an account there starts with
+the whole pre-marketplace set: the repository tabs (Code, Issues, Pull
+requests, Branches, Commits, Releases, Discussions, Actions, Agents) and the
+navigation entries (Chat, Network, Agents and the rest). Why: the cut-off
+only exists so that new forkmesh.com accounts pick features in the Market
+onboarding; an instance has no onboarding, every account on a new instance
+(its admins included) is created after the date, and the web hides every
+`data-plugin-entry` the account does not have, so signed-in users saw fewer
+repository tabs than signed-out visitors. Removing a package still stores an
+`installed: false` row, which wins as in step 1. ForkMesh-company surfaces
+among them (World, the ledger) stay hidden by the instance's own plugin
+switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../INSTANCES.md)).
+forkmesh.com is unchanged.
+
 The server marks answers from steps 2 and 3 with `"legacy": true`
 (`_legacy_only` in `plugin_data.py`). "Created before the date" means the
 account record's `created_at` (missing or unreadable counts as old) on the

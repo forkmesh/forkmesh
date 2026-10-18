@@ -147,6 +147,13 @@ Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
   pages and others) are off on an instance unless listed in
   `INSTANCE_PLUGINS`. A disabled plugin's routes answer 404 before any other
   route; tagged UI (`data-instance-plugin`) is hidden.
+- **Market packages:** every account on an instance has the
+  pre-marketplace packages (repository tabs, Chat, Network, Agents, ...)
+  installed until it removes one itself, because an instance has no Market
+  onboarding; see "Account state" in
+  [marketplace/core-plugins.md](marketplace/core-plugins.md). Nothing is
+  stored, so existing accounts get them as soon as the app restarts with the
+  change.
 - **Pages** (`app/src/instance_pages.py`): an instance renders its own
   `/desktop` and `/docs` guide pages.
 
