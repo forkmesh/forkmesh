@@ -380,8 +380,10 @@ private struct AddRelayForm: View {
     }
 
     private func add() {
+        let logoUrl: String = model.result?.logoUrl ?? ""
         if let saved = model.add() {
             FmHaptics.commit()
+            Task { await ProjectImages.shared.adoptInstanceLogo(saved.id, logoUrl: logoUrl) }
             onAdded(saved)
         }
     }
