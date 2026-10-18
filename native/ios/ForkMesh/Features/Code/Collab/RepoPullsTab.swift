@@ -20,6 +20,7 @@ struct RepoPullsTab: View {
         VStack(spacing: 0) {
             CollabNoticeLine(horizontalPadding: FmSpace.x4)
             content
+                .refreshable { await reload() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(fm.listSurface)
@@ -33,21 +34,44 @@ struct RepoPullsTab: View {
             }
             .padding(FmSpace.x4)
         }
-        .sheet(isPresented: $composing) {
+        .sheet(isPresented: $composing, onDismiss: { Task { await reload() } }) {
             NewPullSheet(repo: model.repo)
         }
         .task {
             await model.start()
-            adoptOpenCount()
+            viewed()
+        }
+        .onAppear { ShellPullsWatch.shared.opened(ref) }
+        .onDisappear { ShellPullsWatch.shared.closed(ref) }
+        .onChange(of: ShellCounts.shared.pullsRevision) { (_: Int, _: Int) in
+            takeShellList()
+        }
+        .onChange(of: ShellCounts.shared.pullsRings) { (_: Int, _: Int) in
+            guard !ShellPullsWatch.shared.isCurrent(ref) else { return }
+            Task { await reload() }
         }
     }
 
-    private func adoptOpenCount() {
-        guard model.state.value != nil else { return }
+    private var ref: RepoRef { RepoRef(owner: model.repo.owner, name: model.repo.name) }
+
+    private func viewed() {
+        guard let pulls = model.state.value else { return }
+        ShellPullsWatch.shared.viewed(ref, pulls)
+    }
+
+    private func takeShellList() {
         let counts: ShellCounts = ShellCounts.shared
-        let ref: RepoRef = RepoRef(owner: model.repo.owner, name: model.repo.name)
-        guard counts.knowsCounts(of: ref) else { return }
-        counts.adopt(ref, counts: [.pulls: model.count(.open)])
+        guard counts.pullsSlug == ref.slug.lowercased(), model.state.value != nil else { return }
+        model.adopt(counts.pulls)
+    }
+
+    private func reload() async {
+        if ShellPullsWatch.shared.isCurrent(ref) {
+            await ShellPullsWatch.shared.refresh()
+        } else {
+            await model.load()
+            viewed()
+        }
     }
 
     @ViewBuilder private var content: some View {

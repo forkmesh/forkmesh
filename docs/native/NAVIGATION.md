@@ -161,6 +161,36 @@ destination, in sections, with counts and activity:
   the bar and the page's Open chip all count a pull as open unless it is
   closed or merged (`PullStatusFilter.open`). The operator asked for the
   count on the mobile Pull requests icon on 2026-10-16.
+- **New pull requests show at once.** `ShellPullsWatch` (iOS) is the one
+  reader of the current repository's pull list. It reads it when the
+  repository changes, when the app comes back to the foreground, when the
+  account event channel reconnects, and the moment the relay pushes a `pulls`
+  event frame (sent to the repository owner's channel by `notify_repo_host`
+  whenever a pull is submitted or changes). Repositories whose
+  owner is someone else get no frame, so the watch also polls every 20 s on a
+  cool phone, every 5 minutes when warm or in Low Power Mode, and not at all
+  when critical (`NewPullsMarker.pollEvery`). The Pull requests page takes
+  the watch's list instead of reading its own (`RepoPullsModel.adopt`),
+  supports pull to refresh, re-reads after the New PR sheet closes, and keeps
+  the list on screen when a refresh fails. Before 2026-10-18 the page read
+  its list once on open and the shell never re-read it, so a new pull did not
+  appear until the page was reopened; the operator asked for it to show
+  instantly.
+- **Unread badges on Pull requests, RSS Reader and Tasks.** The Pull
+  requests icon (and the Code icon beside Repos, whose count is the open
+  pulls) carries a solid accent badge with the number of open pulls newer
+  than the user last saw (`NewPullsMarker`, FMCode, `shell/pulls-seen`: the
+  highest pull number seen per repository, 40 repositories kept). A
+  repository seen for the first time records its highest number without a
+  badge, so a fresh install does not flag every open pull; the page clears
+  the badge while it is open. RSS Reader shows its unread article count, the
+  same number as its Unread smart feed, read from the reader's saved library
+  (`RSSReaderFeature.loaded`, cached by model revision); Home's count refresh
+  also refreshes the feeds that are due. Tasks shows the open tasks assigned
+  to the signed-in user (`TasksListModel.mineOpen`), refreshed with Home's
+  counts, on every `pings` frame (an assignment arrives as a ping) and
+  whenever the Tasks page reloads (`ShellNavigatorCounts.adoptTasks`). The
+  operator asked for the three badges on 2026-10-18.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
 - **Update dot.** A plugin tile whose Market package changed version since
   the user last opened it shows a small accent dot at the icon's bottom right

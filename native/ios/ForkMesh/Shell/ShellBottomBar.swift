@@ -21,6 +21,11 @@ final class ShellCounts {
     var currentRepo: RepoRef?
     private(set) var repoCounts: [RepoSection: Int] = [:]
     private(set) var repoCountsSlug: String = ""
+    var pulls: [PublishedPull] = []
+    var pullsSlug: String = ""
+    var pullsRevision: Int = 0
+    var pullsRings: Int = 0
+    var newPulls: Int = 0
 
     init() {
         currentRepo = CodeCurrentRepo.memory.ref
@@ -39,6 +44,11 @@ final class ShellCounts {
 
     func knowsCounts(of repo: RepoRef) -> Bool {
         repo.slug.lowercased() == repoCountsSlug
+    }
+
+    var newPullsBadge: Int {
+        guard let repo = currentRepo, repo.slug.lowercased() == pullsSlug else { return 0 }
+        return newPulls
     }
 }
 

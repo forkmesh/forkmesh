@@ -17,6 +17,11 @@ enum RSSReaderFeature {
         return manager.temporaryDirectory.appendingPathComponent("rss-reader", isDirectory: true)
     }
 
+    static var loaded: RSSReaderModel? {
+        guard let cached, cached.path == directory().path else { return nil }
+        return cached.model
+    }
+
     static func model() -> RSSReaderModel {
         let folder: URL = directory()
         if let cached, cached.path == folder.path { return cached.model }
