@@ -13,6 +13,8 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSettings>
+#include <QStackedWidget>
+#include <QTableWidget>
 #include <QUrlQuery>
 
 namespace pingforward = forkmesh::pingforward;
@@ -89,6 +91,14 @@ QString MainWindow::forwardPingToPhones(const AppNotification &item)
             if (source.body.isEmpty())
                 source.body = session->prompt.trimmed();
         }
+    }
+    if (!forkmesh::poweralert::isPowerKind(item.kind)) {
+        pingforward::Screen screen;
+        screen.active = isActiveWindow() && !isMinimized();
+        screen.agentList = m_agentTable && m_agentTable->isVisible();
+        screen.pingsPage = m_sectionStack && m_sectionStack->currentIndex() == 3;
+        if (pingforward::seenOnScreen(screen, source))
+            return {};
     }
     const pingforward::Ping ping = pingforward::pingFor(source);
     if (!pingforward::valid(ping))

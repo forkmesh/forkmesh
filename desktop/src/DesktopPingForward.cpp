@@ -209,6 +209,16 @@ Ping pingFor(const Source &source)
     return ping;
 }
 
+bool seenOnScreen(const Screen &screen, const Source &source)
+{
+    if (!screen.active)
+        return false;
+    if (screen.pingsPage)
+        return true;
+    return screen.agentList && source.linkKind == QLatin1String("agent") &&
+           source.linkNumber > 0;
+}
+
 bool valid(const Ping &ping)
 {
     return pingIdPattern().match(ping.pingId).hasMatch() &&

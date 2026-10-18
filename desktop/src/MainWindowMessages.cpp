@@ -988,6 +988,8 @@ void MainWindow::onMessage(const ChatMessage &message)
     if (!message.historical && !ownMessage) {
         const bool privateConversation =
             isPrivateChatConversation(conversation);
+        const bool watching =
+            conversation == m_currentConversation && isChatViewVisible();
         const QString where =
             isDirectConversation(conversation) ||
                     forkmesh::office::isDirectOfficeConversation(conversation)
@@ -1017,6 +1019,7 @@ void MainWindow::onMessage(const ChatMessage &message)
             item.actor = message.senderName;
             item.actorId = message.senderId;
             item.chatMessageId = message.id;
+            item.quiet = watching;
             recordNotification(item);
         }
         const QString mentionTarget =
@@ -1024,7 +1027,7 @@ void MainWindow::onMessage(const ChatMessage &message)
                 ? m_discordClient->botName()
                 : m_userName;
         if (textMentionsNodeName(message.text, mentionTarget)) {
-            if (notifyEnabled(kMentionAlertSetting)) {
+            if (notifyEnabled(kMentionAlertSetting) && !watching) {
                 if (!pingsPaused() && nativeSystemNotificationsEnabled())
                     QApplication::alert(this, 0);
                 const QString mentionTitle =

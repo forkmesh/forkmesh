@@ -245,8 +245,12 @@ extension ApplePushBridge: UNUserNotificationCenterDelegate {
                 Task { await direct.refresh() }
             }
             DesktopAlarm.shared.ring(open)
+            if Services.get(PushNotificationService.self)?.isOnScreen(open) == true {
+                completionHandler([])
+                return
+            }
+            completionHandler(open.isAlarm ? [.banner, .list] : [.banner, .sound])
         }
-        completionHandler(open.isAlarm ? [.banner, .list] : [.banner, .sound])
     }
 
     /// A tap tells the shell where to go: the service extension leaves the row
