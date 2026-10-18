@@ -39,6 +39,8 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 WORKFLOW_PATH_RE = re.compile(r"^\.forkmesh/[A-Za-z0-9._-]{1,96}\.ya?ml$")
 INPUT_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,99}$")
 SECRET_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+PUBLIC_RUN_FIELDS = ("id", "workflow", "workflowPath", "event", "commit", "ref",
+                     "status", "createdAt", "startedAt", "finishedAt", "actor")
 _ACTIVE_SQL = "('leased','running','cancelling')"
 
 
@@ -768,7 +770,7 @@ async def dispatch(runtime, owner, repo, workflow, ref, inputs, actor):
 
 
 async def run_log(runtime, owner, repo, run_id):
-    owner, _public = await identity(runtime, owner, repo)
+    owner, public = await identity(runtime, owner, repo)
     run_id = _int(run_id)
     job_id = run_id // RUN_ID_STRIDE
     index = run_id % RUN_ID_STRIDE - 1
@@ -784,32 +786,39 @@ async def run_log(runtime, owner, repo, run_id):
     if not row:
         return {"log": "", "updatedAt": 0}
     record = await _open(runtime, row.get("data"))
-    return {"log": str(record.get("log") or ""),
+    masks = (await secrets_for(runtime, owner, repo, public)).values()
+    return {"log": mask(record.get("log"), masks),
             "updatedAt": int(row.get("updated_at") or 0)}
 
 
-async def snapshot(runtime, owner, repo, always=False):
+async def snapshot(runtime, owner, repo, always=False, masked=True):
     repo = str(repo or "").strip()
     owner, public = await identity(runtime, owner, repo)
     rows = await runtime.d1_all(
         "SELECT id,runner,status,commit_oid,branch,data,created_at,updated_at,"
-        "event,workflow,ref,note FROM repo_action_jobs WHERE owner=? AND repo=? "
-        "ORDER BY id DESC LIMIT %d" % SNAPSHOT_JOBS, owner, repo)
+        "event,workflow,ref,note,actor FROM repo_action_jobs WHERE owner=? "
+        "AND repo=? ORDER BY id DESC LIMIT %d" % SNAPSHOT_JOBS, owner, repo)
     if not rows and not always and not await owner_has_runner(
             runtime, public) and not await owner_has_runner(runtime, owner):
         return None
     now = runtime.now()
     runs = []
     node = ""
+    masks = ((await secrets_for(runtime, owner, repo, public)).values()
+             if masked and rows else ())
     for row in rows:
         node = node or str(row.get("runner") or "")
         event = str(row.get("event") or "push")
+        actor = _line(row.get("actor"), 64)
         record = await _open(runtime, row.get("data"))
         stored = record.get("runs")
         if isinstance(stored, list) and stored:
             for run in stored:
                 if isinstance(run, dict):
-                    runs.append({"event": event, **run})
+                    item = {"event": event, "actor": actor, **run}
+                    if masks and item.get("logTail"):
+                        item["logTail"] = mask(item["logTail"], masks)
+                    runs.append(item)
         elif str(row.get("status") or "") in (
                 ("queued",) + ACTIVE_STATUSES + tuple(ENDED_STATUSES)):
             commit = str(row.get("commit_oid") or "")
@@ -830,6 +839,7 @@ async def snapshot(runtime, owner, repo, always=False):
                 "logTail": _log_tail(_line(row.get("note"), 300) + "\n")
                 if ended and row.get("note") else "",
                 "event": event,
+                "actor": actor,
             })
         if len(runs) >= RUN_LIMIT:
             break
@@ -842,4 +852,24 @@ async def snapshot(runtime, owner, repo, always=False):
         "source": "runner",
         "controlAvailable": bool(runtime.setting("ACTIONS_INSTANCE_RUNNER")),
         "workflows": await catalog(runtime, owner, repo),
+    }
+
+
+def public_summary(full):
+    runs = [{key: run[key] for key in PUBLIC_RUN_FIELDS if key in run}
+            for run in full.get("runs") or () if isinstance(run, dict)]
+    workflows = [{"path": item.get("path", ""), "name": item.get("name", ""),
+                  "events": list(item.get("events") or ())}
+                 for item in full.get("workflows") or ()
+                 if isinstance(item, dict)]
+    return {
+        "ok": True,
+        "access": "public",
+        "node": "",
+        "updatedAt": full.get("updatedAt", 0),
+        "expiresAt": full.get("expiresAt", 0),
+        "runs": runs,
+        "source": "runner",
+        "controlAvailable": False,
+        "workflows": workflows,
     }
