@@ -256,7 +256,7 @@ def test_starting_again_skips_finished_steps_and_follows_a_running_setup():
 
 def test_https_is_verified_with_a_real_certificate_and_a_redirect():
     caddyfile = TEXT.split("\nwrite_caddyfile() {", 1)[1].split("\nEOF\n", 1)[0]
-    assert 'header Strict-Transport-Security "max-age=31536000"' in caddyfile
+    assert 'Strict-Transport-Security "max-age=31536000"' in caddyfile
     live = function("https_live")
     assert '--resolve "$DOMAIN:443:127.0.0.1" "$ORIGIN/api/version"' in live
     assert " -k" not in live and "--insecure" not in live
@@ -264,6 +264,17 @@ def test_https_is_verified_with_a_real_certificate_and_a_redirect():
     assert 'caddy_news "$cursor" "$started"' in https
     assert "check_https" in https
     assert '"http://$DOMAIN/"' in function("check_https")
+
+
+def test_caddy_sends_the_only_strict_transport_security_header():
+    caddyfile = TEXT.split("\nwrite_caddyfile() {", 1)[1].split("\nEOF\n", 1)[0]
+    assert caddyfile.lower().count("strict-transport-security") == 1
+    assert (
+        '\theader {\n\t\tdefer\n'
+        '\t\tStrict-Transport-Security "max-age=31536000"\n\t}\n'
+    ) in caddyfile
+    site = caddyfile.split("\n$DOMAIN {\n", 1)[1]
+    assert site.index("\theader {\n\t\tdefer") < site.index("handle @gateway")
 
 
 DNS_FAKES = {
