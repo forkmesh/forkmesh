@@ -28,6 +28,49 @@ under 30 ms at the node.
 | **Genie after load.** The spider starts in idle time after the `load` event rather than at `DOMContentLoaded`, so it no longer competes with the dashboard's first render. | `www/public/genie-spider.js` |
 | **Static weight.** Self-hosted icons, small logos, precompressed assets (`.br` when `brotli` is in the deploy venv, plus gzip), immutable caching for hashed files, `no-cache` for pages carrying a rendered view. | build, Caddy |
 
+## The first paint is the final layout
+
+Pages used to paint one thing and then replace it: the repository page's
+server-rendered first view was a narrow, differently styled table (blue
+`name/` links, no tabs, no About rail) that dashboard.js swapped for the full
+interface 300-800 ms later (several seconds on a slow device); the header was
+drawn with signed-in controls and blank icon boxes that became "Sign Up / Log
+In" and icons after the session check. Layout-shift scores missed most of it
+because a replaced block is not a shift. What each page now paints first:
+
+| Piece | Now |
+|---|---|
+| Repository root (`repo_ssr.render_view`) | The dashboard's own markup and classes: tab strip, toolbar, path bar, mirror line, commit summary, file rows with icons and "N hours ago" dates, README card, About rail with placeholders. Rows and boxes land on the same pixels as the dashboard's (`test_first_view_rows_and_frame_match_the_dashboard_markup`, `test_first_view_uses_dashboard_classes_that_the_stylesheet_has`). Tabs follow the remembered anonymous `about` (Code alone when there is none); `.forkmesh/info.json` (`about`, `website`) is read with the first view. The page header gets the repository name and "public". |
+| Dashboard takeover | `applyRepoFirstViewAbout` applies the first view's features, description and website before the dashboard paints its own frame, so its tabs and rail do not change after it has drawn them. |
+| Other repository routes | `[data-repo-frame]`: the tab strip's band and the canvas colour instead of "Choose a repository" in the corner; `initRepoPage` keeps it instead of writing "Loading repository…". |
+| About rail | Files and Size rows show "–", Languages and Contributors show placeholders of their final size (`data-repo-about-pending`, hidden only if their data never comes). The size map observes its row instead of inserting a marker. |
+| Header | A head script marks `html[data-guest]` when there is neither a `forkmesh_session` cookie nor a stored session, and CSS shows the guest header from the start; the dashboard clears it when a session turns up. The always-visible header icons are inline SVG. `:where(i[data-lucide])` is `inline-block`, so every other icon placeholder already has its size. |
+| Profile | The contribution period buttons (Last year and the five years before) are in the page with year-wide placeholders filled by an inline script; the summary keeps two lines; the About panel's edit button no longer sets the panel's height (guests do not see it). |
+
+Fonts were not the cause: DejaVu Sans Mono is a Latin subset with
+`font-display: swap` used only for counts and hashes, and the theme is set by
+the inline head script before the stylesheet.
+
+Measured on code.example.org, signed out, headless Chromium 1366×900, three
+cold loads each; "after" serves this branch's pages, scripts and instance
+stylesheet in place of the live ones. CLS is the sum of layout shifts;
+"first view" is the share of pixels that differ between the first contentful
+frame and the settled page.
+
+| Page | CLS before | CLS after | First view before | First view after |
+|---|---|---|---|---|
+| `/Bolt` | 0.0036 | 0 | 14-18 % | 7 % |
+| `/dashboard` | 0.0047 | 0.0027 | 1.8 % | 0.9 % |
+| `/forkmesh` | 0.0291 | 0.0016 | 14-17 % | 7.5 % |
+| `/@drew` | 0.1649 | 0.0077 | 8.5 % | 7.1 % |
+| `/Bolt/actions` | 0.0010 | 0.0002 | 12.9 % | 8.3 % |
+
+What still differs after the first paint is data the first view does not
+have: counts and stars, the branch count, the release row, the languages and
+contributors, the contribution skyline, and on tab routes the panel itself.
+Pull request, issue and discussion first views (`repo_views`) still use the
+older `.fm-ssr` styling.
+
 ## How to measure
 
 Headless Chromium through Playwright, recording each request's start, TTFB,

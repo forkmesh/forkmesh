@@ -57,7 +57,7 @@
                     <section data-profile-about-panel class="overflow-hidden rounded-md border border-border bg-card">
                       <div class="flex items-center justify-between gap-3 px-4 py-3">
                         <h2 class="min-w-0 truncate text-sm font-semibold text-muted-foreground"><span data-profile-about-owner>forkmesh</span> / <span data-profile-about-label>About yourself</span></h2>
-                        <button data-profile-about-edit type="button" aria-label="Edit about yourself" class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        <button data-profile-about-edit type="button" aria-label="Edit about yourself" class="-my-1 flex shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
                           <i data-lucide="pencil" class="h-4 w-4"></i>
                         </button>
                       </div>
@@ -81,11 +81,27 @@
                           <header class="flex min-w-0 flex-col gap-4 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                             <div class="min-w-0">
                               <p class="text-xs text-muted-foreground">Native activity</p>
-                              <h2 id="profile-contribution-heading" data-profile-contribution-summary class="mt-1 text-xl font-semibold leading-7 text-foreground">0 contributions in the last year</h2>
+                              <h2 id="profile-contribution-heading" data-profile-contribution-summary class="mt-1 text-xl font-semibold leading-7 text-foreground" style="min-height:3.5rem">0 contributions in the last year</h2>
                             </div>
                             <div data-profile-contribution-periods role="group" aria-label="Contribution period" class="flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-border bg-background p-1 text-xs">
                               <button data-profile-contribution-period="rolling" type="button" aria-current="true" class="shrink-0 rounded-md bg-secondary px-3 py-1.5 font-semibold text-foreground">Last year</button>
+                              <button data-profile-contribution-period="" type="button" aria-current="false" class="shrink-0 rounded-md px-3 py-1.5 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">&#8199;&#8199;&#8199;&#8199;</button>
+                              <button data-profile-contribution-period="" type="button" aria-current="false" class="shrink-0 rounded-md px-3 py-1.5 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">&#8199;&#8199;&#8199;&#8199;</button>
+                              <button data-profile-contribution-period="" type="button" aria-current="false" class="shrink-0 rounded-md px-3 py-1.5 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">&#8199;&#8199;&#8199;&#8199;</button>
+                              <button data-profile-contribution-period="" type="button" aria-current="false" class="shrink-0 rounded-md px-3 py-1.5 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">&#8199;&#8199;&#8199;&#8199;</button>
+                              <button data-profile-contribution-period="" type="button" aria-current="false" class="shrink-0 rounded-md px-3 py-1.5 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">&#8199;&#8199;&#8199;&#8199;</button>
                             </div>
+                            <script>
+                              (() => {
+                                const year = new Date().getUTCFullYear();
+                                const buttons = document.currentScript.previousElementSibling.querySelectorAll("button");
+                                buttons.forEach((button, index) => {
+                                  if (!index) return;
+                                  button.dataset.profileContributionPeriod = String(year - index);
+                                  button.textContent = String(year - index);
+                                });
+                              })();
+                            </script>
                           </header>
 
                           <div class="relative min-w-0 p-4 sm:p-5">

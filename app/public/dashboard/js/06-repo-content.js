@@ -10140,6 +10140,27 @@
 
   const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
 
+  function repoFirstViewSeed(repo) {
+    let seed = null;
+    try {
+      seed = JSON.parse(document.getElementById("forkmesh-repo-ssr")?.textContent || "null");
+    } catch (_) {
+      return null;
+    }
+    if (!seed?.owner || !seed?.repo) return null;
+    const base = `/api/repo/${encodeURIComponent(seed.owner)}/${encodeURIComponent(seed.repo)}`;
+    return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
+  }
+
+  function applyRepoFirstViewAbout(repo) {
+    const seed = repoFirstViewSeed(repo);
+    if (!seed) return;
+    applyRepoFeatures(seed.features);
+    const about = String(seed.info?.about || "").trim();
+    if (about) applyRepoAboutDescription(repo, about);
+    if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
+  }
+
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
     REPO_FEATURE_TABS.forEach((key) => {
@@ -11245,7 +11266,6 @@
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
     label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
-    section.classList.remove("hidden");
   }
 
   // ranked: [[language, weight], ...] already sorted desc. weight is bytes when
@@ -11267,6 +11287,7 @@
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11324,6 +11345,7 @@
     list.innerHTML = shown.map(repoContributorAvatar).join("") +
       (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
     dropBrokenContributorAvatars(list);
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11559,7 +11581,6 @@
     const meta = $("[data-repo-about-sizemap-meta]");
     if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
-    section.classList.remove("hidden");
   }
 
   // --- Size map tab (adhoc #198) ----------------------------------------
@@ -11835,17 +11856,9 @@
     const section = $("[data-repo-about-sizemap]");
     state.repoAboutSizeMapObserver?.disconnect();
     state.repoAboutSizeMapObserver = null;
-    if (!section?.parentElement || typeof IntersectionObserver !== "function") {
+    if (!section || typeof IntersectionObserver !== "function") {
       loadRepoAboutSizeMap(repo);
       return;
-    }
-    let marker = section.previousElementSibling;
-    if (!marker?.hasAttribute("data-repo-about-sizemap-marker")) {
-      marker = document.createElement("div");
-      marker.setAttribute("data-repo-about-sizemap-marker", "");
-      marker.setAttribute("aria-hidden", "true");
-      marker.style.height = "1px";
-      section.parentElement.insertBefore(marker, section);
     }
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -11854,14 +11867,22 @@
       if (repoAboutStillCurrent(repo)) loadRepoAboutSizeMap(repo);
     }, { rootMargin: "300px 0px" });
     state.repoAboutSizeMapObserver = observer;
-    observer.observe(marker);
+    observer.observe(section);
   }
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    if (await loadRepoAboutStats(repo)) return;
-    loadRepoAboutFilesAndLanguages(repo);
-    loadRepoAboutContributors(repo);
+    if (!await loadRepoAboutStats(repo)) {
+      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo)]);
+    }
+    if (repoAboutStillCurrent(repo)) settleRepoAboutPending();
+  }
+
+  function settleRepoAboutPending() {
+    document.querySelectorAll("[data-repo-about-pending]").forEach((section) => {
+      section.removeAttribute("data-repo-about-pending");
+      section.classList.add("hidden");
+    });
   }
 
   function loadRepoAboutRail(repo) {
