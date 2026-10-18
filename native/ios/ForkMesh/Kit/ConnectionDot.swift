@@ -132,17 +132,19 @@ struct AvatarWithDot: View {
                 .lineLimit(1)
                 .fixedSize()
                 .shadow(color: Color.black.opacity(0.35), radius: 1, x: 0, y: 0.5)
-                .offset(x: size * 0.14, y: size * 0.14)
+                .offset(x: -size * 0.3, y: size * 0.22)
         }
     }
 
     var body: some View {
         if rounded {
             FmAvatar(name: label, avatarPng: avatarPng, size: size, corner: size * 0.28)
-                .overlay(alignment: statusEmoji.isEmpty ? .bottomTrailing : .topTrailing) {
-                    dot.offset(x: 2, y: statusEmoji.isEmpty ? 2 : -4)
+                .overlay {
+                    RoundedRectangle(cornerRadius: size * 0.28 + 3, style: .continuous)
+                        .strokeBorder(dotColor, lineWidth: 2)
+                        .padding(-3)
                 }
-                .overlay(alignment: .bottomTrailing) { badge }
+                .overlay(alignment: .bottomLeading) { badge }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(verbatim: "Connection status: \(statusLabel). Account \(label)"))
         } else {

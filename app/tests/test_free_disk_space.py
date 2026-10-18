@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -7,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools/free_disk_space.py"
 WORKFLOW = ROOT / ".forkmesh/free-disk-space.yml"
+sys.path.insert(0, str(ROOT / "app/src"))
+
+import workflow_desktop as desktop  # noqa: E402
 
 
 def _env(home: Path) -> dict[str, str]:
@@ -144,58 +148,43 @@ def test_usage_and_report_steps_delete_nothing(tmp_path: Path) -> None:
     assert paths["old_claude"].exists()
 
 
-def _workflow_steps() -> list[tuple[str, str]]:
-    lines = WORKFLOW.read_text().splitlines()
-    steps = []
-    for index, line in enumerate(lines):
-        if line.strip().startswith("- name: "):
-            steps.append((line.split(": ", 1)[1].strip(), lines[index + 2].strip()))
-    return steps
+def _result(output: str) -> dict:
+    lines = [line for line in output.splitlines() if line.startswith("::result::")]
+    assert len(lines) == 1, output
+    return json.loads(lines[0][len("::result::"):])
 
 
-def _run_step(paths: dict[str, Path], command: str, checkout: Path | None) -> subprocess.CompletedProcess:
-    env = _env(paths["home"])
-    if checkout is not None:
-        env["FORKMESH_LOCAL_CHECKOUT"] = str(checkout)
-    script = f'{command} --home "{paths["home"]}" --tmp "{paths["tmp"]}" --no-caches'
-    return subprocess.run(["bash", "-ec", script], cwd=ROOT, capture_output=True, text=True, env=env)
-
-
-def test_workflow_runs_every_step_on_this_computer_by_hand_only() -> None:
-    text = WORKFLOW.read_text()
-    assert "\non: [workflow_dispatch]\n" in text
-    assert "\nsandbox: false\n" in text
-    steps = _workflow_steps()
-    assert [command.split("--step ", 1)[1].split()[0] for _name, command in steps] == [
+def test_the_graphical_workflow_runs_every_step_of_the_tool() -> None:
+    assert [step for _type, step, *_rest in desktop.STEPS] == [
         "usage", "agents", "tests", "versions", "caches", "report"]
-    for _name, command in steps:
-        assert command.startswith("python3 tools/free_disk_space.py --execute --step ")
-        assert '--repo "${FORKMESH_LOCAL_CHECKOUT:?' in command
+    assert not WORKFLOW.exists()
 
 
-def test_workflow_steps_clean_the_local_checkout_debris(tmp_path: Path) -> None:
+def test_desktop_steps_clean_the_checkout_debris_and_report_what_they_freed(tmp_path: Path) -> None:
     paths = _layout(tmp_path)
+    results = []
     outputs = []
-    for name, command in _workflow_steps():
-        result = _run_step(paths, command, paths["repo"])
-        assert result.returncode == 0, (name, result.stdout, result.stderr)
-        outputs.append(result.stdout)
+    for _type, step, *_rest in desktop.STEPS:
+        output = _run(paths, "--execute", "--step", step, "--json")
+        outputs.append(output)
+        results.append(_result(output))
     assert outputs[0].startswith("Before: /")
     assert outputs[-1].startswith("After: /")
+    assert [result["step"] for result in results] == [step for _type, step, *_rest in desktop.STEPS]
+    assert results[0]["freedBytes"] == 0 and results[-1]["freedBytes"] == 0
+    assert results[1]["freedBytes"] > 0 and results[1]["items"] >= 2
+    assert all(result["totalBytes"] >= result["freeBytes"] > 0 for result in results)
     for key in ("orphan_scratch", "orphan_build", "orphan_tmp", "sandbox", "old_claude"):
         assert not paths[key].exists(), key
     for key in ("live_scratch", "recent_scratch", "live_build", "named_build", "new_claude", "repo"):
         assert paths[key].exists(), key
 
 
-def test_workflow_step_refuses_without_a_local_checkout(tmp_path: Path) -> None:
+def test_a_dry_run_reports_nothing_freed(tmp_path: Path) -> None:
     paths = _layout(tmp_path)
-    _name, command = _workflow_steps()[1]
-    result = _run_step(paths, command, None)
-    assert result.returncode != 0
-    assert "this run has no local checkout" in result.stderr
+    result = _result(_run(paths, "--step", "agents", "--json"))
+    assert result["freedBytes"] == 0 and result["items"] == 0
     assert paths["orphan_scratch"].exists()
-    assert paths["orphan_build"].exists()
 
 
 def test_a_candidate_holding_the_tools_own_cwd_is_kept(tmp_path: Path) -> None:

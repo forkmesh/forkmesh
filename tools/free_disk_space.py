@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -25,6 +26,7 @@ BACKUP_PATTERNS = (re.compile(r"^forkmesh-fleet-\d{8}-\d{6}\.tar\.gz\.age$"),
 BACKUP_KEEP = 3
 CLAUDE_VERSION = re.compile(r"^\d+(?:\.\d+)+$")
 STEPS = ("usage", "agents", "tests", "versions", "caches", "report")
+RESULT_PREFIX = "::result::"
 DELETE_STEPS = ("agents", "tests", "versions")
 
 
@@ -52,6 +54,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--proc", type=Path, default=Path("/proc"))
     parser.add_argument("--step", choices=STEPS,
                         help="run one part only: usage, agents, tests, versions, caches or report")
+    parser.add_argument("--json", action="store_true",
+                        help="end with one ::result:: line of JSON: bytes freed, items removed, free space")
     return parser.parse_args(argv)
 
 
@@ -322,20 +326,32 @@ def _free(path: Path) -> str:
     return f"{_human(usage.free)} free of {_human(usage.total)} ({(usage.total - usage.free) * 100 // usage.total}% used)"
 
 
+def result_line(step: str | None, freed: int, items: int, home: Path) -> str:
+    usage = shutil.disk_usage(home)
+    return RESULT_PREFIX + json.dumps({
+        "step": step or "all", "freedBytes": max(0, int(freed)), "items": int(items),
+        "freeBytes": int(usage.free), "totalBytes": int(usage.total)}, sort_keys=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     args.repo = args.repo.resolve()
     args.home = args.home.resolve()
     step = args.step
+    free_before = shutil.disk_usage(args.home).free
     if step in (None, "usage"):
         print(f"Before: / {_free(args.home)}; /tmp {_free(args.tmp)}")
     if step == "usage":
         worktree_paths, _names, _numbers = worktrees(args.repo)
         print(f"Keeping {len(worktree_paths)} registered worktrees of {args.repo}")
+        if args.json:
+            print(result_line(step, 0, 0, args.home))
         return 0
     if step == "report":
         print(f"After: / {_free(args.home)}; /tmp {_free(args.tmp)}")
         report_large(args.home)
+        if args.json:
+            print(result_line(step, 0, 0, args.home))
         return 0
     removable: list[Candidate] = []
     if step != "caches":
@@ -355,12 +371,14 @@ def main(argv: list[str] | None = None) -> int:
             candidate.size = tree_size(candidate.path)
             removable.append(candidate)
     total = 0
+    removed = 0
     for candidate in removable:
         verb = "del  " if args.execute else "would"
         print(f"{verb} {_human(candidate.size):>8}  {candidate.path}  ({candidate.reason})")
         if args.execute and not remove(candidate):
             continue
         total += candidate.size
+        removed += 1
     if step in (None, "caches"):
         if args.no_caches:
             print("Left the pip and npm caches alone (--no-caches).")
@@ -373,6 +391,11 @@ def main(argv: list[str] | None = None) -> int:
         report_large(args.home)
     if not args.execute:
         print("\nDry run. Re-run with --execute to delete.")
+    if args.json:
+        freed = total
+        if step == "caches" and args.execute:
+            freed = shutil.disk_usage(args.home).free - free_before
+        print(result_line(step, freed if args.execute else 0, removed if args.execute else 0, args.home))
     return 0
 
 

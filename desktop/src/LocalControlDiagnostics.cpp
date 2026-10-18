@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QRegularExpression>
 
 namespace forkmesh::localcontrol::diag {
@@ -325,7 +326,7 @@ QString processDetailText(const QString &text)
 QStringList mutatingActions()
 {
     return {QStringLiteral("stopAgent"), QStringLiteral("sendStalls"),
-            QStringLiteral("sendStall")};
+            QStringLiteral("sendStall"), QStringLiteral("freeDiskSpace")};
 }
 
 QString subjectFor(const QString &action, const QJsonObject &params, QString *error)
@@ -349,6 +350,12 @@ QString subjectFor(const QString &action, const QJsonObject &params, QString *er
     }
     if (action == QLatin1String("sendStalls"))
         return QStringLiteral("all");
+    if (action == QLatin1String("freeDiskSpace")) {
+        const QString step = params.value(QStringLiteral("step")).toString();
+        if (!freeDiskSpaceSteps().contains(step))
+            return fail("bad_step");
+        return step;
+    }
     return fail("unsupported_action");
 }
 
@@ -365,7 +372,78 @@ QString actionSummary(const QString &action, const QString &subject,
     if (action == QLatin1String("sendStall"))
         return QStringLiteral("Start an agent on the desktop to fix this UI stall%1.")
             .arg(label.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(label));
+    if (action == QLatin1String("freeDiskSpace"))
+        return QStringLiteral("Free disk space on the desktop: %1. Only ForkMesh debris that "
+                              "nothing uses is deleted.")
+            .arg(freeDiskSpaceStepLabel(subject));
     return {};
+}
+
+QStringList freeDiskSpaceSteps()
+{
+    return {QStringLiteral("usage"),    QStringLiteral("agents"), QStringLiteral("tests"),
+            QStringLiteral("versions"), QStringLiteral("caches"), QStringLiteral("report")};
+}
+
+QString freeDiskSpaceStepLabel(const QString &step)
+{
+    if (step == QLatin1String("usage"))
+        return QStringLiteral("measure the disk");
+    if (step == QLatin1String("agents"))
+        return QStringLiteral("remove agent leftovers");
+    if (step == QLatin1String("tests"))
+        return QStringLiteral("remove test leftovers");
+    if (step == QLatin1String("versions"))
+        return QStringLiteral("prune old versions and Trash");
+    if (step == QLatin1String("caches"))
+        return QStringLiteral("clear the pip and npm caches");
+    if (step == QLatin1String("report"))
+        return QStringLiteral("report free space");
+    return step;
+}
+
+QString freeDiskSpaceScript()
+{
+    return QStringLiteral("tools/free_disk_space.py");
+}
+
+QStringList freeDiskSpaceArguments(const QString &checkout, const QString &step)
+{
+    return {QStringLiteral("-u"), QDir(checkout).filePath(freeDiskSpaceScript()),
+            QStringLiteral("--execute"), QStringLiteral("--step"), step,
+            QStringLiteral("--repo"), checkout, QStringLiteral("--json")};
+}
+
+QJsonObject freeDiskSpaceReply(const QString &step, const QByteArray &output, qint64 ms,
+                               QString *error)
+{
+    static const QString prefix = QStringLiteral("::result::");
+    QJsonObject result;
+    QStringList lines;
+    for (const QString &raw : QString::fromUtf8(output).split(QLatin1Char('\n'))) {
+        const QString line = raw.trimmed();
+        if (line.startsWith(prefix)) {
+            result = QJsonDocument::fromJson(line.mid(prefix.size()).toUtf8()).object();
+            continue;
+        }
+        if (!line.isEmpty())
+            lines.append(line.left(kFreeDiskSpaceMaxLineChars));
+    }
+    if (result.isEmpty() || result.value(QStringLiteral("step")).toString() != step) {
+        if (error)
+            *error = QStringLiteral("cleanup_failed");
+        return {};
+    }
+    if (lines.size() > kFreeDiskSpaceMaxLines)
+        lines = lines.mid(lines.size() - kFreeDiskSpaceMaxLines);
+    QJsonObject reply{{QStringLiteral("step"), step},
+                      {QStringLiteral("ms"), double(qMax<qint64>(0, ms))},
+                      {QStringLiteral("lines"), QJsonArray::fromStringList(lines)}};
+    for (const char *key : {"freedBytes", "items", "freeBytes", "totalBytes"}) {
+        const QString name = QString::fromLatin1(key);
+        reply.insert(name, qMax(0.0, result.value(name).toDouble()));
+    }
+    return reply;
 }
 
 QString backupLocationLabel(const QString &root, const QString &dataRoot)
