@@ -255,6 +255,31 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   or `{action: "rerun", runId}` is handled locally for runner snapshots.
   `GET /api/repo/<owner>/<repo>/actions/runs/<id>/log` returns the full log.
 
+Web UI (`app/public/dashboard/js/06-repo-actions.js`): a runner snapshot
+with `controlAvailable: true` (schema version 1 or 2) turns on the controls.
+Selecting a workflow from `snapshot.workflows` (normalized from the catalog;
+`inputs` may be a `{name: spec}` map or a list of `{name, ...}`) whose events
+include `workflow_dispatch` shows Run workflow with a branch picker and one
+field per input: `string` a text field, `choice` a select of `options`,
+`boolean` a checkbox, with `default` filled in and `required` checked before
+sending. The page posts `{action: "dispatch", workflow: <path>, ref: <bare
+branch name>, inputs: {name: string | boolean}}`, `{action: "cancel",
+runId}` and `{action: "rerun", runId}` without a `requestId` or `node` (those
+belong to the mirror contract); a 2xx answer counts as done, an optional
+`runId` in it opens that run, and an error body's `error` code is shown in
+words (`run_active`, `input_required`, `input_invalid`, `workflow_not_found`
+and others). Each run shows its `event` as a badge. Opening a run loads
+`GET .../actions/runs/<id>/log`, which must answer JSON `{ok: true, log:
+"<text>"}`; while it loads, or if it fails, the run's `logTail` is shown. A
+live run's log is re-read on each poll. The repository Settings tab has an
+Actions secrets card and the organization page (owners and admins) an
+Actions secrets section; both expect `GET` to answer `{secrets: [{name,
+updatedAt}]}` (milliseconds) and send `PUT .../<NAME>` with `{value}` and
+`DELETE .../<NAME>`; the value field is cleared after every attempt. Like every
+dashboard call through `orgAgentRequest`, JSON bodies also carry
+`sessionToken` when the session is a bearer token; the endpoints must ignore
+it.
+
 Triggers:
 
 | Event | Where |

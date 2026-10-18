@@ -2684,6 +2684,7 @@
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
+      mountActionsSecrets($("[data-actions-secrets]"));
     }
     // Counts are live mirror state, not part of the tab's load-once cache.
     // Revalidate them whenever a collaboration tab is explicitly opened.
