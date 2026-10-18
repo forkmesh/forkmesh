@@ -376,3 +376,35 @@ func TestCatalogActivityWeeksMatchesGitLogInOnePass(t *testing.T) {
 		t.Fatalf("activity commits=%d/%d merges=%d/%d", sum(commits), all, sum(merges), merged)
 	}
 }
+
+func TestCatalogDescriptionComesFromTheRepositoryAbout(t *testing.T) {
+	source, bare := makeBareRepo(t)
+	ctx := context.Background()
+	if got := catalogDescription(ctx, bare); got != "" {
+		t.Fatalf("description without an about file = %q", got)
+	}
+	cases := []struct {
+		about string
+		want  string
+	}{
+		{`{"about": "  Mirror,\n preserve\tand share  ", "description": "x"}`, "Mirror, preserve and share"},
+		{`{"about": "", "description": "Fallback text"}`, "Fallback text"},
+		{`{"about": 7}`, ""},
+		{`not json`, ""},
+		{`{"about": "` + strings.Repeat("é", 300) + `"}`, strings.Repeat("é", 240)},
+	}
+	if err := os.MkdirAll(filepath.Join(source, ".forkmesh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for index, test := range cases {
+		if err := os.WriteFile(filepath.Join(source, ".forkmesh", "info.json"), []byte(test.about), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(t, source, "git", "add", ".forkmesh/info.json")
+		run(t, source, "git", "commit", "-q", "-m", "about "+strconv.Itoa(index))
+		run(t, source, "git", "push", "-q", bare, "HEAD:main")
+		if got := catalogDescription(ctx, bare); got != test.want {
+			t.Fatalf("case %d: description = %q, want %q", index, got, test.want)
+		}
+	}
+}
