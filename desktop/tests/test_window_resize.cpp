@@ -5682,6 +5682,81 @@ void checkErrorLogTriage(MainWindow &window)
               == QStringLiteral("Offline"),
           QStringLiteral("a real failure notice is still reported when it can be"));
 
+    {
+        QTemporaryDir conflictRepo;
+        QTemporaryDir conflictWorktreeParent;
+        const QString branch = QStringLiteral("agent/test-unattended-conflict");
+        const QString worktree =
+            conflictWorktreeParent.path() + QStringLiteral("/linked-unattended");
+        const auto writeFixture = [](const QString &path,
+                                     const QByteArray &contents) {
+            QFile file(path);
+            return file.open(QIODevice::WriteOnly | QIODevice::Truncate) &&
+                   file.write(contents) == contents.size();
+        };
+        const QString shared =
+            conflictRepo.path() + QStringLiteral("/shared.txt");
+        const bool fixtureReady =
+            initGitRepo(conflictRepo) &&
+            writeFixture(shared, QByteArrayLiteral("base\n")) &&
+            runGitChecked(conflictRepo.path(), {"add", "shared.txt"}) &&
+            runGitChecked(conflictRepo.path(), {"commit", "-m", "base file"}) &&
+            runGitChecked(conflictRepo.path(), {"branch", branch}) &&
+            runGitChecked(conflictRepo.path(),
+                          {"worktree", "add", worktree, branch}) &&
+            writeFixture(worktree + QStringLiteral("/shared.txt"),
+                         QByteArrayLiteral("branch\n")) &&
+            runGitChecked(worktree, {"add", "shared.txt"}) &&
+            runGitChecked(worktree, {"commit", "-m", "branch edit"}) &&
+            writeFixture(shared, QByteArrayLiteral("main\n")) &&
+            runGitChecked(conflictRepo.path(), {"add", "shared.txt"}) &&
+            runGitChecked(conflictRepo.path(), {"commit", "-m", "main edit"});
+        const QString branchTip =
+            fixtureReady ? gitOutput(worktree, {"rev-parse", "HEAD"}).trimmed()
+                         : QString();
+        const QString mainTip =
+            fixtureReady
+                ? gitOutput(conflictRepo.path(), {"rev-parse", "main"}).trimmed()
+                : QString();
+        window.testOpenRepository(window.testAddLocalRepository(
+            "me", "unattended-conflict", conflictRepo.path()));
+        window.testClearPageNotices();
+        QApplication::processEvents();
+        bool editorOpened = false;
+        window.testSetMergeConflictEditorHook(
+            [&editorOpened](const QString &, const QStringList &,
+                            const std::function<bool(QString *)> &) {
+                editorOpened = true;
+                return false;
+            });
+        bool conflicted = false;
+        const bool merged =
+            fixtureReady && window.testMergeBranchUnattended(branch, &conflicted);
+        window.testSetMergeConflictEditorHook({});
+        const bool refsKept =
+            fixtureReady &&
+            gitOutput(worktree, {"rev-parse", "HEAD"}).trimmed() == branchTip &&
+            gitOutput(conflictRepo.path(), {"rev-parse", "main"}).trimmed() ==
+                mainTip;
+        const bool worktreeClean =
+            gitOutput(worktree, {"status", "--porcelain"}).trimmed().isEmpty();
+        QApplication::processEvents();
+        const QString pingStatus = window.testPingStatusFor(
+            QStringLiteral("Couldn't merge %1 into main: updating it").arg(branch));
+        check(fixtureReady && !editorOpened && !merged && conflicted && refsKept &&
+                  worktreeClean && pingStatus == QStringLiteral("Local only"),
+              QStringLiteral("a phone merge that conflicts answers at once instead "
+                             "of opening the desktop merge editor (fixture=%1 "
+                             "editor=%2 merged=%3 conflicted=%4 refs=%5 clean=%6 ping=%7)")
+                  .arg(fixtureReady)
+                  .arg(editorOpened)
+                  .arg(merged)
+                  .arg(conflicted)
+                  .arg(refsKept)
+                  .arg(worktreeClean)
+                  .arg(pingStatus));
+    }
+
     window.testClearPageNotices();
     window.testResetLoggedErrorAlerts();
     QSettings().remove(forkmesh::kReportUserVisibleErrorsSetting);

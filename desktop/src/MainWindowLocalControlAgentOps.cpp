@@ -978,7 +978,9 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                         if (!merged) {
                             m_localControl->respondError(
                                 connectionId, requestId,
-                                QStringLiteral("merge_failed"),
+                                m_worktreeMergeConflicted
+                                    ? QStringLiteral("conflicts")
+                                    : QStringLiteral("merge_failed"),
                                 m_operationNoticeSerial != noticesBefore
                                     ? m_lastOperationNotice
                                     : QString());
@@ -1000,7 +1002,8 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                                      {QStringLiteral("merged"), true},
                                      {QStringLiteral("stats"), agentops::mergeStatsJson(stats)}});
                             });
-                    });
+                    },
+                    true);
             });
         return;
     }
