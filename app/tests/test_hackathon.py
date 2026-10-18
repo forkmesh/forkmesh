@@ -1167,7 +1167,8 @@ def test_prize_minimums_stop_one_small_payment_winning_a_prize():
     assert "never more than half of the revenue" in text
     assert "not awarded" in text
     assert "made or funded by the entrant" in text
-    assert "last updated 1 october 2026" in text
+    assert "on 1 october 2026 we added the prize minimums" in text
+    assert "last updated 6 october 2026" in text
 
 
 def test_landing_script_degrades_to_truthful_static_copy():
