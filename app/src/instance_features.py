@@ -238,3 +238,32 @@ def describe(env):
             feature[0], ""),
         "paths": list(feature[3]),
     } for feature in FEATURES]
+
+
+ERROR_TEXT_FIELDS = ("message", "hint", "detail", "title", "reason")
+
+
+def rename_error_body(env, body):
+    if not branded(env) or not isinstance(body, (bytes, str)):
+        return body
+    raw = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
+    if "ForkMesh" not in raw:
+        return body
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return body
+    if not isinstance(payload, dict):
+        return body
+    changed = False
+    for key in ERROR_TEXT_FIELDS:
+        value = payload.get(key)
+        if isinstance(value, str):
+            renamed = rename(env, value)
+            if renamed != value:
+                payload[key] = renamed
+                changed = True
+    if not changed:
+        return body
+    text = json.dumps(payload, separators=(",", ":"))
+    return text.encode("utf-8") if isinstance(body, bytes) else text

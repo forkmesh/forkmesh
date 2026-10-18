@@ -815,6 +815,16 @@ def test_the_worker_admits_the_signed_state_of_the_job_target_node(
     assert calls == [("forkmesh", "site", "forkmesh")]
 
 
+def test_the_instance_git_node_is_shown_as_the_instance_name():
+    runtime, _key = setup()
+    runtime.settings["INSTANCE_FLAGSHIP_NODE"] = "box"
+    runtime.settings["INSTANCE_NAME"] = "Acme Code"
+    assert runner_actions._shown_actor(runtime, "box") == "Acme Code"
+    assert runner_actions._shown_actor(runtime, "ada") == "ada"
+    runtime.settings["INSTANCE_NAME"] = ""
+    assert runner_actions._shown_actor(runtime, "box") == "box"
+
+
 def test_a_trusted_job_marks_its_target_node_as_pushing_until_it_ends():
     runtime, key = setup()
     pushing = runner_actions.pushing

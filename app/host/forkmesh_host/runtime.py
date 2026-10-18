@@ -185,8 +185,30 @@ class HostRuntime:
         with d1_caller.request_scope(request):
             if self._db_scope is not None:
                 with self._db_scope():
-                    return await self.entrypoint(ctx).fetch(request)
-            return await self.entrypoint(ctx).fetch(request)
+                    response = await self.entrypoint(ctx).fetch(request)
+            else:
+                response = await self.entrypoint(ctx).fetch(request)
+        return self._instance_error_text(response)
+
+    def _instance_error_text(self, response):
+        features = sys.modules.get("instance_features")
+        try:
+            status = int(getattr(response, "status", 0) or 0)
+        except (TypeError, ValueError):
+            return response
+        if features is None or status < 400 or not features.branded(self.env):
+            return response
+        content_type = str(response.headers.get("content-type") or "").lower()
+        body = getattr(response, "_body", None)
+        if "json" not in content_type or not isinstance(body, (bytes, str)):
+            return response
+        renamed = features.rename_error_body(self.env, body)
+        if renamed is not body:
+            response._body = renamed
+            if response.headers.has("content-length"):
+                response.headers.set("content-length", str(len(
+                    renamed if isinstance(renamed, bytes) else renamed.encode("utf-8"))))
+        return response
 
     async def scheduled(self, scheduled_time=None, cron=CRON_EXPRESSION):
         if self.sealed:

@@ -251,3 +251,28 @@ def test_brand_tool_renames_page_descriptions_but_keeps_the_desktop(tmp_path):
 
 def test_brand_script_keeps_the_company_name_and_identifiers():
     assert "(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)" in BRAND_JS
+
+
+def test_api_error_messages_name_the_instance():
+    import json as _json
+    sys.path.insert(0, str(ROOT / "host"))
+    from forkmesh_host.runtime import HostRuntime
+    from forkmesh_host.workers import Response
+
+    def answer(env_values, payload, status=429, content_type="application/json"):
+        response = Response(_json.dumps(payload), status=status,
+                            headers={"content-type": content_type})
+        holder = SimpleNamespace(env=env(**env_values))
+        return HostRuntime._instance_error_text(holder, response)
+
+    payload = {"error": "hosted_quota_exceeded",
+               "message": "This account already hosts 5 repositories on ForkMesh.",
+               "owner": "forkmesh"}
+    renamed = answer({"INSTANCE_NAME": "Acme Code"}, payload)
+    body = _json.loads(renamed._body)
+    assert body["message"] == "This account already hosts 5 repositories on Acme Code."
+    assert body["owner"] == "forkmesh" and body["error"] == "hosted_quota_exceeded"
+    assert _json.loads(answer({}, payload)._body) == payload
+    assert _json.loads(answer({"INSTANCE_NAME": "Acme Code"}, payload, status=200)._body) == payload
+    text = answer({"INSTANCE_NAME": "Acme Code"}, payload, content_type="text/plain")
+    assert _json.loads(text._body) == payload

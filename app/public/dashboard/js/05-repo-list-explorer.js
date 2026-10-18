@@ -676,7 +676,7 @@
     const key = repoKey(origin);
     const label = repoLabelParts(groupDisplayName(group));
     const displayOwner = label.owner;
-    const servedNote = displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
+    const servedNote = !dashboardOnInstance() && displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
       ? ` (published from ${origin.owner || "a node"})`
       : "";
     const fullLabel = displayOwner ? `${displayOwner}/${origin.name || "repository"}` : String(origin.name || "repository");
@@ -713,7 +713,7 @@
                 ${statusText}
               </span>
               ${repositoryTermsBadge(origin)}
-              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
+              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || ""}/${origin.name || ""}`)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
                 <i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i>
                 <span data-repo-star-label>Star</span>
                 <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
@@ -818,7 +818,7 @@
     const license = String(repo.license || repo.licenseName || "").trim();
     const description = String(repo.description || "").trim();
     const displayOwner = repoLabelParts(groupDisplayName(group)).owner;
-    const publishedFrom = displayOwner && repo.owner &&
+    const publishedFrom = !dashboardOnInstance() && displayOwner && repo.owner &&
       displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
       ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
       : "";
@@ -840,7 +840,7 @@
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">${meta}</div>
       </div>
       <div class="flex shrink-0 flex-col items-end justify-between gap-3">
-        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
+        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || repo.owner || ""}/${repo.name || ""}`)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
           <i data-lucide="star" data-repo-star-icon class="h-4 w-4 text-muted-foreground"></i>
           <span data-repo-star-label>Star</span>
           <span data-repo-star-count class="hidden">${formatCount(0)}</span>
