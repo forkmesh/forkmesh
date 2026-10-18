@@ -20,6 +20,8 @@ final class OpenWrtRouterModel {
     var rollback: Bool = true
     var snapshot = OpenWrtSnapshot()
     var packageOutput: String = ""
+    var storageLog: String = ""
+    var storageBusy: Bool = false
     var routerHost: String = ""
 
     @ObservationIgnored private var client: OpenWrtClient?
@@ -109,6 +111,8 @@ final class OpenWrtRouterModel {
         signedIn = false
         snapshot = OpenWrtSnapshot()
         packageOutput = ""
+        storageLog = ""
+        storageBusy = false
         routerHost = ""
     }
 
@@ -118,6 +122,7 @@ final class OpenWrtRouterModel {
         http = nil
         signedIn = false
         snapshot = OpenWrtSnapshot()
+        storageLog = ""
         show(text)
     }
 
@@ -139,7 +144,10 @@ final class OpenWrtRouterModel {
     func reloadConfig(_ config: String) async {
         guard let client else { return }
         let result = await client.call("uci", "get", ["config": .string(config)])
-        if result.ok { snapshot.configs[config] = result.data.obj("values") }
+        if result.ok {
+            snapshot.configs[config] = result.data.obj("values")
+            snapshot.missingConfigs.remove(config)
+        }
         snapshot.changes = await client.call("uci", "changes").data.obj("changes")
     }
 
@@ -248,12 +256,99 @@ final class OpenWrtRouterModel {
     }
 
     func setAutoMount(_ on: Bool) async {
-        let values: JSONObject = ["anon_mount": .string(on ? "1" : "0"), "auto_mount": "1"]
-        if let global = snapshot.sections("fstab", type: "global").first {
-            await stage("fstab", global.name, UciEdit(values: values), what: "Automatic mounting")
-        } else {
-            await add("fstab", type: "global", values: values, what: "Automatic mounting")
+        guard let client else { return }
+        if snapshot.fstabMissing {
+            guard on, !storageBusy else { return }
+            storageBusy = true
+            show("The router has no storage settings file (/etc/config/fstab) yet. Creating it…")
+            let created = await client.createFstab()
+            storageBusy = false
+            guard created.ok else {
+                show(created.error, error: true)
+                await checkStorage()
+                return
+            }
+            appendStorageLog("Created /etc/config/fstab on the router.")
+            let fstab = await client.call("uci", "get", ["config": "fstab"])
+            guard fstab.ok else { return show("ForkMesh created /etc/config/fstab, but the router cannot read it: \(fstab.error)", error: true) }
+            snapshot.configs["fstab"] = fstab.data.obj("values")
+            snapshot.missingConfigs.remove("fstab")
         }
+        let values: JSONObject = ["anon_mount": .string(on ? "1" : "0"), "auto_mount": "1"]
+        let saved: Bool
+        if let global = snapshot.sections("fstab", type: "global").first {
+            saved = await stage("fstab", global.name, UciEdit(values: values), what: "Automatic mounting")
+        } else {
+            saved = await add("fstab", type: "global", values: values, what: "Automatic mounting")
+        }
+        if saved {
+            show(on ? "Automatic mounting saved. Apply the change, then press Mount disks now." : "Automatic mounting turned off. Apply to make it take effect.")
+        } else {
+            show("Could not change automatic mounting: \(message)", error: true)
+            await checkStorage()
+        }
+    }
+
+    func appendStorageLog(_ line: String) {
+        storageLog = storageLog.isEmpty ? line : storageLog + "\n" + line
+    }
+
+    func checkStorage(keepLog: Bool = false) async {
+        guard let client, !storageBusy else { return }
+        storageBusy = true
+        defer { storageBusy = false }
+        if keepLog { appendStorageLog("\nChecking USB storage…") } else { storageLog = "Checking USB storage…" }
+        let (check, fresh) = await client.checkStorage(snapshot)
+        snapshot = fresh
+        let report = OpenWrtModel.storageReport(check)
+        if keepLog { appendStorageLog(report) } else { storageLog = report }
+    }
+
+    func installStorageSupport() async {
+        guard let client, !storageBusy else { return }
+        guard let tool = snapshot.packageTool else {
+            show("The router does not let ForkMesh run its package manager, so USB storage support cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.", error: true)
+            await checkStorage()
+            return
+        }
+        storageBusy = true
+        show("Installing USB storage support…")
+        storageLog = "Updating the router's package lists…"
+        let update = await client.packageAction(tool, action: "update", names: [])
+        if update.ok {
+            appendStorageLog("Package lists updated.")
+        } else {
+            appendStorageLog("Updating the package lists failed; the router may have no internet connection. Trying to install anyway.")
+            OpenWrtModel.outputTail(update.error).forEach { appendStorageLog("  " + $0) }
+        }
+        var failed: [String] = []
+        for name in OpenWrtModel.usbStoragePackages {
+            appendStorageLog("Installing \(name)…")
+            let result = await client.packageAction(tool, action: "install", names: [name])
+            if result.ok {
+                appendStorageLog("  \(name) is installed.")
+            } else {
+                failed.append(name)
+                appendStorageLog("  \(name) failed:")
+                let output = (result.data.str("stdout") + "\n" + result.data.str("stderr")).trimmingCharacters(in: .whitespacesAndNewlines)
+                OpenWrtModel.outputTail(output.isEmpty ? result.error : output).forEach { appendStorageLog("    " + $0) }
+            }
+        }
+        storageBusy = false
+        await refresh()
+        if failed.isEmpty {
+            show("USB storage support installed.")
+        } else {
+            show("Some storage packages could not be installed: \(failed.joined(separator: ", ")). The log below says why.", error: true)
+        }
+        await checkStorage(keepLog: true)
+    }
+
+    func applyAndMount() async {
+        await apply()
+        guard snapshot.pendingCount == 0 else { return }
+        await mountAll()
+        await checkStorage()
     }
 
     func mountAtBoot(_ disk: OpenWrtDisk, path: String) async {

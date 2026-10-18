@@ -147,6 +147,26 @@ public struct OpenWrtChoice: Equatable, Sendable, Identifiable {
     public var id: String { value }
 }
 
+public struct OpenWrtStorageCheck: Equatable, Sendable {
+    public var packagesKnown = false
+    public var installed: [String] = []
+    public var blockTool = false
+    public var fstabExists = false
+    public var autoMount = false
+    public var autoMountPending = false
+    public var usbKnown = false
+    public var usbControllers = 0
+    public var usbDevices: [String] = []
+    public var partitionsKnown = false
+    public var partitions: [String] = []
+    public var disks = 0
+    public var mounted = 0
+    public var listProblem = ""
+    public var kernelLines: [String] = []
+
+    public init() {}
+}
+
 public struct OpenWrtBlockDevice: Equatable, Sendable {
     public var name: String = ""
     public var device: String = ""
@@ -901,6 +921,125 @@ public enum OpenWrtModel {
     }
 
     public static let usbStoragePackages = ["kmod-usb-storage", "kmod-usb-storage-uas", "block-mount", "kmod-fs-ext4", "kmod-fs-vfat", "kmod-fs-exfat"]
+    public static let fstabPath = "/etc/config/fstab"
+    public static let defaultFstab = "config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n"
+
+    public static func parsePartitions(_ text: String) -> [String] {
+        var names: [String] = []
+        for line in text.split(separator: "\n") {
+            let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            if fields.count == 4, isStorageDevice(fields[3]), !names.contains(fields[3]) { names.append(fields[3]) }
+        }
+        return names
+    }
+
+    public static func usbControllerCount(_ entries: [String]) -> Int {
+        entries.filter { $0.range(of: #"^usb\d+$"#, options: .regularExpression) != nil }.count
+    }
+
+    public static func usbDeviceEntries(_ entries: [String]) -> [String] {
+        entries.filter { $0.range(of: #"^\d+-\d+(\.\d+)*$"#, options: .regularExpression) != nil }.sorted()
+    }
+
+    public static func storageKernelLines(_ dmesg: String, limit: Int = 20) -> [String] {
+        let wanted = #"usb|uas|scsi|xhci|ehci|ohci|\bsd[a-z]+\d*\b|exfat|ext4|vfat|fat-fs|mmc\d|i/o error"#
+        let lines = dmesg.split(separator: "\n").map { line in
+            String(line).replacingOccurrences(of: #"^<\d+>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty && $0.range(of: wanted, options: [.regularExpression, .caseInsensitive]) != nil }
+        return Array(lines.suffix(limit))
+    }
+
+    public static func missingStoragePackages(_ installed: [String]) -> [String] {
+        usbStoragePackages.filter { !installed.contains($0) }
+    }
+
+    public static func fstabFromDetect(_ output: String) -> String {
+        let hasGlobal = output.split(separator: "\n").contains { line in
+            String(line).range(of: #"^config\s+'?global'?\s*$"#, options: .regularExpression) != nil
+        }
+        guard hasGlobal else { return defaultFstab }
+        return output.hasSuffix("\n") ? output : output + "\n"
+    }
+
+    public static func outputTail(_ text: String, count: Int = 4) -> [String] {
+        Array(text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.suffix(count))
+    }
+
+    public static func storageFindings(_ check: OpenWrtStorageCheck) -> [String] {
+        var findings: [String] = []
+        let devices = check.usbDevices.joined(separator: ", ")
+        let partitions = check.partitions.joined(separator: ", ")
+        let missing = missingStoragePackages(check.installed)
+        if !check.listProblem.isEmpty { findings.append("The router could not list its disks: \(check.listProblem)") }
+        if check.usbKnown && check.usbControllers == 0 && check.partitions.isEmpty {
+            findings.append("The router has no USB controller driver running, so it cannot see anything in its USB port. Install the driver for this router (usually kmod-usb2 or kmod-usb3), or check that the model has a USB port.")
+        } else if check.usbKnown && check.usbDevices.isEmpty && check.partitions.isEmpty {
+            findings.append("The router sees nothing plugged into its USB port. Push the drive in fully, try another port or cable, and give a hard disk that needs more power a powered USB hub.")
+        } else if check.partitionsKnown && check.partitions.isEmpty && !check.usbDevices.isEmpty {
+            if check.packagesKnown && !check.installed.contains("kmod-usb-storage") {
+                findings.append("A USB device is plugged in (\(devices)), but the USB storage driver (kmod-usb-storage) is not installed, so no disk appears. Press Install USB storage support.")
+            } else {
+                findings.append("A USB device is plugged in (\(devices)), but no disk appeared for it. Unplug it and plug it back in, or restart the router; the kernel messages below may say why.")
+            }
+        }
+        if !check.partitions.isEmpty && !check.blockTool {
+            findings.append("The router sees the disk (\(partitions)), but block-mount is not installed, so it cannot list or mount it. Press Install USB storage support.")
+        } else if !check.partitions.isEmpty && check.disks == 0 && check.listProblem.isEmpty {
+            let drivers = missing.filter { $0.hasPrefix("kmod-fs-") }
+            var text = "The router sees the disk (\(partitions)), but found no filesystem it can read on it. Format it on a computer as ext4, exFAT or FAT32."
+            if check.packagesKnown && !drivers.isEmpty { text += " These filesystem drivers are not installed: \(drivers.joined(separator: ", "))." }
+            findings.append(text)
+        }
+        if check.blockTool && !check.fstabExists {
+            findings.append("The router has no storage settings file (/etc/config/fstab) yet. Turning on Mount any disk when it is plugged in creates it.")
+        }
+        if !check.packagesKnown {
+            findings.append("ForkMesh cannot run the router's package manager, so it cannot tell which drivers are installed.")
+        } else if !missing.isEmpty {
+            findings.append("Not installed: \(missing.joined(separator: ", ")).")
+        }
+        let unmounted = check.disks - check.mounted
+        if unmounted > 0 {
+            let count = unmounted == 1 ? "1 disk is not mounted." : "\(unmounted) disks are not mounted."
+            if !check.autoMount {
+                findings.append(count + " Turn on Mount any disk when it is plugged in and apply, or choose Mount at boot for the disk; then press Mount disks now.")
+            } else if check.autoMountPending {
+                findings.append(count + " Apply your changes, then press Mount disks now.")
+            } else {
+                findings.append(count + " Press Mount disks now; if it stays unmounted, its filesystem driver may be missing.")
+            }
+        } else if check.disks > 0 {
+            findings.append(check.disks == 1 ? "The disk is mounted." : "All \(check.disks) disks are mounted.")
+        }
+        if findings.isEmpty { findings.append("No problem found.") }
+        return findings
+    }
+
+    public static func storageReport(_ check: OpenWrtStorageCheck) -> String {
+        var lines = storageFindings(check).map { "• " + $0 }
+        lines.append("")
+        if check.usbKnown {
+            lines.append("USB controllers: \(check.usbControllers)")
+            lines.append("USB devices: \(check.usbDevices.isEmpty ? "none" : check.usbDevices.joined(separator: ", "))")
+        } else {
+            lines.append("USB devices: the router did not list them")
+        }
+        lines.append("Disks the kernel sees: \(!check.partitionsKnown ? "could not read /proc/partitions" : check.partitions.isEmpty ? "none" : check.partitions.joined(separator: ", "))")
+        lines.append("Disks with a readable filesystem: \(check.disks), mounted: \(check.mounted)")
+        lines.append("block-mount: \(check.blockTool ? "installed" : "not installed")")
+        lines.append("Storage settings (/etc/config/fstab): \(check.fstabExists ? "present" : "missing")")
+        lines.append("Mount any disk when it is plugged in: \(check.autoMount ? "on" : "off")\(check.autoMountPending ? ", waiting to be applied" : "")")
+        let missing = missingStoragePackages(check.installed)
+        lines.append(!check.packagesKnown ? "Storage packages: unknown"
+                     : missing.isEmpty ? "Storage packages: all installed" : "Storage packages missing: \(missing.joined(separator: ", "))")
+        if check.kernelLines.isEmpty {
+            lines.append("Recent kernel messages: none about USB or disks")
+        } else {
+            lines.append("Recent kernel messages:")
+            lines.append(contentsOf: check.kernelLines.map { "  " + $0 })
+        }
+        return lines.joined(separator: "\n")
+    }
 
     public static func shareConfig(_ configs: [String]) -> String {
         if configs.contains("ksmbd") { return "ksmbd" }

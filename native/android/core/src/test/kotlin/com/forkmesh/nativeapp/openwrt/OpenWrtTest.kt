@@ -16,6 +16,7 @@ private class FakeRouter : OpenWrtTransport {
     var logins = 0
     var expireNextBoard = false
     var confirmFailures = 0
+    var fstabMissing = false
     val calls = mutableListOf<List<Any?>>()
 
     fun last(objectName: String, method: String): List<Any?>? = calls.lastOrNull { it.getOrNull(1) == objectName && it.getOrNull(2) == method }
@@ -60,7 +61,7 @@ private class FakeRouter : OpenWrtTransport {
                     "lan" to mapOf(".name" to "lan", ".type" to "interface", ".index" to 1L, "proto" to "static", "ipaddr" to "192.168.1.1", "netmask" to "255.255.255.0"),
                     "wan" to mapOf(".name" to "wan", ".type" to "interface", ".index" to 2L, "proto" to "dhcp"),
                 )
-                "fstab" -> mapOf("cfg01" to mapOf(".name" to "cfg01", ".type" to "global", ".anonymous" to true, ".index" to 0L, "anon_mount" to "1"))
+                "fstab" -> if (fstabMissing) return reply(listOf(4L)) else mapOf("cfg01" to mapOf(".name" to "cfg01", ".type" to "global", ".anonymous" to true, ".index" to 0L, "anon_mount" to "1"))
                 "ksmbd" -> mapOf("cfg02" to mapOf(".name" to "cfg02", ".type" to "share", ".index" to 0L, "name" to "Media", "path" to "/mnt/sda1", "guest_ok" to "yes"))
                 else -> return reply(listOf(4L))
             }
@@ -79,8 +80,22 @@ private class FakeRouter : OpenWrtTransport {
             return when (args.str("command")) {
                 "/bin/false" -> reply(listOf(0L, mapOf("code" to 1L, "stderr" to "nope")))
                 "/bin/opkg" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "base-files - 1-r1\nluci - git-24\n")))
+                "/sbin/block" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "config 'global'\n\toption\tanon_mount\t'0'\n")))
+                "/bin/dmesg" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n")))
                 else -> reply(listOf(6L))
             }
+        }
+        if (objectName == "file" && method == "write") {
+            if (args.str("path") != "/etc/config/fstab" || !args.str("data").contains("global")) return reply(listOf(6L))
+            fstabMissing = false
+            return reply(listOf(0L))
+        }
+        if (objectName == "file" && method == "list" && args.str("path") == "/sys/bus/usb/devices") {
+            return reply(listOf(0L, mapOf("entries" to listOf(mapOf("name" to "usb1"), mapOf("name" to "1-1"), mapOf("name" to "1-1:1.0")))))
+        }
+        if (objectName == "file" && method == "read" && args.str("path") == "/sys/bus/usb/devices/1-1/product") return reply(listOf(0L, mapOf("data" to "Flash Disk\n")))
+        if (objectName == "file" && method == "read" && args.str("path") == "/proc/partitions") {
+            return reply(listOf(0L, mapOf("data" to "major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   64000000 sda\n   8        1   63999000 sda1\n")))
         }
         if (objectName == "uci" && method == "changes") return reply(listOf(0L, mapOf("changes" to emptyMap<String, Any?>())))
         return reply(listOf(0L))
@@ -226,6 +241,62 @@ class OpenWrtTest {
         assertEq("share", OpenWrtModel.shareSectionType("ksmbd"))
         expect(OpenWrtModel.shareNameProblem("Media") == null && OpenWrtModel.shareNameProblem("a/b") != null)
         expect("block-mount" in OpenWrtModel.usbStoragePackages)
+    }
+
+    fun testStorageCheck() {
+        assertEq(listOf("sda", "sda1", "mmcblk0"), OpenWrtModel.parsePartitions("major minor  #blocks  name\n\n  31 0 1024 mtdblock0\n 8 0 100 sda\n 8 1 99 sda1\n 179 0 50 mmcblk0\n"))
+        val entries = listOf("usb1", "usb2", "1-1", "1-1:1.0", "2-1.4")
+        assertEq(2, OpenWrtModel.usbControllerCount(entries))
+        assertEq(listOf("1-1", "2-1.4"), OpenWrtModel.usbDeviceEntries(entries))
+        assertEq(
+            listOf("[1.0] usb 1-1: new device", "[2.0] sd 0:0:0:0: [sda] No Caching mode page found"),
+            OpenWrtModel.storageKernelLines("<6>[1.0] usb 1-1: new device\n<6>[1.1] eth0: link up\n<3>[2.0] sd 0:0:0:0: [sda] No Caching mode page found\n"),
+        )
+        assertEq(OpenWrtModel.usbStoragePackages.size - 2, OpenWrtModel.missingStoragePackages(listOf("block-mount", "kmod-usb-storage")).size)
+        expect(OpenWrtModel.fstabFromDetect("config 'global'\n\toption\tanon_mount\t'0'").endsWith("'0'\n"))
+        expect(OpenWrtModel.fstabFromDetect("").startsWith("config global\n"))
+        assertEq(listOf("b", "c"), OpenWrtModel.outputTail("a\n\nb\nc\n", 2))
+
+        val empty = OpenWrtStorageCheck(packagesKnown = true, usbKnown = true, usbControllers = 1, partitionsKnown = true)
+        expect(OpenWrtModel.storageFindings(empty)[0].contains("sees nothing plugged into its USB port"))
+        expect(OpenWrtModel.storageFindings(empty.copy(usbControllers = 0))[0].contains("no USB controller driver"))
+        val noDriver = empty.copy(usbDevices = listOf("Flash Disk (1-1)"))
+        expect(OpenWrtModel.storageFindings(noDriver)[0].contains("kmod-usb-storage"))
+        val noBlock = noDriver.copy(installed = listOf("kmod-usb-storage"), partitions = listOf("sda", "sda1"))
+        expect(OpenWrtModel.storageFindings(noBlock)[0].contains("block-mount is not installed"))
+        val noFstab = noBlock.copy(blockTool = true, disks = 1)
+        val findings = OpenWrtModel.storageFindings(noFstab)
+        expect(findings.joinToString("\n").contains("/etc/config/fstab"))
+        expect(findings.last().contains("Turn on Mount any disk"))
+        val ready = noFstab.copy(fstabExists = true, installed = OpenWrtModel.usbStoragePackages, mounted = 1)
+        assertEq(listOf("The disk is mounted."), OpenWrtModel.storageFindings(ready))
+        expect(OpenWrtModel.storageReport(ready).startsWith("• The disk is mounted."))
+        expect(OpenWrtModel.storageReport(ready).contains("Storage packages: all installed"))
+    }
+
+    fun testMissingFstabIsCreatedAndStorageChecked() {
+        val router = FakeRouter()
+        router.fstabMissing = true
+        val client = OpenWrtClient(router, "http://192.168.1.1")
+        client.signIn("root", "secret")
+        val snapshot = client.loadSnapshot(now = 0)
+        expect(snapshot.fstabMissing)
+        expect(snapshot.problems.isEmpty(), snapshot.problems.toString())
+        expect(client.createFstab().ok)
+        @Suppress("UNCHECKED_CAST")
+        val written = router.last("file", "write")?.get(3) as JsonMap
+        assertEq("/etc/config/fstab", written.str("path"))
+        expect(written.str("data").startsWith("config 'global'"))
+        val (check, fresh) = client.checkStorage(snapshot)
+        expect(!fresh.fstabMissing)
+        expect(check.fstabExists && check.packagesKnown && check.blockTool)
+        assertEq(1, check.usbControllers)
+        assertEq(listOf("Flash Disk (1-1)"), check.usbDevices)
+        assertEq(listOf("sda", "sda1"), check.partitions)
+        assertEq(1, check.disks)
+        assertEq(1, check.mounted)
+        assertEq(listOf("[    5.1] usb 1-1: new high-speed USB device number 2"), check.kernelLines)
+        expect(OpenWrtModel.storageReport(check).contains("USB devices: Flash Disk (1-1)"))
     }
 
     fun testClientSignInRenewalAndExec() {
