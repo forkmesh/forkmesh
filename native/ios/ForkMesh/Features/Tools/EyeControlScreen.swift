@@ -35,6 +35,14 @@ struct EyeControlScreen: View {
                         onChanged: { (index: Int) in tracker.smoothing = EyeSmoothing.allCases[index] })
                     Text("Steady holds still on small targets; Quick follows your eyes with less delay but shakes more.")
                         .fmText(.bodySmall, color: fm.textSecondary)
+                    Toggle(isOn: $tracker.snapping) {
+                        Text("Snap to buttons")
+                            .fmText(.bodyMedium, color: fm.textPrimary)
+                    }
+                    .tint(fm.accent)
+                    .accessibilityIdentifier("eye-control-snapping")
+                    Text("The cursor locks onto the button you are looking at and outlines it, so a blink presses that button even when your gaze lands a little off.")
+                        .fmText(.bodySmall, color: fm.textSecondary)
                 }
                 practiceSection
                 VStack(alignment: .leading, spacing: FmSpace.x1) {
@@ -104,18 +112,42 @@ struct EyeControlScreen: View {
             Text(
                 tracker.calibrated
                     ? "Calibrated for your eyes. Calibrate again if the cursor drifts or after you rotate the screen."
-                    : "Not calibrated yet, so the cursor uses a rough estimate. Calibrating takes about 20 seconds: look at each dot until it moves."
+                    : "Not calibrated yet, so the cursor uses a rough estimate. Calibrating takes about 20 seconds: look at each dot until its ring fills and it moves."
             )
             .fmText(.bodySmall, color: fm.textSecondary)
+            if let detail = learningDetail {
+                Text(detail)
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .accessibilityIdentifier("eye-control-accuracy")
+            }
             HStack(spacing: FmSpace.x2) {
                 FmOutlinedButton(tracker.calibrated ? "Calibrate again" : "Calibrate", icon: "adjust", minHeight: 34, onPressed: { tracker.calibrate() })
                     .disabled(!tracker.supported)
                     .accessibilityIdentifier("eye-control-calibrate")
-                if tracker.calibrated {
+                if tracker.calibrated || tracker.learned > 0 {
                     FmOutlinedButton("Reset", icon: "refresh", minHeight: 34, onPressed: { tracker.resetCalibration() })
                         .accessibilityIdentifier("eye-control-reset-calibration")
                 }
             }
+            Toggle(isOn: $tracker.learning) {
+                Text("Keep learning")
+                    .fmText(.bodyMedium, color: fm.textPrimary)
+            }
+            .tint(fm.accent)
+            .accessibilityIdentifier("eye-control-learning")
+            Text("Each blink-tap on a button, and each steady look at one, fine-tunes the calibration while you use it, so it keeps up when you shift the phone or how you sit.")
+                .fmText(.bodySmall, color: fm.textSecondary)
+        }
+    }
+
+    private var learningDetail: String? {
+        let accuracy: String? = tracker.accuracy.map { "Accurate to within about \(Int($0.rounded())) points" }
+        let learned: String? = tracker.learned > 0 ? "learned from \(tracker.learned) taps and looks" : nil
+        switch (accuracy, learned) {
+        case let (a?, l?): return "\(a), \(l)."
+        case let (a?, nil): return "\(a)."
+        case let (nil, l?): return "Adjusted live, \(l)."
+        default: return nil
         }
     }
 
@@ -162,11 +194,19 @@ struct EyeCalibrationView: View {
             GeometryReader { (proxy: GeometryProxy) in
                 if let target = tracker.calibrationTarget {
                     let frame: CGRect = proxy.frame(in: .global)
-                    Circle()
-                        .fill(fm.accent)
-                        .frame(width: 22, height: 22)
-                        .overlay(Circle().stroke(fm.accent.opacity(0.35), lineWidth: 10))
-                        .position(x: target.x - frame.minX, y: target.y - frame.minY)
+                    ZStack {
+                        Circle()
+                            .fill(fm.accent)
+                            .frame(width: 22 - 12 * tracker.calibrationDotProgress, height: 22 - 12 * tracker.calibrationDotProgress)
+                            .overlay(Circle().stroke(fm.accent.opacity(0.35), lineWidth: 10))
+                        Circle()
+                            .trim(from: 0, to: tracker.calibrationDotProgress)
+                            .stroke(fm.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 44, height: 44)
+                    }
+                    .animation(.linear(duration: 0.1), value: tracker.calibrationDotProgress)
+                    .position(x: target.x - frame.minX, y: target.y - frame.minY)
                 }
             }
             .ignoresSafeArea()

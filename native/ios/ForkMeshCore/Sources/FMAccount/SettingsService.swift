@@ -99,6 +99,7 @@ public final class SettingsService {
     nonisolated public static let showAgentDotsKey = "agentWatch/showDots"
     nonisolated public static let signInOnKey = "packages/sign-in/on"
     nonisolated public static let aquariumOnKey = "packages/aquarium/on"
+    nonisolated public static let captureOnKey = "packages/capture/on"
     nonisolated public static let removedPackagesKey = "packages/removed"
     nonisolated public static let starterPackKey = "packages/starter-pack"
     /// Seven days, in milliseconds.
@@ -636,6 +637,16 @@ public final class SettingsService {
 
     public func setAquariumOn(_ v: Bool) {
         prefs.set(v, forKey: SettingsService.aquariumOnKey)
+        notifyListeners()
+    }
+
+    public var captureOn: Bool {
+        track()
+        return prefs.bool(forKey: SettingsService.captureOnKey) ?? true
+    }
+
+    public func setCaptureOn(_ v: Bool) {
+        prefs.set(v, forKey: SettingsService.captureOnKey)
         notifyListeners()
     }
 

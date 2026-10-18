@@ -1,3 +1,4 @@
+import FMTools
 import UIKit
 
 @MainActor
@@ -36,7 +37,93 @@ enum EyeClicker {
         return false
     }
 
-    private static func ancestor(of view: UIView, where test: (UIView) -> Bool) -> UIView? {
+    static let maxTargets: Int = 300
+    static let minTargetSize: CGFloat = 6
+    static let maxTargetShare: CGFloat = 0.5
+    static let activeTraits: UIAccessibilityTraits = [.button, .link, .adjustable, .keyboardKey, .searchField, .toggleButton]
+
+    static func targets() -> [EyeTarget] {
+        guard let window = appWindow() else { return [] }
+        var scan: TargetScan = TargetScan(window: window)
+        scan.visit(window, owner: window, depth: 0)
+        return scan.found
+    }
+
+    static func precision(of view: UIView) -> Bool? {
+        switch view {
+        case let control as UIControl where !control.isEnabled || !control.isUserInteractionEnabled: return nil
+        case is UISlider, is UISegmentedControl, is UIStepper: return true
+        case is UIControl, is UISearchBar: return false
+        case let text as UITextView: return text.isEditable ? false : nil
+        case is UITableViewCell, is UICollectionViewCell: return view.isUserInteractionEnabled ? false : nil
+        default: return nil
+        }
+    }
+
+    @MainActor
+    private struct TargetScan {
+        let window: UIWindow
+        var found: [EyeTarget] = []
+        var seen: Set<[Int]> = []
+        var visited: Int = 0
+
+        init(window: UIWindow) {
+            self.window = window
+        }
+
+        mutating func visit(_ node: NSObject, owner: UIView, depth: Int) {
+            guard depth < EyeClicker.maxDepth, visited < EyeClicker.maxNodes, found.count < EyeClicker.maxTargets else { return }
+            visited += 1
+            if node.accessibilityElementsHidden { return }
+            var owner: UIView = owner
+            if let view = node as? UIView {
+                if view.isHidden || view.alpha < 0.01 || view is EyePassthroughWindow { return }
+                owner = view
+                if let precise = EyeClicker.precision(of: view) {
+                    record(view.convert(view.bounds, to: window), precise: precise, owner: view, id: ObjectIdentifier(view).hashValue)
+                    if view is UIControl { return }
+                    if view is UITableViewCell || view is UICollectionViewCell {
+                        for sub in view.subviews {
+                            visit(sub, owner: view, depth: depth + 1)
+                        }
+                        return
+                    }
+                }
+            }
+            if node.isAccessibilityElement {
+                let traits: UIAccessibilityTraits = node.accessibilityTraits
+                if !traits.isDisjoint(with: EyeClicker.activeTraits), !traits.contains(.notEnabled) {
+                    let frame: CGRect = window.convert(node.accessibilityFrame, from: window.screen.coordinateSpace)
+                    record(frame, precise: traits.contains(.adjustable), owner: owner, id: ObjectIdentifier(node).hashValue)
+                }
+                return
+            }
+            for child in EyeClicker.children(of: node) {
+                visit(child, owner: owner, depth: depth + 1)
+            }
+        }
+
+        mutating func record(_ frame: CGRect, precise: Bool, owner: UIView, id: Int) {
+            guard !frame.isNull, !frame.isInfinite else { return }
+            let bounds: CGRect = window.bounds
+            let visible: CGRect = frame.intersection(bounds)
+            guard !visible.isNull, visible.width >= EyeClicker.minTargetSize, visible.height >= EyeClicker.minTargetSize,
+                visible.width * visible.height <= bounds.width * bounds.height * EyeClicker.maxTargetShare
+            else { return }
+            let key: [Int] = [visible.minX, visible.minY, visible.width, visible.height].map { Int($0.rounded()) }
+            guard !seen.contains(key) else { return }
+            guard let hit = window.hitTest(CGPoint(x: visible.midX, y: visible.midY), with: nil),
+                hit.isDescendant(of: owner) || owner.isDescendant(of: hit)
+            else { return }
+            seen.insert(key)
+            found.append(EyeTarget(
+                id: id,
+                frame: EyeRect(x: Double(visible.minX), y: Double(visible.minY), width: Double(visible.width), height: Double(visible.height)),
+                precise: precise))
+        }
+    }
+
+    static func ancestor(of view: UIView, where test: (UIView) -> Bool) -> UIView? {
         var current: UIView? = view
         while let node = current {
             if test(node) { return node }
@@ -96,7 +183,7 @@ enum EyeClicker {
             .map(\.element)
     }
 
-    private static func children(of node: NSObject) -> [NSObject] {
+    static func children(of node: NSObject) -> [NSObject] {
         if let listed = node.accessibilityElements, !listed.isEmpty {
             return listed.compactMap { $0 as? NSObject }
         }
