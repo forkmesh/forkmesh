@@ -3405,6 +3405,97 @@ def test_lagging_upload_pack_returns_to_its_advertising_mirror():
     assert len(attempts) == 2
 
 
+def _run_single_core_clone(monkeypatch, pushing, node="forkmesh",
+                           operation="git-info-refs"):
+    import runner_actions
+    import runner_leases
+    proxy, attempts = _proxy_namespace([200, 200])
+    namespace = proxy.__globals__
+    ahead = "b" * 64
+    calls = {"pushing": [], "admit": []}
+
+    async def lagging_proof(_env, endpoint, _context, _operation, **kwargs):
+        details = kwargs.get("details")
+        if isinstance(details, dict):
+            details.update({
+                "reason": "refs_mismatch",
+                "signed": True,
+                "refsSha256": ahead,
+                "operations": ["git-info-refs", "git-upload-pack", "tree"],
+            })
+        return False
+
+    async def candidates(_env, _context, _country, sticky="", **_kwargs):
+        return [{"node": node, "baseUrl": "https://git.invalid",
+                 "refsSha256": "a" * 64}]
+
+    async def job_pushing(_runtime, owner, repo, target):
+        calls["pushing"].append((owner, repo, target))
+        return pushing
+
+    async def admit(_env, owner, repo, endpoint, alias=""):
+        calls["admit"].append((owner, repo, endpoint["node"]))
+        return ahead
+
+    async def request_bytes():
+        return b"0000"
+
+    monkeypatch.setattr(runner_actions, "pushing", job_pushing)
+    monkeypatch.setattr(runner_leases, "_bind_runtime", lambda _ns: None)
+    namespace.update({
+        "_https_mirror_repository_proof": lagging_proof,
+        "_https_mirror_request_candidates": candidates,
+        "_admit_core_push_state": admit,
+        "hosted_core_owners": lambda _env: ["forkmesh"],
+        "js_fetch_until_response": namespace["js_fetch_with_timeout"],
+        "HTTPS_MIRROR_GIT_INITIAL_RESPONSE_TIMEOUT_SECONDS": 5,
+        "Uint8Array": SimpleNamespace(new=lambda value: value),
+        "_to_js": lambda value: value,
+        "method_name": lambda _request: (
+            "POST" if operation == "git-upload-pack" else "GET"),
+    })
+    namespace["https_routing"].mismatch_is_servable = (
+        routing.mismatch_is_servable)
+    namespace["https_routing"].signed_refs_lag = routing.signed_refs_lag
+    exec(_function_source("_core_push_nodes"), namespace)
+    exec(_function_source("_actions_push_admitted"), namespace)
+    request = SimpleNamespace(
+        url="https://git.example.test/forkmesh/site/info/refs",
+        headers={}, bytes=request_bytes)
+    answer = asyncio.run(proxy(
+        object(), request, "forkmesh", "site", operation))
+    return answer, attempts, calls
+
+
+def test_a_single_core_clone_right_after_an_actions_push_is_served(
+        monkeypatch):
+    answer, attempts, calls = _run_single_core_clone(monkeypatch, True)
+    assert answer.init["status"] == 200
+    assert answer.init["headers"]["X-ForkMesh-Served-By"] == "forkmesh"
+    assert calls == {"pushing": [("forkmesh", "site", "forkmesh")],
+                     "admit": [("forkmesh", "site", "forkmesh")]}
+    assert attempts == [
+        "https://git.invalid/v1/repositories/forkmesh/site/git-info-refs"]
+
+    answer, _attempts, calls = _run_single_core_clone(
+        monkeypatch, True, operation="git-upload-pack")
+    assert answer.init["status"] == 200
+    assert calls["admit"] == [("forkmesh", "site", "forkmesh")]
+
+
+def test_a_lagging_node_without_a_pushing_job_never_moves_the_pin(
+        monkeypatch):
+    answer, attempts, calls = _run_single_core_clone(monkeypatch, False)
+    assert answer.status == 503 and attempts == []
+    assert calls == {"pushing": [("forkmesh", "site", "forkmesh")],
+                     "admit": []}
+
+    answer, attempts, calls = _run_single_core_clone(
+        monkeypatch, True, node="mirror9")
+    assert answer.status == 503 and attempts == []
+    assert calls == {"pushing": [], "admit": []}
+
+
 def test_release_blob_response_uses_the_manifest_selected_filename():
     proxy, attempts = _proxy_namespace([200])
     request = SimpleNamespace(

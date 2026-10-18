@@ -51043,9 +51043,14 @@ async def _https_mirror_proxy(
                 proof_details.get("refsSha256") or "").lower()
             lagging_refs_endpoints.setdefault(lagging_digest, {})[
                 str(endpoint.get("node") or "").lower()] = endpoint
+            admit_actions_push = globals().get("_actions_push_admitted")
             if not https_routing.mismatch_is_servable(
                     operation, endpoint.get("node"), proof_details,
-                    lagging_refs_quorum):
+                    lagging_refs_quorum) and not (
+                        not monitoring and callable(admit_actions_push)
+                        and await admit_actions_push(
+                            env, context, endpoint, operation,
+                            proof_details)):
                 if probe_quarantine is not None:
                     probe_quarantine.add(
                         str(endpoint.get("node") or "").lower())
@@ -51659,6 +51664,34 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
     except Exception:
         pass
     return state
+
+
+async def _actions_push_admitted(env, context, endpoint, operation, details):
+    if operation == "git-receive-pack":
+        return False
+    lagging = https_routing.signed_refs_lag(operation, details)
+    node = str((endpoint or {}).get("node") or "").strip().lower()
+    owner = str(context.get("owner") or "").strip().lower()
+    cores = _core_push_nodes(env)
+    if not lagging or not node or node not in cores or owner not in cores:
+        return False
+    try:
+        import runner_actions
+        import runner_leases
+        runner_leases._bind_runtime(globals())
+        if not await runner_actions.pushing(
+                runner_leases.WorkerRuntime(env, None), owner,
+                context["repo"], node):
+            return False
+    except Exception:
+        return False
+    try:
+        state = await _admit_core_push_state(
+            env, owner, context["repo"], endpoint,
+            alias=str(context.get("routeOwner") or ""))
+    except Exception:
+        return False
+    return bool(state)
 
 
 async def _record_core_push_state(env, context, endpoint, alias):
