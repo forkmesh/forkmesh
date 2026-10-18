@@ -293,7 +293,7 @@
     if (view.key !== key) {
       stopRepoActionsRefresh();
       Object.assign(view, {
-        key, phase: "idle", error: "", node: "", source: "", access: "", updatedAt: 0, schemaVersion: 1,
+        key, phase: "idle", error: "", node: "", local: false, host: "", source: "", access: "", updatedAt: 0, schemaVersion: 1,
         controlAvailable: false, actionsEnabled: null, runs: [], controls: [],
         summaryWorkflows: null, treeWorkflows: null, selectedWorkflow: "",
         selectedRunId: 0, pending: [], notice: null, loading: false,
@@ -326,6 +326,8 @@
       view.error = "";
       view.node = repoActionsCleanLine(payload.node, 80);
       view.source = payload.source === "runner" ? "runner" : "mirror";
+      view.local = view.source === "runner" && payload.local === true;
+      view.host = view.local ? repoActionsCleanLine(payload.host, 253) : "";
       view.access = view.source === "runner" && payload.access === "public" ? "public" : "member";
       view.updatedAt = Math.max(0, Number(payload.updatedAt) || 0);
       view.schemaVersion = Number(payload.schemaVersion) === 2 ? 2 : 1;
@@ -554,7 +556,7 @@
     return `
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i><span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i>${view.local ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold">${escapeHtml(view.host)}</span>` : ""}` : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}`}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
           <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.access === "public" ? ` ${repoActionsPublicNote()}` : view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
@@ -689,7 +691,7 @@
       ? "Full redacted log (up to 1 MiB)."
       : view.source === "runner"
         ? (fullLog?.loading ? "Loading the full log ..." : "Last lines of the redacted log.")
-        : `Last 16 KiB of the redacted log. The full log stays on ${view.node}.`;
+        : `Last 16 KiB of the redacted log. The full log stays on ${view.local ? (view.host || "this server") : view.node}.`;
     const log = logText
       ? `<pre data-repo-actions-log class="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-[11px] leading-[1.15rem] text-muted-foreground">${escapeHtml(logText)}</pre><p class="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">${escapeHtml(logNote)}</p>`
       : `<p class="px-4 py-3 text-xs text-muted-foreground">${run.status === "queued" ? "Queued: waiting for a free runner or for the workflows this one needs." : run.status === "awaiting-approval" ? "Nothing has run yet." : "This run produced no log output."}</p>`;
