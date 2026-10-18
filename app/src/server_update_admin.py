@@ -342,7 +342,6 @@ async def render_addresses(env, request, csrf_field, admin_query):
         title="Short addresses",
         description="When on, /<repository> and /<repository>/<folder> open "
         "that owner's repository. Names of accounts, organizations and "
-        "site pages keep their own addresses.",
         "site pages keep their own addresses. With the second switch the "
         "site links, clone URLs and the address bar show only "
         "/<repository> for that owner, and the full address redirects "
