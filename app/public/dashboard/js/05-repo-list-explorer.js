@@ -719,7 +719,7 @@
                 <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
               </button>
             </div>
-            <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(repo.description || origin.description || "No description published.")}</p>
+            <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(repoDescriptionText(repo, origin) || "No description published.")}</p>
             <div class="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap">
               <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span data-repo-language-dot class="w-2 h-2 rounded-full bg-primary"></span>${escapeHtml(language)}

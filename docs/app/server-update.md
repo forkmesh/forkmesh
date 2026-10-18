@@ -172,7 +172,11 @@ Where the short form is produced:
   repository lists, return `/<repo>/...` for the owner, its creator aliases
   and rows whose public owner is the organization. `cloneUrl` adds `.git` to a
   one-segment address. `repoPublicHref`/`repoPublicKey` shorten notification
-  links and labels. Short paths the page itself made are remembered so
+  links and labels. The "forked from" line (`repoProvenanceHtml`) names the parent
+  through `repoDisplayName`; it printed the stored `forkedFrom` key, so a
+  fork of the platform mirror read `<org>/forkmesh` while every other label
+  read `forkmesh` (test:
+  `test_single_org_fork_line_names_the_parent_by_its_short_address`). Short paths the page itself made are remembered so
   Back/Forward parse them again (`repoRouteParts`). `parseCloneUrlIdentity`
   reads a one-segment clone URL of this site as `<owner>/<repo>`.
 - **Clone URLs in API answers**: the hosted-create and push-credential

@@ -1634,6 +1634,18 @@
     }
   }
 
+  function repoDescriptionText(...repos) {
+    for (const repo of repos) {
+      const text = String(repo?.description || "").trim();
+      if (text) return text;
+    }
+    for (const repo of repos) {
+      const mirrorOf = repoMirrorOf(repo);
+      if (mirrorOf) return `Read-only mirror of ${repoMirrorUpstreamPath(mirrorOf) || mirrorOf}`;
+    }
+    return "";
+  }
+
   function repoMirrorSyncedAt(repo) {
     const value = Number(repo?.lastSyncedAt || 0);
     return Number.isFinite(value) && value > 0 ? value : 0;
@@ -1657,7 +1669,7 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(parent.key)}</a></span>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -11930,7 +11942,7 @@
                 <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
               </button>
             </div>
-            <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(repo.description || origin.description || "No description published.")}</p>
+            <p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(repoDescriptionText(repo, origin) || "No description published.")}</p>
             <div class="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap">
               <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span data-repo-language-dot class="w-2 h-2 rounded-full bg-primary"></span>${escapeHtml(language)}
@@ -37161,7 +37173,7 @@
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
                 : ""}
             </div>
-            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repo.description || "No description published.")}</p>
+            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repoDescriptionText(repo) || "No description published.")}</p>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
               <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
