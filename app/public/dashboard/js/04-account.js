@@ -2425,8 +2425,10 @@
       // user's or organization's /@name page, the name opens the repository.
       // repoDisplayKey(repo) stays the single source of both labels.
       const [owner, ...nameParts] = repoDisplayKey(repo).split("/");
-      const repoLink = `<a href="${escapeHtml(repoLinkUrl(repo))}" class="hover:underline">${escapeHtml(nameParts.join("/"))}</a>`;
-      headerContext.innerHTML = owner
+      const repoHref = repoLinkUrl(repo);
+      const shortAddress = repoHref.split("/").filter(Boolean).length === 1;
+      const repoLink = `<a href="${escapeHtml(repoHref)}" class="hover:underline">${escapeHtml(nameParts.join("/"))}</a>`;
+      headerContext.innerHTML = owner && !shortAddress
         ? `<a href="${escapeHtml(publicProfileUrl(owner))}" data-repo-header-owner class="hover:underline">${escapeHtml(owner)}</a><span class="px-1 font-normal text-muted-foreground" aria-hidden="true">/</span>${repoLink}`
         : repoLink;
       repoMeta?.classList.add("sm:flex");

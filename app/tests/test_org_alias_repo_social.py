@@ -69,13 +69,12 @@ def _load_function(name, namespace):
 
 def _load_default_method(name, namespace):
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
-    default = next(
-        node for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "Default")
     method = next(
-        node for node in default.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == name)
+        child for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Default"
+        for child in node.body
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and child.name == name)
     subject = ast.ClassDef(
         name="_Subject",
         bases=[],
@@ -607,3 +606,75 @@ def test_alias_fork_lists_remain_scoped_to_public_repository_identity():
     ]
     assert "_public_repo_owner(\n        env, request, owner, repo, REPO_FORKS_RE)" in handler
     assert 'blind_index(env, public_owner + "/" + repo)' in handler
+
+
+def test_a_canonical_short_page_titles_the_repository_without_its_owner():
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    import repo_short_urls
+
+    async def org_repo_node(_env, owner, repo):
+        return "drew" if (owner, repo) == ("acme-bolt", "Bolt") else ""
+
+    async def no(*_args):
+        return False
+
+    async def blind_index(_env, value):
+        assert value == "drew/Bolt"
+        return "repo-bi"
+
+    async def d1_first(_env, sql, *params):
+        return {"data": "encrypted"}
+
+    async def decrypt_row(_env, value):
+        return {"owner": "drew", "name": "Bolt", "visibility": "public",
+                "description": "", "stateHash": "a" * 64}
+
+    async def edge_cache_match(_key):
+        raise AssertionError("a short page skips the shared cache")
+
+    page_class = _load_default_method("_serve_repo_page", {
+        "safe_segment": catalog.safe_segment,
+        "unquote": unquote,
+        "quote": quote,
+        "_org_repo_node": org_repo_node,
+        "_repo_is_private": no,
+        "edge_cache_match": edge_cache_match,
+        "edge_cache_put": no,
+        "DASHBOARD_REPO_ASSET": "repo.html",
+        "Response": _Response,
+        "ensure_schema": no,
+        "blind_index": blind_index,
+        "d1_first": d1_first,
+        "decrypt_row": decrypt_row,
+        "_ap_origin": lambda _env, _request=None: "https://git.example.org",
+        "_catalog_record_matches_identity": (
+            lambda rec, owner, repo:
+            rec.get("owner") == owner and rec.get("name") == repo),
+        "_repository_social_version": lambda rec: rec.get("stateHash", ""),
+        "_html_escape": html.escape,
+        "og_card": SimpleNamespace(CARD_W=1200, CARD_H=630),
+        "repo_short_urls": repo_short_urls,
+    })
+
+    def page(setting):
+        subject = page_class()
+        subject.env = SimpleNamespace(ASSETS=_Assets())
+
+        async def short_setting():
+            return setting
+
+        subject._repo_short_setting = short_setting
+        return _run(subject._serve_repo_page(
+            SimpleNamespace(headers={}),
+            urlparse("https://git.example.org/acme-bolt/Bolt"),
+            "Bolt")).body
+
+    body = page({"short": True, "owner": "acme-bolt", "canonical": True})
+    assert '<meta property="og:title" content="Bolt - ForkMesh">' in body
+    assert '<meta name="twitter:title" content="Bolt - ForkMesh">' in body
+    assert 'content="Bolt on ForkMesh' in body
+    assert '<link rel="canonical" href="https://git.example.org/Bolt">' in body
+    body = page({"short": True, "owner": "acme-bolt", "canonical": False})
+    assert ('<meta property="og:title" content="acme-bolt/Bolt - ForkMesh">'
+            in body)

@@ -193,11 +193,28 @@ and the owner's `repositories` rows and cached for five minutes per process
 whose name collides with an account can show a short link for up to that
 long; the server redirect itself checks accounts on every request.
 
-Still shown with the owner: the server-rendered first view of a repository
-page (`repo_ssr`, its links are replaced when the dashboard boots, and it is
-skipped for one-segment paths), ActivityPub actor URLs and the fediverse
-profile, `og:title`, mirror and runner clone URLs on other hosts, and the
-materialized public catalog snapshot on the cores (instances do not use it).
+With canonical on, the repository page names only the repository:
+
+- **Header**: `renderHeaderContext` (`04-account.js`) shows just the
+  repository link when `repoLinkUrl` gives a one-segment address, instead of
+  `acme-bolt / Bolt`.
+- **`og:title`, `twitter:title`** and the fallback `og:description` read
+  `Bolt - ForkMesh` (`_serve_repo_page`, only for a page served at the short
+  address of the canonical owner).
+- **Server-rendered first view** (`app/host/forkmesh_host/repo_ssr.py`): a
+  one-segment GET (`short_target`) gets a `ShortTicket`; the owner is not
+  known until the Worker's page arrives, so `finish` reads the
+  `forkmesh-repo-short` / `forkmesh-repo-owner` meta tags from it
+  (`short_page`), then renders the remembered first view of
+  `<owner>/<repo>` within the same budget as a full address. With
+  `forkmesh-repo-canonical` present, the title is the repository alone and
+  the file, folder and README links are `/<repo>/...`. The early-read script
+  still only reads two-segment paths, so on a short page the dashboard reads
+  the tree itself when it boots.
+
+Still shown with the owner: ActivityPub actor URLs and the fediverse
+profile, mirror and runner clone URLs on other hosts, and the materialized
+public catalog snapshot on the cores (instances do not use it).
 
 New instances opt in with `"singleOrganization": true` in the install
 settings (default `false`, organization owners only); see

@@ -29,6 +29,9 @@ import re
 import urllib.parse
 
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
+SHORT_PAGE_RE = re.compile(r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/?$")
+SHORT_META_RE = re.compile(
+    r'<meta name="forkmesh-repo-(short|owner|canonical)" content="([^"]*)">')
 RESERVED_OWNERS = frozenset({
     "api", "assets", "dashboard", "favicon", "docs", "blog", "world", "login",
     "signup", "static", "ap", "nodeinfo", "admin", "hackathon", "notes",
@@ -86,6 +89,32 @@ def page_target(scope):
     return match.group(1).lower(), repo
 
 
+def short_target(scope):
+    if scope.get("method", "GET").upper() != "GET":
+        return None
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    match = SHORT_PAGE_RE.match(path)
+    if not match or (scope.get("query_string") or b""):
+        return None
+    name = match.group(1)
+    if name.lower() in RESERVED_OWNERS or name.endswith(".git"):
+        return None
+    return name
+
+
+def short_page(page):
+    found = {}
+    end = page.find("</head>")
+    for key, value in SHORT_META_RE.findall(page if end < 0 else page[:end]):
+        found.setdefault(key, html.unescape(value))
+    owner = found.get("owner", "").lower()
+    repo = found.get("short", "")
+    if not PAGE_RE.match("/%s/%s" % (owner, repo)):
+        return None
+    return owner, repo, found.get("canonical", "").lower() == owner
+
+
 async def _get_json(fastpath, url):
     response = await fastpath.client().get(url)
     if response.status_code != 200:
@@ -119,6 +148,12 @@ async def prerender(fastpath, owner, repo):
                 "servedBy": node, "tree": tree, "readme": readme}
     except Exception:
         return None
+
+
+class ShortTicket:
+    def __init__(self, fastpath, name):
+        self.fastpath = fastpath
+        self.name = name
 
 
 class ViewTicket:
@@ -192,7 +227,8 @@ def start(fastpath, scope):
         return ViewTicket(task, section, (owner, repo, name, number))
     target = page_target(scope)
     if target is None:
-        return None
+        name = short_target(scope)
+        return ShortTicket(fastpath, name) if name else None
     return remembered_prerender(fastpath, *target)
 
 
@@ -287,6 +323,8 @@ async def finish(task, response):
         if int(response.status) != 200 or "text/html" not in content_type:
             return response
         from . import js as _js
+        if isinstance(task, ShortTicket):
+            return await _finish_short(task, response)
         try:
             data = await asyncio.wait_for(asyncio.shield(task),
                                           SSR_BUDGET_SECONDS)
@@ -319,6 +357,29 @@ async def finish(task, response):
         return response
 
 
+async def _finish_short(ticket, response):
+    from . import js as _js
+    body = await response._read()
+    page = body.decode("utf-8")
+    named = short_page(page)
+    rendered = None
+    if named is not None and named[1].lower() == ticket.name.lower():
+        owner, repo, canonical = named
+        try:
+            data = await asyncio.wait_for(asyncio.shield(remembered_prerender(
+                ticket.fastpath, owner, repo)), SSR_BUDGET_SECONDS)
+        except asyncio.TimeoutError:
+            data = None
+        if data:
+            rendered = inject(page, data, short=canonical)
+    if rendered is None:
+        return _js.Response(body, response.status, "", response.headers)
+    headers = response.headers
+    headers.set("cache-control", "no-cache")
+    return _js.Response(rendered.encode("utf-8"), response.status, "",
+                        headers)
+
+
 # -- rendering ------------------------------------------------------------
 
 def _json_for_script(value):
@@ -328,7 +389,7 @@ def _json_for_script(value):
             .replace("\u2029", "\\u2029"))
 
 
-def inject(page, data):
+def inject(page, data, short=False):
     """The page with the rendered block and its data, or None."""
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page:
@@ -339,7 +400,7 @@ def inject(page, data):
             'id="forkmesh-repo-ssr">' + _json_for_script(payload)
             + "</script>\n    " + STYLE)
     page = page.replace(CHARSET, head, 1)
-    return page.replace(PLACEHOLDER, render_view(data), 1)
+    return page.replace(PLACEHOLDER, render_view(data, short), 1)
 
 
 def _view_reads_head(meta):
@@ -390,9 +451,11 @@ def _when(value):
     return html.escape(text[:10])
 
 
-def render_view(data):
+def render_view(data, short=False):
     owner, repo = data["owner"], data["repo"]
     base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
+    if short:
+        base = "/" + urllib.parse.quote(repo)
     tree = data["tree"]
     latest = tree.get("latestCommit") or {}
     entries = sorted(tree.get("entries") or [], key=lambda e: (
@@ -434,15 +497,15 @@ def render_view(data):
                   '<h2 class="fm-ssr-file">%s</h2>'
                   '<div class="fm-ssr-md" data-repo-readme-body>%s</div>'
                   '</div>' % (html.escape(name), body))
+    title = '<a href="%s">%s</a>' % (html.escape(base), html.escape(repo))
+    if not short:
+        title = '<a href="/%s">%s</a> / %s' % (
+            html.escape(urllib.parse.quote(owner)), html.escape(owner), title)
     return (
         '<div class="fm-ssr" data-repo-ssr>'
-        '<h1 class="fm-ssr-title"><a href="/%s">%s</a> / '
-        '<a href="%s">%s</a></h1>'
+        '<h1 class="fm-ssr-title">%s</h1>'
         '<div class="fm-ssr-box">%s<div data-repo-tree>%s</div></div>%s'
-        '</div>' % (
-            html.escape(urllib.parse.quote(owner)), html.escape(owner),
-            html.escape(base), html.escape(repo), commit_line,
-            "".join(rows), readme))
+        '</div>' % (title, commit_line, "".join(rows), readme))
 
 
 # -- a small, escaping Markdown subset --------------------------------------

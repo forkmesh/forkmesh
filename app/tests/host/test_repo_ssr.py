@@ -147,3 +147,73 @@ def test_a_view_that_misses_its_budget_still_starts_its_bundle():
     assert answer.headers.get("cache-control") == "no-cache"
     assert repo_ssr.PLACEHOLDER in text
     assert repo_ssr.inject_view_reads("<html></html>", "a", "b", "issues", 0) is None
+
+
+def short_data():
+    return dict(DATA, owner="acme-bolt", repo="Bolt")
+
+
+def test_a_canonical_short_view_names_and_links_only_the_repository():
+    page = repo_ssr.inject(repo_page(), short_data(), short=True)
+    view = page[page.index('<div class="fm-ssr"'):]
+    assert '<h1 class="fm-ssr-title"><a href="/Bolt">Bolt</a></h1>' in view
+    assert 'href="/Bolt/blob/README.md"' in view
+    assert 'href="/Bolt/tree/app"' in view
+    assert 'href="/Bolt/blob/docs/a.md"' in view
+    assert "acme-bolt" not in view
+    long = repo_ssr.inject(repo_page(), short_data())
+    assert ('<a href="/acme-bolt">acme-bolt</a> / <a href="/acme-bolt/Bolt">Bolt</a>'
+            in long)
+
+
+def test_short_targets_and_the_page_meta():
+    def scope(path, query=b"", method="GET"):
+        return {"method": method, "path": path, "raw_path": path.encode(),
+                "query_string": query}
+    assert repo_ssr.short_target(scope("/Bolt")) == "Bolt"
+    assert repo_ssr.short_target(scope("/Bolt/")) == "Bolt"
+    for path in ("/api", "/dashboard", "/Bolt.git", "/a/b", "/", "/Bolt/issues"):
+        assert repo_ssr.short_target(scope(path)) is None, path
+    assert repo_ssr.short_target(scope("/Bolt", b"ref=x")) is None
+    assert repo_ssr.short_target(scope("/Bolt", method="POST")) is None
+    assert isinstance(repo_ssr.start(object(), scope("/Bolt")),
+                      repo_ssr.ShortTicket)
+    meta = ('<meta name="forkmesh-repo-short" content="Bolt">'
+            '<meta name="forkmesh-repo-owner" content="acme-bolt">')
+    canonical = '<meta name="forkmesh-repo-canonical" content="acme-bolt">'
+    assert repo_ssr.short_page(meta + canonical) == ("acme-bolt", "Bolt", True)
+    assert repo_ssr.short_page(meta) == ("acme-bolt", "Bolt", False)
+    assert repo_ssr.short_page("<html></html>") is None
+
+
+def test_a_short_address_page_gets_its_first_view_with_short_links():
+    import asyncio
+
+    from forkmesh_host import js
+
+    meta = ('<meta name="forkmesh-repo-short" content="Bolt">'
+            '<meta name="forkmesh-repo-owner" content="acme-bolt">'
+            '<meta name="forkmesh-repo-canonical" content="acme-bolt">')
+    page = repo_page().replace("</head>", meta + "</head>", 1)
+
+    async def main(name):
+        loop = asyncio.get_running_loop()
+        repo_ssr._prerendered[("acme-bolt", "Bolt")] = (loop.time(), short_data())
+        try:
+            ticket = repo_ssr.ShortTicket(object(), name)
+            response = js.Response(page.encode("utf-8"), 200, "",
+                                   {"content-type": "text/html; charset=utf-8"})
+            answer = await repo_ssr.finish(ticket, response)
+            return answer, (await answer._read()).decode("utf-8")
+        finally:
+            repo_ssr._prerendered.pop(("acme-bolt", "Bolt"), None)
+
+    answer, text = asyncio.run(main("bolt"))
+    assert answer.headers.get("cache-control") == "no-cache"
+    assert '<h1 class="fm-ssr-title"><a href="/Bolt">Bolt</a></h1>' in text
+    assert 'href="/Bolt/blob/README.md"' in text
+    assert json.loads(re.search(
+        r'id="forkmesh-repo-ssr">(.*?)</script>', text, re.S).group(1))[
+            "owner"] == "acme-bolt"
+    _answer, other = asyncio.run(main("Other"))
+    assert repo_ssr.PLACEHOLDER in other and "fm-ssr-title" not in other

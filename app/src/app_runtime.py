@@ -4364,13 +4364,15 @@ class Default:
                 origin, quote(owner), quote(repo))
             if social_version:
                 og_image += "?v=" + quote(social_version, safe="")
+            shown = short_name if canonical_short else "%s/%s" % (
+                owner, repo)
             og_description = str(
                 repo_record.get("description", "") or "")
             if not og_description:
-                og_description = ("%s/%s on ForkMesh — distributed Git "
+                og_description = ("%s on ForkMesh — distributed Git "
                                   "hosting on a mesh of desktop nodes."
-                                  % (owner, repo))
-            title = "%s/%s - ForkMesh" % (owner, repo)
+                                  % shown)
+            title = _html_escape("%s - ForkMesh" % shown)
             tags = (
                 "<link rel=\"canonical\" href=\"%s\">"
                 "<link rel=\"me\" href=\"%s\">"
