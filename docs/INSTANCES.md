@@ -171,6 +171,11 @@ to every provider.
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
   them.
+- Turnstile tokens must name the instance's own host. The installer writes
+  `TURNSTILE_HOSTNAMES=<domain>` (an existing value is kept), and without it a
+  branded instance accepts the host of `APP_ORIGIN`. Before this, an instance
+  fell back to forkmesh.com's hostnames and refused every sign-up and password
+  reset check with `hostname_mismatch`.
 - Without a fingerprint the first host key is trusted (and shown).
 - SSH credentials pass through the app once, in memory only.
 - The instance app's egress guard refuses forkmesh.com; nothing needs it.

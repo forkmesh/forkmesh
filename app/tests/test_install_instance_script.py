@@ -519,3 +519,9 @@ def test_the_build_records_its_version_and_commit(tmp_path):
     assert value["version"] == "1.4.2" and value["subject"] == 'Ship "notes"'
     assert len(value["commit"]) == 40 and value["ref"] == "main"
     assert oct(info.stat().st_mode & 0o777) == "0o644"
+
+
+def test_the_installer_writes_and_keeps_the_turnstile_hostname():
+    writer = function("write_settings")
+    assert "grep -qE '^TURNSTILE_HOSTNAMES=.' \"$APP_ENV\"" in writer
+    assert 'echo "TURNSTILE_HOSTNAMES=$DOMAIN"' in writer
