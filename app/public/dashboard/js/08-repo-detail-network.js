@@ -122,6 +122,8 @@
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
+        : routeKind === "pulls" && routeParts[3] === "send"
+          ? pullBatchUrl(repo)
         : repoTabRoutesFor(repo).includes(routeKind)
           ? `${repoLinkUrl(repo)}/${routeKind}`
           : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
@@ -2906,6 +2908,13 @@
         return;
       }
 
+      const pullBatchOpen = event.target.closest("[data-repo-pull-batch-open]");
+      if (pullBatchOpen && state.selectedRepo && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        event.preventDefault();
+        void openPullBatch(state.selectedRepo);
+        return;
+      }
+
       const pullCancelButton = event.target.closest("[data-repo-pull-cancel]");
       if (pullCancelButton && state.selectedRepo) {
         // The form may have been opened from a comparison, whose address is
@@ -4233,7 +4242,9 @@
           // sections (/pulls/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
-            if (/^\d+$/.test(recordNumber)) {
+            if (kind === "pulls" && recordNumber === "send") {
+              void openPullBatch(repo, { navigate: false });
+            } else if (/^\d+$/.test(recordNumber)) {
               const section = kind === "pulls"
                 ? normalizeRepoRecordSection(parts[4])
                 : "conversation";
@@ -4245,7 +4256,7 @@
               if (sameRecord) setRepoRecordSection(section);
               else loadRepoRecordDetail(repo, kind, recordNumber);
             } else if (state.repoRecordDetail?.kind === kind
-                || (kind === "pulls" && state.repoCompare)) {
+                || (kind === "pulls" && (state.repoCompare || document.querySelector("[data-pull-batch], [data-pull-batch-message]")))) {
               if (kind === "pulls") stopRepoPullActivityRefresh();
               state.repoRecordDetail = null;
               // Stepping back from a comparison lands on the list it left.

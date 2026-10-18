@@ -945,9 +945,7 @@
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] remote pull request submission failed", error);
-      setHint(String(error?.message || "") === "remote_unreachable"
-        ? `Nothing was delivered: ${remote.host} could not be reached, or it runs a ForkMesh version that does not take pull requests from other instances yet.`
-        : webPullSubmitErrorText(error, base, head, where), "bad");
+      setHint(remotePullSubmitErrorText(error, remote, base, head), "bad");
     }
   }
 
@@ -2542,6 +2540,8 @@
       // instead of the list; Back to the list loads it lazily from there.
       if (recordRoute && recordRoute.kind === active && recordRoute.number) {
         loadRepoRecordDetail(repo, active, recordRoute.number);
+      } else if (active === "pulls" && pullBatchRouteActive(repo)) {
+        void openPullBatch(repo, { navigate: false });
       } else if (active === "pulls" && compareRoute) {
         // A comparison deep link (/owner/repo/compare/base...head) opens the
         // diff viewer directly; Back to the list loads it lazily from there.
@@ -4097,7 +4097,10 @@
                     ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
                 </div>
-                <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                <div class="flex flex-wrap items-center gap-2">
+                  <a data-repo-pull-batch-open href="${escapeHtml(pullBatchUrl(repo))}" class="hidden h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[14px] font-medium text-foreground hover:bg-secondary"><i data-lucide="send" class="h-3.5 w-3.5 text-muted-foreground"></i>Send pull requests</a>
+                  <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                </div>
               </div>
               ${pullContributionTipDismissed(repo) ? "" : `
               <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">
