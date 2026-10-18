@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.feature.rssreader
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
@@ -321,6 +322,47 @@ internal class RssArticleWebView(context: Context) : WebView(context) {
     private var downRawY = 0f
     private var axis = AXIS_NONE
     private var velocity: VelocityTracker? = null
+    private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var scrolledAt = 0L
+    private var scrollingAtDown = false
+    private var linkOpened = false
+    private var pendingTap: Runnable? = null
+
+    fun openedLink() {
+        linkOpened = true
+        pendingTap?.let { removeCallbacks(it) }
+        pendingTap = null
+    }
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        scrolledAt = SystemClock.uptimeMillis()
+    }
+
+    private fun onControl(): Boolean = when (hitTestResult.type) {
+        WebView.HitTestResult.SRC_ANCHOR_TYPE,
+        WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE,
+        WebView.HitTestResult.EMAIL_TYPE,
+        WebView.HitTestResult.PHONE_TYPE,
+        WebView.HitTestResult.GEO_TYPE,
+        WebView.HitTestResult.EDIT_TEXT_TYPE -> true
+        else -> false
+    }
+
+    private fun tapped(event: MotionEvent) {
+        if (scrollingAtDown) return
+        if (abs(event.rawX - downRawX) > tapSlop || abs(event.rawY - downRawY) > tapSlop) return
+        if (event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) return
+        val direction = if (event.x < width / 2f) -1 else 1
+        if (!canPage(direction)) return
+        linkOpened = false
+        val check = Runnable {
+            pendingTap = null
+            if (!linkOpened && !onControl()) onPage(direction)
+        }
+        pendingTap = check
+        postDelayed(check, TAP_DELAY_MS)
+    }
 
     private fun track(event: MotionEvent) {
         val raw = MotionEvent.obtain(event)
@@ -371,6 +413,7 @@ internal class RssArticleWebView(context: Context) : WebView(context) {
                 downY = event.y
                 downRawX = event.rawX
                 downRawY = event.rawY
+                scrollingAtDown = SystemClock.uptimeMillis() - scrolledAt < 120
                 axis = AXIS_NONE
                 velocity?.recycle()
                 velocity = VelocityTracker.obtain()
@@ -406,7 +449,9 @@ internal class RssArticleWebView(context: Context) : WebView(context) {
                         true
                     }
                     was == AXIS_FREE -> super.onTouchEvent(event)
-                    else -> pass(event)
+                    else -> pass(event).also {
+                        if (was == AXIS_NONE && event.actionMasked == MotionEvent.ACTION_UP) tapped(event)
+                    }
                 }
             }
             else -> return when (axis) {
@@ -418,6 +463,8 @@ internal class RssArticleWebView(context: Context) : WebView(context) {
     }
 
     override fun onDetachedFromWindow() {
+        pendingTap?.let { removeCallbacks(it) }
+        pendingTap = null
         velocity?.recycle()
         velocity = null
         super.onDetachedFromWindow()
@@ -428,6 +475,7 @@ internal class RssArticleWebView(context: Context) : WebView(context) {
         const val AXIS_HORIZONTAL = 1
         const val AXIS_VERTICAL = 2
         const val AXIS_FREE = 3
+        const val TAP_DELAY_MS = 200L
     }
 }
 
@@ -452,6 +500,7 @@ private fun articleWebView(context: Context): RssArticleWebView = RssArticleWebV
     isHorizontalFadingEdgeEnabled = false
     webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            (view as? RssArticleWebView)?.openedLink()
             openInBrowser(view.context, request.url.toString())
             return true
         }
