@@ -13,8 +13,7 @@ public enum ThemeMode: String, CaseIterable, Sendable {
 }
 
 /// The accent colour picked in Settings, stored by name
-/// (`appearance/accent`). The app target's `FmAccent` holds the colours; map with
-/// `FmAccent.fromName(settings.accent.rawValue)`.
+/// (`appearance/accent`). `AccentChoice.rgb` holds the colours; `AppTheme` resolves them.
 public enum AccentChoice: String, CaseIterable, Sendable {
     case blue
     case cyan
@@ -81,6 +80,10 @@ public final class SettingsService {
     nonisolated public static let bugButtonLeftKey = "bugReport/onLeft"
     nonisolated public static let themeModeKey = "appearance/themeMode"
     nonisolated public static let accentKey = "appearance/accent"
+    nonisolated public static let accentCustomKey = "appearance/accentCustom"
+    nonisolated public static let surfaceKey = "appearance/surface"
+    nonisolated public static let readableColorsKey = "appearance/readableColors"
+    nonisolated public static let themeColorsKey = "appearance/themeColors"
     nonisolated public static let backgroundImageKey = "appearance/backgroundImage"
     nonisolated public static let backgroundDimKey = "appearance/backgroundDim"
     nonisolated public static let defaultBackgroundDim: Double = 0.4
@@ -445,7 +448,43 @@ public final class SettingsService {
         return AccentChoice.fromName(prefs.string(forKey: SettingsService.accentKey))
     }
 
-    public func setAccent(_ accent: AccentChoice) { set(SettingsService.accentKey, accent.rawValue) }
+    public func setAccent(_ accent: AccentChoice) {
+        prefs.remove(SettingsService.accentCustomKey)
+        set(SettingsService.accentKey, accent.rawValue)
+    }
+
+    public var theme: AppTheme {
+        track()
+        let colors = AppTheme.parseColors(prefs.string(forKey: SettingsService.themeColorsKey))
+        let custom: UInt32? =
+            prefs.string(forKey: SettingsService.accentKey) == AppTheme.customAccentName
+            ? prefs.string(forKey: SettingsService.accentCustomKey).flatMap(ThemeColor.parseHex) : nil
+        return AppTheme(
+            surface: ThemeSurface.fromName(prefs.string(forKey: SettingsService.surfaceKey)),
+            accent: AccentChoice.fromName(prefs.string(forKey: SettingsService.accentKey)),
+            customAccent: custom,
+            readable: prefs.bool(forKey: SettingsService.readableColorsKey) ?? true,
+            lightColors: colors.light,
+            darkColors: colors.dark)
+    }
+
+    public func setTheme(_ theme: AppTheme) {
+        prefs.set(theme.accentName, forKey: SettingsService.accentKey)
+        prefs.set(theme.customAccent.map(ThemeColor.hex), forKey: SettingsService.accentCustomKey)
+        if theme.surface == .fallback {
+            prefs.remove(SettingsService.surfaceKey)
+        } else {
+            prefs.set(theme.surface.rawValue, forKey: SettingsService.surfaceKey)
+        }
+        if theme.readable {
+            prefs.remove(SettingsService.readableColorsKey)
+        } else {
+            prefs.set(false, forKey: SettingsService.readableColorsKey)
+        }
+        let json: String = theme.colorsJSON()
+        prefs.set(json.isEmpty ? nil : json, forKey: SettingsService.themeColorsKey)
+        notifyListeners()
+    }
 
     public var backgroundImage: String {
         track()
