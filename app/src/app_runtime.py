@@ -1031,6 +1031,10 @@ class Default:
                 response = await self._admin(request)
             else:
                 response = await self._route(request, url)
+            if url.path.rstrip("/") in (
+                    "/api/repositories", "/api/repositories/search"):
+                response = await self._repo_canonical_json(
+                    request, url, response)
         except RequestBodyTooLarge:
             response = json_response(
                 {"error": "request_too_large"},
@@ -1741,6 +1745,7 @@ class Default:
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
                 "theme": await self._instance_theme(),
+                "repoAddresses": await self._repo_addresses_doc(),
             }, cache_control="public, max-age=60")
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
@@ -3930,6 +3935,12 @@ class Default:
             return await self._route(request, short_url)
 
         if looks_like_repo_route(url.path):
+            canonical_target = await self._repo_canonical_redirect(
+                request, url)
+            if canonical_target:
+                return Response("", status=301, headers={
+                    "location": canonical_target,
+                    "cache-control": "no-store"})
             return await self._serve_repo_page(request, url)
 
         if url.path == "/dashboard" or url.path.startswith("/dashboard/"):
@@ -4169,19 +4180,46 @@ class Default:
         return page
 
     async def _repo_short_setting(self):
-        now = int(Date.now())
-        setting = repo_short_urls.cached(now)
-        if setting is not None:
-            return setting
+        return await _repo_short_setting_row(self.env)
+
+    async def _repo_short_keep(self, owner):
+        return await _repo_short_links(self.env, owner)
+
+    async def _repo_addresses_doc(self):
+        setting = await self._repo_short_setting()
+        owner = repo_short_urls.canonical_owner(setting)
+        links = await self._repo_short_keep(owner) if owner else {}
+        if links is None:
+            setting = dict(setting, canonical=False)
+        return repo_short_urls.client_doc(setting, links)
+
+    async def _repo_canonical_redirect(self, request, url):
+        if method_name(request) not in ("GET", "HEAD"):
+            return None
+        return await _repo_canonical_path(self.env, url.path, url.query)
+
+    async def _repo_canonical_json(self, request, url, response):
+        if method_name(request) != "GET" or int(
+                getattr(response, "status", 0) or 0) != 200:
+            return response
+        setting = await self._repo_short_setting()
+        owner = repo_short_urls.canonical_owner(setting)
+        if not owner:
+            return response
+        links = await self._repo_short_keep(owner)
+        if links is None:
+            return response
+        text = str(await response.text())
+        headers = [(k, v) for k, v in response.headers.items()
+                   if str(k).lower() not in ("content-length", "etag")]
         try:
-            row = await d1_first(
-                self.env,
-                "SELECT doc FROM instance_settings WHERE k=?",
-                repo_short_urls.SETTING_KEY)
+            data = json.loads(text)
+            text = json.dumps(repo_short_urls.short_urls(
+                data, url.scheme + "://" + url.netloc, setting, links),
+                separators=(",", ":"))
         except Exception:
-            row = None
-        return repo_short_urls.remember(
-            repo_short_urls.parse((row or {}).get("doc") or ""), now)
+            pass
+        return Response(text, status=200, headers=headers)
 
     async def _repo_projects_setting(self):
         now = int(Date.now())
@@ -4301,8 +4339,13 @@ class Default:
             body = await resp.text()
         except Exception:
             body = "<!doctype html><title>ForkMesh Dashboard</title>"
+        canonical_short = bool(short_name) and (
+            repo_short_urls.canonical_owner(
+                await self._repo_short_setting()) == owner.lower())
         if owner and repo and explicit_public and "</head>" in body:
             canonical = "%s/%s/%s" % (origin, quote(owner), quote(repo))
+            if canonical_short:
+                canonical = "%s/%s" % (origin, quote(short_name))
             # The repo actor's `url` — the /@owner.repo fediverse profile — is
             # the rel=me target that verifies this page's "Repository" row.
             # Lowercased to match the actor id (handles are case-folded).
@@ -4354,7 +4397,10 @@ class Default:
                 "</head>",
                 '<meta name="forkmesh-repo-short" content="%s">'
                 '<meta name="forkmesh-repo-owner" content="%s">'
-                "</head>" % (_html_escape(short_name), _html_escape(owner)),
+                "%s</head>" % (
+                    _html_escape(short_name), _html_escape(owner),
+                    '<meta name="forkmesh-repo-canonical" content="%s">'
+                    % _html_escape(owner) if canonical_short else ""),
                 1)
         page = Response(body, status=200, headers={
             "content-type": "text/html; charset=utf-8",

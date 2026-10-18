@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, state } = core;
+  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -38,7 +38,7 @@
   };
 
   function agentsSessionHref(owner, repo, id) {
-    const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`;
+    const base = `${repoPathUrl({ owner, name: repo })}/agents`;
     return id ? `${base}?session=${encodeURIComponent(id)}` : base;
   }
 

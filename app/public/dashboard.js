@@ -1220,7 +1220,8 @@
   // machine currently serving the bytes: cloning forkmesh/forkmesh must keep
   // working after the mirror that answered today goes away.
   function cloneUrl(repo) {
-    return `${publicSiteOrigin()}${repoLinkUrl(repo)}`;
+    const link = repoLinkUrl(repo);
+    return `${publicSiteOrigin()}${link}${link.split("/").length === 2 ? ".git" : ""}`;
   }
 
   function repoKey(repo) {
@@ -1381,6 +1382,8 @@
     } catch (_) {}
     path = path.split("?")[0].split("#")[0].replace(/^\/+|\/+$/g, "");
     const parts = path.split("/").filter(Boolean);
+    const addresses = parts.length === 1 && isThisSiteUrl(raw) ? repoAddresses() : null;
+    if (addresses) parts.unshift(addresses.owner);
     if (parts.length < 2) return null;
     const owner = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 2] || ""));
     let name = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 1] || ""));
@@ -1750,10 +1753,85 @@
     ).trim();
   }
 
+  const REPO_ADDRESSES_STORE = "forkmesh.repoAddresses";
+  const REPO_CORE_HOSTS = ["app.forkmesh.com", "forkmesh.com", "world.forkmesh.com"];
+  const REPO_SHORT_NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+  const REPO_SHORT_FILE_RE = /\.(?:php\d?|txt|xml|json|ico|png|jpe?g|gif|svg|js|mjs|css|map|env|html?|aspx?|jsp|cgi|zip|gz|tgz|tar|sql|bak|ya?ml|ini|log|webmanifest|woff2?|ttf|pdf)$/i;
+
+  function normalizeRepoAddresses(value) {
+    const owner = String(value?.owner || "").trim().toLowerCase();
+    if (!value || value.canonical !== true || !owner) return null;
+    const names = (list) => new Set((Array.isArray(list) ? list : []).map((name) => String(name || "").toLowerCase()));
+    const aliases = new Map(Object.entries(value.aliases && typeof value.aliases === "object" ? value.aliases : {})
+      .map(([name, creator]) => [String(name).toLowerCase(), String(creator || "").toLowerCase()]));
+    return { owner, keep: names(value.keep), reserved: names(value.reserved), aliases };
+  }
+
+  function repoAddresses() {
+    if (state.repoAddresses !== undefined) return state.repoAddresses;
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(REPO_ADDRESSES_STORE) || "null");
+    } catch (_) {}
+    let addresses = normalizeRepoAddresses(stored);
+    const pageOwner = String(document.querySelector('meta[name="forkmesh-repo-canonical"]')?.content || "").toLowerCase();
+    if (pageOwner && addresses?.owner !== pageOwner) {
+      addresses = normalizeRepoAddresses({ owner: pageOwner, canonical: true });
+    }
+    state.repoAddresses = addresses;
+    return addresses;
+  }
+
+  function applyRepoAddresses(value) {
+    state.repoAddresses = normalizeRepoAddresses(value);
+    try {
+      localStorage.setItem(REPO_ADDRESSES_STORE, JSON.stringify(value || null));
+    } catch (_) {}
+    return state.repoAddresses;
+  }
+
+  async function loadRepoAddresses() {
+    if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
+    try {
+      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
+      const data = response.ok ? await response.json() : null;
+      if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
+    } catch (_) {}
+    return repoAddresses();
+  }
+
+  function repoAddressesKnown() {
+    try {
+      return localStorage.getItem(REPO_ADDRESSES_STORE) !== null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoShortName(owner, name) {
+    const addresses = repoAddresses();
+    const value = String(name || "");
+    const lowered = value.toLowerCase();
+    const lowerOwner = String(owner || "").toLowerCase();
+    if (!addresses || !value || !lowerOwner) return false;
+    if (lowerOwner !== addresses.owner && addresses.aliases.get(lowered) !== lowerOwner) return false;
+    if (lowered === addresses.owner || addresses.keep.has(lowered) || addresses.reserved.has(lowered)) return false;
+    return REPO_SHORT_NAME_RE.test(value) && !lowered.endsWith(".git") && !REPO_SHORT_FILE_RE.test(value);
+  }
+
   function repoPathUrl(repo, kind = "tree", path = "") {
     const owner = encodeURIComponent(repo.owner || "");
     const name = encodeURIComponent(repo.name || "");
     const suffix = path ? `/${kind}/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+    let publicOwner = "";
+    try {
+      publicOwner = repoPublicOwner(repo);
+    } catch (_) {}
+    if (repoShortName(repo.owner, repo.name) || (publicOwner && repoShortName(publicOwner, repo.name))) {
+      if (!state.repoShortNames) state.repoShortNames = new Map();
+      state.repoShortNames.set(String(repo.name).toLowerCase(), { name: String(repo.name), owner: repoAddresses().owner });
+      return `/${name}${suffix}`;
+    }
     return `/${owner}/${name}${suffix}`;
   }
 
@@ -1798,17 +1876,41 @@
   // route prefix (e.g. /dashboard/owner/repo/issues -> ["owner","repo","issues"])
   // so repo-route parsing sees the same clean owner/repo/tab shape regardless
   // of whether the browser landed here directly or via the 404.html bounce.
-  function repoShortRoute() {
+  function repoPublicHref(href) {
+    const value = String(href || "");
+    if (!value.startsWith("/") || value.startsWith("//")) return value;
+    const [path, ...tail] = value.split(/(?=[?#])/);
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) return value;
+    const owner = safeDecodeURIComponent(parts[0]);
+    const name = safeDecodeURIComponent(parts[1]);
+    const rest = parts.slice(2);
+    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (!repoShortName(owner, name)) return value;
+    return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
+  }
+
+  function repoPublicKey(key) {
+    const [owner, name, ...extra] = String(key || "").split("/");
+    return owner && name && !extra.length && repoShortName(owner, name) ? name : String(key || "");
+  }
+
+  function repoShortRoute(first = "") {
     const name = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
     const owner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+    if (name && owner && (!first || first.toLowerCase() === name.toLowerCase())) return { name, owner };
+    const known = first ? state.repoShortNames?.get(first.toLowerCase()) : null;
+    if (known && repoShortName(known.owner, known.name)) return known;
     return name && owner ? { name, owner } : null;
   }
 
   function repoRouteParts() {
     let parts = location.pathname.split("/").filter(Boolean);
-    if (parts[0] === "dashboard") parts = parts.slice(1);
-    const short = repoShortRoute();
-    if (short && parts.length && decodeURIComponent(parts[0]) === short.name) {
+    const prefixed = parts[0] === "dashboard";
+    if (prefixed) parts = parts.slice(1);
+    const first = parts.length ? safeDecodeURIComponent(parts[0]) : "";
+    const short = prefixed ? null : repoShortRoute(first);
+    if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
       const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
       return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
@@ -8411,7 +8513,7 @@
     if (supplied.startsWith("/") && !supplied.startsWith("//")) return supplied;
     const owner = String(repository?.owner || "").trim();
     const name = String(repository?.name || "").trim();
-    return owner && name ? `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}` : "/dashboard/repos";
+    return owner && name ? repoPathUrl({ owner, name }) : "/dashboard/repos";
   }
 
   function renderProfileActivity(data) {
@@ -11739,7 +11841,7 @@
       ...organizationRepositories.map((repo) => ({
         repo,
         key: `${repo.owner}/${repo.name}`,
-        href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+        href: repoPathUrl(repo),
         organization: true,
       })),
       ...groups.map((group) => {
@@ -11829,7 +11931,7 @@
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
           repo,
-          href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+          href: repoPathUrl(repo),
           organization: true,
         })),
       ...mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])).map((group) => {
@@ -12103,7 +12205,7 @@
     const repo = String(session.repo || "").trim();
     const repoLabel = owner && repo ? `${owner}/${repo}` : repo;
     const href = owner && repo
-      ? `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`
+      ? `${repoPathUrl({ owner, name: repo })}/agents`
       : "";
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
@@ -12281,7 +12383,7 @@
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
     const forkmeshUrl = hosted
-      ? `/${encodeURIComponent(repository.targetOwner)}/${encodeURIComponent(repository.name)}`
+      ? repoPathUrl({ owner: repository.targetOwner, name: repository.name })
       : original;
     const canVolunteer = Boolean(state.session?.sessionToken) &&
       !["actively_mirrored", "archived"].includes(String(repository?.status || ""));
@@ -13151,7 +13253,7 @@
 
   function renderNewRepoPush(repository, push, hosting = null) {
     const repoLabel = $("[data-new-repo-push-repo]");
-    if (repoLabel) repoLabel.textContent = repoKey(repository || {});
+    if (repoLabel) repoLabel.textContent = repoPublicKey(repoKey(repository || {}));
     const intro = $("[data-new-repo-push-intro]");
     if (intro) {
       intro.textContent = hosting?.importing
@@ -15807,7 +15909,7 @@
     }
     const path = normalized.join("/");
     const kind = !target || target.endsWith("/") || !path ? "tree" : "blob";
-    const href = path ? repoLinkUrl(context.repo, kind, path) : `/${context.repo.owner}/${context.repo.name}`;
+    const href = path ? repoLinkUrl(context.repo, kind, path) : repoLinkUrl(context.repo);
     const anchor = hash ? mdHeadingSlug(hash.slice(1)) : "";
     return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
   }
@@ -23127,7 +23229,7 @@
   function repoForkPath(rawUrl, owner, name) {
     return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
       ? rawUrl
-      : `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+      : repoPathUrl({ owner, name });
   }
 
   function repoForkRowHtml(fork) {
@@ -36381,7 +36483,7 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
             <p class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || item.repo || "ForkMesh update")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || repoPublicKey(item.repo) || "ForkMesh update")}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -36404,14 +36506,14 @@
         </span>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">${escapeHtml(item.title || "Ping")}</p>
-          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(item.repo)}` : ""}</p>
+          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
       <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(item.body || "ForkMesh notification")}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(item.href)}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -43568,7 +43670,7 @@
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
-    "agents": "/dashboard-page-agents.js?v=228adef39c05",
+    "agents": "/dashboard-page-agents.js?v=5588ceb004a1",
     "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=f3f31e10bb77",
@@ -43576,9 +43678,9 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=0617eb425d63",
+    "notes": "/dashboard-page-notes.js?v=b1cad88b6d13",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=d19aedd4b98f",
+    "tasks": "/dashboard-page-tasks.js?v=e733aa90193f",
     "workflows": "/dashboard-page-workflows.js?v=31a4ee1ae76e",
   };
   const dashboardChunkScope = {
@@ -43611,6 +43713,7 @@
     repoIsLive,
     repoLinkUrl,
     repoLiveUrl,
+    repoPathUrl,
     sourceOfTruth,
     state,
     submitWebIssue,
@@ -43838,6 +43941,7 @@
 
   async function bootDashboard() {
     const startupStartedAt = 0;
+    const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     watchGenieSetting();
     watchHomeRedirectSetting();
@@ -43846,6 +43950,9 @@
     void ensurePortableControllerSession();
     await hydratePortableMirrorSession();
     await restoreControllerSession();
+    if (!repoAddressesKnown()) {
+      await Promise.race([repoAddressesLoaded, new Promise((resolve) => setTimeout(resolve, 1500))]);
+    }
     initDailyInterface();
     if (initSharedChrome()) {
       startAccountSessionWatch();

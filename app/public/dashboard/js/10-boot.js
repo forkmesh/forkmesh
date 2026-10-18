@@ -168,6 +168,7 @@
 
   async function bootDashboard() {
     const startupStartedAt = 0;
+    const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     watchGenieSetting();
     watchHomeRedirectSetting();
@@ -176,6 +177,9 @@
     void ensurePortableControllerSession();
     await hydratePortableMirrorSession();
     await restoreControllerSession();
+    if (!repoAddressesKnown()) {
+      await Promise.race([repoAddressesLoaded, new Promise((resolve) => setTimeout(resolve, 1500))]);
+    }
     initDailyInterface();
     if (initSharedChrome()) {
       startAccountSessionWatch();

@@ -104,12 +104,100 @@ or organization. `app/src/repo_short_urls.py` holds the rules.
 - The repository page is served at the short address with two meta tags
   (`forkmesh-repo-short`, `forkmesh-repo-owner`). `repoRouteParts` in
   `02-helpers.js` maps the short path back to owner, repository, tab and
-  folder. Links inside the page keep the full address. Short-address pages
+  folder. Links inside the page keep the full address unless the owner is
+  canonical (below). Short-address pages
   skip the shared social edge cache because the page differs.
 - The setting is cached for 30 seconds per process
   (`repo_short_urls.cached`); a save clears the local cache.
 - On the cores Caddy serves static files before the app, so short addresses
   are meant for instances.
+
+### Single-organization instances (canonical short addresses)
+
+The second switch on the Short addresses card, "Show repositories without
+the owner (single-organization instance)", stores `"canonical": true` in the
+same row: `{"canonical":true,"owner":"acme-bolt","short":true}`. It only
+counts while `short` is on. The repositories of that owner then show only as
+`/<repo>`: `https://code.example.org/Bolt`, `/Bolt/issues`,
+`/Bolt/tree/bolt-c`, clone `https://code.example.org/Bolt.git`.
+
+Organization repositories are stored under the account that created them
+and linked to the organization in `org_repos` (Bolt is hosted as
+`drew/Bolt` and aliased as `acme-bolt/Bolt`). That creator address is
+treated like the organization address.
+
+| Request | Answer |
+| --- | --- |
+| `GET`/`HEAD /<owner>/<repo>[/tab/...]` | `301` to `/<repo>[/...]`, query kept, `cache-control: no-store` so turning the switch off takes effect at once |
+| `GET /<creator>/<repo>[/...]`, the repository linked to the owner | the same `301`, for a public repository only (a redirect for a private one would tell a visitor that it exists) |
+| `/<owner>/<repo>/info/refs`, `git-upload-pack`, `git-receive-pack`, `/api/repo/...` | unchanged at both addresses; git and the API are never redirected |
+| a name that is reserved, looks like a file, ends in `.git`, equals the owner, or is an account or organization | keeps `/<owner>/<repo>` (the short rewrite refuses those names, so the full address is the only one that works) |
+
+Where the short form is produced:
+
+- **Server redirect**: `_repo_canonical_path` in `entry.py` (called from
+  `_route` just before the `/<owner>/<repo>` page is served, after every git
+  and API route, so those never redirect). `repo_short_urls.canonical_redirect`
+  holds the pure rule: the short path must rewrite back to exactly the
+  requested full path.
+- **Head tags**: a page served at the short address with canonical on gets
+  `<link rel="canonical">` and `og:url` of `https://<host>/<repo>` and a
+  `forkmesh-repo-canonical` meta tag naming the owner.
+- **Browser**: the dashboard pages are static files, so the setting reaches
+  them through `GET /api/instance` (`repoAddresses`: owner, canonical, the
+  owner's public repository names that must keep the owner, public creator
+  aliases `{repo: creator}`, and the reserved route names). Dashboard boot
+  (`10-boot.js`) starts the read at once and waits for it (at most 1.5 s)
+  only the first time; the answer is kept in `localStorage`
+  (`forkmesh.repoAddresses`) so later pages render short links straight away.
+  The core hosts never ask. `repoPathUrl`, and through it `repoLinkUrl`,
+  `groupLinkUrl`, record and compare links, `navigateHistory` targets and the
+  repository lists, return `/<repo>/...` for the owner, its creator aliases
+  and rows whose public owner is the organization. `cloneUrl` adds `.git` to a
+  one-segment address. `repoPublicHref`/`repoPublicKey` shorten notification
+  links and labels. Short paths the page itself made are remembered so
+  Back/Forward parse them again (`repoRouteParts`). `parseCloneUrlIdentity`
+  reads a one-segment clone URL of this site as `<owner>/<repo>`.
+- **Clone URLs in API answers**: the hosted-create and push-credential
+  answers (`remoteUrl` and the commands) use `_repo_clone_url`. The catalog
+  rows keep their stored, signed `cloneUrl` (the server reads identities from
+  it), and `GET /api/repositories` and `/api/repositories/search` answers are
+  rewritten on the way out (`repo_short_urls.short_urls`): same-site URLs of
+  the owner or of a linked creator become `/<repo>` (`/<repo>.git` for
+  `cloneUrl`, `clone.https` and `git clone` commands); mirror URLs on other
+  hosts and names that must keep the owner are left alone.
+- **Notifications**: `enqueue_notification` stores the short `href`.
+- **Git over the short address**: `/<repo>.git/info/refs` and
+  `/<repo>.git/git-receive-pack` are re-dispatched as the full path. The
+  request object still carries the short URL, so the organization-alias
+  recovery (`_git_push_alias_owner`, `_https_mirror_proxy`) maps it back
+  through `_git_request_path`. The instance host's 256 MiB push body limit
+  (`request_guard.GIT_PUSH_RE`) also matches the one-segment push path.
+
+The owner's repository names and creator links are read from `org_repos`
+and the owner's `repositories` rows and cached for five minutes per process
+(`_repo_short_links`); a save on the admin page clears it. A new repository
+whose name collides with an account can show a short link for up to that
+long; the server redirect itself checks accounts on every request.
+
+Still shown with the owner: the server-rendered first view of a repository
+page (`repo_ssr`, its links are replaced when the dashboard boots, and it is
+skipped for one-segment paths), ActivityPub actor URLs and the fediverse
+profile, `og:title`, mirror and runner clone URLs on other hosts, and the
+materialized public catalog snapshot on the cores (instances do not use it).
+
+To turn it on for an existing instance, use the admin page (Platform →
+Repository addresses, both switches, owner = the organization), or write the
+row directly:
+
+```sql
+INSERT INTO instance_settings (k, doc, updated_at)
+VALUES ('repo_paths', '{"canonical":true,"owner":"acme-bolt","short":true}',
+        CAST(strftime('%s','now') AS INTEGER) * 1000)
+ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
+```
+
+A row written by SQL takes effect within 30 seconds (the per-process cache).
 
 ### Project addresses
 
@@ -136,6 +224,9 @@ tab-separated; `#` lines are comments. A folder of `-` marks retired names,
 which redirect to the repository. The same table can live in the repository
 (Bolt keeps it in `scripts/routing/projects.tsv`) and be pasted here.
 `app/src/repo_projects.py` holds the rules.
+Project addresses already target `/<repo>/...`, so they work unchanged with
+canonical short addresses: a project redirect is checked before the short
+route and lands on an address that canonical mode never redirects again.
 
 - Names match without regard to case, and the folder name works as well as
   the address name. Unknown names fall through to the short-address rules.

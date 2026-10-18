@@ -33,7 +33,7 @@
   };
 
   function agentsSessionHref(owner, repo, id) {
-    const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`;
+    const base = `${repoPathUrl({ owner, name: repo })}/agents`;
     return id ? `${base}?session=${encodeURIComponent(id)}` : base;
   }
 

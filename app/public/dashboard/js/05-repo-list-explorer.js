@@ -935,7 +935,7 @@
       ...organizationRepositories.map((repo) => ({
         repo,
         key: `${repo.owner}/${repo.name}`,
-        href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+        href: repoPathUrl(repo),
         organization: true,
       })),
       ...groups.map((group) => {
@@ -1025,7 +1025,7 @@
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
           repo,
-          href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+          href: repoPathUrl(repo),
           organization: true,
         })),
       ...mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])).map((group) => {
@@ -1299,7 +1299,7 @@
     const repo = String(session.repo || "").trim();
     const repoLabel = owner && repo ? `${owner}/${repo}` : repo;
     const href = owner && repo
-      ? `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`
+      ? `${repoPathUrl({ owner, name: repo })}/agents`
       : "";
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
@@ -1477,7 +1477,7 @@
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
     const forkmeshUrl = hosted
-      ? `/${encodeURIComponent(repository.targetOwner)}/${encodeURIComponent(repository.name)}`
+      ? repoPathUrl({ owner: repository.targetOwner, name: repository.name })
       : original;
     const canVolunteer = Boolean(state.session?.sessionToken) &&
       !["actively_mirrored", "archived"].includes(String(repository?.status || ""));
@@ -2347,7 +2347,7 @@
 
   function renderNewRepoPush(repository, push, hosting = null) {
     const repoLabel = $("[data-new-repo-push-repo]");
-    if (repoLabel) repoLabel.textContent = repoKey(repository || {});
+    if (repoLabel) repoLabel.textContent = repoPublicKey(repoKey(repository || {}));
     const intro = $("[data-new-repo-push-intro]");
     if (intro) {
       intro.textContent = hosting?.importing

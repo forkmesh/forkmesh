@@ -3828,7 +3828,7 @@
     if (supplied.startsWith("/") && !supplied.startsWith("//")) return supplied;
     const owner = String(repository?.owner || "").trim();
     const name = String(repository?.name || "").trim();
-    return owner && name ? `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}` : "/dashboard/repos";
+    return owner && name ? repoPathUrl({ owner, name }) : "/dashboard/repos";
   }
 
   function renderProfileActivity(data) {

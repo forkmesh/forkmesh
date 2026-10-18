@@ -305,6 +305,7 @@ async def render_addresses(env, request, csrf_field, admin_query):
         '<form method="post" action="%s" class="stack">%s'
         '<input type="hidden" name="action" value="save_repo_paths">'
         '<div>%s</div>'
+        '<div>%s</div>'
         '<label class="form-row"><span>Owner of the short addresses</span>'
         '<input type="text" name="owner" value="%s" class="grow" '
         'placeholder="account or organization" autocomplete="off" '
@@ -315,7 +316,15 @@ async def render_addresses(env, request, csrf_field, admin_query):
             csrf_field,
             shell.switch("short", "Serve repositories at /<repository>",
                          setting["short"]),
+            shell.switch("canonical", "Show repositories without the owner "
+                         "(single-organization instance)",
+                         setting["canonical"]),
             _esc(setting["owner"])))
+    full = (
+        "https://%s/%s/&lt;repository&gt; redirects to "
+        "https://%s/&lt;repository&gt;" % (host, owner, host)
+        if setting["canonical"] else
+        "https://%s/%s/&lt;repository&gt; keeps working" % (host, owner))
     examples = (
         '<dl class="kv">'
         "<dt>Repository</dt><dd class=\"mono\">https://%s/&lt;repository&gt;"
@@ -324,9 +333,8 @@ async def render_addresses(env, request, csrf_field, admin_query):
         "&lt;folder&gt;</dd>"
         "<dt>Clone</dt><dd class=\"mono\">git clone https://%s/"
         "&lt;repository&gt;.git</dd>"
-        "<dt>Full address</dt><dd class=\"mono\">https://%s/%s/"
-        "&lt;repository&gt; keeps working</dd></dl>" % (
-            host, host, host, host, owner))
+        "<dt>Full address</dt><dd class=\"mono\">%s</dd></dl>" % (
+            host, host, host, full))
     return shell.page_head(
         "Repository addresses",
         "Let the repositories of one account or organization open without "
@@ -334,7 +342,10 @@ async def render_addresses(env, request, csrf_field, admin_query):
         title="Short addresses",
         description="When on, /<repository> and /<repository>/<folder> open "
         "that owner's repository. Names of accounts, organizations and "
-        "site pages keep their own addresses.",
+        "site pages keep their own addresses. With the second switch the "
+        "site links, clone URLs and the address bar show only "
+        "/<repository> for that owner, and the full address redirects "
+        "there; Git and API addresses keep working at both.",
         body=form, table=examples) + await render_projects(
             env, request, csrf_field, admin_query)
 
@@ -439,7 +450,8 @@ async def _start_core_update(env, account):
 async def _save_addresses(env, form):
     try:
         setting = repo_short_urls.clean(_first(form, "short") == "1",
-                                        _first(form, "owner"))
+                                        _first(form, "owner"),
+                                        _first(form, "canonical") == "1")
     except repo_short_urls.SettingError:
         return "owner_invalid", None
     if setting["owner"]:

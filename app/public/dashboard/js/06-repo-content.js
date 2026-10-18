@@ -109,7 +109,7 @@
     }
     const path = normalized.join("/");
     const kind = !target || target.endsWith("/") || !path ? "tree" : "blob";
-    const href = path ? repoLinkUrl(context.repo, kind, path) : `/${context.repo.owner}/${context.repo.name}`;
+    const href = path ? repoLinkUrl(context.repo, kind, path) : repoLinkUrl(context.repo);
     const anchor = hash ? mdHeadingSlug(hash.slice(1)) : "";
     return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
   }
@@ -7429,7 +7429,7 @@
   function repoForkPath(rawUrl, owner, name) {
     return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
       ? rawUrl
-      : `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+      : repoPathUrl({ owner, name });
   }
 
   function repoForkRowHtml(fork) {

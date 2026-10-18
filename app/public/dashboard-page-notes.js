@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, state, submitWebIssue } = core;
+  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, state, submitWebIssue } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
@@ -340,7 +340,7 @@
     const kindIcon = { issue: "circle-dot", pull: "git-pull-request", discussion: "message-square" };
     const chips = (note.links || []).map((link) => {
       const section = link.kind === "pull" ? "pulls" : `${link.kind}s`;
-      const href = `/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}?tab=${section}#${link.number}`;
+      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}?tab=${section}#${link.number}`;
       return `<span class="notes-chip"><span data-kind="${escapeHtml(link.kind)}">${noteIcon(kindIcon[link.kind] || "link")}</span><a href="${href}" title="${escapeHtml(link.owner)}/${escapeHtml(link.repo)} ${escapeHtml(link.kind)} #${link.number}">${escapeHtml(link.repo)}#${link.number}</a>${canEdit ? `<button type="button" class="notes-chip-x" data-note-unlink='${escapeHtml(JSON.stringify(link))}' aria-label="Unlink ${escapeHtml(link.repo)}#${link.number}">${noteIcon("x")}</button>` : ""}</span>`;
     }).join("");
     const adder = !canEdit ? ""

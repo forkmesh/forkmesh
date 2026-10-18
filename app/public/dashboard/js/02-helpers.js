@@ -844,7 +844,8 @@
   // machine currently serving the bytes: cloning forkmesh/forkmesh must keep
   // working after the mirror that answered today goes away.
   function cloneUrl(repo) {
-    return `${publicSiteOrigin()}${repoLinkUrl(repo)}`;
+    const link = repoLinkUrl(repo);
+    return `${publicSiteOrigin()}${link}${link.split("/").length === 2 ? ".git" : ""}`;
   }
 
   function repoKey(repo) {
@@ -1005,6 +1006,8 @@
     } catch (_) {}
     path = path.split("?")[0].split("#")[0].replace(/^\/+|\/+$/g, "");
     const parts = path.split("/").filter(Boolean);
+    const addresses = parts.length === 1 && isThisSiteUrl(raw) ? repoAddresses() : null;
+    if (addresses) parts.unshift(addresses.owner);
     if (parts.length < 2) return null;
     const owner = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 2] || ""));
     let name = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 1] || ""));
@@ -1374,10 +1377,85 @@
     ).trim();
   }
 
+  const REPO_ADDRESSES_STORE = "forkmesh.repoAddresses";
+  const REPO_CORE_HOSTS = ["app.forkmesh.com", "forkmesh.com", "world.forkmesh.com"];
+  const REPO_SHORT_NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+  const REPO_SHORT_FILE_RE = /\.(?:php\d?|txt|xml|json|ico|png|jpe?g|gif|svg|js|mjs|css|map|env|html?|aspx?|jsp|cgi|zip|gz|tgz|tar|sql|bak|ya?ml|ini|log|webmanifest|woff2?|ttf|pdf)$/i;
+
+  function normalizeRepoAddresses(value) {
+    const owner = String(value?.owner || "").trim().toLowerCase();
+    if (!value || value.canonical !== true || !owner) return null;
+    const names = (list) => new Set((Array.isArray(list) ? list : []).map((name) => String(name || "").toLowerCase()));
+    const aliases = new Map(Object.entries(value.aliases && typeof value.aliases === "object" ? value.aliases : {})
+      .map(([name, creator]) => [String(name).toLowerCase(), String(creator || "").toLowerCase()]));
+    return { owner, keep: names(value.keep), reserved: names(value.reserved), aliases };
+  }
+
+  function repoAddresses() {
+    if (state.repoAddresses !== undefined) return state.repoAddresses;
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(REPO_ADDRESSES_STORE) || "null");
+    } catch (_) {}
+    let addresses = normalizeRepoAddresses(stored);
+    const pageOwner = String(document.querySelector('meta[name="forkmesh-repo-canonical"]')?.content || "").toLowerCase();
+    if (pageOwner && addresses?.owner !== pageOwner) {
+      addresses = normalizeRepoAddresses({ owner: pageOwner, canonical: true });
+    }
+    state.repoAddresses = addresses;
+    return addresses;
+  }
+
+  function applyRepoAddresses(value) {
+    state.repoAddresses = normalizeRepoAddresses(value);
+    try {
+      localStorage.setItem(REPO_ADDRESSES_STORE, JSON.stringify(value || null));
+    } catch (_) {}
+    return state.repoAddresses;
+  }
+
+  async function loadRepoAddresses() {
+    if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
+    try {
+      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
+      const data = response.ok ? await response.json() : null;
+      if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
+    } catch (_) {}
+    return repoAddresses();
+  }
+
+  function repoAddressesKnown() {
+    try {
+      return localStorage.getItem(REPO_ADDRESSES_STORE) !== null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoShortName(owner, name) {
+    const addresses = repoAddresses();
+    const value = String(name || "");
+    const lowered = value.toLowerCase();
+    const lowerOwner = String(owner || "").toLowerCase();
+    if (!addresses || !value || !lowerOwner) return false;
+    if (lowerOwner !== addresses.owner && addresses.aliases.get(lowered) !== lowerOwner) return false;
+    if (lowered === addresses.owner || addresses.keep.has(lowered) || addresses.reserved.has(lowered)) return false;
+    return REPO_SHORT_NAME_RE.test(value) && !lowered.endsWith(".git") && !REPO_SHORT_FILE_RE.test(value);
+  }
+
   function repoPathUrl(repo, kind = "tree", path = "") {
     const owner = encodeURIComponent(repo.owner || "");
     const name = encodeURIComponent(repo.name || "");
     const suffix = path ? `/${kind}/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+    let publicOwner = "";
+    try {
+      publicOwner = repoPublicOwner(repo);
+    } catch (_) {}
+    if (repoShortName(repo.owner, repo.name) || (publicOwner && repoShortName(publicOwner, repo.name))) {
+      if (!state.repoShortNames) state.repoShortNames = new Map();
+      state.repoShortNames.set(String(repo.name).toLowerCase(), { name: String(repo.name), owner: repoAddresses().owner });
+      return `/${name}${suffix}`;
+    }
     return `/${owner}/${name}${suffix}`;
   }
 
@@ -1422,17 +1500,41 @@
   // route prefix (e.g. /dashboard/owner/repo/issues -> ["owner","repo","issues"])
   // so repo-route parsing sees the same clean owner/repo/tab shape regardless
   // of whether the browser landed here directly or via the 404.html bounce.
-  function repoShortRoute() {
+  function repoPublicHref(href) {
+    const value = String(href || "");
+    if (!value.startsWith("/") || value.startsWith("//")) return value;
+    const [path, ...tail] = value.split(/(?=[?#])/);
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) return value;
+    const owner = safeDecodeURIComponent(parts[0]);
+    const name = safeDecodeURIComponent(parts[1]);
+    const rest = parts.slice(2);
+    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (!repoShortName(owner, name)) return value;
+    return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
+  }
+
+  function repoPublicKey(key) {
+    const [owner, name, ...extra] = String(key || "").split("/");
+    return owner && name && !extra.length && repoShortName(owner, name) ? name : String(key || "");
+  }
+
+  function repoShortRoute(first = "") {
     const name = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
     const owner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+    if (name && owner && (!first || first.toLowerCase() === name.toLowerCase())) return { name, owner };
+    const known = first ? state.repoShortNames?.get(first.toLowerCase()) : null;
+    if (known && repoShortName(known.owner, known.name)) return known;
     return name && owner ? { name, owner } : null;
   }
 
   function repoRouteParts() {
     let parts = location.pathname.split("/").filter(Boolean);
-    if (parts[0] === "dashboard") parts = parts.slice(1);
-    const short = repoShortRoute();
-    if (short && parts.length && decodeURIComponent(parts[0]) === short.name) {
+    const prefixed = parts[0] === "dashboard";
+    if (prefixed) parts = parts.slice(1);
+    const first = parts.length ? safeDecodeURIComponent(parts[0]) : "";
+    const short = prefixed ? null : repoShortRoute(first);
+    if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
       const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
       return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];

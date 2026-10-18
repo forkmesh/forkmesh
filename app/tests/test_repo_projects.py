@@ -110,3 +110,23 @@ def test_history_forwards_and_filters_by_path():
     entry = (ROOT / "src" / "entry.py").read_text()
     assert 'operation in ("tree", "blob", "raw", "commit", "history")' in entry
     assert 'operation == "history" and query.get("path")' in entry
+
+
+def test_project_addresses_land_on_short_addresses_that_canonical_mode_keeps():
+    sys.path.insert(0, str(ROOT / "src"))
+    import repo_short_urls
+    canonical = repo_short_urls.parse(
+        '{"short":true,"owner":"acme-bolt","canonical":true}')
+    for path in ("/Bolt/Bolt-C", "/Bolt/Bolt-C/issues",
+                 "/acme-bolt/SelfErase/pulls"):
+        target = go(path)
+        assert target.startswith("/Bolt/"), target
+        assert repo_short_urls.canonical_redirect(
+            target.split("?")[0], "", canonical) is None
+        assert repo_short_urls.rewrite(target.split("?")[0], "acme-bolt")
+    assert repo_short_urls.canonical_redirect(
+        "/acme-bolt/Bolt/tree/bolt-c", "", canonical)[0] == "/Bolt/tree/bolt-c"
+    source = (ROOT / "src" / "app_runtime.py").read_text()
+    helper = source.split("    async def _repo_projects_redirect(self, url):", 1)[1]
+    helper = helper.split("\n    async def ", 1)[0]
+    assert 'if not short["short"]:' in helper
