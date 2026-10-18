@@ -42,8 +42,8 @@ func prepareAgentWorkspace(ctx context.Context, gitDir, dir, branch, base, node 
 		return err
 	}
 	for _, args := range [][]string{
-		{"config", "user.name", node},
-		{"config", "user.email", node + "@users.noreply.forkmesh.com"},
+		{"config", "user.name", commitIdentityName(node)},
+		{"config", "user.email", commitIdentityEmail(node)},
 	} {
 		if _, err := agentGit(ctx, dir, args...); err != nil {
 			return err
@@ -219,7 +219,8 @@ func agentWipCommit(ctx context.Context, dir, head, node string) (string, error)
 	if name == "" {
 		name = "forkmesh-agent"
 	}
-	email := name + "@users.noreply.forkmesh.com"
+	email := commitIdentityEmail(name)
+	name = commitIdentityName(name)
 	env := []string{"GIT_INDEX_FILE=" + index,
 		"GIT_AUTHOR_NAME=" + name, "GIT_AUTHOR_EMAIL=" + email,
 		"GIT_COMMITTER_NAME=" + name, "GIT_COMMITTER_EMAIL=" + email}

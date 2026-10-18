@@ -1445,6 +1445,8 @@ Environment=TZ=UTC
 Environment=HOME=/var/lib/forkmesh
 Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
 Environment=TMPDIR=/var/lib/forkmesh/tmp
+Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"
+Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN
 ExecStartPre=$DAEMON --config $DAEMON_CONFIG --check
 ExecStart=$DAEMON --config $DAEMON_CONFIG
 Restart=on-failure
@@ -1692,8 +1694,19 @@ setup_actions_runner() {
     warn "could not register the Actions runner $RUNNER_NAME with the app"
     return 0
   fi
+  write_runner_identity
   systemctl restart "$RUNNER_UNIT" >/dev/null 2>&1 || true
   say "The Actions runner $RUNNER_NAME runs workflows for $CFG_ownerName as $RUNNER_JOB_USER."
+}
+
+write_runner_identity() {
+  local dir="/etc/systemd/system/$RUNNER_UNIT.d"
+  install -d -m 0755 "$dir"
+  printf '[Service]\nEnvironment="FORKMESH_COMMIT_NAME=%s"\nEnvironment=FORKMESH_COMMIT_EMAIL=noreply@%s\n' \
+    "$CFG_projectName" "$DOMAIN" > "$dir/identity.conf.new"
+  chmod 0644 "$dir/identity.conf.new"
+  mv "$dir/identity.conf.new" "$dir/identity.conf"
+  systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
 write_first_login_cleanup() {
@@ -1731,6 +1744,8 @@ if [ -n "$RUNNER_OWNER" ]; then
   systemctl disable --now "forkmesh-runner@$RUNNER_OWNER.service" >/dev/null 2>&1 || true
   fm_safe_rm_tree /etc/forkmesh-runner/accounts "/etc/forkmesh-runner/accounts/$RUNNER_OWNER"
   fm_safe_rm_tree /var/lib/forkmesh-runner/accounts "/var/lib/forkmesh-runner/accounts/$RUNNER_OWNER"
+  rm -f "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d/identity.conf"
+  rmdir "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d" 2>/dev/null || true
 fi
 if [ -e "$CLEANUP_DIR/created-runner-root" ]; then
   systemctl disable --now forkmesh-runner-firewall.service >/dev/null 2>&1 || true
