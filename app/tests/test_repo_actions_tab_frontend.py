@@ -204,3 +204,11 @@ def test_public_runs_hint_at_signing_in_for_logs():
     assert "actor: repoActionsCleanLine(run?.actor, 64)," in FRAGMENT
     assert "${escapeHtml(run.actor)}" in function("renderRepoActionsRuns")
     assert "Sign in to see runs" in FRAGMENT
+
+
+def test_the_instance_runner_reads_as_this_server():
+    source = (ROOT / "public" / "dashboard" / "js" / "06-repo-actions.js").read_text(encoding="utf-8")
+    assert 'view.local = view.source === "runner" && payload.local === true;' in source
+    assert "Runs on this server" in source
+    assert "escapeHtml(view.host)" in source
+    assert "Runs on this server" in DASHBOARD_JS
