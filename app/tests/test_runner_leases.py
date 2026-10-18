@@ -68,6 +68,9 @@ class FakeRuntime:
         self.db.executescript(
             (ROOT / "migrations" / "0248_repo_action_jobs.sql").read_text()
             .split("INSERT INTO schema_meta")[0])
+        self.db.executescript(
+            (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
+            .split("INSERT INTO schema_meta")[0])
         self.db.execute("""CREATE TABLE org_agent_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
             org_bi TEXT NOT NULL, target_node TEXT NOT NULL,
@@ -92,6 +95,7 @@ class FakeRuntime:
         self.on_sleep = None
         self.stopping_value = False
         self.attachments = {}
+        self.settings = {}
 
     # request plumbing
     def use(self, raw=b"", headers=None, actor="", method="POST"):
@@ -144,6 +148,9 @@ class FakeRuntime:
     async def open(self, value): return json.loads(value)
     async def seal(self, value): return json.dumps(value)
     async def audit(self, *_args): pass
+    def setting(self, name): return self.settings.get(name, "")
+    def public_origin(self): return "https://git.example.test"
+    async def default_branch(self, _owner, _repo): return "main"
     async def d1_all(self, sql, *args):
         return [dict(r) for r in self.db.execute(sql, args).fetchall()]
     async def d1_first(self, sql, *args):
