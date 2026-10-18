@@ -52,7 +52,7 @@
 	<key>FORKMESH_WORLD_URL</key>
 	<string>$(FORKMESH_WORLD_URL)</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Take a photo to attach to an agent prompt, record view-once video messages, and let the Genie spider see your hands when you turn on hand play, and bring the spider into your room in Spider Room. Hand-play and room frames stay on this device.</string>
+	<string>Take a photo to attach to an agent prompt, record view-once video messages, and let the Genie spider see your hands when you turn on hand play, and follow where you look when you turn on Eye Control, and bring the spider into your room in Spider Room. Hand-play, Eye Control and room frames stay on this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Dictate a prompt instead of typing it, and record voice and video messages.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

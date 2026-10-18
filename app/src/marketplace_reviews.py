@@ -61,6 +61,7 @@ FIRST_PARTY_PACKAGES = {
     "discord": "Discord",
     "discussions": "Discussions",
     "docs": "Docs",
+    "eye-control": "Eye Control",
     "face-changer": "Face Changer",
     "food-guide": "Food Guide",
     "forkmesh-ide": "ForkMesh for VS Code",

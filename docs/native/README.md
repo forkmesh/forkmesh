@@ -249,6 +249,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - The **Phone Security** package (`phone-security`) is the phones' checkup,
   the counterpart of the desktop's Security package; checks, rules and code
   are in [../marketplace/phone-security.md](../marketplace/phone-security.md).
+- The **Eye Control** package (`eye-control`, iOS only, experimental) moves a
+  cursor with ARKit face tracking and taps on a firm blink (route
+  `eyeControl`); see [../marketplace/eye-control.md](../marketplace/eye-control.md).
 - The **Router** package (`openwrt`) manages an OpenWrt router on the phone's
   Wi-Fi (route `openWrtRouter`, web path `/dashboard/openwrt`). Logic is in
   `FMPackages/OpenWrt*.swift` and core `openwrt/`; screens in

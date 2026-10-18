@@ -173,6 +173,7 @@ public enum RouteCatalog {
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
+        case .eyeControl: return "Eye Control"
         case .openWrtRouter: return "Router"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
@@ -253,6 +254,7 @@ public enum RouteCatalog {
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
+        case .eyeControl: return "eye"
         case .openWrtRouter: return "wifi.router"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
@@ -389,6 +391,7 @@ public enum HubCatalog {
         .destination(.speech),
         .destination(.glassesAlert),
         .destination(.phoneSecurity),
+        .destination(.eyeControl),
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
