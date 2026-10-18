@@ -774,6 +774,17 @@ QStringList usbStoragePackages()
             QStringLiteral("kmod-fs-ext4"), QStringLiteral("kmod-fs-vfat"), QStringLiteral("kmod-fs-exfat")};
 }
 
+QStringList networkSharingPackages()
+{
+    return {QStringLiteral("ksmbd-server"), QStringLiteral("luci-app-ksmbd")};
+}
+
+QString shareUrl(const QString &routerHost, const QString &shareName)
+{
+    const QString host = routerHost.contains(QLatin1Char(':')) ? QStringLiteral("[%1]").arg(routerHost) : routerHost;
+    return QStringLiteral("smb://%1/%2/").arg(host, QString::fromUtf8(QUrl::toPercentEncoding(shareName)));
+}
+
 QStringList parsePartitions(const QString &text)
 {
     QStringList names;

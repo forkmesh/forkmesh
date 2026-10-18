@@ -154,7 +154,7 @@ final class DjDiagnostics {
         let outcome = await composer.launcher.send(prompt: prompt, repository: DiagnosticsBundle.repository, onDevice: false)
         composer.busy = false
         switch outcome {
-        case .queued, .queuedWithoutSession, .desktop:
+        case .queued, .queuedWithoutSession, .desktop, .done:
             FmHaptics.send(.success)
             return nil
         case .device:

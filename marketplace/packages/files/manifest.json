@@ -1,0 +1,73 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "files",
+  "name": "Files",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Productivity",
+  "version": "1.0.0",
+  "summary": "A file explorer on the desktop, iPhone and Android for the files on each device and on network shares (SMB), such as a disk your router shares: browse, open, edit, upload, download, copy, move, rename and delete.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Files page listing a network share's folders beside the folders on this device"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:files",
+    "ios": "builtin:files",
+    "android": "builtin:files",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "files.local.write",
+      "label": "Open, edit, rename and delete files on this device in the folders you choose",
+      "risk": "sensitive"
+    },
+    {
+      "id": "network.lan.smb",
+      "label": "Connect to file shares (SMB) on your local network with the user you enter",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "installedBefore": "2026-10-19",
+    "places": [
+      "mobile",
+      "desktop"
+    ]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

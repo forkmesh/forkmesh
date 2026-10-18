@@ -34,3 +34,37 @@ final class PromptMarkupTests: XCTestCase {
         XCTAssertEqual(PromptPhotoRules.attachmentName("shared-1.jpg"), "shared-1.jpg")
     }
 }
+
+final class CaptureAreaTests: XCTestCase {
+    func testAreaIsTheDraggedBoxInAnyDirectionClampedToTheScreen() {
+        XCTAssertEqual(
+            CaptureAreaRules.area(fromX: 300, fromY: 500, toX: 100, toY: 200, boundsWidth: 390, boundsHeight: 844),
+            CaptureArea(x: 100, y: 200, width: 200, height: 300))
+        XCTAssertEqual(
+            CaptureAreaRules.area(fromX: -20, fromY: 800, toX: 420, toY: 900, boundsWidth: 390, boundsHeight: 844),
+            CaptureArea(x: 0, y: 800, width: 390, height: 44))
+        XCTAssertEqual(CaptureAreaRules.area(fromX: 0, fromY: 0, toX: 10, toY: 10, boundsWidth: 0, boundsHeight: 844), .empty)
+    }
+
+    func testTinyBoxesAreNotUsable() {
+        XCTAssertTrue(CaptureAreaRules.isUsable(CaptureArea(x: 0, y: 0, width: 16, height: 40)))
+        XCTAssertFalse(CaptureAreaRules.isUsable(CaptureArea(x: 0, y: 0, width: 15, height: 400)))
+        XCTAssertFalse(CaptureAreaRules.isUsable(.empty))
+    }
+
+    func testPixelsCoverTheWholeBoxInsideTheImage() {
+        XCTAssertEqual(
+            CaptureAreaRules.pixels(CaptureArea(x: 10.2, y: 20.5, width: 100, height: 50), scale: 3, pixelWidth: 1170, pixelHeight: 2532),
+            CaptureArea(x: 30, y: 61, width: 301, height: 151))
+        XCTAssertEqual(
+            CaptureAreaRules.pixels(CaptureArea(x: 300, y: 800, width: 200, height: 100), scale: 3, pixelWidth: 1170, pixelHeight: 2532),
+            CaptureArea(x: 900, y: 2400, width: 270, height: 132))
+        XCTAssertEqual(CaptureAreaRules.pixels(CaptureArea(x: 0, y: 0, width: 10, height: 10), scale: 0, pixelWidth: 10, pixelHeight: 10), .empty)
+    }
+
+    func testOnlyElementsSmallerThanHalfTheScreenCountAsContent() {
+        XCTAssertTrue(CaptureAreaRules.isContent(elementWidth: 80, elementHeight: 44, boundsWidth: 390, boundsHeight: 844))
+        XCTAssertFalse(CaptureAreaRules.isContent(elementWidth: 390, elementHeight: 600, boundsWidth: 390, boundsHeight: 844))
+        XCTAssertFalse(CaptureAreaRules.isContent(elementWidth: 0, elementHeight: 44, boundsWidth: 390, boundsHeight: 844))
+    }
+}

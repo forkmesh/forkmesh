@@ -123,7 +123,7 @@ enum EyeClicker {
         }
     }
 
-    private static func ancestor(of view: UIView, where test: (UIView) -> Bool) -> UIView? {
+    static func ancestor(of view: UIView, where test: (UIView) -> Bool) -> UIView? {
         var current: UIView? = view
         while let node = current {
             if test(node) { return node }
@@ -183,7 +183,7 @@ enum EyeClicker {
             .map(\.element)
     }
 
-    private static func children(of node: NSObject) -> [NSObject] {
+    static func children(of node: NSObject) -> [NSObject] {
         if let listed = node.accessibilityElements, !listed.isEmpty {
             return listed.compactMap { $0 as? NSObject }
         }

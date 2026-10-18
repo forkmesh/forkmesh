@@ -35,9 +35,9 @@ def test_real_client_against_the_real_worker_module():
 
 
 @needs_node
-def test_password_manager_exports_import_through_the_real_worker():
-    result = _node("import_check.js")
-    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+def test_password_exports_from_other_apps_are_read():
+    result = _node("transfer_check.js")
+    assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
     assert "checks passed" in result.stdout
 
 

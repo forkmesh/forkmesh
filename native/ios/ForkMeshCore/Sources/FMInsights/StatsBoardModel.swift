@@ -1,4 +1,5 @@
 import FMBase
+import FMControl
 import Foundation
 import Observation
 
@@ -92,7 +93,9 @@ public enum StatsTiles {
     public static let networkIds: Set<String> = ["repos", "nodes", "hosts"]
     public static let historyIds: Set<String> = ["nodeHours"]
     public static let statusIds: Set<String> = ["uptime", "incidents", "errors"]
-    public static var serverIds: Set<String> { networkIds.union(historyIds).union(statusIds) }
+    public static var releaseIds: Set<String> { LiveReleases.homepageIds.union([LiveReleases.iosId]) }
+    public static var serverIds: Set<String> { networkIds.union(historyIds).union(statusIds).union(releaseIds) }
+    public static var allIds: Set<String> { serverIds.union(desktopIds).union(DesktopTiles.ids) }
 
     public static func withHistory(_ tiles: [String: StatsTileData], _ history: [String: [StatsSample]]) -> [String: StatsTileData] {
         var out = tiles
@@ -111,6 +114,7 @@ public final class StatsBoardModel {
     @ObservationIgnored private let layoutStore: StatsLayoutStore
     @ObservationIgnored private let desktop: (@MainActor () async throws -> DesktopHealth)?
     @ObservationIgnored private let codemagic: (@MainActor () async throws -> CodemagicUsage)?
+    @ObservationIgnored private let desktopTiles: (@MainActor () async throws -> DesktopTilesReply)?
     @ObservationIgnored private let history: StatsHistoryStore?
     @ObservationIgnored private let now: () -> Date
 
@@ -118,31 +122,40 @@ public final class StatsBoardModel {
     public private(set) var offered: [String]
     public private(set) var tiles: [String: StatsTileData] = [:]
     public private(set) var loading = false
-    public private(set) var pending: Set<String> = StatsTiles.serverIds.union(StatsTiles.desktopIds)
+    public private(set) var pending: Set<String> = StatsTiles.allIds
     public private(set) var failures: [String] = []
     public private(set) var desktopNote = ""
+    public private(set) var desktopTilesNote = ""
+    public private(set) var desktopOffered: Set<String> = []
     public private(set) var updatedAt: Date?
 
     public init(transport: InsightsRequesting, layoutStore: StatsLayoutStore,
                 desktop: (@MainActor () async throws -> DesktopHealth)? = nil,
                 codemagic: (@MainActor () async throws -> CodemagicUsage)? = nil,
+                desktopTiles: (@MainActor () async throws -> DesktopTilesReply)? = nil,
                 history: StatsHistoryStore? = nil, now: @escaping () -> Date = Date.init) {
         self.transport = transport
         self.layoutStore = layoutStore
         self.desktop = desktop
         self.codemagic = codemagic
+        self.desktopTiles = desktopTiles
         self.history = history
         self.now = now
         let merge = layoutStore.load()
         layout = merge.layout
         offered = merge.offered
+        desktopOffered = layoutStore.loadDesktopTiles()
     }
 
-    public var visible: [StatsTilePlacement] { StatsLayout.visible(layout, catalog: StatsCatalog.entries) }
+    public func isShown(_ id: String) -> Bool { !DesktopTiles.isDesktopTile(id) || desktopOffered.contains(id) }
+
+    public var visible: [StatsTilePlacement] {
+        StatsLayout.visible(layout, catalog: StatsCatalog.entries).filter { isShown($0.id) }
+    }
 
     public var addable: [StatsTileCatalogEntry] {
         let placed = Set(layout.map(\.id))
-        return StatsCatalog.entries.filter { !placed.contains($0.id) }
+        return StatsCatalog.entries.filter { !placed.contains($0.id) && isShown($0.id) }
     }
 
     public func data(_ id: String) -> StatsTileData? { tiles[id] }
@@ -152,7 +165,7 @@ public final class StatsBoardModel {
     public func reload() async {
         loading = true
         defer { loading = false }
-        pending = StatsTiles.serverIds.union(StatsTiles.desktopIds)
+        pending = StatsTiles.allIds
         var failed: [String] = []
         async let network: String? = load(StatsTiles.networkIds, failure: "network") {
             StatsTiles.network(NetworkSnapshot(json: try await self.transport.call("GET", "/api/network/stats", nil)))
@@ -163,10 +176,15 @@ public final class StatsBoardModel {
         async let status: String? = load(StatsTiles.statusIds, failure: "status") {
             StatsTiles.status(StatusReport(json: try await self.transport.call("GET", "/api/status", nil)))
         }
+        async let releases: String? = load(LiveReleases.homepageIds, failure: "releases") {
+            LiveReleases.tiles(try await LiveReleases.load(self.transport))
+        }
+        async let appStoreDone: Void = loadAppStore()
         async let desktopDone: Void = loadDesktop()
         async let codemagicDone: Void = loadCodemagic()
-        for name in await [network, activity, status] { if let name { failed.append(name) } }
-        _ = await (desktopDone, codemagicDone)
+        async let desktopTilesDone: Void = loadDesktopTiles()
+        for name in await [network, activity, status, releases] { if let name { failed.append(name) } }
+        _ = await (desktopDone, codemagicDone, appStoreDone, desktopTilesDone)
         pending = []
         failures = failed
         updatedAt = now()
@@ -213,6 +231,47 @@ public final class StatsBoardModel {
         }
     }
 
+    private func loadAppStore() async {
+        defer { pending.remove(LiveReleases.iosId) }
+        do {
+            publish([LiveReleases.iosId: LiveReleases.appStore(try await transport.call("GET", LiveReleases.appStoreStatus, nil))])
+        } catch {
+            if tiles[LiveReleases.iosId]?.available != true {
+                tiles[LiveReleases.iosId] = .missing("App Store status unavailable: \(InsightsError.from(error).message)")
+            }
+        }
+    }
+
+    private func loadDesktopTiles() async {
+        defer { pending.subtract(DesktopTiles.ids) }
+        guard let desktopTiles else {
+            offerDesktopTiles([])
+            desktopTilesNote = ""
+            return
+        }
+        do {
+            let reply = try await desktopTiles()
+            offerDesktopTiles(reply.offered.intersection(DesktopTiles.ids))
+            publish(reply.tiles.filter { DesktopTiles.ids.contains($0.key) })
+            desktopTilesNote = ""
+        } catch {
+            if DesktopControlFamily.isUnsupported(error) {
+                offerDesktopTiles([])
+                desktopTilesNote = "Update ForkMesh on your desktop to see all of its stats here."
+            } else {
+                desktopTilesNote = ""
+                let why = DesktopStatsClient.explain(error)
+                for id in desktopOffered where tiles[id]?.available != true { tiles[id] = .missing(why) }
+            }
+        }
+    }
+
+    private func offerDesktopTiles(_ ids: Set<String>) {
+        guard ids != desktopOffered else { return }
+        desktopOffered = ids
+        layoutStore.saveDesktopTiles(ids)
+    }
+
     private func publish(_ fresh: [String: StatsTileData]) {
         var fresh = fresh
         if let history {
@@ -249,7 +308,7 @@ public final class StatsBoardModel {
     }
 
     public func add(_ id: String) {
-        guard StatsCatalog.entry(id) != nil, !layout.contains(where: { $0.id == id }) else { return }
+        guard StatsCatalog.entry(id) != nil, isShown(id), !layout.contains(where: { $0.id == id }) else { return }
         layout.append(StatsTilePlacement(id: id))
         persist()
     }
