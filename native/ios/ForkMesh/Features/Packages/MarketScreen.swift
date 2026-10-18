@@ -62,12 +62,18 @@ struct MarketScreen: View {
             .padding(.bottom, FmSpace.x4)
         }
         .scrollDismissesKeyboard(.immediately)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            MarketControls(model: model)
-        }
         .navigationTitle("Market")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search packages")
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                MarketSearchField(query: $model.query)
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                MarketSortMenu(model: model)
+                MarketFilterMenu(model: model)
+            }
+        }
         .overlay {
             if model.loading && model.packages.isEmpty { ProgressView() }
         }
@@ -152,39 +158,41 @@ struct MarketScreen: View {
     }
 }
 
-struct MarketControls: View {
+struct MarketSearchField: View {
+    @Binding var query: String
+
+    var body: some View {
+        HStack(spacing: FmSpace.x2) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search packages", text: $query)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .accessibilityIdentifier("market-search")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(.subheadline)
+        .padding(.horizontal, FmSpace.x3)
+        .frame(height: 36)
+        .frame(maxWidth: .infinity)
+        .background(.quaternary, in: Capsule())
+    }
+}
+
+struct MarketSortMenu: View {
     @Bindable var model: MarketModel
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: FmSpace.x2) {
-                sortMenu
-                statusMenu
-                categoryMenu
-                runsOnMenu
-                scopeMenu
-                moreMenu
-                if model.filters.activeCount > 0 || model.filter != .all {
-                    Button {
-                        model.filters = MarketFilters()
-                        model.filter = .all
-                        FmHaptics.selection()
-                    } label: {
-                        Label("Clear", systemImage: "xmark")
-                            .marketChip(active: false)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("market-filter-clear")
-                }
-            }
-            .padding(.horizontal, FmSpace.x4)
-            .padding(.vertical, FmSpace.x2)
-        }
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
-    }
-
-    private var sortMenu: some View {
         Menu {
             Picker("Sort by", selection: $model.sort) {
                 ForEach(MarketSort.allCases, id: \.self) { (sort: MarketSort) in
@@ -192,74 +200,45 @@ struct MarketControls: View {
                 }
             }
         } label: {
-            Label(model.sort.title, systemImage: "arrow.up.arrow.down")
-                .marketChip(active: model.sort != .featured)
+            Image(systemName: "arrow.up.arrow.down")
+                .foregroundStyle(model.sort != .featured ? Color.accentColor : Color.primary)
         }
         .accessibilityLabel("Sort by \(model.sort.title)")
         .accessibilityIdentifier("market-sort")
     }
+}
 
-    private var statusMenu: some View {
+struct MarketFilterMenu: View {
+    @Bindable var model: MarketModel
+
+    private var activeCount: Int {
+        model.filters.activeCount + (model.filter != .all ? 1 : 0)
+    }
+
+    var body: some View {
         Menu {
             Picker("Show", selection: $model.filter) {
                 ForEach(MarketFilter.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-        } label: {
-            Label(model.filter == .all ? "Installed or not" : model.filter.title, systemImage: "checkmark.circle")
-                .marketChip(active: model.filter != .all)
-        }
-        .accessibilityIdentifier("market-filter-status")
-    }
-
-    private var categoryMenu: some View {
-        Menu {
+            .pickerStyle(.menu)
             Picker("Category", selection: $model.filters.category) {
                 Text("All categories").tag(String?.none)
                 ForEach(model.categories, id: \.self) { (category: String) in
                     Text(category).tag(String?.some(category))
                 }
             }
-        } label: {
-            Label(model.filters.category ?? "Category", systemImage: "square.grid.2x2")
-                .marketChip(active: model.filters.category != nil)
-        }
-        .accessibilityIdentifier("market-filter-category")
-    }
-
-    private var runsOnMenu: some View {
-        Menu {
+            .pickerStyle(.menu)
             Picker("Runs on", selection: $model.filters.runsOn) {
                 ForEach(MarketRunsOn.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-        } label: {
-            Label(model.filters.runsOn == .any ? "Runs on" : model.filters.runsOn.title, systemImage: "iphone")
-                .marketChip(active: model.filters.runsOn != .any)
-        }
-        .accessibilityIdentifier("market-filter-runs-on")
-    }
-
-    private var scopeMenu: some View {
-        Menu {
+            .pickerStyle(.menu)
             Picker("Installs for", selection: $model.filters.scope) {
                 Text("Anyone").tag(MarketInstallScope?.none)
                 ForEach(MarketInstallScope.allCases, id: \.self) { (scope: MarketInstallScope) in
                     Text(scope.title).tag(MarketInstallScope?.some(scope))
                 }
             }
-        } label: {
-            Label(model.filters.scope?.title ?? "Installs for", systemImage: "person.crop.circle")
-                .marketChip(active: model.filters.scope != nil)
-        }
-        .accessibilityIdentifier("market-filter-scope")
-    }
-
-    private var moreActive: Int {
-        [model.filters.kind != nil, model.filters.price != .any, model.filters.publisher != nil,
-         model.filters.verifiedOnly, model.filters.ratedOnly].filter { $0 }.count
-    }
-
-    private var moreMenu: some View {
-        Menu {
+            .pickerStyle(.menu)
             Picker("Kind", selection: $model.filters.kind) {
                 Text("Every kind").tag(String?.none)
                 ForEach(model.kinds, id: \.self) { (kind: String) in
@@ -280,33 +259,23 @@ struct MarketControls: View {
             .pickerStyle(.menu)
             Toggle("Verified publishers only", isOn: $model.filters.verifiedOnly)
             Toggle("Rated only", isOn: $model.filters.ratedOnly)
+            if activeCount > 0 {
+                Divider()
+                Button("Clear filters", systemImage: "xmark", role: .destructive) {
+                    model.filters = MarketFilters()
+                    model.filter = .all
+                    FmHaptics.selection()
+                }
+                .accessibilityIdentifier("market-filter-clear")
+            }
         } label: {
-            Label(moreActive > 0 ? "More (\(moreActive))" : "More", systemImage: "line.3.horizontal.decrease")
-                .marketChip(active: moreActive > 0)
+            Image(
+                systemName: activeCount > 0
+                    ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(activeCount > 0 ? Color.accentColor : Color.primary)
         }
-        .accessibilityIdentifier("market-filter-more")
-    }
-}
-
-private struct MarketChip: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .font(.footnote.weight(active ? .semibold : .regular))
-            .lineLimit(1)
-            .padding(.horizontal, FmSpace.x3)
-            .frame(minHeight: 32)
-            .foregroundStyle(active ? Color.white : Color.primary)
-            .background(
-                Capsule().fill(active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary)))
-            .contentShape(Capsule())
-    }
-}
-
-extension View {
-    fileprivate func marketChip(active: Bool) -> some View {
-        modifier(MarketChip(active: active))
+        .accessibilityLabel(activeCount > 0 ? "Filters, \(activeCount) on" : "Filters")
+        .accessibilityIdentifier("market-filter")
     }
 }
 
