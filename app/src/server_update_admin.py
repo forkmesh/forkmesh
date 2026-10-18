@@ -2,6 +2,7 @@ import secrets
 from urllib.parse import parse_qs, quote, urlparse
 
 import deploy_approvals
+import instance_legal
 import repo_projects
 import repo_short_urls
 import server_update
@@ -16,8 +17,9 @@ def _bind_runtime(runtime):
 
 VIEW = "update"
 ADDRESS_VIEW = "repo-addresses"
-VIEWS = (VIEW, ADDRESS_VIEW)
-MAX_FORM_BYTES = 96 * 1024
+LEGAL_VIEW = "legal-pages"
+VIEWS = (VIEW, ADDRESS_VIEW, LEGAL_VIEW)
+MAX_FORM_BYTES = 192 * 1024
 RECENT_CORE_UPDATES = 5
 NOTICES = {
     "update_started": ("Update requested. This page refreshes while it runs.",
@@ -37,11 +39,28 @@ NOTICES = {
     "owner_unknown": ("No account or organization has that name.", "bad"),
     "owner_invalid": ("Choose the account or organization that owns the "
                       "short addresses.", "bad"),
+    "legal_saved": ("Legal page saved.", "ok"),
+    "legal_invalid": ("Check the page: write its text for a page on this "
+                      "site, or give a full http or https link.", "bad"),
+    "legal_core": ("These pages are set on self-hosted instances only.",
+                   "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = ("check_update", "start_update", "save_repo_paths",
-           "save_repo_projects")
+           "save_repo_projects", "save_legal_page")
+LEGAL_MODES = (
+    ("off", "Off: no link, the page is not found"),
+    ("markdown", "A page on this site, written in Markdown"),
+    ("url", "A link to a page on another site"),
+)
+LEGAL_HELP = {
+    "terms": "The terms people accept when they sign up. When it is on, "
+             "the sign-up page asks them to agree to it.",
+    "privacy": "How this instance handles personal data.",
+    "security": "How to report a vulnerability in this instance. When it is "
+                "on, /.well-known/security.txt points to it.",
+}
 
 
 def _first(params, key):
@@ -398,6 +417,75 @@ async def render_projects(env, request, csrf_field, admin_query):
         body=form, table=examples)
 
 
+def _legal_form(page, entry, csrf_field, admin_query):
+    options = "".join(
+        '<option value="%s"%s>%s</option>' % (
+            mode, " selected" if entry["mode"] == mode else "", _esc(label))
+        for mode, label in LEGAL_MODES)
+    contact = ""
+    if page == "security":
+        contact = (
+            '<label class="form-row"><span>Security contact</span>'
+            '<input type="text" name="contact" value="%s" class="grow" '
+            'placeholder="security@example.com or https://..." '
+            'autocomplete="off" aria-label="Security contact"></label>'
+            % _esc(entry.get("contact")))
+    return (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_legal_page">'
+        '<input type="hidden" name="page" value="%s">'
+        '<label class="form-row"><span>Show</span>'
+        '<select name="mode" aria-label="%s">%s</select></label>'
+        '<label class="stack"><span>Page text, in Markdown (used when the '
+        'page is on this site)</span>'
+        '<textarea name="markdown" rows="12" class="mono" spellcheck="true" '
+        'aria-label="%s text">%s</textarea></label>'
+        '<label class="form-row"><span>Link</span>'
+        '<input type="url" name="url" value="%s" class="grow" '
+        'placeholder="https://example.com/%s" autocomplete="off" '
+        'aria-label="%s link"></label>%s'
+        '<div><button type="submit" class="btn btn-primary">Save</button>'
+        '</div></form>' % (
+            _admin_href(admin_query, view=LEGAL_VIEW),  # noqa: F821
+            csrf_field, page, _esc(instance_legal.TITLES[page]), options,
+            _esc(instance_legal.TITLES[page]), _esc(entry["markdown"]),
+            _esc(entry["url"]), page, _esc(instance_legal.TITLES[page]),
+            contact))
+
+
+async def render_legal(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "Legal pages",
+        "Choose the Terms, Privacy and Security pages this instance links "
+        "to.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="ForkMesh's own pages",
+            description="This server serves forkmesh.com's own Terms, "
+            "Privacy and Security pages. These settings are for self-hosted "
+            "instances.")
+    setting = instance_legal.parse(
+        await _settings_doc(env, instance_legal.SETTING_KEY))
+    cards = []
+    for page in instance_legal.IDS:
+        entry = setting[page]
+        on = instance_legal.enabled(setting, page)
+        target = instance_legal.href(setting, page)
+        actions = shell.pill("On" if on else "Off", "ok" if on else "")
+        if on:
+            actions += ' <a class="btn" href="%s" rel="noopener">Open</a>' % (
+                _esc(target))
+        cards.append(shell.card(
+            title=instance_legal.TITLES[page],
+            description=LEGAL_HELP[page] + " Off by default: the link is "
+            "hidden everywhere and %s is not found." %
+            instance_legal.PATHS[page],
+            actions=actions,
+            body=_legal_form(page, entry, csrf_field, admin_query)))
+    return head + "".join(cards)
+
+
 async def admin_handler(env, request, params, csrf_field="", admin_query="",
                         account=""):
     view = _first(params, "view")
@@ -408,7 +496,10 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     banner = shell.banner(notice[0], notice[1]) if notice else ""
     now = _now()
     head_extra = ""
-    if view == ADDRESS_VIEW:
+    if view == LEGAL_VIEW:
+        title = "Legal pages"
+        content = await render_legal(env, csrf_field, admin_query)
+    elif view == ADDRESS_VIEW:
         title = "Repository addresses"
         content = await render_addresses(env, request, csrf_field,
                                          admin_query)
@@ -489,13 +580,36 @@ async def _save_projects(env, form, short):
                               "legacy": setting["legacy"]}
 
 
+async def _save_legal(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "legal_core", None
+    page = _first(form, "page")
+    try:
+        entry = instance_legal.clean(
+            page, _first(form, "mode"), _first(form, "markdown"),
+            _first(form, "url"), _first(form, "contact"))
+    except instance_legal.SettingError:
+        return "legal_invalid", ({"page": page}
+                                 if page in instance_legal.IDS else None)
+    setting = instance_legal.with_page(instance_legal.parse(
+        await _settings_doc(env, instance_legal.SETTING_KEY)), page, entry)
+    await d1_run(  # noqa: F821
+        env,
+        "INSERT INTO instance_settings (k, doc, updated_at) VALUES (?,?,?) "
+        "ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, "
+        "updated_at=excluded.updated_at",
+        instance_legal.SETTING_KEY, instance_legal.dump(setting), _now())
+    instance_legal.forget()
+    return "legal_saved", {"page": page, "mode": entry["mode"]}
+
+
 async def _handle_post(env, request, view, admin_query, account):
     try:
         raw = await request.text()
     except Exception:
         raw = ""
     form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
-    target = ADDRESS_VIEW if view == ADDRESS_VIEW else VIEW
+    target = view if view in VIEWS else VIEW
 
     def location(notice):
         return _console_path(env) + _admin_href(  # noqa: F821
@@ -515,6 +629,10 @@ async def _handle_post(env, request, view, admin_query, account):
         short = repo_short_urls.parse(
             await _settings_doc(env, repo_short_urls.SETTING_KEY))
         notice, saved = await _save_projects(env, form, short)
+        if saved is not None:
+            details = saved
+    elif action == "save_legal_page":
+        notice, saved = await _save_legal(env, form)
         if saved is not None:
             details = saved
     elif action == "start_update" and _first(form, "confirm") != "yes":
