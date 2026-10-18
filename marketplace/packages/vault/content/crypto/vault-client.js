@@ -71,6 +71,222 @@ function forkMeshVaultClientFactory() {
     return Boolean(saved) && saved === loginHost(pageUrl);
   }
 
+  const IMPORT_MAX_BYTES = 16 * 1024 * 1024;
+  const IMPORT_UNTITLED = "Imported login";
+  const IMPORT_COLUMNS = [
+    ["title", ["title", "name", "account", "item name", "login name", "display name"]],
+    ["url", ["url", "login_uri", "uri", "website", "web site", "web address", "site", "hostname", "login url", "urls"]],
+    ["username", ["username", "login_username", "user name", "user", "login", "email", "email address", "user id"]],
+    ["password", ["password", "login_password", "pass"]],
+    ["notes", ["notes", "note", "comments", "comment", "extra"]],
+    ["otpauth", ["otpauth", "login_totp", "totp", "otp", "one-time password", "otp auth", "otp url"]],
+  ];
+  const IMPORT_SOURCES = {
+    applePasswords: "Apple Passwords", duckDuckGo: "DuckDuckGo", chrome: "Chrome", firefox: "Firefox",
+    bitwarden: "Bitwarden", onePassword: "1Password", other: "a password manager",
+  };
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false, atFieldStart = true;
+    const source = String(text || "").replace(/^﻿/, "");
+    const endField = () => { row.push(field); field = ""; atFieldStart = true; };
+    const endRow = () => {
+      endField();
+      if (!(row.length === 1 && row[0] === "")) rows.push(row);
+      row = [];
+    };
+    for (let i = 0; i < source.length; i += 1) {
+      const c = source[i];
+      if (quoted) {
+        if (c === "\"") {
+          if (source[i + 1] === "\"") { field += "\""; i += 1; } else quoted = false;
+        } else field += c;
+      } else if (c === "\"" && atFieldStart) {
+        quoted = true; atFieldStart = false;
+      } else if (c === ",") {
+        endField();
+      } else if (c === "\r") {
+        if (source[i + 1] === "\n") i += 1;
+        endRow();
+      } else if (c === "\n") {
+        endRow();
+      } else {
+        field += c; atFieldStart = false;
+      }
+    }
+    if (field || row.length || quoted) endRow();
+    return rows;
+  }
+
+  function importSource(header) {
+    const names = new Set(header.map((name) => String(name).trim().toLowerCase()));
+    const all = (...wanted) => wanted.every((name) => names.has(name));
+    if (names.has("login_uri") || names.has("login_password")) return "bitwarden";
+    if (names.has("httprealm") || names.has("formactionorigin") || names.has("guid")) return "firefox";
+    if (names.has("otpauth")) return "applePasswords";
+    if (all("name", "url", "username", "password", "note")) return "chrome";
+    if (names.has("archived") || names.has("one-time password")) return "onePassword";
+    if (all("title", "url", "username", "password", "notes")) return "duckDuckGo";
+    return "other";
+  }
+
+  function readCsv(text) {
+    const rows = parseCsv(text);
+    if (!rows.length) throw new VaultError("csv_empty");
+    const names = rows[0].map((name) => String(name).trim().toLowerCase());
+    const index = {};
+    for (const [field, aliases] of IMPORT_COLUMNS) {
+      const alias = aliases.find((name) => names.includes(name));
+      if (alias !== undefined) index[field] = names.indexOf(alias);
+    }
+    if (index.password === undefined) throw new VaultError("csv_unknown_columns");
+    const logins = [];
+    let skippedRows = 0;
+    for (const row of rows.slice(1)) {
+      const value = (field) => (index[field] === undefined ? "" : String(row[index[field]] ?? ""));
+      const login = {
+        title: value("title").trim(), url: value("url").trim(), username: value("username"),
+        password: value("password"), notes: value("notes"), otpauth: value("otpauth").trim(),
+      };
+      if (!login.password && !login.username.trim()) {
+        if (row.some((cell) => String(cell).trim())) skippedRows += 1;
+        continue;
+      }
+      logins.push(login);
+    }
+    if (!logins.length) throw new VaultError("csv_no_logins");
+    const source = importSource(rows[0]);
+    return { source, sourceLabel: IMPORT_SOURCES[source], logins, skippedRows };
+  }
+
+  function isZip(bytes) {
+    return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+  }
+
+  let crcTable = null;
+  function crc32(bytes) {
+    if (!crcTable) {
+      crcTable = new Uint32Array(256);
+      for (let n = 0; n < 256; n += 1) {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        crcTable[n] = c >>> 0;
+      }
+    }
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i += 1) crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  async function inflateRaw(bytes, maximum) {
+    if (typeof DecompressionStream !== "function") throw new VaultError("zip_unreadable");
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > maximum) { await reader.cancel().catch(() => {}); throw new VaultError("csv_too_large"); }
+        chunks.push(value);
+      }
+    } catch (error) {
+      if (error instanceof VaultError) throw error;
+      throw new VaultError("zip_unreadable");
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) { out.set(chunk, at); at += chunk.length; }
+    return out;
+  }
+
+  async function firstCsvInZip(bytes, maximum) {
+    const u16 = (at) => (at >= 0 && at + 2 <= bytes.length ? bytes[at] | (bytes[at + 1] << 8) : 0);
+    const u32 = (at) => (at >= 0 && at + 4 <= bytes.length
+      ? (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16) | (bytes[at + 3] << 24)) >>> 0 : 0);
+    if (bytes.length < 22) throw new VaultError("zip_unreadable");
+    let eocd = -1;
+    for (let at = bytes.length - 22, floor = Math.max(0, bytes.length - 22 - 0xffff); at >= floor; at -= 1) {
+      if (u32(at) === 0x06054b50) { eocd = at; break; }
+    }
+    if (eocd < 0) throw new VaultError("zip_unreadable");
+    const count = u16(eocd + 10);
+    let cursor = u32(eocd + 16);
+    for (let entry = 0; entry < count; entry += 1) {
+      if (cursor + 46 > bytes.length || u32(cursor) !== 0x02014b50) throw new VaultError("zip_unreadable");
+      const flags = u16(cursor + 8), method = u16(cursor + 10), crc = u32(cursor + 16);
+      const compressed = u32(cursor + 20), size = u32(cursor + 24);
+      const nameLength = u16(cursor + 28), extraLength = u16(cursor + 30), commentLength = u16(cursor + 32);
+      const local = u32(cursor + 42), nameStart = cursor + 46;
+      if (nameStart + nameLength > bytes.length) throw new VaultError("zip_unreadable");
+      const name = new TextDecoder().decode(bytes.subarray(nameStart, nameStart + nameLength));
+      cursor = nameStart + nameLength + extraLength + commentLength;
+      const leaf = name.split("/").pop() || "";
+      if (!/\.csv$/i.test(name) || name.startsWith("__MACOSX/") || leaf.startsWith(".")) continue;
+      if (flags & 1) throw new VaultError("zip_encrypted");
+      if (size > maximum) throw new VaultError("csv_too_large");
+      if (local + 30 > bytes.length || u32(local) !== 0x04034b50) throw new VaultError("zip_unreadable");
+      const start = local + 30 + u16(local + 26) + u16(local + 28), end = start + compressed;
+      if (end > bytes.length) throw new VaultError("zip_unreadable");
+      let output;
+      if (method === 0) output = bytes.slice(start, end);
+      else if (method === 8) output = await inflateRaw(bytes.subarray(start, end), maximum);
+      else throw new VaultError("zip_unreadable");
+      if (output.length !== size || crc32(output) !== crc) throw new VaultError("zip_unreadable");
+      return output;
+    }
+    throw new VaultError("zip_no_csv");
+  }
+
+  async function readImportFile(data) {
+    let bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+    if (bytes.length > IMPORT_MAX_BYTES) throw new VaultError("csv_too_large");
+    if (isZip(bytes)) bytes = await firstCsvInZip(bytes, IMPORT_MAX_BYTES);
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    catch { text = new TextDecoder("latin1").decode(bytes); }
+    return readCsv(text);
+  }
+
+  function importTitle(login) {
+    const title = String(login.title || "").trim();
+    if (title) return title;
+    const host = loginHost(login.url);
+    if (host) return host;
+    return String(login.username || "").trim() || IMPORT_UNTITLED;
+  }
+
+  function importFields(login) {
+    let notes = String(login.notes || "").trim();
+    const code = String(login.otpauth || "").trim();
+    if (code && !notes.includes(code)) notes = notes ? notes + "\n\n" + code : code;
+    return {
+      title: importTitle(login), url: String(login.url || "").trim(),
+      username: String(login.username || ""), password: String(login.password || ""), notes,
+    };
+  }
+
+  function importIdentity(login) {
+    const user = String(login.username || "").trim().toLowerCase();
+    const host = loginHost(login.url);
+    return (host || importTitle(login).toLowerCase()) + "\u0000" + user + "\u0000" + String(login.password || "");
+  }
+
+  function planImport(logins, existing) {
+    const seen = new Set((existing || []).filter((item) => item.fields).map((item) => importIdentity(item.fields)));
+    const fresh = [];
+    let duplicates = 0;
+    for (const login of logins) {
+      const key = importIdentity(login);
+      if (seen.has(key)) { duplicates += 1; continue; }
+      seen.add(key);
+      fresh.push(login);
+    }
+    return { fresh, duplicates };
+  }
+
   function create({ crypto: C, request, workerUrl = "" }) {
     let account = "";
     let server = null;          // the account record from GET /api/vault
@@ -410,6 +626,23 @@ function forkMeshVaultClientFactory() {
       trust.pins[String(name)] = String(fingerprint);
       await saveTrust();
     }
+    async function importLogins(logins, onProgress = null) {
+      requireUnlocked();
+      const plan = planImport(logins, items);
+      let added = 0, stoppedBy = "";
+      for (const login of plan.fresh) {
+        try {
+          await save(importFields(login));
+        } catch (error) {
+          stoppedBy = error.code || error.message || "import_failed";
+          break;
+        }
+        added += 1;
+        if (onProgress) onProgress(added, plan.fresh.length);
+      }
+      await load().catch(() => {});
+      return { added, duplicates: plan.duplicates, remaining: plan.fresh.length - added, stoppedBy };
+    }
     async function exportData() { return request(API + "/export"); }
     async function destroy() {
       const payload = await request(API + "/uninstall", "POST", {});
@@ -420,12 +653,15 @@ function forkMeshVaultClientFactory() {
     return {
       status, setUp, unlock, resume, exportKeyset, lock, unlocked, recover, changePassword,
       renewRecoveryCode, load, list, find, save, remove, previewShare, share, unshare, rotate,
-      syncPending, organizations, myFingerprint, acceptKeys, exportData, destroy,
+      syncPending, organizations, myFingerprint, acceptKeys, importLogins, exportData, destroy,
       account: () => account,
       matching: (pageUrl) => items.filter((item) => item.fields && matchesPage(item, pageUrl)),
     };
   }
 
-  return { create, VaultError, loginHost, loginHref, matchesPage, cleanFields, FIELD_LIMITS };
+  return {
+    create, VaultError, loginHost, loginHref, matchesPage, cleanFields, FIELD_LIMITS,
+    parseCsv, readCsv, readImportFile, importFields, planImport,
+  };
 }
 })(typeof globalThis !== "undefined" ? globalThis : this);

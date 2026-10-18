@@ -127,6 +127,32 @@ network manager; `desktop/resources/network/endpoint-catalog.json` lists them.
 The list distinguishes an empty vault from a search with no matches, and gives
 the matching count to accessibility clients.
 
+## Importing on the web
+
+The dashboard page's Import button (also in Vault settings) reads the same
+files the phone apps do: a CSV export from Apple Passwords (File, Export All
+Passwords on a Mac), DuckDuckGo, Chrome, Firefox, Bitwarden or 1Password, or
+the ZIP that Safari's Export writes on iPhone. The parser and the duplicate
+check are the iOS app's (`VaultTransfer.swift`) ported to `vault-client.js`
+(`readImportFile`, `planImport`, `importLogins`), so a login skipped on one
+client is skipped on the other:
+
+- The file is read in the browser and never uploaded. A ZIP is opened with
+  the browser's own `DecompressionStream`, and its CRC-32 is checked.
+- A login whose host (without `www.`), username (case-insensitive) and
+  password match one already readable in the vault is skipped.
+- Titles missing from the export fall back to the site's host, then the
+  username. An `OTPAuth` column goes into the notes as an `otpauth://` link.
+- Each new login is encrypted and uploaded one at a time, as if added by
+  hand. If one fails (for example, the vault reaches its 2,000-item limit),
+  the import stops there and says how many are left; running it again skips
+  the ones already in.
+- When it finishes, the page reminds the person to delete the export, which
+  holds every password in plain text.
+
+`tests/import_check.js` runs the reader against Apple, Chrome and Bitwarden
+headers and hand-built ZIPs, then imports through the real Worker module.
+
 ## On the phone
 
 The vault locks when idle, after a minute in the background, and on sign-out.

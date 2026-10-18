@@ -57,6 +57,13 @@ window.ForkMeshDashboard.registerPage("vault", ({
     vault_locked: "The vault is locked.",
     vault_full: "This vault is full.",
     title_required: "Give the login a title.",
+    csv_too_large: "That file is too large to be a password export.",
+    csv_empty: "That file is empty.",
+    csv_unknown_columns: "That file has no Password column. Export a CSV file from your password manager and try again.",
+    csv_no_logins: "That file has no logins in it.",
+    zip_unreadable: "That ZIP file is damaged or uses a format this browser cannot open.",
+    zip_encrypted: "That ZIP file is password-protected. Export it again without a password.",
+    zip_no_csv: "That ZIP file has no CSV file of passwords in it.",
   };
   function explain(error) {
     const code = String(error?.code || error?.payload?.error || "");
@@ -378,6 +385,33 @@ window.ForkMeshDashboard.registerPage("vault", ({
       $(`[data-vault-settings-dialog]`).close(); show("setup"); message("notice", "Vault deleted.");
     } catch (error) { $(`[data-vault-settings-dialog]`).close(); message("error", explain(error)); }
   }
+  async function importFile(file) {
+    clearMessages(); $(`[data-vault-settings-dialog]`).close();
+    if (!file) return;
+    let read;
+    try { read = await Vault.readImportFile(await file.arrayBuffer()); }
+    catch (error) { message("error", explain(error)); return; }
+    const plan = Vault.planImport(read.logins, state.client.list());
+    const source = read.sourceLabel;
+    if (!plan.fresh.length) { message("notice", `Every login from ${source} is already in your vault.`); return; }
+    const parts = [`Import ${plan.fresh.length} login${plan.fresh.length === 1 ? "" : "s"} from ${source}? Each one is encrypted in this browser before it is uploaded.`];
+    if (plan.duplicates) parts.push(`${plan.duplicates} already in the vault ${plan.duplicates === 1 ? "is" : "are"} skipped.`);
+    if (read.skippedRows) parts.push(`${read.skippedRows} row${read.skippedRows === 1 ? " has" : "s have"} no username or password and ${read.skippedRows === 1 ? "is" : "are"} left out.`);
+    if (!(await ask(parts.join(" "), { title: "Import passwords", action: "Import" }))) return;
+    const button = $(`[data-vault-import]`);
+    try {
+      const report = await busy(button, () => state.client.importLogins(read.logins, (done, total) => {
+        message("notice", `Importing ${done} of ${total}…`); touch();
+      }));
+      renderList();
+      const summary = [`Imported ${report.added} login${report.added === 1 ? "" : "s"} from ${source}.`];
+      if (report.duplicates) summary.push(`Skipped ${report.duplicates} already in the vault.`);
+      if (report.stoppedBy) summary.push(`Stopped with ${report.remaining} left: ${explain({ code: report.stoppedBy, message: report.stoppedBy })}`);
+      summary.push("Delete the exported file now: it holds your passwords in plain text.");
+      clearMessages();
+      message(report.stoppedBy ? "error" : "notice", summary.join(" "));
+    } catch (error) { renderList(); clearMessages(); message("error", explain(error)); }
+  }
   async function openSettings() {
     $(`[data-vault-my-fingerprint]`).textContent = await state.client.myFingerprint().catch(() => "");
     $(`[data-vault-autolock]`).value = String(autolockMinutes());
@@ -424,6 +458,11 @@ window.ForkMeshDashboard.registerPage("vault", ({
     $(`[data-vault-search]`)?.addEventListener("input", renderList);
     $(`[data-vault-filter]`)?.addEventListener("change", renderList);
     $(`[data-vault-new]`)?.addEventListener("click", () => openEditor());
+    $$(`[data-vault-import]`).forEach((button) => button.addEventListener("click", () => $(`[data-vault-import-file]`)?.click()));
+    $(`[data-vault-import-file]`)?.addEventListener("change", (event) => {
+      const file = event.target.files?.[0]; event.target.value = "";
+      void importFile(file);
+    });
     $(`[data-vault-list]`)?.addEventListener("click", (event) => {
       const row = event.target.closest("[data-vault-item]"); if (!row) return;
       const item = state.client.find(row.dataset.vaultItem); if (!item?.fields) return;

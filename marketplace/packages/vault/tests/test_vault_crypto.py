@@ -35,6 +35,13 @@ def test_real_client_against_the_real_worker_module():
 
 
 @needs_node
+def test_password_manager_exports_import_through_the_real_worker():
+    result = _node("import_check.js")
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-2000:]
+    assert "checks passed" in result.stdout
+
+
+@needs_node
 def test_the_browser_opens_what_every_other_client_writes():
     """interop-from-*.json are committed by each port of suite fmv1."""
     result = _node("interop_check.js")
