@@ -417,7 +417,12 @@ object NavigationFeature {
         register(Route.Kind.Discussion, base) { route ->
             (route as Route.Discussion).let { CollaborationScreens.discussionDetailScreen(repository(it.repo), it.number) }
         }
-        register(Route.Kind.Run, base) { route -> repoTarget((route as Route.Run).repo, RepoDetailTab.Actions) }
+        register(Route.Kind.Run, base) { route ->
+            (route as Route.Run).let { run ->
+                val id = run.id.toIntOrNull() ?: 0
+                if (id > 0) CodeFeature.actionRunScreen(repository(run.repo), id) else repoTarget(run.repo, RepoDetailTab.Actions)
+            }
+        }
         register(Route.Kind.Release, base) { route -> repoTarget((route as Route.Release).repo, RepoDetailTab.Releases) }
         register(Route.Kind.Notes, base) { NotesScreen() }
         register(Route.Kind.Note, base) { route -> NoteEditorScreen((route as Route.Note).id.ifEmpty { null }) }
@@ -481,7 +486,12 @@ object NavigationFeature {
         register(Route.Kind.RepoSettings, code) { route -> CodeFeature.repoSettingsScreen(repository((route as Route.RepoSettings).repo)) }
         register(Route.Kind.FileHistory, code) { route -> (route as Route.FileHistory).let { CodeFeature.fileToolsScreen(repository(it.repo), it.path, it.ref) } }
         val ci = "WS14"
-        register(Route.Kind.Run, ci) { route -> CodeFeature.actionsScreen(repository((route as Route.Run).repo)) }
+        register(Route.Kind.Run, ci) { route ->
+            (route as Route.Run).let { run ->
+                val id = run.id.toIntOrNull() ?: 0
+                if (id > 0) CodeFeature.actionRunScreen(repository(run.repo), id) else CodeFeature.actionsScreen(repository(run.repo))
+            }
+        }
         register(Route.Kind.Release, ci) { route -> CodeFeature.releasesScreen(repository((route as Route.Release).repo)) }
     }
 }

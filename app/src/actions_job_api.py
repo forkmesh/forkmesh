@@ -87,8 +87,8 @@ async def bot_identity(env):
     jwk = await js_crypto.subtle.exportKey("jwk", key)
     if hasattr(jwk, "to_py"):
         jwk = jwk.to_py()
-    public_key = str(jwk["x"] if isinstance(jwk, dict) else jwk.x)
-    private_key = str(jwk["d"] if isinstance(jwk, dict) else jwk.d)
+    public_key = str(jwk["x"])
+    private_key = str(jwk["d"])
     return public_key.rstrip("="), private_key.rstrip("=")
 
 

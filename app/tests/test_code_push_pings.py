@@ -49,7 +49,7 @@ ALERT_FUNCS = {
     "clean_string", "_notification_display_repo",
     "_notification_digest_title", "_notification_item_record",
     "_notification_item_path", "_notification_stored_path",
-    "_notification_code_push_tail", "_push_alert_item",
+    "_notification_stored_tail", "_push_alert_item",
 }
 ALERT_CONSTANTS = {
     "MAX_NODE_NAME", "MAX_AVATAR_B64", "MAX_AVATAR_BYTES", "AVATAR_B64_RE",
@@ -423,11 +423,14 @@ def test_an_alias_fronted_push_keeps_the_branch_but_not_the_backing_node():
          "repo": "node7/atlas", "href": "/node7/atlas/commits/main",
          "meta": {}}, {"node7/atlas": "acme/atlas"}, {})
     assert item["href"] == "/acme/atlas/commits/main"
-    # Other kinds keep landing on the repository itself.
     other = ns["_push_alert_item"](
         {"id": "y", "kind": "repo_activity", "repo": "alice/atlas",
          "href": "/alice/atlas/commits/main", "meta": {}}, {}, {})
-    assert other["href"] == "/alice/atlas"
+    assert other["href"] == "/alice/atlas/commits/main"
+    elsewhere = ns["_push_alert_item"](
+        {"id": "z", "kind": "repo_activity", "repo": "alice/atlas",
+         "href": "/alice/atlas-other/commits/main", "meta": {}}, {}, {})
+    assert elsewhere["href"] == "/alice/atlas"
 
 
 # --- the call sites ----------------------------------------------------------

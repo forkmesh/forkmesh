@@ -183,7 +183,16 @@ struct PingDetailScreen: View {
     private func open(_ target: NotificationTapTarget) {
         switch target {
         case .repo(let link):
-            openedRepo = link
+            switch link.route {
+            case .run, .agent:
+                if let router = Services.get(AppRouter.self) {
+                    router.open(link.route, placement: .currentTab)
+                } else {
+                    openedRepo = link
+                }
+            default:
+                openedRepo = link
+            }
         case .web(let url):
             if let attention = Services.get(RunnerAttentionModel.self), attention.openHref(ping.href) {
                 return

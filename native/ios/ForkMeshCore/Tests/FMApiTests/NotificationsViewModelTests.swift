@@ -215,6 +215,7 @@ final class NotificationsViewModelTests: XCTestCase {
         XCTAssertEqual(pingOpenLabel(.repo(issue)), "Open issue #12")
         XCTAssertEqual(pingOpenLabel(.repo(pull)), "Open pull request #3")
         XCTAssertEqual(pingOpenLabel(.repo(repo)), "Open mona/forkmesh")
+        XCTAssertEqual(pingOpenLabel(.repo(NotificationDeepLink.parse("/mona/forkmesh/actions/runs/41")!)), "Open run #41")
         XCTAssertEqual(pingOpenLabel(.web(URL(string: "https://forkmesh.com/pricing")!)), "Open in browser")
         XCTAssertNil(pingOpenLabel(.context))
     }
