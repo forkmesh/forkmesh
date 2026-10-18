@@ -12,7 +12,11 @@ AST-extraction harness in the style of test_account_alert_signed_inbox.py.
 import ast
 import asyncio
 from pathlib import Path
+import sys
 from _maintenance_stubs import with_maintenance_off
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import admin_path  # noqa: E402
 
 
 ENTRY = Path(__file__).resolve().parents[1] / "src" / "entry.py"
@@ -116,6 +120,7 @@ def _harness(admins=("root",)):
         "Date": _Date,
         "MAX_ERROR_LOG": 5000,
         "MAX_NODE_NAME": 63,
+        "_admin_path_rules": admin_path,
     })
     return namespace, object(), rows, sent
 

@@ -515,7 +515,8 @@ async def product_analysis_handler(env, request):
         view, report, params, theme, admin=admin,
         console=_admin_shell.console_base(env) if admin else "",
         badges=(await _admin_shell.nav_badges(env)) if admin else None,
-        founder_session=founder)
+        founder_session=founder,
+        subpages=_admin_shell.subpage_base(env) if admin else "/admin")
     return Response(body, status=200, headers=_html_headers())
 
 
@@ -1852,7 +1853,8 @@ _RENDERERS = {
 
 
 def render_dashboard_html(view, report, params, theme="system", admin="",
-                          console="", badges=None, founder_session=True):
+                          console="", badges=None, founder_session=True,
+                          subpages="/admin"):
     shell = _admin_shell
     renderer = _RENDERERS.get(view, render_overview)
     title = dict(VIEWS).get(view, "Overview")
@@ -1876,6 +1878,7 @@ def render_dashboard_html(view, report, params, theme="system", admin="",
     return shell.render_page(
         "%s · Product analytics" % title, content, active="analytics",
         console=console, theme=theme, badges=badges, account=admin,
+        subpages=subpages,
         next_path=_route_path() + _raw_query(params or {}),
         foot_extra=foot, allowed=None if admin else {"analytics"},
         head_extra="<style>" + _STYLE + "</style>")

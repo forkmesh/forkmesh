@@ -5,9 +5,13 @@ import ast
 import asyncio
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import admin_path  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,6 +255,7 @@ def _load_handler(overrides):
         "FEEDBACK_NOTE_PATHS": _NS["FEEDBACK_NOTE_PATHS"],
         "hashlib": hashlib,
         "json": json,
+        "_admin_path_rules": admin_path,
         **overrides,
     }
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))

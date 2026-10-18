@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -808,3 +809,125 @@ def test_the_platform_mirror_source_is_an_optional_setting(tmp_path):
     assert found["CFG_platformUrl"] == "https://app.forkmesh.com/forkmesh/forkmesh"
     result = parse(tmp_path, settings(platformUrl="http://insecure.example/x"))
     assert result.returncode != 0 and "platformUrl" in result.stdout + result.stderr
+
+
+PRIVATE_PATH = "/manage-x7k2q9"
+
+
+def test_an_admin_path_setting_is_checked_and_never_echoed(tmp_path):
+    result = parse(tmp_path, settings(adminPath=PRIVATE_PATH))
+    assert result.returncode == 0, result.stdout
+    assert PRIVATE_PATH not in result.stdout
+    assert values(result.stdout)["ADMIN_PATH_LENGTH"] == str(len(PRIVATE_PATH))
+    assert values(parse(tmp_path, settings()).stdout)["ADMIN_PATH_LENGTH"] == "0"
+    for bad in ("manage-x7k2q9", "/short", "/a/b-c-d-e-f", "/manage.x7k2q9",
+                "/" + "a" * 65, "/admin", "/dashboard", "/Forgot-Password"):
+        refused = parse(tmp_path, settings(adminPath=bad))
+        assert refused.returncode == 2, bad
+        assert "adminPath" in refused.stdout and "not valid" in refused.stdout
+
+
+def _choose(tmp_path, mode, new, setting, existing):
+    app_env = tmp_path / "app.env"
+    app_env.write_text("DATA_KEY=x\n" + ("ADMIN_PATH=%s\n" % existing if existing else ""))
+    body = ('APP_ENV=%s\nCONFIG_MODE=%s\nNEW_INSTANCE=%s\nCFG_adminPath=%s\n'
+            'choose_admin_path\nprintf "%%s|%%s\\n" "$ADMIN_PATH_SOURCE" "$ADMIN_PATH_VALUE"\n'
+            % (shlex.quote(str(app_env)), mode, new, shlex.quote(setting)))
+    result = run_functions(tmp_path, ["env_value", "new_admin_path", "choose_admin_path"], body)
+    assert result.returncode == 0, result.stderr
+    return tuple(result.stdout.strip().split("|"))
+
+
+def test_a_fresh_install_writes_a_path_and_an_update_never_changes_or_adds_one(tmp_path):
+    import re
+    source, value = _choose(tmp_path, "file", "1", "", "")
+    assert source == "generated" and re.fullmatch(r"/admin-[a-z0-9]{20}", value)
+    assert _choose(tmp_path, "file", "1", "", "")[1] != value
+    assert _choose(tmp_path, "file", "1", PRIVATE_PATH, "") == ("settings", PRIVATE_PATH)
+    assert _choose(tmp_path, "file", "0", "", "") == ("", "")
+    assert _choose(tmp_path, "file", "0", PRIVATE_PATH, "") == ("settings", PRIVATE_PATH)
+    assert _choose(tmp_path, "file", "1", "/other-x7k2q9z", PRIVATE_PATH) == ("kept-other", PRIVATE_PATH)
+    assert _choose(tmp_path, "file", "1", PRIVATE_PATH, PRIVATE_PATH) == ("kept", PRIVATE_PATH)
+    assert _choose(tmp_path, "update", "0", "", PRIVATE_PATH) == ("kept", PRIVATE_PATH)
+    assert _choose(tmp_path, "update", "0", "", "") == ("", "")
+    writer = function("write_settings")
+    assert "choose_admin_path" in writer
+    assert 'if [ -n "$ADMIN_PATH_VALUE" ]; then echo "ADMIN_PATH=$ADMIN_PATH_VALUE"; fi' in writer
+    assert "adminPath" not in TEXT.split('keys = ["projectName"', 1)[1].split("]", 1)[0]
+
+
+def _summary(tmp_path, detached, mode, owner="0"):
+    log = tmp_path / "setup.log"
+    log.write_text("")
+    fake = tmp_path / "bin"
+    fake.mkdir(exist_ok=True)
+    (fake / "stat").write_text(
+        '#!/bin/sh\ncase "$2" in %%u) echo %s ;; %%a) echo %s ;; esac\n' % (owner, mode))
+    (fake / "stat").chmod(0o755)
+    body = ('SETUP_LOG=%s\nDETACHED=%s\nAPP_ENV=/etc/forkmesh-instance/app.env\n'
+            'ORIGIN=https://code.example.com\nADMIN_PATH_VALUE=%s\n'
+            'for ADMIN_PATH_SOURCE in generated settings kept-other kept ""; do say_admin_path; done\n'
+            % (shlex.quote(str(log)), detached, PRIVATE_PATH))
+    result = run_functions(tmp_path, ["setup_log_private", "say_admin_path"], body,
+                           path_dir=str(fake))
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def test_the_summary_prints_a_generated_path_only_where_it_stays_private(tmp_path):
+    shown = _summary(tmp_path, "0", "644")
+    assert "Admin console: https://code.example.com%s" % PRIVATE_PATH in shown
+    assert shown.count(PRIVATE_PATH) == 1
+    assert "from your settings" in shown and "was kept" in shown
+    private_log = _summary(tmp_path, "1", "600")
+    assert private_log.count(PRIVATE_PATH) == 1
+    for mode, owner in (("640", "0"), ("644", "0"), ("600", "1000")):
+        hidden = _summary(tmp_path, "1", mode, owner)
+        assert PRIVATE_PATH not in hidden
+        assert "it is ADMIN_PATH in /etc/forkmesh-instance/app.env" in hidden
+    finish = function("finish")
+    assert finish.index("Sign in as @") < finish.index("say_admin_path")
+
+
+def _write_settings(tmp_path, mode, new, before):
+    etc = tmp_path / "etc"
+    etc.mkdir(exist_ok=True)
+    app_env = etc / "app.env"
+    app_env.write_text(before)
+    body = "\n".join([
+        "begin() { :; }", "chown() { :; }", "git() { echo 0123abc; }",
+        "upstream_page() { :; }", "release_version() { echo 1.0.0; }",
+        "logo_file() { :; }", "files_digest() { cat \"$@\" 2>/dev/null | sha256sum; }",
+        "APP_ENV=%s" % shlex.quote(str(app_env)),
+        "INSTANCE_JSON=%s" % shlex.quote(str(etc / "instance.json")),
+        " ".join("CFG_%s=" % key for key in (
+            "mailApiKey", "mailFrom", "mailgunDomain", "mailgunRegion",
+            "domainProvided", "publicAddress", "ownerType", "ownerName",
+            "sourceUrl", "sourceRef", "plugins", "poweredBy")),
+        "LOGIN_MARKER=/x UPDATE_REQUEST_DIR=/x UPDATE_STATE=/x BUILD_INFO=/x",
+        "RUNNER_NAME=forkmesh-runner INSTANCE_INSTALLER_VERSION=2",
+        "CONFIG_MODE=%s" % mode, "NEW_INSTANCE=%s" % new, "CFG_adminPath=",
+        "APP_USER=forkmesh-app VENV=/nonexistent SRC=/nonexistent NODE_NAME=forkmesh",
+        "CFG_projectName=Acme CFG_domain=code.example.com CFG_mailProvider=none",
+        "CFG_actions=0 CFG_adminUsername=ada CFG_adminEmail=ada@example.com",
+        "ORIGIN=https://code.example.com DOMAIN=code.example.com",
+        "write_settings", ""])
+    result = run_functions(
+        tmp_path, ["env_value", "new_admin_path", "choose_admin_path", "write_settings"], body)
+    assert result.returncode == 0, result.stderr + result.stdout
+    return app_env.read_text(), (etc / "instance.json").read_text()
+
+
+def test_an_update_rewrites_app_env_but_keeps_a_hand_set_admin_path(tmp_path):
+    keys = ("DATA_KEY=d\nADMIN_PASS=p\nMIRROR_ROUTER_SIGNING_SEED=s\n"
+            "MIRROR_ROUTER_PUBLIC_KEY=k\n")
+    after, instance = _write_settings(
+        tmp_path, "update", "0", keys + "ADMIN_PATH=%s\n" % PRIVATE_PATH)
+    assert after.count("ADMIN_PATH=") == 1
+    assert "ADMIN_PATH=%s\n" % PRIVATE_PATH in after
+    assert "INSTANCE_NAME=Acme\n" in after and "DATA_KEY=d\n" in after
+    assert PRIVATE_PATH not in instance
+    after, _ = _write_settings(tmp_path, "update", "0", keys)
+    assert "ADMIN_PATH=" not in after
+    after, _ = _write_settings(tmp_path, "file", "1", keys)
+    assert re.search(r"^ADMIN_PATH=/admin-[a-z0-9]{20}$", after, re.M)

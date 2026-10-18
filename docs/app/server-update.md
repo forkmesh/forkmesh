@@ -8,6 +8,17 @@ Legal pages (Terms, Privacy and Security on an instance) are described in
 CSRF-checked and written to the sensitive audit log as
 `admin.console_<action>`.
 
+The pages are `?view=` pages of the console, so they live at
+`<ADMIN_PATH>?view=update` (and so on). On an instance with a private
+`ADMIN_PATH` every console page, including the theme switch, Acquisition and
+Hackathon, is served only under that path and `/admin/...` answers the normal
+404 page; links and form actions inside these pages come from
+`admin_shell.subpage_base(env)` and `console_base(env)`, never a fixed
+`/admin`. Setting it on a live instance (one line in `app.env`, then
+`systemctl restart forkmesh-instance`), the installer's `adminPath` setting,
+and what stays at `/api/admin/...` are in
+[../INSTANCES.md](../INSTANCES.md#private-admin-console-path).
+
 ## Update ForkMesh (`?view=update`)
 
 The page shows the build this server runs next to the newest commit on the

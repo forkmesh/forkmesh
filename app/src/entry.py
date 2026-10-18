@@ -6368,6 +6368,7 @@ _api_metrics = _LazyModule("api_metrics")
 # (docs/attribution.md). Loaded on the first served HTML navigation.
 _attribution = _LazyModule("attribution")
 _not_found_log = _LazyModule("not_found_log")
+_admin_path_rules = _LazyModule("admin_path")
 _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
@@ -20245,6 +20246,20 @@ def _apply_browser_security_headers(response, pathname):
             existing_csp).__name__ not in ("JsNull", "JsUndefined"):
         values.pop("content-security-policy")
     for name, value in values.items():
+        try:
+            headers.set(name, value)
+        except AttributeError:
+            headers[name] = value
+    return response
+
+
+def _private_console_headers(response):
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return response
+    for name, value in (("cache-control", "no-store"),
+                        ("x-robots-tag", "noindex, nofollow"),
+                        ("referrer-policy", "no-referrer")):
         try:
             headers.set(name, value)
         except AttributeError:
@@ -43317,7 +43332,8 @@ async def _notify_new_error_group(env, status, method, path, message):
             continue
         await enqueue_notification(
             env, name, "error_group", title, body=body,
-            href="/admin?table=error_log", source="error_log",
+            href=_admin_path_rules.notification_href(
+                env, "?table=error_log"), source="error_log",
             dedupe="error-group:%s:%s:%s:%s" % (
                 status, str(method or "")[:16], str(path or "")[:120],
                 str(message or "")[:160]),
@@ -44286,7 +44302,8 @@ async def ping_signup_failure(env, reason, status, claim=None, name="",
                 continue
             await enqueue_notification(
                 env, admin, "operational_alert", title, body=body,
-                href="/admin?table=users", source="signup",
+                href=_admin_path_rules.notification_href(
+                    env, "?table=users"), source="signup",
                 dedupe="signup-failure:" + key, ts=now,
                 meta={"key": "signup-failure", "reason": reason,
                       "status": int(status), "source": source,
@@ -44594,7 +44611,8 @@ async def _enqueue_world_feedback_pings(env, message, now, dedupe,
                 "New website feedback" if source == "web"
                 else "New World feedback",
                 body=clean_string(message, 500),
-                href="/admin", source="world-feedback",
+                href=_admin_path_rules.notification_href(env),
+                source="world-feedback",
                 dedupe="world-feedback:" + dedupe, ts=now,
                 meta={"feedbackSource": source},
             )
