@@ -41,7 +41,7 @@ def _ms(day):
 
 
 OLD = _ms("2025-03-01")
-NEW = _ms("2026-10-15")
+NEW = _ms("2026-10-20")
 
 
 def _registry():
