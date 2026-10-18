@@ -21,6 +21,9 @@ public final class CalendarModel {
     @ObservationIgnored public let firstWeekday: Int
     @ObservationIgnored private let clock: Clock
     @ObservationIgnored private var loadedRange: (start: Int64, end: Int64)?
+    @ObservationIgnored private var loadToken = 0
+    @ObservationIgnored private var revision = 0
+    @ObservationIgnored private var localChanges: [(revision: Int, id: String, event: CalendarEvent?)] = []
 
     public init(client: PlanningClient, mode: CalendarMode = .month, anchorDay: String? = nil, timeZone: TimeZone = .current,
                 firstWeekday: Int = Calendar.current.firstWeekday, clock: Clock = SystemClock()) {
@@ -98,11 +101,15 @@ public final class CalendarModel {
         let wanted = range
         let start = CalendarMath.addDays(wanted.start, -31, timeZone: timeZone)
         let end = CalendarMath.addDays(wanted.end, 31, timeZone: timeZone)
+        loadToken += 1
+        let token = loadToken
+        let seen = revision
         loading = true
-        defer { loading = false }
+        defer { if token == loadToken { loading = false } }
         do {
             let data = try await client.accountApiCall("GET", "/api/calendar?start=\(start)&end=\(end)", nil)
-            events = data.maps("events").prefix(500).compactMap(CalendarEvent.init(json:))
+            guard token == loadToken else { return }
+            events = merged(data.maps("events").prefix(500).compactMap(CalendarEvent.init(json:)), since: seen)
             let infos = data.maps("calendars").compactMap { map -> CalendarInfo? in
                 let id = map.str("id", map.str("name"))
                 return id.isEmpty ? nil : CalendarInfo(id: id, name: map.str("name", id), scope: map.str("scope"), role: map.str("role"))
@@ -112,9 +119,27 @@ public final class CalendarModel {
             loadedRange = (start, end)
             error = nil
         } catch {
+            guard token == loadToken else { return }
             self.error = PlanningErrors.text(error, "The calendar could not be loaded.")
         }
     }
+
+    private func merged(_ server: [CalendarEvent], since seen: Int) -> [CalendarEvent] {
+        localChanges.removeAll { $0.revision <= seen }
+        var result = server
+        for change in localChanges {
+            result.removeAll { $0.id == change.id }
+            if let event = change.event { result.append(event) }
+        }
+        return result
+    }
+
+    private func recordChange(_ id: String, _ event: CalendarEvent?) {
+        revision += 1
+        localChanges.append((revision, id, event))
+    }
+
+    public func clearError() { error = nil }
 
     public func event(_ id: String) -> CalendarEvent? { events.first { $0.id == id } }
 
@@ -127,7 +152,7 @@ public final class CalendarModel {
         defer { loading = false }
         do {
             let data = try await client.accountApiCall("GET", "/api/calendar/\(id)", nil)
-            _ = upsert(data)
+            _ = upsert(data, local: false)
             if actor.isEmpty { actor = data.str("actor").lowercased() }
             error = nil
         } catch {
@@ -168,10 +193,11 @@ public final class CalendarModel {
         }
     }
 
-    private func upsert(_ data: JSONObject) -> CalendarEvent? {
+    private func upsert(_ data: JSONObject, local: Bool = true) -> CalendarEvent? {
         guard let event = data["event"]?.objectValue.flatMap(CalendarEvent.init(json:)) else { return nil }
         events.removeAll { $0.id == event.id }
         events.append(event)
+        if local { recordChange(event.id, event) }
         return event
     }
 
@@ -200,6 +226,7 @@ public final class CalendarModel {
             return false
         }
         events.removeAll { $0.id == id }
+        recordChange(id, nil)
         return true
     }
 
@@ -212,6 +239,7 @@ public final class CalendarModel {
         if upsert(data) == nil, let index = events.firstIndex(where: { $0.id == id }),
            let attendee = events[index].attendees.firstIndex(where: { $0.name.lowercased() == actor }) {
             events[index].attendees[attendee].status = status
+            recordChange(id, events[index])
         }
         return true
     }

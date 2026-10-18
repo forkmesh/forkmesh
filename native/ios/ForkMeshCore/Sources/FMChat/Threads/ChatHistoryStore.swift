@@ -115,7 +115,7 @@ public enum ChatHistoryCodec {
 
     public static func decode(_ data: Data) -> ChatHistorySnapshot? {
         let root = JSON.parseObject(data)
-        guard root["v"]?.intValue == version else { return nil }
+        guard let stored = root["v"]?.intValue, stored >= 1 else { return nil }
         var snapshot = ChatHistorySnapshot()
         snapshot.messages = (root["messages"]?.objects ?? []).compactMap(decodeMessage)
         snapshot.replies = (root["replies"]?.objects ?? []).compactMap(decodeMessage)
@@ -153,6 +153,77 @@ public enum ChatHistoryCodec {
         }
         return String(hash, radix: 16)
     }
+
+    public static func projectScope(projectId: String, room: String) -> String {
+        "project-" + scopeName(serverUrl: projectId, room: room)
+    }
+
+    public static let relayPaths = ["/api/repo/mainnode/forkmesh/rooms/general/ws", AppEnv.relayPath]
+
+    public static func formerScopes(serverUrl: String, room: String) -> [String] {
+        var urls = [serverUrl]
+        if var components = URLComponents(string: serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)),
+            let host = components.host?.lowercased(), relayPaths.contains(components.percentEncodedPath)
+        {
+            let prod = components.port == nil && (host == AppEnv.prodHost || AppEnv.isProdAlias(host))
+            let hosts = prod ? [AppEnv.prodHost] + AppEnv.prodAliasHosts.sorted() : [host]
+            let schemes = prod ? ["wss"] : [components.scheme ?? "wss"]
+            for scheme in schemes {
+                for name in hosts {
+                    for path in relayPaths {
+                        components.scheme = scheme
+                        components.host = name
+                        components.percentEncodedPath = path
+                        if let url = components.string { urls.append(url) }
+                    }
+                }
+            }
+        }
+        var seen = Set<String>()
+        return urls.map { scopeName(serverUrl: $0, room: room) }.filter { seen.insert($0).inserted }
+    }
+
+    public static func merge(_ snapshots: [ChatHistorySnapshot]) -> ChatHistorySnapshot {
+        var out = ChatHistorySnapshot()
+        func union(_ lists: [[ChatMessage]]) -> [ChatMessage] {
+            var ids = Set<String>()
+            var kept: [ChatMessage] = []
+            for list in lists { for message in list where ids.insert(message.id).inserted { kept.append(message) } }
+            return kept.enumerated().sorted {
+                $0.element.timestamp == $1.element.timestamp ? $0.offset < $1.offset : $0.element.timestamp < $1.element.timestamp
+            }.map(\.element)
+        }
+        func names(_ lists: [[String]]) -> [String] {
+            var seen = Set<String>()
+            return lists.flatMap { $0 }.filter { seen.insert($0).inserted }
+        }
+        out.messages = union(snapshots.map(\.messages))
+        out.replies = union(snapshots.map(\.replies))
+        var eventIds = Set<String>()
+        out.lookEvents = snapshots.flatMap(\.lookEvents).filter { eventIds.insert($0.id).inserted }
+        out.privateChannels = names(snapshots.map(\.privateChannels))
+        out.hiddenChannels = names(snapshots.map(\.hiddenChannels))
+        out.hiddenMessages = names(snapshots.map(\.hiddenMessages))
+        out.removedMessages = names(snapshots.map(\.removedMessages))
+        for snapshot in snapshots {
+            out.replyRoots.merge(snapshot.replyRoots) { kept, _ in kept }
+            out.reactions.merge(snapshot.reactions) { kept, _ in kept }
+            out.reactionOrder.merge(snapshot.reactionOrder) { kept, _ in kept }
+            out.edits.merge(snapshot.edits) { kept, _ in kept }
+            out.looks.merge(snapshot.looks) { kept, _ in kept }
+            out.receipts.merge(snapshot.receipts) { kept, _ in kept }
+        }
+        let removed = Set(out.removedMessages)
+        out.messages.removeAll { removed.contains($0.id) }
+        out.replies.removeAll { removed.contains($0.id) }
+        return out
+    }
+}
+
+public enum ChatHistoryLoad: Equatable, Sendable {
+    case loaded(ChatHistorySnapshot)
+    case missing
+    case unreadable
 }
 
 public struct ChatHistoryParts: Sendable {
@@ -203,7 +274,16 @@ public struct ChatHistoryParts: Sendable {
 final class ChatHistoryWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.forkmesh.chat-history", qos: .utility)
     private var written: [URL: ChatHistorySnapshot] = [:]
+    private var blocked: Set<URL> = []
     private(set) var writes = 0
+
+    func block(_ target: URL) {
+        queue.sync { _ = blocked.insert(target) }
+    }
+
+    func unblock(_ target: URL) {
+        queue.sync { _ = blocked.remove(target) }
+    }
 
     func save(_ parts: ChatHistoryParts, to target: URL, in directory: URL) {
         queue.async { self.write(parts.snapshot, to: target, in: directory) }
@@ -226,8 +306,10 @@ final class ChatHistoryWriter: @unchecked Sendable {
 
     func flush() -> Int { queue.sync { writes } }
 
+    func wrote(_ target: URL) -> Bool { queue.sync { written[target] != nil } }
+
     private func write(_ snapshot: ChatHistorySnapshot, to target: URL, in directory: URL) {
-        if written[target] == snapshot { return }
+        if blocked.contains(target) || written[target] == snapshot { return }
         let data = ChatHistoryCodec.encode(snapshot)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         #if os(iOS)
@@ -278,10 +360,62 @@ public final class ChatHistoryStore {
     public func file(scope: String) -> URL { directory.appendingPathComponent("relay-\(scope).json") }
 
     public func load(scope: String) -> ChatHistorySnapshot? {
+        if case .loaded(let snapshot) = read(scope: scope) { return snapshot }
+        return nil
+    }
+
+    public func read(scope: String, formerScopes: [String] = []) -> ChatHistoryLoad {
         let target = file(scope: scope)
-        guard let data = try? Data(contentsOf: target), let snapshot = ChatHistoryCodec.decode(data) else { return nil }
+        let manager = FileManager.default
+        if !manager.fileExists(atPath: target.path) {
+            let former = formerScopes.filter { $0 != scope }.map(file(scope:)).filter { manager.fileExists(atPath: $0.path) }
+            if former.isEmpty {
+                writer.unblock(target)
+                return .missing
+            }
+            return adopt(former, into: target)
+        }
+        guard let data = try? Data(contentsOf: target) else {
+            writer.block(target)
+            return .unreadable
+        }
+        guard let snapshot = ChatHistoryCodec.decode(data) else {
+            if setAside(target, as: "unreadable-\(Date().epochMillis)") {
+                writer.unblock(target)
+                return .missing
+            }
+            writer.block(target)
+            return .unreadable
+        }
+        writer.unblock(target)
         writer.remember(snapshot, at: target)
-        return snapshot
+        return .loaded(snapshot)
+    }
+
+    private func adopt(_ former: [URL], into target: URL) -> ChatHistoryLoad {
+        var found: [(URL, Date, ChatHistorySnapshot)] = []
+        for url in former {
+            guard let data = try? Data(contentsOf: url) else {
+                writer.block(target)
+                return .unreadable
+            }
+            guard let snapshot = ChatHistoryCodec.decode(data) else { continue }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            found.append((url, modified ?? .distantPast, snapshot))
+        }
+        writer.unblock(target)
+        if found.isEmpty { return .missing }
+        let merged = ChatHistoryCodec.merge(found.sorted { $0.1 > $1.1 }.map(\.2))
+        writer.saveNow(merged, to: target, in: directory)
+        if writer.wrote(target) {
+            for (url, _, _) in found { setAside(url, as: "migrated") }
+        }
+        return .loaded(merged)
+    }
+
+    @discardableResult
+    private func setAside(_ url: URL, as suffix: String) -> Bool {
+        (try? FileManager.default.moveItem(at: url, to: url.appendingPathExtension(suffix))) != nil
     }
 
     public func save(_ snapshot: ChatHistorySnapshot, scope: String) {

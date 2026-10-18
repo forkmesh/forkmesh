@@ -204,9 +204,9 @@ final class DirectLiveTests: XCTestCase {
         XCTAssertEqual(engine.strokes(in: conversation).first?.ended, true)
 
         let track = try XCTUnwrap(engine.partnerMotion(conversation))
-        let start = 50_000 + DirectLiveFrames.motionPlaybackMarginMs
-        XCTAssertEqual(track.samples.map(\.at), [start, start + 80])
-        XCTAssertEqual(track.sample(at: start + 40)?.gx ?? 0, 0.5, accuracy: 0.0001)
+        let newest = 50_000 + DirectLiveFrames.motionPlaybackMarginMs
+        XCTAssertEqual(track.samples.map(\.at), [newest - 80, newest])
+        XCTAssertEqual(track.sample(at: newest - 40)?.gx ?? 0, 0.5, accuracy: 0.0001)
 
         engine.receive(peerFrame(["motionOff": true]), conversation: conversation)
         XCTAssertNil(engine.partnerMotion(conversation))
@@ -214,6 +214,33 @@ final class DirectLiveTests: XCTestCase {
         engine.receive(peerFrame(["clear": true]), conversation: conversation)
         XCTAssertTrue(engine.strokes(in: conversation).isEmpty)
         XCTAssertTrue(sent.frames.isEmpty)
+    }
+
+    @MainActor func testPartnerMotionPlaysTheNewestSampleOneMarginBehind() throws {
+        let clock = FixedClock(epochMillis: 60_000)
+        let engine = makeEngine(clock, DirectLiveSent())
+        let conversation = DirectLiveTests.conversation
+        let margin = DirectLiveFrames.motionPlaybackMarginMs
+        engine.receive(
+            peerFrame(["motion": [[-66, 0, -100, 0], [-33, 20, -100, 0], [0, 40, -100, 0]]], ts: 5_000),
+            conversation: conversation)
+        var track = try XCTUnwrap(engine.partnerMotion(conversation))
+        XCTAssertEqual(track.samples.last?.at, 60_000 + margin)
+        XCTAssertEqual(track.sample(at: 60_000 + margin)?.gx ?? 0, 0.4, accuracy: 0.0001)
+
+        clock.advance(by: 0.088)
+        let newest = engine.now + margin
+        engine.receive(
+            peerFrame(["motion": [[-55, 60, -100, 0], [-22, 80, -100, 0], [0, 100, -100, 0]]], ts: 5_088),
+            conversation: conversation)
+        track = try XCTUnwrap(engine.partnerMotion(conversation))
+        XCTAssertEqual(track.samples.last?.at, newest)
+        XCTAssertEqual(track.samples.map(\.at), track.samples.map(\.at).sorted())
+        XCTAssertEqual(track.sample(at: 60_000 + margin)?.gx ?? 0, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(track.sample(at: newest)?.gx ?? 0, 1, accuracy: 0.0001)
+        let between = try XCTUnwrap(track.sample(at: 60_000 + margin + 10)?.gx)
+        XCTAssertGreaterThan(between, 0.4)
+        XCTAssertLessThan(between, 0.6)
     }
 
     @MainActor func testInkFadesAndIsPruned() {
