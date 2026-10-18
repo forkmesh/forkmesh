@@ -754,6 +754,60 @@ def test_a_push_makes_the_others_fetch_but_not_the_pusher():
     assert [tuple(r) for r in rows] == [(pusher, 10), (other, 10)]
 
 
+def _stats(commit, count, weeks=None):
+    return {"commit": commit, "commitCount": count,
+            "mergeCount": 2, "activityWeeks": weeks or [0] * 51 + [5],
+            "mergeActivityWeeks": [0] * 51 + [2]}
+
+
+def test_a_current_copy_reports_the_true_commit_count_and_activity():
+    world = World()
+    module = install(world)
+    repo_id = _created(world, module)
+    primary = hosted_repos.rendezvous(list(CORES), repo_id)[0]
+    digest = "a" * 64
+    report = {"pushedAt": 0, "empty": False, "routingDigest": digest,
+              "sizeBytes": 1234, **_stats("1" * 40, 45204)}
+    signed_replicas(module, primary, {repo_id: report})
+    record = world.catalog("alice", "app")[0]
+    assert record["stateHash"] == digest
+    assert record["commitCount"] == "45204"
+    assert record["mergeCount"] == "2"
+    assert record["activityWeeks"] == [0] * 51 + [5]
+    assert record["mergeActivityWeeks"] == [0] * 51 + [2]
+
+
+def test_stats_of_a_copy_behind_the_pin_never_reach_the_catalog():
+    world = World()
+    module = install(world)
+    repo_id = _created(world, module)
+    primary = hosted_repos.rendezvous(list(CORES), repo_id)[0]
+    other = [n for n in CORES if n != primary][0]
+    signed_replicas(module, primary, {repo_id: {
+        "pushedAt": 0, "empty": False, "routingDigest": "a" * 64,
+        "sizeBytes": 1, **_stats("1" * 40, 10)}})
+    signed_replicas(module, other, {repo_id: {
+        "pushedAt": 0, "empty": False, "routingDigest": "b" * 64,
+        "sizeBytes": 1, **_stats("2" * 40, 99)}},
+        request_id="request_0123456789ac")
+    assert world.catalog("alice", "app")[0]["commitCount"] == "10"
+
+
+def test_report_stats_are_bounded_and_need_a_commit():
+    clean = hosted_repos.clean_stats
+    assert clean(_stats("1" * 40, 7))["activityWeeks"][-1] == 5
+    assert clean({**_stats("1" * 40, 7), "activityWeeks": [1, 2]})[
+        "activityWeeks"] == [0] * 50 + [1, 2]
+    assert clean(_stats("short", 7)) is None
+    assert clean(_stats("1" * 40, 0)) is None
+    assert clean(_stats("1" * 40, 10 ** 10)) is None
+    assert clean({**_stats("1" * 40, 7), "activityWeeks": [0] * 53}) is None
+    assert clean({**_stats("1" * 40, 7), "activityWeeks": [-1]}) is None
+    no_merges = clean({**_stats("1" * 40, 7), "mergeCount": 9})
+    assert "mergeCount" not in no_merges
+    assert "mergeActivityWeeks" not in no_merges
+
+
 def test_a_deleted_catalog_row_is_removed_everywhere():
     world = World()
     module = install(world)

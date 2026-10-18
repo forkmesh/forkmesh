@@ -221,3 +221,68 @@ def test_the_root_path_bundles_only_commits_the_repository_lacks(
     assert git(git_dir, "rev-parse", "copy") == new
     assert leftovers(root) == []
     git(git_dir, "fsck", "--no-dangling")
+
+
+def dated_commit(work, name, when, *extra):
+    (work / name).write_text(name)
+    git(work, "add", ".")
+    env = dict(os.environ, GIT_AUTHOR_NAME="T", GIT_AUTHOR_EMAIL="t@e.test",
+               GIT_COMMITTER_NAME="T", GIT_COMMITTER_EMAIL="t@e.test",
+               GIT_AUTHOR_DATE="@%d +0000" % when,
+               GIT_COMMITTER_DATE="@%d +0000" % when)
+    subprocess.run(["git", "commit", "-q", "-m", name, *extra],
+                   cwd=str(work), check=True, capture_output=True, env=env)
+
+
+def test_history_stats_count_the_whole_history_and_bucket_weeks(tmp_path):
+    work = tmp_path / "source"
+    work.mkdir()
+    git(work, "init", "-q", "-b", "main")
+    now = 1_800_000_000
+    week = repo.WEEK_SECONDS
+    dated_commit(work, "ancient", now - 400 * week)
+    dated_commit(work, "early", now - 51 * week - 60)
+    git(work, "checkout", "-q", "-b", "side")
+    dated_commit(work, "side", now - 2 * 86400)
+    git(work, "checkout", "-q", "main")
+    dated_commit(work, "late", now - 86400)
+    env = dict(os.environ, GIT_AUTHOR_NAME="T", GIT_AUTHOR_EMAIL="t@e.test",
+               GIT_COMMITTER_NAME="T", GIT_COMMITTER_EMAIL="t@e.test",
+               GIT_AUTHOR_DATE="@%d +0000" % (now - 60),
+               GIT_COMMITTER_DATE="@%d +0000" % (now - 60))
+    subprocess.run(["git", "merge", "-q", "--no-ff", "-m", "merge", "side"],
+                   cwd=str(work), check=True, capture_output=True, env=env)
+    head = git(work, "rev-parse", "HEAD")
+    stats = repo.history_stats(repo.Git(), work / ".git", head, now=now)
+    assert stats["commitCount"] == 5
+    assert stats["mergeCount"] == 1
+    assert len(stats["activityWeeks"]) == 52
+    assert stats["activityWeeks"][0] == 1
+    assert stats["activityWeeks"][-1] == 3
+    assert sum(stats["activityWeeks"]) == 4
+    assert stats["mergeActivityWeeks"][-1] == 1
+    empty = repo.history_stats(repo.Git(), work / ".git", "", now=now)
+    assert empty["commitCount"] == 0 and sum(empty["activityWeeks"]) == 0
+
+
+def test_fill_reports_the_whole_history_and_its_activity(hosted):
+    work, root = hosted
+    filled = repo.fill(spec_for(work, root), {"id": REPO_ID}, 64 << 20)
+    assert filled["commitCount"] == 1
+    assert filled["mergeCount"] == 0
+    assert sum(filled["activityWeeks"]) == 1
+    assert len(filled["mergeActivityWeeks"]) == 52
+
+
+def test_the_total_commit_count_is_never_capped():
+    calls = []
+
+    class Recorder:
+        def run(self, _git_dir, *argv, check=True):
+            calls.append(argv)
+            return SimpleNamespace(stdout=b"45204\n")
+
+    assert repo._commit_count(Recorder(), "x", "", "a" * 40, limit=0) == 45204
+    assert not any(arg.startswith("--max-count") for arg in calls[-1])
+    repo._commit_count(Recorder(), "x", "b" * 40, "a" * 40)
+    assert "--max-count=%d" % repo.COMMIT_COUNT_LIMIT in calls[-1]

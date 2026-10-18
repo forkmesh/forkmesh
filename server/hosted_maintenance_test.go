@@ -3,6 +3,7 @@ package mirrornode
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -170,5 +171,42 @@ func TestHostedReplicatorMaintainsDueRepositories(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(target, hostedMaintenanceLock)); err != nil {
 		t.Fatalf("lock file: %v", err)
+	}
+}
+
+func TestHostedCopyStateReportsTheWholeHistoryCachedPerTip(t *testing.T) {
+	daemon := hostedTestDaemon(t, "fmnext-n1", "http://127.0.0.1:1")
+	gitDir, head := hostedBloatedRepo(t)
+	target := daemon.hosted.gitDir(testHostedID)
+	if err := os.Rename(gitDir, target); err != nil {
+		t.Fatal(err)
+	}
+	run(t, ".", "git", "--git-dir="+target, "symbolic-ref", "HEAD", "refs/heads/main")
+	ctx := context.Background()
+	state := daemon.hosted.copyState(ctx, testHostedID)
+	if state.Commit != head || state.CommitCount != 3 || state.MergeCount != 0 {
+		t.Fatalf("state = %+v", state)
+	}
+	total := 0
+	for _, week := range state.ActivityWeeks {
+		total += week
+	}
+	if len(state.ActivityWeeks) != 52 || total != 3 || len(state.MergeActivityWeeks) != 52 {
+		t.Fatalf("activity = %v", state.ActivityWeeks)
+	}
+	cached := daemon.hosted.stats[testHostedID]
+	cached.CommitCount = 99
+	daemon.hosted.stats[testHostedID] = cached
+	if again := daemon.hosted.copyState(ctx, testHostedID); again.CommitCount != 99 {
+		t.Fatalf("an unchanged tip recounted: %d", again.CommitCount)
+	}
+	daemon.hosted.clock = func() time.Time { return time.Now().Add(48 * time.Hour) }
+	if later := daemon.hosted.copyState(ctx, testHostedID); later.CommitCount != 3 {
+		t.Fatalf("a new day kept a stale count: %d", later.CommitCount)
+	}
+	body, err := json.Marshal(state)
+	if err != nil || !strings.Contains(string(body), `"commitCount":3`) ||
+		!strings.Contains(string(body), `"commit":"`+head+`"`) {
+		t.Fatalf("report = %s %v", body, err)
 	}
 }

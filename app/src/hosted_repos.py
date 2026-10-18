@@ -47,6 +47,9 @@ HOSTED_SOURCE = "hosted-web"
 ID_RE = re.compile(r"^hr[0-9a-f]{24}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+ACTIVITY_WEEKS = 52
+MAX_COMMIT_COUNT = 10 ** 9
 BRANCH = "main"
 DEFAULT_MAX_PER_ACCOUNT = 10
 DEFAULT_MAX_BYTES = 200 * 1024 * 1024
@@ -415,6 +418,44 @@ def _error(runtime, code, status):
     return runtime.response({"error": code}, status)
 
 
+def _clean_count(value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if 0 <= number <= MAX_COMMIT_COUNT else None
+
+
+def _clean_weeks(value):
+    if not isinstance(value, list) or len(value) > ACTIVITY_WEEKS:
+        return None
+    weeks = []
+    for item in value:
+        number = _clean_count(item)
+        if number is None:
+            return None
+        weeks.append(number)
+    return [0] * (ACTIVITY_WEEKS - len(weeks)) + weeks
+
+
+def clean_stats(state):
+    if not isinstance(state, dict):
+        return None
+    commit = str(state.get("commit") or "").lower()
+    count = _clean_count(state.get("commitCount"))
+    weeks = _clean_weeks(state.get("activityWeeks"))
+    if not OID_RE.fullmatch(commit) or not count or weeks is None:
+        return None
+    stats = {"commit": commit, "commitCount": str(count),
+             "activityWeeks": weeks}
+    merges = _clean_count(state.get("mergeCount"))
+    merge_weeks = _clean_weeks(state.get("mergeActivityWeeks"))
+    if merges is not None and merges <= count and merge_weeks is not None:
+        stats["mergeCount"] = str(merges)
+        stats["mergeActivityWeeks"] = merge_weeks
+    return stats
+
+
 def _clean_reports(value):
     reports = {}
     if not isinstance(value, dict):
@@ -434,6 +475,9 @@ def _clean_reports(value):
             "digest": digest if DIGEST_RE.fullmatch(digest) else "",
             "sizeBytes": size,
         }
+        stats = clean_stats(state)
+        if stats and not state.get("empty"):
+            reports[str(repo_id)]["stats"] = stats
     return reports
 
 
@@ -537,6 +581,10 @@ async def replicas(runtime, raw):
                 # The first content a core reports (an initial commit or an
                 # import) becomes the routing pin; later pins come from pushes.
                 await runtime.pin_initial(owner, name, report["digest"])
+        if (report is not None and not unchanged and report.get("stats")
+                and report["digest"] and hasattr(runtime, "record_stats")):
+            await runtime.record_stats(owner, name, report["digest"],
+                                       report["stats"])
         order = rendezvous(live or cores, repo_id)
         primary = order[0] if order else ""
         pushed_at = int(row.get("pushed_at") or 0)

@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HOSTED_ROOT = "/var/lib/forkmesh/hosted"
@@ -23,6 +24,8 @@ MAINTENANCE_MARKER = "forkmesh-maintenance-due"
 DEFAULT_BRANCHES = ("main", "master", "trunk", "develop")
 REF_UPDATES_MAX = 40
 COMMIT_COUNT_LIMIT = 10000
+ACTIVITY_WEEKS = 52
+WEEK_SECONDS = 7 * 24 * 60 * 60
 GIT_TIMEOUT = 6 * 60 * 60
 
 
@@ -407,15 +410,46 @@ def routing_digest(git, git_dir):
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-def _commit_count(git, git_dir, old, new):
+def _commit_count(git, git_dir, old, new, limit=COMMIT_COUNT_LIMIT):
     revisions = [new] if not old else [new, "^" + old]
-    completed = git.run(git_dir, "rev-list", "--count",
-                        "--max-count=%d" % COMMIT_COUNT_LIMIT, *revisions,
+    bound = ["--max-count=%d" % limit] if limit else []
+    completed = git.run(git_dir, "rev-list", "--count", *bound, *revisions,
                         "--", check=False)
     try:
         return int(completed.stdout.decode().strip() or 0)
     except ValueError:
         return 0
+
+
+def history_stats(git, git_dir, commit, now=None):
+    commits = [0] * ACTIVITY_WEEKS
+    merges = [0] * ACTIVITY_WEEKS
+    if not commit:
+        return {"commitCount": 0, "mergeCount": 0, "activityWeeks": commits,
+                "mergeActivityWeeks": merges}
+    start = int(time.time() if now is None else now) - (
+        ACTIVITY_WEEKS * WEEK_SECONDS)
+    completed = git.run(git_dir, "rev-list", "--since=@%d" % start,
+                        "--timestamp", "--parents", commit, "--",
+                        check=False)
+    for line in completed.stdout.decode("utf-8", "replace").splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].isdigit():
+            continue
+        index = min(max((int(fields[0]) - start) // WEEK_SECONDS, 0),
+                    ACTIVITY_WEEKS - 1)
+        commits[index] += 1
+        if len(fields) >= 4:
+            merges[index] += 1
+    total = _commit_count(git, git_dir, "", commit, limit=0)
+    merged = git.run(git_dir, "rev-list", "--count", "--merges", commit, "--",
+                     check=False).stdout.decode().strip()
+    return {
+        "commitCount": total,
+        "mergeCount": int(merged) if merged.isdigit() else 0,
+        "activityWeeks": commits,
+        "mergeActivityWeeks": merges,
+    }
 
 
 def _stage(git, spec, git_dir, scratch, current):
@@ -501,13 +535,16 @@ def fill(spec, info, max_bytes, git_user=""):
         roots = git.out(git_dir, "rev-list", "--max-parents=0",
                         commit).split()
         root_commit = roots[-1] if roots else ""
+    stats = history_stats(git, git_dir, commit)
     return {
         "branches": sorted(ref[len("refs/heads/"):] for ref in heads),
         "tags": len(tags),
         "defaultBranch": default,
         "commit": commit,
-        "commitCount": _commit_count(git, git_dir, "", commit) if commit
-        else 0,
+        "commitCount": stats["commitCount"],
+        "mergeCount": stats["mergeCount"],
+        "activityWeeks": stats["activityWeeks"],
+        "mergeActivityWeeks": stats["mergeActivityWeeks"],
         "rootCommit": root_commit,
         "digest": routing_digest(git, git_dir) if heads or tags else "",
         "updates": updates,
@@ -534,6 +571,15 @@ async def record(runtime, spec, info, filled):
     updates = filled["updates"]
     digest = filled["digest"]
     pinned = catalog.get("stateHash", "")
+    stats = {
+        "commit": filled["commit"],
+        "commitCount": str(filled.get("commitCount") or 0),
+        "mergeCount": str(filled.get("mergeCount") or 0),
+        "activityWeeks": list(filled.get("activityWeeks") or []),
+        "mergeActivityWeeks": list(filled.get("mergeActivityWeeks") or []),
+    }
+    if digest and not updates and pinned == digest:
+        await hosted_git.record_hosted_stats(env, owner, name, digest, stats)
     if digest and (updates or pinned != digest):
         endpoint = await _endpoint(hosted_git, env, info["id"], info["node"])
         if updates:
@@ -543,7 +589,10 @@ async def record(runtime, spec, info, filled):
             "branch": filled["defaultBranch"],
             "commit": filled["commit"],
             "branchCount": str(len(filled["branches"])),
-            "commitCount": str(filled["commitCount"]),
+            "commitCount": stats["commitCount"],
+            "mergeCount": stats["mergeCount"],
+            "activityWeeks": stats["activityWeeks"],
+            "mergeActivityWeeks": stats["mergeActivityWeeks"],
             "rootCommit": filled["rootCommit"],
             "sizeBytes": int(filled["sizeBytes"]),
         })

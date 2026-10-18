@@ -367,6 +367,17 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 `created`, `branches`, `tags`, `defaultBranch`, `commit`, `refsUpdated`,
 `sizeBytes`, `stateHash`, `gitDir` (or `ok: false` and `error`, exit 1).
 
+- **Counts and activity.** The fill writes the default branch's whole
+  `commitCount` (`git rev-list --count`), `mergeCount`, and the 52-week
+  `activityWeeks` / `mergeActivityWeeks` series that the dashboard cards
+  draw, bucketed the same way as `server/catalog.go`. The total used to be
+  `rev-list --count --max-count=10000`, so every large import (a 45,000-commit
+  repository, the 62,000-commit platform source) showed 10,000 and an empty
+  activity chart. The 10,000 cap still applies to the per-ref counts of a
+  push report. A rerun that moves no refs still refreshes the counts
+  (`hosted_git.record_hosted_stats`), so running the command again repairs a
+  repository imported before this change.
+
 - **Source.** `--from` is a repository directory or a `git bundle` file. Only
   local `refs/heads/*` and `refs/tags/*` are imported, so make the source with
   `git clone --mirror <url> /root/<repo>.git` (a normal clone has one local

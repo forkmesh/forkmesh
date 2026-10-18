@@ -121,16 +121,31 @@ type hostedReplicator struct {
 	lastCheck  time.Time
 	fetchedAt  map[string]int64 // id -> the pushedAt this copy has fetched
 	lastReport map[string]hostedCopyState
+	stats      map[string]hostedHistoryStats
 	pushState  map[string]hostedPushState
 	runPush    hostedPushRunner
 	clock      func() time.Time
 }
 
 type hostedCopyState struct {
-	PushedAt  int64  `json:"pushedAt"`
-	Empty     bool   `json:"empty"`
-	Digest    string `json:"routingDigest,omitempty"`
-	SizeBytes int64  `json:"sizeBytes"`
+	PushedAt           int64  `json:"pushedAt"`
+	Empty              bool   `json:"empty"`
+	Digest             string `json:"routingDigest,omitempty"`
+	SizeBytes          int64  `json:"sizeBytes"`
+	Commit             string `json:"commit,omitempty"`
+	CommitCount        int64  `json:"commitCount,omitempty"`
+	MergeCount         int64  `json:"mergeCount,omitempty"`
+	ActivityWeeks      []int  `json:"activityWeeks,omitempty"`
+	MergeActivityWeeks []int  `json:"mergeActivityWeeks,omitempty"`
+}
+
+type hostedHistoryStats struct {
+	Commit             string
+	Day                string
+	CommitCount        int64
+	MergeCount         int64
+	ActivityWeeks      []int
+	MergeActivityWeeks []int
 }
 
 type hostedReplicaRequest struct {
@@ -207,6 +222,7 @@ func newHostedReplicator(d *Daemon) (*hostedReplicator, error) {
 		d: d, cfg: cfg, client: &http.Client{Timeout: 30 * time.Second},
 		pending: true, fetchedAt: map[string]int64{},
 		lastReport: map[string]hostedCopyState{}, pushState: map[string]hostedPushState{},
+		stats: map[string]hostedHistoryStats{},
 	}, nil
 }
 
@@ -295,9 +311,40 @@ func (r *hostedReplicator) copyState(ctx context.Context, id string) hostedCopyS
 		"--format=%(refname)", "refs/heads", "refs/tags")) == 0
 	if !state.Empty {
 		state.Digest, _ = routingRefsSHA256(ctx, gitDir)
+		if stats, ok := r.historyStats(ctx, id, gitDir); ok {
+			state.Commit = stats.Commit
+			state.CommitCount = stats.CommitCount
+			state.MergeCount = stats.MergeCount
+			state.ActivityWeeks = stats.ActivityWeeks
+			state.MergeActivityWeeks = stats.MergeActivityWeeks
+		}
 	}
 	state.SizeBytes = hostedRepositoryBytes(ctx, gitDir)
 	return state
+}
+
+func (r *hostedReplicator) historyStats(ctx context.Context, id, gitDir string) (hostedHistoryStats, bool) {
+	commit := gitValue(ctx, gitDir, "rev-parse", "--verify", "-q", "HEAD^{commit}")
+	if !gitObjectIDPattern.MatchString(commit) {
+		return hostedHistoryStats{}, false
+	}
+	day := r.now().UTC().Format("2006-01-02")
+	if cached, ok := r.stats[id]; ok && cached.Commit == commit && cached.Day == day {
+		return cached, true
+	}
+	count, err := strconv.ParseInt(gitValue(ctx, gitDir, "rev-list", "--count", commit), 10, 64)
+	if err != nil || count <= 0 {
+		return hostedHistoryStats{}, false
+	}
+	merges, _ := strconv.ParseInt(gitValue(ctx, gitDir, "rev-list", "--count", "--merges", commit), 10, 64)
+	weeks, mergeWeeks := catalogActivityWeeks(ctx, gitDir)
+	stats := hostedHistoryStats{Commit: commit, Day: day, CommitCount: count, MergeCount: merges,
+		ActivityWeeks: weeks, MergeActivityWeeks: mergeWeeks}
+	if r.stats == nil {
+		r.stats = map[string]hostedHistoryStats{}
+	}
+	r.stats[id] = stats
+	return stats, true
 }
 
 func (r *hostedReplicator) exchange(ctx context.Context) (hostedReplicaResponse, error) {
