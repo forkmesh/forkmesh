@@ -14037,7 +14037,8 @@
     const rawUrl = escapeHtml(meta.rawUrl);
     let media = "";
     if (meta.kind === "image") {
-      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" src="${rawUrl}" alt="${name}" />`;
+      const source = meta.mime === "image/svg+xml" ? "data-repo-svg-src" : "src";
+      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" ${source}="${rawUrl}" alt="${name}" />`;
     } else if (meta.kind === "video") {
       media = `<video data-repo-video controls preload="metadata" class="max-h-[34rem] w-full max-w-5xl rounded-md bg-black"><source src="${rawUrl}" type="${mime}" />This browser cannot play this video.</video>`;
     } else if (meta.kind === "audio") {
@@ -15406,9 +15407,12 @@
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
     const hint = /#w=(\d{1,4})$/.exec(url);
-    const source = mdImageSource(hint ? url.slice(0, hint.index) : url, context);
+    const target = hint ? url.slice(0, hint.index) : url;
+    const source = mdImageSource(target, context);
     if (!source) return alt;
-    return `<img src="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
+    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+      && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
       + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
   }
 
@@ -17186,6 +17190,133 @@
     if (!commit) throw new Error("pull_metadata_absent");
     return commit;
   }
+
+  const REPO_OPTIONAL_TREE_MISS_MS = 10 * 60 * 1000;
+  const repoOptionalTreeListings = new Map();
+
+  function repoOptionalTreeScope(repo) {
+    return `${repoKey(repo)}@${repoSelectedBranch(repo)}#${repoDataVersion(repo) || ""}`;
+  }
+
+  function repoOptionalTreeMissKey(repo, path) {
+    return `forkmesh.repoTreeMiss:${repoOptionalTreeScope(repo)}:${path}`;
+  }
+
+  function repoOptionalTreeMissed(repo, path) {
+    try {
+      const at = Number(sessionStorage.getItem(repoOptionalTreeMissKey(repo, path)) || 0);
+      return at > 0 && Date.now() - at < REPO_OPTIONAL_TREE_MISS_MS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function rememberRepoOptionalTreeMiss(repo, path) {
+    try {
+      sessionStorage.setItem(repoOptionalTreeMissKey(repo, path), String(Date.now()));
+    } catch (_) {}
+  }
+
+  function repoRootTreeFolders(repo) {
+    const view = state.repoTreeView;
+    if (!view || view.path || !view.repo || repoKey(view.repo) !== repoKey(repo)) return null;
+    return new Set((Array.isArray(view.entries) ? view.entries : [])
+      .filter((entry) => entry?.type === "tree")
+      .map((entry) => String(entry.name || "")));
+  }
+
+  async function repoOptionalTreeParentHas(repo, path, fresh) {
+    const parts = String(path).split("/");
+    const name = parts.pop();
+    const parent = parts.join("/");
+    const root = repoRootTreeFolders(repo);
+    if (root && !root.has(parts[0] || name)) return false;
+    if (!parent || fresh) return true;
+    const key = `${repoOptionalTreeScope(repo)}:${parent}`;
+    if (!repoOptionalTreeListings.has(key)) {
+      const pending = fetchRepoOptionalTree(repo, parent).then((tree) => (tree
+        ? new Set((Array.isArray(tree.entries) ? tree.entries : [])
+          .filter((entry) => entry?.type === "tree")
+          .map((entry) => String(entry.name || "")))
+        : null));
+      pending.catch(() => repoOptionalTreeListings.delete(key));
+      repoOptionalTreeListings.set(key, pending);
+    }
+    const folders = await repoOptionalTreeListings.get(key);
+    return Boolean(folders && folders.has(name));
+  }
+
+  async function fetchRepoOptionalTree(repo, path, { fresh = false } = {}) {
+    if (!fresh && repoOptionalTreeMissed(repo, path)) return null;
+    if (!(await repoOptionalTreeParentHas(repo, path, fresh))) return null;
+    try {
+      return await fetchRepoJson(repoLiveUrl(repo, "tree", { path }));
+    } catch (error) {
+      if (Number(error?.status) !== 404 && !isMissingMirrorFolder(error)) throw error;
+      rememberRepoOptionalTreeMiss(repo, path);
+      return null;
+    }
+  }
+
+  const REPO_SVG_IMAGE_MAX_BYTES = 1024 * 1024;
+
+  function isRepoRawSvgUrl(url) {
+    try {
+      const parsed = new URL(String(url || ""), location.origin);
+      return parsed.origin === location.origin
+        && /^\/api\/repo\/[^/]+\/[^/]+\/raw$/.test(parsed.pathname)
+        && /\.svg$/i.test(parsed.searchParams.get("path") || "");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function svgDataUrl(bytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(new Blob([bytes], { type: "image/svg+xml" }));
+    });
+  }
+
+  async function hydrateRepoSvgImage(image) {
+    const source = image.getAttribute("data-repo-svg-src") || "";
+    image.removeAttribute("data-repo-svg-src");
+    if (!isRepoRawSvgUrl(source)) return;
+    try {
+      const response = await fetch(source, { credentials: "same-origin" });
+      if (!response.ok) return;
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > REPO_SVG_IMAGE_MAX_BYTES) return;
+      const head = new TextDecoder().decode(bytes.slice(0, 4096));
+      if (!/<svg[\s>]/i.test(head)) return;
+      const dataUrl = await svgDataUrl(bytes);
+      if (dataUrl.startsWith("data:image/svg+xml") && image.isConnected) image.src = dataUrl;
+    } catch (_) {}
+  }
+
+  function hydrateRepoSvgImages(root) {
+    const scope = root?.querySelectorAll ? root : document;
+    scope.querySelectorAll("img[data-repo-svg-src]").forEach((image) => { hydrateRepoSvgImage(image); });
+  }
+
+  function watchRepoSvgImages() {
+    if (!document.body || typeof MutationObserver !== "function") return;
+    hydrateRepoSvgImages(document);
+    new MutationObserver((records) => {
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.matches?.("img[data-repo-svg-src]")) hydrateRepoSvgImage(node);
+          else if (node.querySelector?.("img[data-repo-svg-src]")) hydrateRepoSvgImages(node);
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.body) watchRepoSvgImages();
+  else document.addEventListener("DOMContentLoaded", watchRepoSvgImages, { once: true });
 
   // An authoritative "the repository does not hold this" answer, as opposed to
   // "nothing could answer". Mirrors report a missing tree path as 404
@@ -23642,7 +23773,8 @@
         // List the git tree under .forkmesh/issues/ (which also reveals the
         // open//closed/ status subdirs), then read one issue-${number}.json
         // blob for each issue from wherever it lives.
-        tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" }));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/issues", { fresh: true });
+        if (!tree) throw Object.assign(new Error("not_found"), { status: 404, code: "not_found" });
       } catch (error) {
         if (isMissingMirrorFolder(error)) {
           // No issues have been committed to the mirror yet - which is the
@@ -26186,12 +26318,9 @@
     try {
       let tree;
       try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
       } catch (_) { return; }
+      if (!tree) return;
       const channels = (Array.isArray(tree?.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)
         .map((entry) => String(entry.name));
@@ -32881,19 +33010,10 @@
       // Release manifests live in the git tree at .forkmesh/releases/<channel>/release.json
       // (issue #304). List the channels, then batch-read every manifest in one
       // tunnel round-trip so opening the tab doesn't fan out N blob requests.
-      let tree;
-      try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
-      } catch (error) {
-        if (isMissingMirrorFolder(error)) {
-          container.innerHTML = empty;
-          return;
-        }
-        throw error;
+      const tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
+      if (!tree) {
+        container.innerHTML = empty;
+        return;
       }
       const channels = (Array.isArray(tree.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)

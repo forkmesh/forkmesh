@@ -1180,7 +1180,7 @@ def test_dashboard_repository_detail_keeps_code_comments_issues_shell():
 def test_dashboard_release_probes_use_the_committed_forkmesh_directory():
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
-    assert dashboard_js.count('{ path: ".forkmesh/releases" }') == 2
+    assert dashboard_js.count('fetchRepoOptionalTree(repo, ".forkmesh/releases")') == 2
     assert '{ path: "releases" }' not in dashboard_js
 
 

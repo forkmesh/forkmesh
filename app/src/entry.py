@@ -16214,6 +16214,48 @@ def _committed_repository_logo_url(record, owner, repo):
     )
 
 
+_COMMITTED_LOGO_PROBES = {}
+_COMMITTED_LOGO_PROBE_LIMIT = 512
+
+
+def _repository_root_listing(record):
+    source = record if isinstance(record, dict) else {}
+    metadata = source.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = source.get("logoMetadata")
+    listed = metadata.get("fileStructure") if isinstance(
+        metadata, dict) else None
+    return listed if isinstance(listed, list) else []
+
+
+async def _verified_committed_logo_url(env, request, record, owner, repo,
+                                       url):
+    if not url or _repository_root_listing(record):
+        return url
+    commit = clean_string((record or {}).get("commit", ""), 64).lower()
+    key = (str(owner or "").lower(), str(repo or "").lower(), commit)
+    if key in _COMMITTED_LOGO_PROBES:
+        return url if _COMMITTED_LOGO_PROBES[key] else ""
+    try:
+        import directory_about
+        directory_about._bind_runtime(globals())
+        status, data = await directory_about.read_blobs(
+            env, request, owner, repo, ["logo.png"], commit, False)
+    except Exception:
+        return url
+    if status == 200:
+        found = isinstance(((data or {}).get("blobs") or {}).get("logo.png"),
+                           dict)
+    elif status == 404:
+        found = False
+    else:
+        return url
+    while len(_COMMITTED_LOGO_PROBES) >= _COMMITTED_LOGO_PROBE_LIMIT:
+        del _COMMITTED_LOGO_PROBES[next(iter(_COMMITTED_LOGO_PROBES))]
+    _COMMITTED_LOGO_PROBES[key] = found
+    return url if found else ""
+
+
 # A repository's social header belongs to the repository, so it ships inside
 # it: `.forkmesh/banner.png`, alongside the rest of a project's ForkMesh
 # metadata. Nothing here falls back to the ForkMesh brand banner — that image
@@ -16390,10 +16432,13 @@ async def native_repository_logo_handler(
         # flagship repo lost its profile picture (adhoc #122).
         committed_logo_url = (
             "" if logo_url
-            else _committed_repository_logo_url(
-                record,
-                await _public_repository_owner(env, request, owner, repo),
-                repo))
+            else await _verified_committed_logo_url(
+                env, request, record, owner, repo,
+                _committed_repository_logo_url(
+                    record,
+                    await _public_repository_owner(
+                        env, request, owner, repo),
+                    repo)))
         params = parse_qs(urlparse(request.url).query)
         if params.get("image", [""])[0] == "1":
             if logo_url or committed_logo_url:
