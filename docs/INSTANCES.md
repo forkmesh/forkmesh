@@ -183,8 +183,11 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   owner, and every git command runs as `forkmesh-node` (`--git-user`), the
   owner of `/var/lib/forkmesh/hosted` (`--hosted-root`). The source is first
   written as a bundle into `/var/lib/forkmesh/tmp` and handed to
-  `forkmesh-node`, which may not be able to read the operator's folder. Run
-  as another user, everything happens as that user (tests, development).
+  `forkmesh-node`, which may not be able to read the operator's folder. That
+  bundle holds only what the hosted repository lacks: every hosted head and
+  tag the source also has is passed to `git bundle create` as an exclusion,
+  so re-running after one new commit bundles one commit. Run as another
+  user, everything happens as that user (tests, development).
 - **Create.** Same records as the create form for an organization
   repository, through the helpers `_create_core_repository` now shares in
   `hosted_git.py` (`core_repository_target`, `core_catalog_record`,
@@ -197,13 +200,38 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   (the repository still counts towards it).
 - **Fill.** The command creates `<root>/<id>.git` itself when the git node has
   not yet (`git init --bare --initial-branch=main`, mode 0700, then a rename,
-  exactly like `server/hosted.go`), fetches every head and tag into
-  `refs/forkmesh/import/*`, and applies them in one `update-ref` transaction:
+  exactly like `server/hosted.go`). It then works in a staging repository, a
+  quarantine like the one `git receive-pack` uses: a bare repository in a
+  scratch folder (`/var/lib/forkmesh/tmp/instance-repo-*`, else beside the
+  hosted root) whose `objects/info/alternates` names the hosted objects. Every
+  head and tag is fetched there; a fetch from a directory negotiates with the
+  hosted tips, a bundle is indexed whole. The ref plan (fast-forward check)
+  runs in the staging repository too. Only then is one pack built with
+  `git pack-objects --revs --local` from the new tips minus the hosted tips,
+  so a full bundle of a repository the node already holds adds only the
+  missing commits (a first fill moves the staged packs as they are). The size
+  check adds that pack to the hosted repository's reachable size
+  (`git rev-list --all --objects --disk-usage`, which counts each object
+  once whatever duplicate packs hold it). A refused ref or a repository that
+  would pass `HOSTED_REPO_MAX_BYTES` raises before anything reaches the
+  hosted repository, and the scratch folder is removed with
+  `forkmesh_safe_delete.remove_tree` either way. On success the pack is
+  renamed into `objects/pack` (`.pack`, `.rev`, then `.idx`, the order git
+  writes them) and the refs are applied in one `update-ref` transaction:
   new refs are created, branches move only by fast-forward and tags never
-  move, unless `--force`. Nothing is ever deleted. A refused ref or a
-  repository larger than `HOSTED_REPO_MAX_BYTES` leaves every ref as it was.
-  HEAD points at `main`, else `master`, `trunk`, `develop`, else the first
-  branch.
+  move, unless `--force`. Nothing is ever deleted. A failed `update-ref`
+  after the pack moved leaves an unreferenced pack, which the node's
+  maintenance keeps (no prune); a rerun reuses it. The fill touches
+  `forkmesh-maintenance-due` so the git node compacts the repository next
+  (see [HOSTED_REPOS.md](HOSTED_REPOS.md#maintenance)). HEAD points at `main`,
+  else `master`, `trunk`, `develop`, else the first branch.
+
+  Before 2026-10-17 the fill fetched straight into the hosted repository under
+  `refs/forkmesh/import/*`. As root the source was always a full bundle, and
+  a bundle carries no negotiation, so every run wrote the whole history again
+  as a new pack. On the Bolt instance a rerun after one commit added a second
+  392 MB pack; the size check (directory bytes) then counted both, refused
+  the run at 1.2 GB, and left the duplicate pack behind.
 - **Record.** As after an accepted web push: `hosted_repos.pushed_at` /
   `pushed_by` (so the node does not fetch over it), the routing pin computed
   from the filled repository with the same canonical form as
@@ -226,9 +254,10 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   serve the new refs at once.
 - **Size.** The installer sets `HOSTED_REPO_MAX_BYTES=1073741824` (1 GiB) in
   `app.env` and `hosted.maxRepositoryBytes` to the same in
-  `/etc/forkmesh/mirror-node.json`. The command refuses a fill that leaves the
-  repository directory above the app limit; web pushes are refused past it
-  too (largest copy the node reports). For a bigger repository raise
+  `/etc/forkmesh/mirror-node.json`. The command refuses a fill whose
+  reachable objects plus the new pack would pass the app limit; web pushes
+  are refused past it too (largest copy the node reports, measured as
+  `git count-objects` loose plus pack bytes after the node's maintenance). For a bigger repository raise
   `HOSTED_REPO_MAX_BYTES` in `app.env` (and the node's value, which bounds
   imports and replica fetches) and restart `forkmesh-instance`; the next
   run of the command reads the new value. Later pushes over HTTPS are also

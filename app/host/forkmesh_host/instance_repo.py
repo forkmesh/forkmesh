@@ -8,6 +8,7 @@ import pwd
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -18,7 +19,7 @@ NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,37}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 ID_RE = re.compile(r"^hr[0-9a-f]{24}$")
 OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-STAGE = "refs/forkmesh/import/"
+MAINTENANCE_MARKER = "forkmesh-maintenance-due"
 DEFAULT_BRANCHES = ("main", "master", "trunk", "develop")
 REF_UPDATES_MAX = 40
 COMMIT_COUNT_LIMIT = 10000
@@ -161,13 +162,14 @@ class Git:
             }
         self.ids = (entry.pw_uid, entry.pw_gid) if user else None
 
-    def run(self, git_dir, *args, check=True, timeout=GIT_TIMEOUT):
+    def run(self, git_dir, *args, check=True, timeout=GIT_TIMEOUT,
+            input=None):
         command = ["git", "-c", "safe.directory=*"]
         if git_dir:
             command.append("--git-dir=" + str(git_dir))
         completed = subprocess.run(
             command + list(args), capture_output=True, timeout=timeout,
-            **self.kwargs)
+            input=input, **self.kwargs)
         if check and completed.returncode != 0:
             raise RepoError("git %s: %s" % (args[0], completed.stderr.decode(
                 "utf-8", "replace").strip()[-400:]))
@@ -219,37 +221,148 @@ def _is_bundle(path):
     return head.startswith((b"# v2 git bundle", b"# v3 git bundle"))
 
 
-def _stage_source(git, spec, scratch):
+def _source_refs(local, source):
+    refs = {}
+    for line in local.out(None, "-C", str(source), "for-each-ref",
+                          "--format=%(objectname) %(refname)",
+                          "refs/heads", "refs/tags").splitlines():
+        oid, _, ref = line.partition(" ")
+        if OID_RE.fullmatch(oid) and ref:
+            refs[ref] = oid
+    return refs
+
+
+def _present(git, git_dir, oids, cwd=None):
+    oids = sorted(set(oids))
+    if not oids:
+        return set()
+    prefix = ["-C", str(cwd)] if cwd else []
+    completed = git.run(None if cwd else git_dir, *prefix, "cat-file",
+                        "--batch-check", input=("\n".join(oids) + "\n")
+                        .encode(), check=False)
+    found = set()
+    for line in completed.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[1] != "missing" and parts[0] in oids:
+            found.add(parts[0])
+    return found
+
+
+def _stage_source(git, spec, scratch, current):
     source = Path(spec["source"])
     if not git.ids:
-        return str(source)
+        return str(source), None
     bundle = Path(scratch) / "source.bundle"
     if source.is_file() and _is_bundle(source):
         shutil.copyfile(source, bundle)
-    else:
-        local = Git()
-        local.run(None, "-C", str(source), "bundle", "create", str(bundle),
-                  "--branches", "--tags")
+        git.chown(bundle)
+        return str(bundle), None
+    local = Git()
+    refs = _source_refs(local, source)
+    haves = _present(local, None, current.values(), cwd=source)
+    revisions = ["--branches", "--tags"] + ["^" + oid for oid in sorted(
+        haves)]
+    completed = local.run(None, "-C", str(source), "bundle", "create",
+                          "--quiet", str(bundle), "--stdin",
+                          input=("\n".join(revisions) + "\n").encode(),
+                          check=False)
+    if completed.returncode != 0:
+        if bundle.exists():
+            bundle.unlink()
+        if not refs:
+            raise RepoError("git bundle: %s" % completed.stderr.decode(
+                "utf-8", "replace").strip()[-400:])
+        return "", refs
     git.chown(bundle)
-    return str(bundle)
+    return str(bundle), None
 
 
-def _directory_bytes(path):
+def _stored_bytes(git, git_dir):
+    completed = git.run(git_dir, "rev-list", "--all", "--objects",
+                        "--disk-usage", check=False)
+    try:
+        if completed.returncode == 0:
+            return int(completed.stdout.decode().strip() or 0)
+    except ValueError:
+        pass
     total = 0
-    for folder, _, files in os.walk(path):
-        for item in files:
-            try:
-                stat = os.lstat(os.path.join(folder, item))
-            except OSError:
-                continue
-            total += stat.st_size
+    for line in git.out(git_dir, "count-objects", "-v").splitlines():
+        key, _, value = line.partition(": ")
+        if key in ("size", "size-pack") and value.strip().isdigit():
+            total += int(value.strip()) * 1024
     return total
+
+
+def _pack_objects(path):
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(12)
+    except OSError:
+        return 0
+    if len(header) < 12 or header[:4] != b"PACK":
+        return 0
+    return int.from_bytes(header[8:12], "big")
+
+
+def _packs(folder):
+    found = []
+    for pack in sorted(Path(folder).glob("pack-*.pack")):
+        if (pack.with_suffix(".idx").is_file()
+                and _pack_objects(pack) > 0):
+            found.append(pack)
+    return found
+
+
+def _new_packs(git, stage, scratch, current, staged):
+    if not current:
+        return _packs(Path(stage) / "objects" / "pack")
+    revisions = sorted(set(staged.values())) + [
+        "^" + oid for oid in sorted(set(current.values()))]
+    git.run(stage, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m",
+            "pack-objects", "--revs", "--local", "-q",
+            str(Path(scratch) / "pack"),
+            input=("\n".join(revisions) + "\n").encode())
+    return _packs(scratch)
+
+
+def _migrate(git, packs, git_dir):
+    target = Path(git_dir) / "objects" / "pack"
+    for pack in packs:
+        for suffix in (".pack", ".rev", ".idx"):
+            source = pack.with_suffix(suffix)
+            destination = target / source.name
+            if not source.is_file() or destination.exists():
+                continue
+            try:
+                os.rename(source, destination)
+            except OSError:
+                temporary = target / ("tmp_import_" + source.name)
+                shutil.copyfile(source, temporary)
+                os.chmod(temporary, 0o444)
+                git.chown(temporary)
+                os.rename(temporary, destination)
+
+
+def _mark_maintenance(git, git_dir):
+    marker = Path(git_dir) / MAINTENANCE_MARKER
+    try:
+        marker.touch(mode=0o600)
+        git.chown(marker)
+    except OSError:
+        pass
+
+
+def _remove_scratch(scratch, parent):
+    tools = str(Path(__file__).resolve().parents[3] / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import forkmesh_safe_delete
+    forkmesh_safe_delete.remove_tree(scratch, parent, ignore_errors=True)
 
 
 def _plan(git, git_dir, current, staged, force):
     updates, rejected = [], []
-    for ref, new in sorted(staged.items()):
-        target = "refs/" + ref[len(STAGE):]
+    for target, new in sorted(staged.items()):
         old = current.get(target, "")
         if old == new:
             continue
@@ -300,6 +413,29 @@ def _commit_count(git, git_dir, old, new):
         return 0
 
 
+def _stage(git, spec, git_dir, scratch, current):
+    stage = Path(scratch) / "stage.git"
+    git.run(None, "init", "--quiet", "--bare", str(stage))
+    alternates = stage / "objects" / "info" / "alternates"
+    alternates.write_text(str(Path(git_dir).resolve() / "objects") + "\n")
+    git.chown(alternates)
+    source, known = _stage_source(git, spec, scratch, current)
+    if known is not None:
+        if _present(git, stage, known.values()) != set(known.values()):
+            raise RepoError("git bundle could not package the source")
+        return stage, known
+    try:
+        git.run(stage, "-c", "fetch.unpackLimit=1", "-c",
+                "transfer.unpackLimit=1", "fetch", "--quiet", "--no-tags",
+                "--no-write-fetch-head", "--", source,
+                "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
+    finally:
+        bundle = Path(scratch) / "source.bundle"
+        if bundle.exists():
+            bundle.unlink()
+    return stage, _refs(git, stage, "refs/heads", "refs/tags")
+
+
 def fill(spec, info, max_bytes, git_user=""):
     if not ID_RE.fullmatch(str(info.get("id") or "")):
         raise RepoError("invalid repository id")
@@ -307,50 +443,42 @@ def fill(spec, info, max_bytes, git_user=""):
     root = Path(spec["root"])
     git_dir = root / (info["id"] + ".git")
     _ensure_bare(git, root, git_dir)
-    scratch = ""
-    if git.ids:
-        base = root.parent / "tmp"
-        scratch = tempfile.mkdtemp(prefix="instance-repo-",
-                                   dir=str(base if base.is_dir() else root))
-        git.chown(scratch)
+    base = root.parent / "tmp"
+    parent = base if base.is_dir() else root
+    scratch = tempfile.mkdtemp(prefix="instance-repo-", dir=str(parent))
+    git.chown(scratch)
     try:
-        source = _stage_source(git, spec, scratch)
         current = _refs(git, git_dir, "refs/heads", "refs/tags")
-        git.run(git_dir, "fetch", "--quiet", "--no-tags",
-                "--no-write-fetch-head", "--", source,
-                "+refs/heads/*:" + STAGE + "heads/*",
-                "+refs/tags/*:" + STAGE + "tags/*")
+        stage, staged = _stage(git, spec, git_dir, scratch, current)
+        updates, rejected = _plan(git, stage, current, staged, spec["force"])
+        if rejected:
+            raise RepoError("not a fast-forward or a moved tag: %s (rerun "
+                            "with --force)" % ", ".join(rejected[:10]))
+        if updates:
+            packs = _new_packs(git, stage, scratch, current, staged)
+            added = sum(pack.stat().st_size + pack.with_suffix(".idx").stat()
+                        .st_size for pack in packs)
+            stored = _stored_bytes(git, git_dir)
+            if stored + added > max_bytes:
+                raise RepoError(
+                    "the repository would take %d bytes (%d stored, %d new), "
+                    "more than HOSTED_REPO_MAX_BYTES=%d"
+                    % (stored + added, stored, added, max_bytes))
+            _migrate(git, packs, git_dir)
     finally:
-        if scratch:
-            bundle = Path(scratch) / "source.bundle"
-            if bundle.exists():
-                bundle.unlink()
-            os.rmdir(scratch)
-    staged = _refs(git, git_dir, STAGE)
-    updates, rejected = _plan(git, git_dir, current, staged, spec["force"])
-    size = _directory_bytes(git_dir)
-    problem = ""
-    if rejected:
-        problem = ("not a fast-forward or a moved tag: %s (rerun with "
-                   "--force)" % ", ".join(rejected[:10]))
-    elif size > max_bytes:
-        problem = ("the repository takes %d bytes, more than "
-                   "HOSTED_REPO_MAX_BYTES=%d" % (size, max_bytes))
-    commands = ["delete %s %s" % (ref, oid) for ref, oid in staged.items()]
-    if not problem:
+        _remove_scratch(scratch, parent)
+    if updates:
         commands = ["update %s %s %s" % (u["ref"], u["new"], u["old"] or (
-            "0" * len(u["new"]))) for u in updates] + commands
-    if commands:
+            "0" * len(u["new"]))) for u in updates]
         completed = subprocess.run(
             ["git", "-c", "safe.directory=*", "--git-dir=" + str(git_dir),
              "update-ref", "--stdin"],
             input=("\n".join(commands) + "\n").encode(), capture_output=True,
             timeout=GIT_TIMEOUT, **git.kwargs)
-        if completed.returncode != 0 and not problem:
-            problem = "update-ref: " + completed.stderr.decode(
-                "utf-8", "replace").strip()[-400:]
-    if problem:
-        raise RepoError(problem)
+        if completed.returncode != 0:
+            raise RepoError("update-ref: " + completed.stderr.decode(
+                "utf-8", "replace").strip()[-400:])
+        _mark_maintenance(git, git_dir)
     heads = _refs(git, git_dir, "refs/heads")
     tags = _refs(git, git_dir, "refs/tags")
     default = _default_branch(git, git_dir, heads)
@@ -378,7 +506,7 @@ def fill(spec, info, max_bytes, git_user=""):
         "rootCommit": root_commit,
         "digest": routing_digest(git, git_dir) if heads or tags else "",
         "updates": updates,
-        "sizeBytes": _directory_bytes(git_dir),
+        "sizeBytes": _stored_bytes(git, git_dir),
         "gitDir": str(git_dir),
     }
 
