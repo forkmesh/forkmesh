@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Native catalog logo privacy and authorization contracts."""
 
 import ast
 import asyncio
