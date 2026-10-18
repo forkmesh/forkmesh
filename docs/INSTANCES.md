@@ -483,7 +483,9 @@ never carry it.
 
 After a successful launch, `instance_directory.publish` writes an
 `instance_directory` row keyed by domain (name, URL, logo, choices, World
-slot). The World has 12 instance slots. Cron phase `instance-health` probes
+slot). The World has 12 instance slots: the flowers around forkmesh.com on
+the shared World map, where visitors walk between worlds without leaving the
+page ([World mesh](world/README.md#world-mesh)). Cron phase `instance-health` probes
 `https://<domain>/readyz`; two misses in a row hide the entry, a day offline
 pings the admins once per outage. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not

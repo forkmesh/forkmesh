@@ -28,12 +28,14 @@ desktop embeds the same page.
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
+| `world/public/world/world-mesh.js` | World mesh: directory normalising and the watch/visit sockets to neighbouring worlds ([World mesh](#world-mesh)) |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
 | `world/public/world/vendor/` | Pinned three.js (`three-0.184.0`) and other vendored libraries |
 | `world/src/*.py` | World and Office routes (`/api/world/*`), element store, events, community boards; staged into the App |
 | `world/src/world_durable_objects.py` | `ForkMeshWorld` and `ForkMeshOfficeRoom` |
+| `world/src/world_mesh.py` | World mesh directory, visitor visas and the cross-world origin rule |
 | `world/wrangler.toml` | Not deployed. Its `run_worker_first` list and `[build]` command are read by `deploy/core/caddy_routes.py` and `tools/next_deploy.py` |
 | `world/worker.js` | Not deployed. `caddy_routes.py` mirrors its `APP_ASSET_PATHS`; `app/host/forkmesh_host/world_health.py` reimplements `mobileWorldHealth()` |
 | `deploy/core/caddy_routes.py` | Generates `world-routes.caddy` per release |
@@ -84,8 +86,11 @@ desktop embeds the same page.
   1 KB–4 MB).
 - Element contract: `world/public/world/elements/README.md`; prices are set by
   `world/src/world_element_store.py`.
-- `GET /api/start/instances` and `/api/start/instances/<id>/logo`: the
-  instance directory used for instance hexagons.
+- `GET /api/start/instances/<id>/logo`: an instance logo, drawn on its
+  hexagon.
+- `GET /api/world/mesh`, `POST /api/world/visa`,
+  `POST /api/world/visa/verify` and the `watch` / `visa` forms of
+  `/api/world/ws`: the [World mesh](#world-mesh).
 
 ## Configuration
 
@@ -93,7 +98,9 @@ desktop embeds the same page.
 `[production.vars]` (rendered as `FORKMESH_VAR_WORLD_ORIGIN` by
 `deploy/core/render.py`), and with the same value in `app/wrangler.toml` and
 `www/wrangler.toml`. The served host is `world_host` in `deploy/fleet.toml`
-`[production]`. `world/wrangler.toml` still carries legacy Worker settings;
+`[production]`. `WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
+where an instance reads the World mesh directory; an App without
+`INSTANCE_NAME` is the hub itself. `world/wrangler.toml` still carries legacy Worker settings;
 the served stack reads only its `run_worker_first` list and `[build]`
 command. It holds no secrets.
 
@@ -469,15 +476,13 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   in three draws (asphalt, edge lines, instanced centre dashes).
   `createRoadGraph()` builds the matching graph (24 nodes, 30 roads) for
   bikes.
-- **Instance hexagons.** `INSTANCE_HEX_SLOTS` (`scene/layout.js`) is a second
-  ring of 12 tiles. An instance with its own world gets a meadow hexagon with
-  roads, its logo as a ground decal, and a landmark board that opens the
-  instance's address. `refreshInstanceDirectory()` reads
-  `/api/start/instances` every 5 minutes and keeps entries with
-  `world: true`, an https address, a 32-hex id and an unused slot. Nothing is
-  built while no instance has a hexagon.
+- **Neighbouring worlds.** Every World is a seven-hex "flower" (its city and
+  its six desert hexes) on one shared map, and other worlds sit on the
+  flowers around it. You can see them and walk straight in. See
+  [World mesh](#world-mesh).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
-  by the road width plus junction discs. `WORLD_RADIUS` (1900) bounds remote
+  by the road width plus junction discs, the hexes of every placed
+  neighbouring world included (`setWorldMeshFlowers()`). `WORLD_RADIUS` (1900) bounds remote
   avatars, spawns, flight and the server's saved-view check; the relay's
   `WORLD_COORD_LIMIT` is 16000.
 - **Ground logo.** `groundLogoTexture()`/`applyGroundLogo()` (`scene/town.js`)
@@ -546,6 +551,74 @@ signed control request (`/api/world/floor-notes-changed`, HMAC, one minute) to
   one post per 5 s, 100 replies per thread.
 - Storage: `world_floor_notes`, `world_floor_note_replies`; author and text
   encrypted in `data`, keyed by `account_bi`, removed with the account.
+
+## World mesh
+
+All the Worlds (forkmesh.com and every self-hosted instance with its own
+World) share one map, so you can see the worlds around you and walk into
+them without changing page.
+
+- **Map.** Each World is a flower of seven hexes: its city plus the six
+  desert hexes. Flowers tile the plane without gaps. The hub (forkmesh.com) is
+  at the origin. Directory slot `n` is `worldMeshSlotOffset(n)`
+  (`scene/layout.js`): slots 0–5 are the six flowers touching the hub, 6–11
+  the next six. Every client draws itself at the centre and each other world
+  at `offset(world) - offset(self)`. An instance therefore sees the hub and
+  its fellow instances where they really sit.
+- **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
+  `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
+  it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own
+  entry (`id: "forkmesh"`, slot −1). An instance fetches the hub's copy from
+  `WORLD_MESH_HUB` server-side and caches it (5 minutes, 30 seconds after a
+  failure). `self` is the answering world, matched by host.
+- **Drawing.** `createInstanceHex()` draws a neighbour as a meadow centre with
+  its logo, landmark and label, six sand hexes and one road net, all as
+  shared geometry. The neighbour's roads sit 0.02 below the home roads so the
+  shared border strip does not z-fight. Clicking the landmark explains how to
+  walk in; it opens no tab.
+- **Ownership.** `worldMeshOwnerAt()` decides whose ground the player stands
+  on. The home hexes win the shared road strip; past it, the neighbour's
+  flower owns the point.
+- **Watch sockets.** `WorldMeshLinks` (`world-mesh.js`) opens
+  `wss://<api>/api/world/ws?watch=1` to up to four neighbours whose centre is
+  within 1700 units (released at 1900). The relay accepts a watcher only from
+  a mesh origin, tags it `watch` and sends a `welcome` snapshot. It then
+  forwards only `join`, `presence`, `move` and `leave` frames, and pings keep
+  the socket alive. Watchers are not participants: they get no avatar, are
+  not counted as online, and have their own cap (`WORLD_MAX_WATCHERS`, 128).
+  Their peers are shifted by the neighbour's offset and drawn in the space
+  `world-mesh`, which carries the district radius. They are named
+  `name@host`, except visitors from this world, who keep their plain name.
+- **Visits.** Stepping onto a neighbour's flower swaps that world's watch
+  socket for a presence socket. The client sends its profile as
+  `town-square`, and its moves after subtracting the offset, so the
+  neighbour's own visitors see it walk in from their edge. Meanwhile the home
+  socket stays open (chat, Office and the rest are unchanged), but its
+  presence switches to the space `visiting` and its moves stop. Home viewers
+  hide `visiting` peers and see the visitor through their own watch socket
+  instead, so nobody is drawn twice. Walking back reverses the swap. A notice
+  says which world you entered or returned to.
+- **Visas (the session trick).** A signed-in user's account lives on their
+  home world only. Before a visit the client asks home for a visa:
+  `POST /api/world/visa {destination}`. It needs a session and an allowed
+  origin, and the destination must be a neighbour in the directory. The visa
+  is an HMAC token over `{name, home, destination, nonce, issuedAt,
+  expiresAt}`, valid for 60 seconds. It travels as `?visa=` on the socket.
+  The destination admits the socket only when its `Origin` is a neighbouring
+  world equal to the visa's `home`. It then posts the visa to
+  `<home api>/api/world/visa/verify` (4-second timeout, redirects refused).
+  Home checks the signature, lifetime and destination and returns the name.
+  The visitor joins as `Registered` under that name, with the visa nonce as
+  its single-use ticket nonce. A guest travels without a visa and joins as a
+  guest. Either way the relay sets the public field `home` to the origin's
+  host. The visitor's account key is namespaced (`name@home`), so it never
+  displaces a local account with the same name. Visitors get no node belt, no
+  face image, no wallet and no admin rights.
+- **Limits.** The page shows at most 32 peers per neighbouring world. Flight
+  and rides keep `WORLD_RADIUS`, so travel is on foot. Peer coordinates on the
+  home socket are clamped to ±1900 (they were ±512, which also clamped people
+  walking the desert ring). Federated relay portals in the fediverse district
+  are a separate list and still open a tab.
 
 ## Activities
 
