@@ -97,6 +97,22 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "start",
     # Referral share links (/r/<name>) are worker-owned counters.
     "r",
+    "admin",
+    "ap",
+    "client-error",
+    "cron-runner",
+    "desktop-error",
+    "developers",
+    "health",
+    "healthz",
+    "readyz",
+    "mcp",
+    "nodeinfo",
+    "oauth",
+    "oauth2",
+    "pitch-deck",
+    "v1",
+    "ws",
 })
 
 RESERVED_ROUTE_PREFIXES = CORE_RESERVED_ROUTE_PREFIXES | PLUGIN_WWW_SITE_ROUTES

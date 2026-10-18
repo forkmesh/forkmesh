@@ -186,6 +186,14 @@ Where the short form is produced:
   through `_git_request_path`. The instance host's 256 MiB push body limit
   (`request_guard.GIT_PUSH_RE`) also matches the one-segment push path.
 
+Server pages that live at the root (`/admin`, `/health`, `/readyz`,
+`/oauth`, `/developers`, `/mcp`, `/nodeinfo`, `/ap`, `/v1`, `/ws` and the
+others in `static_routes.CORE_RESERVED_ROUTE_PREFIXES`) are reserved, so a
+one-segment address never turns them into a repository page. Before they were
+listed, turning canonical mode on made `/admin` render an empty repository
+page named "admin" and the admin console unreachable. A repository whose name
+is reserved keeps its `/<owner>/<repo>` address.
+
 Internal accounts are node accounts (`_account_kind` = `node`): the git
 node `forkmesh`, the Actions bot `<org>-actions`. They keep their
 organization role (the bot stays a maintainer so workflows can push), but the

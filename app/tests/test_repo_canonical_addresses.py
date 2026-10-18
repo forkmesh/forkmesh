@@ -791,3 +791,11 @@ def test_no_dashboard_link_builds_the_owner_form_by_hand():
                     and "url.pathname" not in line:
                 offenders.append("%s:%d" % (path.name, number))
     assert offenders == []
+
+
+@pytest.mark.parametrize("path", [
+    "/admin", "/admin/", "/admin/theme", "/health", "/readyz", "/oauth/x",
+    "/developers", "/mcp", "/nodeinfo/2.0", "/ap/actor", "/v1/runner/acme/Repo.git",
+])
+def test_server_pages_are_never_read_as_a_short_repository(path):
+    assert repo_short_urls.rewrite(path, "acme") is None
