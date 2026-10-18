@@ -302,15 +302,32 @@ struct MessagesBackgroundPicker: View {
     let hub: ChatHub
     @State private var item: PhotosPickerItem?
     @State private var working: Bool = false
+    @State private var sharing: Bool
+
+    init(hub: ChatHub) {
+        self.hub = hub
+        _sharing = State(initialValue: hub.canChangeLook && !hub.conversationOwnBackground)
+    }
+
+    private var shown: ChatLook {
+        let shared: ChatLook = hub.conversationSharedLook
+        return sharing ? shared : shared.shown
+    }
+
+    private var marksChoice: Bool { sharing || hub.conversationOwnBackground }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: FmSpace.x4) {
-                    Text(
-                        hub.inDirect
-                            ? "You both see the background you choose. It travels end-to-end encrypted."
-                            : "Everyone in this conversation sees the background you choose.")
+                    Picker("Who sees it", selection: $sharing) {
+                        Text("Share").tag(true)
+                        Text("Just for me").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(!hub.canChangeLook)
+                    .accessibilityIdentifier("chat-background-share-mode")
+                    Text(explanation)
                         .fmText(.bodyMedium, color: fm.textSecondary)
                     PhotosPicker(selection: $item, matching: .images) {
                         Label("Choose a Photo", systemImage: "photo.on.rectangle")
@@ -320,14 +337,14 @@ struct MessagesBackgroundPicker: View {
                     .buttonStyle(.plain)
                     .disabled(working)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 12) {
-                        tile(label: "None", chosen: !hub.conversationLook.hasBackground) {
+                        tile(label: "None", chosen: marksChoice && !shown.hasBackground) {
                             RoundedRectangle(cornerRadius: 16, style: .continuous).fill(fm.bgBase)
                                 .overlay(Image(systemName: "nosign").foregroundStyle(fm.textTertiary))
                         } action: {
                             apply(ChatLookChange(field: .background))
                         }
                         ForEach(ChatBackgroundCatalog.presets) { (preset: ChatBackgroundPreset) in
-                            tile(label: preset.label, chosen: hub.conversationLook.backgroundPreset == preset.id) {
+                            tile(label: preset.label, chosen: marksChoice && shown.backgroundPreset == preset.id) {
                                 MessagesPresetSwatch(preset: preset)
                                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             } action: {
@@ -368,7 +385,24 @@ struct MessagesBackgroundPicker: View {
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
+    private var explanation: String {
+        if !sharing {
+            return hub.conversationSharedLook.hasBackground
+                ? "Only you see the background you choose here. It covers the shared one on this phone and nothing is sent."
+                : "Only you see the background you choose here. Nothing is sent."
+        }
+        return hub.inDirect
+            ? "You and \(hub.conversationName) both see the background you choose. It travels end-to-end encrypted."
+            : "Everyone in this conversation sees the background you choose."
+    }
+
     private func apply(_ change: ChatLookChange) {
+        if !sharing {
+            hub.setOwnBackground(change)
+            FmHaptics.selection()
+            dismiss()
+            return
+        }
         working = true
         Task { @MainActor in
             let sent: Bool = await hub.setLook(change)

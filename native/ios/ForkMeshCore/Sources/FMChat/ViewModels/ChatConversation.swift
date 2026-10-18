@@ -159,6 +159,18 @@ public enum ChatConversationLayout {
     }
 }
 
+public enum ChatPeerPresence: String, Equatable, Sendable {
+    case online, away, offline
+
+    public var label: String {
+        switch self {
+        case .online: return "Online"
+        case .away: return "Away"
+        case .offline: return "Offline"
+        }
+    }
+}
+
 extension ChatHub {
     public func isConversation(_ conversation: String) -> Bool {
         if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) { return true }
@@ -174,7 +186,21 @@ extension ChatHub {
 
     public var inGroupConversation: Bool { isGroupConversation(relay.currentConversation) }
 
-    public var conversationLook: ChatLook { extras.look(for: relay.currentConversation) }
+    public var conversationLook: ChatLook { extras.look(for: relay.currentConversation).shown }
+
+    public var conversationSharedLook: ChatLook { extras.look(for: relay.currentConversation) }
+
+    public var conversationOwnBackground: Bool { extras.look(for: relay.currentConversation).ownBackground }
+
+    public func setOwnBackground(_ change: ChatLookChange?) {
+        let conversation = relay.currentConversation
+        guard isConversation(conversation) else { return }
+        if let image = change?.image, image.count > ChatLookFrames.maxImageBytes {
+            post("That picture is too large to use.")
+            return
+        }
+        extras.setOwnBackground(conversation, change)
+    }
 
     public var conversationItems: [ChatConversationItem] {
         ChatConversationLayout.items(
@@ -202,6 +228,49 @@ extension ChatHub {
         return relay.roster().first { $0.id == id }
     }
 
+    public var conversationPeerGroup: MemberGroup? { peerGroup(relay.currentConversation) }
+
+    public func peerGroup(_ conversation: String) -> MemberGroup? {
+        let groups = memberGroups.filter { !$0.isSelf }
+        if conversation.hasPrefix("@") {
+            let id = String(conversation.dropFirst())
+            return groups.first { $0.members.contains { $0.id == id } }
+        }
+        guard let direct, DirectMessageFrames.isDirect(conversation) else { return nil }
+        let other = (direct.record(for: conversation)?.otherUser ?? "").lowercased()
+        let peers = direct.devices(conversation).filter { !$0.isOwnAccount && !$0.isSelf && $0.state != .blocked }
+        let nodes = Set(peers.map(\.node).filter { !$0.isEmpty })
+        let accounts = Set(peers.map { $0.acct.lowercased() }.filter { !$0.isEmpty } + (other.isEmpty ? [] : [other]))
+        let matches = groups.filter { group in
+            group.members.contains { nodes.contains($0.id) } || accounts.contains(group.account)
+                || group.members.contains { accounts.contains($0.owner.lowercased()) }
+        }
+        if let match = matches.first(where: \.online) ?? matches.first { return match }
+        guard !other.isEmpty else { return nil }
+        return groups.first { $0.name.lowercased() == other }
+    }
+
+    public func peerActive(_ conversation: String) -> Bool {
+        if !typingNames(in: conversation).isEmpty { return true }
+        if let live, live.partnerMotion(conversation) != nil || live.taps(in: conversation).contains(where: { !$0.isSelf }) {
+            return true
+        }
+        return directRoute(conversation) == .directOnly
+    }
+
+    public func peerPresence(_ conversation: String) -> ChatPeerPresence {
+        let group = peerGroup(conversation)
+        let online: Bool
+        if conversation.hasPrefix("@") {
+            let id = String(conversation.dropFirst())
+            online = relay.roster().first { $0.id == id }?.online == true || group?.online == true
+        } else {
+            online = group?.online == true
+        }
+        if online { return group?.userStatus.away == true ? .away : .online }
+        return peerActive(conversation) ? .online : .offline
+    }
+
     public var conversationName: String {
         let named = conversationLook.name
         if inGroupConversation && !named.isEmpty { return named }
@@ -227,9 +296,7 @@ extension ChatHub {
             let count = conversationMembers.count
             return count == 1 ? "1 person" : "\(count) people"
         }
-        guard let peer = conversationPeer else { return "Offline" }
-        if peer.online && peer.userStatus.away { return "Away" }
-        return peer.online ? "Online" : "Offline"
+        return peerPresence(relay.currentConversation).label
     }
 
     public var conversationPhotos: [ChatAttachment] {
@@ -275,6 +342,7 @@ extension ChatHub {
                 post("The change could not be shared. Check the connection and try again.")
                 return false
             }
+            if change.field == .background { extras.setOwnBackground(conversation, nil) }
             return true
         } else if let office, office.room(for: conversation) != nil {
             sent = await office.postFrame(conversation, type: ChatLookFrames.type, fields: ChatLookFrames.fields(change)) != nil
@@ -284,6 +352,8 @@ extension ChatHub {
         if !sent {
             post("The change could not be shared. Reconnecting...")
             if office?.room(for: conversation) == nil { Task { await relay.connect() } }
+        } else if change.field == .background {
+            extras.setOwnBackground(conversation, nil)
         }
         return sent
     }

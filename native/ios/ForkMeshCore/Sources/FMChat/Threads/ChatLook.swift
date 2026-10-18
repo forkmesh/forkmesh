@@ -38,12 +38,38 @@ public struct ChatLook: Equatable, Sendable {
     public var name = ""
     public var photo: Data?
     public var stamps: [String: ChatLookStamp] = [:]
+    public var ownBackground = false
+    public var ownBackgroundPreset = ""
+    public var ownBackgroundImage: Data?
 
     public init() {}
 
     public var hasBackground: Bool { backgroundImage != nil || ChatBackgroundCatalog.preset(backgroundPreset) != nil }
 
-    public var isEmpty: Bool { stamps.isEmpty }
+    public var isEmpty: Bool { stamps.isEmpty && !ownBackground }
+
+    public var shown: ChatLook {
+        guard ownBackground else { return self }
+        var look = self
+        look.backgroundPreset = ownBackgroundImage == nil ? ownBackgroundPreset : ""
+        look.backgroundImage = ownBackgroundImage
+        return look
+    }
+
+    public func overriding(_ change: ChatLookChange?) -> ChatLook {
+        var look = self
+        guard let change, change.field == .background else {
+            look.ownBackground = false
+            look.ownBackgroundPreset = ""
+            look.ownBackgroundImage = nil
+            return look
+        }
+        look.ownBackground = true
+        look.ownBackgroundImage = change.image.flatMap { $0.isEmpty || $0.count > ChatLookFrames.maxImageBytes ? nil : $0 }
+        look.ownBackgroundPreset =
+            look.ownBackgroundImage == nil && ChatBackgroundCatalog.preset(change.preset) != nil ? change.preset : ""
+        return look
+    }
 }
 
 public struct ChatLookStamp: Equatable, Sendable {
@@ -197,6 +223,11 @@ public enum ChatLookFrames {
         var stamps: JSONObject = [:]
         for (field, stamp) in look.stamps { stamps[field] = .object(["ts": .int(stamp.ts), "id": .string(stamp.id)]) }
         object["st"] = .object(stamps)
+        if look.ownBackground {
+            object["ob"] = true
+            if !look.ownBackgroundPreset.isEmpty { object["obp"] = .string(look.ownBackgroundPreset) }
+            if let image = look.ownBackgroundImage { object["obi"] = .string(image.base64EncodedString()) }
+        }
         return .object(object)
     }
 
@@ -210,6 +241,12 @@ public enum ChatLookFrames {
         for (field, value) in object["st"]?.objectOrEmpty ?? [:] where ChatLookField(rawValue: field) != nil {
             let stamp = value.objectOrEmpty
             look.stamps[field] = ChatLookStamp(ts: stamp["ts"]?.int64Value ?? 0, id: stamp["id"]?.text ?? "")
+        }
+        if object["ob"]?.isTrue == true {
+            look.ownBackground = true
+            let own = object["obp"]?.text ?? ""
+            if ChatBackgroundCatalog.preset(own) != nil { look.ownBackgroundPreset = own }
+            look.ownBackgroundImage = image(object["obi"])
         }
         return look
     }

@@ -31,7 +31,7 @@ enum DirectLiveHaptics {
 @MainActor
 final class DirectLiveMotionFeed {
     static let shared: DirectLiveMotionFeed = DirectLiveMotionFeed()
-    static let rate: Double = 20
+    static let rate: Double = 30
     static let smoothing: Double = 0.1
 
     private let manager: CMMotionManager = CMMotionManager()
@@ -384,7 +384,7 @@ struct MessagesLivePartnerPhone<Avatar: View>: View {
         } label: {
             Group {
                 if sharing || floatingFace {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
+                    TimelineView(.animation(minimumInterval: sharing ? 1.0 / 60.0 : 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
                         phone(
                             sharing ? engine.motion[conversation]?.sample(at: context.date.epochMillis) : nil,
                             time: context.date.timeIntervalSinceReferenceDate)

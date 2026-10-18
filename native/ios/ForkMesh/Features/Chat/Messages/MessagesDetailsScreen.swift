@@ -42,7 +42,7 @@ struct MessagesDetailsScreen: View {
             List {
                 Section { identity }
                     .listRowBackground(Color.clear)
-                if hub.canChangeLook {
+                if hub.canChangeLook || hub.inConversation {
                     Section {
                         Button(action: { background = true }) {
                             HStack {
@@ -54,16 +54,20 @@ struct MessagesDetailsScreen: View {
                                     .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(fm.border, lineWidth: 0.5))
                             }
                         }
-                        if hub.conversationLook.hasBackground {
+                        if hub.conversationOwnBackground {
+                            Button(action: { hub.setOwnBackground(nil) }) {
+                                Label(
+                                    hub.conversationSharedLook.hasBackground ? "Use Shared Background" : "Remove My Background",
+                                    systemImage: "arrow.uturn.backward.circle")
+                            }
+                            .accessibilityIdentifier("chat-background-use-shared")
+                        } else if hub.canChangeLook && hub.conversationSharedLook.hasBackground {
                             Button(role: .destructive, action: { change(ChatLookChange(field: .background)) }) {
                                 Label("Remove Background", systemImage: "xmark.circle")
                             }
                         }
                     } footer: {
-                        Text(
-                            hub.inDirect
-                                ? "A background is shared: you both see it, end-to-end encrypted."
-                                : "A background is shared: everyone in the conversation sees it.")
+                        Text(backgroundFooter)
                     }
                 }
                 if group { peopleSection }
@@ -278,6 +282,17 @@ struct MessagesDetailsScreen: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Photo")
         }
+    }
+
+    private var backgroundFooter: String {
+        if hub.conversationOwnBackground {
+            return hub.conversationSharedLook.hasBackground
+                ? "Only you see this background. It covers the shared one on this phone."
+                : "Only you see this background."
+        }
+        return hub.inDirect
+            ? "Share a background so you both see it, end-to-end encrypted, or choose one just for you."
+            : "Share a background with everyone in the conversation, or choose one just for you."
     }
 
     private func change(_ next: ChatLookChange) {
