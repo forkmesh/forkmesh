@@ -2751,6 +2751,8 @@ def repository_metadata_cache_key(
         if not cacheable_tree_path(path):
             return ""
         canonical_query = {"path": path, "ref": ref}
+    elif operation == "history" and query.get("path"):
+        return ""
     elif operation in {"sizes", "stats", "history"} and ref:
         canonical_query = {"ref": ref}
     elif operation == "blob" and ref:
@@ -6357,6 +6359,7 @@ _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
 _server_update_admin = _LazyModule("server_update_admin")
 repo_short_urls = _LazyModule("repo_short_urls")
+repo_projects = _LazyModule("repo_projects")
 _ids_console = _LazyModule("ids_console")
 # The hackathon growth layer (app/src/hackathon.py is its pure policy half).
 # Lazy for the usual reason -- none of it belongs in the entrypoint's
@@ -49113,7 +49116,7 @@ def _https_mirror_request_query(url, operation, release_sha=""):
         for key in keys:
             if params.get(key):
                 output[key] = params[key][0]
-    elif operation in ("tree", "blob", "raw", "commit"):
+    elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
     # Only operations that resolve a ref accept one. compare/merge-preview

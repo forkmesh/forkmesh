@@ -46,6 +46,10 @@
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
+    const routeQuery = new URLSearchParams(location.search);
+    const routeRef = String(routeQuery.get("ref") || "").trim();
+    if (routeRef) setRepoSelectedBranch(repo, routeRef);
+    state.repoHistoryPath = String(routeQuery.get("path") || "").trim();
     // The Branches page paints a fresh, empty filter box, so a query left
     // over from an earlier visit to this repo must not keep narrowing the
     // list behind it.
@@ -63,7 +67,7 @@
       items: [],
       query: "",
       filters: {
-        author: "", label: "", milestone: "", assignee: "",
+        author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
         mentions: "", involves: "", type: "", sort: "recently_updated",
       },
     };
