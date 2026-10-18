@@ -88,9 +88,11 @@ Shortcuts (`.forkmesh/shortcuts/`):
   `local-<slug>-<random>` id and no server URL; it works on the device alone,
   and choosing an instance is offered, never required. A project row may name a
   `logo` file. The instance check also reads `GET /api/instance`: its `name`
-  replaces "ForkMesh" in the "Connected to …" line, and attaching an instance
-  to a project with no logo (or creating a project on one without picking a
-  logo) saves the instance's `logo`, else its favicon, as the project logo.
+  replaces "ForkMesh" in the "Connected to …" line and, on iOS, fills an empty
+  Name field so a new project or relay is saved under the instance's name, not
+  its host. Attaching an instance to a project with no logo (or creating a
+  project or relay on one without picking a logo) saves the instance's `logo`,
+  else its favicon, as the project logo.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.
@@ -98,6 +100,59 @@ Shortcuts (`.forkmesh/shortcuts/`):
 - **No polling for display.** Screens reload when the account event socket,
   the relay or the local network says something changed.
 - **No toasts.** Feedback shows inline where the action ran.
+- **Calendar saves (iOS, 2026-10-18).** Adding an event on the phone could
+  look like it did nothing or vanish afterwards, though `POST /api/calendar`
+  and its answer matched the server (`app/src/calendar_api.py`). Fixed in
+  `FMPlanning/CalendarModel.swift` and
+  `Features/Planning/Calendar/CalendarScreen.swift`:
+  - `load()` replaced the event list with whatever answer came back last. A
+    list requested before a save (the screen loads on every appear, step and
+    pull) wiped the new event, and a deleted one came back. Each load now has
+    a token, so only the newest answer is applied, and every create, edit,
+    delete and RSVP is recorded with a revision. A list requested before a
+    change gets that change applied on top; once a list requested after the
+    change comes back, the server's copy is used.
+  - The editor greyed out Save for any validation problem (more than five
+    reminders, a meeting link without `https://`, an end before the start)
+    and printed the reason, and any save error, under Notes at the bottom of
+    the form, where nobody saw it. Save now stays on once there is a title.
+    Tapping it shows the problem at the top of the form, scrolls there and
+    plays the warning haptic. A spinner replaces Save while the request runs.
+    The editor shows no error until Save is tapped, so an old "could not be
+    loaded" message no longer appears in a new event.
+  - Edit on a pushed event page set a sheet on the calendar page under it.
+    `CalendarEventScreen` now shows its own editor sheet.
+- **Chat history survives updates and restarts (iOS).** The phone is the only
+  place most chat history can be read again: DMs are deleted from the server
+  once acknowledged and use a per-message ratchet, sealed channel frames can
+  only be opened while the prekey that sealed them is alive (8 days), and a
+  channel's server history holds its last 200 messages. `ChatHistoryStore`
+  keeps it in `Application Support/chat-history/`. Until 2026-10-18 history
+  went missing after an app update for three reasons, all fixed in
+  `ChatHistoryStore.swift`, `ChatHub.swift`, `OfficeChannels.swift` and
+  `AppServices+Chat.swift`:
+  - The file was named after a hash of the relay URL, and launch rewrites the
+    built-in relay's URL to the build's (`RelayDirectory.ensureBuiltIn`) and
+    folds `rooms/general` and the `forkmesh.com` / Next aliases onto
+    `app.forkmesh.com`. A changed URL started an empty file. The file is now
+    named after the project id and room (`ChatHistoryCodec.projectScope`); on
+    first launch the files under every former URL of that relay
+    (`ChatHistoryCodec.formerScopes`) are merged into it and renamed
+    `*.migrated`, which also brings back history a previous update orphaned.
+  - Server-side group channels (`#office/…`, which include `#general`,
+    `#random` and `#welcome`) were never written to disk, so a restart showed
+    only what the server could still give and decrypt. They are saved with the
+    rest and restored into `OfficeChannelService`; a copy from the server
+    replaces the restored one in place.
+  - A sign-out or an expired session (401) cleared the DMs in memory and the
+    next save wrote the file without them. The hub now holds them while signed
+    out and gives them back when the same account signs in again; another
+    account drops them.
+  The store also never overwrites what it could not read: a file that exists
+  but cannot be read yet (data protection before first unlock) blocks writes
+  to it until a later read succeeds, a file that does not parse is renamed
+  `*.unreadable-<ms>` instead of being replaced, and a file from a newer or
+  older build (`v` other than 1) is read field by field instead of discarded.
 
 ## Protocols and interfaces
 
@@ -208,8 +263,8 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - Core tests can fail on macOS where Linux passes; `ios-native-build` runs them
   last so they cannot hide whether the app compiles.
 - On Linux, a synchronous `@MainActor func test…()` in a class that is not
-  `@MainActor` aborts the whole test bundle at discovery. Declare such tests
-  `async`.
+  `@MainActor`, or a synchronous `throws` test in a `@MainActor` class, aborts
+  the whole test bundle at discovery. Declare such tests `async`.
 - Keeping Gemma loaded needs the increased-memory-limit capability enabled in
   the developer portal before it is added to the entitlements, or the export
   finds no matching profile.

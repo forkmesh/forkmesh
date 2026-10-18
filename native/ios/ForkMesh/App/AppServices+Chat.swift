@@ -23,9 +23,14 @@ struct ChatInstaller: AppServicesInstaller {
         let api: ApiService? = Services.get(ApiService.self)
 
         if let directory = ChatHistoryStore.defaultDirectory(), let settings = settings {
-            hub.attachHistory(ChatHistoryStore(directory: directory)) {
-                ChatHistoryCodec.scopeName(serverUrl: settings.serverUrl, room: settings.room)
-            }
+            hub.attachHistory(
+                ChatHistoryStore(directory: directory),
+                scope: {
+                    let project: String = settings.relays.activeId
+                    return ChatHistoryCodec.projectScope(
+                        projectId: project.isEmpty ? settings.serverUrl : project, room: settings.room)
+                },
+                formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) })
         }
         if let prefs = Services.get(KeyValueStore.self), let settings = settings {
             Services.put(
@@ -66,6 +71,7 @@ struct ChatInstaller: AppServicesInstaller {
             hub.apps = api.appsClient
             Services.put(office)
             Services.put(direct)
+            hub.directSessionChanged(account: auth?.session?.nodeName ?? "")
             if !(auth?.session?.sessionToken ?? "").isEmpty {
                 restoreRooms()
                 Task {
@@ -84,12 +90,14 @@ struct ChatInstaller: AppServicesInstaller {
                     MainActor.assumeIsolated {
                         hub.resetAppCommands(clearReplies: (auth.session?.sessionToken ?? "").isEmpty)
                         if (auth.session?.sessionToken ?? "").isEmpty {
+                            hub.directSessionChanged(account: "")
                             Task { await office.closeAll() }
                             Task { await direct.clear() }
                             DirectLiveMotionFeed.shared.stop()
                             live.clear()
                             readMarks.clear()
                         } else {
+                            hub.directSessionChanged(account: auth.session?.nodeName ?? "")
                             restoreRooms()
                             Task {
                                 await office.load()

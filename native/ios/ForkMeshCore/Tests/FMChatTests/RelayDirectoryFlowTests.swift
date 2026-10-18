@@ -74,6 +74,14 @@ final class RelayProbeTests: XCTestCase {
         }.check("relay.acme.dev")
         XCTAssertEqual(named.message, "Connected to Acme Code 1.2.0.")
         XCTAssertEqual(named.logoUrl, "https://relay.acme.dev/instance-logo.png")
+        XCTAssertEqual(named.profile?.label, "Acme Code")
+        let labelled = await probe { request in
+            if request.url.path == "/api/instance" {
+                return versionResponse(body: ["ok": true, "name": "Acme Code", "logo": "/instance-logo.png"])
+            }
+            return versionResponse()
+        }.check("relay.acme.dev", label: "Work")
+        XCTAssertEqual(labelled.profile?.label, "Work")
         let offsite = await probe { request in
             if request.url.path == "/api/instance" {
                 return versionResponse(body: ["ok": true, "name": "Acme Code", "logo": "//evil.example.com/x.png"])
@@ -86,6 +94,7 @@ final class RelayProbeTests: XCTestCase {
         }.check("relay.acme.dev")
         XCTAssertTrue(older.ok)
         XCTAssertEqual(older.message, "Connected to ForkMesh 1.2.0.")
+        XCTAssertEqual(older.profile?.label, "relay.acme.dev")
         XCTAssertEqual(older.logoUrl, "")
     }
 
@@ -662,6 +671,20 @@ final class RelaySettingsModelTests: XCTestCase {
         XCTAssertNil(add.result)
     }
 
+    func testAnUnnamedRelayTakesTheInstanceName() async throws {
+        let h = try await SwitchHarness.make()
+        let add = AddRelayModel(relays: h.device.settings.relays, probe: RelayProbe(http: FakeHTTPClient { request in
+            if request.url.path == "/api/instance" { return versionResponse(body: ["ok": true, "name": "Acme Code"]) }
+            return versionResponse()
+        }))
+        add.host = "relay.example.com"
+        await add.check()
+        XCTAssertEqual(add.label, "Acme Code")
+        add.label = "Acme"
+        let saved = try XCTUnwrap(add.add())
+        XCTAssertEqual(saved.label, "Acme")
+    }
+
     func testADuplicateHostIsRefusedBeforeAnyRequest() async throws {
         let h = try await SwitchHarness.make()
         let http = FakeHTTPClient { _ in versionResponse() }
@@ -795,6 +818,20 @@ final class AddProjectModelTests: XCTestCase {
         XCTAssertEqual(created.id, "staging.forkmesh.com")
         XCTAssertEqual(created.label, "Staging")
         XCTAssertEqual(relays.byId("staging.forkmesh.com")?.logo, "s.png")
+    }
+
+    @MainActor
+    func testAnUnnamedProjectTakesTheInstanceName() async throws {
+        let relays = directory()
+        let model = AddProjectModel(relays: relays, probe: probe { request in
+            if request.url.path == "/api/instance" { return versionResponse(body: ["ok": true, "name": "Acme Code"]) }
+            return versionResponse()
+        })
+        model.host = "relay.acme.dev"
+        await model.check()
+        XCTAssertEqual(model.name, "Acme Code")
+        let created = try XCTUnwrap(model.create())
+        XCTAssertEqual(created.label, "Acme Code")
     }
 }
 

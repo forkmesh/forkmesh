@@ -278,13 +278,15 @@ public final class AddRelayModel {
         if current != generation { return }
         checking = false
         result = outcome
+        if outcome.ok, label.dartTrimmed.isEmpty { label = outcome.instanceName }
     }
 
     /// Saves the verified relay (never switches to it); nil when nothing verified.
     public func add() -> RelayProfile? {
         if let known { return known }
         guard let verified = result?.profile else { return nil }
-        return relays.add(verified)
+        let name = label.dartTrimmed
+        return relays.add(name.isEmpty ? verified : verified.copyWith(label: name))
     }
 
     public static let intro =
@@ -345,6 +347,7 @@ public final class AddProjectModel {
         if current != generation { return }
         checking = false
         result = outcome
+        if outcome.ok, cleanName.isEmpty { name = outcome.instanceName }
     }
 
     public func create(logo: String = "") -> RelayProfile? {

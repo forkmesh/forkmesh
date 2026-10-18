@@ -1415,6 +1415,7 @@ public final class DirectMessageService {
         await closeAll()
         records = []
         history = [:]
+        seen = [:]
         nextCursor = ""
         pinned = []
         backoff = [:]

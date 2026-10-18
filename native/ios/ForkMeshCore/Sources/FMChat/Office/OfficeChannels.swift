@@ -231,6 +231,7 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingDeleteOrder: [String] = []
     @ObservationIgnored private var removedIds: Set<String> = []
     @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
+    @ObservationIgnored public var onChange: (@MainActor () -> Void)?
 
     public private(set) var rooms: [OfficeRoom] = []
     public private(set) var loading = false
@@ -259,6 +260,24 @@ public final class OfficeChannelService {
     public func room(for conversation: String) -> OfficeRoom? { rooms.first { $0.conversation == conversation } }
 
     public func messages(_ conversation: String) -> [ChatMessage] { history[conversation] ?? [] }
+
+    public var historySnapshot: [String: [ChatMessage]] { history }
+
+    public func restore(_ messages: [ChatMessage]) {
+        var changed = false
+        for message in messages where OfficeFrames.isOffice(message.conversation) && !isGone(message.id) {
+            if isExpired?(retentionKey(message.conversation), message.timestamp) == true { continue }
+            var list = history[message.conversation] ?? []
+            if list.contains(where: { $0.id == message.id }) { continue }
+            var at = list.count
+            while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
+            list.insert(message, at: at)
+            if list.count > OfficeFrames.maxMessagesPerRoom { list.removeFirst(list.count - OfficeFrames.maxMessagesPerRoom) }
+            history[message.conversation] = list
+            changed = true
+        }
+        if changed { onChange?() }
+    }
 
     public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
 
@@ -429,6 +448,7 @@ public final class OfficeChannelService {
         removedIds.insert(id)
         receipts.removeValue(forKey: id)
         onRemoved?(conversation, id)
+        onChange?()
     }
 
     public func retentionKey(_ conversation: String) -> String {
@@ -446,6 +466,7 @@ public final class OfficeChannelService {
             changed = true
             history[conversation] = kept.isEmpty ? nil : kept
         }
+        if changed { onChange?() }
         return changed
     }
 
@@ -464,11 +485,18 @@ public final class OfficeChannelService {
         ids.insert(message.id)
         seen[roomId] = ids
         var list = history[message.conversation] ?? []
+        if let restored = list.firstIndex(where: { $0.id == message.id }) {
+            list[restored] = message
+            history[message.conversation] = list
+            onChange?()
+            return false
+        }
         var at = list.count
         while at > 0 && RelayService.compareMessages(list[at - 1], message) > 0 { at -= 1 }
         list.insert(message, at: at)
         if list.count > OfficeFrames.maxMessagesPerRoom { list.removeFirst(list.count - OfficeFrames.maxMessagesPerRoom) }
         history[message.conversation] = list
+        onChange?()
         return true
     }
 

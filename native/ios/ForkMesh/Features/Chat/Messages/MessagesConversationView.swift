@@ -325,8 +325,8 @@ struct MessagesConversationView<Drawer: View>: View {
         if let live = hub.live, hub.inDirect, !hub.inGroupConversation {
             MessagesLivePartnerPhone(
                 engine: live, conversation: hub.relay.currentConversation, name: hub.conversationName, dark: palette.dark
-            ) {
-                MessagesConversationAvatar(hub: hub, size: 22)
+            ) { (size: CGFloat) in
+                MessagesConversationAvatar(hub: hub, size: size)
             }
         }
     }

@@ -433,7 +433,28 @@ struct ShellBarItem: Identifiable {
     var active: Bool = false
     var count: Int?
     var live: Int = 0
+    var progress: ShellBarProgress?
     var action: () -> Void
+}
+
+struct ShellBarProgress: Equatable, Sendable {
+    var startedAtMs: Int64
+    var expectedMs: Int64
+
+    var estimated: Bool { startedAtMs > 0 && expectedMs > 0 }
+
+    func fraction(nowMs: Int64) -> Double? {
+        guard estimated else { return nil }
+        return min(0.99, max(0, Double(nowMs - startedAtMs) / Double(expectedMs)))
+    }
+
+    static func nowMs(_ date: Date = Date()) -> Int64 { Int64(date.timeIntervalSince1970 * 1000) }
+
+    static func latest(_ runs: [ShellBarProgress]) -> ShellBarProgress? {
+        guard !runs.isEmpty else { return nil }
+        if let unknown = runs.first(where: { !$0.estimated }) { return unknown }
+        return runs.max { $0.startedAtMs + $0.expectedMs < $1.startedAtMs + $1.expectedMs }
+    }
 }
 
 enum ShellPage: Equatable, Sendable {
@@ -658,7 +679,11 @@ struct ShellBottomBar: View {
             return new.isEmpty ? live : live + ", " + new
         }
         guard item.active else { return new }
-        return new.isEmpty ? "Active" : "Active, " + new
+        var state: String = "Active"
+        if let fraction = item.progress?.fraction(nowMs: ShellBarProgress.nowMs()) {
+            state = "Running, \(Int(fraction * 100)) percent"
+        }
+        return new.isEmpty ? state : state + ", " + new
     }
 
     static func countText(_ count: Int) -> String {
@@ -717,6 +742,7 @@ struct ShellBottomBar: View {
 
 struct ShellBarCellLabel: View {
     @Environment(\.fmPalette) var fm
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     let item: ShellBarItem
     let iconSize: CGFloat
@@ -741,12 +767,22 @@ struct ShellBarCellLabel: View {
 
     private var homeMarks: Bool { look.marks == .home }
 
+    private var ringShown: Bool { item.progress != nil && activity }
+
+    private var ringSize: CGFloat { tiled ? tileSide - 5 : iconSize + 10 }
+
     var body: some View {
         VStack(spacing: spacing) {
             glyph
                 .frame(width: homeMarks ? glyphHeight : nil, height: glyphHeight)
+                .overlay {
+                    if let progress = item.progress, activity {
+                        ShellBarProgressRing(progress: progress, size: ringSize, lineWidth: tiled ? 1.75 : 2)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
                 .background {
-                    if item.active && activity {
+                    if item.active && activity && !ringShown {
                         activityMark
                             .transition(.scale.combined(with: .opacity))
                     } else if heat > 0 {
@@ -889,6 +925,8 @@ struct ShellBarCellLabel: View {
             .font(.system(size: tiled ? iconSize * 0.82 : iconSize, weight: item.selected ? .semibold : .regular))
             .symbolVariant(look.icons == .filled ? .fill : .none)
             .foregroundStyle(glyphColor)
+            .scaleEffect(ringShown ? 0.78 : 1)
+            .animation(reduceMotion ? nil : .snappy, value: ringShown)
             .symbolEffect(.bounce, value: item.pulse)
     }
 
@@ -999,6 +1037,39 @@ struct ShellHeartbeatCount: View {
                 .background(Capsule().fill(fm.bgBase))
                 .scaleEffect(1 + 0.22 * beat)
         }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct ShellBarProgressRing: View {
+    @Environment(\.fmPalette) var fm
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
+    static let sweep: CGFloat = 0.28
+
+    let progress: ShellBarProgress
+    let size: CGFloat
+    var lineWidth: CGFloat = 2
+
+    var body: some View {
+        TimelineView(
+            .animation(minimumInterval: progress.estimated ? 0.5 : 1.0 / 30.0, paused: reduceMotion && !progress.estimated)
+        ) { (context: TimelineViewDefaultContext) in
+            let fraction: Double? = progress.fraction(nowMs: ShellBarProgress.nowMs(context.date))
+            let t: Double = context.date.timeIntervalSinceReferenceDate
+            let spin: Double = reduceMotion ? 0 : t.truncatingRemainder(dividingBy: ShellActivityHalo.turn) / ShellActivityHalo.turn
+            ZStack {
+                Circle()
+                    .stroke(fm.accent.opacity(0.18), lineWidth: lineWidth)
+                Circle()
+                    .trim(from: 0, to: fraction.map { CGFloat($0) } ?? ShellBarProgressRing.sweep)
+                    .stroke(fm.accent, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(fraction == nil ? 360 * spin - 90 : -90))
+                    .animation(fraction == nil || reduceMotion ? nil : .linear(duration: 0.5), value: fraction)
+            }
+        }
+        .frame(width: size, height: size)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

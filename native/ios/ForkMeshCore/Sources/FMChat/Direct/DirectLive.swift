@@ -123,7 +123,7 @@ public enum DirectLiveFrames {
     public static let inkFadeMs: Int64 = 5_000
     public static let tapLifeMs: Int64 = 1_400
     public static let motionQuietMs: Int64 = 4_000
-    public static let motionPlaybackMarginMs: Int64 = 120
+    public static let motionPlaybackMarginMs: Int64 = 100
     public static let motionKeepMs: Int64 = 1_500
     public static let maxStrokeWidth = 24.0
     public static let colors: [UInt32] = [0xFFFFFF, 0xFF453A, 0xFF9F0A, 0xFFD60A, 0x32D74B, 0x64D2FF, 0xBF5AF2, 0x000000]
@@ -403,7 +403,7 @@ public final class DirectLiveEngine {
             .compactMap { DirectLiveFrames.decodeMotion($0, base: base) }.sorted { $0.at < $1.at }
         guard let first = incoming.first, let last = incoming.last else { return }
         let span = max(0, last.at - first.at)
-        let shift = received + DirectLiveFrames.motionPlaybackMarginMs - first.at
+        let shift = received + DirectLiveFrames.motionPlaybackMarginMs - last.at
         var samples = track.samples.filter { $0.at < first.at + shift }
         samples.append(contentsOf: incoming.map { $0.shifted(to: $0.at + shift) })
         let keepFrom = received - DirectLiveFrames.motionKeepMs

@@ -76,6 +76,17 @@ final class ShellNavigatorCounts {
         }
     }
 
+    func progress(_ kind: Route.Kind) -> ShellBarProgress? {
+        guard kind == .shortcuts, let store = TeammatesFeature.shortcuts else { return nil }
+        let runs: [ShellBarProgress] = store.runs.values.filter(\.running).map {
+            ShellBarProgress(startedAtMs: $0.startedAtMs, expectedMs: $0.expectedMs)
+        }
+        let entries: [ShellBarProgress] = (store.catalog?.entries ?? []).filter(\.running).map {
+            ShellBarProgress(startedAtMs: $0.startedAtMs, expectedMs: $0.expectedMs)
+        }
+        return ShellBarProgress.latest(runs + entries)
+    }
+
     static let fetchable: [Route.Kind] = [
         .repos, .notes, .tasks, .calendar, .orgs, .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .admin,
         .crm, .marketing, .analytics,

@@ -285,7 +285,13 @@ What is still not covered (audit 2026-10-14):
 - View-once tombstone rows (sender, recipient, size, times) are kept 30 days;
   self-hosted SQLite has no `secure_delete`.
 - Chat history JSON (text and file names, no file bytes) uses
-  until-first-unlock protection. Since v3 it is excluded from backups.
+  until-first-unlock protection. Since v3 it is excluded from backups, so it
+  survives app and iOS updates (the file stays in Application Support) but not
+  a restore onto a new or erased phone. Keeping it out of backups is the v3
+  privacy choice: an unencrypted iTunes/Finder backup or iCloud backup would
+  otherwise carry readable chat text, and iOS has no per-file "encrypted
+  backups only" flag. Why history used to vanish after an app update, and the
+  fix, is in [../native/README.md](../native/README.md#architecture).
 - The desktop writes received files up to 512 KB in plaintext into its chat
   history; Android leaves `cacheDir/chat-media/` behind.
 
@@ -301,6 +307,25 @@ every `ROOM_LIVE_ACCESS_RECHECK_MS`. On join the relay announces
 `{"kind":"forkmesh-live","v":1,"perWindow":150,"windowMs":10000}` and clients
 pace themselves from it. A shared DM background is a sealed persisted `look`
 frame.
+
+On iOS the other person's phone shows in the DM header as a phone outline
+that follows their gravity samples:
+
+- The phone draws as its owner sees it. Roll turns it in its own plane first,
+  then pitch tilts the top away. Tilting back leans the top away; tilting
+  right leans it clockwise. Pitch is capped at about 69° so a phone lying flat
+  still shows as a thin slab rather than disappearing edge-on.
+- The icon has no glass circle so the outline can fill the 44 pt control.
+  Tapping it opens a sheet with a large copy that moves the same way. Tapping
+  the large copy sends a tap, and the sheet holds the Floating 3D Face toggle.
+- Senders sample at 60 Hz. Receivers time each batch from its newest sample:
+  that sample plays `motionPlaybackMarginMs` (100 ms) after the batch arrives,
+  and older ones play before it. A new batch lands about one send interval
+  (88 ms at 150 frames per 10 s) later, so playback stays smooth. The pose is
+  about 100 ms behind the sender. Before this change, timing came from the
+  oldest sample with a 120 ms margin, which put the pose a whole batch further
+  behind. If a batch arrives late, the pose holds and then catches up; the
+  delay does not build up.
 
 ## View-once video and voice messages
 

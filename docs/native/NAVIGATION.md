@@ -134,6 +134,16 @@ destination, in sections, with counts and activity:
   (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
   with live work (`ShellBarItem.active`) show an activity halo drawn from a
   `TimelineView` (30 fps cap, still with Reduce Motion).
+- While a shortcut runs, the Shortcuts icon swaps that halo for a circular
+  progress bar (`ShellBarProgressRing`) drawn inside the icon's cell, around
+  the glyph (inside the tile when icons are tiles), and the glyph shrinks to
+  78% to make room. `ShellNavigatorCounts.progress` reads the running runs and
+  catalog entries of `ShortcutsStore` (`startedAtMs`, `expectedMs`, the last
+  run's duration) and keeps the one expected to finish last; the ring fills
+  as `elapsed / expected`, capped at 99% like the Shortcuts page's bar, and
+  updates twice a second. With no earlier run to estimate from it spins a
+  short arc instead. It follows the Show activity setting, and VoiceOver reads
+  "Running, N percent". The operator asked for it on 2026-10-18.
 - The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
   once per turn of the activity ring (`ShellActivityHalo.turn`), when the
   ring's bright head passes the top-left corner where the count sits
@@ -161,6 +171,15 @@ destination, in sections, with counts and activity:
   (`PackageGate.packageId(for:)`), its Market page, or installing it. The
   operator asked for the dot on 2026-10-16, and on 2026-10-17 for it to show
   on every unopened plugin after a new install.
+- **Clear all update dots.** Long-pressing Home's empty background (half a
+  second, `ShellHome.backgroundHold`, not while dragging a tile) opens a menu
+  with **Clear all update dots**, **Home settings…** and **Bottom bar
+  settings…**. Clearing calls `AccountPackagesStore.markAllViewed()`, which
+  records every package's latest version as seen, so the dots return only when
+  a new version is published. The same item appears in the tile and section
+  long-press menus while any dot shows. The background fills at least one
+  screen (`minHeight: viewHeight`) so the space below a short grid answers the
+  press. The operator asked for it on 2026-10-18.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
