@@ -227,14 +227,17 @@ public struct RelayProbe: Sendable {
 
         let rev = RelayProbe.dartText(body["rev"])
         let instance = await describe(candidate)
+        let instanceName = RelayProbe.dartText(instance["name"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = candidate.label == candidate.id && !instanceName.isEmpty ? instanceName : candidate.label
         return RelayProbeResult(
             status: .ok,
-            profile: candidate.copyWith(verifiedAt: clock.nowMillis, verifiedRev: rev, features: features),
+            profile: candidate.copyWith(
+                label: label, verifiedAt: clock.nowMillis, verifiedRev: rev, features: features),
             rev: rev,
             version: RelayProbe.dartText(body["version"]),
             statusCode: response.status,
             features: features,
-            instanceName: RelayProbe.dartText(instance["name"]).trimmingCharacters(in: .whitespacesAndNewlines),
+            instanceName: instanceName,
             logoUrl: RelayProbe.logoUrl(candidate, RelayProbe.dartText(instance["logo"])))
     }
 
