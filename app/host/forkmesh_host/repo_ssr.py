@@ -451,6 +451,14 @@ def _when(value):
     return html.escape(text[:10])
 
 
+def raw_prefix(data):
+    return "/api/repo/%s/%s/raw?ref=%s&path=" % (
+        urllib.parse.quote(data["owner"], safe=""),
+        urllib.parse.quote(data["repo"], safe=""),
+        urllib.parse.quote(str(data.get("ref") or data.get("commit") or ""),
+                           safe=""))
+
+
 def render_view(data, short=False):
     owner, repo = data["owner"], data["repo"]
     base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
@@ -492,7 +500,7 @@ def render_view(data, short=False):
             if blob.get("encoding") != "base64" else ""
         body = ("<pre>%s</pre>" % html.escape(text)
                 if name.lower().endswith(".txt")
-                else markdown_html(text, base))
+                else markdown_html(text, base, raw_prefix(data)))
         readme = ('<div class="fm-ssr-box fm-ssr-readme">'
                   '<h2 class="fm-ssr-file">%s</h2>'
                   '<div class="fm-ssr-md" data-repo-readme-body>%s</div>'
@@ -509,18 +517,81 @@ def render_view(data, short=False):
 
 
 # -- a small, escaping Markdown subset --------------------------------------
-# Enough for a README to read well until the dashboard's own renderer takes
-# over: headings, paragraphs, lists, quotes, fenced code, inline code,
-# emphasis and links. Raw HTML is shown as text (never interpreted), images
-# become their alt text, and only http(s), mailto and relative links are
-# kept (relative ones resolve inside the repository, like the dashboard).
 
 _INLINE_CODE = re.compile(r"`([^`]+)`")
-_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_CODE_SPAN = re.compile(r"(`+[^`]*`+)")
+_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]*)\)")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _BOLD = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
 _ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])")
-_TAG = re.compile(r"<[^>\n]{1,400}>")
+_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_A_TAG = re.compile(r"<a\b([^>]*)>(.*?)</a\s*>", re.I | re.S)
+_BLOCK_TAG = re.compile(
+    r"</?(?:p|div|center|section|summary|details|ul|ol|li|table|tbody|thead|tr"
+    r"|blockquote|picture|h[1-6])\b[^>]*>", re.I)
+_ANY_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?/?>")
+_SIZE_HINT = re.compile(r"#w=(\d{1,4})(?:x(\d{1,4}))?$")
+_RAW_BLOCK = re.compile(r"^\s*<[a-zA-Z!/]")
+_CENTRED = re.compile(r"<center\b|\balign\s*=\s*[\"']?center", re.I)
+IMAGE_CLASS = "my-2 inline-block max-w-full rounded-md border border-border"
+
+
+def _attr(tag, name):
+    match = re.search(r"(?<![\w-])%s\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"
+                      % name, tag, re.I)
+    if not match:
+        return ""
+    return match.group(1) if match.group(1) is not None else (
+        match.group(2) if match.group(2) is not None else match.group(3))
+
+
+def _markdown_url(url):
+    return url.strip().replace(" ", "%20").replace(")", "%29")
+
+
+def _flatten_html(text, block=True):
+    def image(match):
+        tag = match.group(0)
+        source = _markdown_url(html.unescape(_attr(tag, "src")))
+        if not source:
+            return ""
+        hint = ""
+        width, height = _attr(tag, "width"), _attr(tag, "height")
+        if width.isdigit() and 0 < int(width) < 10000 and "#" not in source:
+            hint = "#w=%d" % int(width)
+            if height.isdigit() and 0 < int(height) < 10000:
+                hint += "x%d" % int(height)
+        alt = re.sub(r"[\[\]]", "", html.unescape(_attr(tag, "alt")))
+        return "![%s](%s%s)" % (alt, source, hint)
+
+    def link(match):
+        label = match.group(2).strip()
+        href = _markdown_url(html.unescape(_attr(match.group(1), "href")))
+        if not label:
+            return ""
+        return "[%s](%s)" % (label, href) if href else label
+
+    text = _COMMENT.sub("", text)
+    text = _IMG_TAG.sub(image, text)
+    text = _A_TAG.sub(link, text)
+    text = re.sub(r"</?(?:strong|b)\s*>", "**", text, flags=re.I)
+    text = re.sub(r"</?(?:em|i)\s*>", "*", text, flags=re.I)
+    text = re.sub(r"</?(?:code|tt)\s*>", "`", text, flags=re.I)
+    text = re.sub(r"<br\s*/?>", "\n" if block else " ", text, flags=re.I)
+    if block:
+        text = re.sub(r"<hr\s*/?>", "\n\n---\n\n", text, flags=re.I)
+        text = re.sub(r"<h([1-6])\b[^>]*>",
+                      lambda m: "\n\n%s " % ("#" * int(m.group(1))), text,
+                      flags=re.I)
+        text = _BLOCK_TAG.sub("\n\n", text)
+    text = _ANY_TAG.sub("", text)
+    return html.unescape(text)
+
+
+def _flatten_inline(text):
+    return "".join(part if index % 2 else _flatten_html(part, block=False)
+                   for index, part in enumerate(_CODE_SPAN.split(text)))
 
 
 def _safe_href(url, base):
@@ -537,16 +608,61 @@ def _safe_href(url, base):
     return "%s/blob/%s" % (base, url.lstrip("./"))
 
 
-def _inline(text, base):
+def _image_src(url, raw):
+    lowered = url.lower()
+    if lowered.startswith(("https://", "http://")):
+        return url
+    if re.match(r"^[a-z][a-z0-9+.-]*:", lowered) or url.startswith(("//", "#")):
+        return ""
+    if url.startswith("/"):
+        return url
+    if not raw:
+        return ""
+    parts = []
+    for part in url.split("?", 1)[0].split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(urllib.parse.unquote(part))
+    return raw + urllib.parse.quote("/".join(parts), safe="") if parts else ""
+
+
+def _image_html(alt, url, raw):
+    hint = _SIZE_HINT.search(url)
+    target = url[:hint.start()] if hint else url
+    source = _image_src(target, raw)
+    if not source:
+        return html.escape(alt)
+    size = ""
+    if hint:
+        size = ' width="%s"' % hint.group(1)
+        if hint.group(2):
+            size += ' height="%s"' % hint.group(2)
+    external = ' referrerpolicy="no-referrer"' \
+        if source.lower().startswith("http") else ""
+    return ('<img src="%s" alt="%s"%s%s class="%s" loading="lazy" '
+            'decoding="async">' % (html.escape(source), html.escape(alt), size,
+                                   external, IMAGE_CLASS))
+
+
+def _inline(text, base, raw=""):
     codes = []
 
     def keep_code(match):
         codes.append("<code>%s</code>" % html.escape(match.group(1)))
         return "\x00%d\x00" % (len(codes) - 1)
 
-    text = _INLINE_CODE.sub(keep_code, text)
-    text = _TAG.sub("", text)
-    text = _IMAGE.sub(lambda m: "\x01%s\x02" % m.group(1), text)
+    text = _INLINE_CODE.sub(keep_code, _flatten_inline(text))
+    images = []
+
+    def keep_image(match):
+        images.append(_image_html(match.group(1), match.group(2), raw))
+        return "\x01%d\x01" % (len(images) - 1)
+
+    text = _IMAGE.sub(keep_image, text)
     links = []
 
     def keep_link(match):
@@ -561,13 +677,14 @@ def _inline(text, base):
     text = _BOLD.sub(lambda m: "<strong>%s</strong>" % (m.group(1) or m.group(2)),
                      text)
     text = _ITALIC.sub(lambda m: "<em>%s</em>" % m.group(1), text)
-    text = text.replace("\x01", "").replace("\x02", "")
     text = re.sub("\x03(\\d+)\x03", lambda m: links[int(m.group(1))], text)
+    text = re.sub("\x01(\\d+)\x01", lambda m: images[int(m.group(1))], text)
     return re.sub("\x00(\\d+)\x00", lambda m: codes[int(m.group(1))], text)
 
 
-def markdown_html(source, base):
+def markdown_html(source, base, raw="", depth=0):
     out = []
+    source = re.sub("[\x00-\x03]", "", source)
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     paragraph = []
     lists = None  # ("ul"|"ol", [items])
@@ -576,12 +693,12 @@ def markdown_html(source, base):
     def flush():
         nonlocal paragraph, lists
         if paragraph:
-            out.append("<p>%s</p>" % _inline(" ".join(paragraph), base))
+            out.append("<p>%s</p>" % _inline(" ".join(paragraph), base, raw))
             paragraph = []
         if lists:
             tag, items = lists
             out.append("<%s>%s</%s>" % (tag, "".join(
-                "<li>%s</li>" % _inline(item, base) for item in items), tag))
+                "<li>%s</li>" % _inline(item, base, raw) for item in items), tag))
             lists = None
 
     while i < len(lines):
@@ -600,12 +717,23 @@ def markdown_html(source, base):
                 "\n".join(block)))
             i += 1
             continue
+        if depth < 2 and _RAW_BLOCK.match(line):
+            flush()
+            block = []
+            while i < len(lines) and lines[i].strip():
+                block.append(lines[i])
+                i += 1
+            text = "\n".join(block)
+            rendered = markdown_html(_flatten_html(text), base, raw, depth + 1)
+            out.append('<div class="text-center">%s</div>' % rendered
+                       if _CENTRED.search(text) else rendered)
+            continue
         heading = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", stripped)
         if heading:
             flush()
             level = len(heading.group(1))
             out.append("<h%d>%s</h%d>" % (level, _inline(heading.group(2),
-                                                        base), level))
+                                                        base, raw), level))
         elif not stripped or re.match(r"^(-{3,}|\*{3,}|_{3,})$", stripped):
             flush()
             if stripped:
@@ -615,7 +743,7 @@ def markdown_html(source, base):
             ordered = bool(re.match(r"^\s*\d+[.)]\s+", line))
             tag = "ol" if ordered else "ul"
             if paragraph:
-                out.append("<p>%s</p>" % _inline(" ".join(paragraph), base))
+                out.append("<p>%s</p>" % _inline(" ".join(paragraph), base, raw))
                 paragraph = []
             if lists and lists[0] != tag:
                 flush()
@@ -629,7 +757,7 @@ def markdown_html(source, base):
                 quote.append(lines[i].strip()[1:].strip())
                 i += 1
             out.append("<blockquote><p>%s</p></blockquote>" % _inline(
-                " ".join(quote), base))
+                " ".join(quote), base, raw))
             continue
         elif lists and line.startswith(("  ", "\t")):
             lists[1][-1] += " " + stripped

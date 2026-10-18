@@ -160,7 +160,7 @@ def test_a_canonical_short_view_names_and_links_only_the_repository():
     assert 'href="/Bolt/blob/README.md"' in view
     assert 'href="/Bolt/tree/app"' in view
     assert 'href="/Bolt/blob/docs/a.md"' in view
-    assert "acme-bolt" not in view
+    assert "acme-bolt" not in re.sub(r'src="/api/repo/acme-bolt/Bolt/raw[^"]*"', "", view)
     long = repo_ssr.inject(repo_page(), short_data())
     assert ('<a href="/acme-bolt">acme-bolt</a> / <a href="/acme-bolt/Bolt">Bolt</a>'
             in long)
@@ -217,3 +217,48 @@ def test_a_short_address_page_gets_its_first_view_with_short_links():
             "owner"] == "acme-bolt"
     _answer, other = asyncio.run(main("Other"))
     assert repo_ssr.PLACEHOLDER in other and "fm-ssr-title" not in other
+
+
+RAW = "/api/repo/acme-bolt/Bolt/raw?ref=main&path="
+
+
+def test_readme_html_avatars_render_as_linked_images():
+    out = repo_ssr.markdown_html(
+        '<a href="https://github.com/alice" title="alice"><img src="https://github.com/alice.png?size=60" '
+        'width="50" height="50" alt="alice"></a> <a href="https://github.com/bob">'
+        '<img src="https://github.com/bob.png?size=60" width="50" height="50" alt="bob"></a>\n',
+        "/Bolt", RAW)
+    assert "undefined" not in out
+    assert out.count("<img ") == 2
+    assert ('<a href="https://github.com/alice"><img src="https://github.com/alice.png?size=60" '
+            'alt="alice" width="50" height="50"') in out
+    assert 'referrerpolicy="no-referrer"' in out
+
+
+def test_readme_relative_and_centred_images_use_the_raw_endpoint():
+    out = repo_ssr.markdown_html(
+        '<p align="center"><img src="bolt-b/logo.png" alt="Logo" width="140" height="140"></p>\n\n'
+        "![shot](./docs/a%20b.png) [![badge](https://e.example/b.svg)](https://e.example)\n",
+        "/Bolt", RAW)
+    assert out.startswith('<div class="text-center"><p><img src="'
+                          '/api/repo/acme-bolt/Bolt/raw?ref=main&amp;path=bolt-b%2Flogo.png"')
+    assert 'width="140" height="140"' in out
+    assert "path=docs%2Fa%20b.png" in out
+    assert '<a href="https://e.example"><img src="https://e.example/b.svg" alt="badge"' in out
+    assert repo_ssr.markdown_html("![x](logo.png)", "/Bolt") == "<p>x</p>"
+
+
+def test_readme_raw_html_stays_sanitized():
+    out = repo_ssr.markdown_html(
+        '<a href="javascript:alert(1)" onclick="x"><img src="javascript:y" onerror="z" alt="j"></a> '
+        '<img src=x onerror=alert(5)//> <img src="data:image/png;base64,AAAA" alt="d"> '
+        '<svg onload="alert(6)"></svg><iframe src="https://evil.example"></iframe> '
+        '<img src="//evil.example/a.png" alt="p"> <a href="https://ok.example" style="color:red">ok</a> '
+        '<img src="https://e.example/a.png" alt="q&quot; onload=&quot;r">\n'
+        "\x01" + "9\x01 tail\n",
+        "/Bolt", RAW)
+    for bad in ("javascript:", "onerror", "onclick", "onload=\"", "<svg", "<iframe",
+                "data:image", "//evil", "style="):
+        assert bad not in out, bad
+    assert '<a href="https://ok.example">ok</a>' in out
+    assert 'alt="q&quot; onload=&quot;r"' in out

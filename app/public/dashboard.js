@@ -16123,14 +16123,16 @@
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
-    const hint = /#w=(\d{1,4})$/.exec(url);
+    const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
-    if (!source) return alt;
+    if (!source || source === "#") return alt;
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
-    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
-      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
+    const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
+    const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${size}${external}`
+      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
   // Operates on already-`escapeHtml`d text so the captured groups (urls,
@@ -16142,8 +16144,7 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
-  function renderMarkdownInline(escapedText, context, linkRecordReferences = true) {
-    const parked = [];
+  function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
       if (!linkRecordReferences) return whole;
@@ -16155,7 +16156,7 @@
     return escapedText
       .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => park(mdImageHtml(alt, url, context)))
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
-        park(mdLinkHtml(renderMarkdownInline(label, context, false), url, context)))
+        park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
@@ -16210,15 +16211,18 @@
     return decodeHtmlEntities(String(text)
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<img\b[^>]*>/gi, (tag) => {
-        const source = htmlTagAttr(tag, "src");
+        const source = htmlTagAttr(tag, "src").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!source) return "";
         const width = parseInt(htmlTagAttr(tag, "width"), 10);
-        const hint = width > 0 && !source.includes("#") ? `#w=${width}` : "";
-        return `![${htmlTagAttr(tag, "alt")}](${source}${hint})`;
+        const height = parseInt(htmlTagAttr(tag, "height"), 10);
+        const hint = width > 0 && width < 10000 && !source.includes("#")
+          ? `#w=${width}${height > 0 && height < 10000 ? `x${height}` : ""}`
+          : "";
+        return `![${htmlTagAttr(tag, "alt").replace(/[[\]]/g, "")}](${source}${hint})`;
       })
       .replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi, (whole, attributes, label) => {
         const text = label.trim();
-        const href = htmlTagAttr(attributes, "href");
+        const href = htmlTagAttr(attributes, "href").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!text) return "";
         return href ? `[${text}](${href})` : text;
       })
