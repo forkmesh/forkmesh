@@ -10463,6 +10463,7 @@ bool mirrorHasBranch(const QString &mirrorPath, const QString &branch);
 // stalls.log over 2026-09-01..10 (the `rev-parse --verify` cluster: 29 UI
 // stalls, 36 s), and none of them needs a process.
 bool repoHasLocalBranch(const QString &repoPath, const QString &branch);
+QString localPullAgentBranch(const QString &gitDir, const PullRequest &pull);
 
 // PullStore::loadAll() skips a forkmesh/pull/<n> branch whose snapshot is no
 // newer than the ledger commit that deleted its record, because mirrors keep
