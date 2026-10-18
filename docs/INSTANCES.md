@@ -403,9 +403,9 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   JSON and refuses one with other modes, odd token names or non-hex values.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless listed in
-  `INSTANCE_PLUGINS`. A disabled plugin's routes answer 404 before any other
-  route; tagged UI (`data-instance-plugin`) is hidden.
+  pages and others) are off on an instance unless turned on. A disabled
+  plugin's routes answer 404 before any other route; tagged UI
+  (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
   pre-marketplace packages (repository tabs, Chat, Network, Agents, ...)
   installed until it removes one itself, because an instance has no Market
@@ -439,6 +439,44 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   bootstrap writes it once (`ON CONFLICT DO NOTHING`); `--update` ignores it
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
+
+## Plugins
+
+An admin turns optional plugins on and off from the admin console, Platform →
+Plugins (`app/src/instance_console.py`). The choice applies without a
+reinstall or restart.
+
+| Plugin | On an instance |
+|---|---|
+| `world` | The instance's own World at `/world` with the Office and its chat. With a World listing ([Directory](#directory)) a portal joins it to the ForkMesh World. |
+| `guestbook` | The agent guestbook in the instance's chat. |
+| `genie` | The tip spider at the bottom of each page. |
+| `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+
+Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
+`discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
+`blog`, `status`, `ios-testers`, `website`) needs forkmesh.com's own
+accounts, ledger, keys or content. The page lists them under "forkmesh.com
+services" with the reason (`FORKMESH_ONLY`) and offers no switch;
+`/api/instance` reports each plugin's `scope` (`instance` or `forkmesh`) and
+`note`. An operator who really wants one can still name it in
+`INSTANCE_PLUGINS`; a saved choice keeps it as it is.
+
+- **Where the choice lives.** Saving writes the `instance_settings` row
+  `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
+  `admin.console_save_plugins` with the plugins turned on and off. Until the
+  first save, `INSTANCE_PLUGINS` (the install setting `plugins`) decides;
+  once the row exists it wins. The installer never writes the row and
+  `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
+  admin's choice.
+- **How it applies.** Every request on an instance passes
+  `Default._instance_plugins_load` before the plugin gate. It reads the row
+  at most every 30 seconds (`CACHE_MS`) into a process cache that
+  `enabled_ids` uses; a failed read keeps the last value. The saving process
+  updates its cache at once, so the admin sees the result on the next page;
+  `/api/instance` (cached 60 s) and the brand script follow within a minute.
+- forkmesh.com never reads the row: every plugin stays on there, and the page
+  says so instead of showing the form.
 
 ## Dashboard on an instance
 
@@ -500,6 +538,7 @@ to every provider.
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`,
+`test_instance_plugins.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
 `test_instance_node_reconnect_frontend.py`,

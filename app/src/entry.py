@@ -6362,6 +6362,7 @@ _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
 _server_update_admin = _LazyModule("server_update_admin")
+_instance_console = _LazyModule("instance_console")
 repo_short_urls = _LazyModule("repo_short_urls")
 repo_projects = _LazyModule("repo_projects")
 _ids_console = _LazyModule("ids_console")

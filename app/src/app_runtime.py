@@ -891,6 +891,7 @@ class Default:
         if maintenance is not None:
             return self._with_fast_cors(request, maintenance)
         if instance_features.branded(self.env):
+            await self._instance_plugins_load()
             plugin_path = urlparse(str(request.url)).path
             switched_off = instance_features.blocked(self.env, plugin_path)
             if switched_off:
@@ -1200,6 +1201,10 @@ class Default:
                 account_cookie_name)
         if params.get("view", [""])[0] == _instance_directory_admin.VIEW:
             return await _instance_directory_admin.admin_handler(
+                self.env, request, params, csrf_field, admin_query,
+                account_cookie_name)
+        if params.get("view", [""])[0] in _instance_console.VIEWS:
+            return await _instance_console.admin_handler(
                 self.env, request, params, csrf_field, admin_query,
                 account_cookie_name)
         if params.get("view", [""])[0] in _server_update_admin.VIEWS:
@@ -1680,6 +1685,20 @@ class Default:
             body, status=200,
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=300"}))
+
+    async def _instance_plugins_load(self):
+        now = int(Date.now())
+        if instance_features.fresh(now):
+            return
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_features.SETTING_KEY)
+        except Exception:
+            instance_features.remember(instance_features.current(), now)
+            return
+        instance_features.remember(
+            instance_features.parse((row or {}).get("doc") or ""), now)
 
     async def _instance_legal_setting(self):
         if not instance_branded(self.env):

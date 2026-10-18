@@ -89,6 +89,7 @@ NAV = (
         ("repo-addresses", "Repository addresses", "branch",
          ("console", "repo-addresses")),
         ("legal-pages", "Legal pages", "lock", ("console", "legal-pages")),
+        ("plugins", "Plugins", "grid", ("console", "plugins")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

@@ -1,3 +1,4 @@
+import json
 import re
 
 FEATURES = (
@@ -72,12 +73,43 @@ FEATURES = (
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
+FORKMESH_ONLY = {
+    "hackathon": "Runs ForkMesh's own hackathon, its squads and prizes.",
+    "challenges": "ForkMesh's community challenges and their rewards.",
+    "pitch-deck": "ForkMesh's own pitch deck.",
+    "ads": "Sells and shows ads through ForkMesh's ad network.",
+    "patreon": "Syncs memberships of ForkMesh's Patreon page.",
+    "discord": "Uses ForkMesh's Discord app; its package is not built on "
+               "instances.",
+    "microjobs": "Pays microjobs through the ForkMesh ledger.",
+    "rewards": "Mirror rewards and wallets on ForkMesh's Solana ledger.",
+    "referrals": "Referral rewards and bounties paid by ForkMesh.",
+    "forkbot": "ForkMesh's chat bot and its model keys.",
+    "ecosystem": "forkmesh.com's curated ecosystem directory.",
+    "blog": "Reads the forkmesh.com blog.",
+    "status": "Monitors forkmesh.com's own cores, mirrors and app releases.",
+    "ios-testers": "Enrolls testers in ForkMesh's iOS builds.",
+    "website": "forkmesh.com's own marketing pages.",
+}
+INSTANCE_NOTES = {
+    "world": "Your own 3D World at /world, with the Office and its chat. "
+             "With a World listing it is joined to the ForkMesh World by a "
+             "portal.",
+    "guestbook": "Lets agents sign a guestbook in this instance's chat.",
+    "genie": "The spider at the bottom of each page that offers tips.",
+    "developer-docs": "Shows the docs/ folder of this instance's read-only "
+                      "forkmesh mirror in the dashboard.",
+}
+SETTING_KEY = "plugins"
+CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
+CHOOSABLE = tuple(item for item in IDS if item not in FORKMESH_ONLY)
 _PATTERNS = {
     feature[0]: tuple(re.compile(pattern) for pattern in feature[4])
     for feature in FEATURES
 }
 _ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,40}$")
+_cache = {"at": -CACHE_MS, "value": None, "loaded": False}
 
 
 def _setting(env, name):
@@ -88,14 +120,63 @@ def branded(env):
     return bool(" ".join(_setting(env, "INSTANCE_NAME").split()))
 
 
-def enabled_ids(env):
-    if not branded(env):
-        return set(IDS)
+def installed_ids(env):
     raw = _setting(env, "INSTANCE_PLUGINS").lower()
     if raw == "all":
         return set(IDS)
     chosen = {item.strip() for item in raw.split(",")}
     return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS}
+
+
+def enabled_ids(env):
+    if not branded(env):
+        return set(IDS)
+    if _cache["loaded"] and _cache["value"] is not None:
+        return set(_cache["value"])
+    return installed_ids(env)
+
+
+def parse(doc):
+    try:
+        data = json.loads(doc) if doc else None
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("enabled"), list):
+        return None
+    return {item for item in data["enabled"]
+            if isinstance(item, str) and item in IDS}
+
+
+def dump(ids):
+    return json.dumps({"enabled": sorted(set(ids) & set(IDS))},
+                      separators=(",", ":"))
+
+
+def choose(current, chosen):
+    kept = {item for item in current if item in FORKMESH_ONLY}
+    picked = {item for item in chosen if item in CHOOSABLE}
+    return kept | picked
+
+
+def fresh(now_ms):
+    return _cache["loaded"] and now_ms - _cache["at"] < CACHE_MS
+
+
+def current():
+    return _cache["value"]
+
+
+def remember(value, now_ms):
+    _cache["value"] = set(value) if value is not None else None
+    _cache["at"] = now_ms
+    _cache["loaded"] = True
+    return value
+
+
+def forget():
+    _cache["value"] = None
+    _cache["at"] = -CACHE_MS
+    _cache["loaded"] = False
 
 
 def _matches(path, prefix):
@@ -126,5 +207,8 @@ def describe(env):
         "title": feature[1],
         "description": feature[2],
         "enabled": feature[0] in on,
+        "scope": "forkmesh" if feature[0] in FORKMESH_ONLY else "instance",
+        "note": FORKMESH_ONLY.get(feature[0]) or INSTANCE_NOTES.get(
+            feature[0], ""),
         "paths": list(feature[3]),
     } for feature in FEATURES]
