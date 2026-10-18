@@ -98,6 +98,7 @@
     projectsView: { filter: "open", mode: "gantt", items: [] },
     claimNode: { pendingNodeId: "" },
     linkGrant: null,
+    linkedNodePresence: {},
     repoMirrors: [],
     // Mirrors tab filter: hide nodes that are not serving this repository
     // right now. Off by default so the tab opens on the full published mesh.
