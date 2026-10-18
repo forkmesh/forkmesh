@@ -33,6 +33,12 @@ struct NativePackageRepository {
     QString ref;
 };
 
+struct NativePackageChatTarget {
+    QString id;
+    QString label;
+    bool person = false;
+};
+
 struct NativePackageHost {
     // Manifest metadata is supplied by the generic host. A package can adapt
     // its own UI without reaching into MainWindow or assuming its catalog id.
@@ -68,6 +74,8 @@ struct NativePackageHost {
     std::function<NativePackageRepository()> currentRepository;
     std::function<void(const NativePackageRepository &, const QString &, int)>
         openRepositoryFile;
+    std::function<QList<NativePackageChatTarget>()> chatTargets;
+    std::function<bool(const QString &, const QString &)> sendChatMessage;
 };
 
 struct NativePackagePromptTarget {

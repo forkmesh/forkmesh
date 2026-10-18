@@ -9,6 +9,7 @@
 #include "ForkMeshPackageRegistry.h"
 #include "LedgerFeature.h"
 #include "MainWindowInternal.h"
+#include "OfficeChannelMirror.h"
 #include "NativePackageExtension.h"
 #include "PackageFeedback.h"
 #include "ServerNode.h"
@@ -3212,6 +3213,31 @@ void MainWindow::syncNativePackagePages()
             member.accountKind = QStringLiteral("user");
             showChatUserProfile(member, {});
         };
+        if (permissionIds.contains(QStringLiteral("chat.messages.share"))) {
+            host.chatTargets = [this] {
+                QList<forkmesh::market::NativePackageChatTarget> targets;
+                if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+                    return targets;
+                QStringList seen;
+                const QStringList channels = m_officeChannelMirror->conversations();
+                const QStringList direct = m_officeChannelMirror->directConversations();
+                for (const QStringList &group : {channels, direct}) {
+                    for (const QString &conversation : group) {
+                        if (seen.contains(conversation) ||
+                            !m_officeChannelMirror->canSend(conversation))
+                            continue;
+                        seen.append(conversation);
+                        targets.append({conversation, chatConversationLabel(conversation),
+                                        forkmesh::office::isDirectOfficeConversation(conversation)});
+                    }
+                }
+                return targets;
+            };
+            host.sendChatMessage = [this](const QString &conversation, const QString &text) {
+                return m_officeChannelMirror && m_officeChannelMirror->isActive() &&
+                       m_officeChannelMirror->sendMessage(conversation, text);
+            };
+        }
         if (permissionIds.contains(QStringLiteral("repository.read"))) {
             host.repositories = [this] { return nativePackageRepositories(); };
             host.currentRepository = [this] { return currentNativePackageRepository(); };

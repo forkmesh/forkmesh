@@ -58,6 +58,9 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var excludeFromToday = false
     public var excludeFromUnread = false
     public var language: String = ""
+    public var iconFound: String = ""
+    public var iconSource: String = ""
+    public var iconCheckedAt: Int64 = 0
 
     public init(id: String, url: String, title: String = "", folderId: String = "", siteUrl: String = "", addedAt: Int64 = 0) {
         self.id = id
@@ -72,6 +75,7 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
         case id, url, title, customTitle, folderId, siteUrl, iconUrl, summary, etag, lastModified, previousUrls
         case addedAt, fetchedAt, nextFetchAt, errorCount, error, errorAt
         case paused, excludeFromToday, excludeFromUnread, language
+        case iconFound, iconSource, iconCheckedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +101,9 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
         excludeFromToday = (try? c.decodeIfPresent(Bool.self, forKey: .excludeFromToday)) ?? false
         excludeFromUnread = (try? c.decodeIfPresent(Bool.self, forKey: .excludeFromUnread)) ?? false
         language = (try? c.decodeIfPresent(String.self, forKey: .language)) ?? ""
+        iconFound = (try? c.decodeIfPresent(String.self, forKey: .iconFound)) ?? ""
+        iconSource = (try? c.decodeIfPresent(String.self, forKey: .iconSource)) ?? ""
+        iconCheckedAt = (try? c.decodeIfPresent(Int64.self, forKey: .iconCheckedAt)) ?? 0
     }
 
     public var displayTitle: String {
@@ -108,7 +115,11 @@ public struct RSSFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
 
     public var homePage: String { siteUrl.isEmpty ? RSSURL.origin(url) : siteUrl }
 
-    public var iconAddress: String { iconUrl.isEmpty ? RSSURL.favicon(siteUrl.isEmpty ? url : siteUrl) : iconUrl }
+    public var iconAddress: String {
+        if !iconFound.isEmpty { return iconFound }
+        if iconCheckedAt > 0 && iconSource == RSSFeedIcons.source(self) { return "" }
+        return RSSFeedIcons.plan(self).first ?? ""
+    }
 
     public var identities: Set<String> { Set(([url] + previousUrls).map(RSSURL.identity)) }
 }
