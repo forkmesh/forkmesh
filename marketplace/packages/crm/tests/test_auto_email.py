@@ -400,3 +400,102 @@ def test_manual_sends_cannot_be_rated():
     refused = call(runtime.use("POST", body={"emailId": logged, "rating": 5}),
                    "/api/crm/acme/outreach/rate")
     assert refused["data"]["error"] == "email_not_automated"
+
+
+class ScopedZohoRuntime(ZohoSendRuntime):
+    def __init__(self, drafts=None, scope="", token_ok=True, **kwargs):
+        super().__init__(drafts, **kwargs)
+        self.scope = scope
+        self.token_ok = token_ok
+
+    async def outbound_json(self, url, method="GET", headers=None, body=""):
+        if url.endswith("/oauth/v2/token"):
+            self.outbound_calls.append((url, method, dict(headers or {}), body))
+            if not self.token_ok:
+                return {"ok": True, "status": 400, "data": {"error": "invalid_code"}}
+            data = {"access_token": "request-local-token"}
+            if self.scope:
+                data["scope"] = self.scope
+            return {"ok": True, "status": 200, "data": data}
+        return await super().outbound_json(url, method, headers, body)
+
+
+def _zoho_status(runtime):
+    return call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"]["zoho"]
+
+
+def _forget_connected_at(runtime):
+    raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
+    settings = json.loads(raw.removeprefix("sealed:"))
+    settings["zoho"].pop("connectedAt")
+    runtime.db.execute("UPDATE crm_settings SET data=?",
+                       ("sealed:" + json.dumps(settings),))
+
+
+def test_a_connection_made_before_sending_existed_asks_for_a_reconnect_until_zoho_grants_it():
+    runtime = _zoho_connected(ScopedZohoRuntime(scope="ZohoMail.messages.READ,ZohoMail.folders.READ"))
+    _forget_connected_at(runtime)
+    status = _zoho_status(runtime)
+    assert status["canSend"] is False
+    assert [step["key"] for step in status["steps"]] == ["send", "sync"]
+    assert status["steps"][0]["action"] == "reconnect"
+
+    synced = call(runtime.use("POST", body={"limit": 5}), "/api/crm/acme/mail/import")
+    assert synced["status"] == 200
+    status = synced["data"]["settings"]["zoho"]
+    assert status["lastSyncAt"] > 0 and status["canSend"] is False
+    assert [step["key"] for step in status["steps"]] == ["send"]
+
+    runtime.scope = "ZohoMail.messages.READ ZohoMail.messages.CREATE ZohoMail.folders.READ"
+    runtime.clock += crm.ZOHO_AUTO_SYNC_MS
+    status = call(runtime.use("POST", body={"limit": 5}),
+                  "/api/crm/acme/mail/import")["data"]["settings"]["zoho"]
+    assert status["canSend"] is True and status["steps"] == []
+
+
+def test_a_refused_send_shows_the_reconnect_step_and_a_new_sign_in_clears_it():
+    runtime = _zoho_connected(ScopedZohoRuntime(
+        [_draft("Hello")], send_status=404, send_error="INVALID_OAUTHSCOPE"))
+    assert _zoho_status(runtime)["canSend"] is True
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    refused = _send(runtime, sam)
+    assert refused["data"]["error"] == "zoho_send_not_allowed"
+    assert "Reconnect Zoho Mail at the top" in refused["data"]["detail"]
+    status = _zoho_status(runtime)
+    assert status["canSend"] is False
+    assert status["steps"][0]["key"] == "send"
+    assert status["steps"][0]["text"].startswith("Zoho refused")
+
+    body = {"zoho": {"region": "com", "accountId": "1", "clientId": "c",
+                     "clientSecret": "s", "refreshToken": "new-grant"}}
+    saved = call(runtime.use("PUT", body=body), "/api/crm/acme/settings")
+    assert saved["data"]["settings"]["zoho"]["canSend"] is True
+
+
+def test_a_rejected_sign_in_or_failed_sync_becomes_a_step():
+    runtime = _zoho_connected(ScopedZohoRuntime(token_ok=False))
+    failed = call(runtime.use("POST", body={}), "/api/crm/acme/mail/import")
+    assert failed["status"] == 502
+    status = _zoho_status(runtime)
+    assert status["canSend"] is False and status["lastSyncError"] == "zoho_token_rejected"
+    assert [step["key"] for step in status["steps"]] == ["token"]
+
+    runtime.token_ok = True
+    runtime.clock += crm.ZOHO_AUTO_SYNC_MS
+    status = call(runtime.use("POST", body={}),
+                  "/api/crm/acme/mail/import")["data"]["settings"]["zoho"]
+    assert status["canSend"] is True and status["steps"] == []
+
+
+def test_the_page_sync_runs_at_most_every_fifteen_minutes():
+    runtime = _zoho_connected(ScopedZohoRuntime())
+    first = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/mail/import")
+    assert first["status"] == 200 and not first["data"].get("skipped")
+    calls = len(runtime.outbound_calls)
+    again = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/mail/import")
+    assert again["data"]["skipped"] is True and len(runtime.outbound_calls) == calls
+    manual = call(runtime.use("POST", body={}), "/api/crm/acme/mail/import")
+    assert not manual["data"].get("skipped") and len(runtime.outbound_calls) > calls
+    runtime.clock += crm.ZOHO_AUTO_SYNC_MS
+    later = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/mail/import")
+    assert not later["data"].get("skipped")

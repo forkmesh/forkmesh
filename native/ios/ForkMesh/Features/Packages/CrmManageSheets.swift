@@ -565,6 +565,12 @@ struct CrmSettingsSheet: View {
         let status = model.data?.settings.zoho
         if status?.connected == true {
             LabeledContent("Zoho Mail", value: "Connected (\(status?.region ?? "com"))")
+            LabeledContent("Sending", value: status?.canSend == true ? "Allowed" : "Read only")
+            if status?.canSend != true && status?.oneClick == true && model.canManage {
+                Button("Reconnect Zoho Mail", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { if let url = await model.connectZoho() { openURL(url) } }
+                }
+            }
         } else if status?.oneClick == true {
             Button("Connect Zoho Mail", systemImage: "link.badge.plus") {
                 Task { if let url = await model.connectZoho() { openURL(url) } }

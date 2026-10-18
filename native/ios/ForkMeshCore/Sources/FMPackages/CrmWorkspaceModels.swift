@@ -533,6 +533,20 @@ public struct CrmMailMessage: Equatable, Sendable, Identifiable {
     }
 }
 
+public struct CrmZohoStep: Equatable, Sendable, Identifiable {
+    public var key: String
+    public var action: String
+    public var text: String
+
+    public var id: String { key }
+
+    public init(json: JSONObject) {
+        key = json.str("key")
+        action = json.str("action")
+        text = json.str("text")
+    }
+}
+
 public struct CrmZohoStatus: Equatable, Sendable {
     public var connected: Bool
     public var region: String
@@ -540,6 +554,10 @@ public struct CrmZohoStatus: Equatable, Sendable {
     public var lastSyncAt: Int64
     public var oneClick: Bool
     public var managed: Bool
+    public var canSend: Bool
+    public var lastSentAt: Int64
+    public var lastSyncError: String
+    public var steps: [CrmZohoStep]
 
     public init(json: JSONObject) {
         connected = json.bool("connected")
@@ -548,6 +566,10 @@ public struct CrmZohoStatus: Equatable, Sendable {
         lastSyncAt = json.int64("lastSyncAt")
         oneClick = json.bool("oneClick")
         managed = json.bool("managed")
+        canSend = json.optBool("canSend") ?? connected
+        lastSentAt = json.int64("lastSentAt")
+        lastSyncError = json.str("lastSyncError")
+        steps = json.maps("steps").map(CrmZohoStep.init(json:)).filter { !$0.text.isEmpty }
     }
 }
 

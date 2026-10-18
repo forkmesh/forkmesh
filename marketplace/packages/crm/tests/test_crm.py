@@ -512,9 +512,14 @@ def test_zoho_connection_is_encrypted_redacted_and_imports_grouped_mail_boxes():
         },
     }), "/api/crm/acme/settings")
     public = connected["data"]["settings"]["zoho"]
+    assert public.pop("connectedAt") > 0
     assert public == {"connected": True, "region": "eu",
                       "accountId": "123456789", "lastSyncAt": 0,
-                      "oneClick": False, "managed": False}
+                      "oneClick": False, "managed": False, "canSend": True,
+                      "lastSentAt": 0, "lastSyncError": "",
+                      "lastSyncErrorAt": 0,
+                      "steps": [{"key": "sync", "action": "sync",
+                                 "text": "Sync Zoho Mail once to bring in the mailbox."}]}
     raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
     assert raw.startswith("sealed:") and "refresh-secret" in raw
     assert "refreshToken" not in json.dumps(public)
@@ -674,8 +679,12 @@ def test_zoho_one_click_connects_with_the_platform_app_and_syncs():
     assert runtime.outbound_calls[-1][0] == "https://mail.zoho.eu/api/accounts"
 
     zoho = call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"]["zoho"]
-    assert zoho == {"connected": True, "region": "eu", "accountId": "98765",
-                    "lastSyncAt": 0, "oneClick": True, "managed": True}
+    assert {key: zoho[key] for key in (
+        "connected", "region", "accountId", "lastSyncAt", "oneClick", "managed",
+        "canSend")} == {"connected": True, "region": "eu", "accountId": "98765",
+                        "lastSyncAt": 0, "oneClick": True, "managed": True,
+                        "canSend": True}
+    assert [step["key"] for step in zoho["steps"]] == ["sync"]
     raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
     assert "granted-refresh" in raw and "platform-secret" not in raw
 
