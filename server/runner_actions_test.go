@@ -220,6 +220,28 @@ func TestRunnerActionsAllowedOwnersMatchTheOrganization(t *testing.T) {
 	}
 }
 
+func TestRunnerActionsPushGrantForAnOrganizationLease(t *testing.T) {
+	a := newTestRunnerActions(t)
+	now := time.Now().UnixMilli()
+	push := func(owner string) string {
+		return mintGrant(t, runnerGrant{Node: "core1", Owner: owner, Repository: "Project", Access: "actions-push",
+			Ref: "refs/heads/main", Runner: "fmnext-r1", GrantID: "grant-0000000011", IssuedAt: now,
+			ExpiresAt: now + 3600_000})
+	}
+	job := runnerActionsJob{Kind: "actions", RepositoryOwner: "acme", RepositoryName: "Project",
+		Organization: "acme", Branch: "main", Trusted: true, PushRef: "refs/heads/main", PushGrant: push("acme")}
+	if a.pushGrant(job) != job.PushGrant {
+		t.Fatal("an organization lease must configure its organization push grant")
+	}
+	for _, owner := range []string{"alice", "other"} {
+		stray := job
+		stray.PushGrant = push(owner)
+		if a.pushGrant(stray) != "" {
+			t.Fatalf("a push grant for %s must not be configured on an acme lease", owner)
+		}
+	}
+}
+
 func TestTailBufferKeepsTheEnd(t *testing.T) {
 	tail := &tailBuffer{limit: 8}
 	io.WriteString(tail, "abcdef")
