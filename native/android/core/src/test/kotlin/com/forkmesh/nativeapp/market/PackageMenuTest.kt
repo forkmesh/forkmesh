@@ -41,6 +41,47 @@ class PackageMenuTest {
         assertEq("Uninstall", PackageMenu.uninstallLabel(null))
         assertEq("Uninstall from acme", PackageMenu.uninstallLabel("acme"))
         assertEq("Send feedback or report a bug", PackageMenu.FEEDBACK)
+        assertEq("Rate, report or uninstall…", PackageMenu.OPTIONS)
+    }
+
+    fun testThePopupSendsARatingAReportOrBoth() {
+        expect(!PluginFeedback().canSend, "empty")
+        expect(!PluginFeedback(text = "   ").canSend, "blank")
+        expect(!PluginFeedback(text = "  ").canAskAgent, "blank agent")
+        val rated = PluginFeedback(stars = 5)
+        expect(rated.canSend && rated.rates && !rated.reports && !rated.canAskAgent, "rated")
+        val written = PluginFeedback(text = "Crashes on open")
+        expect(written.canSend && !written.rates && written.canAskAgent, "written")
+    }
+
+    fun testFiveStarsKeepTheEarlierReviewAndFewerStarsUseTheTypedText() {
+        val rules = ReviewRules()
+        val earlier = ReviewDraft(stars = 3, problem = "old problem", improvement = "old idea", comment = "kept")
+        assertEq(null, PluginFeedback(text = "words").review(earlier, rules))
+        val five = PluginFeedback(stars = 5, text = "Love it").review(earlier, rules)
+        assertEq(5, five?.stars)
+        assertEq("old problem", five?.problem)
+        expect(!PluginFeedback(stars = 5).asksImprovement(rules), "five stars ask nothing more")
+        val two = PluginFeedback(stars = 2, text = "  The sync stops  ", improvement = " Retry it ").review(earlier, rules)
+        assertEq(2, two?.stars)
+        assertEq("The sync stops", two?.problem)
+        assertEq("Retry it", two?.improvement)
+        assertEq("kept", two?.comment)
+        expect(PluginFeedback(stars = 2).asksImprovement(rules), "two stars ask how to improve")
+        assertEq("old problem", PluginFeedback(stars = 2).review(earlier, rules)?.problem)
+    }
+
+    fun testThanksSayWhatWasSent() {
+        assertEq("Thanks for rating CRM.", PluginFeedback.thanks("CRM", rated = true, reported = false))
+        assertEq("Thanks — your feedback on CRM reached the ForkMesh team.", PluginFeedback.thanks("CRM", rated = false, reported = true))
+        assertEq("Thanks — your rating and feedback on CRM reached the ForkMesh team.", PluginFeedback.thanks("CRM", rated = true, reported = true))
+    }
+
+    fun testTheAgentPromptNamesThePluginAndCarriesTheText() {
+        val prompt = PluginFeedback(stars = 2, text = " Export is empty ").agentPrompt("Ledger", "ledger", "Ledger")
+        expect(prompt.startsWith("Feedback on the ForkMesh plugin Ledger (package `ledger`), sent from the Ledger screen of the Android app:"), prompt)
+        expect(prompt.contains("\n\nExport is empty\n\nRated 2 of 5 stars.\n\n"), prompt)
+        expect(!PluginFeedback(text = "x").agentPrompt("A", "a", "A").contains("Rated"), "no rating line")
     }
 
     fun testEveryPluginHasAPublicShareLink() {
