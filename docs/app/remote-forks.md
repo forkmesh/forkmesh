@@ -90,3 +90,14 @@ with it, which is why the description names the parent.
 Pull requests have no dependency field. The `Depends on: #N` line is the same
 convention issues use (`issueDependencyNumbers`), but the pull request page
 shows it as part of the description, not as a relationship list.
+
+### Each stacked pull request carries only its own commits
+
+A row with exactly one `dependsOn` branch is compared with that branch, not
+with its `base`: the patch and commit series hold only the row's own commits,
+while the signed pull request still targets `base` and names its parent with
+"Depends on: #N". Comparing every row with `main` made each stacked pull
+request repeat all of its parents, so the reviewer saw the whole stack again
+and the upper rows outgrew the 4 MiB submission cap (`pull_too_large`). After
+the parent merges, `git am --3way` on the target applies the row cleanly. A row
+with several dependencies is still compared with `base`.

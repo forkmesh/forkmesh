@@ -35,8 +35,8 @@ function row(branch, extra = {}) {
 }
 function fakeSend(calls, failures = {}) {
   let next = 40;
-  return async (r, target, title, body, base, head) => {
-    calls.push({ title, body, base, head, target: target.url });
+  return async (r, target, title, body, base, head, compareBase = "") => {
+    calls.push({ title, body, base, head, compareBase, target: target.url });
     if (failures[head]) {
       const error = new Error(failures[head]);
       error.code = failures[head];
@@ -169,6 +169,7 @@ def test_a_run_sends_in_order_and_names_each_parent_number():
     assert out["sentNow"] == 3
     assert [call["head"] for call in out["calls"]] == ["pr/a", "pr/b", "pr/c"]
     assert all(call["base"] == "main" and call["target"].endswith("/acme-bolt/bolt") for call in out["calls"])
+    assert [call["compareBase"] for call in out["calls"]] == ["", "pr/a", "pr/b"]
     assert not out["calls"][0]["body"].startswith("Depends on")
     assert out["calls"][1]["body"].startswith("Depends on: #41\n")
     assert out["calls"][2]["body"].startswith("Depends on: #42\n")
