@@ -288,7 +288,14 @@ otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
   wrapped as `@direct:…`.
 - The composer is one glass line (`ChatComposerBar(glass: true)`) docked on the
   bar. Transcripts use `.defaultScrollAnchor(.bottom)` plus
-  `chatKeepsEndInView`.
+  `chatKeepsEndInView`, and `chatFollowsOwnSend` scrolls the end into view
+  whenever the newest message of your own gets newer (sending, in a room, a
+  thread or Messages). It waits one main-queue turn so the new row has been
+  laid out: before 2026-10-17 a sent message could stay hidden under the
+  composer, because the only scroll ran in the same update that inserted the
+  row, and it ran only when the last row changed, which a later-stamped message
+  or event below yours prevents. Deleting your last message or loading older
+  history does not scroll.
 - Chat screens make no interface sounds (`.fmQuietSounds()`).
 - Members of relay `#channels` are counted from presence and posters (the relay
   stores ciphertext only); office and server rooms use the server's list.
