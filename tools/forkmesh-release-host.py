@@ -1086,7 +1086,8 @@ git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
 git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
   '/app/src/apns.py' '/app/src/app_runtime.py' '/marketplace/packages/vault/tests/fixtures/' \
-  '/marketplace/packages/people/tests/fixtures/'
+  '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
+  '/docs/native/PERFORMANCE_CHECKS.md' '/docs/marketplace/video-mix-dj-studio-performance.md'
 attempt=1
 until git fetch -q --depth=1 --no-tags --filter=blob:none origin "$2" &&
     git -c advice.detachedHead=false checkout -q --force --detach FETCH_HEAD; do
