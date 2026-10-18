@@ -56,7 +56,7 @@ struct CalendarScreen: View {
     var body: some View {
         Group {
             if let model = model {
-                CalendarContent(model: model, editing: $editing)
+                CalendarContent(model: model)
                     .task { await model.load() }
                     .fmRefreshable { await model.load() }
                     .sheet(item: $editing) { (target: CalendarEditTarget) in
@@ -94,7 +94,6 @@ struct CalendarEditTarget: Identifiable {
 struct CalendarContent: View {
     @Environment(\.fmPalette) private var fm
     let model: CalendarModel
-    @Binding var editing: CalendarEditTarget?
 
     private var modeBinding: Binding<CalendarMode> {
         Binding(get: { model.mode }, set: { (mode: CalendarMode) in Task { await model.setMode(mode) } })
@@ -191,7 +190,7 @@ struct CalendarContent: View {
 
     private func occurrenceRow(_ occurrence: CalendarOccurrence) -> some View {
         NavigationLink {
-            CalendarEventScreen(model: model, eventId: occurrence.event.id, editing: $editing)
+            CalendarEventScreen(model: model, eventId: occurrence.event.id)
                 .shellPageClearance()
         } label: {
             HStack(alignment: .top, spacing: 10) {
@@ -270,7 +269,7 @@ struct CalendarEventScreen: View {
     @Environment(\.dismiss) private var dismiss
     let model: CalendarModel
     let eventId: String
-    @Binding var editing: CalendarEditTarget?
+    @State private var editing: CalendarEditTarget?
     @State private var confirmDelete: Bool = false
 
     private var event: CalendarEvent? { model.event(eventId) }
@@ -339,6 +338,9 @@ struct CalendarEventScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Event")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $editing) { (target: CalendarEditTarget) in
+            CalendarEventEditor(model: model, eventId: target.eventId, draft: target.draft)
+        }
         .confirmationDialog("Delete this event?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Task {
@@ -352,11 +354,14 @@ struct CalendarEventScreen: View {
 }
 
 struct CalendarEventEditor: View {
+    @Environment(\.fmPalette) private var fm
     @Environment(\.dismiss) private var dismiss
     let model: CalendarModel
     let eventId: String?
     @State private var draft: CalendarEventDraft
     @State private var attendees: String
+    @State private var tried: Bool = false
+    @State private var problemShown: Int = 0
 
     init(model: CalendarModel, eventId: String?, draft: CalendarEventDraft) {
         self.model = model
@@ -379,57 +384,63 @@ struct CalendarEventEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("Title", text: $draft.title)
-                    Toggle("All day", isOn: $draft.allDay)
-                    DatePicker("Starts", selection: dateBinding(\.startAt),
-                               displayedComponents: draft.allDay ? [.date] : [.date, .hourAndMinute])
-                    DatePicker("Ends", selection: dateBinding(\.endAt),
-                               displayedComponents: draft.allDay ? [.date] : [.date, .hourAndMinute])
-                    Picker("Repeat", selection: $draft.recurrence) {
-                        ForEach(CalendarRecurrence.allCases, id: \.self) { (value: CalendarRecurrence) in
-                            Text(value.label).tag(value)
+            ScrollViewReader { (proxy: ScrollViewProxy) in
+                Form {
+                    if let problem = tried ? draft.validationError ?? model.error : nil {
+                        Section {
+                            Text(problem).foregroundStyle(fm.danger)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fmMessageTools(problem)
+                                .id("calendar-editor-problem")
                         }
                     }
-                }
-                Section {
-                    Picker("Calendar", selection: $draft.calendar) {
-                        ForEach(model.calendars) { (info: CalendarInfo) in
-                            Text(info.id == "personal" ? "Personal" : info.name).tag(info.id == "personal" ? "personal" : info.name)
-                        }
-                    }
-                    TextField("Location", text: $draft.location)
-                    TextField("Meeting link", text: $draft.meetingUrl)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                    TextField("Invite (names, comma separated)", text: $attendees)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                Section("Reminders") {
-                    ForEach(CalendarEventDraft.allowedReminders, id: \.self) { (minutes: Int) in
-                        Toggle(CalendarEventDraft.reminderLabel(minutes), isOn: Binding(
-                            get: { draft.reminders.contains(minutes) },
-                            set: { (on: Bool) in
-                                if on {
-                                    draft.reminders.append(minutes)
-                                } else {
-                                    draft.reminders.removeAll { $0 == minutes }
-                                }
-                            }
-                        ))
-                    }
-                }
-                Section("Notes") {
-                    TextEditor(text: $draft.description).frame(minHeight: 100)
-                }
-                if let problem = draft.validationError ?? model.error {
                     Section {
-                        Text(problem).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fmMessageTools(problem)
+                        TextField("Title", text: $draft.title)
+                        Toggle("All day", isOn: $draft.allDay)
+                        DatePicker("Starts", selection: dateBinding(\.startAt),
+                                   displayedComponents: draft.allDay ? [.date] : [.date, .hourAndMinute])
+                        DatePicker("Ends", selection: dateBinding(\.endAt),
+                                   displayedComponents: draft.allDay ? [.date] : [.date, .hourAndMinute])
+                        Picker("Repeat", selection: $draft.recurrence) {
+                            ForEach(CalendarRecurrence.allCases, id: \.self) { (value: CalendarRecurrence) in
+                                Text(value.label).tag(value)
+                            }
+                        }
                     }
+                    Section {
+                        Picker("Calendar", selection: $draft.calendar) {
+                            ForEach(model.calendars) { (info: CalendarInfo) in
+                                Text(info.id == "personal" ? "Personal" : info.name).tag(info.id == "personal" ? "personal" : info.name)
+                            }
+                        }
+                        TextField("Location", text: $draft.location)
+                        TextField("Meeting link", text: $draft.meetingUrl)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                        TextField("Invite (names, comma separated)", text: $attendees)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    Section("Reminders") {
+                        ForEach(CalendarEventDraft.allowedReminders, id: \.self) { (minutes: Int) in
+                            Toggle(CalendarEventDraft.reminderLabel(minutes), isOn: Binding(
+                                get: { draft.reminders.contains(minutes) },
+                                set: { (on: Bool) in
+                                    if on {
+                                        draft.reminders.append(minutes)
+                                    } else {
+                                        draft.reminders.removeAll { $0 == minutes }
+                                    }
+                                }
+                            ))
+                        }
+                    }
+                    Section("Notes") {
+                        TextEditor(text: $draft.description).frame(minHeight: 100)
+                    }
+                }
+                .onChange(of: problemShown) { (_: Int, _: Int) in
+                    withAnimation { proxy.scrollTo("calendar-editor-problem", anchor: .top) }
                 }
             }
             .navigationTitle(eventId == nil ? "New event" : "Edit event")
@@ -439,8 +450,12 @@ struct CalendarEventEditor: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(model.busy || draft.validationError != nil)
+                    if model.busy {
+                        ProgressView()
+                    } else {
+                        Button("Save") { save() }
+                            .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                 }
             }
         }
@@ -449,6 +464,13 @@ struct CalendarEventEditor: View {
     private func save() {
         draft.attendees = attendees.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        model.clearError()
+        tried = true
+        guard draft.validationError == nil else {
+            FmHaptics.warning()
+            problemShown += 1
+            return
+        }
         let pending: CalendarEventDraft = draft
         Task {
             let saved: CalendarEvent?
@@ -458,7 +480,11 @@ struct CalendarEventEditor: View {
                 saved = await model.create(pending)
             }
             if saved != nil {
+                FmHaptics.commit()
                 dismiss()
+            } else {
+                FmHaptics.warning()
+                problemShown += 1
             }
         }
     }
@@ -467,7 +493,6 @@ struct CalendarEventEditor: View {
 struct CalendarEventDestination: View {
     let eventId: String
     @State private var model: CalendarModel?
-    @State private var editing: CalendarEditTarget?
 
     init(eventId: String) {
         self.eventId = eventId
@@ -480,11 +505,8 @@ struct CalendarEventDestination: View {
 
     var body: some View {
         if let model = model {
-            CalendarEventScreen(model: model, eventId: eventId, editing: $editing)
+            CalendarEventScreen(model: model, eventId: eventId)
                 .task { await model.loadEvent(eventId) }
-                .sheet(item: $editing) { (target: CalendarEditTarget) in
-                    CalendarEventEditor(model: model, eventId: target.eventId, draft: target.draft)
-                }
         } else {
             FmEmptyState(icon: "calendar_today_outlined", title: "The calendar is unavailable")
         }
