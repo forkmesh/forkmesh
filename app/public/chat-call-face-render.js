@@ -21,6 +21,11 @@ const EYE_UV_HALF = [0.62, 0.36];
 const LOOK_GAIN = 0.55;
 const PHOTO_SOFTEN = 0.35;
 const GRAIN = 0.012;
+const SKIN_LEVEL = 0.4;
+const SKIN_HUE = 0.6;
+const SKIN_RANGE = [0.55, 1.8];
+const HIGHLIGHT_KNEE = 0.82;
+const HALO_CLEAR = [0.45, 0.92];
 const LIP_SHADOW = 0.22;
 const MOUTH_EDGE = 0.6;
 const OUTFIT_REACH = 0.35;
@@ -226,7 +231,7 @@ void main() {
   vec4 b = texture2D(uBlurred, vUv);
   vec3 fill = texture2D(uFill, vUv).rgb;
   vec3 mine = b.rgb / max(b.a, 1e-4);
-  gl_FragColor = vec4(mix(fill, mine, smoothstep(0.02, 0.3, b.a)), 1.0);
+  gl_FragColor = vec4(mix(fill, mine, smoothstep(0.02, 0.3, b.a)), clamp(b.a, 0.0, 1.0));
 }`;
 
 const COMPOSITE_FRAGMENT = `
@@ -298,6 +303,11 @@ vec3 dress(vec3 front, vec3 cam, float alpha, float zone) {
 float grain(vec2 at) {
   return fract(sin(dot(floor(at) + vec2(uSeed, uSeed * 0.61), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
 }
+vec3 shoulder(vec3 x) {
+  float k = ${HIGHLIGHT_KNEE.toFixed(2)};
+  vec3 over = max(x - k, 0.0);
+  return min(x, vec3(k)) + (1.0 - k) * (1.0 - exp(-over / (1.0 - k)));
+}
 float tongueAt(vec2 uv, vec3 cam) {
   vec2 d = uv * uPixels - uTongueCenter;
   vec2 q = vec2(dot(d, uTongueX), dot(d, uTongueY));
@@ -333,8 +343,9 @@ void main() {
   } else if (uMode > 0.5) {
     backdrop = texture2D(uBackdrop, vUv).rgb;
   } else if (uFace > 0.5) {
-    float halo = headHalo(vUv) * uPresence * uHasMatte;
-    backdrop = mix(behind, texture2D(uBackdrop, vUv).rgb, halo);
+    vec4 soft = texture2D(uBackdrop, vUv);
+    float halo = headHalo(vUv) * uPresence * uHasMatte * (1.0 - smoothstep(${HALO_CLEAR[0].toFixed(2)}, ${HALO_CLEAR[1].toFixed(2)}, soft.a));
+    backdrop = mix(behind, soft.rgb, halo);
   }
   float keep = alpha * (1.0 - zone);
   vec3 color = backdrop * (1.0 - keep) + front * (1.0 - zone);
@@ -358,9 +369,11 @@ void main() {
     float level = max(dot(global, LUMA), 0.05);
     vec3 hue = global / level;
     vec3 hair = clamp(pow(hue, vec3(0.5)) * pow(level, 0.5), 0.45, 1.8);
+    vec3 tone = clamp(pow(hue, vec3(${SKIN_HUE.toFixed(2)})) * pow(level, ${SKIN_LEVEL.toFixed(2)}), ${SKIN_RANGE[0].toFixed(2)}, ${SKIN_RANGE[1].toFixed(2)});
+    vec3 lit = clamp(local / max(global, vec3(0.05)), 0.6, 1.6) * tone;
     float skin = clamp(aux.r / max(warp.a, 0.002), 0.0, 1.0);
     skin = smoothstep(0.15, 0.85, skin);
-    vec3 face = clamp(warp.rgb * mix(hair, local * shade, skin) + grain(vUv * uPixels) * ${GRAIN.toFixed(3)}, 0.0, 1.0);
+    vec3 face = clamp(shoulder(warp.rgb * mix(hair, lit * shade, skin)) + grain(vUv * uPixels) * ${GRAIN.toFixed(3)}, 0.0, 1.0);
     float lip = hole * (1.0 - hole) * 4.0;
     color *= 1.0 - ${LIP_SHADOW.toFixed(2)} * lip * uPresence;
     color = mix(color, face, warp.a * uPresence);

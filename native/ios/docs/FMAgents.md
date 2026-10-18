@@ -127,7 +127,8 @@ second form.
 
 `PromptPhotoRules` (2048 px, JPEG without metadata, size limits) and `PromptMarkupRules` (the
 PencilKit markup editor geometry; see `docs/native/CAPTURE_MARKUP.md`) back the composer's
-photos.
+photos. `CaptureAreaRules` holds the long-press capture's maths: the dragged box clamped to the
+screen, the 16 pt minimum, the pixel crop and which accessibility elements count as content.
 
 ### Pasting images (`PromptPaste.swift`, app `PromptPasteboard.swift`)
 

@@ -71,16 +71,13 @@ struct ThemedAppView: View {
         }
     }
 
-    private var accent: FmAccent {
-        return FmAccent.fromName(services.settings.accent.rawValue)
-    }
-
     var body: some View {
         let settings: SettingsService = services.settings
-        ForkMeshTheme(accent: accent, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
+        ForkMeshTheme(theme: settings.theme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
             AppHomeView(auth: services.auth)
                 .signInPresenter(services.signIn)
                 .background { FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim) }
+                .background { CaptureHoldAnchor().accessibilityHidden(true) }
         }
         .preferredColorScheme(forcedDark.map { (dark: Bool) -> ColorScheme in dark ? .dark : .light })
     }

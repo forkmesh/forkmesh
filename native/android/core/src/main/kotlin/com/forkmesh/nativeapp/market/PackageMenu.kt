@@ -6,6 +6,7 @@ import com.forkmesh.nativeapp.navigation.RouteParser
 object PackageMenu {
     const val FEEDBACK = "Send feedback or report a bug"
     const val MORE = "Plugin options"
+    const val OPTIONS = "Rate, report or uninstall…"
     const val SHARE = "Share…"
     const val COPY_LINK = "Copy link"
     const val SHARE_BASE = "https://forkmesh.com/market/"
