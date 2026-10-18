@@ -580,6 +580,15 @@ struct HomeShell: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(fm.bgBase)
             }
+            if let mail: ShellMailNotice = ShellMailStatus.shared.notice {
+                FmNoticeLine(mail.line, isError: mail.isError, onDismiss: { ShellMailStatus.shared.dismiss() })
+                    .padding(.horizontal, FmSpace.x4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(fm.bgBase)
+                    .id(mail.id)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .accessibilityIdentifier("shell-mail-notice")
+            }
             if let attention = runnerAttention, router.selectedTab != .agents {
                 RunnerAttentionBanner(model: attention, compact: true)
                     .padding(.horizontal, FmSpace.x2)

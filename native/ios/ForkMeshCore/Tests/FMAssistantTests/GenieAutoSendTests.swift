@@ -73,6 +73,20 @@ final class GenieAutoSendTests: XCTestCase {
         XCTAssertTrue(pace.due(now: midnight.addingTimeInterval(24 * 60 * 60)))
     }
 
+    func testCountdownRunsFromTheLastSendToTheNext() {
+        let pace = GenieAutoSendPace(store: InMemoryKeyValueStore(), calendar: utc)
+        XCTAssertNil(pace.countdown(now: start))
+        pace.setOn(true)
+        XCTAssertNil(pace.countdown(now: start))
+        pace.sent(at: start)
+        let window = pace.countdown(now: start.addingTimeInterval(200))
+        XCTAssertEqual(window?.start, start)
+        XCTAssertEqual(window?.end, start.addingTimeInterval(864))
+        XCTAssertNil(pace.countdown(now: start.addingTimeInterval(864)))
+        pace.setOn(false)
+        XCTAssertNil(pace.countdown(now: start.addingTimeInterval(200)))
+    }
+
     func testOutcomesSkipTheContactOrPauseTheSender() {
         guard case let .sent(receipt) = GenieAutoSend.outcome(sent, pick: pick) else { return XCTFail("not sent") }
         XCTAssertEqual(receipt.subject, "Quick idea")
@@ -107,14 +121,29 @@ final class GenieAutoSendTests: XCTestCase {
             seen = messages.map(\.content)
             return "Subject: Quick idea\n\nHi Sam,\n\nhttps://forkmesh.com/r/alice"
         }
-        let outcome = await box.outreachAutoSend(pick, writers: [writer])
+        var stages: [GenieAutoSendStage] = []
+        let outcome = await box.outreachAutoSend(pick, writers: [writer]) { stages.append($0) }
         guard case .sent = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(stages, [.writing, .sending, .sent])
         XCTAssertEqual(seen, ["Write to Sam."])
         XCTAssertEqual(transport.requests.map(\.path), ["/api/crm/acme/outreach/auto", "/api/crm/acme/outreach/auto"])
         let retry = transport.requests[1].body ?? [:]
         XCTAssertEqual(retry.str("subject"), "Quick idea")
         XCTAssertEqual(retry.str("model"), "Phone model")
         XCTAssertEqual(retry.str("contactId"), samId)
+    }
+
+    func testAServerDraftGoesStraightFromWritingToSent() async {
+        let client = PackagesClient(transport: FakeAutoSendTransport([sent]))
+        let box = ForkMeshToolbox(sources: AssistantSources(crm: { client }))
+        var stages: [GenieAutoSendStage] = []
+        _ = await box.outreachAutoSend(pick, writers: []) { stages.append($0) }
+        XCTAssertEqual(stages, [.writing, .sent])
+
+        let refused = PackagesClient(transport: FakeAutoSendTransport([PackagesReply(status: 409, json: ["error": "recently_emailed"])]))
+        stages = []
+        _ = await ForkMeshToolbox(sources: AssistantSources(crm: { refused })).outreachAutoSend(pick, writers: []) { stages.append($0) }
+        XCTAssertEqual(stages, [.writing])
     }
 
     func testRatingsPostToTheCrm() async throws {

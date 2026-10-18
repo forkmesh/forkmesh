@@ -29,12 +29,16 @@ struct ShellSuggestionChips: View {
     @Environment(\.fmPalette) private var fm
     private let suggestions: ShellSuggestions = ShellSuggestions.shared
     private let autoSend: ShellAutoSend = ShellAutoSend.shared
+    private let status: ShellMailStatus = ShellMailStatus.shared
     @State private var held: Bool = false
 
     private static let size: CGFloat = 44
+    private static let badgeSide: CGFloat = 16
+    private static let countSide: CGFloat = 18
+    private static let ringGap: CGFloat = 6
 
     var body: some View {
-        if suggestions.on, suggestions.contact != nil || autoSend.on {
+        if suggestions.on, suggestions.contact != nil || autoSend.on || status.stage != nil {
             contactButton(suggestions.contact)
                 .accessibilityIdentifier("top-suggestions")
         }
@@ -55,16 +59,7 @@ struct ShellSuggestionChips: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) { count }
-                .overlay(alignment: .bottomTrailing) {
-                    if let pick {
-                        Image(systemName: pick.channel == .email ? "envelope.fill" : "bubble.left.fill")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.white)
-                            .frame(width: 16, height: 16)
-                            .background(Circle().fill(fm.accent))
-                            .offset(x: 2, y: 2)
-                    }
-                }
+                .overlay(alignment: .bottomTrailing) { badge(pick) }
                 .contentShape(Circle())
         }
         .buttonStyle(ShellBarButtonStyle())
@@ -81,6 +76,50 @@ struct ShellSuggestionChips: View {
         .accessibilityIdentifier("top-suggestion-contact")
     }
 
+    private var paused: Bool { autoSend.on && !autoSend.pausedFor.isEmpty }
+
+    private func symbol(_ pick: GenieOutreachPick?) -> String {
+        switch status.stage {
+        case .finding: return "magnifyingglass"
+        case .writing: return "pencil"
+        case .sending: return "paperplane.fill"
+        case .sent: return "checkmark"
+        case nil:
+            if paused { return "pause.fill" }
+            return pick?.channel == .mastodon ? "bubble.left.fill" : "envelope.fill"
+        }
+    }
+
+    private var stageLabel: String {
+        switch status.stage {
+        case .finding: return "Picking who to email."
+        case .writing: return "Writing the email."
+        case .sending: return "Sending the email."
+        case .sent: return "Sent."
+        case nil: return paused ? "Auto-send is waiting: \(autoSend.pausedFor)" : ""
+        }
+    }
+
+    @ViewBuilder private func badge(_ pick: GenieOutreachPick?) -> some View {
+        if pick != nil || status.stage != nil || paused {
+            Image(systemName: symbol(pick))
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Color.white)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: ShellSuggestionChips.badgeSide, height: ShellSuggestionChips.badgeSide)
+                .background(Circle().fill(status.stage == nil && paused ? fm.warning : fm.accent))
+                .background {
+                    if status.busy {
+                        ShellMailSpinner(color: fm.accent, backing: fm.bgBase)
+                            .frame(width: ShellSuggestionChips.badgeSide + ShellSuggestionChips.ringGap,
+                                   height: ShellSuggestionChips.badgeSide + ShellSuggestionChips.ringGap)
+                    }
+                }
+                .offset(x: 2, y: 2)
+                .accessibilityHidden(true)
+        }
+    }
+
     private var toggleLabel: String { autoSend.on ? "Turn auto-send off" : "Turn auto-send on" }
 
     private func hint(_ pick: GenieOutreachPick?) -> String {
@@ -91,7 +130,12 @@ struct ShellSuggestionChips: View {
 
     private func label(_ pick: GenieOutreachPick?) -> String {
         let sent: String = autoSend.sentToday == 1 ? "1 email sent today" : "\(autoSend.sentToday) emails sent today"
-        let state: String = autoSend.on ? "Auto-send on, \(sent)" : sent
+        var state: String = autoSend.on ? "Auto-send on, \(sent)" : sent
+        if let window: DateInterval = autoSend.countdown(now: Date()) {
+            let minutes: Int = max(1, Int((window.end.timeIntervalSinceNow / 60).rounded(.up)))
+            state += minutes == 1 ? ". Next email in 1 minute" : ". Next email in \(minutes) minutes"
+        }
+        if !stageLabel.isEmpty { state = "\(stageLabel) \(state)" }
         guard let pick else { return state }
         return autoSend.on ? "Next: \(pick.contact.displayName). \(state)" : "\(pick.caption) \(state)"
     }
@@ -100,12 +144,38 @@ struct ShellSuggestionChips: View {
         if autoSend.on || autoSend.sentToday > 0 {
             Text("\(autoSend.sentToday)")
                 .font(.system(size: 10, weight: .bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .foregroundStyle(Color.white)
-                .padding(.horizontal, 4)
-                .frame(minWidth: 17, minHeight: 17)
-                .background(Capsule().fill(autoSend.on ? fm.accent : fm.textSecondary))
+                .padding(.horizontal, 2)
+                .frame(width: ShellSuggestionChips.countSide, height: ShellSuggestionChips.countSide)
+                .background(Circle().fill(autoSend.on ? fm.accent : fm.textSecondary))
+                .background {
+                    if autoSend.on {
+                        countdown
+                            .frame(width: ShellSuggestionChips.countSide + ShellSuggestionChips.ringGap,
+                                   height: ShellSuggestionChips.countSide + ShellSuggestionChips.ringGap)
+                    }
+                }
                 .offset(x: 3, y: -3)
                 .accessibilityHidden(true)
+        }
+    }
+
+    private var countdown: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { (context: TimelineViewDefaultContext) in
+            if let window: DateInterval = autoSend.countdown(now: context.date), window.duration > 0 {
+                let left: Double = min(1, max(0, window.end.timeIntervalSince(context.date) / window.duration))
+                ZStack {
+                    Circle().fill(fm.bgBase)
+                    Circle().stroke(fm.accent.opacity(0.25), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: left)
+                        .stroke(fm.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 1), value: left)
+                }
+            }
         }
     }
 
@@ -132,6 +202,26 @@ struct ShellSuggestionChips: View {
         }
         .frame(width: ShellSuggestionChips.size, height: ShellSuggestionChips.size)
         .clipShape(Circle())
+    }
+}
+
+struct ShellMailSpinner: View {
+    let color: Color
+    let backing: Color
+
+    var body: some View {
+        TimelineView(.animation) { (context: TimelineViewDefaultContext) in
+            let turn: Double = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1)
+            ZStack {
+                Circle().fill(backing)
+                Circle().stroke(color.opacity(0.25), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: 0.3)
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(turn * 360))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
