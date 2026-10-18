@@ -438,3 +438,11 @@ def test_an_instance_accepts_its_own_address_without_a_hostname_list():
     assert T.allowed_hostnames(listed) == frozenset({"other.example"})
     assert T.allowed_hostnames(live_env(APP_ORIGIN="https://app.forkmesh.com")) == \
         frozenset(T.DEFAULT_HOSTNAMES)
+
+
+def test_instance_origin_hostname_parsing_uses_the_url_host():
+    env = live_env(INSTANCE_NAME="Acme Code",
+                   APP_ORIGIN="https://user@example.org:8443/path")
+    assert T.allowed_hostnames(env) == frozenset({"example.org"})
+    env = live_env(INSTANCE_NAME="Acme Code", APP_ORIGIN="https://[::1")
+    assert T.allowed_hostnames(env) == frozenset(T.DEFAULT_HOSTNAMES)

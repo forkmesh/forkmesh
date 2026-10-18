@@ -48,6 +48,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 
 def _bind_runtime(runtime):
@@ -174,7 +175,11 @@ def site_key(env):
 
 def _origin_host(env):
     origin = _var(env, "APP_ORIGIN")
-    host = origin.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    try:
+        parsed = urlsplit(origin)
+        host = parsed.hostname or ""
+    except ValueError:
+        return ""
     return host.strip().lower().rstrip(".")
 
 
