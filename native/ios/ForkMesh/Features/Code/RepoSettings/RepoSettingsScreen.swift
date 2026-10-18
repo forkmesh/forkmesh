@@ -207,6 +207,13 @@ struct RepoActionsMenu: View {
             NavigationLink(value: Route.codeMap(repo, ref: ref)) {
                 Label("Code map", systemImage: "square.grid.3x3")
             }
+            ForEach(CodeInsightPlugin.allCases) { (plugin: CodeInsightPlugin) in
+                if PackageGate.shows(plugin.route(repo)) {
+                    NavigationLink(value: plugin.route(repo)) {
+                        Label(plugin.title, systemImage: plugin.systemImage)
+                    }
+                }
+            }
             NavigationLink(value: Route.board(repo)) {
                 Label("Issue board", systemImage: "rectangle.split.3x1")
             }

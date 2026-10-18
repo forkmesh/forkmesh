@@ -5,12 +5,19 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QSet>
 #include <QTemporaryDir>
 #include <QThread>
+
+#include <cstdio>
 
 #include <cmath>
 
@@ -767,11 +774,372 @@ int preview(const QString &root, const QString &out)
     return 0;
 }
 
+QJsonValue pathOf(const Snapshot &snapshot, int file)
+{
+    return file >= 0 && file < snapshot.files.size() ? QJsonValue(snapshot.files[file].path) : QJsonValue();
+}
+
+QJsonValue moduleOf(const ModuleGraph &graph, int module)
+{
+    return module >= 0 && module < graph.nodes.size() ? QJsonValue(graph.nodes[module].path) : QJsonValue();
+}
+
+QJsonObject scoreJson(const Score &score)
+{
+    return QJsonObject{{QStringLiteral("debt"), score.debt},
+                       {QStringLiteral("effort"), score.effort},
+                       {QStringLiteral("ratio"), score.ratio},
+                       {QStringLiteral("rating"), score.rating},
+                       {QStringLiteral("interest"), score.interest},
+                       {QStringLiteral("violations"), score.violations},
+                       {QStringLiteral("worst"), score.worst}};
+}
+
+QJsonArray rectJson(const QRectF &rect)
+{
+    return QJsonArray{rect.x(), rect.y(), rect.width(), rect.height()};
+}
+
+QJsonObject layoutJson(const GraphLayout &layout)
+{
+    QJsonArray boxes;
+    for (const QRectF &box : layout.boxes)
+        boxes.append(rectJson(box));
+    QJsonArray ranks;
+    for (int rank : layout.ranks)
+        ranks.append(rank);
+    QJsonArray edges;
+    for (const RoutedEdge &edge : layout.edges) {
+        QJsonArray points;
+        for (const QPointF &p : edge.points)
+            points.append(QJsonArray{p.x(), p.y()});
+        edges.append(QJsonObject{{QStringLiteral("from"), edge.from},
+                                 {QStringLiteral("to"), edge.to},
+                                 {QStringLiteral("weight"), edge.weight},
+                                 {QStringLiteral("cycle"), edge.cycle},
+                                 {QStringLiteral("flat"), edge.flat},
+                                 {QStringLiteral("points"), points}});
+    }
+    return QJsonObject{{QStringLiteral("boxes"), boxes},
+                       {QStringLiteral("ranks"), ranks},
+                       {QStringLiteral("edges"), edges},
+                       {QStringLiteral("bounds"), rectJson(layout.bounds)},
+                       {QStringLiteral("crossings"), layout.crossings},
+                       {QStringLiteral("rankCount"), layout.rankCount}};
+}
+
+QJsonObject treemapJson(const Snapshot &snapshot, const ModuleGraph &graph, int sizeBy, const QRectF &area)
+{
+    const auto sizeOf = [&snapshot, sizeBy](int f) -> double {
+        const FileInfo &info = snapshot.files[f];
+        if (sizeBy == 1)
+            return info.codeLines > 0 ? std::max(1, info.complexity) : 0;
+        if (sizeBy == 2)
+            return info.codeLines > 0 ? std::max<int>(1, info.functions.size()) : 0;
+        return info.codeLines;
+    };
+    QVector<double> moduleWeights(graph.nodes.size(), 0);
+    for (int m = 0; m < graph.nodes.size(); ++m) {
+        for (int f : graph.nodes[m].files)
+            moduleWeights[m] += sizeOf(f);
+    }
+    const QVector<QRectF> moduleRects = squarify(moduleWeights, area);
+    QVector<QRectF> fileRects(snapshot.files.size());
+    for (int m = 0; m < graph.nodes.size(); ++m) {
+        const QRectF box = moduleRects[m];
+        if (box.width() < 2 || box.height() < 2)
+            continue;
+        const double header = box.height() > 44 && box.width() > 70 ? 17 : 0;
+        const QRectF inner = box.adjusted(2, 2 + header, -2, -2);
+        QVector<double> weights;
+        for (int f : graph.nodes[m].files)
+            weights.append(sizeOf(f));
+        const QVector<QRectF> cells = squarify(weights, inner);
+        for (int k = 0; k < cells.size(); ++k)
+            fileRects[graph.nodes[m].files[k]] = cells[k];
+    }
+    QJsonArray modules;
+    for (const QRectF &rect : moduleRects)
+        modules.append(rectJson(rect));
+    QJsonArray files;
+    for (const QRectF &rect : fileRects)
+        files.append(rectJson(rect));
+    return QJsonObject{{QStringLiteral("modules"), modules}, {QStringLiteral("files"), files}};
+}
+
+QJsonObject modelJson(const Snapshot &snapshot, int depth)
+{
+    const ModelPtr model = buildModel(std::make_shared<Snapshot>(snapshot), depth);
+    const Report &report = model->report;
+    const ModuleGraph &graph = report.graph;
+    QJsonArray cycles;
+    for (const QVector<int> &cycle : graph.cycles) {
+        QJsonArray members;
+        for (int m : cycle)
+            members.append(graph.nodes[m].path);
+        cycles.append(members);
+    }
+    QJsonArray edges;
+    for (const ModuleEdge &edge : graph.edges)
+        edges.append(QJsonObject{{QStringLiteral("from"), graph.nodes[edge.from].path},
+                                 {QStringLiteral("to"), graph.nodes[edge.to].path},
+                                 {QStringLiteral("weight"), edge.weight},
+                                 {QStringLiteral("inCycle"), edge.inCycle}});
+    QJsonArray nodes;
+    for (const ModuleNode &node : graph.nodes)
+        nodes.append(QJsonObject{{QStringLiteral("path"), node.path},
+                                 {QStringLiteral("cycle"), node.cycle},
+                                 {QStringLiteral("afferent"), node.afferent},
+                                 {QStringLiteral("efferent"), node.efferent},
+                                 {QStringLiteral("instability"), node.instability},
+                                 {QStringLiteral("abstractness"), node.abstractness},
+                                 {QStringLiteral("distance"), node.distance}});
+    QJsonArray rules;
+    for (const Rule &rule : report.rules) {
+        QJsonArray violations;
+        for (const Violation &v : rule.violations)
+            violations.append(QJsonObject{{QStringLiteral("file"), pathOf(snapshot, v.file)},
+                                          {QStringLiteral("module"), moduleOf(graph, v.module)},
+                                          {QStringLiteral("peerModule"), moduleOf(graph, v.peerModule)},
+                                          {QStringLiteral("line"), v.line},
+                                          {QStringLiteral("severity"), severityName(v.severity)},
+                                          {QStringLiteral("message"), v.message},
+                                          {QStringLiteral("debt"), v.debt}});
+        rules.append(QJsonObject{{QStringLiteral("id"), rule.id},
+                                 {QStringLiteral("title"), rule.title},
+                                 {QStringLiteral("category"), categoryName(rule.category)},
+                                 {QStringLiteral("severity"), severityName(rule.severity)},
+                                 {QStringLiteral("moduleScope"), rule.moduleScope},
+                                 {QStringLiteral("debt"), rule.debt},
+                                 {QStringLiteral("worst"), rule.worst()},
+                                 {QStringLiteral("violations"), violations}});
+    }
+    QJsonArray files;
+    for (int f = 0; f < snapshot.files.size(); ++f) {
+        QJsonObject score = scoreJson(report.files[f]);
+        score.insert(QStringLiteral("path"), snapshot.files[f].path);
+        QJsonArray refs;
+        for (const ViolationRef &ref : report.fileViolations[f])
+            refs.append(QJsonArray{report.rules[ref.first].id, ref.second});
+        score.insert(QStringLiteral("refs"), refs);
+        files.append(score);
+    }
+    QJsonArray modules;
+    for (int m = 0; m < graph.nodes.size(); ++m) {
+        QJsonObject score = scoreJson(report.modules[m]);
+        score.insert(QStringLiteral("path"), graph.nodes[m].path);
+        QJsonArray refs;
+        for (const ViolationRef &ref : report.moduleViolations[m])
+            refs.append(QJsonArray{report.rules[ref.first].id, ref.second});
+        score.insert(QStringLiteral("refs"), refs);
+        QJsonArray worst;
+        for (const ViolationRef &ref : report.worstForModule(m, 6))
+            worst.append(QJsonArray{report.rules[ref.first].id, ref.second});
+        score.insert(QStringLiteral("worstRefs"), worst);
+        modules.append(score);
+    }
+    QJsonArray gates;
+    for (const GateResult &gate : report.gates)
+        gates.append(QJsonObject{{QStringLiteral("name"), gate.name},
+                                 {QStringLiteral("status"), gateStatusName(gate.status)},
+                                 {QStringLiteral("measured"), gate.measured},
+                                 {QStringLiteral("detail"), gate.detail}});
+    const Metrics &m = report.metrics;
+    const QJsonObject metrics{{QStringLiteral("codeLines"), m.codeLines},
+                              {QStringLiteral("commentLines"), m.commentLines},
+                              {QStringLiteral("files"), m.files},
+                              {QStringLiteral("modules"), m.modules},
+                              {QStringLiteral("types"), m.types},
+                              {QStringLiteral("functions"), m.functions},
+                              {QStringLiteral("averageComplexity"), m.averageComplexity},
+                              {QStringLiteral("maxComplexity"), m.maxComplexity},
+                              {QStringLiteral("maxComplexityFunction"), m.maxComplexityFunction},
+                              {QStringLiteral("maxComplexityFile"), pathOf(snapshot, m.maxComplexityFile)},
+                              {QStringLiteral("commentPercent"), m.commentPercent},
+                              {QStringLiteral("duplicatedPercent"), m.duplicatedPercent},
+                              {QStringLiteral("testFiles"), m.testFiles}};
+    QJsonArray order;
+    for (int i : model->order)
+        order.append(graph.nodes[i].path);
+    QJsonArray layers;
+    for (int layer : moduleLayers(graph))
+        layers.append(layer);
+    QJsonArray drills;
+    for (int module = 0; module < graph.nodes.size(); ++module) {
+        const DrillGraph drill = drillGraph(snapshot, graph, module);
+        QJsonArray drillNodes;
+        for (const DrillNode &node : drill.nodes)
+            drillNodes.append(QJsonObject{{QStringLiteral("module"), node.module},
+                                          {QStringLiteral("dependent"), node.dependent},
+                                          {QStringLiteral("name"), node.module ? moduleOf(graph, node.index) : pathOf(snapshot, node.index)},
+                                          {QStringLiteral("weight"), node.weight}});
+        QJsonArray links;
+        for (const LayoutLink &link : drill.links)
+            links.append(QJsonArray{link.from, link.to, link.weight, link.cycle});
+        drills.append(QJsonObject{{QStringLiteral("module"), graph.nodes[module].path},
+                                  {QStringLiteral("hiddenFiles"), drill.hiddenFiles},
+                                  {QStringLiteral("nodes"), drillNodes},
+                                  {QStringLiteral("links"), links},
+                                  {QStringLiteral("layout"), layoutJson(drill.layout)}});
+    }
+    QJsonArray boxSizes;
+    for (int lines : {0, 1, 100, 1000, 5000, 20000, 100000}) {
+        const QSizeF size = moduleBoxSize(lines);
+        boxSizes.append(QJsonArray{lines, size.width(), size.height()});
+    }
+    const QRectF area(14, 6, 972, 648);
+    return QJsonObject{{QStringLiteral("depth"), graph.depth},
+                       {QStringLiteral("summary"), summaryLine(report)},
+                       {QStringLiteral("history"), report.history},
+                       {QStringLiteral("total"), scoreJson(report.total)},
+                       {QStringLiteral("metrics"), metrics},
+                       {QStringLiteral("bySeverity"), QJsonArray{report.bySeverity[0], report.bySeverity[1], report.bySeverity[2], report.bySeverity[3]}},
+                       {QStringLiteral("cycles"), cycles},
+                       {QStringLiteral("nodes"), nodes},
+                       {QStringLiteral("edges"), edges},
+                       {QStringLiteral("rules"), rules},
+                       {QStringLiteral("files"), files},
+                       {QStringLiteral("modules"), modules},
+                       {QStringLiteral("gates"), gates},
+                       {QStringLiteral("order"), order},
+                       {QStringLiteral("layers"), layers},
+                       {QStringLiteral("layout"), layoutJson(model->layout)},
+                       {QStringLiteral("drill"), drills},
+                       {QStringLiteral("boxSizes"), boxSizes},
+                       {QStringLiteral("treemapLines"), treemapJson(snapshot, graph, 0, area)},
+                       {QStringLiteral("treemapComplexity"), treemapJson(snapshot, graph, 1, area)},
+                       {QStringLiteral("treemapFunctions"), treemapJson(snapshot, graph, 2, area)},
+                       {QStringLiteral("report"), reportHtml(snapshot, report, QStringLiteral("fixture <repo>"))}};
+}
+
+bool gitIn(const QString &dir, const QStringList &args)
+{
+    QProcess process;
+    process.setWorkingDirectory(dir);
+    process.start(QStringLiteral("git"), args);
+    return process.waitForFinished(60000) && process.exitCode() == 0;
+}
+
+int writeGolden(const QString &fixture)
+{
+    QTemporaryDir temp;
+    const QString repo = temp.path() + QStringLiteral("/repo");
+    QDirIterator it(fixture + QStringLiteral("/repo"), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString target = repo + source.mid(fixture.size() + 5);
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        QFile::copy(source, target);
+    }
+    qputenv("GIT_CEILING_DIRECTORIES", temp.path().toUtf8());
+    qputenv("GIT_AUTHOR_NAME", "Fixture");
+    qputenv("GIT_AUTHOR_EMAIL", "fixture@example.com");
+    qputenv("GIT_COMMITTER_NAME", "Fixture");
+    qputenv("GIT_COMMITTER_EMAIL", "fixture@example.com");
+    if (!gitIn(repo, {QStringLiteral("init"), QStringLiteral("-q")}) || !gitIn(repo, {QStringLiteral("add"), QStringLiteral("-A")})
+        || !gitIn(repo, {QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), QStringLiteral("fixture")})) {
+        std::fprintf(stderr, "git setup failed\n");
+        return 1;
+    }
+    forkmesh::insight::Options options;
+    options.history = false;
+    const forkmesh::insight::SnapshotPtr base = forkmesh::insight::analyze(repo, options);
+    if (!base || !base->error.isEmpty()) {
+        std::fprintf(stderr, "analysis failed\n");
+        return 1;
+    }
+    QFile logFile(fixture + QStringLiteral("/history.log"));
+    logFile.open(QIODevice::ReadOnly);
+    Snapshot history = *base;
+    forkmesh::insight::applyHistory(history, logFile.readAll(), forkmesh::insight::Options(), 1792000000);
+    for (FileInfo &file : history.files) {
+        QStringList issues;
+        file.health = forkmesh::insight::computeHealth(file, &issues);
+        file.healthIssues = issues;
+    }
+    forkmesh::insight::computeHotspots(history);
+    history.head = QStringLiteral("0000000000000000000000000000000000000000");
+    history.branch = QStringLiteral("main");
+    history.analyzedAt = 0;
+    Snapshot plain = *base;
+    plain.head = history.head;
+    plain.branch = history.branch;
+    plain.analyzedAt = 0;
+    QJsonArray debts;
+    for (double minutes : {0.0, 0.4, 0.5, 45.0, 59.6, 60.0, 200.0, 480.0, 660.0, 960.0, 2940.0, 48000.0, 480000.0, 4800000.0})
+        debts.append(QJsonArray{minutes, formatDebt(minutes)});
+    QJsonArray percents;
+    for (double ratio : {0.0, 0.0004, 0.001, 0.0123, 0.05, 0.0995, 0.1, 0.12345, 0.5, 1.0, 12.3456})
+        percents.append(QJsonArray{ratio, formatPercent(ratio)});
+    LayoutInput mesh;
+    for (int i = 0; i < 30; ++i)
+        mesh.sizes.append(QSizeF(100 + (i % 4) * 30, 70 + (i % 3) * 20));
+    for (int i = 0; i < 30; ++i) {
+        for (int k = 1; k <= 3; ++k) {
+            const int j = i + k * 3 + (i % 5);
+            if (j < 30)
+                mesh.links.append({i, j, 1 + (i + j) % 7, false});
+        }
+    }
+    LayoutInput hinted;
+    for (int i = 0; i < 6; ++i)
+        hinted.sizes.append(QSizeF(120, 80));
+    hinted.layers = {3, 2, 2, 1, 0, 0};
+    hinted.links = {{0, 1, 1, false}, {0, 2, 1, false}, {1, 3, 1, false}, {2, 4, 1, false}, {3, 5, 1, false}};
+    LayoutInput cyclic;
+    for (int i = 0; i < 7; ++i)
+        cyclic.sizes.append(QSizeF(120 + i * 7, 80));
+    cyclic.links = {{0, 1, 2, true}, {1, 2, 1, true}, {2, 0, 3, true}, {2, 3, 1, false}, {3, 4, 2, true}, {4, 5, 1, true}, {5, 3, 4, true}, {4, 3, 1, true}, {0, 6, 1, false}};
+    LayoutInput wide;
+    wide.sizes.append(QSizeF(140, 80));
+    for (int i = 1; i <= 40; ++i) {
+        wide.sizes.append(QSizeF(120, 70));
+        wide.links.append({0, i, 1, false});
+    }
+    LayoutInput isolated;
+    for (int i = 0; i < 5; ++i)
+        isolated.sizes.append(QSizeF(100, 60));
+    isolated.links = {{0, 1, 1, false}};
+    LayoutInput tall;
+    for (int i = 0; i < 12; ++i)
+        tall.sizes.append(QSizeF(110, 70));
+    for (int i = 0; i + 1 < 8; ++i)
+        tall.links.append({i, i + 1, 1, false});
+    LayoutInput lonely;
+    for (int i = 0; i < 9; ++i)
+        lonely.sizes.append(QSizeF(90 + i * 10, 60));
+    QJsonArray squares;
+    for (const QRectF &rect : squarify({50, 25, 12.5, 12.5, 0, 3, 7.25, 1}, QRectF(3, 5, 400, 200)))
+        squares.append(rectJson(rect));
+    const QJsonObject layouts{{QStringLiteral("mesh"), layoutJson(layeredLayout(mesh))},
+                              {QStringLiteral("hinted"), layoutJson(layeredLayout(hinted))},
+                              {QStringLiteral("cyclic"), layoutJson(layeredLayout(cyclic))},
+                              {QStringLiteral("wide"), layoutJson(layeredLayout(wide))},
+                              {QStringLiteral("isolated"), layoutJson(layeredLayout(isolated))},
+                              {QStringLiteral("tall"), layoutJson(layeredLayout(tall))},
+                              {QStringLiteral("lonely"), layoutJson(layeredLayout(lonely))},
+                              {QStringLiteral("squarify"), squares}};
+    const QJsonObject root{{QStringLiteral("now"), 1792000000},
+                           {QStringLiteral("formatDebt"), debts},
+                           {QStringLiteral("formatPercent"), percents},
+                           {QStringLiteral("layouts"), layouts},
+                           {QStringLiteral("auto"), modelJson(history, 0)},
+                           {QStringLiteral("depth2"), modelJson(history, 2)},
+                           {QStringLiteral("plain"), modelJson(plain, 0)},
+                           {QStringLiteral("synthetic"), modelJson(richSnapshot(), 1)}};
+    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Compact) + "\n";
+    std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
+    return 0;
+}
+
 }
 
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
+    const QString golden = qEnvironmentVariable("FORKMESH_STRATA_GOLDEN");
+    if (!golden.isEmpty())
+        return writeGolden(QDir(golden).absolutePath());
     const QString root = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_ROOT");
     const QString out = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_OUT");
     if (!root.isEmpty() && !out.isEmpty())

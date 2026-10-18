@@ -1,0 +1,66 @@
+c15Erin1791913600Docs only
+
+3	0	docs/readme.md
+c14Bob1791827200Polish strings
+
+2	2	src/util/strings.py
+1	1	src/util/helpers.py
+c13Alice1791568000Strings and helpers
+
+6	1	src/util/strings.py
+3	1	src/util/helpers.py
+2	0	app/main.py
+c12Dave1791136000Tweak handlers
+
+10	5	big/handlers.py
+4	2	src/util/strings.py
+2	0	src/util/helpers.py
+c11Alice1790272000Handlers
+
+900	0	big/handlers.py
+160	0	big/brain.cpp
+c10Bob1789408000Engine bugfix
+
+8	8	src/core/engine.cpp
+1	1	src/core/engine.h
+c09Dave1788112000Refactor math
+
+12	10	web/lib/math.ts
+3	1	web/index.ts
+1	1	old/removed.py
+c08Alice1786816000Regression in store
+
+3	3	server/store/store.go
+1	1	server/main.go
+c07Bob1785088000fix: describe() bug for large values
+
+5	3	web/lib/math.ts
+2	2	web/index.ts
+c06Alice1783360000Add math and index
+
+22	0	web/lib/math.ts
+10	0	web/index.ts
+8	0	web/lib/format.js
+c05Bob1781632000Engine speedup
+
+30	25	src/core/engine.cpp
+4	2	src/core/engine.h
+-	-	assets.bin
+c04Alice1779040000Store: handle empty keys
+
+6	2	server/store/store.go
+2	1	server/main.go
+c03Alice1774720000Add store
+
+40	0	server/store/store.go
+15	0	server/main.go
+5	0	server/go.mod
+c02Carol1767808000Fix crash in engine
+
+10	4	src/core/engine.cpp
+2	1	src/core/engine.h
+c01Carol1766080000Add the engine
+
+120	0	src/core/engine.cpp
+20	0	src/core/engine.h
+12	0	src/core/types.h

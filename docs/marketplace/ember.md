@@ -189,3 +189,51 @@ by `FORKMESH_INSIGHT_PREVIEW_VIEW`, and selects the top non-test refactoring
 target, falling back to the least healthy large file. It then zooms so file
 names are readable and saves the PNG. `FORKMESH_EMBER_PREVIEW_CARD=1` or `2`
 opens the card's trend or coupling tab first.
+
+## On phones
+
+Ember runs on iPhone and Android with the desktop's numbers; the shared parts
+(where the code comes from, history, caching, parity tests) are in
+[codebase-analysis.md](codebase-analysis.md#on-phones).
+
+| Platform | Model | Page |
+| --- | --- | --- |
+| iOS | `FMCodeInsight/Ember{Pack,Layout,Model,Panel}.swift` | `ForkMesh/Features/CodeInsight/Ember*.swift` |
+| Android | `core/.../codeinsight/Ember*.kt` | `app/.../feature/codeinsight/Ember*.kt` |
+
+The models are ports of `EmberModel` (packing with the same shuffle, layout,
+zoom maths, colouring, filters, targets, coupling index, summary) and are
+checked against `native/fixtures/insight/ember.json`, written by
+`FORKMESH_EMBER_GOLDEN=<fixture> forkmesh-ember-tests`: packing cases, every
+layout node, fit and focus, zoom interpolation samples, hit tests, targets,
+all seven tabs with and without history, the filter cases, the summary and a
+400-file synthetic layout (colours within 1e-4, because the desktop keeps
+16-bit channels). Numbers use English grouping and one-decimal
+values round half up as Qt does (health 7.25 shows 7.3).
+
+On the phone:
+
+- The tabs are a row of chips; the default tab follows the desktop rule.
+- The map is drawn on a canvas: pinch to zoom around the fingers, drag to
+  pan, tap a folder to zoom to it, tap a file to select it (with a haptic).
+  A double tap fits the whole repository on iPhone and zooms in 2× on
+  Android; neither opens the file as the desktop's double-click does
+  (**Open file** in the card does). The breadcrumb, legend and the coupling
+  links of the selected file are as on the desktop; desktop pixel thresholds
+  become points or dp. At most 40 folder labels are drawn (300 file labels on
+  iPhone), and on iPhone curved folder names hide while a gesture runs. On
+  Android the map is two layered canvases and the glow updates about 20
+  times a second, to save battery; the panel sits under the map.
+- **Map / List** switches to the files that pass the filters, ranked by the
+  tab: hotspot score, target order, lowest health, strongest coupling,
+  highest former-contributor share, most fix commits, or language rank then
+  lines of code. The list is the screen-reader view of the map.
+- Search sits in the navigation bar with suggestions on iPhone and in the
+  filter sheet on Android; the filter sheet holds search, author, the two-thumb health range (1 to 10 in steps of 0.5) and the
+  commit threshold. Tapping a band in the overview or the filter sheet toggles
+  that band's range.
+- The file card is a bottom sheet (medium and large) with Metrics,
+  Complexity trend (lines of code and complexity on a shared time axis; touch
+  shows commit, author, date and health) and Coupling; **Open file** closes the
+  sheet and opens the file, **Copy path** and **Share** are next to it.
+- Animations respect Reduce Motion and the system animation scale.

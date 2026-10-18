@@ -4,7 +4,12 @@
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QDirIterator>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -468,11 +473,242 @@ void runOn(const QString &root)
                 qlonglong(graph.nodes.size()), qlonglong(graph.edges.size()), qlonglong(graph.cycles.size()));
 }
 
+QJsonArray stringArray(const QStringList &values)
+{
+    QJsonArray out;
+    for (const QString &value : values)
+        out.append(value);
+    return out;
+}
+
+QJsonArray pathArray(const Snapshot &snapshot, const QVector<int> &indexes)
+{
+    QStringList paths;
+    for (const int index : indexes)
+        paths.append(snapshot.files.at(index).path);
+    paths.sort();
+    return stringArray(paths);
+}
+
+QJsonObject snapshotJson(const Snapshot &snapshot)
+{
+    QJsonArray files;
+    for (const FileInfo &file : snapshot.files) {
+        QJsonArray functions;
+        for (const FunctionInfo &fn : file.functions)
+            functions.append(QJsonObject{{QStringLiteral("name"), fn.name},
+                                         {QStringLiteral("line"), fn.line},
+                                         {QStringLiteral("length"), fn.length},
+                                         {QStringLiteral("complexity"), fn.complexity},
+                                         {QStringLiteral("nesting"), fn.nesting},
+                                         {QStringLiteral("parameters"), fn.parameters}});
+        QJsonArray topAuthors;
+        for (const auto &author : file.topAuthors)
+            topAuthors.append(QJsonArray{author.first, author.second});
+        QJsonObject object{{QStringLiteral("path"), file.path},
+                           {QStringLiteral("language"), file.language},
+                           {QStringLiteral("bytes"), file.bytes},
+                           {QStringLiteral("lines"), file.lines},
+                           {QStringLiteral("codeLines"), file.codeLines},
+                           {QStringLiteral("commentLines"), file.commentLines},
+                           {QStringLiteral("blankLines"), file.blankLines},
+                           {QStringLiteral("types"), file.types},
+                           {QStringLiteral("abstractTypes"), file.abstractTypes},
+                           {QStringLiteral("complexity"), file.complexity},
+                           {QStringLiteral("maxComplexity"), file.maxComplexity},
+                           {QStringLiteral("maxNesting"), file.maxNesting},
+                           {QStringLiteral("duplicatedLines"), file.duplicatedLines},
+                           {QStringLiteral("test"), file.test},
+                           {QStringLiteral("functions"), functions},
+                           {QStringLiteral("imports"), stringArray(file.imports)},
+                           {QStringLiteral("externalImports"), stringArray(file.externalImports)},
+                           {QStringLiteral("declares"), stringArray(file.declares)},
+                           {QStringLiteral("references"), stringArray(file.references)},
+                           {QStringLiteral("dependsOn"), pathArray(snapshot, file.dependsOn)},
+                           {QStringLiteral("dependedOnBy"), pathArray(snapshot, file.dependedOnBy)},
+                           {QStringLiteral("commits"), file.commits},
+                           {QStringLiteral("recentCommits"), file.recentCommits},
+                           {QStringLiteral("authors"), file.authors},
+                           {QStringLiteral("fixCommits"), file.fixCommits},
+                           {QStringLiteral("linesAdded"), file.linesAdded},
+                           {QStringLiteral("linesDeleted"), file.linesDeleted},
+                           {QStringLiteral("lastChanged"), file.lastChanged},
+                           {QStringLiteral("firstChanged"), file.firstChanged},
+                           {QStringLiteral("mainAuthor"), file.mainAuthor},
+                           {QStringLiteral("mainAuthorShare"), file.mainAuthorShare},
+                           {QStringLiteral("formerAuthorShare"), file.formerAuthorShare},
+                           {QStringLiteral("topAuthors"), topAuthors},
+                           {QStringLiteral("health"), file.health},
+                           {QStringLiteral("healthIssues"), stringArray(file.healthIssues)},
+                           {QStringLiteral("healthBand"), healthBandName(healthBand(file.health))},
+                           {QStringLiteral("hotspot"), file.hotspot},
+                           {QStringLiteral("inCycle"), file.cycle >= 0}};
+        files.append(object);
+    }
+    QJsonArray cycles;
+    for (const QVector<int> &cycle : snapshot.cycles)
+        cycles.append(pathArray(snapshot, cycle));
+    QJsonArray couplings;
+    QList<Coupling> sorted = snapshot.couplings;
+    std::sort(sorted.begin(), sorted.end(), [&snapshot](const Coupling &x, const Coupling &y) {
+        return snapshot.files.at(x.a).path + QLatin1Char('\n') + snapshot.files.at(x.b).path <
+               snapshot.files.at(y.a).path + QLatin1Char('\n') + snapshot.files.at(y.b).path;
+    });
+    for (const Coupling &coupling : sorted)
+        couplings.append(QJsonObject{{QStringLiteral("a"), snapshot.files.at(coupling.a).path},
+                                     {QStringLiteral("b"), snapshot.files.at(coupling.b).path},
+                                     {QStringLiteral("shared"), coupling.shared},
+                                     {QStringLiteral("degree"), coupling.degree}});
+    QJsonObject roots;
+    for (auto it = snapshot.packageRoots.cbegin(); it != snapshot.packageRoots.cend(); ++it)
+        roots.insert(it.key(), it.value());
+    return QJsonObject{{QStringLiteral("files"), files},
+                       {QStringLiteral("cycles"), cycles},
+                       {QStringLiteral("couplings"), couplings},
+                       {QStringLiteral("packageRoots"), roots},
+                       {QStringLiteral("authors"), stringArray(snapshot.authors)},
+                       {QStringLiteral("formerAuthors"), stringArray(snapshot.formerAuthors)},
+                       {QStringLiteral("commitsScanned"), snapshot.commitsScanned},
+                       {QStringLiteral("historyStart"), snapshot.historyStart},
+                       {QStringLiteral("historyEnd"), snapshot.historyEnd},
+                       {QStringLiteral("historyDays"), snapshot.historyDays},
+                       {QStringLiteral("skippedFiles"), snapshot.skippedFiles},
+                       {QStringLiteral("totalCodeLines"), snapshot.totalCodeLines()},
+                       {QStringLiteral("totalComplexity"), snapshot.totalComplexity()}};
+}
+
+QJsonObject moduleJson(const Snapshot &snapshot, int depth)
+{
+    const ModuleGraph graph = buildModuleGraph(snapshot, depth);
+    QJsonArray nodes;
+    for (const ModuleNode &node : graph.nodes)
+        nodes.append(QJsonObject{{QStringLiteral("path"), node.path},
+                                 {QStringLiteral("name"), node.name},
+                                 {QStringLiteral("files"), pathArray(snapshot, node.files)},
+                                 {QStringLiteral("codeLines"), node.codeLines},
+                                 {QStringLiteral("complexity"), node.complexity},
+                                 {QStringLiteral("functions"), node.functions},
+                                 {QStringLiteral("types"), node.types},
+                                 {QStringLiteral("abstractTypes"), node.abstractTypes},
+                                 {QStringLiteral("afferent"), node.afferent},
+                                 {QStringLiteral("efferent"), node.efferent},
+                                 {QStringLiteral("internalEdges"), node.internalEdges},
+                                 {QStringLiteral("instability"), node.instability},
+                                 {QStringLiteral("abstractness"), node.abstractness},
+                                 {QStringLiteral("distance"), node.distance},
+                                 {QStringLiteral("cohesion"), node.cohesion},
+                                 {QStringLiteral("health"), node.health},
+                                 {QStringLiteral("commits"), node.commits},
+                                 {QStringLiteral("inCycle"), node.cycle >= 0},
+                                 {QStringLiteral("layer"), node.layer}});
+    QJsonArray edges;
+    for (const ModuleEdge &edge : graph.edges)
+        edges.append(QJsonObject{{QStringLiteral("from"), graph.nodes.at(edge.from).path},
+                                 {QStringLiteral("to"), graph.nodes.at(edge.to).path},
+                                 {QStringLiteral("weight"), edge.weight},
+                                 {QStringLiteral("inCycle"), edge.inCycle}});
+    QJsonArray cycles;
+    for (const QVector<int> &cycle : graph.cycles) {
+        QStringList paths;
+        for (const int index : cycle)
+            paths.append(graph.nodes.at(index).path);
+        paths.sort();
+        cycles.append(stringArray(paths));
+    }
+    return QJsonObject{{QStringLiteral("depth"), graph.depth},
+                       {QStringLiteral("nodes"), nodes},
+                       {QStringLiteral("edges"), edges},
+                       {QStringLiteral("cycles"), cycles}};
+}
+
+bool runIn(const QString &dir, const QStringList &args)
+{
+    QProcess process;
+    process.setWorkingDirectory(dir);
+    process.start(QStringLiteral("git"), args);
+    return process.waitForFinished(60000) && process.exitCode() == 0;
+}
+
+int writeGolden(const QString &fixture)
+{
+    QTemporaryDir temp;
+    const QString repo = temp.path() + QStringLiteral("/repo");
+    QDirIterator it(fixture + QStringLiteral("/repo"), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString target = repo + source.mid(fixture.size() + 5);
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        QFile::copy(source, target);
+    }
+    qputenv("GIT_CEILING_DIRECTORIES", temp.path().toUtf8());
+    qputenv("GIT_AUTHOR_NAME", "Fixture");
+    qputenv("GIT_AUTHOR_EMAIL", "fixture@example.com");
+    qputenv("GIT_COMMITTER_NAME", "Fixture");
+    qputenv("GIT_COMMITTER_EMAIL", "fixture@example.com");
+    if (!runIn(repo, {QStringLiteral("init"), QStringLiteral("-q")}) ||
+        !runIn(repo, {QStringLiteral("add"), QStringLiteral("-A")}) ||
+        !runIn(repo, {QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), QStringLiteral("fixture")})) {
+        std::fprintf(stderr, "git setup failed\n");
+        return 1;
+    }
+    Options options;
+    options.history = false;
+    const SnapshotPtr base = analyze(repo, options);
+    if (!base || !base->error.isEmpty()) {
+        std::fprintf(stderr, "analysis failed\n");
+        return 1;
+    }
+    QFile logFile(fixture + QStringLiteral("/history.log"));
+    logFile.open(QIODevice::ReadOnly);
+    Snapshot history = *base;
+    applyHistory(history, logFile.readAll(), Options(), 1792000000);
+    for (FileInfo &file : history.files) {
+        QStringList issues;
+        file.health = computeHealth(file, &issues);
+        file.healthIssues = issues;
+    }
+    computeHotspots(history);
+    const QStringList probePaths = {
+        QStringLiteral("a/b.c"), QStringLiteral("a/b.H"), QStringLiteral("x.hpp"), QStringLiteral("x.mm"),
+        QStringLiteral("x.jsx"), QStringLiteral("x.mts"), QStringLiteral("x.vue"), QStringLiteral("x.pyi"),
+        QStringLiteral("x.kts"), QStringLiteral("x.sc"), QStringLiteral("build.gradle"), QStringLiteral("x.zsh"),
+        QStringLiteral("x.pm"), QStringLiteral("Rakefile.rake"), QStringLiteral("x.exs"), QStringLiteral("x.sass"),
+        QStringLiteral("x.less"), QStringLiteral(".bashrc"), QStringLiteral("README"), QStringLiteral("x.md"),
+        QStringLiteral("src/tests/a.py"), QStringLiteral("src/UITests/a.swift"), QStringLiteral("a/fooTests/b.kt"),
+        QStringLiteral("test_a.py"), QStringLiteral("a_test.go"), QStringLiteral("a.test.ts"), QStringLiteral("a.spec.js"),
+        QStringLiteral("a_spec.rb"), QStringLiteral("conftest.py"), QStringLiteral("CartTests.swift"),
+        QStringLiteral("CartTest.kt"), QStringLiteral("Tests.swift"), QStringLiteral("e2e/a.ts"),
+        QStringLiteral("vendor/a.go"), QStringLiteral("Pods/A/a.m"), QStringLiteral("x/node_modules/y.js"),
+        QStringLiteral("a.min.js"), QStringLiteral("a.pb.go"), QStringLiteral("a_pb2.py"), QStringLiteral("a.g.dart"),
+        QStringLiteral("a.generated.cs"), QStringLiteral("package-lock.json"), QStringLiteral("x/.venv/a.py"),
+        QStringLiteral("build/a.c"), QStringLiteral("dist/a.js")};
+    QJsonArray probes;
+    for (const QString &path : probePaths)
+        probes.append(QJsonObject{{QStringLiteral("path"), path},
+                                  {QStringLiteral("language"), languageForPath(path)},
+                                  {QStringLiteral("test"), isTestPath(path)},
+                                  {QStringLiteral("vendored"), isVendoredPath(path)}});
+    const QJsonObject root{{QStringLiteral("now"), 1792000000},
+                           {QStringLiteral("probes"), probes},
+                           {QStringLiteral("base"), snapshotJson(*base)},
+                           {QStringLiteral("history"), snapshotJson(history)},
+                           {QStringLiteral("modules"),
+                            QJsonObject{{QStringLiteral("auto"), moduleJson(history, 0)},
+                                        {QStringLiteral("depth1"), moduleJson(history, 1)},
+                                        {QStringLiteral("depth2"), moduleJson(history, 2)}}}};
+    std::fwrite(QJsonDocument(root).toJson(QJsonDocument::Indented).constData(), 1,
+                size_t(QJsonDocument(root).toJson(QJsonDocument::Indented).size()), stdout);
+    return 0;
+}
+
 }
 
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
+    const QString golden = qEnvironmentVariable("FORKMESH_INSIGHT_GOLDEN");
+    if (!golden.isEmpty())
+        return writeGolden(QDir(golden).absolutePath());
     const QString root = qEnvironmentVariable("FORKMESH_INSIGHT_ROOT");
     if (!root.isEmpty()) {
         runOn(root);
