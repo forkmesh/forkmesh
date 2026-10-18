@@ -99,9 +99,9 @@ struct ShellComposerOverlay: View {
                 text: $model.prompt,
                 hint: model.promptHint,
                 attachments: startsAgent ? $composer.attachments : nil,
-                modelLabel: startsAgent ? launcher.model.label : nil,
+                modelLabel: startsAgent ? launcher.chip.label : nil,
                 modelOptions: launcher.modelChoices.map { PromptModelOption(id: $0.id, label: $0.label, note: $0.note) },
-                selectedModelId: launcher.model.id,
+                selectedModelId: launcher.chip.id,
                 onSelectModel: { (id: String) in
                     if let choice = launcher.modelChoices.first(where: { $0.id == id }) {
                         launcher.choose(model: choice)
@@ -256,6 +256,39 @@ struct ShellComposerOverlay: View {
         .accessibilityIdentifier(identifier)
     }
 
+    private var assigneeMenu: some View {
+        Menu {
+            ForEach(launcher.taskAssignees, id: \.self) { (name: String) in
+                Button {
+                    FmHaptics.selection()
+                    launcher.choose(assignee: name)
+                } label: {
+                    if name == launcher.taskAssignee {
+                        Label(launcher.taskAssigneeLabel(name), systemImage: "checkmark")
+                    } else {
+                        Text(launcher.taskAssigneeLabel(name))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: FmSpace.x1) {
+                Image(systemName: "person.crop.circle")
+                    .font(.footnote)
+                Text("Assign to \(launcher.taskAssigneeLabel(launcher.taskAssignee))")
+                    .fmText(.bodySmall, color: fm.accent)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(fm.accent)
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
+        }
+        .task { if launcher.taskPeople == nil { await launcher.loadTaskPeople() } }
+        .accessibilityLabel(Text("Assign the task to \(launcher.taskAssigneeLabel(launcher.taskAssignee))"))
+        .accessibilityIdentifier("shell-prompt-assignee")
+    }
+
     /// The run's context ("forkmesh/forkmesh · mirror35"), tappable; and when
     /// the last send could not run, why and the one tap that fixes it.
     @ViewBuilder private var header: some View {
@@ -267,6 +300,9 @@ struct ShellComposerOverlay: View {
             } else {
                 if launcher.takesRunOptions {
                     runOptions
+                }
+                if launcher.action == .task {
+                    assigneeMenu
                 }
                 Button {
                     FmHaptics.tap()
@@ -287,7 +323,7 @@ struct ShellComposerOverlay: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("Runs in \(launcher.contextLine)"))
+                .accessibilityLabel(Text(launcher.action == nil ? "Runs in \(launcher.contextLine)" : launcher.contextLine))
                 .accessibilityHint(Text("Choose the repository, where it runs, and the model"))
                 .accessibilityIdentifier("shell-prompt-context")
             }
@@ -327,23 +363,39 @@ struct QuickLaunchPickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Runs on") {
-                    if launcher.destinations.isEmpty {
-                        Text(emptyDestinations)
-                            .fmText(.bodySmall, color: fm.textSecondary)
+                if launcher.action == .task {
+                    Section("Assign to") {
+                        if launcher.loadingTaskPeople && launcher.taskPeople == nil {
+                            Text("Loading members…")
+                                .fmText(.bodySmall, color: fm.textSecondary)
+                        }
+                        ForEach(launcher.taskAssignees, id: \.self) { (name: String) in
+                            row(title: launcher.taskAssigneeLabel(name), detail: name.isEmpty ? "On the General board" : "",
+                                selected: name == launcher.taskAssignee) {
+                                launcher.choose(assignee: name)
+                            }
+                        }
                     }
-                    ForEach(launcher.destinations, id: \.self) { (destination: QuickLaunchDestination) in
-                        row(
-                            title: title(destination), detail: launcher.detail(destination),
-                            selected: destination == launcher.destination
-                        ) {
-                            launcher.choose(destination)
+                }
+                if launcher.action == nil {
+                    Section("Runs on") {
+                        if launcher.destinations.isEmpty {
+                            Text(emptyDestinations)
+                                .fmText(.bodySmall, color: fm.textSecondary)
+                        }
+                        ForEach(launcher.destinations, id: \.self) { (destination: QuickLaunchDestination) in
+                            row(
+                                title: title(destination), detail: launcher.detail(destination),
+                                selected: destination == launcher.destination
+                            ) {
+                                launcher.choose(destination)
+                            }
                         }
                     }
                 }
                 Section("Model") {
                     ForEach(launcher.modelChoices) { (choice: AgentModelChoice) in
-                        row(title: choice.label, detail: choice.note, selected: choice == launcher.model) {
+                        row(title: choice.label, detail: choice.note, selected: choice == launcher.chip) {
                             launcher.choose(model: choice)
                         }
                     }
@@ -369,22 +421,24 @@ struct QuickLaunchPickerSheet: View {
                         }
                     }
                 }
-                Section("Repository") {
-                    if (launcher.form.targets ?? []).isEmpty {
-                        Text(launcher.preparing || launcher.form.targets == nil
-                            ? "Loading repositories…" : "No repositories could be loaded. Check the connection and open this again.")
-                            .fmText(.bodySmall, color: fm.textSecondary)
-                            .fmMessageTools(launcher.preparing || launcher.form.targets == nil
-                                ? nil : "No repositories could be loaded. Check the connection and open this again.")
-                    }
-                    ForEach(launcher.form.targets ?? []) { (target: AgentStartTarget) in
-                        row(title: target.label, detail: target.detail, selected: target == launcher.repository) {
-                            Task { await launcher.choose(target) }
+                if launcher.action == nil || launcher.action?.needsRepository == true {
+                    Section("Repository") {
+                        if (launcher.form.targets ?? []).isEmpty {
+                            Text(launcher.preparing || launcher.form.targets == nil
+                                ? "Loading repositories…" : "No repositories could be loaded. Check the connection and open this again.")
+                                .fmText(.bodySmall, color: fm.textSecondary)
+                                .fmMessageTools(launcher.preparing || launcher.form.targets == nil
+                                    ? nil : "No repositories could be loaded. Check the connection and open this again.")
+                        }
+                        ForEach(launcher.form.targets ?? []) { (target: AgentStartTarget) in
+                            row(title: target.label, detail: target.detail, selected: target == launcher.repository) {
+                                Task { await launcher.choose(target) }
+                            }
                         }
                     }
                 }
             }
-            .navigationTitle("Where it runs")
+            .navigationTitle(launcher.action == nil ? "Where it runs" : "Send as")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
