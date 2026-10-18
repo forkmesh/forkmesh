@@ -2849,7 +2849,8 @@ QString dirtyWorktreeRefusal(const QString &branch, const QStringList &paths,
 void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                        const QString &worktreePathArg,
                                        bool cleanUp,
-                                       std::function<void(bool)> callerDone)
+                                       std::function<void(bool)> callerDone,
+                                       bool unattended)
 {
     const QString branch = branchArg;
     const QString worktreePath = worktreePathArg;
@@ -2861,11 +2862,23 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         return;
     }
     if (m_worktreeMergeRunning) {
+        if (unattended && !m_worktreeMergeAwaiting.isEmpty()) {
+            const QString message =
+                QStringLiteral("Couldn't merge %1: the merge before it is waiting "
+                               "for an answer on the desktop (%2).")
+                    .arg(branch, m_worktreeMergeAwaiting);
+            logSystem(QStringLiteral("Git: ") + message);
+            flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+            if (callerDone)
+                callerDone(false);
+            return;
+        }
         QueuedWorktreeMerge queued;
         queued.dir = dir;
         queued.branch = branch;
         queued.worktreePath = worktreePath;
         queued.cleanUp = cleanUp;
+        queued.unattended = unattended;
         queued.done = std::move(callerDone);
         if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
             queued.owner = m_repositories.at(m_repoDetailIndex).owner;
@@ -2878,10 +2891,13 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         return;
     }
     m_worktreeMergeRunning = true;
+    m_worktreeMergeConflicted = false;
     std::function<void(bool)> done = [this, callerDone](bool ok) {
         m_worktreeMergeRunning = false;
+        m_worktreeMergeAwaiting.clear();
         if (callerDone)
             callerDone(ok);
+        m_worktreeMergeConflicted = false;
         QTimer::singleShot(0, this, [this] { runNextQueuedWorktreeMerge(); });
     };
     const auto refuse = [&done] { done(false); };
@@ -2924,7 +2940,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                 ? QStringLiteral("Agent %1 is").arg(names.first())
                                 : QStringLiteral("Agents %1 are")
                                       .arg(names.join(QStringLiteral(", ")));
-        if (anyExternal) {
+        if (anyExternal || unattended) {
             setRepoDetailNotice(
                 QStringLiteral("%1 still working on %2. %3, then merge so %4 "
                                "committed work is included.")
@@ -2954,7 +2970,9 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                        : QStringLiteral("Stop agents && merge"),
             QMessageBox::AcceptRole);
         box.addButton(QMessageBox::Cancel);
+        awaitDesktopDuringMerge(box.windowTitle());
         box.exec();
+        m_worktreeMergeAwaiting.clear();
         if (box.clickedButton() != stopAndMerge) {
             refuse();
             return;
@@ -2971,7 +2989,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
             }
         }
         m_worktreeMergeRunning = false;
-        mergeWorktreeIntoMain(branch, worktreePath, cleanUp, callerDone);
+        mergeWorktreeIntoMain(branch, worktreePath, cleanUp, callerDone, unattended);
         return;
     }
 
@@ -2992,7 +3010,8 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     if (!requestedPullSessions.isEmpty()) {
         auto pending = std::make_shared<int>(int(requestedPullSessions.size()));
         const auto resume = [this, pending, requestedPullSessions, branch,
-                             worktreePath, cleanUp, callerDone, dir, done] {
+                             worktreePath, cleanUp, callerDone, dir, done,
+                             unattended] {
             if (--*pending > 0)
                 return;
             QList<int> nothingToLand;
@@ -3035,7 +3054,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                 m_agentPullSkipOnce.insert(sessionId);
             }
             m_worktreeMergeRunning = false;
-            mergeWorktreeIntoMain(branch, worktreePath, cleanUp, callerDone);
+            mergeWorktreeIntoMain(branch, worktreePath, cleanUp, callerDone, unattended);
             for (const int sessionId : std::as_const(nothingToLand))
                 m_agentPullSkipOnce.remove(sessionId);
         };
@@ -3059,6 +3078,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     flow.base = base;
     flow.worktreePath = worktreePath;
     flow.cleanUp = cleanUp;
+    flow.unattended = unattended;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
         flow.owner = repo.owner;
@@ -3106,7 +3126,31 @@ void MainWindow::runNextQueuedWorktreeMerge()
         }
     }
     mergeWorktreeIntoMain(next.branch, next.worktreePath, next.cleanUp,
-                          std::move(next.done));
+                          std::move(next.done), next.unattended);
+}
+
+void MainWindow::awaitDesktopDuringMerge(const QString &what)
+{
+    m_worktreeMergeAwaiting = what;
+    QList<QueuedWorktreeMerge> waiting;
+    for (auto it = m_queuedWorktreeMerges.begin(); it != m_queuedWorktreeMerges.end();) {
+        if (it->unattended) {
+            waiting.append(std::move(*it));
+            it = m_queuedWorktreeMerges.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (QueuedWorktreeMerge &next : waiting) {
+        const QString message =
+            QStringLiteral("Couldn't merge %1: the merge before it is waiting for "
+                           "an answer on the desktop (%2).")
+                .arg(next.branch, what);
+        logSystem(QStringLiteral("Git: ") + message);
+        flashMessage(message, true, QString(), forkmesh::kLocalOperationNoticeKind);
+        if (next.done)
+            next.done(false);
+    }
 }
 
 MainWindow::WorktreeMergeStep
@@ -3398,6 +3442,23 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
         return;
     }
     if (step.kind == WorktreeMergeStep::NeedsEditor) {
+        if (flow.unattended) {
+            m_worktreeMergeConflicted = true;
+            noticeForRepo(here,
+                          QStringLiteral("Couldn't merge %1 into %2: updating it from "
+                                         "%2 conflicts. Kept its worktree and branch; "
+                                         "use \"Fix with agent\" or resolve the "
+                                         "conflicts on the desktop.")
+                              .arg(branch, base),
+                          true, forkmesh::kLocalOperationNoticeKind);
+            if (here) {
+                loadWorktreesPanel();
+                loadBranchesAndTags();
+            }
+            if (done)
+                done(false);
+            return;
+        }
         if (!here) {
             flashMessage(QStringLiteral("Left %1 unmerged: its repository was closed "
                                         "before its conflicts could be resolved.")
@@ -3413,7 +3474,10 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
         // branch contains the base. Cancelling leaves both refs
         // untouched and the editor's neutral cancellation notice in
         // place.
+        awaitDesktopDuringMerge(
+            QString::fromUtf8("Merge editor \xE2\x80\x94 %1").arg(branch));
         openBranchMergeEditor(branch, [this, flow, done] {
+            m_worktreeMergeAwaiting.clear();
             runOffThread<WorktreeMergeStep>(
                 [flow] {
                     WorktreeMergeStep next;
@@ -3549,6 +3613,7 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
             return;
         }
     } else if (hasConflicts) {
+        m_worktreeMergeConflicted = true;
         setRepoDetailNotice(
             QStringLiteral("Couldn't merge %1 into %2 cleanly — kept its worktree and "
                            "branch. Update it from %2 to resolve the conflicts (the "

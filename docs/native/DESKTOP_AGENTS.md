@@ -392,6 +392,20 @@ rebuilds never close an open agent.
   (`ShellChrome.stackReturns`, `ShellChrome.leave` trims the path to the last
   `.agents` route), because the merged run's list link is gone.
 - Failures show in `MergeFailureNote` above the diff with Try again.
+- A phone merge never waits on the desktop. `agentops.merge` and the YOLO and
+  Vibe auto-merges (`maybeAutoMergeForSession`) run `mergeWorktreeIntoMain`
+  with `unattended`, which never opens a window there: an agent still working
+  on the branch is refused ("Stop it, then merge"), and a conflict found while
+  updating the branch from its base is refused with `conflicts` (so the phone
+  offers Fix with agent) instead of opening the modal merge editor. Before
+  this, such a merge opened the editor on the desktop and held the merge lock
+  until someone answered it there, so the phone's merge, and every merge after
+  it, waited 180 s and failed with "The desktop did not answer in time".
+- While a merge started on the desktop waits for an answer there (the "Agent
+  is still working" box or the merge editor, `m_worktreeMergeAwaiting`), a
+  phone merge is refused at once with a message naming that window instead of
+  queueing behind it (`awaitDesktopDuringMerge` also refuses the phone merges
+  already queued).
 
 ### Merge stats
 
@@ -749,7 +763,8 @@ desktop:
 
 - **YOLO** (`agent/desktop/yolo`, remembered): sends `vibe: true`, so a
   finished run is merged into the default branch, pushed and cleaned up
-  (`maybeAutoMergeForSession`).
+  (`maybeAutoMergeForSession`). A conflict leaves the branch unmerged with a
+  notice; it never opens the desktop merge editor (see Merge & clean up).
 - **No worktree** (next run only, Claude Code and Codex): sends
   `worktree: false`; YOLO is dimmed while it is on.
 - iOS `QuickLaunchRunOptions`, `QuickAgentLauncher.runOptions`,

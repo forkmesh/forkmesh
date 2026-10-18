@@ -3481,6 +3481,29 @@ public:
         testSpinWhile([state] { return !state->finished; });
         return state->merged;
     }
+    bool testMergeBranchUnattended(const QString &branch, bool *conflicted)
+    {
+        struct MergeWait {
+            bool finished = false;
+            bool merged = false;
+            bool conflicted = false;
+        };
+        const auto state = std::make_shared<MergeWait>();
+        mergeWorktreeIntoMain(branch,
+                              worktreePathForBranch(repoGitDir(), branch,
+                                                    WorktreeLookup::Any),
+                              true,
+                              [this, state](bool ok) {
+                                  state->finished = true;
+                                  state->merged = ok;
+                                  state->conflicted = m_worktreeMergeConflicted;
+                              },
+                              true);
+        testSpinWhile([state] { return !state->finished; });
+        if (conflicted)
+            *conflicted = state->conflicted;
+        return state->merged;
+    }
     bool testHasAgentSession(int sessionId)
     {
         return findAgentSession(sessionId) != nullptr;
@@ -7948,13 +7971,15 @@ private:
     void mergeWorktreeIntoMain(const QString &branch,
                                const QString &worktreePath = QString(),
                                bool cleanUp = false,
-                               std::function<void(bool)> done = {});
+                               std::function<void(bool)> done = {},
+                               bool unattended = false);
     struct WorktreeMergeFlow {
         QString dir;
         QString branch;
         QString base;
         QString worktreePath;
         bool cleanUp = false;
+        bool unattended = false;
         QString owner;
         QString name;
         QString localPath;
@@ -7994,6 +8019,8 @@ private:
                                    const QList<int> &deletedPulls,
                                    const QString &pullError);
     bool m_worktreeMergeRunning = false;
+    QString m_worktreeMergeAwaiting;
+    bool m_worktreeMergeConflicted = false;
     struct QueuedWorktreeMerge {
         QString dir;
         QString owner;
@@ -8001,13 +8028,16 @@ private:
         QString branch;
         QString worktreePath;
         bool cleanUp = false;
+        bool unattended = false;
         std::function<void(bool)> done;
     };
     QList<QueuedWorktreeMerge> m_queuedWorktreeMerges;
     void runNextQueuedWorktreeMerge();
+    void awaitDesktopDuringMerge(const QString &what);
     bool mergeAgentBranchIntoBase(int repoIndex, const QString &branch,
                                   bool cleanUp,
-                                  std::function<void(bool)> done = {});
+                                  std::function<void(bool)> done = {},
+                                  bool unattended = false);
     void updateWorktreeFromMain(const QString &worktreePath, const QString &branch,
                                 const QString &baseArg = QString(),
                                 std::function<void()> done = {});

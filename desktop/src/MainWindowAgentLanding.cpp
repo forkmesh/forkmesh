@@ -1046,7 +1046,8 @@ void MainWindow::completeOrgTaskForSession(int sessionId, const QString &followU
 
 bool MainWindow::mergeAgentBranchIntoBase(int repoIndex, const QString &branchArg,
                                           bool cleanUp,
-                                          std::function<void(bool)> done)
+                                          std::function<void(bool)> done,
+                                          bool unattended)
 {
     if (repoIndex < 0 || repoIndex >= m_repositories.size())
         return false;
@@ -1070,7 +1071,7 @@ bool MainWindow::mergeAgentBranchIntoBase(int repoIndex, const QString &branchAr
     }
     mergeWorktreeIntoMain(
         branch, worktreePathForBranch(localPath, branch, WorktreeLookup::Any),
-        cleanUp, std::move(done));
+        cleanUp, std::move(done), unattended);
     return true;
 }
 
@@ -1118,7 +1119,8 @@ void MainWindow::maybeAutoMergeForSession(int sessionId)
         };
     }
     if (!mergeAgentBranchIntoBase(ri, session.branchName,
-                                  /*cleanUp=*/session.vibe, std::move(afterMerge))
+                                  /*cleanUp=*/session.vibe, std::move(afterMerge),
+                                  /*unattended=*/true)
         && m_agentStore)
         m_agentStore->appendLog(
             session,
