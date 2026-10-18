@@ -708,7 +708,7 @@
     if (!container || !repo) return;
     state.repoCompare = null;
     setRepoRecordOpen("pulls", true);
-    const parent = repoForkParent(repo);
+    const parent = pullRequestParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
     const sourceLabel = repoDisplayName(repo);
     const targetLabel = parent?.key ? repoDisplayName(parent.key) : repoDisplayName(targetRepo);
@@ -992,7 +992,7 @@
         throw new Error("number_unavailable");
       }
       const targetRepo = result.targetRepo || repo;
-      const crossFork = Boolean(repoForkParent(repo));
+      const crossFork = Boolean(pullRequestParent(repo));
       const item = {
         number,
         title,

@@ -3674,8 +3674,15 @@
     return submitWebPullEvent(repo, number, "delete", {});
   }
 
-  function pullRequestTargetRepo(repo) {
+  function pullRequestParent(repo) {
     const parent = repoForkParent(repo);
+    if (!parent) return null;
+    const parentRecord = findRepository(parent.key);
+    return parentRecord && repoReadOnlyMirror(parentRecord) ? null : parent;
+  }
+
+  function pullRequestTargetRepo(repo) {
+    const parent = pullRequestParent(repo);
     if (!parent) return repo;
     return findRepository(parent.key) || {
       owner: parent.owner,
@@ -3693,7 +3700,7 @@
   // delivered to the parent's durable inbox; the parent node can be offline.
   async function submitWebPullOpen(repo, title, body, base, head) {
     const targetRepo = pullRequestTargetRepo(repo);
-    const parent = repoForkParent(repo);
+    const parent = pullRequestParent(repo);
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
@@ -32652,7 +32659,7 @@
     if (!container || !repo) return;
     state.repoCompare = null;
     setRepoRecordOpen("pulls", true);
-    const parent = repoForkParent(repo);
+    const parent = pullRequestParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
     const sourceLabel = repoDisplayName(repo);
     const targetLabel = parent?.key ? repoDisplayName(parent.key) : repoDisplayName(targetRepo);
@@ -32936,7 +32943,7 @@
         throw new Error("number_unavailable");
       }
       const targetRepo = result.targetRepo || repo;
-      const crossFork = Boolean(repoForkParent(repo));
+      const crossFork = Boolean(pullRequestParent(repo));
       const item = {
         number,
         title,
