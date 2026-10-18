@@ -73,6 +73,7 @@ import com.forkmesh.nativeapp.model.RepoDetailTab
 import com.forkmesh.nativeapp.model.Repository
 import com.forkmesh.nativeapp.navigation.ComposeTarget
 import com.forkmesh.nativeapp.navigation.RepoRef
+import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
@@ -158,6 +159,9 @@ internal class RepoDetailScreen(
             RepoHubSection.MergeQueue -> MergeQueueScreen(repo)
             RepoHubSection.CodeMap -> CodeMapScreen(repo)
             RepoHubSection.Insights -> InsightsFeature.repoInsightsScreen(repo)
+            RepoHubSection.Ember -> NavigationFeature.registeredScreen(Route.Ember(RepoRef(repo.owner, repo.name)))
+            RepoHubSection.Strata -> NavigationFeature.registeredScreen(Route.Strata(RepoRef(repo.owner, repo.name)))
+            RepoHubSection.Synapse -> NavigationFeature.registeredScreen(Route.Synapse(RepoRef(repo.owner, repo.name)))
             RepoHubSection.Security -> SecurityScreen(repo)
             RepoHubSection.Webhooks -> WebhooksScreen(repo)
             RepoHubSection.Projects -> PlanningFeature.projectsScreen(RepoRef(repo.owner, repo.name))

@@ -129,6 +129,18 @@ enum NavigationRoutes {
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
         fallback(routes, .eyeControl) { _ in AnyView(EyeControlScreen()) }
+        fallback(routes, .ember) { route in
+            guard case let .ember(repo) = route else { return AnyView(RoutePlaceholderView(route: route)) }
+            return AnyView(CodeInsightScreen(plugin: .ember, repo: repo) { EmberPage(context: $0) })
+        }
+        fallback(routes, .strata) { route in
+            guard case let .strata(repo) = route else { return AnyView(RoutePlaceholderView(route: route)) }
+            return AnyView(CodeInsightScreen(plugin: .strata, repo: repo) { StrataPage(context: $0) })
+        }
+        fallback(routes, .synapse) { route in
+            guard case let .synapse(repo) = route else { return AnyView(RoutePlaceholderView(route: route)) }
+            return AnyView(CodeInsightScreen(plugin: .synapse, repo: repo) { SynapsePage(context: $0) })
+        }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
         fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
