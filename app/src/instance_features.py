@@ -185,9 +185,14 @@ def _matches(path, prefix):
 
 def feature_for(path):
     path = str(path or "")
+    best, length = "", -1
     for feature in FEATURES:
-        if any(_matches(path, prefix) for prefix in feature[3]):
-            return feature[0]
+        for prefix in feature[3]:
+            if _matches(path, prefix) and len(prefix) > length:
+                best, length = feature[0], len(prefix)
+    if best:
+        return best
+    for feature in FEATURES:
         if any(pattern.match(path) for pattern in _PATTERNS[feature[0]]):
             return feature[0]
     return ""

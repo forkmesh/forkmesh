@@ -1199,6 +1199,8 @@ repo_alias_redirect = _static_routes.export("repo_alias_redirect")
 external_site_route = _static_routes.export("external_site_route")
 external_site_delivery = _static_routes.export("external_site_delivery")
 site_document_asset_path = _static_routes.export("site_document_asset_path")
+world_asset_path = _static_routes.export("world_asset_path")
+world_asset_cache_control = _static_routes.export("world_asset_cache_control")
 looks_like_repo_route = _static_routes.export("looks_like_repo_route")
 dashboard_repo_redirect = _static_routes.export("dashboard_repo_redirect")
 

@@ -76,7 +76,9 @@ import {
   readWorldBootPrefs,
   startWorldBootPrefetch,
 } from "./world-boot.js";
+import { installCanvasBrand } from "./world-brand.js";
 
+if (typeof window !== "undefined") installCanvasBrand();
 if (typeof window !== "undefined") startWorldBootPrefetch(window);
 const WORLD_BOOT = typeof window === "undefined" ? null : installWorldBoot(window);
 WORLD_BOOT?.mark("runtime", "World runtime module evaluated", "module");

@@ -59,6 +59,27 @@ SITE_DOCUMENT_FALLBACK_SECURITY_HEADERS = {
     "x-frame-options": "DENY",
 }
 
+WORLD_DOCUMENT_SECURITY_HEADERS = {
+    "content-security-policy": (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; "
+        "script-src 'self' 'unsafe-inline'; style-src 'self' "
+        "'unsafe-inline'; img-src 'self' data: blob: https:; "
+        "font-src 'self' data:; connect-src 'self' https: wss:; "
+        "media-src 'self' blob: https:; frame-src 'self' https:; "
+        "worker-src 'self' blob:; manifest-src 'self'; "
+        "upgrade-insecure-requests"
+    ),
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": (
+        "camera=(), geolocation=(), payment=(), usb=(), serial=(), "
+        "browsing-topics=(), microphone=(self), clipboard-write=(self)"
+    ),
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+}
+
 
 class Default:
     """Request implementation for per-event global HTTP and cron handlers."""
@@ -2088,6 +2109,8 @@ class Default:
             if mode == "proxy":
                 return await self._serve_site_document(
                     request, url, destination_origin)
+            if external_owner == "world":
+                return await self._serve_world_asset(request, url)
             return await self._serve_site_document(request, url, "")
 
         if url.path in BLOCKED_STATIC_HTML_PATHS:
@@ -4193,6 +4216,26 @@ class Default:
         except Exception:
             pass
         return await self._serve_not_found_page(url)
+
+    async def _serve_world_asset(self, request, url):
+        path = world_asset_path(url.path)
+        if not path:
+            return await self._serve_not_found_page(url)
+        base = url.scheme + "://" + url.netloc
+        try:
+            local = await self.env.ASSETS.fetch(base + path)
+            if int(getattr(local, "status", 0) or 0) != 200:
+                return await self._serve_not_found_page(url)
+            headers = dict(WORLD_DOCUMENT_SECURITY_HEADERS)
+            headers["content-type"] = str(
+                local.headers.get("content-type")
+                or "application/octet-stream")
+            headers["cache-control"] = world_asset_cache_control(
+                url.path, url.query)
+            return self._without_head_body(request, JsResponse.new(
+                local.body, to_js({"status": 200, "headers": headers})))
+        except Exception:
+            return await self._serve_not_found_page(url)
 
     async def _proxy_site_document(self, request, url, upstream):
         destination = upstream + url.path + (

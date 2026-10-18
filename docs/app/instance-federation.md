@@ -148,6 +148,12 @@ What "each World is connected" means in the code:
   locally at `https://<domain>/world/`, with its own members, chat and Office
   in the instance's database. With the plugin off `/world` is not found.
   Worlds share no state: there is no relay between them.
+- **The bundle.** The instance build copies the built World into `app/dist`
+  (`build_site_assets.py instance-world`), and `_serve_world_asset` answers
+  `/world`, `/world/` and `/world/*` from it. Before that step existed the
+  instance had no World files at all, so `/world/` answered the 404 page even
+  with the plugin on. Headers, caching, branding and the parts that need
+  forkmesh.com are in [INSTANCES.md](../INSTANCES.md#the-world-on-an-instance).
 - **Twelve instance slots.** The ForkMesh World's town is ringed by twelve
   instance hexagons (`INSTANCE_HEX_SLOTS`, `scene/layout.js`). Every World
   reads `/api/start/instances` on its own origin and builds a hexagon for each
@@ -185,9 +191,12 @@ Automated: `app/tests/test_instance_registry.py` (protocol, failure cases,
 console, document, `/api/instance`), `app/tests/test_instance_directory.py`,
 `app/tests/test_install_instance_script.py`,
 `app/host/tests_unit/test_instance_bootstrap.py`,
-`app/tests/host/test_host_egress.py` and
+`app/tests/host/test_host_egress.py`,
 `world/tests/test_world_instance_portals.py` (URL rules, home portal, arrival
-spots, wiring).
+spots, wiring), `app/tests/test_instance_world_bundle.py` (bundle step, path
+and cache rules, plugin ownership), `app/tests/host/test_instance_world_serving.py`
+(`/world/`, modules, vendor files and the API through the instance router with
+the plugin on, off and saved) and `world/tests/test_world_instance_brand.py`.
 
 By hand, once forkmesh.com and the instance both run this code:
 

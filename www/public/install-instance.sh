@@ -680,6 +680,8 @@ build_app() {
   (
     cd "$SRC/app/host"
     FORKMESH_EXCLUDED_PLUGINS="$EXCLUDED_PACKAGES" "$VENV/bin/python" -m forkmesh_host build 2>&1 | lines
+    cd "$SRC/app"
+    "$VENV/bin/python" tools/build_site_assets.py instance-world 2>&1 | lines
   )
   local brand_args=(--name "$CFG_projectName" --dist "$SRC/app/dist") logo
   logo="$(logo_file)"

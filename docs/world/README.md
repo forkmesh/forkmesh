@@ -29,6 +29,7 @@ desktop embeds the same page.
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
+| `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../INSTANCES.md#the-world-on-an-instance)) |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
 | `world/public/world/vendor/` | Pinned three.js (`three-0.184.0`) and other vendored libraries |

@@ -478,6 +478,75 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
   `/api/instance` (cached 60 s) and the brand script follow within a minute.
 - forkmesh.com never reads the row: every plugin stays on there, and the page
   says so instead of showing the form.
+- **The most specific prefix wins.** `feature_for` picks the plugin with the
+  longest matching path prefix, so `/api/world/store` and `/api/world/wallet`
+  belong to `rewards` and `/api/world/community-ads` to `ads` even while
+  `world` (which owns `/api/world`) is on. Before, the first listed plugin
+  won and turning the World on also opened those forkmesh.com-only routes.
+
+### The World on an instance
+
+The World client lives in `world/public/world`, not in `app/public`, and
+forkmesh.com serves it from a separate `world/dist`. The instance build
+therefore runs `app/tools/build_site_assets.py instance-world` after
+`forkmesh_host build` and before `apply_instance_brand.py`
+(`build_app` in the installer). It builds `world/dist` as for
+world.forkmesh.com (bundled scene, minified and versioned modules,
+three.js r184 vendored under `/world/vendor/`) and copies it into
+`app/dist`: all of `world/`, plus the World-only files the app bundle lacks
+(bot avatars, marketplace World packages, `security/latest.json`). It never
+overwrites an app file and drops the World's `_headers`. The World
+document's canonical link to forkmesh.com is removed. The result is about
+10 MB on disk (6 MB of it source maps); the build needs the same esbuild the
+Office build already installs. The target is not part of a plain
+`build_site_assets.py` run, so forkmesh.com's app bundle is unchanged.
+
+The World is always bundled; the plugin decides at request time. The
+installer sets `WORLD_ORIGIN` to the instance's own origin, so
+`external_site_delivery` answers `local` and `_serve_world_asset`
+(`app/src/app_runtime.py`) serves `/world` and `/world/` from
+`world/index.html` and every other `/world/...` path from the exact bundled
+file (`static_routes.world_asset_path`; dot segments and unknown files are
+404). Headers:
+
+- `content-type` from the file (`text/javascript` for modules, `image/webp`
+  and so on).
+- `cache-control`: `public, max-age=31536000, immutable` for a `?v=` URL and
+  for `/world/vendor/`; `no-store, max-age=0, must-revalidate` for the
+  document and any unversioned file, as on world.forkmesh.com, so a rebuild
+  never mixes module graphs.
+- The World CSP (`WORLD_DOCUMENT_SECURITY_HEADERS`): `script-src 'self'
+  'unsafe-inline'` with no CDN, since three.js is local; `connect-src 'self'
+  https: wss:` for the API and the `/api/world/ws` presence socket; frames
+  `'self'` for the embedded chat; `frame-ancestors 'none'` (nothing frames
+  the World on an instance, and the global HTML layer sets
+  `X-Frame-Options: DENY`).
+
+With the plugin off, the plugin gate answers 404 for `/world`, `/world/*`,
+`/api/world/*` and `/office` before any of this runs.
+
+Every API the World calls is relative to the page, and `api-client.js` keeps
+`location.origin` on any host that is not forkmesh.com, so presence, chat,
+the Office, plots, notes and preferences reach the instance's own app and
+accounts. The World's server code calls no forkmesh.com address (satellites
+read celestrak.org, social boards x.com and reddit.com), so the egress guard
+needs no new allowance.
+
+Branding: the brand tool renames the World's title ("Acme Code World") and
+adds the brand script, which renames "ForkMesh" in the World's HTML. Text
+the scene paints on canvases (signs such as "FORKMESH OFFICE") is renamed by
+`world/public/world/world-brand.js`: on a page that carries the brand script
+it wraps `fillText`, `strokeText` and `measureText` of the 2D canvas
+contexts so measured and painted text match. It leaves "ForkMesh World" (the
+portal home), "ForkMesh Desktop", `forkmesh.com` addresses, `@forkmesh`
+handles and lower-case repository names alone. The logo comes from
+`/assets/logo.svg`, which the brand tool replaces with the instance logo.
+
+What does not work on an instance: the rewards and ledger parts (World
+store, wallet, central fund, pending rewards), community ads, the ForkMesh
+blog board, the `forkmesh/forkmesh` mirror and agent-bot boards (they read
+that repository, which an instance does not have under that name), Discord,
+and the relay federation towers. The World shows those boards empty.
 
 ## Dashboard on an instance
 
